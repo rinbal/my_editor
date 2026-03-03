@@ -3,8 +3,8 @@
 HTML Editor widget with bullet and format logic.
 """
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QTextCursor, QTextCharFormat, QColor, QClipboard
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QPainter, QTextCursor, QTextCharFormat, QColor, QClipboard
 from PySide6.QtWidgets import QTextEdit, QMenu, QApplication
 from constants import DARK_BG, DARK_FG, LIGHT_BG, LIGHT_FG, DARK_SELECTION, LIGHT_SELECTION, MONO_FONT, TEXT_COLORS
 
@@ -39,6 +39,14 @@ class HtmlEditor(QTextEdit):
 
         # Connect to cursor position changes to update active format
         self.cursorPositionChanged.connect(self._update_active_format)
+
+        # Block cursor (terminal-style): hide Qt's thin cursor, draw our own
+        self.setCursorWidth(0)
+        self._cursor_visible = True
+        self._blink_timer = QTimer(self)
+        self._blink_timer.setInterval(530)
+        self._blink_timer.timeout.connect(self._on_cursor_blink)
+        self._blink_timer.start()
 
     def undo(self):
         self.document().undo()
@@ -124,6 +132,41 @@ class HtmlEditor(QTextEdit):
         self.active_format['italic'] = fmt.fontItalic()
         self.active_format['underline'] = fmt.fontUnderline()
         self.active_format['color'] = fmt.foreground().color() if fmt.hasProperty(QTextCharFormat.ForegroundBrush) else None
+
+    # -------- Block cursor --------
+    def _block_cursor_rect(self):
+        """Return the rect the block cursor occupies (used for painting and invalidation)."""
+        rect = self.cursorRect()
+        rect.setWidth(max(self.fontMetrics().averageCharWidth(), 10))
+        return rect
+
+    def _on_cursor_blink(self):
+        self._cursor_visible = not self._cursor_visible
+        self.viewport().update(self._block_cursor_rect())
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        cursor = self.textCursor()
+        if not self.hasFocus() or not self._cursor_visible or cursor.hasSelection():
+            return
+        rect = self._block_cursor_rect()
+        is_dark = hasattr(self, '_theme_colors') and self._theme_colors['bg'] == DARK_BG
+        color = QColor(212, 212, 212, 210) if is_dark else QColor(51, 51, 51, 210)
+        painter = QPainter(self.viewport())
+        painter.fillRect(rect, color)
+        painter.end()
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        self._cursor_visible = True
+        self._blink_timer.start()
+        self.viewport().update(self._block_cursor_rect())
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        self._cursor_visible = False
+        self._blink_timer.stop()
+        self.viewport().update(self._block_cursor_rect())
 
     # -------- Context menu with colors --------
     def contextMenuEvent(self, event):
@@ -229,6 +272,10 @@ class HtmlEditor(QTextEdit):
         self.setTextCursor(nc)
 
     def keyPressEvent(self, e):
+        # Keep cursor solid immediately after a keypress; blink restarts from now
+        self._cursor_visible = True
+        self._blink_timer.start()
+
         # Undo / Redo
         if e.key() == Qt.Key_Z and e.modifiers() == Qt.ControlModifier:
             self.undo()
