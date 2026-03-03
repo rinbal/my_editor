@@ -497,9 +497,7 @@ class MainWindow(QMainWindow):
     def open_dialog(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Open", "",
-            "All Supported Files (*.html *.htm *.txt *.md *.py *.js *.css *.json);;"
-            "HTML files (*.html *.htm);;Text files (*.txt);;Markdown (*.md);;"
-            "Python (*.py);;JavaScript (*.js);;CSS (*.css);;JSON (*.json);;All files (*.*)"
+            "Note files (*.md *.html *.txt);;All files (*.*)"
         )
         if path:
             self.open_path(path)
@@ -513,8 +511,11 @@ class MainWindow(QMainWindow):
             return
 
         ed = HtmlEditor()
-        if path.lower().endswith(('.html', '.htm')):
+        ext = path.lower()
+        if ext.endswith(('.html', '.htm')):
             ed.setHtml(content)
+        elif ext.endswith('.md'):
+            ed.document().setMarkdown(content)
         else:
             ed.setPlainText(content)
 
@@ -551,17 +552,17 @@ class MainWindow(QMainWindow):
     def save_as(self) -> bool:
         path, selected_filter = QFileDialog.getSaveFileName(
             self, "Save As", "",
-            "Text files (*.txt);;PDF files (*.pdf);;HTML files (*.html);;Markdown (*.md);;"
-            "Python (*.py);;JavaScript (*.js);;CSS (*.css);;JSON (*.json);;All files (*.*)"
+            "Plain Text (*.txt);;Markdown (*.md);;RTF (*.rtf);;PDF (*.pdf)"
         )
         if not path:
             return False
 
-        # Auto-add extension if missing
+        # Auto-add extension if the user didn't type one
         ext_map = {
-            "Text": ".txt", "PDF": ".pdf", "HTML": ".html",
-            "Markdown": ".md", "Python": ".py", "JavaScript": ".js",
-            "CSS": ".css", "JSON": ".json"
+            "Plain Text": ".txt",
+            "Markdown":   ".md",
+            "RTF":        ".rtf",
+            "PDF":        ".pdf",
         }
         for keyword, ext in ext_map.items():
             if keyword in selected_filter and not path.lower().endswith(ext):
@@ -578,24 +579,15 @@ class MainWindow(QMainWindow):
         if not ed:
             return False
 
+        ext = path.lower()
         try:
-            if path.lower().endswith('.pdf'):
+            if ext.endswith('.pdf'):
                 return self._save_as_pdf(ed, path)
+            elif ext.endswith('.rtf'):
+                return self._save_as_rtf(ed, path)
 
-            elif path.lower().endswith(('.html', '.htm')):
-                # HTML export — colors are universal so no remapping needed.
-                # Just ensure the body has a white background for browser display.
-                import re
-                html = ed.toHtml()
-                # Replace dark editor background with white
-                html = html.replace(f'background-color:{DARK_BG}', 'background-color:#FFFFFF')
-                html = html.replace(f'background:{DARK_BG}', 'background:#FFFFFF')
-                # Ensure body tag has white background
-                body_pat = r'<body[^>]*>'
-                if re.search(body_pat, html):
-                    html = re.sub(body_pat, '<body style="background-color:#FFFFFF; color:#000000;">', html)
-                content = html
-
+            if ext.endswith('.md'):
+                content = ed.document().toMarkdown()
             else:
                 content = ed.toPlainText()
 
@@ -609,6 +601,106 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"File could not be saved:\n{e}")
             return False
+
+    def _save_as_rtf(self, editor, path: str) -> bool:
+        try:
+            content = self._to_rtf(editor)
+            with open(path, "w", encoding="ascii") as f:
+                f.write(content)
+            editor.document().setModified(False)
+            self._update_tab_title()
+            self.status.showMessage(f"Saved: {path}")
+            return True
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"RTF could not be saved:\n{e}")
+            return False
+
+    def _to_rtf(self, editor) -> str:
+        """Convert QTextDocument to an RTF string.
+
+        Walks the document block by block, fragment by fragment.
+        Each fragment becomes an RTF group carrying its formatting codes.
+        Non-ASCII characters are escaped as \\uN? (RTF Unicode escape).
+        """
+        doc = editor.document()
+
+        # --- Pass 1: collect all unique foreground colors used in the document ---
+        colors: list[tuple[int, int, int]] = []
+        block = doc.begin()
+        while block.isValid():
+            it = block.begin()
+            while not it.atEnd():
+                fmt = it.fragment().charFormat()
+                if fmt.hasProperty(QTextCharFormat.ForegroundBrush):
+                    c = fmt.foreground().color()
+                    rgb = (c.red(), c.green(), c.blue())
+                    if rgb not in colors:
+                        colors.append(rgb)
+                it += 1
+            block = block.next()
+
+        # --- RTF header ---
+        # \colortbl: entry 0 is implicit default; custom colors start at index 1.
+        color_table = "{\\colortbl;" + "".join(
+            f"\\red{r}\\green{g}\\blue{b};" for r, g, b in colors
+        ) + "}"
+
+        parts = [
+            "{\\rtf1\\ansi\\deff0\n",
+            "{\\fonttbl{\\f0\\fmodern\\fcharset0 Courier New;}}\n",
+            color_table + "\n",
+            "\\f0\\fs28\n",  # Courier New 14 pt  (RTF uses half-points)
+        ]
+
+        # --- Pass 2: emit content ---
+        block = doc.begin()
+        first_block = True
+        while block.isValid():
+            if not first_block:
+                parts.append("\\par\n")
+            first_block = False
+
+            it = block.begin()
+            while not it.atEnd():
+                frag = it.fragment()
+                fmt = frag.charFormat()
+
+                # Escape RTF special chars and non-ASCII
+                escaped = []
+                for ch in frag.text():
+                    if ch == "\\":
+                        escaped.append("\\\\")
+                    elif ch == "{":
+                        escaped.append("\\{")
+                    elif ch == "}":
+                        escaped.append("\\}")
+                    elif ord(ch) > 127:
+                        escaped.append(f"\\u{ord(ch)}?")
+                    else:
+                        escaped.append(ch)
+                text = "".join(escaped)
+
+                # Build format prefix (all codes go inside a single RTF group
+                # so they reset automatically at the closing brace)
+                codes = ""
+                if fmt.fontWeight() > 400:
+                    codes += "\\b "
+                if fmt.fontItalic():
+                    codes += "\\i "
+                if fmt.fontUnderline():
+                    codes += "\\ul "
+                if fmt.hasProperty(QTextCharFormat.ForegroundBrush):
+                    c = fmt.foreground().color()
+                    idx = colors.index((c.red(), c.green(), c.blue())) + 1
+                    codes += f"\\cf{idx} "
+
+                parts.append(f"{{{codes}{text}}}" if codes else text)
+                it += 1
+
+            block = block.next()
+
+        parts.append("\n}")
+        return "".join(parts)
 
     def _save_as_pdf(self, editor, path: str) -> bool:
         try:
