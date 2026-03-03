@@ -208,21 +208,17 @@ class HeaderWidget(QWidget):
         layout.setSpacing(8)
 
         # Left: theme + line numbers toggles
-        self.theme_checkbox = QCheckBox()
+        self.theme_checkbox = QCheckBox("Dark Theme")
         self.theme_checkbox.setToolTip("Enable Dark Theme (unchecked = Light Theme)")
         self.theme_checkbox.setChecked(True)
-        self.theme_label = QLabel("Dark Theme")
 
         layout.addWidget(self.theme_checkbox)
-        layout.addWidget(self.theme_label)
         layout.addSpacing(8)
 
-        self.line_numbers_checkbox = QCheckBox()
+        self.line_numbers_checkbox = QCheckBox("Line Numbers")
         self.line_numbers_checkbox.setToolTip("Toggle Line Numbers")
-        self.line_numbers_label = QLabel("Line Numbers")
 
         layout.addWidget(self.line_numbers_checkbox)
-        layout.addWidget(self.line_numbers_label)
 
         # Center: undo / redo round arrows
         layout.addStretch(1)
@@ -257,7 +253,7 @@ class HeaderWidget(QWidget):
                     background: #252526;
                     border-bottom: 1px solid #3C3C3C;
                 }
-                QCheckBox { spacing: 0px; }
+                QCheckBox { spacing: 6px; color: #CCCCCC; font-size: 12px; }
                 QCheckBox::indicator {
                     width: 14px; height: 14px;
                     border: 1px solid #3C3C3C;
@@ -276,17 +272,17 @@ class HeaderWidget(QWidget):
                 }
                 QPushButton:hover { background: #3C3C3C; }
                 QPushButton:pressed { background: #1E1E1E; }
+                QPushButton:disabled { background: #252526; color: #3C3C3C; border-color: #2D2D2D; }
             """)
-            self.theme_label.setText("Dark Theme")
             self.theme_checkbox.setChecked(True)
-            self.credit_label.setStyleSheet("QLabel { font-size: 10px; font-style: italic; color: #858585; }")
+            self.credit_label.setStyleSheet("QLabel { font-size: 12px; font-style: italic; color: #858585; }")
         else:
             self.setStyleSheet("""
                 QWidget {
                     background: #F8F8F8;
                     border-bottom: 1px solid #E1E1E1;
                 }
-                QCheckBox { spacing: 0px; }
+                QCheckBox { spacing: 6px; color: #333333; font-size: 12px; }
                 QCheckBox::indicator {
                     width: 14px; height: 14px;
                     border: 1px solid #666666;
@@ -305,7 +301,7 @@ class HeaderWidget(QWidget):
                 }
                 QPushButton:hover { background: #E1E1E1; }
                 QPushButton:pressed { background: #D0D0D0; }
+                QPushButton:disabled { background: #F8F8F8; color: #CCCCCC; border-color: #EBEBEB; }
             """)
-            self.theme_label.setText("Dark Theme")
             self.theme_checkbox.setChecked(False)
-            self.credit_label.setStyleSheet("QLabel { font-size: 10px; font-style: italic; color: #999999; }")
+            self.credit_label.setStyleSheet("QLabel { font-size: 12px; font-style: italic; color: #555555; }")

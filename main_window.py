@@ -35,11 +35,11 @@ class MainWindow(QMainWindow):
         self.tabs.setTabsClosable(True)
         self.tabs.tabCloseRequested.connect(self.close_tab)
 
-        plus = QToolButton()
-        plus.setText("+")
-        plus.setAutoRaise(True)
-        plus.clicked.connect(self.new_tab)
-        self.tabs.setCornerWidget(plus, Qt.TopRightCorner)
+        self.plus_btn = QToolButton()
+        self.plus_btn.setText("+")
+        self.plus_btn.setAutoRaise(True)
+        self.plus_btn.clicked.connect(self.new_tab)
+        self.tabs.setCornerWidget(self.plus_btn, Qt.TopRightCorner)
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
@@ -141,6 +141,35 @@ class MainWindow(QMainWindow):
             QScrollBar::handle:horizontal:hover {{ background: {fg}; }}
             QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0px; }}
         """)
+
+        if self.is_dark_theme:
+            self.plus_btn.setStyleSheet("""
+                QToolButton {
+                    background: #2D2D30;
+                    color: #CCCCCC;
+                    border: 1px solid #3C3C3C;
+                    border-radius: 4px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    min-width: 20px;
+                    min-height: 20px;
+                }
+                QToolButton:hover { background: #3C3C3C; }
+            """)
+        else:
+            self.plus_btn.setStyleSheet("""
+                QToolButton {
+                    background: #DCDCDC;
+                    color: #222222;
+                    border: 1px solid #BBBBBB;
+                    border-radius: 4px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    min-width: 20px;
+                    min-height: 20px;
+                }
+                QToolButton:hover { background: #C8C8C8; }
+            """)
 
         for i in range(self.tabs.count()):
             container = self.tabs.widget(i)
