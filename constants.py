@@ -18,7 +18,7 @@ LIGHT_BORDER = "#E1E1E1"
 LIGHT_MENU_BG = "#F3F3F3"
 LIGHT_MENU_FG = "#333333"
 
-MONO_FONT = "Fira Code, JetBrains Mono, Consolas, 'Courier New', monospace"
+MONO_FONT = "Noto Sans Mono"
 
 # Single universal color palette — mid-range saturation (Material Design 600).
 # These colors are clearly visible on both dark (#1E1E1E) and light (#FFFFFF) backgrounds,
