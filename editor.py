@@ -231,6 +231,8 @@ class HtmlEditor(QTextEdit):
         act_b = menu.addAction("Bold (Ctrl+B)")
         act_i = menu.addAction("Italic (Ctrl+I)")
         act_u = menu.addAction("Underline (Ctrl+U)")
+        menu.addSeparator()
+        act_reset = menu.addAction("Reset Format (Ctrl+D)")
 
         chosen = menu.exec(event.globalPos())
         if not chosen:
@@ -247,6 +249,8 @@ class HtmlEditor(QTextEdit):
             self.toggle_italic()
         elif chosen == act_u:
             self.toggle_underline()
+        elif chosen == act_reset:
+            self.reset_to_default()
         else:
             data = chosen.data()
             if isinstance(data, tuple) and data and data[0] == "color":
