@@ -9,7 +9,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QMainWindow, QFileDialog, QMessageBox, QWidget, QVBoxLayout,
-    QTextEdit, QTabWidget, QToolButton, QHBoxLayout, QStatusBar
+    QTextEdit, QTabWidget, QToolButton, QHBoxLayout, QStatusBar, QPushButton, QTabBar
 )
 
 from constants import (
@@ -32,8 +32,7 @@ class MainWindow(QMainWindow):
 
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
-        self.tabs.setTabsClosable(True)
-        self.tabs.tabCloseRequested.connect(self.close_tab)
+        self.tabs.setTabsClosable(False)
 
         self.plus_btn = QToolButton()
         self.plus_btn.setText("+")
@@ -430,6 +429,30 @@ class MainWindow(QMainWindow):
 
         idx = self.tabs.addTab(container, "Untitled*")
         self.tabs.setCurrentIndex(idx)
+
+        close_btn = QPushButton("×")
+        close_btn.setFixedSize(24, 24)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                color: #A84444;
+                background: transparent;
+                border: none;
+                border-radius: 4px;
+                font-size: 18px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                color: #D06060;
+                background: rgba(168, 68, 68, 0.15);
+            }
+            QPushButton:pressed {
+                background: rgba(168, 68, 68, 0.30);
+            }
+        """)
+        close_btn.setToolTip("Close tab")
+        close_btn.clicked.connect(lambda: self.close_tab(self.tabs.indexOf(container)))
+        self.tabs.tabBar().setTabButton(idx, QTabBar.RightSide, close_btn)
+
         ed._file_path = None
         ed.setHtml("<div></div>")
         ed.setFocus()
@@ -552,7 +575,7 @@ class MainWindow(QMainWindow):
     def save_as(self) -> bool:
         path, selected_filter = QFileDialog.getSaveFileName(
             self, "Save As", "",
-            ".txt (*.txt);; .md (*.md);; .rtf (*.rtf);; .pdf (*.pdf)"
+            ".txt (*.txt);; .pdf (*.pdf);; .md (*.md);; .rtf (*.rtf)"
         )
         if not path:
             return False
