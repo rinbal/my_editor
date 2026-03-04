@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=minimal texteditor
+Comment=Minimal note-taking text editor
+Exec=/path/to/my_editor/.venv/bin/python /path/to/my_editor/main.py
+Path=/path/to/my_editor
+Icon=accessories-text-editor
+Terminal=false
+Categories=Office;TextEditor;
+StartupNotify=true
