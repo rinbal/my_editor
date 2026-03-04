@@ -552,17 +552,17 @@ class MainWindow(QMainWindow):
     def save_as(self) -> bool:
         path, selected_filter = QFileDialog.getSaveFileName(
             self, "Save As", "",
-            "Plain Text (*.txt);;Markdown (*.md);;RTF (*.rtf);;PDF (*.pdf)"
+            ".txt (*.txt);; .md (*.md);; .rtf (*.rtf);; .pdf (*.pdf)"
         )
         if not path:
             return False
 
         # Auto-add extension if the user didn't type one
         ext_map = {
-            "Plain Text": ".txt",
-            "Markdown":   ".md",
-            "RTF":        ".rtf",
-            "PDF":        ".pdf",
+            ".txt": ".txt",
+            ".md":  ".md",
+            ".rtf": ".rtf",
+            ".pdf": ".pdf",
         }
         for keyword, ext in ext_map.items():
             if keyword in selected_filter and not path.lower().endswith(ext):
@@ -705,11 +705,13 @@ class MainWindow(QMainWindow):
     def _save_as_pdf(self, editor, path: str) -> bool:
         try:
             from PySide6.QtPrintSupport import QPrinter
+            from PySide6.QtGui import QFont
 
             printer = QPrinter(QPrinter.HighResolution)
             printer.setOutputFormat(QPrinter.PdfFormat)
             printer.setOutputFileName(path)
-            printer.setPageMargins(QMarginsF(15, 15, 15, 15), QPageLayout.Millimeter)
+            printer.setPageSize(QPageSize(QPageSize.A4))
+            printer.setPageMargins(QMarginsF(10, 10, 10, 10), QPageLayout.Millimeter)
 
             # Clone document and force white background + black default text for print.
             # Custom text colors (red, blue, etc.) are mid-range and print well on white.
@@ -718,6 +720,13 @@ class MainWindow(QMainWindow):
             frame_fmt.setBackground(QColor("white"))
             doc.rootFrame().setFrameFormat(frame_fmt)
             doc.setDefaultStyleSheet("body { color: #000000; background: #ffffff; }")
+
+            # Use point size (device-independent) so text scales correctly at 1200 DPI.
+            # The editor uses "font-size: 14px" (screen pixels) which would appear tiny
+            # at printer resolution without this conversion. 11pt ≈ standard document size.
+            font = QFont(MONO_FONT, 11)
+            doc.setDefaultFont(font)
+
             doc.print_(printer)
 
             editor.document().setModified(False)

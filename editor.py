@@ -93,15 +93,32 @@ class HtmlEditor(QTextEdit):
 
     def apply_color(self, qcolor: QColor | None):
         cursor = self.textCursor()
-        fmt = QTextCharFormat()
         if qcolor is None:
-            fmt.clearForeground()
+            if cursor.hasSelection():
+                # mergeCharFormat can only set properties, not clear them.
+                # Must iterate character by character to actually remove the color.
+                start, end = cursor.selectionStart(), cursor.selectionEnd()
+                c = QTextCursor(self.document())
+                c.beginEditBlock()
+                c.setPosition(start)
+                while c.position() < end:
+                    c.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+                    char_fmt = c.charFormat()
+                    char_fmt.clearForeground()
+                    c.setCharFormat(char_fmt)
+                    c.setPosition(c.position())
+                c.endEditBlock()
+            else:
+                char_fmt = self.currentCharFormat()
+                char_fmt.clearForeground()
+                self.setCurrentCharFormat(char_fmt)
         else:
+            fmt = QTextCharFormat()
             fmt.setForeground(qcolor)
-        if cursor.hasSelection():
-            cursor.mergeCharFormat(fmt)
-        else:
-            self.mergeCurrentCharFormat(fmt)
+            if cursor.hasSelection():
+                cursor.mergeCharFormat(fmt)
+            else:
+                self.mergeCurrentCharFormat(fmt)
         self.active_format['color'] = qcolor
         self.ensureCursorVisible()
 
