@@ -133,6 +133,13 @@ You can now double-click `my-editor.app` in Finder to launch the editor, or drag
 
 > **Note:** macOS may show a security warning the first time you open the app since it is not from the App Store. To bypass it: right-click the app → **Open** → confirm in the dialog. You only need to do this once.
 
+> **Icon:** By default the app shows a generic icon. To use a custom icon, place a `.icns` file in `my-editor.app/Contents/Resources/` and add the following to `Info.plist` inside the `<dict>` block:
+> ```xml
+> <key>CFBundleIconFile</key>
+> <string>your-icon-name</string>
+> ```
+> To convert a PNG to `.icns` on macOS, see `iconutil` (built into macOS).
+
 ---
 
 ### Windows — Batch Script
@@ -166,6 +173,8 @@ cd C:\Users\yourname\my_editor
   ```
 
 > **Note:** A terminal window will briefly appear on launch — this is normal for `.bat` files on Windows.
+
+> **Icon:** `.bat` files cannot carry a custom icon directly. To use one, create a Windows shortcut (`.lnk`) to the `.bat` file, then right-click the shortcut → **Properties** → **Change Icon** and select any `.ico` file.
 
 ---
 

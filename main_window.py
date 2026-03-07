@@ -80,6 +80,9 @@ class MainWindow(QMainWindow):
                 border-top: 1px solid {border};
                 background: {bg};
             }}
+            QTabBar {{
+                background: {menu_bg};
+            }}
             QTabBar::tab {{
                 background: {menu_bg};
                 color: {menu_fg};
