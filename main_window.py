@@ -31,7 +31,6 @@ class MainWindow(QMainWindow):
         self.show_line_numbers = False
 
         self.tabs = QTabWidget()
-        self.tabs.setDocumentMode(True)
         self.tabs.setTabsClosable(False)
 
         self.plus_btn = QToolButton()
