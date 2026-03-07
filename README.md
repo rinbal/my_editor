@@ -47,24 +47,31 @@ python main.py /path/to/file.txt
 
 ---
 
-## Desktop Shortcut (Linux)
+## App Shortcuts
 
-A template `.desktop` file is included so you can launch the editor with a single click from your app launcher or dock.
+Three launcher templates are included, one per platform:
+- `my-editor.desktop.example` — Linux
+- `my-editor.app.example/` — macOS
+- `my-editor.bat.example` — Windows
 
-**1. Find out the full path to the project folder:**
+### Linux — Desktop Shortcut
+
+The file `my-editor.desktop.example` is a template to register the editor as an application in your Linux desktop environment (GNOME, KDE, etc.).
+
+**1. Find the full path to the project folder:**
 ```bash
 pwd
 ```
-This prints something like `/home/yourname/my_editor` - copy that path.
+This prints something like `/home/yourname/my_editor` — copy that path.
 
-**2. Copy the template file:**
+**2. Copy the template:**
 ```bash
 cp my-editor.desktop.example my-editor.desktop
 ```
 
-**3. Open `my-editor.desktop` in a text editor and replace both `/path/to/my_editor` entries with your actual path from step 1.**
+**3. Open `my-editor.desktop` and replace both `/path/to/my_editor` entries with your actual path.**
 
-For example, if your path is `/home/yourname/my_editor`, the relevant lines should look like:
+Example with path `/home/yourname/my_editor`:
 ```
 Exec=/home/yourname/my_editor/.venv/bin/python /home/yourname/my_editor/main.py
 Path=/home/yourname/my_editor
@@ -76,6 +83,89 @@ cp my-editor.desktop ~/.local/share/applications/
 ```
 
 The editor will now appear in your app launcher and can be pinned to the dock.
+
+---
+
+### macOS — App Bundle
+
+The folder `my-editor.app.example/` is a template for a native macOS `.app` bundle. On macOS, any folder named `Something.app` with the right internal structure is treated as a clickable application — no installation tool required.
+
+**Structure of the bundle:**
+```
+my-editor.app/
+└── Contents/
+    ├── Info.plist          ← app metadata
+    ├── MacOS/
+    │   └── my-editor       ← launcher shell script (must be executable)
+    └── Resources/          ← optional: place your icon (.icns) here
+```
+
+**1. Find the full path to the project folder:**
+```bash
+pwd
+```
+This prints something like `/Users/yourname/my_editor` — copy that path.
+
+**2. Copy the template bundle:**
+```bash
+cp -r my-editor.app.example my-editor.app
+```
+
+**3. Open `my-editor.app/Contents/MacOS/my-editor` in a text editor and replace the path:**
+
+Example with path `/Users/yourname/my_editor`:
+```bash
+cd /Users/yourname/my_editor
+.venv/bin/python main.py
+```
+
+**4. Make the launcher script executable:**
+```bash
+chmod +x my-editor.app/Contents/MacOS/my-editor
+```
+
+**5. Move the app to Applications (optional but recommended):**
+```bash
+mv my-editor.app /Applications/
+```
+
+You can now double-click `my-editor.app` in Finder to launch the editor, or drag it to the Dock to pin it.
+
+> **Note:** macOS may show a security warning the first time you open the app since it is not from the App Store. To bypass it: right-click the app → **Open** → confirm in the dialog. You only need to do this once.
+
+---
+
+### Windows — Batch Script
+
+The file `my-editor.bat.example` is a template for a double-clickable launcher script on Windows.
+
+**1. Find the full path to the project folder:**
+
+Open the project folder in File Explorer, click the address bar, and copy the path. It will look something like `C:\Users\yourname\my_editor`.
+
+**2. Copy the template:**
+```
+copy my-editor.bat.example my-editor.bat
+```
+
+**3. Open `my-editor.bat` in a text editor and replace the path with your actual path.**
+
+Example with path `C:\Users\yourname\my_editor`:
+```bat
+cd C:\Users\yourname\my_editor
+.venv\Scripts\python.exe main.py
+```
+
+**4. Double-click `my-editor.bat` to launch the editor.**
+
+**Optional — Pin to taskbar or Start Menu:**
+- **Taskbar:** Right-click `my-editor.bat` → **Pin to taskbar**
+- **Start Menu:** Place a shortcut to the `.bat` file in:
+  ```
+  %APPDATA%\Microsoft\Windows\Start Menu\Programs\
+  ```
+
+> **Note:** A terminal window will briefly appear on launch — this is normal for `.bat` files on Windows.
 
 ---
 

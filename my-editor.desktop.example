@@ -1,3 +1,6 @@
+# Linux launcher template for minimal texteditor
+# See README.md > App Shortcuts for setup instructions
+
 [Desktop Entry]
 Version=1.0
 Type=Application
