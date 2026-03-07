@@ -32,6 +32,7 @@ class MainWindow(QMainWindow):
 
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(False)
+        self.tabs.tabBar().setExpanding(False)
 
         self.plus_btn = QToolButton()
         self.plus_btn.setText("+")
