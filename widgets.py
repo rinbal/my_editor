@@ -219,6 +219,13 @@ class HeaderWidget(QWidget):
         self.line_numbers_checkbox.setToolTip("Toggle Line Numbers")
 
         layout.addWidget(self.line_numbers_checkbox)
+        layout.addSpacing(8)
+
+        self.syntax_highlight_checkbox = QCheckBox("Syntax Highlighting")
+        self.syntax_highlight_checkbox.setToolTip("Toggle Syntax Highlighting")
+        self.syntax_highlight_checkbox.setChecked(True)
+
+        layout.addWidget(self.syntax_highlight_checkbox)
 
         # Center: undo / redo round arrows
         layout.addStretch(1)
