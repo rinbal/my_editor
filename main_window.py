@@ -530,6 +530,16 @@ class MainWindow(QMainWindow):
         self._attach_close_button(idx, container)
 
         ed._file_path = None
+        ed._language = None
+
+        # Debounce timer: detect language from pasted/typed content
+        _timer = QTimer(ed)
+        _timer.setSingleShot(True)
+        _timer.setInterval(600)
+        _timer.timeout.connect(lambda: self._auto_detect_language(ed))
+        ed.document().contentsChanged.connect(_timer.start)
+        ed._lang_detect_timer = _timer
+
         ed.setHtml("<div></div>")
         ed._backup = EditorBackup(ed, None)
         ed.setFocus()
@@ -558,21 +568,6 @@ class MainWindow(QMainWindow):
         close_btn.setToolTip("Close tab")
         close_btn.clicked.connect(lambda: self.close_tab(self.tabs.indexOf(container)))
         self.tabs.tabBar().setTabButton(idx, QTabBar.RightSide, close_btn)
-
-        ed._file_path = None
-        ed._language = None
-
-        # Debounce timer: detect language from pasted/typed content
-        _timer = QTimer(ed)
-        _timer.setSingleShot(True)
-        _timer.setInterval(600)
-        _timer.timeout.connect(lambda: self._auto_detect_language(ed))
-        ed.document().contentsChanged.connect(_timer.start)
-        ed._lang_detect_timer = _timer
-
-        ed.setHtml("<div></div>")
-        ed.setFocus()
-        self._update_window_title()
 
     def close_tab(self, index: int):
         w = self.tabs.widget(index)
