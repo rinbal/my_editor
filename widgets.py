@@ -240,7 +240,7 @@ class HeaderWidget(QWidget):
         layout.addStretch(1)
 
         # Right: credit
-        self.credit_label = QLabel("created by rinbal")
+        self.credit_label = QLabel("built by rinbal")
         layout.addWidget(self.credit_label)
 
         # Apply initial dark theme

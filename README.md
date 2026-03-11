@@ -252,4 +252,4 @@ Right-clicking in the editor opens a context menu with:
 
 ---
 
-*created by rinbal*
+*built by rinbal*
