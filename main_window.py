@@ -23,6 +23,7 @@ from highlighter import SyntaxHighlighter, detect_language, detect_language_from
 
 # These extensions are loaded as rendered documents, not plain-text source code.
 _RICH_DOC_EXTS = ('.html', '.htm', '.md', '.markdown')
+from recovery import EditorBackup, find_all_backups
 
 
 class MainWindow(QMainWindow):
@@ -63,7 +64,9 @@ class MainWindow(QMainWindow):
 
         if initial_path and os.path.isfile(initial_path):
             self.open_path(initial_path)
-        else:
+
+        restored = self._restore_backups()
+        if not initial_path and not restored:
             self.new_tab()
 
         self.tabs.currentChanged.connect(self._on_tab_changed)
@@ -454,6 +457,52 @@ class MainWindow(QMainWindow):
 
 
     # ----------------------------------------------------------------------
+    # CRASH RECOVERY
+    # ----------------------------------------------------------------------
+    def _restore_backups(self) -> bool:
+        """Silently restore any backup files left over from a previous crash.
+
+        Returns True if at least one backup was restored.
+        """
+        backups = find_all_backups()
+        for backup in backups:
+            original_path = backup.get("original_path")
+            content = backup.get("content", "")
+            backup_file = backup["_backup_file"]
+
+            ed = HtmlEditor()
+            ed.setPlainText(content)
+            ed._file_path = original_path
+            ed.document().setModified(True)
+            ed.document().contentsChanged.connect(self._update_tab_title)
+            ed.document().undoAvailable.connect(self._update_undo_redo_buttons)
+            ed.document().redoAvailable.connect(self._update_undo_redo_buttons)
+            self._update_editor_theme(ed)
+
+            container = QWidget()
+            layout = QHBoxLayout(container)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(0)
+
+            if self.show_line_numbers:
+                gutter = LineNumberGutter(ed)
+                layout.addWidget(gutter)
+                ed._line_gutter = gutter
+
+            layout.addWidget(ed)
+
+            base_name = os.path.basename(original_path) if original_path else "Untitled"
+            idx = self.tabs.addTab(container, f"{base_name} (recovered)*")
+            self._attach_close_button(idx, container)
+
+            # Replace the old backup file with a fresh one for the restored content
+            os.remove(backup_file)
+            ed._backup = EditorBackup(ed, original_path)
+            ed._backup.write_now()
+
+        return len(backups) > 0
+
+    # ----------------------------------------------------------------------
     # FILE I/O
     # ----------------------------------------------------------------------
     def new_tab(self):
@@ -478,6 +527,15 @@ class MainWindow(QMainWindow):
         idx = self.tabs.addTab(container, "Untitled*")
         self.tabs.setCurrentIndex(idx)
 
+        self._attach_close_button(idx, container)
+
+        ed._file_path = None
+        ed.setHtml("<div></div>")
+        ed._backup = EditorBackup(ed, None)
+        ed.setFocus()
+        self._update_window_title()
+
+    def _attach_close_button(self, idx: int, container: QWidget):
         close_btn = QPushButton("×")
         close_btn.setFixedSize(24, 24)
         close_btn.setStyleSheet("""
@@ -534,6 +592,8 @@ class MainWindow(QMainWindow):
                 self.tabs.setCurrentIndex(index)
                 if not self.save():
                     return
+        if editor and hasattr(editor, '_backup'):
+            editor._backup.delete()
         self.tabs.removeTab(index)
 
     def _close_current_tab(self):
@@ -564,6 +624,10 @@ class MainWindow(QMainWindow):
                         self.tabs.setCurrentIndex(i)
                         if not self.save():
                             return
+        for i in range(self.tabs.count()):
+            ed = self._editor_from_widget(self.tabs.widget(i))
+            if ed and hasattr(ed, '_backup'):
+                ed._backup.delete()
         self.close()
 
     def _editor_from_widget(self, w) -> HtmlEditor | None:
@@ -622,6 +686,8 @@ class MainWindow(QMainWindow):
 
         idx = self.tabs.addTab(container, os.path.basename(path))
         self.tabs.setCurrentIndex(idx)
+        self._attach_close_button(idx, container)
+        ed._backup = EditorBackup(ed, path)
         ed.setFocus()
         self._update_window_title()
 
@@ -658,6 +724,8 @@ class MainWindow(QMainWindow):
             if ed:
                 self._attach_highlighter(ed, path)
                 self._update_status_bar()
+            if ed and hasattr(ed, '_backup'):
+                ed._backup.update_file_path(path)
         return ok
 
     def _save_to(self, path: str) -> bool:
@@ -1139,4 +1207,8 @@ Ctrl+Shift+T    - Toggle dark/light theme"""
                     return
                 else:
                     break
+        for i in range(self.tabs.count()):
+            ed = self._editor_from_widget(self.tabs.widget(i))
+            if ed and hasattr(ed, '_backup'):
+                ed._backup.delete()
         event.accept()
