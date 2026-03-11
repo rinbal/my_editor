@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# minimal texteditor created by rinbal
+# minimal texteditor built by rinbal
 
 
 import sys
