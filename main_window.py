@@ -2,7 +2,7 @@
 
 
 import os
-from PySide6.QtCore import Qt, QMarginsF
+from PySide6.QtCore import Qt, QMarginsF, QTimer
 from PySide6.QtGui import (
     QAction, QKeySequence, QTextCursor, QTextDocument, QTextCharFormat, QColor,
     QPageLayout, QPageSize
@@ -19,6 +19,10 @@ from constants import (
 )
 from widgets import FindBar, HeaderWidget, LineNumberGutter
 from editor import HtmlEditor
+from highlighter import SyntaxHighlighter, detect_language, detect_language_from_content, LANGUAGE_DISPLAY_NAMES
+
+# These extensions are loaded as rendered documents, not plain-text source code.
+_RICH_DOC_EXTS = ('.html', '.htm', '.md', '.markdown')
 from recovery import EditorBackup, find_all_backups
 
 
@@ -30,6 +34,7 @@ class MainWindow(QMainWindow):
 
         self.is_dark_theme = True
         self.show_line_numbers = False
+        self.syntax_highlighting = True
 
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(False)
@@ -49,6 +54,7 @@ class MainWindow(QMainWindow):
         self.header_widget = HeaderWidget()
         self.header_widget.theme_checkbox.toggled.connect(self._toggle_theme)
         self.header_widget.line_numbers_checkbox.toggled.connect(self._toggle_line_numbers)
+        self.header_widget.syntax_highlight_checkbox.toggled.connect(self._toggle_syntax_highlighting)
         self.header_widget.undo_btn.clicked.connect(self._undo)
         self.header_widget.redo_btn.clicked.connect(self._redo)
 
@@ -185,6 +191,32 @@ class MainWindow(QMainWindow):
                         break
 
 
+    def _auto_detect_language(self, editor):
+        """Called via debounce timer; detects language from content for untitled tabs."""
+        if getattr(editor, '_language', None):
+            return  # already known
+        lang = detect_language_from_content(editor.toPlainText())
+        if lang and self.syntax_highlighting:
+            editor._language = lang
+            editor._highlighter = SyntaxHighlighter(
+                editor.document(), lang, self.is_dark_theme
+            )
+            self._update_status_bar()
+
+    def _attach_highlighter(self, editor, path: str | None):
+        """Detect language from path and attach / replace syntax highlighter."""
+        lang = detect_language(path)
+        editor._language = lang
+        # Remove existing highlighter if any
+        if hasattr(editor, '_highlighter'):
+            editor._highlighter.setDocument(None)
+            del editor._highlighter
+        # Only highlight plain-text source files, not rendered rich documents
+        if lang and path and not path.lower().endswith(_RICH_DOC_EXTS) and self.syntax_highlighting:
+            editor._highlighter = SyntaxHighlighter(
+                editor.document(), lang, self.is_dark_theme
+            )
+
     def _update_editor_theme(self, editor):
         bg = DARK_BG if self.is_dark_theme else LIGHT_BG
         fg = DARK_FG if self.is_dark_theme else LIGHT_FG
@@ -234,6 +266,9 @@ class MainWindow(QMainWindow):
 
         editor._theme_colors = {'bg': bg, 'fg': fg}
 
+        if hasattr(editor, '_highlighter'):
+            editor._highlighter.set_theme(self.is_dark_theme)
+
         if hasattr(editor, '_line_gutter'):
             editor._line_gutter._update_theme()
 
@@ -277,11 +312,15 @@ class MainWindow(QMainWindow):
             return
         path = getattr(ed, "_file_path", None)
         file_info = path if path else "(Untitled)"
+        lang = getattr(ed, "_language", None)
+        lang_label = LANGUAGE_DISPLAY_NAMES.get(lang, '') if lang else ''
+        parts = [file_info]
+        if lang_label:
+            parts.append(lang_label)
         page_count = ed.document().pageCount()
         if page_count > 1:
-            self.status.showMessage(f"{file_info} | Page {page_count}")
-        else:
-            self.status.showMessage(file_info)
+            parts.append(f"Page {page_count}")
+        self.status.showMessage(" | ".join(parts))
 
     def _update_window_title(self, *_):
         self.setWindowTitle("")
@@ -370,6 +409,12 @@ class MainWindow(QMainWindow):
         self.act_toggle_line_numbers.setShortcut(QKeySequence("Ctrl+Shift+L"))
         self.act_toggle_line_numbers.triggered.connect(self._toggle_line_numbers)
         self.act_toggle_line_numbers.setCheckable(True)
+
+        self.act_toggle_syntax_hl = QAction("Syntax Highlighting", self)
+        self.act_toggle_syntax_hl.setShortcut(QKeySequence("Ctrl+Shift+H"))
+        self.act_toggle_syntax_hl.triggered.connect(self._toggle_syntax_highlighting)
+        self.act_toggle_syntax_hl.setCheckable(True)
+        self.act_toggle_syntax_hl.setChecked(True)
 
         self.addAction(self.act_bold)
         self.addAction(self.act_italic)
@@ -485,6 +530,16 @@ class MainWindow(QMainWindow):
         self._attach_close_button(idx, container)
 
         ed._file_path = None
+        ed._language = None
+
+        # Debounce timer: detect language from pasted/typed content
+        _timer = QTimer(ed)
+        _timer.setSingleShot(True)
+        _timer.setInterval(600)
+        _timer.timeout.connect(lambda: self._auto_detect_language(ed))
+        ed.document().contentsChanged.connect(_timer.start)
+        ed._lang_detect_timer = _timer
+
         ed.setHtml("<div></div>")
         ed._backup = EditorBackup(ed, None)
         ed.setFocus()
@@ -610,6 +665,7 @@ class MainWindow(QMainWindow):
         ed.document().undoAvailable.connect(self._update_undo_redo_buttons)
         ed.document().redoAvailable.connect(self._update_undo_redo_buttons)
         self._update_editor_theme(ed)
+        self._attach_highlighter(ed, path)
 
         container = QWidget()
         layout = QHBoxLayout(container)
@@ -660,6 +716,9 @@ class MainWindow(QMainWindow):
         if ok:
             self.set_current_path(path)
             ed = self.current_editor()
+            if ed:
+                self._attach_highlighter(ed, path)
+                self._update_status_bar()
             if ed and hasattr(ed, '_backup'):
                 ed._backup.update_file_path(path)
         return ok
@@ -1099,6 +1158,33 @@ Ctrl+Shift+T    - Toggle dark/light theme"""
                         delattr(editor, '_line_gutter')
 
         self.status.showMessage(f"Line numbers {'enabled' if self.show_line_numbers else 'disabled'}", 2000)
+
+
+    # ----------------------------------------------------------------------
+    # SYNTAX HIGHLIGHTING
+    # ----------------------------------------------------------------------
+    def _toggle_syntax_highlighting(self):
+        if hasattr(self, 'header_widget'):
+            self.syntax_highlighting = self.header_widget.syntax_highlight_checkbox.isChecked()
+        else:
+            self.syntax_highlighting = not self.syntax_highlighting
+
+        self.act_toggle_syntax_hl.setChecked(self.syntax_highlighting)
+        self.header_widget.syntax_highlight_checkbox.setChecked(self.syntax_highlighting)
+
+        for i in range(self.tabs.count()):
+            container = self.tabs.widget(i)
+            if isinstance(container, QWidget):
+                editor = self._editor_from_widget(container)
+                if editor:
+                    if self.syntax_highlighting:
+                        path = getattr(editor, '_file_path', None)
+                        self._attach_highlighter(editor, path)
+                    elif hasattr(editor, '_highlighter'):
+                        editor._highlighter.setDocument(None)
+                        del editor._highlighter
+
+        self.status.showMessage(f"Syntax highlighting {'enabled' if self.syntax_highlighting else 'disabled'}", 2000)
 
 
     # ----------------------------------------------------------------------
