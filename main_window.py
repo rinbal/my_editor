@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 
+import json
 import os
 from PySide6.QtCore import Qt, QMarginsF, QTimer
 from PySide6.QtGui import (
@@ -8,7 +9,7 @@ from PySide6.QtGui import (
     QPageLayout, QPageSize
 )
 from PySide6.QtWidgets import (
-    QMainWindow, QFileDialog, QMessageBox, QWidget, QVBoxLayout,
+    QMainWindow, QFileDialog, QInputDialog, QMenu, QMessageBox, QWidget, QVBoxLayout,
     QTextEdit, QTabWidget, QToolButton, QHBoxLayout, QStatusBar, QPushButton, QTabBar
 )
 
@@ -39,6 +40,8 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(False)
         self.tabs.tabBar().setExpanding(False)
+        self.tabs.tabBar().setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tabs.tabBar().customContextMenuRequested.connect(self._on_tab_context_menu)
 
         self.plus_btn = QToolButton()
         self.plus_btn.setText("+")
@@ -66,7 +69,8 @@ class MainWindow(QMainWindow):
             self.open_path(initial_path)
 
         restored = self._restore_backups()
-        if not initial_path and not restored:
+        session = self._restore_session() if not initial_path and not restored else False
+        if not initial_path and not restored and not session:
             self.new_tab()
 
         self.tabs.currentChanged.connect(self._on_tab_changed)
@@ -546,6 +550,51 @@ class MainWindow(QMainWindow):
         ed.setHtml("<div></div>")
         ed._backup = EditorBackup(ed, None)
         ed.setFocus()
+        self._update_window_title()
+
+    def _on_tab_context_menu(self, pos):
+        idx = self.tabs.tabBar().tabAt(pos)
+        if idx < 0:
+            return
+        ed = self._editor_from_widget(self.tabs.widget(idx))
+        has_path = bool(getattr(ed, '_file_path', None))
+
+        menu = QMenu(self)
+        rename_action = menu.addAction("Rename")
+        rename_action.setEnabled(has_path)
+        if not has_path:
+            rename_action.setToolTip("Save the file first before renaming")
+
+        action = menu.exec(self.tabs.tabBar().mapToGlobal(pos))
+        if action == rename_action:
+            self._rename_tab(idx, ed)
+
+    def _rename_tab(self, idx: int, ed):
+        old_path = ed._file_path
+        old_name = os.path.basename(old_path)
+        directory = os.path.dirname(old_path)
+
+        new_name, ok = QInputDialog.getText(self, "Rename File", "New filename:", text=old_name)
+        if not ok or not new_name.strip() or new_name.strip() == old_name:
+            return
+
+        new_name = new_name.strip()
+        new_path = os.path.join(directory, new_name)
+
+        if os.path.exists(new_path):
+            QMessageBox.warning(self, "Rename Failed", f'A file named "{new_name}" already exists.')
+            return
+
+        try:
+            os.rename(old_path, new_path)
+        except OSError as e:
+            QMessageBox.critical(self, "Rename Failed", str(e))
+            return
+
+        ed._file_path = new_path
+        if hasattr(ed, '_backup'):
+            ed._backup.update_file_path(new_path)
+        self.tabs.setTabText(idx, new_name)
         self._update_window_title()
 
     def _attach_close_button(self, idx: int, container: QWidget):
@@ -1206,6 +1255,43 @@ Ctrl+Shift+H    - Toggle syntax highlighting"""
     # ----------------------------------------------------------------------
     # CLOSE EVENT
     # ----------------------------------------------------------------------
+    _SESSION_FILE = os.path.join(os.path.expanduser("~"), ".cache", "my_editor", "session.json")
+
+    def _save_session(self):
+        paths = []
+        for i in range(self.tabs.count()):
+            ed = self._editor_from_widget(self.tabs.widget(i))
+            if ed and getattr(ed, '_file_path', None):
+                paths.append(ed._file_path)
+        if not paths:
+            return
+        data = {"paths": paths, "active": self.tabs.currentIndex()}
+        os.makedirs(os.path.dirname(self._SESSION_FILE), exist_ok=True)
+        with open(self._SESSION_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+
+    def _restore_session(self) -> bool:
+        if not os.path.isfile(self._SESSION_FILE):
+            return False
+        try:
+            with open(self._SESSION_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            return False
+        os.remove(self._SESSION_FILE)
+        paths = [p for p in data.get("paths", []) if os.path.isfile(p)]
+        if not paths:
+            return False
+        missing = len(data.get("paths", [])) - len(paths)
+        for path in paths:
+            self.open_path(path)
+        active = data.get("active", 0)
+        if 0 <= active < self.tabs.count():
+            self.tabs.setCurrentIndex(active)
+        if missing:
+            self.status.showMessage(f"{missing} file(s) from last session could not be found.", 5000)
+        return True
+
     def closeEvent(self, event):
         for i in range(self.tabs.count()):
             ed = self._editor_from_widget(self.tabs.widget(i))
@@ -1218,6 +1304,7 @@ Ctrl+Shift+H    - Toggle syntax highlighting"""
                     return
                 else:
                     break
+        self._save_session()
         for i in range(self.tabs.count()):
             ed = self._editor_from_widget(self.tabs.widget(i))
             if ed and hasattr(ed, '_backup'):

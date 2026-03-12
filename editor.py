@@ -294,8 +294,10 @@ class HtmlEditor(QTextEdit):
 
     def keyPressEvent(self, e):
         # Keep cursor solid immediately after a keypress; blink restarts from now
+        old_cursor_rect = self._block_cursor_rect()
         self._cursor_visible = True
         self._blink_timer.start()
+        self.viewport().update(old_cursor_rect)
 
         # Undo / Redo
         if e.key() == Qt.Key_Z and e.modifiers() == Qt.ControlModifier:
@@ -388,7 +390,7 @@ class HtmlEditor(QTextEdit):
                 return
 
         elif e.key() == Qt.Key_Backspace:
-            if c.positionInBlock() <= spaces + (2 if has_bullet else 0) and (spaces > 0 or has_bullet):
+            if not c.hasSelection() and c.positionInBlock() <= spaces + (2 if has_bullet else 0) and (spaces > 0 or has_bullet):
                 if has_bullet:
                     if spaces == 0 and c.blockNumber() > 0:
                         # No indentation, not first block: remove bullet and merge with previous line
