@@ -4,7 +4,7 @@
 from PySide6.QtCore import Qt, QRect, QSize
 from PySide6.QtGui import QPainter, QFont, QColor
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QLineEdit, QLabel, QPushButton, QFrame, QMenu, QCheckBox
+    QWidget, QHBoxLayout, QVBoxLayout, QLineEdit, QLabel, QPushButton, QFrame, QMenu, QCheckBox
 )
 from constants import DARK_BG, LIGHT_BG, MONO_FONT
 
@@ -97,11 +97,15 @@ class FindBar(QFrame):
         self.is_dark = True
         self._update_theme()
 
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(8, 8, 8, 8)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 8, 8, 6)
+        outer.setSpacing(4)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
         self.label = QLabel("Search:")
         self.edit = QLineEdit()
-        self.edit.setPlaceholderText("Search text…")
+        self.edit.setPlaceholderText("Search…")
         self.btn_prev = QPushButton("←")
         self.btn_next = QPushButton("→")
         self.btn_close = QPushButton("×")
@@ -115,12 +119,21 @@ class FindBar(QFrame):
 
         self.edit.installEventFilter(self)
 
-        lay.addWidget(self.label)
-        lay.addWidget(self.edit, 1)
-        lay.addWidget(self.btn_prev)
-        lay.addWidget(self.btn_next)
-        lay.addWidget(self.match_info)
-        lay.addWidget(self.btn_close)
+        row.addWidget(self.label)
+        row.addWidget(self.edit, 1)
+        row.addWidget(self.btn_prev)
+        row.addWidget(self.btn_next)
+        row.addWidget(self.match_info)
+        row.addWidget(self.btn_close)
+
+        self.hint_label = QLabel("Enter: next  |  Shift+Enter: prev  |  Esc: close & edit here")
+        hint_font = self.hint_label.font()
+        hint_font.setPointSize(hint_font.pointSize() - 1)
+        hint_font.setItalic(True)
+        self.hint_label.setFont(hint_font)
+
+        outer.addLayout(row)
+        outer.addWidget(self.hint_label)
 
     def eventFilter(self, obj, event):
         if obj == self.edit and event.type() == event.Type.KeyPress:
@@ -167,6 +180,8 @@ class FindBar(QFrame):
             QPushButton:hover { background: #3C3C3C; }
             QLabel { color: #CCCCCC; }
             """)
+            if hasattr(self, 'hint_label'):
+                self.hint_label.setStyleSheet("color: #777777;")
         else:
             self.setStyleSheet("""
             #FindBar {
@@ -192,6 +207,8 @@ class FindBar(QFrame):
             QPushButton:hover { background: #E1E1E1; }
             QLabel { color: #666666; }
             """)
+            if hasattr(self, 'hint_label'):
+                self.hint_label.setStyleSheet("color: #999999;")
 
     def focusIn(self):
         self.edit.setFocus()
@@ -205,31 +222,32 @@ class HeaderWidget(QWidget):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 5, 10, 5)
-        layout.setSpacing(8)
+        layout.setSpacing(0)
 
-        # Left: theme + line numbers toggles
+        # Left: checkboxes in an expanding widget, left-aligned
+        left = QWidget()
+        left.setObjectName("HeaderLeft")
+        left_layout = QHBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(8)
+
         self.theme_checkbox = QCheckBox("Dark Theme")
-        self.theme_checkbox.setToolTip("Enable Dark Theme (unchecked = Light Theme, Hotkey: Ctrl+Shift+T)")
+        self.theme_checkbox.setToolTip("Toggle Theme (Ctrl+Shift+T)")
         self.theme_checkbox.setChecked(True)
-
-        layout.addWidget(self.theme_checkbox)
-        layout.addSpacing(8)
 
         self.line_numbers_checkbox = QCheckBox("Line Numbers")
         self.line_numbers_checkbox.setToolTip("Toggle Line Numbers (Ctrl+Shift+L)")
-
-        layout.addWidget(self.line_numbers_checkbox)
-        layout.addSpacing(8)
 
         self.syntax_highlight_checkbox = QCheckBox("Syntax Highlighting")
         self.syntax_highlight_checkbox.setToolTip("Toggle Syntax Highlighting (Ctrl+Shift+H)")
         self.syntax_highlight_checkbox.setChecked(True)
 
-        layout.addWidget(self.syntax_highlight_checkbox)
+        left_layout.addWidget(self.theme_checkbox)
+        left_layout.addWidget(self.line_numbers_checkbox)
+        left_layout.addWidget(self.syntax_highlight_checkbox)
+        left_layout.addStretch()
 
         # Center: undo / redo round arrows
-        layout.addStretch(1)
-
         self.undo_btn = QPushButton("↺")
         self.undo_btn.setToolTip("Undo (Ctrl+Z)")
         self.undo_btn.setFixedSize(26, 26)
@@ -240,15 +258,22 @@ class HeaderWidget(QWidget):
         self.redo_btn.setFixedSize(26, 26)
         self.redo_btn.setEnabled(False)
 
+        # Right: credit in an expanding widget, right-aligned
+        right = QWidget()
+        right.setObjectName("HeaderRight")
+        right_layout = QHBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        self.credit_label = QLabel("built by rinbal")
+        right_layout.addStretch()
+        right_layout.addWidget(self.credit_label)
+
+        layout.addWidget(left, 1)
+        layout.addSpacing(8)
         layout.addWidget(self.undo_btn)
         layout.addSpacing(4)
         layout.addWidget(self.redo_btn)
-
-        layout.addStretch(1)
-
-        # Right: credit
-        self.credit_label = QLabel("built by rinbal")
-        layout.addWidget(self.credit_label)
+        layout.addSpacing(8)
+        layout.addWidget(right, 1)
 
         # Apply initial dark theme
         self.update_theme(True)
@@ -270,6 +295,7 @@ class HeaderWidget(QWidget):
                 QCheckBox::indicator:checked { background: #FF8C00; border: 1px solid #FF8C00; }
                 QCheckBox::indicator:unchecked { background: #2D2D30; border: 1px solid #3C3C3C; }
                 QLabel { color: #CCCCCC; font-size: 12px; background: transparent; }
+                #HeaderLeft, #HeaderRight { background: transparent; }
                 QPushButton {
                     background: #2D2D30;
                     color: #D4D4D4;
@@ -299,6 +325,7 @@ class HeaderWidget(QWidget):
                 QCheckBox::indicator:checked { background: #FF8C00; border: 1px solid #FF8C00; }
                 QCheckBox::indicator:unchecked { background: #FFFFFF; border: 1px solid #666666; }
                 QLabel { color: #333333; font-size: 12px; background: transparent; }
+                #HeaderLeft, #HeaderRight { background: transparent; }
                 QPushButton {
                     background: #ECECEC;
                     color: #333333;
