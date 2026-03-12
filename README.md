@@ -1,7 +1,15 @@
 # minimal texteditor
 
+<p align="center">
+  <img src="assets/texteditor_icon.jpg" width="80" alt="minimal texteditor icon"/>
+</p>
+
 A clean, minimal note-taking text editor built with Python and PySide6.
 Designed for writing lecture notes and personal documents with a distraction-free interface.
+
+<p align="center">
+  <img src="assets/texteditor_example.png" width="780" alt="minimal texteditor screenshot"/>
+</p>
 
 ---
 
@@ -17,6 +25,7 @@ Designed for writing lecture notes and personal documents with a distraction-fre
 - **Undo / Redo** - full history with header buttons and keyboard shortcuts
 - **Syntax highlighting** - automatic language detection by file extension (Python, JavaScript, TypeScript, HTML, CSS, Rust, Go, Java); adapts to dark/light theme; toggleable
 - **Crash recovery** - auto-saves every open document in the background; silently restores unsaved work on next launch
+- **Session restore** - reopens all previously open files automatically on next launch
 
 ---
 
@@ -214,9 +223,11 @@ cd C:\Users\yourname\my_editor
 | Shortcut | Action |
 |---|---|
 | `Ctrl+F` | Open find bar |
+| `Enter` | Next match (while find bar is open) |
+| `Shift+Enter` | Previous match (while find bar is open) |
 | `F3` | Find next |
 | `Shift+F3` | Find previous |
-| `Escape` | Close find bar |
+| `Escape` | Close find bar & return to editor |
 
 ### Editor
 
@@ -241,6 +252,10 @@ Right-clicking in the editor opens a context menu with:
 - **Remove Color** - restore default text color
 - Bold / Italic / Underline toggles
 - **Reset Format** - clear all formatting at once
+
+Right-clicking a **tab** opens a context menu with:
+
+- **Rename** - rename the file on disk and update the tab (greyed out for unsaved files)
 
 ---
 

@@ -952,6 +952,12 @@ class MainWindow(QMainWindow):
         else:
             self.findbar.set_match_info("")
             self._clear_search_highlights()
+            ed = self.current_editor()
+            if ed:
+                cursor = ed.textCursor()
+                cursor.setPosition(cursor.selectionStart())
+                ed.setTextCursor(cursor)
+                ed.setFocus()
 
     def _show_shortcuts(self):
         shortcuts_text = """Keyboard Shortcuts:
@@ -1033,12 +1039,8 @@ Ctrl+Shift+H    - Toggle syntax highlighting"""
             return
 
         highlight_fmt = QTextCharFormat()
-        if self.is_dark_theme:
-            highlight_fmt.setBackground(QColor("#3C3C3C"))
-            highlight_fmt.setForeground(QColor("#D4D4D4"))
-        else:
-            highlight_fmt.setBackground(QColor("#FFFF00"))
-            highlight_fmt.setForeground(QColor("#000000"))
+        highlight_fmt.setBackground(QColor("#FFD700"))
+        highlight_fmt.setForeground(QColor("#000000"))
 
         selections = []
         for start_pos, end_pos in self._search_matches:
@@ -1093,22 +1095,22 @@ Ctrl+Shift+H    - Toggle syntax highlighting"""
             self.findbar.set_match_info("No matches")
             return
 
-        current_pos = ed.textCursor().position()
+        wrapped = False
+        total = len(self._search_matches)
         if forward:
-            for i, (start, end) in enumerate(self._search_matches):
-                if start > current_pos:
-                    self._current_match_index = i
-                    break
-            else:
+            if self._current_match_index == -1:
                 self._current_match_index = 0
-        else:
-            for i in range(len(self._search_matches) - 1, -1, -1):
-                start, end = self._search_matches[i]
-                if end < current_pos:
-                    self._current_match_index = i
-                    break
             else:
-                self._current_match_index = len(self._search_matches) - 1
+                next_idx = (self._current_match_index + 1) % total
+                wrapped = (next_idx == 0)
+                self._current_match_index = next_idx
+        else:
+            if self._current_match_index == -1:
+                self._current_match_index = total - 1
+            else:
+                prev_idx = (self._current_match_index - 1) % total
+                wrapped = (prev_idx == total - 1)
+                self._current_match_index = prev_idx
 
         if 0 <= self._current_match_index < len(self._search_matches):
             start_pos, end_pos = self._search_matches[self._current_match_index]
@@ -1120,6 +1122,9 @@ Ctrl+Shift+H    - Toggle syntax highlighting"""
 
         self._highlight_all_matches()
         self._update_match_display()
+        if wrapped:
+            self.findbar.set_match_info("Wrapped · " + self.findbar.match_info.text())
+            QTimer.singleShot(1200, self._update_match_display)
 
     def _update_match_display(self):
         if not self._search_matches:
