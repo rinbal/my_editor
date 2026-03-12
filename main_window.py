@@ -420,6 +420,9 @@ class MainWindow(QMainWindow):
         self.addAction(self.act_italic)
         self.addAction(self.act_underline)
         self.addAction(self.act_reset_format)
+        self.addAction(self.act_toggle_theme)
+        self.addAction(self.act_toggle_line_numbers)
+        self.addAction(self.act_toggle_syntax_hl)
 
     def _build_menu(self):
         m_file = self.menuBar().addMenu("&File")
@@ -934,7 +937,8 @@ Tab             - Indent / Create bullet
 Shift+Tab       - Outdent / Remove bullet
 Enter           - New line (continues bullets)
 Ctrl+Shift+L    - Toggle line numbers
-Ctrl+Shift+T    - Toggle dark/light theme"""
+Ctrl+Shift+T    - Toggle dark/light theme
+Ctrl+Shift+H    - Toggle syntax highlighting"""
 
         msg = QMessageBox(self)
         msg.setWindowTitle("Keyboard Shortcuts")
@@ -1121,7 +1125,14 @@ Ctrl+Shift+T    - Toggle dark/light theme"""
     # THEME TOGGLE
     # ----------------------------------------------------------------------
     def _toggle_theme(self):
-        self.is_dark_theme = self.header_widget.theme_checkbox.isChecked()
+        if hasattr(self, 'header_widget') and self.header_widget.theme_checkbox.isChecked() != self.is_dark_theme:
+            self.is_dark_theme = self.header_widget.theme_checkbox.isChecked()
+        else:
+            self.is_dark_theme = not self.is_dark_theme
+        if hasattr(self, 'header_widget'):
+            self.header_widget.theme_checkbox.blockSignals(True)
+            self.header_widget.theme_checkbox.setChecked(self.is_dark_theme)
+            self.header_widget.theme_checkbox.blockSignals(False)
         self._apply_theme()
         if hasattr(self, 'findbar'):
             self.findbar.is_dark = self.is_dark_theme
@@ -1136,11 +1147,14 @@ Ctrl+Shift+T    - Toggle dark/light theme"""
     # LINE NUMBERS
     # ----------------------------------------------------------------------
     def _toggle_line_numbers(self):
-        if hasattr(self, 'header_widget'):
+        if hasattr(self, 'header_widget') and self.header_widget.line_numbers_checkbox.isChecked() != self.show_line_numbers:
             self.show_line_numbers = self.header_widget.line_numbers_checkbox.isChecked()
         else:
             self.show_line_numbers = not self.show_line_numbers
-
+        if hasattr(self, 'header_widget'):
+            self.header_widget.line_numbers_checkbox.blockSignals(True)
+            self.header_widget.line_numbers_checkbox.setChecked(self.show_line_numbers)
+            self.header_widget.line_numbers_checkbox.blockSignals(False)
         self.act_toggle_line_numbers.setChecked(self.show_line_numbers)
 
         for i in range(self.tabs.count()):
@@ -1164,13 +1178,15 @@ Ctrl+Shift+T    - Toggle dark/light theme"""
     # SYNTAX HIGHLIGHTING
     # ----------------------------------------------------------------------
     def _toggle_syntax_highlighting(self):
-        if hasattr(self, 'header_widget'):
+        if hasattr(self, 'header_widget') and self.header_widget.syntax_highlight_checkbox.isChecked() != self.syntax_highlighting:
             self.syntax_highlighting = self.header_widget.syntax_highlight_checkbox.isChecked()
         else:
             self.syntax_highlighting = not self.syntax_highlighting
 
         self.act_toggle_syntax_hl.setChecked(self.syntax_highlighting)
+        self.header_widget.syntax_highlight_checkbox.blockSignals(True)
         self.header_widget.syntax_highlight_checkbox.setChecked(self.syntax_highlighting)
+        self.header_widget.syntax_highlight_checkbox.blockSignals(False)
 
         for i in range(self.tabs.count()):
             container = self.tabs.widget(i)

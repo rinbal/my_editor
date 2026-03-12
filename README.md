@@ -15,6 +15,8 @@ Designed for writing lecture notes and personal documents with a distraction-fre
 - **Line numbers** - optional gutter on the left
 - **Export formats** - save as `.txt`, `.pdf`, `.md`, `.rtf`
 - **Undo / Redo** - full history with header buttons and keyboard shortcuts
+- **Syntax highlighting** - automatic language detection by file extension (Python, JavaScript, TypeScript, HTML, CSS, Rust, Go, Java); adapts to dark/light theme; toggleable
+- **Crash recovery** - auto-saves every open document in the background; silently restores unsaved work on next launch
 
 ---
 
@@ -226,6 +228,7 @@ cd C:\Users\yourname\my_editor
 | `Enter` (on empty bullet) | Exit bullet mode |
 | `Ctrl+Shift+L` | Toggle line numbers |
 | `Ctrl+Shift+T` | Toggle dark / light theme |
+| `Ctrl+Shift+H` | Toggle syntax highlighting |
 
 ---
 
