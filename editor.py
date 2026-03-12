@@ -389,15 +389,25 @@ class HtmlEditor(QTextEdit):
 
         elif e.key() == Qt.Key_Backspace:
             if c.positionInBlock() <= spaces + (2 if has_bullet else 0) and (spaces > 0 or has_bullet):
-                # Bullet-aware backspace — handled by _set_line_text
                 if has_bullet:
-                    new_line = " " * spaces + line[spaces + 2:]
+                    if spaces == 0 and c.blockNumber() > 0:
+                        # No indentation, not first block: remove bullet and merge with previous line
+                        cursor = self.textCursor()
+                        cursor.beginEditBlock()
+                        cursor.setPosition(start)
+                        cursor.setPosition(start + 2, QTextCursor.KeepAnchor)
+                        cursor.removeSelectedText()
+                        cursor.deletePreviousChar()  # delete preceding newline to merge blocks
+                        cursor.endEditBlock()
+                        self.setTextCursor(cursor)
+                    else:
+                        # Indented bullet, or first block: remove bullet only, cursor stays at content start
+                        new_line = " " * spaces + line[spaces + 2:]
+                        self._set_line_text(start, new_line, start + spaces)
                 else:
                     new_spaces = max(0, spaces - 2)
                     new_line = " " * new_spaces + line[spaces:]
-                bullet_pos = new_line.find("• ")
-                move_to = start + bullet_pos + 2 if bullet_pos >= 0 else start + len(new_line.rstrip())
-                self._set_line_text(start, new_line, move_to)
+                    self._set_line_text(start, new_line, start + new_spaces)
                 self.ensureCursorVisible()
                 return
             else:
