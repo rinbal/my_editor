@@ -209,20 +209,20 @@ class HeaderWidget(QWidget):
 
         # Left: theme + line numbers toggles
         self.theme_checkbox = QCheckBox("Dark Theme")
-        self.theme_checkbox.setToolTip("Enable Dark Theme (unchecked = Light Theme)")
+        self.theme_checkbox.setToolTip("Enable Dark Theme (unchecked = Light Theme, Hotkey: Ctrl+Shift+T)")
         self.theme_checkbox.setChecked(True)
 
         layout.addWidget(self.theme_checkbox)
         layout.addSpacing(8)
 
         self.line_numbers_checkbox = QCheckBox("Line Numbers")
-        self.line_numbers_checkbox.setToolTip("Toggle Line Numbers")
+        self.line_numbers_checkbox.setToolTip("Toggle Line Numbers (Ctrl+Shift+L)")
 
         layout.addWidget(self.line_numbers_checkbox)
         layout.addSpacing(8)
 
         self.syntax_highlight_checkbox = QCheckBox("Syntax Highlighting")
-        self.syntax_highlight_checkbox.setToolTip("Toggle Syntax Highlighting")
+        self.syntax_highlight_checkbox.setToolTip("Toggle Syntax Highlighting (Ctrl+Shift+H)")
         self.syntax_highlight_checkbox.setChecked(True)
 
         layout.addWidget(self.syntax_highlight_checkbox)
