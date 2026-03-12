@@ -1,9 +1,5 @@
 # minimal texteditor
 
-<p align="center">
-  <img src="assets/texteditor_icon.jpg" width="80" alt="minimal texteditor icon"/>
-</p>
-
 A clean, minimal note-taking text editor built with Python and PySide6.
 Designed for writing lecture notes and personal documents with a distraction-free interface.
 
