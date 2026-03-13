@@ -3,6 +3,7 @@
 
 import json
 import os
+from send2trash import send2trash
 from PySide6.QtCore import Qt, QMarginsF, QTimer
 from PySide6.QtGui import (
     QAction, QKeySequence, QTextCursor, QTextDocument, QTextCharFormat, QColor,
@@ -10,7 +11,8 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QMainWindow, QFileDialog, QInputDialog, QMenu, QMessageBox, QWidget, QVBoxLayout,
-    QTextEdit, QTabWidget, QToolButton, QHBoxLayout, QStatusBar, QPushButton, QTabBar
+    QTextEdit, QTabWidget, QToolButton, QHBoxLayout, QStatusBar, QPushButton, QTabBar,
+    QDialogButtonBox
 )
 
 from constants import (
@@ -40,6 +42,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(False)
         self.tabs.tabBar().setExpanding(False)
+        self.tabs.setMovable(True)
         self.tabs.tabBar().setContextMenuPolicy(Qt.CustomContextMenu)
         self.tabs.tabBar().customContextMenuRequested.connect(self._on_tab_context_menu)
 
@@ -565,9 +568,63 @@ class MainWindow(QMainWindow):
         if not has_path:
             rename_action.setToolTip("Save the file first before renaming")
 
+        menu.addSeparator()
+
+        delete_action = menu.addAction("Delete File...")
+        delete_action.setEnabled(has_path)
+        if not has_path:
+            delete_action.setToolTip("No file on disk to delete")
+
         action = menu.exec(self.tabs.tabBar().mapToGlobal(pos))
         if action == rename_action:
             self._rename_tab(idx, ed)
+        elif action == delete_action:
+            self._delete_tab_file(idx, ed)
+
+    def _delete_tab_file(self, idx: int, ed):
+        file_path = ed._file_path
+        file_name = os.path.basename(file_path)
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Delete file")
+        msg.setIcon(QMessageBox.NoIcon)
+        msg.setText(f'Are you sure you want to move "{file_name}" to trash?')
+        msg.setStandardButtons(QMessageBox.Cancel)
+        delete_btn = msg.addButton("Move to Trash", QMessageBox.DestructiveRole)
+        delete_btn.setStyleSheet("""
+            QPushButton {
+                color: white;
+                background-color: transparent;
+                border: 1px solid #888;
+                border-radius: 4px;
+                padding: 4px 12px;
+            }
+            QPushButton:hover {
+                background-color: #c0392b;
+                border-color: #c0392b;
+            }
+        """)
+        msg.setDefaultButton(QMessageBox.Cancel)
+        msg.setWindowFlag(Qt.WindowCloseButtonHint, False)
+
+        button_box = msg.findChild(QDialogButtonBox)
+        if button_box:
+            button_box.setCenterButtons(True)
+
+        msg.exec()
+        if msg.clickedButton() != delete_btn:
+            return
+
+        try:
+            send2trash(file_path)
+        except Exception as e:
+            QMessageBox.critical(self, "Delete Failed", str(e))
+            return
+
+        # Close tab without prompting to save — file is gone
+        if hasattr(ed, '_backup'):
+            ed._backup.delete()
+        self.tabs.removeTab(idx)
 
     def _rename_tab(self, idx: int, ed):
         old_path = ed._file_path

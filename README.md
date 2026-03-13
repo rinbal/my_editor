@@ -12,7 +12,7 @@ Designed for writing lecture notes and personal documents with a distraction-fre
 ## Features
 
 - **Dark / Light theme** - toggle anytime, text colors adapt automatically
-- **Multiple tabs** - work on several documents at once
+- **Multiple tabs** - work on several documents at once; drag to reorder
 - **Rich text formatting** - bold, italic, underline, text colors
 - **Bullet lists** - smart bullet behavior with Tab indentation
 - **Find bar** - search with match counter and previous/next navigation
@@ -252,6 +252,7 @@ Right-clicking in the editor opens a context menu with:
 Right-clicking a **tab** opens a context menu with:
 
 - **Rename** - rename the file on disk and update the tab (greyed out for unsaved files)
+- **Delete File** - move the file to system trash with a confirmation dialog (greyed out for unsaved files)
 
 ---
 
