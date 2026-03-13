@@ -285,9 +285,13 @@ class HeaderWidget(QWidget):
                     background: #252526;
                     border-bottom: 1px solid #3C3C3C;
                 }
-                QCheckBox { spacing: 6px; color: #CCCCCC; font-size: 12px; }
+                QCheckBox {
+                    spacing: 6px; color: #CCCCCC; font-size: 12px;
+                    background: transparent; border-radius: 4px; padding: 2px 6px;
+                }
+                QCheckBox:hover { background: rgba(255, 255, 255, 0.07); color: #FFFFFF; }
                 QCheckBox::indicator {
-                    width: 14px; height: 14px;
+                    width: 11px; height: 11px;
                     border: 1px solid #3C3C3C;
                     border-radius: 2px;
                     background: #2D2D30;
@@ -315,9 +319,13 @@ class HeaderWidget(QWidget):
                     background: #F8F8F8;
                     border-bottom: 1px solid #E1E1E1;
                 }
-                QCheckBox { spacing: 6px; color: #333333; font-size: 12px; }
+                QCheckBox {
+                    spacing: 6px; color: #333333; font-size: 12px;
+                    background: transparent; border-radius: 4px; padding: 2px 6px;
+                }
+                QCheckBox:hover { background: rgba(0, 0, 0, 0.06); color: #000000; }
                 QCheckBox::indicator {
-                    width: 14px; height: 14px;
+                    width: 11px; height: 11px;
                     border: 1px solid #666666;
                     border-radius: 2px;
                     background: #FFFFFF;
