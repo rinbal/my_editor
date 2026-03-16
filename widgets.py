@@ -401,6 +401,12 @@ class FileChangedBar(QWidget):
         self._reload_btn.hide()
         self.show()
 
+    def show_unsupported(self, filename: str = ""):
+        msg = f"File type not supported: {filename}" if filename else "File type not supported."
+        self._text.setText(msg)
+        self._reload_btn.hide()
+        self.show()
+
     def _on_dismiss(self):
         self.hide()
         self.dismissed.emit()

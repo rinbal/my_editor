@@ -17,9 +17,13 @@ Designed for writing lecture notes and personal documents with a distraction-fre
 - **Bullet lists** - smart bullet behavior with Tab indentation
 - **Find bar** - search with match counter and previous/next navigation
 - **Line numbers** - optional gutter on the left
+- **Line counter** - current line and total lines always visible in the bottom right corner (`Ln X / Y`)
 - **Export formats** - save as `.txt`, `.pdf`, `.md`, `.rtf`
 - **Undo / Redo** - full history with header buttons and keyboard shortcuts
 - **Syntax highlighting** - automatic language detection by file extension (Python, JavaScript, TypeScript, HTML, CSS, Rust, Go, Java); adapts to dark/light theme; toggleable
+- **Recent files** - quick access to the last 10 opened files under `File > Recent Files`
+- **Drag and drop** - drag `.txt`, `.md`, `.html` files onto the editor to open them; drag plain text to insert it
+- **File change detection** - notifies when an open file is changed externally, with a one-click reload option
 - **Crash recovery** - auto-saves every open document in the background; silently restores unsaved work on next launch
 - **Session restore** - reopens all previously open files automatically on next launch
 
