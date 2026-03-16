@@ -13,7 +13,7 @@ Designed for writing lecture notes and personal documents with a distraction-fre
 
 - **Dark / Light theme** - toggle anytime, text colors adapt automatically
 - **Multiple tabs** - work on several documents at once; drag to reorder
-- **Rich text formatting** - bold, italic, underline, text colors
+- **Rich text formatting** - bold, italic, underline, text colors; **B / I / U buttons** in the header show and toggle the active state at the cursor
 - **Bullet lists** - smart bullet behavior with Tab indentation
 - **Find bar** - search with match counter and previous/next navigation
 - **Line numbers** - optional gutter on the left
@@ -210,6 +210,8 @@ cd C:\Users\yourname\my_editor
 | `Ctrl+I` | Italic |
 | `Ctrl+U` | Underline |
 | `Ctrl+D` | Reset all formatting |
+
+The **B**, **I**, and **U** buttons in the header bar mirror these shortcuts and highlight orange when the format is active at the cursor position.
 
 ### Undo / Redo
 
