@@ -468,6 +468,32 @@ class HtmlEditor(QTextEdit):
             fmt.setForeground(self.active_format['color'])
         self.mergeCurrentCharFormat(fmt)
 
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            main = self.window()
+            if hasattr(main, '_handle_dropped_urls'):
+                main._handle_dropped_urls(event.mimeData().urls())
+            event.acceptProposedAction()
+        elif event.mimeData().hasText():
+            cursor = self.cursorForPosition(event.position().toPoint())
+            self.setTextCursor(cursor)
+            fmt = QTextCharFormat()
+            fmt.setFontWeight(400)
+            fmt.setFontItalic(False)
+            fmt.setFontUnderline(False)
+            fmt.clearForeground()
+            cursor.insertText(event.mimeData().text(), fmt)
+            self.setTextCursor(cursor)
+            event.acceptProposedAction()
+        else:
+            super().dropEvent(event)
+
     def paste_normalized(self):
         """Paste plain text with default formatting (no external styles, no baked colors)."""
         plain_text = QApplication.clipboard().text()

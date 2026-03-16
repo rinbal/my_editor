@@ -12,7 +12,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QMainWindow, QFileDialog, QInputDialog, QMenu, QMessageBox, QWidget, QVBoxLayout,
     QTextEdit, QTabWidget, QToolButton, QHBoxLayout, QStatusBar, QPushButton, QTabBar,
-    QDialogButtonBox
+    QDialogButtonBox, QWidgetAction, QLabel
 )
 
 from constants import (
@@ -26,7 +26,11 @@ from highlighter import SyntaxHighlighter, detect_language, detect_language_from
 
 # These extensions are loaded as rendered documents, not plain-text source code.
 _RICH_DOC_EXTS = ('.html', '.htm', '.md', '.markdown')
+
+# Extensions accepted for drag-and-drop and file open.
+_SUPPORTED_EXTS = {'.md', '.html', '.htm', '.txt'}
 from recovery import EditorBackup, find_all_backups
+from recent_files import load_recent, add_recent, clear_recent
 
 
 class MainWindow(QMainWindow):
@@ -43,6 +47,8 @@ class MainWindow(QMainWindow):
         self._watcher.fileChanged.connect(self._on_file_changed)
         self._saving_paths: set[str] = set()
 
+        self.setAcceptDrops(True)
+
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(False)
         self.tabs.tabBar().setExpanding(False)
@@ -58,6 +64,9 @@ class MainWindow(QMainWindow):
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
+        self._line_label = QLabel()
+        self._line_label.setContentsMargins(0, 0, 8, 0)
+        self.status.addPermanentWidget(self._line_label)
 
         self._apply_theme()
 
@@ -82,6 +91,7 @@ class MainWindow(QMainWindow):
 
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self._update_undo_redo_buttons()
+        self._update_status_bar()
 
 
     # ----------------------------------------------------------------------
@@ -192,6 +202,9 @@ class MainWindow(QMainWindow):
                 }
                 QToolButton:hover { background: #C8C8C8; }
             """)
+
+        label_color = DARK_MENU_FG if self.is_dark_theme else LIGHT_FG
+        self._line_label.setStyleSheet(f"color: {label_color}; font-size: 12px;")
 
         for i in range(self.tabs.count()):
             ed = self._editor_from_widget(self.tabs.widget(i))
@@ -310,11 +323,14 @@ class MainWindow(QMainWindow):
     def _update_status_bar(self):
         ed = self.current_editor()
         if not ed:
+            self._line_label.setText("")
             return
         path = getattr(ed, "_file_path", None)
         file_info = path if path else "(Untitled)"
         lang = getattr(ed, "_language", None)
         lang_label = LANGUAGE_DISPLAY_NAMES.get(lang, '') if lang else ''
+        current_line = ed.textCursor().blockNumber() + 1
+        total_lines = ed.document().blockCount()
         parts = [file_info]
         if lang_label:
             parts.append(lang_label)
@@ -322,6 +338,7 @@ class MainWindow(QMainWindow):
         if page_count > 1:
             parts.append(f"Page {page_count}")
         self.status.showMessage(" | ".join(parts))
+        self._line_label.setText(f"Ln {current_line} / {total_lines}")
 
     def _update_window_title(self, *_):
         self.setWindowTitle("")
@@ -329,6 +346,7 @@ class MainWindow(QMainWindow):
     def _on_tab_changed(self, index=None):
         self._update_window_title()
         self._update_undo_redo_buttons()
+        self._update_status_bar()
 
     def _update_undo_redo_buttons(self):
         ed = self.current_editor()
@@ -430,6 +448,9 @@ class MainWindow(QMainWindow):
         m_file.addAction(self.act_new)
         m_file.addAction(self.act_open)
         m_file.addSeparator()
+        self.m_recent = m_file.addMenu("Recent Files")
+        self._populate_recent_menu()
+        m_file.addSeparator()
         m_file.addAction(self.act_save)
         m_file.addAction(self.act_save_as)
         m_file.addSeparator()
@@ -445,6 +466,45 @@ class MainWindow(QMainWindow):
         shortcuts_action = QAction("Keyboard Shortcuts", self)
         shortcuts_action.triggered.connect(self._show_shortcuts)
         help_menu.addAction(shortcuts_action)
+
+    def _populate_recent_menu(self):
+        self.m_recent.clear()
+        self.m_recent.setToolTipsVisible(True)
+        entries = [p for p in load_recent() if os.path.exists(p)]
+
+        if not entries:
+            empty = QAction("(empty)", self)
+            empty.setEnabled(False)
+            self.m_recent.addAction(empty)
+        else:
+            for path in entries:
+                action = QAction(os.path.basename(path), self)
+                action.setToolTip(path)
+                action.triggered.connect(lambda checked, p=path: self.open_path(p))
+                self.m_recent.addAction(action)
+
+        self.m_recent.addSeparator()
+        clear_widget = QLabel("  Clear Recent Files  ")
+        clear_widget.setContentsMargins(4, 4, 4, 4)
+        clear_widget.setStyleSheet("""
+            QLabel {
+                color: #CC4444;
+                padding: 4px 8px;
+            }
+            QLabel:hover {
+                background: rgba(180, 40, 40, 0.15);
+                color: #FF6666;
+            }
+        """)
+        clear_action = QWidgetAction(self)
+        clear_action.setDefaultWidget(clear_widget)
+        clear_action.triggered.connect(self._clear_recent_files)
+        clear_widget.mousePressEvent = lambda e: (self.m_recent.close(), self._clear_recent_files())
+        self.m_recent.addAction(clear_action)
+
+    def _clear_recent_files(self):
+        clear_recent()
+        self._populate_recent_menu()
 
     def _build_findbar(self):
         self.findbar = FindBar(self._find_next, self._find_prev, self._toggle_findbar, self)
@@ -481,6 +541,7 @@ class MainWindow(QMainWindow):
             ed.document().contentsChanged.connect(self._update_tab_title)
             ed.document().undoAvailable.connect(self._update_undo_redo_buttons)
             ed.document().redoAvailable.connect(self._update_undo_redo_buttons)
+            ed.cursorPositionChanged.connect(self._update_status_bar)
             self._update_editor_theme(ed)
 
             container = QWidget()
@@ -528,6 +589,7 @@ class MainWindow(QMainWindow):
         ed.document().contentsChanged.connect(self._update_tab_title)
         ed.document().undoAvailable.connect(self._update_undo_redo_buttons)
         ed.document().redoAvailable.connect(self._update_undo_redo_buttons)
+        ed.cursorPositionChanged.connect(self._update_status_bar)
         self._update_editor_theme(ed)
 
         container = QWidget()
@@ -772,6 +834,53 @@ class MainWindow(QMainWindow):
             return w.findChild(FileChangedBar)
         return None
 
+    # ----------------------------------------------------------------------
+    # DRAG AND DROP
+    # ----------------------------------------------------------------------
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls() or event.mimeData().hasText():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            self._handle_dropped_urls(event.mimeData().urls())
+            event.acceptProposedAction()
+        elif event.mimeData().hasText():
+            self._handle_dropped_text(event.mimeData().text())
+            event.acceptProposedAction()
+
+    def _handle_dropped_urls(self, urls):
+        unsupported = []
+        for url in urls:
+            if not url.isLocalFile():
+                continue
+            path = url.toLocalFile()
+            if os.path.splitext(path)[1].lower() in _SUPPORTED_EXTS:
+                self.open_path(path)
+            else:
+                unsupported.append(os.path.basename(path))
+
+        if unsupported:
+            bar = self._bar_from_widget(self.tabs.currentWidget())
+            if bar:
+                bar.show_unsupported(", ".join(unsupported))
+
+    def _handle_dropped_text(self, text: str):
+        ed = self.current_editor()
+        if ed is None:
+            self.new_tab()
+            ed = self.current_editor()
+        cursor = ed.textCursor()
+        fmt = QTextCharFormat()
+        fmt.setFontWeight(400)
+        fmt.setFontItalic(False)
+        fmt.setFontUnderline(False)
+        fmt.clearForeground()
+        cursor.insertText(text, fmt)
+        ed.setTextCursor(cursor)
+
     def open_dialog(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Open", "",
@@ -811,6 +920,7 @@ class MainWindow(QMainWindow):
         ed.document().contentsChanged.connect(self._update_tab_title)
         ed.document().undoAvailable.connect(self._update_undo_redo_buttons)
         ed.document().redoAvailable.connect(self._update_undo_redo_buttons)
+        ed.cursorPositionChanged.connect(self._update_status_bar)
         self._update_editor_theme(ed)
         self._attach_highlighter(ed, path)
 
@@ -842,6 +952,8 @@ class MainWindow(QMainWindow):
         self._attach_close_button(idx, container)
         ed._backup = EditorBackup(ed, path)
         self._watcher.addPath(path)
+        add_recent(path)
+        self._populate_recent_menu()
         ed.setFocus()
         self._update_window_title()
 
@@ -884,6 +996,8 @@ class MainWindow(QMainWindow):
                 self._update_status_bar()
             if ed and hasattr(ed, '_backup'):
                 ed._backup.update_file_path(path)
+            add_recent(path)
+            self._populate_recent_menu()
         return ok
 
     def _save_to(self, path: str) -> bool:
