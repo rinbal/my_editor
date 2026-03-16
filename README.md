@@ -29,6 +29,9 @@ Designed for writing lecture notes and personal documents with a distraction-fre
 
 ---
 
+  > [!NOTE]                                                                                                                                              
+  > Developed and tested on Linux. macOS and Windows should work but may show minor visual differences.
+
 ## Installation
 
 **Requirements:** Python 3.10+
