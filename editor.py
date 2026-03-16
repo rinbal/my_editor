@@ -55,39 +55,72 @@ class HtmlEditor(QTextEdit):
         self.document().redo()
 
     # -------- Format Toggles --------
+    def _all_in_selection(self, cursor: QTextCursor, check) -> bool:
+        """Return True if every text fragment in the selection passes check(QTextCharFormat).
+        Uses block/fragment iteration (efficient — no char-by-char loop)."""
+        start = cursor.selectionStart()
+        end = cursor.selectionEnd()
+        doc = self.document()
+        block = doc.findBlock(start)
+        while block.isValid() and block.position() < end:
+            it = block.begin()
+            while not it.atEnd():
+                frag = it.fragment()
+                if frag.isValid():
+                    frag_start = frag.position()
+                    frag_end = frag_start + frag.length()
+                    if frag_end > start and frag_start < end:
+                        if not check(frag.charFormat()):
+                            return False
+                it += 1
+            block = block.next()
+        return True
+
     def toggle_bold(self):
         cursor = self.textCursor()
-        current = cursor.charFormat() if cursor.hasSelection() else self.currentCharFormat()
-        new_weight = 400 if current.fontWeight() > 400 else 700
         fmt = QTextCharFormat()
-        fmt.setFontWeight(new_weight)
         if cursor.hasSelection():
+            all_bold = self._all_in_selection(cursor, lambda f: f.fontWeight() > 400)
+            new_weight = 400 if all_bold else 700
+            fmt.setFontWeight(new_weight)
             cursor.mergeCharFormat(fmt)
+            self.setTextCursor(cursor)
         else:
+            current = self.currentCharFormat()
+            new_weight = 400 if current.fontWeight() > 400 else 700
+            fmt.setFontWeight(new_weight)
             self.mergeCurrentCharFormat(fmt)
         self.active_format['bold'] = (new_weight > 400)
 
     def toggle_italic(self):
         cursor = self.textCursor()
-        current = cursor.charFormat() if cursor.hasSelection() else self.currentCharFormat()
-        new_italic = not current.fontItalic()
         fmt = QTextCharFormat()
-        fmt.setFontItalic(new_italic)
         if cursor.hasSelection():
+            all_italic = self._all_in_selection(cursor, lambda f: f.fontItalic())
+            new_italic = not all_italic
+            fmt.setFontItalic(new_italic)
             cursor.mergeCharFormat(fmt)
+            self.setTextCursor(cursor)
         else:
+            current = self.currentCharFormat()
+            new_italic = not current.fontItalic()
+            fmt.setFontItalic(new_italic)
             self.mergeCurrentCharFormat(fmt)
         self.active_format['italic'] = new_italic
 
     def toggle_underline(self):
         cursor = self.textCursor()
-        current = cursor.charFormat() if cursor.hasSelection() else self.currentCharFormat()
-        new_underline = not current.fontUnderline()
         fmt = QTextCharFormat()
-        fmt.setFontUnderline(new_underline)
         if cursor.hasSelection():
+            all_underline = self._all_in_selection(cursor, lambda f: f.fontUnderline())
+            new_underline = not all_underline
+            fmt.setFontUnderline(new_underline)
             cursor.mergeCharFormat(fmt)
+            self.setTextCursor(cursor)
         else:
+            current = self.currentCharFormat()
+            new_underline = not current.fontUnderline()
+            fmt.setFontUnderline(new_underline)
             self.mergeCurrentCharFormat(fmt)
         self.active_format['underline'] = new_underline
 

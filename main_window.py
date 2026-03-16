@@ -76,6 +76,9 @@ class MainWindow(QMainWindow):
         self.header_widget.syntax_highlight_checkbox.toggled.connect(self._toggle_syntax_highlighting)
         self.header_widget.undo_btn.clicked.connect(self._undo)
         self.header_widget.redo_btn.clicked.connect(self._redo)
+        self.header_widget.bold_btn.clicked.connect(lambda: self._toggle_format('bold'))
+        self.header_widget.italic_btn.clicked.connect(lambda: self._toggle_format('italic'))
+        self.header_widget.underline_btn.clicked.connect(lambda: self._toggle_format('underline'))
 
         self._build_actions()
         self._build_menu()
@@ -339,6 +342,7 @@ class MainWindow(QMainWindow):
             parts.append(f"Page {page_count}")
         self.status.showMessage(" | ".join(parts))
         self._line_label.setText(f"Ln {current_line} / {total_lines}")
+        self._update_format_buttons()
 
     def _update_window_title(self, *_):
         self.setWindowTitle("")
@@ -346,7 +350,18 @@ class MainWindow(QMainWindow):
     def _on_tab_changed(self, index=None):
         self._update_window_title()
         self._update_undo_redo_buttons()
-        self._update_status_bar()
+        self._update_status_bar()  # also calls _update_format_buttons
+        if self.findbar.isVisible():
+            # Clear stale highlights on every non-active tab
+            for i in range(self.tabs.count()):
+                if i != index:
+                    ed = self._editor_from_widget(self.tabs.widget(i))
+                    if ed:
+                        ed.setExtraSelections([])
+            self._search_matches = []
+            self._current_match_index = -1
+            self._last_search_text = ""
+            self._on_search_text_changed()
 
     def _update_undo_redo_buttons(self):
         ed = self.current_editor()
@@ -354,6 +369,33 @@ class MainWindow(QMainWindow):
         can_redo = ed.document().isRedoAvailable() if ed else False
         self.header_widget.undo_btn.setEnabled(can_undo)
         self.header_widget.redo_btn.setEnabled(can_redo)
+
+    def _toggle_format(self, fmt: str):
+        ed = self.current_editor()
+        if ed:
+            getattr(ed, f'toggle_{fmt}')()
+            self._update_format_buttons()
+
+    def _update_format_buttons(self):
+        ed = self.current_editor()
+        if not ed:
+            self.header_widget.bold_btn.setChecked(False)
+            self.header_widget.italic_btn.setChecked(False)
+            self.header_widget.underline_btn.setChecked(False)
+            return
+        cursor = ed.textCursor()
+        if cursor.hasSelection():
+            bold = ed._all_in_selection(cursor, lambda f: f.fontWeight() > 400)
+            italic = ed._all_in_selection(cursor, lambda f: f.fontItalic())
+            underline = ed._all_in_selection(cursor, lambda f: f.fontUnderline())
+        else:
+            fmt = ed.currentCharFormat()
+            bold = fmt.fontWeight() > 400
+            italic = fmt.fontItalic()
+            underline = fmt.fontUnderline()
+        self.header_widget.bold_btn.setChecked(bold)
+        self.header_widget.italic_btn.setChecked(italic)
+        self.header_widget.underline_btn.setChecked(underline)
 
 
     # ----------------------------------------------------------------------
@@ -374,7 +416,7 @@ class MainWindow(QMainWindow):
 
         self.act_save_as = QAction("Save As…", self)
         self.act_save_as.setShortcut(QKeySequence("Ctrl+Shift+S"))
-        self.act_save_as.triggered.connect(self.save_as)
+        self.act_save_as.triggered.connect(lambda: self.save_as())
 
         self.act_close_tab = QAction("Close Tab", self)
         self.act_close_tab.setShortcut(QKeySequence("Ctrl+W"))
@@ -542,6 +584,8 @@ class MainWindow(QMainWindow):
             ed.document().undoAvailable.connect(self._update_undo_redo_buttons)
             ed.document().redoAvailable.connect(self._update_undo_redo_buttons)
             ed.cursorPositionChanged.connect(self._update_status_bar)
+            ed.currentCharFormatChanged.connect(self._update_format_buttons)
+            ed.selectionChanged.connect(self._update_format_buttons)
             self._update_editor_theme(ed)
 
             container = QWidget()
@@ -590,6 +634,8 @@ class MainWindow(QMainWindow):
         ed.document().undoAvailable.connect(self._update_undo_redo_buttons)
         ed.document().redoAvailable.connect(self._update_undo_redo_buttons)
         ed.cursorPositionChanged.connect(self._update_status_bar)
+        ed.currentCharFormatChanged.connect(self._update_format_buttons)
+        ed.selectionChanged.connect(self._update_format_buttons)
         self._update_editor_theme(ed)
 
         container = QWidget()
@@ -912,6 +958,7 @@ class MainWindow(QMainWindow):
             ed.setHtml(content)
         elif ext.endswith('.md'):
             ed.document().setMarkdown(content)
+            ed._loaded_as_markdown = True
         else:
             ed.setPlainText(content)
 
@@ -921,6 +968,8 @@ class MainWindow(QMainWindow):
         ed.document().undoAvailable.connect(self._update_undo_redo_buttons)
         ed.document().redoAvailable.connect(self._update_undo_redo_buttons)
         ed.cursorPositionChanged.connect(self._update_status_bar)
+        ed.currentCharFormatChanged.connect(self._update_format_buttons)
+        ed.selectionChanged.connect(self._update_format_buttons)
         self._update_editor_theme(ed)
         self._attach_highlighter(ed, path)
 
@@ -957,31 +1006,125 @@ class MainWindow(QMainWindow):
         ed.setFocus()
         self._update_window_title()
 
+    def _has_formatting(self, ed: HtmlEditor) -> bool:
+        """Return True if the document contains any bold, italic, underline, or color formatting."""
+        block = ed.document().begin()
+        while block.isValid():
+            it = block.begin()
+            while not it.atEnd():
+                fragment = it.fragment()
+                if fragment.isValid():
+                    fmt = fragment.charFormat()
+                    if (fmt.fontWeight() > 400
+                            or fmt.fontItalic()
+                            or fmt.fontUnderline()
+                            or fmt.hasProperty(QTextCharFormat.ForegroundBrush)):
+                        return True
+                it += 1
+            block = block.next()
+        return False
+
+    def _warn_formatting_loss(self, ext_label: str) -> str:
+        """Show warning dialog when saving to a format that loses formatting.
+        Returns 'anyway', 'html', 'rtf', or 'cancel'."""
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Formatting will be lost")
+        msg.setIcon(QMessageBox.Warning)
+        msg.setText(
+            f"This document contains colors or text formatting\n"
+            f"that cannot be stored in {ext_label}."
+        )
+        anyway_btn = msg.addButton(f"Save as {ext_label} anyway", QMessageBox.DestructiveRole)
+        html_btn   = msg.addButton("Save as .html", QMessageBox.AcceptRole)
+        rtf_btn    = msg.addButton("Save as .rtf", QMessageBox.AcceptRole)
+        cancel_btn = msg.addButton(QMessageBox.Cancel)
+        msg.setDefaultButton(cancel_btn)
+
+        anyway_btn.setToolTip("Formatting and colors will be permanently removed from the saved file.")
+        html_btn.setToolTip("Saves all colors, bold, italic and formatting.\nBest choice for editing in this editor.")
+        rtf_btn.setToolTip("Saves all colors, bold, italic and formatting.\nCompatible with Word, LibreOffice and other apps.")
+
+        _btn_base = """
+            QPushButton {
+                padding: 6px 14px;
+                border-radius: 4px;
+                border: 1px solid;
+            }
+        """
+        anyway_btn.setStyleSheet(_btn_base + """
+            QPushButton { background: transparent; color: #CC4444; border-color: #CC4444; }
+            QPushButton:hover { background: rgba(180,40,40,0.15); color: #FF5555; border-color: #FF5555; }
+        """)
+        html_btn.setStyleSheet(_btn_base + """
+            QPushButton { background: transparent; color: #4A9F4A; border-color: #4A9F4A; }
+            QPushButton:hover { background: rgba(40,140,40,0.15); color: #5ABF5A; border-color: #5ABF5A; }
+        """)
+        rtf_btn.setStyleSheet(_btn_base + """
+            QPushButton { background: transparent; color: #4A9F4A; border-color: #4A9F4A; }
+            QPushButton:hover { background: rgba(40,140,40,0.15); color: #5ABF5A; border-color: #5ABF5A; }
+        """)
+
+        msg.exec()
+        clicked = msg.clickedButton()
+        if clicked == anyway_btn:
+            return 'anyway'
+        elif clicked == html_btn:
+            return 'html'
+        elif clicked == rtf_btn:
+            return 'rtf'
+        return 'cancel'
+
     def save(self) -> bool:
         path = self.current_path()
         if not path:
             return self.save_as()
+        ed = self.current_editor()
+        if ed and path.lower().endswith(('.txt', '.md')) and self._has_formatting(ed):
+            result = self._warn_formatting_loss(os.path.splitext(path)[1])
+            if result == 'cancel':
+                return False
+            elif result == 'html':
+                return self.save_as(self._suggest_path(path, '.html'), ".html (*.html)")
+            elif result == 'rtf':
+                return self.save_as(self._suggest_path(path, '.rtf'), ".rtf (*.rtf)")
         return self._save_to(path)
 
-    def save_as(self) -> bool:
+    def _suggest_path(self, current_path: str, new_ext: str) -> str:
+        """Return current_path with its extension replaced by new_ext."""
+        return os.path.splitext(current_path)[0] + new_ext
+
+    def save_as(self, initial_path: str = "", initial_filter: str = "") -> bool:
         path, selected_filter = QFileDialog.getSaveFileName(
-            self, "Save As", "",
-            ".txt (*.txt);; .pdf (*.pdf);; .md (*.md);; .rtf (*.rtf)"
+            self, "Save As", initial_path,
+            ".txt (*.txt);; .html (*.html);; .pdf (*.pdf);; .md (*.md);; .rtf (*.rtf)",
+            initial_filter
         )
         if not path:
             return False
 
         # Auto-add extension if the user didn't type one
         ext_map = {
-            ".txt": ".txt",
-            ".md":  ".md",
-            ".rtf": ".rtf",
-            ".pdf": ".pdf",
+            ".txt":  ".txt",
+            ".html": ".html",
+            ".md":   ".md",
+            ".rtf":  ".rtf",
+            ".pdf":  ".pdf",
         }
         for keyword, ext in ext_map.items():
             if keyword in selected_filter and not any(path.lower().endswith(e) for e in ext_map.values()):
                 path += ext
                 break
+
+        # Warn if saving to a format that loses formatting
+        ed = self.current_editor()
+        if ed and path.lower().endswith(('.txt', '.md')) and self._has_formatting(ed):
+            result = self._warn_formatting_loss(os.path.splitext(path)[1])
+            if result == 'cancel':
+                return False
+            elif result == 'html':
+                return self.save_as(self._suggest_path(path, '.html'), ".html (*.html)")
+            elif result == 'rtf':
+                return self.save_as(self._suggest_path(path, '.rtf'), ".rtf (*.rtf)")
 
         old_path = self.current_path()
         ok = self._save_to(path)
@@ -1016,7 +1159,12 @@ class MainWindow(QMainWindow):
             elif ext.endswith('.rtf'):
                 return self._save_as_rtf(ed, path)
 
-            content = ed.toPlainText()
+            if ext.endswith(('.html', '.htm')):
+                content = ed.toHtml()
+            elif ext.endswith('.md') and getattr(ed, '_loaded_as_markdown', False):
+                content = ed.document().toMarkdown()
+            else:
+                content = ed.toPlainText()
 
             with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
@@ -1065,6 +1213,7 @@ class MainWindow(QMainWindow):
             ed.setHtml(content)
         elif ext.endswith('.md'):
             ed.document().setMarkdown(content)
+            ed._loaded_as_markdown = True
         else:
             ed.setPlainText(content)
 
