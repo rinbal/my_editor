@@ -4,7 +4,7 @@
 import json
 import os
 from send2trash import send2trash
-from PySide6.QtCore import Qt, QMarginsF, QTimer
+from PySide6.QtCore import Qt, QMarginsF, QTimer, QFileSystemWatcher
 from PySide6.QtGui import (
     QAction, QKeySequence, QTextCursor, QTextDocument, QTextCharFormat, QColor,
     QPageLayout, QPageSize
@@ -20,7 +20,7 @@ from constants import (
     DARK_MENU_BG, DARK_MENU_FG, LIGHT_MENU_BG, LIGHT_MENU_FG,
     DARK_BORDER, LIGHT_BORDER, MONO_FONT
 )
-from widgets import FindBar, HeaderWidget, LineNumberGutter
+from widgets import FindBar, HeaderWidget, LineNumberGutter, FileChangedBar
 from editor import HtmlEditor
 from highlighter import SyntaxHighlighter, detect_language, detect_language_from_content, LANGUAGE_DISPLAY_NAMES
 
@@ -38,6 +38,10 @@ class MainWindow(QMainWindow):
         self.is_dark_theme = True
         self.show_line_numbers = False
         self.syntax_highlighting = True
+
+        self._watcher = QFileSystemWatcher(self)
+        self._watcher.fileChanged.connect(self._on_file_changed)
+        self._saving_paths: set[str] = set()
 
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(False)
@@ -190,12 +194,9 @@ class MainWindow(QMainWindow):
             """)
 
         for i in range(self.tabs.count()):
-            container = self.tabs.widget(i)
-            if isinstance(container, QWidget):
-                for child in container.children():
-                    if isinstance(child, HtmlEditor):
-                        self._update_editor_theme(child)
-                        break
+            ed = self._editor_from_widget(self.tabs.widget(i))
+            if ed:
+                self._update_editor_theme(ed)
 
 
     def _auto_detect_language(self, editor):
@@ -284,14 +285,7 @@ class MainWindow(QMainWindow):
     # EDITOR / TAB HELPERS
     # ----------------------------------------------------------------------
     def current_editor(self) -> HtmlEditor | None:
-        w = self.tabs.currentWidget()
-        if isinstance(w, HtmlEditor):
-            return w
-        elif isinstance(w, QWidget):
-            for child in w.children():
-                if isinstance(child, HtmlEditor):
-                    return child
-        return None
+        return self._editor_from_widget(self.tabs.currentWidget())
 
     def current_path(self) -> str | None:
         ed = self.current_editor()
@@ -490,7 +484,17 @@ class MainWindow(QMainWindow):
             self._update_editor_theme(ed)
 
             container = QWidget()
-            layout = QHBoxLayout(container)
+            vbox = QVBoxLayout(container)
+            vbox.setContentsMargins(0, 0, 0, 0)
+            vbox.setSpacing(0)
+
+            bar = FileChangedBar()
+            bar.update_theme(self.is_dark_theme)
+            bar.reload_requested.connect(lambda b=bar, e=ed: self._reload_from_disk(e, b))
+            vbox.addWidget(bar)
+
+            editor_area = QWidget()
+            layout = QHBoxLayout(editor_area)
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(0)
 
@@ -500,10 +504,14 @@ class MainWindow(QMainWindow):
                 ed._line_gutter = gutter
 
             layout.addWidget(ed)
+            vbox.addWidget(editor_area)
 
             base_name = os.path.basename(original_path) if original_path else "Untitled"
             idx = self.tabs.addTab(container, f"{base_name} (recovered)*")
             self._attach_close_button(idx, container)
+
+            if original_path:
+                self._watcher.addPath(original_path)
 
             # Replace the old backup file with a fresh one for the restored content
             os.remove(backup_file)
@@ -523,7 +531,17 @@ class MainWindow(QMainWindow):
         self._update_editor_theme(ed)
 
         container = QWidget()
-        layout = QHBoxLayout(container)
+        vbox = QVBoxLayout(container)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(0)
+
+        bar = FileChangedBar()
+        bar.update_theme(self.is_dark_theme)
+        bar.reload_requested.connect(lambda b=bar, e=ed: self._reload_from_disk(e, b))
+        vbox.addWidget(bar)
+
+        editor_area = QWidget()
+        layout = QHBoxLayout(editor_area)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
@@ -533,6 +551,7 @@ class MainWindow(QMainWindow):
             ed._line_gutter = gutter
 
         layout.addWidget(ed)
+        vbox.addWidget(editor_area)
 
         idx = self.tabs.addTab(container, "Untitled*")
         self.tabs.setCurrentIndex(idx)
@@ -624,6 +643,7 @@ class MainWindow(QMainWindow):
         # Close tab without prompting to save — file is gone
         if hasattr(ed, '_backup'):
             ed._backup.delete()
+        self._watcher.removePath(file_path)
         self.tabs.removeTab(idx)
 
     def _rename_tab(self, idx: int, ed):
@@ -648,6 +668,8 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Rename Failed", str(e))
             return
 
+        self._watcher.removePath(old_path)
+        self._watcher.addPath(new_path)
         ed._file_path = new_path
         if hasattr(ed, '_backup'):
             ed._backup.update_file_path(new_path)
@@ -698,6 +720,10 @@ class MainWindow(QMainWindow):
                     return
         if editor and hasattr(editor, '_backup'):
             editor._backup.delete()
+        if editor:
+            path = getattr(editor, '_file_path', None)
+            if path:
+                self._watcher.removePath(path)
         self.tabs.removeTab(index)
 
     def _close_current_tab(self):
@@ -738,9 +764,12 @@ class MainWindow(QMainWindow):
         if isinstance(w, HtmlEditor):
             return w
         if isinstance(w, QWidget):
-            for child in w.children():
-                if isinstance(child, HtmlEditor):
-                    return child
+            return w.findChild(HtmlEditor)
+        return None
+
+    def _bar_from_widget(self, w) -> FileChangedBar | None:
+        if isinstance(w, QWidget):
+            return w.findChild(FileChangedBar)
         return None
 
     def open_dialog(self):
@@ -752,6 +781,15 @@ class MainWindow(QMainWindow):
             self.open_path(path)
 
     def open_path(self, path: str):
+        for i in range(self.tabs.count()):
+            ed = self._editor_from_widget(self.tabs.widget(i))
+            if ed and getattr(ed, '_file_path', None) == path:
+                self.tabs.setCurrentIndex(i)
+                bar = self._bar_from_widget(self.tabs.widget(i))
+                if bar:
+                    bar.show_already_open()
+                return
+
         try:
             with open(path, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -777,7 +815,17 @@ class MainWindow(QMainWindow):
         self._attach_highlighter(ed, path)
 
         container = QWidget()
-        layout = QHBoxLayout(container)
+        vbox = QVBoxLayout(container)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(0)
+
+        bar = FileChangedBar()
+        bar.update_theme(self.is_dark_theme)
+        bar.reload_requested.connect(lambda b=bar, e=ed: self._reload_from_disk(e, b))
+        vbox.addWidget(bar)
+
+        editor_area = QWidget()
+        layout = QHBoxLayout(editor_area)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
@@ -787,11 +835,13 @@ class MainWindow(QMainWindow):
             ed._line_gutter = gutter
 
         layout.addWidget(ed)
+        vbox.addWidget(editor_area)
 
         idx = self.tabs.addTab(container, os.path.basename(path))
         self.tabs.setCurrentIndex(idx)
         self._attach_close_button(idx, container)
         ed._backup = EditorBackup(ed, path)
+        self._watcher.addPath(path)
         ed.setFocus()
         self._update_window_title()
 
@@ -817,12 +867,16 @@ class MainWindow(QMainWindow):
             ".pdf": ".pdf",
         }
         for keyword, ext in ext_map.items():
-            if keyword in selected_filter and not path.lower().endswith(ext):
+            if keyword in selected_filter and not any(path.lower().endswith(e) for e in ext_map.values()):
                 path += ext
                 break
 
+        old_path = self.current_path()
         ok = self._save_to(path)
         if ok:
+            if old_path and old_path != path:
+                self._watcher.removePath(old_path)
+            self._watcher.addPath(path)
             self.set_current_path(path)
             ed = self.current_editor()
             if ed:
@@ -837,6 +891,10 @@ class MainWindow(QMainWindow):
         if not ed:
             return False
 
+        # Suppress the watcher trigger caused by our own write
+        self._saving_paths.add(path)
+        QTimer.singleShot(500, lambda: self._saving_paths.discard(path))
+
         ext = path.lower()
         try:
             if ext.endswith('.pdf'):
@@ -844,10 +902,7 @@ class MainWindow(QMainWindow):
             elif ext.endswith('.rtf'):
                 return self._save_as_rtf(ed, path)
 
-            if ext.endswith('.md'):
-                content = ed.document().toMarkdown()
-            else:
-                content = ed.toPlainText()
+            content = ed.toPlainText()
 
             with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
@@ -859,6 +914,49 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"File could not be saved:\n{e}")
             return False
+
+    def _on_file_changed(self, path: str):
+        if path in self._saving_paths:
+            return
+
+        # Re-add path: some OS implementations remove it after a change event
+        if os.path.exists(path):
+            self._watcher.addPath(path)
+
+        for i in range(self.tabs.count()):
+            w = self.tabs.widget(i)
+            ed = self._editor_from_widget(w)
+            if ed and getattr(ed, '_file_path', None) == path:
+                bar = self._bar_from_widget(w)
+                if bar:
+                    if os.path.exists(path):
+                        bar.show_changed(ed.document().isModified())
+                    else:
+                        bar.show_deleted()
+                break
+
+    def _reload_from_disk(self, ed, bar: FileChangedBar):
+        path = getattr(ed, '_file_path', None)
+        if not path or not os.path.exists(path):
+            return
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not reload file:\n{e}")
+            return
+
+        ext = path.lower()
+        if ext.endswith(('.html', '.htm')):
+            ed.setHtml(content)
+        elif ext.endswith('.md'):
+            ed.document().setMarkdown(content)
+        else:
+            ed.setPlainText(content)
+
+        ed.document().setModified(False)
+        bar.hide()
+        self._update_tab_title()
 
     def _save_as_rtf(self, editor, path: str) -> bool:
         try:
@@ -1250,6 +1348,10 @@ Ctrl+Shift+H    - Toggle syntax highlighting"""
             self.findbar._update_theme()
         if hasattr(self, 'header_widget'):
             self.header_widget.update_theme(self.is_dark_theme)
+        for i in range(self.tabs.count()):
+            bar = self._bar_from_widget(self.tabs.widget(i))
+            if bar:
+                bar.update_theme(self.is_dark_theme)
         mode = "Dark" if self.is_dark_theme else "Light"
         self.status.showMessage(f"Switched to {mode} theme", 2000)
 
@@ -1275,10 +1377,10 @@ Ctrl+Shift+H    - Toggle syntax highlighting"""
                 if editor:
                     if self.show_line_numbers and not hasattr(editor, '_line_gutter'):
                         gutter = LineNumberGutter(editor)
-                        container.layout().insertWidget(0, gutter)
+                        editor.parent().layout().insertWidget(0, gutter)
                         editor._line_gutter = gutter
                     elif not self.show_line_numbers and hasattr(editor, '_line_gutter'):
-                        container.layout().removeWidget(editor._line_gutter)
+                        editor.parent().layout().removeWidget(editor._line_gutter)
                         editor._line_gutter.deleteLater()
                         delattr(editor, '_line_gutter')
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 
-from PySide6.QtCore import Qt, QRect, QSize
+from PySide6.QtCore import Qt, QRect, QSize, Signal
 from PySide6.QtGui import QPainter, QFont, QColor
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLineEdit, QLabel, QPushButton, QFrame, QMenu, QCheckBox
@@ -347,3 +347,100 @@ class HeaderWidget(QWidget):
             """)
             self.theme_checkbox.setChecked(False)
             self.credit_label.setStyleSheet("QLabel { font-size: 12px; font-style: italic; color: #555555; }")
+
+
+class FileChangedBar(QWidget):
+    """Notification bar shown at the top of a tab when the file was changed externally."""
+
+    reload_requested = Signal()
+    dismissed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("FileChangedBar")
+        self.is_dark = True
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 6, 8, 6)
+        layout.setSpacing(10)
+
+        self._icon = QLabel("⚠")
+        self._icon.setFixedWidth(18)
+        layout.addWidget(self._icon)
+
+        self._text = QLabel()
+        self._reload_btn = QPushButton("Reload")
+        self._reload_btn.setFixedHeight(26)
+        self._reload_btn.clicked.connect(self.reload_requested)
+
+        self._dismiss_btn = QPushButton("×")
+        self._dismiss_btn.setFixedSize(26, 26)
+        self._dismiss_btn.setToolTip("Dismiss")
+        self._dismiss_btn.clicked.connect(self._on_dismiss)
+
+        layout.addWidget(self._text, 1)
+        layout.addWidget(self._reload_btn)
+        layout.addWidget(self._dismiss_btn)
+
+        self._update_theme()
+        self.hide()
+
+    def show_changed(self, has_unsaved: bool):
+        self._text.setText("File was changed externally.")
+        self._reload_btn.setText("Discard my changes and reload" if has_unsaved else "Reload")
+        self._reload_btn.show()
+        self.show()
+
+    def show_deleted(self):
+        self._text.setText("File was deleted - save to recreate it.")
+        self._reload_btn.hide()
+        self.show()
+
+    def show_already_open(self):
+        self._text.setText("This file is already open in this tab.")
+        self._reload_btn.hide()
+        self.show()
+
+    def _on_dismiss(self):
+        self.hide()
+        self.dismissed.emit()
+
+    def update_theme(self, is_dark: bool):
+        self.is_dark = is_dark
+        self._update_theme()
+
+    def _update_theme(self):
+        if self.is_dark:
+            self.setStyleSheet("""
+                #FileChangedBar {
+                    background: #3C3000;
+                    border-bottom: 1px solid #5C4A00;
+                }
+                QLabel { color: #FFD080; background: transparent; font-size: 12px; font-weight: bold; }
+                QPushButton {
+                    background: #5C4A00;
+                    color: #FFD080;
+                    border: 1px solid #7A6200;
+                    padding: 3px 10px;
+                    border-radius: 4px;
+                    font-size: 12px;
+                }
+                QPushButton:hover { background: #7A6200; }
+            """)
+        else:
+            self.setStyleSheet("""
+                #FileChangedBar {
+                    background: #FFF8DC;
+                    border-bottom: 1px solid #D4A800;
+                }
+                QLabel { color: #7A5000; background: transparent; font-size: 12px; font-weight: bold; }
+                QPushButton {
+                    background: #F0D060;
+                    color: #4A3000;
+                    border: 1px solid #C0A000;
+                    padding: 3px 10px;
+                    border-radius: 4px;
+                    font-size: 12px;
+                }
+                QPushButton:hover { background: #D4B840; }
+            """)
