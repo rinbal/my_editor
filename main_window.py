@@ -5,6 +5,7 @@ import json
 import os
 from send2trash import send2trash
 from PySide6.QtCore import Qt, QMarginsF, QTimer, QFileSystemWatcher
+from PySide6.QtNetwork import QLocalServer
 from PySide6.QtGui import (
     QAction, QKeySequence, QTextCursor, QTextDocument, QTextCharFormat, QColor,
     QPageLayout, QPageSize
@@ -31,6 +32,8 @@ _RICH_DOC_EXTS = ('.html', '.htm', '.md', '.markdown')
 _SUPPORTED_EXTS = {'.md', '.html', '.htm', '.txt'}
 from recovery import EditorBackup, find_all_backups
 from recent_files import load_recent, add_recent, clear_recent
+
+_IPC_SERVER_NAME = "minimal-texteditor-ipc"
 
 
 class MainWindow(QMainWindow):
@@ -95,7 +98,29 @@ class MainWindow(QMainWindow):
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self._update_undo_redo_buttons()
         self._update_status_bar()
+        self._start_ipc_server()
 
+
+    # ----------------------------------------------------------------------
+    # IPC - SINGLE INSTANCE
+    # ----------------------------------------------------------------------
+    def _start_ipc_server(self):
+        """Start a local socket server so that a second launch can forward a
+        file path here instead of opening a new window."""
+        QLocalServer.removeServer(_IPC_SERVER_NAME)  # remove stale socket if any
+        self._ipc_server = QLocalServer(self)
+        self._ipc_server.newConnection.connect(self._on_ipc_connection)
+        self._ipc_server.listen(_IPC_SERVER_NAME)
+
+    def _on_ipc_connection(self):
+        conn = self._ipc_server.nextPendingConnection()
+        conn.waitForReadyRead(300)
+        path = conn.readAll().data().decode("utf-8").strip()
+        conn.deleteLater()
+        if path and os.path.isfile(path):
+            self.open_path(path)
+        self.raise_()
+        self.activateWindow()
 
     # ----------------------------------------------------------------------
     # THEME APPLICATION
