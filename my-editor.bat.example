@@ -4,4 +4,4 @@ rem See README.md > App Shortcuts for setup instructions
 rem Replace C:\Users\yourname\my_editor with the actual path to your project folder
 
 cd C:\Users\yourname\my_editor
-.venv\Scripts\python.exe main.py
+.venv\Scripts\python.exe main.py %*

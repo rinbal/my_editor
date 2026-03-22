@@ -64,11 +64,11 @@ python main.py /path/to/file.txt
 ## App Shortcuts
 
 Three launcher templates are included, one per platform:
-- `my-editor.desktop.example` — Linux
-- `my-editor.app.example/` — macOS
-- `my-editor.bat.example` — Windows
+- `my-editor.desktop.example` - Linux
+- `my-editor.app.example/` - macOS
+- `my-editor.bat.example` - Windows
 
-### Linux — Desktop Shortcut
+### Linux - Desktop Shortcut
 
 The file `my-editor.desktop.example` is a template to register the editor as an application in your Linux desktop environment (GNOME, KDE, etc.).
 
@@ -76,7 +76,7 @@ The file `my-editor.desktop.example` is a template to register the editor as an 
 ```bash
 pwd
 ```
-This prints something like `/home/yourname/my_editor` — copy that path.
+This prints something like `/home/yourname/my_editor` - copy that path.
 
 **2. Copy the template:**
 ```bash
@@ -87,22 +87,25 @@ cp my-editor.desktop.example my-editor.desktop
 
 Example with path `/home/yourname/my_editor`:
 ```
-Exec=/home/yourname/my_editor/.venv/bin/python /home/yourname/my_editor/main.py
+Exec=/home/yourname/my_editor/.venv/bin/python /home/yourname/my_editor/main.py %F
 Path=/home/yourname/my_editor
 ```
 
 **4. Install the shortcut:**
 ```bash
 cp my-editor.desktop ~/.local/share/applications/
+update-desktop-database ~/.local/share/applications/
 ```
 
 The editor will now appear in your app launcher and can be pinned to the dock.
 
+**"Open with" support:** The `.desktop` file includes a `MimeType` field that registers the editor for common text file types (`.txt`, `.md`, `.html`, `.py`, `.json`, etc.). After installing, you can right-click any text file in your file manager and choose **Open with > minimal texteditor**.
+
 ---
 
-### macOS — App Bundle
+### macOS - App Bundle
 
-The folder `my-editor.app.example/` is a template for a native macOS `.app` bundle. On macOS, any folder named `Something.app` with the right internal structure is treated as a clickable application — no installation tool required.
+The folder `my-editor.app.example/` is a template for a native macOS `.app` bundle. On macOS, any folder named `Something.app` with the right internal structure is treated as a clickable application - no installation tool required.
 
 **Structure of the bundle:**
 ```
@@ -118,7 +121,7 @@ my-editor.app/
 ```bash
 pwd
 ```
-This prints something like `/Users/yourname/my_editor` — copy that path.
+This prints something like `/Users/yourname/my_editor` - copy that path.
 
 **2. Copy the template bundle:**
 ```bash
@@ -145,6 +148,8 @@ mv my-editor.app /Applications/
 
 You can now double-click `my-editor.app` in Finder to launch the editor, or drag it to the Dock to pin it.
 
+**"Open with" support:** The `Info.plist` includes a `CFBundleDocumentTypes` entry that registers the editor for common text file types. After placing the app in `/Applications/` and launching it once, you can right-click any text file in Finder and choose **Open with > minimal texteditor**.
+
 > **Note:** macOS may show a security warning the first time you open the app since it is not from the App Store. To bypass it: right-click the app → **Open** → confirm in the dialog. You only need to do this once.
 
 > **Icon:** By default the app shows a generic icon. To use a custom icon, place a `.icns` file in `my-editor.app/Contents/Resources/` and add the following to `Info.plist` inside the `<dict>` block:
@@ -156,7 +161,7 @@ You can now double-click `my-editor.app` in Finder to launch the editor, or drag
 
 ---
 
-### Windows — Batch Script
+### Windows - Batch Script
 
 The file `my-editor.bat.example` is a template for a double-clickable launcher script on Windows.
 
@@ -179,14 +184,16 @@ cd C:\Users\yourname\my_editor
 
 **4. Double-click `my-editor.bat` to launch the editor.**
 
-**Optional — Pin to taskbar or Start Menu:**
+**"Open with" support:** Windows cannot register `.bat` files in the "Open with" menu automatically. However, if you manually associate a file type with the editor once (right-click a file → **Open with > Choose another app** → browse to the `.bat` file), Windows will remember the choice and the file will open correctly because the `.bat` passes its arguments to `main.py`.
+
+**Optional - Pin to taskbar or Start Menu:**
 - **Taskbar:** Right-click `my-editor.bat` → **Pin to taskbar**
 - **Start Menu:** Place a shortcut to the `.bat` file in:
   ```
   %APPDATA%\Microsoft\Windows\Start Menu\Programs\
   ```
 
-> **Note:** A terminal window will briefly appear on launch — this is normal for `.bat` files on Windows.
+> **Note:** A terminal window will briefly appear on launch - this is normal for `.bat` files on Windows.
 
 > **Icon:** `.bat` files cannot carry a custom icon directly. To use one, create a Windows shortcut (`.lnk`) to the `.bat` file, then right-click the shortcut → **Properties** → **Change Icon** and select any `.ico` file.
 
