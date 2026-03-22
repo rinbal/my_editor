@@ -4,4 +4,4 @@
 # Replace /Users/yourname/my_editor with the actual path to your project folder
 
 cd /Users/yourname/my_editor
-.venv/bin/python main.py
+.venv/bin/python main.py "$@"
