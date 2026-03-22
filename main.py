@@ -6,7 +6,23 @@
 
 import sys
 from PySide6.QtWidgets import QApplication
+from PySide6.QtNetwork import QLocalSocket
 from main_window import MainWindow
+
+_IPC_SERVER_NAME = "minimal-texteditor-ipc"
+
+
+def _forward_to_running_instance(path: str) -> bool:
+    """Send a file path to an already-running instance via a local socket.
+    Returns True if a running instance was found and the path was forwarded."""
+    socket = QLocalSocket()
+    socket.connectToServer(_IPC_SERVER_NAME)
+    if not socket.waitForConnected(300):
+        return False
+    socket.write((path + "\n").encode("utf-8"))
+    socket.waitForBytesWritten(300)
+    socket.disconnectFromServer()
+    return True
 
 
 def main():
@@ -14,13 +30,18 @@ def main():
     app.setApplicationName("minimal texteditor")
     app.setStyleSheet("""
         QWidget { color: #D4D4D4; }
-        QToolTip { 
-            background-color: #252526; 
-            color: #D4D4D4; 
-            border: 1px solid #3C3C3C; 
+        QToolTip {
+            background-color: #252526;
+            color: #D4D4D4;
+            border: 1px solid #3C3C3C;
         }
     """)
+
     initial_path = sys.argv[1] if len(sys.argv) > 1 else None
+
+    if initial_path and _forward_to_running_instance(initial_path):
+        sys.exit(0)
+
     win = MainWindow(initial_path)
     win.show()
     sys.exit(app.exec())
