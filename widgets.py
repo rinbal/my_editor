@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLineEdit, QLabel, QPushButton, QFrame, QMenu, QCheckBox
 )
 from constants import DARK_BG, LIGHT_BG, MONO_FONT
+from nostr.ui.profile_chip import ProfileChip
 
 
 class LineNumberGutter(QWidget):
@@ -271,14 +272,19 @@ class HeaderWidget(QWidget):
         self.redo_btn.setFixedSize(26, 26)
         self.redo_btn.setEnabled(False)
 
-        # Right half: credit label right-aligned
+        # Right half: credit label right-aligned, with the Nostr profile chip
+        # tucked just after it. The credit stays exactly where it was — the
+        # chip is additive.
         right = QWidget()
         right.setObjectName("HeaderRight")
         right_layout = QHBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
         self.credit_label = QLabel("built by rinbal")
+        self.profile_chip = ProfileChip()
         right_layout.addStretch()
         right_layout.addWidget(self.credit_label)
+        right_layout.addSpacing(10)
+        right_layout.addWidget(self.profile_chip)
 
         # left(1) and right(1) give equal weight → ↺↻ land exactly in the window centre
         layout.addWidget(left, 1)
@@ -397,6 +403,10 @@ class HeaderWidget(QWidget):
             """)
             self.theme_checkbox.setChecked(False)
             self.credit_label.setStyleSheet("QLabel { font-size: 12px; font-style: italic; color: #555555; }")
+
+        # Let the profile chip re-paint its placeholder/disconnected glyph
+        # in colours that read on the new background.
+        self.profile_chip.set_dark_theme(is_dark)
 
 
 class FileChangedBar(QWidget):
