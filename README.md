@@ -27,6 +27,7 @@ Designed for writing lecture notes and personal documents with a distraction-fre
 - **Crash recovery** - auto-saves every open document in the background; silently restores unsaved work on next launch
 - **Session restore** - reopens all previously open files automatically on next launch
 - **Nostr publishing** - send the current document straight to Nostr as a short note or a long-form article, signed by your phone via NIP-46. No private key ever lives inside the editor.
+- **Private encrypted drafts** - save in-progress work as a NIP-37 draft encrypted to your own Nostr key. The same draft appears on every device you sign in with the same profile.
 
 ---
 
@@ -208,8 +209,8 @@ cd C:\Users\yourname\my_editor
 |---|---|
 | `Ctrl+N` | New tab |
 | `Ctrl+O` | Open file |
-| `Ctrl+S` | Save |
-| `Ctrl+Shift+S` | Save As |
+| `Ctrl+S` | Save (local file, or silent re-save of a draft tab) |
+| `Ctrl+Shift+S` | Save As (choose local file or Nostr draft) |
 | `Ctrl+W` | Close tab |
 | `Ctrl+Q` | Quit |
 
@@ -260,8 +261,10 @@ The **B**, **I**, and **U** buttons in the header bar mirror these shortcuts and
 |---|---|
 | `Ctrl+Shift+P` | Publish current document as a short note (kind 1) |
 | `Ctrl+Shift+A` | Publish current document as a long-form article (kind 30023) |
+| `Ctrl+Shift+D` | Open or close the Drafts panel |
+| `Ctrl+Shift+S` | Save current document (chooser: local file or private Nostr draft) |
 
-The **`Nostr`** menu also exposes `Connect Signer…` and `Sign Out Active Profile` for managing identities. The avatar chip at the far right of the header is a one-click profile switcher.
+The **`Nostr`** menu also exposes `Drafts…`, `Connect Signer…`, and `Sign Out Active Profile` for managing identities. The avatar chip at the far right of the header is a one-click profile switcher.
 
 ---
 
@@ -344,6 +347,31 @@ The publisher uses eager-first-accept semantics: as soon as one relay acknowledg
 - **No private key in the editor.** All signing goes through NIP-46 over NIP-44 v2 encryption. Every `sign_event` call surfaces an approval prompt in your signer.
 - **Connection spoof protection.** The `nostrconnect://` flow generates a one-time secret that the editor verifies against the signer's response before completing the handshake.
 - **Profile file permissions.** The on-disk profile store is restricted to the owner. The local channel keypair stored there only authorizes the existing bunker session; it cannot sign anything itself.
+
+---
+
+## Private Encrypted Drafts
+
+In-progress work is saved as a **NIP-37 draft**: a kind 31234 event whose body is NIP-44 encrypted to your own Nostr key. Only you can decrypt it, and the encryption happens inside your signer so the editor never holds the plaintext key.
+
+**Cross-device by design.** Drafts live on the same relays you already publish to. Sign in with the same Nostr profile on another device and the editor pulls those drafts straight back into the panel. No cloud account, no separate service.
+
+### How to use it
+
+- **`Ctrl+Shift+D`** opens the Drafts panel on the right.
+- **`Ctrl+Shift+S`** asks where to save the current tab: local file or private Nostr draft. The choice can be remembered per tab.
+- **`Ctrl+S`** on a draft-bound tab silently re-saves the draft. Same shortcut, no questions, exactly like saving a local file.
+- Double-click a row to open the draft in a new tab. Right-click for Publish, Copy event id, or Delete.
+
+### Recovery
+
+If your signer (Amber, nsec.app) times out a decrypt approval or you dismiss the prompt by accident, the row shows up as failed with a one-click retry. Double-click the row or right-click → **Retry decryption** to send the request again. No relay round-trip needed.
+
+### Storage notes
+
+- Drafts are kept on relays for ~90 days then expire (NIP-40). Re-saving extends the window.
+- Notes are tagged with a private UUID; articles use a stable slug, so the draft and its eventual published article share the same address.
+- Deleting a draft publishes an empty replacement so your other devices see it removed.
 
 ---
 

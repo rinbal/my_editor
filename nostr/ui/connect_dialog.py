@@ -67,7 +67,7 @@ QLineEdit, QTextEdit {
     border-radius: 4px;
     padding: 6px 8px;
     selection-background-color: #264F78;
-    font-family: "Noto Sans Mono", monospace;
+    font-family: "Menlo", "Consolas", "Noto Sans Mono", monospace;
     font-size: 11px;
 }
 QPushButton {
@@ -109,7 +109,7 @@ QLineEdit, QTextEdit {
     border-radius: 4px;
     padding: 6px 8px;
     selection-background-color: #0078D4;
-    font-family: "Noto Sans Mono", monospace;
+    font-family: "Menlo", "Consolas", "Noto Sans Mono", monospace;
     font-size: 11px;
 }
 QPushButton {

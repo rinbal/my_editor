@@ -431,7 +431,14 @@ class _DraftRowWidget(QWidget):
         if loading:
             self._snippet.setText("…")
         elif failed:
-            self._snippet.setText(record.failure_reason or "Could not decrypt")
+            reason = record.failure_reason or "Could not decrypt"
+            # If we still have the ciphertext, retry is one click away —
+            # nudge the user with that hint rather than leaving the row
+            # looking permanently broken.
+            if record.ciphertext:
+                self._snippet.setText(f"{reason} · double-click to retry")
+            else:
+                self._snippet.setText(reason)
         else:
             self._snippet.setText(record.snippet or "")
         self._snippet.setToolTip(self._snippet.text())
@@ -468,6 +475,7 @@ class DraftsPanel(QFrame):
     open_draft = Signal(str)
     publish_draft = Signal(str)
     delete_draft = Signal(str, int)
+    retry_decrypt = Signal(str)
     copy_event_id = Signal(str)
     switch_profile_requested = Signal()
     refresh_requested = Signal()
@@ -962,9 +970,25 @@ class DraftsPanel(QFrame):
     # -- list interaction --------------------------------------------------
 
     def _on_item_activated(self, item: QListWidgetItem) -> None:
+        """Double-click / Enter on a row.
+
+        Behaviour depends on the row's state:
+          - READY   → open the decrypted draft in a new tab.
+          - FAILED  → retry decryption (most common case: the signer
+                      timed out and the user wants to approve now).
+          - LOADING → no-op; the row is mid-decryption.
+        """
         identifier = item.data(Qt.UserRole)
-        if isinstance(identifier, str) and identifier:
+        if not isinstance(identifier, str) or not identifier:
+            return
+        record = self._store.get(identifier) if self._store is not None else None
+        if record is None:
+            return
+        if record.state is DraftState.READY:
             self.open_draft.emit(identifier)
+        elif record.state is DraftState.FAILED:
+            self.retry_decrypt.emit(identifier)
+        # LOADING — intentionally no-op
 
     def _on_context_menu(self, pos) -> None:
         item = self._list.itemAt(pos)
@@ -978,6 +1002,18 @@ class DraftsPanel(QFrame):
             return
         menu = QMenu(self._list)
         menu.setStyleSheet(_DARK_MENU_CSS if self._is_dark else _LIGHT_MENU_CSS)
+
+        if record.state is DraftState.FAILED:
+            # For a failed row the *only* useful primary action is to
+            # retry decryption. Promote it to the top of the menu so
+            # right-click → Enter is the recovery path.
+            act_retry = QAction("Retry decryption", menu)
+            act_retry.triggered.connect(
+                lambda: self.retry_decrypt.emit(identifier)
+            )
+            act_retry.setEnabled(bool(record.ciphertext))
+            menu.addAction(act_retry)
+            menu.addSeparator()
 
         act_open = QAction("Open in new tab", menu)
         act_open.triggered.connect(lambda: self.open_draft.emit(identifier))
