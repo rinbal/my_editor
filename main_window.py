@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, QMarginsF, QTimer, QFileSystemWatcher
 from PySide6.QtNetwork import QLocalServer
 from PySide6.QtGui import (
     QAction, QKeySequence, QTextCursor, QTextDocument, QTextCharFormat, QColor,
-    QPageLayout, QPageSize
+    QPageLayout, QPageSize, QPixmap
 )
 from PySide6.QtWidgets import (
     QMainWindow, QFileDialog, QInputDialog, QMenu, QMessageBox, QWidget, QVBoxLayout,
@@ -32,6 +32,20 @@ _RICH_DOC_EXTS = ('.html', '.htm', '.md', '.markdown')
 _SUPPORTED_EXTS = {'.md', '.html', '.htm', '.txt'}
 from recovery import EditorBackup, find_all_backups
 from recent_files import load_recent, add_recent, clear_recent
+
+from nostr.avatar_store import AvatarBatchLoader, AvatarStore
+from nostr.bech32 import encode_note
+from nostr.bunker import BunkerSessionPool
+from nostr.contacts import ContactListFetcher
+from nostr.known_people import KnownPeople, Person
+from nostr.metadata import AvatarLoader, ProfileMetadataFetcher
+from nostr.outbox import RelayListCache
+from nostr.profiles import Profile, ProfileStore
+from nostr.relay import RelayPool
+from nostr.search import Nip50SearchClient
+from nostr.ui.connect_dialog import ConnectDialog
+from nostr.ui.publish_article_dialog import PublishArticleDialog
+from nostr.ui.publish_note_dialog import PublishNoteDialog
 
 _IPC_SERVER_NAME = "minimal-texteditor-ipc"
 
@@ -82,6 +96,49 @@ class MainWindow(QMainWindow):
         self.header_widget.bold_btn.clicked.connect(lambda: self._toggle_format('bold'))
         self.header_widget.italic_btn.clicked.connect(lambda: self._toggle_format('italic'))
         self.header_widget.underline_btn.clicked.connect(lambda: self._toggle_format('underline'))
+
+        # Nostr publishing infrastructure. All pieces are process-wide
+        # singletons living on the window; they are cheap to create and stay
+        # alive for the lifetime of the editor.
+        self._relay_pool = RelayPool(parent=self)
+        self._profile_store = ProfileStore()
+        self._relay_list_cache = RelayListCache(self._relay_pool, parent=self)
+        self._session_pool = BunkerSessionPool(self._relay_pool, parent=self)
+        self._metadata_fetcher = ProfileMetadataFetcher(
+            self._relay_pool, self._profile_store, parent=self
+        )
+        self._metadata_fetcher.updated.connect(self._on_metadata_updated)
+        self._avatar_loader = AvatarLoader(parent=self)
+        # Throttled batcher feeds AvatarStore; widgets get repaint hints via
+        # AvatarStore.avatar_added so newly-arrived pixmaps appear live.
+        self._avatar_batcher = AvatarBatchLoader(self._avatar_loader, parent=self)
+        self._avatars = AvatarStore(parent=self)
+        self._avatar_batcher.ready.connect(self._avatars.put)
+        # The own-profile chip refresh is still triggered explicitly so we can
+        # also flip the menu if the active profile's avatar landed.
+        self._avatars.avatar_added.connect(self._on_avatar_added)
+
+        # Mentions infrastructure: cached known people, NIP-50 search,
+        # background contact-list fetcher. All process-wide singletons.
+        self._known_people = KnownPeople()
+        self._search_client = Nip50SearchClient(
+            self._relay_pool, self._known_people, parent=self
+        )
+        self._search_client.results.connect(self._on_search_results)
+        self._contact_fetcher = ContactListFetcher(
+            self._relay_pool, self._known_people, parent=self
+        )
+        self._contact_fetcher.person_updated.connect(self._on_person_updated)
+
+        self._update_profile_chip()
+        self._refresh_profile_chip_menu()
+        # If a profile exists from a previous session, refresh its metadata
+        # in the background and prime the mentions cache from the NIP-02
+        # contact list.
+        active = self._profile_store.default()
+        if active is not None:
+            self._metadata_fetcher.fetch(active)
+            self._contact_fetcher.fetch(active.user_pubkey, active.bunker_relays)
 
         self._build_actions()
         self._build_menu()
@@ -528,6 +585,23 @@ class MainWindow(QMainWindow):
         m_find.addAction(self.act_find)
         m_find.addAction(self.act_find_next)
         m_find.addAction(self.act_find_prev)
+
+        m_nostr = self.menuBar().addMenu("&Nostr")
+        act_nostr_publish = QAction("Publish as Note…", self)
+        act_nostr_publish.setShortcut(QKeySequence("Ctrl+Shift+P"))
+        act_nostr_publish.triggered.connect(self._on_nostr_publish_note)
+        m_nostr.addAction(act_nostr_publish)
+        act_nostr_publish_article = QAction("Publish as Article…", self)
+        act_nostr_publish_article.setShortcut(QKeySequence("Ctrl+Shift+A"))
+        act_nostr_publish_article.triggered.connect(self._on_nostr_publish_article)
+        m_nostr.addAction(act_nostr_publish_article)
+        m_nostr.addSeparator()
+        act_nostr_connect = QAction("Connect Signer…", self)
+        act_nostr_connect.triggered.connect(self._on_nostr_connect)
+        m_nostr.addAction(act_nostr_connect)
+        act_nostr_sign_out = QAction("Sign Out Active Profile", self)
+        act_nostr_sign_out.triggered.connect(self._on_nostr_sign_out)
+        m_nostr.addAction(act_nostr_sign_out)
 
         help_menu = self.menuBar().addMenu("&Help")
         shortcuts_action = QAction("Keyboard Shortcuts", self)
@@ -1761,4 +1835,252 @@ Ctrl+Shift+H    - Toggle syntax highlighting"""
             ed = self._editor_from_widget(self.tabs.widget(i))
             if ed and hasattr(ed, '_backup'):
                 ed._backup.delete()
+        # Close any warm relay sockets and bunker channels so the WebSocket
+        # layer can flush close frames before the QApplication tears down.
+        if hasattr(self, "_session_pool"):
+            self._session_pool.close_all()
+        if hasattr(self, "_relay_pool"):
+            self._relay_pool.close_all()
         event.accept()
+
+    # ----------------------------------------------------------------------
+    # NOSTR — profile chip menu + connect flow
+    # ----------------------------------------------------------------------
+
+    def _update_profile_chip(self):
+        """Re-render the chip icon from the current default profile.
+
+        If we have a cached avatar pixmap for the active profile, it's
+        passed in; otherwise the chip falls back to initials on a
+        deterministic color disc.
+        """
+        chip = self.header_widget.profile_chip
+        default = self._profile_store.default()
+        if default is None:
+            chip.set_disconnected()
+            return
+        chip.set_profile(
+            display_name=default.display_name,
+            user_pubkey_hex=default.user_pubkey,
+            avatar_pixmap=self._avatars.get(default.user_pubkey),
+        )
+
+    def _refresh_profile_chip_menu(self):
+        """Rebuild the chip's dropdown — fast and idempotent."""
+        menu = self.header_widget.profile_chip.menu()
+        menu.clear()
+
+        profiles = self._profile_store.list()
+        if not profiles:
+            act = menu.addAction("Connect Nostr signer…")
+            act.triggered.connect(self._on_nostr_connect)
+            return
+
+        active = self._profile_store.default()
+        for profile in profiles:
+            label = profile.display_name or profile.npub_short()
+            act = menu.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(profile is active)
+            act.triggered.connect(
+                lambda _checked=False, p=profile: self._on_nostr_select_profile(p)
+            )
+
+        menu.addSeparator()
+        act_add = menu.addAction("Add profile…")
+        act_add.triggered.connect(self._on_nostr_connect)
+        act_signout = menu.addAction("Sign out active profile")
+        act_signout.triggered.connect(self._on_nostr_sign_out)
+
+    def _on_nostr_connect(self):
+        dialog = ConnectDialog(
+            self._relay_pool,
+            self._profile_store,
+            parent=self,
+            is_dark=self.is_dark_theme,
+        )
+        dialog.profile_connected.connect(self._on_nostr_profile_connected)
+        dialog.exec()
+
+    def _on_nostr_profile_connected(self, profile: Profile):
+        # New (or re-connected) profile becomes the active one.
+        self._profile_store.set_default(profile.user_pubkey)
+        self._update_profile_chip()
+        self._refresh_profile_chip_menu()
+        self.status.showMessage(
+            f"Connected as {profile.display_name or profile.npub_short()}", 5000
+        )
+        # Kick off metadata + avatar fetch in the background. The chip will
+        # refresh itself when the fetcher signals back.
+        self._metadata_fetcher.fetch(profile)
+        # Also prime the mentions cache from this profile's NIP-02 contact list.
+        self._contact_fetcher.fetch(profile.user_pubkey, profile.bunker_relays)
+
+    def _on_nostr_select_profile(self, profile: Profile):
+        self._profile_store.set_default(profile.user_pubkey)
+        self._update_profile_chip()
+        self._refresh_profile_chip_menu()
+
+    def _on_nostr_sign_out(self):
+        active = self._profile_store.default()
+        if active is None:
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Sign out?",
+            (
+                f"Remove the profile for {active.display_name or active.npub_short()}?\n\n"
+                "Your real key stays in your signer. Only the local connection is forgotten."
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        self._session_pool.drop(active.user_pubkey)
+        self._avatars.pop(active.user_pubkey, None)
+        self._profile_store.remove(active.user_pubkey)
+        self._update_profile_chip()
+        self._refresh_profile_chip_menu()
+
+    # -- metadata / avatar updates ----------------------------------------
+
+    def _on_metadata_updated(self, profile: Profile):
+        """Refreshed display name / picture URL landed — repaint the chip
+        and queue the avatar download if one is available."""
+        self._update_profile_chip()
+        self._refresh_profile_chip_menu()
+        if profile.picture:
+            self._avatar_batcher.request(profile.user_pubkey, profile.picture)
+
+    def _on_avatar_added(self, pubkey_hex: str, _pixmap: QPixmap):
+        """A new pixmap landed in the store. Refresh the header chip only
+        if it's for the currently-active profile; the picker/chip-row
+        widgets subscribe to ``avatar_added`` themselves and don't need
+        this signal."""
+        active = self._profile_store.default()
+        if active is not None and active.user_pubkey == pubkey_hex:
+            self._update_profile_chip()
+
+    def _on_person_updated(self, person: Person):
+        """A kind 0 just resolved for someone in the contact list. Queue
+        their avatar so the picker has it ready by the time the user
+        searches for them."""
+        if person.picture:
+            self._avatar_batcher.request(person.pubkey, person.picture)
+
+    def _on_search_results(self, _query: str, people: list):
+        """NIP-50 search returned matches — queue their avatars too."""
+        for person in people:
+            if isinstance(person, Person) and person.picture:
+                self._avatar_batcher.request(person.pubkey, person.picture)
+
+    # -- publish ----------------------------------------------------------
+
+    def _on_nostr_publish_note(self):
+        active = self._profile_store.default()
+        if active is None:
+            QMessageBox.information(
+                self,
+                "Connect a signer first",
+                "Connect a Nostr signer before publishing. Use the avatar "
+                "chip in the header or Nostr → Connect Signer…",
+            )
+            return
+
+        ed = self.current_editor()
+        content = ed.toPlainText().strip() if ed is not None else ""
+        if not content:
+            QMessageBox.information(
+                self,
+                "Nothing to publish",
+                "The current document is empty.",
+            )
+            return
+
+        dialog = PublishNoteDialog(
+            content=content,
+            active_profile=active,
+            store=self._profile_store,
+            relay_pool=self._relay_pool,
+            relay_list_cache=self._relay_list_cache,
+            session_pool=self._session_pool,
+            known_people=self._known_people,
+            search_client=self._search_client,
+            avatars=self._avatars,
+            parent=self,
+            is_dark=self.is_dark_theme,
+        )
+        dialog.published.connect(self._on_nostr_note_published)
+        dialog.exec()
+
+    def _on_nostr_note_published(self, event_id_hex: str, results):
+        accepted = sum(1 for _, ok, _ in results if ok)
+        note_id = encode_note(event_id_hex) if event_id_hex else ""
+        if note_id:
+            msg = (
+                f"Published to Nostr: {accepted}/{len(results)} relays · "
+                f"{note_id[:16]}…"
+            )
+        else:
+            msg = f"Published to Nostr: {accepted}/{len(results)} relays"
+        self.status.showMessage(msg, 8000)
+
+    def _on_nostr_publish_article(self):
+        active = self._profile_store.default()
+        if active is None:
+            QMessageBox.information(
+                self,
+                "Connect a signer first",
+                "Connect a Nostr signer before publishing. Use the avatar "
+                "chip in the header or Nostr → Connect Signer…",
+            )
+            return
+
+        ed = self.current_editor()
+        body = ed.toPlainText().rstrip() if ed is not None else ""
+        if not body:
+            QMessageBox.information(
+                self,
+                "Nothing to publish",
+                "The current document is empty.",
+            )
+            return
+
+        # Pre-fill metadata: the first non-blank line becomes the suggested
+        # title (strip a leading Markdown '# '); the filename becomes the
+        # suggested slug. Both stay editable in the dialog.
+        first_line = next((ln for ln in body.splitlines() if ln.strip()), "")
+        default_title = first_line.lstrip("# ").strip()
+        path = self.current_path()
+        default_slug = (
+            os.path.splitext(os.path.basename(path))[0] if path else ""
+        )
+
+        dialog = PublishArticleDialog(
+            body_markdown=body,
+            active_profile=active,
+            store=self._profile_store,
+            relay_pool=self._relay_pool,
+            relay_list_cache=self._relay_list_cache,
+            session_pool=self._session_pool,
+            known_people=self._known_people,
+            search_client=self._search_client,
+            avatars=self._avatars,
+            default_title=default_title,
+            default_slug=default_slug,
+            parent=self,
+            is_dark=self.is_dark_theme,
+        )
+        dialog.published.connect(self._on_nostr_article_published)
+        dialog.exec()
+
+    def _on_nostr_article_published(self, naddr: str, results):
+        accepted = sum(1 for _, ok, _ in results if ok)
+        if naddr:
+            msg = (
+                f"Published article to Nostr: {accepted}/{len(results)} relays · "
+                f"{naddr[:18]}…"
+            )
+        else:
+            msg = f"Published article to Nostr: {accepted}/{len(results)} relays"
+        self.status.showMessage(msg, 8000)
