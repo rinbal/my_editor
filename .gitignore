@@ -7,3 +7,5 @@ __pycache__/
 *.txt
 !requirements.txt
 .claude
+plugin_plan.md
+RSS_PYTHON_IMPORT_PLAN.md

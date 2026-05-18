@@ -3,6 +3,9 @@
 
 import json
 import os
+from dataclasses import dataclass
+from typing import Optional
+
 from send2trash import send2trash
 from PySide6.QtCore import Qt, QMarginsF, QTimer, QFileSystemWatcher
 from PySide6.QtNetwork import QLocalServer
@@ -13,7 +16,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QMainWindow, QFileDialog, QInputDialog, QMenu, QMessageBox, QWidget, QVBoxLayout,
     QTextEdit, QTabWidget, QToolButton, QHBoxLayout, QStatusBar, QPushButton, QTabBar,
-    QDialogButtonBox, QWidgetAction, QLabel
+    QDialogButtonBox, QWidgetAction, QLabel, QDialog, QSplitter
 )
 
 from constants import (
@@ -37,17 +40,52 @@ from nostr.avatar_store import AvatarBatchLoader, AvatarStore
 from nostr.bech32 import encode_note
 from nostr.bunker import BunkerSessionPool
 from nostr.contacts import ContactListFetcher
+from nostr.draft_store import DraftState, DraftStore
+from nostr.draft_sync import DraftSync
+from nostr.drafts import (
+    INNER_KIND_LONG_FORM,
+    INNER_KIND_SHORT_NOTE,
+    MAX_INNER_PAYLOAD_BYTES,
+    build_inner_event,
+    serialize_inner_event,
+)
 from nostr.known_people import KnownPeople, Person
 from nostr.metadata import AvatarLoader, ProfileMetadataFetcher
 from nostr.outbox import RelayListCache
 from nostr.profiles import Profile, ProfileStore
+from nostr.publisher import DraftDeleteJob, DraftPublishJob
 from nostr.relay import RelayPool
 from nostr.search import Nip50SearchClient
 from nostr.ui.connect_dialog import ConnectDialog
+from nostr.ui.draft_conflict_banner import DraftConflictBanner
+from nostr.ui.drafts_panel import DEFAULT_PANEL_WIDTH, DraftsPanel
 from nostr.ui.publish_article_dialog import PublishArticleDialog
 from nostr.ui.publish_note_dialog import PublishNoteDialog
+from nostr.ui.save_destination_dialog import SaveDestination, SaveDestinationDialog
+from nostr.ui.stash_kind_dialog import StashChoice, StashKind, StashKindDialog
 
 _IPC_SERVER_NAME = "minimal-texteditor-ipc"
+
+
+# --------------------------------------------------------------------------- #
+# Per-tab Nostr-draft binding                                                 #
+# --------------------------------------------------------------------------- #
+
+@dataclass
+class DraftBinding:
+    """Tracks a tab's link to a NIP-37 draft.
+
+    Set on an editor whenever the user stashes a tab as a draft or
+    opens an existing draft into a new tab. Used by the tab-title
+    decoration (lock glyph + draft title) and by the stash flow to
+    preserve the addressable ``d``-tag across subsequent saves.
+    """
+
+    identifier: str       # the draft's d-tag
+    inner_kind: int       # INNER_KIND_SHORT_NOTE or INNER_KIND_LONG_FORM
+    event_id: str = ""    # newest wrap event id we've observed for this draft
+    created_at: int = 0   # ``created_at`` of that wrap (last stash time)
+    title: str = ""       # cached display title for the tab
 
 
 class MainWindow(QMainWindow):
@@ -130,6 +168,29 @@ class MainWindow(QMainWindow):
         )
         self._contact_fetcher.person_updated.connect(self._on_person_updated)
 
+        # NIP-37 draft infrastructure. The store is profile-scoped and
+        # rebinds when the active profile changes; the sync orchestrator
+        # owns the subscription + decryption pipeline; the panel is the
+        # user-facing surface. All three stay alive for the session.
+        self._draft_store = DraftStore(parent=self)
+        self._draft_store.record_changed.connect(self._on_draft_record_changed)
+        self._draft_sync = DraftSync(
+            relay_pool=self._relay_pool,
+            relay_list_cache=self._relay_list_cache,
+            session_pool=self._session_pool,
+            store=self._draft_store,
+            parent=self,
+        )
+        self._draft_sync.status_changed.connect(self._on_draft_sync_status)
+        self._draft_sync.bunker_error.connect(self._on_draft_sync_bunker_error)
+        # Created lazily inside ``_build_findbar`` so its parent is the
+        # central widget rather than ``self`` — keeps Qt's geometry
+        # reasoning straightforward.
+        self._drafts_panel: Optional[DraftsPanel] = None
+        # Maps each open editor → its conflict banner widget so we can
+        # avoid stacking duplicate banners on the same tab.
+        self._tab_conflict_banners: dict = {}
+
         self._update_profile_chip()
         self._refresh_profile_chip_menu()
         # If a profile exists from a previous session, refresh its metadata
@@ -139,6 +200,10 @@ class MainWindow(QMainWindow):
         if active is not None:
             self._metadata_fetcher.fetch(active)
             self._contact_fetcher.fetch(active.user_pubkey, active.bunker_relays)
+            # Start the draft sync in the background. It's idempotent —
+            # if the panel is never opened, this still keeps the store
+            # warm so opening the panel later is instant.
+            self._draft_sync.start_for(active)
 
         self._build_actions()
         self._build_menu()
@@ -399,11 +464,35 @@ class MainWindow(QMainWindow):
         ed = self.current_editor()
         if not ed:
             return
-        path = getattr(ed, "_file_path", None)
-        dirty = "*" if ed.document().isModified() else ""
-        title = (os.path.basename(path) if path else "Untitled") + dirty
-        self.tabs.setTabText(self.tabs.currentIndex(), title)
+        self.tabs.setTabText(self.tabs.currentIndex(), self._compose_tab_title(ed))
         self._update_status_bar()
+
+    def _compose_tab_title(self, ed) -> str:
+        """Compute the display title for a tab.
+
+        Precedence:
+          - File path basename if the tab is backed by a local file.
+          - Draft title if the tab is purely a draft (opened from the
+            drafts panel without a local file).
+          - "Untitled" as the final fallback for fresh blank tabs.
+
+        Tabs with a draft binding get a leading lock glyph so the user
+        can tell at a glance that contents are encrypted at rest on
+        the relays.
+        """
+        path = getattr(ed, "_file_path", None)
+        binding = getattr(ed, "_draft_binding", None)
+        dirty = "*" if ed.document().isModified() else ""
+        if path:
+            base = os.path.basename(path)
+        elif binding and binding.title:
+            base = binding.title
+        elif binding:
+            base = "Untitled draft"
+        else:
+            base = "Untitled"
+        prefix = "⚿ " if binding is not None else ""
+        return f"{prefix}{base}{dirty}"
 
     def _update_status_bar(self):
         ed = self.current_editor()
@@ -498,7 +587,11 @@ class MainWindow(QMainWindow):
 
         self.act_save_as = QAction("Save As…", self)
         self.act_save_as.setShortcut(QKeySequence("Ctrl+Shift+S"))
-        self.act_save_as.triggered.connect(lambda: self.save_as())
+        # Contextual: behaves as classic Save As when no Nostr profile
+        # is connected; otherwise asks where to save (local file vs.
+        # encrypted Nostr draft) and remembers the per-tab choice. See
+        # ``_on_save_as_pressed`` for the full decision tree.
+        self.act_save_as.triggered.connect(self._on_save_as_pressed)
 
         self.act_close_tab = QAction("Close Tab", self)
         self.act_close_tab.setShortcut(QKeySequence("Ctrl+W"))
@@ -596,6 +689,14 @@ class MainWindow(QMainWindow):
         act_nostr_publish_article.triggered.connect(self._on_nostr_publish_article)
         m_nostr.addAction(act_nostr_publish_article)
         m_nostr.addSeparator()
+        # Drafts surface — the side-docked panel. No keyboard shortcut
+        # so we don't crowd ``Ctrl+Shift+*`` which is reserved for the
+        # publish + save-as triad.
+        self.act_nostr_drafts = QAction("Drafts…", self)
+        self.act_nostr_drafts.setCheckable(True)
+        self.act_nostr_drafts.triggered.connect(self._on_toggle_drafts_panel)
+        m_nostr.addAction(self.act_nostr_drafts)
+        m_nostr.addSeparator()
         act_nostr_connect = QAction("Connect Signer…", self)
         act_nostr_connect.triggered.connect(self._on_nostr_connect)
         m_nostr.addAction(act_nostr_connect)
@@ -651,14 +752,49 @@ class MainWindow(QMainWindow):
         self.findbar = FindBar(self._find_next, self._find_prev, self._toggle_findbar, self)
         self.findbar.setVisible(False)
         self.findbar.edit.textChanged.connect(self._on_search_text_changed)
-        wrapper = QWidget()
-        v = QVBoxLayout(wrapper)
+
+        # The editor area (header + findbar + tabs) lives on the left
+        # of a horizontal splitter; the drafts panel docks on the right.
+        # We always create the panel — keeping it always-present (just
+        # hidden) preserves the layout's geometry across show/hide and
+        # avoids re-parenting issues. When no Nostr profile is connected,
+        # the panel itself renders the "Connect a Nostr profile" empty
+        # state without taking visual space beyond a thin border.
+        editor_side = QWidget()
+        v = QVBoxLayout(editor_side)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(0)
         v.addWidget(self.header_widget, 0)
         v.addWidget(self.findbar, 0)
         v.addWidget(self.tabs, 1)
-        self.setCentralWidget(wrapper)
+
+        self._drafts_panel = DraftsPanel(is_dark=self.is_dark_theme)
+        self._drafts_panel.bind_store(self._draft_store)
+        self._drafts_panel.set_avatar_store(self._avatars)
+        self._drafts_panel.set_active_profile(self._profile_store.default())
+        # The panel's outbound actions all route back through the host.
+        self._drafts_panel.open_draft.connect(self._on_panel_open_draft)
+        self._drafts_panel.publish_draft.connect(self._on_panel_publish_draft)
+        self._drafts_panel.delete_draft.connect(self._on_panel_delete_draft)
+        self._drafts_panel.copy_event_id.connect(self._on_panel_copy_event_id)
+        self._drafts_panel.switch_profile_requested.connect(
+            self._on_panel_switch_profile
+        )
+        self._drafts_panel.refresh_requested.connect(self._draft_sync.refresh)
+        self._drafts_panel.close_requested.connect(self._hide_drafts_panel)
+
+        self._central_splitter = QSplitter(Qt.Horizontal)
+        self._central_splitter.setObjectName("central_splitter")
+        self._central_splitter.setHandleWidth(1)
+        self._central_splitter.setChildrenCollapsible(False)
+        self._central_splitter.addWidget(editor_side)
+        self._central_splitter.addWidget(self._drafts_panel)
+        # Editor takes all stretch; panel starts hidden.
+        self._central_splitter.setStretchFactor(0, 1)
+        self._central_splitter.setStretchFactor(1, 0)
+        self._drafts_panel.hide()
+
+        self.setCentralWidget(self._central_splitter)
 
 
     # ----------------------------------------------------------------------
@@ -1176,6 +1312,16 @@ class MainWindow(QMainWindow):
     def save(self) -> bool:
         path = self.current_path()
         if not path:
+            # No local file backs this tab. If it's a draft tab (opened
+            # from the drafts panel, or stashed and never disk-saved),
+            # the user pressing Ctrl+S means "save what I'm working on"
+            # — i.e. re-stash with the same kind + d-tag, no dialogs.
+            # Otherwise fall through to the standard "Save As" prompt.
+            ed = self.current_editor()
+            binding = getattr(ed, "_draft_binding", None) if ed else None
+            if binding is not None and self._has_active_nostr_profile():
+                self._restash_with_binding(ed, binding)
+                return True
             return self.save_as()
         ed = self.current_editor()
         if ed and path.lower().endswith(('.txt', '.md')) and self._has_formatting(ed):
@@ -1915,11 +2061,24 @@ Ctrl+Shift+H    - Toggle syntax highlighting"""
         self._metadata_fetcher.fetch(profile)
         # Also prime the mentions cache from this profile's NIP-02 contact list.
         self._contact_fetcher.fetch(profile.user_pubkey, profile.bunker_relays)
+        # Bind the draft pipeline to the new profile so the panel
+        # (visible or not) starts collecting wraps from the relays.
+        self._draft_sync.start_for(profile)
+        if self._drafts_panel is not None:
+            self._drafts_panel.set_active_profile(profile)
+            self._drafts_panel.set_signer_unsupported(False)
 
     def _on_nostr_select_profile(self, profile: Profile):
         self._profile_store.set_default(profile.user_pubkey)
         self._update_profile_chip()
         self._refresh_profile_chip_menu()
+        # Switching identities — re-point the draft sync at the new
+        # profile. ``DraftSync.start_for`` is idempotent if the same
+        # profile is already active.
+        self._draft_sync.start_for(profile)
+        if self._drafts_panel is not None:
+            self._drafts_panel.set_active_profile(profile)
+            self._drafts_panel.set_signer_unsupported(False)
 
     def _on_nostr_sign_out(self):
         active = self._profile_store.default()
@@ -1941,6 +2100,16 @@ Ctrl+Shift+H    - Toggle syntax highlighting"""
         self._profile_store.remove(active.user_pubkey)
         self._update_profile_chip()
         self._refresh_profile_chip_menu()
+        # Tear down the draft pipeline. If another profile remains, the
+        # caller (or chip menu) can re-bind to it; otherwise the panel
+        # falls back to its "Connect a Nostr profile" empty state.
+        self._draft_sync.stop()
+        remaining = self._profile_store.default()
+        if self._drafts_panel is not None:
+            self._drafts_panel.set_active_profile(remaining)
+            self._drafts_panel.set_signer_unsupported(False)
+        if remaining is not None:
+            self._draft_sync.start_for(remaining)
 
     # -- metadata / avatar updates ----------------------------------------
 
@@ -2084,3 +2253,567 @@ Ctrl+Shift+H    - Toggle syntax highlighting"""
         else:
             msg = f"Published article to Nostr: {accepted}/{len(results)} relays"
         self.status.showMessage(msg, 8000)
+
+    # ----------------------------------------------------------------------
+    # NOSTR — drafts panel toggling
+    # ----------------------------------------------------------------------
+
+    def _on_toggle_drafts_panel(self):
+        """Menu action: show/hide the side-docked drafts panel.
+
+        First time we show the panel we also size the splitter so the
+        editor doesn't lose more than necessary. Subsequent toggles
+        preserve the user's resize. The QSplitter naturally clamps the
+        panel between its min and max widths.
+        """
+        if self._drafts_panel is None:
+            return
+        if self._drafts_panel.isVisible():
+            self._hide_drafts_panel()
+        else:
+            self._show_drafts_panel()
+
+    def _show_drafts_panel(self) -> None:
+        if self._drafts_panel is None:
+            return
+        self._drafts_panel.show()
+        # If the panel currently has zero width (its first appearance),
+        # split the central area so the panel gets its default width
+        # while the editor keeps the remainder.
+        sizes = self._central_splitter.sizes()
+        if len(sizes) == 2 and sizes[1] <= 0:
+            total = max(sum(sizes), self._central_splitter.width())
+            panel_w = min(DEFAULT_PANEL_WIDTH, max(total - 360, 240))
+            self._central_splitter.setSizes([total - panel_w, panel_w])
+        self.act_nostr_drafts.setChecked(True)
+        self._draft_sync.refresh()
+
+    def _hide_drafts_panel(self) -> None:
+        if self._drafts_panel is None:
+            return
+        self._drafts_panel.hide()
+        self.act_nostr_drafts.setChecked(False)
+
+    # ----------------------------------------------------------------------
+    # NOSTR — drafts panel signal handlers
+    # ----------------------------------------------------------------------
+
+    def _on_panel_switch_profile(self) -> None:
+        """The panel's profile chip was clicked — defer to the existing
+        chip menu so the user has one canonical place to switch."""
+        chip = self.header_widget.profile_chip
+        chip.showMenu()
+
+    def _on_panel_copy_event_id(self, event_id: str) -> None:
+        if event_id:
+            self.status.showMessage(f"Copied event id {event_id[:10]}…", 3000)
+
+    def _on_panel_open_draft(self, identifier: str) -> None:
+        """Open a draft into a new editor tab.
+
+        If a tab is already bound to this identifier, just activate it.
+        Otherwise spin up a new untitled tab and load the decrypted body.
+        """
+        record = self._draft_store.get(identifier)
+        if record is None or record.state is not DraftState.READY:
+            self.status.showMessage(
+                "Draft isn't ready to open yet — still decrypting.", 4000
+            )
+            return
+
+        # Activate an already-open tab if it's bound to this draft.
+        for i in range(self.tabs.count()):
+            ed = self._editor_from_widget(self.tabs.widget(i))
+            if ed is None:
+                continue
+            binding = getattr(ed, "_draft_binding", None)
+            if binding is not None and binding.identifier == identifier:
+                self.tabs.setCurrentIndex(i)
+                return
+
+        # Fresh tab. Reuse ``new_tab`` so every per-tab wiring (backup,
+        # timers, theming) is consistent with disk-opened tabs.
+        self.new_tab()
+        ed = self.current_editor()
+        if ed is None:
+            return
+        ed.setPlainText(record.content)
+        ed.document().setModified(False)
+        ed._draft_binding = DraftBinding(
+            identifier=record.identifier,
+            inner_kind=record.inner_kind,
+            event_id=record.event_id,
+            created_at=record.created_at,
+            title=record.title,
+        )
+        # Deliberately NOT pre-setting ``_save_destination`` — the
+        # destination dialog should still appear on first Ctrl+Shift+S
+        # so the user can save the draft locally if they want. Silent
+        # re-stashes go through Ctrl+S, which respects the binding via
+        # ``_restash_with_binding``.
+        self._update_tab_title()
+
+    def _on_panel_publish_draft(self, identifier: str) -> None:
+        """Promote a draft to a real (signed, public) Nostr publish.
+
+        Routes through the existing publish dialogs. The simplest path:
+        open the draft into a tab (so all current-tab-reading plumbing
+        keeps working) then trigger the appropriate publish action.
+        """
+        record = self._draft_store.get(identifier)
+        if record is None or record.state is not DraftState.READY:
+            return
+        self._on_panel_open_draft(identifier)
+        if record.inner_kind == INNER_KIND_LONG_FORM:
+            self._on_nostr_publish_article()
+        else:
+            self._on_nostr_publish_note()
+
+    def _on_panel_delete_draft(self, identifier: str, inner_kind: int) -> None:
+        profile = self._profile_store.default()
+        if profile is None:
+            return
+        record = self._draft_store.get(identifier)
+        title = record.title if (record and record.title) else "this draft"
+        confirm = QMessageBox(self)
+        confirm.setIcon(QMessageBox.Warning)
+        confirm.setWindowTitle("Delete draft?")
+        confirm.setText(f"Delete \"{title}\" from your Nostr drafts?")
+        confirm.setInformativeText(
+            "A blank-content replacement will be published to your relays. "
+            "Other clients (and your other devices) will treat the draft as "
+            "removed. This action can't be undone."
+        )
+        confirm.setStandardButtons(QMessageBox.Cancel | QMessageBox.Yes)
+        confirm.setDefaultButton(QMessageBox.Cancel)
+        if confirm.exec() != QMessageBox.Yes:
+            return
+
+        job = DraftDeleteJob(
+            relay_pool=self._relay_pool,
+            relay_list_cache=self._relay_list_cache,
+            session_pool=self._session_pool,
+            profile=profile,
+            identifier=identifier,
+            inner_kind=inner_kind,
+            parent=self,
+        )
+        job.status_changed.connect(lambda s: self.status.showMessage(s, 4000))
+        job.tombstoned.connect(lambda d, _eid: self._draft_store.remove(d))
+        job.failed.connect(
+            lambda reason: QMessageBox.warning(
+                self, "Couldn't delete draft", reason
+            )
+        )
+        job.start()
+
+    def _on_draft_sync_status(self, text: str) -> None:
+        if self._drafts_panel is not None:
+            self._drafts_panel.set_status(text)
+
+    def _on_draft_sync_bunker_error(self, message: str) -> None:
+        if self._drafts_panel is not None:
+            self._drafts_panel.set_signer_unsupported(True)
+        # Surface in the main window status bar too — the user may not
+        # have the panel open.
+        self.status.showMessage(message, 8000)
+
+    # ----------------------------------------------------------------------
+    # NOSTR — contextual Ctrl+Shift+S: disk vs. draft destination
+    # ----------------------------------------------------------------------
+
+    def _has_active_nostr_profile(self) -> bool:
+        return self._profile_store.default() is not None
+
+    def _on_save_as_pressed(self) -> None:
+        """Handler for ``Ctrl+Shift+S``.
+
+        Three-way decision:
+          1. No Nostr profile connected → behave as classic ``Save As``.
+          2. Nostr connected + this tab already chose a destination →
+             use that destination silently.
+          3. Otherwise → open the chooser dialog; optionally remember
+             the choice for this tab.
+        """
+        ed = self.current_editor()
+        if ed is None:
+            return
+        if not self._has_active_nostr_profile():
+            self.save_as()
+            return
+
+        remembered = getattr(ed, "_save_destination", None)
+        if remembered is SaveDestination.LOCAL:
+            self.save_as()
+            return
+        if remembered is SaveDestination.NOSTR_DRAFT:
+            self._stash_current_tab_as_draft()
+            return
+
+        # Default the chooser to the option that matches the tab's
+        # current identity: if it's a draft tab, pre-select "Save as
+        # Nostr draft" — but still show the dialog so the user can
+        # change their mind. Otherwise default to the safer disk option.
+        is_draft_tab = getattr(ed, "_draft_binding", None) is not None
+        default = (
+            SaveDestination.NOSTR_DRAFT if is_draft_tab else SaveDestination.LOCAL
+        )
+        dlg = SaveDestinationDialog(
+            default=default,
+            is_dark=self.is_dark_theme,
+            parent=self,
+        )
+        if dlg.exec() != QDialog.Accepted:
+            return
+        if dlg.remember:
+            ed._save_destination = dlg.destination
+        if dlg.destination is SaveDestination.LOCAL:
+            self.save_as()
+        else:
+            self._stash_current_tab_as_draft()
+
+    def _stash_current_tab_as_draft(self) -> None:
+        """Open the kind picker and, on accept, fire a ``DraftPublishJob``.
+
+        Per the product spec we ask for the kind on every Save-As stash
+        — the prior binding (if any) is pre-selected so the common path
+        is two clicks: open dialog → confirm.
+
+        For a silent re-save of an already-bound tab (the ``Ctrl+S``
+        path) see ``_restash_with_binding`` instead.
+        """
+        ed = self.current_editor()
+        profile = self._profile_store.default()
+        if ed is None or profile is None:
+            return
+
+        prior: Optional[DraftBinding] = getattr(ed, "_draft_binding", None)
+        default_kind = (
+            StashKind.ARTICLE
+            if prior is not None and prior.inner_kind == INNER_KIND_LONG_FORM
+            else StashKind.NOTE
+        )
+        title_hint, slug_hint, summary_hint, existing_note_id = (
+            self._stash_defaults_for(ed, prior)
+        )
+
+        dlg = StashKindDialog(
+            default=default_kind,
+            suggested_title=title_hint,
+            suggested_slug=slug_hint,
+            suggested_summary=summary_hint,
+            existing_note_identifier=existing_note_id,
+            is_dark=self.is_dark_theme,
+            parent=self,
+        )
+        if dlg.exec() != QDialog.Accepted or dlg.choice is None:
+            return
+
+        choice: StashChoice = dlg.choice
+        inner = self._build_inner_for_choice(profile, choice, ed.toPlainText())
+        if inner is None:
+            return
+        self._fire_draft_publish_job(ed, profile, choice, inner)
+
+    def _restash_with_binding(self, ed, binding: DraftBinding) -> None:
+        """Silent re-save of a draft-bound tab — no dialogs.
+
+        Triggered by ``Ctrl+S`` when the tab has a draft binding but no
+        local file path. The kind, identifier, and metadata are taken
+        from the binding (and from the store for the cached summary),
+        so the user gets the standard "save without asking" experience
+        familiar from every editor.
+
+        If the user wants to change the kind or move the draft to disk,
+        they use ``Ctrl+Shift+S`` (the chooser dialog).
+        """
+        profile = self._profile_store.default()
+        if profile is None:
+            return
+
+        # Pull summary off the cached record so re-stashes don't drop
+        # metadata that's only stored in the inner event tags. Title is
+        # already on the binding.
+        summary = ""
+        record = self._draft_store.get(binding.identifier)
+        if record is not None:
+            for tag in record.inner_tags:
+                if len(tag) >= 2 and tag[0] == "summary" and not summary:
+                    summary = tag[1]
+
+        kind = (
+            StashKind.ARTICLE
+            if binding.inner_kind == INNER_KIND_LONG_FORM
+            else StashKind.NOTE
+        )
+        choice = StashChoice(
+            kind=kind,
+            identifier=binding.identifier,
+            title=binding.title,
+            summary=summary,
+        )
+        inner = self._build_inner_for_choice(profile, choice, ed.toPlainText())
+        if inner is None:
+            return
+        self._fire_draft_publish_job(ed, profile, choice, inner)
+
+    def _fire_draft_publish_job(
+        self,
+        ed,
+        profile: Profile,
+        choice: StashChoice,
+        inner: dict,
+    ) -> None:
+        """Validate size, fire ``DraftPublishJob``, wire the callbacks.
+
+        Shared by the explicit-kind-picker path and the silent-restash
+        path so both behave identically once the kind + identifier are
+        decided.
+        """
+        # Pre-flight the plaintext cap with a friendly message rather
+        # than letting the publish job fail mid-pipeline. The job also
+        # checks, but doing it here means no signer round-trip wasted.
+        try:
+            payload_bytes = len(serialize_inner_event(inner).encode("utf-8"))
+        except (KeyError, TypeError, ValueError):
+            QMessageBox.warning(
+                self, "Couldn't prepare draft",
+                "The draft contents could not be serialized for encryption.",
+            )
+            return
+        if payload_bytes > MAX_INNER_PAYLOAD_BYTES:
+            QMessageBox.warning(
+                self, "Draft too large",
+                f"This draft ({payload_bytes:,} bytes) exceeds the NIP-44 "
+                f"encryption limit of {MAX_INNER_PAYLOAD_BYTES:,} bytes. "
+                "Split it into smaller drafts or publish it directly.",
+            )
+            return
+
+        job = DraftPublishJob(
+            relay_pool=self._relay_pool,
+            relay_list_cache=self._relay_list_cache,
+            session_pool=self._session_pool,
+            profile=profile,
+            inner_event=inner,
+            identifier=choice.identifier,
+            parent=self,
+        )
+        # Pass the editor + inner through the closure so the stashed
+        # handler can bind the tab and update the store optimistically.
+        job.status_changed.connect(lambda s: self.status.showMessage(s, 5000))
+        job.stashed.connect(
+            lambda ident, eid, ts, _ed=ed, _inner=inner, _choice=choice:
+            self._on_draft_stashed(_ed, _choice, eid, ts, _inner)
+        )
+        job.failed.connect(
+            lambda reason: QMessageBox.warning(
+                self, "Couldn't stash draft", reason
+            )
+        )
+        job.start()
+
+    def _stash_defaults_for(
+        self,
+        ed,
+        prior: Optional[DraftBinding],
+    ) -> tuple[str, str, str, str]:
+        """Compute title / slug / summary defaults for the kind dialog.
+
+        Priority: prior draft binding → store metadata → file basename.
+        Returns ``(title, slug, summary, existing_note_identifier)``.
+        """
+        title = ""
+        slug = ""
+        summary = ""
+        existing_note_id = ""
+
+        if prior is not None and prior.inner_kind == INNER_KIND_SHORT_NOTE:
+            existing_note_id = prior.identifier
+
+        if prior is not None:
+            title = prior.title or ""
+            if prior.inner_kind == INNER_KIND_LONG_FORM:
+                slug = prior.identifier
+            # Pull the cached summary off the store if available.
+            record = self._draft_store.get(prior.identifier)
+            if record is not None:
+                for tag in record.inner_tags:
+                    if len(tag) >= 2 and tag[0] == "summary" and not summary:
+                        summary = tag[1]
+
+        if not title:
+            # Fall back to the file basename without extension.
+            path = getattr(ed, "_file_path", None)
+            if path:
+                base = os.path.splitext(os.path.basename(path))[0]
+                # Underscores/hyphens to spaces; title-case for a humane default.
+                title = base.replace("_", " ").replace("-", " ").strip()
+        return title, slug, summary, existing_note_id
+
+    def _build_inner_for_choice(
+        self,
+        profile: Profile,
+        choice: StashChoice,
+        content: str,
+    ) -> Optional[dict]:
+        """Compose the inner unsigned event from the kind-picker choice.
+
+        For articles we also seed the ``title`` / ``summary`` / ``d``
+        tags so promoting the draft to a real NIP-23 publish later has
+        the metadata it needs.
+        """
+        tags: list[list[str]] = []
+        if choice.kind is StashKind.ARTICLE:
+            tags.append(["d", choice.identifier])
+            if choice.title:
+                tags.append(["title", choice.title])
+            if choice.summary:
+                tags.append(["summary", choice.summary])
+        try:
+            return build_inner_event(
+                kind=choice.kind.value,
+                content=content,
+                pubkey_hex=profile.user_pubkey,
+                tags=tags,
+            )
+        except ValueError as exc:
+            QMessageBox.warning(
+                self, "Couldn't prepare draft", str(exc),
+            )
+            return None
+
+    def _on_draft_stashed(
+        self,
+        ed,
+        choice: StashChoice,
+        event_id: str,
+        created_at: int,
+        inner: dict,
+    ) -> None:
+        """Job has signed the wrap. Bind the tab + update the store
+        optimistically so the panel reflects the new state immediately
+        rather than waiting for the relay echo to round-trip back
+        through ``DraftSync``."""
+        # The editor may have been closed mid-flight — bail gracefully.
+        if ed is None or self._editor_widget_index(ed) < 0:
+            return
+        ed._draft_binding = DraftBinding(
+            identifier=choice.identifier,
+            inner_kind=choice.kind.value,
+            event_id=event_id,
+            created_at=created_at,
+            title=choice.title or (choice.identifier if choice.kind is StashKind.NOTE else ""),
+        )
+        # A successful stash clears the modified flag — the tab's
+        # contents now match the latest draft snapshot on the network.
+        ed.document().setModified(False)
+        self._update_tab_title()
+
+        # Optimistic store update — by the time the relay echo arrives
+        # via DraftSync, the panel already shows the row.
+        self._draft_store.upsert_from_inner(
+            identifier=choice.identifier,
+            inner=inner,
+            event_id=event_id,
+            created_at=created_at,
+            expiration=None,
+        )
+
+    def _editor_widget_index(self, ed) -> int:
+        """Return the tab index that hosts ``ed``, or -1 if not found.
+
+        Walks the tab widgets defensively — used by the post-job
+        callback to verify the tab still exists before mutating it.
+        """
+        for i in range(self.tabs.count()):
+            if self._editor_from_widget(self.tabs.widget(i)) is ed:
+                return i
+        return -1
+
+    # ----------------------------------------------------------------------
+    # NOSTR — conflict banner
+    # ----------------------------------------------------------------------
+
+    def _on_draft_record_changed(self, identifier: str) -> None:
+        """Detect "newer version arrived from another device" conflicts.
+
+        Fires whenever ``DraftStore.record_changed`` triggers. For each
+        tab bound to ``identifier`` whose locally-cached event_id is
+        older than the store's current one, surface the conflict banner.
+        """
+        record = self._draft_store.get(identifier)
+        if record is None or record.state is not DraftState.READY:
+            return
+        for i in range(self.tabs.count()):
+            container = self.tabs.widget(i)
+            ed = self._editor_from_widget(container)
+            if ed is None:
+                continue
+            binding = getattr(ed, "_draft_binding", None)
+            if binding is None or binding.identifier != identifier:
+                continue
+            if not record.event_id or record.event_id == binding.event_id:
+                continue  # No new server-side version.
+            # If the tab isn't dirty, silently refresh — there's
+            # nothing to conflict with.
+            if not ed.document().isModified():
+                ed.setPlainText(record.content)
+                ed.document().setModified(False)
+                binding.event_id = record.event_id
+                binding.created_at = record.created_at
+                binding.title = record.title
+                self._update_tab_title()
+                continue
+            # Local edits + remote update → show the banner.
+            self._show_conflict_banner(container, ed, record)
+
+    def _show_conflict_banner(self, container, ed, record) -> None:
+        """Insert (or update) the per-tab conflict banner."""
+        if ed in self._tab_conflict_banners:
+            # Already showing — refresh the message in case the remote
+            # version has updated again.
+            self._tab_conflict_banners[ed].show()
+            return
+        banner = DraftConflictBanner(is_dark=self.is_dark_theme)
+        identifier = record.identifier
+        banner.view_remote.connect(
+            lambda i=identifier: self._on_conflict_view(i)
+        )
+        banner.reload.connect(
+            lambda e=ed, i=identifier: self._on_conflict_reload(e, i)
+        )
+        banner.keep_mine.connect(lambda e=ed: self._dismiss_conflict_banner(e))
+        banner.dismissed.connect(lambda e=ed: self._dismiss_conflict_banner(e))
+
+        # The container's layout is a QVBoxLayout holding [bar, editor_area].
+        # We insert the banner at the very top so it sits above both.
+        layout = container.layout()
+        layout.insertWidget(0, banner)
+        self._tab_conflict_banners[ed] = banner
+
+    def _dismiss_conflict_banner(self, ed) -> None:
+        banner = self._tab_conflict_banners.pop(ed, None)
+        if banner is None:
+            return
+        banner.setParent(None)
+        banner.deleteLater()
+
+    def _on_conflict_view(self, identifier: str) -> None:
+        # View = open the remote version in a brand-new tab without
+        # touching the conflicted one.
+        self._on_panel_open_draft(identifier)
+
+    def _on_conflict_reload(self, ed, identifier: str) -> None:
+        record = self._draft_store.get(identifier)
+        if record is None or record.state is not DraftState.READY:
+            return
+        ed.setPlainText(record.content)
+        ed.document().setModified(False)
+        binding = getattr(ed, "_draft_binding", None)
+        if binding is not None:
+            binding.event_id = record.event_id
+            binding.created_at = record.created_at
+            binding.title = record.title
+        self._update_tab_title()
+        self._dismiss_conflict_banner(ed)

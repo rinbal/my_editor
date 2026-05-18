@@ -80,6 +80,46 @@ def parse_relay_list(event: dict) -> RelayList:
     return RelayList(write=write, read=read)
 
 
+def select_draft_publish_relays(
+    relay_list: "RelayList",
+    *,
+    bunker_relays: Iterable[str] = (),
+    base: Iterable[str] = DEFAULT_RELAYS,
+    cap: int = RELAY_CAP,
+) -> List[str]:
+    """Choose where to *publish* a NIP-37 private draft.
+
+    Drafts must land somewhere the user's other devices will read back.
+    The reader path (``draft_sync._select_read_relays``) consults
+    ``read`` → ``write`` → bunker — so we mirror that by publishing to
+    the union ``write`` ∪ ``read`` ∪ bunker, with the curated base set
+    as a backstop for brand-new profiles. Deduped and capped at ``cap``.
+
+    Distinct from ``select_publish_relays`` (used for regular notes &
+    articles), which only blends write + base — drafts need the
+    extra read-set inclusion specifically because asymmetric read /
+    write sets are common (paid read relays + free write relays, etc.)
+    and we cannot afford drafts written on device A to be invisible
+    on device B.
+    """
+    seen: set[str] = set()
+    out: List[str] = []
+    for url in (
+        list(relay_list.write)
+        + list(relay_list.read)
+        + list(bunker_relays)
+        + list(base)
+    ):
+        normalized = _normalize_for_dedup(url)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        out.append(url)
+        if len(out) >= cap:
+            break
+    return out
+
+
 def select_publish_relays(
     user_write_relays: Iterable[str],
     *,

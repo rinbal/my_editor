@@ -52,10 +52,23 @@ DEFAULT_CONNECT_TIMEOUT_MS = 90_000
 DEFAULT_RPC_TIMEOUT_MS = 30_000
 
 # Permissions we request at connect time. Comma-separated per spec.
-# Kind 1 = short notes, kind 30023 = long-form articles. ping keeps a
-# keepalive method available; get_public_key is required for the post-connect
-# user-pubkey lookup.
-DEFAULT_PERMS = "get_public_key,sign_event:1,sign_event:30023,ping"
+#
+#   sign_event:1      — short notes
+#   sign_event:30023  — long-form articles
+#   sign_event:31234  — NIP-37 draft wraps (private encrypted drafts)
+#   nip44_encrypt     — encrypting draft payloads to the user's own pubkey
+#   nip44_decrypt     — decrypting drafts pulled back from relays
+#   get_public_key    — required for the post-connect user-pubkey lookup
+#   ping              — keepalive
+#
+# Signers that don't recognise an entry typically ignore it silently;
+# the actual capability check happens lazily when we invoke each method.
+DEFAULT_PERMS = (
+    "get_public_key,"
+    "sign_event:1,sign_event:30023,sign_event:31234,"
+    "nip44_encrypt,nip44_decrypt,"
+    "ping"
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -495,6 +508,135 @@ class BunkerClient(QObject):
             timeout_ms=timeout_ms,
         )
 
+    # -- high-level: NIP-44 encrypt / decrypt via the signer ---------------
+    #
+    # NIP-46 §"Methods" defines ``nip44_encrypt`` and ``nip44_decrypt``:
+    #   params: [third_party_pubkey_hex, plaintext_or_ciphertext]
+    #   result: the encrypted (base64) or decrypted (UTF-8) string
+    #
+    # For NIP-37 self-encrypted drafts the third-party pubkey is the
+    # user's own pubkey — we expose ``nip44_encrypt_self`` /
+    # ``nip44_decrypt_self`` as convenience wrappers to make that
+    # intent explicit at the call site.
+
+    def nip44_encrypt(
+        self,
+        peer_pubkey_hex: str,
+        plaintext: str,
+        on_success: Callable[[str], None],
+        on_failure: Callable[[str], None],
+        *,
+        timeout_ms: int = DEFAULT_RPC_TIMEOUT_MS,
+    ) -> None:
+        """Ask the signer to NIP-44 encrypt ``plaintext`` to ``peer_pubkey_hex``.
+
+        ``on_success`` receives the base64-encoded NIP-44 payload.
+        ``on_failure`` receives a human-readable reason — including the
+        case where the signer rejects the method as unknown (older
+        signers without NIP-44 support).
+        """
+        if not self._is_connected:
+            on_failure("not connected")
+            return
+        peer = peer_pubkey_hex.strip().lower()
+        if len(peer) != 64 or not all(c in "0123456789abcdef" for c in peer):
+            on_failure(f"invalid peer pubkey: {peer_pubkey_hex!r}")
+            return
+
+        def _ok(result: str) -> None:
+            if not result:
+                on_failure("signer returned empty ciphertext")
+                return
+            on_success(result)
+
+        self._send_request(
+            method="nip44_encrypt",
+            params=[peer, plaintext],
+            on_success=_ok,
+            on_failure=on_failure,
+            timeout_ms=timeout_ms,
+        )
+
+    def nip44_decrypt(
+        self,
+        peer_pubkey_hex: str,
+        ciphertext_b64: str,
+        on_success: Callable[[str], None],
+        on_failure: Callable[[str], None],
+        *,
+        timeout_ms: int = DEFAULT_RPC_TIMEOUT_MS,
+    ) -> None:
+        """Ask the signer to NIP-44 decrypt ``ciphertext_b64`` from ``peer_pubkey_hex``."""
+        if not self._is_connected:
+            on_failure("not connected")
+            return
+        peer = peer_pubkey_hex.strip().lower()
+        if len(peer) != 64 or not all(c in "0123456789abcdef" for c in peer):
+            on_failure(f"invalid peer pubkey: {peer_pubkey_hex!r}")
+            return
+        if not ciphertext_b64:
+            on_failure("ciphertext is empty")
+            return
+
+        def _ok(result: str) -> None:
+            # Some signers return "" on permission denial instead of a
+            # proper error frame. Symmetrise with ``nip44_encrypt`` which
+            # rejects empty ciphertext, and give the caller a clear reason
+            # rather than letting downstream JSON parsing fail with a
+            # misleading "not valid JSON".
+            if not result:
+                on_failure("signer returned empty plaintext")
+                return
+            on_success(result)
+
+        self._send_request(
+            method="nip44_decrypt",
+            params=[peer, ciphertext_b64],
+            on_success=_ok,
+            on_failure=on_failure,
+            timeout_ms=timeout_ms,
+        )
+
+    def nip44_encrypt_self(
+        self,
+        plaintext: str,
+        on_success: Callable[[str], None],
+        on_failure: Callable[[str], None],
+        *,
+        timeout_ms: int = DEFAULT_RPC_TIMEOUT_MS,
+    ) -> None:
+        """Self-encrypt — the NIP-37 case. Peer pubkey is the user's own."""
+        if self._user_pubkey is None:
+            on_failure("user pubkey not yet known")
+            return
+        self.nip44_encrypt(
+            self._user_pubkey,
+            plaintext,
+            on_success,
+            on_failure,
+            timeout_ms=timeout_ms,
+        )
+
+    def nip44_decrypt_self(
+        self,
+        ciphertext_b64: str,
+        on_success: Callable[[str], None],
+        on_failure: Callable[[str], None],
+        *,
+        timeout_ms: int = DEFAULT_RPC_TIMEOUT_MS,
+    ) -> None:
+        """Self-decrypt — the NIP-37 case. Peer pubkey is the user's own."""
+        if self._user_pubkey is None:
+            on_failure("user pubkey not yet known")
+            return
+        self.nip44_decrypt(
+            self._user_pubkey,
+            ciphertext_b64,
+            on_success,
+            on_failure,
+            timeout_ms=timeout_ms,
+        )
+
     # -- low-level: lifecycle ----------------------------------------------
 
     def close(self, reason: str = "closed by client") -> None:
@@ -504,12 +646,25 @@ class BunkerClient(QObject):
         if self._nc_timer is not None:
             self._nc_timer.stop()
             self._nc_timer = None
-        for pending in list(self._pending.values()):
-            pending.timer.stop()
-            pending.on_failure(reason)
+        # Snapshot AND clear pending before invoking callbacks. A callback
+        # that re-enters by sending a fresh request would otherwise either
+        # have its new entry wiped by the trailing ``.clear()`` (silently
+        # dropping the new request) or be skipped by a subsequent
+        # iteration over a mutated dict.
+        pending_snapshot = list(self._pending.values())
         self._pending.clear()
+        for pending in pending_snapshot:
+            pending.timer.stop()
+            try:
+                pending.on_failure(reason)
+            except Exception:  # noqa: BLE001 — never let one callback break the rest
+                pass
         was_connected = self._is_connected
         self._is_connected = False
+        # Clear the user pubkey too: a closed channel has no identity
+        # context, and stale ``_user_pubkey`` would let ``nip44_*_self``
+        # silently target the wrong key on a future reopen.
+        self._user_pubkey = None
         if was_connected:
             self.disconnected.emit(reason)
 

@@ -23,11 +23,38 @@ from PySide6.QtCore import QObject, Signal
 
 from . import CLIENT_NAME
 from .bech32 import decode_npub, decode_nprofile, encode_nprofile
-from .bunker import BunkerSessionPool
+from .bunker import BunkerClient, BunkerSessionPool
+from .drafts import (
+    DEFAULT_EXPIRATION_SECONDS,
+    MAX_INNER_PAYLOAD_BYTES,
+    SUPPORTED_INNER_KINDS,
+    build_draft_wrap,
+    build_tombstone_wrap,
+    serialize_inner_event,
+)
 from .events import build_event
-from .outbox import RelayListCache, select_publish_relays
+from .outbox import RelayListCache, select_draft_publish_relays, select_publish_relays
 from .profiles import Profile
 from .relay import RelayPool
+
+
+# Max length we'll surface from a signer-provided error string. Defensive
+# truncation against signers that echo plaintext back in error messages
+# (we've not observed it in practice but the contract isn't ours).
+_MAX_REASON_CHARS: int = 200
+
+
+def _safe_reason(reason: str) -> str:
+    """Clip a signer-provided failure reason to ``_MAX_REASON_CHARS``.
+
+    Keeps log lines bounded and protects against an over-talkative
+    signer echoing the request payload into the error text.
+    """
+    if not reason:
+        return "unknown error"
+    if len(reason) <= _MAX_REASON_CHARS:
+        return reason
+    return reason[:_MAX_REASON_CHARS - 1].rstrip() + "…"
 
 
 PublishResult = Tuple[str, bool, str]  # (relay_url, ok, message)
@@ -315,5 +342,329 @@ class PublishJob(QObject):
         accepted = sum(1 for _, ok, _ in results if ok)
         self.status_changed.emit(
             f"Published. {accepted}/{len(results)} relays accepted."
+        )
+        self.completed.emit(results)
+
+
+# --------------------------------------------------------------------------- #
+# DraftPublishJob — stash an unsigned inner event as a NIP-37 draft           #
+# --------------------------------------------------------------------------- #
+
+class DraftPublishJob(QObject):
+    """End-to-end stash of one inner event as a NIP-37 draft wrap.
+
+    Pipeline:
+      1. Resolve NIP-65 relay list.
+      2. Acquire bunker session.
+      3. Bunker NIP-44 encrypts ``serialize_inner_event(inner)``.
+      4. Wrap the ciphertext in a kind-31234 event.
+      5. Bunker signs the wrap.
+      6. Publish to ``select_draft_publish_relays`` (write ∪ read ∪
+         bunker ∪ base) so other devices reading from any of those
+         sets can decrypt the same draft.
+
+    Signals (in firing order on the happy path):
+      status_changed(str)        progress text
+      stashed(str, str, int)     (identifier, event_id, created_at) on
+                                 successful sign — fires before relay
+                                 results are in so the panel can update
+                                 optimistically.
+      completed(list)            list of PublishResult tuples
+      failed(str)                terminal — no further signals after this
+
+    Cancellation: ``cancel()`` flips a flag that suppresses all future
+    signal emissions. The in-flight NIP-46 RPC can't actually be
+    recalled — but the dialog (now destroyed) will no longer be
+    notified, preventing "wrapped C/C++ object has been deleted"
+    warnings on PySide6.
+    """
+
+    status_changed = Signal(str)
+    stashed = Signal(str, str, int)
+    completed = Signal(list)
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        *,
+        relay_pool: RelayPool,
+        relay_list_cache: RelayListCache,
+        session_pool: BunkerSessionPool,
+        profile: Profile,
+        inner_event: dict,
+        identifier: str,
+        expiration_seconds: int = DEFAULT_EXPIRATION_SECONDS,
+        extra_wrap_tags: Optional[List[List[str]]] = None,
+        parent: Optional[QObject] = None,
+    ) -> None:
+        super().__init__(parent)
+        if inner_event.get("pubkey", "").lower() != profile.user_pubkey.lower():
+            raise ValueError(
+                "inner event pubkey does not match the stashing profile"
+            )
+        if not identifier:
+            raise ValueError("draft identifier (d-tag) must not be empty")
+        self._relay_pool = relay_pool
+        self._relay_list_cache = relay_list_cache
+        self._session_pool = session_pool
+        self._profile = profile
+        self._inner_event = inner_event
+        self._identifier = identifier
+        self._expiration_seconds = expiration_seconds
+        self._extra_wrap_tags = extra_wrap_tags
+        self._wrap_unsigned: Optional[dict] = None
+        self._cancelled: bool = False
+
+    # -- public API --------------------------------------------------------
+
+    def start(self) -> None:
+        """Kick off the stash. Safe to call once per instance."""
+        self._emit_status("Looking up your relay list…")
+        relays_to_query = list(dict.fromkeys(list(self._profile.bunker_relays)))
+        self._relay_list_cache.fetch(
+            self._profile.user_pubkey,
+            relays=relays_to_query,
+            on_done=self._on_relay_list_resolved,
+        )
+
+    def cancel(self) -> None:
+        """Suppress further signal emissions; the in-flight RPC runs out."""
+        self._cancelled = True
+
+    # -- signal-emission helpers (guarded by ``_cancelled``) --------------
+
+    def _emit_status(self, text: str) -> None:
+        if not self._cancelled:
+            self.status_changed.emit(text)
+
+    def _emit_failed(self, reason: str) -> None:
+        if not self._cancelled:
+            self.failed.emit(_safe_reason(reason))
+
+    # -- pipeline ----------------------------------------------------------
+
+    def _on_relay_list_resolved(self, relay_list) -> None:
+        if self._cancelled:
+            return
+        publish_relays = select_draft_publish_relays(
+            relay_list,
+            bunker_relays=self._profile.bunker_relays,
+        )
+        self._emit_status("Connecting to your signer…")
+        self._session_pool.get(
+            self._profile,
+            on_ready=lambda client: self._on_bunker_ready(client, publish_relays),
+            on_error=self._emit_failed,
+        )
+
+    def _on_bunker_ready(self, client: BunkerClient, publish_relays: List[str]) -> None:
+        if self._cancelled:
+            return
+        try:
+            plaintext = serialize_inner_event(self._inner_event)
+        except (KeyError, TypeError, ValueError) as exc:
+            self._emit_failed(f"Could not serialize draft: {exc}")
+            return
+        # Pre-flight against the NIP-44 v2 plaintext cap (65535 bytes
+        # post-encode). The bunker would reject larger payloads anyway —
+        # surfacing it here yields a clearer message and avoids one
+        # round-trip + approval prompt for an inevitable failure.
+        payload_bytes = len(plaintext.encode("utf-8"))
+        if payload_bytes > MAX_INNER_PAYLOAD_BYTES:
+            self._emit_failed(
+                f"Draft is too large to encrypt "
+                f"({payload_bytes:,} of {MAX_INNER_PAYLOAD_BYTES:,} bytes). "
+                "Split it across smaller drafts or publish directly."
+            )
+            return
+        self._emit_status(
+            "Encrypting draft. Approve on your signer if prompted…"
+        )
+        client.nip44_encrypt_self(
+            plaintext,
+            on_success=lambda ct: self._on_encrypted(ct, client, publish_relays),
+            on_failure=lambda reason: self._emit_failed(
+                f"Could not encrypt draft: {_safe_reason(reason)}"
+            ),
+        )
+
+    def _on_encrypted(
+        self,
+        ciphertext: str,
+        client: BunkerClient,
+        publish_relays: List[str],
+    ) -> None:
+        if self._cancelled:
+            return
+        try:
+            self._wrap_unsigned = build_draft_wrap(
+                identifier=self._identifier,
+                inner_kind=int(self._inner_event["kind"]),
+                encrypted_content=ciphertext,
+                pubkey_hex=self._profile.user_pubkey,
+                client_name=CLIENT_NAME,
+                expiration_seconds=self._expiration_seconds,
+                extra_tags=self._extra_wrap_tags,
+            )
+        except ValueError as exc:
+            self._emit_failed(f"Could not build draft wrap: {exc}")
+            return
+
+        self._emit_status(
+            "Waiting for signature. Approve the request on your signer…"
+        )
+        client.sign_event(
+            self._wrap_unsigned,
+            on_success=lambda signed: self._on_signed(signed, publish_relays),
+            on_failure=self._emit_failed,
+        )
+
+    def _on_signed(self, signed_event: dict, publish_relays: List[str]) -> None:
+        if self._cancelled:
+            return
+        self.stashed.emit(
+            self._identifier,
+            signed_event["id"],
+            int(signed_event["created_at"]),
+        )
+        self._emit_status(
+            f"Publishing draft to {len(publish_relays)} relays…"
+        )
+        job = self._relay_pool.publish(publish_relays, signed_event)
+        job.all_done.connect(self._on_publish_done)
+
+    def _on_publish_done(self, results: List[PublishResult]) -> None:
+        if self._cancelled:
+            return
+        accepted = sum(1 for _, ok, _ in results if ok)
+        self._emit_status(
+            f"Draft saved to {accepted}/{len(results)} relays."
+        )
+        self.completed.emit(results)
+
+
+# --------------------------------------------------------------------------- #
+# DraftDeleteJob — tombstone an existing draft                                #
+# --------------------------------------------------------------------------- #
+
+class DraftDeleteJob(QObject):
+    """Publish a blank-content replacement wrap to soft-delete a draft.
+
+    Per NIP-37 the deletion mechanism is *not* NIP-09; the addressable
+    event is replaced with one whose ``content`` is empty. Same shape
+    as ``DraftPublishJob`` minus the encryption step (no plaintext).
+
+    Signals:
+      status_changed(str)
+      tombstoned(str, str)       (identifier, event_id) right after the
+                                 signer returns the signed tombstone —
+                                 lets the panel remove the row before
+                                 relay results land.
+      completed(list)            list of PublishResult tuples
+      failed(str)
+    """
+
+    status_changed = Signal(str)
+    tombstoned = Signal(str, str)
+    completed = Signal(list)
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        *,
+        relay_pool: RelayPool,
+        relay_list_cache: RelayListCache,
+        session_pool: BunkerSessionPool,
+        profile: Profile,
+        identifier: str,
+        inner_kind: int,
+        parent: Optional[QObject] = None,
+    ) -> None:
+        super().__init__(parent)
+        if not identifier:
+            raise ValueError("draft identifier (d-tag) must not be empty")
+        if inner_kind not in SUPPORTED_INNER_KINDS:
+            raise ValueError(
+                f"unsupported inner kind {inner_kind!r}; "
+                f"expected one of {SUPPORTED_INNER_KINDS}"
+            )
+        self._relay_pool = relay_pool
+        self._relay_list_cache = relay_list_cache
+        self._session_pool = session_pool
+        self._profile = profile
+        self._identifier = identifier
+        self._inner_kind = inner_kind
+        self._cancelled: bool = False
+
+    # -- public API --------------------------------------------------------
+
+    def start(self) -> None:
+        self._emit_status("Looking up your relay list…")
+        self._relay_list_cache.fetch(
+            self._profile.user_pubkey,
+            relays=list(dict.fromkeys(self._profile.bunker_relays)),
+            on_done=self._on_relay_list_resolved,
+        )
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    # -- guarded emit helpers ---------------------------------------------
+
+    def _emit_status(self, text: str) -> None:
+        if not self._cancelled:
+            self.status_changed.emit(text)
+
+    def _emit_failed(self, reason: str) -> None:
+        if not self._cancelled:
+            self.failed.emit(_safe_reason(reason))
+
+    # -- pipeline ----------------------------------------------------------
+
+    def _on_relay_list_resolved(self, relay_list) -> None:
+        if self._cancelled:
+            return
+        publish_relays = select_draft_publish_relays(
+            relay_list,
+            bunker_relays=self._profile.bunker_relays,
+        )
+        self._session_pool.get(
+            self._profile,
+            on_ready=lambda client: self._on_bunker_ready(client, publish_relays),
+            on_error=self._emit_failed,
+        )
+
+    def _on_bunker_ready(self, client: BunkerClient, publish_relays: List[str]) -> None:
+        if self._cancelled:
+            return
+        unsigned = build_tombstone_wrap(
+            identifier=self._identifier,
+            inner_kind=self._inner_kind,
+            pubkey_hex=self._profile.user_pubkey,
+            client_name=CLIENT_NAME,
+        )
+        self._emit_status(
+            "Waiting for signature. Approve the deletion on your signer…"
+        )
+        client.sign_event(
+            unsigned,
+            on_success=lambda signed: self._on_signed(signed, publish_relays),
+            on_failure=self._emit_failed,
+        )
+
+    def _on_signed(self, signed_event: dict, publish_relays: List[str]) -> None:
+        if self._cancelled:
+            return
+        self.tombstoned.emit(self._identifier, signed_event["id"])
+        self._emit_status(f"Removing draft from {len(publish_relays)} relays…")
+        job = self._relay_pool.publish(publish_relays, signed_event)
+        job.all_done.connect(self._on_publish_done)
+
+    def _on_publish_done(self, results: List[PublishResult]) -> None:
+        if self._cancelled:
+            return
+        accepted = sum(1 for _, ok, _ in results if ok)
+        self._emit_status(
+            f"Draft removed on {accepted}/{len(results)} relays."
         )
         self.completed.emit(results)
