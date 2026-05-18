@@ -1,3 +1,7 @@
 PySide6>=6.6.0
 send2trash>=1.8.0
 
+# Nostr publishing (NIP-46 / NIP-44 v2 / BIP-340)
+coincurve>=20.0.0      # libsecp256k1 bindings — schnorr sign/verify, ECDH
+cryptography>=42.0.0   # ChaCha20 + HMAC-SHA256 for NIP-44 v2
+segno>=1.6.0           # QR code rendering for nostrconnect:// pairing
