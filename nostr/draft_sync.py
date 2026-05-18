@@ -189,6 +189,42 @@ class DraftSync(QObject):
         self.status_changed.emit("Refreshing drafts…")
         self._open_subscription()
 
+    def retry_decrypt(self, identifier: str) -> None:
+        """Re-queue a previously-failed decryption.
+
+        Typical use: the signer (e.g. Amber) didn't approve the first
+        ``nip44_decrypt`` request in time, or the user dismissed the
+        prompt. The wrap is still in our store with its ciphertext, so
+        retrying is a single fresh bunker round-trip — no relay
+        re-fetch needed.
+
+        Safe to call for any state; we only do work if the record
+        actually has a ciphertext to decrypt.
+        """
+        if self._profile is None or self._bunker is None:
+            return
+        if self._bunker_unsupported:
+            return
+        record = self._store.get(identifier)
+        if record is None or not record.ciphertext:
+            return
+        # Reset the failure marker so the panel re-renders the row as
+        # loading; ``_after_decrypt`` will handle either outcome.
+        if record.state is DraftState.FAILED:
+            record.state = DraftState.LOADING
+            record.failure_reason = ""
+            self._store.record_changed.emit(identifier)
+        meta = DraftWrapMeta(
+            identifier=identifier,
+            inner_kind=record.inner_kind,
+            event_id=record.event_id,
+            pubkey=self._profile.user_pubkey.lower(),
+            created_at=record.created_at,
+            expiration=record.expiration,
+            ciphertext=record.ciphertext,
+        )
+        self._enqueue_decrypt(meta)
+
     # -- internal: cancellation -------------------------------------------
 
     def _is_current(self, gen: int) -> bool:

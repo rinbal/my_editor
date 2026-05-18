@@ -306,6 +306,98 @@ def test_per_call_failure_does_not_latch():
 
 
 # --------------------------------------------------------------------------- #
+# Retry path: signer timed out → user retries                                 #
+# --------------------------------------------------------------------------- #
+
+def test_retry_decrypt_resends_ciphertext_after_timeout():
+    """User missed the Amber prompt → decrypt timed out → retry must
+    re-send the exact same ciphertext without needing a relay re-fetch."""
+    sync = _make_sync()
+    sync._profile = _make_profile(PK)
+    sync._store.bind_profile(PK)
+    calls: List[str] = []
+    bunker = MagicMock()
+    bunker.nip44_decrypt_self.side_effect = lambda ct, on_success, on_failure: calls.append(ct)
+    sync._bunker = bunker
+
+    # Wrap arrives, decryption is enqueued
+    meta = _wrap(ident="x", event_id="e1", ct="THE-CIPHERTEXT")
+    sync._store.upsert_skeleton(meta)
+    sync._enqueue_decrypt(meta)
+    assert calls == ["THE-CIPHERTEXT"]
+    # Ciphertext is on the record so retry can reuse it
+    assert sync._store.get("x").ciphertext == "THE-CIPHERTEXT"
+
+    # Bunker times out
+    sync._on_decrypt_failure(
+        sync._generation, "x", "e1", "timed out waiting for signer",
+    )
+    record = sync._store.get("x")
+    assert record.state is DraftState.FAILED
+    assert "timed out" in record.failure_reason
+    # Ciphertext still cached
+    assert record.ciphertext == "THE-CIPHERTEXT"
+
+    # User clicks retry — same ciphertext sent again, state flips back to LOADING
+    sync.retry_decrypt("x")
+    assert calls == ["THE-CIPHERTEXT", "THE-CIPHERTEXT"]
+    assert sync._store.get("x").state is DraftState.LOADING
+
+
+def test_retry_decrypt_is_noop_on_unknown_identifier():
+    sync = _make_sync()
+    sync._profile = _make_profile(PK)
+    sync._store.bind_profile(PK)
+    sync._bunker = MagicMock()
+    sync.retry_decrypt("does-not-exist")
+    sync._bunker.nip44_decrypt_self.assert_not_called()
+
+
+def test_retry_decrypt_is_noop_without_ciphertext():
+    """An optimistically-inserted record (e.g. from upsert_from_inner)
+    has no ciphertext — retry must not crash and must not send an empty
+    decrypt request to the bunker."""
+    sync = _make_sync()
+    sync._profile = _make_profile(PK)
+    sync._store.bind_profile(PK)
+    sync._bunker = MagicMock()
+    sync._store.upsert_from_inner(
+        identifier="x",
+        inner=build_inner_event(kind=1, content="hi", pubkey_hex=PK),
+        event_id="e1", created_at=10, expiration=None,
+    )
+    sync.retry_decrypt("x")
+    sync._bunker.nip44_decrypt_self.assert_not_called()
+
+
+def test_retry_decrypt_does_nothing_when_bunker_unsupported():
+    sync = _make_sync()
+    sync._profile = _make_profile(PK)
+    sync._store.bind_profile(PK)
+    sync._bunker = MagicMock()
+    sync._store.upsert_skeleton(_wrap(ident="x", event_id="e1", ct="ct"))
+    sync._bunker_unsupported = True
+    sync.retry_decrypt("x")
+    sync._bunker.nip44_decrypt_self.assert_not_called()
+
+
+def test_set_decrypted_clears_ciphertext_on_success():
+    """After a successful decryption we should no longer hold the
+    ciphertext — it's redundant once the plaintext is in the record,
+    and dropping it keeps the in-memory footprint small."""
+    sync = _make_sync()
+    sync._profile = _make_profile(PK)
+    sync._store.bind_profile(PK)
+    sync._bunker = MagicMock()
+    sync._store.upsert_skeleton(_wrap(ident="x", event_id="e1", ct="CT"))
+    assert sync._store.get("x").ciphertext == "CT"
+    inner = build_inner_event(kind=1, content="hi", pubkey_hex=PK)
+    sync._on_decrypt_success(sync._generation, "x", "e1", serialize_inner_event(inner))
+    assert sync._store.get("x").state is DraftState.READY
+    assert sync._store.get("x").ciphertext == "", "ciphertext should be cleared after success"
+
+
+# --------------------------------------------------------------------------- #
 # 5. _select_read_relays precedence                                           #
 # --------------------------------------------------------------------------- #
 

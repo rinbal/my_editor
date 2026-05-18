@@ -689,13 +689,17 @@ class MainWindow(QMainWindow):
         act_nostr_publish_article.triggered.connect(self._on_nostr_publish_article)
         m_nostr.addAction(act_nostr_publish_article)
         m_nostr.addSeparator()
-        # Drafts surface — the side-docked panel. No keyboard shortcut
-        # so we don't crowd ``Ctrl+Shift+*`` which is reserved for the
-        # publish + save-as triad.
+        # Drafts surface — the side-docked panel. ``Ctrl+Shift+D`` (D
+        # for Draft) toggles it, sitting alongside the other Ctrl+Shift
+        # Nostr shortcuts.
         self.act_nostr_drafts = QAction("Drafts…", self)
+        self.act_nostr_drafts.setShortcut(QKeySequence("Ctrl+Shift+D"))
         self.act_nostr_drafts.setCheckable(True)
         self.act_nostr_drafts.triggered.connect(self._on_toggle_drafts_panel)
         m_nostr.addAction(self.act_nostr_drafts)
+        # Register globally so the shortcut works even when the menu
+        # bar is hidden (Linux compact themes, full-screen mode).
+        self.addAction(self.act_nostr_drafts)
         m_nostr.addSeparator()
         act_nostr_connect = QAction("Connect Signer…", self)
         act_nostr_connect.triggered.connect(self._on_nostr_connect)
@@ -776,6 +780,7 @@ class MainWindow(QMainWindow):
         self._drafts_panel.open_draft.connect(self._on_panel_open_draft)
         self._drafts_panel.publish_draft.connect(self._on_panel_publish_draft)
         self._drafts_panel.delete_draft.connect(self._on_panel_delete_draft)
+        self._drafts_panel.retry_decrypt.connect(self._on_panel_retry_decrypt)
         self._drafts_panel.copy_event_id.connect(self._on_panel_copy_event_id)
         self._drafts_panel.switch_profile_requested.connect(
             self._on_panel_switch_profile
@@ -1623,46 +1628,15 @@ class MainWindow(QMainWindow):
                 ed.setFocus()
 
     def _show_shortcuts(self):
-        shortcuts_text = """Keyboard Shortcuts:
+        """Open the cheat-sheet style ``ShortcutsDialog``.
 
-File Operations:
-Ctrl+N          - New document
-Ctrl+O          - Open file
-Ctrl+S          - Save file
-Ctrl+Shift+S    - Save As
-Ctrl+W          - Close tab
-Ctrl+Q          - Quit
-
-Text Formatting:
-Ctrl+B          - Bold
-Ctrl+I          - Italic
-Ctrl+U          - Underline
-Ctrl+D          - Reset to default format
-
-Undo / Redo:
-Ctrl+Z          - Undo
-Ctrl+Y          - Redo
-Ctrl+Shift+Z    - Redo
-
-Navigation & Search:
-Ctrl+F          - Find
-F3              - Find next
-Shift+F3        - Find previous
-Escape          - Close find bar
-
-Editor Features:
-Tab             - Indent / Create bullet
-Shift+Tab       - Outdent / Remove bullet
-Enter           - New line (continues bullets)
-Ctrl+Shift+L    - Toggle line numbers
-Ctrl+Shift+T    - Toggle dark/light theme
-Ctrl+Shift+H    - Toggle syntax highlighting"""
-
-        msg = QMessageBox(self)
-        msg.setWindowTitle("Keyboard Shortcuts")
-        msg.setText(shortcuts_text)
-        msg.setIcon(QMessageBox.Information)
-        msg.exec()
+        Replaces the previous plain-text ``QMessageBox`` so we get a
+        searchable, themed, category-grouped surface in keeping with
+        how major desktop apps display their keyboard reference.
+        """
+        from shortcuts_dialog import ShortcutsDialog
+        dlg = ShortcutsDialog(is_dark=self.is_dark_theme, parent=self)
+        dlg.exec()
 
     def _on_search_text_changed(self):
         needle = self.findbar.text()
@@ -2368,6 +2342,18 @@ Ctrl+Shift+H    - Toggle syntax highlighting"""
             self._on_nostr_publish_article()
         else:
             self._on_nostr_publish_note()
+
+    def _on_panel_retry_decrypt(self, identifier: str) -> None:
+        """Re-attempt NIP-44 decryption for a previously-failed draft.
+
+        Common trigger: the user missed the Amber approval prompt in
+        time, the bunker request timed out, and the row is now sitting
+        in FAILED state. ``DraftSync.retry_decrypt`` uses the
+        ciphertext cached on the record, so this is a single fresh
+        signer round-trip — no relay re-fetch.
+        """
+        self._draft_sync.retry_decrypt(identifier)
+        self.status.showMessage("Retrying decryption — approve on your signer…", 6000)
 
     def _on_panel_delete_draft(self, identifier: str, inner_kind: int) -> None:
         profile = self._profile_store.default()

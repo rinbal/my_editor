@@ -71,6 +71,11 @@ class DraftRecord:
     created_at: int = 0                   # outer wrap created_at (== last stash time)
     expiration: Optional[int] = None      # NIP-40 expiration unix, if any
     failure_reason: str = ""              # populated when state == FAILED
+    # Latest base64 NIP-44 ciphertext. Held so we can retry decryption
+    # when the signer times out or the user dismisses an Amber prompt
+    # without having to re-fetch the wrap from relays. Cleared once a
+    # successful decryption produces the plaintext.
+    ciphertext: str = ""
 
     @property
     def is_article(self) -> bool:
@@ -177,6 +182,10 @@ class DraftStore(QObject):
     def upsert_skeleton(self, meta: DraftWrapMeta) -> None:
         """Insert/update from a wrap that hasn't been decrypted yet.
 
+        Stores the ciphertext on the record so a later
+        ``DraftSync.retry_decrypt`` doesn't have to re-subscribe to
+        relays just because the signer didn't approve in time.
+
         Tombstones (empty ciphertext) are handled here too — they remove
         any existing record for that ``d`` and emit ``record_removed``.
         """
@@ -193,6 +202,7 @@ class DraftStore(QObject):
                 event_id=meta.event_id,
                 created_at=meta.created_at,
                 expiration=meta.expiration,
+                ciphertext=meta.ciphertext,
             )
             self._records[meta.identifier] = record
             self.record_added.emit(meta.identifier)
@@ -207,6 +217,7 @@ class DraftStore(QObject):
         existing.created_at = meta.created_at
         existing.expiration = meta.expiration
         existing.inner_kind = meta.inner_kind
+        existing.ciphertext = meta.ciphertext
         existing.state = DraftState.LOADING
         existing.failure_reason = ""
         self.record_changed.emit(meta.identifier)
@@ -254,6 +265,10 @@ class DraftStore(QObject):
         record.inner_tags = [list(t) for t in inner.get("tags", []) if isinstance(t, list)]
         record.state = DraftState.READY
         record.failure_reason = ""
+        # We've got the plaintext now — drop the ciphertext to keep the
+        # in-memory footprint down. A subsequent newer wrap will refill
+        # it via ``upsert_skeleton``.
+        record.ciphertext = ""
         self.record_changed.emit(identifier)
 
     def set_failed(self, identifier: str, reason: str) -> None:
