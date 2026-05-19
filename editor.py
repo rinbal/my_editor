@@ -341,8 +341,17 @@ class HtmlEditor(QTextEdit):
             self.redo()
             return
 
-        # Ctrl+V — normalized paste
+        # Ctrl+V — image-aware paste.
+        # If the clipboard carries an image and the main window can
+        # upload it (Blossom + connected profile), route there so the
+        # image survives saving as Markdown/HTML; otherwise fall through
+        # to the plain-text path that strips foreign formatting.
         if e.key() == Qt.Key_V and e.modifiers() == Qt.ControlModifier:
+            clip = QApplication.clipboard()
+            if clip.mimeData().hasImage():
+                main = self.window()
+                if hasattr(main, '_handle_pasted_image') and main._handle_pasted_image():
+                    return
             self.paste_normalized()
             return
 

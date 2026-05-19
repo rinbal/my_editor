@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 
 
+import itertools
 import json
 import os
+import time
 from dataclasses import dataclass
 from typing import Optional
 
 from send2trash import send2trash
-from PySide6.QtCore import Qt, QMarginsF, QTimer, QFileSystemWatcher
+from PySide6.QtCore import QBuffer, QIODevice, Qt, QMarginsF, QTimer, QFileSystemWatcher
 from PySide6.QtNetwork import QLocalServer
 from PySide6.QtGui import (
     QAction, QKeySequence, QTextCursor, QTextDocument, QTextCharFormat, QColor,
@@ -33,11 +35,16 @@ _RICH_DOC_EXTS = ('.html', '.htm', '.md', '.markdown')
 
 # Extensions accepted for drag-and-drop and file open.
 _SUPPORTED_EXTS = {'.md', '.html', '.htm', '.txt'}
+
+# Image extensions we route through Blossom upload on drag-and-drop.
+# These never overlap with _SUPPORTED_EXTS so the dispatcher stays simple.
+_IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'}
 from recovery import EditorBackup, find_all_backups
 from recent_files import load_recent, add_recent, clear_recent
 
 from nostr.avatar_store import AvatarBatchLoader, AvatarStore
 from nostr.bech32 import encode_note
+from nostr.blossom.store import MediaFile, MediaStore
 from nostr.bunker import BunkerSessionPool
 from nostr.contacts import ContactListFetcher
 from nostr.draft_store import DraftState, DraftStore
@@ -46,6 +53,7 @@ from nostr.drafts import (
     INNER_KIND_LONG_FORM,
     INNER_KIND_SHORT_NOTE,
     MAX_INNER_PAYLOAD_BYTES,
+    SUPPORTED_INNER_KINDS,
     build_inner_event,
     serialize_inner_event,
 )
@@ -59,12 +67,19 @@ from nostr.search import Nip50SearchClient
 from nostr.ui.connect_dialog import ConnectDialog
 from nostr.ui.draft_conflict_banner import DraftConflictBanner
 from nostr.ui.drafts_panel import DEFAULT_PANEL_WIDTH, DraftsPanel
+from nostr.ui.media_library_dialog import MediaLibraryDialog
 from nostr.ui.publish_article_dialog import PublishArticleDialog
 from nostr.ui.publish_note_dialog import PublishNoteDialog
 from nostr.ui.save_destination_dialog import SaveDestination, SaveDestinationDialog
 from nostr.ui.stash_kind_dialog import StashChoice, StashKind, StashKindDialog
+from nostr.ui.thumbnail_loader import ThumbnailLoader
 
 _IPC_SERVER_NAME = "minimal-texteditor-ipc"
+
+# Monotonic counter for clipboard / drop upload job names. Pairs with
+# the dialog-side helper but lives here too because main_window also
+# originates paste-to-upload jobs (editor Ctrl+V).
+_paste_job_counter = itertools.count(1)
 
 
 # --------------------------------------------------------------------------- #
@@ -195,6 +210,30 @@ class MainWindow(QMainWindow):
         # Maps each open editor → its conflict banner widget so we can
         # avoid stacking duplicate banners on the same tab.
         self._tab_conflict_banners: dict = {}
+
+        # Blossom media library — orchestrates uploads / list / delete
+        # against the user's configured Blossom servers, signing each
+        # auth event through the existing bunker pool.
+        self._media_store = MediaStore(
+            session_pool=self._session_pool,
+            profile_provider=lambda: self._profile_store.default(),
+            parent=self,
+        )
+        # Loader used by the editor's "Insert image" flow to materialize
+        # a Blossom URL into a local file before calling QTextCursor.insertImage.
+        self._media_image_loader = ThumbnailLoader(parent=self)
+        self._media_image_loader.ready.connect(self._on_media_image_ready)
+        self._media_image_loader.failed.connect(self._on_media_image_failed)
+        # hash -> (editor_id, source_url, alt_text). Populated when we
+        # pick or paste an image whose bytes aren't cached yet; drained
+        # by _on_media_image_ready / _on_media_image_failed.
+        self._pending_image_inserts: dict = {}
+        # display_name -> editor_id. Tracks drag-/paste-originated
+        # uploads so we can auto-insert into the originating editor
+        # when MediaStore.upload_finished fires.
+        self._pending_upload_inserts: dict = {}
+        self._media_store.upload_finished.connect(self._on_upload_finished_for_insert)
+        self._media_store.upload_failed.connect(self._on_upload_failed_for_insert)
 
         self._update_profile_chip()
         self._refresh_profile_chip_menu()
@@ -694,6 +733,19 @@ class MainWindow(QMainWindow):
         act_nostr_publish_article.triggered.connect(self._on_nostr_publish_article)
         m_nostr.addAction(act_nostr_publish_article)
         m_nostr.addSeparator()
+        # Media (Blossom) — browse the user's uploaded blobs, upload new
+        # ones, or insert one into the current document at the cursor.
+        act_nostr_media = QAction("Media Library…", self)
+        act_nostr_media.setShortcut(QKeySequence("Ctrl+Shift+M"))
+        act_nostr_media.triggered.connect(self._on_nostr_media_library)
+        m_nostr.addAction(act_nostr_media)
+        self.addAction(act_nostr_media)
+        act_nostr_insert_image = QAction("Insert image…", self)
+        act_nostr_insert_image.setShortcut(QKeySequence("Ctrl+Shift+I"))
+        act_nostr_insert_image.triggered.connect(self._on_nostr_insert_image)
+        m_nostr.addAction(act_nostr_insert_image)
+        self.addAction(act_nostr_insert_image)
+        m_nostr.addSeparator()
         # Drafts surface — the side-docked panel. ``Ctrl+Shift+D`` (D
         # for Draft) toggles it, sitting alongside the other Ctrl+Shift
         # Nostr shortcuts.
@@ -780,6 +832,11 @@ class MainWindow(QMainWindow):
         self._drafts_panel = DraftsPanel(is_dark=self.is_dark_theme)
         self._drafts_panel.bind_store(self._draft_store)
         self._drafts_panel.set_avatar_store(self._avatars)
+        self._drafts_panel.feeds.bind_runtime(
+            relay_pool=self._relay_pool,
+            relay_list_cache=self._relay_list_cache,
+            session_pool=self._session_pool,
+        )
         self._drafts_panel.set_active_profile(self._profile_store.default())
         # The panel's outbound actions all route back through the host.
         self._drafts_panel.open_draft.connect(self._on_panel_open_draft)
@@ -1159,19 +1216,71 @@ class MainWindow(QMainWindow):
 
     def _handle_dropped_urls(self, urls):
         unsupported = []
+        image_paths = []
         for url in urls:
             if not url.isLocalFile():
                 continue
             path = url.toLocalFile()
-            if os.path.splitext(path)[1].lower() in _SUPPORTED_EXTS:
+            ext = os.path.splitext(path)[1].lower()
+            if ext in _SUPPORTED_EXTS:
                 self.open_path(path)
+            elif ext in _IMAGE_EXTS:
+                image_paths.append(path)
             else:
                 unsupported.append(os.path.basename(path))
+
+        if image_paths:
+            self._handle_dropped_images(image_paths)
 
         if unsupported:
             bar = self._bar_from_widget(self.tabs.currentWidget())
             if bar:
                 bar.show_unsupported(", ".join(unsupported))
+
+    def _handle_dropped_images(self, paths):
+        """An image was dropped on the window. Offer to upload it to
+        Blossom and insert the resulting URL at the current cursor.
+
+        No-op with a single informational dialog when no profile is
+        connected: the editor's no-image-support story is fine for that
+        case (no key, no upload, no insert)."""
+        active = self._profile_store.default()
+        if active is None:
+            QMessageBox.information(
+                self,
+                "Connect a signer first",
+                "Connect a Nostr signer (Nostr → Connect Signer…) before "
+                "uploading images to Blossom.",
+            )
+            return
+        ed = self.current_editor()
+        if ed is None:
+            self.new_tab()
+            ed = self.current_editor()
+        if ed is None:
+            return
+
+        names = ", ".join(os.path.basename(p) for p in paths)
+        prompt = QMessageBox(self)
+        prompt.setWindowTitle("Upload image to Blossom")
+        prompt.setText(
+            f"Upload {len(paths)} image{'s' if len(paths) != 1 else ''} "
+            f"({names}) to your Blossom servers and insert at the cursor?"
+        )
+        prompt.setStandardButtons(QMessageBox.Cancel | QMessageBox.Yes)
+        prompt.setDefaultButton(QMessageBox.Yes)
+        if prompt.exec() != QMessageBox.Yes:
+            return
+
+        # Match by basename — MediaStore emits upload_finished(name, ...)
+        # using the file's basename as the display name.
+        for path in paths:
+            self._pending_upload_inserts[os.path.basename(path)] = id(ed)
+            self._media_store.upload_file(path)
+        self.status.showMessage(
+            f"Uploading {len(paths)} image{'s' if len(paths) != 1 else ''} to Blossom…",
+            5000,
+        )
 
     def _handle_dropped_text(self, text: str):
         ed = self.current_editor()
@@ -2269,6 +2378,7 @@ class MainWindow(QMainWindow):
             known_people=self._known_people,
             search_client=self._search_client,
             avatars=self._avatars,
+            media_store=self._media_store,
             default_title=default_title,
             default_slug=default_slug,
             parent=self,
@@ -2287,6 +2397,207 @@ class MainWindow(QMainWindow):
         else:
             msg = f"Published article to Nostr: {accepted}/{len(results)} relays"
         self.status.showMessage(msg, 8000)
+
+    # -- media (Blossom) --------------------------------------------------
+
+    def _on_nostr_media_library(self):
+        """Open the Media Library dialog. Non-modal so the user can keep
+        editing while uploads run in the background."""
+        active = self._profile_store.default()
+        if active is None:
+            QMessageBox.information(
+                self,
+                "Connect a signer first",
+                "Connect a Nostr signer (Nostr → Connect Signer…) before "
+                "browsing your Blossom media library.",
+            )
+            return
+        dialog = MediaLibraryDialog(
+            store=self._media_store,
+            is_dark=self.is_dark_theme,
+            pick_mode=False,
+            parent=self,
+        )
+        dialog.show()
+
+    def _on_nostr_insert_image(self):
+        """Open the Media Library in picker mode, restricted to images.
+        On selection, materialize the blob to the local cache and insert
+        it at the current cursor in the active editor."""
+        active = self._profile_store.default()
+        if active is None:
+            QMessageBox.information(
+                self,
+                "Connect a signer first",
+                "Connect a Nostr signer (Nostr → Connect Signer…) before "
+                "inserting Blossom images.",
+            )
+            return
+        ed = self.current_editor()
+        if ed is None:
+            self.new_tab()
+            ed = self.current_editor()
+        if ed is None:
+            return
+        dialog = MediaLibraryDialog(
+            store=self._media_store,
+            is_dark=self.is_dark_theme,
+            pick_mode=True,
+            parent=self,
+        )
+        # Pre-select images in the picker — videos / audio can't be
+        # inserted as inline document objects.
+        dialog._filter_combo.setCurrentIndex(1)
+        dialog.file_picked.connect(
+            lambda media, alt, e=ed: self._insert_media_at_cursor(media, e, alt)
+        )
+        dialog.exec()
+
+    def _insert_media_at_cursor(self, media: MediaFile, editor, alt_text: str = "") -> None:
+        """Resolve a media file and insert it at the editor's cursor.
+
+        Three branches:
+          - non-image  → insert the URL as plain text
+          - markdown   → ``![alt](url)`` (no fetch needed, survives save)
+          - rich text  → fetch into the cache, then insertImage(local path)
+        """
+        if not (media.mime_type or "").startswith("image/"):
+            self.status.showMessage(
+                f"Inserted URL only (non-image): {media.url}", 5000
+            )
+            cursor = editor.textCursor()
+            cursor.insertText(media.url)
+            return
+
+        if getattr(editor, "_loaded_as_markdown", False):
+            self._do_insert_image(editor, "", media.url, alt_text)
+            return
+
+        cache_path = self._media_image_loader.cache_path(media.hash)
+        if cache_path.is_file():
+            self._do_insert_image(editor, str(cache_path), media.url, alt_text)
+            return
+        # Queue and trigger an async load. ``ready`` will fire with the
+        # local path so we can complete the insert.
+        self._pending_image_inserts[media.hash] = (id(editor), media.url, alt_text)
+        self._media_image_loader.load(media.hash, media.url)
+        self.status.showMessage(f"Fetching {media.url}…", 5000)
+
+    def _on_media_image_ready(self, sha: str, local_path: str, _pixmap) -> None:
+        pending = self._pending_image_inserts.pop(sha, None)
+        if pending is None:
+            return
+        editor_id, original_url, alt_text = pending
+        editor = self._editor_by_id(editor_id)
+        if editor is None:
+            return
+        self._do_insert_image(editor, local_path, original_url, alt_text)
+
+    def _on_media_image_failed(self, sha: str, reason: str) -> None:
+        """Loader failed for a hash we wanted to insert — drop the
+        pending entry and surface a status message so the queue doesn't
+        leak and the user sees why nothing was inserted."""
+        if self._pending_image_inserts.pop(sha, None) is None:
+            return
+        self.status.showMessage(f"Image fetch failed: {reason}", 5000)
+
+    def _do_insert_image(self, editor, local_path: str, source_url: str, alt_text: str = "") -> None:
+        """Insert an image at the editor's current cursor.
+
+        Markdown-loaded tabs (``_loaded_as_markdown``) get
+        ``![alt](url)`` so the image survives a save round-trip. Rich-
+        text tabs get an embedded ``QTextImageFormat`` pointing at the
+        local cache file; the alt text rides along as the image's
+        tooltip (the closest QTextDocument equivalent of alt).
+        """
+        is_md = getattr(editor, "_loaded_as_markdown", False)
+        cursor = editor.textCursor()
+        if is_md:
+            cursor.insertText(f"![{alt_text}]({source_url})")
+        else:
+            cursor.insertImage(local_path)
+        editor.setTextCursor(cursor)
+        suffix = f" · alt: {alt_text}" if alt_text else ""
+        self.status.showMessage(f"Inserted image · {source_url}{suffix}", 5000)
+
+    def _editor_by_id(self, editor_id: int):
+        for i in range(self.tabs.count()):
+            ed = self._editor_from_widget(self.tabs.widget(i))
+            if ed is not None and id(ed) == editor_id:
+                return ed
+        # Fall back to the current editor if the original tab is gone.
+        return self.current_editor()
+
+    def _on_upload_finished_for_insert(self, name: str, media: MediaFile) -> None:
+        """When a dragged or pasted image finishes uploading, auto-insert
+        it into the editor the user originated the drop / paste on.
+
+        Uploads NOT initiated by drop/paste (e.g. the Library dialog's
+        Upload button) won't be in the pending dict, so this is a no-op
+        for those — no UI surprise."""
+        editor_id = self._pending_upload_inserts.pop(name, None)
+        if editor_id is None:
+            return
+        editor = self._editor_by_id(editor_id)
+        if editor is None:
+            return
+        self._insert_media_at_cursor(media, editor)
+
+    def _on_upload_failed_for_insert(self, name: str, reason: str) -> None:
+        """An upload originated from a drop or paste failed — drop the
+        pending entry so it doesn't leak. Failure status is already
+        surfaced by MediaStore via upload_failed → status label."""
+        self._pending_upload_inserts.pop(name, None)
+
+    # -- Blossom: paste image from clipboard ------------------------------
+
+    def _handle_pasted_image(self) -> bool:
+        """Upload the clipboard image and queue an auto-insert at the
+        editor's cursor. Returns True if the paste was consumed (so the
+        editor skips its plain-text fallback). Returns False on any
+        reason we couldn't handle it.
+        """
+        clipboard = QApplication.clipboard()
+        if not clipboard.mimeData().hasImage():
+            return False
+        image = clipboard.image()
+        if image.isNull():
+            return False
+
+        active = self._profile_store.default()
+        if active is None:
+            QMessageBox.information(
+                self,
+                "Connect a signer first",
+                "You pasted an image, but no Nostr signer is connected. "
+                "Connect one (Nostr → Connect Signer…) to upload images "
+                "to Blossom and insert them into your notes.",
+            )
+            return True  # consumed — don't fall through to plain-text paste
+
+        ed = self.current_editor()
+        if ed is None:
+            self.new_tab()
+            ed = self.current_editor()
+        if ed is None:
+            return False
+
+        buf = QBuffer()
+        buf.open(QIODevice.WriteOnly)
+        if not image.save(buf, "PNG"):
+            self.status.showMessage(
+                "Pasted image could not be encoded as PNG.", 5000
+            )
+            return True
+        body = bytes(buf.data())
+
+        # Monotonic counter + wall clock keeps the display name unique
+        # even when two pastes land inside one second.
+        name = f"clipboard-{int(time.time())}-{next(_paste_job_counter):03d}.png"
+        self._pending_upload_inserts[name] = id(ed)
+        self._media_store.upload_bytes(body, name=name, mime_type="image/png")
+        self.status.showMessage("Uploading pasted image to Blossom…", 5000)
+        return True
 
     # ----------------------------------------------------------------------
     # NOSTR — drafts panel toggling
@@ -2423,6 +2734,30 @@ class MainWindow(QMainWindow):
             return
         record = self._draft_store.get(identifier)
         title = record.title if (record and record.title) else "this draft"
+
+        # Pre-flight: drafts created by other Nostr clients can use inner
+        # kinds this editor doesn't speak (the most common case is NIP-23
+        # kind 30024, used by Habla / Yakihonne for long-form drafts).
+        # Tombstoning one of those from here could leave it visible in
+        # the originating client, so we refuse early with a clear note
+        # instead of asking the user to confirm a destructive action that
+        # would then fail at the signer round-trip.
+        if inner_kind not in SUPPORTED_INNER_KINDS:
+            info = QMessageBox(self)
+            info.setIcon(QMessageBox.Information)
+            info.setWindowTitle("Can't remove this draft")
+            info.setText(f"\"{title}\" was created by another Nostr client.")
+            info.setInformativeText(
+                "It uses a draft format this editor doesn't recognise, so "
+                "removing it from here might leave it visible in the other "
+                "client.\n\nTo remove it cleanly, open it in the app that "
+                "created it and delete it there."
+            )
+            info.setDetailedText(f"Inner event kind: {inner_kind}")
+            info.setStandardButtons(QMessageBox.Ok)
+            info.exec()
+            return
+
         confirm = QMessageBox(self)
         confirm.setIcon(QMessageBox.Warning)
         confirm.setWindowTitle("Delete draft?")
@@ -2437,15 +2772,27 @@ class MainWindow(QMainWindow):
         if confirm.exec() != QMessageBox.Yes:
             return
 
-        job = DraftDeleteJob(
-            relay_pool=self._relay_pool,
-            relay_list_cache=self._relay_list_cache,
-            session_pool=self._session_pool,
-            profile=profile,
-            identifier=identifier,
-            inner_kind=inner_kind,
-            parent=self,
-        )
+        # Safety net: any future validation that DraftDeleteJob adds
+        # (or any new ValueError path) lands as a calm dialog instead of
+        # a traceback, matching the pre-flight tone above.
+        try:
+            job = DraftDeleteJob(
+                relay_pool=self._relay_pool,
+                relay_list_cache=self._relay_list_cache,
+                session_pool=self._session_pool,
+                profile=profile,
+                identifier=identifier,
+                inner_kind=inner_kind,
+                parent=self,
+            )
+        except ValueError as exc:
+            QMessageBox.warning(
+                self,
+                "Couldn't start the deletion",
+                f"This draft can't be removed from here.\n\n{exc}",
+            )
+            return
+
         job.status_changed.connect(lambda s: self.status.showMessage(s, 4000))
         job.tombstoned.connect(lambda d, _eid: self._draft_store.remove(d))
         job.failed.connect(
