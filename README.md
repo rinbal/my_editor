@@ -28,6 +28,8 @@ Designed for writing lecture notes and personal documents with a distraction-fre
 - **Session restore** - reopens all previously open files automatically on next launch
 - **Nostr publishing** - send the current document straight to Nostr as a short note or a long-form article, signed by your phone via NIP-46. No private key ever lives inside the editor.
 - **Private encrypted drafts** - save in-progress work as a NIP-37 draft encrypted to your own Nostr key. The same draft appears on every device you sign in with the same profile.
+- **Nostr media library (Blossom)** - upload images, video, and audio to your Blossom servers, browse them in a built-in library, paste / drag-drop / pick to insert into notes, and set article hero images. Mirrored across servers by default and deduplicated by sha256.
+- **Import RSS / Atom / JSON feeds as drafts** - paste a blog homepage, article, or feed URL; the editor auto-discovers the feed and mirrors each post as a private NIP-37 draft. Posts whose body lives on Nostr are resolved straight from their kind:30023 long-form event.
 
 ---
 
@@ -261,6 +263,8 @@ The **B**, **I**, and **U** buttons in the header bar mirror these shortcuts and
 |---|---|
 | `Ctrl+Shift+P` | Publish current document as a short note (kind 1) |
 | `Ctrl+Shift+A` | Publish current document as a long-form article (kind 30023) |
+| `Ctrl+Shift+M` | Open the Media Library (Blossom) |
+| `Ctrl+Shift+I` | Insert image from the Media Library at the cursor |
 | `Ctrl+Shift+D` | Open or close the Drafts panel |
 | `Ctrl+Shift+S` | Save current document (chooser: local file or private Nostr draft) |
 
@@ -372,6 +376,69 @@ If your signer (Amber, nsec.app) times out a decrypt approval or you dismiss the
 - Drafts are kept on relays for ~90 days then expire (NIP-40). Re-saving extends the window.
 - Notes are tagged with a private UUID; articles use a stable slug, so the draft and its eventual published article share the same address.
 - Deleting a draft publishes an empty replacement so your other devices see it removed.
+
+---
+
+## Nostr Media (Blossom)
+
+Upload images, video, and audio to your own Blossom servers, browse them in a built-in library, and drop them into notes and articles. All uploads are authorised by a kind 24242 event signed through your existing signer; no separate API key, no third-party account.
+
+### Capabilities
+
+- **Library dialog** (`Ctrl+Shift+M`) — sortable, filterable grid of every blob your pubkey hosts on the configured servers. Per-file: preview, copy URL, download, open in browser, delete (across all mirrors).
+- **Upload** four ways: the **Upload** button, drag a file onto the drop zone, **paste** an image with `Ctrl+V` while the grid has focus, or drag an image onto the editor itself.
+- **Insert into notes** (`Ctrl+Shift+I`) — pick from the library; alt text is offered inline. Markdown tabs get `![alt](url)`; rich-text tabs embed the cached image. Pasted screenshots auto-upload and auto-insert at the cursor.
+- **Hero image for articles** — the Publish Article dialog has a *Cover image* row with a built-in picker; selected images upload to Blossom in the same flow.
+- **Mirroring by default** — every upload is mirrored to all configured servers in parallel. Deletes fan out across every server the blob lives on; success on one is treated as success.
+- **Dedupe by sha256** — the same file across N servers shows up as one entry; the tile shows a *Nx* badge so you know how widely it's mirrored.
+- **Preview lightbox** — 1024 × 720, keyboard nav (← →), shows dimensions, size, mime type, and mirror count alongside Copy URL / Download / Open in browser.
+
+### Default servers
+
+Two operators, chosen for vendor diversity and a published per-file cap:
+
+| URL | Free cap | Notes |
+|---|---|---|
+| `https://nostr.download` | 100 MiB | Primary (uploads land here first) |
+| `https://blossom.primal.net` | ~100 MiB (unpublished) | Mirror |
+
+The list lives in `~/.config/my_editor/blossom_servers.json`. Edit the file to add custom servers; an empty `custom` list falls back to the defaults. (A Settings dialog for in-app management is planned.)
+
+### Upload sizing
+
+The planner checks each configured server's documented per-file limit before sending. If your primary can't take the file but a mirror can, the upload is **rerouted** to the mirror automatically and the status line shows a short note (`blossom.band can't take this file — routing to nostr.download instead`). The hard ceiling is 100 MiB.
+
+### Security model
+
+- **No separate credential.** Every privileged Blossom request carries an `Authorization: Nostr <base64(signed event)>` header where the event is a kind 24242 you signed via NIP-46. Your signer prompts you to approve the first upload / list call in a session.
+- **No CORS proxy.** Requests go straight from the desktop app to the Blossom servers.
+- **Content-addressed cache.** Thumbnails and previewed bytes are cached at `~/.config/my_editor/blossom_cache/<sha256>` and verified against the hash before use.
+
+---
+
+## Import from RSS / Atom / JSON Feed
+
+Mirror your own blog into private Nostr drafts. Open the Drafts panel with `Ctrl+Shift+D`, switch to the **Feeds** segment, paste a URL, and import. Each surviving item becomes a NIP-37 draft signed by your active profile with title, summary, cover image, hashtags, and original publish date preserved.
+
+### Paste anything
+
+You don't need the feed URL. The editor accepts:
+
+- A feed URL (`https://yourblog.example.com/feed/`)
+- The site's homepage or any article URL on the site
+- A bare domain like `yourblog.example.com` (the `https://` is added automatically)
+
+Auto-discovery reads `<link rel="alternate" type="application/rss+xml">` from the page head, falls back to the well-known `/feed/` path for WordPress / Ghost / Substack, and explains itself in plain language when no feed is found.
+
+Supports RSS 2.0, Atom, and JSON Feed (WordPress, Ghost, Hugo, Jekyll, Substack, Bear, Mataroa, and friends).
+
+### Nostr-native publishers
+
+Some publishers (Habla, Yakihonne, Pareto, self-hosted Nostr-aware blogs) emit feeds where the body is a teaser and the real article lives on Nostr as a kind:30023 long-form event. When the feed's link is a `nostr:naddr...` URI, or contains a bech32 naddr embedded in an HTTP URL (njump.me, habla.news, yakihonne.com, etc.), the importer fetches the event from your NIP-65 read relays plus the relay hints encoded in the address and uses its prose as the draft body. If the fetch times out or the event is empty, the feed-provided teaser is published instead so the draft always ships.
+
+### Idempotent re-runs
+
+Each item's draft identifier is derived from its feed id, so re-running the same import replaces existing drafts on relays rather than duplicating them. Safe to schedule daily, weekly, or whenever you publish a new post.
 
 ---
 
