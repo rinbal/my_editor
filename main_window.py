@@ -77,15 +77,20 @@ class DraftBinding:
 
     Set on an editor whenever the user stashes a tab as a draft or
     opens an existing draft into a new tab. Used by the tab-title
-    decoration (lock glyph + draft title) and by the stash flow to
-    preserve the addressable ``d``-tag across subsequent saves.
+    decoration (lock glyph + draft title), by the stash flow to
+    preserve the addressable ``d``-tag across subsequent saves, and
+    by the profile-mismatch guard to spot a binding whose signing
+    identity no longer matches the active profile.
     """
 
-    identifier: str       # the draft's d-tag
-    inner_kind: int       # INNER_KIND_SHORT_NOTE or INNER_KIND_LONG_FORM
-    event_id: str = ""    # newest wrap event id we've observed for this draft
-    created_at: int = 0   # ``created_at`` of that wrap (last stash time)
-    title: str = ""       # cached display title for the tab
+    identifier: str            # the draft's d-tag
+    inner_kind: int            # INNER_KIND_SHORT_NOTE or INNER_KIND_LONG_FORM
+    event_id: str = ""         # newest wrap event id we've observed for this draft
+    created_at: int = 0        # ``created_at`` of that wrap (last stash time)
+    title: str = ""            # cached display title for the tab
+    # pubkey of the profile this draft was last signed by. Used to
+    # detect "tab from a different identity" after profile switches.
+    profile_pubkey: str = ""
 
 
 class MainWindow(QMainWindow):
@@ -1072,6 +1077,21 @@ class MainWindow(QMainWindow):
             path = getattr(editor, '_file_path', None)
             if path:
                 self._watcher.removePath(path)
+            # A draft tab might own a conflict banner — drop the dict
+            # entry so we don't accumulate references to dead editors
+            # across the session.
+            banner = self._tab_conflict_banners.pop(editor, None)
+            if banner is not None:
+                banner.setParent(None)
+                banner.deleteLater()
+            # Cancel any in-flight stash so its signal callbacks don't
+            # fire against a destroyed editor. The signer round-trip
+            # itself can't be recalled, but ``cancel()`` flips a flag
+            # that suppresses all future signal emissions.
+            active_job = getattr(editor, "_active_stash_job", None)
+            if active_job is not None:
+                active_job.cancel()
+                editor._active_stash_job = None
         self.tabs.removeTab(index)
 
     def _close_current_tab(self):
@@ -1325,6 +1345,27 @@ class MainWindow(QMainWindow):
             ed = self.current_editor()
             binding = getattr(ed, "_draft_binding", None) if ed else None
             if binding is not None and self._has_active_nostr_profile():
+                if self._is_stash_in_flight_for(ed):
+                    self._stash_already_running_message()
+                    return True
+                # On Ctrl+S we never silently fork: if the binding
+                # belongs to a different profile, the user has to make
+                # an intentional choice. We don't offer "save a copy"
+                # here because Ctrl+S is meant to mean "save what I
+                # have" — silently changing identity violates that.
+                mismatch_pk = self._draft_binding_profile_mismatch(ed)
+                if mismatch_pk is not None:
+                    outcome = self._resolve_mismatch(ed, mismatch_pk, allow_fork=False)
+                    if outcome == "cancel":
+                        return False
+                    if outcome == "switch":
+                        if not self._switch_active_profile_to(mismatch_pk):
+                            QMessageBox.warning(
+                                self, "Profile unavailable",
+                                "That profile is no longer connected. "
+                                "Re-pair it from Nostr → Connect Signer to save here.",
+                            )
+                            return False
                 self._restash_with_binding(ed, binding)
                 return True
             return self.save_as()
@@ -1834,6 +1875,14 @@ class MainWindow(QMainWindow):
             bar = self._bar_from_widget(self.tabs.widget(i))
             if bar:
                 bar.update_theme(self.is_dark_theme)
+        # The drafts panel and any mounted conflict banners each carry
+        # their own dark/light stylesheet pair. Update them in lockstep
+        # with the rest of the window so a theme switch doesn't leave
+        # half the editor on the old palette.
+        if getattr(self, "_drafts_panel", None) is not None:
+            self._drafts_panel.apply_theme(self.is_dark_theme)
+        for banner in getattr(self, "_tab_conflict_banners", {}).values():
+            banner.apply_theme(self.is_dark_theme)
         mode = "Dark" if self.is_dark_theme else "Light"
         self.status.showMessage(f"Switched to {mode} theme", 2000)
 
@@ -2189,15 +2238,26 @@ class MainWindow(QMainWindow):
             )
             return
 
-        # Pre-fill metadata: the first non-blank line becomes the suggested
-        # title (strip a leading Markdown '# '); the filename becomes the
-        # suggested slug. Both stay editable in the dialog.
-        first_line = next((ln for ln in body.splitlines() if ln.strip()), "")
-        default_title = first_line.lstrip("# ").strip()
-        path = self.current_path()
-        default_slug = (
-            os.path.splitext(os.path.basename(path))[0] if path else ""
-        )
+        # Pre-fill metadata. Precedence:
+        #   1. Draft binding (so a published article inherits the exact
+        #      ``d`` and title from its draft, preserving the addressable
+        #      coordinate so re-publishing replaces the draft in place).
+        #   2. File path basename for disk-backed tabs.
+        #   3. First non-blank line as a heuristic title for free-form tabs.
+        binding = getattr(ed, "_draft_binding", None) if ed else None
+        default_title = ""
+        default_slug = ""
+        if binding is not None and binding.inner_kind == INNER_KIND_LONG_FORM:
+            default_title = binding.title
+            default_slug = binding.identifier
+        if not default_title:
+            first_line = next((ln for ln in body.splitlines() if ln.strip()), "")
+            default_title = first_line.lstrip("# ").strip()
+        if not default_slug:
+            path = self.current_path()
+            default_slug = (
+                os.path.splitext(os.path.basename(path))[0] if path else ""
+            )
 
         dialog = PublishArticleDialog(
             body_markdown=body,
@@ -2313,12 +2373,14 @@ class MainWindow(QMainWindow):
             return
         ed.setPlainText(record.content)
         ed.document().setModified(False)
+        active = self._profile_store.default()
         ed._draft_binding = DraftBinding(
             identifier=record.identifier,
             inner_kind=record.inner_kind,
             event_id=record.event_id,
             created_at=record.created_at,
             title=record.title,
+            profile_pubkey=active.user_pubkey.lower() if active else "",
         )
         # Deliberately NOT pre-setting ``_save_destination`` — the
         # destination dialog should still appear on first Ctrl+Shift+S
@@ -2420,13 +2482,48 @@ class MainWindow(QMainWindow):
              use that destination silently.
           3. Otherwise → open the chooser dialog; optionally remember
              the choice for this tab.
+
+        Two safety guards run before any dialog opens:
+          - **Debounce**: if a stash is already in flight for this tab,
+            we surface a status message and bail. Prevents rapid-fire
+            shortcut presses from stacking up signer prompts.
+          - **Profile mismatch**: if the tab is bound to a draft from a
+            different identity, the user picks between switching back,
+            saving a copy under the active profile, or cancelling.
         """
         ed = self.current_editor()
         if ed is None:
             return
+        if self._is_stash_in_flight_for(ed):
+            self._stash_already_running_message()
+            return
         if not self._has_active_nostr_profile():
             self.save_as()
             return
+
+        # Profile mismatch handling. On the Save-As path we allow
+        # forking because the user has explicitly asked "save somewhere"
+        # rather than the silent "save what I have" that Ctrl+S means.
+        mismatch_pk = self._draft_binding_profile_mismatch(ed)
+        if mismatch_pk is not None:
+            outcome = self._resolve_mismatch(ed, mismatch_pk, allow_fork=True)
+            if outcome == "cancel":
+                return
+            if outcome == "switch":
+                if not self._switch_active_profile_to(mismatch_pk):
+                    # Profile was removed between detection and
+                    # confirmation — surface and bail rather than fall
+                    # through to a save under the wrong identity.
+                    QMessageBox.warning(
+                        self, "Profile unavailable",
+                        "That profile is no longer connected. "
+                        "Re-pair it from Nostr → Connect Signer to save here.",
+                    )
+                    return
+                # After the switch, the binding now matches active, so
+                # we proceed normally below.
+            elif outcome == "fork":
+                self._fork_draft_binding(ed)
 
         remembered = getattr(ed, "_save_destination", None)
         if remembered is SaveDestination.LOCAL:
@@ -2556,6 +2653,23 @@ class MainWindow(QMainWindow):
         path so both behave identically once the kind + identifier are
         decided.
         """
+        # Final debounce check — the entry points (Ctrl+S, Ctrl+Shift+S)
+        # also guard, but defense-in-depth here protects any future
+        # call site we add (e.g. an auto-save timer).
+        if self._is_stash_in_flight_for(ed):
+            self._stash_already_running_message()
+            return
+        # Empty body: short-circuit with a friendly message before we
+        # ask the signer to encrypt nothing. Matches the same guard the
+        # publish-note and publish-article flows already use.
+        if not str(inner.get("content", "")).strip():
+            QMessageBox.information(
+                self,
+                "Nothing to stash",
+                "The current document is empty. Add some content before "
+                "saving it as a draft.",
+            )
+            return
         # Pre-flight the plaintext cap with a friendly message rather
         # than letting the publish job fail mid-pipeline. The job also
         # checks, but doing it here means no signer round-trip wasted.
@@ -2597,6 +2711,9 @@ class MainWindow(QMainWindow):
                 self, "Couldn't stash draft", reason
             )
         )
+        # Register before starting so a synchronous failure path can't
+        # leave the tab thinking nothing is in flight.
+        self._attach_active_stash(ed, job)
         job.start()
 
     def _stash_defaults_for(
@@ -2684,12 +2801,14 @@ class MainWindow(QMainWindow):
         # The editor may have been closed mid-flight — bail gracefully.
         if ed is None or self._editor_widget_index(ed) < 0:
             return
+        active = self._profile_store.default()
         ed._draft_binding = DraftBinding(
             identifier=choice.identifier,
             inner_kind=choice.kind.value,
             event_id=event_id,
             created_at=created_at,
             title=choice.title or (choice.identifier if choice.kind is StashKind.NOTE else ""),
+            profile_pubkey=active.user_pubkey.lower() if active else "",
         )
         # A successful stash clears the modified flag — the tab's
         # contents now match the latest draft snapshot on the network.
@@ -2716,6 +2835,142 @@ class MainWindow(QMainWindow):
             if self._editor_from_widget(self.tabs.widget(i)) is ed:
                 return i
         return -1
+
+    # ----------------------------------------------------------------------
+    # NOSTR — stash debounce: at most one in-flight stash per tab
+    # ----------------------------------------------------------------------
+
+    def _is_stash_in_flight_for(self, ed) -> bool:
+        """True if a ``DraftPublishJob`` is currently running for this tab.
+
+        Prevents the rapid-Ctrl+Shift+S footgun where a user holding the
+        shortcut would spawn N parallel stash jobs, each opening its own
+        signer approval prompt. The guard sits at every entry point so
+        the chooser + kind dialogs don't even appear while a stash is
+        already underway.
+        """
+        return getattr(ed, "_active_stash_job", None) is not None
+
+    def _stash_already_running_message(self) -> None:
+        self.status.showMessage("Already saving this draft — wait for it to finish.", 4000)
+
+    def _attach_active_stash(self, ed, job) -> None:
+        ed._active_stash_job = job
+
+        def _release(*_args) -> None:
+            # Only clear if this is still the registered job — guards
+            # against an out-of-order completed/failed pair from an
+            # earlier cancelled job clobbering a newer one.
+            if getattr(ed, "_active_stash_job", None) is job:
+                ed._active_stash_job = None
+
+        job.completed.connect(_release)
+        job.failed.connect(_release)
+
+    # ----------------------------------------------------------------------
+    # NOSTR — draft / active-profile mismatch
+    # ----------------------------------------------------------------------
+
+    def _draft_binding_profile_mismatch(self, ed) -> Optional[str]:
+        """Return the draft binding's pubkey if it doesn't match the active
+        profile, or ``None`` when the binding either matches or is absent.
+
+        The active profile drives signing and relay routing. Saving a
+        draft tab under a different identity would silently fork the
+        draft's addressable coordinate, which is rarely the user's
+        intent — so this check funnels mismatches through a clear
+        confirmation dialog rather than letting them happen by accident.
+        """
+        binding: Optional[DraftBinding] = getattr(ed, "_draft_binding", None)
+        if binding is None or not binding.profile_pubkey:
+            return None
+        active = self._profile_store.default()
+        if active is None:
+            # No active profile: the caller already short-circuits to
+            # disk save, so the mismatch doesn't matter here.
+            return None
+        if binding.profile_pubkey.lower() == active.user_pubkey.lower():
+            return None
+        return binding.profile_pubkey.lower()
+
+    def _resolve_mismatch(
+        self,
+        ed,
+        original_pubkey: str,
+        *,
+        allow_fork: bool,
+    ) -> str:
+        """Show the mismatch dialog and return one of ``switch`` /
+        ``fork`` / ``cancel`` based on the user's choice.
+
+        ``allow_fork`` is False on the Ctrl+S path because silent
+        ``save`` should never quietly change which identity owns the
+        draft; the user must explicitly Save-As to fork.
+        """
+        active = self._profile_store.default()
+        original = self._profile_store.get(original_pubkey)
+
+        def _label_for(p: Optional[Profile], pk: str) -> str:
+            if p is not None:
+                return p.display_name or p.npub_short()
+            if pk:
+                return f"{pk[:8]}…{pk[-4:]}"
+            return "(unknown profile)"
+
+        active_label = _label_for(active, active.user_pubkey if active else "")
+        original_label = _label_for(original, original_pubkey)
+
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Different Nostr profile")
+        msg.setText(
+            f"This draft was last saved under {original_label}, "
+            f"but you're now signed in as {active_label}."
+        )
+        msg.setInformativeText(
+            "Saving under the current profile would create a separate "
+            "draft. How would you like to handle it?"
+        )
+
+        switch_btn = None
+        if original is not None:
+            switch_btn = msg.addButton(
+                f"Switch to {original_label} and save",
+                QMessageBox.AcceptRole,
+            )
+        fork_btn = None
+        if allow_fork:
+            fork_btn = msg.addButton(
+                f"Save a copy under {active_label}",
+                QMessageBox.ActionRole,
+            )
+        cancel_btn = msg.addButton(QMessageBox.Cancel)
+        msg.setDefaultButton(cancel_btn)
+        msg.exec()
+
+        clicked = msg.clickedButton()
+        if switch_btn is not None and clicked is switch_btn:
+            return "switch"
+        if fork_btn is not None and clicked is fork_btn:
+            return "fork"
+        return "cancel"
+
+    def _switch_active_profile_to(self, pubkey_hex: str) -> bool:
+        """Switch the active Nostr profile by pubkey. Returns True on
+        success, False if the requested profile is no longer in the
+        store."""
+        profile = self._profile_store.get(pubkey_hex)
+        if profile is None:
+            return False
+        self._on_nostr_select_profile(profile)
+        return True
+
+    def _fork_draft_binding(self, ed) -> None:
+        """Detach a tab from its current draft so the next stash mints
+        a fresh identifier under the active profile."""
+        ed._draft_binding = None
+        ed._save_destination = None  # ensure the chooser re-appears
+        self._update_tab_title()
 
     # ----------------------------------------------------------------------
     # NOSTR — conflict banner
