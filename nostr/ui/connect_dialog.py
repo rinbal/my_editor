@@ -43,10 +43,6 @@ from ..qr import make_qr_pixmap
 from ..relay import RelayPool
 
 
-# Subset of curated relays used for the nostrconnect:// QR handshake. The
-# URI itself goes through every relay listed here; smaller set = smaller
-# QR matrix = easier to scan from across a desk.
-_NOSTRCONNECT_RELAYS: tuple[str, ...] = DEFAULT_RELAYS[:3]
 
 # Seconds the QR is valid before we ask the user to regenerate. After this,
 # the listener is closed and the "Try Again" affordance appears.
@@ -330,14 +326,14 @@ class ConnectDialog(QDialog):
         secret = secrets.token_hex(8)
         client = BunkerClient(self._pool, parent=self)
         local_pk = client.listen_for_nostrconnect(
-            relays=list(_NOSTRCONNECT_RELAYS),
+            relays=list(DEFAULT_RELAYS),
             secret=secret,
             on_success=self._on_pair_success,
             on_failure=self._on_pair_failure,
             timeout_ms=_QR_TTL_SECONDS * 1000,
         )
         uri = build_nostrconnect_uri(
-            local_pk, list(_NOSTRCONNECT_RELAYS), secret,
+            local_pk, list(DEFAULT_RELAYS), secret,
         )
         self._client = client
         self._qr_uri_field.setText(uri)
@@ -498,8 +494,9 @@ class ConnectDialog(QDialog):
 
     def _teardown_client(self, *, reason: str) -> None:
         if self._client is not None:
-            self._client.close(reason=reason)
+            client = self._client
             self._client = None
+            client.close(reason=reason)
 
     def _refresh_action_buttons(self) -> None:
         self._update_paste_button()
