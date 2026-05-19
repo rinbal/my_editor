@@ -5,7 +5,7 @@ Layout, top to bottom:
   ┌──────────────────────────────────────────┐
   │  ▸ profile chip       Drafts    ↻  ×    │   header
   ├──────────────────────────────────────────┤
-  │  [ My Drafts ] [ Feeds (soon) ]          │   segmented control
+  │  [ My Drafts ] [ Feeds ]                  │   segmented control
   ├──────────────────────────────────────────┤
   │  [ search… ]                  [ ⇅ ]      │   search + sort
   │  [All] [Notes] [Articles]                │   kind filter chips
@@ -59,6 +59,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QStackedLayout,
+    QStackedWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -74,6 +75,7 @@ from .avatar import (
     compose_chip_icon,
     pixmap_for_profile,
 )
+from .feeds_panel import FeedsPanel
 
 
 # Width hints. The host can resize through a QSplitter; these are the
@@ -514,9 +516,33 @@ class DraftsPanel(QFrame):
 
         outer.addWidget(self._build_header())
         outer.addWidget(self._build_segment_row())
-        outer.addWidget(self._build_filter_row())
-        outer.addWidget(self._build_body(), 1)
+        outer.addWidget(self._build_mode_stack(), 1)
         outer.addWidget(self._build_footer())
+
+    def _build_mode_stack(self) -> QWidget:
+        """Top-level page switcher: ``My Drafts`` vs ``Feeds``.
+
+        Each segment button maps to one index in this stack. The filter
+        row only applies to the drafts list so it lives inside the
+        drafts-mode container, not at the outer level.
+        """
+        self._mode_stack = QStackedWidget()
+        self._mode_stack.setObjectName("drafts_panel_mode_stack")
+
+        # Drafts mode: filter row + body (existing behaviour).
+        drafts_mode = QWidget()
+        drafts_mode_layout = QVBoxLayout(drafts_mode)
+        drafts_mode_layout.setContentsMargins(0, 0, 0, 0)
+        drafts_mode_layout.setSpacing(0)
+        drafts_mode_layout.addWidget(self._build_filter_row())
+        drafts_mode_layout.addWidget(self._build_body(), 1)
+        self._mode_stack.addWidget(drafts_mode)
+
+        # Feeds mode: RSS / Atom / JSON Feed importer.
+        self._feeds_panel = FeedsPanel(is_dark=self._is_dark, parent=self)
+        self._mode_stack.addWidget(self._feeds_panel)
+
+        return self._mode_stack
 
     def _build_header(self) -> QWidget:
         frame = QFrame()
@@ -583,8 +609,8 @@ class DraftsPanel(QFrame):
         self._seg_feeds = QPushButton("Feeds")
         self._seg_feeds.setObjectName("drafts_panel_segment")
         self._seg_feeds.setCheckable(True)
-        self._seg_feeds.setEnabled(False)
-        self._seg_feeds.setToolTip("Coming soon — RSS feeds imported as private drafts")
+        self._seg_feeds.setCursor(Qt.PointingHandCursor)
+        self._seg_feeds.setToolTip("Import RSS, Atom, or JSON feeds as private drafts")
         self._seg_feeds.setStyleSheet(
             "QPushButton#drafts_panel_segment {"
             "  border-top-right-radius: 4px;"
@@ -596,6 +622,7 @@ class DraftsPanel(QFrame):
         group.setExclusive(True)
         group.addButton(self._seg_drafts, 0)
         group.addButton(self._seg_feeds, 1)
+        group.idToggled.connect(self._on_segment_changed)
 
         layout.addStretch(1)
         layout.addWidget(self._seg_drafts)
@@ -693,11 +720,33 @@ class DraftsPanel(QFrame):
         layout.addWidget(self._footer_text, 1)
         return frame
 
+    # -- public API: feeds page wiring ------------------------------------
+
+    @property
+    def feeds(self) -> FeedsPanel:
+        """The RSS importer page. Host wires its runtime via this handle."""
+        return self._feeds_panel
+
+    def _on_segment_changed(self, button_id: int, checked: bool) -> None:
+        """Switch the top-level mode stack when a segment toggles on.
+
+        Guarded with ``hasattr`` because the button group's ``idToggled``
+        signal is connected during ``_build_segment_row``, which runs
+        before ``_build_mode_stack``. Any future reordering of the build
+        sequence shouldn't crash on the early signal path.
+        """
+        if not checked or not hasattr(self, "_mode_stack"):
+            return
+        if 0 <= button_id < self._mode_stack.count():
+            self._mode_stack.setCurrentIndex(button_id)
+
     # -- public API: theming ----------------------------------------------
 
     def apply_theme(self, is_dark: bool) -> None:
         self._is_dark = is_dark
         self.setStyleSheet(_DARK_CSS if is_dark else _LIGHT_CSS)
+        if hasattr(self, "_feeds_panel") and self._feeds_panel is not None:
+            self._feeds_panel.apply_theme(is_dark)
         if hasattr(self, "_list") and self._list is not None:
             self._list.viewport().update()
         # Re-poll any property-driven labels on existing rows so their
@@ -738,6 +787,8 @@ class DraftsPanel(QFrame):
         self._active_profile = profile
         self._refresh_profile_chip()
         self._refresh_empty_state()
+        if hasattr(self, "_feeds_panel") and self._feeds_panel is not None:
+            self._feeds_panel.set_active_profile(profile)
 
     def set_avatar_store(self, avatar_store: AvatarStore) -> None:
         if self._avatar_store is avatar_store:
