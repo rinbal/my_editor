@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import sys
+
 from PySide6.QtGui import QColor
 
 # UI theme colors
@@ -18,7 +20,14 @@ LIGHT_BORDER = "#E1E1E1"
 LIGHT_MENU_BG = "#F3F3F3"
 LIGHT_MENU_FG = "#333333"
 
-MONO_FONT = "Noto Sans Mono"
+# Pick a monospace font that ships with the host OS, otherwise Qt warns
+# at startup ("Populating font family aliases took N ms") on every run.
+if sys.platform == "darwin":
+    MONO_FONT = "Menlo"
+elif sys.platform == "win32":
+    MONO_FONT = "Consolas"
+else:
+    MONO_FONT = "Noto Sans Mono"
 
 # Single universal color palette — mid-range saturation (Material Design 600).
 # These colors are clearly visible on both dark (#1E1E1E) and light (#FFFFFF) backgrounds,

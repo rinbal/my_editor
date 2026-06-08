@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenu,
+    QPushButton,
     QTextEdit,
     QToolButton,
     QVBoxLayout,
@@ -29,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from ..avatar_store import AvatarStore
 from ..bech32 import encode_naddr
+from ..blossom.store import MediaFile, MediaStore
 from ..bunker import BunkerSessionPool
 from ..known_people import KnownPeople
 from ..outbox import RelayListCache
@@ -42,7 +44,9 @@ from .avatar import (
     compose_chip_icon,
     pixmap_for_profile,
 )
+from .media_library_dialog import MediaLibraryDialog
 from .mention_chips import MentionChipRow
+from .thumbnail_loader import ThumbnailLoader
 
 
 # Rough words-per-minute used for the read-time hint. Public-facing prose
@@ -101,7 +105,7 @@ QTextEdit#article_body {
     border: 1px solid #3C3C3C;
     border-radius: 4px;
     padding: 10px 12px;
-    font-family: "Noto Sans Mono", monospace;
+    font-family: "Menlo", "Consolas", "Noto Sans Mono", monospace;
     font-size: 12px;
     selection-background-color: #264F78;
 }
@@ -138,6 +142,18 @@ QToolButton#profile_switch {
 }
 QToolButton#profile_switch:hover { background: #3C3C3C; }
 QToolButton#profile_switch::menu-indicator { image: none; width: 0; }
+
+QLabel#article_cover_preview {
+    background: #252526;
+    border: 1px solid #3C3C3C;
+    border-radius: 4px;
+    color: #6A6A6A;
+    font-size: 10px;
+}
+QLabel#article_field_hint {
+    color: #6A6A6A;
+    font-size: 10px;
+}
 """
 
 _LIGHT_CSS = """
@@ -187,7 +203,7 @@ QTextEdit#article_body {
     border: 1px solid #E1E1E1;
     border-radius: 4px;
     padding: 10px 12px;
-    font-family: "Noto Sans Mono", monospace;
+    font-family: "Menlo", "Consolas", "Noto Sans Mono", monospace;
     font-size: 12px;
     selection-background-color: #0078D4;
 }
@@ -224,6 +240,18 @@ QToolButton#profile_switch {
 }
 QToolButton#profile_switch:hover { background: #E1E1E1; }
 QToolButton#profile_switch::menu-indicator { image: none; width: 0; }
+
+QLabel#article_cover_preview {
+    background: #F8F8F8;
+    border: 1px solid #E1E1E1;
+    border-radius: 4px;
+    color: #999999;
+    font-size: 10px;
+}
+QLabel#article_field_hint {
+    color: #999999;
+    font-size: 10px;
+}
 """
 
 _DARK_MENU_CSS = """
@@ -294,6 +322,7 @@ class PublishArticleDialog(QDialog):
         known_people: KnownPeople,
         search_client: Nip50SearchClient,
         avatars: AvatarStore,
+        media_store: Optional[MediaStore] = None,
         default_title: str = "",
         default_slug: str = "",
         parent=None,
@@ -312,6 +341,7 @@ class PublishArticleDialog(QDialog):
         self._known_people = known_people
         self._search_client = search_client
         self._avatars = avatars
+        self._media_store = media_store
         self._is_dark = is_dark
         self._current_profile = active_profile
         self._job: Optional[PublishJob] = None
@@ -320,6 +350,13 @@ class PublishArticleDialog(QDialog):
         # they haven't, slug stays in sync with title.
         self._slug_is_auto = True
         self._advanced_open = False
+        # Cover-image preview state.
+        self._cover_thumb_hash: str = ""
+        self._cover_loader: Optional[ThumbnailLoader] = (
+            ThumbnailLoader(parent=self) if media_store is not None else None
+        )
+        if self._cover_loader is not None:
+            self._cover_loader.ready.connect(self._on_cover_thumb_ready)
 
         self._build_ui(
             body_markdown=body_markdown,
@@ -401,8 +438,13 @@ class PublishArticleDialog(QDialog):
         self._advanced_toggle.clicked.connect(self._toggle_advanced)
         root.addWidget(self._advanced_toggle)
 
+        # The Advanced panel stacks two rows so the cover-image block —
+        # which is taller than a single-line field — gets its own
+        # horizontal slot instead of stretching the siblings around it.
+        #   Row 1:  Slug · Hashtags          (equal-weight compact fields)
+        #   Row 2:  Cover image              (URL + button, then thumb)
         self._advanced_panel = QWidget()
-        adv = QHBoxLayout(self._advanced_panel)
+        adv = QVBoxLayout(self._advanced_panel)
         adv.setContentsMargins(0, 4, 0, 4)
         adv.setSpacing(12)
 
@@ -413,14 +455,22 @@ class PublishArticleDialog(QDialog):
         self._slug_edit.textEdited.connect(self._on_slug_edited)
 
         self._image_edit = QLineEdit()
+        self._image_edit.setObjectName("article_advanced_field")
         self._image_edit.setPlaceholderText("https://example.com/cover.png")
+        self._image_edit.setClearButtonEnabled(True)
+        self._image_edit.textChanged.connect(self._on_cover_url_changed)
 
         self._tags_edit = QLineEdit()
         self._tags_edit.setPlaceholderText("comma, separated, hashtags")
 
-        adv.addWidget(_make_field("Slug (article ID)", self._slug_edit), 1)
-        adv.addWidget(_make_field("Cover image URL", self._image_edit), 2)
-        adv.addWidget(_make_field("Hashtags", self._tags_edit), 1)
+        compact_row = QHBoxLayout()
+        compact_row.setContentsMargins(0, 0, 0, 0)
+        compact_row.setSpacing(12)
+        compact_row.addWidget(_make_field("Slug (article ID)", self._slug_edit), 1)
+        compact_row.addWidget(_make_field("Hashtags", self._tags_edit), 1)
+        adv.addLayout(compact_row)
+
+        adv.addWidget(self._build_cover_field())
 
         self._advanced_panel.setVisible(False)
         root.addWidget(self._advanced_panel)
@@ -487,6 +537,131 @@ class PublishArticleDialog(QDialog):
     def _on_body_changed(self) -> None:
         self._refresh_meta()
         self._refresh_publish_enabled()
+
+    # -- cover image -------------------------------------------------------
+
+    # Compact landscape thumb — large enough to read at a glance, small
+    # enough that the cover block sits at the same visual weight as the
+    # slug + hashtags row above it.
+    _COVER_THUMB_WIDTH = 144
+    _COVER_THUMB_HEIGHT = 84
+
+    def _build_cover_field(self) -> QWidget:
+        """Compose the Cover-image field as one tidy horizontal block:
+
+            [thumbnail]   COVER IMAGE
+                          [URL field________________] [Choose or upload…]
+
+        The thumbnail is on the left so the user's eye lands on the
+        actual image first; the controls cluster on the right. Alt
+        text is intentionally absent — NIP-23's ``image`` tag has no
+        alt sibling.
+        """
+        container = QWidget()
+        row = QHBoxLayout(container)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(12)
+
+        self._cover_preview = QLabel("No cover\nselected")
+        self._cover_preview.setObjectName("article_cover_preview")
+        self._cover_preview.setFixedSize(
+            self._COVER_THUMB_WIDTH, self._COVER_THUMB_HEIGHT
+        )
+        self._cover_preview.setAlignment(Qt.AlignCenter)
+        row.addWidget(self._cover_preview, 0, Qt.AlignTop)
+
+        controls = QVBoxLayout()
+        controls.setContentsMargins(0, 0, 0, 0)
+        controls.setSpacing(4)
+
+        label = QLabel("Cover image")
+        label.setObjectName("article_field_label")
+        controls.addWidget(label)
+
+        input_row = QHBoxLayout()
+        input_row.setContentsMargins(0, 0, 0, 0)
+        input_row.setSpacing(6)
+        input_row.addWidget(self._image_edit, 1)
+        if self._media_store is not None:
+            self._image_pick_btn = QPushButton("Choose or upload…")
+            self._image_pick_btn.setCursor(Qt.PointingHandCursor)
+            self._image_pick_btn.clicked.connect(self._on_choose_cover_image)
+            input_row.addWidget(self._image_pick_btn)
+        else:
+            self._image_pick_btn = None
+        controls.addLayout(input_row)
+        # Subtle help line under the input — Notion / Medium do something
+        # similar so users know where the asset comes from without us
+        # having to write docs.
+        hint = QLabel(
+            "Picked images upload to your Blossom servers automatically."
+            if self._media_store is not None
+            else "Paste an image URL hosted anywhere on the public web."
+        )
+        hint.setObjectName("article_field_hint")
+        controls.addWidget(hint)
+        controls.addStretch(1)
+
+        row.addLayout(controls, 1)
+        return container
+
+    def _on_choose_cover_image(self) -> None:
+        """Open the Media Library picker scoped to images, with the alt
+        row hidden (cover URL has no alt sibling on Nostr)."""
+        if self._media_store is None:
+            return
+        picker = MediaLibraryDialog(
+            store=self._media_store,
+            is_dark=self._is_dark,
+            pick_mode=True,
+            pick_alt_text=False,
+            parent=self,
+        )
+        picker.setWindowTitle("Choose hero image")
+        # Pre-filter to images — videos / audio can't be a NIP-23 cover.
+        picker._filter_combo.setCurrentIndex(1)
+        picker.file_picked.connect(self._on_cover_image_picked)
+        picker.exec()
+
+    def _on_cover_image_picked(self, media: MediaFile, _alt: str) -> None:
+        # Setting .text() triggers ``_on_cover_url_changed``, which
+        # clears any prior thumbnail. We then kick off the load by hash
+        # so the preview reflects the new pick.
+        self._image_edit.setText(media.url)
+        self._cover_thumb_hash = media.hash
+        if self._cover_loader is not None and (media.mime_type or "").startswith("image/"):
+            self._cover_loader.load(media.hash, media.url)
+
+    def _on_cover_url_changed(self, text: str) -> None:
+        """Reset the preview whenever the URL field changes. A typed URL
+        we don't have a hash for stays as text-only: the user already
+        committed to it by typing the URL; downloading + previewing
+        arbitrary remote URLs from a publish dialog would be a surprise."""
+        if not text.strip():
+            self._clear_cover_preview("No cover\nselected")
+        elif not self._cover_thumb_hash:
+            # Manual entry — we have no hash, so no thumbnail. Make the
+            # preview state honest rather than misleading.
+            self._clear_cover_preview("Preview shown\nfor library picks")
+
+    def _clear_cover_preview(self, placeholder: str) -> None:
+        self._cover_thumb_hash = ""
+        self._cover_preview.setPixmap(QPixmap())
+        # Wrap text onto two lines so a short caption sits centered in
+        # the thumbnail box without overflowing its fixed width.
+        self._cover_preview.setText(placeholder)
+
+    def _on_cover_thumb_ready(self, sha: str, _path: str, pix: QPixmap) -> None:
+        if sha != self._cover_thumb_hash or pix.isNull():
+            return
+        scaled = pix.scaled(
+            self._COVER_THUMB_WIDTH - 2,
+            self._COVER_THUMB_HEIGHT - 2,
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation,
+        )
+        self._cover_preview.setPixmap(scaled)
+        self._cover_preview.setText("")
 
     # -- advanced panel ----------------------------------------------------
 
