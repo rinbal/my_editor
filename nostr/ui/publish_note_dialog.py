@@ -63,7 +63,7 @@ QTextEdit {
     border: 1px solid #3C3C3C;
     border-radius: 4px;
     padding: 8px;
-    font-family: "Noto Sans Mono", monospace;
+    font-family: "Menlo", "Consolas", "Noto Sans Mono", monospace;
     font-size: 12px;
     selection-background-color: #264F78;
 }
@@ -100,7 +100,7 @@ QTextEdit {
     border: 1px solid #E1E1E1;
     border-radius: 4px;
     padding: 8px;
-    font-family: "Noto Sans Mono", monospace;
+    font-family: "Menlo", "Consolas", "Noto Sans Mono", monospace;
     font-size: 12px;
     selection-background-color: #0078D4;
 }
