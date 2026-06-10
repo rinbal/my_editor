@@ -9,3 +9,9 @@ __pycache__/
 .claude
 plugin_plan.md
 RSS_PYTHON_IMPORT_PLAN.md
+TELEGRAM_PUBLISHER_PLAN.md
+
+# Packaging build outputs (installers are published via GitHub Releases)
+build/
+dist/
+packaging/icons/icon.iconset/

@@ -1,0 +1,5 @@
+#!/bin/sh
+# AppImage entrypoint. Launches the bundled PyInstaller executable, forwarding
+# any file arguments (so `./my-editor.AppImage notes.md` opens the file).
+HERE="$(dirname "$(readlink -f "${0}")")"
+exec "${HERE}/usr/lib/my-editor/my-editor" "$@"
