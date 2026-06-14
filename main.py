@@ -4,12 +4,25 @@
 # minimal texteditor built by rinbal
 
 
+import os
 import sys
 from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QIcon
 from PySide6.QtNetwork import QLocalSocket
 from main_window import MainWindow
+import constants
 
 _IPC_SERVER_NAME = "minimal-texteditor-ipc"
+
+
+def resource_path(rel_path: str) -> str:
+    """Resolve a bundled resource, working both from source and when frozen.
+
+    PyInstaller unpacks bundled data under sys._MEIPASS; from source we resolve
+    relative to this file (the repo root). The spec bundles assets preserving
+    their repo-relative path, so the same rel_path works in both cases."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, rel_path)
 
 
 def _forward_to_running_instance(path: str) -> bool:
@@ -27,7 +40,10 @@ def _forward_to_running_instance(path: str) -> bool:
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("minimal texteditor")
+    app.setApplicationName(constants.APP_DISPLAY_NAME)
+    app.setApplicationDisplayName(constants.APP_DISPLAY_NAME)
+    app.setApplicationVersion(constants.APP_VERSION)
+    app.setWindowIcon(QIcon(resource_path("packaging/icons/icon-256.png")))
     app.setStyleSheet("""
         QWidget { color: #D4D4D4; }
         QToolTip {

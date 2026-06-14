@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=minimal texteditor
+Comment=Minimal note-taking text editor
+Exec=my-editor %F
+Icon=my-editor
+Terminal=false
+Categories=Office;TextEditor;Utility;
+MimeType=text/plain;text/markdown;text/html;application/json;text/xml;text/css;text/x-python;text/x-yaml;
+StartupNotify=true

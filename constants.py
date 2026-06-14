@@ -5,6 +5,14 @@ import sys
 
 from PySide6.QtGui import QColor
 
+# Product identity. These drive the packaging pipeline (PyInstaller spec,
+# Windows installer, macOS Info.plist, Linux AppImage) and the in-app title.
+# Bump APP_VERSION and tag the release "v<APP_VERSION>" to ship a new build.
+APP_VERSION = "1.0.0"
+APP_DISPLAY_NAME = "minimal texteditor"   # shown in title bars and OS menus
+APP_BINARY_NAME = "my-editor"             # executable / file name, no spaces
+APP_BUNDLE_ID = "com.rinbal.myeditor"     # reverse-DNS id; change to your own
+
 # UI theme colors
 DARK_BG = "#1E1E1E"
 DARK_FG = "#D4D4D4"
