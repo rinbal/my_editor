@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>my-editor</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <name>MyEditor</name>
+  <summary>Minimal note-taking text editor</summary>
+  <description>
+    <p>
+      A distraction-free minimal text editor for notes and writing. It
+      supports multiple tabs, dark and light themes, and crash recovery so
+      unsaved work is never lost.
+    </p>
+  </description>
+  <launchable type="desktop-id">my-editor.desktop</launchable>
+  <url type="homepage">https://github.com/rinbal/my_editor</url>
+  <developer>
+    <name>rinbal</name>
+  </developer>
+  <provides>
+    <binary>my-editor</binary>
+  </provides>
+  <content_rating type="oars-1.1" />
+</component>

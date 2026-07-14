@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=minimal texteditor
+Name=MyEditor
 Comment=Minimal note-taking text editor
 Exec=my-editor %F
 Icon=my-editor

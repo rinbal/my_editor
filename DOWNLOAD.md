@@ -1,4 +1,4 @@
-# Download minimal texteditor
+# Download MyEditor
 
 Pick your system, download the file, and open it. The app is currently
 **unsigned**, so the first time you open it your operating system shows a
@@ -6,7 +6,7 @@ one-time safety prompt. The steps below walk you through it. After the first
 launch it opens normally with a double-click.
 
 The downloads live on the project's
-[Releases page](https://github.com/DoktorShift/my_editor/releases/latest).
+[Releases page](https://github.com/rinbal/my_editor/releases/latest).
 
 ---
 
@@ -18,9 +18,9 @@ The downloads live on the project's
 3. Click **More info**, then click the **Run anyway** button that appears.
 4. Follow the installer (Next, Next, Finish). It installs for your user only,
    so it does not ask for an administrator password.
-5. Launch **minimal texteditor** from the Start Menu.
+5. Launch **MyEditor** from the Start Menu.
 
-To uninstall later: Settings > Apps > minimal texteditor > Uninstall.
+To uninstall later: Settings > Apps > MyEditor > Uninstall.
 
 ---
 
@@ -28,15 +28,20 @@ To uninstall later: Settings > Apps > minimal texteditor > Uninstall.
 
 1. Download **`my-editor-x.y.z-macos-arm64.dmg`** (use the `-intel` file if you
    have an older Intel Mac).
-2. Open the `.dmg` and drag **minimal texteditor** onto the **Applications**
+2. Open the `.dmg` and drag **MyEditor** onto the **Applications**
    folder.
 3. Open **Applications** and double-click the app. macOS says it
    "cannot be opened because Apple cannot check it for malicious software."
    Click **Done**.
 4. Open **System Settings > Privacy & Security**, scroll down, and click
-   **Open Anyway** next to the message about minimal texteditor. Confirm with
+   **Open Anyway** next to the message about MyEditor. Confirm with
    **Open**.
 5. From now on it opens with a normal double-click.
+
+> If macOS instead says the app "is damaged and can't be opened", the
+> downloaded file was flagged by quarantine. Clear it once in a terminal with
+> `xattr -dr com.apple.quarantine "/Applications/MyEditor.app"`
+> and open the app again.
 
 > Not sure if your Mac is Apple Silicon or Intel? Click the Apple menu >
 > About This Mac. "Apple M1/M2/M3..." means Apple Silicon (use the `arm64`
@@ -53,11 +58,11 @@ To uninstall later: Settings > Apps > minimal texteditor > Uninstall.
    - running in a terminal: `chmod +x my-editor-*.AppImage`
 3. Double-click the AppImage (or run `./my-editor-*.AppImage` in a terminal).
 
-If it does not start, install the small dependencies most distros already have:
+If it does not start, install one small library most distros already have:
 
 ```bash
 # Debian / Ubuntu
-sudo apt install libfuse2 libxcb-cursor0
+sudo apt install libxcb-cursor0
 ```
 
 There is no installer to run and nothing to uninstall: the single AppImage file

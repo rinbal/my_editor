@@ -6,10 +6,10 @@ via NIP-46. No private key ever lives inside the editor process.
 """
 
 # NIP-89-style client identifier. Honoured by readers like Coracle and others
-# to display "Published from My-Editor" under the note. The publisher attaches
+# to display "Published from MyEditor" under the note. The publisher attaches
 # ["client", CLIENT_NAME] to every event it builds; remove the tag there to opt
 # out per-event.
-CLIENT_NAME: str = "My-Editor"
+CLIENT_NAME: str = "MyEditor"
 
 
 # Default relay set — curated for operator diversity.

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>minimal texteditor</string>
+    <string>MyEditor</string>
 
     <key>CFBundleExecutable</key>
     <string>my-editor</string>

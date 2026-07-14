@@ -510,3 +510,88 @@ class FileChangedBar(QWidget):
                 }
                 QPushButton:hover { background: #D4B840; }
             """)
+
+
+class UpdateBar(QWidget):
+    """Notification bar shown at the top of the window when a newer app version is available."""
+
+    download_requested = Signal()
+    dismissed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("UpdateBar")
+        self.is_dark = True
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 6, 8, 6)
+        layout.setSpacing(10)
+
+        self._icon = QLabel("⬆")
+        self._icon.setFixedWidth(18)
+        layout.addWidget(self._icon)
+
+        self._text = QLabel()
+        self._download_btn = QPushButton("Download")
+        self._download_btn.setFixedHeight(26)
+        self._download_btn.clicked.connect(self.download_requested)
+
+        self._dismiss_btn = QPushButton("×")
+        self._dismiss_btn.setFixedSize(26, 26)
+        self._dismiss_btn.setToolTip("Dismiss")
+        self._dismiss_btn.clicked.connect(self._on_dismiss)
+
+        layout.addWidget(self._text, 1)
+        layout.addWidget(self._download_btn)
+        layout.addWidget(self._dismiss_btn)
+
+        self._update_theme()
+        self.hide()
+
+    def show_update(self, version: str):
+        self._text.setText(f"Version {version} is available.")
+        self.show()
+
+    def _on_dismiss(self):
+        self.hide()
+        self.dismissed.emit()
+
+    def update_theme(self, is_dark: bool):
+        self.is_dark = is_dark
+        self._update_theme()
+
+    def _update_theme(self):
+        if self.is_dark:
+            self.setStyleSheet("""
+                #UpdateBar {
+                    background: #16324A;
+                    border-bottom: 1px solid #1F4C6E;
+                }
+                QLabel { color: #8FD0FF; background: transparent; font-size: 12px; font-weight: bold; }
+                QPushButton {
+                    background: #1F4C6E;
+                    color: #8FD0FF;
+                    border: 1px solid #2C6690;
+                    padding: 3px 10px;
+                    border-radius: 4px;
+                    font-size: 12px;
+                }
+                QPushButton:hover { background: #2C6690; }
+            """)
+        else:
+            self.setStyleSheet("""
+                #UpdateBar {
+                    background: #E3F2FD;
+                    border-bottom: 1px solid #90CAF9;
+                }
+                QLabel { color: #0D47A1; background: transparent; font-size: 12px; font-weight: bold; }
+                QPushButton {
+                    background: #BBDEFB;
+                    color: #0D47A1;
+                    border: 1px solid #64B5F6;
+                    padding: 3px 10px;
+                    border-radius: 4px;
+                    font-size: 12px;
+                }
+                QPushButton:hover { background: #90CAF9; }
+            """)
