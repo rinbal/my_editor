@@ -1,10 +1,10 @@
-# minimal texteditor
+# MyEditor
 
 A clean, minimal note-taking text editor built with Python and PySide6.
 Designed for writing lecture notes and personal documents with a distraction-free interface.
 
 <p align="center">
-  <img src="assets/texteditor_example.png" width="780" alt="minimal texteditor screenshot"/>
+  <img src="assets/texteditor_example.png" width="780" alt="MyEditor screenshot"/>
 </p>
 
 ---
@@ -18,6 +18,9 @@ Designed for writing lecture notes and personal documents with a distraction-fre
 - **Find bar** - search with match counter and previous/next navigation
 - **Line numbers** - optional gutter on the left
 - **Line counter** - current line and total lines always visible in the bottom right corner (`Ln X / Y`)
+- **Background styles** - lined, dashed, dotted, or grid backgrounds that stay locked to your text baseline; pick one from the `View` menu
+- **Paper mode** - center your writing in a page-width column with margins, like a sheet of paper; text re-wraps cleanly at any window size
+- **Highlight current line** - a subtle band marks the line you are editing
 - **Export formats** - save as `.txt`, `.pdf`, `.md`, `.rtf`
 - **Undo / Redo** - full history with header buttons and keyboard shortcuts
 - **Syntax highlighting** - automatic language detection by file extension (Python, JavaScript, TypeScript, HTML, CSS, Rust, Go, Java); adapts to dark/light theme; toggleable
@@ -103,7 +106,7 @@ update-desktop-database ~/.local/share/applications/
 
 The editor will now appear in your app launcher and can be pinned to the dock.
 
-**"Open with" support:** The `.desktop` file includes a `MimeType` field that registers the editor for common text file types (`.txt`, `.md`, `.html`, `.py`, `.json`, etc.). After installing, you can right-click any text file in your file manager and choose **Open with > minimal texteditor**.
+**"Open with" support:** The `.desktop` file includes a `MimeType` field that registers the editor for common text file types (`.txt`, `.md`, `.html`, `.py`, `.json`, etc.). After installing, you can right-click any text file in your file manager and choose **Open with > MyEditor**.
 
 ---
 
@@ -152,7 +155,7 @@ mv my-editor.app /Applications/
 
 You can now double-click `my-editor.app` in Finder to launch the editor, or drag it to the Dock to pin it.
 
-**"Open with" support:** The `Info.plist` includes a `CFBundleDocumentTypes` entry that registers the editor for common text file types. After placing the app in `/Applications/` and launching it once, you can right-click any text file in Finder and choose **Open with > minimal texteditor**.
+**"Open with" support:** The `Info.plist` includes a `CFBundleDocumentTypes` entry that registers the editor for common text file types. After placing the app in `/Applications/` and launching it once, you can right-click any text file in Finder and choose **Open with > MyEditor**.
 
 > **Note:** macOS may show a security warning the first time you open the app since it is not from the App Store. To bypass it: right-click the app → **Open** → confirm in the dialog. You only need to do this once.
 
@@ -257,6 +260,8 @@ The **B**, **I**, and **U** buttons in the header bar mirror these shortcuts and
 | `Ctrl+Shift+T` | Toggle dark / light theme |
 | `Ctrl+Shift+H` | Toggle syntax highlighting |
 
+The **`View`** menu holds the appearance options: background style (lined, dashed, dotted, grid), paper mode, and highlight current line.
+
 ### Nostr
 
 | Shortcut | Action |
@@ -309,7 +314,7 @@ Write in the editor, hit publish, approve on your phone. The document goes out a
 - **Short notes** (kind 1, `Ctrl+Shift+P`): the editor's content as plain text. Formatting is stripped on publish.
 - **Long-form articles** (NIP-23 kind 30023, `Ctrl+Shift+A`): Markdown body with title, summary, slug (the `d`-tag identifier), cover image, and hashtags. Re-publishing with the same slug replaces the previous version, so an article stays addressable as one `naddr1…` link across edits.
 
-Both flows display a `Published from My-Editor` client tag so readers that honour NIP-89 can show which app produced the note.
+Both flows display a `Published from MyEditor` client tag so readers that honour NIP-89 can show which app produced the note.
 
 ### Connecting a signer
 
@@ -385,13 +390,13 @@ Upload images, video, and audio to your own Blossom servers, browse them in a bu
 
 ### Capabilities
 
-- **Library dialog** (`Ctrl+Shift+M`) — sortable, filterable grid of every blob your pubkey hosts on the configured servers. Per-file: preview, copy URL, download, open in browser, delete (across all mirrors).
+- **Library dialog** (`Ctrl+Shift+M`) - sortable, filterable grid of every blob your pubkey hosts on the configured servers. Per-file: preview, copy URL, download, open in browser, delete (across all mirrors).
 - **Upload** four ways: the **Upload** button, drag a file onto the drop zone, **paste** an image with `Ctrl+V` while the grid has focus, or drag an image onto the editor itself.
-- **Insert into notes** (`Ctrl+Shift+I`) — pick from the library; alt text is offered inline. Markdown tabs get `![alt](url)`; rich-text tabs embed the cached image. Pasted screenshots auto-upload and auto-insert at the cursor.
-- **Hero image for articles** — the Publish Article dialog has a *Cover image* row with a built-in picker; selected images upload to Blossom in the same flow.
-- **Mirroring by default** — every upload is mirrored to all configured servers in parallel. Deletes fan out across every server the blob lives on; success on one is treated as success.
-- **Dedupe by sha256** — the same file across N servers shows up as one entry; the tile shows a *Nx* badge so you know how widely it's mirrored.
-- **Preview lightbox** — 1024 × 720, keyboard nav (← →), shows dimensions, size, mime type, and mirror count alongside Copy URL / Download / Open in browser.
+- **Insert into notes** (`Ctrl+Shift+I`) - pick from the library; alt text is offered inline. Markdown tabs get `![alt](url)`; rich-text tabs embed the cached image. Pasted screenshots auto-upload and auto-insert at the cursor.
+- **Hero image for articles** - the Publish Article dialog has a *Cover image* row with a built-in picker; selected images upload to Blossom in the same flow.
+- **Mirroring by default** - every upload is mirrored to all configured servers in parallel. Deletes fan out across every server the blob lives on; success on one is treated as success.
+- **Dedupe by sha256** - the same file across N servers shows up as one entry; the tile shows a *Nx* badge so you know how widely it's mirrored.
+- **Preview lightbox** - 1024 × 720, keyboard nav (← →), shows dimensions, size, mime type, and mirror count alongside Copy URL / Download / Open in browser.
 
 ### Default servers
 
@@ -406,7 +411,7 @@ The list lives in `~/.config/my_editor/blossom_servers.json`. Edit the file to a
 
 ### Upload sizing
 
-The planner checks each configured server's documented per-file limit before sending. If your primary can't take the file but a mirror can, the upload is **rerouted** to the mirror automatically and the status line shows a short note (`blossom.band can't take this file — routing to nostr.download instead`). The hard ceiling is 100 MiB.
+The planner checks each configured server's documented per-file limit before sending. If your primary can't take the file but a mirror can, the upload is **rerouted** to the mirror automatically and the status line shows a short note (`blossom.band can't take this file - routing to nostr.download instead`). The hard ceiling is 100 MiB.
 
 ### Security model
 
