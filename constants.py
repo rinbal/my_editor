@@ -9,9 +9,12 @@ from PySide6.QtGui import QColor
 # Windows installer, macOS Info.plist, Linux AppImage) and the in-app title.
 # Bump APP_VERSION and tag the release "v<APP_VERSION>" to ship a new build.
 APP_VERSION = "1.0.0"
-APP_DISPLAY_NAME = "minimal texteditor"   # shown in title bars and OS menus
+APP_DISPLAY_NAME = "MyEditor"   # shown in title bars and OS menus
 APP_BINARY_NAME = "my-editor"             # executable / file name, no spaces
 APP_BUNDLE_ID = "com.rinbal.myeditor"     # reverse-DNS id; change to your own
+APP_REPO_SLUG = "rinbal/my_editor"        # canonical GitHub repo (owner/name)
+APP_URL = f"https://github.com/{APP_REPO_SLUG}"
+APP_RELEASES_URL = f"{APP_URL}/releases/latest"
 
 # UI theme colors
 DARK_BG = "#1E1E1E"
@@ -27,6 +30,17 @@ LIGHT_SELECTION = "#0078D4"
 LIGHT_BORDER = "#E1E1E1"
 LIGHT_MENU_BG = "#F3F3F3"
 LIGHT_MENU_FG = "#333333"
+
+# Background viewing aids (patterns, current-line band, paper surface).
+# Low-alpha guide colors so they whisper behind text on both themes.
+DARK_GUIDE = QColor(255, 255, 255, 22)
+LIGHT_GUIDE = QColor(0, 0, 0, 26)
+DARK_CURRENT_LINE = QColor(255, 255, 255, 14)
+LIGHT_CURRENT_LINE = QColor(0, 0, 0, 13)
+# Opaque page surface for Paper Mode (slightly offset from the base bg so the
+# centered page reads as a sheet floating on the window backdrop).
+DARK_PAPER = QColor(38, 38, 38)     # #262626 on a #1E1E1E backdrop
+LIGHT_PAPER = QColor(250, 249, 246) # #FAF9F6 on a #FFFFFF backdrop
 
 # Pick a monospace font that ships with the host OS, otherwise Qt warns
 # at startup ("Populating font family aliases took N ms") on every run.

@@ -167,7 +167,7 @@ def test_parse_tolerates_unknown_kind():
 def test_build_draft_wrap_tag_set():
     wrap = build_draft_wrap(
         identifier="my-slug", inner_kind=30023,
-        encrypted_content="b64payload==", pubkey_hex=PK, client_name="My-Editor",
+        encrypted_content="b64payload==", pubkey_hex=PK, client_name="MyEditor",
         created_at=100, expiration_seconds=86400,
     )
     assert wrap["kind"] == DRAFT_WRAP_KIND
@@ -179,7 +179,7 @@ def test_build_draft_wrap_tag_set():
         ["d", "my-slug"],
         ["k", "30023"],
         ["expiration", "86500"],  # created_at(100) + 86400
-        ["client", "My-Editor"],
+        ["client", "MyEditor"],
     ]
 
 

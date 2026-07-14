@@ -3,10 +3,13 @@
 HTML Editor widget with bullet and format logic.
 """
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPainter, QTextCursor, QTextCharFormat, QColor, QClipboard
+from PySide6.QtCore import Qt, QTimer, QRect, QPoint
+from PySide6.QtGui import QPainter, QTextCursor, QTextCharFormat, QColor, QClipboard, QPen, QTextOption
 from PySide6.QtWidgets import QTextEdit, QMenu, QApplication
-from constants import DARK_BG, DARK_FG, LIGHT_BG, LIGHT_FG, DARK_SELECTION, LIGHT_SELECTION, MONO_FONT, TEXT_COLORS
+from constants import (
+    DARK_BG, DARK_FG, LIGHT_BG, LIGHT_FG, DARK_SELECTION, LIGHT_SELECTION, MONO_FONT, TEXT_COLORS,
+    DARK_GUIDE, LIGHT_GUIDE, DARK_CURRENT_LINE, LIGHT_CURRENT_LINE, DARK_PAPER, LIGHT_PAPER,
+)
 
 
 class HtmlEditor(QTextEdit):
@@ -15,6 +18,12 @@ class HtmlEditor(QTextEdit):
         super().__init__(parent)
         self.setAcceptRichText(True)
         self.setUndoRedoEnabled(True)
+
+        # Always wrap to the visible viewport width, breaking long unbroken
+        # tokens instead of forcing a horizontal scrollbar. This keeps
+        # reflow correct across Paper Mode toggles and window resizes.
+        self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
 
         self.setStyleSheet(f"""
             QTextEdit {{
@@ -47,6 +56,13 @@ class HtmlEditor(QTextEdit):
         self._blink_timer.setInterval(530)
         self._blink_timer.timeout.connect(self._on_cursor_blink)
         self._blink_timer.start()
+
+        # Background viewing aids (all painted behind the text in paintEvent).
+        self._bg_pattern = "none"        # none | lines | dashed | dots | grid
+        self._paper_mode = False
+        self._highlight_line = False
+        self._paper_measure_chars = 88   # target column measure in Paper Mode
+        self.viewport().setAutoFillBackground(False)
 
     def undo(self):
         self.document().undo()
@@ -194,17 +210,161 @@ class HtmlEditor(QTextEdit):
         self._cursor_visible = not self._cursor_visible
         self.viewport().update(self._block_cursor_rect())
 
+    # -------- Background viewing aids --------
+    def set_background_pattern(self, name: str):
+        self._bg_pattern = name or "none"
+        self.viewport().update()
+
+    def set_highlight_current_line(self, on: bool):
+        self._highlight_line = bool(on)
+        self.viewport().update()
+
+    def set_paper_mode(self, on: bool):
+        self._paper_mode = bool(on)
+        self._update_paper_margins()
+        self.viewport().update()
+
+    def _update_paper_margins(self):
+        if not self._paper_mode:
+            self.setViewportMargins(0, 0, 0, 0)
+            return
+        char_w = self.fontMetrics().horizontalAdvance("0") or 8
+        measure = char_w * self._paper_measure_chars
+        side = int(max(0, (self.width() - measure) / 2))
+        self.setViewportMargins(side, 0, side, 0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._paper_mode:
+            self._update_paper_margins()
+
+    def _is_dark(self) -> bool:
+        return hasattr(self, "_theme_colors") and self._theme_colors["bg"] == DARK_BG
+
+    def _surface_color(self) -> QColor:
+        if self._paper_mode:
+            return DARK_PAPER if self._is_dark() else LIGHT_PAPER
+        bg = self._theme_colors["bg"] if hasattr(self, "_theme_colors") else DARK_BG
+        return QColor(bg)
+
     def paintEvent(self, event):
+        vp = self.viewport()
+        painter = QPainter(vp)
+
+        # We own the background now (the stylesheet sets it transparent), so fill
+        # it ourselves. This is what lets the guides sit behind the text.
+        painter.fillRect(vp.rect(), self._surface_color())
+
+        if (self._highlight_line and self.hasFocus()
+                and not self.textCursor().hasSelection()):
+            line_rect = self.cursorRect()
+            band = QRect(0, line_rect.top(), vp.width(), line_rect.height())
+            painter.fillRect(band, DARK_CURRENT_LINE if self._is_dark() else LIGHT_CURRENT_LINE)
+
+        if self._bg_pattern != "none" or self._paper_mode:
+            self._paint_guides(painter)
+
+        painter.end()
+
         super().paintEvent(event)
+
+        # Block cursor on top of the text (unchanged behavior).
         cursor = self.textCursor()
         if not self.hasFocus() or not self._cursor_visible or cursor.hasSelection():
             return
         rect = self._block_cursor_rect()
-        is_dark = hasattr(self, '_theme_colors') and self._theme_colors['bg'] == DARK_BG
-        color = QColor(212, 212, 212, 210) if is_dark else QColor(51, 51, 51, 210)
-        painter = QPainter(self.viewport())
-        painter.fillRect(rect, color)
-        painter.end()
+        color = QColor(212, 212, 212, 210) if self._is_dark() else QColor(51, 51, 51, 210)
+        p2 = QPainter(vp)
+        p2.fillRect(rect, color)
+        p2.end()
+
+    def _paint_guides(self, painter):
+        vp = self.viewport()
+        guide = DARK_GUIDE if self._is_dark() else LIGHT_GUIDE
+        padding = 8  # matches the stylesheet padding on the editor
+        width = vp.width()
+        height = vp.height()
+
+        solid = QPen(guide)
+        solid.setCosmetic(True)
+        solid.setWidth(1)
+
+        pattern = self._bg_pattern
+        if pattern in ("lines", "dashed", "grid", "dots"):
+            line_ys, pitch = self._rule_line_ys(height)
+        else:
+            line_ys, pitch = [], 0
+
+        if pattern in ("lines", "dashed"):
+            pen = QPen(guide)
+            pen.setCosmetic(True)
+            pen.setWidth(1)
+            if pattern == "dashed":
+                pen.setStyle(Qt.DashLine)
+            painter.setPen(pen)
+            for y in line_ys:
+                painter.drawLine(padding, y, width - padding, y)
+
+        elif pattern in ("grid", "dots") and pitch > 0 and line_ys:
+            xs = list(range(padding, width - padding + 1, pitch))
+            if pattern == "grid":
+                painter.setPen(solid)
+                for y in line_ys:
+                    painter.drawLine(padding, y, width - padding, y)
+                top, bottom = line_ys[0], line_ys[-1]
+                for x in xs:
+                    painter.drawLine(x, top, x, bottom)
+            else:  # dots
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(guide)
+                for y in line_ys:
+                    for x in xs:
+                        painter.drawEllipse(QPoint(x, y), 1, 1)
+
+        if self._paper_mode:
+            painter.setPen(solid)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawLine(0, 0, 0, height)
+            painter.drawLine(width - 1, 0, width - 1, height)
+
+    def _rule_line_ys(self, height):
+        """Baseline y (viewport coordinates) of every ruled line across the page.
+
+        Anchored to the real text layout via cursorRect, which maps a document
+        position to viewport coordinates exactly (accounting for scroll offset and
+        document margins), so each line of text sits on a rule with no drift. The
+        rhythm is then extended above and below the text to fill the whole page."""
+        vp = self.viewport()
+        block = self.cursorForPosition(QPoint(0, 0)).block()
+        if not block.isValid():
+            return [], 0
+        baselines = []
+        pitch = 0
+        b = block
+        while b.isValid():
+            top = self.cursorRect(QTextCursor(b)).top()
+            if top > height:
+                break
+            bl = b.layout()
+            for i in range(bl.lineCount()):
+                line = bl.lineAt(i)
+                baselines.append(int(round(top + line.y() + line.ascent())))
+                if pitch == 0:
+                    pitch = int(round(line.height()))
+            b = b.next()
+        if not baselines:
+            return [], 0
+        if pitch <= 0:
+            pitch = max(int(round(self.fontMetrics().height() * 1.5)), 8)
+        y = baselines[0] - pitch
+        while y >= -pitch:
+            baselines.insert(0, y)
+            y -= pitch
+        y = baselines[-1] + pitch
+        while y <= height + pitch:
+            baselines.append(y)
+            y += pitch
+        return baselines, pitch
 
     def focusInEvent(self, event):
         super().focusInEvent(event)

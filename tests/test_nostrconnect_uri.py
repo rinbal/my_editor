@@ -25,7 +25,7 @@ def test_basic_uri_shape():
     assert qs["relay"] == ["wss://relay.example"]
     assert qs["secret"] == ["mysecret"]
     assert qs["perms"] == [DEFAULT_PERMS]
-    assert qs["name"] == ["My-Editor"]
+    assert qs["name"] == ["MyEditor"]
 
 
 def test_multiple_relays_preserve_order():

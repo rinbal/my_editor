@@ -159,7 +159,7 @@ def build_note(
     their URIs are appended at the end of the body if not already present.
 
     Always attaches ``["client", CLIENT_NAME]`` so readers that honour the
-    NIP-89 client tag display "Published from My-Editor" under the note.
+    NIP-89 client tag display "Published from MyEditor" under the note.
     """
     final_content, p_tags = _resolve_mentions(content, mentions or [])
     tags: List[List[str]] = [["client", CLIENT_NAME]]

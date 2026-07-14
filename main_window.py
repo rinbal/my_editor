@@ -9,11 +9,11 @@ from dataclasses import dataclass
 from typing import Optional
 
 from send2trash import send2trash
-from PySide6.QtCore import QBuffer, QIODevice, Qt, QMarginsF, QTimer, QFileSystemWatcher
+from PySide6.QtCore import QBuffer, QIODevice, Qt, QMarginsF, QTimer, QUrl, QFileSystemWatcher
 from PySide6.QtNetwork import QLocalServer
 from PySide6.QtGui import (
-    QAction, QKeySequence, QTextCursor, QTextDocument, QTextCharFormat, QColor,
-    QPageLayout, QPageSize, QPixmap
+    QAction, QActionGroup, QKeySequence, QTextCursor, QTextDocument, QTextCharFormat, QColor,
+    QPageLayout, QPageSize, QPixmap, QGuiApplication, QDesktopServices
 )
 from PySide6.QtWidgets import (
     QMainWindow, QFileDialog, QInputDialog, QMenu, QMessageBox, QWidget, QVBoxLayout,
@@ -24,11 +24,14 @@ from PySide6.QtWidgets import (
 from constants import (
     DARK_BG, DARK_FG, LIGHT_BG, LIGHT_FG, DARK_SELECTION, LIGHT_SELECTION,
     DARK_MENU_BG, DARK_MENU_FG, LIGHT_MENU_BG, LIGHT_MENU_FG,
-    DARK_BORDER, LIGHT_BORDER, MONO_FONT
+    DARK_BORDER, LIGHT_BORDER, MONO_FONT, APP_DISPLAY_NAME, APP_VERSION, APP_URL
 )
-from widgets import FindBar, HeaderWidget, LineNumberGutter, FileChangedBar
+from widgets import FindBar, HeaderWidget, LineNumberGutter, FileChangedBar, UpdateBar
 from editor import HtmlEditor
 from highlighter import SyntaxHighlighter, detect_language, detect_language_from_content, LANGUAGE_DISPLAY_NAMES
+from settings import load_settings, save_setting
+from welcome import welcome_html
+from update_check import UpdateChecker
 
 # These extensions are loaded as rendered documents, not plain-text source code.
 _RICH_DOC_EXTS = ('.html', '.htm', '.md', '.markdown')
@@ -114,9 +117,26 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("")
         self.resize(1100, 720)
 
-        self.is_dark_theme = True
+        theme_pref = load_settings().get("theme")
+        if theme_pref == "dark":
+            self.is_dark_theme = True
+        elif theme_pref == "light":
+            self.is_dark_theme = False
+        else:
+            self.is_dark_theme = self._detect_os_dark_theme()
+        # While True, the app follows OS color scheme changes live. Set to
+        # False the moment the user picks a theme explicitly (checkbox or
+        # Ctrl+Shift+T) so their choice sticks.
+        self._follow_os_theme = theme_pref is None
+        QGuiApplication.styleHints().colorSchemeChanged.connect(self._on_os_color_scheme_changed)
+
         self.show_line_numbers = False
         self.syntax_highlighting = True
+
+        _s = load_settings()
+        self.editor_background = _s.get("editor_background", "none")
+        self.highlight_current_line = _s.get("highlight_current_line", False)
+        self.paper_mode = _s.get("paper_mode", False)
 
         self._watcher = QFileSystemWatcher(self)
         self._watcher.fileChanged.connect(self._on_file_changed)
@@ -251,7 +271,13 @@ class MainWindow(QMainWindow):
 
         self._build_actions()
         self._build_menu()
+        self._build_status_bar_view_toggle()
         self._build_findbar()
+
+        # header_widget and findbar always construct themselves in dark
+        # mode; bring them in line with a light theme detected above.
+        if not self.is_dark_theme:
+            self._set_theme(self.is_dark_theme, announce=False)
 
         if initial_path and os.path.isfile(initial_path):
             self.open_path(initial_path)
@@ -259,12 +285,17 @@ class MainWindow(QMainWindow):
         restored = self._restore_backups()
         session = self._restore_session() if not initial_path and not restored else False
         if not initial_path and not restored and not session:
-            self.new_tab()
+            if "welcome_shown" not in load_settings():
+                self.show_welcome_tab()
+                save_setting("welcome_shown", True)
+            else:
+                self.new_tab()
 
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self._update_undo_redo_buttons()
         self._update_status_bar()
         self._start_ipc_server()
+        QTimer.singleShot(3000, self._maybe_auto_check_for_updates)
 
 
     # ----------------------------------------------------------------------
@@ -291,6 +322,13 @@ class MainWindow(QMainWindow):
     # ----------------------------------------------------------------------
     # THEME APPLICATION
     # ----------------------------------------------------------------------
+    @staticmethod
+    def _detect_os_dark_theme() -> bool:
+        """Best-effort read of the OS color scheme. Dark is the fallback
+        default when the platform does not report a scheme."""
+        scheme = QGuiApplication.styleHints().colorScheme()
+        return scheme != Qt.ColorScheme.Light
+
     def _apply_theme(self):
         bg = DARK_BG if self.is_dark_theme else LIGHT_BG
         fg = DARK_FG if self.is_dark_theme else LIGHT_FG
@@ -441,7 +479,7 @@ class MainWindow(QMainWindow):
 
         editor.setStyleSheet(f"""
             QTextEdit {{
-                background: {bg};
+                background: transparent;
                 color: {fg};
                 border: none;
                 selection-background-color: {selection};
@@ -486,6 +524,13 @@ class MainWindow(QMainWindow):
 
         if hasattr(editor, '_line_gutter'):
             editor._line_gutter._update_theme()
+
+    def _apply_view_prefs_to_editor(self, editor):
+        """Push the current View-menu preferences onto one editor. Called for
+        every editor created (new_tab, open_path) so all tabs stay in sync."""
+        editor.set_background_pattern(self.editor_background)
+        editor.set_highlight_current_line(self.highlight_current_line)
+        editor.set_paper_mode(self.paper_mode)
 
 
     # ----------------------------------------------------------------------
@@ -696,6 +741,39 @@ class MainWindow(QMainWindow):
         self.act_toggle_syntax_hl.setCheckable(True)
         self.act_toggle_syntax_hl.setChecked(True)
 
+        # View menu: background viewing aids. All four toggles are independent
+        # and composable except the background pattern, which is a radio pick.
+        self.act_paper_mode = QAction("Paper Mode", self)
+        self.act_paper_mode.setCheckable(True)
+        self.act_paper_mode.setChecked(self.paper_mode)
+        self.act_paper_mode.toggled.connect(self._toggle_paper_mode)
+
+        self._bg_pattern_group = QActionGroup(self)
+        self._bg_pattern_group.setExclusive(True)
+
+        self.act_bg_none = QAction("None", self)
+        self.act_bg_lines = QAction("Lines", self)
+        self.act_bg_dashed = QAction("Dashed", self)
+        self.act_bg_dots = QAction("Dots", self)
+        self.act_bg_grid = QAction("Grid", self)
+
+        for name, action in (
+            ("none", self.act_bg_none),
+            ("lines", self.act_bg_lines),
+            ("dashed", self.act_bg_dashed),
+            ("dots", self.act_bg_dots),
+            ("grid", self.act_bg_grid),
+        ):
+            action.setCheckable(True)
+            action.setChecked(self.editor_background == name)
+            action.triggered.connect(lambda checked, n=name: self._set_background_pattern(n))
+            self._bg_pattern_group.addAction(action)
+
+        self.act_highlight_line = QAction("Highlight Current Line", self)
+        self.act_highlight_line.setCheckable(True)
+        self.act_highlight_line.setChecked(self.highlight_current_line)
+        self.act_highlight_line.toggled.connect(self._toggle_highlight_line)
+
         self.addAction(self.act_bold)
         self.addAction(self.act_italic)
         self.addAction(self.act_underline)
@@ -722,6 +800,17 @@ class MainWindow(QMainWindow):
         m_find.addAction(self.act_find)
         m_find.addAction(self.act_find_next)
         m_find.addAction(self.act_find_prev)
+
+        m_view = self.menuBar().addMenu("&View")
+        m_view.addAction(self.act_paper_mode)
+        m_view.addSeparator()
+        m_background = m_view.addMenu("Background")
+        m_background.addAction(self.act_bg_none)
+        m_background.addAction(self.act_bg_lines)
+        m_background.addAction(self.act_bg_dashed)
+        m_background.addAction(self.act_bg_dots)
+        m_background.addAction(self.act_bg_grid)
+        m_view.addAction(self.act_highlight_line)
 
         m_nostr = self.menuBar().addMenu("&Nostr")
         act_nostr_publish = QAction("Publish as Note…", self)
@@ -766,9 +855,31 @@ class MainWindow(QMainWindow):
         m_nostr.addAction(act_nostr_sign_out)
 
         help_menu = self.menuBar().addMenu("&Help")
+        welcome_action = QAction("Welcome", self)
+        welcome_action.triggered.connect(self.show_welcome_tab)
+        help_menu.addAction(welcome_action)
         shortcuts_action = QAction("Keyboard Shortcuts", self)
         shortcuts_action.triggered.connect(self._show_shortcuts)
         help_menu.addAction(shortcuts_action)
+        help_menu.addSeparator()
+        check_updates_action = QAction("Check for Updates", self)
+        check_updates_action.triggered.connect(self._check_for_updates_manual)
+        help_menu.addAction(check_updates_action)
+        help_menu.addSeparator()
+        about_action = QAction("About", self)
+        about_action.triggered.connect(self._show_about)
+        help_menu.addAction(about_action)
+
+    def _build_status_bar_view_toggle(self):
+        """Quick status-bar toggle for Paper Mode, mirroring the View menu item."""
+        self._paper_btn = QToolButton()
+        self._paper_btn.setText("Paper")
+        self._paper_btn.setToolTip("Toggle Paper Mode")
+        self._paper_btn.setCheckable(True)
+        self._paper_btn.setChecked(self.paper_mode)
+        self._paper_btn.setAutoRaise(True)
+        self._paper_btn.toggled.connect(self._toggle_paper_mode)
+        self.status.addPermanentWidget(self._paper_btn)
 
     def _populate_recent_menu(self):
         self.m_recent.clear()
@@ -814,6 +925,11 @@ class MainWindow(QMainWindow):
         self.findbar.setVisible(False)
         self.findbar.edit.textChanged.connect(self._on_search_text_changed)
 
+        self.update_bar = UpdateBar()
+        self.update_bar.update_theme(self.is_dark_theme)
+        self.update_bar.download_requested.connect(self._on_update_bar_download)
+        self.update_bar.dismissed.connect(self._on_update_bar_dismissed)
+
         # The editor area (header + findbar + tabs) lives on the left
         # of a horizontal splitter; the drafts panel docks on the right.
         # We always create the panel — keeping it always-present (just
@@ -827,6 +943,7 @@ class MainWindow(QMainWindow):
         v.setSpacing(0)
         v.addWidget(self.header_widget, 0)
         v.addWidget(self.findbar, 0)
+        v.addWidget(self.update_bar, 0)
         v.addWidget(self.tabs, 1)
 
         self._drafts_panel = DraftsPanel(is_dark=self.is_dark_theme)
@@ -939,6 +1056,7 @@ class MainWindow(QMainWindow):
         ed.currentCharFormatChanged.connect(self._update_format_buttons)
         ed.selectionChanged.connect(self._update_format_buttons)
         self._update_editor_theme(ed)
+        self._apply_view_prefs_to_editor(ed)
 
         container = QWidget()
         vbox = QVBoxLayout(container)
@@ -983,6 +1101,15 @@ class MainWindow(QMainWindow):
         ed._backup = EditorBackup(ed, None)
         ed.setFocus()
         self._update_window_title()
+
+    def show_welcome_tab(self):
+        """Open a friendly first-run tab introducing the app."""
+        self.new_tab()
+        ed = self.current_editor()
+        ed.setHtml(welcome_html())
+        ed.document().setModified(False)
+        self.tabs.setTabText(self.tabs.currentIndex(), "Welcome")
+        self._update_status_bar()
 
     def _on_tab_context_menu(self, pos):
         idx = self.tabs.tabBar().tabAt(pos)
@@ -1340,6 +1467,7 @@ class MainWindow(QMainWindow):
         ed.currentCharFormatChanged.connect(self._update_format_buttons)
         ed.selectionChanged.connect(self._update_format_buttons)
         self._update_editor_theme(ed)
+        self._apply_view_prefs_to_editor(ed)
         self._attach_highlighter(ed, path)
 
         container = QWidget()
@@ -1788,6 +1916,74 @@ class MainWindow(QMainWindow):
         dlg = ShortcutsDialog(is_dark=self.is_dark_theme, parent=self)
         dlg.exec()
 
+    def _show_about(self):
+        QMessageBox.about(
+            self,
+            f"About {APP_DISPLAY_NAME}",
+            f"<h3>{APP_DISPLAY_NAME}</h3>"
+            f"<p>Version {APP_VERSION}</p>"
+            "<p>A minimal distraction-free text editor.</p>"
+            f'<p><a href="{APP_URL}">{APP_URL}</a></p>',
+        )
+
+    # ----------------------------------------------------------------------
+    # UPDATE CHECK
+    # ----------------------------------------------------------------------
+    _UPDATE_CHECK_INTERVAL = 24 * 60 * 60  # seconds
+
+    def _maybe_auto_check_for_updates(self):
+        """Silent startup check, throttled to once every 24 hours."""
+        settings = load_settings()
+        last_check = settings.get("last_update_check", 0)
+        if time.time() - last_check < self._UPDATE_CHECK_INTERVAL:
+            return
+        self._auto_update_checker = UpdateChecker(self)
+        self._auto_update_checker.update_available.connect(self._on_auto_update_available)
+        self._auto_update_checker.check()
+        save_setting("last_update_check", time.time())
+
+    def _on_auto_update_available(self, version: str, url: str):
+        if load_settings().get("skipped_version") == version:
+            return
+        self._pending_update_version = version
+        self._pending_update_url = url
+        self.update_bar.show_update(version)
+
+    def _on_update_bar_download(self):
+        url = getattr(self, "_pending_update_url", None)
+        if url:
+            QDesktopServices.openUrl(QUrl(url))
+
+    def _on_update_bar_dismissed(self):
+        version = getattr(self, "_pending_update_version", None)
+        if version:
+            save_setting("skipped_version", version)
+
+    def _check_for_updates_manual(self):
+        """Help > Check for Updates - always checks, reports via QMessageBox."""
+        self._manual_update_checker = UpdateChecker(self)
+        self._manual_update_checker.update_available.connect(self._on_manual_update_available)
+        self._manual_update_checker.up_to_date.connect(self._on_manual_up_to_date)
+        self._manual_update_checker.failed.connect(self._on_manual_update_failed)
+        self._manual_update_checker.check()
+        save_setting("last_update_check", time.time())
+
+    def _on_manual_update_available(self, version: str, url: str):
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Update Available")
+        msg.setText(f"Version {version} is available.")
+        open_btn = msg.addButton("Open Release Page", QMessageBox.ButtonRole.AcceptRole)
+        msg.addButton(QMessageBox.StandardButton.Close)
+        msg.exec()
+        if msg.clickedButton() == open_btn:
+            QDesktopServices.openUrl(QUrl(url))
+
+    def _on_manual_up_to_date(self):
+        QMessageBox.information(self, "Check for Updates", "You are up to date.")
+
+    def _on_manual_update_failed(self, error: str):
+        QMessageBox.warning(self, "Check for Updates", "Could not reach GitHub to check for updates.")
+
     def _on_search_text_changed(self):
         needle = self.findbar.text()
         if needle != self._last_search_text:
@@ -1965,11 +2161,14 @@ class MainWindow(QMainWindow):
     # ----------------------------------------------------------------------
     # THEME TOGGLE
     # ----------------------------------------------------------------------
-    def _toggle_theme(self):
-        if hasattr(self, 'header_widget') and self.header_widget.theme_checkbox.isChecked() != self.is_dark_theme:
-            self.is_dark_theme = self.header_widget.theme_checkbox.isChecked()
-        else:
-            self.is_dark_theme = not self.is_dark_theme
+    def _set_theme(self, is_dark: bool, announce: bool = True):
+        """Apply is_dark to every theme-aware widget in the window.
+
+        Shared by the manual toggle (checkbox / Ctrl+Shift+T) and the
+        OS color-scheme-follow path, so the fan-out logic lives in one
+        place instead of being duplicated.
+        """
+        self.is_dark_theme = is_dark
         if hasattr(self, 'header_widget'):
             self.header_widget.theme_checkbox.blockSignals(True)
             self.header_widget.theme_checkbox.setChecked(self.is_dark_theme)
@@ -1980,6 +2179,8 @@ class MainWindow(QMainWindow):
             self.findbar._update_theme()
         if hasattr(self, 'header_widget'):
             self.header_widget.update_theme(self.is_dark_theme)
+        if hasattr(self, 'update_bar'):
+            self.update_bar.update_theme(self.is_dark_theme)
         for i in range(self.tabs.count()):
             bar = self._bar_from_widget(self.tabs.widget(i))
             if bar:
@@ -1992,8 +2193,25 @@ class MainWindow(QMainWindow):
             self._drafts_panel.apply_theme(self.is_dark_theme)
         for banner in getattr(self, "_tab_conflict_banners", {}).values():
             banner.apply_theme(self.is_dark_theme)
-        mode = "Dark" if self.is_dark_theme else "Light"
-        self.status.showMessage(f"Switched to {mode} theme", 2000)
+        if announce:
+            mode = "Dark" if self.is_dark_theme else "Light"
+            self.status.showMessage(f"Switched to {mode} theme", 2000)
+
+    def _toggle_theme(self):
+        if hasattr(self, 'header_widget') and self.header_widget.theme_checkbox.isChecked() != self.is_dark_theme:
+            target = self.header_widget.theme_checkbox.isChecked()
+        else:
+            target = not self.is_dark_theme
+        self._set_theme(target)
+        # The user made an explicit choice - stop following the OS scheme
+        # and remember this choice across restarts.
+        self._follow_os_theme = False
+        save_setting("theme", "dark" if target else "light")
+
+    def _on_os_color_scheme_changed(self, scheme):
+        if not self._follow_os_theme:
+            return
+        self._set_theme(scheme != Qt.ColorScheme.Light)
 
 
     # ----------------------------------------------------------------------
@@ -2054,6 +2272,47 @@ class MainWindow(QMainWindow):
                         del editor._highlighter
 
         self.status.showMessage(f"Syntax highlighting {'enabled' if self.syntax_highlighting else 'disabled'}", 2000)
+
+
+    # ----------------------------------------------------------------------
+    # VIEW MENU (background pattern, current-line highlight, paper mode)
+    # ----------------------------------------------------------------------
+    def _set_background_pattern(self, name):
+        self.editor_background = name
+        save_setting("editor_background", name)
+        for i in range(self.tabs.count()):
+            ed = self._editor_from_widget(self.tabs.widget(i))
+            if ed:
+                ed.set_background_pattern(name)
+        self.status.showMessage(f"Background: {name.capitalize()}", 2000)
+
+    def _toggle_paper_mode(self, on):
+        on = bool(on)
+        self.paper_mode = on
+        save_setting("paper_mode", on)
+        if hasattr(self, "act_paper_mode") and self.act_paper_mode.isChecked() != on:
+            self.act_paper_mode.blockSignals(True)
+            self.act_paper_mode.setChecked(on)
+            self.act_paper_mode.blockSignals(False)
+        if hasattr(self, "_paper_btn") and self._paper_btn.isChecked() != on:
+            self._paper_btn.blockSignals(True)
+            self._paper_btn.setChecked(on)
+            self._paper_btn.blockSignals(False)
+        for i in range(self.tabs.count()):
+            ed = self._editor_from_widget(self.tabs.widget(i))
+            if ed:
+                ed.set_paper_mode(on)
+        self.status.showMessage(f"Paper mode {'on' if on else 'off'}", 2000)
+
+    def _toggle_highlight_line(self, on):
+        on = bool(on)
+        self.highlight_current_line = on
+        save_setting("highlight_current_line", on)
+        for i in range(self.tabs.count()):
+            ed = self._editor_from_widget(self.tabs.widget(i))
+            if ed:
+                ed.set_highlight_current_line(on)
+        self.status.showMessage(f"Highlight current line {'on' if on else 'off'}", 2000)
 
 
     # ----------------------------------------------------------------------
