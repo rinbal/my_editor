@@ -35,6 +35,11 @@ cp packaging/linux/my-editor.desktop "$APPDIR/my-editor.desktop"
 cp packaging/linux/AppRun "$APPDIR/AppRun"
 chmod +x "$APPDIR/AppRun"
 
+# AppStream metainfo lets software centers and AppImage tooling show a
+# description, summary and icon for the app.
+mkdir -p "$APPDIR/usr/share/metainfo"
+cp packaging/linux/my-editor.appdata.xml "$APPDIR/usr/share/metainfo/my-editor.appdata.xml"
+
 # Get appimagetool (prefer one on PATH; otherwise download the static build).
 TOOL="$(command -v appimagetool || true)"
 if [ -z "$TOOL" ]; then

@@ -1,4 +1,4 @@
-; Inno Setup script for minimal texteditor (Windows installer wizard).
+; Inno Setup script for MyEditor (Windows installer wizard).
 ;
 ; Build (after `pyinstaller packaging\my_editor.spec` produced dist\my-editor\):
 ;     iscc /DMyAppVersion=1.0.0 packaging\windows\installer.iss
@@ -12,10 +12,10 @@
 #ifndef MyAppVersion
   #define MyAppVersion "1.0.0"
 #endif
-#define MyAppName "minimal texteditor"
+#define MyAppName "MyEditor"
 #define MyAppExeName "my-editor.exe"
 #define MyAppPublisher "rinbal"
-#define MyAppURL "https://github.com/DoktorShift/my_editor"
+#define MyAppURL "https://github.com/rinbal/my_editor"
 
 [Setup]
 ; Stable AppId so upgrades replace the prior version and the uninstaller is tracked.

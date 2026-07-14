@@ -22,7 +22,7 @@ if [ -z "$APP_PATH" ]; then
   exit 1
 fi
 
-APP_NAME="$(basename "$APP_PATH")"          # e.g. "minimal texteditor.app"
+APP_NAME="$(basename "$APP_PATH")"          # e.g. "MyEditor.app"
 VOL_NAME="${APP_NAME%.app}"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
 ARCH="$(uname -m)"                          # arm64 or x86_64

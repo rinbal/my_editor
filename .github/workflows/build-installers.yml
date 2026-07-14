@@ -21,14 +21,14 @@ jobs:
             name: windows
           - os: macos-latest      # Apple Silicon (arm64)
             name: macos-arm64
-          - os: macos-13          # Intel (x86_64) -- remove this entry to drop Intel support
+          - os: macos-15-intel    # Intel (x86_64); this image retires in fall 2027, the last Intel one
             name: macos-intel
-          - os: ubuntu-22.04      # older glibc => runs on a wide range of distros
+          - os: ubuntu-22.04      # oldest glibc still offered => widest distro support; image retires April 2027, move to ubuntu-24.04 then
             name: linux
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -38,7 +38,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxcb-cursor0 libegl1 libxkbcommon0 libfuse2
+          sudo apt-get install -y libxcb-cursor0 libegl1 libxkbcommon0
 
       - name: Install Python dependencies
         run: |
@@ -65,7 +65,7 @@ jobs:
         run: bash packaging/linux/build_appimage.sh
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: installer-${{ matrix.name }}
           path: |
@@ -82,8 +82,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Check out repo (for the release notes file)
+        uses: actions/checkout@v7
+
       - name: Download all installers
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
@@ -91,9 +94,24 @@ jobs:
       - name: List downloaded files
         run: ls -R artifacts
 
+      # Use the curated RELEASE_NOTES_<tag>.md as the release body when it is
+      # present, otherwise fall back to GitHub's auto-generated notes.
+      - name: Resolve release notes
+        id: notes
+        run: |
+          f="RELEASE_NOTES_${GITHUB_REF_NAME}.md"
+          if [ -f "$f" ]; then
+            echo "path=$f" >> "$GITHUB_OUTPUT"
+            echo "auto=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=" >> "$GITHUB_OUTPUT"
+            echo "auto=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create / update release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
+          body_path: ${{ steps.notes.outputs.path }}
+          generate_release_notes: ${{ steps.notes.outputs.auto }}
           files: artifacts/**/*
-          generate_release_notes: true
           fail_on_unmatched_files: true

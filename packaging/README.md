@@ -1,6 +1,6 @@
 # Packaging
 
-One-click installers for minimal texteditor, built with PyInstaller plus a
+One-click installers for MyEditor, built with PyInstaller plus a
 per-OS wrapper. End users get instructions in the top-level `DOWNLOAD.md`.
 
 ```
@@ -14,11 +14,19 @@ packaging/
 
 ## How a release happens
 
-1. Bump `APP_VERSION` in `constants.py`.
-2. Commit, then tag: `git tag v1.0.0 && git push --tags`.
-3. GitHub Actions (`.github/workflows/build-installers.yml`) builds Windows,
-   macOS (arm64 + Intel) and Linux, then attaches the installers to a GitHub
-   Release. Link those release assets from the homepage.
+The whole flow is one command. From a Claude Code session follow
+`ReleaseNotesCreator_MyEditor.txt` (it writes the release notes), then run:
+
+```bash
+bash packaging/release.sh <version>     # for example: packaging/release.sh 3.0
+```
+
+That script bumps `APP_VERSION` in `constants.py`, commits it, pushes the code to
+`main`, and pushes the tag `v<version>`. Pushing the tag triggers
+`.github/workflows/build-installers.yml`, which builds Windows, macOS (arm64 +
+Intel) and Linux and publishes a GitHub Release that uses
+`RELEASE_NOTES_v<version>.md` as the body and attaches the three installers as
+assets. Nothing is built locally (each installer can only be built on its own OS).
 
 Use the **Run workflow** button on the Actions tab (workflow_dispatch) to build
 without tagging; it uploads the installers as artifacts but does not publish a
@@ -67,5 +75,6 @@ The committed `icon.ico` / `icon.icns` / `icon-256.png` are what the build uses;
   job; nothing else in the pipeline changes.
 - QtWebEngine is excluded in the spec (the app does not use it), which keeps
   bundles around 100-200 MB instead of 500 MB+.
-- macOS double-click file association via Finder needs `argv_emulation=True` in
-  the spec (off by default to keep the launch path simple).
+- macOS double-click file association via Finder is handled by the app itself:
+  `EditorApplication` in `main.py` catches `QFileOpenEvent`, so no
+  `argv_emulation` is needed or wanted.

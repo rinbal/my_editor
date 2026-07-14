@@ -7,7 +7,7 @@ Build (from the repo root):
 
 Outputs:
     Windows / Linux : dist/my-editor/            (onedir folder)
-    macOS           : dist/minimal texteditor.app (app bundle) + the folder
+    macOS           : dist/MyEditor.app (app bundle) + the folder
 
 The OS wrapper scripts (Inno Setup / create-dmg / appimagetool) turn these into
 the final installer for each platform. See packaging/<os>/ and the CI workflow.
@@ -25,7 +25,7 @@ sys.path.insert(0, ROOT)
 import constants  # noqa: E402  (needs ROOT on sys.path first)
 
 BINARY = constants.APP_BINARY_NAME        # "my-editor"
-DISPLAY = constants.APP_DISPLAY_NAME      # "minimal texteditor"
+DISPLAY = constants.APP_DISPLAY_NAME      # "MyEditor"
 VERSION = constants.APP_VERSION
 
 ICON_DIR = os.path.join(ROOT, "packaging", "icons")
@@ -97,6 +97,50 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
+# Windows-only: a version resource so Explorer's file Properties dialog shows
+# product/version metadata for my-editor.exe. The import lives behind the
+# platform check since PyInstaller.utils.win32.versioninfo pulls in Windows-only
+# dependencies; version_info stays None (no-op) on Linux/macOS.
+version_info = None
+if sys.platform == "win32":
+    from PyInstaller.utils.win32.versioninfo import (
+        VSVersionInfo,
+        FixedFileInfo,
+        StringFileInfo,
+        StringTable,
+        StringStruct,
+        VarFileInfo,
+        VarStruct,
+    )
+
+    _version_parts = tuple(int(p) for p in VERSION.split("."))
+    _version_tuple = _version_parts + (0,) * (4 - len(_version_parts))
+
+    version_info = VSVersionInfo(
+        ffi=FixedFileInfo(
+            filevers=_version_tuple,
+            prodvers=_version_tuple,
+        ),
+        kids=[
+            StringFileInfo(
+                [
+                    StringTable(
+                        "040904B0",
+                        [
+                            StringStruct("CompanyName", "rinbal"),
+                            StringStruct("FileDescription", DISPLAY),
+                            StringStruct("FileVersion", VERSION),
+                            StringStruct("ProductVersion", VERSION),
+                            StringStruct("ProductName", DISPLAY),
+                            StringStruct("OriginalFilename", "my-editor.exe"),
+                        ],
+                    )
+                ]
+            ),
+            VarFileInfo([VarStruct("Translation", [1033, 1200])]),
+        ],
+    )
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -109,11 +153,12 @@ exe = EXE(
     upx=False,
     console=False,            # GUI app: no terminal window
     disable_windowed_traceback=False,
-    argv_emulation=False,     # macOS file-open via Finder: see note below
+    argv_emulation=False,     # macOS Finder file-opens are handled in-app via QFileOpenEvent, not argv
     target_arch=None,         # native arch of the build host (CI handles arches)
     codesign_identity=None,   # unsigned for now (see DOWNLOAD.md)
     entitlements_file=None,
     icon=icon_file,
+    version=version_info,
 )
 
 coll = COLLECT(
@@ -127,12 +172,16 @@ coll = COLLECT(
 )
 
 # macOS: wrap the collected folder into a proper .app bundle.
-# Set argv_emulation=True on the EXE above if you later want double-clicking a
-# .md/.txt in Finder to open it in a running app (delivers the path via argv).
+# Double-clicking a .md/.txt in Finder is handled by the app itself: main.py
+# defines EditorApplication, which overrides event() to catch QFileOpenEvent
+# (the odoc Apple event Qt turns file-opens into). argv_emulation stays False
+# above because PyInstaller recommends against it for GUI toolkits: it only
+# covers the initial launch and can interfere with the toolkit's own event
+# handling.
 if sys.platform == "darwin":
     app = BUNDLE(
         coll,
-        name=f"{DISPLAY}.app",            # dist/minimal texteditor.app
+        name=f"{DISPLAY}.app",            # dist/MyEditor.app
         icon=icon_file,
         bundle_identifier=constants.APP_BUNDLE_ID,
         version=VERSION,

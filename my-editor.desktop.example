@@ -1,10 +1,10 @@
-# Linux launcher template for minimal texteditor
+# Linux launcher template for MyEditor
 # See README.md > App Shortcuts for setup instructions
 
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=minimal texteditor
+Name=MyEditor
 Comment=Minimal note-taking text editor
 Exec=/path/to/my_editor/.venv/bin/python /path/to/my_editor/main.py %F
 Path=/path/to/my_editor
