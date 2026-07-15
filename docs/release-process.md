@@ -68,7 +68,7 @@ Thanks to everyone who shipped this release:
 
 ## Community
 
-- Nostr: https://nostr-ecosystem.netlify.app/join/g/groups.0xchat.com/my-editor-public-talk?n=My+Editor+-+Public+Talk&a=A+community+for+users%2C+contributors%2C+and+anyone+interested+in+a+clean%2C+distraction-free+note-taking+editor+built+with+Python+and+PySide6.%0A%0AS&p=https%3A%2F%2Fblossom.primal.net%2F6173a8dc06038a1d67d6149755166fb48d74d92d41ef6af8b6cd863489eb3095
+- Nostr: [Community Chat](https://nostr-ecosystem.netlify.app/join/g/groups.0xchat.com/my-editor-public-talk?n=My+Editor+-+Public+Talk&a=A+community+for+users%2C+contributors%2C+and+anyone+interested+in+a+clean%2C+distraction-free+note-taking+editor+built+with+Python+and+PySide6.%0A%0AS&p=https%3A%2F%2Fblossom.primal.net%2F6173a8dc06038a1d67d6149755166fb48d74d92d41ef6af8b6cd863489eb3095)
 
 ## Download
 
@@ -102,7 +102,9 @@ three installers attached and the release notes as its body.
 
 ## Usage
 
-Replace {VERSION} with the target version (for example 3.0) before sending. If
+- Replace {VERSION} with the target version (for example 3.0) before sending. If
 unsure what the next version should be, ask rather than guessing.
 
 - DO NOT use em dashes
+
+- Compare Dev against main
