@@ -8,3 +8,4 @@ Terminal=false
 Categories=Office;TextEditor;Utility;
 MimeType=text/plain;text/markdown;text/html;application/json;text/xml;text/css;text/x-python;text/x-yaml;
 StartupNotify=true
+StartupWMClass=my-editor

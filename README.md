@@ -44,10 +44,11 @@ Download the file for your system from the
 
 - **Windows:** run the `-windows-setup.exe`. If SmartScreen warns, click
   **More info**, then **Run anyway**.
-- **macOS:** open the `.dmg` (`-arm64` for Apple Silicon, `-intel` for older
-  Macs), drag MyEditor into **Applications**, then right-click it once and choose
-  **Open**.
-- **Linux:** make the AppImage executable and run it:
+- **macOS:** open the `.dmg`, drag MyEditor onto **Applications** (follow the
+  arrow), then right-click it once and choose **Open**. Use `-arm64` for Apple
+  Silicon, `-intel` for older Macs.
+- **Linux:** on Ubuntu, Debian, Mint, or Pop!_OS, double-click the `.deb` and
+  click **Install**. On any other distribution, use the AppImage:
 
   ```bash
   chmod +x my-editor-*.AppImage
@@ -55,7 +56,7 @@ Download the file for your system from the
   ```
 
 The app is unsigned, so the first launch shows a one-time security prompt. The
-[full install guide](docs/install.md) covers each prompt and troubleshooting.
+[full install guide](docs/install.md) walks through every prompt step by step.
 
 ---
 

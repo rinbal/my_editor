@@ -1,11 +1,11 @@
 # Install MyEditor
 
-Pick your system, download the file, and open it. The app is currently
-**unsigned**, so the first time you open it your operating system shows a
-one-time safety prompt. The steps below walk you through it. After the first
-launch it opens normally with a double-click.
+Pick your system, download one file, and open it. MyEditor is not yet signed
+with a paid certificate, so your computer shows a one-time safety prompt the
+first time. Each guide below walks you through it. After that, MyEditor opens
+with a normal double-click.
 
-The downloads live on the project's
+All downloads are on the
 [Releases page](https://github.com/rinbal/my_editor/releases/latest).
 
 ---
@@ -13,71 +13,71 @@ The downloads live on the project's
 ## Windows
 
 1. Download **`my-editor-x.y.z-windows-setup.exe`**.
-2. Double-click it. Windows may show a blue **"Windows protected your PC"** box.
-3. Click **More info**, then click the **Run anyway** button that appears.
-4. Follow the installer (Next, Next, Finish). It installs for your user only, so
-   it does not ask for an administrator password.
-5. Launch **MyEditor** from the Start Menu.
+2. Double-click it. If a blue **"Windows protected your PC"** box appears, click
+   **More info**, then **Run anyway**.
+3. Click through the installer. It installs for you only and never asks for an
+   administrator password.
 
-To uninstall later: Settings > Apps > MyEditor > Uninstall.
+MyEditor launches when it finishes. You will also find it in the Start Menu and
+on your desktop.
+
+> Remove it later from **Settings > Apps > MyEditor > Uninstall**.
 
 ---
 
 ## macOS
 
-1. Download **`my-editor-x.y.z-macos-arm64.dmg`** (use the `-intel` file if you
-   have an older Intel Mac).
-2. Open the `.dmg` and drag **MyEditor** onto the **Applications** folder.
-3. Open **Applications** and double-click the app. macOS says it "cannot be
-   opened because Apple cannot check it for malicious software." Click **Done**.
-4. Open **System Settings > Privacy & Security**, scroll down, and click
-   **Open Anyway** next to the message about MyEditor. Confirm with **Open**.
-5. From now on it opens with a normal double-click.
+1. Download **`my-editor-x.y.z-macos-arm64.dmg`**. On an older Intel Mac, use
+   the **`-intel`** file.
+2. Open the file. In the window that appears, drag the **MyEditor** icon onto
+   the **Applications** folder, following the arrow.
+3. Open your **Applications** folder, **right-click** MyEditor, and choose
+   **Open**.
+4. macOS asks once if you are sure. Click **Open**.
 
-> If macOS instead says the app "is damaged and can't be opened", the downloaded
-> file was flagged by quarantine. Clear it once in a terminal with
-> `xattr -dr com.apple.quarantine "/Applications/MyEditor.app"` and open the app
-> again.
+Done. MyEditor now opens with a normal double-click.
 
-> Not sure if your Mac is Apple Silicon or Intel? Click the Apple menu > About
-> This Mac. "Apple M1/M2/M3..." means Apple Silicon (use the `arm64` file);
-> "Intel" means use the `-intel` file.
+> Step 3 matters: **right-click, then Open**. A plain double-click only shows a
+> **Done** button and will not open the app the first time.
+
+> Says "damaged and can't be opened"? The download was quarantined. Open the
+> **Terminal** app, paste this line, press Return, then open MyEditor again:
+> `xattr -dr com.apple.quarantine "/Applications/MyEditor.app"`
+
+> Apple Silicon or Intel? Apple menu > **About This Mac**. "Apple M1/M2/M3..."
+> uses the **arm64** file; "Intel" uses the **-intel** file.
 
 ---
 
 ## Linux
 
+**Ubuntu, Debian, Mint, or Pop!_OS (easiest):**
+
+1. Download **`my-editor_x.y.z_amd64.deb`**.
+2. Double-click it, then click **Install** (it may ask for your password).
+3. Open MyEditor from your applications menu.
+
+Everything it needs is installed for you. Remove it with
+`sudo apt remove my-editor`.
+
+**Any other distribution:**
+
 1. Download **`my-editor-x.y.z-linux-x86_64.AppImage`**.
-2. Make it executable, either by:
-   - right-clicking the file > **Properties** > **Permissions** > tick **Allow
-     executing file as program**, or
-   - running in a terminal: `chmod +x my-editor-*.AppImage`
-3. Double-click the AppImage (or run `./my-editor-*.AppImage` in a terminal).
+2. Make it executable: right-click > **Properties** > **Permissions** > tick
+   **Allow executing file as program** (or run `chmod +x my-editor-*.AppImage`).
+3. Double-click it to run.
 
-If it does not start, install one small library most distros already have:
+This one file is the whole app. Delete it to remove the program. To add a menu
+entry, use [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher).
 
-```bash
-# Debian / Ubuntu
-sudo apt install libxcb-cursor0
-```
-
-There is no installer to run and nothing to uninstall: the single AppImage file
-*is* the app. Delete it to remove the program.
-
-**Add it to your application menu (optional).** The AppImage runs fine on its own,
-and the running window already shows the MyEditor icon. To get a launcher entry
-with the icon, use [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher):
-it integrates any AppImage automatically, so you never write a `.desktop` file by
-hand.
+> AppImage will not start? Install one common library:
+> `sudo apt install libxcb-cursor0`. The `.deb` above pulls it in for you.
 
 ---
 
-## Where my files and settings are stored
+## Where your files and settings live
 
-Your notes stay wherever you save them. The app keeps its own settings and caches
-in:
-
-- **Windows / macOS / Linux:** `~/.config/my_editor` and `~/.cache/my_editor`
-
-Removing the app does not delete these; delete those folders too for a full
+Your notes stay wherever you save them. MyEditor keeps its own settings and
+cache in `~/.config/my_editor` and `~/.cache/my_editor` on every system.
+Removing the app leaves these in place. Delete those two folders for a full
 cleanup.

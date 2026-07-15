@@ -35,6 +35,24 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 AllowNoIcons=yes
 
+; Fewer clicks for non-technical users: the install location is fixed (per-user),
+; so skip the folder-selection and the pre-install summary pages. The Welcome,
+; task checkboxes, progress and finish pages remain.
+DisableDirPage=yes
+DisableReadyPage=yes
+
+; Only Windows 10 and later are supported (the PySide6 / Python 3.12 runtime),
+; so fail with a clear message on older Windows instead of crashing at launch.
+MinVersion=10.0
+
+; On an upgrade, offer to close a running MyEditor, then relaunch it afterwards,
+; instead of failing with a "file in use" error.
+CloseApplications=yes
+RestartApplications=yes
+
+; Notify the shell so file-type icons refresh when the associations below are on.
+ChangesAssociations=yes
+
 ; Installer appearance and output.
 WizardStyle=modern
 SetupIconFile=..\icons\icon.ico
@@ -50,7 +68,9 @@ OutputBaseFilename=my-editor-{#MyAppVersion}-windows-setup
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
+; Desktop shortcut on by default: the target audience relies on it to relaunch.
+Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
+; File association stays opt-in so the installer never quietly hijacks .md / .txt.
 Name: "associatefiles"; Description: "Open .md and .txt files with {#MyAppName}"; GroupDescription: "File associations:"; Flags: unchecked
 
 [Files]
