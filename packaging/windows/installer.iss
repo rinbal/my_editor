@@ -90,4 +90,7 @@ Root: HKCU; Subkey: "Software\Classes\.md\OpenWithProgids"; ValueType: string; V
 Root: HKCU; Subkey: "Software\Classes\.txt\OpenWithProgids"; ValueType: string; ValueName: "myeditor.textfile"; ValueData: ""; Tasks: associatefiles; Flags: uninsdeletevalue
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+; No skipifsilent: the in-app updater installs with /SILENT and relies on this
+; entry to relaunch MyEditor once the update finishes. Interactive installs still
+; show this as the "Launch MyEditor" checkbox on the final page.
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall
