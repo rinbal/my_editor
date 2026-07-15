@@ -84,14 +84,12 @@ def main():
     # on Windows and macOS.
     app.setDesktopFileName("my-editor")
     app.setWindowIcon(QIcon(resource_path("packaging/icons/icon-256.png")))
-    app.setStyleSheet("""
-        QWidget { color: #D4D4D4; }
-        QToolTip {
-            background-color: #252526;
-            color: #D4D4D4;
-            border: 1px solid #3C3C3C;
-        }
-    """)
+    # Fusion honors the QPalette consistently on every OS, so un-styled
+    # widgets (message boxes, input dialogs, the tab scroller) follow the
+    # in-app light/dark theme instead of the native platform look. The
+    # authoritative palette is set from MainWindow._apply_theme during
+    # startup and on every toggle; see theme.apply_app_theme.
+    app.setStyle("Fusion")
 
     initial_path = sys.argv[1] if len(sys.argv) > 1 else None
 

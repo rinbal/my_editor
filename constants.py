@@ -23,6 +23,10 @@ DARK_SELECTION = "#264F78"
 DARK_BORDER = "#3C3C3C"
 DARK_MENU_BG = "#252526"
 DARK_MENU_FG = "#CCCCCC"
+# Secondary text used for placeholders and disabled controls. Keep this
+# distinct from DARK_BORDER: borders can be subtle, but text must remain
+# readable against both DARK_BG and DARK_MENU_BG.
+DARK_MUTED_FG = "#8F8F8F"
 
 LIGHT_BG = "#FFFFFF"
 LIGHT_FG = "#333333"
@@ -30,6 +34,9 @@ LIGHT_SELECTION = "#0078D4"
 LIGHT_BORDER = "#E1E1E1"
 LIGHT_MENU_BG = "#F3F3F3"
 LIGHT_MENU_FG = "#333333"
+# Meets normal-text contrast against both LIGHT_BG and LIGHT_MENU_BG while
+# remaining visually subordinate to LIGHT_FG.
+LIGHT_MUTED_FG = "#6D6D6D"
 
 # Background viewing aids (patterns, current-line band, paper surface).
 # Low-alpha guide colors so they whisper behind text on both themes.

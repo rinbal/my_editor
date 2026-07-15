@@ -33,6 +33,7 @@ from settings import load_settings, save_setting
 from welcome import welcome_html
 from update_check import UpdateChecker
 from updater import detect_install_kind, supports_in_app_update, select_asset, UpdateInstaller
+import theme
 
 # These extensions are loaded as rendered documents, not plain-text source code.
 _RICH_DOC_EXTS = ('.html', '.htm', '.md', '.markdown')
@@ -331,6 +332,12 @@ class MainWindow(QMainWindow):
         return scheme != Qt.ColorScheme.Light
 
     def _apply_theme(self):
+        # Sync the application palette first so pop-ups the window stylesheet
+        # never touches (message boxes, input dialogs, the tab scroller)
+        # follow the theme. This is the single call site for both startup
+        # and every later toggle, since _set_theme routes through here.
+        theme.apply_app_theme(self.is_dark_theme)
+
         bg = DARK_BG if self.is_dark_theme else LIGHT_BG
         fg = DARK_FG if self.is_dark_theme else LIGHT_FG
         menu_bg = DARK_MENU_BG if self.is_dark_theme else LIGHT_MENU_BG
@@ -361,6 +368,12 @@ class MainWindow(QMainWindow):
                 border-bottom: 1px solid {bg};
             }}
             QTabBar::tab:hover {{ background: {menu_bg}; }}
+            QTabBar QToolButton {{
+                background: {menu_bg};
+                color: {menu_fg};
+                border: 1px solid {border};
+            }}
+            QTabBar QToolButton:hover {{ background: {bg}; }}
             QStatusBar {{
                 background: {menu_bg};
                 color: {menu_fg};
