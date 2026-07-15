@@ -75,6 +75,21 @@ entry, use [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher).
 
 ---
 
+## Updating
+
+When a newer version is out, MyEditor shows a banner at the top of the window
+with a **Download** button. You can also check any time from **Help > Check for
+Updates**.
+
+- **Windows and the AppImage:** MyEditor downloads the update, closes, and
+  reopens on the new version. There is nothing to reinstall by hand.
+- **macOS and the `.deb`:** it opens the release page so you can download the
+  new file and install it the same way you did the first time.
+
+Your notes and settings carry over across updates.
+
+---
+
 ## Where your files and settings live
 
 Your notes stay wherever you save them. MyEditor keeps its own settings and
