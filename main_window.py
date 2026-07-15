@@ -18,7 +18,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QMainWindow, QFileDialog, QInputDialog, QMenu, QMessageBox, QWidget, QVBoxLayout,
     QTextEdit, QTabWidget, QToolButton, QHBoxLayout, QStatusBar, QPushButton, QTabBar,
-    QDialogButtonBox, QWidgetAction, QLabel, QDialog, QSplitter
+    QDialogButtonBox, QWidgetAction, QLabel, QDialog, QSplitter, QProgressDialog
 )
 
 from constants import (
@@ -32,6 +32,7 @@ from highlighter import SyntaxHighlighter, detect_language, detect_language_from
 from settings import load_settings, save_setting
 from welcome import welcome_html
 from update_check import UpdateChecker
+from updater import detect_install_kind, supports_in_app_update, select_asset, UpdateInstaller
 
 # These extensions are loaded as rendered documents, not plain-text source code.
 _RICH_DOC_EXTS = ('.html', '.htm', '.md', '.markdown')
@@ -1942,22 +1943,130 @@ class MainWindow(QMainWindow):
         self._auto_update_checker.check()
         save_setting("last_update_check", time.time())
 
-    def _on_auto_update_available(self, version: str, url: str):
-        if load_settings().get("skipped_version") == version:
+    def _on_auto_update_available(self, info):
+        if load_settings().get("skipped_version") == info.version:
             return
-        self._pending_update_version = version
-        self._pending_update_url = url
-        self.update_bar.show_update(version)
+        self._pending_release = info
+        self.update_bar.show_update(info.version)
 
     def _on_update_bar_download(self):
-        url = getattr(self, "_pending_update_url", None)
-        if url:
-            QDesktopServices.openUrl(QUrl(url))
+        info = getattr(self, "_pending_release", None)
+        if info is not None:
+            self._start_update_or_open(info)
 
     def _on_update_bar_dismissed(self):
-        version = getattr(self, "_pending_update_version", None)
-        if version:
-            save_setting("skipped_version", version)
+        info = getattr(self, "_pending_release", None)
+        if info is not None:
+            save_setting("skipped_version", info.version)
+
+    def _start_update_or_open(self, info):
+        """Update in place when this install supports it, otherwise open the
+        release page in the browser (macOS, the .deb, and source runs)."""
+        kind = detect_install_kind()
+        asset = select_asset(kind, info.assets)
+        if supports_in_app_update(kind) and asset is not None:
+            self._run_in_app_update(kind, asset)
+        else:
+            QDesktopServices.openUrl(QUrl(info.page_url))
+
+    def _run_in_app_update(self, kind, asset):
+        self._update_installer = UpdateInstaller(kind, self)
+        dlg = QProgressDialog("Downloading update…", "Cancel", 0, 100, self)
+        dlg.setWindowTitle("Updating MyEditor")
+        dlg.setWindowModality(Qt.WindowModal)
+        dlg.setMinimumDuration(0)
+        dlg.setAutoClose(False)
+        dlg.setAutoReset(False)
+        self._update_progress = dlg
+
+        self._update_installer.progress.connect(self._on_update_progress)
+        self._update_installer.ready.connect(self._on_update_downloaded)
+        self._update_installer.failed.connect(self._on_update_failed)
+        dlg.canceled.connect(self._cancel_update)
+
+        dlg.setValue(0)
+        self._update_installer.start(asset)
+
+    def _cancel_update(self):
+        inst = getattr(self, "_update_installer", None)
+        if inst is not None:
+            inst.cancel()
+        dlg = getattr(self, "_update_progress", None)
+        if dlg is not None:
+            dlg.close()
+        # The update bar stays visible so the user can retry.
+
+    def _on_update_progress(self, percent):
+        dlg = getattr(self, "_update_progress", None)
+        if dlg is not None and percent >= 0:
+            dlg.setValue(percent)
+
+    def _on_update_downloaded(self, path):
+        dlg = getattr(self, "_update_progress", None)
+        if dlg is not None:
+            dlg.close()
+        if not self._confirm_save_before_update():
+            self._cleanup_update_file(path)
+            return
+        try:
+            self._update_installer.apply(path)
+        except Exception as e:
+            self._cleanup_update_file(path)
+            QMessageBox.critical(self, "Update Failed", f"Could not start the update.\n\n{e}")
+            return
+        # The installer (Windows) or the swap helper (AppImage) is now running
+        # and will relaunch MyEditor; close so it can replace our files.
+        self._closing_for_update = True
+        self.close()
+
+    def _on_update_failed(self, message):
+        dlg = getattr(self, "_update_progress", None)
+        if dlg is not None:
+            dlg.close()
+        info = getattr(self, "_pending_release", None)
+        text = f"Could not download the update.\n\n{message}"
+        if info is not None:
+            r = QMessageBox.question(
+                self, "Update Failed",
+                text + "\n\nOpen the download page instead?",
+                QMessageBox.Yes | QMessageBox.No)
+            if r == QMessageBox.Yes:
+                QDesktopServices.openUrl(QUrl(info.page_url))
+        else:
+            QMessageBox.warning(self, "Update Failed", text)
+
+    def _confirm_save_before_update(self):
+        """Handle unsaved work before the app relaunches for an update. Returns
+        True if it is safe to proceed, False if the user cancelled."""
+        has_unsaved = False
+        for i in range(self.tabs.count()):
+            ed = self._editor_from_widget(self.tabs.widget(i))
+            if ed and ed.document().isModified():
+                has_unsaved = True
+                break
+        if not has_unsaved:
+            return True
+        r = QMessageBox.question(
+            self, "Save Changes?",
+            "MyEditor will close to install the update.\n\nSave your changes first?",
+            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel, QMessageBox.Yes)
+        if r == QMessageBox.Cancel:
+            return False
+        if r == QMessageBox.Yes:
+            for i in range(self.tabs.count()):
+                ed = self._editor_from_widget(self.tabs.widget(i))
+                if ed and ed.document().isModified():
+                    self.tabs.setCurrentIndex(i)
+                    if not self.save():
+                        return False
+        return True
+
+    def _cleanup_update_file(self, path):
+        try:
+            if path and os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
 
     def _check_for_updates_manual(self):
         """Help > Check for Updates - always checks, reports via QMessageBox."""
@@ -1968,15 +2077,26 @@ class MainWindow(QMainWindow):
         self._manual_update_checker.check()
         save_setting("last_update_check", time.time())
 
-    def _on_manual_update_available(self, version: str, url: str):
+    def _on_manual_update_available(self, info):
+        self._pending_release = info
+        kind = detect_install_kind()
+        asset = select_asset(kind, info.assets)
         msg = QMessageBox(self)
         msg.setWindowTitle("Update Available")
-        msg.setText(f"Version {version} is available.")
-        open_btn = msg.addButton("Open Release Page", QMessageBox.ButtonRole.AcceptRole)
-        msg.addButton(QMessageBox.StandardButton.Close)
-        msg.exec()
-        if msg.clickedButton() == open_btn:
-            QDesktopServices.openUrl(QUrl(url))
+        msg.setText(f"Version {info.version} is available.")
+        if supports_in_app_update(kind) and asset is not None:
+            msg.setInformativeText("Download and install it now?")
+            action_btn = msg.addButton("Update Now", QMessageBox.ButtonRole.AcceptRole)
+            msg.addButton(QMessageBox.StandardButton.Cancel)
+            msg.exec()
+            if msg.clickedButton() == action_btn:
+                self._run_in_app_update(kind, asset)
+        else:
+            action_btn = msg.addButton("Open Release Page", QMessageBox.ButtonRole.AcceptRole)
+            msg.addButton(QMessageBox.StandardButton.Close)
+            msg.exec()
+            if msg.clickedButton() == action_btn:
+                QDesktopServices.openUrl(QUrl(info.page_url))
 
     def _on_manual_up_to_date(self):
         QMessageBox.information(self, "Check for Updates", "You are up to date.")
@@ -2356,17 +2476,19 @@ class MainWindow(QMainWindow):
         return True
 
     def closeEvent(self, event):
-        for i in range(self.tabs.count()):
-            ed = self._editor_from_widget(self.tabs.widget(i))
-            if ed and ed.document().isModified():
-                r = QMessageBox.question(self, "Save Changes?",
-                                         "There are unsaved changes. Close everything now?",
-                                         QMessageBox.Yes | QMessageBox.No)
-                if r != QMessageBox.Yes:
-                    event.ignore()
-                    return
-                else:
-                    break
+        # An update relaunch already handled unsaved work, so skip the prompt.
+        if not getattr(self, "_closing_for_update", False):
+            for i in range(self.tabs.count()):
+                ed = self._editor_from_widget(self.tabs.widget(i))
+                if ed and ed.document().isModified():
+                    r = QMessageBox.question(self, "Save Changes?",
+                                             "There are unsaved changes. Close everything now?",
+                                             QMessageBox.Yes | QMessageBox.No)
+                    if r != QMessageBox.Yes:
+                        event.ignore()
+                        return
+                    else:
+                        break
         self._save_session()
         for i in range(self.tabs.count()):
             ed = self._editor_from_widget(self.tabs.widget(i))

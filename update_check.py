@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+from dataclasses import dataclass
 
 from PySide6.QtCore import QObject, QUrl, Signal
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
@@ -9,6 +10,22 @@ from constants import APP_REPO_SLUG, APP_RELEASES_URL, APP_VERSION
 
 _API_URL = f"https://api.github.com/repos/{APP_REPO_SLUG}/releases/latest"
 _TIMEOUT_MS = 10000
+
+
+@dataclass(frozen=True)
+class Asset:
+    """One downloadable file attached to a GitHub release."""
+    name: str
+    url: str
+    size: int
+
+
+@dataclass(frozen=True)
+class ReleaseInfo:
+    """The latest release: its version, its web page, and its download assets."""
+    version: str
+    page_url: str
+    assets: tuple  # tuple[Asset, ...]
 
 
 def _version_tuple(version: str):
@@ -23,7 +40,7 @@ def _version_tuple(version: str):
 class UpdateChecker(QObject):
     """Checks the GitHub releases API for a version newer than the running one."""
 
-    update_available = Signal(str, str)   # latest_version, release_page_url
+    update_available = Signal(object)     # ReleaseInfo
     up_to_date = Signal()
     failed = Signal(str)
 
@@ -61,6 +78,15 @@ class UpdateChecker(QObject):
             return
 
         if latest_tuple > current_tuple:
-            self.update_available.emit(latest, release_url)
+            assets = tuple(
+                Asset(
+                    name=a.get("name", ""),
+                    url=a.get("browser_download_url", ""),
+                    size=a.get("size", 0) or 0,
+                )
+                for a in data.get("assets", [])
+                if a.get("browser_download_url")
+            )
+            self.update_available.emit(ReleaseInfo(latest, release_url, assets))
         else:
             self.up_to_date.emit()
