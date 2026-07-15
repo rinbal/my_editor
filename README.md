@@ -44,7 +44,7 @@ Designed for writing lecture notes and personal documents with a distraction-fre
 Download the file for your system from the
 [latest release](https://github.com/rinbal/my_editor/releases/latest) and open it.
 Step-by-step help, including the one-time "unsigned app" prompt each system shows,
-is in [DOWNLOAD.md](DOWNLOAD.md).
+is in the [full install guide](docs/install.md).
 
 - **Windows:** run `my-editor-x.y.z-windows-setup.exe`. If SmartScreen warns, click
   **More info**, then **Run anyway**, and launch MyEditor from the Start Menu.

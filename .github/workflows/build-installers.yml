@@ -94,12 +94,12 @@ jobs:
       - name: List downloaded files
         run: ls -R artifacts
 
-      # Use the curated RELEASE_NOTES_<tag>.md as the release body when it is
+      # Use the curated docs/releases/<tag>.md as the release body when it is
       # present, otherwise fall back to GitHub's auto-generated notes.
       - name: Resolve release notes
         id: notes
         run: |
-          f="RELEASE_NOTES_${GITHUB_REF_NAME}.md"
+          f="docs/releases/${GITHUB_REF_NAME}.md"
           if [ -f "$f" ]; then
             echo "path=$f" >> "$GITHUB_OUTPUT"
             echo "auto=false" >> "$GITHUB_OUTPUT"

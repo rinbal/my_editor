@@ -9,7 +9,7 @@
 #
 # Preconditions (checked, the script stops if any fail):
 #   1. The working tree is clean. Commit all code for this release first.
-#   2. RELEASE_NOTES_v<version>.md exists and is committed. Write it first.
+#   2. docs/releases/v<version>.md exists and is committed. Write it first.
 #   3. The tag v<version> does not already exist locally or on origin.
 #
 # What it does:
@@ -21,7 +21,7 @@
 # Pushing the tag triggers .github/workflows/build-installers.yml, which builds
 # the Windows, macOS (Apple Silicon + Intel) and Linux one-click installers on
 # their own runners and publishes a GitHub Release that uses
-# RELEASE_NOTES_v<version>.md as the body and attaches the installers as assets.
+# docs/releases/v<version>.md as the body and attaches the installers as assets.
 # The three OS installers can only be built on their own platforms, so there is
 # nothing to build locally. Everything here needs only git and python.
 
@@ -46,7 +46,7 @@ VERSION="${POSITIONAL[0]#v}"   # accept "3.0" or "v3.0"
 TAG="v${VERSION}"
 
 cd "$(git rev-parse --show-toplevel)"
-NOTES="RELEASE_NOTES_${TAG}.md"
+NOTES="docs/releases/${TAG}.md"
 
 # --- Preconditions -------------------------------------------------------
 if [ -n "$(git status --porcelain)" ]; then
