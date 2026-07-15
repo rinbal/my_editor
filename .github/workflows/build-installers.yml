@@ -64,6 +64,10 @@ jobs:
         if: runner.os == 'Linux'
         run: bash packaging/linux/build_appimage.sh
 
+      - name: Package Linux .deb
+        if: runner.os == 'Linux'
+        run: bash packaging/linux/build_deb.sh
+
       - name: Upload installer artifact
         uses: actions/upload-artifact@v7
         with:
@@ -72,6 +76,7 @@ jobs:
             dist/*-setup.exe
             dist/*.dmg
             dist/*.AppImage
+            dist/*.deb
           if-no-files-found: error
 
   release:

@@ -9,12 +9,12 @@ When this finishes:
   - The latest code is pushed to main.
   - Tag v{VERSION} is pushed, which triggers GitHub Actions to build the Windows,
     macOS (Apple Silicon + Intel) and Linux one-click installers and publish a
-    GitHub Release that uses the release notes as its body and attaches the three
-    installers as assets.
+    GitHub Release that uses the release notes as its body and attaches every
+    platform installer as assets.
 
-The three OS installers can only be built on their own runners, so the build and
-the asset upload happen in CI (`.github/workflows/build-installers.yml`), not
-locally. Everything the local machine needs is git and python.
+The installers can only be built on their own runners, so the build and the asset
+upload happen in CI (`.github/workflows/build-installers.yml`), not locally.
+Everything the local machine needs is git and python.
 
 ---
 
@@ -94,7 +94,7 @@ first. Then run:
 That script bumps APP_VERSION in constants.py, commits it, pushes the code to main,
 and pushes the tag v{VERSION}. The tag push starts the CI build. When CI finishes,
 verify that https://github.com/rinbal/my_editor/releases/tag/v{VERSION} has the
-three installers attached and the release notes as its body.
+platform installers attached and the release notes as its body.
 
 ## Prompt (copy to here)
 

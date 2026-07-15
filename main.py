@@ -79,6 +79,10 @@ def main():
     app.setApplicationName(constants.APP_DISPLAY_NAME)
     app.setApplicationDisplayName(constants.APP_DISPLAY_NAME)
     app.setApplicationVersion(constants.APP_VERSION)
+    # Link the window to the installed .desktop launcher so Linux desktops show
+    # the app icon in the dock / task switcher instead of a generic one. No-op
+    # on Windows and macOS.
+    app.setDesktopFileName("my-editor")
     app.setWindowIcon(QIcon(resource_path("packaging/icons/icon-256.png")))
     app.setStyleSheet("""
         QWidget { color: #D4D4D4; }
