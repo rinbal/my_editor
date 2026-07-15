@@ -1,7 +1,0 @@
-#!/bin/bash
-# macOS launcher template for MyEditor
-# See README.md > App Shortcuts for setup instructions
-# Replace /Users/yourname/my_editor with the actual path to your project folder
-
-cd /Users/yourname/my_editor
-.venv/bin/python main.py "$@"
