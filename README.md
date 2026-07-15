@@ -3,7 +3,7 @@
 **A clean, distraction-free desktop text editor. Write locally, publish to Nostr, keep your keys in your own signer.**
 
 <p align="center">
-  <img src="assets/texteditor_example.png" width="780" alt="MyEditor screenshot"/>
+  <img src="assets/MyEditor_screenshot_v3.png" width="780" alt="MyEditor screenshot"/>
 </p>
 
 MyEditor is a fast, local-first note editor for lecture notes, quick drafts, and
@@ -85,4 +85,7 @@ Open a file directly with `python main.py /path/to/file.txt`.
 
 ---
 
-*built by rinbal*
+*built by rinbal & the Community*
+
+Join the Public [Community Chat](https://nostr-ecosystem.netlify.app/join/g/groups.0xchat.com/my-editor-public-talk?n=My+Editor+-+Public+Talk&a=A+community+for+users%2C+contributors%2C+and+anyone+interested+in+a+clean%2C+distraction-free+note-taking+editor+built+with+Python+and+PySide6.%0A%0AS&p=https%3A%2F%2Fblossom.primal.net%2F6173a8dc06038a1d67d6149755166fb48d74d92d41ef6af8b6cd863489eb3095) to Discuss, Report or provide Feedback or Feature Requests.
+
