@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor
 # Product identity. These drive the packaging pipeline (PyInstaller spec,
 # Windows installer, macOS Info.plist, Linux AppImage) and the in-app title.
 # Bump APP_VERSION and tag the release "v<APP_VERSION>" to ship a new build.
-APP_VERSION = "3.0"
+APP_VERSION = "3.1"
 APP_DISPLAY_NAME = "MyEditor"   # shown in title bars and OS menus
 APP_BINARY_NAME = "my-editor"             # executable / file name, no spaces
 APP_BUNDLE_ID = "com.rinbal.myeditor"     # reverse-DNS id; change to your own
