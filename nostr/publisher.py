@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """End-to-end publishing: resolve relays → sign via signer → publish.
 
 One generic ``PublishJob`` drives the pipeline for any unsigned event

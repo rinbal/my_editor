@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Deterministic NIP-23 d-tag derivation for feed items.
 
 Matches the reference implementation in ``nostr-core/src/rss.ts``:

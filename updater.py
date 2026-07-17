@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """In-app updater for the packaged builds that can safely replace themselves.
 
 Only two install formats are updated in place, because only these can be swapped

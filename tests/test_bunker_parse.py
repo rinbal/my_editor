@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """URI parsing for bunker:// — pure-function tests, no network."""
 
 from __future__ import annotations

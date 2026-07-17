@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Blossom blob thumbnail loader.
 
 Downloads image blobs to a disk cache and emits a ``QPixmap`` for the

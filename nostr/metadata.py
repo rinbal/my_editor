@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Kind 0 profile metadata + avatar image loader.
 
 Two pieces:

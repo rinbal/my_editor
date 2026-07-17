@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Modal dialog for publishing a kind 1 short note.
 
 Lifecycle:

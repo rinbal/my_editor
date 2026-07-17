@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Generate the professional drag-to-Applications background for the macOS DMG.
 
 Run on a Mac with Pillow installed (tiffutil, used for the Retina variant, ships

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Modal dialog for publishing a NIP-23 long-form article (kind 30023).
 
 The layout is built around the *writing*, not the metadata: a large,

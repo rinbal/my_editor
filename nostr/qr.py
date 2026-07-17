@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Render text (typically a ``nostrconnect://`` URI) to a QPixmap.
 
 We use ``segno`` to compute the QR matrix (pure Python, already in

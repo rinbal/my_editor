@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """HTTP layer for Blossom: upload, list, delete, mirror.
 
 Built on ``QNetworkAccessManager`` so all I/O stays on the Qt event

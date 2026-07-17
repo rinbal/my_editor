@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Manual network smoke test: full NIP-37 draft round-trip on real relays.
 
 Not run by pytest (no ``test_`` prefix). Run with:

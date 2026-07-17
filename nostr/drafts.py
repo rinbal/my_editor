@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """NIP-37 private encrypted drafts — pure builders.
 
 Spec: https://github.com/nostr-protocol/nips/blob/master/37.md

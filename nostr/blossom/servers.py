@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Default Blossom server registry.
 
 Ported verbatim from STANDUP so the two clients agree on which servers

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Disk-backed cache of people we know about, keyed by hex pubkey.
 
 Populated from three sources, recorded so the picker can show provenance:

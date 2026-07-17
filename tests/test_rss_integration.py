@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Integration tests that walk end-to-end through the pure layers.
 
 These tests don't touch the network or Qt event loop. They verify:

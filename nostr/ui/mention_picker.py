@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Floating popup for picking a person to mention.
 
 Usage from a parent widget (e.g. the publish dialog):

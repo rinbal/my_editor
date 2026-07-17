@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """AvatarStore + AvatarBatchLoader behavior.
 
 The HTTP fetch path is exercised via a fake AvatarLoader subclass — we

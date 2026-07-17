@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """select_draft_publish_relays — cross-device sync guarantee.
 
 The contract: a draft published from device A on profile P must land on

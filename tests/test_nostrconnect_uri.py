@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """build_nostrconnect_uri: pure URI construction tests."""
 
 from __future__ import annotations

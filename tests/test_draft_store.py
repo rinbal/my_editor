@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """DraftStore — emit semantics, stale-event rejection, profile lifecycle.
 
 These tests pin behaviour that an upstream code-review pass identified

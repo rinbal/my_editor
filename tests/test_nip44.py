@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """NIP-44 v2 conformance — runs the full official vector suite.
 
 Source: https://github.com/paulmillr/nip44/blob/main/nip44.vectors.json

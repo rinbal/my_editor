@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """NIP-01 events: canonical serialization, id computation, sign & verify.
 
 References:
