@@ -70,6 +70,9 @@ class AvatarStore(QObject):
         self._map[pubkey_hex] = pixmap
         self.avatar_added.emit(pubkey_hex, pixmap)
 
+    def pop(self, pubkey_hex: str, default: Optional[QPixmap] = None) -> Optional[QPixmap]:
+        return self._map.pop(pubkey_hex, default)
+
     def clear(self) -> None:
         self._map.clear()
 
