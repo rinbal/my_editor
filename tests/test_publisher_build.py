@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """build_note: the pure unsigned-event builder. The full NotePublishJob
 exercises Qt + the network and is covered manually."""
 

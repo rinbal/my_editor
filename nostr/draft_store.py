@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """In-memory cache for the currently visible profile's NIP-37 drafts.
 
 The drafts panel binds to a single ``DraftStore`` instance. The store

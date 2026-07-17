@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Event id, signing, and verification — NIP-01 conformance.
 
 The NIP-44 v2 suite already deeply validates the crypto primitives this

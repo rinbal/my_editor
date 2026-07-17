@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Media Library dialog — browse, upload, preview, delete Blossom media.
 
 One self-contained dialog. Toolbar with filter + sort + Upload + Refresh

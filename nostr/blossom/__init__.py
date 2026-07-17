@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Blossom media client for my_editor.
 
 A minimal, BUD-02 / BUD-04 Blossom implementation: upload to a primary

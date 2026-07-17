@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """RSS, Atom, and JSON Feed import for the drafts panel.
 
 Mirrors the TypeScript reference at ``nostr-core/src/rss.ts`` (branch

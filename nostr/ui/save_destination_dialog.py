@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Choose where to save the current tab: local file or Nostr draft.
 
 Triggered by ``Ctrl+Shift+S`` whenever a Nostr profile is connected.

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Async feed fetch on top of ``QNetworkAccessManager``.
 
 Matches the rest of the editor (avatar loader, blossom client, relay

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Unit tests for ``nostr.rss.parser``.
 
 Samples are kept inline (small, readable, no fixture directory) and shaped

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Round profile-avatar chip with chevron — sits in the editor header.
 
 The chip's hover state and its dropdown menu reuse the editor's existing

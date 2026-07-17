@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Pure upload planner: pre-flight a file size against the configured servers.
 
 Single entry point — ``plan_upload(file_size, servers)`` — decides which

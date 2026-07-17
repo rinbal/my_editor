@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Pick the inner kind for a Nostr draft (Short note vs. Long-form article).
 
 This is the second-stage dialog in the stash flow. The first stage

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """End-to-end import of one feed URL as NIP-37 drafts.
 
 Pipeline:

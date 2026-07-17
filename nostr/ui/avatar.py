@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Shared avatar + chevron rendering helpers.
 
 Used by both ``profile_chip`` (header) and ``publish_note_dialog``

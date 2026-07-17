@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Kind 24242 Blossom auth event helpers (BUD-02).
 
 A Blossom server requires every privileged request (upload, list,

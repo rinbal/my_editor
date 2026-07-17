@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Second page of the drafts panel: import RSS / Atom / JSON feeds as
 NIP-37 drafts.
 

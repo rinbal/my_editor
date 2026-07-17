@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Nostr protocol primitives and NIP-46 client for the minimal text editor.
 
 This package implements the subset of Nostr needed to publish kind 1 (short notes)

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Manual network smoke test: publish a kind 1 note to real relays.
 
 Not run by pytest (no ``test_`` prefix). Run with:

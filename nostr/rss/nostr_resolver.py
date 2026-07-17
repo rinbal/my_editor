@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Resolve thin RSS items to NIP-23 long-form events on Nostr.
 
 Some publishers (Habla, Yakihonne, Pareto, self-hosted Nostr-aware blogs)

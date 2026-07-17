@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """NIP-65 outbox: per-pubkey relay-list cache + publish-set selection.
 
 Spec: https://github.com/nostr-protocol/nips/blob/master/65.md

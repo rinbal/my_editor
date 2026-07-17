@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """One-shot event queries layered on top of RelayPool subscriptions.
 
 The pattern is the same for kind 0 (user metadata) and kind 10002 (relay

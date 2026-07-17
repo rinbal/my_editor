@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Normalise a ``FeedItem`` into kwargs for ``nostr.publisher.build_article``.
 
 Two layers:

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Mention handling in build_note / build_article — pure-function tests."""
 
 from __future__ import annotations

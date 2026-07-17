@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Side-docked drafts panel — the editor's primary surface for NIP-37 drafts.
 
 Layout, top to bottom:

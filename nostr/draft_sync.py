@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Inbound side of NIP-37 drafts: relays → wrap parse → bunker decrypt → store.
 
 ``DraftSync`` is the orchestrator the drafts panel binds to. It owns:

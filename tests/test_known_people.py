@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """KnownPeople: roundtrip, merge semantics, local search ranking."""
 
 from __future__ import annotations

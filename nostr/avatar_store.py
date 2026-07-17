@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """In-memory avatar cache + throttled batch loader.
 
 Two cooperating objects:

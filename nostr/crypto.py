@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Cryptographic primitives for Nostr (BIP-340 schnorr + NIP-44 v2).
 
 All public functions in this module are pure: they take bytes in and return

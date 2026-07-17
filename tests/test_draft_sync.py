@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """DraftSync — cancellation, queue invariants, trust boundary.
 
 Three critical correctness properties from the code-review pass live here:

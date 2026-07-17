@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Persistent store for NIP-46 profiles.
 
 A profile is the editor's record of one signer connection. The user's

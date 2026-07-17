@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Bech32 (BIP-173) + NIP-19 helpers.
 
 NIP-19 uses plain bech32 (constant 1), NOT bech32m (constant 0x2bc830a3).
