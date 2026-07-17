@@ -70,6 +70,26 @@ def test_store_ignores_null_pixmap(qapp):
     assert "ab" * 32 not in store
 
 
+def test_store_pop_removes_and_returns_pixmap(qapp):
+    """Sign-out drops the active profile's avatar via .pop. The store has
+    to answer it like a dict, or the sign-out handler dies partway through
+    and the profile stays on screen."""
+    store = AvatarStore()
+    pix = QPixmap(4, 4)
+    pix.fill()
+    store.put("ab" * 32, pix)
+
+    assert store.pop("ab" * 32) is pix
+    assert "ab" * 32 not in store
+    assert store.get("ab" * 32) is None
+
+
+def test_store_pop_missing_key_returns_default(qapp):
+    store = AvatarStore()
+    assert store.pop("missing") is None
+    assert store.pop("missing", "fallback") == "fallback"
+
+
 # --------------------------------------------------------------------------- #
 # AvatarBatchLoader                                                           #
 # --------------------------------------------------------------------------- #
