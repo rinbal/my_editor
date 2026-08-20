@@ -8,7 +8,7 @@ so the panel can update individual rows without rebuilding the whole
 list when a decryption finishes or a tombstone arrives.
 
 The store is **profile-scoped**: switching profiles calls ``reset()``
-which clears all records. We never aggregate across identities — that
+which clears all records. We never aggregate across identities, that
 would require labelling every row with an identity badge and risks
 confusing "which key signs the next publish" decisions.
 
@@ -30,6 +30,7 @@ from .drafts import (
     INNER_KIND_LONG_FORM,
     INNER_KIND_SHORT_NOTE,
     derive_preview_snippet,
+    derive_title_from_markdown,
     extract_article_metadata,
 )
 
@@ -37,9 +38,9 @@ from .drafts import (
 class DraftState(Enum):
     """Lifecycle of one draft in the store.
 
-    LOADING — wrap has arrived, decryption hasn't returned yet.
-    READY   — decrypted; title/snippet/content are populated.
-    FAILED  — decryption failed (key mismatch, malformed payload, etc.).
+    LOADING , wrap has arrived, decryption hasn't returned yet.
+    READY   , decrypted; title/snippet/content are populated.
+    FAILED  , decryption failed (key mismatch, malformed payload, etc.).
               We keep the row so the user can retry rather than seeing
               a phantom "12 drafts but only 7 shown" mismatch.
     """
@@ -64,7 +65,7 @@ class DraftRecord:
     state: DraftState = DraftState.LOADING
     title: str = ""                       # NIP-23 title tag (articles) or first heading (notes)
     snippet: str = ""                     # short preview for the list row
-    # Full decrypted body. Lives in this process only — drafts are
+    # Full decrypted body. Lives in this process only, drafts are
     # re-decrypted through the bunker on every fresh session so we
     # never persist plaintext to disk. Wiped on profile switch.
     content: str = ""
@@ -96,11 +97,11 @@ class DraftStore(QObject):
     """Process-wide draft cache for the *active* Nostr profile.
 
     Signals:
-      record_added(str d)        — a new row appeared.
-      record_changed(str d)      — an existing row was updated in place.
-      record_removed(str d)      — a row was removed (tombstone or reset).
-      cleared()                  — all rows removed (profile switch).
-      loading_state_changed(bool) — overall "is a refresh in flight" flag.
+      record_added(str d)        , a new row appeared.
+      record_changed(str d)      , an existing row was updated in place.
+      record_removed(str d)      , a row was removed (tombstone or reset).
+      cleared()                  , all rows removed (profile switch).
+      loading_state_changed(bool), overall "is a refresh in flight" flag.
     """
 
     record_added = Signal(str)
@@ -150,7 +151,7 @@ class DraftStore(QObject):
     def bind_profile(self, pubkey_hex: Optional[str]) -> None:
         """Switch the store to a different profile.
 
-        Always wipes existing records — drafts are per-identity and must
+        Always wipes existing records, drafts are per-identity and must
         not bleed across profile switches. If ``pubkey_hex`` matches the
         current binding this is a no-op so the caller can be lazy.
         """
@@ -188,7 +189,7 @@ class DraftStore(QObject):
         ``DraftSync.retry_decrypt`` doesn't have to re-subscribe to
         relays just because the signer didn't approve in time.
 
-        Tombstones (empty ciphertext) are handled here too — they remove
+        Tombstones (empty ciphertext) are handled here too, they remove
         any existing record for that ``d`` and emit ``record_removed``.
         """
         if meta.is_tombstone:
@@ -234,7 +235,7 @@ class DraftStore(QObject):
         """Fill in the title/snippet/content for a loading row.
 
         ``inner`` is the parsed inner event dict (see ``drafts.parse_inner_event``).
-        If no record exists for ``identifier`` we ignore — the wrap may
+        If no record exists for ``identifier`` we ignore, the wrap may
         have been replaced by a newer one while decryption was in flight.
 
         ``source_event_id`` is the id of the outer wrap whose ciphertext
@@ -267,7 +268,7 @@ class DraftStore(QObject):
         record.inner_tags = [list(t) for t in inner.get("tags", []) if isinstance(t, list)]
         record.state = DraftState.READY
         record.failure_reason = ""
-        # We've got the plaintext now — drop the ciphertext to keep the
+        # We've got the plaintext now, drop the ciphertext to keep the
         # in-memory footprint down. A subsequent newer wrap will refill
         # it via ``upsert_skeleton``.
         record.ciphertext = ""
@@ -335,16 +336,9 @@ class DraftStore(QObject):
 def _note_title_from_content(content: str) -> str:
     """Synthesize a row title for a short-note draft.
 
-    Notes have no title field. We use the first Markdown heading if
-    present, otherwise the first ~60 chars of the first non-empty line.
-    If the body is empty, we return "Untitled note" so the row is still
-    recognisable in the list.
+    Notes have no title field, so the shared Markdown title rule picks
+    the first line that still reads as words. If the body is empty, or
+    is nothing but images, we return "Untitled note" so the row is
+    still recognisable in the list.
     """
-    for raw in content.splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        if line.startswith("#"):
-            return line.lstrip("#").strip() or "Untitled note"
-        return line if len(line) <= 60 else line[:59].rstrip() + "…"
-    return "Untitled note"
+    return derive_title_from_markdown(content, max_len=60, fallback="Untitled note")

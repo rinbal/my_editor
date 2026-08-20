@@ -13,7 +13,7 @@ Lifecycle:
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Callable, List, Optional, Sequence
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPixmap
@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..avatar_store import AvatarStore
-from ..bunker import BunkerSessionPool
+from ..bunker import BunkerSessionPool, humanize_failure
 from ..known_people import KnownPeople
 from ..outbox import RelayListCache
 from ..profiles import Profile, ProfileStore
@@ -50,7 +50,7 @@ _LONGFORM_HINT_CHARS = 1_000
 
 
 # --------------------------------------------------------------------------- #
-# Styles — pulled from the editor's existing palette                          #
+# Styles: pulled from the editor's existing palette                          #
 # --------------------------------------------------------------------------- #
 
 _DARK_DIALOG_CSS = """
@@ -167,6 +167,7 @@ class PublishNoteDialog(QDialog):
         relay_pool: RelayPool,
         relay_list_cache: RelayListCache,
         session_pool: BunkerSessionPool,
+        entitled_relays: Optional[Callable[[], Sequence[str]]] = None,
         known_people: KnownPeople,
         search_client: Nip50SearchClient,
         avatars: AvatarStore,
@@ -182,6 +183,9 @@ class PublishNoteDialog(QDialog):
         self._relay_pool = relay_pool
         self._relay_list_cache = relay_list_cache
         self._session_pool = session_pool
+        # Relays this account has standing on beyond its own list, resolved
+        # when the publish actually happens rather than at dialog open.
+        self._entitled_relays = entitled_relays
         self._known_people = known_people
         self._search_client = search_client
         self._avatars = avatars
@@ -231,7 +235,7 @@ class PublishNoteDialog(QDialog):
         self._char_count.setObjectName("publish_count")
         layout.addWidget(self._char_count)
 
-        # Mentions chip row — picks become ["p", hex, relay-hint] tags + URI
+        # Mentions chip row, picks become ["p", hex, relay-hint] tags + URI
         # lines appended to the body on publish.
         self._mention_row = MentionChipRow(
             self._known_people,
@@ -378,6 +382,8 @@ class PublishNoteDialog(QDialog):
             relay_list_cache=self._relay_list_cache,
             session_pool=self._session_pool,
             profile=self._current_profile,
+            entitled_relays=list(self._entitled_relays() or ())
+            if self._entitled_relays else (),
             unsigned_event=unsigned,
             parent=self,
         )
@@ -402,7 +408,7 @@ class PublishNoteDialog(QDialog):
 
     def _on_failed(self, reason: str) -> None:
         self._job = None
-        self._set_status(f"Publish failed: {reason}", error=True)
+        self._set_status(f"Publish failed: {humanize_failure(reason)}", error=True)
         self._set_busy(False)
 
     def _on_cancel(self) -> None:

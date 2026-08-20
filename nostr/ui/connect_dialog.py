@@ -1,14 +1,14 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Connect-to-Nostr dialog — three pairing flows on one tabbed surface.
+"""Connect-to-Nostr dialog: three pairing flows on one tabbed surface.
 
 Tabs:
 
-  * **Paste URI**     — paste a ``bunker://`` URI generated in Amber et al.
-  * **Scan QR**       — display a ``nostrconnect://`` QR for the signer to
+  * **Paste URI**     paste a ``bunker://`` URI generated in Amber et al.
+  * **Scan QR**       display a ``nostrconnect://`` QR for the signer to
                         scan; the channel opens once the signer's connect
                         event arrives.
-  * **Manual**        — build a ``bunker://`` URI from separate fields when
+  * **Manual**        build a ``bunker://`` URI from separate fields when
                         you have the pubkey + relays + secret on paper but
                         not as a URL.
 
@@ -21,7 +21,8 @@ from __future__ import annotations
 import secrets
 from typing import Optional
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -44,6 +45,8 @@ from ..profiles import Profile, ProfileStore
 from ..qr import make_qr_pixmap
 from ..relay import RelayPool
 
+from url_safety import is_safe_external_url
+
 
 
 # Seconds the QR is valid before we ask the user to regenerate. After this,
@@ -52,7 +55,7 @@ _QR_TTL_SECONDS: int = 90
 
 
 # --------------------------------------------------------------------------- #
-# Stylesheets — same palette as the rest of the editor                        #
+# Stylesheets: same palette as the rest of the editor                        #
 # --------------------------------------------------------------------------- #
 
 _DARK_CSS = """
@@ -327,6 +330,7 @@ class ConnectDialog(QDialog):
 
         secret = secrets.token_hex(8)
         client = BunkerClient(self._pool, parent=self)
+        self._watch_client_diagnostics(client)
         local_pk = client.listen_for_nostrconnect(
             relays=list(DEFAULT_RELAYS),
             secret=secret,
@@ -368,7 +372,7 @@ class ConnectDialog(QDialog):
         if self._qr_seconds_left > 0:
             self._countdown_label.setText(f"Code expires in {self._qr_seconds_left}s")
         else:
-            self._countdown_label.setText("Code expired — press Try Again")
+            self._countdown_label.setText("Code expired, press Try Again")
 
     def _copy_qr_uri(self) -> None:
         from PySide6.QtWidgets import QApplication
@@ -446,7 +450,7 @@ class ConnectDialog(QDialog):
         relays = [r.strip() for r in self._manual_relays.toPlainText().splitlines() if r.strip()]
         secret = self._manual_secret.text().strip()
         # Synthesise a bunker:// URI and route through the same code path
-        # as the Paste tab — keeps the parsing/validation in one place.
+        # as the Paste tab, keeps the parsing/validation in one place.
         parts = [f"relay={quote(r, safe='')}" for r in relays]
         if secret:
             parts.append(f"secret={quote(secret, safe='')}")
@@ -463,12 +467,45 @@ class ConnectDialog(QDialog):
     def _begin_bunker_connect(self, uri: str) -> None:
         self._teardown_client(reason="starting new attempt")
         self._client = BunkerClient(self._pool, parent=self)
+        self._watch_client_diagnostics(self._client)
         self._set_status("Contacting signer. Approve the request on your phone…")
         self._refresh_action_buttons()
         self._client.connect_to_bunker(
             uri,
             on_success=self._on_pair_success,
             on_failure=self._on_pair_failure,
+        )
+
+    def _watch_client_diagnostics(self, client: BunkerClient) -> None:
+        """Surface the two things that otherwise present as a bare timeout."""
+        client.auth_challenge.connect(self._on_auth_challenge)
+        client.unreadable_reply.connect(self._on_unreadable_reply)
+
+    def _on_auth_challenge(self, url: str) -> None:
+        """The signer wants the user to authenticate before it will answer."""
+        if is_safe_external_url(url):
+            QDesktopServices.openUrl(QUrl(url))
+            self._set_status(
+                "Your signer needs you to approve this in the browser window "
+                "that just opened. Waiting…"
+            )
+        else:
+            self._set_status(
+                "Your signer asked for approval at an address that cannot be "
+                "opened safely, so the connection was not continued.",
+                error=True,
+            )
+
+    def _on_unreadable_reply(self, _signer_pubkey: str) -> None:
+        """A signer answered but the payload was not readable.
+
+        Almost always an encryption mismatch. Saying so beats a timeout that
+        looks the same as the signer never having replied.
+        """
+        self._set_status(
+            "A signer replied but the message could not be read. It may be "
+            "using an older encryption format than this app supports.",
+            error=True,
         )
 
     def _on_pair_success(self, user_pubkey_hex: str) -> None:
@@ -511,7 +548,7 @@ class ConnectDialog(QDialog):
         self._set_status("")
         self._refresh_action_buttons()
         if index == 1:
-            # Entering the QR tab — kick off the listener right away.
+            # Entering the QR tab, kick off the listener right away.
             self._start_qr_listener()
 
     def _set_status(self, text: str, *, error: bool = False) -> None:

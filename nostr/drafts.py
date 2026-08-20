@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""NIP-37 private encrypted drafts — pure builders.
+"""NIP-37 private encrypted drafts, pure builders.
 
 Spec: https://github.com/nostr-protocol/nips/blob/master/37.md
 
@@ -23,12 +23,13 @@ Lifecycle:
   4. Sign and publish via the existing PublishJob pipeline.
 
 To delete a draft, publish a tombstone (same ``d`` + ``k``, empty
-content) — see ``build_tombstone_wrap``.
+content), see ``build_tombstone_wrap``.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -39,7 +40,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # Protocol constants                                                          #
 # --------------------------------------------------------------------------- #
 
-# Outer wrap kind — addressable / parameterized-replaceable.
+# Outer wrap kind, addressable / parameterized-replaceable.
 DRAFT_WRAP_KIND: int = 31234
 
 # Inner-event kinds we currently support. Notes and long-form articles
@@ -93,7 +94,7 @@ def build_inner_event(
 ) -> Dict[str, Any]:
     """Construct the unsigned inner event that will be encrypted.
 
-    Per NIP-37 the inner event is unsigned — no ``id``, no ``sig``. We
+    Per NIP-37 the inner event is unsigned, no ``id``, no ``sig``. We
     include ``pubkey`` and ``created_at`` so callers can later promote
     the draft to a real publish without rebuilding from scratch.
 
@@ -122,7 +123,7 @@ def serialize_inner_event(inner: Dict[str, Any]) -> str:
     """Return the canonical JSON form of an inner event for encryption.
 
     Uses compact separators and ``ensure_ascii=False`` so the encrypted
-    payload is as small as possible — NIP-44 has a 65535-byte plaintext
+    payload is as small as possible. NIP-44 has a 65535-byte plaintext
     cap and long-form articles can approach it.
     """
     # Explicit key whitelist keeps stray fields (e.g. an accidentally
@@ -161,7 +162,7 @@ def parse_inner_event(plaintext: str) -> Dict[str, Any]:
     # Unknown inner kinds are intentionally tolerated: a future client
     # could stash other kinds and we'd rather display "unknown draft
     # type" than silently drop them. ``DraftStore`` decides how to
-    # render — see the kind branch in ``set_decrypted``.
+    # render, see the kind branch in ``set_decrypted``.
     if not all(isinstance(t, list) and all(isinstance(x, str) for x in t) for t in tags):
         raise ValueError("draft payload tags must be list[list[str]]")
     return {
@@ -191,14 +192,14 @@ def build_draft_wrap(
     """Build an unsigned kind-31234 wrap ready for the signer.
 
     Tags emitted, in order:
-      ``["d", identifier]``        — addressable id (NIP-01).
-      ``["k", str(inner_kind)]``   — required by NIP-37; lets clients
+      ``["d", identifier]``        , addressable id (NIP-01).
+      ``["k", str(inner_kind)]``   , required by NIP-37; lets clients
                                       filter "drafts of articles" vs.
                                       "drafts of notes" without
                                       decryption.
-      ``["expiration", ...]``      — NIP-40, recommended by NIP-37.
-      ``["client", client_name]``  — NIP-89 attribution.
-      ``*extra_tags``              — opaque pass-through (reserved for
+      ``["expiration", ...]``      , NIP-40, recommended by NIP-37.
+      ``["client", client_name]``  , NIP-89 attribution.
+      ``*extra_tags``              , opaque pass-through (reserved for
                                       future use, e.g. RSS-source tags).
 
     ``encrypted_content`` is the base64 NIP-44 payload produced by the
@@ -250,7 +251,7 @@ def build_tombstone_wrap(
     been deleted." Same ``d`` + ``k`` (so the addressable replacement
     targets the right event), empty content, no encryption needed.
 
-    The expiration tag is intentionally short here — a tombstone only
+    The expiration tag is intentionally short here. A tombstone only
     needs to live long enough for other clients to observe the empty
     content; we still set 90 days because some relays drop events with
     expiration in the near past.
@@ -279,7 +280,7 @@ class DraftWrapMeta:
     pubkey: str              # author pubkey (hex, lowercase)
     created_at: int          # outer event created_at
     expiration: Optional[int]  # NIP-40 expiration, if present
-    ciphertext: str          # base64 NIP-44 payload — empty == tombstone
+    ciphertext: str          # base64 NIP-44 payload, empty == tombstone
 
     @property
     def is_tombstone(self) -> bool:
@@ -289,7 +290,7 @@ class DraftWrapMeta:
 def parse_wrap_event(event: Dict[str, Any]) -> Optional[DraftWrapMeta]:
     """Extract metadata from a relay-delivered 31234 event.
 
-    Returns ``None`` if the event is not a recognisable draft wrap —
+    Returns ``None`` if the event is not a recognisable draft wrap,
     specifically: not a dict, wrong kind, missing ``d`` tag, or whose
     tag list isn't a list of lists. Empty / non-integer ``k`` tag maps
     to ``inner_kind = 0`` (treat as "unknown" downstream); a missing
@@ -358,7 +359,7 @@ def extract_article_metadata(inner: Dict[str, Any]) -> Dict[str, str]:
     """Pull common NIP-23 metadata tags off an inner article event.
 
     Returns a dict with keys ``title``, ``summary``, ``image``,
-    ``published_at`` — missing tags map to empty strings. The drafts
+    ``published_at``. Missing tags map to empty strings. The drafts
     panel uses these to render article rows without re-parsing tag lists
     at every paint.
     """
@@ -372,25 +373,117 @@ def extract_article_metadata(inner: Dict[str, Any]) -> Dict[str, str]:
     return out
 
 
+# --------------------------------------------------------------------------- #
+# Markdown text derivation (shared by the importers and the draft store)      #
+# --------------------------------------------------------------------------- #
+
+# Images are deleted outright: an image contributes no readable words, so
+# a body opening with a hero image must fall through to the next line
+# rather than titling the row "![alt](https://...)". Images have to be
+# matched before links because "![alt](url)" contains "[alt](url)".
+_MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+_MD_IMAGE_REF_RE = re.compile(r"!\[[^\]]*\]\[[^\]]*\]")
+# Links keep their text and lose their URL, both in the inline and in
+# the reference form.
+_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_MD_LINK_REF_RE = re.compile(r"\[([^\]]*)\]\[[^\]]*\]")
+# Also disposes of a leading <img> and of bare <https://...> autolinks.
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_MD_EMPHASIS_RE = re.compile(r"[*_`~]")
+
+# Block markers are stripped for titles only, see the note in
+# ``flatten_markdown_inline``.
+_MD_BLOCKQUOTE_RE = re.compile(r"^\s*(?:>\s*)+")
+_MD_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s*")
+_MD_LIST_RE = re.compile(r"^\s*(?:[-*+]|\d{1,3}[.)])\s+")
+
+
+def flatten_markdown_inline(line: str) -> str:
+    """Reduce one line of Markdown to the words a human would read.
+
+    Deletes images, unwraps links to their text, drops HTML tags and
+    emphasis/code punctuation, then collapses whitespace runs.
+
+    Block-level markers (headings, quotes, bullets) are deliberately
+    *not* touched here. They only get in the way when hunting for a
+    title, which is where ``derive_title_from_markdown`` strips them,
+    while a preview snippet has to keep "## sub" and "#tag" because on
+    that surface they are the body text, not markup.
+    """
+    text = _MD_IMAGE_RE.sub("", str(line or ""))
+    text = _MD_IMAGE_REF_RE.sub("", text)
+    text = _MD_LINK_RE.sub(r"\1", text)
+    text = _MD_LINK_REF_RE.sub(r"\1", text)
+    text = _HTML_TAG_RE.sub("", text)
+    text = _MD_EMPHASIS_RE.sub("", text)
+    return " ".join(text.split())
+
+
+def _truncate_on_word_boundary(text: str, max_len: int) -> str:
+    """Cap ``text`` at ``max_len`` characters, ellipsis included.
+
+    Cuts back to the last space when one survives in the right-hand 40%
+    of the budget, so a title lands on a word boundary instead of
+    reading "One Class, On". A single very long word has no boundary to
+    fall back to and is still cut mid-word.
+    """
+    if max_len <= 1 or len(text) <= max_len:
+        return text
+    cut = text[: max_len - 1]
+    space = cut.rfind(" ")
+    if space >= int(max_len * 0.6):
+        cut = cut[:space]
+    return cut.rstrip() + "…"
+
+
+def derive_title_from_markdown(
+    markdown: str,
+    *,
+    max_len: int = 90,
+    fallback: str = "",
+) -> str:
+    """First line of ``markdown`` that still has words once flattened.
+
+    One rule for every surface that has to invent a title for a body
+    that carries none: imported Nostr events, Bluesky threads and
+    short-note drafts all route here so a hero image or a link-only
+    opener can never reach a list row as raw Markdown.
+
+    Returns ``fallback`` when no line yields any text.
+    """
+    for raw in str(markdown or "").split("\n"):
+        line = _MD_BLOCKQUOTE_RE.sub("", raw)
+        line = _MD_HEADING_RE.sub("", line)
+        line = _MD_LIST_RE.sub("", line)
+        line = flatten_markdown_inline(line)
+        if not line:
+            continue
+        return _truncate_on_word_boundary(line, max_len)
+    return fallback
+
+
 def derive_preview_snippet(content: str, *, max_chars: int = 140) -> str:
     """Return a single-line preview for a list row.
 
-    Strips leading Markdown heading hashes, collapses whitespace,
-    truncates with an ellipsis. Empty or whitespace-only content yields
-    the empty string (the panel can then fall back to a placeholder).
+    Strips leading Markdown heading hashes, flattens inline Markdown,
+    collapses whitespace, truncates with an ellipsis. Empty or
+    whitespace-only content yields the empty string (the panel can then
+    fall back to a placeholder).
     """
     if not content:
         return ""
-    # Drop a leading "# heading" line — for articles it duplicates the
+    # Flatten per line first: an image-led body used to put the whole
+    # "![alt](url)" on the row's second line as well as the first, and
+    # it also pushed the real heading out of first place below.
+    lines = [flatten_markdown_inline(ln) for ln in str(content).split("\n")]
+    lines = [ln for ln in lines if ln]
+    # Drop a leading "# heading" line. For articles it duplicates the
     # title-tag row; for notes it's still useful to keep, so we only
-    # strip when it looks like a level-1 heading.
-    stripped = content.lstrip()
-    if stripped.startswith("# "):
-        first_newline = stripped.find("\n")
-        if first_newline != -1:
-            stripped = stripped[first_newline + 1 :]
-    # Collapse all runs of whitespace into single spaces.
-    flat = " ".join(stripped.split())
+    # strip when it looks like a level-1 heading and there is other
+    # content to show instead.
+    if len(lines) > 1 and lines[0].startswith("# "):
+        lines = lines[1:]
+    flat = " ".join(lines)
     if len(flat) <= max_chars:
         return flat
     return flat[: max_chars - 1].rstrip() + "…"

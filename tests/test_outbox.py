@@ -123,3 +123,69 @@ def test_select_filters_empty_entries():
     user = ["", "   ", "wss://valid.example"]
     out = select_publish_relays(user, base=BASE, cap=10)
     assert out == list(BASE) + ["wss://valid.example"]
+
+
+# --------------------------------------------------------------------------- #
+# Adding a relay to a published list, without destroying it
+# --------------------------------------------------------------------------- #
+
+from nostr.outbox import relay_list_tags_adding
+
+E21 = "wss://nostr.einundzwanzig.space"
+
+
+def _event(*tags):
+    return {"kind": 10002, "tags": [list(t) for t in tags]}
+
+
+def test_an_unread_list_refuses_rather_than_replacing_it():
+    # A kind 10002 is replaceable. Publishing one built from nothing does
+    # not add a relay, it wipes the user's list and scatters their readers.
+    assert relay_list_tags_adding(None, E21) is None
+    assert relay_list_tags_adding("not an event", E21) is None
+
+
+def test_the_relay_is_appended_as_a_write_relay():
+    tags = relay_list_tags_adding(_event(["r", "wss://a.example"]), E21)
+    assert tags == [["r", "wss://a.example"], ["r", E21, "write"]]
+
+
+def test_every_existing_entry_survives_with_its_marker():
+    existing = _event(
+        ["r", "wss://a.example", "read"],
+        ["r", "wss://b.example", "write"],
+        ["r", "wss://c.example"],
+    )
+    tags = relay_list_tags_adding(existing, E21)
+    assert tags[:3] == existing["tags"]
+
+
+def test_unrelated_tags_are_carried_through_untouched():
+    # A relay list may carry tags this app has never heard of, and
+    # dropping them would be editing the user's event.
+    existing = _event(["r", "wss://a.example"], ["alt", "my relays"], ["client", "x"])
+    tags = relay_list_tags_adding(existing, E21)
+    assert ["alt", "my relays"] in tags and ["client", "x"] in tags
+
+
+def test_an_already_listed_relay_is_a_no_op():
+    # Nothing to do means never asking the signer to approve nothing.
+    assert relay_list_tags_adding(_event(["r", E21]), E21) is None
+    assert relay_list_tags_adding(_event(["r", E21 + "/"]), E21) is None
+    assert relay_list_tags_adding(_event(["r", E21.upper()]), E21) is None
+
+
+def test_a_read_only_entry_is_left_alone_rather_than_promoted():
+    # Promoting read to write would rewrite a choice the user made.
+    assert relay_list_tags_adding(_event(["r", E21, "read"]), E21) is None
+
+
+def test_an_empty_but_real_list_is_still_safe_to_add_to():
+    # An author who published an empty list has still published one, so
+    # there is nothing to lose by appending.
+    assert relay_list_tags_adding(_event(), E21) == [["r", E21, "write"]]
+
+
+def test_a_junk_url_is_refused():
+    assert relay_list_tags_adding(_event(["r", "wss://a.example"]), "") is None
+    assert relay_list_tags_adding(_event(["r", "wss://a.example"]), "   ") is None

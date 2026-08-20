@@ -7,12 +7,17 @@ The defect classes this file guards against:
 - round-trip damage: Qt re-parsing our own output must reproduce the
   document (the ONLY accepted change is 0-space bullets normalizing to
   4 spaces),
-- images silently losing their bytes instead of embedding as data URIs.
+- images silently losing their bytes instead of embedding as data URIs,
+- an image whose name is itself an address (a data: URI from a reopened
+  export, a third-party URL) being erased instead of passed through,
+- a document naming a file outside the caller's trusted roots and the
+  exporter embedding it anyway.
 """
 
 import base64
 import os
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -26,6 +31,7 @@ from PySide6.QtGui import (
     QTextCharFormat,
     QTextCursor,
     QTextDocument,
+    QTextImageFormat,
 )
 
 from export_html import (
@@ -162,7 +168,8 @@ def test_image_embeds_as_data_uri_with_provenance(tmp_path):
     doc = QTextDocument()
     QTextCursor(doc).insertImage(path)
     out = document_to_html(doc, "T",
-                           source_url_for=lambda p: "https://x.example/i.png")
+                           source_url_for=lambda p: "https://x.example/i.png",
+                           image_roots=(str(tmp_path),))
     assert 'src="data:image/png;base64,' in out
     assert 'data-source-url="https://x.example/i.png"' in out
     # The payload must actually decode back to the file bytes.
@@ -181,6 +188,151 @@ def test_missing_image_falls_back_to_url_then_placeholder(tmp_path):
     assert "[image unavailable]" in without
 
 
+def test_image_outside_the_roots_is_never_read(tmp_path):
+    # A document names the paths it embeds, and a hostile document can
+    # name anything on the machine; only the roots the caller trusts
+    # may be read.
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    secret = _png_at(outside, name="secret")
+    root = tmp_path / "root"
+    root.mkdir()
+    doc = QTextDocument()
+    QTextCursor(doc).insertImage(secret)
+    out = document_to_html(doc, "T", image_roots=(str(root),))
+    assert "[image unavailable]" in out
+    assert "base64," not in out
+    payload = base64.b64encode(open(secret, "rb").read()).decode("ascii")
+    assert payload not in out
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlinks only")
+def test_symlink_out_of_the_root_is_refused(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    secret = _png_at(outside, name="secret")
+    root = tmp_path / "root"
+    root.mkdir()
+    link = root / "innocent"
+    link.symlink_to(secret)
+    doc = QTextDocument()
+    QTextCursor(doc).insertImage(str(link))
+    out = document_to_html(doc, "T", image_roots=(str(root),))
+    assert "[image unavailable]" in out
+    assert "base64," not in out
+
+
+def test_asset_resolver_supplies_bytes_alt_and_provenance(tmp_path):
+    # An app-created image is named by a key no filesystem can resolve;
+    # its bytes and its uploaded URL come from the resolver.
+    data = open(_png_at(tmp_path), "rb").read()
+    sha = "d" * 64
+    key = f"myeditor-asset:{sha}"
+    resolved = SimpleNamespace(
+        data=data, mime="image/png", remote_url=f"https://x.example/{sha}",
+        width=0, height=0, alt="a photo", sha256=sha,
+    )
+    fmt = QTextImageFormat()
+    fmt.setName(key)
+    fmt.setProperty(QTextImageFormat.ImageAltText, "a photo")
+    doc = QTextDocument()
+    QTextCursor(doc).insertImage(fmt)
+    out = document_to_html(doc, "T", image_roots=(str(tmp_path),),
+                           asset_resolver=lambda name: resolved)
+    assert 'src="data:image/png;base64,' in out
+    assert f'data-source-url="https://x.example/{sha}"' in out
+    assert 'alt="a photo"' in out
+    assert key not in out
+
+
+def test_data_uri_named_image_is_reexported_unchanged(tmp_path):
+    # Reopening an exported .html names every embedded image by its
+    # whole data URI. Saving again used to answer "[image unavailable]"
+    # and destroy the user's own picture on a routine second save.
+    data = open(_png_at(tmp_path), "rb").read()
+    uri = "data:image/png;base64," + base64.b64encode(data).decode("ascii")
+    doc = QTextDocument()
+    doc.setHtml(f'<p><img src="{uri}"></p>')
+    out = document_to_html(doc, "T", image_roots=(str(tmp_path),))
+    assert "[image unavailable]" not in out
+    assert f'src="{uri}"' in out
+
+
+def test_foreign_urls_survive_export_byte_identical(tmp_path):
+    # Media this app did not create is never rewritten and never
+    # dropped, whichever server it came from.
+    urls = [
+        "https://other.example/pictures/cat.png",
+        f"https://blossom.other.example/{'c' * 64}.png",
+        "http://plain.example/legacy.gif",
+    ]
+    doc = QTextDocument()
+    doc.setHtml("".join(f'<p><img src="{u}"></p>' for u in urls))
+    out = document_to_html(doc, "T", image_roots=(str(tmp_path),))
+    assert "[image unavailable]" not in out
+    for url in urls:
+        assert f'src="{url}"' in out
+
+
+def test_a_url_with_a_query_string_reopens_identical():
+    # The ampersand must be escaped to stay valid inside the attribute,
+    # and the parser must give the original name back on reopening.
+    url = "https://pics.example.org/photos/cat.png?size=large&v=2"
+    doc = QTextDocument()
+    doc.setMarkdown(f"![cat]({url})")
+    out = document_to_html(doc, "T")
+    assert 'src="https://pics.example.org/photos/cat.png?size=large&amp;v=2"' in out
+
+    reopened = QTextDocument()
+    reopened.setHtml(out)
+    normalize_lists_after_set_html(reopened)
+    names = []
+    block = reopened.begin()
+    while block.isValid():
+        it = block.begin()
+        while not it.atEnd():
+            frag = it.fragment()
+            if frag.isValid() and frag.charFormat().isImageFormat():
+                names.append(frag.charFormat().toImageFormat().name())
+            it += 1
+        block = block.next()
+    assert names == [url]
+
+
+def test_unresolved_asset_key_never_leaks_into_src(tmp_path):
+    fmt = QTextImageFormat()
+    fmt.setName("myeditor-asset:" + "e" * 64)
+    doc = QTextDocument()
+    QTextCursor(doc).insertImage(fmt)
+    out = document_to_html(doc, "T", image_roots=(str(tmp_path),))
+    assert "[image unavailable]" in out
+    assert "myeditor-asset" not in out
+
+
+def test_alt_text_is_emitted(tmp_path):
+    path = _png_at(tmp_path)
+    fmt = QTextImageFormat()
+    fmt.setName(path)
+    fmt.setProperty(QTextImageFormat.ImageAltText, 'a "quoted" cat')
+    doc = QTextDocument()
+    QTextCursor(doc).insertImage(fmt)
+    out = document_to_html(doc, "T", image_roots=(str(tmp_path),))
+    assert 'alt="a &quot;quoted&quot; cat"' in out
+
+
+def test_explicit_size_is_emitted(tmp_path):
+    path = _png_at(tmp_path)
+    fmt = QTextImageFormat()
+    fmt.setName(path)
+    fmt.setWidth(120)
+    fmt.setHeight(80)
+    doc = QTextDocument()
+    QTextCursor(doc).insertImage(fmt)
+    out = document_to_html(doc, "T", image_roots=(str(tmp_path),))
+    assert 'width="120"' in out
+    assert 'height="80"' in out
+
+
 def test_mime_and_ext_sniffing():
     png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
     jpg = b"\xff\xd8\xff\xe0" + b"\x00" * 8
@@ -196,8 +348,8 @@ def test_mime_and_ext_sniffing():
 # Round-trip: export -> setHtml -> normalize
 # --------------------------------------------------------------------------- #
 
-def _roundtrip(doc, title="T"):
-    out = document_to_html(doc, title)
+def _roundtrip(doc, title="T", image_roots=()):
+    out = document_to_html(doc, title, image_roots=image_roots)
     doc2 = QTextDocument()
     doc2.setHtml(out)
     normalize_lists_after_set_html(doc2)
@@ -254,7 +406,7 @@ def test_roundtrip_keeps_embedded_image(tmp_path):
     cur = QTextCursor(doc)
     cur.insertText("x ", PLAIN)
     cur.insertImage(path)
-    doc2 = _roundtrip(doc)
+    doc2 = _roundtrip(doc, image_roots=(str(tmp_path),))
     assert "\ufffc" in doc2.toPlainText()
 
 

@@ -4,18 +4,24 @@
 
 Two pieces:
 
-  ProfileMetadataFetcher — subscribes to the configured relays for a
+  ProfileMetadataFetcher subscribes to the configured relays for a
     user's ``kind:0`` event, parses the content JSON, writes the resolved
     name/picture/nip05 back to the profile store, and emits the updated
     Profile.
 
-  AvatarLoader — downloads the ``picture`` URL via QtNetwork to a local
+  AvatarLoader downloads the ``picture`` URL via QtNetwork to a local
     cache directory, then emits the resulting QPixmap so the chip can
     refresh.
 
-These are separate because the metadata fetch is fast (subscribe →
-decrypt nothing → parse small JSON) while the avatar download is a
-potentially slow HTTPS round-trip that should never block UI updates.
+These are separate because the metadata fetch is fast (subscribe, then
+parse small JSON) while the avatar download is a potentially slow HTTPS
+round-trip that should never block UI updates.
+
+An avatar URL comes from a stranger's kind 0 event, so it is treated as
+hostile input: the scheme and host are checked before the request and
+again after redirects, the transfer is capped mid-flight, and the bytes
+are decoded through an explicit format allowlist rather than Qt
+sniffing (which hands SVG to a renderer that reads local files).
 """
 
 from __future__ import annotations
@@ -23,13 +29,16 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse
 
 from PySide6.QtCore import QObject, QStandardPaths, QUrl, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
+
+import url_safety
+from image_safety import decode_image_bytes
 
 from . import DEFAULT_RELAYS
 from .profiles import Profile, ProfileStore
@@ -38,11 +47,16 @@ from .relay import RelayPool
 
 
 AVATAR_CACHE_DIR = Path.home() / ".cache" / "my_editor" / "nostr_avatars"
-# Soft cap on avatar bytes — we don't want a malicious or accidental 100 MB
-# image to land in the cache and stall the editor.
+# Soft cap on avatar bytes: a malicious or accidental 100 MB image must
+# not land in the cache and stall the editor.
 _MAX_AVATAR_BYTES: int = 2_000_000
 # Curate how long we'll wait for an HTTP response before giving up.
 _AVATAR_HTTP_TIMEOUT_MS: int = 10_000
+# Avatars live behind CDNs and vanity redirectors, so hops are normal.
+# Qt's no-less-safe policy refuses an https to http downgrade; the final
+# URL is re-checked in the handler because that policy still permits a
+# redirect into a private address.
+_MAX_AVATAR_REDIRECTS: int = 4
 
 
 # --------------------------------------------------------------------------- #
@@ -53,10 +67,10 @@ class ProfileMetadataFetcher(QObject):
     """Background loader for a profile's kind 0 event.
 
     Signals:
-      updated(Profile)  — emitted after the profile store has been
-                          mutated with the freshly resolved fields.
-      failed(str)       — emitted with a short reason if no kind 0
-                          event could be retrieved.
+      updated(Profile)  emitted after the profile store has been
+                        mutated with the freshly resolved fields.
+      failed(str)       emitted with a short reason if no kind 0
+                        event could be retrieved.
     """
 
     updated = Signal(object)   # Profile
@@ -127,25 +141,36 @@ class AvatarLoader(QObject):
     """Downloads avatar images and caches them to disk.
 
     Signals:
-      ready(pubkey_hex, QPixmap)  — fired when a valid pixmap is available,
-                                    either from the on-disk cache or after
-                                    a successful HTTP download.
-      failed(pubkey_hex, str)     — fired when the request can't be served
-                                    (skipped, network error, bad payload,
-                                    oversized). Always fires exactly once
-                                    per ``load()`` call alongside ``ready``,
-                                    or alone on failure — useful for a
-                                    throttled batcher that needs to free
-                                    its slot regardless of outcome.
+      ready(pubkey_hex, QPixmap)  fired when a valid pixmap is available,
+                                  either from the on-disk cache or after
+                                  a successful HTTP download.
+      failed(pubkey_hex, str)     fired when the request can't be served
+                                  (skipped, network error, bad payload,
+                                  oversized). Always fires exactly once
+                                  per ``load()`` call alongside ``ready``,
+                                  or alone on failure, which a throttled
+                                  batcher needs so it can free its slot
+                                  regardless of outcome.
     """
 
     ready = Signal(str, object)   # pubkey_hex, QPixmap
     failed = Signal(str, str)     # pubkey_hex, reason
 
-    def __init__(self, parent: Optional[QObject] = None) -> None:
+    def __init__(
+        self,
+        parent: Optional[QObject] = None,
+        *,
+        cache_dir=None,
+        nam=None,
+    ) -> None:
         super().__init__(parent)
-        AVATAR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        self._nam = QNetworkAccessManager(self)
+        # Seams for tests: no test writes the real cache or opens a socket.
+        self._cache_dir = Path(cache_dir) if cache_dir else AVATAR_CACHE_DIR
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        # The cache lists everyone the user follows, which is a
+        # behavioural fingerprint; keep it owner-only.
+        _chmod(self._cache_dir, 0o700)
+        self._nam = nam or QNetworkAccessManager(self)
         # pubkey -> reply, so a re-request for the same pubkey can be coalesced
         self._inflight: dict[str, QNetworkReply] = {}
 
@@ -158,31 +183,49 @@ class AvatarLoader(QObject):
         if not picture_url:
             self.failed.emit(pubkey_hex, "no picture URL")
             return
-        if not _looks_like_http_url(picture_url):
-            # data: URLs, file:// paths, and other schemes aren't worth the
-            # exception surface here — skip but report so the batcher's slot
-            # accounting stays correct.
+        if not url_safety.is_safe_mirror_source(picture_url):
+            # file:// paths, data: URLs, userinfo tricks and IP literals
+            # pointing back into the local network are refused. Plain
+            # http passes: real avatars still live on plain-http hosts.
             self.failed.emit(pubkey_hex, "unsupported URL scheme")
             return
         if pubkey_hex in self._inflight:
-            return  # already downloading for this pubkey — its eventual
-                    # signal will cover both callers
+            return  # already downloading for this pubkey, and its
+                    # eventual signal covers both callers
 
         cache_path = self._cache_path(pubkey_hex, picture_url)
         if cache_path.is_file():
-            pix = QPixmap(str(cache_path))
-            if not pix.isNull():
-                self.ready.emit(pubkey_hex, pix)
+            image = _decode_cached(cache_path)
+            if image is not None:
+                self.ready.emit(pubkey_hex, QPixmap.fromImage(image))
                 return
 
         request = QNetworkRequest(QUrl(picture_url))
         request.setTransferTimeout(_AVATAR_HTTP_TIMEOUT_MS)
         # Identify ourselves so a vain image host doesn't reject the request.
         request.setRawHeader(b"User-Agent", b"my-editor-nostr-chip/1")
+        request.setAttribute(
+            QNetworkRequest.Attribute.RedirectPolicyAttribute,
+            QNetworkRequest.RedirectPolicy.NoLessSafeRedirectPolicy,
+        )
+        request.setMaximumRedirectsAllowed(_MAX_AVATAR_REDIRECTS)
         reply = self._nam.get(request)
         self._inflight[pubkey_hex] = reply
+        oversize = {"hit": False}
+
+        def _size_guard(received: int, total: int, r=reply) -> None:
+            if oversize["hit"]:
+                return
+            if received > _MAX_AVATAR_BYTES or (
+                total > 0 and total > _MAX_AVATAR_BYTES
+            ):
+                oversize["hit"] = True
+                r.abort()
+
+        reply.downloadProgress.connect(_size_guard)
         reply.finished.connect(
-            lambda pk=pubkey_hex, r=reply, p=cache_path: self._on_reply(pk, r, p)
+            lambda pk=pubkey_hex, r=reply, p=cache_path: self._on_reply(
+                pk, r, p, oversize)
         )
 
     # -- internals ---------------------------------------------------------
@@ -192,11 +235,21 @@ class AvatarLoader(QObject):
         pubkey_hex: str,
         reply: QNetworkReply,
         cache_path: Path,
+        oversize: dict,
     ) -> None:
         self._inflight.pop(pubkey_hex, None)
         try:
+            if oversize["hit"]:
+                self.failed.emit(
+                    pubkey_hex, f"avatar exceeds {_MAX_AVATAR_BYTES} bytes")
+                return
             if reply.error() != QNetworkReply.NoError:
                 self.failed.emit(pubkey_hex, reply.errorString() or "network error")
+                return
+            # Redirects were followed, so check where the bytes actually
+            # came from before reading them.
+            if not url_safety.is_safe_mirror_source(reply.url().toString()):
+                self.failed.emit(pubkey_hex, "unsupported URL scheme")
                 return
             data = bytes(reply.readAll())
             if not data:
@@ -205,34 +258,62 @@ class AvatarLoader(QObject):
             if len(data) > _MAX_AVATAR_BYTES:
                 self.failed.emit(pubkey_hex, f"avatar exceeds {_MAX_AVATAR_BYTES} bytes")
                 return
-            pix = QPixmap()
-            if not pix.loadFromData(data):
+            image = decode_image_bytes(data)
+            if image is None:
                 self.failed.emit(pubkey_hex, "image decode failed")
                 return
-            # Persist to disk atomically.
-            tmp = cache_path.with_suffix(cache_path.suffix + ".tmp")
-            try:
-                tmp.write_bytes(data)
-                os.replace(tmp, cache_path)
-            except OSError:
-                pass  # cache miss next time is fine; we still have the pixmap
-            self.ready.emit(pubkey_hex, pix)
+            _write_private_file(cache_path, data)
+            self.ready.emit(pubkey_hex, QPixmap.fromImage(image))
         finally:
             reply.deleteLater()
 
     def _cache_path(self, pubkey_hex: str, picture_url: str) -> Path:
         """Cache key includes a hash of the URL so a URL change invalidates."""
         url_hash = hashlib.sha256(picture_url.encode("utf-8")).hexdigest()[:12]
-        return AVATAR_CACHE_DIR / f"{pubkey_hex}-{url_hash}"
+        return self._cache_dir / f"{pubkey_hex}-{url_hash}"
 
 
 # --------------------------------------------------------------------------- #
 # Utilities                                                                    #
 # --------------------------------------------------------------------------- #
 
-def _looks_like_http_url(value: str) -> bool:
+def _decode_cached(path: Path) -> Optional[object]:
+    """Decode a cached avatar file through the format allowlist."""
     try:
-        parsed = urlparse(value)
-    except (ValueError, AttributeError):
-        return False
-    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+        data = path.read_bytes()
+    except OSError:
+        return None
+    return decode_image_bytes(data)
+
+
+def _chmod(target, mode: int) -> None:
+    """Best-effort permissions; on Windows chmod only toggles read-only
+    and a failure here must never stop startup."""
+    try:
+        os.chmod(target, mode)
+    except OSError:
+        pass
+
+
+def _write_private_file(path: Path, data: bytes) -> None:
+    """Atomically cache ``data`` at ``path``, owner-readable only.
+
+    A cache miss next time is fine, so every failure here is swallowed:
+    the caller already has the pixmap.
+    """
+    try:
+        fd, tmp_path = tempfile.mkstemp(
+            prefix=".avatar_", suffix=".tmp", dir=str(path.parent)
+        )
+    except OSError:
+        return
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        _chmod(tmp_path, 0o600)
+        os.replace(tmp_path, path)
+    except OSError:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass

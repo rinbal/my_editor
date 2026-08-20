@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 
 import rmd_toolchain
 from rmd_toolchain import Cancelled, ToolchainError
+from url_safety import is_safe_external_url
 
 _DARK_CSS = """
 QDialog { background: #1E1E1E; }
@@ -292,7 +293,7 @@ class RmdSetupDialog(QDialog):
         self._append_log(f"\nFAILED: {message}")
         if instructions:
             self._append_log(instructions)
-        if page:
+        if page and is_safe_external_url(page):
             self._page_btn.setVisible(True)
             try:
                 self._page_btn.clicked.disconnect()

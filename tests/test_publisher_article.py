@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""build_article + slugify — pure builder + identifier-derivation tests."""
+"""build_article + slugify: pure builder + identifier-derivation tests."""
 
 from __future__ import annotations
 
@@ -92,7 +92,7 @@ def test_build_article_omits_empty_optional_tags():
 
 
 def test_build_article_published_at_zero_is_included():
-    # Falsy but explicitly provided — must still be emitted.
+    # Falsy but explicitly provided, must still be emitted.
     event = build_article("body", PK, slug="x", published_at=0)
     assert ["published_at", "0"] in event["tags"]
 
@@ -105,6 +105,41 @@ def test_build_article_extra_tags_appended():
         extra_tags=[["e", "abc123"]],
     )
     assert ["e", "abc123"] in event["tags"]
+
+
+# --------------------------------------------------------------------------- #
+# The NIP-23 cover image gate                                                 #
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("cover", [
+    "javascript:alert(1)",
+    "data:text/html,<script>alert(1)</script>",
+    "file:///etc/passwd",
+    "//cdn.example.com/x.png",          # protocol-relative, no scheme
+    "/img/hero.png",                    # never resolved against the feed base
+    "https://user:pw@host.example/x.png",
+    "http://169.254.169.254/x",         # link-local, the metadata service
+    "http://10.0.0.1/x.png",
+    "https://cdn.example.com/a b.png",  # whitespace inside a tag value
+])
+def test_an_unsafe_cover_drops_the_tag_and_still_publishes(cover):
+    # An imported article's cover comes straight out of untrusted feed
+    # HTML, and the article carries this app's client tag once signed.
+    # Losing the cover is the right trade; losing the article is not.
+    event = build_article("body", PK, slug="x", title="T", image=cover)
+    assert not any(t[0] == "image" for t in event["tags"])
+    assert ["title", "T"] in event["tags"]
+    assert event["content"] == "body"
+
+
+@pytest.mark.parametrize("cover", [
+    "http://blog.example/cover.png",    # plain http is normal for blogs
+    "https://cdn.example.com/cover.png",
+    "https://cdn.example.com/cover.png?w=1200",
+])
+def test_a_reachable_cover_keeps_its_tag(cover):
+    event = build_article("body", PK, slug="x", image=cover)
+    assert ["image", cover] in event["tags"]
 
 
 def test_build_article_signs_and_verifies():

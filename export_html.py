@@ -14,6 +14,11 @@ semantic, fully self-contained HTML:
 - images are embedded as base64 data URIs so a shared file carries its
   media with it; the original upload URL rides along in data-source-url.
 
+A document can name any path on the machine, so image bytes are read
+only through an ImageRootPolicy built from the caller's image_roots.
+The default is empty, which reads nothing: a caller that forgets the
+argument exports a placeholder instead of leaking a file.
+
 normalize_lists_after_set_html() is the inverse half of the round-trip:
 after loading any HTML file, real QTextList items are converted back to
 the editor's literal "• " bullet convention so the bullet key handlers
@@ -27,6 +32,7 @@ from PySide6.QtGui import (
     QTextBlockFormat,
     QTextCharFormat,
     QTextCursor,
+    QTextImageFormat,
 )
 
 from constants import DARK_BG, DARK_FG, LIGHT_BG, LIGHT_FG, MONO_FONT
@@ -38,6 +44,15 @@ from doc_walk import (
     parse_bullet_line,
     skip_prefix,
 )
+# Re-exported: the sniffers moved to image_safety because the decode
+# boundary needs them too, and main_window plus the tests import them
+# from here.
+from image_safety import (  # noqa: F401
+    ImageRootPolicy,
+    is_portable_image_source,
+    sniff_image_ext,
+    sniff_image_mime,
+)
 
 GENERATOR = "minimal texteditor"
 
@@ -47,57 +62,9 @@ _OBJ = "\ufffc"
 # Qt uses U+2028 for Shift+Enter line breaks inside a block.
 _LINE_SEP = "\u2028"
 
-_MAGIC_MIMES = (
-    (b"\x89PNG\r\n\x1a\n", "image/png"),
-    (b"\xff\xd8\xff", "image/jpeg"),
-    (b"GIF87a", "image/gif"),
-    (b"GIF89a", "image/gif"),
-    (b"BM", "image/bmp"),
-)
 
-
-def sniff_image_mime(data: bytes) -> str | None:
-    """Detect an image MIME type from magic bytes.
-
-    Needed because Blossom cache files are named by bare sha256 with no
-    extension. Returns None for unrecognized data.
-    """
-    for magic, mime in _MAGIC_MIMES:
-        if data.startswith(magic):
-            return mime
-    # WebP: RIFF....WEBP
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return "image/webp"
-    # SVG is text; look for an <svg root near the start.
-    head = data[:512].lstrip()
-    if head.startswith(b"<?xml") or head.startswith(b"<svg"):
-        if b"<svg" in data[:2048]:
-            return "image/svg+xml"
-    return None
-
-
-_EXT_FOR_MIME = {
-    "image/png": ".png",
-    "image/jpeg": ".jpg",
-    "image/gif": ".gif",
-    "image/webp": ".webp",
-    "image/bmp": ".bmp",
-    "image/svg+xml": ".svg",
-}
-
-
-def sniff_image_ext(data: bytes) -> str | None:
-    """File extension for image data, or None when unrecognized."""
-    mime = sniff_image_mime(data)
-    return _EXT_FOR_MIME.get(mime) if mime else None
-
-
-def _image_data_uri(path: str) -> str | None:
-    try:
-        with open(path, "rb") as f:
-            data = f.read()
-    except OSError:
-        return None
+def _data_uri(data: bytes) -> str | None:
+    """Base64 data URI for image bytes, or None when unrecognized."""
     mime = sniff_image_mime(data)
     if mime is None:
         return None
@@ -143,20 +110,48 @@ def _head_css() -> str:
     img {{ max-width: 100%; height: auto; }}"""
 
 
-def _render_image(img_fmt, source_url_for) -> str:
-    path = img_fmt.name()
-    source_url = source_url_for(path) if source_url_for else None
-    attrs = ""
+def _render_image(img_fmt, source_url_for, policy, asset_resolver) -> str:
+    """One <img>, resolving bytes through the resolver then the policy.
+
+    Order matters: an app-created asset is named by a key only the
+    resolver understands, a legacy or foreign image is named by a path
+    only the policy may read, and an image whose name is itself an
+    address (a data: URI or a third-party URL) is its own answer.
+    """
+    name = img_fmt.name()
+    alt = str(img_fmt.property(QTextImageFormat.ImageAltText) or "")
+    attrs = f' alt="{html.escape(alt, quote=True)}"'
+    for prop, value in (("width", img_fmt.width()), ("height", img_fmt.height())):
+        if value and value > 0:
+            attrs += f' {prop}="{int(value)}"'
+
+    source_url = source_url_for(name) if source_url_for else None
+    data = None
+    resolved = asset_resolver(name) if asset_resolver else None
+    if resolved is not None and getattr(resolved, "data", b""):
+        data = resolved.data
+        remote_url = str(getattr(resolved, "remote_url", "") or "")
+        if remote_url:
+            source_url = remote_url
     if source_url:
         attrs += f' data-source-url="{html.escape(source_url, quote=True)}"'
+    if data is None:
+        data = policy.read(name)
 
-    uri = _image_data_uri(path)
+    uri = _data_uri(data) if data else None
     if uri is not None:
-        return f'<img src="{uri}" alt=""{attrs}>'
+        return f'<img src="{uri}"{attrs}>'
+    if is_portable_image_source(name):
+        # The name is the picture's address: a data: URI already carries
+        # the bytes, and a foreign URL is media this app did not create.
+        # Both must come out exactly as the document holds them, and a
+        # document reopened from HTML names every embedded image this
+        # way, so anything else would erase the user's own picture.
+        return f'<img src="{html.escape(name, quote=True)}"{attrs}>'
     if source_url:
         # Bytes are gone from the cache; the original URL is better than
         # nothing even though it breaks strict self-containment.
-        return f'<img src="{html.escape(source_url, quote=True)}" alt=""{attrs}>'
+        return f'<img src="{html.escape(source_url, quote=True)}"{attrs}>'
     return "<em>[image unavailable]</em>"
 
 
@@ -174,11 +169,11 @@ def _render_text_run(text: str, fmt: QTextCharFormat) -> str:
     return out
 
 
-def _render_runs(runs, source_url_for) -> str:
+def _render_runs(runs, render_image) -> str:
     parts = []
     for text, fmt in runs:
         if fmt.isImageFormat():
-            parts.append(_render_image(fmt.toImageFormat(), source_url_for))
+            parts.append(render_image(fmt.toImageFormat()))
             continue
         # Defensive: strip stray object-replacement chars from plain runs.
         text = text.replace(_OBJ, "")
@@ -192,13 +187,26 @@ def _needs_pre_wrap(text: str) -> bool:
     return text.startswith(" ") or "  " in text
 
 
-def document_to_html(doc, title: str = "", source_url_for=None) -> str:
+def document_to_html(doc, title: str = "", source_url_for=None, *,
+                     image_roots=(), asset_resolver=None) -> str:
     """Serialize a QTextDocument to a self-contained semantic HTML5 page.
 
     source_url_for: optional callback mapping a local image path to its
     original https URL, used only for the data-source-url provenance
     attribute and as a last-resort src when the cached bytes are gone.
+
+    image_roots: directories a local image name may be read from. Empty
+    (the default) reads nothing.
+
+    asset_resolver: optional callback mapping an image name to an object
+    exposing ``data`` / ``remote_url``, used for images this app created
+    and holds in its own cache.
     """
+    policy = ImageRootPolicy(image_roots)
+
+    def render_image(img_fmt) -> str:
+        return _render_image(img_fmt, source_url_for, policy, asset_resolver)
+
     body: list[str] = []
     # List markup is emitted compactly (no newlines): whitespace text nodes
     # inside <li> would be re-parsed by Qt as trailing spaces on the item.
@@ -241,7 +249,7 @@ def document_to_html(doc, title: str = "", source_url_for=None) -> str:
             li_open[d] = True
 
             runs = skip_prefix(list(iter_block_runs(block)), spaces + len("• "))
-            list_buf.append(_render_runs(runs, source_url_for))
+            list_buf.append(_render_runs(runs, render_image))
             continue
 
         close_to(0)
@@ -251,7 +259,7 @@ def document_to_html(doc, title: str = "", source_url_for=None) -> str:
             # into a truly empty block on load.
             body.append("<p>&nbsp;</p>")
             continue
-        content = _render_runs(list(iter_block_runs(block)), source_url_for)
+        content = _render_runs(list(iter_block_runs(block)), render_image)
         if _needs_pre_wrap(text):
             body.append(f'<p style="white-space:pre-wrap">{content}</p>')
         else:

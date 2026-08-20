@@ -5,8 +5,9 @@ The defect classes this file guards against:
   substring matching silently failed for ".Rmd (*.Rmd)"),
 - .rmd accidentally matching the .md suffix branches (formatting-loss
   warning, toMarkdown save),
-- _do_insert_image dropping the source URL again (exports use it for
-  provenance).
+- the insert path putting literal markdown text into a markdown tab
+  again, which Qt's own writer escapes into a link so the image reopens
+  as text.
 """
 
 import os
@@ -18,6 +19,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtGui import QTextImageFormat
 from PySide6.QtWidgets import QApplication
 
 from main_window import MainWindow, _SAVE_EXTS, _SUPPORTED_EXTS, _extension_from_filter
@@ -76,7 +78,7 @@ def test_rmd_is_supported_for_open_and_drop():
 
 
 # --------------------------------------------------------------------------- #
-# _do_insert_image records the source URL for provenance
+# _insert_asset puts a real image format into both kinds of tab
 # --------------------------------------------------------------------------- #
 
 class _StatusStub:
@@ -84,23 +86,54 @@ class _StatusStub:
         pass
 
 
-def _fake_window():
-    return types.SimpleNamespace(status=_StatusStub())
+class _AssetManagerStub:
+    def __init__(self, data=b""):
+        self._data = data
+
+    def resolve_bytes(self, key):
+        return self._data or None
 
 
-def test_insert_image_records_source_url(tmp_path):
+def _fake_window(data=b""):
+    return types.SimpleNamespace(
+        status=_StatusStub(), _asset_manager=_AssetManagerStub(data)
+    )
+
+
+def _image_formats(doc):
+    out = []
+    block = doc.begin()
+    while block.isValid():
+        it = block.begin()
+        while not it.atEnd():
+            frag = it.fragment()
+            if frag.isValid() and frag.charFormat().isImageFormat():
+                out.append(frag.charFormat().toImageFormat())
+            it += 1
+        block = block.next()
+    return out
+
+
+def test_insert_asset_uses_the_asset_key_as_the_image_name():
     ed = HtmlEditor()
-    local = str(tmp_path / ("a" * 64))
-    MainWindow._do_insert_image(_fake_window(), ed, local,
-                                "https://blossom.example/a.png")
-    assert ed._image_urls == {local: "https://blossom.example/a.png"}
+    asset = types.SimpleNamespace(key=f"myeditor-asset:{'a' * 64}", sha256="a" * 64)
+    MainWindow._insert_asset(_fake_window(), ed, asset, alt="a picture")
+
+    formats = _image_formats(ed.document())
+    assert [f.name() for f in formats] == [asset.key]
+    assert formats[0].property(QTextImageFormat.ImageAltText) == "a picture"
+    # The per-editor URL record is gone: provenance comes from the
+    # asset layer, so nothing here may recreate it.
+    assert not hasattr(ed, "_image_urls")
 
 
-def test_insert_image_markdown_tab_inserts_reference(tmp_path):
+def test_insert_asset_markdown_tab_gets_a_fragment_not_literal_text():
     ed = HtmlEditor()
     ed._loaded_as_markdown = True
-    MainWindow._do_insert_image(_fake_window(), ed,
-                                str(tmp_path / "x"),
-                                "https://blossom.example/a.png", "alt")
-    assert "![alt](https://blossom.example/a.png)" in ed.toPlainText()
+    asset = types.SimpleNamespace(key=f"myeditor-asset:{'b' * 64}", sha256="b" * 64)
+    MainWindow._insert_asset(_fake_window(), ed, asset, alt="alt")
+
+    # Literal "![alt](url)" text is what toMarkdown escapes into a link.
+    assert "![alt]" not in ed.toPlainText()
+    assert [f.name() for f in _image_formats(ed.document())] == [asset.key]
     assert not hasattr(ed, "_image_urls")

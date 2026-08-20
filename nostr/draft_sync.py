@@ -6,7 +6,7 @@
 
   - One ``Subscription`` on the active profile's read relays, filtered to
     kind-31234 events authored by the profile pubkey.
-  - A sequential decryption queue feeding a ``BunkerClient`` —
+  - A sequential decryption queue feeding a ``BunkerClient``.
     decrypting one wrap at a time avoids slamming the signer with N
     approval prompts in parallel and matches the bunker's request /
     response cadence.
@@ -34,7 +34,7 @@ from typing import Deque, Dict, List, Optional, Tuple
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from . import DEFAULT_RELAYS
-from .bunker import BunkerClient, BunkerSessionPool
+from .bunker import BunkerClient, BunkerSessionPool, is_signer_silent
 from .draft_store import DraftState, DraftStore
 from .drafts import (
     DRAFT_WRAP_KIND,
@@ -65,19 +65,37 @@ _BUNKER_UNSUPPORTED_NEEDLES: Tuple[str, ...] = (
     "not implemented",
 )
 
+# A silent signer (see ``bunker.is_signer_silent``) is a recoverable
+# condition whose cure is on the user's phone, so it is latched
+# separately from an incapable one and can be cleared.
+#
+# What a row says once we have stopped asking on its behalf.
+_SIGNER_SILENT_REASON = "your signer did not answer"
+
+# How many drafts in a row may time out before we stop asking. The queue
+# is serialized, so one timeout can be a single dropped reply but two in
+# a row means nothing is listening, and every further attempt costs the
+# user another 30 seconds of a progress line that cannot advance.
+_SILENCE_LIMIT: int = 2
+
 
 class DraftSync(QObject):
     """Drive the draft list for one Nostr profile at a time.
 
     Signals:
-      status_changed(str)   — human-readable line for the panel footer.
-      bunker_error(str)     — terminal: signer rejected NIP-44 entirely;
-                              panel should show the unsupported-signer
-                              state.
+      status_changed(str)      human-readable line for the panel footer.
+      bunker_error(str)        terminal: signer rejected NIP-44 entirely;
+                               panel should show the unsupported-signer
+                               state.
+      signer_unreachable(bool) the signer is not answering at all. Unlike
+                               ``bunker_error`` this is recoverable, so it
+                               carries a flag rather than a message and is
+                               cleared once the signer replies again.
     """
 
     status_changed = Signal(str)
     bunker_error = Signal(str)
+    signer_unreachable = Signal(bool)
 
     def __init__(
         self,
@@ -115,6 +133,15 @@ class DraftSync(QObject):
         self._pending: Dict[str, Tuple[str, str]] = {}
         self._bunker_unsupported: bool = False
 
+        # A signer that is not answering is a different condition from one
+        # that cannot decrypt: it is temporary, and the cure is on the
+        # user's phone. We latch it so the queue stops rather than serving
+        # every remaining draft its own 30-second timeout, which for a
+        # 54-draft library is close to half an hour of a progress line
+        # that will never advance.
+        self._signer_unreachable: bool = False
+        self._consecutive_silences: int = 0
+
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setInterval(DEFAULT_REFRESH_INTERVAL_MS)
         self._refresh_timer.timeout.connect(self.refresh)
@@ -143,7 +170,7 @@ class DraftSync(QObject):
         self._store.set_loading(True)
         self.status_changed.emit("Looking up your relay list…")
 
-        # Always include bunker relays as a seed — they're the most
+        # Always include bunker relays as a seed. They're the most
         # likely place the user's recent activity shows up even before
         # the NIP-65 list lands.
         seed_relays = list(dict.fromkeys(profile.bunker_relays))
@@ -156,7 +183,7 @@ class DraftSync(QObject):
     def stop(self) -> None:
         """Tear down the subscription and invalidate in-flight callbacks.
 
-        Idempotent — safe to call from teardown paths.
+        Idempotent, so it is safe to call from teardown paths.
         """
         # Bumping the generation token first guarantees any callback
         # that fires after this point sees a stale ``gen`` and exits
@@ -170,6 +197,8 @@ class DraftSync(QObject):
         self._pending.clear()
         self._decrypt_inflight = None
         self._bunker_unsupported = False
+        self._signer_unreachable = False
+        self._consecutive_silences = 0
         self._profile = None
         self._bunker = None
         self._read_relays = []
@@ -197,7 +226,7 @@ class DraftSync(QObject):
         Typical use: the signer (e.g. Amber) didn't approve the first
         ``nip44_decrypt`` request in time, or the user dismissed the
         prompt. The wrap is still in our store with its ciphertext, so
-        retrying is a single fresh bunker round-trip — no relay
+        retrying is a single fresh bunker round-trip with no relay
         re-fetch needed.
 
         Safe to call for any state; we only do work if the record
@@ -207,6 +236,9 @@ class DraftSync(QObject):
             return
         if self._bunker_unsupported:
             return
+        # Retrying one row is the user telling us the signer is awake, so
+        # the whole queue gets to run again, not just this draft.
+        self._clear_signer_unreachable()
         record = self._store.get(identifier)
         if record is None or not record.ciphertext:
             return
@@ -226,6 +258,41 @@ class DraftSync(QObject):
             ciphertext=record.ciphertext,
         )
         self._enqueue_decrypt(meta)
+
+    def retry_signer(self) -> None:
+        """Ask again after the user tells us their signer is awake.
+
+        There are two ways the signer can be missing and the caller
+        should not have to know which one it is looking at: the handshake
+        never completed, which needs a fresh session, or it completed and
+        the signer then went quiet, which only needs the queue restarted.
+        """
+        if self._profile is None or self._bunker_unsupported:
+            return
+        self._clear_signer_unreachable()
+        if self._bunker is None:
+            gen = self._generation
+            self.status_changed.emit("Connecting to your signer…")
+            self._session_pool.get(
+                self._profile,
+                on_ready=lambda client, g=gen: self._on_bunker_ready(g, client),
+                on_error=lambda reason, g=gen: self._on_bunker_unavailable(g, reason),
+            )
+            return
+        self._requeue_failed_drafts()
+
+    def _requeue_failed_drafts(self) -> None:
+        """Re-queue every draft we stopped asking about.
+
+        ``retry_decrypt`` is the single door back into the queue, so a
+        draft that failed for its own reasons (a malformed payload, a
+        foreign identity) is re-examined here too. That costs one signer
+        round-trip and keeps this from needing to know which failures are
+        worth retrying.
+        """
+        for record in list(self._store):
+            if record.state is DraftState.FAILED and record.ciphertext:
+                self.retry_decrypt(record.identifier)
 
     # -- internal: cancellation -------------------------------------------
 
@@ -255,17 +322,27 @@ class DraftSync(QObject):
         if not self._is_current(gen):
             return
         self._bunker = client
+        self._clear_signer_unreachable()
         self._open_subscription()
+        # A reconnect finds drafts we already gave up on, and the relay
+        # will not re-deliver their wraps because the store already holds
+        # them at that ``created_at``. Nothing else would ever ask again.
+        self._requeue_failed_drafts()
         self._refresh_timer.start()
 
     def _on_bunker_unavailable(self, gen: int, reason: str) -> None:
         if not self._is_current(gen):
             return
-        # Without a signer we can't decrypt anything — surface the
-        # failure but keep the wraps as skeleton rows so the user sees
-        # there *are* drafts, just locked.
+        # Without a signer we can't decrypt anything, so surface the
+        # failure but keep the wraps as skeleton rows: the user should
+        # see there *are* drafts, just locked.
         self.status_changed.emit(f"Signer unavailable: {reason}")
         self._open_subscription()
+        # A handshake that went unanswered is the strongest evidence we
+        # ever get that nothing is listening, so there is no reason to
+        # spend two draft timeouts rediscovering it.
+        if is_signer_silent(reason):
+            self._latch_signer_unreachable()
 
     def _open_subscription(self) -> None:
         if self._profile is None or not self._read_relays:
@@ -317,11 +394,17 @@ class DraftSync(QObject):
         if self._bunker_unsupported or self._bunker is None:
             # Nothing we can do until the signer is back.
             return
+        if self._signer_unreachable:
+            # Wraps keep arriving from the relays after we have given up
+            # asking. Marking them says so, where leaving them loading
+            # would show a row decrypting with nothing on its way.
+            self._store.set_failed(meta.identifier, _SIGNER_SILENT_REASON)
+            return
         # Latest-write wins: overwriting ``_pending[id]`` ensures the
         # newest ciphertext is what the pump picks up, even if an older
         # one is currently inflight. When the inflight completes we
         # re-enqueue the identifier (in ``_after_decrypt``) so the newer
-        # ciphertext gets its turn — fixes the lost-update race where a
+        # ciphertext gets its turn, fixing the lost-update race where a
         # wrap arriving during inflight would otherwise be stranded in
         # ``_pending`` forever.
         self._pending[meta.identifier] = (meta.event_id, meta.ciphertext)
@@ -337,11 +420,13 @@ class DraftSync(QObject):
             return
         if self._bunker is None or self._bunker_unsupported:
             return
+        if self._signer_unreachable:
+            return
         while self._decrypt_queue:
             identifier = self._decrypt_queue.popleft()
             entry = self._pending.pop(identifier, None)
             if entry is None:
-                # Tombstoned or otherwise drained — skip and continue.
+                # Tombstoned or otherwise drained, so skip and continue.
                 continue
             event_id, ciphertext = entry
             if not ciphertext:
@@ -363,7 +448,7 @@ class DraftSync(QObject):
         """Clear inflight bookkeeping and re-pump.
 
         If a newer wrap arrived while we were waiting on the signer it
-        will be sitting in ``_pending[identifier]`` — re-enqueue so the
+        will be sitting in ``_pending[identifier]``, so re-enqueue and the
         next pump round picks it up. Without this, rapid edits to the
         same draft can lose the latest ciphertext.
         """
@@ -381,6 +466,9 @@ class DraftSync(QObject):
     ) -> None:
         if not self._is_current(gen):
             return
+        # Whatever the payload turns out to be, the signer replied, which
+        # is the only thing the unreachable latch is about.
+        self._clear_signer_unreachable()
         try:
             inner = parse_inner_event(plaintext)
         except ValueError as exc:
@@ -426,14 +514,53 @@ class DraftSync(QObject):
             self._latch_bunker_unsupported()
             return
 
+        if is_signer_silent(reason):
+            self._store.set_failed(identifier, _SIGNER_SILENT_REASON)
+            self._consecutive_silences += 1
+            if self._consecutive_silences >= _SILENCE_LIMIT:
+                self._latch_signer_unreachable()
+                return
+            self._after_decrypt(identifier)
+            return
+
+        # A reasoned refusal proves the signer is there, so it clears the
+        # silence tally even though this particular draft failed.
+        self._consecutive_silences = 0
         self._store.set_failed(identifier, reason or "decryption failed")
         self._after_decrypt(identifier)
+
+    def _latch_signer_unreachable(self) -> None:
+        """Stop asking a signer that is not there.
+
+        Every draft still waiting is marked so the panel can offer a
+        retry per row, and the queue is emptied so a signer that comes
+        back does not first have to chew through a backlog of requests
+        the user has long stopped caring about.
+        """
+        if self._signer_unreachable:
+            return
+        self._signer_unreachable = True
+        self._decrypt_queue.clear()
+        self._pending.clear()
+        self._decrypt_inflight = None
+        for record in list(self._store):
+            if record.state is DraftState.LOADING:
+                self._store.set_failed(record.identifier, _SIGNER_SILENT_REASON)
+        self.signer_unreachable.emit(True)
+
+    def _clear_signer_unreachable(self) -> None:
+        """The signer answered, so drop the latch and the tally."""
+        self._consecutive_silences = 0
+        if not self._signer_unreachable:
+            return
+        self._signer_unreachable = False
+        self.signer_unreachable.emit(False)
 
     def _latch_bunker_unsupported(self) -> None:
         """Stop hammering a signer that has no NIP-44 support."""
         self._bunker_unsupported = True
         self.bunker_error.emit(
-            "This signer doesn't support NIP-44 encryption — "
+            "This signer doesn't support NIP-44 encryption, so "
             "private drafts are unavailable for this profile."
         )
         # Mark every loading record so the panel can render the
@@ -463,7 +590,7 @@ def _select_read_relays(
 
     Order of preference:
       1. NIP-65 read relays the user has explicitly published.
-      2. NIP-65 write relays — drafts are stashed there, so they're
+      2. NIP-65 write relays, because drafts are stashed there, so they're
          the next-best source if no read set exists.
       3. Bunker relays the profile was paired through.
       4. Curated defaults as a last-resort backstop so a brand-new
@@ -471,7 +598,7 @@ def _select_read_relays(
 
     De-duplicated, capped at ``cap``. Distinct from the publish-relay
     selector (``outbox.select_publish_relays``) which deliberately
-    blends our curated set at the *front* — for reads, we honour the
+    blends our curated set at the *front*. For reads, we honour the
     user's choices first.
     """
     seen: set[str] = set()
@@ -496,7 +623,7 @@ def _select_read_relays(
     if len(out) < cap:
         add(bunker_relays)
     if not out:
-        # Nothing user-specific to consult — fall back to curated set
+        # Nothing user-specific to consult, so fall back to curated set
         # so the subscription has somewhere to land.
         add(DEFAULT_RELAYS)
     return out

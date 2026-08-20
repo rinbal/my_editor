@@ -26,6 +26,7 @@ from ...bech32 import (
     encode_naddr,
     encode_nevent,
 )
+from ...drafts import derive_title_from_markdown
 from ...outbox import parse_relay_list
 from ...queries import fetch_addressable_events, fetch_latest_event
 from ...relay import RelayPool
@@ -186,14 +187,7 @@ def event_tag(event: dict, name: str) -> str:
 
 def _title_from_content(markdown: str, max_len: int = 90) -> str:
     """A title for events that carry none (e.g. a kind-1 note)."""
-    for line in str(markdown or "").split("\n"):
-        line = re.sub(r"^#+\s*", "", line)
-        line = re.sub(r"[*_`>]", "", line).strip()
-        if line:
-            if len(line) > max_len:
-                return line[: max_len - 1].rstrip() + "…"
-            return line
-    return ""
+    return derive_title_from_markdown(markdown, max_len=max_len, fallback="")
 
 
 def nostr_event_to_item(event: dict) -> FeedItem:

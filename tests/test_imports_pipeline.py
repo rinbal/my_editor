@@ -37,6 +37,7 @@ from nostr.imports.constants import (
     IDENTIFIER_PREFIX,
     SOURCE_TAG,
 )
+from nostr.imports.images import RehostedImage
 from nostr.imports.pipeline import ImportItemsJob
 from nostr.rss.dtag import derive_identifier
 
@@ -552,6 +553,7 @@ IMAGE_HTML = (
 
 
 def fake_image_mirror(results=None):
+    """A transport that rehosts but measures nothing, the old shape."""
     table = dict(results or {})
     calls = []
 
@@ -565,6 +567,47 @@ def fake_image_mirror(results=None):
             on_failure(payload)
 
     return mirror, calls
+
+
+IMAGE_BYTES = 4096
+FOREIGN_SHA = "ab" * 32
+
+
+def image_sha(index: int) -> str:
+    return f"{index:064x}"
+
+
+def measuring_image_mirror(results=None, *, address_names_the_hash=True):
+    """The production shape: the URL plus what was measured about it.
+
+    With ``address_names_the_hash`` off the blob is served from a name
+    carrying a different 64 character hex run, the one case where the
+    address and the measured hash disagree.
+    """
+    table = dict(results or {})
+    calls = []
+
+    def mirror(url, on_success, on_failure):
+        calls.append(url)
+        kind, payload = table.get(url, ("ok", ""))
+        if kind != "ok":
+            on_failure(payload)
+            return
+        sha = image_sha(len(calls))
+        named = sha if address_names_the_hash else FOREIGN_SHA
+        rehosted = payload or f"https://blossom.example/{named}.png"
+        on_success(rehosted, RehostedImage(
+            url=rehosted,
+            sha256=sha,
+            mime="image/png",
+            size=IMAGE_BYTES,
+        ))
+
+    return mirror, calls
+
+
+def imeta_tags(event) -> list:
+    return [t for t in event["tags"] if t[0] == "imeta"]
 
 
 class TestImageRehosting:
@@ -607,6 +650,48 @@ class TestImageRehosting:
         assert calls == []
         assert "https://a.example/banner.png" in created[0].inner_event["content"]
 
+    def test_cover_follows_the_body_when_it_was_rehosted(self):
+        # The cover is a tag, the body is content, and both can name the
+        # same file. Once the user has approved rehosting that image in
+        # the review dialog, leaving the tag pointing at the dead
+        # original would publish an article whose cover disagrees with
+        # its own first picture.
+        factory, created = make_factory()
+        mirror, _calls = fake_image_mirror()
+        item = make_item("Pictures", guid="p1", content_html=IMAGE_HTML,
+                         image="https://a.example/banner.png")
+        job = make_job([item], factory=factory, image_mirror=mirror)
+        job.start()
+        tags = created[0].inner_event["tags"]
+        assert ["image", "https://blossom.example/1"] in tags
+
+    def test_a_cover_outside_the_body_is_neither_uploaded_nor_rewritten(self):
+        # The review dialog lists body images only, so a cover the user
+        # never saw there must keep the URL the feed gave it. Rehosting
+        # it would put a third party's file on the user's server outside
+        # what was approved.
+        factory, created = make_factory()
+        mirror, calls = fake_image_mirror()
+        item = make_item("Pictures", guid="p1", content_html=IMAGE_HTML,
+                         image="https://a.example/cover-only.png")
+        job = make_job([item], factory=factory, image_mirror=mirror)
+        job.start()
+        assert "https://a.example/cover-only.png" not in calls
+        tags = created[0].inner_event["tags"]
+        assert ["image", "https://a.example/cover-only.png"] in tags
+
+    def test_a_cover_whose_image_failed_to_rehost_keeps_its_url(self):
+        factory, created = make_factory()
+        mirror, _calls = fake_image_mirror({
+            "https://a.example/banner.png": ("err", "no thanks"),
+        })
+        item = make_item("Pictures", guid="p1", content_html=IMAGE_HTML,
+                         image="https://a.example/banner.png")
+        job = make_job([item], factory=factory, image_mirror=mirror)
+        job.start()
+        tags = created[0].inner_event["tags"]
+        assert ["image", "https://a.example/banner.png"] in tags
+
     def test_skip_set_honoured(self):
         factory, created = make_factory()
         mirror, calls = fake_image_mirror()
@@ -617,6 +702,123 @@ class TestImageRehosting:
         assert calls == ["https://a.example/photo.jpg"]
         content = created[0].inner_event["content"]
         assert "https://a.example/banner.png" in content
+
+
+class TestRehostedImageMetadata:
+    """NIP-92 ``imeta`` for the images this import put on the server.
+
+    The importer downloads each image and hashes it, so the hash, the
+    mime and the size are measurements this process made rather than
+    anything a server or a feed asserted. That is what makes describing
+    them allowed under AD-14, and it is the payoff for having stopped
+    asking servers to fetch third-party URLs.
+    """
+
+    def test_a_rehosted_image_is_described(self):
+        factory, created = make_factory()
+        mirror, _calls = measuring_image_mirror()
+        item = make_item("Pictures", guid="p1", content_html=IMAGE_HTML)
+        job = make_job([item], factory=factory, image_mirror=mirror)
+        job.start()
+
+        inner = created[0].inner_event
+        tags = imeta_tags(inner)
+        assert len(tags) == 2
+        first = f"https://blossom.example/{image_sha(1)}.png"
+        assert first in inner["content"]
+        assert tags[0] == [
+            "imeta",
+            f"url {first}",
+            "m image/png",
+            f"x {image_sha(1)}",
+            f"size {IMAGE_BYTES}",
+        ]
+
+    def test_no_dimensions_are_claimed(self):
+        """Nothing on this path decodes the image, so nothing measured it."""
+        factory, created = make_factory()
+        mirror, _calls = measuring_image_mirror()
+        item = make_item("Pictures", guid="p1", content_html=IMAGE_HTML)
+        job = make_job([item], factory=factory, image_mirror=mirror)
+        job.start()
+        entries = [e for tag in imeta_tags(created[0].inner_event)
+                   for e in tag]
+        assert not any(e.startswith("dim ") for e in entries)
+
+    def test_an_image_that_kept_its_original_url_is_not_described(self):
+        factory, created = make_factory()
+        mirror, _calls = measuring_image_mirror({
+            "https://a.example/banner.png": ("err", "no thanks"),
+        })
+        item = make_item("Pictures", guid="p1", content_html=IMAGE_HTML)
+        job = make_job([item], factory=factory, image_mirror=mirror)
+        job.start()
+
+        inner = created[0].inner_event
+        assert "https://a.example/banner.png" in inner["content"]
+        tags = imeta_tags(inner)
+        assert len(tags) == 1
+        assert "https://a.example/banner.png" not in tags[0][1]
+
+    def test_a_skipped_image_is_not_described(self):
+        factory, created = make_factory()
+        mirror, _calls = measuring_image_mirror()
+        item = make_item("Pictures", guid="p1", content_html=IMAGE_HTML)
+        job = make_job([item], factory=factory, image_mirror=mirror,
+                       skip_image_urls={"https://a.example/banner.png"})
+        job.start()
+        tags = imeta_tags(created[0].inner_event)
+        assert len(tags) == 1
+
+    def test_rehosting_turned_off_describes_nothing(self):
+        factory, created = make_factory()
+        mirror, _calls = measuring_image_mirror()
+        item = make_item("Pictures", guid="p1", content_html=IMAGE_HTML)
+        job = make_job([item], factory=factory, image_mirror=mirror,
+                       rehost_images=False)
+        job.start()
+        assert imeta_tags(created[0].inner_event) == []
+
+    def test_a_transport_that_measured_nothing_describes_nothing(self):
+        factory, created = make_factory()
+        mirror, _calls = fake_image_mirror()
+        item = make_item("Pictures", guid="p1", content_html=IMAGE_HTML)
+        job = make_job([item], factory=factory, image_mirror=mirror)
+        job.start()
+        assert "https://blossom.example/1" in created[0].inner_event["content"]
+        assert imeta_tags(created[0].inner_event) == []
+
+    def test_an_address_naming_another_hash_is_not_described(self):
+        """BUD-03 reads the LAST 64 hex run in a URL as the blob's hash.
+
+        A reader applying that rule to an address whose last run is not
+        the hash resolves it to a different blob than the ``x`` field
+        claims. The image is published either way; only the description
+        is dropped.
+        """
+        factory, created = make_factory()
+        mirror, _calls = measuring_image_mirror(address_names_the_hash=False)
+        item = make_item("Pictures", guid="p1", content_html=IMAGE_HTML)
+        job = make_job([item], factory=factory, image_mirror=mirror)
+        job.start()
+
+        inner = created[0].inner_event
+        assert f"https://blossom.example/{FOREIGN_SHA}.png" in inner["content"]
+        assert imeta_tags(inner) == []
+
+    def test_a_cover_outside_the_body_is_never_described(self):
+        """B9: the cover is a tag, and imeta describes content URLs."""
+        factory, created = make_factory()
+        mirror, _calls = measuring_image_mirror()
+        item = make_item("Pictures", guid="p1", content_html=IMAGE_HTML,
+                         image="https://a.example/cover-only.png")
+        job = make_job([item], factory=factory, image_mirror=mirror)
+        job.start()
+
+        inner = created[0].inner_event
+        assert ["image", "https://a.example/cover-only.png"] in inner["tags"]
+        entries = [e for tag in imeta_tags(inner) for e in tag]
+        assert not any("cover-only" in e for e in entries)
 
 
 # --------------------------------------------------------------------------- #

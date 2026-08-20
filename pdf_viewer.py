@@ -43,6 +43,7 @@ from PySide6.QtWidgets import (
     QTreeView, QVBoxLayout, QWidget,
 )
 
+from url_safety import is_safe_external_url
 from widgets import FindBar
 
 _POSITIONS_PATH = os.path.expanduser("~/.config/my_editor/pdf_positions.json")
@@ -411,7 +412,10 @@ class _ReaderView(QPdfView):
     def _follow_link(self, link):
         url = link.url()
         if url.isValid() and not url.isEmpty():
-            QDesktopServices.openUrl(url)
+            # A PDF is authored entirely by whoever sent it, so its links
+            # are handed to the OS only when they are ordinary web links.
+            if is_safe_external_url(url.toString()):
+                QDesktopServices.openUrl(url)
         elif link.page() >= 0:
             self.pageNavigator().jump(link)
 

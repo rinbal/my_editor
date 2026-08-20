@@ -28,7 +28,9 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPointF
+import types
+
+from PySide6.QtCore import QPointF, QUrl
 from PySide6.QtGui import QTextDocument
 from PySide6.QtPdfWidgets import QPdfView
 from PySide6.QtWidgets import QApplication
@@ -491,6 +493,15 @@ def test_links_hit_follow_and_miss(tmp_path, qt_app, monkeypatch):
     monkeypatch.setattr(pdf_viewer.QDesktopServices, "openUrl",
                         staticmethod(lambda u: opened.append(u.toString()) or True))
     view._follow_link(url_link)
+    assert opened == ["https://example.com/doc"]
+
+    # A PDF is authored entirely by whoever sent it, so a link naming a
+    # local file, a UNC share or a script never reaches the OS.
+    for hostile in ("file:///etc/passwd", "javascript:alert(1)",
+                    "smb://attacker.example/share"):
+        view._follow_link(
+            types.SimpleNamespace(url=lambda u=hostile: QUrl(u), page=lambda: -1)
+        )
     assert opened == ["https://example.com/doc"]
 
 

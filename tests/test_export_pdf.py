@@ -6,14 +6,20 @@ The defect classes this file guards against:
   white page (the ctx.palette override),
 - page geometry not honoring the persisted page setup,
 - oversized images overflowing the printable width,
+- a cold clone losing every image, or reading files outside the
+  caller's trusted roots,
+- an image carried by a data: URI name (every document reopened from
+  .html) printing as the unavailable placeholder,
 - metadata (title/creator) not landing in the file.
 
 Painting requires a QApplication (not QCoreApplication) plus the
 offscreen platform.
 """
 
+import base64
 import os
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -22,7 +28,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QSize, QLocale
-from PySide6.QtGui import QColor, QImage, QTextCharFormat, QTextCursor, QTextDocument
+from PySide6.QtGui import (
+    QColor,
+    QImage,
+    QTextCharFormat,
+    QTextCursor,
+    QTextDocument,
+    QTextImageFormat,
+)
 from PySide6.QtPdf import QPdfDocument
 
 import export_pdf
@@ -140,7 +153,8 @@ def test_oversized_image_capped_to_printable_width(tmp_path):
     doc = QTextDocument()
     QTextCursor(doc).insertImage(ipath)
     out = str(tmp_path / "img.pdf")
-    export_pdf_file(doc, out, title="T", page_setup=A4_SETUP)
+    export_pdf_file(doc, out, title="T", page_setup=A4_SETUP,
+                    image_roots=(str(tmp_path),))
     pdf = _load(out)
     im = pdf.render(0, QSize(595, 842))
     xs = [x for y in range(0, 842, 2) for x in range(595)
@@ -149,6 +163,92 @@ def test_oversized_image_capped_to_printable_width(tmp_path):
     width_pt = max(xs) - min(xs) + 1
     printable_pt = 595 - 2 * (20 / 25.4 * 72)  # A4 minus 20mm margins
     assert width_pt <= printable_pt + 3  # rasterization tolerance
+
+
+def _count_pixels(pdf, predicate):
+    im = pdf.render(0, QSize(595, 842))
+    return sum(1 for y in range(0, 842, 4) for x in range(0, 595, 4)
+               if predicate(im.pixelColor(x, y)))
+
+
+def test_image_outside_the_roots_renders_a_placeholder(tmp_path):
+    # The document names the file; only the caller's roots may be read.
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    img = QImage(400, 200, QImage.Format_RGB32)
+    img.fill(QColor("red"))
+    ipath = str(outside / "secret.png")
+    img.save(ipath, "PNG")
+    root = tmp_path / "root"
+    root.mkdir()
+    doc = QTextDocument()
+    QTextCursor(doc).insertImage(ipath)
+    out = str(tmp_path / "outside.pdf")
+    export_pdf_file(doc, out, title="T", page_setup=A4_SETUP,
+                    image_roots=(str(root),))
+    pdf = _load(out)
+    red = _count_pixels(pdf, lambda c: c.red() > 200 and c.green() < 80)
+    grey = _count_pixels(
+        pdf, lambda c: 180 < c.red() < 220 and abs(c.red() - c.blue()) < 12)
+    assert red == 0
+    assert grey > 0
+
+
+def test_cold_document_renders_images_from_the_asset_resolver(tmp_path):
+    # clone() is a plain QTextDocument, so a resolver installed on the
+    # editor widget does not apply to it: without priming, a document
+    # that was never shown exports with no image at all.
+    img = QImage(400, 200, QImage.Format_RGB32)
+    img.fill(QColor("red"))
+    ipath = str(tmp_path / "asset.png")
+    img.save(ipath, "PNG")
+    data = open(ipath, "rb").read()
+    key = "myeditor-asset:" + "a" * 64
+    fmt = QTextImageFormat()
+    fmt.setName(key)
+    doc = QTextDocument()
+    QTextCursor(doc).insertImage(fmt)
+    resolved = SimpleNamespace(data=data, mime="image/png", remote_url="",
+                               width=400, height=200, alt="", sha256="a" * 64)
+    out = str(tmp_path / "cold.pdf")
+    export_pdf_file(doc, out, title="T", page_setup=A4_SETUP,
+                    asset_resolver=lambda name: resolved)
+    pdf = _load(out)
+    red = _count_pixels(pdf, lambda c: c.red() > 200 and c.green() < 80)
+    assert red > 0
+
+
+def test_data_uri_named_image_prints_its_own_pixels(tmp_path):
+    # Every document reopened from .html names its images by the data
+    # URI that carries them; printing a grey box instead was losing the
+    # picture on the one path that cannot be undone.
+    img = QImage(400, 200, QImage.Format_RGB32)
+    img.fill(QColor("red"))
+    ipath = str(tmp_path / "embedded.png")
+    img.save(ipath, "PNG")
+    uri = ("data:image/png;base64,"
+           + base64.b64encode(open(ipath, "rb").read()).decode("ascii"))
+    doc = QTextDocument()
+    doc.setHtml(f'<p><img src="{uri}"></p>')
+    out = str(tmp_path / "datauri.pdf")
+    export_pdf_file(doc, out, title="T", page_setup=A4_SETUP)
+    pdf = _load(out)
+    red = _count_pixels(pdf, lambda c: c.red() > 200 and c.green() < 80)
+    assert red > 0
+
+
+def test_data_uri_carrying_a_refused_format_stays_a_placeholder(tmp_path):
+    # SVG is never handed to a renderer, whichever way it arrives.
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200">'
+    svg += b'<rect width="400" height="200" fill="red"/></svg>'
+    uri = "data:image/svg+xml;base64," + base64.b64encode(svg).decode("ascii")
+    doc = QTextDocument()
+    doc.setHtml(f'<p><img src="{uri}"></p>')
+    out = str(tmp_path / "svg.pdf")
+    export_pdf_file(doc, out, title="T", page_setup=A4_SETUP)
+    pdf = _load(out)
+    red = _count_pixels(pdf, lambda c: c.red() > 200 and c.green() < 80)
+    assert red == 0
 
 
 # --------------------------------------------------------------------------- #

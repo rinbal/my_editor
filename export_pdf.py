@@ -15,27 +15,35 @@ Geometry notes, established empirically against QPdfDocument:
   behavior) keeps runs contiguous.
 - QTextImageFormat sizes are in CSS pixels (96 per inch): an image with
   no explicit size renders at intrinsic_px * 72/96 points.
+- doc.clone() returns a plain QTextDocument, so any resource resolver
+  installed on the editor widget does not apply to it. Every image is
+  therefore primed into the clone before layout: without that a cold
+  document (one never shown on screen) exports with no images at all,
+  and Qt would resolve image names against the filesystem itself,
+  outside the trusted-root policy.
 """
 
 import json
 import os
 
-from PySide6.QtCore import QMarginsF, QRectF, QSizeF, Qt, QLocale
+from PySide6.QtCore import QMarginsF, QRectF, QSizeF, Qt, QLocale, QUrl
 from PySide6.QtGui import (
     QAbstractTextDocumentLayout,
     QColor,
     QFont,
-    QImageReader,
+    QImage,
     QPageLayout,
     QPageSize,
     QPainter,
     QPalette,
     QPdfWriter,
     QTextCursor,
+    QTextDocument,
     QTextImageFormat,
 )
 
 from constants import MONO_FONT
+from image_safety import ImageRootPolicy, data_uri_bytes, decode_image_bytes
 
 CREATOR = "minimal texteditor"
 
@@ -104,11 +112,64 @@ def make_page_layout(setup: dict) -> QPageLayout:
                        QMarginsF(m, m, m, m), QPageLayout.Millimeter)
 
 
-def _cap_image_widths(doc, available_css_px: float) -> None:
+def _placeholder_image() -> QImage:
+    """Neutral stand-in for an image the export is not allowed to read."""
+    image = QImage(160, 100, QImage.Format_RGB32)
+    image.fill(QColor("#c8c8c8"))
+    return image
+
+
+def _prime_clone_images(clone, policy: ImageRootPolicy, asset_resolver) -> dict:
+    """Register every image as a resource on ``clone`` and return sizes.
+
+    Mandatory, not defensive: the clone is a plain QTextDocument, so it
+    resolves image names itself unless they are already registered, and
+    a name that resolves to nothing renders as an empty box. Priming
+    also means Qt never touches the disk during layout or paint, which
+    is what keeps the trusted-root policy in force.
+    """
+    sizes: dict[str, object] = {}
+    for name in _iter_image_names(clone):
+        if name in sizes:
+            continue
+        image = None
+        resolved = asset_resolver(name) if asset_resolver else None
+        if resolved is not None and getattr(resolved, "data", b""):
+            image = decode_image_bytes(resolved.data)
+        if image is None:
+            # A document reopened from HTML names its embedded images by
+            # the whole data: URI, so the bytes are in the name; without
+            # this every such image prints as the placeholder.
+            data = policy.read(name) or data_uri_bytes(name)
+            if data:
+                image = decode_image_bytes(data)
+        if image is None:
+            image = _placeholder_image()
+        clone.addResource(QTextDocument.ImageResource, QUrl(name), image)
+        sizes[name] = image.size()
+    return sizes
+
+
+def _iter_image_names(doc):
+    block = doc.begin()
+    while block.isValid():
+        it = block.begin()
+        while not it.atEnd():
+            frag = it.fragment()
+            fmt = frag.charFormat()
+            if frag.isValid() and fmt.isImageFormat():
+                yield fmt.toImageFormat().name()
+            it += 1
+        block = block.next()
+
+
+def _cap_image_widths(doc, available_css_px: float, sizes: dict) -> None:
     """Shrink images wider than the printable area, keeping aspect ratio.
 
     Sizes are in CSS pixels (96/inch). Images with no explicit size are
-    measured via QImageReader without decoding the full file.
+    measured from the primed resources: opening the file again here
+    would put back the untrusted disk read that priming removed, and an
+    asset key is not a filename any reader could open anyway.
     """
     block = doc.begin()
     while block.isValid():
@@ -121,8 +182,8 @@ def _cap_image_widths(doc, available_css_px: float) -> None:
                 width = imf.width()
                 height = imf.height()
                 if width <= 0:
-                    intrinsic = QImageReader(imf.name()).size()
-                    if intrinsic.isValid():
+                    intrinsic = sizes.get(imf.name())
+                    if intrinsic is not None and intrinsic.isValid():
                         width = float(intrinsic.width())
                         if height <= 0:
                             height = float(intrinsic.height())
@@ -140,8 +201,13 @@ def _cap_image_widths(doc, available_css_px: float) -> None:
         block = block.next()
 
 
-def export_pdf(doc, path: str, title: str = "", page_setup: dict | None = None) -> None:
+def export_pdf(doc, path: str, title: str = "", page_setup: dict | None = None,
+               *, image_roots=(), asset_resolver=None) -> None:
     """Write the document to ``path`` as a paginated PDF.
+
+    ``image_roots`` are the directories a local image name may be read
+    from; empty (the default) reads nothing. ``asset_resolver`` supplies
+    bytes for images this app created and holds in its own cache.
 
     Raises OSError when the file cannot be written.
     """
@@ -159,6 +225,7 @@ def export_pdf(doc, path: str, title: str = "", page_setup: dict | None = None) 
     content_h = float(paint.height()) - footer_px
 
     clone = doc.clone()
+    sizes = _prime_clone_images(clone, ImageRootPolicy(image_roots), asset_resolver)
     # Layout must measure fonts against the writer's dpi, exactly as
     # doc.print_() would.
     clone.documentLayout().setPaintDevice(writer)
@@ -171,7 +238,7 @@ def export_pdf(doc, path: str, title: str = "", page_setup: dict | None = None) 
     clone.rootFrame().setFrameFormat(frame_fmt)
 
     paint_width_pt = page_w * 72.0 / RESOLUTION
-    _cap_image_widths(clone, paint_width_pt * 96.0 / 72.0)
+    _cap_image_widths(clone, paint_width_pt * 96.0 / 72.0, sizes)
 
     clone.setTextWidth(page_w)
     clone.setPageSize(QSizeF(page_w, content_h))

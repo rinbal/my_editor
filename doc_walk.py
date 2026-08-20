@@ -20,6 +20,14 @@ BULLET_MARKER = "• "
 # constant here so exporters never import the widget class.
 INDENT_STEP = 4
 
+# Object-replacement character: the text an image fragment carries.
+OBJECT_REPLACEMENT = "\ufffc"
+
+# Qt uses U+2028 for Shift+Enter line breaks inside a block. toPlainText()
+# maps it to a newline; fragment text does not, so any serializer that
+# replaces toPlainText has to do the mapping itself.
+LINE_SEPARATOR = "\u2028"
+
 
 def iter_blocks(doc):
     """Yield the document's QTextBlocks in order."""
@@ -58,6 +66,45 @@ def bullet_depth(spaces: int) -> int:
     bullet at column 0; both map to depth 1. Ragged indents floor.
     """
     return max(1, spaces // INDENT_STEP)
+
+
+def iter_image_names(doc):
+    """Yield the name() of every image fragment, in document order.
+
+    Duplicates are kept: a caller counting occurrences needs them, and a
+    caller wanting unique names can build a set in one line.
+    """
+    for block in iter_blocks(doc):
+        for _text, fmt in iter_block_runs(block):
+            if fmt.isImageFormat():
+                yield fmt.toImageFormat().name()
+
+
+def serialize_plain_with_images(doc, image_target) -> str:
+    """Plain text with each image replaced by image_target(QTextImageFormat).
+
+    The text half reproduces toPlainText exactly, which is why this can
+    stand in for it everywhere images must survive: blocks joined with
+    newlines, U+2028 line separators mapped to newlines, stray
+    object-replacement characters in plain runs dropped.
+
+    A target function returning None omits the image entirely, which is
+    what a format with no way to carry one (.txt) needs.
+    """
+    lines = []
+    for block in iter_blocks(doc):
+        parts = []
+        for text, fmt in iter_block_runs(block):
+            if fmt.isImageFormat():
+                target = image_target(fmt.toImageFormat())
+                if target:
+                    parts.append(target)
+                continue
+            text = text.replace(OBJECT_REPLACEMENT, "")
+            if text:
+                parts.append(text.replace(LINE_SEPARATOR, "\n"))
+        lines.append("".join(parts))
+    return "\n".join(lines)
 
 
 def skip_prefix(runs, n: int):

@@ -24,13 +24,14 @@ each into an encrypted draft:
      (stray nav / footer) is usually *shorter*, not longer. Recovers
      the real title for slug-titled (sitemap) items.
   4. Image rehosting (opt-in, default on when a Blossom server is
-     configured): every unique image in the markdown is mirrored to the
-     user's Blossom server (BUD-04, the server pulls the source URL
-     itself) and the markdown rewritten. A user-curated skip set keeps
-     chosen images at their original URLs; one failed image never fails
-     the item.
+     configured): every unique image in the markdown is downloaded and
+     uploaded to the user's Blossom server, and the markdown rewritten.
+     A user-curated skip set keeps chosen images at their original URLs;
+     one failed image never fails the item.
   5. Build the unsigned NIP-23 inner event via ``build_article`` (with
-     the ``source`` tag identifying the origin feed) and hand it to a
+     the ``source`` tag identifying the origin feed, and a NIP-92
+     ``imeta`` tag for each image step 4 rehosted, built from what this
+     process measured about those bytes) and hand it to a
      ``DraftPublishJob`` for encryption, NIP-37 wrapping (kind 31234),
      signing, and relay publish.
 
@@ -62,9 +63,10 @@ from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+from ..blossom import hashes
 from ..outbox import RelayListCache
 from ..profiles import Profile
-from ..publisher import DraftPublishJob, build_article
+from ..publisher import DraftPublishJob, PublishedMedia, build_article
 from ..relay import RelayPool
 from ..bunker import BunkerSessionPool
 from ..rss.normalize import (
@@ -89,7 +91,7 @@ from .constants import (
 )
 from .fetch import SourceFetcher
 from .fulltext import extract_readable_content
-from .images import MirrorProgress, blossom_mirror, rehost_images
+from .images import MirrorOutcome, MirrorProgress, blossom_rehost, rehost_images
 from .sources.podcast import build_podcast_markdown, fetch_podcast_chapters
 
 
@@ -187,16 +189,16 @@ class ImportItemsJob(QObject):
             lambda fn, ok, err: workers.run_blocking(fn, ok, err, parent=self)
         )
         self._pacer = pacer or (lambda ms, fn: QTimer.singleShot(ms, fn))
-        # Image-mirror transport: injected for tests, else the real
-        # Blossom BUD-04 path when a server is configured. ``None``
-        # disables the mirror step entirely.
+        # Image-rehost transport: injected for tests, else the real
+        # Blossom path when a server is configured. ``None`` disables the
+        # rehost step entirely.
         self._image_mirror = image_mirror
         if (
             self._image_mirror is None
             and rehost_images
             and blossom_server
         ):
-            self._image_mirror, _ = blossom_mirror(
+            self._image_mirror, _ = blossom_rehost(
                 session_pool=session_pool,
                 profile=profile,
                 server=blossom_server,
@@ -557,7 +559,20 @@ class ImportItemsJob(QObject):
                     f"{len(outcome.failed)} of {total} image(s) couldn't be "
                     "mirrored; originals kept."
                 )
-            self._sign_and_publish(replace(template, content=outcome.markdown))
+            # The cover follows the body only when it IS an image from
+            # the body, because that rewrite is the one the user already
+            # approved in the review dialog. A cover the user never saw
+            # in that list keeps the URL the feed gave it; rehosting it
+            # would upload a third party's file to the user's server
+            # outside what was approved.
+            self._sign_and_publish(
+                replace(
+                    template,
+                    content=outcome.markdown,
+                    image=outcome.mapping.get(template.image, template.image),
+                ),
+                media=_media_records(outcome),
+            )
 
         rehost_images(
             template.content,
@@ -570,8 +585,18 @@ class ImportItemsJob(QObject):
 
     # -- sign + publish ----------------------------------------------------
 
-    def _sign_and_publish(self, template: ArticleTemplate) -> None:
-        """Build the inner event and kick off the publish job."""
+    def _sign_and_publish(
+        self,
+        template: ArticleTemplate,
+        media: Sequence[PublishedMedia] = (),
+    ) -> None:
+        """Build the inner event and kick off the publish job.
+
+        ``media`` describes the images this import downloaded, hashed
+        and put on the user's own server. It is empty whenever rehosting
+        was off or nothing was rehosted, which is the same thing as
+        having measured nothing worth saying.
+        """
         if self._cancelled:
             return
         extra_tags = (
@@ -588,6 +613,7 @@ class ImportItemsJob(QObject):
                 published_at=template.published_at,
                 hashtags=template.hashtags,
                 extra_tags=extra_tags,
+                media=media,
             )
         except ValueError as exc:
             self._record_failure(f"Could not build article: {exc}")
@@ -688,6 +714,37 @@ class ImportItemsJob(QObject):
                 signal.disconnect()
             except (RuntimeError, TypeError):
                 pass  # already disconnected / no connections
+
+
+def _media_records(outcome: MirrorOutcome) -> List[PublishedMedia]:
+    """NIP-92 records for the images this import rehosted itself.
+
+    Only rehosted images qualify. One the user skipped in the review
+    dialog, and one whose download or upload failed, still points at
+    somebody else's server; describing it would mean publishing metadata
+    nobody here measured about a file nobody here fetched, which is what
+    AD-14 forbids.
+
+    ``dim`` is never emitted because nothing on this path decodes the
+    image, and ``alt`` is left out because the markdown's alt text
+    belongs to one reference rather than to the blob, and the same URL
+    can appear twice in a body carrying two different ones.
+    """
+    records: List[PublishedMedia] = []
+    for image in outcome.descriptors.values():
+        # A server may address a blob however it likes, but if the URL
+        # names a hash at all it has to name this one. Otherwise every
+        # client applying BUD-03's last-64-hex rule resolves the address
+        # to a different blob than the `x` field claims.
+        if not hashes.url_agrees_with_hash(image.url, image.sha256):
+            continue
+        records.append(PublishedMedia(
+            url=image.url,
+            sha256=image.sha256,
+            mime=image.mime,
+            size=image.size,
+        ))
+    return records
 
 
 def _is_http_url(link: Optional[str]) -> bool:

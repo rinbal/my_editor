@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Shared async source fetcher on top of ``QNetworkAccessManager``.
+"""Shared async source fetchers on top of ``QNetworkAccessManager``.
 
 The one fetch path every resolver uses. Matches the rest of the editor
 (avatar loader, blossom client, relay pool): callback-driven, no
@@ -18,6 +18,11 @@ Bounds:
 Decoding is intentionally permissive: feeds in the wild lie about
 encoding, so we fall back through ``Content-Type charset`` to the XML
 declaration to UTF-8 with replacement on errors.
+
+:class:`BlobFetcher` is the same discipline for bytes rather than text.
+Rehosting an image needs the bytes themselves, and
+:class:`SourceFetcher` cannot serve that: it decodes every response to a
+string, which mangles anything that is not text.
 """
 
 from __future__ import annotations
@@ -32,6 +37,9 @@ from PySide6.QtNetwork import (
     QNetworkRequest,
 )
 
+import url_safety
+from image_safety import sniff_image_mime
+
 from .errors import ERROR_CODES, SourceError
 
 
@@ -42,6 +50,17 @@ _MAX_REDIRECTS = 8                        # slash-fix / https-upgrade / www hops
 _OVERSIZE_MESSAGE = (
     f"Feed exceeds the {_MAX_BODY_BYTES // (1024 * 1024)} MiB size limit"
 )
+
+# Ceiling for a rehosted image, before the destination server's own cap
+# narrows it further. A feed body should never carry anything near this.
+_MAX_BLOB_BYTES = 25 * 1024 * 1024
+
+_BLOB_USER_AGENT = b"my-editor-rehost/1"
+# Short copy: these land in the per-image row of the image review
+# dialog, next to the filename.
+_BLOB_UNSAFE_URL = "URL was not allowed"
+_BLOB_OVERSIZE = "Image is too large to rehost"
+_BLOB_EMPTY = "Image was empty"
 
 _CHARSET_FROM_CONTENT_TYPE = re.compile(
     r"charset\s*=\s*([A-Za-z0-9_\-.:]+)", re.IGNORECASE
@@ -145,6 +164,126 @@ class SourceFetcher(QObject):
             on_success(text)
         finally:
             reply.deleteLater()
+
+
+class BlobFetcher(QObject):
+    """Reusable one-shot fetcher for raw bytes, used by image rehosting.
+
+    Call :meth:`fetch` per request; ``on_success`` receives
+    ``(bytes, mime)``. The object owns one ``QNetworkAccessManager`` for
+    the life of the instance.
+
+    ``max_bytes`` narrows the cap to what the destination Blossom server
+    says it accepts, so an image too big to rehost is dropped while it
+    is being downloaded rather than after a server refuses it. This
+    module's own ceiling is the upper bound either way.
+
+    The address is checked against the mirror policy before the request
+    and again on the reply, because redirects are followed and the
+    bytes may end up coming from somewhere the caller never named. This
+    request carries no credentials, so a redirect cannot leak one.
+    """
+
+    def __init__(
+        self,
+        parent: Optional[QObject] = None,
+        *,
+        max_bytes: int = _MAX_BLOB_BYTES,
+        nam=None,
+    ) -> None:
+        super().__init__(parent)
+        # ``nam`` is a seam for tests: a fake transport keeps the size
+        # cap and the redirect recheck assertable without a network.
+        self._nam = nam or QNetworkAccessManager(self)
+        self._max_bytes = max(1, min(int(max_bytes), _MAX_BLOB_BYTES))
+
+    def fetch(
+        self,
+        url: str,
+        *,
+        on_success: Callable[[bytes, str], None],
+        on_failure: Callable[[str], None],
+    ) -> None:
+        """GET ``url`` and hand the raw body plus its mime type back.
+
+        ``on_failure`` receives short user-facing copy rather than a
+        Qt transport string: it is rendered per image in the review
+        dialog, next to the filename.
+        """
+        if not url_safety.is_safe_mirror_source(url):
+            on_failure(_BLOB_UNSAFE_URL)
+            return
+
+        request = QNetworkRequest(QUrl(url))
+        request.setTransferTimeout(_TRANSFER_TIMEOUT_MS)
+        request.setMaximumRedirectsAllowed(_MAX_REDIRECTS)
+        request.setRawHeader(b"User-Agent", _BLOB_USER_AGENT)
+        request.setRawHeader(b"Accept", b"image/*;q=0.9, */*;q=0.1")
+
+        reply = self._nam.get(request)
+        # Same discipline as the feed fetcher: abort the moment the cap
+        # is crossed instead of buffering an arbitrarily large body and
+        # measuring it afterwards. A declared ``Content-Length`` over
+        # the cap is refused without transferring anything at all.
+        oversize = {"hit": False}
+
+        def _size_guard(received: int, total: int, r=reply) -> None:
+            if oversize["hit"]:
+                return
+            if received > self._max_bytes or total > self._max_bytes:
+                oversize["hit"] = True
+                r.abort()
+
+        reply.downloadProgress.connect(_size_guard)
+        reply.finished.connect(
+            lambda r=reply: self._on_finished(
+                r, oversize, on_success, on_failure)
+        )
+
+    # -- internals ---------------------------------------------------------
+
+    def _on_finished(
+        self,
+        reply: QNetworkReply,
+        oversize: dict,
+        on_success: Callable[[bytes, str], None],
+        on_failure: Callable[[str], None],
+    ) -> None:
+        try:
+            if oversize["hit"]:
+                on_failure(_BLOB_OVERSIZE)
+                return
+            if reply.error() != QNetworkReply.NoError:
+                on_failure("Could not download the image")
+                return
+            final = reply.url().toString()
+            if final and not url_safety.is_safe_mirror_source(final):
+                on_failure(_BLOB_UNSAFE_URL)
+                return
+            data = bytes(reply.readAll())
+            if not data:
+                on_failure(_BLOB_EMPTY)
+                return
+            if len(data) > self._max_bytes:
+                on_failure(_BLOB_OVERSIZE)
+                return
+            content_type = reply.header(QNetworkRequest.ContentTypeHeader)
+            on_success(data, _blob_mime(str(content_type or ""), data))
+        finally:
+            reply.deleteLater()
+
+
+def _blob_mime(content_type: str, data: bytes) -> str:
+    """Mime for downloaded bytes: the header, then the bytes, then generic.
+
+    The header is only a claim, so a generic or absent one falls through
+    to the magic bytes. Nothing here decodes the image; the value is
+    what gets sent on to the Blossom server as the blob's type.
+    """
+    declared = (content_type or "").split(";", 1)[0].strip().lower()
+    if declared and declared != "application/octet-stream":
+        return declared
+    return sniff_image_mime(data) or "application/octet-stream"
 
 
 def _decode_body(data: bytes, content_type: str) -> str:

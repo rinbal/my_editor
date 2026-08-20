@@ -5,8 +5,13 @@
 HTML Editor widget with bullet and format logic.
 """
 
-from PySide6.QtCore import Qt, QTimer, QRect, QPoint
-from PySide6.QtGui import QPainter, QTextCursor, QTextCharFormat, QColor, QClipboard, QPen, QTextOption
+import os
+
+from PySide6.QtCore import Qt, QTimer, QRect, QPoint, QMetaMethod, Signal
+from PySide6.QtGui import (
+    QPainter, QTextCursor, QTextCharFormat, QColor, QClipboard, QPen, QTextOption,
+    QImage, QTextDocument,
+)
 from PySide6.QtWidgets import QTextEdit, QMenu, QApplication
 from constants import (
     DARK_BG, DARK_FG, LIGHT_BG, LIGHT_FG, DARK_SELECTION, LIGHT_SELECTION, MONO_FONT, TEXT_COLORS,
@@ -14,12 +19,49 @@ from constants import (
 )
 
 
+# Stand-in painted for an image whose bytes have not arrived yet. Its
+# size is deliberately modest: it is replaced in place once the real
+# image resolves, and a large box would reflow the whole document twice.
+_PLACEHOLDER_SIZE = (160, 100)
+_PLACEHOLDER_COLOR = "#c8c8c8"
+
+
+def _is_document_relative(url) -> bool:
+    """Whether a resource name means "beside the document".
+
+    A name with no scheme and no absolute path belongs to the directory
+    the file came from. Qt's own answer is the process working
+    directory, which is wherever the app happened to be launched from
+    and names a different file entirely.
+    """
+    if url.scheme():
+        return False
+    name = url.toString()
+    return bool(name) and not name.startswith(("/", "\\")) and not os.path.isabs(name)
+
+
 class HtmlEditor(QTextEdit):
     """QTextEdit with bullet and format logic."""
+
+    # Media entry points. The editor knows nothing about where an image
+    # goes or who uploads it; it reports the gesture and lets whoever is
+    # connected decide. Nothing is emitted when nobody is listening, so
+    # the widget stays usable on its own (tests, previews).
+    image_pasted = Signal(object)    # QImage from the clipboard
+    urls_dropped = Signal(list)      # list[QUrl] dropped on the editor
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptRichText(True)
         self.setUndoRedoEnabled(True)
+
+        # Resource seam: a resolver plus the URL scheme it answers for.
+        # Injected by the window so the editor carries no knowledge of
+        # what an asset is or where its bytes live.
+        self._resource_resolver = None
+        self._asset_scheme = None
+        self._asset_placeholder = None
+        self._local_image_resolver = None
 
         # Always wrap to the visible viewport width, breaking long unbroken
         # tokens instead of forcing a horizontal scrollbar. This keeps
@@ -72,10 +114,63 @@ class HtmlEditor(QTextEdit):
     def redo(self):
         self.document().redo()
 
+    # -------- Resource resolution --------
+    def set_resource_resolver(self, resolver, scheme: str) -> None:
+        """Install the callback that turns a ``scheme:`` name into a QImage.
+
+        ``resolver`` may return None; the placeholder is shown then.
+        """
+        self._resource_resolver = resolver
+        self._asset_scheme = scheme or None
+
+    def set_local_image_resolver(self, resolver) -> None:
+        """Install the callback that reads an image named beside the file.
+
+        ``resolver`` takes the name exactly as the document spells it
+        and returns a QImage or None. Injected so the editor holds no
+        opinion about where the document lives or how bytes decode.
+        """
+        self._local_image_resolver = resolver
+
+    def _placeholder_image(self) -> QImage:
+        """One shared stand-in image, built on first use."""
+        if self._asset_placeholder is None:
+            image = QImage(*_PLACEHOLDER_SIZE, QImage.Format_RGB32)
+            image.fill(QColor(_PLACEHOLDER_COLOR))
+            self._asset_placeholder = image
+        return self._asset_placeholder
+
+    def loadResource(self, type_, url):
+        """Resolve a document resource, keeping asset names off the disk.
+
+        An asset name is never passed to Qt's default resolution: Qt
+        would treat it as a relative file path. A miss returns the
+        placeholder rather than nothing, because Qt caches an image but
+        re-asks for a null result on every repaint.
+
+        A document-relative image goes to the local resolver for the
+        same reason it never falls through: Qt's fallback reads the
+        name against the working directory, which is not the folder the
+        picture was saved beside.
+        """
+        if self._asset_scheme is not None and url.scheme() == self._asset_scheme:
+            if type_ != QTextDocument.ImageResource:
+                return None
+            image = None
+            if self._resource_resolver is not None:
+                image = self._resource_resolver(url.toString())
+            return image if image is not None else self._placeholder_image()
+        if (type_ == QTextDocument.ImageResource
+                and self._local_image_resolver is not None
+                and _is_document_relative(url)):
+            image = self._local_image_resolver(url.toString())
+            return image if image is not None else self._placeholder_image()
+        return super().loadResource(type_, url)
+
     # -------- Format Toggles --------
     def _all_in_selection(self, cursor: QTextCursor, check) -> bool:
         """Return True if every text fragment in the selection passes check(QTextCharFormat).
-        Uses block/fragment iteration (efficient — no char-by-char loop)."""
+        Uses block/fragment iteration (efficient, no char-by-char loop)."""
         start = cursor.selectionStart()
         end = cursor.selectionEnd()
         doc = self.document()
@@ -503,16 +598,16 @@ class HtmlEditor(QTextEdit):
             self.redo()
             return
 
-        # Ctrl+V — image-aware paste.
-        # If the clipboard carries an image and the main window can
-        # upload it (Blossom + connected profile), route there so the
-        # image survives saving as Markdown/HTML; otherwise fall through
-        # to the plain-text path that strips foreign formatting.
+        # Ctrl+V, image-aware paste. A clipboard image is reported to
+        # whoever owns media handling; with nobody listening it falls
+        # through to the plain-text path that strips foreign formatting.
         if e.key() == Qt.Key_V and e.modifiers() == Qt.ControlModifier:
             clip = QApplication.clipboard()
             if clip.mimeData().hasImage():
-                main = self.window()
-                if hasattr(main, '_handle_pasted_image') and main._handle_pasted_image():
+                image = clip.image()
+                if not image.isNull() and self.isSignalConnected(
+                        QMetaMethod.fromSignal(self.image_pasted)):
+                    self.image_pasted.emit(image)
                     return
             self.paste_normalized()
             return
@@ -557,7 +652,7 @@ class HtmlEditor(QTextEdit):
                 is_empty_bullet = (content_after_bullet == "") and (cursor_pos_in_block <= bullet_end_pos)
 
                 if is_empty_bullet:
-                    # Double Enter — remove bullet, start plain line
+                    # Double Enter: remove bullet, start plain line
                     c.beginEditBlock()
                     c.movePosition(QTextCursor.StartOfBlock)
                     c.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
@@ -617,7 +712,7 @@ class HtmlEditor(QTextEdit):
                 self.ensureCursorVisible()
                 return
             else:
-                # Regular backspace — one character per undo step
+                # Regular backspace: one character per undo step
                 cursor = self.textCursor()
                 cursor.beginEditBlock()
                 if cursor.hasSelection():
@@ -630,7 +725,7 @@ class HtmlEditor(QTextEdit):
                 return
 
         elif e.key() == Qt.Key_Delete:
-            # Delete key — one character per undo step
+            # Delete key: one character per undo step
             cursor = self.textCursor()
             cursor.beginEditBlock()
             if cursor.hasSelection():
@@ -642,7 +737,7 @@ class HtmlEditor(QTextEdit):
             self.ensureCursorVisible()
             return
 
-        # Regular printable character — one character per undo step.
+        # Regular printable character: one character per undo step.
         # Using beginEditBlock/endEditBlock prevents Qt from merging consecutive insertions.
         if e.text() and not e.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier):
             cursor = self.textCursor()
@@ -679,10 +774,9 @@ class HtmlEditor(QTextEdit):
             super().dragEnterEvent(event)
 
     def dropEvent(self, event):
-        if event.mimeData().hasUrls():
-            main = self.window()
-            if hasattr(main, '_handle_dropped_urls'):
-                main._handle_dropped_urls(event.mimeData().urls())
+        if (event.mimeData().hasUrls()
+                and self.isSignalConnected(QMetaMethod.fromSignal(self.urls_dropped))):
+            self.urls_dropped.emit(list(event.mimeData().urls()))
             event.acceptProposedAction()
         elif event.mimeData().hasText():
             cursor = self.cursorForPosition(event.position().toPoint())

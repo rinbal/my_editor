@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""DraftSync — cancellation, queue invariants, trust boundary.
+"""DraftSync: cancellation, queue invariants, trust boundary.
 
 Three critical correctness properties from the code-review pass live here:
 
@@ -94,7 +94,7 @@ def test_callback_from_stopped_session_is_ignored():
     gen_a = sync._generation
 
     sync.stop()
-    # Bind a new profile — store is now keyed on OTHER_PK.
+    # Bind a new profile, so the store is now keyed on OTHER_PK.
     sync._profile = _make_profile(OTHER_PK)
     sync._store.bind_profile(OTHER_PK)
 
@@ -164,7 +164,7 @@ def test_newer_wrap_during_inflight_is_decrypted_after():
     sync._enqueue_decrypt(_wrap(ident="x", event_id="e1", ct="CT1", created_at=10))
     assert calls == ["CT1"]
 
-    # v2 arrives during inflight — held in _pending, NOT yet decrypted.
+    # v2 arrives during inflight, held in _pending, NOT yet decrypted.
     sync._store.upsert_skeleton(_wrap(ident="x", event_id="e2", ct="CT2", created_at=20))
     sync._enqueue_decrypt(_wrap(ident="x", event_id="e2", ct="CT2", created_at=20))
     assert calls == ["CT1"]
@@ -178,7 +178,7 @@ def test_newer_wrap_during_inflight_is_decrypted_after():
 
 def test_multiple_intervening_wraps_collapse_to_latest():
     # Rapid edits to the same draft must not blow up the bunker with N
-    # decryption requests — last-write-wins.
+    # decryption requests, last-write-wins.
     sync = _make_sync()
     sync._profile = _make_profile(PK)
     sync._store.bind_profile(PK)
@@ -202,13 +202,13 @@ def test_multiple_intervening_wraps_collapse_to_latest():
         sync._generation, "x", "e1",
         serialize_inner_event(build_inner_event(kind=1, content="v1", pubkey_hex=PK)),
     )
-    # Only the LAST pending ciphertext gets sent — not CT2/3/4 in turn.
+    # Only the LAST pending ciphertext gets sent, not CT2/3/4 in turn.
     assert calls == ["CT1", "CT5"]
 
 
 def test_tombstone_drains_pending_ciphertext():
     # If a tombstone arrives while a decryption is queued, we must
-    # drop the queued ciphertext — otherwise we'd briefly resurrect
+    # drop the queued ciphertext, or we'd briefly resurrect
     # the deleted draft.
     sync = _make_sync()
     sync._profile = _make_profile(PK)
@@ -238,7 +238,7 @@ def test_tombstone_drains_pending_ciphertext():
 
 def test_inner_pubkey_mismatch_fails_the_record():
     # A malicious or buggy signer could decrypt an inner event with a
-    # foreign pubkey. We must refuse to populate the record — promoting
+    # foreign pubkey. We must refuse to populate the record, because promoting
     # that draft to publish would sign foreign content under our key.
     sync = _make_sync()
     sync._profile = _make_profile(PK)
@@ -336,11 +336,13 @@ def test_retry_decrypt_resends_ciphertext_after_timeout():
     )
     record = sync._store.get("x")
     assert record.state is DraftState.FAILED
-    assert "timed out" in record.failure_reason
+    # The row says who is not answering rather than quoting the transport,
+    # because the person reading it is holding the thing that has to change.
+    assert "signer" in record.failure_reason
     # Ciphertext still cached
     assert record.ciphertext == "THE-CIPHERTEXT"
 
-    # User clicks retry — same ciphertext sent again, state flips back to LOADING
+    # User clicks retry, same ciphertext sent again, state flips to LOADING
     sync.retry_decrypt("x")
     assert calls == ["THE-CIPHERTEXT", "THE-CIPHERTEXT"]
     assert sync._store.get("x").state is DraftState.LOADING
@@ -357,7 +359,7 @@ def test_retry_decrypt_is_noop_on_unknown_identifier():
 
 def test_retry_decrypt_is_noop_without_ciphertext():
     """An optimistically-inserted record (e.g. from upsert_from_inner)
-    has no ciphertext — retry must not crash and must not send an empty
+    has no ciphertext, so retry must not crash and must not send an empty
     decrypt request to the bunker."""
     sync = _make_sync()
     sync._profile = _make_profile(PK)
@@ -385,7 +387,7 @@ def test_retry_decrypt_does_nothing_when_bunker_unsupported():
 
 def test_set_decrypted_clears_ciphertext_on_success():
     """After a successful decryption we should no longer hold the
-    ciphertext — it's redundant once the plaintext is in the record,
+    ciphertext, which is redundant once the plaintext is in the record,
     and dropping it keeps the in-memory footprint small."""
     sync = _make_sync()
     sync._profile = _make_profile(PK)
@@ -406,7 +408,7 @@ def test_set_decrypted_clears_ciphertext_on_success():
 def test_read_relays_prefer_user_read_over_write_over_bunker():
     rl = RelayList(write=["wss://w.example"], read=["wss://r.example"])
     result = _select_read_relays(rl, bunker_relays=["wss://b.example"])
-    # Read first, then write, then bunker — most-trusted-user-choice first.
+    # Read first, then write, then bunker: most-trusted-user-choice first.
     assert result.index("wss://r.example") < result.index("wss://w.example")
     assert result.index("wss://w.example") < result.index("wss://b.example")
 
@@ -414,7 +416,7 @@ def test_read_relays_prefer_user_read_over_write_over_bunker():
 def test_read_relays_fall_back_to_defaults_when_nothing_specific():
     result = _select_read_relays(RelayList(write=[], read=[]), bunker_relays=())
     assert result  # never empty
-    # The DEFAULT_RELAYS set lives in nostr/__init__.py — checking
+    # The DEFAULT_RELAYS set lives in nostr/__init__.py, so checking
     # length-non-zero is the contract.
 
 

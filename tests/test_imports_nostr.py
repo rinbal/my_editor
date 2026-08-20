@@ -215,6 +215,38 @@ class TestEventNormalisation(unittest.TestCase):
         self.assertEqual(item.guid, EVENT_ID)
         self.assertTrue(item.link.startswith("https://njump.me/nevent1"))
 
+    def test_image_led_note_skips_the_hero_image(self):
+        # A body that opens with a hero image used to title the row
+        # "![One Class, One Purpose](https://...)", which the drafts
+        # panel then cut mid-word.
+        event = {"id": EVENT_ID, "kind": 1, "pubkey": PK,
+                 "created_at": 1700000000,
+                 "content": ("![One Class, One Purpose](https://x/hero.png)\n"
+                             "\n# One Class, One Purpose\n\nBody."),
+                 "tags": []}
+        item = nostr_event_to_item(event)
+        self.assertEqual(item.title, "One Class, One Purpose")
+
+    def test_link_led_note_uses_the_link_text(self):
+        event = {"id": EVENT_ID, "kind": 1, "pubkey": PK,
+                 "created_at": 1700000000,
+                 "content": "[Read the full post](https://example.com/x)",
+                 "tags": []}
+        item = nostr_event_to_item(event)
+        self.assertEqual(item.title, "Read the full post")
+        self.assertNotIn("http", item.title)
+
+    def test_all_image_note_falls_back_to_the_event_placeholder(self):
+        # Nothing in the body reads as words, so the derivation yields
+        # nothing and the caller's "Nostr note <id>" placeholder wins,
+        # rather than the row showing image syntax.
+        event = {"id": EVENT_ID, "kind": 1, "pubkey": PK,
+                 "created_at": 1700000000,
+                 "content": "![a](1)\n![b](2)\n", "tags": []}
+        item = nostr_event_to_item(event)
+        self.assertNotIn("![", item.title)
+        self.assertTrue(item.title.startswith("Nostr note "))
+
     def test_wiki_event_normalised_and_tagged(self):
         event = article_event(kind=30818,
                               content="== Section\n\nSee [[Other Page|that page]].")

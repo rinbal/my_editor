@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""NIP-37 pure builders & parsers — see ``nostr/drafts.py``.
+"""NIP-37 pure builders & parsers, see ``nostr/drafts.py``.
 
 These are the on-wire-shape guarantees we make to other Nostr clients:
 the d/k/expiration/client tag set, the inner-event JSON whitelist, and
@@ -26,7 +26,9 @@ from nostr.drafts import (
     build_inner_event,
     build_tombstone_wrap,
     derive_preview_snippet,
+    derive_title_from_markdown,
     extract_article_metadata,
+    flatten_markdown_inline,
     new_note_identifier,
     parse_inner_event,
     parse_wrap_event,
@@ -59,7 +61,7 @@ def test_protocol_constants():
 
 def test_build_inner_event_shape():
     e = build_inner_event(kind=1, content="hello", pubkey_hex=PK, tags=[["t", "x"]])
-    # No id / sig — inner is unsigned by NIP-37 contract.
+    # No id / sig, inner is unsigned by NIP-37 contract.
     assert "id" not in e and "sig" not in e
     assert e["kind"] == 1
     assert e["content"] == "hello"
@@ -100,21 +102,21 @@ def test_build_inner_event_respects_explicit_created_at():
 def test_serialize_uses_compact_json():
     e = build_inner_event(kind=1, content="x", pubkey_hex=PK)
     s = serialize_inner_event(e)
-    # Compact separators — no whitespace between keys.
+    # Compact separators, no whitespace between keys.
     assert ", " not in s and ": " not in s
 
 
 def test_serialize_preserves_unicode():
     # NIP-44 plaintext is UTF-8; we must not escape non-ASCII or the
     # payload grows for no good reason.
-    e = build_inner_event(kind=1, content="café — 🎩", pubkey_hex=PK)
+    e = build_inner_event(kind=1, content="café · 🎩", pubkey_hex=PK)
     s = serialize_inner_event(e)
     assert "café" in s and "🎩" in s
 
 
 def test_serialize_strips_id_and_sig():
     # If a caller accidentally hands us a signed event dict, the
-    # whitelist in serialize_inner_event must drop id/sig — otherwise
+    # whitelist in serialize_inner_event must drop id/sig, otherwise
     # the encrypted payload bloats and leaks past activity.
     poisoned = build_inner_event(kind=1, content="x", pubkey_hex=PK)
     poisoned["id"] = "f" * 64
@@ -156,14 +158,14 @@ def test_parse_rejects_malformed(payload):
 def test_parse_tolerates_unknown_kind():
     # A future client could stash kind 9999 drafts; we must surface them
     # rather than silently fail. The store branch is what decides how to
-    # render — parse just hands the data through.
+    # render, parse just hands the data through.
     s = json.dumps({"kind": 9999, "content": "x", "tags": [], "created_at": 1, "pubkey": PK})
     parsed = parse_inner_event(s)
     assert parsed["kind"] == 9999
 
 
 # --------------------------------------------------------------------------- #
-# build_draft_wrap — outer 31234                                              #
+# build_draft_wrap, outer 31234                                              #
 # --------------------------------------------------------------------------- #
 
 def test_build_draft_wrap_tag_set():
@@ -324,7 +326,7 @@ def test_extract_article_metadata_pulls_known_keys():
 
 def test_extract_article_metadata_first_value_wins():
     # Spec doesn't say which to keep when a tag repeats; first-write-wins
-    # is the safest default — it matches what most other clients do.
+    # is the safest default, it matches what most other clients do.
     inner = {
         "tags": [["title", "First"], ["title", "Second"]],
     }
@@ -368,3 +370,111 @@ def test_snippet_truncates_with_ellipsis():
     snippet = derive_preview_snippet(long, max_chars=20)
     assert snippet.endswith("…")
     assert len(snippet) == 20
+
+
+# --------------------------------------------------------------------------- #
+# flatten_markdown_inline / derive_title_from_markdown                        #
+# --------------------------------------------------------------------------- #
+
+def test_flatten_deletes_images_and_keeps_link_text():
+    assert flatten_markdown_inline("![alt](https://x/y.png)") == ""
+    assert flatten_markdown_inline("![a](1) after") == "after"
+    assert flatten_markdown_inline("[Read it](https://x/y)") == "Read it"
+    assert flatten_markdown_inline("[Read it][ref]") == "Read it"
+
+
+def test_flatten_strips_html_and_emphasis():
+    assert flatten_markdown_inline("<img src='x.png'/>") == ""
+    assert flatten_markdown_inline("<https://example.com>") == ""
+    assert flatten_markdown_inline("**Bold** and `code`") == "Bold and code"
+
+
+def test_flatten_leaves_block_markers_alone():
+    # Headings and bullets are markup for a title, but body text for a
+    # preview snippet; only the title derivation strips them.
+    assert flatten_markdown_inline("## sub") == "## sub"
+    assert flatten_markdown_inline("#tag at start") == "#tag at start"
+
+
+def test_title_skips_a_hero_image_line():
+    # The reported defect: an article whose body opens with a hero image
+    # was titled "![One Class, One Purpose](https://...)" and then cut
+    # mid-word by the row.
+    body = (
+        "![One Class, One Purpose](https://blog.example.com/hero.png)\n"
+        "\n"
+        "# One Class, One Purpose\n"
+        "\n"
+        "Body."
+    )
+    assert derive_title_from_markdown(body) == "One Class, One Purpose"
+
+
+def test_title_from_a_link_uses_its_text_not_its_url():
+    title = derive_title_from_markdown("[Read the full post](https://example.com/x)")
+    assert title == "Read the full post"
+    assert "http" not in title
+
+
+def test_title_from_a_heading_line():
+    assert derive_title_from_markdown("## A heading line\n\nMore prose.") == "A heading line"
+    assert derive_title_from_markdown("#Hello") == "Hello"
+
+
+def test_title_of_an_image_only_body_is_the_fallback():
+    body = "![a](1)\n![b](2)\n"
+    assert derive_title_from_markdown(body, fallback="Bluesky thread") == "Bluesky thread"
+
+
+def test_title_of_an_empty_body_is_the_fallback():
+    assert derive_title_from_markdown("", fallback="Untitled note") == "Untitled note"
+    assert derive_title_from_markdown("   \n\n\t ", fallback="Untitled note") == "Untitled note"
+    assert derive_title_from_markdown(None, fallback="Untitled note") == "Untitled note"
+
+
+def test_title_truncates_on_a_word_boundary():
+    body = "One Class, One Purpose: Refactoring the Import Pipeline for Sanity"
+    title = derive_title_from_markdown(body, max_len=60)
+    assert title.endswith("…")
+    assert len(title) <= 60
+    # The cut lands between words, never inside one.
+    assert not title[:-1].endswith(" ")
+    assert body.startswith(title[:-1])
+    assert body[len(title) - 1] == " "
+
+
+def test_title_truncates_a_single_long_word_mid_word():
+    # No boundary to fall back to, so the ellipsis is the only signal.
+    title = derive_title_from_markdown("x" * 200, max_len=20)
+    assert title == "x" * 19 + "…"
+
+
+def test_title_strips_quote_and_list_markers():
+    assert derive_title_from_markdown("> quoted opener") == "quoted opener"
+    assert derive_title_from_markdown("- first bullet item") == "first bullet item"
+    assert derive_title_from_markdown("1. first numbered item") == "first numbered item"
+
+
+def test_title_skips_a_leading_html_image():
+    body = "<img src='x.png'/>\n\nReal title here"
+    assert derive_title_from_markdown(body) == "Real title here"
+
+
+def test_snippet_flattens_inline_markdown():
+    # Same defect on the row's second line: the snippet leaked raw
+    # image and link syntax into the preview.
+    assert derive_preview_snippet("![hero](https://x/y.png)\n\nBody.") == "Body."
+    assert derive_preview_snippet("See [the post](https://x/y).") == "See the post."
+
+
+def test_snippet_drops_the_heading_behind_a_hero_image():
+    # The heading is the first thing a reader sees once the image is
+    # gone, so it duplicates the title exactly as it would have without
+    # the image.
+    body = "![hero](https://x/y.png)\n\n# One Class, One Purpose\n\nBody text."
+    assert derive_preview_snippet(body) == "Body text."
+
+
+def test_snippet_keeps_a_heading_that_is_the_whole_body():
+    # Nothing else to show, so dropping it would leave a blank row.
+    assert derive_preview_snippet("# Only a heading") == "# Only a heading"

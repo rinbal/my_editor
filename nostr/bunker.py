@@ -22,7 +22,7 @@ Flow for the bunker:// pairing this module handles:
      identity).
   7. ``connected`` signal fires with the user pubkey.
 
-Subsequent ``sign_event`` calls follow the same JSON-RPC dance — caller
+Subsequent ``sign_event`` calls follow the same JSON-RPC dance, caller
 gets a callback when the signed event arrives (or a failure callback on
 timeout/error).
 """
@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 import secrets
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, quote, urlsplit
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -49,19 +49,66 @@ from .relay import RelayPool, Subscription
 # so the connect-call timeout is generous.
 DEFAULT_CONNECT_TIMEOUT_MS = 90_000
 
-# Subsequent get_public_key / sign_event calls should be fast — the channel
+# Subsequent get_public_key / sign_event calls should be fast, the channel
 # is already up, the signer just has to compute.
 DEFAULT_RPC_TIMEOUT_MS = 30_000
 
+# ``ping`` is the one call no signer asks a human about, so the only thing
+# it waits on is a relay round-trip. Giving it the full RPC budget meant a
+# signer that simply does not implement ping (Amber does not) burned 30
+# seconds before ``reattach`` even tried the fallback that would have
+# worked, and a signer that is asleep cost 60 seconds to say nothing. This
+# is a liveness probe: if it has not come back in a few seconds, the answer
+# we need is somewhere else.
+PING_TIMEOUT_MS = 6_000
+
+# A signer may answer any request with an "auth_url" challenge instead of a
+# result, meaning the user has to authenticate in a browser first. The real
+# answer arrives later under the same request id, so the pending request is
+# held open this long rather than failing.
+AUTH_CHALLENGE_TIMEOUT_MS = 180_000
+
+# The failure reasons that mean nobody answered, as opposed to the signer
+# answering "no". Defined here, next to the code that produces them, so
+# the callers that have to recognise them cannot drift from the wording.
+SIGNER_SILENT_NEEDLES: Tuple[str, ...] = (
+    "timed out waiting for signer",
+    "could not deliver request to any relay",
+)
+
+
+def is_signer_silent(reason: str) -> bool:
+    """True if ``reason`` means the signer never answered."""
+    lowered = (reason or "").lower()
+    return any(needle in lowered for needle in SIGNER_SILENT_NEEDLES)
+
+
+def humanize_failure(reason: str) -> str:
+    """Turn a transport failure into something the user can act on.
+
+    These strings are written to be precise in a log, and "timed out
+    waiting for signer" is precise. It is also a dead end for someone
+    holding a phone, because it does not say that the phone is where the
+    problem is. Anything we do not have better words for is passed
+    through unchanged rather than blurred into a generic apology.
+    """
+    if is_signer_silent(reason):
+        return (
+            "Your signer did not answer. Open your signer app, make sure "
+            "it is running, and try again."
+        )
+    return reason
+
+
 # Permissions we request at connect time. Comma-separated per spec.
 #
-#   sign_event:1      — short notes
-#   sign_event:30023  — long-form articles
-#   sign_event:31234  — NIP-37 draft wraps (private encrypted drafts)
-#   nip44_encrypt     — encrypting draft payloads to the user's own pubkey
-#   nip44_decrypt     — decrypting drafts pulled back from relays
-#   get_public_key    — required for the post-connect user-pubkey lookup
-#   ping              — keepalive
+#   sign_event:1      short notes
+#   sign_event:30023  long-form articles
+#   sign_event:31234  NIP-37 draft wraps (private encrypted drafts)
+#   nip44_encrypt     encrypting draft payloads to the user's own pubkey
+#   nip44_decrypt     decrypting drafts pulled back from relays
+#   get_public_key    required for the post-connect user-pubkey lookup
+#   ping              keepalive
 #
 # Signers that don't recognise an entry typically ignore it silently;
 # the actual capability check happens lazily when we invoke each method.
@@ -161,6 +208,32 @@ def build_nostrconnect_uri(
 # Pending-request bookkeeping                                                  #
 # --------------------------------------------------------------------------- #
 
+def connect_handshake_secret(payload: dict) -> Optional[str]:
+    """Pull the pairing secret out of a signer's ``connect`` handshake.
+
+    NIP-46 has the remote signer answer a ``nostrconnect://`` QR with a
+    connect *response* whose ``result`` is the secret. Signers predating
+    that wording instead send a connect *request* carrying the secret in
+    ``params``. Both shapes are read here so either signer can pair.
+
+    Returns None when the payload is not a connect handshake at all, which
+    is different from a handshake carrying the wrong secret.
+    """
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("method") == "connect":
+        params = payload.get("params")
+        if isinstance(params, list) and len(params) >= 2 and isinstance(params[1], str):
+            return params[1]
+        return ""  # a connect request with no secret, which cannot match
+    result = payload.get("result")
+    # "auth_url" is a challenge, not an answer, and "ack" carries no proof
+    # of who sent it. Neither may stand in for the secret.
+    if isinstance(result, str) and result and result not in ("auth_url", "ack"):
+        return result
+    return None
+
+
 @dataclass
 class _Pending:
     method: str
@@ -183,12 +256,17 @@ class BunkerClient(QObject):
       Finally ``close`` to release the relay subscription.
 
     Signals:
-      connected(user_pubkey_hex)  — after connect + get_public_key succeed
-      disconnected(reason)        — channel torn down
+      connected(user_pubkey_hex)  after connect + get_public_key succeed
+      disconnected(reason)        channel torn down
     """
 
     connected = Signal(str)
     disconnected = Signal(str)
+    # A signer wants the user to authenticate at this URL before it answers.
+    auth_challenge = Signal(str)
+    # A signer replied on our channel but we could not read the message.
+    # Surfaced so the UI can say so instead of showing a bare timeout.
+    unreadable_reply = Signal(str)
 
     def __init__(self, pool: RelayPool, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -205,8 +283,9 @@ class BunkerClient(QObject):
         self._subscription: Optional[Subscription] = None
         self._pending: Dict[str, _Pending] = {}
         self._is_connected = False
+        self._warned_unreadable = False
 
-        # nostrconnect:// state — only used while listen_for_nostrconnect
+        # nostrconnect:// state, only used while listen_for_nostrconnect
         # is the active flow.
         self._nc_secret: Optional[str] = None
         self._nc_on_success: Optional[Callable[[str], None]] = None
@@ -308,7 +387,7 @@ class BunkerClient(QObject):
         if self._subscription is not None:
             self._subscription.close()
 
-        # Filter is loose by necessity — we don't know the signer's
+        # Filter is loose by necessity, we don't know the signer's
         # pubkey yet, so we accept any kind 24133 addressed to us.
         self._subscription = self._pool.subscribe(
             self._relays,
@@ -325,8 +404,8 @@ class BunkerClient(QObject):
         return self._local_pk_hex
 
     def _on_nostrconnect_event(self, event: dict) -> None:
-        """Look for an incoming ``connect`` request; ignore everything else
-        until the channel is established."""
+        """Wait for the signer's ``connect`` handshake, ignore everything
+        else until the channel is established."""
         signer_pk_hex = event.get("pubkey", "")
         if not isinstance(signer_pk_hex, str) or len(signer_pk_hex) != 64:
             return
@@ -337,17 +416,17 @@ class BunkerClient(QObject):
             plaintext = crypto.decrypt(event.get("content", ""), conv_key)
             payload = json.loads(plaintext)
         except (ValueError, json.JSONDecodeError):
-            return  # not for us, or malformed
-
-        if not isinstance(payload, dict) or payload.get("method") != "connect":
+            # Addressed to us but unreadable, so a signer is very likely
+            # talking a dialect we do not speak. Silence here is what makes
+            # the failure look like "nothing happened".
+            self._note_unreadable_reply(signer_pk_hex)
             return
 
-        params = payload.get("params")
-        received_secret = (
-            params[1] if isinstance(params, list) and len(params) >= 2 else ""
-        )
+        received_secret = connect_handshake_secret(payload)
+        if received_secret is None:
+            return
         if received_secret != self._nc_secret:
-            # Wrong secret — spoof attempt. Stay listening; the real
+            # Wrong secret, so a spoof attempt. Stay listening, the real
             # signer may still scan the QR. Don't fail the caller.
             return
 
@@ -364,9 +443,10 @@ class BunkerClient(QObject):
         self._subscription.event.connect(self._on_response_event)
         self._nc_timer.stop()
 
-        # Reply with "ack" so the signer knows we accepted.
+        # Only a connect *request* is owed an answer. When the signer sent a
+        # response instead, acking it would be replying to a reply.
         request_id = payload.get("id", "")
-        if isinstance(request_id, str) and request_id:
+        if payload.get("method") == "connect" and isinstance(request_id, str) and request_id:
             self._send_response(request_id, "ack")
 
         # Now resolve the user's actual pubkey (distinct from the
@@ -402,7 +482,7 @@ class BunkerClient(QObject):
     def _send_response(self, request_id: str, result: str) -> None:
         """Send a NIP-46 response back to the signer (no pending state).
 
-        Used for the ``"ack"`` reply during the nostrconnect handshake —
+        Used for the ``"ack"`` reply during the nostrconnect handshake,
         the signer sent us the connect request, so we owe them an answer.
         Fire-and-forget; publish acknowledgement isn't surfaced.
         """
@@ -437,9 +517,12 @@ class BunkerClient(QObject):
     ) -> None:
         """Re-open the channel for an already-paired profile.
 
-        We skip the ``connect`` request and verify the channel is live by
-        sending a ``ping``. If the ping comes back, we trust the saved
-        user_pubkey and emit ``connected``.
+        The ``connect`` request is skipped and the channel is proven live
+        with a ``ping``. Not every signer answers one, so a failed ping
+        falls back to ``get_public_key``, which every signer implements and
+        which we already hold permission for. That fallback also re-checks
+        the identity: if the signer has since switched accounts, saying so
+        beats publishing under a pubkey the user no longer means to use.
         """
         self._setup_channel(
             bunker_pubkey=bunker_pubkey,
@@ -453,12 +536,34 @@ class BunkerClient(QObject):
             self.connected.emit(user_pubkey)
             on_success()
 
+        def _confirm_identity(pk_hex: str) -> None:
+            if pk_hex.strip().lower() != user_pubkey.strip().lower():
+                on_failure(
+                    "the signer is now holding a different account than this "
+                    "profile was paired with"
+                )
+                self.close(reason="identity changed")
+                return
+            _ok("pong")
+
+        def _ping_failed(_reason: str) -> None:
+            self._send_request(
+                method="get_public_key",
+                params=[],
+                on_success=_confirm_identity,
+                on_failure=on_failure,
+                timeout_ms=timeout_ms,
+            )
+
         self._send_request(
             method="ping",
             params=[],
             on_success=_ok,
-            on_failure=on_failure,
-            timeout_ms=timeout_ms,
+            on_failure=_ping_failed,
+            # The probe gets a short leash so the fallback that actually
+            # works is reached quickly. ``min`` so a caller asking for an
+            # even tighter budget still gets it.
+            timeout_ms=min(PING_TIMEOUT_MS, timeout_ms),
         )
 
     # -- high-level: sign an event ------------------------------------------
@@ -474,7 +579,7 @@ class BunkerClient(QObject):
         """Hand an unsigned event to the remote signer.
 
         The unsigned event needs ``kind``, ``content``, ``tags``,
-        ``created_at`` — but NOT ``id``, ``pubkey``, or ``sig``. The
+        ``created_at``, but NOT ``id``, ``pubkey``, or ``sig``. The
         signer fills those in.
         """
         if not self._is_connected:
@@ -517,7 +622,7 @@ class BunkerClient(QObject):
     #   result: the encrypted (base64) or decrypted (UTF-8) string
     #
     # For NIP-37 self-encrypted drafts the third-party pubkey is the
-    # user's own pubkey — we expose ``nip44_encrypt_self`` /
+    # user's own pubkey, we expose ``nip44_encrypt_self`` /
     # ``nip44_decrypt_self`` as convenience wrappers to make that
     # intent explicit at the call site.
 
@@ -533,7 +638,7 @@ class BunkerClient(QObject):
         """Ask the signer to NIP-44 encrypt ``plaintext`` to ``peer_pubkey_hex``.
 
         ``on_success`` receives the base64-encoded NIP-44 payload.
-        ``on_failure`` receives a human-readable reason — including the
+        ``on_failure`` receives a human-readable reason, including the
         case where the signer rejects the method as unknown (older
         signers without NIP-44 support).
         """
@@ -607,7 +712,7 @@ class BunkerClient(QObject):
         *,
         timeout_ms: int = DEFAULT_RPC_TIMEOUT_MS,
     ) -> None:
-        """Self-encrypt — the NIP-37 case. Peer pubkey is the user's own."""
+        """Self-encrypt, the NIP-37 case. Peer pubkey is the user's own."""
         if self._user_pubkey is None:
             on_failure("user pubkey not yet known")
             return
@@ -627,7 +732,7 @@ class BunkerClient(QObject):
         *,
         timeout_ms: int = DEFAULT_RPC_TIMEOUT_MS,
     ) -> None:
-        """Self-decrypt — the NIP-37 case. Peer pubkey is the user's own."""
+        """Self-decrypt, the NIP-37 case. Peer pubkey is the user's own."""
         if self._user_pubkey is None:
             on_failure("user pubkey not yet known")
             return
@@ -659,7 +764,7 @@ class BunkerClient(QObject):
             pending.timer.stop()
             try:
                 pending.on_failure(reason)
-            except Exception:  # noqa: BLE001 — never let one callback break the rest
+            except Exception:  # noqa: BLE001, never let one callback break the rest
                 pass
         was_connected = self._is_connected
         self._is_connected = False
@@ -792,7 +897,8 @@ class BunkerClient(QObject):
             plaintext = crypto.decrypt(event.get("content", ""), self._conv_key)
             payload = json.loads(plaintext)
         except (ValueError, json.JSONDecodeError):
-            return  # not for us, or malformed — ignore quietly
+            self._note_unreadable_reply(event.get("pubkey", ""))
+            return
         if not isinstance(payload, dict):
             return
 
@@ -802,12 +908,39 @@ class BunkerClient(QObject):
 
         error = payload.get("error")
         result = payload.get("result")
+
+        if result == "auth_url":
+            # Not an answer but a challenge: the user has to authenticate in
+            # a browser, after which the real answer arrives under this same
+            # id. Hold the request open rather than failing it.
+            url = str(error or "").strip()
+            if url:
+                pending = self._pending.get(request_id)
+                if pending is not None:
+                    pending.timer.start(AUTH_CHALLENGE_TIMEOUT_MS)
+                self.auth_challenge.emit(url)
+                return
+            self._fail(request_id, "signer asked for authentication but sent no address")
+            return
+
         if error:
             self._fail(request_id, str(error))
         elif isinstance(result, str):
             self._succeed(request_id, result)
         else:
             self._fail(request_id, "signer response missing both result and error")
+
+    def _note_unreadable_reply(self, signer_pk_hex: str) -> None:
+        """Report, once per channel, that a reply arrived we could not read.
+
+        Payloads are NIP-44 encrypted per NIP-46. A signer using the older
+        NIP-04 encoding lands here, and without this the only symptom is a
+        timeout that looks identical to the signer never answering at all.
+        """
+        if self._warned_unreadable:
+            return
+        self._warned_unreadable = True
+        self.unreadable_reply.emit(signer_pk_hex)
 
     def _on_timeout(self, request_id: str) -> None:
         self._fail(request_id, "timed out waiting for signer")
@@ -828,7 +961,7 @@ class BunkerClient(QObject):
 
 
 # --------------------------------------------------------------------------- #
-# BunkerSessionPool — one connected client per profile, cached process-wide   #
+# BunkerSessionPool: one connected client per profile, cached process-wide   #
 # --------------------------------------------------------------------------- #
 
 class BunkerSessionPool(QObject):
@@ -837,7 +970,7 @@ class BunkerSessionPool(QObject):
     The first ``get(profile, …)`` call for a profile creates a fresh
     client and triggers a ``reattach`` handshake (sends ``ping``). On
     success the client is memoized and reused for subsequent ``sign_event``
-    calls — no extra WebSocket handshakes per publish.
+    calls, no extra WebSocket handshakes per publish.
 
     Closing the pool tears down every active client (used at app shutdown).
     """
@@ -851,7 +984,7 @@ class BunkerSessionPool(QObject):
 
     def get(
         self,
-        profile,  # nostr.profiles.Profile — avoid circular import
+        profile,  # nostr.profiles.Profile, not imported to avoid a cycle
         on_ready: Callable[[BunkerClient], None],
         on_error: Callable[[str], None],
     ) -> None:
@@ -876,7 +1009,7 @@ class BunkerSessionPool(QObject):
             for ready_cb, _err_cb in self._inflight.pop(pubkey, []):
                 try:
                     ready_cb(new_client)
-                except Exception:  # noqa: BLE001 — never let one waiter's bug break another
+                except Exception:  # noqa: BLE001, never let one waiter's bug break another
                     pass
 
         def _err(reason: str) -> None:

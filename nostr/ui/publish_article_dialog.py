@@ -11,7 +11,7 @@ collapsible **Advanced** section that stays out of the way until needed.
 from __future__ import annotations
 
 import time
-from typing import List, Optional
+from typing import Callable, List, Optional, Sequence
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPixmap
@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
 from ..avatar_store import AvatarStore
 from ..bech32 import encode_naddr
 from ..blossom.store import MediaFile, MediaStore
-from ..bunker import BunkerSessionPool
+from ..bunker import BunkerSessionPool, humanize_failure
 from ..known_people import KnownPeople
 from ..outbox import RelayListCache
 from ..profiles import Profile, ProfileStore
@@ -46,7 +46,11 @@ from .avatar import (
     compose_chip_icon,
     pixmap_for_profile,
 )
+from ..media.media_visibility import MediaVisibility
+from ..media.private_library import PrivateLibrary
+from ..media.publish_copy import PublicCopyMaker
 from .media_library_dialog import MediaLibraryDialog
+from .publish_copy_dialog import resolve_pick
 from .mention_chips import MentionChipRow
 from .thumbnail_loader import ThumbnailLoader
 
@@ -57,7 +61,7 @@ _WPM_READ_SPEED: int = 200
 
 
 # --------------------------------------------------------------------------- #
-# Stylesheets — palette pulled from widgets.py / editor.py                    #
+# Stylesheets: palette pulled from widgets.py / editor.py                    #
 # --------------------------------------------------------------------------- #
 
 _DARK_CSS = """
@@ -321,10 +325,14 @@ class PublishArticleDialog(QDialog):
         relay_pool: RelayPool,
         relay_list_cache: RelayListCache,
         session_pool: BunkerSessionPool,
+        entitled_relays: Optional[Callable[[], Sequence[str]]] = None,
         known_people: KnownPeople,
         search_client: Nip50SearchClient,
         avatars: AvatarStore,
         media_store: Optional[MediaStore] = None,
+        media_visibility: Optional[MediaVisibility] = None,
+        copy_maker: Optional[PublicCopyMaker] = None,
+        private_library: Optional[PrivateLibrary] = None,
         default_title: str = "",
         default_slug: str = "",
         parent=None,
@@ -340,10 +348,25 @@ class PublishArticleDialog(QDialog):
         self._relay_pool = relay_pool
         self._relay_list_cache = relay_list_cache
         self._session_pool = session_pool
+        # Relays this account has standing on beyond its own list, resolved
+        # when the publish actually happens rather than at dialog open.
+        self._entitled_relays = entitled_relays
         self._known_people = known_people
         self._search_client = search_client
         self._avatars = avatars
         self._media_store = media_store
+        # A cover image is the most public thing in an article: it is the
+        # picture every reader sees before they read a word. So the same
+        # gate the editor uses runs here, and a picker with no visibility
+        # wired simply sees every file as public, which is what it saw
+        # before this existed.
+        self._media_visibility = media_visibility or MediaVisibility()
+        self._copy_maker = copy_maker
+        # Held so the cover picker can start the library reading. Nothing
+        # is read on the way into this dialog: the signer prompts that
+        # cost belong to the moment someone goes looking for a picture,
+        # and most articles are published without one.
+        self._private_library = private_library
         self._is_dark = is_dark
         self._current_profile = active_profile
         self._job: Optional[PublishJob] = None
@@ -440,8 +463,8 @@ class PublishArticleDialog(QDialog):
         self._advanced_toggle.clicked.connect(self._toggle_advanced)
         root.addWidget(self._advanced_toggle)
 
-        # The Advanced panel stacks two rows so the cover-image block —
-        # which is taller than a single-line field — gets its own
+        # The Advanced panel stacks two rows so the cover-image block,
+        # which is taller than a single-line field, gets its own
         # horizontal slot instead of stretching the siblings around it.
         #   Row 1:  Slug · Hashtags          (equal-weight compact fields)
         #   Row 2:  Cover image              (URL + button, then thumb)
@@ -542,7 +565,7 @@ class PublishArticleDialog(QDialog):
 
     # -- cover image -------------------------------------------------------
 
-    # Compact landscape thumb — large enough to read at a glance, small
+    # Compact landscape thumb, large enough to read at a glance, small
     # enough that the cover block sits at the same visual weight as the
     # slug + hashtags row above it.
     _COVER_THUMB_WIDTH = 144
@@ -556,7 +579,7 @@ class PublishArticleDialog(QDialog):
 
         The thumbnail is on the left so the user's eye lands on the
         actual image first; the controls cluster on the right. Alt
-        text is intentionally absent — NIP-23's ``image`` tag has no
+        text is intentionally absent: NIP-23's ``image`` tag has no
         alt sibling.
         """
         container = QWidget()
@@ -592,7 +615,7 @@ class PublishArticleDialog(QDialog):
         else:
             self._image_pick_btn = None
         controls.addLayout(input_row)
-        # Subtle help line under the input — Notion / Medium do something
+        # Subtle help line under the input, since Notion / Medium do something
         # similar so users know where the asset comes from without us
         # having to write docs.
         hint = QLabel(
@@ -612,27 +635,52 @@ class PublishArticleDialog(QDialog):
         row hidden (cover URL has no alt sibling on Nostr)."""
         if self._media_store is None:
             return
+        # Reading the private library is what lets this picker tell a
+        # private file from a public one. Without it every file reads as
+        # unchecked and no cover can be chosen at all, which is the
+        # honest failure but a useless one, so the read starts here.
+        if self._private_library is not None:
+            self._private_library.bind_profile(self._current_profile)
         picker = MediaLibraryDialog(
             store=self._media_store,
             is_dark=self._is_dark,
             pick_mode=True,
             pick_alt_text=False,
+            visibility=self._media_visibility,
             parent=self,
         )
+        if self._private_library is not None:
+            picker.bind_private_library(self._private_library)
         picker.setWindowTitle("Choose hero image")
-        # Pre-filter to images — videos / audio can't be a NIP-23 cover.
+        # Pre-filter to images: videos / audio can't be a NIP-23 cover.
         picker._filter_combo.setCurrentIndex(1)
         picker.file_picked.connect(self._on_cover_image_picked)
         picker.exec()
 
     def _on_cover_image_picked(self, media: MediaFile, _alt: str) -> None:
+        # A private pick cannot become a cover as it stands: the bytes at
+        # that address are ciphertext, so a reader would get a broken
+        # image and the user would have advertised a file they meant to
+        # keep. The gate turns it into a public copy first, or leaves the
+        # field alone.
+        picked = resolve_pick(
+            media,
+            visibility=self._media_visibility,
+            maker=self._copy_maker,
+            is_dark=self._is_dark,
+            parent=self,
+        )
+        if not picked.ok:
+            if picked.reason:
+                self._set_status(picked.reason, error=True)
+            return
         # Setting .text() triggers ``_on_cover_url_changed``, which
         # clears any prior thumbnail. We then kick off the load by hash
         # so the preview reflects the new pick.
-        self._image_edit.setText(media.url)
-        self._cover_thumb_hash = media.hash
-        if self._cover_loader is not None and (media.mime_type or "").startswith("image/"):
-            self._cover_loader.load(media.hash, media.url)
+        self._image_edit.setText(picked.url)
+        self._cover_thumb_hash = picked.sha256
+        if self._cover_loader is not None and (picked.mime or "").startswith("image/"):
+            self._cover_loader.load(picked.sha256, picked.url)
 
     def _on_cover_url_changed(self, text: str) -> None:
         """Reset the preview whenever the URL field changes. A typed URL
@@ -642,7 +690,7 @@ class PublishArticleDialog(QDialog):
         if not text.strip():
             self._clear_cover_preview("No cover\nselected")
         elif not self._cover_thumb_hash:
-            # Manual entry — we have no hash, so no thumbnail. Make the
+            # Manual entry, so we have no hash, so no thumbnail. Make the
             # preview state honest rather than misleading.
             self._clear_cover_preview("Preview shown\nfor library picks")
 
@@ -801,6 +849,8 @@ class PublishArticleDialog(QDialog):
             relay_list_cache=self._relay_list_cache,
             session_pool=self._session_pool,
             profile=self._current_profile,
+            entitled_relays=list(self._entitled_relays() or ())
+            if self._entitled_relays else (),
             unsigned_event=unsigned,
             parent=self,
         )
@@ -835,7 +885,7 @@ class PublishArticleDialog(QDialog):
 
     def _on_failed(self, reason: str) -> None:
         self._job = None
-        self._set_status(f"Publish failed: {reason}", error=True)
+        self._set_status(f"Publish failed: {humanize_failure(reason)}", error=True)
         self._set_busy(False)
 
     def _on_cancel(self) -> None:

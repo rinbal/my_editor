@@ -7,7 +7,7 @@ are first-class, what each one's published per-file cap is, and which
 servers are surfaced as one-click recommendations vs. only available via
 manual entry.
 
-Sizes are in bytes — the upload path never has to convert.
+Sizes are in bytes, so the upload path never has to convert.
 """
 
 from __future__ import annotations
@@ -32,20 +32,20 @@ BLOSSOM_UNPUBLISHED_LIMIT_FALLBACK = 100 * _MiB
 
 # Per-server metadata keyed by hostname (not origin) so trailing slashes
 # and protocol variations don't break lookup. Always read via
-# ``plan.get_server_info()`` — never index this map directly from
+# ``plan.get_server_info()``, never index this map directly from
 # feature code.
 #
 # Field semantics (matches STANDUP):
-#   free          — usable without payment for the typical workload
-#   paid          — operator runs a paid tier (informational only)
-#   requires_auth — server demands a signed kind 24242 event (BUD-02)
-#   free_max_file — largest single file the free tier accepts, in bytes;
+#   free          : usable without payment for the typical workload
+#   paid          : operator runs a paid tier (informational only)
+#   requires_auth : server demands a signed kind 24242 event (BUD-11)
+#   free_max_file : largest single file the free tier accepts, in bytes;
 #                   None when not published
-#   paid_max_file — same, for the paid tier; None when not applicable
-#   confidence    — 'documented' | 'partial' | 'unpublished'; drives the
+#   paid_max_file : same, for the paid tier; None when not applicable
+#   confidence    : 'documented' | 'partial' | 'unpublished'; drives the
 #                   indicator dot in Settings and the warning copy in the
 #                   upload hint
-#   notes         — short key suffix for an operator-specific note
+#   notes         : short key suffix for an operator-specific note
 BLOSSOM_SERVER_INFO = MappingProxyType({
     "blossom.band": {
         "free": True,

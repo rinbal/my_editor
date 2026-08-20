@@ -14,17 +14,28 @@ Shape of the flow:
      approve on their phone here.
   4. Publish the signed event with eager-first-accept semantics.
   5. Emit ``completed(results)`` with per-relay outcomes.
+
+The builders also attach NIP-92 ``imeta`` tags for media, from records
+the caller hands them. One rule governs every field: describe only media
+this app itself resolved, and never fabricate a value for a URL nobody
+here fetched. A foreign image passes through the content untouched and
+gets no tag at all, because a wrong ``x`` tells every other client to
+reject the blob it just downloaded, which is worse than an absent one.
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Iterable, List, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QObject, Signal
 
+import url_safety
+
 from . import CLIENT_NAME
 from .bech32 import decode_npub, decode_nprofile, encode_nprofile
+from .blossom.hashes import blob_url
 from .bunker import BunkerClient, BunkerSessionPool
 from .drafts import (
     DEFAULT_EXPIRATION_SECONDS,
@@ -60,7 +71,7 @@ def _safe_reason(reason: str) -> str:
 
 
 PublishResult = Tuple[str, bool, str]  # (relay_url, ok, message)
-Mention = Tuple[str, str]              # (pubkey_hex, relay_hint) — hint may be empty
+Mention = Tuple[str, str]              # (pubkey_hex, relay_hint), hint may be empty
 
 
 # --------------------------------------------------------------------------- #
@@ -128,7 +139,7 @@ def _resolve_mentions(
 
     # Union of mention pubkeys for p-tags. Order: inline first, then chip
     # mentions in the order the user picked them. First seen wins the relay
-    # hint slot — usually the more specific one.
+    # hint slot, usually the more specific one.
     seen: set[str] = set()
     p_tags: List[List[str]] = []
     for pk, hint in list(inline) + list(chip_mentions):
@@ -143,6 +154,171 @@ def _resolve_mentions(
 
 
 # --------------------------------------------------------------------------- #
+# Media attachments (NIP-92 imeta)                                             #
+# --------------------------------------------------------------------------- #
+
+@dataclass(frozen=True)
+class PublishedMedia:
+    """One image this app resolved into a URL it wrote into the content.
+
+    Every field is something this process measured or a server it
+    uploaded to confirmed. Nothing here may be inferred from a URL, and
+    an unknown value stays at its default so the builder can leave the
+    field out rather than guess it.
+    """
+
+    url: str
+    sha256: str = ""
+    mime: str = ""
+    width: int = 0
+    height: int = 0
+    alt: str = ""
+    size: int = 0
+    servers: Tuple[str, ...] = ()
+
+
+# One event carries at most this many imeta tags. The images stay in the
+# content either way; only the metadata is capped.
+_MAX_IMETA_TAGS = 100
+
+# Alt text is prose and lands in someone else's UI, so it is clipped
+# rather than trusted to be short.
+_MAX_ALT_CHARS = 1000
+
+# What the asset layer records when the bytes did not sniff to a known
+# image type. Emitting it would claim a measurement nobody made, so the
+# ``m`` field is dropped instead and readers can sniff for themselves.
+_UNKNOWN_MIME = "application/octet-stream"
+
+_WHITESPACE_RUN_RE = re.compile(r"\s+")
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _is_injection_free(value: str) -> bool:
+    """Whether ``value`` can be an imeta field value unchanged.
+
+    imeta entries are space-delimited key/value pairs inside a variadic
+    tag, so whitespace in a URL forges an extra field and a newline in
+    any value forges an extra entry, or an extra tag, inside an event
+    the user is about to sign. Both are refused at the source.
+    """
+    if not isinstance(value, str) or not value:
+        return False
+    return not _WHITESPACE_RUN_RE.search(value) and not _CONTROL_CHAR_RE.search(value)
+
+
+def _clean_alt(value: str) -> str:
+    """Alt text flattened onto one line and clipped.
+
+    Alt is the one field where spaces are legitimate, so it is repaired
+    instead of refused: control characters and newlines become spaces,
+    runs collapse, and the result cannot introduce a second entry.
+    """
+    if not isinstance(value, str) or not value:
+        return ""
+    flattened = _CONTROL_CHAR_RE.sub(" ", value)
+    return _WHITESPACE_RUN_RE.sub(" ", flattened).strip()[:_MAX_ALT_CHARS].strip()
+
+
+def _fallbacks_for(record: PublishedMedia) -> List[str]:
+    """Sibling addresses for one blob, from confirmed servers only.
+
+    ``servers`` holds the origins that answered with this blob, and
+    BUD-01 serves every endpoint from the root of the domain, so
+    ``<origin>/<sha256>`` is an address this app can stand behind even
+    though no server ever handed it that exact string. A configured but
+    unconfirmed server never appears: a fallback nobody verified is a
+    fabricated one, and it sends readers to a 404.
+    """
+    if not record.sha256:
+        return []
+    out: List[str] = []
+    for origin in record.servers:
+        candidate = blob_url(origin, record.sha256)
+        if candidate == record.url or url_safety.same_origin(candidate, record.url):
+            continue
+        if candidate in out or not _is_injection_free(candidate):
+            continue
+        if not url_safety.is_safe_media_url(candidate):
+            continue
+        out.append(candidate)
+    return out
+
+
+def build_imeta_tags(
+    media: Sequence[PublishedMedia], content: str
+) -> List[List[str]]:
+    """NIP-92 ``imeta`` tags for the media this app put into ``content``.
+
+    ``media`` comes from the walk that serialized the document, which is
+    the only place that knows which URL was written for which image.
+    Rediscovering the URLs with a regex over the finished content was
+    rejected: it would find third-party addresses this app never
+    fetched, and URLs the user typed as prose, and describing either one
+    means guessing metadata nobody measured.
+
+    Field order is fixed so the same document yields the same event id
+    twice running. A record is dropped whole when its ``url`` is unsafe,
+    is absent from the final content, or when no other field is known,
+    since NIP-92 requires ``url`` plus at least one more.
+    """
+    tags: List[List[str]] = []
+    described: set = set()
+    for record in media or ():
+        if len(tags) >= _MAX_IMETA_TAGS:
+            break
+        url = (record.url or "").strip()
+        if url in described or not _is_injection_free(url):
+            continue
+        if not url_safety.is_safe_media_url(url):
+            continue
+        # NIP-92: each tag SHOULD match a URL in the event content. The
+        # user can still edit the body in the publish dialog, so an
+        # image described here may no longer be there.
+        if url not in content:
+            continue
+
+        entries: List[str] = []
+        mime = (record.mime or "").strip().lower()
+        if mime and mime != _UNKNOWN_MIME and _is_injection_free(mime):
+            entries.append(f"m {mime}")
+        sha = (record.sha256 or "").strip().lower()
+        if sha and _is_injection_free(sha):
+            entries.append(f"x {sha}")
+        if record.width > 0 and record.height > 0:
+            entries.append(f"dim {record.width}x{record.height}")
+        alt = _clean_alt(record.alt)
+        if alt:
+            entries.append(f"alt {alt}")
+        if record.size > 0:
+            entries.append(f"size {record.size}")
+        entries.extend(f"fallback {u}" for u in _fallbacks_for(record))
+        if not entries:
+            continue
+
+        described.add(url)
+        tags.append(["imeta", f"url {url}"] + entries)
+    return tags
+
+
+def _is_publishable_cover(url: str) -> bool:
+    """Whether a NIP-23 cover address may be signed into an event.
+
+    An imported article's cover is lifted straight out of untrusted feed
+    HTML, so it arrives as anything: ``javascript:``, ``data:text/html``,
+    ``file:///``, a protocol-relative address or a bare path.
+
+    The mirror-source policy is the right gate rather than the media
+    policy. Plenty of real blogs serve covers over plain http and
+    refusing those would silently delete a legitimate image, while
+    ``javascript:``, ``data:``, ``file:``, userinfo and private address
+    literals are all refused. A refusal drops the tag and keeps the
+    article: a per-item import must never fail over a cover.
+    """
+    return _is_injection_free(url) and url_safety.is_safe_mirror_source(url)
+
+
+# --------------------------------------------------------------------------- #
 # Pure builders                                                                #
 # --------------------------------------------------------------------------- #
 
@@ -152,13 +328,19 @@ def build_note(
     *,
     mentions: Optional[Sequence[Mention]] = None,
     extra_tags: Optional[List[List[str]]] = None,
+    media: Sequence[PublishedMedia] = (),
 ) -> dict:
     """Construct an unsigned kind 1 event ready for a remote signer.
 
-    ``mentions`` is a list of ``(pubkey_hex, relay_hint)`` tuples — typically
+    ``mentions`` is a list of ``(pubkey_hex, relay_hint)`` tuples, typically
     sourced from the publish dialog's mention-chip row. They're merged with
     any inline ``nostr:n…`` URIs already in ``content`` (deduplicated), and
     their URIs are appended at the end of the body if not already present.
+
+    ``media`` describes images this app resolved into URLs already in
+    ``content``; the imeta tags are built here rather than threaded
+    through ``extra_tags`` because only this function holds the final
+    content, and the "URL is in the content" check has to run against it.
 
     Always attaches ``["client", CLIENT_NAME]`` so readers that honour the
     NIP-89 client tag display "Published from MyEditor" under the note.
@@ -166,6 +348,7 @@ def build_note(
     final_content, p_tags = _resolve_mentions(content, mentions or [])
     tags: List[List[str]] = [["client", CLIENT_NAME]]
     tags.extend(p_tags)
+    tags.extend(build_imeta_tags(media, final_content))
     if extra_tags:
         tags.extend(extra_tags)
     return build_event(
@@ -188,10 +371,11 @@ def build_article(
     hashtags: Iterable[str] = (),
     mentions: Optional[Sequence[Mention]] = None,
     extra_tags: Optional[List[List[str]]] = None,
+    media: Sequence[PublishedMedia] = (),
 ) -> dict:
     """Construct an unsigned NIP-23 long-form article (kind 30023).
 
-    The ``slug`` becomes the ``d``-tag — the identifier that makes this
+    The ``slug`` becomes the ``d``-tag, the identifier that makes this
     event addressable. Re-publishing with the same slug replaces the
     previous version on relays that honour parameterized replacement.
 
@@ -200,8 +384,18 @@ def build_article(
     and a ``["p", hex, relay-hint]`` tag is emitted per unique pubkey.
 
     Per NIP-23, ``content`` is Markdown and clients MUST NOT hard line-break
-    paragraphs or accept HTML — we don't transform the content; that's the
+    paragraphs or accept HTML. This does not transform the content; that is the
     caller's responsibility.
+
+    ``image`` is the cover. It is gated through
+    :func:`_is_publishable_cover` because an imported article's cover
+    comes from untrusted feed HTML; a refused address drops the tag and
+    still publishes the article.
+
+    NIP-94's note that it is "not expected to be implemented by ...
+    longform clients that deal with kind:30023 articles" is about kind
+    1063 file-metadata events, not about ``imeta`` tags, which NIP-92
+    defines for any event. Emitting imeta on 30023 is correct.
     """
     if not slug.strip():
         raise ValueError("article slug (d-tag) must not be empty")
@@ -215,14 +409,16 @@ def build_article(
         tags.append(["title", title.strip()])
     if summary.strip():
         tags.append(["summary", summary.strip()])
-    if image.strip():
-        tags.append(["image", image.strip()])
+    cover = image.strip()
+    if cover and _is_publishable_cover(cover):
+        tags.append(["image", cover])
     if published_at is not None:
         tags.append(["published_at", str(int(published_at))])
     for raw in hashtags:
         tag = raw.strip().lstrip("#").lower()
         if tag:
             tags.append(["t", tag])
+    tags.extend(build_imeta_tags(media, final_content))
     if extra_tags:
         tags.extend(extra_tags)
     return build_event(
@@ -251,7 +447,7 @@ def slugify(text: str, *, fallback: str = "untitled") -> str:
 
 
 # --------------------------------------------------------------------------- #
-# PublishJob — outbox → sign → publish                                        #
+# PublishJob: outbox, sign, publish                                           #
 # --------------------------------------------------------------------------- #
 
 class PublishJob(QObject):
@@ -261,9 +457,9 @@ class PublishJob(QObject):
       status_changed(str)     human-readable progress text
       signed(str)             event id (hex) of the signed event
       completed(list)         final list of PublishResult tuples
-                              [(url, ok, message), …] — fired even when
+                              [(url, ok, message), …], fired even when
                               zero relays accepted
-      failed(str)             short reason; terminal — no further signals
+      failed(str)             short reason; terminal. No further signals
                               after this
     """
 
@@ -280,6 +476,7 @@ class PublishJob(QObject):
         session_pool: BunkerSessionPool,
         profile: Profile,
         unsigned_event: dict,
+        entitled_relays: Sequence[str] = (),
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
@@ -290,13 +487,15 @@ class PublishJob(QObject):
         self._relay_pool = relay_pool
         self._relay_list_cache = relay_list_cache
         self._session_pool = session_pool
+        # Relays this account has standing on beyond its own list.
+        self._entitled_relays = list(entitled_relays)
         self._profile = profile
         self._unsigned = unsigned_event
 
     def start(self) -> None:
         """Kick off the publish. Safe to call once per instance."""
         self.status_changed.emit("Looking up your relay list…")
-        # Always include the profile's bunker relays when querying — even
+        # Always include the profile's bunker relays when querying, even
         # if the user has no NIP-65 published, we still want a fast result.
         relays_to_query = list(dict.fromkeys(list(self._profile.bunker_relays)))
         self._relay_list_cache.fetch(
@@ -308,7 +507,9 @@ class PublishJob(QObject):
     # -- pipeline ----------------------------------------------------------
 
     def _on_relay_list_resolved(self, relay_list) -> None:
-        publish_relays = select_publish_relays(relay_list.write)
+        publish_relays = select_publish_relays(
+            relay_list.write, entitled=self._entitled_relays,
+        )
         self.status_changed.emit("Connecting to your signer…")
         self._session_pool.get(
             self._profile,
@@ -349,7 +550,7 @@ class PublishJob(QObject):
 
 
 # --------------------------------------------------------------------------- #
-# DraftPublishJob — stash an unsigned inner event as a NIP-37 draft           #
+# DraftPublishJob: stash an unsigned inner event as a NIP-37 draft            #
 # --------------------------------------------------------------------------- #
 
 class DraftPublishJob(QObject):
@@ -368,15 +569,15 @@ class DraftPublishJob(QObject):
     Signals (in firing order on the happy path):
       status_changed(str)        progress text
       stashed(str, str, int)     (identifier, event_id, created_at) on
-                                 successful sign — fires before relay
+                                 successful sign. Fires before relay
                                  results are in so the panel can update
                                  optimistically.
       completed(list)            list of PublishResult tuples
-      failed(str)                terminal — no further signals after this
+      failed(str)                terminal. No further signals after this
 
     Cancellation: ``cancel()`` flips a flag that suppresses all future
     signal emissions. The in-flight NIP-46 RPC can't actually be
-    recalled — but the dialog (now destroyed) will no longer be
+    recalled, but the dialog (now destroyed) will no longer be
     notified, preventing "wrapped C/C++ object has been deleted"
     warnings on PySide6.
     """
@@ -397,6 +598,7 @@ class DraftPublishJob(QObject):
         identifier: str,
         expiration_seconds: int = DEFAULT_EXPIRATION_SECONDS,
         extra_wrap_tags: Optional[List[List[str]]] = None,
+        entitled_relays: Sequence[str] = (),
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
@@ -409,6 +611,8 @@ class DraftPublishJob(QObject):
         self._relay_pool = relay_pool
         self._relay_list_cache = relay_list_cache
         self._session_pool = session_pool
+        # Relays this account has standing on beyond its own list.
+        self._entitled_relays = list(entitled_relays)
         self._profile = profile
         self._inner_event = inner_event
         self._identifier = identifier
@@ -451,6 +655,7 @@ class DraftPublishJob(QObject):
         publish_relays = select_draft_publish_relays(
             relay_list,
             bunker_relays=self._profile.bunker_relays,
+            entitled=self._entitled_relays,
         )
         self._emit_status("Connecting to your signer…")
         self._session_pool.get(
@@ -468,7 +673,7 @@ class DraftPublishJob(QObject):
             self._emit_failed(f"Could not serialize draft: {exc}")
             return
         # Pre-flight against the NIP-44 v2 plaintext cap (65535 bytes
-        # post-encode). The bunker would reject larger payloads anyway —
+        # post-encode). The bunker would reject larger payloads anyway,
         # surfacing it here yields a clearer message and avoids one
         # round-trip + approval prompt for an inevitable failure.
         payload_bytes = len(plaintext.encode("utf-8"))
@@ -546,7 +751,7 @@ class DraftPublishJob(QObject):
 
 
 # --------------------------------------------------------------------------- #
-# DraftDeleteJob — tombstone an existing draft                                #
+# DraftDeleteJob: tombstone an existing draft                                 #
 # --------------------------------------------------------------------------- #
 
 class DraftDeleteJob(QObject):
@@ -559,7 +764,7 @@ class DraftDeleteJob(QObject):
     Signals:
       status_changed(str)
       tombstoned(str, str)       (identifier, event_id) right after the
-                                 signer returns the signed tombstone —
+                                 signer returns the signed tombstone,
                                  lets the panel remove the row before
                                  relay results land.
       completed(list)            list of PublishResult tuples
@@ -580,6 +785,7 @@ class DraftDeleteJob(QObject):
         profile: Profile,
         identifier: str,
         inner_kind: int,
+        entitled_relays: Sequence[str] = (),
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
@@ -593,6 +799,8 @@ class DraftDeleteJob(QObject):
         self._relay_pool = relay_pool
         self._relay_list_cache = relay_list_cache
         self._session_pool = session_pool
+        # Relays this account has standing on beyond its own list.
+        self._entitled_relays = list(entitled_relays)
         self._profile = profile
         self._identifier = identifier
         self._inner_kind = inner_kind
@@ -629,6 +837,7 @@ class DraftDeleteJob(QObject):
         publish_relays = select_draft_publish_relays(
             relay_list,
             bunker_relays=self._profile.bunker_relays,
+            entitled=self._entitled_relays,
         )
         self._session_pool.get(
             self._profile,
@@ -670,3 +879,191 @@ class DraftDeleteJob(QObject):
             f"Draft removed on {accepted}/{len(results)} relays."
         )
         self.completed.emit(results)
+
+
+class DraftBulkDeleteJob(QObject):
+    """Delete several drafts, one signer round-trip at a time.
+
+    Sequential rather than parallel, and not as a performance choice.
+    Every deletion needs its own signature, and a remote signer answers
+    one request at a time whatever this end does; firing all of them at
+    once would put N prompts on the user's phone in an order nobody
+    chose, and take away the ability to stop after the third.
+
+    One failure does not end the run. The user asked for these to go,
+    and the ones that can go should. What they get at the end is a count
+    of what did not, because a partial result reported as a whole one is
+    the version of this that loses drafts quietly.
+
+    Cancelling stops the run before the next signature is requested. It
+    cannot recall a deletion already signed and published, so the count
+    in ``finished`` is what actually happened rather than what was asked
+    for.
+
+    Signals:
+      progress(int, int)   drafts settled so far, total asked for.
+      tombstoned(str, str) (identifier, event_id) as each one is signed,
+                           forwarded so the panel can drop the row before
+                           the relay results land.
+      finished(int, list)  how many were deleted, and the
+                           (identifier, reason) pairs for those that
+                           were not.
+    """
+
+    progress = Signal(int, int)
+    tombstoned = Signal(str, str)
+    finished = Signal(int, list)
+
+    def __init__(
+        self,
+        *,
+        relay_pool: RelayPool,
+        relay_list_cache: RelayListCache,
+        session_pool: BunkerSessionPool,
+        profile: Profile,
+        targets: Sequence[Tuple[str, int]],
+        entitled_relays: Sequence[str] = (),
+        parent: Optional[QObject] = None,
+    ) -> None:
+        super().__init__(parent)
+        # Validated here, before a single signature is asked for. A run
+        # that would die on its ninth draft because of something knowable
+        # at the start has already cost the user eight approvals.
+        self._targets: List[Tuple[str, int]] = []
+        for identifier, inner_kind in targets:
+            if not identifier:
+                raise ValueError("draft identifier (d-tag) must not be empty")
+            if inner_kind not in SUPPORTED_INNER_KINDS:
+                raise ValueError(
+                    f"unsupported inner kind {inner_kind!r}; "
+                    f"expected one of {SUPPORTED_INNER_KINDS}"
+                )
+            self._targets.append((identifier, int(inner_kind)))
+
+        self._relay_pool = relay_pool
+        self._relay_list_cache = relay_list_cache
+        self._session_pool = session_pool
+        self._entitled_relays = list(entitled_relays)
+        self._profile = profile
+
+        self._index: int = 0
+        self._deleted: int = 0
+        self._failures: List[Tuple[str, str]] = []
+        self._current: Optional[DraftDeleteJob] = None
+        self._cancelled: bool = False
+        # Re-entrancy guard, the same shape the decrypt queues use: a
+        # signer that answers synchronously would otherwise recurse once
+        # per draft.
+        self._pumping: bool = False
+        self._inflight: bool = False
+        self._done: bool = False
+
+    # -- public API --------------------------------------------------------
+
+    @property
+    def total(self) -> int:
+        return len(self._targets)
+
+    def start(self) -> None:
+        if not self._targets:
+            self._finish()
+            return
+        self._pump()
+
+    def cancel(self) -> None:
+        """Stop before the next signature is asked for.
+
+        The in-flight deletion is cancelled too, but it may already be
+        signed and on its way to the relays, which is why this reports
+        rather than promises.
+        """
+        if self._cancelled or self._done:
+            return
+        self._cancelled = True
+        if self._current is not None:
+            self._current.cancel()
+            self._current = None
+        self._finish()
+
+    # -- the queue ---------------------------------------------------------
+
+    def _pump(self) -> None:
+        if self._pumping or self._inflight or self._done:
+            return
+        self._pumping = True
+        try:
+            while (
+                not self._cancelled
+                and not self._inflight
+                and self._index < len(self._targets)
+            ):
+                identifier, inner_kind = self._targets[self._index]
+                self._inflight = True
+                self._start_one(identifier, inner_kind)
+        finally:
+            self._pumping = False
+        if not self._inflight and not self._cancelled:
+            self._finish()
+
+    def _start_one(self, identifier: str, inner_kind: int) -> None:
+        try:
+            job = DraftDeleteJob(
+                relay_pool=self._relay_pool,
+                relay_list_cache=self._relay_list_cache,
+                session_pool=self._session_pool,
+                profile=self._profile,
+                identifier=identifier,
+                inner_kind=inner_kind,
+                entitled_relays=self._entitled_relays,
+                parent=self,
+            )
+        except ValueError as exc:
+            # Cannot happen for targets that passed the constructor, but
+            # a run that dies here would strand the whole queue.
+            self._settle(identifier, reason=str(exc))
+            return
+
+        self._current = job
+        job.tombstoned.connect(self.tombstoned)
+        job.completed.connect(
+            lambda results, ident=identifier: self._on_one_completed(ident, results)
+        )
+        job.failed.connect(
+            lambda reason, ident=identifier: self._settle(ident, reason=reason)
+        )
+        job.start()
+
+    def _on_one_completed(self, identifier: str, results: List[PublishResult]) -> None:
+        # ``completed`` fires even when every relay refused, so the
+        # results decide whether this counts as deleted. Reporting a
+        # deletion no relay accepted would tell the user a draft is gone
+        # from a place it is still on.
+        if any(ok for _, ok, _ in results):
+            self._settle(identifier)
+            return
+        reasons = "; ".join(msg for _url, ok, msg in results if not ok and msg)
+        self._settle(
+            identifier,
+            reason=f"no relay accepted the deletion{f' ({reasons})' if reasons else ''}",
+        )
+
+    def _settle(self, identifier: str, *, reason: str = "") -> None:
+        if self._done:
+            return
+        if reason:
+            self._failures.append((identifier, _safe_reason(reason)))
+        else:
+            self._deleted += 1
+        self._current = None
+        self._index += 1
+        self._inflight = False
+        self.progress.emit(self._index, len(self._targets))
+        if self._cancelled:
+            return
+        self._pump()
+
+    def _finish(self) -> None:
+        if self._done:
+            return
+        self._done = True
+        self.finished.emit(self._deleted, list(self._failures))

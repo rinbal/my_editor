@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Round profile-avatar chip with chevron — sits in the editor header.
+"""Round profile-avatar chip with chevron, sits in the editor header.
 
 The chip's hover state and its dropdown menu reuse the editor's existing
 CSS verbatim (the same blocks in ``widgets.py`` and ``editor.py``) so it
@@ -26,7 +26,7 @@ from .avatar import (
 
 
 # --------------------------------------------------------------------------- #
-# Editor palette — kept literally identical to widgets.py / editor.py         #
+# Editor palette, kept literally identical to widgets.py / editor.py          #
 # --------------------------------------------------------------------------- #
 
 _DARK_MENU_CSS = """
@@ -85,13 +85,17 @@ QToolButton::menu-indicator { image: none; width: 0; }
 # --------------------------------------------------------------------------- #
 
 class ProfileChip(QToolButton):
-    """Header avatar chip — click opens a styled QMenu of profiles + actions."""
+    """Header avatar chip, click opens a styled QMenu of profiles + actions."""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._is_dark = True
         self.setPopupMode(QToolButton.InstantPopup)
         self.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        # Icon-only, so the accessible name is the only thing VoiceOver
+        # and Full Keyboard Access have to announce this control by. It
+        # is also the control the drafts panel's empty state points at.
+        self.setAccessibleName("Nostr profile")
         self.setCursor(Qt.PointingHandCursor)
         self.setIconSize(QSize(CHIP_TOTAL_WIDTH, AVATAR_SIZE))
         self.setFixedHeight(32)

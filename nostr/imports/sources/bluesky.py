@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from typing import Callable, List, Optional
 from urllib.parse import quote, unquote
 
+from ...drafts import derive_title_from_markdown
 from ...rss.parser import FeedItem
 from .mdx import derive_summary
 
@@ -214,17 +215,17 @@ def _to_unix(iso: Optional[str]) -> Optional[int]:
 
 
 def derive_thread_title(markdown: str, max_len: int = 80) -> str:
-    line = next(
-        (ln.strip() for ln in str(markdown or "").split("\n") if ln.strip()),
-        "",
+    """First readable line of the stitched thread, or a placeholder.
+
+    Shares the editor's one Markdown title rule, so a thread opening
+    with an image embed no longer titles itself with the image syntax.
+    Hashtags now survive: the old local rule stripped ``#`` anywhere in
+    the line, which turned "Great day #nostr" into "Great day nostr",
+    and on Bluesky a hashtag is a word people mean to read.
+    """
+    return derive_title_from_markdown(
+        markdown, max_len=max_len, fallback="Bluesky thread",
     )
-    clean = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", line)
-    clean = re.sub(r"[*_`>#]", "", clean).strip()
-    if not clean:
-        return "Bluesky thread"
-    if len(clean) > max_len:
-        return clean[: max_len - 1].rstrip() + "…"
-    return clean
 
 
 def _get_json(fetcher, method: str, params: dict, on_done, on_error) -> None:

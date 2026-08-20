@@ -9,6 +9,7 @@ from PySide6.QtCore import QObject, QUrl, Signal
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
 from constants import APP_REPO_SLUG, APP_RELEASES_URL, APP_VERSION
+from url_safety import is_safe_external_url
 
 _API_URL = f"https://api.github.com/repos/{APP_REPO_SLUG}/releases/latest"
 _TIMEOUT_MS = 10000
@@ -71,7 +72,10 @@ class UpdateChecker(QObject):
             return
 
         latest = tag[1:] if tag.startswith("v") else tag
-        release_url = data.get("html_url") or APP_RELEASES_URL
+        # Validate here rather than at the openUrl call sites: a release
+        # page URL is JSON from the network, and there are three of them.
+        html_url = data.get("html_url") or ""
+        release_url = html_url if is_safe_external_url(html_url) else APP_RELEASES_URL
 
         latest_tuple = _version_tuple(latest)
         current_tuple = _version_tuple(APP_VERSION)
@@ -87,7 +91,7 @@ class UpdateChecker(QObject):
                     size=a.get("size", 0) or 0,
                 )
                 for a in data.get("assets", [])
-                if a.get("browser_download_url")
+                if is_safe_external_url(a.get("browser_download_url") or "")
             )
             self.update_available.emit(ReleaseInfo(latest, release_url, assets))
         else:
