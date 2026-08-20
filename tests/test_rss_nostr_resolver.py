@@ -152,5 +152,38 @@ class IsNostrUriSchemeTests(unittest.TestCase):
         self.assertFalse(is_nostr_uri_scheme(None))
 
 
+class BareCoordinateTests(unittest.TestCase):
+    """The NIP-01 ``kind:pubkey:d-tag`` form Nostr-native CMSs put in guid."""
+
+    def test_bare_longform_coordinate(self) -> None:
+        coord = extract_nostr_coord(f"30023:{'a' * 64}:my-post")
+        self.assertIsInstance(coord, LongFormCoord)
+        self.assertEqual(coord.kind, 30023)
+        self.assertEqual(coord.d_tag, "my-post")
+        self.assertEqual(coord.pubkey_hex, "a" * 64)
+        self.assertEqual(coord.relay_hints, ())
+
+    def test_uppercase_pubkey_normalised(self) -> None:
+        coord = extract_nostr_coord(f"30023:{'A' * 64}:post")
+        self.assertEqual(coord.pubkey_hex, "a" * 64)
+
+    def test_wrong_kind_rejected(self) -> None:
+        self.assertIsNone(extract_nostr_coord(f"31000:{'a' * 64}:notebook"))
+        self.assertIsNone(extract_nostr_coord(f"1:{'a' * 64}:note"))
+
+    def test_short_pubkey_rejected(self) -> None:
+        self.assertIsNone(extract_nostr_coord(f"30023:{'a' * 32}:post"))
+
+    def test_d_tag_may_contain_colons(self) -> None:
+        coord = extract_nostr_coord(f"30023:{'a' * 64}:a:b:c")
+        self.assertEqual(coord.d_tag, "a:b:c")
+
+    def test_bech32_form_still_wins_when_both_present(self) -> None:
+        mixed = f"{_LONGFORM_NADDR} 30023:{'b' * 64}:other"
+        coord = extract_nostr_coord(mixed)
+        self.assertEqual(coord.d_tag, "my-post")
+        self.assertEqual(coord.pubkey_hex, "a" * 64)
+
+
 if __name__ == "__main__":
     unittest.main()

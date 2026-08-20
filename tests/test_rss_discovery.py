@@ -9,9 +9,12 @@ import unittest
 
 from nostr.rss.discovery import (
     COMMON_FEED_PATHS,
+    MAX_FEED_URL_LENGTH,
     FeedHint,
+    candidate_feed_urls,
     candidate_root_feed,
     extract_feeds_from_html,
+    is_likely_feed_url,
     looks_like_html,
     normalize_user_url,
 )
@@ -276,6 +279,96 @@ class CandidateRootFeedTests(unittest.TestCase):
         # candidate_root_feed uses the first entry of COMMON_FEED_PATHS;
         # the constant ordering is part of the public contract.
         self.assertEqual(COMMON_FEED_PATHS[0], "/feed/")
+
+
+class TestCandidateFeedUrls(unittest.TestCase):
+    def test_origin_only_yields_palette_under_origin(self) -> None:
+        urls = candidate_feed_urls("https://example.com")
+        self.assertEqual(urls[0], "https://example.com/feed/")
+        self.assertEqual(len(urls), len(COMMON_FEED_PATHS))
+
+    def test_deep_path_yields_three_bases_most_specific_first(self) -> None:
+        urls = candidate_feed_urls("https://example.com/blog/article")
+        self.assertEqual(urls[0], "https://example.com/blog/article/feed/")
+        self.assertIn("https://example.com/blog/feed/", urls)
+        self.assertIn("https://example.com/feed/", urls)
+        # Order: pasted path block, then first segment, then origin.
+        self.assertLess(
+            urls.index("https://example.com/blog/article/feed/"),
+            urls.index("https://example.com/blog/feed/"),
+        )
+        self.assertLess(
+            urls.index("https://example.com/blog/feed/"),
+            urls.index("https://example.com/feed/"),
+        )
+
+    def test_single_segment_path_collapses_duplicate_bases(self) -> None:
+        urls = candidate_feed_urls("https://example.com/blog")
+        # /blog is both "the pasted path" and "its first segment": one block.
+        self.assertEqual(len(urls), 2 * len(COMMON_FEED_PATHS))
+        self.assertEqual(len(set(urls)), len(urls))
+
+    def test_preserves_port(self) -> None:
+        urls = candidate_feed_urls("http://localhost:5006/blog")
+        self.assertEqual(urls[0], "http://localhost:5006/blog/feed/")
+
+    def test_unparseable_input_yields_empty(self) -> None:
+        self.assertEqual(candidate_feed_urls(""), [])
+        self.assertEqual(candidate_feed_urls("not a url"), [])
+
+
+class TestNormalizeIpv6(unittest.TestCase):
+    def test_bracketed_loopback_defaults_to_http(self) -> None:
+        self.assertEqual(
+            normalize_user_url("[::1]:8080/feed"),
+            "http://[::1]:8080/feed",
+        )
+
+    def test_bracketed_public_ipv6_defaults_to_https(self) -> None:
+        self.assertEqual(
+            normalize_user_url("[2001:db8::1]/feed"),
+            "https://[2001:db8::1]/feed",
+        )
+
+    def test_unclosed_bracket_still_returns_something(self) -> None:
+        # Garbage in, best-effort out; is_likely_feed_url is the gate.
+        self.assertTrue(normalize_user_url("[::1").startswith("https://"))
+
+
+class TestIsLikelyFeedUrl(unittest.TestCase):
+    def test_accepts_normal_urls(self) -> None:
+        self.assertTrue(is_likely_feed_url("https://example.com/feed/"))
+        self.assertTrue(is_likely_feed_url("example.com"))
+        self.assertTrue(is_likely_feed_url("blog.example.com/rss.xml"))
+
+    def test_accepts_loopback_hosts(self) -> None:
+        self.assertTrue(is_likely_feed_url("localhost:5006/feed"))
+        self.assertTrue(is_likely_feed_url("127.0.0.1/feed"))
+        self.assertTrue(is_likely_feed_url("[::1]:8080/feed"))
+
+    def test_rejects_bare_words(self) -> None:
+        self.assertFalse(is_likely_feed_url("feed"))
+        self.assertFalse(is_likely_feed_url("rss"))
+
+    def test_rejects_empty_and_whitespace(self) -> None:
+        self.assertFalse(is_likely_feed_url(""))
+        self.assertFalse(is_likely_feed_url("   "))
+
+    def test_rejects_pasted_markup(self) -> None:
+        self.assertFalse(is_likely_feed_url("<?xml version=\"1.0\"?><rss>"))
+        self.assertFalse(is_likely_feed_url("<!doctype html><html>"))
+
+    def test_rejects_internal_whitespace(self) -> None:
+        self.assertFalse(is_likely_feed_url("example.com/my feed"))
+        self.assertFalse(is_likely_feed_url("line one\nline two"))
+
+    def test_rejects_over_length_input(self) -> None:
+        long_url = "https://example.com/" + "a" * MAX_FEED_URL_LENGTH
+        self.assertFalse(is_likely_feed_url(long_url))
+
+    def test_rejects_non_http_schemes(self) -> None:
+        self.assertFalse(is_likely_feed_url("ftp://example.com/feed"))
+        self.assertFalse(is_likely_feed_url("file:///etc/passwd"))
 
 
 if __name__ == "__main__":

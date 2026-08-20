@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Side-docked drafts panel — the editor's primary surface for NIP-37 drafts.
+"""Side-docked drafts panel, the editor's primary surface for NIP-37 drafts.
 
 Layout, top to bottom:
 
@@ -32,12 +32,12 @@ Cross-platform discipline:
   - Uses Qt's built-in widgets exclusively (QListWidget + setItemWidget
     pattern) so the panel honours each platform's native scrollbar,
     selection highlight, and high-DPI behaviour for free.
-  - No platform-specific code paths — `is_dark` is the only branching
+  - No platform-specific code paths, `is_dark` is the only branching
     axis, matching the rest of the editor.
 
 The panel is **dormant** when no profile is bound: ``set_active_profile(None)``
 puts it in a quiet "not connected" state. It is the host (MainWindow)'s
-job not to *show* the panel at all when there is no profile — but if
+job not to *show* the panel at all when there is no profile, but if
 it does, the panel won't crash, it'll just show the disconnected state.
 """
 
@@ -319,7 +319,7 @@ _FILTER_ALL = -1
 def _format_relative_time(ts: int, *, now: Optional[int] = None) -> str:
     """Return a compact human-readable age, e.g. ``'2h'``, ``'3d'``.
 
-    Stays small enough for a list-row badge — full timestamps belong in
+    Stays small enough for a list-row badge, full timestamps belong in
     a tooltip, not the row. Falls through to ``'just now'`` for entries
     less than a minute old.
     """
@@ -346,6 +346,18 @@ def _kind_label(kind: int) -> str:
     if kind == INNER_KIND_LONG_FORM:
         return "Article"
     return "?"
+
+
+def _imported_source(record: DraftRecord) -> str:
+    """The origin feed/file of an imported draft, or '' for authored ones.
+
+    The importer writes a ``source`` tag on the inner event; it only
+    becomes visible here after decryption.
+    """
+    for tag in record.inner_tags or []:
+        if isinstance(tag, list) and len(tag) >= 2 and tag[0] == "source":
+            return str(tag[1])
+    return ""
 
 
 # --------------------------------------------------------------------------- #
@@ -436,7 +448,7 @@ class _DraftRowWidget(QWidget):
             self._snippet.setText("…")
         elif failed:
             reason = record.failure_reason or "Could not decrypt"
-            # If we still have the ciphertext, retry is one click away —
+            # If we still have the ciphertext, retry is one click away ,
             # nudge the user with that hint rather than leaving the row
             # looking permanently broken.
             if record.ciphertext:
@@ -447,7 +459,16 @@ class _DraftRowWidget(QWidget):
             self._snippet.setText(record.snippet or "")
         self._snippet.setToolTip(self._snippet.text())
 
-        self._kind.setText(_kind_label(record.inner_kind))
+        # Imported drafts swap the kind chip for an "Imported" badge so
+        # they are tell-apart-able from hand-authored work at a glance;
+        # the tooltip carries the origin feed or file.
+        source = _imported_source(record)
+        if source:
+            self._kind.setText("Imported")
+            self._kind.setToolTip(f"Imported from {source}")
+        else:
+            self._kind.setText(_kind_label(record.inner_kind))
+            self._kind.setToolTip("")
         self._time.setText(_format_relative_time(record.created_at))
 
 
@@ -459,21 +480,21 @@ class DraftsPanel(QFrame):
     """Side-docked drafts surface.
 
     Public signals (the host wires these into MainWindow handlers):
-      open_draft(str)             — identifier of a draft to open in a new tab
-      publish_draft(str)          — identifier to promote draft → real publish
-      delete_draft(str, int)      — (identifier, inner_kind) to tombstone
-      copy_event_id(str)          — copy outer wrap event id to clipboard
-      switch_profile_requested()  — clicked the profile chip
-      refresh_requested()         — manual refresh tap on the header
-      close_requested()           — × on the header
+      open_draft(str)            , identifier of a draft to open in a new tab
+      publish_draft(str)         , identifier to promote draft → real publish
+      delete_draft(str, int)     , (identifier, inner_kind) to tombstone
+      copy_event_id(str)         , copy outer wrap event id to clipboard
+      switch_profile_requested() , clicked the profile chip
+      refresh_requested()        , manual refresh tap on the header
+      close_requested()          , × on the header
 
     Public methods:
-      bind_store(store)           — connect to a DraftStore instance
-      set_active_profile(p)       — refresh the chip header
-      set_avatar_store(s)         — wire avatars
-      set_status(text)            — update the footer line
-      set_signer_unsupported(bool)— show the "signer lacks NIP-44" footer
-      apply_theme(is_dark)        — switch dark/light
+      bind_store(store)          , connect to a DraftStore instance
+      set_active_profile(p)      , refresh the chip header
+      set_avatar_store(s)        , wire avatars
+      set_status(text)           , update the footer line
+      set_signer_unsupported(bool), show the "signer lacks NIP-44" footer
+      apply_theme(is_dark)       , switch dark/light
     """
 
     open_draft = Signal(str)
@@ -592,7 +613,7 @@ class DraftsPanel(QFrame):
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(0)
 
-        # Use a button group with the cosmetic ``checked`` look — flat
+        # Use a button group with the cosmetic ``checked`` look, flat
         # buttons reading as a segmented control. ``flat="true"``
         # property + matching QSS gives us a native-feeling cluster.
         self._seg_drafts = QPushButton("My Drafts")
@@ -766,7 +787,7 @@ class DraftsPanel(QFrame):
         if self._store is store:
             return
         if self._store is not None:
-            # Disconnect previous bindings — Qt allows this idiom by
+            # Disconnect previous bindings, Qt allows this idiom by
             # disconnecting the exact slot-callable pair.
             try:
                 self._store.record_added.disconnect(self._on_record_added)
@@ -952,7 +973,7 @@ class DraftsPanel(QFrame):
         if record is None or not self._passes_filter(record):
             return
         # Insert in the natural store order (newest-first). Easiest is
-        # to re-look-up the position from store.all() — N is small.
+        # to re-look-up the position from store.all(), N is small.
         ordered = self._store.all()
         idx = next((i for i, r in enumerate(ordered) if r.identifier == identifier), -1)
         if idx < 0:
@@ -971,7 +992,7 @@ class DraftsPanel(QFrame):
 
     def _on_record_changed(self, identifier: str) -> None:
         # The change may have made the row newly-pass or newly-fail the
-        # current filter — recompute and adjust if needed.
+        # current filter, recompute and adjust if needed.
         if self._store is None:
             return
         record = self._store.get(identifier)
@@ -999,7 +1020,7 @@ class DraftsPanel(QFrame):
         self._refresh_footer()
 
     def _on_loading_changed(self, loading: bool) -> None:
-        # The footer carries loading state from DraftSync — but if the
+        # The footer carries loading state from DraftSync, but if the
         # caller forgot to wire status_changed we still want some hint.
         if loading and self._signer_unsupported is False and not self._footer_text.text():
             self._footer_text.setText("Loading…")
@@ -1041,7 +1062,7 @@ class DraftsPanel(QFrame):
             self.open_draft.emit(identifier)
         elif record.state is DraftState.FAILED:
             self.retry_decrypt.emit(identifier)
-        # LOADING — intentionally no-op
+        # LOADING, intentionally no-op
 
     def _on_context_menu(self, pos) -> None:
         item = self._list.itemAt(pos)

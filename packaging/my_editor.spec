@@ -46,6 +46,13 @@ hiddenimports = [
     "PySide6.QtNetwork",
     "PySide6.QtWebSockets",
     "PySide6.QtPrintSupport",
+    # Full-text recovery (nostr/imports/fulltext.py): readability-lxml
+    # rides on lxml's compiled extensions, which static analysis can
+    # only partially see.
+    "readability",
+    "lxml.etree",
+    "lxml.html",
+    "lxml.html.clean",
 ]
 
 # coincurve ships compiled CFFI extensions (_libsecp256k1 and a vendored

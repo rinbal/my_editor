@@ -4,11 +4,12 @@
 
 Matches the reference implementation in ``nostr-core/src/rss.ts``:
 
-    sha256(guid || link || title)[:16]
+    sha256(first non-empty of (guid, link, title))[:16]
 
-The first non-empty of (guid, link, title) is hashed. Falling back through
-``link`` and ``title`` makes the identifier stable across CMSs that
-regenerate ``guid`` on every render.
+Exactly one seed value is hashed, never a concatenation. Falling back
+through ``link`` and ``title`` makes the identifier stable across CMSs
+that regenerate ``guid`` on every render. Existing drafts key on this
+derivation; it must not change.
 """
 
 from __future__ import annotations

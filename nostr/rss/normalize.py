@@ -89,8 +89,15 @@ def item_to_article(
     The d-tag identifier is derived deterministically from
     ``(guid, link, title)`` so re-importing the same feed produces the
     same draft slot on the relay (idempotent replacement).
+
+    Content precedence: a source-supplied ``content_markdown`` (Nostr
+    long-form, NostrHub NIPs, MDX) is authoritative and taken verbatim;
+    otherwise the item's HTML body is converted.
     """
-    markdown = html_to_markdown(item.content_html).strip()
+    if (item.content_markdown or "").strip():
+        markdown = str(item.content_markdown).strip()
+    else:
+        markdown = html_to_markdown(item.content_html).strip()
     if append_source_link and item.link:
         markdown = (markdown + source_link_footer(item.link)).strip()
 

@@ -9,3 +9,4 @@ segno>=1.6.0           # QR code rendering for nostrconnect:// pairing
 # RSS to NIP-37 draft import
 feedparser>=6.0.10     # RSS 2.0 + Atom parsing
 markdownify>=0.11.6    # HTML to Markdown for feed bodies
+readability-lxml>=0.8.1  # full-text recovery for teaser-only feeds

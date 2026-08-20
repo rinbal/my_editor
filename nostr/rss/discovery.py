@@ -28,6 +28,7 @@ responsibility.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import List, Optional
@@ -67,6 +68,16 @@ COMMON_FEED_PATHS = (
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "0.0.0.0"})
 
 
+# Hard cap on anything we treat as a feed URL. Also the backstop that
+# stops a stray full-XML paste (kilobytes long) from ever being handled
+# as a "URL". Mirrors the reference importer's frontend/backend guard.
+MAX_FEED_URL_LENGTH: int = 2048
+
+# Angle brackets and internal whitespace never appear in a real URL but
+# are the signature of an XML/HTML paste, the decisive cheap check.
+_URL_REJECT_RE = re.compile(r"[<>\s]")
+
+
 @dataclass(frozen=True)
 class FeedHint:
     """One feed URL discovered on an HTML page."""
@@ -96,9 +107,48 @@ def normalize_user_url(value: str) -> str:
     if cleaned.startswith("//"):
         cleaned = cleaned[2:]
     host_segment = cleaned.split("/", 1)[0]
-    host = host_segment.split(":", 1)[0].lower()
+    if host_segment.startswith("["):
+        # Bracketed IPv6 literal, e.g. ``[::1]:8080``. The host is the
+        # bracket contents; splitting on ``:`` would slice mid-address.
+        end = host_segment.find("]")
+        host = host_segment[1:end].lower() if end > 0 else ""
+    else:
+        host = host_segment.split(":", 1)[0].lower()
     scheme = "http" if host in _LOCAL_HOSTS else "https"
     return f"{scheme}://{cleaned}"
+
+
+def is_likely_feed_url(value: str) -> bool:
+    """Is this string something we can sensibly fetch as a feed source?
+
+    The single validation authority for "does this look like a URL at
+    all", used by the panel before an import may start. It is what stops
+    a pasted XML document (or any multi-line blob) from being treated as
+    a URL. Deliberately strict: a false negative just asks the user for
+    a cleaner URL, while a false positive would hand the fetcher a
+    kilobyte-long "URL".
+    """
+    raw = (value or "").strip()
+    if not raw or len(raw) > MAX_FEED_URL_LENGTH:
+        return False
+    if _URL_REJECT_RE.search(raw):
+        return False
+    try:
+        parsed = urlparse(normalize_user_url(raw))
+        host = (parsed.hostname or "").lower()
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    if not host:
+        return False
+    # ``urlparse`` strips the brackets from an IPv6 literal, so a colon
+    # in the hostname can only mean IPv6, fetchable as-is. Otherwise
+    # require a dotted host (domain or IPv4) or a known loopback name;
+    # a bare word like ``feed`` is not fetchable on its own.
+    if ":" in host:
+        return True
+    return "." in host or host in _LOCAL_HOSTS
 
 
 # --------------------------------------------------------------------------- #
@@ -205,7 +255,7 @@ def extract_feeds_from_html(
     try:
         parser.feed(html)
         parser.close()
-    except Exception:  # noqa: BLE001 — html.parser raises on truly broken input
+    except Exception:  # noqa: BLE001, html.parser raises on truly broken input
         # Return whatever we managed to collect before the failure.
         pass
     return [
@@ -221,6 +271,56 @@ def extract_feeds_from_html(
 # --------------------------------------------------------------------------- #
 # Common-path fallback                                                        #
 # --------------------------------------------------------------------------- #
+
+def candidate_feed_urls(page_url: str) -> List[str]:
+    """Ordered best-guess feed URLs when a page has no autodiscovery tag.
+
+    Probes the :data:`COMMON_FEED_PATHS` palette under three bases, most
+    specific first, so the feed closest to what the user pasted wins:
+
+      1. the pasted path itself:  ``/blog``         -> ``/blog/feed/`` ...
+      2. its first path segment:  ``/blog/article`` -> ``/blog/feed/`` ...
+      3. the bare origin:         ``/``             -> ``/feed/`` ...
+
+    Bases are de-duplicated (a bare ``/blog`` collapses 1 and 2), every
+    candidate is absolute and appears once. Returns ``[]`` when
+    ``page_url`` can't be parsed. Callers iterate lazily and stop at the
+    first candidate that parses, so the list length costs nothing up
+    front.
+    """
+    try:
+        parsed = urlparse(page_url)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        return []
+    if not parsed.scheme or not hostname:
+        return []
+    origin = f"{parsed.scheme}://{hostname}{f':{port}' if port else ''}"
+
+    segments = [s for s in parsed.path.split("/") if s]
+    base_paths: List[str] = []
+    if segments:
+        base_paths.append("/" + "/".join(segments))
+    if len(segments) > 1:
+        base_paths.append("/" + segments[0])
+    base_paths.append("")  # the origin
+
+    seen_bases: set[str] = set()
+    seen_urls: set[str] = set()
+    urls: List[str] = []
+    for base in base_paths:
+        if base in seen_bases:
+            continue
+        seen_bases.add(base)
+        for leaf in COMMON_FEED_PATHS:
+            url = f"{origin}{base}{leaf}"
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+            urls.append(url)
+    return urls
+
 
 def candidate_root_feed(page_url: str) -> Optional[str]:
     """Most likely feed URL when no ``<link rel="alternate">`` is found.

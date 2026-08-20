@@ -1,13 +1,14 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""RSS, Atom, and JSON Feed import for the drafts panel.
+"""Pure feed-format primitives: parsing, normalisation, discovery.
 
-Mirrors the TypeScript reference at ``nostr-core/src/rss.ts`` (branch
-``rss_feed``), adapted to feed the editor's existing NIP-37 draft pipeline
-instead of building a parallel one.
+This package is format-level only: RSS/Atom/JSON parsing (``parser``),
+HTML-to-Markdown + article templating (``normalize``), deterministic
+d-tag derivation (``dtag``), URL/discovery helpers (``discovery``), and
+NIP-23 long-form coordinate resolution (``nostr_resolver``).
 
-Public surface is re-exported below. Import submodules directly if you
-need lower-level access (parsers, normalisers, etc.).
+Everything orchestration-shaped (the resolver registry, fetching, the
+import pipeline, subscriptions, the UI) lives in ``nostr.imports``.
 """
 
 from __future__ import annotations

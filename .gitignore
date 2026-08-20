@@ -9,7 +9,7 @@ __pycache__/
 !requirements.txt
 .claude
 plugin_plan.md
-RSS_PYTHON_IMPORT_PLAN.md
+IMPORTS_V2_PLAN.md
 TELEGRAM_PUBLISHER_PLAN.md
 
 # Packaging build outputs (installers are published via GitHub Releases)

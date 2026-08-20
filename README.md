@@ -24,9 +24,17 @@ syntax highlighting, line numbers, and lined / dotted / grid backgrounds with a
 paper mode for a real sheet-of-paper feel.
 
 **Publish to Nostr.** Send notes or long-form articles signed on your phone via
-NIP-46, keep private encrypted drafts that sync across your devices, manage media
-on your own Blossom servers, and mirror any blog in from RSS.
+NIP-46, keep private encrypted drafts that sync across your devices, and manage
+media on your own Blossom servers.
 [Read the Nostr guide](docs/nostr.md).
+
+**Import from anywhere.** Pull content in as private drafts from RSS / Atom /
+JSON feeds, Nostr profiles and events, NostrHub NIPs, Bluesky threads, Markdown
+files and GitHub folders, sitemaps, WordPress and Ghost exports, Medium and
+Substack ZIPs, and podcast feeds (with chapters). Preview and pick items before
+anything is signed, recover full text for teaser-only feeds, mirror images to
+your Blossom server, and subscribe to sources (synced privately via your
+relays) to import "new since last visit" later. OPML lists bulk-subscribe.
 
 **Reads PDFs, too.** A built-in distraction-free PDF viewer: open any PDF in a
 tab, find text, select and copy passages straight into your notes, follow links,

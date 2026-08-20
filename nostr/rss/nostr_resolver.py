@@ -35,7 +35,7 @@ from ..relay import RelayPool
 
 
 # NIP-23 long-form article kind. We deliberately don't accept other
-# parameterised-replaceable kinds here — the importer is for long-form,
+# parameterised-replaceable kinds here, the importer is for long-form,
 # and resolving e.g. a notebook (kind 31000) into a long-form draft
 # would be lossy.
 _LONGFORM_KIND: int = 30023
@@ -49,6 +49,12 @@ _DEFAULT_TIMEOUT_MS: int = 8_000
 # decoder validates the alphabet; this regex is a coarse locator so we
 # can find the naddr substring within an arbitrary URL or URI.
 _NADDR_RE = re.compile(r"naddr1[a-z0-9]+", re.IGNORECASE)
+
+# Bare NIP-01 addressable coordinate: ``<kind>:<32-byte-hex-pubkey>:<d>``.
+# Nostr-native CMSs drop this straight into <guid>. The d-tag is an
+# arbitrary string and may itself contain colons, so it runs to the end
+# of the token (any non-whitespace).
+_ADDR_COORD_RE = re.compile(r"\b(\d{1,7}):([0-9a-fA-F]{64}):(\S+)")
 
 
 @dataclass(frozen=True)
@@ -73,8 +79,13 @@ def extract_nostr_coord(link: Optional[str]) -> Optional[LongFormCoord]:
       - ``https://njump.me/naddr1...`` and any URL with a bech32 naddr
         substring anywhere in its path or fragment.
       - The bare bech32 string ``naddr1...``.
+      - A bare NIP-01 ``kind:pubkey:d-tag`` coordinate (the value of an
+        ``a`` tag), as Nostr-native CMSs put into ``<guid>``.
 
-    A URL may contain *multiple* naddr-shaped substrings — for example
+    Bech32 is tried first (it can carry relay hints); the bare
+    coordinate form is the fallback and carries none.
+
+    A URL may contain *multiple* naddr-shaped substrings, for example
     a humanised slug that truncates the bech32 (``/post-naddr1qqr...``)
     followed by the canonical full address in the next path segment.
     We iterate every regex match and return the first one that decodes
@@ -82,7 +93,7 @@ def extract_nostr_coord(link: Optional[str]) -> Optional[LongFormCoord]:
 
     Returns ``None`` if:
       - ``link`` is falsy.
-      - No matching substring decodes to a valid long-form naddr.
+      - No matching substring decodes to a valid long-form pointer.
     """
     if not link:
         return None
@@ -94,7 +105,28 @@ def extract_nostr_coord(link: Optional[str]) -> Optional[LongFormCoord]:
         coord = _decode_to_longform(match.group(0))
         if coord is not None:
             return coord
-    return None
+    return _extract_bare_coord(haystack)
+
+
+def _extract_bare_coord(value: str) -> Optional[LongFormCoord]:
+    """Parse a bare ``kind:pubkey:d-tag`` coordinate out of ``value``.
+
+    Restricted to NIP-23 long-form like the bech32 path: a coordinate
+    pointing at a curation set or another parameterised-replaceable
+    kind has no prose body to substitute, so resolving it would be
+    lossy.
+    """
+    match = _ADDR_COORD_RE.search(value)
+    if match is None:
+        return None
+    if int(match.group(1)) != _LONGFORM_KIND:
+        return None
+    return LongFormCoord(
+        pubkey_hex=match.group(2).lower(),
+        kind=_LONGFORM_KIND,
+        d_tag=match.group(3),
+        relay_hints=(),
+    )
 
 
 def is_nostr_uri_scheme(link: Optional[str]) -> bool:
@@ -168,7 +200,7 @@ class LongFormFetcher(QObject):
         """
         relays = _dedup_relays((*extra_relays, *coord.relay_hints))
         if not relays:
-            # Nothing to query against — no read relays cached, no naddr
+            # Nothing to query against, no read relays cached, no naddr
             # hints. Fail fast and let the caller fall back.
             on_not_found()
             return
@@ -196,7 +228,7 @@ class LongFormFetcher(QObject):
                 timeout_ms=timeout_ms,
                 parent=self,
             )
-        except Exception:  # noqa: BLE001 — settle the contract, move on
+        except Exception:  # noqa: BLE001, settle the contract, move on
             on_not_found()
 
 

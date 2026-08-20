@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Any, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, List, Mapping, Optional, Sequence, Tuple
 
 import feedparser
 
@@ -41,6 +41,20 @@ class FeedItem:
     categories: Tuple[str, ...]
     image: Optional[str]
     author: Optional[str]
+    # True when ``title`` is a placeholder derived from the URL slug
+    # (sitemap-discovered items). Full-text recovery upgrades it to the
+    # real article title once the page has been read.
+    title_from_url: bool = False
+    # Pre-rendered Markdown body from sources that emit Markdown
+    # directly (Nostr long-form, NostrHub NIPs, MDX documents). When
+    # set, the import pipeline uses it verbatim and skips HTML-to-
+    # Markdown conversion and every recovery pass.
+    content_markdown: Optional[str] = None
+    # Podcasting 2.0 payload (a ``sources.podcast.PodcastEpisode``)
+    # attached by the RSS resolver's enrichment pass when the feed item
+    # carries an audio enclosure. The import pipeline renders it as the
+    # episode's Markdown body.
+    podcast: Optional[object] = None
 
 
 @dataclass(frozen=True)
@@ -173,39 +187,61 @@ def _content_html_from_entry(entry: Mapping[str, Any]) -> str:
     return ""
 
 
+def _rss_author(entry: Mapping[str, Any]) -> Optional[str]:
+    return _clean_str(entry.get("author")) or None
+
+
+def _entry_to_item(
+    entry: Mapping[str, Any],
+    *,
+    image_for: Callable[[Mapping[str, Any], str], Optional[str]],
+    published_for: Callable[[Mapping[str, Any]], Optional[time.struct_time]],
+    author_for: Callable[[Mapping[str, Any]], Optional[str]],
+) -> FeedItem:
+    """Shared RSS/Atom entry normalisation.
+
+    Only three fields are genuinely format-specific (image priority,
+    publish-date fallback chain, author extraction); the caller supplies
+    those as strategies and everything else is computed identically.
+    """
+    content_html = _content_html_from_entry(entry)
+    summary = _clean_str(entry.get("summary"))
+    # ``description`` and ``content:encoded`` coincide when the feed only
+    # ships a description. Don't duplicate it into the summary slot.
+    if not content_html:
+        content_html = summary
+        summary_for_item: Optional[str] = None
+    else:
+        summary_for_item = summary if summary and summary != content_html else None
+
+    link = _clean_str(entry.get("link")) or None
+    title = _clean_str(entry.get("title"))
+    guid = _clean_str(entry.get("id")) or link or title
+
+    return FeedItem(
+        guid=guid,
+        title=title,
+        link=link,
+        summary=summary_for_item,
+        content_html=content_html,
+        published_at=_struct_time_to_unix(published_for(entry)),
+        categories=_entry_categories(entry),
+        image=image_for(entry, content_html),
+        author=author_for(entry),
+    )
+
+
 def _parse_rss(parsed: Any) -> Feed:
     channel = parsed.feed or {}
-    items: List[FeedItem] = []
-
-    for entry in parsed.entries or ():
-        content_html = _content_html_from_entry(entry)
-        summary = _clean_str(entry.get("summary"))
-        # ``description`` and ``content:encoded`` coincide when the feed only
-        # ships a description. Don't duplicate it into the summary slot.
-        if not content_html:
-            content_html = summary
-            summary_for_item: Optional[str] = None
-        else:
-            summary_for_item = summary if summary and summary != content_html else None
-
-        link = _clean_str(entry.get("link")) or None
-        title = _clean_str(entry.get("title"))
-        guid = _clean_str(entry.get("id")) or link or title
-
-        items.append(
-            FeedItem(
-                guid=guid,
-                title=title,
-                link=link,
-                summary=summary_for_item,
-                content_html=content_html,
-                published_at=_struct_time_to_unix(entry.get("published_parsed")),
-                categories=_entry_categories(entry),
-                image=_rss_image(entry, content_html),
-                author=_clean_str(entry.get("author")) or None,
-            )
+    items = [
+        _entry_to_item(
+            entry,
+            image_for=_rss_image,
+            published_for=lambda e: e.get("published_parsed"),
+            author_for=_rss_author,
         )
-
+        for entry in parsed.entries or ()
+    ]
     return Feed(
         format="rss",
         title=_clean_str(channel.get("title")),
@@ -219,49 +255,31 @@ def _parse_rss(parsed: Any) -> Feed:
 # Atom                                                                         #
 # --------------------------------------------------------------------------- #
 
+def _atom_author(entry: Mapping[str, Any]) -> Optional[str]:
+    author = _clean_str(entry.get("author")) or None
+    if author:
+        return author
+    for a in entry.get("authors") or ():
+        if isinstance(a, Mapping):
+            name = _clean_str(a.get("name"))
+            if name:
+                return name
+    return None
+
+
 def _parse_atom(parsed: Any) -> Feed:
     head = parsed.feed or {}
-    items: List[FeedItem] = []
-
-    for entry in parsed.entries or ():
-        content_html = _content_html_from_entry(entry)
-        summary = _clean_str(entry.get("summary"))
-        if not content_html:
-            content_html = summary
-            summary_for_item: Optional[str] = None
-        else:
-            summary_for_item = summary if summary and summary != content_html else None
-
-        link = _clean_str(entry.get("link")) or None
-        title = _clean_str(entry.get("title"))
-        guid = _clean_str(entry.get("id")) or link or title
-
-        published = entry.get("published_parsed") or entry.get("updated_parsed")
-
-        author = _clean_str(entry.get("author")) or None
-        if not author:
-            authors = entry.get("authors") or ()
-            for a in authors:
-                if isinstance(a, Mapping):
-                    name = _clean_str(a.get("name"))
-                    if name:
-                        author = name
-                        break
-
-        items.append(
-            FeedItem(
-                guid=guid,
-                title=title,
-                link=link,
-                summary=summary_for_item,
-                content_html=content_html,
-                published_at=_struct_time_to_unix(published),
-                categories=_entry_categories(entry),
-                image=_first_image_from_html(content_html),
-                author=author,
-            )
+    items = [
+        _entry_to_item(
+            entry,
+            image_for=lambda _e, html: _first_image_from_html(html),
+            published_for=lambda e: (
+                e.get("published_parsed") or e.get("updated_parsed")
+            ),
+            author_for=_atom_author,
         )
-
+        for entry in parsed.entries or ()
+    ]
     return Feed(
         format="atom",
         title=_clean_str(head.get("title")),

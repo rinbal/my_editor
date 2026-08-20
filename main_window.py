@@ -1138,6 +1138,9 @@ class MainWindow(QMainWindow):
             relay_pool=self._relay_pool,
             relay_list_cache=self._relay_list_cache,
             session_pool=self._session_pool,
+            # Lets imports reuse a pre-prefix identifier that already
+            # exists locally instead of duplicating the draft.
+            draft_store=self._draft_store,
         )
         self._drafts_panel.set_active_profile(self._profile_store.default())
         # The panel's outbound actions all route back through the host.
@@ -2922,6 +2925,10 @@ class MainWindow(QMainWindow):
             viewer = self._pdf_viewer_from_widget(self.tabs.widget(i))
             if viewer is not None:
                 viewer.save_view_state()
+        # Publish any pending feed-subscription changes before the relay
+        # sockets go away (best effort; the local cache survives anyway).
+        if hasattr(self, "_drafts_panel"):
+            self._drafts_panel.feeds.flush_subscriptions()
         # Close any warm relay sockets and bunker channels so the WebSocket
         # layer can flush close frames before the QApplication tears down.
         if hasattr(self, "_session_pool"):

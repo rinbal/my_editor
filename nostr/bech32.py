@@ -115,7 +115,7 @@ def convertbits(data: List[int], frombits: int, tobits: int, pad: bool = True) -
 
 
 # --------------------------------------------------------------------------- #
-# NIP-19 — simple types (npub, nsec, note)                                    #
+# NIP-19, simple types (npub, nsec, note)                                    #
 # --------------------------------------------------------------------------- #
 
 def _encode_raw32(hrp: str, raw_32: bytes) -> str:
@@ -165,12 +165,12 @@ def decode_note(note: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# NIP-19 — TLV types (naddr)                                                  #
+# NIP-19, TLV types (naddr)                                                  #
 # --------------------------------------------------------------------------- #
 #
 # Each TLV entry is [type(1 byte) | length(1 byte) | value(length bytes)].
 # Per NIP-19:
-#   type 0 (special)   identifier — d-tag value, UTF-8, may be empty
+#   type 0 (special)   identifier, d-tag value, UTF-8, may be empty
 #   type 1 (relay)     optional, repeatable, ASCII relay URL
 #   type 2 (author)    author pubkey, 32 raw bytes
 #   type 3 (kind)      event kind, big-endian uint32 (4 bytes)
@@ -196,8 +196,8 @@ def encode_nprofile(
     """Encode a pubkey + relay hints as ``nprofile1…`` (NIP-19 TLV).
 
     TLV layout:
-      type 0 — pubkey (32 raw bytes)
-      type 1 — relay  (ASCII URL, repeatable)
+      type 0, pubkey (32 raw bytes)
+      type 1, relay  (ASCII URL, repeatable)
     """
     pk = bytes.fromhex(pubkey_hex)
     if len(pk) != 32:
@@ -239,6 +239,84 @@ def decode_nprofile(nprofile: str) -> tuple[str, list[str]]:
     if pubkey_hex is None:
         raise ValueError("nprofile missing required pubkey TLV")
     return pubkey_hex, relays
+
+
+def encode_nevent(
+    event_id_hex: str,
+    relays: list[str] | tuple[str, ...] = (),
+    author_pubkey_hex: str | None = None,
+    kind: int | None = None,
+) -> str:
+    """Encode an event pointer as ``nevent1…`` (NIP-19 TLV).
+
+    TLV layout:
+      type 0, event id (32 raw bytes)
+      type 1, relay    (ASCII URL, repeatable, optional)
+      type 2, author   (32 raw bytes, optional)
+      type 3, kind     (big-endian uint32, optional)
+    """
+    event_id = bytes.fromhex(event_id_hex)
+    if len(event_id) != 32:
+        raise ValueError("event id must be 32 bytes")
+    payload = _tlv(_TLV_SPECIAL, event_id)
+    for relay in relays:
+        payload += _tlv(_TLV_RELAY, relay.encode("ascii"))
+    if author_pubkey_hex is not None:
+        author = bytes.fromhex(author_pubkey_hex)
+        if len(author) != 32:
+            raise ValueError("author pubkey must be 32 bytes")
+        payload += _tlv(_TLV_AUTHOR, author)
+    if kind is not None:
+        if not (0 <= kind <= 0xFFFFFFFF):
+            raise ValueError("kind must fit in u32")
+        payload += _tlv(_TLV_KIND, kind.to_bytes(4, "big"))
+    return bech32_encode("nevent", convertbits(list(payload), 8, 5, pad=True))
+
+
+def decode_nevent(nevent: str) -> tuple[str, list[str], str | None, int | None]:
+    """Inverse of ``encode_nevent``.
+
+    Returns (event_id_hex, relays, author_hex_or_None, kind_or_None).
+    Tolerant of TLV ordering and ignores unknown TLV types so newer
+    nevents don't break us.
+    """
+    hrp, data = bech32_decode(nevent)
+    if hrp != "nevent":
+        raise ValueError(f"expected hrp 'nevent', got {hrp!r}")
+    raw = bytes(convertbits(data, 5, 8, pad=False))
+
+    event_id_hex: str | None = None
+    relays: list[str] = []
+    author_hex: str | None = None
+    kind: int | None = None
+    i = 0
+    while i < len(raw):
+        if i + 2 > len(raw):
+            raise ValueError("truncated TLV header in nevent")
+        t = raw[i]
+        ln = raw[i + 1]
+        i += 2
+        if i + ln > len(raw):
+            raise ValueError(f"TLV value of type {t} runs past payload")
+        value = raw[i : i + ln]
+        i += ln
+        if t == _TLV_SPECIAL:
+            if len(value) != 32:
+                raise ValueError(f"event id TLV must be 32 bytes, got {len(value)}")
+            event_id_hex = value.hex()
+        elif t == _TLV_RELAY:
+            relays.append(value.decode("ascii"))
+        elif t == _TLV_AUTHOR:
+            if len(value) == 32:
+                author_hex = value.hex()
+        elif t == _TLV_KIND:
+            if len(value) == 4:
+                kind = int.from_bytes(value, "big")
+        # Unknown types: ignore for forward compatibility.
+
+    if event_id_hex is None:
+        raise ValueError("nevent missing required event-id TLV")
+    return event_id_hex, relays, author_hex, kind
 
 
 def encode_naddr(
