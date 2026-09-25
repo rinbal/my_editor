@@ -30,6 +30,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QApplication
 
+import alerts
 import image_safety
 import main_window as main_window_module
 from doc_walk import iter_image_names
@@ -39,7 +40,7 @@ from nostr.media.assets import ASSET_SCHEME, AssetIndex, AssetState, asset_key
 from nostr.media.manager import AssetManager
 
 from tests.media_fakes import (
-    PNG_BYTES, TEXT_BYTES, FakeBlobStore, FakeUploader, fake_message_box, sha_of,
+    PNG_BYTES, TEXT_BYTES, FakeBlobStore, FakeUploader, fake_alert, sha_of,
 )
 
 
@@ -369,8 +370,8 @@ def test_never_keeps_a_pasted_image_off_every_server(tmp_path, paste_choice):
 def test_always_uploads_a_pasted_image_without_asking(tmp_path, paste_choice,
                                                       monkeypatch):
     paste_choice("always")
-    box, shown = fake_message_box()
-    monkeypatch.setattr(main_window_module, "QMessageBox", box)
+    box, shown = fake_alert()
+    monkeypatch.setattr(alerts, "Alert", box)
     win = _EntryWindow(tmp_path / "cache", profile=object())
 
     win._handle_pasted_image(win.editor, _clipboard_image())
@@ -386,8 +387,8 @@ def test_ask_consults_the_prompt_and_keeps_local_by_default(tmp_path,
     # A paste is a high-frequency, low-intent gesture, so the outcome of
     # an accidental one has to be that nothing left the machine.
     paste_choice("ask")
-    box, shown = fake_message_box()
-    monkeypatch.setattr(main_window_module, "QMessageBox", box)
+    box, shown = fake_alert()
+    monkeypatch.setattr(alerts, "Alert", box)
     monkeypatch.setattr(main_window_module, "save_setting",
                         lambda *a, **k: pytest.fail("nothing to remember"))
     monkeypatch.setattr(main_window_module, "BlossomSettings",
@@ -397,8 +398,8 @@ def test_ask_consults_the_prompt_and_keeps_local_by_default(tmp_path,
 
     win._handle_pasted_image(win.editor, _clipboard_image())
 
-    assert [d.title for d in shown] == ["Upload pasted image"]
-    assert shown[0].default.label == "Keep local"
+    assert [d.title for d in shown] == ["Upload this image to cdn.example?"]
+    assert shown[0].default.label == "Keep Local"
     assert win._uploader.calls == []
     assert len(win.image_names()) == 1
 
@@ -407,9 +408,9 @@ def test_ask_uploads_when_the_prompt_is_answered_with_upload(tmp_path,
                                                              paste_choice,
                                                              monkeypatch):
     paste_choice("ask")
-    box, shown = fake_message_box(click="Upload")
+    box, shown = fake_alert(click="Upload")
     remembered = []
-    monkeypatch.setattr(main_window_module, "QMessageBox", box)
+    monkeypatch.setattr(alerts, "Alert", box)
     monkeypatch.setattr(main_window_module, "save_setting",
                         lambda key, value: remembered.append((key, value)))
     monkeypatch.setattr(main_window_module, "BlossomSettings",
@@ -421,7 +422,7 @@ def test_ask_uploads_when_the_prompt_is_answered_with_upload(tmp_path,
 
     assert len(win._uploader.calls) == 1
     assert remembered == [], "the box was never ticked"
-    assert shown[0].checkbox.text() == "Remember this choice"
+    assert shown[0].checkbox == "Remember this choice"
 
 
 def test_a_failed_upload_leaves_the_image_in_the_document(tmp_path,
@@ -459,21 +460,21 @@ def test_a_dropped_image_keeps_the_filename_as_its_alt_text(tmp_path):
 
 
 def test_a_drop_uploads_only_when_the_prompt_is_accepted(tmp_path, monkeypatch):
-    box, shown = fake_message_box(click="Keep local")
-    monkeypatch.setattr(main_window_module, "QMessageBox", box)
+    box, shown = fake_alert(click="Keep Local")
+    monkeypatch.setattr(alerts, "Alert", box)
     win = _EntryWindow(tmp_path / "cache", profile=object())
 
     win._handle_dropped_images([_png_file(tmp_path)])
 
-    assert [d.title for d in shown] == ["Upload images"]
+    assert [d.title for d in shown] == ["Upload 1 image to your Blossom servers?"]
     assert shown[0].default.label == "Upload", "dropping is a deliberate act"
     assert win._uploader.calls == []
     assert len(win.image_names()) == 1
 
 
 def test_a_drop_uploads_each_image_when_accepted(tmp_path, monkeypatch):
-    box, _shown = fake_message_box(click="Upload")
-    monkeypatch.setattr(main_window_module, "QMessageBox", box)
+    box, _shown = fake_alert(click="Upload")
+    monkeypatch.setattr(alerts, "Alert", box)
     win = _EntryWindow(tmp_path / "cache", profile=object())
     first = _png_file(tmp_path, "one.png")
     second = _png_file(tmp_path, "two.png", data=PNG_BYTES[:-1] + b"\x00")

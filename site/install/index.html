@@ -1,0 +1,479 @@
+<!doctype html>
+<!--
+  MyEditor install guide. See docs/install-guide.md for how this page is
+  built, deployed, and kept in step with the operating systems.
+
+  The page is plain HTML first: without JavaScript it reads as a complete
+  list of steps for every system. guide.js turns it into a step-by-step
+  guide for the visitor's system. Attributes that steer what shows:
+
+    data-mode="install|update"    copy for installing or for updating
+    data-arch="arm64|x86_64"      Mac download for Apple silicon or Intel
+    data-package="deb|appimage"   Linux path
+    data-download="<key>"         filled with the release file (release_assets.py)
+    data-label="..."              short name for the step list
+
+  Dialog replicas show the operating system's own wording. When Apple,
+  Microsoft or a Linux desktop changes a dialog, update the replica and the
+  step text together.
+-->
+<html lang="en" data-mode="install" data-arch="arm64">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Install MyEditor</title>
+<meta name="description" content="Step-by-step help for installing MyEditor on a Mac, on Windows, and on Linux.">
+<link rel="icon" href="icon.png">
+<link rel="stylesheet" href="guide.css">
+<script>document.documentElement.classList.add("js");</script>
+<script type="module" src="guide.js"></script>
+</head>
+<body>
+
+<header class="masthead">
+  <img class="masthead-icon" src="icon.png" alt="" width="72" height="72">
+  <div class="masthead-text">
+    <h1>
+      <span data-mode="install">Install MyEditor</span>
+      <span data-mode="update">Update MyEditor<span class="update-version" data-update-version></span></span>
+    </h1>
+    <p class="lede" data-mode="install">MyEditor is free and open source. It isn't registered with Apple or Microsoft yet, so your computer asks you to confirm it the first time. These steps show exactly what to click.</p>
+    <p class="lede" data-mode="update">Updating takes the same steps as installing. Your settings and documents stay where they are.</p>
+  </div>
+</header>
+
+<nav class="platforms" aria-label="Choose your system">
+  <div class="segmented">
+    <a href="#mac" data-os-link="mac">Mac</a>
+    <a href="#windows" data-os-link="windows">Windows</a>
+    <a href="#linux" data-os-link="linux">Linux</a>
+  </div>
+  <button type="button" class="text-button" data-action="toggle-view" hidden>Show all steps</button>
+</nav>
+
+<main>
+
+<!-- ================================================================== -->
+<section class="track" id="mac" data-os="mac" aria-labelledby="mac-heading">
+  <h2 class="track-heading" id="mac-heading">MyEditor for Mac</h2>
+  <ol class="steps">
+
+    <li class="step" id="mac-download" data-label="Download">
+      <div class="step-text">
+        <h3 tabindex="-1">Download MyEditor</h3>
+        <p data-arch="arm64">This file is for Macs with Apple silicon (M1 or newer).</p>
+        <p data-arch="x86_64">This file is for Macs with an Intel processor.</p>
+        <p class="actions" data-arch="arm64">
+          <a class="button primary" data-download="mac-arm64" data-advance href="https://github.com/rinbal/my_editor/releases/latest">Download for Mac</a>
+          <a class="text-link" data-download="mac-x86_64" data-advance href="https://github.com/rinbal/my_editor/releases/latest">Mac with an Intel processor?</a>
+        </p>
+        <p class="actions" data-arch="x86_64">
+          <a class="button primary" data-download="mac-x86_64" data-advance href="https://github.com/rinbal/my_editor/releases/latest">Download for Mac (Intel)</a>
+          <a class="text-link" data-download="mac-arm64" data-advance href="https://github.com/rinbal/my_editor/releases/latest">Mac with Apple silicon?</a>
+        </p>
+        <p class="file-meta" data-arch="arm64" data-file-meta="mac-arm64"></p>
+        <p class="file-meta" data-arch="x86_64" data-file-meta="mac-x86_64"></p>
+        <p class="note">Not sure which Mac you have? Choose Apple menu &gt; About This Mac. It lists a Chip for Apple silicon, or a Processor for Intel.</p>
+      </div>
+      <div class="replica" role="img" aria-label="Safari's downloads list, with the MyEditor disk image downloading">
+        <div class="mac-pop">
+          <div class="mac-pop-title">Downloads</div>
+          <div class="file-row">
+            <span class="disk-icon"></span>
+            <div class="grow"><div class="file-name">my-editor-macos.dmg</div><div class="bar"><i style="width:68%"></i></div><div class="file-sub">Downloading…</div></div>
+          </div>
+        </div>
+      </div>
+    </li>
+
+    <li class="step" id="mac-quit" data-label="Quit MyEditor" data-mode="update">
+      <div class="step-text">
+        <h3 tabindex="-1">Quit MyEditor</h3>
+        <p>Choose <b>MyEditor &gt; Quit MyEditor</b>, or press Command-Q. A copy that's still open can't be replaced.</p>
+      </div>
+      <div class="replica" role="img" aria-label="The MyEditor menu, with Quit MyEditor highlighted">
+        <div class="mac-menu">
+          <div class="mac-menu-bar"><b>MyEditor</b><span>File</span><span>Edit</span><span>View</span></div>
+          <div class="mac-menu-list">
+            <span>About MyEditor</span>
+            <hr>
+            <span>Hide MyEditor<kbd>⌘H</kbd></span>
+            <hr>
+            <span class="hl">Quit MyEditor<kbd>⌘Q</kbd></span>
+          </div>
+        </div>
+      </div>
+    </li>
+
+    <li class="step" id="mac-drag" data-label="Drag to Applications">
+      <div class="step-text">
+        <h3 tabindex="-1">Drag MyEditor into Applications</h3>
+        <p data-mode="install">Open the downloaded file. In the window that appears, drag the <b>MyEditor</b> icon onto the <b>Applications</b> folder.</p>
+        <p class="note" data-mode="install">Don't open MyEditor from this window. It needs to live in Applications.</p>
+        <p data-mode="update">Open the downloaded file and drag <b>MyEditor</b> onto <b>Applications</b>. When macOS asks, click <b>Replace</b>.</p>
+      </div>
+      <div class="replica stack">
+        <div class="mac-window" role="img" aria-label="The Install MyEditor window: drag the MyEditor icon onto the Applications folder">
+          <div class="mac-titlebar"><span class="lights"><i></i><i></i><i></i></span><span class="mac-title">Install MyEditor</span></div>
+          <div class="dmg">
+            <span class="app-icon ghost"></span>
+            <div class="dmg-item"><span class="app-icon dmg-app hl"></span>MyEditor</div>
+            <div class="dmg-arrow"></div>
+            <div class="dmg-item"><span class="folder-icon"></span>Applications</div>
+          </div>
+        </div>
+        <div class="mac-alert" data-mode="update" role="img" aria-label="Finder asks whether to replace the existing MyEditor. Replace is highlighted.">
+          <span class="app-icon alert-icon"></span>
+          <div class="alert-title">An item named “MyEditor” already exists in this location.</div>
+          <div class="alert-body">Do you want to replace it with the one you’re moving?</div>
+          <div class="alert-buttons three"><span class="mac-button">Keep Both</span><span class="mac-button">Stop</span><span class="mac-button default hl">Replace</span></div>
+        </div>
+      </div>
+    </li>
+
+    <li class="step" id="mac-open" data-label="Open it once">
+      <div class="step-text">
+        <h3 tabindex="-1">Open it once, then click Done</h3>
+        <p>Open your Applications folder and double-click <b>MyEditor</b>. macOS says it can't verify the app. Click <b>Done</b>.</p>
+        <p class="note">Click Done, not Move to Trash. This step unlocks the button you need next.</p>
+        <p class="note" data-mode="update">MyEditor opened without a message? Then you're finished. <button type="button" class="text-button" data-go="mac-done">Skip to the end</button></p>
+      </div>
+      <div class="replica">
+        <div class="mac-alert" role="img" aria-label="macOS alert: MyEditor Not Opened. Apple could not verify MyEditor is free of malware. Done is highlighted.">
+          <span class="app-icon alert-icon"></span>
+          <div class="alert-title">“MyEditor” Not Opened</div>
+          <div class="alert-body">Apple could not verify “MyEditor” is free of malware that may harm your Mac or compromise your privacy.</div>
+          <div class="alert-buttons"><span class="mac-button default hl">Done</span><span class="mac-button">Move to Trash</span></div>
+        </div>
+      </div>
+    </li>
+
+    <li class="step" id="mac-allow" data-label="Allow in Settings">
+      <div class="step-text">
+        <h3 tabindex="-1">Allow MyEditor in Privacy &amp; Security</h3>
+        <p>Open <b>System Settings</b>, click <b>Privacy &amp; Security</b>, and scroll down to <b>Security</b>. Click <b>Open Anyway</b> next to the message about MyEditor.</p>
+        <p class="actions"><a class="button" href="x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension">Open Privacy &amp; Security</a></p>
+        <p class="note">The button appears for about an hour after you try to open MyEditor. If it's gone, go back one step and open MyEditor again.</p>
+      </div>
+      <div class="replica">
+        <div class="mac-window settings" role="img" aria-label="System Settings, Privacy and Security. Next to the message MyEditor was blocked to protect your Mac, Open Anyway is highlighted.">
+          <div class="mac-titlebar"><span class="lights"><i></i><i></i><i></i></span></div>
+          <div class="settings-grid">
+            <div class="settings-side">
+              <span class="settings-search">Search</span>
+              <span><i style="background:#8E8E93"></i>General</span>
+              <span><i style="background:#1C1C1E"></i>Appearance</span>
+              <span><i style="background:#0A84FF"></i>Accessibility</span>
+              <span><i style="background:#8E8E93"></i>Control Center</span>
+              <span class="selected"><i style="background:#0A84FF"></i>Privacy &amp; Security</span>
+              <span><i style="background:#1C1C1E"></i>Desktop &amp; Dock</span>
+              <span><i style="background:#0A84FF"></i>Displays</span>
+            </div>
+            <div class="settings-main">
+              <div class="settings-title">Privacy &amp; Security</div>
+              <div class="settings-section">Security</div>
+              <div class="settings-group">
+                <div class="settings-row"><span>Allow applications from</span><span class="settings-value">App Store &amp; Known Developers ▾</span></div>
+                <div class="settings-row"><span>“MyEditor” was blocked to protect your Mac.</span><span class="mac-button small hl">Open Anyway</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </li>
+
+    <li class="step" id="mac-confirm" data-label="Confirm">
+      <div class="step-text">
+        <h3 tabindex="-1">Confirm with your password</h3>
+        <p>macOS asks one last time. Click <b>Open Anyway</b>, then use Touch ID or enter the password you use to log in to your Mac.</p>
+      </div>
+      <div class="replica stack" role="img" aria-label="A confirmation with Open Anyway highlighted, then a Touch ID or password prompt">
+        <div class="mac-alert">
+          <span class="app-icon alert-icon"></span>
+          <div class="alert-title">Open “MyEditor”?</div>
+          <div class="alert-body">macOS can't verify the developer of “MyEditor”. Open it only if you trust where it came from.</div>
+          <div class="alert-buttons column"><span class="mac-button default hl">Open Anyway</span><span class="mac-button">Move to Trash</span></div>
+        </div>
+        <div class="mac-auth"><span class="touch-id"></span><div><b>Privacy &amp; Security</b>Use Touch ID or enter your password to allow this.</div></div>
+      </div>
+    </li>
+
+    <li class="step" id="mac-done" data-label="Done">
+      <div class="step-text">
+        <h3 tabindex="-1"><span data-mode="install">MyEditor is installed</span><span data-mode="update">MyEditor is up to date</span></h3>
+        <p data-mode="install">From now on it opens with a normal double-click. Eject the <b>Install MyEditor</b> disk in the Finder sidebar, then move the downloaded file to the Trash.</p>
+        <p data-mode="update">MyEditor opens on the new version. Eject the <b>Install MyEditor</b> disk in the Finder sidebar, then move the downloaded file to the Trash.</p>
+        <p class="note" data-mode="install">To keep it handy, right-click its icon in the Dock and choose Options &gt; Keep in Dock.</p>
+      </div>
+      <div class="replica">
+        <div class="done-row" role="img" aria-label="The Finder sidebar with the eject button next to Install MyEditor highlighted, and MyEditor in the Dock">
+          <div class="finder-side">
+            <span class="finder-heading">Favorites</span>
+            <span>Applications</span>
+            <span>Downloads</span>
+            <span class="finder-heading">Locations</span>
+            <span><i class="disk-icon small"></i>Install MyEditor<b class="eject hl"></b></span>
+          </div>
+          <div class="dock"><i></i><i></i><i></i><span class="dock-app"><span class="app-icon"></span><b></b></span></div>
+        </div>
+      </div>
+    </li>
+
+  </ol>
+
+  <details class="trouble">
+    <summary>Something looks different?</summary>
+    <dl>
+      <dt>macOS says MyEditor is damaged and can't be opened</dt>
+      <dd>
+        <p>This can happen when a download breaks on the way. Download MyEditor again first. If the message stays, open the Terminal app, paste this line, and press Return:</p>
+        <div class="command"><code>xattr -dr com.apple.quarantine "/Applications/MyEditor.app"</code></div>
+      </dd>
+      <dt>There's no Open Anyway button</dt>
+      <dd><p>The button appears only for about an hour after you try to open MyEditor. Open MyEditor from Applications again, click Done, then go back to Privacy &amp; Security.</p></dd>
+      <dt>My Mac runs macOS 14 Sonoma or older</dt>
+      <dd><p>Right-click MyEditor in Applications, choose Open, then click Open in the message.</p></dd>
+      <dt>I opened MyEditor from the disk image window</dt>
+      <dd><p>Quit it, drag MyEditor onto Applications, and open it from there. A copy opened from the disk image stops working once the disk is ejected.</p></dd>
+    </dl>
+  </details>
+</section>
+
+<!-- ================================================================== -->
+<section class="track" id="windows" data-os="windows" aria-labelledby="windows-heading">
+  <h2 class="track-heading" id="windows-heading">MyEditor for Windows</h2>
+  <ol class="steps">
+
+    <li class="step" id="windows-download" data-label="Download">
+      <div class="step-text">
+        <h3 tabindex="-1">Download the installer</h3>
+        <p>The installer works on Windows 10 and Windows 11, 64-bit.</p>
+        <p class="actions"><a class="button primary" data-download="windows-x64" data-advance href="https://github.com/rinbal/my_editor/releases/latest">Download for Windows</a></p>
+        <p class="file-meta" data-file-meta="windows-x64"></p>
+      </div>
+      <div class="replica">
+        <div class="win-panel edge" role="img" aria-label="Microsoft Edge's downloads panel, with the MyEditor installer downloading">
+          <div class="edge-header">Downloads<span>⋯</span></div>
+          <div class="edge-item">
+            <span class="exe-icon"></span>
+            <div class="grow"><div class="file-name">my-editor-windows-setup.exe</div><div class="bar"><i style="width:64%"></i></div><div class="file-sub">Downloading…</div></div>
+          </div>
+        </div>
+      </div>
+    </li>
+
+    <li class="step" id="windows-keep" data-label="Keep the file">
+      <div class="step-text">
+        <h3 tabindex="-1">Tell your browser to keep it</h3>
+        <p>Microsoft Edge may say the file isn't commonly downloaded. Point at the file, click <b>⋯</b> (More actions), then <b>Keep</b>. If Edge asks again, click <b>Show more</b>, then <b>Keep anyway</b>.</p>
+        <p class="note">Chrome shows a similar message with a <b>Keep</b> button.</p>
+      </div>
+      <div class="replica">
+        <div class="win-panel edge" role="img" aria-label="Edge warns the file isn't commonly downloaded. The More actions menu is open with Keep highlighted.">
+          <div class="edge-header">Downloads<span>⋯</span></div>
+          <div class="edge-item">
+            <span class="exe-icon"></span>
+            <div class="grow"><div class="file-name">my-editor-windows-setup.exe</div><div class="file-sub">my-editor-windows-setup.exe isn't commonly downloaded. Make sure you trust it before you open it.</div></div>
+            <span class="edge-more">⋯</span>
+          </div>
+          <div class="edge-menu-row"><div class="win-menu"><span>Delete</span><span class="hl">Keep</span><span>Report this file as safe</span><span>Learn more</span></div></div>
+        </div>
+      </div>
+    </li>
+
+    <li class="step" id="windows-run" data-label="Run anyway">
+      <div class="step-text">
+        <h3 tabindex="-1">Get past the blue box</h3>
+        <p>Open the downloaded file. If <b>Windows protected your PC</b> appears, click <b>More info</b>, then <b>Run anyway</b>.</p>
+      </div>
+      <div class="replica stack" role="img" aria-label="Windows SmartScreen. First click More info, then click Run anyway.">
+        <div class="smartscreen">
+          <span class="ss-close">✕</span>
+          <div class="ss-title">Windows protected your PC</div>
+          <p>Microsoft Defender SmartScreen prevented an unrecognized app from starting. Running this app might put your PC at risk.</p>
+          <span class="ss-link hl">More info</span>
+          <div class="ss-buttons"><span class="ss-button">Don't run</span></div>
+        </div>
+        <div class="smartscreen">
+          <span class="ss-close">✕</span>
+          <div class="ss-title">Windows protected your PC</div>
+          <p>Microsoft Defender SmartScreen prevented an unrecognized app from starting. Running this app might put your PC at risk.</p>
+          <p>App: my-editor-windows-setup.exe<br>Publisher: Unknown publisher</p>
+          <div class="ss-buttons"><span class="ss-button hl">Run anyway</span><span class="ss-button">Don't run</span></div>
+        </div>
+      </div>
+    </li>
+
+    <li class="step" id="windows-install" data-label="Install">
+      <div class="step-text">
+        <h3 tabindex="-1">Click through the installer</h3>
+        <p data-mode="install">It installs for you only and never asks for an administrator password. Leave <b>Create a desktop shortcut</b> on and click <b>Install</b>.</p>
+        <p data-mode="update">The installer finds the version you have and replaces it. If MyEditor is open, the installer offers to close it. Your settings stay.</p>
+      </div>
+      <div class="replica">
+        <div class="inno" role="img" aria-label="The MyEditor setup wizard on Select Additional Tasks, with Install highlighted">
+          <div class="inno-titlebar"><span class="app-icon"></span>Setup - MyEditor<span class="inno-controls"><i></i>✕</span></div>
+          <div class="inno-header"><div><b>Select Additional Tasks</b><span>Which additional tasks should be performed?</span></div><span class="app-icon"></span></div>
+          <div class="inno-body">
+            <p>Select the additional tasks you would like Setup to perform while installing MyEditor, then click Install.</p>
+            <span class="inno-group">Additional shortcuts:</span>
+            <span class="checkbox checked">Create a desktop shortcut</span>
+            <span class="inno-group">File associations:</span>
+            <span class="checkbox">Open .md and .txt files with MyEditor</span>
+          </div>
+          <div class="inno-footer"><span class="inno-button">Back</span><span class="inno-button default hl">Install</span><span class="inno-button">Cancel</span></div>
+        </div>
+      </div>
+    </li>
+
+    <li class="step" id="windows-done" data-label="Done">
+      <div class="step-text">
+        <h3 tabindex="-1"><span data-mode="install">MyEditor is installed</span><span data-mode="update">MyEditor is up to date</span></h3>
+        <p data-mode="install">It opens when the installer finishes. You'll also find it in the Start menu and on your desktop. You can delete the downloaded installer.</p>
+        <p data-mode="update">MyEditor opens on the new version. You can delete the downloaded installer.</p>
+      </div>
+      <div class="replica">
+        <div class="win-panel start" role="img" aria-label="Start menu search for MyEditor, showing the app as the best match">
+          <div class="start-search"><span class="search-icon"></span>myeditor</div>
+          <div class="start-label">Best match</div>
+          <div class="start-row hl"><span class="app-icon"></span><div><b>MyEditor</b><span>App</span></div></div>
+        </div>
+      </div>
+    </li>
+
+  </ol>
+
+  <details class="trouble">
+    <summary>Something looks different?</summary>
+    <dl>
+      <dt>Smart App Control has blocked this app</dt>
+      <dd><p>Smart App Control doesn't allow exceptions for single apps. To install MyEditor, turn it off in Windows Security &gt; App &amp; browser control &gt; Smart App Control settings. Recent Windows updates let you turn it back on later without reinstalling Windows.</p></dd>
+      <dt>There's no Run anyway button</dt>
+      <dd><p>Click More info first. Run anyway only appears after that.</p></dd>
+      <dt>My antivirus removed the file</dt>
+      <dd><p>Some antivirus tools flag new apps from small developers by mistake. Restore the file from quarantine, or download it again and compare its checksum with the one under <a href="#verify">Verify your download</a>.</p></dd>
+      <dt>Windows says the installer can't run on this PC</dt>
+      <dd><p>MyEditor needs 64-bit Windows 10 or Windows 11.</p></dd>
+    </dl>
+  </details>
+</section>
+
+<!-- ================================================================== -->
+<section class="track" id="linux" data-os="linux" aria-labelledby="linux-heading">
+  <h2 class="track-heading" id="linux-heading">MyEditor for Linux</h2>
+  <ol class="steps">
+
+    <li class="step" id="linux-download" data-label="Download">
+      <div class="step-text">
+        <h3 tabindex="-1">Choose your download</h3>
+        <p>Pick the kind of Linux you use. Both are for 64-bit Intel and AMD processors (x86_64).</p>
+        <div class="choices">
+          <div class="choice" data-package="deb">
+            <b>Ubuntu, Debian, Linux Mint, or Pop!_OS</b>
+            <span>A .deb package. Installs like any other app, with a menu entry.</span>
+            <a class="button primary" data-download="deb-amd64" data-choose-package="deb" data-advance href="https://github.com/rinbal/my_editor/releases/latest">Download .deb</a>
+            <span class="file-meta" data-file-meta="deb-amd64"></span>
+          </div>
+          <div class="choice" data-package="appimage">
+            <b>Any other distribution</b>
+            <span>An AppImage. One file that runs without installing.</span>
+            <a class="button" data-download="appimage-x86_64" data-choose-package="appimage" data-advance href="https://github.com/rinbal/my_editor/releases/latest">Download AppImage</a>
+            <span class="file-meta" data-file-meta="appimage-x86_64"></span>
+          </div>
+        </div>
+      </div>
+    </li>
+
+    <li class="step" id="linux-deb" data-label="Install" data-package="deb">
+      <div class="step-text">
+        <h3 tabindex="-1"><span data-mode="install">Install it with App Center</span><span data-mode="update">Install the new package</span></h3>
+        <p data-mode="install">Double-click the downloaded file. App Center opens and warns that the package comes from outside its catalog. Click <b>Install</b> and enter your password.</p>
+        <p data-mode="update">Quit MyEditor, then double-click the downloaded file and click <b>Install</b>. It replaces the old version.</p>
+        <p class="note">No App Center, or the file opens in an archive viewer? Run this in a terminal, in your Downloads folder:</p>
+        <div class="command"><code data-command-template="sudo apt install ./{name}" data-command-file="deb-amd64">sudo apt install ./my-editor_*_amd64.deb</code></div>
+      </div>
+      <div class="replica">
+        <div class="gnome-window" role="img" aria-label="App Center showing MyEditor, a warning that it comes from outside App Center, and Install highlighted">
+          <div class="gnome-header">App Center<span class="gnome-close">✕</span></div>
+          <div class="app-center">
+            <div class="app-center-top"><span class="app-icon"></span><div class="grow"><b>MyEditor</b><span>my-editor_amd64.deb</span></div><span class="ubuntu-button hl">Install</span></div>
+            <div class="app-center-warning">This package comes from outside App Center. Install it only if you trust where it came from.</div>
+          </div>
+        </div>
+      </div>
+    </li>
+
+    <li class="step" id="linux-appimage" data-label="Allow it to run" data-package="appimage">
+      <div class="step-text">
+        <h3 tabindex="-1">Allow it to run</h3>
+        <p data-mode="install">Right-click the downloaded file and choose <b>Properties</b>. Turn on <b>Executable as Program</b>, then double-click the file.</p>
+        <p data-mode="update">Quit MyEditor. Put the new file where the old one was, turn on <b>Executable as Program</b> in its <b>Properties</b>, then double-click it.</p>
+        <p class="note">Prefer the terminal? This does the same:</p>
+        <div class="command"><code data-command-template="chmod +x {name}" data-command-file="appimage-x86_64">chmod +x my-editor-*-linux-x86_64.AppImage</code></div>
+      </div>
+      <div class="replica">
+        <div class="gnome-props" role="img" aria-label="The file's Properties, with the Executable as Program switch turned on and highlighted">
+          <div class="props-head"><span class="file-icon"></span><b>my-editor-linux-x86_64.AppImage</b><span>AppImage application</span></div>
+          <div class="props-list">
+            <div><span>Parent Folder</span><span class="muted">Downloads</span></div>
+            <div><span>Executable as Program</span><span class="switch hl"><i></i></span></div>
+          </div>
+        </div>
+      </div>
+    </li>
+
+    <li class="step" id="linux-done" data-label="Done">
+      <div class="step-text">
+        <h3 tabindex="-1"><span data-mode="install">MyEditor is installed</span><span data-mode="update">MyEditor is up to date</span></h3>
+        <p data-mode="install" data-package="deb">Open MyEditor from your applications menu. To remove it later, run <code>sudo apt remove my-editor</code>.</p>
+        <p data-mode="install" data-package="appimage">Double-click the AppImage to open MyEditor. The file is the whole app, so keep it somewhere handy, like a folder in your home directory. To add it to your app menu, use <a href="https://github.com/TheAssassin/AppImageLauncher">AppImageLauncher</a>.</p>
+        <p data-mode="update">Open MyEditor again. It starts on the new version.</p>
+      </div>
+      <div class="replica">
+        <div class="app-window" role="img" aria-label="MyEditor open with an empty document">
+          <div class="app-window-title">Untitled - MyEditor</div>
+          <div class="app-window-body"><i style="width:38%;background:#E53935"></i><i style="width:62%;background:#FB8C00"></i><i style="width:30%;background:#43A047"></i><i style="width:54%;background:#1E88E5"></i><i style="width:24%;background:#8E24AA"></i></div>
+        </div>
+      </div>
+    </li>
+
+  </ol>
+
+  <details class="trouble">
+    <summary>Something looks different?</summary>
+    <dl>
+      <dt>The AppImage doesn't start</dt>
+      <dd>
+        <p>Install one missing library, then try again. On Ubuntu, Debian and Mint:</p>
+        <div class="command"><code>sudo apt install libxcb-cursor0</code></div>
+        <p>On Fedora:</p>
+        <div class="command"><code>sudo dnf install xcb-util-cursor</code></div>
+      </dd>
+      <dt>Double-clicking the .deb opens an archive viewer</dt>
+      <dd><p>Your desktop has no package installer. Use the terminal command from the install step.</p></dd>
+      <dt>My computer has an ARM processor, like a Raspberry Pi</dt>
+      <dd><p>There's no ARM build yet. You can <a href="https://github.com/rinbal/my_editor#run-from-source">run MyEditor from source</a>.</p></dd>
+    </dl>
+  </details>
+</section>
+
+</main>
+
+<footer class="site-footer">
+  <details class="verify" id="verify">
+    <summary>Verify your download</summary>
+    <p>Each file's SHA-256 checksum should match the list below. Check it with <code>shasum -a 256 &lt;file&gt;</code> on a Mac, <code>Get-FileHash &lt;file&gt;</code> in Windows PowerShell, or <code>sha256sum &lt;file&gt;</code> on Linux.</p>
+    <div class="table-scroll"><table data-checksums><thead><tr><th scope="col">File</th><th scope="col">SHA-256</th></tr></thead><tbody></tbody></table></div>
+    <p class="checksums-fallback">The checksums are also listed with each file on the <a href="https://github.com/rinbal/my_editor/releases/latest">release page</a>.</p>
+  </details>
+  <p class="footer-links">
+    <span data-latest hidden>Latest version: <span data-latest-version></span>. </span>
+    <a href="https://github.com/rinbal/my_editor/releases/latest">All downloads and release notes</a> ·
+    <a href="https://github.com/rinbal/my_editor">Source code</a> ·
+    <a href="https://github.com/rinbal/my_editor/blob/main/LICENSE">GNU AGPL 3.0</a>
+  </p>
+</footer>
+
+</body>
+</html>

@@ -14,8 +14,9 @@ without code signing or a system package manager:
                            the file, and relaunches it.
 
 For every other case (macOS .app, the Linux .deb, or a source checkout) there is
-nothing safe to swap, so supports_in_app_update() returns False and the caller
-falls back to opening the release page in the browser.
+nothing safe to swap, so supports_in_app_update() returns False and the update
+dialog walks the person through the same steps as the install guide instead
+(see update_flow.py).
 """
 
 import os
@@ -27,12 +28,18 @@ import tempfile
 from PySide6.QtCore import QObject, QProcess, QUrl, Signal
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
+from release_assets import WINDOWS, appimage_key, asset_key, deb_key, mac_key
+
 # Install kinds.
 WINDOWS_INSTALLER = "windows_installer"
 APPIMAGE = "appimage"
 MACOS_APP = "macos_app"
-LINUX_OTHER = "linux_other"   # .deb install or a bare onedir
+DEB = "deb"                   # installed by the .deb into /opt/my-editor
+LINUX_OTHER = "linux_other"   # a bare onedir folder
 SOURCE = "source"
+
+# Where packaging/linux/build_deb.sh puts the PyInstaller folder.
+_DEB_PREFIX = "/opt/my-editor/"
 
 
 def detect_install_kind() -> str:
@@ -47,6 +54,8 @@ def detect_install_kind() -> str:
         return WINDOWS_INSTALLER
     if sys.platform == "darwin":
         return MACOS_APP
+    if os.path.realpath(sys.executable).startswith(_DEB_PREFIX):
+        return DEB
     return LINUX_OTHER
 
 
@@ -60,21 +69,30 @@ def supports_in_app_update(kind: str = None) -> bool:
     return False
 
 
-def select_asset(kind: str, assets):
-    """Pick the release asset that matches this install, or None if there is none."""
+def install_asset_key(kind: str, machine: str = None):
+    """The release_assets key of the file that updates this install, or None.
+
+    The key carries the CPU arch, so a wrong-arch build is never swapped in
+    (that would replace the app with one that cannot run).
+    """
+    machine = machine or platform.machine()
     if kind == WINDOWS_INSTALLER:
-        return _first(assets, lambda a: a.name.lower().endswith("-windows-setup.exe"))
+        return WINDOWS
     if kind == APPIMAGE:
-        # Require the CPU arch in the name so we never swap in a wrong-arch build
-        # (that would replace the app with one that cannot run). The AppImage is
-        # named ...-linux-<arch>.AppImage; a mismatch returns None and the caller
-        # falls back to opening the release page.
-        arch = platform.machine().lower()
-        return _first(
-            assets,
-            lambda a: a.name.lower().endswith(".appimage") and arch in a.name.lower(),
-        )
+        return appimage_key(machine)
+    if kind == MACOS_APP:
+        return mac_key(machine)
+    if kind == DEB:
+        return deb_key(machine)
     return None
+
+
+def select_asset(kind: str, assets, machine: str = None):
+    """Pick the release asset that matches this install, or None if there is none."""
+    wanted = install_asset_key(kind, machine)
+    if wanted is None:
+        return None
+    return _first(assets, lambda a: asset_key(a.name) == wanted)
 
 
 def _first(items, predicate):

@@ -60,7 +60,6 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMenu,
-    QMessageBox,
     QProgressBar,
     QPushButton,
     QSizePolicy,
@@ -68,6 +67,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from alerts import confirm_destructive
 
 from ..blossom.store import MediaFile, MediaStore
 from ..media.media_visibility import (
@@ -1458,14 +1459,12 @@ class MediaLibraryDialog(QDialog):
         targets = self._selected_media()
         if not targets:
             return
-        msg = f"Delete {len(targets)} file{'s' if len(targets) != 1 else ''} from your Blossom servers?"
-        confirm = QMessageBox(self)
-        confirm.setWindowTitle("Delete media")
-        confirm.setText(msg)
-        confirm.setIcon(QMessageBox.Warning)
-        confirm.setStandardButtons(QMessageBox.Cancel | QMessageBox.Yes)
-        confirm.setDefaultButton(QMessageBox.Cancel)
-        if confirm.exec() != QMessageBox.Yes:
+        count = len(targets)
+        if not confirm_destructive(
+                self,
+                title=f"Delete {count} file{'s' if count != 1 else ''} from your Blossom servers?",
+                message="This can't be undone.",
+                action="Delete", caution=True):
             return
         for media in targets:
             self._store.delete_file(media.hash)

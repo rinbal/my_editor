@@ -524,10 +524,14 @@ class FileChangedBar(QWidget):
 
 
 class UpdateBar(QWidget):
-    """Notification bar shown at the top of the window when a newer app version is available."""
+    """Notification bar shown at the top of the window when a newer app version is available.
 
-    download_requested = Signal()
-    dismissed = Signal()
+    It only announces the update. "Update\u2026" opens Software Update, where the
+    person chooses; closing the bar means Later (skipping a version is an
+    explicit button in that dialog, never a side effect of closing this).
+    """
+
+    update_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -543,29 +547,25 @@ class UpdateBar(QWidget):
         layout.addWidget(self._icon)
 
         self._text = QLabel()
-        self._download_btn = QPushButton("Download")
-        self._download_btn.setFixedHeight(26)
-        self._download_btn.clicked.connect(self.download_requested)
+        self._update_btn = QPushButton("Update\u2026")
+        self._update_btn.setFixedHeight(26)
+        self._update_btn.clicked.connect(self.update_requested)
 
         self._dismiss_btn = QPushButton("×")
         self._dismiss_btn.setFixedSize(26, 26)
-        self._dismiss_btn.setToolTip("Dismiss")
-        self._dismiss_btn.clicked.connect(self._on_dismiss)
+        self._dismiss_btn.setToolTip("Later")
+        self._dismiss_btn.clicked.connect(self.hide)
 
         layout.addWidget(self._text, 1)
-        layout.addWidget(self._download_btn)
+        layout.addWidget(self._update_btn)
         layout.addWidget(self._dismiss_btn)
 
         self._update_theme()
         self.hide()
 
     def show_update(self, version: str):
-        self._text.setText(f"Version {version} is available.")
+        self._text.setText(f"MyEditor {version} is available.")
         self.show()
-
-    def _on_dismiss(self):
-        self.hide()
-        self.dismissed.emit()
 
     def update_theme(self, is_dark: bool):
         self.is_dark = is_dark

@@ -17,6 +17,9 @@ APP_BUNDLE_ID = "com.rinbal.myeditor"     # reverse-DNS id; change to your own
 APP_REPO_SLUG = "rinbal/my_editor"        # canonical GitHub repo (owner/name)
 APP_URL = f"https://github.com/{APP_REPO_SLUG}"
 APP_RELEASES_URL = f"{APP_URL}/releases/latest"
+# The step-by-step install guide (site/install/), served by GitHub Pages.
+_REPO_OWNER, _REPO_NAME = APP_REPO_SLUG.split("/")
+APP_INSTALL_GUIDE_URL = f"https://{_REPO_OWNER}.github.io/{_REPO_NAME}/install/"
 
 # UI theme colors
 DARK_BG = "#1E1E1E"
@@ -60,7 +63,7 @@ elif sys.platform == "win32":
 else:
     MONO_FONT = "Noto Sans Mono"
 
-# Single universal color palette — mid-range saturation (Material Design 600).
+# Single universal color palette: mid-range saturation (Material Design 600).
 # These colors are clearly visible on both dark (#1E1E1E) and light (#FFFFFF) backgrounds,
 # so no remapping is needed when switching themes or exporting to PDF/HTML.
 TEXT_COLORS = {

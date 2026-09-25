@@ -7,7 +7,9 @@ import hashlib
 import itertools
 import json
 import os
+import platform
 import re
+import sys
 import time
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -15,18 +17,18 @@ from typing import List, Optional, Tuple
 from send2trash import send2trash
 from PySide6.QtCore import (
     QBuffer, QByteArray, QIODevice, Qt, QMarginsF, QTimer, QUrl, QFileSystemWatcher,
-    QPointF,
 )
 from PySide6.QtNetwork import QLocalServer
 from PySide6.QtGui import (
     QAction, QActionGroup, QKeySequence, QTextCursor, QTextDocument, QTextCharFormat, QColor,
-    QImage, QPageLayout, QPageSize, QPixmap, QGuiApplication, QDesktopServices, QIcon,
-    QPainter, QPen, QTextImageFormat
+    QImage, QPageLayout, QPageSize, QPixmap, QGuiApplication, QDesktopServices,
+    QTextImageFormat
 )
+from PySide6.QtPrintSupport import QPrintDialog, QPrintPreviewDialog
 from PySide6.QtWidgets import (
-    QMainWindow, QCheckBox, QFileDialog, QInputDialog, QMenu, QMessageBox, QWidget,
+    QMainWindow, QFileDialog, QInputDialog, QMenu, QWidget,
     QVBoxLayout, QTextEdit, QTabWidget, QToolButton, QHBoxLayout, QStatusBar,
-    QPushButton, QTabBar, QDialogButtonBox, QWidgetAction, QLabel, QDialog, QSplitter,
+    QPushButton, QTabBar, QWidgetAction, QLabel, QDialog, QSplitter,
     QProgressDialog
 )
 
@@ -45,10 +47,17 @@ from settings import load_settings, save_setting
 from welcome import welcome_html
 from update_check import UpdateChecker
 from updater import detect_install_kind, supports_in_app_update, select_asset, UpdateInstaller
+from alerts import (
+    CANCEL, DEFAULT, DESTRUCTIVE, NORMAL, Button, ask, ask_with_checkbox,
+    confirm_destructive, inform,
+)
+from update_dialog import UpdateDialog
+from update_flow import AUTOMATIC, guide_url, plan_for
 import theme
 from export_html import document_to_html, normalize_lists_after_set_html, sniff_image_ext
-from export_pdf import export_pdf
+from export_pdf import export_pdf, load_page_setup
 from page_setup_dialog import PageSetupDialog
+import printing
 from pdf_viewer import PdfViewerTab
 from rmarkdown import KnitRunner, derive_title, document_to_rmd, media_dir_for
 from rmd_setup_dialog import RmdSetupDialog
@@ -142,6 +151,9 @@ _IPC_SERVER_NAME = "minimal-texteditor-ipc"
 # originates paste-to-upload jobs (editor Ctrl+V).
 _paste_job_counter = itertools.count(1)
 
+# Second line of every "Couldn't save" alert: what to do next.
+_SAVE_FAILED_HINT = "Your document is still open. Use Save As to choose another place."
+
 
 # --------------------------------------------------------------------------- #
 # Per-tab Nostr-draft binding                                                 #
@@ -169,99 +181,18 @@ class DraftBinding:
     profile_pubkey: str = ""
 
 
-# Left-to-right order stock QMessageBox uses for these three roles.
-_SAVE_DIALOG_BUTTON_ORDER = (
-    (QMessageBox.Cancel, "Cancel", "x"),
-    (QMessageBox.No, "No", "x"),
-    (QMessageBox.Yes, "Yes", "check"),
-)
+def _ask_save_changes(parent, title: str, *, save_label: str = "Save",
+                      message: str = "Your changes will be lost if you don't save them.") -> str:
+    """Save, Don't Save or Cancel, in Apple's standard wording.
 
-
-def _badge_icon(glyph: str, size: int = 16) -> QIcon:
-    """A small red-x / green-check circular badge for dialog buttons.
-
-    Drawn rather than pulled from the icon theme: Windows and macOS ship
-    no such icons at all, and Linux desktop themes draw them differently,
-    so painting them here keeps the buttons identical on every platform."""
-    pix = QPixmap(size, size)
-    pix.fill(Qt.transparent)
-    p = QPainter(pix)
-    p.setRenderHint(QPainter.Antialiasing)
-    p.setPen(Qt.NoPen)
-    p.setBrush(QColor("#c0392b" if glyph == "x" else "#2e9e4f"))
-    p.drawEllipse(0, 0, size, size)
-    p.setPen(QPen(QColor("white"), 1.6))
-    if glyph == "x":
-        m = size * 0.28
-        p.drawLine(QPointF(m, m), QPointF(size - m, size - m))
-        p.drawLine(QPointF(size - m, m), QPointF(m, size - m))
-    else:
-        p.drawPolyline([
-            QPointF(size * 0.22, size * 0.52),
-            QPointF(size * 0.42, size * 0.72),
-            QPointF(size * 0.78, size * 0.28),
-        ])
-    p.end()
-    return QIcon(pix)
-
-
-class _SaveChangesDialog(QDialog):
-    """Compact Yes/No/Cancel prompt: question icon left, message right,
-    buttons bottom-right -- same structure as QMessageBox, but sized
-    tightly around its own content instead of QMessageBox's generous
-    (and, on Linux, desktop-theme-dependent) grid layout."""
-
-    def __init__(self, parent, text: str, buttons, default_button):
-        super().__init__(parent)
-        self.setWindowTitle("Save Changes?")
-
-        icon_label = QLabel()
-        icon_label.setPixmap(QMessageBox.standardIcon(QMessageBox.Question))
-        icon_label.setAlignment(Qt.AlignTop)
-
-        text_label = QLabel(text)
-        text_label.setWordWrap(True)
-        text_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-
-        top_row = QHBoxLayout()
-        top_row.setSpacing(14)
-        top_row.addWidget(icon_label, 0, Qt.AlignTop)
-        top_row.addWidget(text_label, 1)
-
-        button_row = QHBoxLayout()
-        button_row.setSpacing(8)
-        button_row.addStretch(1)
-        escape_value = None
-        for flag, label, glyph in _SAVE_DIALOG_BUTTON_ORDER:
-            if not (buttons & flag):
-                continue
-            btn = QPushButton(_badge_icon(glyph), label)
-            btn.clicked.connect(lambda checked=False, v=flag: self.done(v))
-            if flag == default_button:
-                btn.setDefault(True)
-            button_row.addWidget(btn)
-            if escape_value is None and flag in (QMessageBox.Cancel, QMessageBox.No):
-                escape_value = flag
-
-        self._escape_value = escape_value if escape_value is not None else default_button
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 22, 18, 18)
-        layout.setSpacing(22)
-        layout.addLayout(top_row)
-        layout.addLayout(button_row)
-        layout.setSizeConstraint(QVBoxLayout.SizeConstraint.SetFixedSize)
-
-    def reject(self):
-        self.done(self._escape_value)
-
-
-def _ask_save_changes(parent, text: str, buttons, default_button):
-    """Save/No/Cancel confirmation used before closing a dirty tab, the
-    whole window, or during an in-place update. See _SaveChangesDialog
-    for why this isn't a plain QMessageBox.question(...) call."""
-    dlg = _SaveChangesDialog(parent, text, buttons, default_button)
-    return dlg.exec()
+    Returns "save", "discard" or "cancel". Don't Save is destructive (red,
+    and placed apart from the other two on macOS); Save is the default.
+    """
+    return ask(parent, title=title, message=message, buttons=(
+        Button("Don't Save", "discard", DESTRUCTIVE),
+        Button("Cancel", "cancel", CANCEL),
+        Button(save_label, "save", DEFAULT),
+    ))
 
 
 class MainWindow(QMainWindow):
@@ -873,6 +804,7 @@ class MainWindow(QMainWindow):
         self._update_undo_redo_buttons()
         self._update_status_bar()  # also calls _update_format_buttons
         self._update_knit_actions()
+        self._update_print_actions()
         # The global find bar searches editors only; a PDF tab carries
         # its own find bar, so retire the editor one when switching over.
         if self.findbar.isVisible() and self.current_pdf_viewer() is not None:
@@ -952,6 +884,14 @@ class MainWindow(QMainWindow):
 
         self.act_page_setup = QAction("Page Setup…", self)
         self.act_page_setup.triggered.connect(self._on_page_setup)
+
+        # Print prints the current tab as formatted pages (see printing.py);
+        # both actions dim when the current tab has nothing to print.
+        self.act_print = QAction("Print\u2026", self)
+        self.act_print.setShortcut(QKeySequence.StandardKey.Print)
+        self.act_print.triggered.connect(self._on_print)
+        self.act_print_preview = QAction("Print Preview\u2026", self)
+        self.act_print_preview.triggered.connect(self._on_print_preview)
 
         # Knitting renders the on-disk .Rmd through the R toolchain, so the
         # actions only light up for .Rmd tabs (see _update_knit_actions).
@@ -1089,6 +1029,9 @@ class MainWindow(QMainWindow):
         m_file.addAction(self.act_save_as)
         m_file.addSeparator()
         m_file.addAction(self.act_page_setup)
+        if printing.OFFERS_PRINT_PREVIEW:
+            m_file.addAction(self.act_print_preview)
+        m_file.addAction(self.act_print)
         m_file.addSeparator()
         m_file.addAction(self.act_knit_html)
         m_file.addAction(self.act_knit_pdf)
@@ -1165,7 +1108,10 @@ class MainWindow(QMainWindow):
         shortcuts_action.triggered.connect(self._show_shortcuts)
         help_menu.addAction(shortcuts_action)
         help_menu.addSeparator()
-        check_updates_action = QAction("Check for Updates", self)
+        install_help_action = QAction("Installation Help", self)
+        install_help_action.triggered.connect(self._open_install_guide)
+        help_menu.addAction(install_help_action)
+        check_updates_action = QAction("Check for Updates\u2026", self)
         check_updates_action.triggered.connect(self._check_for_updates_manual)
         help_menu.addAction(check_updates_action)
         help_menu.addSeparator()
@@ -1230,8 +1176,7 @@ class MainWindow(QMainWindow):
 
         self.update_bar = UpdateBar()
         self.update_bar.update_theme(self.is_dark_theme)
-        self.update_bar.download_requested.connect(self._on_update_bar_download)
-        self.update_bar.dismissed.connect(self._on_update_bar_dismissed)
+        self.update_bar.update_requested.connect(self._on_update_bar_clicked)
 
         # The editor area (header + findbar + tabs) lives on the left
         # of a horizontal splitter; the drafts panel docks on the right.
@@ -1480,40 +1425,21 @@ class MainWindow(QMainWindow):
         file_path = ed._file_path
         file_name = os.path.basename(file_path)
 
-        msg = QMessageBox(self)
-        msg.setWindowTitle("Delete file")
-        msg.setIcon(QMessageBox.NoIcon)
-        msg.setText(f'Are you sure you want to move "{file_name}" to trash?')
-        msg.setStandardButtons(QMessageBox.Cancel)
-        delete_btn = msg.addButton("Move to Trash", QMessageBox.DestructiveRole)
-        delete_btn.setStyleSheet("""
-            QPushButton {
-                color: white;
-                background-color: transparent;
-                border: 1px solid #888;
-                border-radius: 4px;
-                padding: 4px 12px;
-            }
-            QPushButton:hover {
-                background-color: #c0392b;
-                border-color: #c0392b;
-            }
-        """)
-        msg.setDefaultButton(QMessageBox.Cancel)
-        msg.setWindowFlag(Qt.WindowCloseButtonHint, False)
-
-        button_box = msg.findChild(QDialogButtonBox)
-        if button_box:
-            button_box.setCenterButtons(True)
-
-        msg.exec()
-        if msg.clickedButton() != delete_btn:
+        # Windows calls it the Recycle Bin; macOS and Linux desktops, the Trash.
+        bin_name = "Recycle Bin" if sys.platform == "win32" else "Trash"
+        if not confirm_destructive(
+                self,
+                title=f"Move \u201c{file_name}\u201d to the {bin_name}?",
+                message=f"You can restore it from the {bin_name} until you empty it.",
+                action=f"Move to {bin_name}",
+                is_dark=self.is_dark_theme):
             return
 
         try:
             send2trash(file_path)
         except Exception as e:
-            QMessageBox.critical(self, "Delete Failed", str(e))
+            inform(self, title=f"Couldn't move \u201c{file_name}\u201d to the {bin_name}",
+                   message=str(e))
             return
 
         # Close tab without prompting to save - file is gone
@@ -1535,13 +1461,14 @@ class MainWindow(QMainWindow):
         new_path = os.path.join(directory, new_name)
 
         if os.path.exists(new_path):
-            QMessageBox.warning(self, "Rename Failed", f'A file named "{new_name}" already exists.')
+            inform(self, title=f"\u201c{new_name}\u201d already exists",
+                   message="Choose a different name.")
             return
 
         try:
             os.rename(old_path, new_path)
         except OSError as e:
-            QMessageBox.critical(self, "Rename Failed", str(e))
+            inform(self, title="Couldn't rename the file", message=str(e))
             return
 
         self._watcher.removePath(old_path)
@@ -1591,14 +1518,10 @@ class MainWindow(QMainWindow):
         if editor and editor.document().isModified():
             file_name = os.path.basename(editor._file_path) if getattr(editor, '_file_path', None) else "Untitled"
             r = _ask_save_changes(
-                self,
-                f"The document '{file_name}' has unsaved changes.\n\nDo you want to save before closing?",
-                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
-                QMessageBox.Yes
-            )
-            if r == QMessageBox.Cancel:
+                self, f"Do you want to save the changes you made to \u201c{file_name}\u201d?")
+            if r == "cancel":
                 return
-            if r == QMessageBox.Yes:
+            if r == "save":
                 self.tabs.setCurrentIndex(index)
                 if not self.save():
                     return
@@ -1631,33 +1554,35 @@ class MainWindow(QMainWindow):
             self.close_tab(idx)
 
     def _quit_application(self):
-        unsaved = []
-        for i in range(self.tabs.count()):
-            ed = self._editor_from_widget(self.tabs.widget(i))
-            if ed and ed.document().isModified():
-                unsaved.append(os.path.basename(ed._file_path) if getattr(ed, '_file_path', None) else "Untitled")
-
-        if unsaved:
-            msg = (f"The document '{unsaved[0]}' has unsaved changes.\n\nDo you want to save before quitting?"
-                   if len(unsaved) == 1
-                   else f"You have {len(unsaved)} documents with unsaved changes.\n\nDo you want to save all before quitting?")
-            r = _ask_save_changes(self, msg,
-                                  QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
-                                  QMessageBox.Yes)
-            if r == QMessageBox.Cancel:
-                return
-            if r == QMessageBox.Yes:
-                for i in range(self.tabs.count()):
-                    ed = self._editor_from_widget(self.tabs.widget(i))
-                    if ed and ed.document().isModified():
-                        self.tabs.setCurrentIndex(i)
-                        if not self.save():
-                            return
-        for i in range(self.tabs.count()):
-            ed = self._editor_from_widget(self.tabs.widget(i))
-            if ed and hasattr(ed, '_backup'):
-                ed._backup.delete()
+        # closeEvent owns the unsaved-work question, so quitting from the
+        # menu and closing the window ask it once, the same way. (It used
+        # to be asked here and then again, differently, by closeEvent.)
         self.close()
+
+    def _resolve_unsaved_before_closing(self) -> bool:
+        """Save, discard or keep unsaved documents. True means close."""
+        unsaved = [i for i in range(self.tabs.count())
+                   if (ed := self._editor_from_widget(self.tabs.widget(i)))
+                   and ed.document().isModified()]
+        if not unsaved:
+            return True
+        if len(unsaved) == 1:
+            ed = self._editor_from_widget(self.tabs.widget(unsaved[0]))
+            name = os.path.basename(ed._file_path) if getattr(ed, "_file_path", None) else "Untitled"
+            answer = _ask_save_changes(
+                self, f"Do you want to save the changes you made to \u201c{name}\u201d?")
+        else:
+            answer = _ask_save_changes(
+                self, f"Do you want to save the changes to {len(unsaved)} documents?",
+                save_label="Save All")
+        if answer == "cancel":
+            return False
+        if answer == "save":
+            for i in unsaved:
+                self.tabs.setCurrentIndex(i)
+                if not self.save():
+                    return False
+        return True
 
     def _editor_from_widget(self, w) -> HtmlEditor | None:
         if isinstance(w, HtmlEditor):
@@ -1768,17 +1693,12 @@ class MainWindow(QMainWindow):
 
         count = len(pending)
         plural = "s" if count != 1 else ""
-        prompt = QMessageBox(self)
-        prompt.setWindowTitle("Upload images")
-        prompt.setText(
-            f"Upload {count} image{plural} to your Blossom servers? They are "
-            f"already in your document and stay there either way."
-        )
-        upload_btn = prompt.addButton("Upload", QMessageBox.AcceptRole)
-        prompt.addButton("Keep local", QMessageBox.RejectRole)
-        prompt.setDefaultButton(upload_btn)
-        prompt.exec()
-        if prompt.clickedButton() is not upload_btn:
+        upload = ask(
+            self,
+            title=f"Upload {count} image{plural} to your Blossom servers?",
+            message="They're already in your document and stay there either way.",
+            buttons=(Button("Keep Local", False, CANCEL), Button("Upload", True, DEFAULT)))
+        if not upload:
             return
         for asset in pending:
             self._asset_manager.request_upload(asset.sha256)
@@ -1849,7 +1769,8 @@ class MainWindow(QMainWindow):
             with open(path, "r", encoding="utf-8") as f:
                 content = f.read()
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"File could not be read:\n{e}")
+            inform(self, title=f"Couldn't open \u201c{os.path.basename(path)}\u201d",
+                   message=str(e))
             return
 
         ed = self._new_wired_editor()
@@ -1901,8 +1822,8 @@ class MainWindow(QMainWindow):
         """Open ``path`` read-only in the built-in PDF viewer."""
         viewer = PdfViewerTab(path, is_dark=self.is_dark_theme)
         if not viewer.load_ok:
-            QMessageBox.critical(self, "Error",
-                                 f"PDF could not be opened:\n{viewer.load_error}")
+            inform(self, title=f"Couldn't open \u201c{os.path.basename(path)}\u201d",
+                   message=str(viewer.load_error))
             viewer.deleteLater()
             return
         viewer.page_changed.connect(self._on_pdf_page_changed)
@@ -1987,18 +1908,13 @@ class MainWindow(QMainWindow):
         plural = "s" if count != 1 else ""
         verb = "are" if count != 1 else "is"
         them = "them" if count != 1 else "it"
-        prompt = QMessageBox(self)
-        prompt.setWindowTitle("Images not uploaded yet")
-        prompt.setText(
-            f"{count} image{plural} in this document {verb} not uploaded to "
-            f"Blossom. Publishing now would break {them} for readers. Upload "
-            f"first, then publish."
-        )
-        upload_btn = prompt.addButton("Upload now", QMessageBox.AcceptRole)
-        prompt.addButton(QMessageBox.Cancel)
-        prompt.setDefaultButton(upload_btn)
-        prompt.exec()
-        if prompt.clickedButton() is upload_btn:
+        upload = ask(
+            self,
+            title=f"Upload {count} image{plural} before publishing?",
+            message=(f"{count} image{plural} in this document {verb} not on "
+                     f"Blossom yet. Publishing now would break {them} for readers."),
+            buttons=(Button("Cancel", False, CANCEL), Button("Upload Now", True, DEFAULT)))
+        if upload:
             for name in blocked:
                 sha = parse_asset_key(name)
                 if sha is not None:
@@ -2098,58 +2014,28 @@ class MainWindow(QMainWindow):
         return self._has_formatting(ed) or self._has_images(ed)
 
     def _warn_formatting_loss(self, ext_label: str) -> str:
-        """Show warning dialog when saving to a format that loses content.
+        """Ask before saving to a format that drops content.
         Returns 'anyway', 'html', 'rtf', or 'cancel'."""
-        msg = QMessageBox(self)
-        msg.setWindowTitle("Content will be lost")
-        msg.setIcon(QMessageBox.Warning)
-        msg.setText(
-            f"This document contains colors, text formatting or images\n"
-            f"that cannot be stored in {ext_label}."
-        )
-        anyway_btn = msg.addButton(f"Save as {ext_label} anyway", QMessageBox.DestructiveRole)
-        html_btn   = msg.addButton("Save as .html", QMessageBox.AcceptRole)
+        buttons = [
+            Button(f"Save as {ext_label} Anyway", "anyway", DESTRUCTIVE,
+                   "Formatting, colors and images will be permanently removed "
+                   "from the saved file."),
+            Button("Save as .html", "html", NORMAL,
+                   "Saves all colors, bold, italic and formatting.\n"
+                   "Best choice for editing in this editor."),
+        ]
         # Offering .rtf as the escape from an .rtf save would be a loop.
-        rtf_btn = (None if ext_label.lower() == ".rtf"
-                   else msg.addButton("Save as .rtf", QMessageBox.AcceptRole))
-        cancel_btn = msg.addButton(QMessageBox.Cancel)
-        msg.setDefaultButton(cancel_btn)
-
-        anyway_btn.setToolTip("Formatting, colors and images will be permanently removed from the saved file.")
-        html_btn.setToolTip("Saves all colors, bold, italic and formatting.\nBest choice for editing in this editor.")
-        if rtf_btn is not None:
-            rtf_btn.setToolTip("Saves all colors, bold, italic and formatting.\nCompatible with Word, LibreOffice and other apps.")
-
-        _btn_base = """
-            QPushButton {
-                padding: 6px 14px;
-                border-radius: 4px;
-                border: 1px solid;
-            }
-        """
-        anyway_btn.setStyleSheet(_btn_base + """
-            QPushButton { background: transparent; color: #CC4444; border-color: #CC4444; }
-            QPushButton:hover { background: rgba(180,40,40,0.15); color: #FF5555; border-color: #FF5555; }
-        """)
-        html_btn.setStyleSheet(_btn_base + """
-            QPushButton { background: transparent; color: #4A9F4A; border-color: #4A9F4A; }
-            QPushButton:hover { background: rgba(40,140,40,0.15); color: #5ABF5A; border-color: #5ABF5A; }
-        """)
-        if rtf_btn is not None:
-            rtf_btn.setStyleSheet(_btn_base + """
-                QPushButton { background: transparent; color: #4A9F4A; border-color: #4A9F4A; }
-                QPushButton:hover { background: rgba(40,140,40,0.15); color: #5ABF5A; border-color: #5ABF5A; }
-            """)
-
-        msg.exec()
-        clicked = msg.clickedButton()
-        if clicked == anyway_btn:
-            return 'anyway'
-        elif clicked == html_btn:
-            return 'html'
-        elif rtf_btn is not None and clicked == rtf_btn:
-            return 'rtf'
-        return 'cancel'
+        if ext_label.lower() != ".rtf":
+            buttons.append(Button(
+                "Save as .rtf", "rtf", NORMAL,
+                "Saves all colors, bold, italic and formatting.\n"
+                "Compatible with Word, LibreOffice and other apps."))
+        buttons.append(Button("Cancel", "cancel", DEFAULT))
+        return ask(
+            self, title=f"Save as {ext_label} without formatting?",
+            message=(f"This document has colors, text formatting or images "
+                     f"that {ext_label} can't store."),
+            buttons=buttons, caution=True)
 
     def save(self) -> bool:
         if self.current_pdf_viewer() is not None:
@@ -2180,11 +2066,9 @@ class MainWindow(QMainWindow):
                         return False
                     if outcome == "switch":
                         if not self._switch_active_profile_to(mismatch_pk):
-                            QMessageBox.warning(
-                                self, "Profile unavailable",
-                                "That profile is no longer connected. "
-                                "Re-pair it from Nostr → Connect Signer to save here.",
-                            )
+                            inform(
+                                self, title="That profile isn't connected anymore",
+                                message="Pair it again from Nostr > Connect Signer to save here.")
                             return False
                 self._restash_with_binding(ed, binding)
                 return True
@@ -2295,7 +2179,8 @@ class MainWindow(QMainWindow):
             return True
 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"File could not be saved:\n{e}")
+            inform(self, title=f"Couldn't save \u201c{os.path.basename(path)}\u201d",
+                   message=f"{e}\n\n{_SAVE_FAILED_HINT}", caution=True)
             return False
 
     def _on_file_changed(self, path: str):
@@ -2334,7 +2219,8 @@ class MainWindow(QMainWindow):
             with open(path, 'r', encoding='utf-8') as f:
                 content = f.read()
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Could not reload file:\n{e}")
+            inform(self, title=f"Couldn't reload \u201c{os.path.basename(path)}\u201d",
+                   message=str(e))
             return
 
         self._set_editor_content(ed, path, content)
@@ -2599,7 +2485,8 @@ class MainWindow(QMainWindow):
             self.status.showMessage(f"Saved: {path}")
             return True
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"RTF could not be saved:\n{e}")
+            inform(self, title=f"Couldn't save \u201c{os.path.basename(path)}\u201d",
+                   message=f"{e}\n\n{_SAVE_FAILED_HINT}", caution=True)
             return False
 
     def _to_rtf(self, editor) -> str:
@@ -2709,7 +2596,8 @@ class MainWindow(QMainWindow):
             self.status.showMessage(f"Saved: {path}")
             return True
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"PDF could not be saved:\n{e}")
+            inform(self, title=f"Couldn't save \u201c{os.path.basename(path)}\u201d",
+                   message=f"{e}\n\n{_SAVE_FAILED_HINT}", caution=True)
             return False
 
     # ----------------------------------------------------------------------
@@ -2717,6 +2605,81 @@ class MainWindow(QMainWindow):
     # ----------------------------------------------------------------------
     def _on_page_setup(self):
         PageSetupDialog(is_dark=self.is_dark_theme, parent=self).exec()
+
+    # ----------------------------------------------------------------------
+    # PRINT
+    # ----------------------------------------------------------------------
+    def _update_print_actions(self):
+        """Dim Print when the current tab has nothing to print."""
+        can_print = self._print_job() is not None
+        self.act_print.setEnabled(can_print)
+        self.act_print_preview.setEnabled(can_print)
+
+    def _printer(self):
+        """One printer for the window's lifetime, so the chosen printer and
+        its options carry over to the next print."""
+        if getattr(self, "_print_device", None) is None:
+            self._print_device = printing.make_printer()
+        return self._print_device
+
+    def _print_job(self):
+        """What Print prints for the current tab: ``(title, paint)``, where
+        ``paint(printer)`` prints and returns the page count. None when
+        the tab has nothing to print."""
+        viewer = self.current_pdf_viewer()
+        if viewer is not None:
+            return viewer.document_title(), lambda printer: printing.print_pdf(
+                viewer.document, printer)
+        ed = self.current_editor()
+        if ed is None:
+            return None
+        path = getattr(ed, "_file_path", None)
+        title = self._export_title_for(path) if path else "Untitled"
+        roots = self._image_roots_for(path) if path else (self._blob_cache_root(),)
+        return title, lambda printer: printing.print_document(
+            ed.document(), printer, image_roots=roots,
+            asset_resolver=self._asset_manager.export_view)
+
+    def _on_print(self):
+        job = self._print_job()
+        if job is None:
+            return
+        title, paint = job
+        printer = self._printer()
+        printing.prepare(printer, title, load_page_setup())
+        # The platform's own dialog: printer, pages, copies, and on macOS
+        # the preview.
+        if QPrintDialog(printer, self).exec() != QDialog.Accepted:
+            return
+        QGuiApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            pages = paint(printer)
+        except printing.PrintError as exc:
+            QGuiApplication.restoreOverrideCursor()
+            inform(self, title="Couldn't print",
+                   message=f"{exc} Check that it's turned on and connected, then try again.")
+            return
+        QGuiApplication.restoreOverrideCursor()
+        if pages == 0:
+            self.status.showMessage("Nothing printed: those pages aren't in the document.", 6000)
+            return
+        where = printer.outputFileName() or printer.printerName() or "the printer"
+        self.status.showMessage(
+            f"Sent {pages} page{'s' if pages != 1 else ''} to {where}.", 6000)
+
+    def _on_print_preview(self):
+        """File > Print Preview (Windows and Linux; macOS previews in its
+        print panel). The preview's own Print button prints for real."""
+        job = self._print_job()
+        if job is None:
+            return
+        title, paint = job
+        printer = self._printer()
+        printing.prepare(printer, title, load_page_setup())
+        preview = QPrintPreviewDialog(printer, self)
+        preview.setWindowTitle("Print Preview")
+        preview.paintRequested.connect(paint)
+        preview.exec()
 
     def _on_rmd_toolchain(self):
         RmdSetupDialog(is_dark=self.is_dark_theme, parent=self).exec()
@@ -2798,12 +2761,9 @@ class MainWindow(QMainWindow):
                                  want_pdf=(kind == "missing-latex"))
             dlg.exec()
             return
-        msg = QMessageBox(self)
-        msg.setWindowTitle("Knit failed")
-        msg.setIcon(QMessageBox.Warning)
-        msg.setText("The document could not be rendered.")
-        msg.setDetailedText(detail)
-        msg.exec()
+        inform(self, title="Couldn't knit the document",
+               message="R Markdown stopped with an error. The details show what it reported.",
+               details=detail)
         self.status.showMessage("Knit failed.", 5000)
 
     # ----------------------------------------------------------------------
@@ -2841,14 +2801,12 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _show_about(self):
-        QMessageBox.about(
-            self,
-            f"About {APP_DISPLAY_NAME}",
-            f"<h3>{APP_DISPLAY_NAME}</h3>"
-            f"<p>Version {APP_VERSION}</p>"
-            "<p>A minimal distraction-free text editor.</p>"
-            f'<p><a href="{APP_URL}">{APP_URL}</a></p>',
-        )
+        answer = ask(
+            self, title=APP_DISPLAY_NAME,
+            message=f"Version {APP_VERSION}\nA minimal distraction-free text editor.",
+            buttons=(Button("Source Code", "source", NORMAL), Button("OK", "ok", DEFAULT)))
+        if answer == "source":
+            self._open_external(APP_URL)
 
     # ----------------------------------------------------------------------
     # UPDATE CHECK
@@ -2872,91 +2830,47 @@ class MainWindow(QMainWindow):
         self._pending_release = info
         self.update_bar.show_update(info.version)
 
-    def _on_update_bar_download(self):
+    def _on_update_bar_clicked(self):
         info = getattr(self, "_pending_release", None)
         if info is not None:
-            self._start_update_or_open(info)
+            self._show_update_dialog(info)
 
-    def _on_update_bar_dismissed(self):
-        info = getattr(self, "_pending_release", None)
-        if info is not None:
-            save_setting("skipped_version", info.version)
-
-    def _start_update_or_open(self, info):
-        """Update in place when this install supports it, otherwise open the
-        release page in the browser (macOS, the .deb, and source runs)."""
+    def _show_update_dialog(self, info):
+        """Software Update: the same steps as the install guide, for this install."""
+        self._pending_release = info
         kind = detect_install_kind()
         asset = select_asset(kind, info.assets)
-        if supports_in_app_update(kind) and asset is not None:
-            self._run_in_app_update(kind, asset)
-        else:
-            self._open_external(info.page_url)
+        plan = plan_for(
+            kind, info.version, release_url=info.page_url, asset=asset,
+            can_self_update=supports_in_app_update(kind) and asset is not None)
+        installer = UpdateInstaller(kind, self) if plan.mode == AUTOMATIC else None
+        dlg = UpdateDialog(
+            info.version, APP_VERSION, plan,
+            release_url=info.page_url, asset=asset, installer=installer,
+            before_restart=self._confirm_save_before_update,
+            is_dark=self.is_dark_theme, parent=self)
+        if installer is not None:
+            installer.setParent(dlg)   # lives and goes with its dialog
+        dlg.skip_requested.connect(self._skip_update_version)
+        dlg.link_activated.connect(self._open_external)
+        dlg.restart_ready.connect(self._close_for_update)
+        dlg.finished.connect(dlg.deleteLater)
+        self._update_dialog = dlg
+        dlg.open()
 
-    def _run_in_app_update(self, kind, asset):
-        self._update_installer = UpdateInstaller(kind, self)
-        dlg = QProgressDialog("Downloading update…", "Cancel", 0, 100, self)
-        dlg.setWindowTitle("Updating MyEditor")
-        dlg.setWindowModality(Qt.WindowModal)
-        dlg.setMinimumDuration(0)
-        dlg.setAutoClose(False)
-        dlg.setAutoReset(False)
-        self._update_progress = dlg
+    def _skip_update_version(self, version):
+        save_setting("skipped_version", version)
+        self.update_bar.hide()
 
-        self._update_installer.progress.connect(self._on_update_progress)
-        self._update_installer.ready.connect(self._on_update_downloaded)
-        self._update_installer.failed.connect(self._on_update_failed)
-        dlg.canceled.connect(self._cancel_update)
-
-        dlg.setValue(0)
-        self._update_installer.start(asset)
-
-    def _cancel_update(self):
-        inst = getattr(self, "_update_installer", None)
-        if inst is not None:
-            inst.cancel()
-        dlg = getattr(self, "_update_progress", None)
-        if dlg is not None:
-            dlg.close()
-        # The update bar stays visible so the user can retry.
-
-    def _on_update_progress(self, percent):
-        dlg = getattr(self, "_update_progress", None)
-        if dlg is not None and percent >= 0:
-            dlg.setValue(percent)
-
-    def _on_update_downloaded(self, path):
-        dlg = getattr(self, "_update_progress", None)
-        if dlg is not None:
-            dlg.close()
-        if not self._confirm_save_before_update():
-            self._cleanup_update_file(path)
-            return
-        try:
-            self._update_installer.apply(path)
-        except Exception as e:
-            self._cleanup_update_file(path)
-            QMessageBox.critical(self, "Update Failed", f"Could not start the update.\n\n{e}")
-            return
+    def _close_for_update(self):
         # The installer (Windows) or the swap helper (AppImage) is now running
         # and will relaunch MyEditor; close so it can replace our files.
         self._closing_for_update = True
         self.close()
 
-    def _on_update_failed(self, message):
-        dlg = getattr(self, "_update_progress", None)
-        if dlg is not None:
-            dlg.close()
-        info = getattr(self, "_pending_release", None)
-        text = f"Could not download the update.\n\n{message}"
-        if info is not None:
-            r = QMessageBox.question(
-                self, "Update Failed",
-                text + "\n\nOpen the download page instead?",
-                QMessageBox.Yes | QMessageBox.No)
-            if r == QMessageBox.Yes:
-                self._open_external(info.page_url)
-        else:
-            QMessageBox.warning(self, "Update Failed", text)
+    def _open_install_guide(self):
+        """Help > Installation Help: the web guide, opened on this system."""
+        self._open_external(guide_url(detect_install_kind(), machine=platform.machine()))
 
     def _confirm_save_before_update(self):
         """Handle unsaved work before the app relaunches for an update. Returns
@@ -2970,12 +2884,11 @@ class MainWindow(QMainWindow):
         if not has_unsaved:
             return True
         r = _ask_save_changes(
-            self,
-            "MyEditor will close to install the update.\n\nSave your changes first?",
-            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel, QMessageBox.Yes)
-        if r == QMessageBox.Cancel:
+            self, "Save your changes before updating?",
+            message="MyEditor closes to install the update. Changes you don't save will be lost.")
+        if r == "cancel":
             return False
-        if r == QMessageBox.Yes:
+        if r == "save":
             for i in range(self.tabs.count()):
                 ed = self._editor_from_widget(self.tabs.widget(i))
                 if ed and ed.document().isModified():
@@ -2984,15 +2897,8 @@ class MainWindow(QMainWindow):
                         return False
         return True
 
-    def _cleanup_update_file(self, path):
-        try:
-            if path and os.path.exists(path):
-                os.remove(path)
-        except OSError:
-            pass
-
     def _check_for_updates_manual(self):
-        """Help > Check for Updates - always checks, reports via QMessageBox."""
+        """Help > Check for Updates: always checks, then shows Software Update."""
         self._manual_update_checker = UpdateChecker(self)
         self._manual_update_checker.update_available.connect(self._on_manual_update_available)
         self._manual_update_checker.up_to_date.connect(self._on_manual_up_to_date)
@@ -3001,31 +2907,20 @@ class MainWindow(QMainWindow):
         save_setting("last_update_check", time.time())
 
     def _on_manual_update_available(self, info):
-        self._pending_release = info
-        kind = detect_install_kind()
-        asset = select_asset(kind, info.assets)
-        msg = QMessageBox(self)
-        msg.setWindowTitle("Update Available")
-        msg.setText(f"Version {info.version} is available.")
-        if supports_in_app_update(kind) and asset is not None:
-            msg.setInformativeText("Download and install it now?")
-            action_btn = msg.addButton("Update Now", QMessageBox.ButtonRole.AcceptRole)
-            msg.addButton(QMessageBox.StandardButton.Cancel)
-            msg.exec()
-            if msg.clickedButton() == action_btn:
-                self._run_in_app_update(kind, asset)
-        else:
-            action_btn = msg.addButton("Open Release Page", QMessageBox.ButtonRole.AcceptRole)
-            msg.addButton(QMessageBox.StandardButton.Close)
-            msg.exec()
-            if msg.clickedButton() == action_btn:
-                self._open_external(info.page_url)
+        self._show_update_dialog(info)
 
     def _on_manual_up_to_date(self):
-        QMessageBox.information(self, "Check for Updates", "You are up to date.")
+        inform(
+            self, title="You're up to date",
+            message=f"{APP_DISPLAY_NAME} {APP_VERSION} is the newest version.",
+            is_dark=self.is_dark_theme)
 
     def _on_manual_update_failed(self, error: str):
-        QMessageBox.warning(self, "Check for Updates", "Could not reach GitHub to check for updates.")
+        inform(
+            self, title="Can't check for updates",
+            message=(f"{APP_DISPLAY_NAME} couldn't reach GitHub. Check your "
+                     "internet connection, then try again."),
+            is_dark=self.is_dark_theme)
 
     def _on_search_text_changed(self):
         needle = self.findbar.text()
@@ -3417,18 +3312,10 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         # An update relaunch already handled unsaved work, so skip the prompt.
-        if not getattr(self, "_closing_for_update", False):
-            for i in range(self.tabs.count()):
-                ed = self._editor_from_widget(self.tabs.widget(i))
-                if ed and ed.document().isModified():
-                    r = _ask_save_changes(self,
-                                          "There are unsaved changes. Close everything now?",
-                                          QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
-                    if r != QMessageBox.Yes:
-                        event.ignore()
-                        return
-                    else:
-                        break
+        if (not getattr(self, "_closing_for_update", False)
+                and not self._resolve_unsaved_before_closing()):
+            event.ignore()
+            return
         if hasattr(self, "_knit_runner"):
             self._knit_runner.kill()
         self._asset_manager.flush()
@@ -3620,16 +3507,12 @@ class MainWindow(QMainWindow):
         active = self._profile_store.default()
         if active is None:
             return
-        confirm = QMessageBox.question(
-            self,
-            "Sign out?",
-            (
-                f"Remove the profile for {active.display_name or active.npub_short()}?\n\n"
-                "Your real key stays in your signer. Only the local connection is forgotten."
-            ),
-            QMessageBox.Yes | QMessageBox.No,
-        )
-        if confirm != QMessageBox.Yes:
+        if not confirm_destructive(
+                self,
+                title=f"Sign out of {active.display_name or active.npub_short()}?",
+                message=("Your key stays in your signer. MyEditor only forgets "
+                         "this connection."),
+                action="Sign Out"):
             return
         self._session_pool.drop(active.user_pubkey)
         self._avatars.pop(active.user_pubkey, None)
@@ -3686,12 +3569,9 @@ class MainWindow(QMainWindow):
     def _on_nostr_publish_note(self):
         active = self._profile_store.default()
         if active is None:
-            QMessageBox.information(
-                self,
-                "Connect a signer first",
-                "Connect a Nostr signer before publishing. Use the avatar "
-                "chip in the header or Nostr → Connect Signer…",
-            )
+            inform(self, title="Connect a signer first",
+                   message=("Connect a Nostr signer before publishing. Use the avatar "
+                            "chip in the header or Nostr > Connect Signer\u2026"))
             return
 
         ed = self.current_editor()
@@ -3699,11 +3579,7 @@ class MainWindow(QMainWindow):
             return
         content = self._publish_text(ed, "note").strip() if ed is not None else ""
         if not content:
-            QMessageBox.information(
-                self,
-                "Nothing to publish",
-                "The current document is empty.",
-            )
+            inform(self, title="Nothing to publish", message="The current document is empty.")
             return
 
         dialog = PublishNoteDialog(
@@ -3738,12 +3614,9 @@ class MainWindow(QMainWindow):
     def _on_nostr_publish_article(self):
         active = self._profile_store.default()
         if active is None:
-            QMessageBox.information(
-                self,
-                "Connect a signer first",
-                "Connect a Nostr signer before publishing. Use the avatar "
-                "chip in the header or Nostr → Connect Signer…",
-            )
+            inform(self, title="Connect a signer first",
+                   message=("Connect a Nostr signer before publishing. Use the avatar "
+                            "chip in the header or Nostr > Connect Signer\u2026"))
             return
 
         ed = self.current_editor()
@@ -3751,11 +3624,7 @@ class MainWindow(QMainWindow):
             return
         body = self._publish_text(ed, "markdown").rstrip() if ed is not None else ""
         if not body:
-            QMessageBox.information(
-                self,
-                "Nothing to publish",
-                "The current document is empty.",
-            )
+            inform(self, title="Nothing to publish", message="The current document is empty.")
             return
 
         # Pre-fill metadata. Precedence:
@@ -3820,12 +3689,9 @@ class MainWindow(QMainWindow):
         editing while uploads run in the background."""
         active = self._profile_store.default()
         if active is None:
-            QMessageBox.information(
-                self,
-                "Connect a signer first",
-                "Connect a Nostr signer (Nostr → Connect Signer…) before "
-                "browsing your Blossom media library.",
-            )
+            inform(self, title="Connect a signer first",
+                   message=("Connect a Nostr signer (Nostr > Connect Signer\u2026) "
+                            "before browsing your Blossom media library."))
             return
         # Reading the private library is where the signer prompts are, so
         # it happens when the user opens their media and not before.
@@ -3847,12 +3713,9 @@ class MainWindow(QMainWindow):
         it at the current cursor in the active editor."""
         active = self._profile_store.default()
         if active is None:
-            QMessageBox.information(
-                self,
-                "Connect a signer first",
-                "Connect a Nostr signer (Nostr → Connect Signer…) before "
-                "inserting Blossom images.",
-            )
+            inform(self, title="Connect a signer first",
+                   message=("Connect a Nostr signer (Nostr > Connect Signer\u2026) "
+                            "before inserting Blossom images."))
             return
         ed = self.current_editor()
         if ed is None:
@@ -4035,22 +3898,15 @@ class MainWindow(QMainWindow):
         hosts = ", ".join(
             url_safety.host_of(s) or s for s in BlossomSettings().configured_servers()
         )
-        prompt = QMessageBox(self)
-        prompt.setWindowTitle("Upload pasted image")
-        prompt.setText(
-            f"Upload this image to {hosts or 'your Blossom servers'}? Anyone "
-            f"with the link can view it. The image is already in your document "
-            f"and stays there either way."
-        )
-        upload_btn = prompt.addButton("Upload", QMessageBox.AcceptRole)
-        keep_btn = prompt.addButton("Keep local", QMessageBox.RejectRole)
-        prompt.setDefaultButton(keep_btn)
-        remember = QCheckBox("Remember this choice")
-        prompt.setCheckBox(remember)
-        prompt.exec()
-
-        upload = prompt.clickedButton() is upload_btn
-        if remember.isChecked():
+        # A paste is a quick, low-intent gesture, so Keep Local is the default.
+        upload, remember = ask_with_checkbox(
+            self,
+            title=f"Upload this image to {hosts or 'your Blossom servers'}?",
+            message=("Anyone with the link can view it. The image is already in "
+                     "your document and stays there either way."),
+            buttons=(Button("Upload", True, NORMAL), Button("Keep Local", False, DEFAULT)),
+            checkbox="Remember this choice")
+        if remember:
             save_setting(_PASTE_UPLOAD_SETTING, "always" if upload else "never")
         return upload
 
@@ -4211,39 +4067,28 @@ class MainWindow(QMainWindow):
         self._run_draft_deletion(profile, deletable)
 
     def _warn_all_drafts_foreign(self, skipped: List[str]) -> None:
-        info = QMessageBox(self)
-        info.setIcon(QMessageBox.Information)
-        info.setWindowTitle("Can't remove these drafts")
         count = len(skipped)
-        info.setText(
-            "This draft was created by another Nostr client."
-            if count == 1 else
-            f"These {count} drafts were created by other Nostr clients."
-        )
-        info.setInformativeText(
-            "They use a draft format this editor doesn't recognise, so "
-            "removing them from here might leave them visible in the other "
-            "client.\n\nTo remove them cleanly, open them in the app that "
-            "created them and delete them there."
-        )
-        if skipped:
-            info.setDetailedText("\n".join(skipped))
-        info.setStandardButtons(QMessageBox.Ok)
-        info.exec()
+        inform(
+            self,
+            title=("This draft was created by another Nostr client"
+                   if count == 1 else
+                   f"These {count} drafts were created by other Nostr clients"),
+            message=("They use a draft format this editor doesn't recognise, so "
+                     "removing them from here might leave them visible in the other "
+                     "client.\n\nTo remove them cleanly, open them in the app that "
+                     "created them and delete them there."),
+            details="\n".join(skipped))
 
     def _confirm_draft_deletion(
         self, deletable: List[Tuple[str, int]], skipped: List[str],
     ) -> bool:
         count = len(deletable)
-        confirm = QMessageBox(self)
-        confirm.setIcon(QMessageBox.Warning)
-        confirm.setWindowTitle("Delete draft?" if count == 1 else "Delete drafts?")
         if count == 1:
             record = self._draft_store.get(deletable[0][0])
-            title = record.title if (record and record.title) else "this draft"
-            confirm.setText(f'Delete "{title}" from your Nostr drafts?')
+            name = record.title if (record and record.title) else "this draft"
+            heading = f"Delete \u201c{name}\u201d from your Nostr drafts?"
         else:
-            confirm.setText(f"Delete {count} drafts from your Nostr drafts?")
+            heading = f"Delete {count} drafts from your Nostr drafts?"
 
         lines = [
             "A blank-content replacement will be published to your relays. "
@@ -4266,12 +4111,11 @@ class MainWindow(QMainWindow):
                 f"{'is' if n == 1 else 'are'} not included, and will be left "
                 "alone."
             )
-        confirm.setInformativeText("\n\n".join(lines))
-        if skipped:
-            confirm.setDetailedText("Not included:\n" + "\n".join(skipped))
-        confirm.setStandardButtons(QMessageBox.Cancel | QMessageBox.Yes)
-        confirm.setDefaultButton(QMessageBox.Cancel)
-        return confirm.exec() == QMessageBox.Yes
+        return confirm_destructive(
+            self, title=heading, message="\n\n".join(lines),
+            action="Delete" if count == 1 else f"Delete {count} Drafts",
+            caution=True,
+            details=("Not included:\n" + "\n".join(skipped)) if skipped else "")
 
     def _run_draft_deletion(
         self, profile, deletable: List[Tuple[str, int]],
@@ -4287,11 +4131,8 @@ class MainWindow(QMainWindow):
                 parent=self,
             )
         except ValueError as exc:
-            QMessageBox.warning(
-                self,
-                "Couldn't start the deletion",
-                f"These drafts can't be removed from here.\n\n{exc}",
-            )
+            inform(self, title="Couldn't start the deletion",
+                   message=f"These drafts can't be removed from here.\n\n{exc}")
             return
 
         total = job.total
@@ -4339,23 +4180,16 @@ class MainWindow(QMainWindow):
         # A partial result reported as a whole one is how a user comes to
         # believe a draft is gone when it is not, so the count that did
         # not go is the headline and the reasons are one click away.
-        warn = QMessageBox(self)
-        warn.setIcon(QMessageBox.Warning)
-        warn.setWindowTitle("Some drafts were not deleted")
-        warn.setText(
-            f"{deleted} of {total} deleted."
-            if deleted else "No drafts were deleted."
-        )
-        warn.setInformativeText(
-            f"{len(failures)} could not be removed and "
-            f"{'is' if len(failures) == 1 else 'are'} still on your relays. "
-            "You can try again."
-        )
-        warn.setDetailedText("\n".join(
-            f"{identifier[:16]}: {reason}" for identifier, reason in failures
-        ))
-        warn.setStandardButtons(QMessageBox.Ok)
-        warn.exec()
+        inform(
+            self,
+            title=(f"{deleted} of {total} drafts deleted"
+                   if deleted else "No drafts were deleted"),
+            message=(f"{len(failures)} could not be removed and "
+                     f"{'is' if len(failures) == 1 else 'are'} still on your relays. "
+                     "You can try again."),
+            caution=True,
+            details="\n".join(
+                f"{identifier[:16]}: {reason}" for identifier, reason in failures))
 
     def _on_draft_sync_status(self, text: str) -> None:
         if self._drafts_panel is not None:
@@ -4427,11 +4261,9 @@ class MainWindow(QMainWindow):
                     # Profile was removed between detection and
                     # confirmation - surface and bail rather than fall
                     # through to a save under the wrong identity.
-                    QMessageBox.warning(
-                        self, "Profile unavailable",
-                        "That profile is no longer connected. "
-                        "Re-pair it from Nostr → Connect Signer to save here.",
-                    )
+                    inform(
+                        self, title="That profile isn't connected anymore",
+                        message="Pair it again from Nostr > Connect Signer to save here.")
                     return
                 # After the switch, the binding now matches active, so
                 # we proceed normally below.
@@ -4586,12 +4418,8 @@ class MainWindow(QMainWindow):
         # ask the signer to encrypt nothing. Matches the same guard the
         # publish-note and publish-article flows already use.
         if not str(inner.get("content", "")).strip():
-            QMessageBox.information(
-                self,
-                "Nothing to stash",
-                "The current document is empty. Add some content before "
-                "saving it as a draft.",
-            )
+            inform(self, title="Nothing to save as a draft",
+                   message="The current document is empty. Add some content first.")
             return
         # Pre-flight the plaintext cap with a friendly message rather
         # than letting the publish job fail mid-pipeline. The job also
@@ -4599,18 +4427,14 @@ class MainWindow(QMainWindow):
         try:
             payload_bytes = len(serialize_inner_event(inner).encode("utf-8"))
         except (KeyError, TypeError, ValueError):
-            QMessageBox.warning(
-                self, "Couldn't prepare draft",
-                "The draft contents could not be serialized for encryption.",
-            )
+            inform(self, title="Couldn't prepare the draft",
+                   message="Its contents could not be prepared for encryption.")
             return
         if payload_bytes > MAX_INNER_PAYLOAD_BYTES:
-            QMessageBox.warning(
-                self, "Draft too large",
-                f"This draft ({payload_bytes:,} bytes) exceeds the NIP-44 "
-                f"encryption limit of {MAX_INNER_PAYLOAD_BYTES:,} bytes. "
-                "Split it into smaller drafts or publish it directly.",
-            )
+            inform(self, title="This draft is too large",
+                   message=(f"It has {payload_bytes:,} bytes, and NIP-44 encryption "
+                            f"allows {MAX_INNER_PAYLOAD_BYTES:,}. Split it into smaller "
+                            "drafts or publish it directly."))
             return
 
         job = DraftPublishJob(
@@ -4631,9 +4455,7 @@ class MainWindow(QMainWindow):
             self._on_draft_stashed(_ed, _choice, eid, ts, _inner)
         )
         job.failed.connect(
-            lambda reason: QMessageBox.warning(
-                self, "Couldn't stash draft", reason
-            )
+            lambda reason: inform(self, title="Couldn't save the draft", message=reason)
         )
         # Register before starting so a synchronous failure path can't
         # leave the tab thinking nothing is in flight.
@@ -4705,9 +4527,7 @@ class MainWindow(QMainWindow):
                 tags=tags,
             )
         except ValueError as exc:
-            QMessageBox.warning(
-                self, "Couldn't prepare draft", str(exc),
-            )
+            inform(self, title="Couldn't prepare the draft", message=str(exc))
             return None
 
     def _on_draft_stashed(
@@ -4844,40 +4664,19 @@ class MainWindow(QMainWindow):
         active_label = _label_for(active, active.user_pubkey if active else "")
         original_label = _label_for(original, original_pubkey)
 
-        msg = QMessageBox(self)
-        msg.setIcon(QMessageBox.Warning)
-        msg.setWindowTitle("Different Nostr profile")
-        msg.setText(
-            f"This draft was last saved under {original_label}, "
-            f"but you're now signed in as {active_label}."
-        )
-        msg.setInformativeText(
-            "Saving under the current profile would create a separate "
-            "draft. How would you like to handle it?"
-        )
-
-        switch_btn = None
+        buttons = []
         if original is not None:
-            switch_btn = msg.addButton(
-                f"Switch to {original_label} and save",
-                QMessageBox.AcceptRole,
-            )
-        fork_btn = None
+            buttons.append(Button(f"Switch to {original_label} and Save", "switch", NORMAL))
         if allow_fork:
-            fork_btn = msg.addButton(
-                f"Save a copy under {active_label}",
-                QMessageBox.ActionRole,
-            )
-        cancel_btn = msg.addButton(QMessageBox.Cancel)
-        msg.setDefaultButton(cancel_btn)
-        msg.exec()
-
-        clicked = msg.clickedButton()
-        if switch_btn is not None and clicked is switch_btn:
-            return "switch"
-        if fork_btn is not None and clicked is fork_btn:
-            return "fork"
-        return "cancel"
+            buttons.append(Button(f"Save a Copy as {active_label}", "fork", NORMAL))
+        buttons.append(Button("Cancel", "cancel", DEFAULT))
+        return ask(
+            self,
+            title=(f"This draft was last saved as {original_label}, but you're "
+                   f"signed in as {active_label}"),
+            message=("Saving under the current profile would create a separate "
+                     "draft. How would you like to handle it?"),
+            buttons=buttons, caution=True)
 
     def _switch_active_profile_to(self, pubkey_hex: str) -> bool:
         """Switch the active Nostr profile by pubkey. Returns True on
