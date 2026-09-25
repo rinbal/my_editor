@@ -56,6 +56,14 @@ jobs:
           choco install innosetup --no-progress -y
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DMyAppVersion=$version packaging\windows\installer.iss
 
+      # The bundle is ad-hoc signed (unsigned by a developer, but sealed). An
+      # intact seal is what gives users macOS's recoverable "Open Anyway" path;
+      # a broken one shows "damaged and can't be opened" with no button at all.
+      # docs/install-guide.md walks users through that path, so guard it here.
+      - name: Check the app bundle's signature
+        if: runner.os == 'macOS'
+        run: codesign --verify --deep --strict --verbose=2 dist/*.app
+
       - name: Package macOS disk image
         if: runner.os == 'macOS'
         run: bash packaging/macos/build_dmg.sh
@@ -90,6 +98,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
+      actions: write      # dispatch the install guide refresh
     steps:
       - name: Check out repo (for the release notes file)
         uses: actions/checkout@v7
@@ -124,3 +133,12 @@ jobs:
           generate_release_notes: ${{ steps.notes.outputs.auto }}
           files: artifacts/**/*
           fail_on_unmatched_files: true
+
+      # Point the install guide's download buttons at the new files. A run
+      # started with this job's token cannot trigger workflows through a push
+      # or release event, but it can dispatch one, and dispatching on main
+      # satisfies the github-pages environment's branch rule.
+      - name: Refresh the install guide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run install-guide.yml --repo "$GITHUB_REPOSITORY" --ref main

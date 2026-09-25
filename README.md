@@ -59,14 +59,17 @@ rmarkdown, TinyTeX) install on demand from their official sources.
 
 ## Install
 
-Download the file for your system from the
+The **[step-by-step install guide](https://rinbal.github.io/my_editor/install/)**
+picks the right file for your computer and shows every security prompt with a
+picture. In short, download the file for your system from the
 [latest release](https://github.com/rinbal/my_editor/releases/latest) and open it.
 
 - **Windows:** run the `-windows-setup.exe`. If SmartScreen warns, click
   **More info**, then **Run anyway**.
-- **macOS:** open the `.dmg`, drag MyEditor onto **Applications** (follow the
-  arrow), then right-click it once and choose **Open**. Use `-arm64` for Apple
-  Silicon, `-intel` for older Macs.
+- **macOS:** open the `.dmg` and drag MyEditor onto **Applications** (follow the
+  arrow). Open it once and click **Done**, then click **Open Anyway** in
+  **System Settings > Privacy & Security**. Use `-arm64` for Apple silicon,
+  `-x86_64` for Intel Macs.
 - **Linux:** on Ubuntu, Debian, Mint, or Pop!_OS, double-click the `.deb` and
   click **Install**. On any other distribution, use the AppImage:
 
@@ -76,16 +79,19 @@ Download the file for your system from the
   ```
 
 The app is unsigned, so the first launch shows a one-time security prompt. The
-[full install guide](docs/install.md) walks through every prompt step by step.
+[install guide](https://rinbal.github.io/my_editor/install/) walks through every
+prompt step by step, and [docs/install.md](docs/install.md) has the same steps
+as text.
 
 ---
 
 ## Documentation
 
-- [Install guide](docs/install.md) - downloads, security prompts, troubleshooting
+- [Install guide](https://rinbal.github.io/my_editor/install/) ([as text](docs/install.md)) - downloads, security prompts, troubleshooting
 - [Nostr publishing, drafts, media, and RSS import](docs/nostr.md)
 - [Keyboard shortcuts, menus, and save formats](docs/usage.md)
 - [Release process](docs/release-process.md) - for maintainers
+- [Maintaining the install guide](docs/install-guide.md) - for maintainers
 
 ---
 

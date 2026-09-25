@@ -150,67 +150,40 @@ class FakeUploader(QObject):
         self.upload_failed.emit(name, reason)
 
 
-def fake_message_box(click: str | None = None):
-    """A QMessageBox stand-in class plus the list of dialogs it builds.
+def fake_alert(click: str | None = None):
+    """A stand-in for ``alerts.Alert`` plus the list of alerts it builds.
 
-    Returns ``(cls, shown)``. Patch ``cls`` over the QMessageBox name a
-    module imported, and every modal it raises lands in ``shown``
-    instead of blocking. ``click`` names the button label to answer
-    with; with no match the dialog answers with its own default button,
-    which is what dismissing a modal does.
+    Returns ``(cls, shown)``. Patch ``cls`` over ``alerts.Alert`` and every
+    alert the app raises lands in ``shown`` instead of blocking. ``click``
+    names the button label to answer with; with no match the alert answers
+    the way Escape does (its Cancel button, else its default).
 
     A fresh class per call, so no answer can leak between tests.
     """
     shown: list = []
 
-    class _Box:
-        # Roles and standard buttons are only carried, never inspected,
-        # so plain sentinels stand in for the Qt enums.
-        AcceptRole = "accept"
-        RejectRole = "reject"
-        DestructiveRole = "destructive"
-        Cancel = "cancel"
-        Warning = "warning"
-
-        def __init__(self, parent=None) -> None:
+    class _Alert:
+        def __init__(self, parent, *, title, message="", buttons=(), caution=False,
+                     details="", checkbox="", is_dark=None) -> None:
             self.parent = parent
-            self.title = ""
-            self.text = ""
-            self.buttons: list = []
-            self.default = None
-            self.checkbox = None
-            self._clicked = None
+            self.title = title
+            self.message = message
+            self.buttons = tuple(buttons)
+            self.caution = caution
+            self.details = details
+            self.checkbox = checkbox
+            self.checked = False
+            self.default = next((b for b in self.buttons if b.role == "default"), None)
             shown.append(self)
 
-        def setWindowTitle(self, title) -> None:
-            self.title = title
-
-        def setText(self, text) -> None:
-            self.text = text
-
-        def setIcon(self, icon) -> None:
-            pass
-
-        def setCheckBox(self, box) -> None:
-            self.checkbox = box
-
-        def setDefaultButton(self, button) -> None:
-            self.default = button
-
-        def addButton(self, label, role=None):
-            button = SimpleNamespace(label=str(label), role=role)
-            self.buttons.append(button)
-            return button
-
-        def exec(self) -> int:
+        def run(self):
             named = [b for b in self.buttons if b.label == click]
-            self._clicked = named[0] if named else self.default
-            return 0
+            if named:
+                return named[0].value
+            cancel = next((b for b in self.buttons if b.role == "cancel"), None)
+            return (cancel or self.default).value
 
-        def clickedButton(self):
-            return self._clicked
-
-    return _Box, shown
+    return _Alert, shown
 
 
 def make_media(sha256: str, *, url=None, servers=("https://cdn.example",),

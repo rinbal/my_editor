@@ -36,6 +36,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QApplication
 
+import alerts
 import image_safety
 import main_window as main_window_module
 from doc_walk import (
@@ -48,7 +49,7 @@ from nostr.media.assets import ASSET_SCHEME, AssetIndex
 from nostr.media.manager import AssetManager
 
 from tests.media_fakes import (
-    GIF_BYTES, PNG_BYTES, FakeBlobStore, FakeUploader, fake_message_box,
+    GIF_BYTES, PNG_BYTES, FakeBlobStore, FakeUploader, fake_alert,
 )
 
 
@@ -495,11 +496,11 @@ def test_publish_gate_stops_a_document_with_an_unuploaded_image(tmp_path,
         MainWindow._confirm_images_uploaded, win)
     local = win.local_asset()
     ed = _editor_with(local)
-    box, shown = fake_message_box(click="Upload now")
-    monkeypatch.setattr(main_window_module, "QMessageBox", box)
+    box, shown = fake_alert(click="Upload Now")
+    monkeypatch.setattr(alerts, "Alert", box)
 
     assert win._confirm_images_uploaded(ed) is False
-    assert [d.title for d in shown] == ["Images not uploaded yet"]
+    assert [d.title for d in shown] == ["Upload 1 image before publishing?"]
     assert win._asset_manager.get(local.sha256).upload_state.value != "local", (
         "Upload now has to actually queue the blocked asset"
     )
@@ -511,8 +512,8 @@ def test_publish_gate_passes_a_document_whose_images_are_all_reachable(tmp_path,
     win._confirm_images_uploaded = types.MethodType(
         MainWindow._confirm_images_uploaded, win)
     ed = _editor_with(win.uploaded_asset())
-    box, shown = fake_message_box()
-    monkeypatch.setattr(main_window_module, "QMessageBox", box)
+    box, shown = fake_alert()
+    monkeypatch.setattr(alerts, "Alert", box)
 
     assert win._confirm_images_uploaded(ed) is True
     assert shown == [], "nothing to warn about, so no modal"

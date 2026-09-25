@@ -1,0 +1,61 @@
+name: Install guide
+
+# Publishes site/ (the step-by-step install guide) to GitHub Pages, with
+# downloads.json pointing at the latest release's files. Runs when the site
+# changes on main, when build-installers.yml publishes a release (it dispatches
+# this workflow), and on demand from the Actions tab.
+#
+# One-time setup: Settings > Pages > Source: GitHub Actions.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "release_assets.py"
+      - "packaging/site/**"
+      - "packaging/icons/icon-256.png"
+      - ".github/workflows/install-guide.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: install-guide
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build the site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Build site with the latest release's downloads
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python packaging/site/build_site.py --out _site
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}install/
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

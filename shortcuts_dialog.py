@@ -62,6 +62,7 @@ SHORTCUT_GROUPS: Tuple[ShortcutGroup, ...] = (
             Shortcut("Ctrl+O",          "Open file"),
             Shortcut("Ctrl+S",          "Save"),
             Shortcut("Ctrl+Shift+S",    "Save As"),
+            Shortcut("Ctrl+P",          "Print"),
             Shortcut("Ctrl+Shift+K",    "Knit R Markdown to HTML"),
             Shortcut("Ctrl+W",          "Close tab"),
             Shortcut("Ctrl+Q",          "Quit"),

@@ -22,9 +22,17 @@ from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication
 
 from constants import (
-    DARK_BG, DARK_FG, DARK_MENU_BG, DARK_MUTED_FG, DARK_SELECTION,
-    LIGHT_BG, LIGHT_FG, LIGHT_MENU_BG, LIGHT_MUTED_FG, LIGHT_SELECTION,
+    DARK_BG, DARK_BORDER, DARK_FG, DARK_MENU_BG, DARK_MUTED_FG, DARK_SELECTION,
+    LIGHT_BG, LIGHT_BORDER, LIGHT_FG, LIGHT_MENU_BG, LIGHT_MUTED_FG, LIGHT_SELECTION,
 )
+
+# Dialog buttons, per theme: the default action in the accent color and a
+# destructive action in red text, as Apple's alerts do. Every color here is
+# chosen against its own theme's surfaces, so no button can end up as light
+# text on a light background.
+_DIALOG_ACCENT = {True: ("#007ACC", "#1177C7"), False: (LIGHT_SELECTION, "#106EBE")}
+_DIALOG_DESTRUCTIVE = {True: "#FF6B5E", False: "#C0392B"}
+_DIALOG_LINK = {True: "#4FA3F7", False: LIGHT_SELECTION}
 
 
 def _palette(is_dark: bool) -> QPalette:
@@ -68,6 +76,53 @@ def _palette(is_dark: bool) -> QPalette:
         p.setColor(group.Disabled, r, QColor(muted_fg))
 
     return p
+
+
+def is_dark_active() -> bool:
+    """Whether the dark palette is the one currently applied.
+
+    Read back from the application palette that apply_app_theme() sets, so
+    dialogs can follow the theme without it being passed to every call.
+    """
+    app = QApplication.instance()
+    return app is not None and app.palette().color(QPalette.Window).lightness() < 128
+
+
+def dialog_stylesheet(is_dark: bool) -> str:
+    """Base stylesheet for the app's own dialogs (alerts.py, update_dialog.py).
+
+    Covers the surface, text, and the three kinds of push button: normal,
+    default (``setDefault(True)``), and destructive (objectName
+    ``destructive``). Dialogs append their own rules after it.
+    """
+    if is_dark:
+        bg, fg, muted, border, field = DARK_BG, DARK_FG, DARK_MUTED_FG, DARK_BORDER, DARK_MENU_BG
+    else:
+        bg, fg, muted, border, field = LIGHT_BG, LIGHT_FG, LIGHT_MUTED_FG, LIGHT_BORDER, LIGHT_MENU_BG
+    accent, accent_hover = _DIALOG_ACCENT[is_dark]
+    destructive = _DIALOG_DESTRUCTIVE[is_dark]
+    return f"""
+    QDialog {{ background: {bg}; }}
+    QLabel {{ color: {fg}; font-size: 13px; }}
+    QPushButton {{
+        background: {field}; color: {fg}; border: 1px solid {border};
+        padding: 6px 14px; border-radius: 5px; min-width: 72px;
+    }}
+    QPushButton:hover {{ border-color: {muted}; }}
+    QPushButton:default {{ background: {accent}; color: #FFFFFF; border-color: {accent}; }}
+    QPushButton:default:hover {{ background: {accent_hover}; border-color: {accent_hover}; }}
+    QPushButton#destructive {{ color: {destructive}; }}
+    QPushButton#destructive:hover {{ border-color: {destructive}; }}
+    """
+
+
+def dialog_link_color(is_dark: bool) -> str:
+    """Link color for rich-text labels in the app's dialogs.
+
+    The palette's Link role doubles as the selection color, which is too
+    dark to read as a link on the dark theme's background.
+    """
+    return _DIALOG_LINK[is_dark]
 
 
 def apply_app_theme(is_dark: bool) -> None:

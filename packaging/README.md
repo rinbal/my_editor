@@ -10,7 +10,12 @@ packaging/
   windows/installer.iss Inno Setup installer wizard
   macos/                build_dmg.sh + the styled drag-to-Applications background
   linux/                AppRun, .desktop, build_appimage.sh, build_deb.sh
+  site/build_site.py    builds the install guide (site/) for GitHub Pages
 ```
+
+Installer file names follow one pattern per platform, and `release_assets.py`
+maps them to keys that the in-app updater and the install guide share. Rename
+an installer there too, or both will stop finding it.
 
 Each platform gives users the pattern they expect: a click-through wizard on
 Windows, a styled drag-to-Applications disk image on macOS, and a double-click
@@ -31,6 +36,9 @@ That script bumps `APP_VERSION` in `constants.py`, commits it, pushes the code t
 Intel) and Linux and publishes a GitHub Release that uses
 `docs/releases/v<version>.md` as the body and attaches every platform installer
 as assets. Nothing is built locally (each installer can only be built on its own OS).
+Once the release is out, the workflow dispatches `install-guide.yml`, which
+redeploys the [install guide](../docs/install-guide.md) so its download buttons
+point at the new files.
 
 Use the **Run workflow** button on the Actions tab (workflow_dispatch) to build
 without tagging; it uploads the installers as artifacts but does not publish a

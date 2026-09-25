@@ -5,6 +5,7 @@ __pycache__/
 *.pyo
 *.pdf
 *.html
+!site/**/*.html
 *.txt
 !requirements.txt
 .claude
@@ -15,4 +16,6 @@ TELEGRAM_PUBLISHER_PLAN.md
 # Packaging build outputs (installers are published via GitHub Releases)
 build/
 dist/
+# Local builds of the install guide (packaging/site/build_site.py)
+_site/
 packaging/icons/icon.iconset/

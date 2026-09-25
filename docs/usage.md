@@ -10,6 +10,7 @@
 | `Ctrl+O` | Open file |
 | `Ctrl+S` | Save (local file, or silent re-save of a draft tab) |
 | `Ctrl+Shift+S` | Save As (choose local file or Nostr draft) |
+| `Ctrl+P` | Print the current tab (`Cmd+P` on macOS) |
 | `Ctrl+Shift+K` | Knit R Markdown to HTML (`.Rmd` tabs) |
 | `Ctrl+W` | Close tab |
 | `Ctrl+Q` | Quit |
@@ -130,6 +131,20 @@ Right-clicking a **tab** opens a context menu with:
 
 - **Rename**: rename the file on disk and update the tab (greyed out for unsaved files)
 - **Delete File**: move the file to system trash with a confirmation dialog (greyed out for unsaved files)
+
+---
+
+## Printing
+
+`File > Print…` (`Ctrl+P`, `Cmd+P` on macOS) prints the current tab through the
+system's print dialog, where you pick the printer, the pages and the number of
+copies. A note prints exactly as the `.pdf` export lays it out: the paper size,
+orientation and margins from `File > Page Setup…`, images scaled to the page,
+and a "Page N of M" footer. A PDF tab prints its own pages, each scaled to fit.
+The printer you chose and its options stay selected until you quit.
+
+macOS shows a preview inside its print dialog. On Windows and Linux,
+`File > Print Preview…` shows the pages before they print.
 
 ---
 

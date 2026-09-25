@@ -15,6 +15,8 @@ Geometry notes, established empirically against QPdfDocument:
   behavior) keeps runs contiguous.
 - QTextImageFormat sizes are in CSS pixels (96 per inch): an image with
   no explicit size renders at intrinsic_px * 72/96 points.
+- The same pagination prints (printing.py): paginate() and paint_pages()
+  work on any paged device, so a printed page matches the exported one.
 - doc.clone() returns a plain QTextDocument, so any resource resolver
   installed on the editor widget does not apply to it. Every image is
   therefore primed into the clone before layout: without that a cold
@@ -25,6 +27,7 @@ Geometry notes, established empirically against QPdfDocument:
 
 import json
 import os
+from dataclasses import dataclass
 
 from PySide6.QtCore import QMarginsF, QRectF, QSizeF, Qt, QLocale, QUrl
 from PySide6.QtGui import (
@@ -201,6 +204,87 @@ def _cap_image_widths(doc, available_css_px: float, sizes: dict) -> None:
         block = block.next()
 
 
+@dataclass
+class PagedDocument:
+    """A document laid out into pages for one paged device.
+
+    ``clone`` is the private copy that was laid out; sizes are in the
+    device's pixels. Shared by export_pdf() and printing.py, so a printed
+    page and an exported page are the same page.
+    """
+    clone: QTextDocument
+    page_width: float
+    content_height: float
+    footer_height: float
+    page_count: int
+
+
+def paginate(doc, device, resolution: int, *, image_roots=(), asset_resolver=None) -> PagedDocument:
+    """Lay ``doc`` out into pages for ``device`` (a QPdfWriter or a QPrinter).
+
+    Works on a clone, so the editor's document is never touched. See the
+    module docstring for why images are primed and fonts are measured
+    against the device.
+    """
+    paint = device.pageLayout().paintRectPixels(resolution)
+    page_w = float(paint.width())
+    footer_px = FOOTER_BAND_PT * resolution / 72.0
+    content_h = float(paint.height()) - footer_px
+
+    clone = doc.clone()
+    sizes = _prime_clone_images(clone, ImageRootPolicy(image_roots), asset_resolver)
+    # Layout must measure fonts against the device's dpi, exactly as
+    # doc.print_() would.
+    clone.documentLayout().setPaintDevice(device)
+    # Print in points, not the editor's 14 screen pixels, and force a white
+    # page regardless of the active theme. Palette colors (Material 600)
+    # are chosen to stay readable on white.
+    clone.setDefaultFont(QFont(MONO_FONT, BODY_POINT_SIZE))
+    frame_fmt = clone.rootFrame().frameFormat()
+    frame_fmt.setBackground(QColor("white"))
+    clone.rootFrame().setFrameFormat(frame_fmt)
+
+    paint_width_pt = page_w * 72.0 / resolution
+    _cap_image_widths(clone, paint_width_pt * 96.0 / 72.0, sizes)
+
+    clone.setTextWidth(page_w)
+    clone.setPageSize(QSizeF(page_w, content_h))
+    return PagedDocument(clone, page_w, content_h, footer_px, clone.pageCount())
+
+
+def paint_pages(painter: QPainter, device, paged: PagedDocument, page_numbers) -> None:
+    """Paint the given 1-based pages of ``paged`` onto ``device``.
+
+    The footer always counts against the whole document, so page 3 of a
+    printed range still says "Page 3 of 7".
+    """
+    layout = paged.clone.documentLayout()
+    footer_font = QFont(MONO_FONT, FOOTER_POINT_SIZE)
+    content_h = paged.content_height
+    for n, number in enumerate(page_numbers):
+        page = number - 1
+        if n:
+            device.newPage()
+        painter.save()
+        painter.translate(0, -page * content_h)
+        ctx = QAbstractTextDocumentLayout.PaintContext()
+        ctx.clip = QRectF(0, page * content_h, paged.page_width, content_h)
+        # Unset-color text must not inherit the app palette: in dark
+        # theme that would paint near-white on the white page.
+        ctx.palette.setColor(QPalette.Text, Qt.black)
+        layout.draw(painter, ctx)
+        painter.restore()
+
+        if paged.page_count > 1:
+            painter.save()
+            painter.setPen(QColor(FOOTER_COLOR))
+            painter.setFont(footer_font)
+            painter.drawText(QRectF(0, content_h, paged.page_width, paged.footer_height),
+                             Qt.AlignHCenter | Qt.AlignVCenter,
+                             f"Page {number} of {paged.page_count}")
+            painter.restore()
+
+
 def export_pdf(doc, path: str, title: str = "", page_setup: dict | None = None,
                *, image_roots=(), asset_resolver=None) -> None:
     """Write the document to ``path`` as a paginated PDF.
@@ -219,57 +303,12 @@ def export_pdf(doc, path: str, title: str = "", page_setup: dict | None = None,
     writer.setCreator(CREATOR)
     writer.setPageLayout(make_page_layout(setup))
 
-    paint = writer.pageLayout().paintRectPixels(RESOLUTION)
-    page_w = float(paint.width())
-    footer_px = FOOTER_BAND_PT * RESOLUTION / 72.0
-    content_h = float(paint.height()) - footer_px
-
-    clone = doc.clone()
-    sizes = _prime_clone_images(clone, ImageRootPolicy(image_roots), asset_resolver)
-    # Layout must measure fonts against the writer's dpi, exactly as
-    # doc.print_() would.
-    clone.documentLayout().setPaintDevice(writer)
-    # Print in points, not the editor's 14 screen pixels, and force a white
-    # page regardless of the active theme. Palette colors (Material 600)
-    # are chosen to stay readable on white.
-    clone.setDefaultFont(QFont(MONO_FONT, BODY_POINT_SIZE))
-    frame_fmt = clone.rootFrame().frameFormat()
-    frame_fmt.setBackground(QColor("white"))
-    clone.rootFrame().setFrameFormat(frame_fmt)
-
-    paint_width_pt = page_w * 72.0 / RESOLUTION
-    _cap_image_widths(clone, paint_width_pt * 96.0 / 72.0, sizes)
-
-    clone.setTextWidth(page_w)
-    clone.setPageSize(QSizeF(page_w, content_h))
-    pages = clone.pageCount()
-
+    paged = paginate(doc, writer, RESOLUTION, image_roots=image_roots,
+                     asset_resolver=asset_resolver)
     painter = QPainter(writer)
     if not painter.isActive():
         raise OSError(f"could not open {path!r} for writing")
     try:
-        layout = clone.documentLayout()
-        footer_font = QFont(MONO_FONT, FOOTER_POINT_SIZE)
-        for page in range(pages):
-            if page:
-                writer.newPage()
-            painter.save()
-            painter.translate(0, -page * content_h)
-            ctx = QAbstractTextDocumentLayout.PaintContext()
-            ctx.clip = QRectF(0, page * content_h, page_w, content_h)
-            # Unset-color text must not inherit the app palette: in dark
-            # theme that would paint near-white on the white page.
-            ctx.palette.setColor(QPalette.Text, Qt.black)
-            layout.draw(painter, ctx)
-            painter.restore()
-
-            if pages > 1:
-                painter.save()
-                painter.setPen(QColor(FOOTER_COLOR))
-                painter.setFont(footer_font)
-                painter.drawText(QRectF(0, content_h, page_w, footer_px),
-                                 Qt.AlignHCenter | Qt.AlignVCenter,
-                                 f"Page {page + 1} of {pages}")
-                painter.restore()
+        paint_pages(painter, writer, paged, range(1, paged.page_count + 1))
     finally:
         painter.end()

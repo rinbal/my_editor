@@ -72,6 +72,7 @@ Thanks to everyone who shipped this release:
 
 ## Download
 
+- Install guide: https://rinbal.github.io/my_editor/install/
 - Github: https://github.com/rinbal/my_editor
 ```
 
