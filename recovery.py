@@ -27,6 +27,7 @@ import uuid
 from PySide6.QtCore import QTimer
 
 from doc_walk import iter_image_names
+from export_html import normalize_lists_after_set_html
 from nostr.media.assets import ASSET_SCHEME
 
 
@@ -35,7 +36,7 @@ _DEBOUNCE_MS = 3_000
 _MAX_INTERVAL_MS = 10_000
 
 # Current record format. Readers must skip anything higher (see
-# classify_backup's caller) rather than guess at its meaning.
+# is_restorable) rather than guess at its meaning.
 BACKUP_VERSION = 2
 
 # Truncated HTML is corrupt HTML, so an oversized snapshot is skipped
@@ -75,6 +76,47 @@ def _source_mtime_ns(file_path: str | None) -> int | None:
         return os.stat(file_path).st_mtime_ns
     except OSError:
         return None
+
+
+def document_is_empty(doc) -> bool:
+    """True when a document holds nothing worth keeping: no text, no image.
+
+    The one test for it: an empty document's HTML is still a full skeleton,
+    so the length of its HTML says nothing.
+    """
+    return doc.characterCount() <= 1 and not any(True for _ in iter_image_names(doc))
+
+
+def is_restorable(record: dict) -> bool:
+    """Whether this build can read a backup record.
+
+    A record without a version is the old plain-text format. One written
+    by a newer build, or in a format this build does not know, is left on
+    disk untouched rather than guessed at.
+    """
+    version = record.get("version")
+    if version is None:
+        return True
+    return (isinstance(version, int) and not isinstance(version, bool)
+            and version <= BACKUP_VERSION and record.get("format") == "html")
+
+
+def load_backup_content(editor, record: dict, *, modified: bool = True) -> None:
+    """Put a backup record's content into ``editor``, with no undo history.
+
+    Call is_restorable first. Set the editor's file path before calling:
+    image names beside the original file resolve against it.
+    """
+    content = record.get("content", "")
+    if record.get("version") is None:
+        # Version 1 stored plain text. Restoring it as HTML would render
+        # the user's angle brackets as markup.
+        editor.setPlainText(content)
+    else:
+        editor.setHtml(content)
+        normalize_lists_after_set_html(editor.document())
+    editor.document().clearUndoRedoStacks()
+    editor.document().setModified(modified)
 
 
 def classify_backup(record: dict) -> str:
@@ -149,14 +191,42 @@ class EditorBackup:
         self._timer.stop()
         return self._write()
 
-    def delete(self) -> None:
-        """Call on normal close: stop the timers and remove the backup file."""
+    def take_over(self, old_file: str) -> bool:
+        """Protect the editor's restored content under this backup, then
+        remove ``old_file``, the record that content came from.
+
+        The replacement is written first: removing the old file before its
+        successor exists is a window in which a second crash loses
+        everything. A restored document that kept its path derives the
+        same backup ID, so the replacement can be the old file itself, and
+        then it stays. True when the content is safe on disk.
+        """
+        if not self.write_now():
+            return False
+        if os.path.abspath(old_file) != os.path.abspath(self.path):
+            try:
+                os.remove(old_file)
+            except OSError:
+                pass
+        return True
+
+    def release(self) -> None:
+        """Stop writing but keep the file on disk.
+
+        Used when MyEditor closes for an update: the next launch restores
+        the tab from this file (workspace.py), so deleting it here would
+        lose exactly the work the restart promised to keep.
+        """
         self._timer.stop()
         self._max_timer.stop()
         try:
             self._editor.document().contentsChanged.disconnect(self._schedule)
         except RuntimeError:
             pass
+
+    def delete(self) -> None:
+        """Call on normal close: stop the timers and remove the backup file."""
+        self.release()
         if os.path.exists(self.path):
             try:
                 os.remove(self.path)
@@ -196,10 +266,8 @@ class EditorBackup:
 
     def _write(self) -> bool:
         """Write the snapshot. False means nothing usable is on disk yet."""
-        doc = self._editor.document()
-        has_image = any(True for _ in iter_image_names(doc))
-        if doc.characterCount() <= 1 and not has_image:
-            return False  # an empty document's HTML is still a full skeleton
+        if document_is_empty(self._editor.document()):
+            return False
 
         content = self._snapshot()
         fingerprint = hashlib.sha256(
@@ -234,6 +302,23 @@ class EditorBackup:
             return False  # backup is best-effort; never raise to the user
         self._last_hash = fingerprint
         return True
+
+
+def read_backup(path: str) -> dict | None:
+    """One backup record by file path, or None if it is missing or unreadable.
+
+    The record carries ``_backup_file`` like the ones find_all_backups
+    returns, so either can be handed to the same restore code.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    data["_backup_file"] = path
+    return data
 
 
 def find_all_backups() -> list[dict]:

@@ -369,7 +369,7 @@ def test_a_forward_version_record_is_left_on_disk_and_skipped(tmp_path):
     record = dict(json.loads(payload), _backup_file=str(path))
     win = _window_stub()
 
-    assert MainWindow._restore_one_backup(win, record) is False
+    assert MainWindow._restore_one_backup(win, record) is None
 
     assert path.read_text(encoding="utf-8") == payload
     assert win.tabs.titles == []
@@ -383,9 +383,73 @@ def test_an_unknown_format_is_left_on_disk_and_skipped(tmp_path):
     record = dict(json.loads(payload), _backup_file=str(path))
     win = _window_stub()
 
-    assert MainWindow._restore_one_backup(win, record) is False
+    assert MainWindow._restore_one_backup(win, record) is None
 
     assert path.read_text(encoding="utf-8") == payload
+
+
+# --------------------------------------------------------------------------- #
+# The helpers crash recovery and the update restart share
+# --------------------------------------------------------------------------- #
+
+def test_restoring_returns_the_editor_it_opened(tmp_path):
+    path = tmp_path / "old.autosave"
+    path.write_text("{}", encoding="utf-8")
+    record = {"original_path": None, "content": "x", "_backup_file": str(path)}
+    win = _window_stub()
+    assert MainWindow._restore_one_backup(win, record) is win.editors[-1]
+
+
+def test_only_known_formats_are_restorable():
+    assert recovery.is_restorable({})                                   # version 1, plain text
+    assert recovery.is_restorable({"version": 2, "format": "html"})
+    assert not recovery.is_restorable({"version": 3, "format": "html"})  # a newer build
+    assert not recovery.is_restorable({"version": 2, "format": "rtf"})
+    assert not recovery.is_restorable({"version": True, "format": "html"})
+    assert not recovery.is_restorable({"version": "2", "format": "html"})
+
+
+def test_loading_a_backup_leaves_no_undo_history_and_the_given_modified_flag():
+    ed = HtmlEditor()
+    recovery.load_backup_content(ed, {"version": 2, "format": "html",
+                                      "content": "<p>kept</p>"}, modified=False)
+    assert ed.toPlainText() == "kept"
+    assert not ed.document().isModified()
+    assert not ed.document().isUndoAvailable()
+
+    recovery.load_backup_content(ed, {"content": "a <b> tag"})   # version 1: plain text
+    assert ed.toPlainText() == "a <b> tag"
+    assert ed.document().isModified()
+
+
+def test_taking_over_writes_the_replacement_before_removing_the_old_record(tmp_path):
+    old = tmp_path / "old.autosave"
+    old.write_text("{}", encoding="utf-8")
+    backup = recovery.EditorBackup(_editor("restored"), None)
+    assert backup.take_over(str(old))
+    assert not old.exists()
+    assert _record_of(backup)["content"]
+
+
+def test_taking_over_keeps_the_old_record_when_nothing_could_be_written(tmp_path):
+    old = tmp_path / "old.autosave"
+    old.write_text("{}", encoding="utf-8")
+    backup = recovery.EditorBackup(HtmlEditor(), None)   # empty: nothing to write
+    assert backup.take_over(str(old)) is False
+    assert old.exists()
+
+
+def test_taking_over_its_own_file_keeps_it(tmp_path):
+    backup = recovery.EditorBackup(_editor("restored"), str(tmp_path / "note.html"))
+    assert backup.write_now()
+    assert backup.take_over(backup.path)
+    assert os.path.exists(backup.path)
+
+
+def test_an_empty_document_is_empty_and_an_image_is_not():
+    assert recovery.document_is_empty(HtmlEditor().document())
+    assert not recovery.document_is_empty(_editor("x").document())
+    assert not recovery.document_is_empty(_editor_with_image(text="").document())
 
 
 # --------------------------------------------------------------------------- #

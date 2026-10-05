@@ -94,12 +94,29 @@ Click **Update…** to open **Software Update**, which lists the steps for the
 way you installed MyEditor. You can also check any time from **Help > Check for
 Updates…**.
 
-- **Windows and the AppImage:** click **Update Now**. MyEditor downloads the
-  update, offers to save unsaved work, closes, and reopens on the new version.
-- **macOS and the `.deb`:** updating takes the same steps as installing. Click
-  **Open Update Guide** to follow them in the
-  [install guide](https://rinbal.github.io/my_editor/install/), opened for your
-  system and in update mode.
+Software Update shows what's new in the release, then, for most installs,
+updates in place when you click **Install Update**:
+
+- **Windows, the AppImage, macOS and the `.deb`:** MyEditor downloads the
+  update, checks it against the fingerprint (SHA-256) GitHub published for
+  it, closes, and opens again on the new version. On macOS it first copies
+  the new app next to the old one and checks its signature; with the `.deb`,
+  your system asks for your password before anything is installed.
+- **Every open tab comes back** after the restart, in the same order, with
+  its cursor position, its Nostr draft link, and any changes you hadn't
+  saved yet, so there is nothing to save first. Only if MyEditor can't keep
+  a copy of a document (for example because the disk is full) does it ask
+  whether to save that document before it closes.
+- Afterwards a banner says which version you're using now. **What's New**
+  shows the release notes.
+
+When MyEditor can't replace itself (for example a Mac app that was never
+moved out of the Downloads folder, or a folder you can't write to),
+Software Update lists the same steps as installing instead. Click **Open
+Update Guide** to follow them in the
+[install guide](https://rinbal.github.io/my_editor/install/), opened for your
+system and in update mode. If an update ever doesn't install, MyEditor says
+so when it opens again, with your documents still open.
 
 **Skip This Version** hides the banner until the next release. Closing the
 banner only hides it for now. Your notes and settings carry over across

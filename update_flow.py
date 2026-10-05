@@ -10,11 +10,13 @@ describe one flow, and the copy can be tested without a window.
 
 Three modes:
 
-    AUTOMATIC    MyEditor downloads the update, closes, and reopens on it
-                 (Windows installer, writable AppImage).
+    AUTOMATIC    MyEditor downloads the update, checks it, closes, and
+                 reopens on it with every tab as it was (Windows installer,
+                 a writable AppImage, a Mac app in a writable folder, the
+                 .deb when the system can ask for a password).
     GUIDED       Updating repeats the install steps, so the dialog lists them
-                 and hands off to the install guide in update mode (macOS, the
-                 .deb, and any install that cannot replace itself).
+                 and hands off to the install guide in update mode (any
+                 install that cannot replace itself).
     FROM_SOURCE  A git checkout: the steps are commands.
 """
 
@@ -31,11 +33,19 @@ GUIDED = "guided"
 FROM_SOURCE = "source"
 
 
+# What a step of an AUTOMATIC plan does, so the dialog can find the row
+# to update without counting on how many steps a plan has.
+DOWNLOAD = "download"
+PREPARE = "prepare"
+RESTART = "restart"
+
+
 @dataclass(frozen=True)
 class Step:
     title: str
     detail: str
     command: str = ""   # a shell line shown with a Copy button
+    role: str = ""      # DOWNLOAD, PREPARE or RESTART in an AUTOMATIC plan
 
 
 @dataclass(frozen=True)
@@ -85,22 +95,29 @@ def plan_for(kind: str, version: str, *, release_url: str, asset=None,
 def _automatic_plan(kind, version, asset, guide) -> UpdatePlan:
     size = _megabytes(getattr(asset, "size", 0))
     download = "MyEditor downloads the update from GitHub"
-    download += f" ({size} MB)." if size else "."
-    if kind == APPIMAGE:
-        restart = "MyEditor swaps in the new AppImage and opens again."
+    download += f" ({size} MB)" if size else ""
+    download += " and checks that it arrived intact."
+    steps = [Step("Download", download, role=DOWNLOAD)]
+    if kind == MACOS_APP:
+        steps.append(Step("Install", "MyEditor puts the new version next to this one "
+                                     "and checks its signature.", role=PREPARE))
+    elif kind == DEB:
+        steps.append(Step("Install", "Your system asks for your password, "
+                                     "then installs the update.", role=PREPARE))
+    if kind == WINDOWS_INSTALLER:
+        restart = "The installer replaces this version and opens MyEditor again"
+    elif kind == APPIMAGE:
+        restart = "MyEditor swaps in the new AppImage and opens again"
     else:
-        restart = "The installer replaces the old version and opens MyEditor again."
+        restart = "MyEditor closes and opens again on the new version"
+    steps.append(Step("Restart", restart + ", with your tabs just as you left them.",
+                      role=RESTART))
     return UpdatePlan(
         mode=AUTOMATIC,
-        intro=(f"MyEditor downloads version {version}, closes, and opens again "
-               "on the new version. Your settings and documents stay where they are."),
-        steps=(
-            Step("Download", download),
-            Step("Save your work",
-                 "If a document has unsaved changes, MyEditor asks whether to save it first."),
-            Step("Restart", restart),
-        ),
-        primary_label="Update Now",
+        intro=(f"MyEditor installs version {version} and opens again. Every open "
+               "document comes back, including changes you haven't saved."),
+        steps=tuple(steps),
+        primary_label="Install Update",
         guide_url=guide,
     )
 

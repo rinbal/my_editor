@@ -524,14 +524,19 @@ class FileChangedBar(QWidget):
 
 
 class UpdateBar(QWidget):
-    """Notification bar shown at the top of the window when a newer app version is available.
+    """Notification bar at the top of the window about the app's version.
 
-    It only announces the update. "Update\u2026" opens Software Update, where the
-    person chooses; closing the bar means Later (skipping a version is an
-    explicit button in that dialog, never a side effect of closing this).
+    Two messages, one place:
+
+    - A newer version is available. It only announces the update.
+      "Update\u2026" opens Software Update, where the person chooses; closing
+      the bar means Later (skipping a version is an explicit button in that
+      dialog, never a side effect of closing this).
+    - MyEditor was just updated. "What\u2019s New" shows the release notes.
     """
 
     update_requested = Signal()
+    whats_new_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -549,11 +554,13 @@ class UpdateBar(QWidget):
         self._text = QLabel()
         self._update_btn = QPushButton("Update\u2026")
         self._update_btn.setFixedHeight(26)
-        self._update_btn.clicked.connect(self.update_requested)
+        self._update_btn.clicked.connect(self._on_button)
+        self._mode = "available"
 
         self._dismiss_btn = QPushButton("×")
         self._dismiss_btn.setFixedSize(26, 26)
         self._dismiss_btn.setToolTip("Later")
+        self._dismiss_btn.setAccessibleName("Close")
         self._dismiss_btn.clicked.connect(self.hide)
 
         layout.addWidget(self._text, 1)
@@ -564,8 +571,26 @@ class UpdateBar(QWidget):
         self.hide()
 
     def show_update(self, version: str):
+        self._mode = "available"
+        self._icon.setText("\u2b06")
         self._text.setText(f"MyEditor {version} is available.")
+        self._update_btn.setText("Update\u2026")
+        self._dismiss_btn.setToolTip("Later")
         self.show()
+
+    def show_updated(self, version: str):
+        self._mode = "updated"
+        self._icon.setText("\u2713")
+        self._text.setText(f"You\u2019re now using MyEditor {version}.")
+        self._update_btn.setText("What\u2019s New")
+        self._dismiss_btn.setToolTip("Close")
+        self.show()
+
+    def _on_button(self):
+        if self._mode == "updated":
+            self.whats_new_requested.emit()
+        else:
+            self.update_requested.emit()
 
     def update_theme(self, is_dark: bool):
         self.is_dark = is_dark

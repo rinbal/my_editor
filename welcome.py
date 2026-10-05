@@ -5,6 +5,19 @@
 from constants import APP_DISPLAY_NAME, TEXT_COLORS
 
 
+def is_pristine_welcome(editor) -> bool:
+    """The welcome tab just as MyEditor opened it: never saved to a file and
+    not edited since.
+
+    Only then is it titled Welcome, and reopened as the welcome tab after an
+    update. Once saved or changed it is a document like any other: its
+    title is its file name, and an update restart brings back that file.
+    """
+    return (bool(getattr(editor, "_is_welcome", False))
+            and not getattr(editor, "_file_path", None)
+            and not editor.document().isModified())
+
+
 def welcome_html() -> str:
     """Build the HTML shown in the first-run Welcome tab."""
     colors = " ".join(
