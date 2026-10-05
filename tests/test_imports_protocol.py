@@ -53,6 +53,7 @@ from nostr.imports.constants import IDENTIFIER_PREFIX, SOURCE_TAG
 from nostr.rss.dtag import derive_identifier
 
 from tests.imports_fakes import make_factory, make_item
+from tests.outbox_fakes import settle
 from tests.test_imports_pipeline import FEED_URL, make_job
 
 
@@ -85,6 +86,7 @@ def imported_inner_event(item=ITEM, **job_kwargs):
     factory, created = make_factory()
     job = make_job([item], factory=factory, **job_kwargs)
     job.start()
+    settle()
     assert created, "pipeline produced no publish job"
     return created[0].inner_event
 
@@ -210,6 +212,7 @@ class TestEncryptionFloor:
         store.bind_profile(PROFILE)
         store.add_feed("https://secret-reading-list.example/feed")
         scheduler.fire_last()
+        settle()
         _relays, signed = publisher.calls[0]
         outer = json.dumps(
             {k: v for k, v in signed.items() if k != "content"})

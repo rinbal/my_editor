@@ -30,7 +30,6 @@ from nostr.imports.errors import ERROR_CODES
 from nostr.imports.registry import ResolveInput, detect_resolver, resolve_source
 from nostr.imports.sources.mdx import derive_summary
 from nostr.imports.sources.nostr import (
-    dedup_relays,
     event_tag,
     extract_nip05,
     extract_nostr_entity,
@@ -38,8 +37,11 @@ from nostr.imports.sources.nostr import (
     resolve_nip05,
 )
 from nostr.imports.sources.wiki import normalize_wiki_content
+from nostr.outbox import defaults
+from nostr.outbox.policy import LookupState, RelayList
 
 from tests.imports_fakes import FakeFetcher
+from tests.outbox_fakes import FakeRelayDirectory, settle
 
 PK = "ab" * 32
 PK2 = "cd" * 32
@@ -101,7 +103,7 @@ class Sink:
         self.error = error
 
 
-def run(url, query=None, fetcher=None):
+def run(url, query=None, fetcher=None, directory=None):
     sink = Sink()
     resolve_source(
         url,
@@ -109,8 +111,17 @@ def run(url, query=None, fetcher=None):
         on_success=sink.on_success,
         on_failure=sink.on_failure,
         nostr_query=query,
+        relay_directory=directory,
     )
+    settle()                      # the directory answers on the next turn
     return sink
+
+
+def author_directory():
+    """PK publishes to write.example and reads at read.example."""
+    return FakeRelayDirectory({PK: RelayList(
+        write=["wss://write.example"], read=["wss://read.example"],
+        state=LookupState.FOUND)})
 
 
 # --------------------------------------------------------------------------- #
@@ -309,16 +320,6 @@ class TestBech32Nevent(unittest.TestCase):
         self.assertEqual((relays, author, kind), ([], None, None))
 
 
-class TestDedupRelays(unittest.TestCase):
-    def test_order_preserving_case_insensitive(self):
-        out = dedup_relays(
-            ["wss://A.example/", "wss://b.example"],
-            ["wss://a.example", "wss://c.example", ""],
-        )
-        self.assertEqual(out, ["wss://A.example/", "wss://b.example",
-                               "wss://c.example"])
-
-
 # --------------------------------------------------------------------------- #
 # Resolvers                                                                   #
 # --------------------------------------------------------------------------- #
@@ -359,6 +360,25 @@ class TestNostrResolver(unittest.TestCase):
         self.assertIn("wss://hint.example", relays)
         self.assertEqual(filters[0]["#d"], ["my-post"])
 
+    def test_an_naddr_is_read_from_its_authors_outbox(self):
+        query = FakeNostrQuery([("latest", article_event())])
+        directory = author_directory()
+        sink = run(f"nostr:{NADDR_ARTICLE}", query, directory=directory)
+        self.assertIsNone(sink.error)
+        _method, relays, _filters = query.calls[0]
+        self.assertEqual(relays, ["wss://hint.example", "wss://write.example"])
+        self.assertEqual(directory.asked("outbox_of"),
+                         [("outbox_of", PK, ("wss://hint.example",))])
+
+    def test_a_note_without_an_author_is_read_from_hints_and_fallback(self):
+        query = FakeNostrQuery([("latest", article_event())])
+        directory = author_directory()
+        sink = run(NOTE, query, directory=directory)
+        self.assertIsNone(sink.error)
+        _method, relays, _filters = query.calls[0]
+        self.assertEqual(relays, list(defaults.FALLBACK_RELAYS))
+        self.assertEqual(directory.asked("outbox_of"), [])
+
     def test_single_event_by_nevent_id(self):
         query = FakeNostrQuery([("latest", article_event())])
         sink = run(NEVENT, query)
@@ -372,10 +392,6 @@ class TestNostrResolver(unittest.TestCase):
         self.assertEqual(sink.error.code, ERROR_CODES.NOSTR_NOT_FOUND)
 
     def test_author_flow_via_npub(self):
-        outbox = {"kind": 10002, "pubkey": PK, "created_at": 1,
-                  "tags": [["r", "wss://write.example", "write"],
-                           ["r", "wss://read.example", "read"]],
-                  "content": ""}
         articles = [
             article_event(d_tag="a", created_at=100),
             article_event(d_tag="b", created_at=200),
@@ -383,24 +399,66 @@ class TestNostrResolver(unittest.TestCase):
         meta = {"kind": 0, "pubkey": PK, "created_at": 1,
                 "content": json.dumps({"display_name": "Alice"}), "tags": []}
         query = FakeNostrQuery([
-            ("latest", outbox),
             ("addressable", articles),
             ("latest", meta),
         ])
-        sink = run(NPUB, query)
+        sink = run(NPUB, query, directory=author_directory())
         self.assertIsNone(sink.error)
         feed = sink.result.feed
         self.assertEqual(feed.title, "Alice · Articles")
         self.assertEqual(len(feed.items), 2)
-        # The article query ran against the author's write relays.
-        _m, relays, _f = query.calls[1]
-        self.assertIn("wss://write.example", relays)
+        # The article query ran against the author's write relays, and
+        # not their read relays (that is where others write to them).
+        _m, relays, _f = query.calls[0]
+        self.assertEqual(relays, ["wss://write.example"])
         # A bare npub canonicalises to an njump URL.
         self.assertTrue(sink.result.url.startswith("https://njump.me/"))
 
+    def test_an_nprofile_hint_is_asked_first(self):
+        query = FakeNostrQuery([("addressable", []), ("addressable", []), ("latest", None)])
+        run(NPROFILE, query, directory=author_directory())
+        _m, relays, _f = query.calls[0]
+        self.assertEqual(relays, ["wss://hint.example", "wss://write.example"])
+
+    def test_an_article_gone_from_its_authors_relays_is_looked_for_once_more(self):
+        # The author's list names relays that are gone; the article is on
+        # a big public relay.
+        query = FakeNostrQuery([("latest", None), ("latest", article_event())])
+        sink = run(f"nostr:{NADDR_ARTICLE}", query, directory=author_directory())
+        self.assertIsNone(sink.error)
+        _m, retried, _f = query.calls[1]
+        self.assertEqual(retried, list(defaults.FALLBACK_RELAYS))
+
+    def test_an_article_found_nowhere_is_not_found(self):
+        query = FakeNostrQuery([("latest", None), ("latest", None)])
+        sink = run(f"nostr:{NADDR_ARTICLE}", query, directory=author_directory())
+        self.assertEqual(sink.error.code, ERROR_CODES.NOSTR_NOT_FOUND)
+
+    def test_an_authors_articles_are_looked_for_once_more(self):
+        articles = [article_event(d_tag="a", created_at=100)]
+        query = FakeNostrQuery([("addressable", []), ("addressable", articles),
+                                ("latest", None)])
+        sink = run(NPUB, query, directory=author_directory())
+        self.assertEqual(len(sink.result.feed.items), 1)
+        _m, retried, _f = query.calls[1]
+        self.assertEqual(retried, list(defaults.FALLBACK_RELAYS))
+        _m, name_relays, _f = query.calls[2]
+        self.assertEqual(name_relays, retried)        # the name where the articles are
+
+    def test_relays_already_asked_are_not_asked_twice(self):
+        # Read from the fallback relays already: there is nothing left to try.
+        query = FakeNostrQuery([("addressable", []), ("latest", None)])
+        sink = run(NPUB, query, directory=FakeRelayDirectory())
+        self.assertEqual(sink.result.feed.items, ())
+
+    def test_an_author_with_no_known_list_is_read_from_the_fallback(self):
+        query = FakeNostrQuery([("addressable", []), ("latest", None)])
+        run(NPUB, query, directory=FakeRelayDirectory())
+        _m, relays, _f = query.calls[0]
+        self.assertEqual(relays, list(defaults.FALLBACK_RELAYS))
+
     def test_author_with_no_articles_yields_empty_feed(self):
         query = FakeNostrQuery([
-            ("latest", None),          # no outbox event
             ("addressable", []),       # no articles
             ("latest", None),          # no metadata
         ])
@@ -415,7 +473,6 @@ class TestNostrResolver(unittest.TestCase):
                 ("ok", body),
         })
         query = FakeNostrQuery([
-            ("latest", None),
             ("addressable", [article_event()]),
             ("latest", None),
         ])

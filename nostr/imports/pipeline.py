@@ -16,7 +16,10 @@ each into an encrypted draft:
      kind-30023 event on relays and the feed body is only a teaser,
      *however long that teaser reads*. So we always resolve when a
      coordinate is present and prefer the relay body when it is longer
-     than the feed body, falling back to the feed text otherwise.
+     than the feed body, falling back to the feed text otherwise. The
+     event is read where its author publishes (their NIP-65 write
+     relays, and any relay the coordinate names), not where the
+     importing user reads.
   3. Full-text recovery (opt-in, default on): a thin item (teaser under
      ``THIN_CONTENT_CHARS``) with an ordinary http(s) link gets its
      article page fetched and the main content lifted via Readability.
@@ -64,7 +67,8 @@ from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from ..blossom import hashes
-from ..outbox import RelayListCache
+from ..outbox import RelayDirectory
+from ..outbox.policy import retry_relays
 from ..profiles import Profile
 from ..publisher import DraftPublishJob, PublishedMedia, build_article
 from ..relay import RelayPool
@@ -145,7 +149,7 @@ class ImportItemsJob(QObject):
         feed_url: str,
         profile: Profile,
         relay_pool: RelayPool,
-        relay_list_cache: RelayListCache,
+        relay_directory: RelayDirectory,
         session_pool: BunkerSessionPool,
         append_source_link: bool = True,
         fetch_full_text: bool = True,
@@ -161,14 +165,19 @@ class ImportItemsJob(QObject):
         publish_job_factory: Optional[Callable[..., DraftPublishJob]] = None,
         run_blocking: Optional[Callable[..., None]] = None,
         pacer: Optional[Callable[[int, Callable[[], None]], None]] = None,
+        entitled_relays: Sequence[str] = (),
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
         self._items: List[FeedItem] = list(items)
+        # Relays this account has standing on beyond its own list. Drafts
+        # go there as they do from the editor, so DraftSync, which reads
+        # there, finds the imported ones too.
+        self._entitled_relays = list(entitled_relays)
         self._feed_url = (feed_url or "").strip()
         self._profile = profile
         self._relay_pool = relay_pool
-        self._relay_list_cache = relay_list_cache
+        self._relay_directory = relay_directory
         self._session_pool = session_pool
         self._append_source_link = append_source_link
         self._fetch_full_text = fetch_full_text
@@ -212,7 +221,6 @@ class ImportItemsJob(QObject):
         self._attempted: int = 0
         self._current_job: Optional[DraftPublishJob] = None
         self._cancelled: bool = False
-        self._user_read_relays: List[str] = []
 
     # -- public API --------------------------------------------------------
 
@@ -221,14 +229,20 @@ class ImportItemsJob(QObject):
         if not self._items:
             self.completed.emit(0, 0)
             return
-        # The user's NIP-65 read relays are resolved up front so
-        # per-item long-form lookups don't each pay a round-trip.
-        self._emit_status("Looking up your relay list…")
-        self._relay_list_cache.fetch(
-            self._profile.user_pubkey,
-            relays=list(dict.fromkeys(self._profile.bunker_relays)),
-            on_done=self._on_relay_list_ready,
-        )
+        self._look_up_authors()
+        self._start_next_item()
+
+    def _look_up_authors(self) -> None:
+        """Ask for the relay lists of every author the items point at in
+        one request, up front: each item then finds its author's lookup
+        already answered or under way instead of starting its own."""
+        authors = []
+        for item in self._items:
+            coord = extract_nostr_coord(item.link) or extract_nostr_coord(item.guid)
+            if coord is not None:
+                authors.append(coord.pubkey_hex)
+        if len(set(authors)) > 1:
+            self._relay_directory.lookup_many(authors, lambda _lists: None)
 
     def cancel(self) -> None:
         """Stop the import. The in-flight draft job (if any) is
@@ -236,14 +250,6 @@ class ImportItemsJob(QObject):
         self._cancelled = True
         if self._current_job is not None:
             self._current_job.cancel()
-
-    # -- setup -------------------------------------------------------------
-
-    def _on_relay_list_ready(self, relay_list) -> None:
-        if self._cancelled:
-            return
-        self._user_read_relays = list(getattr(relay_list, "read", ()) or ())
-        self._start_next_item()
 
     # -- helpers -----------------------------------------------------------
 
@@ -417,16 +423,44 @@ class ImportItemsJob(QObject):
         if not self._cancelled:
             self.item_resolving_from_nostr.emit(self._index, title_for_ui)
         self._emit_status(f"Resolving '{title_for_ui}' from Nostr…")
-        self._long_form_fetcher.fetch(
-            coord,
-            extra_relays=self._user_read_relays,
-            on_success=lambda event, t=template, i=item, ui=title_for_ui: (
-                self._on_long_form_resolved(event, t, i, ui)
-            ),
-            on_not_found=lambda t=template, i=item, ui=title_for_ui: (
-                self._maybe_recover_full_text(i, t, ui)
-            ),
-        )
+
+        def _fetch_from(relays) -> None:
+            if self._cancelled:
+                return
+            # One more try on the fallback relays not asked yet: the
+            # author's list can name relays that have gone since.
+            retry = retry_relays([*relays, *coord.relay_hints])
+            self._long_form_fetcher.fetch(
+                coord,
+                extra_relays=relays,
+                on_success=lambda event, t=template, i=item, ui=title_for_ui: (
+                    self._on_long_form_resolved(event, t, i, ui)
+                ),
+                on_not_found=lambda: _retry(retry),
+            )
+
+        def _retry(relays) -> None:
+            if self._cancelled:
+                return
+            if not relays:
+                self._maybe_recover_full_text(item, template, title_for_ui)
+                return
+            self._long_form_fetcher.fetch(
+                replace(coord, relay_hints=()),
+                extra_relays=relays,
+                on_success=lambda event, t=template, i=item, ui=title_for_ui: (
+                    self._on_long_form_resolved(event, t, i, ui)
+                ),
+                on_not_found=lambda t=template, i=item, ui=title_for_ui: (
+                    self._maybe_recover_full_text(i, t, ui)
+                ),
+            )
+
+        # Someone else's article lives in their outbox (NIP-65), which the
+        # directory looks up (hints first); the importing user's own read
+        # relays say nothing about where it is.
+        self._relay_directory.outbox_of(
+            coord.pubkey_hex, _fetch_from, hints=coord.relay_hints)
 
     def _on_long_form_resolved(
         self,
@@ -622,11 +656,12 @@ class ImportItemsJob(QObject):
         try:
             job = self._publish_job_factory(
                 relay_pool=self._relay_pool,
-                relay_list_cache=self._relay_list_cache,
+                relay_directory=self._relay_directory,
                 session_pool=self._session_pool,
                 profile=self._profile,
                 inner_event=inner,
                 identifier=template.slug,
+                entitled_relays=self._entitled_relays,
                 parent=self,
             )
         except ValueError as exc:

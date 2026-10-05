@@ -25,11 +25,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Callable, Iterable, List, Optional, Tuple
+from typing import Callable, Iterable, Optional, Tuple
 
 from PySide6.QtCore import QObject
 
 from ..bech32 import decode_naddr
+from ..outbox.policy import dedupe_relays, public_relays
 from ..queries import fetch_latest_event
 from ..relay import RelayPool
 
@@ -156,7 +157,7 @@ def _decode_to_longform(candidate: str) -> Optional[LongFormCoord]:
         pubkey_hex=author_hex.lower(),
         kind=int(kind),
         d_tag=d_tag,
-        relay_hints=tuple(_dedup_relays(relays)),
+        relay_hints=tuple(dedupe_relays(relays)),
     )
 
 
@@ -191,17 +192,20 @@ class LongFormFetcher(QObject):
     ) -> None:
         """Query relays for the event identified by ``coord``.
 
-        ``extra_relays`` (typically the user's NIP-65 read set) is
-        merged with ``coord.relay_hints`` and deduplicated. On EOSE or
-        timeout, the newest matching event is delivered to
+        ``extra_relays`` are where the event's author publishes: their
+        NIP-65 write relays, as RelayDirectory.outbox_of answers for
+        ``coord.pubkey_hex`` (the outbox model; whoever is importing
+        reads elsewhere). They are merged with ``coord.relay_hints``
+        (the public ones: a hint is a stranger's word) and deduplicated.
+        On EOSE or timeout, the newest matching event is delivered to
         ``on_success``; if nothing matched, ``on_not_found`` fires.
 
         Exactly one of the two callbacks is invoked, once.
         """
-        relays = _dedup_relays((*extra_relays, *coord.relay_hints))
+        relays = dedupe_relays(extra_relays, public_relays(coord.relay_hints))
         if not relays:
-            # Nothing to query against, no read relays cached, no naddr
-            # hints. Fail fast and let the caller fall back.
+            # Nothing to query against: no outbox and no naddr hints.
+            # Fail fast and let the caller fall back.
             on_not_found()
             return
 
@@ -230,31 +234,3 @@ class LongFormFetcher(QObject):
             )
         except Exception:  # noqa: BLE001, settle the contract, move on
             on_not_found()
-
-
-# --------------------------------------------------------------------------- #
-# Relay-list hygiene                                                          #
-# --------------------------------------------------------------------------- #
-
-def _dedup_relays(relays: Iterable[object]) -> List[str]:
-    """Order-preserving dedupe.
-
-    Uses the URL trimmed of a trailing slash and case-folded as the dedupe
-    key so ``wss://relay.example/`` and ``wss://Relay.Example`` collapse.
-    Returns the strings in their original first-seen form so caller
-    diagnostics stay readable.
-    """
-    seen: set[str] = set()
-    out: List[str] = []
-    for raw in relays:
-        if not isinstance(raw, str):
-            continue
-        cleaned = raw.strip()
-        if not cleaned:
-            continue
-        key = cleaned.rstrip("/").lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(cleaned)
-    return out

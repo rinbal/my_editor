@@ -13,7 +13,13 @@ Tabs:
                         not as a URL.
 
 All three paths converge on the same ``profile_connected(Profile)`` signal
-and persist the new profile to the on-disk store identically.
+and persist the new profile to the on-disk store identically, unless the
+dialog is opened with ``persist=False``: Create Account checks that the
+signer holds the new account before anything is saved, so a signer paired
+as someone else never replaces a profile that was already here.
+
+Closing the dialog, for any reason, closes its pairing channel; the
+session pool opens its own for the paired profile.
 """
 
 from __future__ import annotations
@@ -35,8 +41,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import DEFAULT_RELAYS
 from ..bunker import (
+    NIP46_RELAYS,
     BunkerClient,
     build_nostrconnect_uri,
     parse_bunker_uri,
@@ -63,6 +69,7 @@ QDialog { background: #1E1E1E; }
 QLabel { color: #D4D4D4; font-size: 12px; }
 QLabel#connect_hint { color: #858585; }
 QLabel#connect_status { color: #FFB347; }
+QPushButton#connect_link { color: #4FA3F7; border: none; background: transparent; min-width: 0; padding: 2px 6px; }
 QLabel#qr_label { background: #1E1E1E; padding: 8px; }
 QLabel#countdown { color: #858585; font-size: 11px; }
 QLineEdit, QTextEdit {
@@ -105,6 +112,7 @@ QDialog { background: #FFFFFF; }
 QLabel { color: #333333; font-size: 12px; }
 QLabel#connect_hint { color: #777777; }
 QLabel#connect_status { color: #A05000; }
+QPushButton#connect_link { color: #0078D4; border: none; background: transparent; min-width: 0; padding: 2px 6px; }
 QLabel#qr_label { background: #FFFFFF; padding: 8px; }
 QLabel#countdown { color: #999999; font-size: 11px; }
 QLineEdit, QTextEdit {
@@ -156,6 +164,9 @@ class ConnectDialog(QDialog):
     """
 
     profile_connected = Signal(object)  # Profile
+    # The person has no signer app: offer the other ways into an account.
+    create_requested = Signal()
+    restore_requested = Signal()
 
     def __init__(
         self,
@@ -164,7 +175,14 @@ class ConnectDialog(QDialog):
         parent=None,
         *,
         is_dark: bool = True,
+        persist: bool = True,
+        start_on_qr: bool = False,
+        offer_alternatives: bool = True,
     ) -> None:
+        """``persist`` False emits the paired profile without saving it.
+        ``start_on_qr`` opens on the code to scan. ``offer_alternatives``
+        False leaves out the links to Create Account and Restore Account,
+        for when the dialog is part of one of those."""
         super().__init__(parent)
         self.setWindowTitle("Connect Nostr Signer")
         self.setModal(True)
@@ -173,6 +191,8 @@ class ConnectDialog(QDialog):
         self._pool = pool
         self._store = store
         self._is_dark = is_dark
+        self._persist = persist
+        self._offer_alternatives = offer_alternatives
 
         # Exactly one in-flight client at a time; switching tabs / cancel
         # tears it down so we don't accumulate orphan subscriptions.
@@ -185,6 +205,8 @@ class ConnectDialog(QDialog):
         self._apply_theme()
         # Auto-start the QR listener whenever the QR tab is the active one.
         self._tabs.currentChanged.connect(self._on_tab_changed)
+        if start_on_qr:
+            self._tabs.setCurrentIndex(1)
 
     # -- UI build ----------------------------------------------------------
 
@@ -208,6 +230,17 @@ class ConnectDialog(QDialog):
         layout.addWidget(self._status)
 
         footer = QHBoxLayout()
+        alternatives = ((("Create an Account", self.create_requested),
+                         ("Restore from Backup", self.restore_requested))
+                        if self._offer_alternatives else ())
+        for label, signal in alternatives:
+            link = QPushButton(label)
+            link.setObjectName("connect_link")
+            link.setFlat(True)
+            link.setAutoDefault(False)
+            link.setCursor(Qt.PointingHandCursor)
+            link.clicked.connect(lambda _=False, sig=signal: (self._on_cancel(), sig.emit()))
+            footer.addWidget(link)
         footer.addStretch(1)
         self._cancel_btn = QPushButton("Close")
         self._cancel_btn.clicked.connect(self._on_cancel)
@@ -332,14 +365,14 @@ class ConnectDialog(QDialog):
         client = BunkerClient(self._pool, parent=self)
         self._watch_client_diagnostics(client)
         local_pk = client.listen_for_nostrconnect(
-            relays=list(DEFAULT_RELAYS),
+            relays=list(NIP46_RELAYS),
             secret=secret,
             on_success=self._on_pair_success,
             on_failure=self._on_pair_failure,
             timeout_ms=_QR_TTL_SECONDS * 1000,
         )
         uri = build_nostrconnect_uri(
-            local_pk, list(DEFAULT_RELAYS), secret,
+            local_pk, list(NIP46_RELAYS), secret,
         )
         self._client = client
         self._qr_uri_field.setText(uri)
@@ -518,7 +551,8 @@ class ConnectDialog(QDialog):
             display_name="",
             picture="",
         )
-        self._store.upsert(profile)
+        if self._persist:
+            self._store.upsert(profile)
         self._set_status(f"Connected as {profile.npub_short()}.")
         self._stop_qr_listener()
         self.profile_connected.emit(profile)
@@ -567,7 +601,9 @@ class ConnectDialog(QDialog):
     def _on_cancel(self) -> None:
         self.reject()
 
-    def reject(self) -> None:  # type: ignore[override]
+    def done(self, result: int) -> None:  # type: ignore[override]
+        # Accepted, canceled or closed: the pairing channel goes with the
+        # dialog, so nothing keeps listening once it is gone.
         self._teardown_client(reason="dialog dismissed")
         self._stop_qr_listener()
-        super().reject()
+        super().done(result)

@@ -13,23 +13,5 @@ via NIP-46. No private key ever lives inside the editor process.
 # out per-event.
 CLIENT_NAME: str = "MyEditor"
 
-
-# Default relay set — curated for operator diversity.
-#
-# Picks 1–5 come from the Buho_go selection (different operators for the first
-# four, plus a second YakiHonne for write redundancy). Picks 6–7 are Amber's
-# defaults when it generates a bunker URI — including them here means our
-# publishing path and the bunker handshake usually share at least one relay,
-# improving delivery reliability.
-#
-# Frozen as a tuple so a future caller can't accidentally mutate the shared
-# constant; any override must be a deliberate copy.
-DEFAULT_RELAYS: tuple[str, ...] = (
-    "wss://relay.primal.net",
-    "wss://relay.damus.io",
-    "wss://nos.lol",
-    "wss://nostr-01.yakihonne.com",
-    "wss://nostr-02.yakihonne.com",
-    "wss://nostr.oxtr.dev",
-    "wss://theforest.nostr1.com",
-)
+# Which relays to use is nostr/outbox's answer, by role; the relays
+# MyEditor picks by itself are in nostr/outbox/defaults.py.

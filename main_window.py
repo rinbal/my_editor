@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from send2trash import send2trash
+import shiboken6
 from PySide6.QtCore import (
     QBuffer, QByteArray, QIODevice, Qt, QMarginsF, QTimer, QUrl, QFileSystemWatcher,
 )
@@ -100,7 +101,6 @@ from recent_files import load_recent, add_recent, clear_recent
 from nostr.avatar_store import AvatarBatchLoader, AvatarStore
 from nostr.bech32 import encode_note
 from nostr.blossom.errors import friendly_message
-from nostr.blossom.settings import BlossomSettings
 from nostr.blossom.store import MediaFile, MediaStore
 from nostr.bunker import BunkerSessionPool
 from nostr.contacts import ContactListFetcher
@@ -123,7 +123,7 @@ from nostr.media.private_library import PrivateLibrary
 from nostr.media.publish_copy import PublicCopyMaker
 from nostr.media.visibility import PublicLedger
 from nostr.metadata import AvatarLoader, ProfileMetadataFetcher
-from nostr.outbox import RelayListCache
+from nostr.outbox.directory import RelayDirectory
 from nostr.profiles import Profile, ProfileStore
 from nostr.publisher import (
     DraftBulkDeleteJob,
@@ -135,7 +135,9 @@ from nostr.search import Nip50SearchClient
 from nostr.ui.connect_dialog import ConnectDialog
 from nostr.ui.draft_conflict_banner import DraftConflictBanner
 from nostr.ui.drafts_panel import DEFAULT_PANEL_WIDTH, DraftsPanel
-from nostr.einundzwanzig import NO_BENEFITS, Benefits, MembershipDirectory
+from nostr.membership_controller import MembershipController
+from nostr.key_vault import KeyVault
+from nostr.account_controller import AccountController
 from nostr.ui.media_library_dialog import MediaLibraryDialog
 from nostr.ui.publish_article_dialog import PublishArticleDialog
 from nostr.ui.publish_copy_dialog import resolve_pick
@@ -267,10 +269,33 @@ class MainWindow(QMainWindow):
         # alive for the lifetime of the editor.
         self._relay_pool = RelayPool(parent=self)
         self._profile_store = ProfileStore()
-        self._relay_list_cache = RelayListCache(self._relay_pool, parent=self)
-        self._session_pool = BunkerSessionPool(self._relay_pool, parent=self)
+        # Where everyone reads and writes (NIP-65): verified, cached, and the
+        # user's own lists remembered across launches. Every job and panel
+        # that touches relays asks it where to go.
+        self._relay_directory = RelayDirectory(
+            self._relay_pool,
+            own_pubkeys=lambda: [p.user_pubkey for p in self._profile_store.list()],
+            parent=self)
+        # Keys kept on this computer, for accounts that chose that over a
+        # signer app (Create Account, Restore Account).
+        self._key_vault = KeyVault()
+        self._session_pool = BunkerSessionPool(self._relay_pool, parent=self,
+                                               vault=self._key_vault)
+        # Creating, restoring, backing up and signing out of accounts, and
+        # telling the network about a new one (nostr/account_controller.py).
+        self._accounts = AccountController(
+            relay_pool=self._relay_pool, directory=self._relay_directory,
+            vault=self._key_vault, session_pool=self._session_pool,
+            store=self._profile_store, window=self,
+            is_dark=lambda: self.is_dark_theme, parent=self)
+        self._accounts.activate.connect(self._on_nostr_profile_connected)
+        self._accounts.profile_changed.connect(self._on_metadata_updated)
+        self._accounts.status.connect(
+            lambda text, ms: self.status.showMessage(text, ms))
+        self._accounts.link_activated.connect(self._open_external)
         self._metadata_fetcher = ProfileMetadataFetcher(
-            self._relay_pool, self._profile_store, parent=self
+            self._relay_pool, self._profile_store, parent=self,
+            relay_directory=self._relay_directory,
         )
         self._metadata_fetcher.updated.connect(self._on_metadata_updated)
         self._avatar_loader = AvatarLoader(parent=self)
@@ -291,7 +316,8 @@ class MainWindow(QMainWindow):
         )
         self._search_client.results.connect(self._on_search_results)
         self._contact_fetcher = ContactListFetcher(
-            self._relay_pool, self._known_people, parent=self
+            self._relay_pool, self._known_people, parent=self,
+            relay_directory=self._relay_directory,
         )
         self._contact_fetcher.person_updated.connect(self._on_person_updated)
 
@@ -303,9 +329,10 @@ class MainWindow(QMainWindow):
         self._draft_store.record_changed.connect(self._on_draft_record_changed)
         self._draft_sync = DraftSync(
             relay_pool=self._relay_pool,
-            relay_list_cache=self._relay_list_cache,
+            relay_directory=self._relay_directory,
             session_pool=self._session_pool,
             store=self._draft_store,
+            entitled_relays=self._entitled_relays,
             parent=self,
         )
         self._draft_sync.status_changed.connect(self._on_draft_sync_status)
@@ -330,21 +357,38 @@ class MainWindow(QMainWindow):
         # auth event through the existing bunker pool. It seeds the same
         # cache on the way out, so an upload never has to be downloaded
         # back to be shown.
+        self._media_library_dialog = None
         # Association membership, which grants a relay and a media server.
         # Resolved in the background; until it answers the account simply
         # has no benefits, which is the same state as not being a member.
-        self._membership = MembershipDirectory(parent=self)
-        self._membership.resolved.connect(self._on_membership_resolved)
-        # An account that was already signed in when the app opened never
-        # passes through the connect flow, so resolve it here too.
-        self._refresh_membership(self._profile_store.default())
+        # The controller owns the roster, its refresh, the membership
+        # window and its client; this window only hands its providers on
+        # (see _entitled_relays and the three below it).
+        self._membership = MembershipController(
+            profile_provider=lambda: self._profile_store.default(),
+            relay_pool=self._relay_pool,
+            session_pool=self._session_pool,
+            relay_directory=self._relay_directory,
+            is_dark=lambda: self.is_dark_theme,
+            open_link=self._open_external,
+            connect_signer=self._on_nostr_connect,
+            show_status=self.status.showMessage,
+            parent=self,
+        )
+        self._membership.benefits_changed.connect(self._on_membership_benefits_changed)
         self._media_store = MediaStore(
             session_pool=self._session_pool,
             profile_provider=lambda: self._profile_store.default(),
             blob_cache=self._media_image_loader,
             entitled_servers=self._entitled_blossom_servers,
+            server_quota=self._entitled_quota,
             parent=self,
         )
+        # An account that was already signed in when the app opened never
+        # passes through the connect flow, so it is resolved here too, and
+        # the roster is refreshed while the app is open. Started once the
+        # store its answer may concern exists.
+        self._membership.start()
         # The one object the editor side talks to about images. Every
         # boundary it crosses is injected here, so nothing below this
         # line knows anything about Blossom.
@@ -368,8 +412,9 @@ class MainWindow(QMainWindow):
         self._public_ledger = PublicLedger()
         self._private_library = PrivateLibrary(
             session_pool=self._session_pool,
-            relay_list_cache=self._relay_list_cache,
+            relay_directory=self._relay_directory,
             query=RelayQueryAdapter(self._relay_pool, parent=self),
+            entitled_relays=self._entitled_relays,
             parent=self,
         )
         self._media_visibility = MediaVisibility(
@@ -395,11 +440,15 @@ class MainWindow(QMainWindow):
         active = self._profile_store.default()
         if active is not None:
             self._metadata_fetcher.fetch(active)
-            self._contact_fetcher.fetch(active.user_pubkey, active.bunker_relays)
+            self._contact_fetcher.fetch(active.user_pubkey)
             # Start the draft sync in the background. It's idempotent -
             # if the panel is never opened, this still keeps the store
             # warm so opening the panel later is instant.
             self._draft_sync.start_for(active)
+            # An account created here whose setup was left for later is
+            # finished now, once the window is up.
+            QTimer.singleShot(0, lambda: self._accounts.profile_activated(
+                self._profile_store.default()))
 
         self._build_actions()
         self._build_menu()
@@ -1093,9 +1142,23 @@ class MainWindow(QMainWindow):
         # bar is hidden (Linux compact themes, full-screen mode).
         self.addAction(self.act_nostr_drafts)
         m_nostr.addSeparator()
+        act_membership = QAction("EINUNDZWANZIG Membership\u2026", self)
+        act_membership.triggered.connect(self._open_membership_window)
+        m_nostr.addAction(act_membership)
+        m_nostr.addSeparator()
+        act_create_account = QAction("Create Account\u2026", self)
+        act_create_account.triggered.connect(self._on_create_account)
+        m_nostr.addAction(act_create_account)
         act_nostr_connect = QAction("Connect Signer…", self)
         act_nostr_connect.triggered.connect(self._on_nostr_connect)
         m_nostr.addAction(act_nostr_connect)
+        act_restore_account = QAction("Restore Account\u2026", self)
+        act_restore_account.triggered.connect(self._on_restore_account)
+        m_nostr.addAction(act_restore_account)
+        self._act_backup_account = QAction("Back Up Account\u2026", self)
+        self._act_backup_account.triggered.connect(self._on_backup_account)
+        m_nostr.addAction(self._act_backup_account)
+        self._update_account_actions()
         act_nostr_sign_out = QAction("Sign Out Active Profile", self)
         act_nostr_sign_out.triggered.connect(self._on_nostr_sign_out)
         m_nostr.addAction(act_nostr_sign_out)
@@ -1202,11 +1265,12 @@ class MainWindow(QMainWindow):
         self._drafts_panel.set_preview_image_loader(self._media_image_loader)
         self._drafts_panel.feeds.bind_runtime(
             relay_pool=self._relay_pool,
-            relay_list_cache=self._relay_list_cache,
+            relay_directory=self._relay_directory,
             session_pool=self._session_pool,
             # Lets imports reuse a pre-prefix identifier that already
             # exists locally instead of duplicating the draft.
             draft_store=self._draft_store,
+            entitled_relays=self._entitled_relays,
         )
         self._drafts_panel.set_active_profile(self._profile_store.default())
         # The panel's outbound actions all route back through the host.
@@ -3365,11 +3429,16 @@ class MainWindow(QMainWindow):
         """Rebuild the chip's dropdown - fast and idempotent."""
         menu = self.header_widget.profile_chip.menu()
         menu.clear()
+        self._update_account_actions()
 
         profiles = self._profile_store.list()
         if not profiles:
-            act = menu.addAction("Connect Nostr signer…")
+            act = menu.addAction("Create Account\u2026")
+            act.triggered.connect(self._on_create_account)
+            act = menu.addAction("Connect Signer\u2026")
             act.triggered.connect(self._on_nostr_connect)
+            act = menu.addAction("Restore Account\u2026")
+            act.triggered.connect(self._on_restore_account)
             return
 
         active = self._profile_store.default()
@@ -3383,10 +3452,38 @@ class MainWindow(QMainWindow):
             )
 
         menu.addSeparator()
-        act_add = menu.addAction("Add profile…")
+        act_membership = menu.addAction("EINUNDZWANZIG Membership\u2026")
+        act_membership.triggered.connect(self._open_membership_window)
+        menu.addSeparator()
+        if active is not None and active.is_local:
+            act_backup = menu.addAction("Back Up Account\u2026")
+            act_backup.triggered.connect(self._on_backup_account)
+        act_add = menu.addAction("Add Profile\u2026")
         act_add.triggered.connect(self._on_nostr_connect)
-        act_signout = menu.addAction("Sign out active profile")
+        act_signout = menu.addAction("Sign Out")
         act_signout.triggered.connect(self._on_nostr_sign_out)
+
+    def _update_account_actions(self) -> None:
+        """Back Up Account is for an account whose key is kept here. The
+        menu bar is built after the first chip refresh, so both call this."""
+        action = getattr(self, "_act_backup_account", None)
+        if action is not None:
+            current = self._profile_store.default()
+            action.setEnabled(current is not None and current.is_local)
+
+    # -- creating, restoring and backing up accounts ---------------------------
+    # The windows and the network work behind them are the account
+    # controller's (nostr/account_controller.py); it makes an account active
+    # through ``_on_nostr_profile_connected``.
+
+    def _on_create_account(self) -> None:
+        self._accounts.create_account()
+
+    def _on_restore_account(self) -> None:
+        self._accounts.restore_account()
+
+    def _on_backup_account(self) -> None:
+        self._accounts.backup_account()
 
     def _on_nostr_connect(self):
         dialog = ConnectDialog(
@@ -3396,57 +3493,85 @@ class MainWindow(QMainWindow):
             is_dark=self.is_dark_theme,
         )
         dialog.profile_connected.connect(self._on_nostr_profile_connected)
+        # A key still kept here for the account is offered for deletion, and
+        # an account connected from a signer app may have no relay list yet.
+        dialog.profile_connected.connect(
+            lambda profile: QTimer.singleShot(0, lambda: self._accounts.signer_paired(profile)))
+        # No signer app yet: the dialog offers the other two ways in.
+        dialog.create_requested.connect(lambda: QTimer.singleShot(0, self._on_create_account))
+        dialog.restore_requested.connect(lambda: QTimer.singleShot(0, self._on_restore_account))
         dialog.exec()
 
     # -- association membership --------------------------------------------
 
-    def _active_benefits(self) -> Benefits:
-        """What the active profile is entitled to, as far as we know.
-
-        An unresolved membership yields no benefits rather than blocking,
-        so nothing in the app ever waits on a third-party host.
-        """
-        profile = self._profile_store.default()
-        if profile is None:
-            return NO_BENEFITS
-        return self._membership.cached_benefits(profile.user_pubkey) or NO_BENEFITS
-
     def _entitled_relays(self) -> list:
-        relay = self._active_benefits().relay
-        return [relay] if relay else []
+        """The relays the active account's membership adds."""
+        return self._membership.entitled_relays()
 
     def _entitled_blossom_servers(self) -> list:
-        server = self._active_benefits().blossom_server
-        return [server] if server else []
+        """The media servers the active account's membership adds."""
+        return self._membership.entitled_blossom_servers()
 
-    def _refresh_membership(self, profile: Optional[Profile]) -> None:
-        if profile is not None:
-            self._membership.resolve(profile.user_pubkey)
+    def _media_server_label(self, origin: str):
+        """The Media Library's name for a server, when it has a better one
+        than its host: the members' server is the association's."""
+        return self._membership.server_label(origin)
 
-    def _on_membership_resolved(self, pubkey: str, is_member: bool) -> None:
-        # The media library reads its targets on each call, so a member
-        # who resolves after startup still gets the server without a
-        # restart. Nothing is written to the user's configuration.
-        active = self._profile_store.default()
-        if active is None or active.user_pubkey.lower() != pubkey.lower():
-            return
-        if is_member:
-            self.status.showMessage(
-                "Einundzwanzig membership recognised. Your association relay "
-                "and media server are available.", 6000,
-            )
+    def _entitled_quota(self, origin: str):
+        """The space a membership gives on its media server, in bytes."""
+        return self._membership.quota(origin)
+
+    def _on_membership_benefits_changed(self) -> None:
+        """The active account's benefits changed (resolved, lapsed,
+        confirmed). Nothing is written to the user's configuration: the
+        relay and media layers read the providers above on each call."""
+        # An open Media Library lists the members' server as soon as it
+        # applies. The store walks again only when its servers changed,
+        # so a check that changed nothing costs no signer prompt.
+        if self._visible_media_library() is not None:
+            self._media_store.refetch_if_targets_changed()
+        # Drafts are written to the members' relay as well, so they are
+        # read there too (a no-op when the set of relays did not change).
+        self._draft_sync.reroute()
+
+    def _visible_media_library(self):
+        """The Media Library dialog while it is open, else None.
+
+        It deletes itself on close, so the reference can outlive the
+        dialog; a deleted one is forgotten here rather than asked
+        anything, which would raise.
+        """
+        dialog = self._media_library_dialog
+        if dialog is not None and not shiboken6.isValid(dialog):
+            dialog = self._media_library_dialog = None
+        return dialog if dialog is not None and dialog.isVisible() else None
+
+    def _forget_media_library(self, dialog) -> None:
+        if self._media_library_dialog is dialog:
+            self._media_library_dialog = None
+
+    def _open_membership_window(self) -> None:
+        """Nostr > EINUNDZWANZIG Membership."""
+        self._membership.open_window()
 
     def _on_nostr_profile_connected(self, profile: Profile):
         # New (or re-connected) profile becomes the active one.
         previous = self._profile_store.default()
+        bound = self._draft_sync.active_profile
         if previous is not None and (
             previous.user_pubkey.lower() != profile.user_pubkey.lower()
         ):
             # Connecting a second account is a switch, so the first one's
             # drafts and media keys go with it.
             self._release_identity_state()
+        elif bound is not None and bound.user_pubkey == profile.user_pubkey and (
+            bound.signer != profile.signer
+        ):
+            # The same account signs another way now (its key restored here,
+            # or a signer app paired): whatever holds the old signer lets go.
+            self._release_identity_state()
         self._profile_store.set_default(profile.user_pubkey)
-        self._refresh_membership(profile)
+        self._membership.account_changed(profile)
         self._update_profile_chip()
         self._refresh_profile_chip_menu()
         self.status.showMessage(
@@ -3456,7 +3581,7 @@ class MainWindow(QMainWindow):
         # refresh itself when the fetcher signals back.
         self._metadata_fetcher.fetch(profile)
         # Also prime the mentions cache from this profile's NIP-02 contact list.
-        self._contact_fetcher.fetch(profile.user_pubkey, profile.bunker_relays)
+        self._contact_fetcher.fetch(profile.user_pubkey)
         # Bind the draft pipeline to the new profile so the panel
         # (visible or not) starts collecting wraps from the relays.
         self._draft_sync.start_for(profile)
@@ -3464,6 +3589,8 @@ class MainWindow(QMainWindow):
             self._drafts_panel.set_active_profile(profile)
             self._drafts_panel.set_signer_unsupported(False)
             self._drafts_panel.set_signer_unreachable(False)
+        # An account created here whose setup was left for later is finished.
+        self._accounts.profile_activated(profile)
 
     def _release_identity_state(self) -> None:
         """Drop everything that belonged to the account being left.
@@ -3480,6 +3607,12 @@ class MainWindow(QMainWindow):
         """
         self._draft_sync.stop()
         self._private_library.stop()
+        # The library lists one account's files; the next account must
+        # never see them, not even until its own fetch lands.
+        self._media_store.clear()
+        # The membership window speaks for one identity; never show one
+        # account's membership, invoice or name to another.
+        self._membership.close_window()
 
     def _on_nostr_select_profile(self, profile: Profile):
         previous = self._profile_store.default()
@@ -3487,7 +3620,6 @@ class MainWindow(QMainWindow):
             previous.user_pubkey.lower() != profile.user_pubkey.lower()
         )
         self._profile_store.set_default(profile.user_pubkey)
-        self._refresh_membership(profile)
         self._update_profile_chip()
         self._refresh_profile_chip_menu()
         # Only tear down when the account actually changes. Re-selecting
@@ -3495,6 +3627,9 @@ class MainWindow(QMainWindow):
         # decrypted and cost a fresh round of signer prompts.
         if leaving:
             self._release_identity_state()
+        # After the teardown, so the membership follows the account that
+        # stays rather than updating a window about to close.
+        self._membership.account_changed(profile)
         # ``DraftSync.start_for`` is idempotent if the same profile is
         # already active.
         self._draft_sync.start_for(profile)
@@ -3502,21 +3637,15 @@ class MainWindow(QMainWindow):
             self._drafts_panel.set_active_profile(profile)
             self._drafts_panel.set_signer_unsupported(False)
             self._drafts_panel.set_signer_unreachable(False)
+        self._accounts.profile_activated(profile)
 
     def _on_nostr_sign_out(self):
         active = self._profile_store.default()
-        if active is None:
+        # The controller asks, then forgets every key kept for the account,
+        # its signer and its profile.
+        if active is None or not self._accounts.sign_out(active):
             return
-        if not confirm_destructive(
-                self,
-                title=f"Sign out of {active.display_name or active.npub_short()}?",
-                message=("Your key stays in your signer. MyEditor only forgets "
-                         "this connection."),
-                action="Sign Out"):
-            return
-        self._session_pool.drop(active.user_pubkey)
         self._avatars.pop(active.user_pubkey, None)
-        self._profile_store.remove(active.user_pubkey)
         self._update_profile_chip()
         self._refresh_profile_chip_menu()
         # Tear down everything scoped to the account just removed. If
@@ -3587,7 +3716,7 @@ class MainWindow(QMainWindow):
             active_profile=active,
             store=self._profile_store,
             relay_pool=self._relay_pool,
-            relay_list_cache=self._relay_list_cache,
+            relay_directory=self._relay_directory,
             session_pool=self._session_pool,
             entitled_relays=self._entitled_relays,
             known_people=self._known_people,
@@ -3653,7 +3782,7 @@ class MainWindow(QMainWindow):
             active_profile=active,
             store=self._profile_store,
             relay_pool=self._relay_pool,
-            relay_list_cache=self._relay_list_cache,
+            relay_directory=self._relay_directory,
             session_pool=self._session_pool,
             entitled_relays=self._entitled_relays,
             known_people=self._known_people,
@@ -3702,9 +3831,14 @@ class MainWindow(QMainWindow):
             is_dark=self.is_dark_theme,
             pick_mode=False,
             visibility=self._media_visibility,
+            server_label=self._media_server_label,
             parent=self,
         )
         dialog.bind_private_library(self._private_library)
+        # The dialog deletes itself on close; forget it then, so nothing
+        # later asks a deleted object whether it is visible.
+        dialog.destroyed.connect(lambda _obj=None, d=dialog: self._forget_media_library(d))
+        self._media_library_dialog = dialog
         dialog.show()
 
     def _on_nostr_insert_image(self):
@@ -3729,6 +3863,7 @@ class MainWindow(QMainWindow):
             is_dark=self.is_dark_theme,
             pick_mode=True,
             visibility=self._media_visibility,
+            server_label=self._media_server_label,
             parent=self,
         )
         dialog.bind_private_library(self._private_library)
@@ -3895,8 +4030,9 @@ class MainWindow(QMainWindow):
         intent gesture, so the outcome of an accidental one has to be
         that nothing was published.
         """
+        # Every server the upload goes to, the members' server included.
         hosts = ", ".join(
-            url_safety.host_of(s) or s for s in BlossomSettings().configured_servers()
+            url_safety.host_of(s) or s for s in self._media_store.target_servers()
         )
         # A paste is a quick, low-intent gesture, so Keep Local is the default.
         upload, remember = ask_with_checkbox(
@@ -4123,7 +4259,7 @@ class MainWindow(QMainWindow):
         try:
             job = DraftBulkDeleteJob(
                 relay_pool=self._relay_pool,
-                relay_list_cache=self._relay_list_cache,
+                relay_directory=self._relay_directory,
                 session_pool=self._session_pool,
                 entitled_relays=self._entitled_relays(),
                 profile=profile,
@@ -4439,7 +4575,7 @@ class MainWindow(QMainWindow):
 
         job = DraftPublishJob(
             relay_pool=self._relay_pool,
-            relay_list_cache=self._relay_list_cache,
+            relay_directory=self._relay_directory,
             session_pool=self._session_pool,
             entitled_relays=self._entitled_relays(),
             profile=profile,

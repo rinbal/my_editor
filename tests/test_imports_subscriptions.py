@@ -24,8 +24,10 @@ from nostr.imports.constants import (
     SUBSCRIPTIONS_KIND,
 )
 from nostr.imports.subscriptions import FeedSubscriptionStore, _parse_payload
+from nostr.outbox import defaults
 
-from tests.imports_fakes import PROFILE, FakeRelayListCache
+from tests.imports_fakes import PROFILE
+from tests.outbox_fakes import FakeRelayDirectory, settle
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -104,13 +106,15 @@ class FakeQuery:
 
 
 def make_store(tmp_path, *, session_pool=None, publisher=None,
-               scheduler=None, query=None, clock=None):
+               scheduler=None, query=None, clock=None, directory=None,
+               entitled=None):
     publisher = publisher or FakePublisher()
     scheduler = scheduler or FakeScheduler()
     store = FeedSubscriptionStore(
         session_pool=session_pool or FakeSessionPool(),
         relay_pool=None,
-        relay_list_cache=FakeRelayListCache(),
+        relay_directory=directory or FakeRelayDirectory(),
+        entitled_relays=entitled,
         cache_dir=tmp_path,
         query=query,
         publisher=publisher,
@@ -127,6 +131,7 @@ class TestMutations:
     def test_add_validates_through_registry(self, tmp_path):
         store, _, _ = make_store(tmp_path)
         store.bind_profile(PROFILE)
+        settle()
         assert store.add_feed(FEED_URL, "My Blog") == {"added": True}
         assert store.add_feed("not a url <xml>") == {
             "added": False, "invalid": True}
@@ -137,6 +142,7 @@ class TestMutations:
     def test_remove(self, tmp_path):
         store, _, _ = make_store(tmp_path)
         store.bind_profile(PROFILE)
+        settle()
         store.add_feed(FEED_URL)
         assert store.remove_feed(FEED_URL) is True
         assert store.remove_feed(FEED_URL) is False
@@ -145,6 +151,7 @@ class TestMutations:
     def test_mark_fetched_uses_clock(self, tmp_path):
         store, _, _ = make_store(tmp_path, clock=lambda: 42)
         store.bind_profile(PROFILE)
+        settle()
         store.add_feed(FEED_URL)
         store.mark_fetched(FEED_URL)
         assert store.get(FEED_URL).last_fetched_at == 42
@@ -152,11 +159,13 @@ class TestMutations:
     def test_cache_round_trip(self, tmp_path):
         store, _, scheduler = make_store(tmp_path)
         store.bind_profile(PROFILE)
+        settle()
         store.add_feed(FEED_URL, "My Blog")
         store.mark_fetched(FEED_URL, when=99)
         # A second store instance sees the cached list immediately.
         store2, _, _ = make_store(tmp_path)
         store2.bind_profile(PROFILE)
+        settle()
         assert [f.url for f in store2.feeds] == [FEED_URL]
         assert store2.get(FEED_URL).last_fetched_at == 99
 
@@ -165,12 +174,14 @@ class TestPublish:
     def test_debounced_changes_publish_once_encrypted(self, tmp_path):
         store, publisher, scheduler = make_store(tmp_path)
         store.bind_profile(PROFILE)
+        settle()
         store.add_feed(FEED_URL, "My Blog")
         store.add_feed("https://other.example/rss.xml")
         # Two mutations, re-scheduled each time, nothing published yet.
         assert publisher.calls == []
         assert len(scheduler.scheduled) == 2
         scheduler.fire_last()
+        settle()
         assert len(publisher.calls) == 1
 
         _relays, signed = publisher.calls[0]
@@ -186,9 +197,11 @@ class TestPublish:
     def test_flush_publishes_pending_changes_immediately(self, tmp_path):
         store, publisher, scheduler = make_store(tmp_path)
         store.bind_profile(PROFILE)
+        settle()
         store.add_feed(FEED_URL)
         assert publisher.calls == []
         store.flush()
+        settle()
         assert len(publisher.calls) == 1
         # The parked debounce was cancelled, not left to double-publish.
         assert scheduler.cancelled >= 1
@@ -196,7 +209,9 @@ class TestPublish:
     def test_flush_without_changes_is_a_noop(self, tmp_path):
         store, publisher, _ = make_store(tmp_path)
         store.bind_profile(PROFILE)
+        settle()
         store.flush()
+        settle()
         assert publisher.calls == []
 
     def test_signer_failure_keeps_changes_queued(self, tmp_path):
@@ -205,8 +220,10 @@ class TestPublish:
         statuses = []
         store.sync_status.connect(statuses.append)
         store.bind_profile(PROFILE)
+        settle()
         store.add_feed(FEED_URL)
         scheduler.fire_last()
+        settle()
         assert publisher.calls == []
         assert store._dirty is True
         assert any("signer offline" in s for s in statuses)
@@ -215,8 +232,10 @@ class TestPublish:
         store, publisher, scheduler = make_store(
             tmp_path, publisher=FakePublisher(accepted=0, total=2))
         store.bind_profile(PROFILE)
+        settle()
         store.add_feed(FEED_URL)
         scheduler.fire_last()
+        settle()
         assert store._dirty is True
 
 
@@ -233,10 +252,32 @@ class TestRelaySync:
         query = FakeQuery(self._remote_event(["https://remote.example/feed"]))
         store, _, _ = make_store(tmp_path, query=query)
         store.bind_profile(PROFILE)
+        settle()
         assert [f.url for f in store.feeds] == ["https://remote.example/feed"]
         # The query asked for exactly our namespaced d-tag.
         _relays, filters = query.calls[0]
         assert filters[0]["#d"] == [FEED_LIST_DTAG]
+
+    def test_the_list_is_read_where_it_is_written(self, tmp_path):
+        # Every device of the account must find what one device saved,
+        # so reading asks every relay writing goes to, plus the fallback
+        # relays a list saved before the account's own was known went to.
+        directory = FakeRelayDirectory({PROFILE.user_pubkey: ["wss://home.example"]})
+        query = FakeQuery(None)
+        store, publisher, scheduler = make_store(
+            tmp_path, query=query, directory=directory,
+            entitled=lambda: ["wss://members.example"])
+        store.bind_profile(PROFILE)
+        settle()
+        store.add_feed(FEED_URL)
+        scheduler.fire_last()
+        settle()
+
+        read_relays, _filters = query.calls[0]
+        written_relays, _signed = publisher.calls[0]
+        assert written_relays == [
+            "wss://home.example", "wss://members.example", "wss://bunker.example"]
+        assert read_relays == written_relays + list(defaults.FALLBACK_RELAYS)
 
     def test_relay_refresh_never_clobbers_unsynced_edits(self, tmp_path):
         # The remote answer arrives while a local add is still pending.
@@ -255,6 +296,7 @@ class TestRelaySync:
         store, _, _ = make_store(tmp_path, query=query)
         ref["store"] = store
         store.bind_profile(PROFILE)
+        settle()
         # The local, unsynced edit survives; remote state did not clobber.
         assert store.has_feed(FEED_URL)
 
@@ -263,14 +305,17 @@ class TestRelaySync:
             "kind": SUBSCRIPTIONS_KIND, "content": "garbage", "tags": []})
         store, _, _ = make_store(tmp_path, query=query)
         store.bind_profile(PROFILE)
+        settle()
         assert store.feeds == []
 
     def test_profile_switch_clears_list(self, tmp_path):
         store, _, _ = make_store(tmp_path)
         store.bind_profile(PROFILE)
+        settle()
         store.add_feed(FEED_URL)
         other = SimpleNamespace(user_pubkey="cd" * 32, bunker_relays=[])
         store.bind_profile(other)
+        settle()
         assert store.feeds == []
 
 

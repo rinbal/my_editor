@@ -4,8 +4,11 @@
 
 ``DraftSync`` is the orchestrator the drafts panel binds to. It owns:
 
-  - One ``Subscription`` on the active profile's read relays, filtered to
-    kind-31234 events authored by the profile pubkey.
+  - One ``Subscription`` on the active profile's private relays (the
+    relay directory's ``private_relays``, the same set DraftPublishJob
+    writes to), filtered to kind-31234 events authored by the profile
+    pubkey. When the directory learns a newer relay list for the
+    profile, the set is worked out again and the subscription follows.
   - A sequential decryption queue feeding a ``BunkerClient``.
     decrypting one wrap at a time avoids slamming the signer with N
     approval prompts in parallel and matches the bunker's request /
@@ -29,11 +32,10 @@ silent count mismatch.
 from __future__ import annotations
 
 from collections import deque
-from typing import Deque, Dict, List, Optional, Tuple
+from typing import Callable, Deque, Dict, List, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from . import DEFAULT_RELAYS
 from .bunker import BunkerClient, BunkerSessionPool, is_signer_silent
 from .draft_store import DraftState, DraftStore
 from .drafts import (
@@ -42,7 +44,7 @@ from .drafts import (
     parse_inner_event,
     parse_wrap_event,
 )
-from .outbox import RelayList, RelayListCache
+from .outbox import RelayDirectory, ask_private_relays
 from .profiles import Profile
 from .relay import RelayPool, Subscription
 
@@ -50,10 +52,6 @@ from .relay import RelayPool, Subscription
 # Default cadence for background refresh. Five minutes balances
 # "drafts written on another device show up" against relay chatter.
 DEFAULT_REFRESH_INTERVAL_MS: int = 5 * 60 * 1000
-
-# Cap on the number of read relays we'll subscribe to per profile.
-# Mirrors ``outbox.RELAY_CAP`` to keep WebSocket fan-out predictable.
-READ_RELAY_CAP: int = 10
 
 # Heuristic signal strings indicating the signer doesn't speak NIP-44
 # at all (vs. a per-call permission denial). We latch on these and stop
@@ -101,16 +99,22 @@ class DraftSync(QObject):
         self,
         *,
         relay_pool: RelayPool,
-        relay_list_cache: RelayListCache,
+        relay_directory: RelayDirectory,
         session_pool: BunkerSessionPool,
         store: DraftStore,
+        entitled_relays: Optional[Callable[[], Sequence[str]]] = None,
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
         self._relay_pool = relay_pool
-        self._relay_list_cache = relay_list_cache
+        self._relay_directory = relay_directory
         self._session_pool = session_pool
         self._store = store
+        # Relays this account has standing on beyond its own list (a
+        # membership's). Drafts are written there too, so they are read
+        # there too.
+        self._entitled_relays = entitled_relays
+        relay_directory.changed.connect(self._on_relay_list_changed)
 
         self._profile: Optional[Profile] = None
         self._subscription: Optional[Subscription] = None
@@ -169,16 +173,7 @@ class DraftSync(QObject):
         self._store.bind_profile(profile.user_pubkey)
         self._store.set_loading(True)
         self.status_changed.emit("Looking up your relay list…")
-
-        # Always include bunker relays as a seed. They're the most
-        # likely place the user's recent activity shows up even before
-        # the NIP-65 list lands.
-        seed_relays = list(dict.fromkeys(profile.bunker_relays))
-        self._relay_list_cache.fetch(
-            profile.user_pubkey,
-            relays=seed_relays,
-            on_done=lambda rl, g=gen: self._on_relay_list_ready(g, rl),
-        )
+        self._ask_relays(lambda relays, g=gen: self._on_relays_ready(g, relays))
 
     def stop(self) -> None:
         """Tear down the subscription and invalidate in-flight callbacks.
@@ -219,6 +214,18 @@ class DraftSync(QObject):
         self._store.set_loading(True)
         self.status_changed.emit("Refreshing drafts…")
         self._open_subscription()
+
+    def reroute(self) -> None:
+        """Work out the private relays again and follow them.
+
+        For when what they depend on changed: a newer relay list (the
+        directory says so through ``changed``) or a membership that adds
+        or drops a relay. The subscription moves only when the set did.
+        """
+        if self._profile is None:
+            return
+        gen = self._generation
+        self._ask_relays(lambda relays, g=gen: self._on_rerouted(g, relays))
 
     def retry_decrypt(self, identifier: str) -> None:
         """Re-queue a previously-failed decryption.
@@ -300,16 +307,17 @@ class DraftSync(QObject):
         """True if the callback was issued in the current generation."""
         return self._profile is not None and gen == self._generation
 
-    # -- internal: resolve relay list, then subscribe ---------------------
+    # -- internal: resolve relays, then subscribe -------------------------
 
-    def _on_relay_list_ready(self, gen: int, relay_list: RelayList) -> None:
+    def _ask_relays(self, on_done: Callable[[List[str]], None]) -> None:
+        ask_private_relays(self._relay_directory, self._profile, on_done,
+                           entitled=self._entitled_relays, reading=True)
+
+    def _on_relays_ready(self, gen: int, relays: List[str]) -> None:
         if not self._is_current(gen):
             return
 
-        self._read_relays = _select_read_relays(
-            relay_list,
-            bunker_relays=self._profile.bunker_relays if self._profile else (),
-        )
+        self._read_relays = list(relays)
 
         self.status_changed.emit("Connecting to your signer…")
         self._session_pool.get(
@@ -317,6 +325,19 @@ class DraftSync(QObject):
             on_ready=lambda client, g=gen: self._on_bunker_ready(g, client),
             on_error=lambda reason, g=gen: self._on_bunker_unavailable(g, reason),
         )
+
+    def _on_relay_list_changed(self, pubkey: str) -> None:
+        if self._profile is not None and pubkey == self._profile.user_pubkey.lower():
+            self.reroute()
+
+    def _on_rerouted(self, gen: int, relays: List[str]) -> None:
+        if not self._is_current(gen) or list(relays) == self._read_relays:
+            return
+        self._read_relays = list(relays)
+        # Before the first subscription opens there is nothing to move;
+        # the signer callback opens it on the new set.
+        if self._subscription is not None:
+            self.refresh()
 
     def _on_bunker_ready(self, gen: int, client: BunkerClient) -> None:
         if not self._is_current(gen):
@@ -345,6 +366,11 @@ class DraftSync(QObject):
             self._latch_signer_unreachable()
 
     def _open_subscription(self) -> None:
+        # One subscription at a time: the signer coming back after it was
+        # unreachable opens it again, and the old one must not stay open.
+        if self._subscription is not None:
+            self._subscription.close()
+            self._subscription = None
         if self._profile is None or not self._read_relays:
             self._store.set_loading(False)
             self.status_changed.emit("No relays available to fetch drafts.")
@@ -574,56 +600,3 @@ class DraftSync(QObject):
         self._decrypt_queue.clear()
         self._pending.clear()
         self._decrypt_inflight = None
-
-
-# --------------------------------------------------------------------------- #
-# Helpers                                                                     #
-# --------------------------------------------------------------------------- #
-
-def _select_read_relays(
-    relay_list: RelayList,
-    *,
-    bunker_relays,
-    cap: int = READ_RELAY_CAP,
-) -> List[str]:
-    """Choose the relay set to subscribe to for the user's drafts.
-
-    Order of preference:
-      1. NIP-65 read relays the user has explicitly published.
-      2. NIP-65 write relays, because drafts are stashed there, so they're
-         the next-best source if no read set exists.
-      3. Bunker relays the profile was paired through.
-      4. Curated defaults as a last-resort backstop so a brand-new
-         profile with no published lists still resolves *something*.
-
-    De-duplicated, capped at ``cap``. Distinct from the publish-relay
-    selector (``outbox.select_publish_relays``) which deliberately
-    blends our curated set at the *front*. For reads, we honour the
-    user's choices first.
-    """
-    seen: set[str] = set()
-    out: List[str] = []
-
-    def add(urls) -> None:
-        for raw in urls:
-            url = raw.strip() if isinstance(raw, str) else ""
-            if not url:
-                continue
-            key = url.rstrip("/").lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(url)
-            if len(out) >= cap:
-                return
-
-    add(relay_list.read)
-    if len(out) < cap:
-        add(relay_list.write)
-    if len(out) < cap:
-        add(bunker_relays)
-    if not out:
-        # Nothing user-specific to consult, so fall back to curated set
-        # so the subscription has somewhere to land.
-        add(DEFAULT_RELAYS)
-    return out

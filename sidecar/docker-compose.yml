@@ -1,0 +1,32 @@
+# The membership sidecar behind Caddy, which gets and renews the HTTPS
+# certificate on its own. From this folder:
+#   cp .env.example .env    # then fill in E21_API_KEY and SIDECAR_DOMAIN
+#   docker compose up -d --build
+services:
+  sidecar:
+    build:
+      context: ..
+      dockerfile: sidecar/Dockerfile
+    env_file: .env
+    restart: unless-stopped
+    expose:
+      - "8021"            # reachable from Caddy only, never published
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SIDECAR_DOMAIN: ${SIDECAR_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - sidecar
+
+volumes:
+  caddy_data:
+  caddy_config:

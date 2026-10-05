@@ -34,8 +34,8 @@ class Person:
     picture: str = ""                   # avatar URL
     nip05: str = ""                     # NIP-05 identifier (alice@example.com)
     relay_hint: str = ""                # best-known relay for them
-    source: str = ""                    # "contact" / "search" / "mention" — provenance
-    updated_at: int = 0                 # unix seconds — when metadata last refreshed
+    source: str = ""                    # provenance: "contact", "search" or "mention"
+    updated_at: int = 0                 # unix seconds when metadata last refreshed
 
     def search_haystack(self) -> str:
         """Lowercased blob the picker matches against."""
@@ -108,19 +108,25 @@ class KnownPeople:
     def upsert(self, person: Person, *, defer_save: bool = False) -> Person:
         """Insert or merge by pubkey.
 
-        Merging rules: any non-empty field on the new record wins; empty
-        fields preserve whatever we had. ``source`` follows the same rule
-        (so a later ``contact`` overrides an earlier ``mention``).
+        Merging rules: the profile fields (name, picture, nip05) come from
+        whichever record is newer by ``updated_at``, the new one on a tie;
+        the older one only fills fields the newer leaves empty. So an old
+        profile, or a contact list's petname (time 0), never overwrites a
+        newer profile. ``relay_hint`` and ``source`` are not profile data:
+        any non-empty value on the new record wins (so a later ``contact``
+        overrides an earlier ``mention``).
         """
         existing = self._people.get(person.pubkey)
         if existing is None:
             self._people[person.pubkey] = person
         else:
+            newer, older = ((person, existing) if person.updated_at >= existing.updated_at
+                            else (existing, person))
             merged = Person(
                 pubkey=person.pubkey,
-                display_name=person.display_name or existing.display_name,
-                picture=person.picture or existing.picture,
-                nip05=person.nip05 or existing.nip05,
+                display_name=newer.display_name or older.display_name,
+                picture=newer.picture or older.picture,
+                nip05=newer.nip05 or older.nip05,
                 relay_hint=person.relay_hint or existing.relay_hint,
                 source=person.source or existing.source,
                 updated_at=max(person.updated_at, existing.updated_at),
@@ -131,7 +137,7 @@ class KnownPeople:
         return self._people[person.pubkey]
 
     def upsert_many(self, people: Iterable[Person]) -> None:
-        """Bulk version — single disk write at the end."""
+        """Bulk version: a single disk write at the end."""
         for p in people:
             self.upsert(p, defer_save=True)
         self._save()

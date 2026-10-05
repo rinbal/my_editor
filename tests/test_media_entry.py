@@ -391,10 +391,8 @@ def test_ask_consults_the_prompt_and_keeps_local_by_default(tmp_path,
     monkeypatch.setattr(alerts, "Alert", box)
     monkeypatch.setattr(main_window_module, "save_setting",
                         lambda *a, **k: pytest.fail("nothing to remember"))
-    monkeypatch.setattr(main_window_module, "BlossomSettings",
-                        lambda: types.SimpleNamespace(
-                            configured_servers=lambda: ["https://cdn.example"]))
     win = _EntryWindow(tmp_path / "cache", profile=object())
+    win._media_store = types.SimpleNamespace(target_servers=lambda: ["https://cdn.example"])
 
     win._handle_pasted_image(win.editor, _clipboard_image())
 
@@ -413,10 +411,8 @@ def test_ask_uploads_when_the_prompt_is_answered_with_upload(tmp_path,
     monkeypatch.setattr(alerts, "Alert", box)
     monkeypatch.setattr(main_window_module, "save_setting",
                         lambda key, value: remembered.append((key, value)))
-    monkeypatch.setattr(main_window_module, "BlossomSettings",
-                        lambda: types.SimpleNamespace(
-                            configured_servers=lambda: ["https://cdn.example"]))
     win = _EntryWindow(tmp_path / "cache", profile=object())
+    win._media_store = types.SimpleNamespace(target_servers=lambda: ["https://cdn.example"])
 
     win._handle_pasted_image(win.editor, _clipboard_image())
 
@@ -571,3 +567,19 @@ def test_a_refresh_for_bytes_that_never_arrived_changes_nothing(tmp_path):
     win._refresh_asset_in_documents("e" * 64)
 
     assert ed.document().isModified() is False
+
+
+def test_the_prompt_names_every_server_the_image_goes_to(tmp_path, paste_choice, monkeypatch):
+    # The members' server receives the upload too, so the question has to
+    # say so: a person deciding what to publish must see every destination.
+    paste_choice("ask")
+    box, shown = fake_alert()
+    monkeypatch.setattr(alerts, "Alert", box)
+    win = _EntryWindow(tmp_path / "cache", profile=object())
+    win._media_store = types.SimpleNamespace(target_servers=lambda: [
+        "https://cdn.example", "https://blossom.einundzwanzig.space"])
+
+    win._handle_pasted_image(win.editor, _clipboard_image())
+
+    assert shown[0].title == ("Upload this image to cdn.example, "
+                              "blossom.einundzwanzig.space?")

@@ -3,9 +3,10 @@
 """Shared Nostr import primitives.
 
 The building blocks every Nostr-facing resolver needs, in one place:
-NIP-19 entity extraction, NIP-05 address resolution, the NIP-65 outbox
-relay lookup, event-to-FeedItem normalisation, and the Qt adapter that
-gives resolvers a tiny relay-query surface.
+NIP-19 entity extraction, NIP-05 address resolution, where to read an
+author (their NIP-65 outbox, through the relay directory),
+event-to-FeedItem normalisation, and the Qt adapter that gives resolvers
+a tiny relay-query surface.
 """
 
 from __future__ import annotations
@@ -27,14 +28,10 @@ from ...bech32 import (
     encode_nevent,
 )
 from ...drafts import derive_title_from_markdown
-from ...outbox import parse_relay_list
+from ...outbox import RelayList, policy
 from ...queries import fetch_addressable_events, fetch_latest_event
 from ...relay import RelayPool
-from ..constants import (
-    NOSTR_INDEXER_RELAYS,
-    NOSTR_LONGFORM_RELAYS,
-    NOSTR_WIKI_KIND,
-)
+from ..constants import NOSTR_WIKI_KIND
 from ..fetch import SourceFetcher
 from ...rss.parser import FeedItem
 from .mdx import derive_summary
@@ -242,23 +239,6 @@ def nostr_event_to_item(event: dict) -> FeedItem:
     )
 
 
-def dedup_relays(*groups: Iterable[str]) -> List[str]:
-    """Order-preserving dedupe across relay groups; drops falsy values."""
-    seen: set = set()
-    out: List[str] = []
-    for group in groups:
-        for relay in group or ():
-            if not isinstance(relay, str):
-                continue
-            cleaned = relay.strip()
-            key = cleaned.rstrip("/").lower()
-            if not key or key in seen:
-                continue
-            seen.add(key)
-            out.append(cleaned)
-    return out
-
-
 # --------------------------------------------------------------------------- #
 # Relay-query adapter + higher-level lookups                                  #
 # --------------------------------------------------------------------------- #
@@ -302,34 +282,26 @@ class RelayQueryAdapter(QObject):
             on_done([])
 
 
-def author_article_relays(
-    nostr_query,
-    pubkey: str,
+def author_outbox(
+    relay_directory,
+    author: Optional[str],
     hints: Iterable[str],
     on_done: Callable[[List[str]], None],
 ) -> None:
-    """Best relays to read an author's articles from.
+    """Where to read what ``author`` wrote: the hint relays, then their
+    outbox (NIP-65 write relays, looked up and verified by the relay
+    directory). Never fails: an author whose list is unknown is read
+    from the hints and the fallback relays.
 
-    Their advertised write relays (kind 10002, per the outbox model),
-    plus any hint relays, plus the long-form fallback set. Never fails:
-    a missed lookup just yields hints + fallback.
+    Without an author (a bare note id) or without a directory (a host
+    with no relay lookups) there is no outbox to ask for, and the same
+    fallback answers at once.
     """
     hint_list = list(hints or ())
-
-    def _on_relay_list(event: Optional[dict]) -> None:
-        outbox: List[str] = []
-        if event:
-            try:
-                outbox = list(parse_relay_list(event).write)
-            except Exception:  # noqa: BLE001, malformed event = no outbox
-                outbox = []
-        on_done(dedup_relays(hint_list, outbox, NOSTR_LONGFORM_RELAYS))
-
-    nostr_query.latest(
-        dedup_relays(hint_list, NOSTR_INDEXER_RELAYS),
-        [{"kinds": [10002], "authors": [pubkey], "limit": 1}],
-        _on_relay_list,
-    )
+    if relay_directory is None or not author:
+        on_done(policy.outbox_relays(RelayList(), hints=hint_list))
+        return
+    relay_directory.outbox_of(author, on_done, hints=hint_list)
 
 
 def fetch_author_name(

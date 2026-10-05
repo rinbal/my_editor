@@ -2,20 +2,23 @@
 
 MyEditor doubles as a Nostr publishing client. Write in the editor, then publish
 to Nostr as a short note or a long-form article, signed by your own NIP-46 signer
-so your private key never enters the app. You also get private encrypted drafts
-that sync across your devices, a media library on your own Blossom servers, and
-one-way import of any blog via RSS.
+so your private key never enters the app, or by a key MyEditor keeps for you on
+this computer. You can create a new account in the app, back it up and restore
+it. You also get private encrypted drafts that sync across your devices, a media
+library on your own Blossom servers, one-way import of any blog via RSS, and
+EINUNDZWANZIG membership.
 
 - [Publishing](#publishing)
 - [Private encrypted drafts](#private-encrypted-drafts)
 - [Media library (Blossom)](#media-library-blossom)
 - [Import from RSS, Atom, and JSON feeds](#import-from-rss-atom-and-json-feeds)
+- [Joining EINUNDZWANZIG in the app](#joining-einundzwanzig-in-the-app)
 
 ---
 
 ## Publishing
 
-Write in the editor, hit publish, approve on your phone. The document goes out as a Nostr event. Your private key stays in your signer (Amber, nsec.app, nsec.bunker, etc.) and never enters this app.
+Write in the editor, hit publish, approve on your phone. The document goes out as a Nostr event. With a signer, your private key stays in it (Amber, nsec.app, nsec.bunker, etc.) and never enters this app. An account kept on this computer signs in MyEditor itself, without a prompt (see [Accounts](#accounts-create-restore-back-up)).
 
 ### What you can publish
 
@@ -34,6 +37,19 @@ Three pairing flows in one dialog (`Nostr → Connect Signer…`):
 
 Connected profiles are saved to `~/.config/my_editor/nostr_profiles.json` with `chmod 600`. The local channel keypair lives there too; your real `nsec` does not.
 
+### Accounts: create, restore, back up
+
+For people new to Nostr, `Nostr → Create Account…` makes a new account in a few steps:
+
+1. **Name.** Optional; it becomes the profile's name.
+2. **Backup.** Right after the key exists, because nobody can reset it: **Save Backup File…** writes a small text file with the public key and the private key protected by a password (NIP-49 `ncryptsec`, which other Nostr apps import too). Saving it unprotected is a second, explicit choice; skipping the backup asks first.
+3. **Where the key lives.** *On this computer*: MyEditor keeps the key and signs with it. *In a signer app*: a guided import into Amber on Android, then pairing, after which the key on this computer is no longer needed.
+4. **Setup.** MyEditor publishes a starter relay list (NIP-65), then the profile, and shows each step. If that can't finish now, **Finish Later** keeps the account and MyEditor completes the setup the next time the account is used, creating only what is still missing.
+
+`Nostr → Restore Account…` opens a backup file (or a pasted key), asks for its password, and brings the account back with its existing relay list and profile; nothing on the network is replaced. `Nostr → Back Up Account…` saves a new backup file at any time for an account kept on this computer.
+
+The private key is never shown on screen. It can be copied (marked as a secret for clipboard managers, and cleared again after a minute) or saved in a backup file. The one exception is the code Amber scans, shown only on request.
+
 ### Multiple identities
 
 The avatar chip at the far right of the header is a profile switcher. Add as many profiles as you want, switch with a single click, and the change takes effect on the next publish. Switching mid-write is fine; the active profile is finalised only when you actually press **Publish** inside the publish dialog (which also has its own inline switcher).
@@ -45,23 +61,28 @@ Avatars and display names are pulled from each profile's kind 0 metadata in the 
 Inside both publish dialogs there's a **Mentions** chip row. Clicking **+ add person** opens a picker that searches:
 
 - your **NIP-02 contact list** first (instant, offline after the first fetch), and
-- **NIP-50 search relays** (`relay.nostr.band`) for anyone you don't already follow.
+- **NIP-50 search relays** (`relay.ditto.pub`, `search.nos.today`) for anyone you don't already follow.
 
 Picked profiles become inline pills and are emitted on publish as `["p", <pubkey>, <relay-hint>]` tags plus a `nostr:nprofile1…` URI appended to the body, so mention rendering works in every client. Inline `nostr:n…` URIs you paste yourself are also picked up and deduplicated automatically.
 
 ### Relays and routing
 
-Publishing follows the **NIP-65 outbox model**:
+Relay choice follows the **NIP-65 outbox model**, decided in one place (`nostr/outbox`):
 
-- Always include a curated base set (Primal, Damus, nos.lol, two YakiHonne relays, `nostr.oxtr.dev`, `theforest.nostr1.com`).
-- Union with the **user's own write relays** from their kind 10002 list, fetched once per profile and cached for 30 minutes.
-- Deduplicate and cap at 10 relays per publish.
+- A note or article goes to **your write relays** from your kind 10002 list first, then a membership relay if you have one, then the **read relays of everyone it mentions** (or the relay hint in the mention when their list is unknown). Your relay list goes along to those people's relays, so readers there can find the rest of what you write. While your list is unknown, or has fewer than two write relays, a small curated set fills in.
+- NIP-65 asks for all of a mentioned person's read relays; MyEditor sends to the first two of each (`INBOX_PER_MENTION`) and to ten for all mentions together (`INBOX_TOTAL_CAP`), so a note naming many people does not fan out to dozens of relays. The slots go round: everyone's first read relay, then everyone's second, so the people named last are reached too. The relay lists of everyone a note mentions are looked up in one request.
+- **Private drafts**, the synced feed list and the private media library are written to your write and read relays, a membership relay, and the signer relays older versions stored drafts on (at most ten; a long relay list never pushes out the last two). While your list is still unknown, the curated set stands in for your own relays. Reading asks every relay writing goes to plus that curated set, so a draft saved before your list was known is still found once it is; deleting a draft reaches all of them too.
+- **Someone else's article** (an `naddr`, an `npub`'s articles) is read from **their** write relays, never from yours.
+- Relay lists are looked up on your own relays and on indexers, verified by signature, and cached: for 30 minutes when found, while your own list is also kept on disk so routing is right from the first second after a launch.
+- Relays named by other people (their relay lists, relay hints in mentions and `naddr`/`nevent` links) are used only when they are public `wss://` relays: plain `ws://`, `localhost`, private and link-local addresses, `.local`/`.lan` style names and `.onion` are skipped, so a stranger's event cannot make MyEditor connect into your own network. Your own relay list is used as you wrote it.
+- Your own profile and contact list are read the same way, and only a validly signed event counts.
 
 The publisher uses eager-first-accept semantics: as soon as one relay acknowledges the event, the dialog shows the result; remaining relays continue in the background and the final count lands in the status bar (e.g. `Published to Nostr: 6/7 relays · note1xxxxx…`).
 
 ### Security model
 
-- **No private key in the editor.** All signing goes through NIP-46 over NIP-44 v2 encryption. Every `sign_event` call surfaces an approval prompt in your signer.
+- **With a signer, no private key in the editor.** All signing goes through NIP-46 over NIP-44 v2 encryption. Every `sign_event` call surfaces an approval prompt in your signer.
+- **An account kept on this computer** has its key in `~/.config/my_editor/nostr_keys.json` (`chmod 600`, folder `chmod 700`), separate from the profiles. It is never shown on screen, and Sign Out deletes it, after an alert that says what a missing backup costs. A damaged key file is set aside, never overwritten.
 - **Connection spoof protection.** The `nostrconnect://` flow generates a one-time secret that the editor verifies against the signer's response before completing the handshake.
 - **Profile file permissions.** The on-disk profile store is restricted to the owner. The local channel keypair stored there only authorizes the existing bunker session; it cannot sign anything itself.
 
@@ -71,7 +92,7 @@ The publisher uses eager-first-accept semantics: as soon as one relay acknowledg
 
 In-progress work is saved as a **NIP-37 draft**: a kind 31234 event whose body is NIP-44 encrypted to your own Nostr key. Only you can decrypt it, and the encryption happens inside your signer so the editor never holds the plaintext key.
 
-**Cross-device by design.** Drafts live on the same relays you already publish to. Sign in with the same Nostr profile on another device and the editor pulls those drafts straight back into the panel. No cloud account, no separate service.
+**Cross-device by design.** Drafts live on your own relays, and every device reads them from exactly where they were written. Sign in with the same Nostr profile on another device and the editor pulls those drafts straight back into the panel. No cloud account, no separate service.
 
 ### How to use it
 
@@ -117,9 +138,11 @@ Two operators, chosen for vendor diversity and a published per-file cap:
 
 The list lives in `~/.config/my_editor/blossom_servers.json`. Edit the file to add custom servers; an empty `custom` list falls back to the defaults. (A Settings dialog for in-app management is planned.)
 
+**EINUNDZWANZIG members** also get the members' server, `https://blossom.einundzwanzig.space` (1 GiB per file, 5 GiB per member), added while the membership is active. Its files show up in the library even when another app uploaded them. **Show files from** narrows the grid to one server, and a storage meter shows how much of the members' space is used. Deleting a file the library can't confirm is public asks first.
+
 ### Upload sizing
 
-The planner checks each configured server's documented per-file limit before sending. If your primary can't take the file but a mirror can, the upload is **rerouted** to the mirror automatically and the status line shows a short note (`blossom.band can't take this file, routing to nostr.download instead`). The hard ceiling is 100 MiB.
+The planner checks each configured server's documented per-file limit before sending. If your primary can't take the file but a mirror can, the upload is **rerouted** to the mirror automatically and the status line shows a short note (`blossom.band can't take this file, routing to nostr.download instead`). Each server's own published limit decides: 100 MiB on the defaults, 1 GiB on the members' server.
 
 ### Security model
 
@@ -152,3 +175,14 @@ Some publishers (Habla, Yakihonne, Pareto, self-hosted Nostr-aware blogs) emit f
 ### Idempotent re-runs
 
 Each item's draft identifier is derived from its feed id, so re-running the same import replaces existing drafts on relays rather than duplicating them. Safe to schedule daily, weekly, or whenever you publish a new post.
+
+## Joining EINUNDZWANZIG in the app
+
+Nostr > EINUNDZWANZIG Membership lets a person apply, pay the annual fee with Lightning and see what membership unlocks (the members' relay, a Nostr address, and media storage).
+
+The association's API needs a client key that must not ship inside the app, so membership requests go through a small service that holds it: the membership sidecar in [`sidecar/`](../sidecar/README.md).
+- A build names its sidecar in `constants.MEMBERSHIP_SERVICE_URL`. That is empty until the maintainers' sidecar is deployed, so for now official builds offer the association's website; once it runs, official builds name it there.
+- A self-hosted build names its own sidecar, or none. `MYEDITOR_MEMBERSHIP_SERVICE` in the environment names one without rebuilding (an `https://` address, or `http://` on this computer).
+- Without a sidecar, with one that has no key, or with one whose key the association refuses, the window says joining in the app isn't available right now and offers the association's website instead.
+- Members get their relay and media server either way, recognized from the association's public member list.
+- Running a sidecar (Docker with Caddy, or systemd behind Caddy or nginx), its limits and what it logs are in [`sidecar/README.md`](../sidecar/README.md). Its server's clock must be synchronized (NTP), because signatures are valid for a minute only.

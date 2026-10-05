@@ -23,6 +23,7 @@ import pytest
 from PySide6.QtCore import QCoreApplication
 
 from nostr.publisher import DraftBulkDeleteJob
+from tests.outbox_fakes import FakeRelayDirectory, settle
 
 PK = "a" * 64
 OK = [("wss://r/", True, "ok")]
@@ -60,12 +61,8 @@ class Signer:
         self.relays_seen: List[List[str]] = []
 
     # -- the seams DraftDeleteJob uses ---------------------------------
-    def relay_list_cache(self):
-        cache = MagicMock()
-        cache.fetch.side_effect = (
-            lambda pubkey, relays, on_done: on_done(MagicMock(write=[], read=[]))
-        )
-        return cache
+    def relay_directory(self):
+        return FakeRelayDirectory()
 
     def session_pool(self):
         pool = MagicMock()
@@ -125,7 +122,7 @@ def run(targets, *, script=(), entitled=(), defer=False):
     signer = Signer(script, defer=defer)
     job = DraftBulkDeleteJob(
         relay_pool=signer.relay_pool(),
-        relay_list_cache=signer.relay_list_cache(),
+        relay_directory=signer.relay_directory(),
         session_pool=signer.session_pool(),
         profile=profile(),
         targets=targets,
@@ -151,15 +148,18 @@ def test_only_one_signature_is_requested_at_a_time():
     # on the user's phone in an order nobody chose.
     job, signer, _ = run(targets(4), defer=True)
     job.start()
+    settle(500)
     assert signer.signed == ["d0"]
 
     signer.release_next()
+    settle(500)
     assert signer.signed == ["d0", "d1"]
 
 
 def test_they_go_in_the_order_they_were_given():
     job, signer, _ = run(targets(4))
     job.start()
+    settle(500)
     assert signer.signed == ["d0", "d1", "d2", "d3"]
 
 
@@ -168,6 +168,7 @@ def test_a_synchronous_signer_does_not_recurse_per_draft():
     # deep is a stack overflow, not a slow deletion.
     job, signer, seen = run(targets(200))
     job.start()
+    settle(500)
     assert len(signer.signed) == 200
     assert seen["finished"] == [(200, [])]
 
@@ -175,12 +176,14 @@ def test_a_synchronous_signer_does_not_recurse_per_draft():
 def test_every_draft_is_reported_as_it_settles():
     job, _signer, seen = run(targets(3))
     job.start()
+    settle(500)
     assert seen["progress"] == [(1, 3), (2, 3), (3, 3)]
 
 
 def test_each_deletion_is_announced_so_the_row_can_go():
     job, _signer, seen = run(targets(3))
     job.start()
+    settle(500)
     assert seen["tombstoned"] == ["d0", "d1", "d2"]
 
 
@@ -192,6 +195,7 @@ def test_one_failure_does_not_end_the_run():
     # The user asked for all of them to go. The ones that can, should.
     job, signer, seen = run(targets(4), script=["ok", "signer refused", "ok", "ok"])
     job.start()
+    settle(500)
     assert len(signer.signed) == 4
     deleted, failures = seen["finished"][0]
     assert deleted == 3 and len(failures) == 1
@@ -205,20 +209,25 @@ def test_a_failure_does_not_strand_the_drafts_behind_it():
     # later, which is the path this covers.
     job, signer, _seen = run(targets(3), script=["denied", "ok", "ok"], defer=True)
     job.start()
+    settle(500)
     assert signer.signed == ["d0"]
 
     signer.release_next()
+    settle(500)
     assert signer.signed == ["d0", "d1"], "the run stopped at the first failure"
     signer.release_next()
+    settle(500)
     assert signer.signed == ["d0", "d1", "d2"]
 
 
 def test_a_deferred_run_reports_once_everything_has_settled():
     job, signer, seen = run(targets(3), script=["denied", "ok", "denied"], defer=True)
     job.start()
+    settle(500)
     for _ in range(3):
         assert not seen["finished"], "reported before the run was over"
         signer.release_next()
+        settle(500)
 
     assert len(seen["finished"]) == 1
     deleted, failures = seen["finished"][0]
@@ -229,6 +238,7 @@ def test_the_failures_name_the_drafts_that_did_not_go():
     job, _signer, seen = run(
         targets(3), script=["denied by user", "ok", "denied by user"])
     job.start()
+    settle(500)
     _deleted, failures = seen["finished"][0]
     assert [ident for ident, _reason in failures] == ["d0", "d2"]
     assert all("denied" in reason for _ident, reason in failures)
@@ -241,13 +251,14 @@ def test_a_deletion_no_relay_accepted_is_not_counted_as_deleted():
     signer._refused_flag = True
     job = DraftBulkDeleteJob(
         relay_pool=signer.relay_pool(),
-        relay_list_cache=signer.relay_list_cache(),
+        relay_directory=signer.relay_directory(),
         session_pool=signer.session_pool(),
         profile=profile(), targets=targets(1),
     )
     out = []
     job.finished.connect(lambda d, f: out.append((d, list(f))))
     job.start()
+    settle(500)
 
     deleted, failures = out[0]
     assert deleted == 0 and len(failures) == 1
@@ -257,12 +268,14 @@ def test_a_deletion_no_relay_accepted_is_not_counted_as_deleted():
 def test_finishing_is_announced_exactly_once():
     job, _signer, seen = run(targets(5), script=["ok", "no", "ok", "no", "ok"])
     job.start()
+    settle(500)
     assert len(seen["finished"]) == 1
 
 
 def test_an_empty_run_finishes_rather_than_hanging():
     job, _signer, seen = run([])
     job.start()
+    settle(500)
     assert seen["finished"] == [(0, [])]
 
 
@@ -273,14 +286,18 @@ def test_an_empty_run_finishes_rather_than_hanging():
 def test_cancelling_stops_before_the_next_signature():
     job, signer, seen = run(targets(5), defer=True)
     job.start()
+    settle(500)
     signer.release_next()          # d0 completes
+    settle(500)
     assert signer.signed == ["d0", "d1"]
 
     job.cancel()
+    settle(500)
     assert seen["finished"], "a cancelled run still has to report"
     before = len(signer.signed)
     if signer.pending:
         signer.release_next()
+        settle(500)
     assert len(signer.signed) == before, "no further signature after cancel"
 
 
@@ -289,9 +306,13 @@ def test_a_cancelled_run_reports_what_actually_happened():
     # count is what went, not what was asked for.
     job, signer, seen = run(targets(5), defer=True)
     job.start()
+    settle(500)
     signer.release_next()
+    settle(500)
     signer.release_next()
+    settle(500)
     job.cancel()
+    settle(500)
 
     deleted, _failures = seen["finished"][0]
     assert deleted == 2
@@ -300,15 +321,20 @@ def test_a_cancelled_run_reports_what_actually_happened():
 def test_cancelling_twice_reports_once():
     job, _signer, seen = run(targets(3), defer=True)
     job.start()
+    settle(500)
     job.cancel()
+    settle(500)
     job.cancel()
+    settle(500)
     assert len(seen["finished"]) == 1
 
 
 def test_cancelling_a_finished_run_changes_nothing():
     job, _signer, seen = run(targets(2))
     job.start()
+    settle(500)
     job.cancel()
+    settle(500)
     assert len(seen["finished"]) == 1
 
 
@@ -321,7 +347,7 @@ def test_a_foreign_inner_kind_is_refused_at_construction():
     # ninth draft has already cost the user eight approvals.
     with pytest.raises(ValueError, match="unsupported inner kind"):
         DraftBulkDeleteJob(
-            relay_pool=MagicMock(), relay_list_cache=MagicMock(),
+            relay_pool=MagicMock(), relay_directory=MagicMock(),
             session_pool=MagicMock(), profile=profile(),
             targets=[("d0", 1), ("d1", 30024)],
         )
@@ -330,7 +356,7 @@ def test_a_foreign_inner_kind_is_refused_at_construction():
 def test_an_empty_identifier_is_refused_at_construction():
     with pytest.raises(ValueError, match="identifier"):
         DraftBulkDeleteJob(
-            relay_pool=MagicMock(), relay_list_cache=MagicMock(),
+            relay_pool=MagicMock(), relay_directory=MagicMock(),
             session_pool=MagicMock(), profile=profile(),
             targets=[("", 1)],
         )
@@ -341,7 +367,7 @@ def test_nothing_is_signed_when_construction_refuses():
     with pytest.raises(ValueError):
         DraftBulkDeleteJob(
             relay_pool=signer.relay_pool(),
-            relay_list_cache=signer.relay_list_cache(),
+            relay_directory=signer.relay_directory(),
             session_pool=signer.session_pool(),
             profile=profile(), targets=[("d0", 1), ("d1", 30024)],
         )
@@ -356,6 +382,7 @@ def test_entitled_relays_reach_every_deletion():
     entitled = ["wss://nostr.einundzwanzig.space"]
     job, signer, _ = run(targets(3), entitled=entitled)
     job.start()
+    settle(500)
     assert len(signer.relays_seen) == 3
     for relays in signer.relays_seen:
         assert entitled[0] in relays

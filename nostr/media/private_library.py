@@ -73,7 +73,7 @@ import time as _time
 from PySide6.QtCore import QObject, Signal
 
 from ..bunker import BunkerClient, BunkerSessionPool
-from ..outbox import RelayListCache, select_draft_publish_relays
+from ..outbox import RelayDirectory, ask_private_relays
 from ..profiles import Profile
 from .assets import is_sha256
 from .visibility import PrivateBlob
@@ -380,15 +380,19 @@ class PrivateLibrary(QObject):
         self,
         *,
         session_pool: BunkerSessionPool,
-        relay_list_cache: RelayListCache,
+        relay_directory: RelayDirectory,
         query: AddressableQuery,
         clock: Optional[Callable[[], int]] = None,
+        entitled_relays: Optional[Callable[[], Sequence[str]]] = None,
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
         self._session_pool = session_pool
-        self._relay_list_cache = relay_list_cache
+        self._relay_directory = relay_directory
         self._query = query
+        # Relays this account has standing on beyond its own list; private
+        # records are written there too, so they are read there too.
+        self._entitled_relays = entitled_relays
         self._clock = clock or (lambda: int(_time.time()))
 
         self._profile: Optional[Profile] = None
@@ -591,12 +595,9 @@ class PrivateLibrary(QObject):
         gen = self._generation
         self._emit_status("Opening your private library...")
 
-        def _on_relay_list(relay_list) -> None:
+        def _on_relays(relays) -> None:
             if not self._is_current(gen):
                 return
-            relays = select_draft_publish_relays(
-                relay_list, bunker_relays=profile.bunker_relays,
-            )
             self._query.addressable(
                 relays,
                 [{
@@ -606,11 +607,10 @@ class PrivateLibrary(QObject):
                 lambda events, g=gen: self._on_events(g, events),
             )
 
-        self._relay_list_cache.fetch(
-            profile.user_pubkey,
-            relays=list(dict.fromkeys(profile.bunker_relays)),
-            on_done=_on_relay_list,
-        )
+        # The account's private relays, where other private records are
+        # written (and read), so files saved on any device are found.
+        ask_private_relays(self._relay_directory, profile, _on_relays,
+                           entitled=self._entitled_relays, reading=True)
 
     # -- internal: cancellation -------------------------------------------
 

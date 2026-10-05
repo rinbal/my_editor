@@ -1,0 +1,44 @@
+# systemd unit for running the sidecar without Docker, behind a reverse
+# proxy (Caddy or nginx) on the same machine that terminates HTTPS and
+# forwards to 127.0.0.1:8021. See README.md, "Run it without Docker".
+#
+# Exactly one uvicorn process, no --workers: the limits and the record of
+# used signatures live in the process's memory, so a second worker would
+# double every limit and could accept a signature a second time.
+[Unit]
+Description=MyEditor membership sidecar
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=myeditor-sidecar
+Group=myeditor-sidecar
+WorkingDirectory=/opt/myeditor
+EnvironmentFile=/etc/myeditor-sidecar.env
+# --no-access-log: uvicorn's access log would record every client address.
+ExecStart=/opt/myeditor/.venv-sidecar/bin/uvicorn sidecar.app:app --host 127.0.0.1 --port 8021 --proxy-headers --forwarded-allow-ips 127.0.0.1 --no-server-header --no-access-log
+Restart=always
+RestartSec=3
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallFilter=@system-service
+UMask=0077
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

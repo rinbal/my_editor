@@ -27,11 +27,11 @@ from ...rss.parser import Feed, FeedItem
 from ..sources.mdx import derive_summary
 from ..sources.nostr import (
     NostrEntity,
-    dedup_relays,
     event_tag,
     extract_nostr_entity,
     fetch_author_name,
 )
+from ...outbox.policy import dedupe_relays, public_relays
 from ...bech32 import encode_naddr
 
 HUB_BASE_URL = "https://nostrhub.io"
@@ -124,7 +124,9 @@ def _resolve(input_: ResolveInput, ctx: ResolveContext) -> None:
         return
 
     ctx.stage("connecting", url, hostname="nostrhub.io")
-    relays = dedup_relays(entity.relays, NOSTRHUB_RELAYS)
+    # The address's own relays (public ones: they are a stranger's
+    # word), then where NostrHub keeps its events.
+    relays = dedupe_relays(public_relays(entity.relays), NOSTRHUB_RELAYS)
 
     def _finish(events: list, source_url: str) -> None:
         if ctx.is_cancelled():

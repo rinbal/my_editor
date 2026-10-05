@@ -4,10 +4,12 @@
 
 Two pieces:
 
-  ProfileMetadataFetcher subscribes to the configured relays for a
-    user's ``kind:0`` event, parses the content JSON, writes the resolved
-    name/picture/nip05 back to the profile store, and emits the updated
-    Profile.
+  ProfileMetadataFetcher asks for a user's own ``kind:0`` event where
+    profiles are found (their write relays, then the indexers), keeps the
+    newest validly signed one, writes the resolved name/picture/nip05 back
+    to the profile store, and emits the updated Profile. Only a verified
+    event counts: a relay that hands out a forged, newer profile cannot
+    rename the user in their own editor.
 
   AvatarLoader downloads the ``picture`` URL via QtNetwork to a local
     cache directory, then emits the resulting QPixmap so the chip can
@@ -40,9 +42,10 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequ
 import url_safety
 from image_safety import decode_image_bytes
 
-from . import DEFAULT_RELAYS
+from .outbox.directory import RelayDirectory
+from .outbox.lookup import Lookup, fetch_replaceable
+from .outbox.policy import KIND_PROFILE, lookup_relays
 from .profiles import Profile, ProfileStore
-from .queries import fetch_latest_event
 from .relay import RelayPool
 
 
@@ -81,19 +84,25 @@ class ProfileMetadataFetcher(QObject):
         pool: RelayPool,
         store: ProfileStore,
         parent: Optional[QObject] = None,
+        *,
+        relay_directory: RelayDirectory,
+        query=fetch_replaceable,
     ) -> None:
         super().__init__(parent)
         self._pool = pool
         self._store = store
+        # Knows the user's own relay list, which leads the lookup (while
+        # it is unknown, the indexers and the fallback relays are asked).
+        # Required: without it the user's own relays would silently go
+        # unasked.
+        self._relay_directory = relay_directory
+        self._query = query
 
     def fetch(self, profile: Profile, *, timeout_ms: int = 8_000) -> None:
-        # Try the curated set first; the bunker's own relays usually mirror
-        # the user's preferred set, so include them too.
-        relays = list(
-            dict.fromkeys(list(DEFAULT_RELAYS) + list(profile.bunker_relays))
-        )
+        known = self._relay_directory.cached(profile.user_pubkey)
 
-        def _on_done(event: Optional[dict]) -> None:
+        def _on_done(result: Lookup) -> None:
+            event = result.event
             if event is None:
                 self.failed.emit("no metadata event found")
                 return
@@ -123,14 +132,9 @@ class ProfileMetadataFetcher(QObject):
             self._store.upsert(current)
             self.updated.emit(current)
 
-        fetch_latest_event(
-            self._pool,
-            relays,
-            filters=[{"kinds": [0], "authors": [profile.user_pubkey], "limit": 1}],
-            on_done=_on_done,
-            timeout_ms=timeout_ms,
-            parent=self,
-        )
+        self._query(self._pool, lookup_relays(known=known, own=True), kind=KIND_PROFILE,
+                    author=profile.user_pubkey, on_done=_on_done,
+                    timeout_ms=timeout_ms, parent=self)
 
 
 # --------------------------------------------------------------------------- #

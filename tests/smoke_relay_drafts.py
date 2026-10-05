@@ -11,7 +11,7 @@ What it does, end to end:
   1. Generate a throwaway secp256k1 keypair in-memory.
   2. Build a kind-1 short-note inner event.
   3. NIP-44-encrypt the serialized inner to the *same* pubkey (self-
-     encryption — the NIP-37 contract). We use ``crypto.encrypt_to``
+     encryption, the NIP-37 contract). We use ``crypto.encrypt_to``
      directly rather than the bunker because this test owns the key.
   4. Wrap the ciphertext in a kind-31234 draft event with the spec
      tag set (d / k / expiration / client), sign locally.
@@ -45,7 +45,8 @@ from PySide6.QtCore import QCoreApplication, QTimer
 import pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from nostr import CLIENT_NAME, DEFAULT_RELAYS, crypto, events  # noqa: E402
+from nostr import CLIENT_NAME, crypto, events  # noqa: E402
+from nostr.outbox.defaults import FALLBACK_RELAYS  # noqa: E402
 from nostr.bech32 import encode_npub  # noqa: E402
 from nostr.drafts import (  # noqa: E402
     DRAFT_WRAP_KIND,
@@ -61,7 +62,7 @@ from nostr.queries import fetch_addressable_events  # noqa: E402
 from nostr.relay import RelayPool  # noqa: E402
 
 
-RELAYS = list(DEFAULT_RELAYS)
+RELAYS = list(FALLBACK_RELAYS)
 DRAFT_BODY = (
     "minimal-texteditor NIP-37 round-trip smoke test. "
     "If you are reading this, the draft wrap was decrypted successfully. "
@@ -101,7 +102,7 @@ def main() -> int:
         pubkey_hex=pk_hex,
         client_name=CLIENT_NAME,
     )
-    # Locally sign — same code path the bunker would use server-side.
+    # Locally sign: same code path the bunker would use server-side.
     wrap_signed = events.build_event(
         kind=wrap_unsigned["kind"],
         content=wrap_unsigned["content"],
@@ -134,7 +135,7 @@ def main() -> int:
             pool.close_all()
             QTimer.singleShot(100, app.quit)
             return
-        # Give the network 1.5s to propagate before subscribing back —
+        # Give the network 1.5s to propagate before subscribing back:
         # some relays index asynchronously after returning OK.
         QTimer.singleShot(1500, lambda: roundtrip_fetch(accepted_urls(results)))
 
@@ -179,7 +180,7 @@ def main() -> int:
         try:
             decrypted = crypto.decrypt_from(meta.ciphertext, sk, pk_bytes)
             inner_back = parse_inner_event(decrypted)
-        except Exception as exc:  # noqa: BLE001 — surface decrypt errors to console
+        except Exception as exc:  # noqa: BLE001, surface decrypt errors to console
             print(f"FAIL: decrypt/parse error: {exc}")
             pool.close_all()
             QTimer.singleShot(100, app.quit)
@@ -220,7 +221,7 @@ def main() -> int:
         QTimer.singleShot(100, app.quit)
 
     # Hard ceiling for the whole pipeline (publish + propagate + fetch).
-    QTimer.singleShot(30_000, lambda: (print("HARD TIMEOUT — exiting"), app.exit(2)))
+    QTimer.singleShot(30_000, lambda: (print("HARD TIMEOUT, exiting"), app.exit(2)))
 
     app.exec()
     return exit_code["value"]

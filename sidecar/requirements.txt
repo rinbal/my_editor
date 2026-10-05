@@ -1,0 +1,9 @@
+# The membership sidecar (sidecar/app.py). Not needed by the desktop app.
+# Compatible-release pins, so a rebuild of the image picks up bug fixes
+# but never a new minor (0.x) or major version unreviewed.
+fastapi~=0.142.2
+uvicorn~=0.54.0
+httpx~=0.28.1
+# Signature checks reuse the app's own nostr package, which needs these.
+coincurve~=21.0
+cryptography~=48.0

@@ -4,7 +4,9 @@
 
 Everything here is offline. The relay pool is a fake that hands back
 whatever the test hands it, so no REQ ever leaves the process, and the
-settings store always lives under ``tmp_path``.
+settings store always lives under ``tmp_path``. A list is read through
+the outbox lookup, so the lists a relay hands back here are really
+signed by their author; a forged one is shown to count for nothing.
 
 The merge matrix is the point of this file. AD-13 says a discovered
 server list may be used for retrieval, may be offered, and may be
@@ -26,7 +28,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QApplication
 
-from nostr import DEFAULT_RELAYS
+from nostr import crypto, events
 from nostr.blossom import server_list
 from nostr.blossom.server_list import (
     BLOSSOM_SERVER_LIST_KIND,
@@ -44,7 +46,9 @@ from nostr.blossom.settings import (
     CONFIG_ORIGIN_USER,
     BlossomSettings,
 )
+from nostr.outbox.policy import LookupState, RelayList, lookup_relays
 from tests.blossom_fakes import PUBKEY
+from tests.outbox_fakes import FakeRelayDirectory
 
 
 # The example event from specs/bud-03.md lines 15-28, verbatim.
@@ -63,9 +67,18 @@ BUD03_EXAMPLE = {
 }
 
 
+# The spec example is validly signed by its author.
+SPEC_AUTHOR = BUD03_EXAMPLE["pubkey"]
+RELAY = ["wss://relay.example"]
+
+# The user whose own list the policy reads, with a key to sign it.
+OWNER_SK = bytes.fromhex("5d" * 32)
+OWNER = crypto.get_public_key(OWNER_SK).hex()
+
+
 @pytest.fixture(scope="module", autouse=True)
 def qt_app():
-    # ``fetch_latest_event`` arms a QTimer, which needs an application
+    # The outbox lookup arms a QTimer, which needs an application
     # object to attach to even though nothing here ever runs the loop.
     app = QApplication.instance() or QApplication(sys.argv)
     yield app
@@ -82,6 +95,13 @@ def _event(*servers, **extra) -> dict:
     return event
 
 
+def _signed(*servers) -> dict:
+    """The owner's kind 10063 naming ``servers``, validly signed."""
+    return events.sign_event({"kind": BLOSSOM_SERVER_LIST_KIND, "content": "",
+                              "tags": [["server", s] for s in servers],
+                              "created_at": 1_750_000_000}, OWNER_SK)
+
+
 def _settings(tmp_path) -> BlossomSettings:
     return BlossomSettings(path=tmp_path / "blossom_servers.json")
 
@@ -91,10 +111,13 @@ def _settings(tmp_path) -> BlossomSettings:
 # --------------------------------------------------------------------------- #
 
 class FakeSub(QObject):
-    """The three members ``fetch_latest_event`` uses off a subscription."""
+    """The members the outbox lookup uses off a subscription."""
 
     event = Signal(dict)
     eose = Signal()
+    relay_eose = Signal(str)
+    relay_closed = Signal(str, str)
+    relay_failed = Signal(str, str)
 
     def __init__(self, filters) -> None:
         super().__init__()
@@ -268,13 +291,26 @@ def test_cache_fetches_kind_10063_for_one_author():
     pool = FakePool()
     cache = ServerListCache(pool)
     seen: list = []
-    cache.fetch(PUBKEY, ["wss://relay.example"], seen.append)
+    cache.fetch(SPEC_AUTHOR, RELAY, seen.append)
 
     assert pool.subs[0].filters == [
-        {"kinds": [10063], "authors": [PUBKEY], "limit": 1}
+        {"kinds": [10063], "authors": [SPEC_AUTHOR], "limit": 2}
     ]
     pool.deliver(BUD03_EXAMPLE)
     assert seen == [["https://cdn.self.hosted", "https://cdn.satellite.earth"]]
+
+
+def test_a_forged_or_foreign_list_counts_for_nothing():
+    # A relay can hand out anything; only the author's signed list counts.
+    forged = dict(BUD03_EXAMPLE, tags=[["server", "https://evil.example"]])
+    pool = FakePool()
+    cache = ServerListCache(pool)
+    seen: list = []
+    cache.fetch(SPEC_AUTHOR, RELAY, seen.append)
+    pool.deliver(forged)
+    cache.fetch(OWNER, RELAY, seen.append)
+    pool.deliver(BUD03_EXAMPLE)                 # signed, but by someone else
+    assert seen == [[], []]
 
 
 def test_two_concurrent_fetches_share_one_req():
@@ -282,8 +318,8 @@ def test_two_concurrent_fetches_share_one_req():
     cache = ServerListCache(pool)
     first: list = []
     second: list = []
-    cache.fetch(PUBKEY, ["wss://relay.example"], first.append)
-    cache.fetch(PUBKEY, ["wss://relay.example"], second.append)
+    cache.fetch(SPEC_AUTHOR, RELAY, first.append)
+    cache.fetch(SPEC_AUTHOR, RELAY, second.append)
 
     assert len(pool.subs) == 1
     pool.deliver(BUD03_EXAMPLE)
@@ -293,11 +329,11 @@ def test_two_concurrent_fetches_share_one_req():
 def test_a_hit_is_answered_from_cache_without_a_second_req():
     pool = FakePool()
     cache = ServerListCache(pool)
-    cache.fetch(PUBKEY, [], lambda _s: None)
+    cache.fetch(SPEC_AUTHOR, RELAY, lambda _s: None)
     pool.deliver(BUD03_EXAMPLE)
 
     seen: list = []
-    cache.fetch(PUBKEY, [], seen.append)
+    cache.fetch(SPEC_AUTHOR, RELAY, seen.append)
     assert len(pool.subs) == 1
     assert seen == [["https://cdn.self.hosted", "https://cdn.satellite.earth"]]
 
@@ -305,13 +341,13 @@ def test_a_hit_is_answered_from_cache_without_a_second_req():
 def test_a_hit_expires_after_the_long_ttl(monkeypatch):
     pool = FakePool()
     cache = ServerListCache(pool)
-    cache.fetch(PUBKEY, [], lambda _s: None)
+    cache.fetch(SPEC_AUTHOR, RELAY, lambda _s: None)
     pool.deliver(BUD03_EXAMPLE)
 
     import time as time_module
-    later = time_module.time() + server_list._TTL_HIT_S + 1
-    monkeypatch.setattr(server_list.time, "time", lambda: later)
-    cache.fetch(PUBKEY, [], lambda _s: None)
+    later = time_module.monotonic() + server_list._TTL_HIT_S + 1
+    monkeypatch.setattr(server_list.time, "monotonic", lambda: later)
+    cache.fetch(SPEC_AUTHOR, RELAY, lambda _s: None)
     assert len(pool.subs) == 2
 
 
@@ -319,24 +355,24 @@ def test_an_empty_answer_is_retried_sooner_than_a_hit(monkeypatch):
     pool = FakePool()
     cache = ServerListCache(pool)
     seen: list = []
-    cache.fetch(PUBKEY, [], seen.append)
+    cache.fetch(SPEC_AUTHOR, RELAY, seen.append)
     pool.deliver_nothing()
     assert seen == [[]]
 
     import time as time_module
-    later = time_module.time() + server_list._TTL_EMPTY_S + 1
-    monkeypatch.setattr(server_list.time, "time", lambda: later)
-    cache.fetch(PUBKEY, [], lambda _s: None)
+    later = time_module.monotonic() + server_list._TTL_EMPTY_S + 1
+    monkeypatch.setattr(server_list.time, "monotonic", lambda: later)
+    cache.fetch(SPEC_AUTHOR, RELAY, lambda _s: None)
     assert len(pool.subs) == 2
 
 
 def test_invalidate_forces_a_refetch():
     pool = FakePool()
     cache = ServerListCache(pool)
-    cache.fetch(PUBKEY, [], lambda _s: None)
+    cache.fetch(SPEC_AUTHOR, RELAY, lambda _s: None)
     pool.deliver(BUD03_EXAMPLE)
-    cache.invalidate(PUBKEY)
-    cache.fetch(PUBKEY, [], lambda _s: None)
+    cache.invalidate(SPEC_AUTHOR)
+    cache.fetch(SPEC_AUTHOR, RELAY, lambda _s: None)
     assert len(pool.subs) == 2
 
 
@@ -346,7 +382,7 @@ def test_the_cache_never_touches_disk(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     pool = FakePool()
     cache = ServerListCache(pool)
-    cache.fetch(PUBKEY, [], lambda _s: None)
+    cache.fetch(SPEC_AUTHOR, RELAY, lambda _s: None)
     pool.deliver(BUD03_EXAMPLE)
     assert list(tmp_path.iterdir()) == []
 
@@ -358,10 +394,11 @@ def test_the_cache_never_touches_disk(tmp_path, monkeypatch):
 class Ctx:
     """A policy object wired to a fake pool and a temp settings file."""
 
-    def __init__(self, tmp_path, profile=None) -> None:
+    def __init__(self, tmp_path, profile=None, directory=None) -> None:
         self.pool = FakePool()
         self.settings = _settings(tmp_path)
-        self.policy = UserServerList(self.pool, settings=self.settings)
+        self.policy = UserServerList(self.pool, settings=self.settings,
+                                     relay_directory=directory or FakeRelayDirectory())
         self.profile = profile if profile is not None else _profile()
         self.discovered: list = []
         self.adopted: list = []
@@ -375,10 +412,10 @@ class Ctx:
         if servers is None:
             self.pool.deliver_nothing()
         else:
-            self.pool.deliver(_event(*servers))
+            self.pool.deliver(_signed(*servers))
 
 
-def _profile(pubkey: str = PUBKEY, relays=()):
+def _profile(pubkey: str = OWNER, relays=()):
     class _P:
         user_pubkey = pubkey
         bunker_relays = list(relays)
@@ -514,7 +551,7 @@ def test_a_second_refresh_after_adoption_does_not_re_adopt(tmp_path):
     ctx.pool.subs.clear()
 
     ctx.policy.refresh(ctx.profile, force=True)
-    ctx.pool.deliver(_event("https://brand.new.example"))
+    ctx.pool.deliver(_signed("https://brand.new.example"))
 
     assert ctx.adopted == [PUBLISHED]
     assert ctx.settings.configured_servers == PUBLISHED
@@ -539,14 +576,27 @@ def test_discovery_is_recorded_but_never_enters_the_upload_list(tmp_path):
 
     reopened = _settings(tmp_path)
     assert reopened.discovered_servers == PUBLISHED
-    assert reopened.discovered_pubkey == PUBKEY
+    assert reopened.discovered_pubkey == OWNER
     assert reopened.configured_servers == CHOSEN
 
 
-def test_refresh_queries_the_default_relays_plus_the_bunker_relays(tmp_path):
-    ctx = Ctx(tmp_path, profile=_profile(relays=["wss://bunker.example"]))
+def test_refresh_asks_where_the_users_own_lists_are(tmp_path):
+    # The same relays as the user's profile and contact list: their write
+    # relays first, then the indexers. A signer's relay is not a home.
+    directory = FakeRelayDirectory({OWNER: RelayList(
+        write=["wss://mine.example"], state=LookupState.FOUND)})
+    ctx = Ctx(tmp_path, profile=_profile(relays=["wss://bunker.example"]),
+              directory=directory)
     ctx.policy.refresh(ctx.profile)
-    assert ctx.pool.relay_sets[0] == list(DEFAULT_RELAYS) + ["wss://bunker.example"]
+    assert ctx.pool.relay_sets[0] == lookup_relays(known=directory.cached(OWNER), own=True)
+    assert ctx.pool.relay_sets[0][0] == "wss://mine.example"
+    assert "wss://bunker.example" not in ctx.pool.relay_sets[0]
+
+
+def test_refresh_with_no_list_known_asks_the_indexers(tmp_path):
+    ctx = Ctx(tmp_path)
+    ctx.policy.refresh(ctx.profile)
+    assert ctx.pool.relay_sets[0] == lookup_relays()
 
 
 def test_refresh_without_a_profile_pubkey_asks_nothing(tmp_path):
@@ -575,9 +625,10 @@ def test_a_recorded_list_is_available_before_the_first_fetch(tmp_path):
     # out of the settings file rather than waiting on a relay.
     stored = _settings(tmp_path)
     stored.set_custom_servers(CHOSEN)
-    stored.record_discovered(PUBLISHED, PUBKEY)
+    stored.record_discovered(PUBLISHED, OWNER)
 
-    policy = UserServerList(FakePool(), settings=_settings(tmp_path))
+    policy = UserServerList(FakePool(), settings=_settings(tmp_path),
+                            relay_directory=FakeRelayDirectory())
     assert policy.discovered_servers == PUBLISHED
     assert policy.recovery_servers() == CHOSEN + PUBLISHED
 

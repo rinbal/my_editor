@@ -3,7 +3,7 @@
 """Orchestration tests for ``nostr.imports.pipeline.ImportItemsJob``.
 
 Drives the per-item import state machine through its injectable seams
-(long-form fetcher, publish-job factory, relay-list cache, executor,
+(long-form fetcher, publish-job factory, relay directory, executor,
 pacer), so no network, relays, signer, threads, or timers are involved
 and every test is deterministic. Guards:
 
@@ -46,12 +46,12 @@ from tests.imports_fakes import (
     RESULTS_OK,
     FakeFetcher,
     FakeLongFormFetcher,
-    FakeRelayListCache,
     RecordingPacer,
     inline_run_blocking,
     make_factory,
     make_item,
 )
+from tests.outbox_fakes import FakeRelayDirectory, settle
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -63,8 +63,20 @@ def qt_app():
 FEED_URL = "https://example.com/feed"
 
 
+# The importing user publishes and reads on their own relays; the author
+# of a resolved article (AUTHOR) publishes somewhere else entirely.
+AUTHOR = "cd" * 32
+
+
+def make_directory():
+    return FakeRelayDirectory({
+        PROFILE.user_pubkey: ["wss://read.example"],
+        AUTHOR: ["wss://author-outbox.example"],
+    })
+
+
 def make_job(items, *, factory=None, long_form=None, pacer=None,
-             page_fetcher=None, feed_url=FEED_URL, **kwargs):
+             page_fetcher=None, feed_url=FEED_URL, directory=None, **kwargs):
     if factory is None:
         factory, _ = make_factory()
     return ImportItemsJob(
@@ -72,7 +84,7 @@ def make_job(items, *, factory=None, long_form=None, pacer=None,
         feed_url=feed_url,
         profile=PROFILE,
         relay_pool=None,
-        relay_list_cache=FakeRelayListCache(),
+        relay_directory=directory or make_directory(),
         session_pool=None,
         fetcher=page_fetcher or FakeFetcher(),
         long_form_fetcher=long_form or FakeLongFormFetcher(None),
@@ -120,6 +132,7 @@ class TestHappyPath:
         job = make_job(TWO_ITEMS)
         rec = Recorder(job)
         job.start()
+        settle()
         assert [e[1] for e in rec.of("item_started")] == [0, 1]
         assert [e[1] for e in rec.of("item_succeeded")] == [0, 1]
         assert rec.of("completed") == [("completed", 2, 2)]
@@ -129,6 +142,7 @@ class TestHappyPath:
         job = make_job([make_item("Only", guid="g1")])
         rec = Recorder(job)
         job.start()
+        settle()
         names = [e[0] for e in rec.events]
         assert names.index("item_succeeded") < names.index("item_published")
 
@@ -136,6 +150,7 @@ class TestHappyPath:
         job = make_job(TWO_ITEMS)
         rec = Recorder(job)
         job.start()
+        settle()
         assert rec.of("item_published") == [
             ("item_published", 0, 1, 2),
             ("item_published", 1, 1, 2),
@@ -148,6 +163,7 @@ class TestHappyPath:
         job = make_job([make_item("Only", guid="g1")], factory=factory)
         rec = Recorder(job)
         job.start()
+        settle()
         assert rec.of("item_published") == [("item_published", 0, 0, 1)]
         # Stash-time accounting is unaffected (publisher.py invariant:
         # failed never fires after stashed).
@@ -158,6 +174,7 @@ class TestHappyPath:
         job = make_job(TWO_ITEMS, factory=factory)
         rec = Recorder(job)
         job.start()
+        settle()
         assert rec.of("item_failed") == [("item_failed", 0, "signer said no")]
         assert [e[1] for e in rec.of("item_succeeded")] == [1]
         assert rec.of("completed") == [("completed", 1, 2)]
@@ -168,24 +185,34 @@ class TestHappyPath:
         job = make_job([bad, make_item("Good", guid="g2")])
         rec = Recorder(job)
         job.start()
+        settle()
         (failure,) = rec.of("item_failed")
         assert failure[1] == 0
         assert "Could not normalise item" in failure[2]
         assert rec.of("completed") == [("completed", 1, 2)]
 
     def test_empty_item_list_completes_immediately(self):
-        cache = FakeRelayListCache()
+        directory = make_directory()
         job = ImportItemsJob(
             items=[], feed_url=FEED_URL, profile=PROFILE, relay_pool=None,
-            relay_list_cache=cache, session_pool=None,
+            relay_directory=directory, session_pool=None,
             long_form_fetcher=FakeLongFormFetcher(None),
             publish_job_factory=make_factory()[0],
             run_blocking=inline_run_blocking, pacer=RecordingPacer(),
         )
         rec = Recorder(job)
         job.start()
+        settle()
         assert rec.of("completed") == [("completed", 0, 0)]
-        assert cache.calls == []  # no pointless relay-list round-trip
+        assert directory.calls == []  # no pointless relay-list round-trip
+
+    def test_drafts_carry_the_membership_relay(self):
+        factory, created = make_factory()
+        job = make_job([make_item("Only", guid="g1")], factory=factory,
+                       entitled_relays=["wss://members.example"])
+        job.start()
+        settle()
+        assert created[0].kwargs["entitled_relays"] == ["wss://members.example"]
 
 
 # --------------------------------------------------------------------------- #
@@ -197,6 +224,7 @@ class TestInnerEvent:
         factory, created = make_factory()
         job = make_job([make_item("Only", guid="g1")], factory=factory)
         job.start()
+        settle()
         expected = derive_identifier(guid="g1", prefix=IDENTIFIER_PREFIX)
         assert created[0].identifier == expected
         assert created[0].identifier.startswith(IDENTIFIER_PREFIX)
@@ -211,6 +239,7 @@ class TestInnerEvent:
             identifier_exists=lambda d: d == bare,
         )
         job.start()
+        settle()
         assert created[0].identifier == bare
 
     def test_migration_keeps_prefix_when_no_existing_draft(self):
@@ -221,6 +250,7 @@ class TestInnerEvent:
             identifier_exists=lambda d: False,
         )
         job.start()
+        settle()
         assert created[0].identifier.startswith(IDENTIFIER_PREFIX)
 
     def test_migration_probe_failure_keeps_prefix(self):
@@ -234,6 +264,7 @@ class TestInnerEvent:
         )
         rec = Recorder(job)
         job.start()
+        settle()
         assert created[0].identifier.startswith(IDENTIFIER_PREFIX)
         assert rec.of("completed") == [("completed", 1, 1)]
 
@@ -241,6 +272,7 @@ class TestInnerEvent:
         factory, created = make_factory()
         job = make_job([make_item("Only", guid="g1")], factory=factory)
         job.start()
+        settle()
         assert [SOURCE_TAG, FEED_URL] in created[0].inner_event["tags"]
 
     def test_no_source_tag_without_feed_url(self):
@@ -248,6 +280,7 @@ class TestInnerEvent:
         job = make_job([make_item("Only", guid="g1")], factory=factory,
                        feed_url="")
         job.start()
+        settle()
         tags = created[0].inner_event["tags"]
         assert not any(t[0] == SOURCE_TAG for t in tags)
 
@@ -255,6 +288,7 @@ class TestInnerEvent:
         factory, created = make_factory()
         job = make_job(TWO_ITEMS, factory=factory)
         job.start()
+        settle()
         assert all(j.inner_event["kind"] == 30023 for j in created)
 
 
@@ -269,6 +303,7 @@ class TestPacing:
         job = make_job(items, pacer=pacer)
         rec = Recorder(job)
         job.start()
+        settle()
         # 6 items over the threshold of 5: a pause before every item
         # except the first.
         assert pacer.calls == [BATCH_PACE_MS] * 5
@@ -279,6 +314,7 @@ class TestPacing:
         items = [make_item(f"P{i}", guid=f"g{i}") for i in range(5)]
         job = make_job(items, pacer=pacer)
         job.start()
+        settle()
         assert pacer.calls == []
 
     def test_cancel_during_pace_stops_batch(self):
@@ -287,6 +323,7 @@ class TestPacing:
         job = make_job(items, pacer=pacer)
         rec = Recorder(job)
         job.start()
+        settle()
         # First item done; the pause before item 2 is parked.
         assert len(pacer.pending) == 1
         job.cancel()
@@ -306,6 +343,7 @@ class TestCancellation:
         job = make_job(TWO_ITEMS, factory=factory)
         rec = Recorder(job)
         job.start()
+        settle()
         assert len(created) == 1
         job.cancel()
         assert created[0].cancelled is True
@@ -321,6 +359,7 @@ class TestCancellation:
         rec = Recorder(job)
         job.cancel()
         job.start()
+        settle()
         assert rec.of("item_started") == []
         assert rec.of("completed") == []
 
@@ -329,7 +368,7 @@ class TestCancellation:
 # Long-form (naddr) resolution                                                #
 # --------------------------------------------------------------------------- #
 
-NADDR = encode_naddr("post-1", "cd" * 32, 30023, ["wss://hint.example"])
+NADDR = encode_naddr("post-1", AUTHOR, 30023, ["wss://hint.example"])
 
 THIN_HTML = "<p>teaser</p>"
 THICK_HTML = "<p>" + ("long body text " * 30) + "</p>"
@@ -345,10 +384,13 @@ class TestLongFormResolution:
         job = make_job([item], factory=factory, long_form=long_form)
         rec = Recorder(job)
         job.start()
+        settle()
         assert len(long_form.calls) == 1
         coord, extra = long_form.calls[0]
         assert coord.d_tag == "post-1"
-        assert extra == ("wss://read.example",)
+        # Read from where the article's author publishes (hint first),
+        # never from the importing user's own read relays.
+        assert extra == ("wss://hint.example", "wss://author-outbox.example")
         assert rec.of("item_resolving") == [("item_resolving", 0, "Nostr post")]
         assert created[0].inner_event["content"].startswith(
             "# Full prose from Nostr")
@@ -364,6 +406,7 @@ class TestLongFormResolution:
                           content_html=THICK_HTML)
         job = make_job([thick], factory=factory, long_form=long_form)
         job.start()
+        settle()
         assert len(long_form.calls) == 1
         assert created[0].inner_event["content"].startswith(
             "# Full prose from Nostr")
@@ -376,6 +419,7 @@ class TestLongFormResolution:
                           content_html=THICK_HTML)
         job = make_job([thick], factory=factory, long_form=long_form)
         job.start()
+        settle()
         assert len(long_form.calls) == 1
         assert created[0].inner_event["content"].startswith("long body text")
 
@@ -387,11 +431,60 @@ class TestLongFormResolution:
                          content_html=THIN_HTML)
         job = make_job([item], factory=factory, long_form=long_form)
         job.start()
+        settle()
         coord, _extra = long_form.calls[0]
         assert coord.d_tag == "my-post"
         assert coord.relay_hints == ()
         assert created[0].inner_event["content"].startswith(
             "# Full prose from Nostr")
+
+    def test_an_author_with_no_known_list_is_read_from_the_fallback(self):
+        from nostr.outbox import defaults
+        long_form = FakeLongFormFetcher({"content": LONG_PROSE})
+        item = make_item("Nostr post", guid="ng1", link=f"nostr:{NADDR}",
+                         content_html=THIN_HTML)
+        directory = FakeRelayDirectory({PROFILE.user_pubkey: ["wss://read.example"]})
+        job = make_job([item], long_form=long_form, directory=directory)
+        job.start()
+        settle()
+        _coord, extra = long_form.calls[0]
+        assert extra == ("wss://hint.example", *defaults.FALLBACK_RELAYS)
+        assert directory.asked("outbox_of") == [
+            ("outbox_of", AUTHOR, ("wss://hint.example",))]
+
+    def test_an_article_gone_from_its_authors_relays_is_looked_for_once_more(self):
+        from nostr.outbox import defaults
+
+        class FoundOnRetry(FakeLongFormFetcher):
+            def fetch(self, coord, *, extra_relays, on_success, on_not_found, **_kw):
+                self.calls.append((coord, tuple(extra_relays)))
+                if len(self.calls) == 1:
+                    on_not_found()
+                else:
+                    on_success({"content": LONG_PROSE})
+
+        factory, created = make_factory()
+        long_form = FoundOnRetry()
+        item = make_item("Nostr post", guid="ng1", link=f"nostr:{NADDR}",
+                         content_html=THIN_HTML)
+        job = make_job([item], factory=factory, long_form=long_form)
+        job.start()
+        settle()
+        (_first, asked), (retry_coord, retried) = long_form.calls
+        assert asked == ("wss://hint.example", "wss://author-outbox.example")
+        assert retried == tuple(defaults.FALLBACK_RELAYS)
+        assert retry_coord.relay_hints == ()            # asked already
+        assert created[0].inner_event["content"].startswith("# Full prose from Nostr")
+
+    def test_every_author_is_looked_up_in_one_request_up_front(self):
+        other = "ef" * 32
+        items = [make_item("One", guid="g1", link=f"nostr:{NADDR}", content_html=THIN_HTML),
+                 make_item("Two", guid=f"30023:{other}:post-2", content_html=THIN_HTML)]
+        directory = make_directory()
+        job = make_job(items, directory=directory)
+        job.start()
+        settle()
+        assert directory.asked("lookup_many") == [("lookup_many", (AUTHOR, other), {})]
 
     def test_not_found_falls_back_to_feed_body(self):
         factory, created = make_factory()
@@ -401,6 +494,7 @@ class TestLongFormResolution:
                        long_form=FakeLongFormFetcher(None))
         rec = Recorder(job)
         job.start()
+        settle()
         assert created[0].inner_event["content"].startswith("teaser")
         assert rec.of("completed") == [("completed", 1, 1)]
 
@@ -411,6 +505,7 @@ class TestLongFormResolution:
         job = make_job([item], factory=factory,
                        long_form=FakeLongFormFetcher({"content": "   "}))
         job.start()
+        settle()
         assert created[0].inner_event["content"].startswith("teaser")
 
     def test_content_markdown_is_authoritative_and_skips_recovery(self):
@@ -426,6 +521,7 @@ class TestLongFormResolution:
         job = make_job([item], factory=factory, long_form=long_form,
                        page_fetcher=pages)
         job.start()
+        settle()
         assert long_form.calls == []
         assert pages.calls == []
         assert created[0].inner_event["content"].startswith("# Verbatim body")
@@ -457,6 +553,7 @@ class TestFullTextRecovery:
         job = make_job([item], factory=factory, page_fetcher=pages)
         rec = Recorder(job)
         job.start()
+        settle()
         assert pages.calls == [ARTICLE_URL]
         assert rec.of("item_extracting") == [("item_extracting", 0, "Teaser")]
         content = created[0].inner_event["content"]
@@ -471,6 +568,7 @@ class TestFullTextRecovery:
                          content_html="", title_from_url=True)
         job = make_job([item], factory=factory, page_fetcher=pages)
         job.start()
+        settle()
         tags = created[0].inner_event["tags"]
         assert ["title", "The Real Article Title"] in tags
 
@@ -481,6 +579,7 @@ class TestFullTextRecovery:
                          content_html=THIN_HTML)
         job = make_job([item], factory=factory, page_fetcher=pages)
         job.start()
+        settle()
         tags = created[0].inner_event["tags"]
         assert ["title", "Author Chosen Title"] in tags
 
@@ -492,6 +591,7 @@ class TestFullTextRecovery:
         job = make_job([item], factory=factory, page_fetcher=pages,
                        fetch_full_text=False)
         job.start()
+        settle()
         assert pages.calls == []
         assert created[0].inner_event["content"].startswith("teaser")
 
@@ -502,6 +602,7 @@ class TestFullTextRecovery:
                          content_html=THICK_HTML)
         job = make_job([item], factory=factory, page_fetcher=pages)
         job.start()
+        settle()
         assert pages.calls == []
 
     def test_page_fetch_failure_keeps_feed_body(self):
@@ -512,6 +613,7 @@ class TestFullTextRecovery:
         job = make_job([item], factory=factory, page_fetcher=pages)
         rec = Recorder(job)
         job.start()
+        settle()
         assert created[0].inner_event["content"].startswith("teaser")
         assert rec.of("completed") == [("completed", 1, 1)]
 
@@ -522,6 +624,7 @@ class TestFullTextRecovery:
                          content_html=THIN_HTML)
         job = make_job([item], factory=factory, page_fetcher=pages)
         job.start()
+        settle()
         assert created[0].inner_event["content"].startswith("teaser")
 
     def test_naddr_miss_falls_through_to_full_text(self):
@@ -537,6 +640,7 @@ class TestFullTextRecovery:
         job = make_job([item], factory=factory, page_fetcher=pages,
                        long_form=FakeLongFormFetcher(None))
         job.start()
+        settle()
         assert "Paragraph 3" in created[0].inner_event["content"]
 
 
@@ -618,6 +722,7 @@ class TestImageRehosting:
         job = make_job([item], factory=factory, image_mirror=mirror)
         rec = Recorder(job)
         job.start()
+        settle()
         assert len(calls) == 2
         content = created[0].inner_event["content"]
         assert "https://blossom.example/1" in content
@@ -634,6 +739,7 @@ class TestImageRehosting:
         job = make_job([item], factory=factory, image_mirror=mirror)
         rec = Recorder(job)
         job.start()
+        settle()
         content = created[0].inner_event["content"]
         assert "https://a.example/banner.png" in content
         # The second image (mirror call #2) still succeeded.
@@ -647,6 +753,7 @@ class TestImageRehosting:
         job = make_job([item], factory=factory, image_mirror=mirror,
                        rehost_images=False)
         job.start()
+        settle()
         assert calls == []
         assert "https://a.example/banner.png" in created[0].inner_event["content"]
 
@@ -662,6 +769,7 @@ class TestImageRehosting:
                          image="https://a.example/banner.png")
         job = make_job([item], factory=factory, image_mirror=mirror)
         job.start()
+        settle()
         tags = created[0].inner_event["tags"]
         assert ["image", "https://blossom.example/1"] in tags
 
@@ -676,6 +784,7 @@ class TestImageRehosting:
                          image="https://a.example/cover-only.png")
         job = make_job([item], factory=factory, image_mirror=mirror)
         job.start()
+        settle()
         assert "https://a.example/cover-only.png" not in calls
         tags = created[0].inner_event["tags"]
         assert ["image", "https://a.example/cover-only.png"] in tags
@@ -689,6 +798,7 @@ class TestImageRehosting:
                          image="https://a.example/banner.png")
         job = make_job([item], factory=factory, image_mirror=mirror)
         job.start()
+        settle()
         tags = created[0].inner_event["tags"]
         assert ["image", "https://a.example/banner.png"] in tags
 
@@ -699,6 +809,7 @@ class TestImageRehosting:
         job = make_job([item], factory=factory, image_mirror=mirror,
                        skip_image_urls={"https://a.example/banner.png"})
         job.start()
+        settle()
         assert calls == ["https://a.example/photo.jpg"]
         content = created[0].inner_event["content"]
         assert "https://a.example/banner.png" in content
@@ -720,6 +831,7 @@ class TestRehostedImageMetadata:
         item = make_item("Pictures", guid="p1", content_html=IMAGE_HTML)
         job = make_job([item], factory=factory, image_mirror=mirror)
         job.start()
+        settle()
 
         inner = created[0].inner_event
         tags = imeta_tags(inner)
@@ -741,6 +853,7 @@ class TestRehostedImageMetadata:
         item = make_item("Pictures", guid="p1", content_html=IMAGE_HTML)
         job = make_job([item], factory=factory, image_mirror=mirror)
         job.start()
+        settle()
         entries = [e for tag in imeta_tags(created[0].inner_event)
                    for e in tag]
         assert not any(e.startswith("dim ") for e in entries)
@@ -753,6 +866,7 @@ class TestRehostedImageMetadata:
         item = make_item("Pictures", guid="p1", content_html=IMAGE_HTML)
         job = make_job([item], factory=factory, image_mirror=mirror)
         job.start()
+        settle()
 
         inner = created[0].inner_event
         assert "https://a.example/banner.png" in inner["content"]
@@ -767,6 +881,7 @@ class TestRehostedImageMetadata:
         job = make_job([item], factory=factory, image_mirror=mirror,
                        skip_image_urls={"https://a.example/banner.png"})
         job.start()
+        settle()
         tags = imeta_tags(created[0].inner_event)
         assert len(tags) == 1
 
@@ -777,6 +892,7 @@ class TestRehostedImageMetadata:
         job = make_job([item], factory=factory, image_mirror=mirror,
                        rehost_images=False)
         job.start()
+        settle()
         assert imeta_tags(created[0].inner_event) == []
 
     def test_a_transport_that_measured_nothing_describes_nothing(self):
@@ -785,6 +901,7 @@ class TestRehostedImageMetadata:
         item = make_item("Pictures", guid="p1", content_html=IMAGE_HTML)
         job = make_job([item], factory=factory, image_mirror=mirror)
         job.start()
+        settle()
         assert "https://blossom.example/1" in created[0].inner_event["content"]
         assert imeta_tags(created[0].inner_event) == []
 
@@ -801,6 +918,7 @@ class TestRehostedImageMetadata:
         item = make_item("Pictures", guid="p1", content_html=IMAGE_HTML)
         job = make_job([item], factory=factory, image_mirror=mirror)
         job.start()
+        settle()
 
         inner = created[0].inner_event
         assert f"https://blossom.example/{FOREIGN_SHA}.png" in inner["content"]
@@ -814,6 +932,7 @@ class TestRehostedImageMetadata:
                          image="https://a.example/cover-only.png")
         job = make_job([item], factory=factory, image_mirror=mirror)
         job.start()
+        settle()
 
         inner = created[0].inner_event
         assert ["image", "https://a.example/cover-only.png"] in inner["tags"]

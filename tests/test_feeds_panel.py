@@ -28,13 +28,13 @@ from tests.imports_fakes import (
     TWO_ITEM_FEED,
     FakeFetcher,
     FakeLongFormFetcher,
-    FakeRelayListCache,
     ManualFetcher,
     RecordingPacer,
     inline_run_blocking,
     make_factory,
     rss_feed,
 )
+from tests.outbox_fakes import FakeRelayDirectory
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -43,7 +43,7 @@ def qt_app():
     yield app
 
 
-def make_panel(fetcher, *, publish_outcomes=None):
+def make_panel(fetcher, *, publish_outcomes=None, entitled_relays=None):
     """A fully wired panel whose import jobs run on fakes.
 
     Returns (panel, created_publish_jobs, job_kwargs_seen): the last
@@ -65,7 +65,7 @@ def make_panel(fetcher, *, publish_outcomes=None):
         kwargs.update(
             session_pool=FakeSessionPool(),
             relay_pool=None,
-            relay_list_cache=FakeRelayListCache(),
+            relay_directory=FakeRelayDirectory(),
             cache_dir=cache_dir,
             publisher=FakePublisher(),
             scheduler=FakeScheduler(),
@@ -76,7 +76,7 @@ def make_panel(fetcher, *, publish_outcomes=None):
     def import_job_factory(**kwargs):
         job_kwargs_seen.append(dict(kwargs))
         kwargs.update(
-            relay_list_cache=FakeRelayListCache(),
+            relay_directory=FakeRelayDirectory(),
             # Page fetches (full-text recovery) also settle synchronously
             # against the same fake response table.
             fetcher=fetcher,
@@ -99,9 +99,10 @@ def make_panel(fetcher, *, publish_outcomes=None):
     )
     panel.bind_runtime(
         relay_pool=object(),
-        relay_list_cache=FakeRelayListCache(),
+        relay_directory=FakeRelayDirectory(),
         session_pool=object(),
         blossom_settings=type("S", (), {"primary": "https://blossom.test"})(),
+        entitled_relays=entitled_relays,
     )
     panel.set_active_profile(PROFILE)
     return panel, created_jobs, job_kwargs_seen
@@ -224,6 +225,17 @@ class TestImportFlow:
         assert "Done. 1/1 item(s) imported as drafts." in panel._status_label.text()
         # The remaining row shows the published state with relay counts.
         assert "published: 1/2 relays" in panel._list.item(0).text()
+
+    def test_imported_drafts_go_where_the_editors_drafts_go(self):
+        # A membership relay is part of the account's private relays, so
+        # the importer hands it to the draft jobs like the editor does.
+        fetcher = FakeFetcher({"https://example.com/feed": ("ok", TWO_ITEM_FEED)})
+        panel, _jobs, kwargs_seen = make_panel(
+            fetcher, entitled_relays=lambda: ["wss://members.example"])
+        panel._url_edit.setText("https://example.com/feed")
+        panel._on_load_clicked()
+        panel._on_import_clicked()
+        assert kwargs_seen[0]["entitled_relays"] == ["wss://members.example"]
 
     def test_import_failure_row_and_summary(self):
         fetcher = FakeFetcher({"https://example.com/feed": ("ok", TWO_ITEM_FEED)})

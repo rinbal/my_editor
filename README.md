@@ -25,7 +25,9 @@ paper mode for a real sheet-of-paper feel.
 
 **Publish to Nostr.** Send notes or long-form articles signed on your phone via
 NIP-46, keep private encrypted drafts that sync across your devices, and manage
-media on your own Blossom servers.
+media on your own Blossom servers. New to Nostr? Create an account in the app,
+with a password-protected backup. EINUNDZWANZIG membership lives in the Nostr
+menu too, and members get the members' relay and media server.
 [Read the Nostr guide](docs/nostr.md).
 
 **Import from anywhere.** Pull content in as private drafts from RSS / Atom /

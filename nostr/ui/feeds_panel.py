@@ -37,7 +37,7 @@ lists select on single click and activate on double-click/Return, with
 a remove control beside the list; blank idle states carry next-step
 guidance; tooltips on every action.
 
-Dependencies (relay pool, relay-list cache, bunker session pool, and
+Dependencies (relay pool, relay directory, bunker session pool, and
 optionally the draft store for identifier migration) are injected via
 :meth:`bind_runtime`. The ``fetcher`` and ``import_job_factory``
 constructor seams exist so tests can drive the whole panel with fakes.
@@ -47,7 +47,7 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Sequence
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
@@ -91,7 +91,7 @@ from ..imports.registry import (
     resolve_source,
 )
 from ..imports.subscriptions import FeedSubscriptionStore
-from ..outbox import RelayListCache
+from ..outbox import RelayDirectory, relays_from
 from ..profiles import Profile
 from ..relay import RelayPool
 from ..rss.parser import FeedItem
@@ -239,7 +239,7 @@ class FeedsPanel(QFrame):
     """Preview-first feed importer.
 
     Public surface:
-      bind_runtime(...)          inject relay pool, relay-list cache,
+      bind_runtime(...)          inject relay pool, relay directory,
                                  session pool, and (optionally) the
                                  draft store used for identifier
                                  migration. Must be called before the
@@ -271,8 +271,9 @@ class FeedsPanel(QFrame):
 
         self._is_dark = is_dark
         self._relay_pool: Optional[RelayPool] = None
-        self._relay_list_cache: Optional[RelayListCache] = None
+        self._relay_directory: Optional[RelayDirectory] = None
         self._session_pool: Optional[BunkerSessionPool] = None
+        self._entitled_relays: Optional[Callable[[], Sequence[str]]] = None
         self._draft_store = None
         self._active_profile: Optional[Profile] = None
 
@@ -577,10 +578,11 @@ class FeedsPanel(QFrame):
         self,
         *,
         relay_pool: RelayPool,
-        relay_list_cache: RelayListCache,
+        relay_directory: RelayDirectory,
         session_pool: BunkerSessionPool,
         draft_store=None,
         blossom_settings=None,
+        entitled_relays: Optional[Callable[[], Sequence[str]]] = None,
     ) -> None:
         """Inject the runtime dependencies needed to publish drafts.
 
@@ -590,10 +592,14 @@ class FeedsPanel(QFrame):
         the new prefixed d-tag. ``blossom_settings`` (anything with a
         ``primary`` attribute) overrides where mirrored images land;
         the user's configured Blossom settings are read by default.
+        ``entitled_relays`` answers which relays the account has standing
+        on beyond its own list (a membership's); imported drafts and the
+        synced feed list go there as well.
         """
         self._relay_pool = relay_pool
-        self._relay_list_cache = relay_list_cache
+        self._relay_directory = relay_directory
         self._session_pool = session_pool
+        self._entitled_relays = entitled_relays
         self._draft_store = draft_store
         self._blossom_settings = blossom_settings
         # The relay-query surface Nostr-facing resolvers use (author
@@ -609,7 +615,8 @@ class FeedsPanel(QFrame):
             self._subscriptions = self._subscription_store_factory(
                 session_pool=session_pool,
                 relay_pool=relay_pool,
-                relay_list_cache=relay_list_cache,
+                relay_directory=relay_directory,
+                entitled_relays=entitled_relays,
                 parent=self,
             )
             self._subscriptions.feeds_changed.connect(
@@ -661,7 +668,7 @@ class FeedsPanel(QFrame):
     def _refresh_controls(self) -> None:
         runtime_ready = (
             self._relay_pool is not None
-            and self._relay_list_cache is not None
+            and self._relay_directory is not None
             and self._session_pool is not None
         )
         # The registry is the single validation authority: registering a
@@ -726,6 +733,7 @@ class FeedsPanel(QFrame):
             is_cancelled=lambda g=generation: g != self._load_generation,
             run_blocking=self._run_blocking,
             nostr_query=self._nostr_query,
+            relay_directory=self._relay_directory,
         )
 
     def _enter_loading_state(self, *, source_label: str) -> int:
@@ -804,6 +812,7 @@ class FeedsPanel(QFrame):
             is_cancelled=lambda g=generation: g != self._load_generation,
             run_blocking=self._run_blocking,
             nostr_query=self._nostr_query,
+            relay_directory=self._relay_directory,
         )
 
     def _import_archive(self, data: bytes, label: str) -> None:
@@ -1152,7 +1161,7 @@ class FeedsPanel(QFrame):
             return
         if (
             self._relay_pool is None
-            or self._relay_list_cache is None
+            or self._relay_directory is None
             or self._session_pool is None
             or self._active_profile is None
         ):
@@ -1187,7 +1196,7 @@ class FeedsPanel(QFrame):
             feed_url=self._resolved_url or self._url_edit.text().strip(),
             profile=self._active_profile,
             relay_pool=self._relay_pool,
-            relay_list_cache=self._relay_list_cache,
+            relay_directory=self._relay_directory,
             session_pool=self._session_pool,
             identifier_exists=identifier_exists,
             fetch_full_text=self._fulltext_check.isChecked(),
@@ -1197,6 +1206,7 @@ class FeedsPanel(QFrame):
                 if self._rehost_check.isChecked() else ""
             ),
             skip_image_urls=set(self._skip_image_urls),
+            entitled_relays=relays_from(self._entitled_relays),
             parent=self,
         )
         self._job.status_changed.connect(self._set_status)

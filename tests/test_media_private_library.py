@@ -38,7 +38,8 @@ from nostr.media.private_library import (
     parse_file_record,
 )
 
-from tests.imports_fakes import FakeRelayListCache
+from nostr.outbox import defaults
+from tests.outbox_fakes import FakeRelayDirectory, settle
 
 
 PUBKEY = "ab" * 32
@@ -182,14 +183,15 @@ def event(payload, *, d=None, created_at=1000, pubkey=PUBKEY, event_id=None):
 
 
 def make_library(events=None, *, client=None, session_pool=None, query=None,
-                 clock=None):
+                 clock=None, directory=None, entitled=None):
     query = query if query is not None else FakeQuery(events)
     pool = session_pool if session_pool is not None else FakeSessionPool(client)
     library = PrivateLibrary(
         session_pool=pool,
-        relay_list_cache=FakeRelayListCache(),
+        relay_directory=directory or FakeRelayDirectory(),
         query=query,
         clock=clock or (lambda: NOW),
+        entitled_relays=entitled,
     )
     return library, query, pool
 
@@ -198,6 +200,7 @@ def loaded(events, **kw):
     """Bind a profile and settle, returning the library."""
     library, _query, _pool = make_library(events, **kw)
     library.bind_profile(PROFILE)
+    settle()
     return library
 
 
@@ -352,9 +355,28 @@ def test_a_healthy_library_lists_its_files():
 def test_the_query_asks_only_for_this_users_own_library():
     library, query, _pool = make_library([event(record())])
     library.bind_profile(PROFILE)
+    settle()
 
     _relays, filters = query.calls[0]
     assert filters == [{"kinds": [PRIVATE_FILE_KIND], "authors": [PUBKEY]}]
+
+
+def test_the_library_is_read_from_the_accounts_private_relays():
+    # The same set drafts are written to and read from, so a file saved
+    # on one device is found on every other.
+    directory = FakeRelayDirectory({PUBKEY: ["wss://home.example"]})
+    library, query, _pool = make_library(
+        [event(record())], directory=directory,
+        entitled=lambda: ["wss://members.example"])
+    library.bind_profile(PROFILE)
+    settle()
+
+    relays, _filters = query.calls[0]
+    assert relays == ["wss://home.example", "wss://members.example",
+                      "wss://bunker.example", *defaults.FALLBACK_RELAYS]
+    assert directory.asked("private_relays") == [
+        ("private_relays", PUBKEY, ("wss://members.example",),
+         ("wss://bunker.example",), True)]
 
 
 def test_an_event_from_another_author_is_ignored():
@@ -414,6 +436,7 @@ def test_an_empty_library_settles_and_says_so():
     seen = []
     library.status_changed.connect(seen.append)
     library.bind_profile(PROFILE)
+    settle()
 
     assert len(library) == 0
     assert library.loading is False
@@ -439,6 +462,7 @@ def test_two_hundred_files_cost_one_repaint():
     library.library_changed.connect(lambda: repaints.append(1))
 
     library.bind_profile(PROFILE)
+    settle()
 
     assert len(repaints) == 1
 
@@ -452,6 +476,7 @@ def test_the_signer_is_asked_for_one_file_at_a_time():
         client=manual,
     )
     library.bind_profile(PROFILE)
+    settle()
 
     assert len(manual.calls) == 1
     manual.settle_next()
@@ -549,6 +574,7 @@ def test_a_status_line_never_carries_a_key():
     library, _query, _pool = make_library([event(record(key=OTHER_KEY))])
     library.status_changed.connect(seen.append)
     library.bind_profile(PROFILE)
+    settle()
 
     assert seen
     assert not any(OTHER_KEY in line for line in seen)
@@ -562,6 +588,7 @@ def test_failures_are_counted_in_the_status_line():
         [event(record(HASH_A)), doomed], client=client)
     library.status_changed.connect(seen.append)
     library.bind_profile(PROFILE)
+    settle()
 
     assert any("1 could not be opened" in line for line in seen)
 
@@ -573,6 +600,7 @@ def test_a_missing_signer_is_reported_once_not_once_per_file():
         [event(record(HASH_A)), event(record(HASH_B))], session_pool=pool)
     library.status_changed.connect(seen.append)
     library.bind_profile(PROFILE)
+    settle()
 
     assert len(library) == 0
     assert library.failures == []
@@ -585,9 +613,11 @@ def test_a_second_refresh_starts_from_a_clean_failure_list():
     client = FakeBunkerClient(fail_on=[doomed["content"]])
     library, _query, _pool = make_library([doomed], client=client)
     library.bind_profile(PROFILE)
+    settle()
     assert len(library.failures) == 1
 
     library.refresh()
+    settle()
 
     assert len(library.failures) == 1  # reported once, not twice over
 
@@ -599,9 +629,11 @@ def test_a_second_refresh_starts_from_a_clean_failure_list():
 def test_switching_profiles_drops_every_key():
     library, _query, _pool = make_library([event(record(key=OTHER_KEY))])
     library.bind_profile(PROFILE)
+    settle()
     assert library.get(HASH_A).key_hex == OTHER_KEY
 
     library.bind_profile(OTHER_PROFILE)
+    settle()
 
     assert len(library) == 0
     assert library.files == []
@@ -611,8 +643,10 @@ def test_switching_profiles_drops_every_key():
 def test_clearing_the_profile_drops_every_key():
     library, _query, _pool = make_library([event(record())])
     library.bind_profile(PROFILE)
+    settle()
 
     library.bind_profile(None)
+    settle()
 
     assert len(library) == 0
     assert library.active_profile is None
@@ -624,9 +658,11 @@ def test_a_decryption_landing_after_a_profile_switch_is_ignored():
     manual = ManualBunkerClient()
     library, _query, _pool = make_library([event(record())], client=manual)
     library.bind_profile(PROFILE)
+    settle()
     assert manual.pending
 
     library.bind_profile(OTHER_PROFILE)
+    settle()
     manual.settle_next()
 
     assert len(library) == 0
@@ -636,9 +672,11 @@ def test_a_relay_answer_landing_after_a_profile_switch_is_ignored():
     query = ParkedQuery()
     library, _query, _pool = make_library(query=query)
     library.bind_profile(PROFILE)
+    settle()
     assert query.pending
 
     library.bind_profile(None)
+    settle()
     query.pending[0]([event(record())])
 
     assert len(library) == 0
@@ -650,9 +688,11 @@ def test_an_answer_from_the_previous_load_does_not_join_the_new_one():
     manual = ManualBunkerClient()
     library, _query, _pool = make_library([event(record(HASH_A))], client=manual)
     library.bind_profile(PROFILE)
+    settle()
     assert len(manual.pending) == 1
 
     library.refresh()
+    settle()
     assert len(manual.pending) == 2
     ciphertext, on_success, _on_failure = manual.pending.pop(0)
     on_success(ciphertext[4:-1])
@@ -665,9 +705,11 @@ def test_an_answer_from_the_previous_load_does_not_join_the_new_one():
 def test_binding_the_same_profile_again_does_not_re_ask_the_signer():
     library, query, pool = make_library([event(record())])
     library.bind_profile(PROFILE)
+    settle()
     calls = pool.calls
 
     library.bind_profile(PROFILE)
+    settle()
 
     assert pool.calls == calls
     assert len(query.calls) == 1
@@ -678,6 +720,7 @@ def test_the_library_holds_no_file_path_to_persist_a_key_to():
     # disk is the day to think again about what is being written there.
     library, _query, _pool = make_library([event(record())])
     library.bind_profile(PROFILE)
+    settle()
 
     assert [v for v in vars(library).values() if isinstance(v, Path)] == []
 
@@ -714,6 +757,7 @@ def test_a_load_waiting_on_the_signer_vouches_for_nothing_yet():
     library, _query, _pool = make_library(
         [event(record(HASH_A)), event(record(HASH_B))], client=manual)
     library.bind_profile(PROFILE)
+    settle()
 
     # The prompt is on screen and neither record is open. Both files are
     # private, and this library cannot yet say which.
@@ -739,6 +783,7 @@ def test_a_file_still_queued_is_not_vouched_for_while_another_opens():
     library, _query, _pool = make_library(
         [event(record(HASH_A)), event(record(HASH_B))], client=manual)
     library.bind_profile(PROFILE)
+    settle()
     manual.settle_next()
 
     # One is open, one is still behind the prompt. The open one is known
@@ -754,6 +799,7 @@ def test_a_signer_that_never_answers_vouches_for_nothing_it_listed():
     library, _query, _pool = make_library(
         [event(record(HASH_A)), event(record(HASH_B))], session_pool=pool)
     library.bind_profile(PROFILE)
+    settle()
 
     # Permanent for the session, not a race: nothing will open these.
     assert library.loading is False
@@ -771,6 +817,7 @@ def test_a_closed_library_still_vouches_for_files_it_never_listed():
     library, _query, _pool = make_library([event(record(HASH_A))],
                                           session_pool=pool)
     library.bind_profile(PROFILE)
+    settle()
 
     assert library.vouches_for(HASH_A) is False
     assert library.vouches_for(HASH_C) is True
@@ -782,6 +829,7 @@ def test_a_record_that_could_not_be_opened_is_not_vouched_for():
     library, _query, _pool = make_library(
         [event(record(HASH_A)), doomed], client=client)
     library.bind_profile(PROFILE)
+    settle()
 
     assert len(library.failures) == 1
     assert library.settled is False
@@ -808,6 +856,7 @@ def test_an_unopenable_record_filed_under_junk_poisons_every_answer():
     client = FakeBunkerClient(fail_on=[doomed["content"]])
     library, _query, _pool = make_library([doomed], client=client)
     library.bind_profile(PROFILE)
+    settle()
 
     assert library.vouches_for(HASH_C) is False
 
@@ -823,10 +872,12 @@ def test_a_refresh_stops_vouching_until_the_relays_answer_again():
     parked = ParkedQuery()
     library, _query, _pool = make_library(query=parked)
     library.bind_profile(PROFILE)
+    settle()
     parked.pending.pop(0)([event(record(HASH_A))])
     assert library.settled is True
 
     library.refresh()
+    settle()
 
     # The previous load's coverage does not carry over, or a refresh
     # would open a window in which private files read as public.
@@ -839,6 +890,7 @@ def test_switching_profiles_stops_vouching_for_the_previous_identity():
     assert library.vouches_for(HASH_C) is True
 
     library.bind_profile(None)
+    settle()
 
     assert library.settled is False
     assert library.vouches_for(HASH_C) is False

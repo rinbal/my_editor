@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Nostr relay WebSocket pool — Qt-native, no asyncio.
+"""Nostr relay WebSocket pool - Qt-native, no asyncio.
 
 References:
   - NIP-01: https://github.com/nostr-protocol/nips/blob/master/01.md
@@ -17,7 +17,7 @@ Wire messages we handle (relay -> client):
   ["EOSE", <sub_id>]                           # end of stored events
   ["NOTICE", <message>]                        # human-readable info / error
   ["CLOSED", <sub_id>, <message>]              # subscription terminated
-  ["AUTH", <challenge>]                        # NIP-42 — not implemented yet
+  ["AUTH", <challenge>]                        # NIP-42 - not implemented yet
 
 Design notes:
   - One Relay per URL, shared across all jobs. WebSocket stays warm so
@@ -39,12 +39,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from PySide6.QtCore import QObject, QTimer, QUrl, Signal
 from PySide6.QtWebSockets import QWebSocket
 
+from .outbox.policy import normalize_relay_url
+
 
 # Per-relay ceiling for a publish ack. Buho_go uses 8 s; we match it.
 DEFAULT_PUBLISH_TIMEOUT_MS: int = 8000
 
 # How long to give a freshly-opened socket to complete its TLS handshake
-# before we declare it dead. Folded into the publish timeout — this is
+# before we declare it dead. Folded into the publish timeout - this is
 # just the wait for ``connected`` to fire.
 DEFAULT_CONNECT_TIMEOUT_MS: int = 5000
 
@@ -53,17 +55,17 @@ PublishResult = Tuple[str, bool, str]  # (url, ok, message)
 
 
 # --------------------------------------------------------------------------- #
-# Relay — one WebSocket connection to one URL                                 #
+# Relay - one WebSocket connection to one URL                                 #
 # --------------------------------------------------------------------------- #
 
 class Relay(QObject):
     """A single, long-lived WebSocket to one relay URL.
 
     Signals:
-      connected()          — handshake completed
-      disconnected()       — socket closed for any reason
-      message(list)        — a parsed JSON array from the relay
-      error(str)           — connection or socket-level error
+      connected()          - handshake completed
+      disconnected()       - socket closed for any reason
+      message(list)        - a parsed JSON array from the relay
+      error(str)           - connection or socket-level error
     """
 
     connected = Signal()
@@ -108,7 +110,7 @@ class Relay(QObject):
         """Serialize and send a JSON message. Returns False if not connected."""
         if not self._connected:
             return False
-        # Compact JSON — relays parse anything legal, but this is what every
+        # Compact JSON - relays parse anything legal, but this is what every
         # mainstream client emits and keeps the bytes small.
         text = json.dumps(message, separators=(",", ":"), ensure_ascii=False)
         return self._ws.sendTextMessage(text) > 0
@@ -140,18 +142,18 @@ class Relay(QObject):
 
 
 # --------------------------------------------------------------------------- #
-# PublishJob — one EVENT, N relays, eager-first-accept                        #
+# PublishJob - one EVENT, N relays, eager-first-accept                        #
 # --------------------------------------------------------------------------- #
 
 class PublishJob(QObject):
     """Track one EVENT publish across N relays in parallel.
 
     Signals:
-      first_accept(str)              — URL of the first relay that OK'd ok=True.
+      first_accept(str)              - URL of the first relay that OK'd ok=True.
                                        Fires at most once. May never fire if
                                        every relay rejects.
-      relay_result(str, bool, str)   — per-relay outcome: (url, ok, message).
-      all_done(list)                 — list of PublishResult tuples in the
+      relay_result(str, bool, str)   - per-relay outcome: (url, ok, message).
+      all_done(list)                 - list of PublishResult tuples in the
                                        order results landed. Fires exactly once.
     """
 
@@ -190,7 +192,7 @@ class PublishJob(QObject):
         self._timer.timeout.connect(self._on_overall_timeout)
 
         if not self._urls:
-            # Edge case: empty URL list — fire all_done on the next tick
+            # Edge case: empty URL list - fire all_done on the next tick
             # so callers can wire up signals before the result lands.
             QTimer.singleShot(0, lambda: self.all_done.emit([]))
             return
@@ -276,13 +278,13 @@ class PublishJob(QObject):
             try:
                 getattr(relay, sig_name).disconnect(slot)
             except (RuntimeError, TypeError):
-                # Already disconnected, relay destroyed, etc. — harmless.
+                # Already disconnected, relay destroyed, etc. - harmless.
                 pass
         self._connections.clear()
 
 
 # --------------------------------------------------------------------------- #
-# RelayPool — dict of Relay keyed by normalized URL                           #
+# RelayPool - dict of Relay keyed by normalized URL                           #
 # --------------------------------------------------------------------------- #
 
 class RelayPool(QObject):
@@ -328,16 +330,27 @@ class RelayPool(QObject):
 
 
 # --------------------------------------------------------------------------- #
-# Subscription — REQ/EVENT/EOSE/CLOSED lifecycle                              #
+# Subscription - REQ/EVENT/EOSE/CLOSED lifecycle                              #
 # --------------------------------------------------------------------------- #
 
 class Subscription(QObject):
     """A live subscription across N relays.
 
     Signals:
-      event(dict)        — one inner event from ["EVENT", sub_id, event]
-      eose()             — every relay has signalled EOSE (initial backlog done)
-      closed(str)        — at least one relay closed the sub with the given reason
+      event(dict)               - one inner event from ["EVENT", sub_id, event]
+      eose()                    - every relay has signalled EOSE (initial
+                                  backlog done); never fires when one of
+                                  them closed or failed instead
+      closed(str)               - at least one relay closed the sub with the
+                                  given reason
+      relay_eose(str)           - this relay ended its stored events (url)
+      relay_closed(str, str)    - this relay closed the sub (url, reason)
+      relay_failed(str, str)    - this relay could not be reached, or
+                                  dropped, before it answered (url, reason)
+
+    The per-relay signals let a caller tell "this relay has nothing" apart
+    from "this relay never answered" (nostr/outbox/lookup.py): each relay
+    ends in at most one of relay_eose, relay_closed and relay_failed.
 
     The subscription stays open until ``close()`` is called; new events
     matching the filter continue to fire ``event`` after EOSE.
@@ -346,6 +359,9 @@ class Subscription(QObject):
     event = Signal(dict)
     eose = Signal()
     closed = Signal(str)
+    relay_eose = Signal(str)            # url
+    relay_closed = Signal(str, str)     # url, reason
+    relay_failed = Signal(str, str)     # url, reason
 
     def __init__(
         self,
@@ -362,6 +378,7 @@ class Subscription(QObject):
         # 8 random bytes -> 16 hex chars; well under the 64-char NIP-01 cap.
         self._sub_id = sub_id or secrets.token_hex(8)
         self._eose_seen: set[str] = set()
+        self._ended: set[str] = set()       # relays that answered, closed or failed
         self._eose_emitted = False
         self._closed = False
         self._connections: List[tuple[Relay, str, object]] = []
@@ -379,8 +396,14 @@ class Subscription(QObject):
         relay = self._pool.get_or_create(url)
 
         msg_slot = lambda payload, u=url: self._on_message(u, payload)
+        err_slot = lambda err, u=url: self._on_relay_lost(u, f"socket error: {err}")
+        disc_slot = lambda u=url: self._on_relay_lost(u, "disconnected before answering")
         relay.message.connect(msg_slot)
+        relay.error.connect(err_slot)
+        relay.disconnected.connect(disc_slot)
         self._connections.append((relay, "message", msg_slot))
+        self._connections.append((relay, "error", err_slot))
+        self._connections.append((relay, "disconnected", disc_slot))
 
         if relay.is_connected:
             self._send_req(url)
@@ -395,7 +418,8 @@ class Subscription(QObject):
         if self._closed:
             return
         relay = self._pool.get_or_create(url)
-        relay.send(["REQ", self._sub_id] + self._filters)
+        if not relay.send(["REQ", self._sub_id] + self._filters):
+            self._on_relay_lost(url, "send failed (not connected)")
 
     # -- relay signal handlers ---------------------------------------------
 
@@ -408,13 +432,26 @@ class Subscription(QObject):
         if verb == "EVENT" and len(msg) >= 3 and isinstance(msg[2], dict):
             self.event.emit(msg[2])
         elif verb == "EOSE":
+            if url not in self._ended:
+                self._ended.add(url)
+                self.relay_eose.emit(url)
             self._eose_seen.add(url)
             if not self._eose_emitted and self._eose_seen >= set(self._urls):
                 self._eose_emitted = True
                 self.eose.emit()
         elif verb == "CLOSED":
             reason = str(msg[2]) if len(msg) >= 3 else ""
+            if url not in self._ended:
+                self._ended.add(url)
+                self.relay_closed.emit(url, reason)
             self.closed.emit(reason)
+
+    def _on_relay_lost(self, url: str, reason: str) -> None:
+        """A relay that will not answer this subscription any more."""
+        if self._closed or url in self._ended:
+            return
+        self._ended.add(url)
+        self.relay_failed.emit(url, reason)
 
     # -- close --------------------------------------------------------------
 
@@ -439,11 +476,17 @@ class Subscription(QObject):
 # --------------------------------------------------------------------------- #
 
 def _normalize(url: str) -> str:
-    """Strip a single trailing slash and lowercase scheme + host.
+    """The relay URL as nostr/outbox/policy.normalize_relay_url writes it
+    (lowercased scheme and host, no default port, no trailing slash), so
+    a URL the routing chose and the connection it gets are spelt alike.
 
-    Path-aware relays exist (rare) so we leave the path alone other than
-    the trailing slash. This is the same shape the JS ecosystem uses.
+    Anything that normalizer refuses is still kept apart by its own
+    spelling: trailing slashes stripped, scheme and host lowercased, the
+    path left alone (path-aware relays exist).
     """
+    normalized = normalize_relay_url(url)
+    if normalized is not None:
+        return normalized
     s = url.strip().rstrip("/")
     # split scheme://host[/path]
     if "://" in s:

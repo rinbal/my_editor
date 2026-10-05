@@ -165,6 +165,7 @@ def _library_after(records):
     from PySide6.QtCore import QCoreApplication
 
     from nostr.media.private_library import PrivateLibrary
+    from tests.outbox_fakes import FakeRelayDirectory, settle
 
     QCoreApplication.instance() or QCoreApplication(sys.argv)
 
@@ -180,10 +181,7 @@ def _library_after(records):
     session_pool = MagicMock()
     session_pool.get.side_effect = lambda profile, on_ready, on_error: on_ready(client)
 
-    relay_list_cache = MagicMock()
-    relay_list_cache.fetch.side_effect = (
-        lambda pubkey, relays, on_done: on_done(MagicMock(write=[], read=[]))
-    )
+    relay_directory = FakeRelayDirectory()
 
     query = MagicMock()
     events = [
@@ -196,13 +194,14 @@ def _library_after(records):
     )
 
     library = PrivateLibrary(
-        session_pool=session_pool, relay_list_cache=relay_list_cache,
+        session_pool=session_pool, relay_directory=relay_directory,
         query=query, clock=lambda: 1_700_000_000,
     )
     profile = MagicMock()
     profile.user_pubkey = HASH_A
     profile.bunker_relays = ["wss://r.test/"]
     library.bind_profile(profile)
+    settle()
     return library
 
 

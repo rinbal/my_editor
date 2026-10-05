@@ -100,6 +100,18 @@ def humanize_failure(reason: str) -> str:
     return reason
 
 
+# Where MyEditor and a signer app meet to pair (NIP-46 nostrconnect).
+# Transport only, never anyone's home relay. theforest.nostr1.com and
+# relay.primal.net are among Amber's own defaults, so a phone that pairs
+# usually already listens on one of them.
+NIP46_RELAYS: tuple = (
+    "wss://relay.primal.net",
+    "wss://relay.damus.io",
+    "wss://nos.lol",
+    "wss://theforest.nostr1.com",
+)
+
+
 # Permissions we request at connect time. Comma-separated per spec.
 #
 #   sign_event:1      short notes
@@ -115,6 +127,11 @@ def humanize_failure(reason: str) -> str:
 DEFAULT_PERMS = (
     "get_public_key,"
     "sign_event:1,sign_event:30023,sign_event:31234,"
+    # Proof of identity for EINUNDZWANZIG membership requests (NIP-98), and
+    # adding the members' relay to the user's relay list (NIP-65).
+    "sign_event:27235,sign_event:10002,"
+    # Publishing the profile of an account created or edited in MyEditor.
+    "sign_event:0,"
     "nip44_encrypt,nip44_decrypt,"
     "ping"
 )
@@ -961,37 +978,59 @@ class BunkerClient(QObject):
 
 
 # --------------------------------------------------------------------------- #
-# BunkerSessionPool: one connected client per profile, cached process-wide   #
+# BunkerSessionPool: one signer per profile, cached process-wide             #
 # --------------------------------------------------------------------------- #
 
 class BunkerSessionPool(QObject):
-    """Lazy cache of ``BunkerClient`` instances keyed by user pubkey.
+    """Lazy cache of signers keyed by user pubkey.
 
-    The first ``get(profile, …)`` call for a profile creates a fresh
-    client and triggers a ``reattach`` handshake (sends ``ping``). On
-    success the client is memoized and reused for subsequent ``sign_event``
-    calls, no extra WebSocket handshakes per publish.
+    A profile that signs with a signer app gets a ``BunkerClient``: the
+    first ``get(profile, …)`` creates one and triggers a ``reattach``
+    handshake, and on success the client is memoized and reused for every
+    later call, with no extra WebSocket handshakes per publish. A profile
+    whose key is kept on this computer gets a ``LocalSigner``.
 
-    Closing the pool tears down every active client (used at app shutdown).
+    The cached signer is for the way the profile signed when it was made.
+    When that changes (an account paired with a signer app is restored
+    with its key, or a local account is paired with a signer app), the
+    old signer is dropped instead of being handed out, so nothing keeps
+    signing the old way.
+
+    Closing the pool tears down every signer (used at app shutdown).
     """
 
-    def __init__(self, pool: RelayPool, parent: Optional[QObject] = None) -> None:
+    def __init__(self, pool: RelayPool, parent: Optional[QObject] = None, *,
+                 vault=None) -> None:
         super().__init__(parent)
         self._pool = pool
-        self._clients: Dict[str, BunkerClient] = {}
-        # pubkey -> pending callbacks waiting on the first reattach to finish.
-        self._inflight: Dict[str, List[tuple[Callable[[BunkerClient], None], Callable[[str], None]]]] = {}
+        # Keys kept on this computer, for profiles that sign locally.
+        self._vault = vault
+        # pubkey -> BunkerClient or LocalSigner, and how that one signs.
+        self._clients: Dict[str, QObject] = {}
+        self._signers: Dict[str, str] = {}
+        # pubkey -> the client whose reattach is in flight, and the
+        # callbacks waiting on it.
+        self._attaching: Dict[str, BunkerClient] = {}
+        self._inflight: Dict[str, List[Tuple[Callable[[QObject], None], Callable[[str], None]]]] = {}
 
     def get(
         self,
         profile,  # nostr.profiles.Profile, not imported to avoid a cycle
-        on_ready: Callable[[BunkerClient], None],
+        on_ready: Callable[[QObject], None],
         on_error: Callable[[str], None],
     ) -> None:
+        from .local_signer import LOCAL
         pubkey = profile.user_pubkey
+        signer = LOCAL if getattr(profile, "signer", "remote") == LOCAL else "remote"
+        if pubkey in self._clients and self._signers.get(pubkey) != signer:
+            self.drop(pubkey)
         client = self._clients.get(pubkey)
         if client is not None and client.is_connected:
             on_ready(client)
+            return
+
+        if signer == LOCAL:
+            self._get_local(pubkey, on_ready, on_error)
             return
 
         # Coalesce: if a reattach is already in flight for this profile,
@@ -1000,12 +1039,34 @@ class BunkerSessionPool(QObject):
         if waiters is not None:
             waiters.append((on_ready, on_error))
             return
-        self._inflight[pubkey] = [(on_ready, on_error)]
 
+        try:
+            local_sk = bytes.fromhex(profile.local_secret_hex)
+        except ValueError:
+            on_error("saved local secret is malformed; please re-connect the signer")
+            return
+
+        self._inflight[pubkey] = [(on_ready, on_error)]
         new_client = BunkerClient(self._pool, parent=self)
+        self._attaching[pubkey] = new_client
+
+        def current() -> bool:
+            # A reattach that was given up on (the account signs locally
+            # now, or was dropped) must not come back as the cached client.
+            # It is left to finish rather than closed mid-handshake, and
+            # closed here when it does.
+            if self._attaching.get(pubkey) is new_client:
+                del self._attaching[pubkey]
+                return True
+            new_client.close(reason="no longer wanted")
+            new_client.deleteLater()
+            return False
 
         def _ok() -> None:
+            if not current():
+                return
             self._clients[pubkey] = new_client
+            self._signers[pubkey] = "remote"
             for ready_cb, _err_cb in self._inflight.pop(pubkey, []):
                 try:
                     ready_cb(new_client)
@@ -1013,19 +1074,14 @@ class BunkerSessionPool(QObject):
                     pass
 
         def _err(reason: str) -> None:
+            if not current():
+                return
             new_client.close(reason=reason)
             for _ready_cb, err_cb in self._inflight.pop(pubkey, []):
                 try:
                     err_cb(reason)
                 except Exception:  # noqa: BLE001
                     pass
-
-        try:
-            local_sk = bytes.fromhex(profile.local_secret_hex)
-        except ValueError:
-            self._inflight.pop(pubkey, None)
-            on_error("saved local secret is malformed; please re-connect the signer")
-            return
 
         new_client.reattach(
             bunker_pubkey=profile.bunker_pubkey,
@@ -1036,13 +1092,46 @@ class BunkerSessionPool(QObject):
             on_failure=_err,
         )
 
+    def _get_local(self, pubkey: str, on_ready, on_error) -> None:
+        """A key kept on this computer: no channel to open, no phone to
+        ask. The same calls are answered by a LocalSigner."""
+        from .key_vault import KeyVault
+        from .local_signer import LOCAL, LocalSigner
+        # A reattach started while the account still signed with an app
+        # is given up; whoever waited on it gets the local signer instead.
+        waiters = [(on_ready, on_error)] + self._inflight.pop(pubkey, [])
+        self._attaching.pop(pubkey, None)
+        vault = self._vault if self._vault is not None else KeyVault()
+        secret = vault.load(pubkey)
+        if secret is None:
+            for _ready_cb, err_cb in waiters:
+                err_cb("the private key for this account is not on this computer")
+            return
+        local = LocalSigner(secret, parent=self)
+        self._clients[pubkey] = local
+        self._signers[pubkey] = LOCAL
+        for ready_cb, _err_cb in waiters:
+            ready_cb(local)
+
     def drop(self, user_pubkey: str) -> None:
+        """Forget the profile's signer, and any reattach still in flight."""
         client = self._clients.pop(user_pubkey, None)
+        self._signers.pop(user_pubkey, None)
         if client is not None:
             client.close(reason="dropped from session pool")
+            client.deleteLater()
+        self._attaching.pop(user_pubkey, None)
+        for _ready_cb, err_cb in self._inflight.pop(user_pubkey, []):
+            try:
+                err_cb("dropped from session pool")
+            except Exception:  # noqa: BLE001
+                pass
 
     def close_all(self) -> None:
         for client in self._clients.values():
             client.close(reason="application shutdown")
+            client.deleteLater()
         self._clients.clear()
+        self._signers.clear()
+        self._attaching.clear()
         self._inflight.clear()

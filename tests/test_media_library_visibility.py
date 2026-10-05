@@ -137,6 +137,9 @@ class FakeStore(QObject):
     upload_finished = Signal(str, object)
     upload_failed = Signal(str, str)
     upload_rerouted = Signal(str, str, str)
+    server_skipped = Signal(str, str, str)
+    mirror_failed = Signal(str, str, str)
+    listings_changed = Signal()
     file_deleted = Signal(str)
     delete_failed = Signal(str, str)
 
@@ -144,6 +147,18 @@ class FakeStore(QObject):
         super().__init__()
         self.files = {m.hash: m for m in records}
         self.fetched = 0
+
+    def target_servers(self):
+        return []
+
+    def server_listings(self):
+        return {}
+
+    def quota_for(self, origin):
+        return None
+
+    def bytes_on(self, origin):
+        return 0
 
     def file_list(self, *, filter_type="all", sort_by="newest"):
         return list(self.files.values())

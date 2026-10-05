@@ -59,7 +59,7 @@ def _wrap(ident: str, ct: str = "CT", created_at: int = 100) -> DraftWrapMeta:
 
 def _sync(sent: List[str] | None = None) -> DraftSync:
     sync = DraftSync(
-        relay_pool=MagicMock(), relay_list_cache=MagicMock(),
+        relay_pool=MagicMock(), relay_directory=MagicMock(),
         session_pool=MagicMock(), store=DraftStore(),
     )
     sync._profile = _make_profile()

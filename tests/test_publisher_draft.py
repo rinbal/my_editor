@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""DraftPublishJob, DraftDeleteJob, _safe_reason — publisher hardening.
+"""DraftPublishJob, DraftDeleteJob, _safe_reason: publisher hardening.
 
 Covers the four publisher-tier defects flagged by the code review:
   - Plaintext size pre-flight rejects oversized drafts before
@@ -61,7 +61,7 @@ def test_draft_publish_job_rejects_pubkey_mismatch():
     with pytest.raises(ValueError, match="does not match"):
         DraftPublishJob(
             relay_pool=MagicMock(),
-            relay_list_cache=MagicMock(),
+            relay_directory=MagicMock(),
             session_pool=MagicMock(),
             profile=profile,
             inner_event=foreign_inner,
@@ -74,7 +74,7 @@ def test_draft_publish_job_rejects_empty_identifier():
     inner = build_inner_event(kind=1, content="x", pubkey_hex=PK)
     with pytest.raises(ValueError, match="identifier"):
         DraftPublishJob(
-            relay_pool=MagicMock(), relay_list_cache=MagicMock(),
+            relay_pool=MagicMock(), relay_directory=MagicMock(),
             session_pool=MagicMock(), profile=profile,
             inner_event=inner, identifier="",
         )
@@ -83,7 +83,7 @@ def test_draft_publish_job_rejects_empty_identifier():
 def test_draft_delete_job_rejects_unsupported_kind():
     with pytest.raises(ValueError, match="unsupported inner kind"):
         DraftDeleteJob(
-            relay_pool=MagicMock(), relay_list_cache=MagicMock(),
+            relay_pool=MagicMock(), relay_directory=MagicMock(),
             session_pool=MagicMock(), profile=_make_profile(),
             identifier="x", inner_kind=9999,
         )
@@ -92,7 +92,7 @@ def test_draft_delete_job_rejects_unsupported_kind():
 def test_draft_delete_job_rejects_empty_identifier():
     with pytest.raises(ValueError, match="identifier"):
         DraftDeleteJob(
-            relay_pool=MagicMock(), relay_list_cache=MagicMock(),
+            relay_pool=MagicMock(), relay_directory=MagicMock(),
             session_pool=MagicMock(), profile=_make_profile(),
             identifier="", inner_kind=1,
         )
@@ -111,7 +111,7 @@ def test_oversized_plaintext_fails_before_bunker_call():
         pubkey_hex=PK,
     )
     job = DraftPublishJob(
-        relay_pool=MagicMock(), relay_list_cache=MagicMock(),
+        relay_pool=MagicMock(), relay_directory=MagicMock(),
         session_pool=MagicMock(), profile=profile,
         inner_event=huge, identifier="big",
     )
@@ -130,7 +130,7 @@ def test_payload_within_cap_proceeds_to_encrypt():
     profile = _make_profile()
     small = build_inner_event(kind=1, content="hi", pubkey_hex=PK)
     job = DraftPublishJob(
-        relay_pool=MagicMock(), relay_list_cache=MagicMock(),
+        relay_pool=MagicMock(), relay_directory=MagicMock(),
         session_pool=MagicMock(), profile=profile,
         inner_event=small, identifier="ok",
     )
@@ -147,7 +147,7 @@ def test_publish_job_cancel_silences_all_signals():
     profile = _make_profile()
     inner = build_inner_event(kind=1, content="hi", pubkey_hex=PK)
     job = DraftPublishJob(
-        relay_pool=MagicMock(), relay_list_cache=MagicMock(),
+        relay_pool=MagicMock(), relay_directory=MagicMock(),
         session_pool=MagicMock(), profile=profile,
         inner_event=inner, identifier="x",
     )
@@ -161,7 +161,7 @@ def test_publish_job_cancel_silences_all_signals():
     job._emit_status("ignored")
     job._emit_failed("ignored")
     # Late callbacks from RPC layers must also be silenced
-    job._on_relay_list_resolved(MagicMock(write=[], read=[]))
+    job._on_relays_ready(["wss://r/"])
     job._on_signed({"id": "x", "kind": 31234, "created_at": 1, "pubkey": PK, "tags": [], "content": ""}, ["wss://r/"])
     job._on_publish_done([("wss://r/", True, "ok")])
     assert captured == []
@@ -170,7 +170,7 @@ def test_publish_job_cancel_silences_all_signals():
 def test_delete_job_cancel_silences_all_signals():
     profile = _make_profile()
     job = DraftDeleteJob(
-        relay_pool=MagicMock(), relay_list_cache=MagicMock(),
+        relay_pool=MagicMock(), relay_directory=MagicMock(),
         session_pool=MagicMock(), profile=profile,
         identifier="x", inner_kind=1,
     )
@@ -181,7 +181,7 @@ def test_delete_job_cancel_silences_all_signals():
 
     job.cancel()
     job._emit_failed("ignored")
-    job._on_relay_list_resolved(MagicMock(write=[], read=[]))
+    job._on_relays_ready(["wss://r/"])
     job._on_signed(
         {"id": "tomb", "kind": 31234, "created_at": 1, "pubkey": PK, "tags": [], "content": ""},
         ["wss://r/"],
@@ -197,7 +197,7 @@ def test_delete_job_cancel_silences_all_signals():
 def test_delete_job_emits_tombstoned_before_publish_completes():
     profile = _make_profile()
     job = DraftDeleteJob(
-        relay_pool=MagicMock(), relay_list_cache=MagicMock(),
+        relay_pool=MagicMock(), relay_directory=MagicMock(),
         session_pool=MagicMock(), profile=profile,
         identifier="x", inner_kind=1,
     )
@@ -218,7 +218,7 @@ def test_delete_job_emits_tombstoned_before_publish_completes():
     job._relay_pool.publish.return_value = MagicMock()
     job._on_signed(signed, publish_relays=["wss://r/"])
 
-    # ``tombstoned`` fires *before* completed — the panel must update
+    # ``tombstoned`` fires *before* completed, so the panel must update
     # optimistically rather than waiting for the relay round-trip.
     assert tomb_events == [("x", "evid-deadbeef")]
     assert completed == []  # publish hasn't finished yet
@@ -254,7 +254,7 @@ def test_publish_job_emits_stashed_before_publish_completes():
     profile = _make_profile()
     inner = build_inner_event(kind=1, content="hi", pubkey_hex=PK)
     job = DraftPublishJob(
-        relay_pool=MagicMock(), relay_list_cache=MagicMock(),
+        relay_pool=MagicMock(), relay_directory=MagicMock(),
         session_pool=MagicMock(), profile=profile,
         inner_event=inner, identifier="x",
     )

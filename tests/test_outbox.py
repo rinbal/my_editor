@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import pytest
 
-from nostr.outbox import RELAY_CAP, parse_relay_list, select_publish_relays
+from nostr.outbox import defaults
+from nostr.outbox.policy import LookupState, RelayList, parse_relay_list, plan_publish
 
 
 # --------------------------------------------------------------------------- #
@@ -72,57 +73,62 @@ def test_parse_skips_malformed_r_tags():
 
 
 # --------------------------------------------------------------------------- #
-# select_publish_relays                                                       #
+# Where a public event goes (plan_publish)                                    #
 # --------------------------------------------------------------------------- #
+#
+# The selector this replaced put the built-in relays first and the
+# author's own write relays after them, where the cap cut them off. The
+# author's outbox is where their readers look, so it leads.
 
-BASE = ("wss://b1.example", "wss://b2.example", "wss://b3.example")
-
-
-def test_select_with_no_user_relays_returns_base():
-    out = select_publish_relays([], base=BASE, cap=10)
-    assert out == list(BASE)
-
-
-def test_select_appends_user_writes_after_base():
-    user = ["wss://u1.example", "wss://u2.example"]
-    out = select_publish_relays(user, base=BASE, cap=10)
-    assert out == list(BASE) + user
+def _list(write=(), read=()):
+    return RelayList(write=list(write), read=list(read), state=LookupState.FOUND)
 
 
-def test_select_dedupes_overlap_case_insensitive():
-    user = ["WSS://B1.EXAMPLE/", "wss://b2.example", "wss://unique.example"]
-    out = select_publish_relays(user, base=BASE, cap=10)
-    # The base entry wins (kept in its original casing/order); duplicates dropped.
-    assert out == [
-        "wss://b1.example",
-        "wss://b2.example",
-        "wss://b3.example",
-        "wss://unique.example",
-    ]
+def test_the_authors_write_relays_come_first_in_their_own_order():
+    user = ["wss://u1.example", "wss://u2.example", "wss://u3.example"]
+    assert list(plan_publish(_list(write=user)).author) == user
 
 
-def test_select_strips_trailing_slash_in_output():
-    out = select_publish_relays(["wss://x.example/"], base=("wss://b.example",), cap=10)
-    assert out == ["wss://b.example", "wss://x.example"]
+def test_read_only_relays_are_not_where_the_author_publishes():
+    plan = plan_publish(_list(write=["wss://w1.example", "wss://w2.example"],
+                              read=["wss://inbox.example"]))
+    assert "wss://inbox.example" not in plan.targets
 
 
-def test_select_respects_cap():
+def test_no_known_list_publishes_to_the_fallback_relays():
+    assert list(plan_publish(RelayList()).author) == list(defaults.FALLBACK_RELAYS[:3])
+
+
+def test_a_single_write_relay_is_topped_up_behind_it():
+    plan = plan_publish(_list(write=["wss://only.example"]))
+    assert plan.author[0] == "wss://only.example"
+    assert len(plan.author) >= defaults.MIN_WRITE_TARGETS
+
+
+def test_duplicates_collapse_ignoring_case_and_trailing_slash():
+    plan = plan_publish(_list(write=["WSS://A.EXAMPLE/", "wss://a.example",
+                                     "wss://b.example"]))
+    assert list(plan.author) == ["wss://a.example", "wss://b.example"]
+
+
+def test_a_sprawling_list_is_capped_without_losing_its_head():
     user = [f"wss://u{i}.example" for i in range(20)]
-    out = select_publish_relays(user, base=BASE, cap=5)
-    assert len(out) == 5
-    assert out == list(BASE) + user[:2]
+    plan = plan_publish(_list(write=user))
+    assert list(plan.author) == user[:defaults.WRITE_CAP]
 
 
-def test_select_default_cap_is_module_constant():
-    user = [f"wss://u{i}.example" for i in range(50)]
-    out = select_publish_relays(user, base=BASE)
-    assert len(out) == RELAY_CAP
+def test_junk_entries_are_dropped():
+    plan = plan_publish(_list(write=["", "   ", "https://not-a-relay.example",
+                                     "wss://valid.example", "wss://two.example"]))
+    assert list(plan.author) == ["wss://valid.example", "wss://two.example"]
 
 
-def test_select_filters_empty_entries():
-    user = ["", "   ", "wss://valid.example"]
-    out = select_publish_relays(user, base=BASE, cap=10)
-    assert out == list(BASE) + ["wss://valid.example"]
+def test_mentioned_people_are_reached_at_their_read_relays_after_the_author():
+    alice = "a" * 64
+    plan = plan_publish(_list(write=["wss://me.example", "wss://me2.example"]),
+                        mentioned={alice: _list(read=["wss://alice.example"])})
+    assert plan.targets == ["wss://me.example", "wss://me2.example",
+                            "wss://alice.example"]
 
 
 # --------------------------------------------------------------------------- #

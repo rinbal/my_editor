@@ -1,122 +1,197 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""select_draft_publish_relays — cross-device sync guarantee.
+"""Private records are read where they are written.
 
-The contract: a draft published from device A on profile P must land on
-at least one relay that device B reading the same profile P will see.
-That's only ensured if the publish set is a superset of the read set's
-sources. These tests verify that invariant against representative
-asymmetric NIP-65 configurations.
+The contract: a draft saved from device A must be found by device B on
+the same account. The old code chose the publish set and the read set
+with two different functions that only mostly agreed. Now one function
+(policy.private_relays, asked through the relay directory) answers both:
+reading asks every relay writing goes to, plus the fallback relays that
+records saved while the account's list was unknown went to. These tests
+pin the set itself and that every writer and the reader really use it.
 """
 
 from __future__ import annotations
 
-from nostr.outbox import (
-    RELAY_CAP,
-    RelayList,
-    select_draft_publish_relays,
-)
+import os
+import sys
+from unittest.mock import MagicMock
+
+import pytest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtCore import QCoreApplication  # noqa: E402
+
+from nostr.draft_store import DraftStore  # noqa: E402
+from nostr.draft_sync import DraftSync  # noqa: E402
+from nostr.drafts import build_inner_event  # noqa: E402
+from nostr.outbox import ask_private_relays, defaults  # noqa: E402
+from nostr.outbox.policy import LookupState, RelayList, private_relays  # noqa: E402
+from nostr.publisher import DraftDeleteJob, DraftPublishJob  # noqa: E402
+from tests.outbox_fakes import FakeRelayDirectory, settle  # noqa: E402
+
+PK = "a" * 64
+BUNKER = "wss://bunker.example"
+MEMBER_RELAY = "wss://members.example"
 
 
-def _normalize(url: str) -> str:
-    """Mirror the dedup key used internally so tests can compare sets."""
-    return url.rstrip("/").lower()
+@pytest.fixture(scope="module", autouse=True)
+def qt_app():
+    app = QCoreApplication.instance() or QCoreApplication(sys.argv)
+    yield app
 
 
-# --------------------------------------------------------------------------- #
-# Cross-device overlap                                                        #
-# --------------------------------------------------------------------------- #
-
-def test_asymmetric_read_and_write_overlap():
-    # Common real-world shape: paid read-only relay + free write relays.
-    rl = RelayList(
-        write=["wss://paid-write.example/", "wss://shared.example/"],
-        read=["wss://paid-read.example/"],
-    )
-    bunker = ["wss://bunker.example/"]
-
-    publish_set = {_normalize(r) for r in select_draft_publish_relays(rl, bunker_relays=bunker)}
-    # The reader's source list, hand-built to match _select_read_relays preference:
-    reader_sources = {_normalize(r) for r in rl.read} | {_normalize(r) for r in rl.write} | {_normalize(r) for r in bunker}
-    overlap = publish_set & reader_sources
-    assert overlap, f"publish set has no overlap with reader sources: pub={publish_set} read={reader_sources}"
-
-
-def test_overlap_when_only_read_relays_published():
-    # A user who only published their read set (NIP-65 oddity but legal).
-    rl = RelayList(write=[], read=["wss://only-read.example/"])
-    publish = select_draft_publish_relays(rl, bunker_relays=())
-    assert any("only-read.example" in r for r in publish)
-
-
-def test_overlap_when_only_bunker_relays_known():
-    # Brand-new profile: no published NIP-65 list yet. The bunker URI's
-    # relays are the only user-specific data we have — they must land in
-    # both publish and read sets.
-    publish = select_draft_publish_relays(RelayList(), bunker_relays=["wss://bunker.example/"])
-    assert any("bunker.example" in r for r in publish)
+def own(write=(), read=()):
+    return RelayList(write=list(write), read=list(read), state=LookupState.FOUND)
 
 
 # --------------------------------------------------------------------------- #
-# Dedup + cap                                                                 #
+# The set                                                                     #
 # --------------------------------------------------------------------------- #
 
-def test_dedupes_case_and_trailing_slash():
-    rl = RelayList(
-        write=["wss://X.Example/", "wss://x.example"],
-        read=["WSS://x.example/"],
-    )
-    result = select_draft_publish_relays(rl, bunker_relays=())
-    # All three inputs normalize to the same key — only one survives.
-    # Output preserves the original casing of the first-seen variant,
-    # so compare case-insensitively.
-    assert sum(1 for r in result if "x.example" in r.lower()) == 1
+def test_asymmetric_read_and_write_relays_are_both_used():
+    # Common real-world shape: a paid read-only relay and free write relays.
+    relays = private_relays(own(write=["wss://w1.example", "wss://shared.example"],
+                                read=["wss://paid-read.example"]))
+    assert relays == ["wss://w1.example", "wss://shared.example", "wss://paid-read.example"]
 
 
-def test_respects_cap():
-    many_writes = [f"wss://w{i}.example" for i in range(50)]
-    rl = RelayList(write=many_writes, read=[])
-    result = select_draft_publish_relays(rl, bunker_relays=(), cap=5)
-    assert len(result) == 5
+def test_a_list_with_only_read_relays_still_has_a_home():
+    assert private_relays(own(read=["wss://only-read.example"])) == ["wss://only-read.example"]
 
 
-def test_default_cap_is_module_constant():
-    rl = RelayList(
-        write=[f"wss://w{i}.example" for i in range(50)],
-        read=[],
-    )
-    result = select_draft_publish_relays(rl, bunker_relays=())
-    assert len(result) == RELAY_CAP
+def test_drafts_kept_on_the_signer_relays_stay_readable():
+    # Earlier versions stored drafts on the relays a profile was paired
+    # through, so they stay in the set, after the account's own.
+    relays = private_relays(own(write=["wss://w.example"]), legacy=[BUNKER + "/"])
+    assert relays == ["wss://w.example", BUNKER]
+
+
+def test_an_unknown_list_falls_back_to_the_curated_relays():
+    relays = private_relays(RelayList(), legacy=[BUNKER])
+    assert relays == [*defaults.FALLBACK_RELAYS, BUNKER]
+
+
+def test_a_known_list_is_not_padded_with_relays_the_user_never_chose():
+    relays = private_relays(own(write=["wss://w.example"]))
+    assert not set(relays) & set(defaults.FALLBACK_RELAYS)
+
+
+def test_a_members_relay_comes_after_the_users_own():
+    relays = private_relays(own(write=["wss://w.example"], read=["wss://r.example"]),
+                            entitled=[MEMBER_RELAY], legacy=[BUNKER])
+    assert relays == ["wss://w.example", "wss://r.example", MEMBER_RELAY, BUNKER]
+
+
+def test_duplicates_collapse_ignoring_case_and_trailing_slash():
+    relays = private_relays(own(write=["wss://X.Example/", "wss://x.example"],
+                                read=["WSS://x.example/"]))
+    assert relays == ["wss://x.example"]
+
+
+def test_the_set_is_capped():
+    relays = private_relays(own(write=[f"wss://w{i}.example" for i in range(50)]))
+    assert len(relays) == defaults.PRIVATE_CAP
 
 
 # --------------------------------------------------------------------------- #
-# Order semantics                                                             #
+# Every writer and the reader use it                                          #
 # --------------------------------------------------------------------------- #
 
-def test_write_relays_appear_before_read():
-    # Write before read matches how the existing publisher pipeline
-    # thinks about delivery priority — write set first, then read as a
-    # fallback for sync coverage.
-    rl = RelayList(write=["wss://w.example"], read=["wss://r.example"])
-    result = select_draft_publish_relays(rl, bunker_relays=())
-    assert result.index("wss://w.example") < result.index("wss://r.example")
+def _profile():
+    profile = MagicMock()
+    profile.user_pubkey = PK
+    profile.bunker_relays = [BUNKER]
+    return profile
 
 
-def test_base_falls_in_last():
-    # Curated defaults are a backstop, not the primary destination:
-    # they appear at the end so user-chosen relays are always tried first.
-    rl = RelayList(write=["wss://user.example"], read=[])
-    result = select_draft_publish_relays(
-        rl,
-        bunker_relays=(),
-        base=("wss://default-a.example", "wss://default-b.example"),
-    )
-    assert result[0] == "wss://user.example"
-    assert result[1] == "wss://default-a.example"
+def _directory():
+    return FakeRelayDirectory({PK: own(write=["wss://w.example"], read=["wss://r.example"])})
 
 
-def test_filters_empty_and_whitespace_urls():
-    rl = RelayList(write=["", "   ", "wss://ok.example"], read=[])
-    result = select_draft_publish_relays(rl, bunker_relays=())
-    assert "wss://ok.example" in result
-    assert "" not in result and "   " not in result
+def _signer():
+    client = MagicMock()
+    client.nip44_encrypt_self.side_effect = (
+        lambda plaintext, on_success, on_failure: on_success("CIPHERTEXT"))
+    client.sign_event.side_effect = (
+        lambda unsigned, on_success, on_failure: on_success(
+            {**unsigned, "id": "e" * 64, "sig": "s" * 128}))
+    session_pool = MagicMock()
+    session_pool.get.side_effect = (
+        lambda profile, on_ready, on_error: on_ready(client))
+    return session_pool
+
+
+def _published_to(job_class, **kwargs):
+    relay_pool = MagicMock()
+    job = job_class(relay_pool=relay_pool, relay_directory=_directory(),
+                    session_pool=_signer(), profile=_profile(),
+                    entitled_relays=[MEMBER_RELAY], **kwargs)
+    job.start()
+    settle()
+    (relays, _event), _kw = relay_pool.publish.call_args
+    return relays
+
+
+def _read_from():
+    relay_pool = MagicMock()
+    sync = DraftSync(relay_pool=relay_pool, relay_directory=_directory(),
+                     session_pool=_signer(), store=DraftStore(),
+                     entitled_relays=lambda: [MEMBER_RELAY])
+    sync.start_for(_profile())
+    settle()
+    (relays, _filters), _kw = relay_pool.subscribe.call_args
+    return relays
+
+
+def test_a_saved_draft_lands_where_drafts_are_read():
+    written = _published_to(
+        DraftPublishJob, identifier="d1",
+        inner_event=build_inner_event(kind=1, content="hi", pubkey_hex=PK))
+    assert written == ["wss://w.example", "wss://r.example", MEMBER_RELAY, BUNKER]
+    assert _read_from() == [*written, *defaults.FALLBACK_RELAYS]
+
+
+def test_a_deletion_lands_wherever_the_draft_may_be():
+    written = _published_to(DraftDeleteJob, identifier="d1", inner_kind=1)
+    assert written == _read_from()
+
+
+# --------------------------------------------------------------------------- #
+# Written while the list was unknown, still found once it is known            #
+# --------------------------------------------------------------------------- #
+
+def test_a_draft_saved_before_the_list_was_known_is_still_read():
+    unknown_then = private_relays(RelayList(), legacy=[BUNKER])
+    known_now = private_relays(own(write=["wss://w.example"]), legacy=[BUNKER],
+                               reading=True)
+    assert set(unknown_then) <= set(known_now)
+
+
+def test_reading_asks_every_relay_writing_goes_to():
+    for author in (RelayList(), own(write=["wss://w.example"], read=["wss://r.example"]),
+                   own(write=[f"wss://w{i}.example" for i in range(50)])):
+        written = private_relays(author, entitled=[MEMBER_RELAY], legacy=[BUNKER])
+        read = private_relays(author, entitled=[MEMBER_RELAY], legacy=[BUNKER], reading=True)
+        assert read[:len(written)] == written
+
+
+def test_a_long_list_never_pushes_out_the_members_or_the_signer_relays():
+    relays = private_relays(own(write=[f"wss://w{i}.example" for i in range(50)]),
+                            entitled=[MEMBER_RELAY], legacy=[BUNKER])
+    assert len(relays) == defaults.PRIVATE_CAP
+    assert relays[-2:] == [MEMBER_RELAY, BUNKER]
+    assert relays[0] == "wss://w0.example"
+
+
+def test_entitled_relays_may_be_asked_for_when_needed():
+    directory = FakeRelayDirectory({PK: own(write=["wss://w.example"])})
+    membership = []
+    got = []
+    ask_private_relays(directory, _profile(), got.append, entitled=lambda: list(membership))
+    membership.append(MEMBER_RELAY)
+    ask_private_relays(directory, _profile(), got.append, entitled=lambda: list(membership))
+    settle()
+    assert MEMBER_RELAY not in got[0] and MEMBER_RELAY in got[1]

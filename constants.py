@@ -21,6 +21,14 @@ APP_RELEASES_URL = f"{APP_URL}/releases/latest"
 _REPO_OWNER, _REPO_NAME = APP_REPO_SLUG.split("/")
 APP_INSTALL_GUIDE_URL = f"https://{_REPO_OWNER}.github.io/{_REPO_NAME}/install/"
 
+# The membership service (sidecar/) that holds the EINUNDZWANZIG association's
+# API key and forwards sign-up requests. Empty means joining in the app is not
+# offered (the association's website is). It stays empty until the
+# maintainers' sidecar is deployed; official builds then point at it, and a
+# self-hosted build points at its own or leaves this empty.
+# MYEDITOR_MEMBERSHIP_SERVICE in the environment overrides it.
+MEMBERSHIP_SERVICE_URL = ""
+
 # UI theme colors
 DARK_BG = "#1E1E1E"
 DARK_FG = "#D4D4D4"

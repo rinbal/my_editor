@@ -39,7 +39,7 @@ from .avatar import make_avatar_pixmap_from_image, pixmap_for_profile
 _DEBOUNCE_MS: int = 220
 
 # If local matches are at or above this count we don't bother hitting
-# NIP-50 — the user almost certainly meant someone they already follow.
+# NIP-50: the user almost certainly meant someone they already follow.
 _LOCAL_HIT_THRESHOLD: int = 5
 
 # Cap on rendered rows.
@@ -188,7 +188,7 @@ class MentionPicker(QWidget):
     """Click-outside-to-dismiss popup that resolves a Person via search.
 
     Signals:
-      picked(Person)  — user chose a result.  After this signal fires the
+      picked(Person)  user chose a result.  After this signal fires the
                         picker hides itself.
     """
 
@@ -272,7 +272,7 @@ class MentionPicker(QWidget):
 
     def _on_text_changed(self, _text: str) -> None:
         self._debounce.start()
-        # Show immediate local results while debouncing — feels snappier.
+        # Show immediate local results while debouncing; feels snappier.
         self._refresh_for_query(self._search_edit.text())
 
     def _run_search(self) -> None:
@@ -319,11 +319,11 @@ class MentionPicker(QWidget):
             self._list.setCurrentRow(0)
 
         if searching:
-            self._hint.setText("Searching relay.nostr.band…")
+            self._hint.setText("Searching Nostr…")
             self._hint.setVisible(True)
         elif not people:
             query = self._search_edit.text().strip()
-            self._hint.setText("No matches yet — keep typing" if query else "Type to search people")
+            self._hint.setText("No matches yet. Keep typing" if query else "Type to search people")
             self._hint.setVisible(True)
         else:
             self._hint.setVisible(False)

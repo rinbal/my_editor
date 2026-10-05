@@ -1,0 +1,10 @@
+# HTTPS for the membership sidecar. Caddy gets the certificate itself;
+# SIDECAR_DOMAIN must point at this server in DNS.
+{$SIDECAR_DOMAIN} {
+	encode gzip
+	request_body {
+		max_size 64KB
+	}
+	reverse_proxy sidecar:8021
+	header -Server
+}

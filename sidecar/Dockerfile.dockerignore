@@ -1,0 +1,12 @@
+# Build context for sidecar/Dockerfile (Docker reads <Dockerfile>.dockerignore
+# next to the Dockerfile). The context is the repository root, so this sends
+# the daemon only the files the image copies: never sidecar/.env with the
+# association's key, never .git or .venv. Add a line here with every new COPY.
+*
+!sidecar/requirements.txt
+!sidecar/__init__.py
+!sidecar/app.py
+!nostr/__init__.py
+!nostr/crypto.py
+!nostr/events.py
+!nostr/nip98.py

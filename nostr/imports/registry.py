@@ -80,6 +80,10 @@ class ResolveContext:
     # has no relay pool; those resolvers then fail with a clear
     # NO_RELAY_ACCESS error instead of crashing.
     nostr_query: Optional[object] = None
+    # Where people publish (``nostr.outbox.RelayDirectory``): resolvers
+    # read an author from their NIP-65 outbox through it. ``None`` reads
+    # from hint and fallback relays only.
+    relay_directory: Optional[object] = None
 
     def stage(self, name: str, url: str = "", **extra) -> None:
         if self.on_stage is None:
@@ -186,6 +190,7 @@ def resolve_source(
     is_cancelled: Callable[[], bool] = lambda: False,
     run_blocking: Optional[Callable[..., None]] = None,
     nostr_query: Optional[object] = None,
+    relay_directory: Optional[object] = None,
 ) -> None:
     """Resolve ``value`` into a normalised ``Feed`` via the first
     matching resolver. Fails with ``UNSUPPORTED_SOURCE`` when nothing
@@ -200,6 +205,7 @@ def resolve_source(
         is_cancelled=is_cancelled,
         run_blocking=run_blocking,
         nostr_query=nostr_query,
+        relay_directory=relay_directory,
     )
     if resolver is None:
         on_failure(SourceError(

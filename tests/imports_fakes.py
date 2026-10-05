@@ -134,16 +134,6 @@ class ManualFetcher:
         self.pending.append((url, on_success, on_failure))
 
 
-class FakeRelayListCache:
-    def __init__(self, read=("wss://read.example",)):
-        self._relay_list = SimpleNamespace(read=list(read), write=[])
-        self.calls = []
-
-    def fetch(self, pubkey, relays=None, on_done=None):
-        self.calls.append((pubkey, tuple(relays or ())))
-        on_done(self._relay_list)
-
-
 class FakeLongFormFetcher:
     """event=None means not-found; otherwise every fetch resolves it."""
 
@@ -168,10 +158,11 @@ class FakePublishJob(QObject):
     failed = Signal(str)
 
     def __init__(self, *, outcome, inner_event=None, identifier=None,
-                 parent=None, **_ignored):
+                 parent=None, **kwargs):
         super().__init__(parent)
         self.inner_event = inner_event
         self.identifier = identifier
+        self.kwargs = kwargs
         self.cancelled = False
         self._outcome = outcome
 

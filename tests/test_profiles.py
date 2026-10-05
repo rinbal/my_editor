@@ -105,7 +105,7 @@ def test_save_is_atomic_no_stale_tmp_files_left(tmp_path: Path) -> None:
 
 
 def test_corrupt_file_is_tolerated(tmp_path: Path) -> None:
-    """A garbled profiles file should not crash the editor on launch — it
+    """A garbled profiles file should not crash the editor on launch: it
     should be treated as empty (and overwritten on the next save)."""
     path = tmp_path / "p.json"
     path.write_text("{not valid json", encoding="utf-8")
@@ -144,3 +144,26 @@ def test_load_skips_unknown_field_entries(tmp_path: Path) -> None:
     store = ProfileStore(path)
     assert len(store) == 1
     assert store.list()[0].display_name == "valid"
+
+
+def test_an_unfinished_setup_is_remembered_and_old_files_load_without_one(
+        tmp_path: Path) -> None:
+    path = tmp_path / "p.json"
+    old = _make_profile(0x01)
+    entry = {k: v for k, v in old.__dict__.items() if k not in ("signer", "setup_pending")}
+    path.write_text(json.dumps({"default": None, "profiles": [entry]}), encoding="utf-8")
+    store = ProfileStore(path)
+    assert store.get(old.user_pubkey).setup_pending is False
+
+    pending = _make_profile(0x02)
+    pending.setup_pending = True
+    store.upsert(pending)
+    assert ProfileStore(path).get(pending.user_pubkey).setup_pending is True
+
+
+def test_the_store_writes_next_to_its_own_file(tmp_path: Path) -> None:
+    path = tmp_path / "deeper" / "p.json"
+    ProfileStore(path).upsert(_make_profile(0x01))
+    assert path.is_file()
+    if os.name == "posix":
+        assert stat.S_IMODE(os.stat(path.parent).st_mode) == 0o700

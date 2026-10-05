@@ -29,6 +29,7 @@ from PySide6.QtNetwork import QNetworkReply, QNetworkRequest
 
 from nostr.einundzwanzig import (
     JOIN_URL,
+    parse_roster_records,
     MAX_FILE_BYTES,
     MEMBER_BLOSSOM,
     MEMBER_RELAY,
@@ -178,8 +179,8 @@ def test_a_member_gets_the_relay_and_the_media_server():
     assert b.is_member
     assert b.relay == MEMBER_RELAY
     assert b.blossom_server == MEMBER_BLOSSOM
-    assert b.max_file_bytes == MAX_FILE_BYTES
     assert b.per_user_bytes == PER_USER_BYTES
+    assert MAX_FILE_BYTES == 1024 ** 3
 
 
 def test_a_non_member_gets_nothing_to_branch_on():
@@ -375,57 +376,213 @@ def test_an_oversized_roster_is_aborted_and_resolves_false():
 # The entitled relay reaching the publish targets                       #
 # --------------------------------------------------------------------- #
 
-from nostr.outbox import (
-    RELAY_CAP, RelayList, select_draft_publish_relays, select_publish_relays,
-)
+from nostr.outbox import RelayList, defaults, plan_publish, private_relays
+from nostr.outbox.policy import LookupState
 
 
-def test_a_members_relay_leads_the_publish_targets():
-    out = select_publish_relays(
-        ["wss://mine.example"],
-        base=["wss://base.example"],
-        entitled=[MEMBER_RELAY],
-    )
-    assert out[0] == MEMBER_RELAY
-    assert "wss://mine.example" in out and "wss://base.example" in out
+def _own(*write):
+    return RelayList(write=list(write), read=[], state=LookupState.FOUND)
+
+
+def test_a_members_relay_follows_the_authors_own_relays():
+    # The author's write relays are where their readers look, so they
+    # lead; the members' relay is added right behind them.
+    plan = plan_publish(_own("wss://mine.example", "wss://mine2.example"),
+                        entitled=[MEMBER_RELAY])
+    assert list(plan.author) == ["wss://mine.example", "wss://mine2.example",
+                                 MEMBER_RELAY]
 
 
 def test_a_non_member_publishes_exactly_as_before():
     # No entitlement must mean no change at all to the existing behaviour.
-    args = (["wss://mine.example"],)
-    kwargs = dict(base=["wss://base.example"])
-    assert select_publish_relays(*args, **kwargs) == select_publish_relays(
-        *args, entitled=[], **kwargs
-    )
+    own = _own("wss://mine.example", "wss://mine2.example")
+    assert plan_publish(own) == plan_publish(own, entitled=[])
 
 
 def test_the_cap_cannot_drop_the_entitled_relay():
     # Being silently trimmed would cost a member the benefit they paid for.
-    crowded = [f"wss://r{i}.example" for i in range(RELAY_CAP * 2)]
-    out = select_publish_relays(crowded, base=crowded, entitled=[MEMBER_RELAY])
-    assert out[0] == MEMBER_RELAY
-    assert len(out) == RELAY_CAP
+    crowded = [f"wss://r{i}.example" for i in range(defaults.WRITE_CAP * 3)]
+    plan = plan_publish(_own(*crowded), entitled=[MEMBER_RELAY])
+    assert MEMBER_RELAY in plan.author
 
 
 def test_an_entitled_relay_already_configured_is_not_duplicated():
-    out = select_publish_relays(
-        [MEMBER_RELAY + "/"], base=[], entitled=[MEMBER_RELAY],
-    )
-    assert out == [MEMBER_RELAY]
+    plan = plan_publish(_own(MEMBER_RELAY + "/", "wss://mine.example"),
+                        entitled=[MEMBER_RELAY])
+    assert list(plan.author) == [MEMBER_RELAY, "wss://mine.example"]
 
 
 def test_drafts_reach_the_members_relay_but_after_the_users_own():
-    out = select_draft_publish_relays(
-        RelayList(write=["wss://mine.example"], read=[]),
-        base=["wss://base.example"],
-        entitled=[MEMBER_RELAY],
-    )
-    assert out.index("wss://mine.example") < out.index(MEMBER_RELAY)
-    assert out.index(MEMBER_RELAY) < out.index("wss://base.example")
+    out = private_relays(_own("wss://mine.example"), entitled=[MEMBER_RELAY],
+                         legacy=["wss://bunker.example"])
+    assert out == ["wss://mine.example", MEMBER_RELAY, "wss://bunker.example"]
 
 
 def test_drafts_are_unchanged_without_an_entitlement():
-    rl = RelayList(write=["wss://mine.example"], read=[])
-    assert select_draft_publish_relays(rl, base=["wss://b.example"]) == (
-        select_draft_publish_relays(rl, base=["wss://b.example"], entitled=[])
-    )
+    own = _own("wss://mine.example")
+    assert private_relays(own) == private_relays(own, entitled=[])
+
+
+# --------------------------------------------------------------------- #
+# Names, confirmations and a steady answer                              #
+# --------------------------------------------------------------------- #
+
+def test_the_roster_remembers_each_members_nostr_address():
+    nam = FakeNam({2026: roster_bytes(MEMBER, OTHER)})
+    directory, _clock = _directory(nam)
+    _resolve(directory, MEMBER)
+    assert directory.cached_handle(MEMBER) == "u0"
+    assert directory.cached_handle(OTHER) == "u1"
+    assert directory.cached_handle("f" * 64) is None
+
+
+def test_a_handle_that_cannot_be_an_address_is_dropped_not_the_member():
+    bad = {"pubkey": "c" * 64, "nip05_handle": "Not A Handle!"}
+    records = parse_roster_records(roster_bytes(MEMBER, extra=[bad]))
+    assert records["c" * 64] is None
+    assert records[MEMBER.lower()] == "u0"
+
+
+def test_a_confirmed_member_is_a_member_before_the_roster_knows():
+    nam = FakeNam({2026: roster_bytes(OTHER)})
+    directory, _clock = _directory(nam)
+    _resolve(directory, MEMBER)
+    assert directory.cached_membership(MEMBER) is False
+    directory.confirm_member(MEMBER)
+    assert directory.cached_membership(MEMBER) is True
+    assert directory.cached_benefits(MEMBER).is_member
+
+
+def test_only_a_real_pubkey_can_be_confirmed():
+    directory, _clock = _directory(FakeNam({}))
+    directory.confirm_member("not a key")
+    assert directory.last_known_membership("not a key") is None
+
+
+def test_a_stale_roster_keeps_its_last_answer_for_steady_benefits():
+    nam = FakeNam({2026: roster_bytes(MEMBER)})
+    directory, clock = _directory(nam)
+    _resolve(directory, MEMBER)
+    clock["t"] += 60 * 60          # well past the refresh interval
+    assert directory.cached_membership(MEMBER) is None      # not fresh
+    assert directory.last_known_membership(MEMBER) is True  # but still known
+    assert directory.last_known_membership(OTHER) is False
+
+
+def test_nothing_known_yet_is_none_not_false():
+    directory, _clock = _directory(FakeNam({}))
+    assert directory.last_known_membership(MEMBER) is None
+
+
+# --------------------------------------------------------------------- #
+# A refresh that fails, a forced refresh, and what the window saved     #
+# --------------------------------------------------------------------- #
+
+class FlakyNam(FakeNam):
+    """Answers from ``by_year`` until ``down`` is set, then fails."""
+
+    def __init__(self, by_year):
+        super().__init__(by_year)
+        self.down = False
+
+    def get(self, request):
+        self.error = QNetworkReply.HostNotFoundError if self.down else None
+        return super().get(request)
+
+
+def test_a_failed_refresh_keeps_the_roster_and_the_names():
+    nam = FlakyNam({2026: roster_bytes(MEMBER)})
+    directory, clock = _directory(nam)
+    _resolve(directory, MEMBER)
+    clock["t"] += 16 * 60                          # stale: the next resolve fetches
+    nam.down = True
+    seen = []
+    directory.resolved.connect(lambda pk, ok: seen.append((pk, ok)))
+    directory.resolve(MEMBER)
+    nam.replies[-1].finished.emit()                # the refresh fails
+    assert seen == [(MEMBER, True)]                # waiters hear the last known answer
+    assert directory.last_known_membership(MEMBER) is True
+    assert directory.cached_handle(MEMBER) == "u0"
+    assert nam.requested == [2026, 2026]
+
+
+def test_a_failed_refresh_is_retried_on_the_next_resolve():
+    nam = FlakyNam({2026: roster_bytes(MEMBER)})
+    directory, clock = _directory(nam)
+
+    def resolve_once():
+        directory.resolve(MEMBER)
+        nam.replies[-1].finished.emit()
+
+    resolve_once()
+    clock["t"] += 16 * 60
+    nam.down = True
+    resolve_once()
+    assert directory.cached_membership(MEMBER) is None   # kept, but still stale
+    nam.down = False
+    resolve_once()
+    assert nam.requested == [2026, 2026, 2026]
+    assert directory.cached_membership(MEMBER) is True
+
+
+def test_a_failure_with_no_roster_is_still_not_a_member():
+    nam = FakeNam(error=QNetworkReply.HostNotFoundError)
+    directory, _clock = _directory(nam)
+    assert _resolve(directory, MEMBER) == [(MEMBER, False)]
+    assert directory.last_known_membership(MEMBER) is None
+
+
+def test_a_forced_refresh_fetches_a_fresh_roster_and_keeps_answering_meanwhile():
+    nam = FakeNam({2026: roster_bytes(MEMBER)})
+    directory, _clock = _directory(nam)
+    _resolve(directory, MEMBER)
+    nam.by_year[2026] = roster_bytes(OTHER)
+    seen = []
+    directory.resolved.connect(lambda pk, ok: seen.append((pk, ok)))
+    directory.resolve(MEMBER, force=True)
+    assert nam.requested == [2026, 2026]
+    assert directory.cached_membership(MEMBER) is True       # until the answer lands
+    nam.replies[-1].finished.emit()
+    assert seen == [(MEMBER, False)]
+    assert directory.cached_membership(MEMBER) is False
+
+
+def test_a_saved_name_is_shown_before_the_roster_lists_it():
+    nam = FakeNam({2026: roster_bytes(MEMBER)})
+    directory, clock = _directory(nam)
+    _resolve(directory, MEMBER)
+    directory.record_handle(MEMBER, "satoshi")
+    assert directory.cached_handle(MEMBER) == "satoshi"
+    clock["t"] += 16 * 60
+    _resolve(directory, MEMBER)                    # the roster still says "u0"
+    assert directory.cached_handle(MEMBER) == "satoshi"
+
+
+def test_only_a_real_name_is_saved():
+    directory, _clock = _directory(FakeNam({}))
+    directory.record_handle(MEMBER, "not a name")
+    directory.record_handle("nonsense", "satoshi")
+    assert directory.cached_handle(MEMBER) is None
+    assert directory.cached_handle("nonsense") is None
+
+
+def test_forgetting_drops_the_confirmation_and_the_saved_name():
+    nam = FakeNam({2026: roster_bytes(OTHER)})
+    directory, _clock = _directory(nam)
+    _resolve(directory, MEMBER)
+    directory.confirm_member(MEMBER)
+    directory.record_handle(MEMBER, "satoshi")
+    directory.forget(MEMBER)
+    assert directory.cached_membership(MEMBER) is False
+    assert directory.cached_handle(MEMBER) is None
+
+
+def test_the_roster_and_the_api_agree_on_what_a_name_is():
+    from nostr.einundzwanzig_api import NIP05_HANDLE_MAX_LENGTH
+    too_long = "a" * (NIP05_HANDLE_MAX_LENGTH + 1)
+    records = parse_roster_records(json.dumps([
+        {"pubkey": MEMBER, "nip05_handle": "fine_name-1"},
+        {"pubkey": OTHER, "nip05_handle": too_long},
+    ]).encode())
+    assert records[MEMBER] == "fine_name-1"
+    assert records[OTHER] is None

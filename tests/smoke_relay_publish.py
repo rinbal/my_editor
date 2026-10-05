@@ -28,11 +28,12 @@ from PySide6.QtCore import QCoreApplication, QTimer
 import pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from nostr import CLIENT_NAME, DEFAULT_RELAYS, crypto, events  # noqa: E402
+from nostr import CLIENT_NAME, crypto, events  # noqa: E402
+from nostr.outbox.defaults import FALLBACK_RELAYS  # noqa: E402
 from nostr.relay import RelayPool  # noqa: E402
 
 
-RELAYS = list(DEFAULT_RELAYS)
+RELAYS = list(FALLBACK_RELAYS)
 
 
 def main() -> int:
@@ -80,7 +81,7 @@ def main() -> int:
     job.relay_result.connect(on_result)
     job.all_done.connect(on_done)
 
-    # Hard ceiling — should never trigger; protects against signal-wiring bugs.
+    # Hard ceiling: should never trigger; protects against signal-wiring bugs.
     QTimer.singleShot(20_000, lambda: (print("HARD TIMEOUT"), app.exit(2)))
 
     app.exec()

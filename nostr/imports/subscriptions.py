@@ -34,13 +34,13 @@ import logging
 import time as _time
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Sequence
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from .. import CLIENT_NAME
 from ..events import build_event
-from ..outbox import RelayListCache, select_draft_publish_relays
+from ..outbox import RelayDirectory, ask_private_relays
 from ..bunker import BunkerSessionPool
 from ..profiles import Profile
 from ..relay import RelayPool
@@ -84,19 +84,21 @@ class FeedSubscriptionStore(QObject):
         *,
         session_pool: BunkerSessionPool,
         relay_pool: RelayPool,
-        relay_list_cache: RelayListCache,
+        relay_directory: RelayDirectory,
         cache_dir: Optional[Path] = None,
         query=None,
         publisher: Optional[Callable[..., None]] = None,
         scheduler: Optional[Callable[..., Callable[[], None]]] = None,
         clock: Optional[Callable[[], int]] = None,
         debounce_ms: int = SUBSCRIPTIONS_DEBOUNCE_MS,
+        entitled_relays: Optional[Callable[[], Sequence[str]]] = None,
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
         self._session_pool = session_pool
         self._relay_pool = relay_pool
-        self._relay_list_cache = relay_list_cache
+        self._relay_directory = relay_directory
+        self._entitled_relays = entitled_relays
         self._cache_dir = Path(cache_dir) if cache_dir else _CACHE_DIR
         self._query = query if query is not None else (
             RelayQueryAdapter(relay_pool, parent=self)
@@ -285,9 +287,13 @@ class FeedSubscriptionStore(QObject):
 
     # -- internals: relay sync ---------------------------------------------
 
-    def _relays_for(self, relay_list, profile: Profile) -> List[str]:
-        return select_draft_publish_relays(
-            relay_list, bunker_relays=profile.bunker_relays)
+    def _with_relays(self, profile: Profile, on_done: Callable[[List[str]], None], *,
+                     reading: bool = False) -> None:
+        """The account's private relays: where the list is written and,
+        so every device finds it, where it is read (which also asks the
+        relays a list written before the account's own was known went)."""
+        ask_private_relays(self._relay_directory, profile, on_done,
+                           entitled=self._entitled_relays, reading=reading)
 
     def _refresh_from_relays(self) -> None:
         profile = self._profile
@@ -295,10 +301,9 @@ class FeedSubscriptionStore(QObject):
             return
         self.sync_status.emit("Syncing feed subscriptions…")
 
-        def _on_relay_list(relay_list) -> None:
+        def _on_relays(relays) -> None:
             if self._profile is not profile:
                 return
-            relays = self._relays_for(relay_list, profile)
             self._query.latest(
                 relays,
                 [{
@@ -318,11 +323,7 @@ class FeedSubscriptionStore(QObject):
                 return
             self._decrypt_and_adopt(profile, str(event["content"]))
 
-        self._relay_list_cache.fetch(
-            profile.user_pubkey,
-            relays=list(dict.fromkeys(profile.bunker_relays)),
-            on_done=_on_relay_list,
-        )
+        self._with_relays(profile, _on_relays, reading=True)
 
     def _decrypt_and_adopt(self, profile: Profile, ciphertext: str) -> None:
         def _on_ready(client) -> None:
@@ -402,15 +403,8 @@ class FeedSubscriptionStore(QObject):
             )
 
         def _publish(signed: dict) -> None:
-            def _on_relay_list(relay_list) -> None:
-                relays = self._relays_for(relay_list, profile)
-                self._publisher(relays, signed, on_done=_done)
-
-            self._relay_list_cache.fetch(
-                profile.user_pubkey,
-                relays=list(dict.fromkeys(profile.bunker_relays)),
-                on_done=_on_relay_list,
-            )
+            self._with_relays(
+                profile, lambda relays: self._publisher(relays, signed, on_done=_done))
 
         def _done(accepted: int, total: int) -> None:
             self._publish_in_flight = False

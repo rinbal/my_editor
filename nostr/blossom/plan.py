@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Pure upload planner: pre-flight a file size against the configured servers.
 
-Single entry point — ``plan_upload(file_size, servers)`` — decides which
+Single entry point - ``plan_upload(file_size, servers)`` - decides which
 servers can accept the file, which can't, and whether the configured
 primary lost its slot (reroute). The same planner output drives the
 upload dispatch, the toast copy, and the per-row UI hint, so there's no
@@ -26,7 +26,7 @@ from .servers import (
 
 @dataclass(frozen=True)
 class ServerInfo:
-    """Metadata for one Blossom server. Always non-null — unknown servers
+    """Metadata for one Blossom server. Always non-null - unknown servers
     get a synthesized ``unpublished`` record so callers can rely on the shape."""
 
     free: bool
@@ -90,6 +90,14 @@ def get_server_info(server_url: str) -> ServerInfo:
     )
 
 
+def lists_publicly(server_url: str) -> bool:
+    """True when the server is known to answer ``GET /list`` without a
+    signed token, so the library can list it without a signer prompt."""
+    host = _host_of(server_url)
+    raw = BLOSSOM_SERVER_INFO.get(host) if host else None
+    return bool(raw and raw.get("public_list"))
+
+
 def get_effective_max_file(server_url: str) -> int:
     """Largest single-file size, in bytes, that ``server_url`` will accept
     on its free tier. ``None`` published-cap → ``BLOSSOM_UNPUBLISHED_LIMIT_FALLBACK``.
@@ -143,11 +151,12 @@ def plan_upload(file_size: int, servers: Sequence[str]) -> UploadPlan:
 
 
 def clamp_to_app_limit(byte_count: Optional[int]) -> tuple[Optional[int], bool]:
-    """Clamp a server's documented cap to the app's actual upload ceiling.
+    """Clamp a server's documented cap to ``BLOSSOM_MAX_FILE_SIZE`` for display.
 
-    Returns ``(value, clamped)``. The UI must not promise a number the
-    upload code can't honour (e.g. satellite.earth's metadata-true
-    5 GiB paid tier vs. the 100 MiB global cap).
+    Returns ``(value, clamped)``. A presentation helper only: the upload
+    path does not clamp, it plans against each server's own published
+    cap (``plan_upload``), so a server that documents more than this
+    (the members' server, 1 GiB) really does receive larger files.
     """
     if not isinstance(byte_count, int):
         return None, False

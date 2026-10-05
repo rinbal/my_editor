@@ -1,14 +1,27 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Persistent store for NIP-46 profiles.
+"""Persistent store for Nostr profiles.
 
-A profile is the editor's record of one signer connection. The user's
-real nsec lives only inside the remote signer (Amber, nsec.app, …); the
-``local_secret_hex`` we store here is the *editor-side* keypair for the
-NIP-46 channel, not their real key.
+A profile is the editor's record of one account and how it signs.
+
+Most profiles are a signer connection (``signer == "remote"``): the user's
+real nsec lives only inside the remote signer (Amber, nsec.app, …), and
+the ``local_secret_hex`` we store here is the *editor-side* keypair for
+the NIP-46 channel, not their real key.
+
+A profile with ``signer == "local"`` is an account whose private key the
+person chose to keep on this computer (Create Account, or signing in with
+a private key). Its key is in nostr/key_vault.py, never in this file; its
+``bunker_relays`` hold the relays the account starts out with, so every
+place that asks "where does this user's traffic go" has an answer.
+
+``setup_pending`` marks an account created in MyEditor whose relay list
+and name haven't reached the network yet. The account controller
+(nostr/account_controller.py) finishes that the next time the account is
+used, and clears the flag.
 
 Storage:
-  ~/.config/my_editor/nostr_profiles.json — chmod 600
+  ~/.config/my_editor/nostr_profiles.json - chmod 600
 
 The file is rewritten atomically (temp file + rename) so a crash mid-write
 cannot corrupt the store.
@@ -30,20 +43,28 @@ PROFILES_FILE = PROFILES_DIR / "nostr_profiles.json"
 
 @dataclass
 class Profile:
-    """One connected NIP-46 signer plus cached display metadata."""
+    """One account: how it signs, plus cached display metadata."""
 
-    user_pubkey: str                       # hex, 64 chars — the user's real Nostr identity
-    bunker_pubkey: str                     # hex, 64 chars — remote-signer relay identity
-    bunker_relays: List[str]               # relays the signer listens on
-    local_secret_hex: str                  # 64 chars — editor-side ephemeral key for this channel
+    user_pubkey: str                       # hex, 64 chars - the user's real Nostr identity
+    bunker_pubkey: str                     # hex, 64 chars - remote-signer relay identity ("" when local)
+    bunker_relays: List[str]               # remote: relays the signer listens on;
+                                           # local: relays the account starts out with
+    local_secret_hex: str                  # remote: editor-side key for the signer channel ("" when local)
     display_name: str = ""                 # from kind 0; may be empty
     picture: str = ""                      # avatar URL from kind 0; may be empty
     nip05: str = ""                        # NIP-05 identifier if set
-    metadata_cached_at: int = 0            # unix seconds — 0 means never fetched
+    metadata_cached_at: int = 0            # unix seconds - 0 means never fetched
     avatar_path: str = ""                  # local cache path for the avatar pixmap
+    signer: str = "remote"                 # "remote" (NIP-46 signer app) or "local" (key on this computer)
+    setup_pending: bool = False            # created here, and its relay list and name aren't
+                                           # published yet; finished when it is next used
+
+    @property
+    def is_local(self) -> bool:
+        return self.signer == "local"
 
     def npub_short(self) -> str:
-        """First and last 4 hex chars — for UI fallback display."""
+        """First and last 4 hex chars - for UI fallback display."""
         return f"{self.user_pubkey[:8]}…{self.user_pubkey[-4:]}"
 
 
@@ -130,18 +151,19 @@ class ProfileStore:
             try:
                 profile = Profile(**entry)
             except TypeError:
-                continue  # unknown field shape — skip silently
+                continue  # unknown field shape - skip silently
             self._profiles[profile.user_pubkey] = profile
         default = data.get("default")
         if isinstance(default, str) and default in self._profiles:
             self._default_pubkey = default
 
     def _save(self) -> None:
-        PROFILES_DIR.mkdir(parents=True, exist_ok=True)
+        folder = self._path.parent
+        folder.mkdir(parents=True, exist_ok=True)
         # Try to lock down the directory too. mkdir's mode= is masked by umask
         # on some setups; chmod after the fact gets us there reliably.
         try:
-            os.chmod(PROFILES_DIR, 0o700)
+            os.chmod(folder, 0o700)
         except OSError:
             pass
 
@@ -151,9 +173,9 @@ class ProfileStore:
         }
 
         # Atomic write: tmp file in the same directory, rename into place.
-        # Same directory is important — rename across filesystems is not atomic.
+        # Same directory is important - rename across filesystems is not atomic.
         fd, tmp_path = tempfile.mkstemp(
-            prefix=".nostr_profiles_", suffix=".json.tmp", dir=str(PROFILES_DIR)
+            prefix=".nostr_profiles_", suffix=".json.tmp", dir=str(folder)
         )
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
