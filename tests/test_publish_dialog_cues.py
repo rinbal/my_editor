@@ -23,7 +23,7 @@ from PySide6.QtGui import QColor  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 import alerts  # noqa: E402
-import theme  # noqa: E402
+from nostr.ui.appearance import roles  # noqa: E402
 from tests.test_publish_job import _dialog  # noqa: E402
 
 
@@ -34,11 +34,16 @@ def qt_app():
 
 
 def edge(button):
-    return button.grab().toImage().pixelColor(1, button.height() // 2)
+    # The ordinary border is one pixel; the keyboard ring is two pixels.
+    image = button.grab().toImage()
+    scale = image.devicePixelRatio()
+    return image.pixelColor(round(.5 * scale), round(button.height() * scale / 2))
 
 
 def middle(button):
-    return button.grab().toImage().pixelColor(4, button.height() // 2)
+    image = button.grab().toImage()
+    scale = image.devicePixelRatio()
+    return image.pixelColor(round(4 * scale), round(button.height() * scale / 2))
 
 
 @pytest.mark.parametrize("dark", [True, False])
@@ -57,18 +62,22 @@ def test_the_default_and_the_focus_can_be_seen(tmp_path, monkeypatch, mac, kind,
     QApplication.processEvents()
     try:
         publish, cancel = dialog._publish_btn, dialog._cancel_btn
-        accent = QColor(theme._DIALOG_ACCENT[dark][0])
+        r = roles(dark)
+        accent = middle(publish)
+        top, bottom = QColor(r.highlight), QColor(r.button)
+        for channel in ("red", "green", "blue"):
+            lo, hi = sorted((getattr(top, channel)(), getattr(bottom, channel)()))
+            assert lo <= getattr(accent, channel)() <= hi
         assert publish.isDefault()
-        assert middle(publish) == accent
         assert middle(cancel) != middle(publish)
         unfocused = edge(cancel)
         cancel.setFocus(Qt.FocusReason.TabFocusReason)
         QApplication.processEvents()
         if mac:
-            assert edge(cancel) == QColor(theme.focus_ring_color(dark))
+            assert edge(cancel) == QColor(r.focus)
         else:
             assert cancel.isDefault() and middle(cancel) == accent
-            assert edge(cancel) == QColor(theme.focus_ring_on_accent_color(dark))
+            assert edge(cancel) == QColor(r.on_accent)
             assert middle(publish) != accent
         assert edge(cancel) != unfocused
     finally:

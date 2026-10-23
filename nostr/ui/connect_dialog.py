@@ -59,6 +59,7 @@ from ..qr import make_qr_pixmap
 from ..relay import RelayPool
 from .assistant import StepList, link_button, stylesheet, text_label
 
+from . import appearance
 from i18n import _, ngettext
 from url_safety import is_safe_external_url
 
@@ -121,13 +122,25 @@ class ConnectDialog(QDialog):
         self._qr_seconds_left: int = 0
 
         self._build_ui()
-        self.setStyleSheet(stylesheet(is_dark) + _EXTRA_CSS)
+        self.apply_theme(is_dark)
+        appearance.bind(self)
         self._tabs.currentChanged.connect(self._on_tab_changed)
         # The code is shown first, and its channel opens with the window.
         self._start_qr_listener()
         self._update_paste_button()
 
     # -- UI build ----------------------------------------------------------
+
+    def apply_theme(self, is_dark: bool) -> None:
+        self._is_dark = is_dark
+        r = appearance.roles(is_dark)
+        self.setStyleSheet(stylesheet(is_dark) + _EXTRA_CSS + f"""
+            QTabBar::tab {{ background: {r.tab}; color: {r.muted}; border: 1px solid {r.line};
+                padding: 6px 12px; min-width: 72px; border-top-left-radius: 6px; border-top-right-radius: 6px; }}
+            QTabBar::tab:selected {{ background: {r.soft}; color: {r.ink}; border-color: {r.edge}; }}
+            QTabBar::tab:hover {{ color: {r.ink}; }}
+        """)
+        appearance.surface(self, is_dark)
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)

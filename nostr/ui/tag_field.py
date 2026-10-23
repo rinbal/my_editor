@@ -33,11 +33,7 @@ from PySide6.QtWidgets import (
 )
 
 import announce
-from constants import (
-    DARK_BORDER, DARK_FG, DARK_MENU_BG, DARK_MUTED_FG, LIGHT_BORDER, LIGHT_FG, LIGHT_MENU_BG,
-    LIGHT_MUTED_FG,
-)
-import theme
+from . import appearance
 from i18n import _
 
 from ..article_details import hashtags_written
@@ -171,17 +167,16 @@ class TagField(QFrame):
 
     def set_dark(self, is_dark: bool) -> None:
         self._is_dark = is_dark
-        field, border, text, muted = (
-            (DARK_MENU_BG, DARK_BORDER, DARK_FG, DARK_MUTED_FG) if is_dark
-            else (LIGHT_MENU_BG, LIGHT_BORDER, LIGHT_FG, LIGHT_MUTED_FG))
-        ring = theme.focus_ring_color(is_dark)
+        r = appearance.roles(is_dark)
+        field, border, text, muted, ring = r.field, r.edge, r.text, r.muted, r.focus
+        self.setPalette(appearance.palette(is_dark))
         self.setStyleSheet(
             f"QFrame#tag_field {{ background: {field}; border: 1px solid {border};"
             f" border-radius: 4px; }}"
             f"QLineEdit#tag_field_entry {{ background: transparent; border: none;"
             f" color: {text}; padding: 2px; }}"
-            f"QFrame#tag_chip {{ background: {border}; border: none; border-radius: 10px; }}"
-            f"QLabel#tag_chip_words {{ color: {text}; background: transparent; }}"
+            f"QFrame#tag_chip {{ background: {r.soft}; border: none; border-radius: 10px; }}"
+            f"QLabel#tag_chip_words {{ color: {r.ink}; background: transparent; }}"
             f"QToolButton#tag_chip_remove {{ color: {muted}; background: transparent;"
             f" border: 1px solid transparent; border-radius: 8px; padding: 0 4px; }}"
             f"QToolButton#tag_chip_remove:hover {{ color: {text}; }}"

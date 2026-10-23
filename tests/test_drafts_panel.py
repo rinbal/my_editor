@@ -436,11 +436,11 @@ def test_loading_and_failed_rows_are_told_apart():
     assert "retry" in rows["d1"].detail.lower()
 
 
-def test_the_selection_is_an_inset_shape_in_the_accent_and_grey_without_focus():
+def test_the_selection_is_an_inset_violet_gradient_and_quiet_without_focus():
     """A selected row is a rounded shape inset from the list's edges, in
-    the system's selection color while the list has the focus and a quiet
-    grey otherwise, as a Mac list draws it (no bar, no hover fill)."""
-    import theme
+    the Nostr accent while focused and a quiet tint otherwise. Local lists
+    continue to use the system accent (covered in test_theme)."""
+    from nostr.ui.appearance import roles
     for is_dark in (True, False):
         panel = shown_panel(healthy_store(), is_dark=is_dark)
         try:
@@ -457,9 +457,13 @@ def test_the_selection_is_an_inset_shape_in_the_accent_and_grey_without_focus():
             panel.activateWindow()
             panel._list.setFocus(Qt.OtherFocusReason)
             QApplication.processEvents()
-            accent = theme.list_selection_color(is_dark).name().upper()
+            r = roles(is_dark)
+            accent = at(rect.width() - 30)
+            top, bottom, actual = QColor(r.highlight), QColor(r.selection), QColor(accent)
             assert at(2) == tokens["panel_bg"].upper()       # inset from the edge
-            assert at(rect.width() - 30) == accent
+            for channel in ("red", "green", "blue"):
+                lo, hi = sorted((getattr(top, channel)(), getattr(bottom, channel)()))
+                assert lo <= getattr(actual, channel)() <= hi
             panel._search_edit.setFocus(Qt.OtherFocusReason)
             QApplication.processEvents()
             assert at(rect.width() - 30) not in (accent, tokens["panel_bg"].upper())
@@ -468,10 +472,10 @@ def test_the_selection_is_an_inset_shape_in_the_accent_and_grey_without_focus():
 
 
 def test_white_text_reads_on_the_selection_in_both_themes():
-    import theme
     for is_dark in (True, False):
-        fill = theme.list_selection_color(is_dark).name()
-        assert contrast("#FFFFFF", fill) >= 4.5, fill
+        from nostr.ui.appearance import roles
+        for fill in (roles(is_dark).highlight, roles(is_dark).selection):
+            assert contrast("#FFFFFF", fill) >= 4.5, fill
 
 
 @pytest.mark.parametrize("control_name", ["_launcher", "_actions_btn", "_search_edit"])

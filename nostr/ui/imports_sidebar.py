@@ -47,6 +47,7 @@ from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPalette
 from PySide6.QtWidgets import QAbstractItemView, QListView, QStyle, QStyledItemDelegate
 
 import theme
+from . import appearance
 from i18n import _
 
 from .imports_glyphs import glyph, is_dark, source_avatar
@@ -187,16 +188,12 @@ class SidebarDelegate(QStyledItemDelegate):
         text_color = palette.color(QPalette.ColorRole.Text)
         muted = palette.color(QPalette.ColorRole.PlaceholderText)
         if selected:
-            highlight = QColor(palette.color(QPalette.ColorRole.Highlight))
-            if not focused:
-                highlight = QColor(palette.color(QPalette.ColorRole.Mid))
-                highlight.setAlpha(110)
+            highlight = QColor(appearance.roles(is_dark(palette)).soft)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(highlight)
             painter.drawRoundedRect(QRectF(rect.adjusted(6, 1, -6, -1)), 6, 6)
-            if focused:
-                text_color = palette.color(QPalette.ColorRole.HighlightedText)
-                muted = text_color
+            text_color = QColor(appearance.roles(is_dark(palette)).ink)
+            muted = text_color
 
         dpr = self._view.devicePixelRatioF()
         icon_rect = QRect(rect.left() + 14, rect.center().y() - ICON // 2 + 1, ICON, ICON)

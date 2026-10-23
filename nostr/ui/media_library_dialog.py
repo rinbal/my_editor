@@ -70,10 +70,10 @@ from PySide6.QtWidgets import (
 
 import i18n
 import media_files
-from constants import DARK_MUTED_FG, LIGHT_MUTED_FG
 import theme
 import url_safety
 from alerts import confirm_destructive
+from . import appearance
 from i18n import _, ngettext
 from media_files import format_size  # noqa: F401, imported from here too
 
@@ -163,7 +163,8 @@ class MediaLibraryDialog(QDialog):
         # Deleted on close, so its connections to the store and the
         # loader go with it.
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.setStyleSheet(theme.dialog_stylesheet(is_dark) + _extra_css(is_dark))
+        self.apply_theme(is_dark)
+        appearance.bind(self)
 
         self._store = store
         self._is_dark = is_dark
@@ -230,6 +231,15 @@ class MediaLibraryDialog(QDialog):
     # ------------------------------------------------------------------
     # Building
     # ------------------------------------------------------------------
+
+    def apply_theme(self, is_dark: bool) -> None:
+        self._is_dark = is_dark
+        self.setStyleSheet(appearance.dialog_stylesheet(is_dark) + _extra_css(is_dark))
+        appearance.surface(self, is_dark)
+        if hasattr(self, "_grid"):
+            self._grid.apply_theme(is_dark)
+        if getattr(self, "_quick_look", None) is not None:
+            self._quick_look.apply_theme(is_dark)
 
     def _build(self, alt_text: bool) -> None:
         layout = QVBoxLayout(self)
@@ -941,7 +951,7 @@ class MediaLibraryDialog(QDialog):
                 "Anything you published with them will no longer show them. You can’t undo "
                 "this action.", len(files))
         if not confirm_destructive(self, title=title, message=message, action=_("Delete"),
-                                   is_dark=self._is_dark):
+                                   is_dark=self._is_dark, nostr=True):
             return
         # A shared original goes with its copy, or the copy would stay
         # public with no tile left to reach it.
@@ -976,7 +986,7 @@ class MediaLibraryDialog(QDialog):
             "Anyone with the link will no longer see them, and anything you published with "
             "them will no longer show them.", len(shared))
         if confirm_destructive(self, title=title, message=message, action=_("Stop Sharing"),
-                               is_dark=self._is_dark):
+                               is_dark=self._is_dark, nostr=True):
             self._delete_copies([tile for tile, _copy in shared], stays=True)
 
     def _delete_copies(self, files: List[Tile], *, stays: bool) -> None:
@@ -1318,8 +1328,8 @@ class MediaLibraryDialog(QDialog):
 # --------------------------------------------------------------------------- #
 
 def _extra_css(is_dark: bool) -> str:
-    muted = DARK_MUTED_FG if is_dark else LIGHT_MUTED_FG
-    return (f"QLabel#media_status[tone=\"error\"] {{ color: {theme.attention_color(is_dark)}; }}\n"
+    muted = appearance.roles(is_dark).muted
+    return (f"QLabel#media_status[tone=\"error\"] {{ color: {appearance.roles(is_dark).error}; }}\n"
             f"QLabel#media_status[tone=\"rest\"], QLabel#media_hint {{ color: {muted}; }}\n"
             "QLabel#media_hint, QLabel#media_status { font-size: 12px; }\n"
             "QLabel#media_empty { font-size: 14px; }\n"

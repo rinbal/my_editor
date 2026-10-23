@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 
 import announce
 import theme
+from . import appearance
 from i18n import _
 from popup_placement import place_below
 
@@ -61,63 +62,6 @@ _MAX_VISIBLE_RESULTS: int = 12
 # --------------------------------------------------------------------------- #
 # Styles                                                                       #
 # --------------------------------------------------------------------------- #
-
-_DARK_CSS = """
-QWidget#mention_picker {
-    background: #252526;
-    border: 1px solid #3C3C3C;
-    border-radius: 6px;
-}
-QLineEdit#mention_search {
-    background: #1E1E1E;
-    color: #D4D4D4;
-    border: 1px solid #3C3C3C;
-    border-radius: 4px;
-    padding: 6px 8px;
-    selection-background-color: #264F78;
-}
-QListWidget#mention_results {
-    background: #252526;
-    color: #D4D4D4;
-    border: none;
-    outline: none;
-}
-QListWidget#mention_results::item { padding: 0; border: none; }
-QListWidget#mention_results::item:selected { background: #1E1E1E; }
-QLabel#row_name { color: #D4D4D4; font-size: 12px; font-weight: 600; }
-QLabel#row_nip05 { color: #858585; font-size: 11px; }
-QLabel#row_badge { color: #FFB347; font-size: 10px; }
-QLabel#picker_hint { color: #858585; font-size: 11px; padding: 6px 10px; }
-"""
-
-_LIGHT_CSS = """
-QWidget#mention_picker {
-    background: #F8F8F8;
-    border: 1px solid #E1E1E1;
-    border-radius: 6px;
-}
-QLineEdit#mention_search {
-    background: #FFFFFF;
-    color: #333333;
-    border: 1px solid #E1E1E1;
-    border-radius: 4px;
-    padding: 6px 8px;
-    selection-background-color: #0078D4;
-}
-QListWidget#mention_results {
-    background: #F8F8F8;
-    color: #333333;
-    border: none;
-    outline: none;
-}
-QListWidget#mention_results::item { padding: 0; border: none; }
-QListWidget#mention_results::item:selected { background: #ECECEC; }
-QLabel#row_name { color: #333333; font-size: 12px; font-weight: 600; }
-QLabel#row_nip05 { color: #777777; font-size: 11px; }
-QLabel#row_badge { color: #A05000; font-size: 10px; }
-QLabel#picker_hint { color: #999999; font-size: 11px; padding: 6px 10px; }
-"""
-
 
 # --------------------------------------------------------------------------- #
 # Result row                                                                  #
@@ -171,9 +115,17 @@ class _ResultRow(QWidget):
 
 
 def _style(is_dark: bool) -> str:
-    error = theme.error_text_color(is_dark)
-    return ((_DARK_CSS if is_dark else _LIGHT_CSS)
-            + f"QLabel#picker_problem {{ color: {error}; font-size: 11px; padding: 0 2px; }}")
+    r = appearance.roles(is_dark)
+    return appearance.controls(is_dark) + f"""
+    QWidget#mention_picker {{ background: {r.popover}; border: 1px solid {r.edge}; border-radius: 8px; }}
+    QListWidget#mention_results {{ background: transparent; border: none; outline: none; }}
+    QListWidget#mention_results::item {{ padding: 0; border: none; }}
+    QListWidget#mention_results::item:selected {{ background: {r.soft}; border-radius: 6px; }}
+    QLabel#row_name {{ color: {r.text}; font-weight: 600; }}
+    QLabel#row_nip05, QLabel#picker_hint {{ color: {r.muted}; }}
+    QLabel#row_badge {{ color: {r.ink}; }}
+    QLabel#picker_problem {{ color: {theme.error_text_color(is_dark)}; padding: 0 2px; }}
+    """
 
 
 def _short_pk(pubkey_hex: str) -> str:
@@ -248,7 +200,9 @@ class MentionPicker(QWidget):
         self._last_people: List[Person] = []
 
         self._build_ui()
+        appearance.bind(self, "set_dark")
         self.setStyleSheet(_style(is_dark))
+        appearance.surface(self, is_dark, kind="popover")
 
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
@@ -310,7 +264,9 @@ class MentionPicker(QWidget):
     def set_dark(self, is_dark: bool) -> None:
         """Follow the window's appearance (light or dark)."""
         self._is_dark = is_dark
+        appearance.bind(self, "set_dark")
         self.setStyleSheet(_style(is_dark))
+        appearance.surface(self, is_dark, kind="popover")
 
     def reject(self) -> None:  # type: ignore[override]
         self._search_client.cancel()

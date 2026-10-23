@@ -41,7 +41,7 @@ class DraftConflictBanner(DocumentNotice):
     dismissed = Signal()
 
     def __init__(self, *, is_dark: bool = True, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent, is_dark=is_dark)
+        super().__init__(parent, is_dark=is_dark, nostr=True)
         self.acted.connect(self._on_acted)
         self.closed.connect(self.dismissed)
         self.present(_("A newer version of this draft was published from another device."),

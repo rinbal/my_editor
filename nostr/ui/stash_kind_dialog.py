@@ -44,6 +44,7 @@ from PySide6.QtWidgets import (
 
 import announce
 import theme
+from . import appearance
 from alerts import answer_return_as_the_system_does, start_on_default
 from i18n import _
 
@@ -83,123 +84,20 @@ class StashChoice:
 # Stylesheets, matched to SaveDestinationDialog's vocabulary                  #
 # --------------------------------------------------------------------------- #
 
-_DARK_CSS = """
-QDialog { background: #1E1E1E; }
-QLabel { color: #D4D4D4; font-size: 12px; }
-QLabel#stash_kind_title { color: #FFFFFF; font-size: 16px; font-weight: 600; }
-QLabel#stash_kind_subtitle { color: #858585; font-size: 12px; }
-QLabel#stash_kind_field_label {
-    color: #858585; font-size: 10px;
-    text-transform: uppercase; letter-spacing: 0.6px;
-}
-QLabel#stash_kind_hint { color: #999999; font-size: 11px; }
-QLabel#stash_kind_option { color: #FFFFFF; font-size: 13px; font-weight: 500; }
-
-QFrame#stash_kind_card {
-    background: #252526;
-    border: 1px solid #3C3C3C;
-    border-radius: 6px;
-}
-QFrame#stash_kind_card[selected="true"] {
-    background: #2A2D2E;
-    border: 1px solid #007ACC;
-}
-QFrame#stash_kind_divider { background: #2D2D30; max-height: 1px; min-height: 1px; }
-
-QRadioButton {
-    color: #D4D4D4;
-    spacing: 8px;
-    background: transparent;
-    border: none;
-    padding: 0;
-}
-QRadioButton::indicator { width: 14px; height: 14px; }
-
-QLineEdit {
-    background: #252526;
-    color: #D4D4D4;
-    border: 1px solid #3C3C3C;
-    border-radius: 4px;
-    padding: 6px 8px;
-    selection-background-color: #264F78;
-    font-size: 12px;
-}
-QLineEdit:focus { border-color: #007ACC; }
-QLineEdit:read-only { color: #858585; }
-
-QPushButton {
-    background: #2D2D30;
-    color: #D4D4D4;
-    border: 1px solid #3C3C3C;
-    padding: 6px 14px;
-    border-radius: 4px;
-    min-width: 86px;
-}
-QPushButton:hover { background: #3C3C3C; }
-QPushButton:pressed { background: #1E1E1E; }
-QPushButton:disabled { background: #252526; color: #6A6A6A; border-color: #2D2D2D; }
-"""
-
-_LIGHT_CSS = """
-QDialog { background: #FFFFFF; }
-QLabel { color: #333333; font-size: 12px; }
-QLabel#stash_kind_title { color: #1A1A1A; font-size: 16px; font-weight: 600; }
-QLabel#stash_kind_subtitle { color: #777777; font-size: 12px; }
-QLabel#stash_kind_field_label {
-    color: #999999; font-size: 10px;
-    text-transform: uppercase; letter-spacing: 0.6px;
-}
-QLabel#stash_kind_hint { color: #777777; font-size: 11px; }
-QLabel#stash_kind_option { color: #1A1A1A; font-size: 13px; font-weight: 500; }
-
-QFrame#stash_kind_card {
-    background: #F8F8F8;
-    border: 1px solid #E1E1E1;
-    border-radius: 6px;
-}
-QFrame#stash_kind_card[selected="true"] {
-    background: #EAF3FB;
-    border: 1px solid #0078D4;
-}
-QFrame#stash_kind_divider { background: #ECECEC; max-height: 1px; min-height: 1px; }
-
-QRadioButton {
-    color: #333333;
-    spacing: 8px;
-    background: transparent;
-    border: none;
-    padding: 0;
-}
-QRadioButton::indicator { width: 14px; height: 14px; }
-
-QLineEdit {
-    background: #FFFFFF;
-    color: #333333;
-    border: 1px solid #E1E1E1;
-    border-radius: 4px;
-    padding: 6px 8px;
-    selection-background-color: #0078D4;
-    font-size: 12px;
-}
-QLineEdit:focus { border-color: #0078D4; }
-QLineEdit:read-only { color: #777777; }
-
-QPushButton {
-    background: #ECECEC;
-    color: #333333;
-    border: 1px solid #CCCCCC;
-    padding: 6px 14px;
-    border-radius: 4px;
-    min-width: 86px;
-}
-QPushButton:hover { background: #E1E1E1; }
-QPushButton:pressed { background: #D0D0D0; }
-QPushButton:disabled { background: #F8F8F8; color: #BBBBBB; border-color: #EBEBEB; }
-"""
+def _stylesheet(dark: bool) -> str:
+    r = appearance.roles(dark)
+    return appearance.dialog_stylesheet(dark) + f"""
+    QLabel#stash_kind_title {{ font-size: 16px; font-weight: 600; }}
+    QLabel#stash_kind_option {{ font-weight: 600; }}
+    QLabel#stash_kind_subtitle, QLabel#stash_kind_field_label, QLabel#stash_kind_hint {{ color: {r.muted}; }}
+    QFrame#stash_kind_card {{ background: {r.control}; border: 1px solid {r.edge}; border-radius: 8px; }}
+    QFrame#stash_kind_card[selected="true"] {{ background: {r.soft}; border-color: {r.focus}; }}
+    QFrame#stash_kind_divider {{ background: {r.line}; max-height: 1px; min-height: 1px; }}
+    QRadioButton {{ color: {r.text}; background: transparent; spacing: 8px; }}
+    QLabel#stash_kind_error {{ color: {theme.error_text_color(dark)}; }}
+    """
 
 
-# --------------------------------------------------------------------------- #
-# Helpers                                                                     #
 # --------------------------------------------------------------------------- #
 
 def _divider() -> QFrame:
@@ -464,12 +362,13 @@ class StashKindDialog(QDialog):
             self._title_edit.setFocus()
 
     def _apply_theme(self) -> None:
-        # The default button, its focus ring and its dimmed state from the
-        # one place every dialog takes them (theme.py).
-        error = theme.error_text_color(self._is_dark)
-        self.setStyleSheet((_DARK_CSS if self._is_dark else _LIGHT_CSS)
-                           + f"QLabel#stash_kind_error {{ color: {error}; font-size: 11px; }}"
-                           + theme.default_and_focus_css(self._is_dark))
+        self.apply_theme(self._is_dark)
+        appearance.bind(self)
+
+    def apply_theme(self, is_dark: bool) -> None:
+        self._is_dark = is_dark
+        self.setStyleSheet(_stylesheet(is_dark))
+        appearance.surface(self, is_dark)
 
     # -- behaviour ---------------------------------------------------------
 

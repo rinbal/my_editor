@@ -90,6 +90,7 @@ from ..search import Nip50SearchClient
 from .coauthors import Coauthors
 from .cover_field import CoverImageField
 from .mention_picker import MentionPicker
+from . import appearance
 from .publish_sheet import (
     AccountRow, BottomRow, PeopleRow, StatusLine, fit_margins, fit_to_window, make_sheet,
     people_tagged, scroll_area, sheet_stylesheet,
@@ -131,6 +132,7 @@ class _ArticleCard(QFrame):
         column.addStretch(1)
 
     def set_dark(self, is_dark: bool) -> None:
+        appearance.neutral(self, is_dark)
         border, ground, muted = ((DARK_BORDER, DARK_MENU_BG, DARK_MUTED_FG) if is_dark
                                  else (LIGHT_BORDER, LIGHT_BG, LIGHT_MUTED_FG))
         self.setStyleSheet(
@@ -138,7 +140,7 @@ class _ArticleCard(QFrame):
             f" border-radius: 8px; }}"
             f"QLabel#card_cover {{ background: {border}; border: none;"
             f" border-top-left-radius: 7px; border-top-right-radius: 7px; }}"
-            f"QLabel#card_title {{ font-size: 15px; font-weight: 600; background: transparent; }}"
+            f"QLabel#card_title {{ color: {self.palette().color(self.foregroundRole()).name()}; font-size: 15px; font-weight: 600; background: transparent; }}"
             f"QLabel#card_summary, QLabel#card_byline {{ color: {muted};"
             f" background: transparent; }}"
             f"QLabel#card_byline {{ font-size: 11px; }}"
@@ -375,6 +377,8 @@ class PublishArticleDialog(QDialog):
 
     def _build(self, profile: Profile, default_title: str, default_slug: str) -> None:
         self.setStyleSheet(sheet_stylesheet(self._is_dark))
+        appearance.surface(self, self._is_dark)
+        appearance.bind(self)
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 18, 20, 14)
         root.setSpacing(10)
@@ -586,6 +590,7 @@ class PublishArticleDialog(QDialog):
         takes the new one, as the window does."""
         self._is_dark = is_dark
         self.setStyleSheet(sheet_stylesheet(is_dark))
+        appearance.surface(self, is_dark)
         self._card.set_dark(is_dark)
         self._hashtags.set_dark(is_dark)
         self._cover.set_dark(is_dark)
@@ -893,7 +898,7 @@ class PublishArticleDialog(QDialog):
             buttons=(*choices,
                      Button(_("Cancel"), "cancel", CANCEL),
                      Button(_("Try Again"), "again", DEFAULT)),
-            is_dark=self._is_dark)
+            is_dark=self._is_dark, nostr=True)
         if choice == "again":
             self._on_publish()
         elif choice == "file":

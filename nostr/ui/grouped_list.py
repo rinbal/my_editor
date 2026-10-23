@@ -39,7 +39,7 @@ from PySide6.QtWidgets import QHBoxLayout, QProgressBar, QPushButton, QVBoxLayou
 
 import format_icons
 import theme
-from constants import DARK_MUTED_FG, LIGHT_MUTED_FG
+from . import appearance
 from nostr.ui.assistant import LINK_EDGE, link_button, text_label
 
 TILE = 24               # a row's symbol tile, as System Settings draws one
@@ -56,13 +56,9 @@ def stylesheet(is_dark: bool) -> str:
     # The secondary words in a row are a shade lighter than the window's
     # muted ones on the dark group, which is lighter than the window: 4.5:1
     # against it, as against the window.
-    if is_dark:
-        muted, fill, edge, hover = "#9A9A9A", "#3A3A3C", "#4A4A4D", "#58585B"
-        track, used = "rgba(255, 255, 255, 0.14)", "#0A84FF"
-    else:
-        muted, fill, edge, hover = LIGHT_MUTED_FG, "#FFFFFF", "#D1D1D6", "#B8B8BE"
-        track, used = "rgba(0, 0, 0, 0.10)", "#007AFF"
-    ring = theme.focus_ring_color(is_dark)
+    r = appearance.roles(is_dark)
+    muted, fill, edge, hover = r.muted, r.control, r.edge, r.ink
+    track, used, ring = r.soft, r.icon, r.focus
     full = theme.attention_color(is_dark)
     return f"""
     QLabel#group_header {{ font-weight: 600; }}
@@ -235,8 +231,11 @@ class ListRow(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(self._tint)
-        painter.drawRoundedRect(tile, TILE_RADIUS, TILE_RADIUS)
+        if self.window().property("nightVioletMembership"):
+            appearance.membership_background(painter, tile, TILE_RADIUS)
+        else:
+            painter.setBrush(self._tint)
+            painter.drawRoundedRect(tile, TILE_RADIUS, TILE_RADIUS)
         margin = (TILE - SYMBOL) / 2
         format_icons.paint(self._symbol, painter, tile.adjusted(margin, margin, -margin, -margin),
                            QColor("#FFFFFF"))
@@ -267,4 +266,4 @@ class Notice(QWidget):
         top = self.label.geometry().top() + self.label.contentsMargins().top() + (line - MARK) / 2
         painter = QPainter(self)
         format_icons.paint("info", painter, QRectF(0, top, MARK, MARK),
-                           QColor(DARK_MUTED_FG if self._is_dark else LIGHT_MUTED_FG))
+                           QColor(appearance.roles(self._is_dark).muted))

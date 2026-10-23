@@ -505,6 +505,9 @@ class PublishedView(QWidget):
         self._model.refresh()
 
     def apply_theme(self, is_dark: bool) -> None:
+        from . import appearance
+        appearance.bind(self)
+        self.setPalette(appearance.palette(is_dark))
         self._is_dark = bool(is_dark)
         self.setStyleSheet(_view_css(self._is_dark))
         self._delegate.set_dark(self._is_dark)
@@ -756,7 +759,7 @@ class PublishedView(QWidget):
                 self, title=_("Delete “{title}” from Nostr?").format(title=short_title(item)),
                 message=_("Relays that keep it are asked to remove it. People and apps that "
                           "already saved a copy may still have it. Your draft stays."),
-                action=_("Delete"), caution=True, is_dark=self._is_dark):
+                action=_("Delete"), caution=True, is_dark=self._is_dark, nostr=True):
             self._model.delete(item.id)
 
     def _load_more(self) -> None:
@@ -982,7 +985,7 @@ class PublishedView(QWidget):
             self, title=_("Couldn’t delete “{title}”").format(title=short_title(item)),
             message=message, details=details, is_dark=self._is_dark,
             buttons=(alerts.Button(_("Cancel"), False, alerts.CANCEL),
-                     alerts.Button(_("Try Again"), True, alerts.DEFAULT)))
+                     alerts.Button(_("Try Again"), True, alerts.DEFAULT)), nostr=True)
         if again is True:
             self._model.try_again(item.id)
         else:

@@ -59,6 +59,7 @@ from PySide6.QtWidgets import (
     QStyleOptionButton,
 )
 
+from . import appearance
 from i18n import _, ngettext
 
 from ..imports.workspace import Post, date_text, selectable, state_word
@@ -341,13 +342,14 @@ class PostDelegate(QStyledItemDelegate):
         text = palette.color(QPalette.ColorRole.Text)
         muted = palette.color(QPalette.ColorRole.PlaceholderText)
         if selected:
-            fill = QColor(palette.color(QPalette.ColorRole.Highlight))
+            dark = is_dark(palette)
+            fill = (appearance.gradient(dark, QRectF(rect)) if focused
+                    else QColor(appearance.roles(dark).soft))
             if focused:
-                text = muted = palette.color(QPalette.ColorRole.HighlightedText)
-            else:
-                fill = QColor(palette.color(QPalette.ColorRole.Mid))
-                fill.setAlpha(90)
-            painter.fillRect(rect, fill)
+                text = muted = QColor("#FFFFFF")
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(fill)
+            painter.drawRoundedRect(QRectF(rect).adjusted(5, 1, -5, -1), 8, 8)
         else:
             separator = QColor(palette.color(QPalette.ColorRole.Mid))
             separator.setAlpha(70)

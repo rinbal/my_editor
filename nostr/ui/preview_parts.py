@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-import theme
+from . import appearance
 from i18n import _
 
 from doc_walk import iter_image_names
@@ -382,10 +382,35 @@ class PreviewReader(NostrPreview):
         self.zoomOut(2)
 
     def _apply_colors(self) -> None:
-        tokens = THEME_TOKENS[bool(self._dark)]
-        self.setStyleSheet(
-            f"QTextBrowser {{ background: {tokens['chrome_bg']}; color: {tokens['field_fg']};"
-            f" border: none; border-top: 1px solid {tokens['border']}; }}")
+        # Document text uses the same neutral reading ground as the editor.
+        # The enclosing preview header and action bar own the Nostr accent.
+        super()._apply_colors()
+        appearance.neutral(self, self._dark)
+
+    def show_markdown(self, markdown, *, names=None) -> None:
+        self._source = ("show_markdown", markdown, {"names": names})
+        super().show_markdown(markdown, names=names)
+
+    def show_note(self, text, *, author="", names=None) -> None:
+        self._source = ("show_note", text, {"author": author, "names": names})
+        super().show_note(text, author=author, names=names)
+
+    def set_dark(self, dark: bool) -> None:
+        changed = self._dark != dark
+        cursor = self.textCursor()
+        anchor, position = cursor.anchor(), cursor.position()
+        scroll = self.verticalScrollBar().value()
+        super().set_dark(dark)
+        if changed and hasattr(self, "_source"):
+            # Rendered documents contain explicit text/link colors. Changing
+            # only the widget palette leaves pale Dark text on a Light page.
+            method, text, options = self._source
+            getattr(self, method)(text, **options)
+            cursor = self.textCursor()
+            cursor.setPosition(anchor)
+            cursor.setPosition(position, cursor.MoveMode.KeepAnchor)
+            self.setTextCursor(cursor)
+            self.verticalScrollBar().setValue(scroll)
 
     def set_pictures(self, lookup: Optional[Callable[[str], Optional[QImage]]],
                      arrived=None) -> None:
@@ -517,6 +542,6 @@ QToolButton#drafts_preview_more::menu-indicator {{ image: none; width: 0px; }}
 QPushButton#drafts_preview_action:hover, QToolButton#drafts_preview_action:hover,
 QToolButton#drafts_preview_more:hover {{ background: {t["hover_bg"]}; }}
 QPushButton#drafts_preview_primary {{ border-radius: 6px; padding: 4px 14px; }}
-{theme.accent_button_css("QPushButton#drafts_preview_primary", self._is_dark)}
-QPushButton:focus, QToolButton:focus {{ border: 2px solid {theme.focus_ring_color(self._is_dark)}; }}
+{appearance.accent_button_css("QPushButton#drafts_preview_primary", self._is_dark)}
+QPushButton:focus, QToolButton:focus {{ border: 2px solid {appearance.roles(self._is_dark).focus}; }}
 """)

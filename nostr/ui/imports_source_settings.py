@@ -257,7 +257,7 @@ class SourceSettingsSheet(_Sheet):
     def _confirm(self, **question) -> bool:
         if self._confirm_with is not None:
             return bool(self._confirm_with(**question))
-        return alerts.confirm_destructive(self, is_dark=self._is_dark, **question)
+        return alerts.confirm_destructive(self, is_dark=self._is_dark, **question, nostr=True)
 
     def unsubscribe(self) -> None:
         """Ask, then stop following the source; the sheet closes."""

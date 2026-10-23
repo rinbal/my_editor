@@ -93,7 +93,7 @@ def test_save_draft_looks_dimmed_while_it_cannot_be_chosen(shown, dark):
     # it was drawn as a pale accent with white text, which reads as a
     # chosen action rather than an unavailable one.
     from PySide6.QtGui import QColor
-    from constants import DARK_MENU_BG, LIGHT_MENU_BG
+    from nostr.ui.appearance import roles
     import theme
     dialog = shown(default=StashKind.ARTICLE, is_dark=dark)
     save = dialog._save_btn
@@ -103,8 +103,12 @@ def test_save_draft_looks_dimmed_while_it_cannot_be_chosen(shown, dark):
     # (review P1: the test failed there, with Save never the default).
     assert dialog.focusWidget() is dialog._title_edit
     inside = save.grab().toImage().pixelColor(6, save.height() // 2)
-    assert inside == QColor(DARK_MENU_BG if dark else LIGHT_MENU_BG)
+    assert inside == QColor(roles(dark).control)
     dialog._title_edit.setText("A title")
     QApplication.processEvents()
     inside = save.grab().toImage().pixelColor(6, save.height() // 2)
-    assert inside == QColor(theme._DIALOG_ACCENT[dark][0])
+    top, bottom = QColor(roles(dark).highlight), QColor(roles(dark).button)
+    for channel in ("red", "green", "blue"):
+        lo, hi = sorted((getattr(top, channel)(), getattr(bottom, channel)()))
+        assert lo <= getattr(inside, channel)() <= hi
+    assert theme.contrast_ratio(QColor("#FFFFFF"), inside) >= 4.5

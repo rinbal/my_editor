@@ -816,11 +816,12 @@ def test_save_to_folder_says_what_wasnt_saved_after_its_window_closed(
         tmp_path, monkeypatch, server):
     """In the status bar, with each reason in the message's tooltip: over
     the message alone, not the word count beside it, and gone with it."""
-    from PySide6.QtWidgets import QLabel, QStatusBar
+    from PySide6.QtWidgets import QLabel
+    from nostr.ui.context_widgets import ContextStatusBar
     import main_window
     files, names = _three_with_one_gone(server)
     keeper, saver = _keeper(tmp_path)
-    bar = QStatusBar()
+    bar = ContextStatusBar()
     words = QLabel("1,234 words")
     bar.addPermanentWidget(words)
     bar.resize(700, 24)

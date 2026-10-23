@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
 )
 
 import media_files
+import theme
+from . import appearance
 from i18n import _
 from .media_picture import MediaPicture, frame_pixmap
 from .media_source import PreviewSource
@@ -26,7 +28,7 @@ class MediaPlayer(QWidget):
     failed = Signal(str)
     poster_ready = Signal(object)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, nostr: bool = False):
         super().__init__(parent)
         self._buffer = None
         self._resume_after_seek = False
@@ -90,6 +92,25 @@ class MediaPlayer(QWidget):
         self._playback_changed(self.player.playbackState())
         self._mute_changed(False)
         self._audio_available(False)
+        self.set_nostr(nostr, theme.is_dark_active())
+
+    def set_nostr(self, nostr: bool, dark: bool) -> None:
+        self._nostr = nostr
+        self._appearance_dark = dark
+        self.setStyleSheet(appearance.controls(dark) if nostr else "")
+        self.setPalette(appearance.palette(dark) if nostr else theme._palette(dark))
+        appearance.neutral(self.display, dark)
+        playing = self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+        self.play_button.setIcon(self._transport_icon(
+            QStyle.StandardPixmap.SP_MediaPause if playing else QStyle.StandardPixmap.SP_MediaPlay))
+        self._mute_changed(self.audio.isMuted())
+        self.full_screen.setIcon(self._transport_icon(QStyle.StandardPixmap.SP_TitleBarMaxButton))
+
+    def _transport_icon(self, standard):
+        icon = self.style().standardIcon(standard)
+        if getattr(self, "_nostr", False):
+            return appearance.transport_icon(icon, self._appearance_dark)
+        return icon
 
     def _transport_button(self):
         button = QToolButton()
@@ -173,7 +194,7 @@ class MediaPlayer(QWidget):
         label = _("Pause") if playing else _("Play")
         self.play_button.setAccessibleName(label)
         self.play_button.setToolTip(label)
-        self.play_button.setIcon(self.style().standardIcon(
+        self.play_button.setIcon(self._transport_icon(
             QStyle.StandardPixmap.SP_MediaPause if playing else QStyle.StandardPixmap.SP_MediaPlay))
         if self._is_video and playing:
             self.display.setCurrentWidget(self.video)
@@ -188,7 +209,7 @@ class MediaPlayer(QWidget):
         label = _("Unmute") if muted else _("Mute")
         self.mute_button.setAccessibleName(label)
         self.mute_button.setToolTip(label)
-        self.mute_button.setIcon(self.style().standardIcon(
+        self.mute_button.setIcon(self._transport_icon(
             QStyle.StandardPixmap.SP_MediaVolumeMuted if muted else QStyle.StandardPixmap.SP_MediaVolume))
 
     def _audio_available(self, available):

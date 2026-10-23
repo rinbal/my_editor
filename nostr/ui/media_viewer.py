@@ -23,6 +23,7 @@ from PySide6.QtWidgets import QDialog, QLabel, QPushButton, QVBoxLayout, QWidget
 
 import media_files
 import theme
+from . import appearance
 from i18n import _
 from .media_player import MediaPlayer
 from .media_source import PreviewResolver
@@ -33,9 +34,13 @@ class MediaViewer(QDialog):
 
     def __init__(self, *, loader, visibility, is_dark: bool, parent=None) -> None:
         super().__init__(parent, Qt.WindowType.Window)
+        self._nostr = False
+        self._is_dark = is_dark
         self.setStyleSheet(theme.dialog_stylesheet(is_dark))
+        appearance.bind(self)
         self._media = None
         self._mime = ""
+        self._message_failed = False
         self._resolver = PreviewResolver(loader, visibility, parent=self)
         self._resolver.ready.connect(self._resolved)
         self._resolver.failed.connect(self._failed)
@@ -62,9 +67,36 @@ class MediaViewer(QDialog):
         self._install_keys(self.player)
         self._play_when_loaded = False
 
-    def play(self, media, mime: str, name: str) -> None:
+    def apply_theme(self, dark: bool) -> None:
+        self._is_dark = dark
+        self.player.set_nostr(self._nostr, dark)
+        if self._nostr:
+            self.setStyleSheet(appearance.dialog_stylesheet(dark))
+            appearance.surface(self, dark)
+        else:
+            self.setProperty("nightVioletSurface", None)
+            from .native_appearance import apply_chrome
+            apply_chrome(self, dark, nostr=False)
+            self.setStyleSheet(theme.dialog_stylesheet(dark))
+            appearance.neutral(self, dark)
+            glow = getattr(self, "_night_violet_glow", None)
+            if glow is not None:
+                glow.hide()
+        self._apply_message_color()
+
+    def _apply_message_color(self) -> None:
+        color = (appearance.roles(self._is_dark).error if self._message_failed
+                 else appearance.roles(self._is_dark).muted)
+        # QSS sets WindowText. PlaceholderText would blend that ink with the
+        # background again, washing out errors in Light and dimming them in Dark.
+        self.message.setForegroundRole(QPalette.WindowText if self._nostr else QPalette.PlaceholderText)
+        self.message.setStyleSheet(f"color: {color};" if self._nostr else "")
+
+    def play(self, media, mime: str, name: str, *, nostr: bool = False) -> None:
         """Play ``media`` (a MediaFile: hash, addresses, size), of type
         ``mime``, called ``name``."""
+        self._nostr = nostr
+        self.apply_theme(self._is_dark)
         self.setWindowTitle(name)
         if media_files.kind_of(mime) == media_files.VIDEO:
             self.resize(720, 470)
@@ -80,6 +112,8 @@ class MediaViewer(QDialog):
         if self._media is None:
             return
         self.player.clear()
+        self._message_failed = False
+        self._apply_message_color()
         self.retry_button.hide()
         self.message.setText(_("Loading…"))
         self.message.show()
@@ -103,6 +137,8 @@ class MediaViewer(QDialog):
 
     def _failed(self, reason: str) -> None:
         self._play_when_loaded = False
+        self._message_failed = True
+        self._apply_message_color()
         self.message.setText(reason)
         self.message.show()
         self.retry_button.show()

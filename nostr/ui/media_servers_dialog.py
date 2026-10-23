@@ -41,8 +41,8 @@ from PySide6.QtWidgets import (
 )
 
 import alerts
-import theme
 import url_safety
+from . import appearance
 from i18n import _
 
 from ..blossom.settings import BlossomSettings
@@ -195,14 +195,20 @@ class MediaServersDialog(QDialog):
         self._suggested = _origins(suggestions)
         self._label = server_label or (lambda _origin: None)
         self._is_dark = is_dark
-        self.setStyleSheet(theme.dialog_stylesheet(is_dark) + (
-            f"QLabel#media_servers_error {{ color: {theme.error_text_color(is_dark)}; }}\n"
-            "QListWidget::item { padding: 4px 6px; }"))
+        self.apply_theme(is_dark)
+        appearance.bind(self)
         self.setMinimumWidth(440)
         self._build()
         self._refresh()
 
     # -- building ------------------------------------------------------------
+
+    def apply_theme(self, is_dark: bool) -> None:
+        self._is_dark = is_dark
+        self.setStyleSheet(appearance.dialog_stylesheet(is_dark) + (
+            f"QLabel#media_servers_error {{ color: {appearance.roles(is_dark).error}; }}\n"
+            "QListWidget::item { padding: 4px 6px; }"))
+        appearance.surface(self, is_dark)
 
     def _build(self) -> None:
         layout = QVBoxLayout(self)
@@ -399,7 +405,7 @@ class MediaServersDialog(QDialog):
                 self, title=_("Remove “{server}”?").format(server=self._name(origin)),
                 message=_("Files already there stay there. The Media Library shows them "
                           "only while another of your servers has them too."),
-                action=_("Remove"), is_dark=self._is_dark):
+                action=_("Remove"), is_dark=self._is_dark, nostr=True):
             return
         self._settings.remove_server(origin)
         self._refresh()

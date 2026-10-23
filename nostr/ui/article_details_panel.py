@@ -38,10 +38,7 @@ from PySide6.QtWidgets import (
 
 import announce
 import theme
-from constants import (
-    DARK_BG, DARK_BORDER, DARK_FG, DARK_MENU_BG, DARK_MUTED_FG, LIGHT_BG, LIGHT_BORDER, LIGHT_FG,
-    LIGHT_MENU_BG, LIGHT_MUTED_FG,
-)
+from . import appearance
 from i18n import _, format_moment
 
 from ..article_details import ArticleDetails
@@ -326,12 +323,11 @@ class ArticleDetailsPanel(QFrame):
 
     def _apply_theme(self) -> None:
         dark = self._is_dark
-        background, border, field, text, muted = (
-            (DARK_BG, DARK_BORDER, DARK_MENU_BG, DARK_FG, DARK_MUTED_FG) if dark
-            else (LIGHT_BG, LIGHT_BORDER, LIGHT_BG, LIGHT_FG, LIGHT_MUTED_FG))
-        band = DARK_MENU_BG if dark else LIGHT_MENU_BG
+        r = appearance.roles(dark)
+        background, border, field, text, muted = r.panel, r.edge, r.field, r.text, r.muted
+        band = r.chrome
         self.setStyleSheet(
-            theme.dialog_stylesheet(dark)
+            appearance.dialog_stylesheet(dark)
             # No edge of its own: the window's divider is its left edge.
             + f"#ArticleDetailsPanel {{ background: {background}; }}"
             + f"#article_details_header {{ background: {band};"
@@ -345,12 +341,12 @@ class ArticleDetailsPanel(QFrame):
               f" border: 1px solid {border}; border-radius: 5px; outline: none; }}"
             + "QTableWidget#article_details_authors::item { padding: 0 6px; border: none; }"
             + f"QTableWidget#article_details_authors::item:selected {{"
-              f" background: {theme.list_selection_color(dark).name()}; color: white; }}"
+              f" background: {r.selection}; color: white; }}"
             + f"QToolButton#article_details_list_button {{ background: {field}; color: {text};"
               f" border: 1px solid {border}; border-radius: 4px; font-size: 14px; }}"
             + f"QToolButton#article_details_list_button:disabled {{ color: {muted}; }}"
             + f"QPushButton#article_details_link {{ border: none; background: transparent;"
-              f" color: {theme.dialog_link_color(dark)}; padding: 0 2px; }}"
+              f" color: {r.ink}; padding: 0 2px; }}"
             + f"#article_details_scroll, #article_details_body {{ background: {background}; }}"
             + f"QLineEdit, QPlainTextEdit {{ background: {field}; color: {text};"
               f" border: 1px solid {border}; border-radius: 4px; padding: 3px 6px; }}"
@@ -365,6 +361,7 @@ class ArticleDetailsPanel(QFrame):
               f" border-radius: 4px; color: {muted}; }}"
             + "QToolButton#article_details_disclosure"
               " { border: none; padding: 2px 4px; }")
+        appearance.surface(self, dark)
 
     def align_band(self, toolbar_height: int) -> None:
         """The header as tall as the format toolbar beside it, so their
@@ -372,6 +369,7 @@ class ArticleDetailsPanel(QFrame):
         self._header.setMinimumHeight(max(0, int(toolbar_height)))
 
     def set_dark(self, is_dark: bool) -> None:
+        appearance.bind(self, "set_dark")
         self._is_dark = is_dark
         self.cover.set_dark(is_dark)
         self.hashtags.set_dark(is_dark)

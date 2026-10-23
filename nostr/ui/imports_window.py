@@ -94,6 +94,8 @@ from PySide6.QtWidgets import (
 )
 
 import alerts
+import theme
+from . import appearance
 import atomic_file
 import url_safety
 from commands import undo_words
@@ -130,6 +132,18 @@ SIDEBAR_MIN, LIST_MIN, ARTICLE_MIN = 170, 320, 360
 SEARCH_DELAY_MS = 150
 
 # Every color comes from the app's palette, so both themes follow.
+def appearance_css(dark: bool) -> str:
+    r = appearance.roles(dark)
+    return appearance.controls(dark) + STYLE + f"""
+    QMainWindow#imports_window, QToolBar {{ background: {r.chrome}; border: none; }}
+    QWidget#imports_list_pane, QListView#imports_posts {{ background: {r.list}; }}
+    QListView#imports_sidebar {{ background: {r.side}; }}
+    QWidget#imports_actions {{ background: {r.panel}; border-top: 1px solid {r.line}; }}
+    QLabel#imports_list_subtitle, QLabel#imports_footnote, QLabel#imports_hint {{ color: {r.muted}; }}
+    QSplitter#imports_splitter::handle {{ background: {r.line}; }}
+    """ + appearance.accent_button_css("QPushButton#imports_create", dark)
+
+
 STYLE = """
 QMainWindow#imports_window, QWidget#imports_list_pane, QWidget#imports_article {
     background: palette(window);
@@ -257,7 +271,9 @@ class ImportsWindow(QMainWindow):
         self._build_toolbar()
         self._build_panes()
         self._build_shortcuts()
-        self.setStyleSheet(STYLE)
+        self.setStyleSheet(appearance_css(self._dark))
+        appearance.surface(self, self._dark, kind="chrome")
+        appearance.bind(self)
         self.setAcceptDrops(True)
         self._drop_overlay = _DropOverlay(self)
         self._drop_overlay.hide()
@@ -279,6 +295,7 @@ class ImportsWindow(QMainWindow):
         self._refresh_sidebar()
         self._update_activity()
         self._restore(load_settings() or {})
+        self.apply_theme(self._dark)
         self._show_list()
         if not self._restored_geometry:
             self.resize(1180, 760)
@@ -1294,7 +1311,7 @@ class ImportsWindow(QMainWindow):
                               name=os.path.basename(path)),
                           message=(exc.strerror or str(exc)) + "\n\n"
                           + _("Choose another place and export again."),
-                          caution=True, is_dark=self._dark)
+                          caution=True, is_dark=self._dark, nostr=True)
 
     def import_link(self) -> None:
         """Add > Import a Link..."""
@@ -1368,7 +1385,7 @@ class ImportsWindow(QMainWindow):
     def _confirm(self, **kw) -> bool:
         if self._confirm_with is not None:
             return bool(self._confirm_with(**kw))
-        return alerts.confirm_destructive(self, **kw)
+        return alerts.confirm_destructive(self, **kw, nostr=True)
 
     def _stop_import(self, job_id: str) -> None:
         """Stop on the import's card, after asking."""
@@ -1441,7 +1458,7 @@ class ImportsWindow(QMainWindow):
         text = _("Hide Sidebar") if shown else _("Show Sidebar")
         self.act_sidebar.setText(text)
         self.act_sidebar.setToolTip(text)
-        color = self.palette().color(QPalette.ColorRole.WindowText)
+        color = QColor(appearance.roles(self._dark).icon)
         self.act_sidebar.setIcon(glyph_icon("sidebar", 18, color))
         self.add_button.setIcon(glyph_icon("plus", 18, color))
 
@@ -1480,9 +1497,19 @@ class ImportsWindow(QMainWindow):
     def apply_theme(self, dark: bool) -> None:
         self._dark = dark
         # Read the palette's colors again.
-        self.setStyleSheet(STYLE)
+        self.setStyleSheet(appearance_css(self._dark))
+        appearance.surface(self, self._dark, kind="chrome")
+        appearance.bind(self)
+        self.sidebar.setPalette(appearance.palette(dark, surface="side"))
+        self.posts.setPalette(appearance.palette(dark, surface="list"))
         self.article.set_dark(dark)
+        appearance.neutral(self.article, dark)
+        self.article.setStyleSheet(theme.dialog_stylesheet(dark)
+            + "QWidget#imports_article { background: palette(window); }")
         self._update_sidebar_action()
+        self._update_activity()
+        self.job_card.apply_theme(dark)
+        self.options_popover.apply_theme(dark)
         self.sidebar.viewport().update()
         self.posts.viewport().update()
 

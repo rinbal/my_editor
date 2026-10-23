@@ -578,7 +578,7 @@ class _Window:
         self.assets: list = []
         self.messages: list = []
         self.status = SimpleNamespace(
-            showMessage=lambda text, msecs=0: self.messages.append(text)
+            showMessage=lambda text, msecs=0, **context: self.messages.append(text)
         )
         self._asset_manager = SimpleNamespace(
             adopt_library_file=self._adopt,

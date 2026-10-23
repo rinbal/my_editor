@@ -178,7 +178,7 @@ def test_publishing_is_said_in_words_without_an_event_id():
     took it only when not all did."""
     from main_window import MainWindow
     said = []
-    win = SimpleNamespace(status=SimpleNamespace(showMessage=lambda text, ms=0: said.append(text)))
+    win = SimpleNamespace(status=SimpleNamespace(showMessage=lambda text, ms=0, **context: said.append(text)))
     win._say_published = lambda results, article: MainWindow._say_published(
         win, results, article=article)
     every = [("wss://a", True, ""), ("wss://b", True, "")]

@@ -42,7 +42,7 @@ def publishable(parent, unsigned: dict, *, is_dark: Optional[bool] = None) -> Op
     keys = refs.secret_keys_in_event(unsigned)
     if keys is None:
         inform(parent, title=_("This text can’t be checked for a secret key"), caution=True,
-               is_dark=is_dark, message=_(refs.UNREADABLE_REFUSED))
+               is_dark=is_dark, message=_(refs.UNREADABLE_REFUSED), nostr=True)
         return None
     if not keys:
         return unsigned
@@ -50,7 +50,7 @@ def publishable(parent, unsigned: dict, *, is_dark: Optional[bool] = None) -> Op
     problem = slug_problem(slug)
     if problem:
         inform(parent, title=_("This text contains a secret key"), caution=True,
-               is_dark=is_dark, message=problem)
+               is_dark=is_dark, message=problem, nostr=True)
         return None
     public = without_secret_keys(unsigned)
     if public is None:
@@ -58,7 +58,7 @@ def publishable(parent, unsigned: dict, *, is_dark: Optional[bool] = None) -> Op
                is_dark=is_dark,
                message=_("Anyone who has it can publish as its owner, and once "
                          "published it can never be taken back. Remove it before "
-                         "publishing."))
+                         "publishing."), nostr=True)
         return None
     choice = ask(parent, title=_("This text contains a secret key"), caution=True,
                  is_dark=is_dark,
@@ -66,5 +66,5 @@ def publishable(parent, unsigned: dict, *, is_dark: Optional[bool] = None) -> Op
                            "published it can never be taken back. Replace it with the "
                            "public key, which only says who it belongs to?"),
                  buttons=(Button(_("Cancel"), False, CANCEL),
-                          Button(_("Replace with Public Key"), True, DEFAULT)))
+                          Button(_("Replace with Public Key"), True, DEFAULT)), nostr=True)
     return public if choice is True else None

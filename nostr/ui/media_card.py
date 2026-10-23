@@ -34,6 +34,7 @@ from PySide6.QtGui import (
 )
 
 import media_files
+from . import appearance
 from constants import (
     DARK_BORDER, DARK_FG, DARK_MENU_BG, DARK_MUTED_FG, LIGHT_BORDER, LIGHT_FG, LIGHT_MUTED_FG,
 )
@@ -98,14 +99,13 @@ def render(title: str, state: str, *, dark: bool, mime: str,
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
     if media_files.kind_of(mime) == media_files.VIDEO:
         _video(painter, w, h, title, state, poster, duration_ms, dark)
-        track, ink = QColor(255, 255, 255, 60), QColor(255, 255, 255, 235)
+        track = QColor(255, 255, 255, 60)
     else:
         _audio(painter, w, h, title, state, duration_ms, dark)
         track = QColor(DARK_BORDER if dark else LIGHT_BORDER)
-        ink = QColor(DARK_FG if dark else LIGHT_FG)
     if uploading:
         bar = QRectF(14, h - MARGIN - _BAR - 5, w - 28, _BAR)
-        _upload_bar(painter, bar, fraction, track, ink)
+        _upload_bar(painter, bar, fraction, track, QColor(appearance.roles(dark or media_files.kind_of(mime) == media_files.VIDEO).icon))
     painter.end()
     return image
 

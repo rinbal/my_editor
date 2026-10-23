@@ -388,7 +388,7 @@ class DraftRelaysSheet(AssistantWindow):
                 self, title=_("Stop looking for drafts on this relay?"),
                 message=_("Drafts kept only on {relay} won’t be shown any more.").format(
                     relay=relay),
-                action=_("Stop Looking"), is_dark=self._is_dark):
+                action=_("Stop Looking"), is_dark=self._is_dark, nostr=True):
             self._relays.stop_reading(relay)
             self._show_relays_left_behind()
 

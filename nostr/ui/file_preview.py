@@ -9,6 +9,8 @@ from PySide6.QtPdfWidgets import QPdfView
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QStackedWidget, QVBoxLayout, QWidget
 
 import media_files
+import theme
+from . import appearance
 from i18n import _
 from .media_source import PreviewSource
 
@@ -58,6 +60,14 @@ class FilePreview(QWidget):
         layout.addWidget(self.note)
         self.pdf.pageNavigator().currentPageChanged.connect(self._update_page)
         self._update_page()
+
+    def apply_theme(self, dark: bool) -> None:
+        self.note.setForegroundRole(QPalette.WindowText)
+        self.note.setStyleSheet(f"color: {appearance.roles(dark).muted};")
+        appearance.neutral(self.text, dark)
+        p = theme._palette(dark)
+        self.text.setStyleSheet(f"QPlainTextEdit {{ background: {p.color(QPalette.Base).name()};"
+                               f" color: {p.color(QPalette.Text).name()}; border: none; }}")
 
     def show_source(self, source: PreviewSource, mime: str) -> None:
         self.clear()

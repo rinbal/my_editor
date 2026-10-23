@@ -59,7 +59,7 @@ from PySide6.QtWidgets import (
 )
 
 import media_files
-from constants import DARK_MUTED_FG, LIGHT_MUTED_FG
+from . import appearance
 from i18n import _
 
 from ..blossom.hashes import hash_from_url
@@ -504,7 +504,7 @@ class CoverImageField(QWidget):
 
     def set_dark(self, is_dark: bool) -> None:
         self._is_dark = is_dark
-        muted = DARK_MUTED_FG if is_dark else LIGHT_MUTED_FG
+        muted = appearance.roles(is_dark).muted
         for label in (self._guidance, self._dimensions):
             label.setStyleSheet(f"color: {muted};")
 

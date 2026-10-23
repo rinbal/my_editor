@@ -57,12 +57,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import theme
+from . import appearance
 from alerts import answer_return_as_the_system_does
-from constants import (
-    DARK_BORDER, DARK_FG, DARK_MENU_BG, DARK_MUTED_FG,
-    LIGHT_BORDER, LIGHT_FG, LIGHT_MENU_BG, LIGHT_MUTED_FG, LIGHT_SELECTION,
-)
 from format_toolbar import Disclosure, PopupButton
 from i18n import _
 from popup_placement import available_area
@@ -87,14 +83,12 @@ SECRET_CLIPBOARD_SECONDS = 60
 
 def stylesheet(is_dark: bool) -> str:
     """The app's dialog look plus what assistants use."""
-    if is_dark:
-        fg, muted, border, field = DARK_FG, DARK_MUTED_FG, DARK_BORDER, DARK_MENU_BG
-        accent, ok, err = "#007ACC", "#43A047", "#E57373"
-    else:
-        fg, muted, border, field = LIGHT_FG, LIGHT_MUTED_FG, LIGHT_BORDER, LIGHT_MENU_BG
-        accent, ok, err = LIGHT_SELECTION, "#2E7D32", "#C62828"
-    link = theme.dialog_link_color(is_dark)
-    ring = theme.focus_ring_color(is_dark)
+    r = appearance.roles(is_dark)
+    fg, muted, border, field = r.text, r.muted, r.edge, r.field
+    accent = r.selection
+    ok = r.success
+    err = r.error
+    link, ring = r.ink, r.focus
     # A pull-down keeps room for its arrow after its title: the arrow, and
     # as much space again before it (a pixel less with the focus ring, so
     # it keeps its size). It is as wide as that, not the width a short
@@ -102,7 +96,7 @@ def stylesheet(is_dark: bool) -> str:
     # button with the focus; a pull-down then keeps its plain fill, as a
     # destructive button does, since its arrow is drawn in the quiet ink.
     arrow_room = PULL_DOWN_ARROW_END + 2 * Disclosure.WIDTH
-    return theme.dialog_stylesheet(is_dark) + f"""
+    return appearance.dialog_stylesheet(is_dark) + f"""
     QLabel#title {{ font-size: 16px; font-weight: 600; }}
     QLabel#muted, QLabel#help {{ color: {muted}; }}
     QLabel#help {{ font-size: 11px; }}
@@ -142,8 +136,8 @@ def stylesheet(is_dark: bool) -> str:
         color: {link}; padding: 0px; min-width: 0;
     }}
     QPushButton#link:hover {{ text-decoration: underline; }}
-    QPushButton#link:focus {{ border-color: {theme.focus_ring_color(is_dark)}; }}
-    QPushButton#link[tone="destructive"] {{ color: {theme.attention_color(is_dark)}; }}
+    QPushButton#link:focus {{ border-color: {appearance.roles(is_dark).focus}; }}
+    QPushButton#link[tone="destructive"] {{ color: {r.error}; }}
     QPushButton#link:disabled {{ color: {muted}; }}
     QRadioButton {{ font-weight: 600; }}
     QProgressBar {{
@@ -462,6 +456,8 @@ class AssistantWindow(QDialog):
         self.setMinimumWidth(min_width)
         self._base_width = min_width
         self.setStyleSheet(stylesheet(is_dark))
+        appearance.surface(self, is_dark)
+        appearance.bind(self)
         self._is_dark = is_dark
         self._page: Optional[str] = None
         self._pages: Dict[str, QWidget] = {}
@@ -495,6 +491,21 @@ class AssistantWindow(QDialog):
         self._button_row = QHBoxLayout()
         self._button_row.setSpacing(8)
         layout.addLayout(self._button_row)
+
+    def apply_theme(self, is_dark: bool) -> None:
+        self._is_dark = is_dark
+        self.setStyleSheet(stylesheet(is_dark))
+        appearance.surface(self, is_dark)
+        # These are appearance-only children, never page or operation rebuilds.
+        from .profile_card import ProfileCard
+        from .membership_card import MembershipCard
+        from .grouped_list import ListGroup, Notice
+        for child in self.findChildren(QWidget):
+            if isinstance(child, ProfileCard):
+                child.set_dark(is_dark)
+            elif isinstance(child, (MembershipCard, ListGroup, Notice)):
+                child._is_dark = is_dark
+                child.update()
 
     @property
     def page(self) -> Optional[str]:

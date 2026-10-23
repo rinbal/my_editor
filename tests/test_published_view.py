@@ -62,9 +62,9 @@ class AnsweringAlert:
     answers = []
 
     def __init__(self, parent, *, title, message="", buttons=(), caution=False,
-                 details="", checkbox="", is_dark=None):
+                 details="", checkbox="", is_dark=None, nostr=False):
         self.record = {"title": title, "message": message, "buttons": list(buttons),
-                       "caution": caution, "details": details}
+                       "caution": caution, "details": details, "nostr": nostr}
         AnsweringAlert.asked.append(self.record)
 
     def run(self):
@@ -518,7 +518,8 @@ def test_both_themes_build():
     view.set_account(Profile())
     relays.run()
     view.apply_theme(True)
-    assert view.is_dark and "#1E1E1E".lower() in view.styleSheet().lower()
+    from nostr.ui.appearance import roles
+    assert view.is_dark and roles(True).panel.lower() in view.styleSheet().lower()
     view.apply_theme(False)
     assert not view.is_dark
 

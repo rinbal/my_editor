@@ -171,7 +171,7 @@ def test_the_window_says_what_happened(qt_app):
     shown = []
 
     class Status:
-        def showMessage(self, text, _ms):
+        def showMessage(self, text, _ms, **context):
             shown.append(text)
 
     window.status = Status()

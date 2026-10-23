@@ -32,8 +32,8 @@ from PySide6.QtWidgets import (
 )
 
 import media_files
-import theme
 import url_safety
+from . import appearance
 from i18n import _
 from .media_picture import MediaPicture
 from .file_icons import FileIcons
@@ -49,8 +49,8 @@ class QuickLook(QDialog):
     def __init__(self, *, grid: QWidget, is_dark: bool, resolver=None, parent=None) -> None:
         super().__init__(parent, Qt.WindowType.Tool)
         self.setWindowTitle(_("Quick Look"))
-        self.setStyleSheet(theme.dialog_stylesheet(is_dark)
-                           + "QLabel#quick_look_name { font-weight: 600; }")
+        self.apply_theme(is_dark)
+        appearance.bind(self)
         self._grid = grid
         self._url = ""
         self._key = ""
@@ -107,6 +107,22 @@ class QuickLook(QDialog):
         row.addWidget(self.save_button)
         row.addStretch(1)
         layout.addLayout(row)
+        self.apply_theme(is_dark)
+
+    def apply_theme(self, is_dark: bool) -> None:
+        self._is_dark = is_dark
+        self.setStyleSheet(appearance.dialog_stylesheet(is_dark)
+                           + "QLabel#quick_look_name { font-weight: 600; }")
+        appearance.surface(self, is_dark)
+        for name in ("message", "detail"):
+            label = getattr(self, name, None)
+            if label is not None:
+                label.setForegroundRole(QPalette.WindowText)
+                label.setStyleSheet(f"color: {appearance.roles(is_dark).muted};")
+        if getattr(self, "_player", None) is not None:
+            self._player.set_nostr(True, is_dark)
+        if getattr(self, "_file_preview", None) is not None:
+            self._file_preview.apply_theme(is_dark)
 
     def show_file(self, *, name: str, detail: str, url: str, glyph: str,
                   picture: Optional[QPixmap], media=None, mime: str = "") -> None:
@@ -171,7 +187,7 @@ class QuickLook(QDialog):
         if media_files.kind_of(self._mime) is not None:
             if self._player is None:
                 from .media_player import MediaPlayer
-                self._player = MediaPlayer(self)
+                self._player = MediaPlayer(self, nostr=True)
                 self._player.failed.connect(self._failed)
                 self._player.poster_ready.connect(self._poster)
                 self.pages.addWidget(self._player)
@@ -182,6 +198,7 @@ class QuickLook(QDialog):
             if self._file_preview is None:
                 from .file_preview import FilePreview
                 self._file_preview = FilePreview(self)
+                self._file_preview.apply_theme(self._is_dark)
                 self._file_preview.failed.connect(self._failed)
                 self.pages.addWidget(self._file_preview)
             self.pages.setCurrentWidget(self._file_preview)

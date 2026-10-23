@@ -49,6 +49,7 @@ from ..publisher import PublishedMedia, PublishJob, PublishResult, build_note
 from ..relay import RelayPool
 from ..search import Nip50SearchClient
 from .mention_picker import MentionPicker
+from . import appearance
 from .publish_sheet import (
     AccountRow, BottomRow, PeopleRow, StatusLine, fit_margins, fit_to_window, make_sheet,
     people_tagged, scroll_area, sheet_stylesheet,
@@ -234,6 +235,8 @@ class PublishNoteDialog(QDialog):
 
     def _build(self, profile: Profile, store: ProfileStore) -> None:
         self.setStyleSheet(sheet_stylesheet(self._is_dark))
+        appearance.surface(self, self._is_dark)
+        appearance.bind(self)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 18, 20, 14)
         outer.setSpacing(8)
@@ -305,6 +308,7 @@ class PublishNoteDialog(QDialog):
         takes the new one, as the window does."""
         self._is_dark = is_dark
         self.setStyleSheet(sheet_stylesheet(is_dark))
+        appearance.surface(self, is_dark)
         self._text_edit.set_dark(is_dark)
         self._account.set_dark(is_dark)
         self._status.set_dark(is_dark)

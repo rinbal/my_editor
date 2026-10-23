@@ -91,6 +91,7 @@ from PySide6.QtWidgets import (
 )
 
 import url_safety
+from . import appearance
 from i18n import _, ngettext
 
 from ..draft_store import DraftRecord, DraftState
@@ -1060,6 +1061,8 @@ class PreviewPopover(QWidget):
 
     def apply_theme(self, is_dark: bool) -> None:
         self._is_dark = bool(is_dark)
+        self.setPalette(appearance.palette(is_dark, surface="popover"))
+        appearance.bind(self)
         self.setStyleSheet(preview_css(self._is_dark))
         self._surface.apply_theme(self._is_dark)
         self._hero.apply_theme(self._is_dark)

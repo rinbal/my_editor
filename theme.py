@@ -270,6 +270,11 @@ def apply_app_theme(is_dark: bool) -> None:
     if _SYSTEM_HIGHLIGHT is None:
         _SYSTEM_HIGHLIGHT = QColor(app.palette().color(QPalette.ColorRole.Highlight))
     app.setPalette(_palette(is_dark))
+    # Nostr owners opt in; local application roles above stay unchanged.
+    import sys
+    appearance = sys.modules.get("nostr.ui.appearance")
+    if appearance is not None:
+        appearance.refresh_windows(is_dark)
 
 
 def _luminance(colour: QColor) -> float:

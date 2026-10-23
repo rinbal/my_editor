@@ -83,12 +83,13 @@ class DocumentNotice(QFrame):
     acted = Signal(str)
     closed = Signal()
 
-    def __init__(self, parent: Optional[QWidget] = None, *, is_dark: bool = True) -> None:
+    def __init__(self, parent: Optional[QWidget] = None, *, is_dark: bool = True, nostr: bool = False) -> None:
         super().__init__(parent)
         self.setObjectName("DocumentNotice")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._dark = is_dark
+        self._nostr = nostr
         self._focus_return: Optional[QWidget] = None
         row = QHBoxLayout(self)
         row.setContentsMargins(14, 6, 8, 6)
@@ -166,6 +167,10 @@ class DocumentNotice(QFrame):
             fill, line, text, button, edge, muted = (
                 "rgba(0, 0, 0, 0.035)", LIGHT_BORDER, LIGHT_FG, LIGHT_MENU_BG,
                 LIGHT_MUTED_FG, LIGHT_MUTED_FG)
+        if self._nostr:
+            from nostr.ui.appearance import roles
+            r = roles(is_dark)
+            fill, line, text, button, edge, muted = r.soft, r.line, r.text, r.control, r.edge, r.ink
         self.setStyleSheet(f"""
             #DocumentNotice {{ background: {fill}; border: none; border-bottom: 1px solid {line}; }}
             #DocumentNoticeText {{ color: {text}; background: transparent; font-size: 13px; }}
@@ -193,7 +198,11 @@ class DocumentNotice(QFrame):
         if self._symbol.kind == CAUTION:
             self._symbol.ink = QColor(_CAUTION_INK[self._dark])
         else:
-            self._symbol.ink = QColor(DARK_MUTED_FG if self._dark else LIGHT_MUTED_FG)
+            if self._nostr:
+                from nostr.ui.appearance import roles
+                self._symbol.ink = QColor(roles(self._dark).icon)
+            else:
+                self._symbol.ink = QColor(DARK_MUTED_FG if self._dark else LIGHT_MUTED_FG)
         self._symbol.update()
 
     def _on_action(self, key: str) -> None:

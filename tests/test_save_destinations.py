@@ -213,7 +213,7 @@ def test_a_save_says_what_it_left_out(path, said):
     audio or video still to be uploaded."""
     shown = []
     window = types.SimpleNamespace(
-        status=types.SimpleNamespace(showMessage=shown.append),
+        status=types.SimpleNamespace(showMessage=lambda text, **context: shown.append(text)),
         _media_not_uploaded=lambda document: [types.SimpleNamespace(alt="talk.mp4", sha256="s",
                                                                     size=10)])
     window._detail_names = lambda details: MainWindow._detail_names(window, details)

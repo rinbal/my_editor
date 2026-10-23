@@ -55,6 +55,7 @@ class ProfileCard(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setAccessibleName(_("Your profile as others see it"))
         self._describe()
+        self.set_dark(is_dark)
 
     # -- what is shown ---------------------------------------------------------
 
@@ -75,6 +76,8 @@ class ProfileCard(QWidget):
 
     def set_dark(self, is_dark: bool) -> None:
         self._is_dark = is_dark
+        import theme
+        self.setPalette(theme._palette(is_dark))
         self.update()
 
     def name(self) -> str:
@@ -108,6 +111,9 @@ class ProfileCard(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(ring)
+        painter.drawRoundedRect(QRectF(self.rect()), RADIUS, RADIUS)
         banner = QRectF(0, 0, self.width(), BANNER_HEIGHT)
         path = QPainterPath()
         path.addRoundedRect(banner, RADIUS, RADIUS)

@@ -111,7 +111,7 @@ class _Window:
             index=AssetIndex(path=cache_dir.parent / "media_assets.json"),
         )
         self._upload_waits = {}
-        self.status = types.SimpleNamespace(showMessage=lambda *a: None, clearMessage=lambda: None)
+        self.status = types.SimpleNamespace(showMessage=lambda *a, **context: None, clearMessage=lambda: None)
 
     @staticmethod
     def _editor_widget_index(ed):
@@ -737,7 +737,7 @@ def test_a_draft_is_saved_only_under_the_account_it_was_asked_for(tmp_path):
     window = types.SimpleNamespace(
         _profile_store=types.SimpleNamespace(
             default=lambda: types.SimpleNamespace(user_pubkey="b" * 64)),
-        status=types.SimpleNamespace(showMessage=said.append),
+        status=types.SimpleNamespace(showMessage=lambda text, **context: said.append(text)),
         _fire_draft_publish_job=lambda *args: fired.append(args))
 
     MainWindow._save_draft(window, HtmlEditor(), types.SimpleNamespace(user_pubkey="a" * 64),

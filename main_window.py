@@ -34,8 +34,7 @@ from PySide6.QtGui import (
 from PySide6.QtPrintSupport import QPrintDialog, QPrintPreviewDialog
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QMainWindow, QFileDialog, QInputDialog, QLineEdit, QMenu,
-    QWidget, QVBoxLayout, QPlainTextEdit, QTextEdit, QTabWidget, QToolButton, QHBoxLayout, QStatusBar,
-    QPushButton, QTabBar, QLabel, QDialog, QSplitter,
+    QWidget, QVBoxLayout, QPlainTextEdit, QTextEdit, QTabWidget, QToolButton, QHBoxLayout, QPushButton, QTabBar, QLabel, QDialog, QSplitter,
     QProgressDialog, QToolTip
 )
 
@@ -130,6 +129,7 @@ from update_dialog import UpdateDialog, WhatsNewDialog
 from settings_window import SettingsWindow
 from update_flow import AUTOMATIC, guide_url, plan_for
 import theme
+from nostr.ui.context_widgets import ContextStatusBar, ContextTabBar
 from export_html import (
     MEDIA_EMBED_LIMIT, document_to_html, image_data_uri, normalize_after_set_html,
     sniff_image_ext)
@@ -516,6 +516,7 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
 
         self.tabs = QTabWidget()
+        self.tabs.setTabBar(ContextTabBar(self))
         self.tabs.setTabsClosable(False)
         self.tabs.tabBar().setExpanding(False)
         self.tabs.setMovable(True)
@@ -572,7 +573,7 @@ class MainWindow(QMainWindow):
         leading_row.addWidget(self._file_list_toggle)
         self.tabs.setCornerWidget(leading, Qt.TopLeftCorner)
 
-        self.status = QStatusBar()
+        self.status = ContextStatusBar()
         self.setStatusBar(self.status)
         # Silent while backups succeed; when the document's backup cannot be
         # kept, it says so here until it is kept again (decision Q-J).
@@ -677,7 +678,7 @@ class MainWindow(QMainWindow):
         self._accounts.activate.connect(self._on_nostr_profile_connected)
         self._accounts.profile_changed.connect(self._on_metadata_updated)
         self._accounts.status.connect(
-            lambda text, ms: self.status.showMessage(text, ms))
+            lambda text, ms: self.status.showMessage(text, ms, nostr=True))
         self._accounts.link_activated.connect(self._open_external)
         self._metadata_fetcher = ProfileMetadataFetcher(
             self._relay_pool, self._profile_store, parent=self,
@@ -810,7 +811,7 @@ class MainWindow(QMainWindow):
             is_dark=lambda: self.is_dark_theme,
             open_link=self._open_external,
             connect_signer=self._on_nostr_connect,
-            show_status=self.status.showMessage,
+            show_status=lambda text, ms: self.status.showMessage(text, ms, nostr=True),
             media_usage=self._media_usage,
             open_media_library=self._on_nostr_media_library,
             parent=self,
@@ -4865,7 +4866,7 @@ class MainWindow(QMainWindow):
                                         "{count} pictures can’t be found",
                                         len(missing)).format(count=len(missing)),
                    message=_("“{name}” is not on this computer any more. Insert it again, "
-                             "or delete it, to go on.").format(name=missing[0]))
+                             "or delete it, to go on.").format(name=missing[0]), nostr=True)
             return None
         return assets
 
@@ -4893,7 +4894,7 @@ class MainWindow(QMainWindow):
         return ask(self, title=title.format(count=count),
                    message=message.format(count=count, name=self._file_label(assets[0])),
                    buttons=(Button(_("Cancel"), False, CANCEL),
-                            Button(action, True, DEFAULT))) is True
+                            Button(action, True, DEFAULT)), nostr=True) is True
 
     @staticmethod
     def _file_label(asset) -> str:
@@ -4933,7 +4934,7 @@ class MainWindow(QMainWindow):
                         message=friendly_message(code) + " " + (
                             _("The draft was not saved.") if draft else _("Nothing was published.")),
                         buttons=(Button(_("Cancel"), False, CANCEL),
-                                 Button(_("Try Again"), True, DEFAULT)))
+                                 Button(_("Try Again"), True, DEFAULT)), nostr=True)
             if again is not True or self._editor_widget_index(ed) < 0:
                 return
             left = self._uploads_needed(ed)
@@ -4948,7 +4949,7 @@ class MainWindow(QMainWindow):
         wait.failed.connect(failed)
         self.status.showMessage(ngettext("Uploading {count} file to your media servers…",
                                          "Uploading {count} files to your media servers…",
-                                         len(assets)).format(count=len(assets)))
+                                         len(assets)).format(count=len(assets)), nostr=True)
         wait.start()
 
     def _cancel_upload_waits(self) -> None:
@@ -7663,6 +7664,9 @@ class MainWindow(QMainWindow):
             self._article_headers.set_dark(self.is_dark_theme, self._all_editors())
         if getattr(self, "_library_window", None) is not None:
             self._library_window.update_theme(self.is_dark_theme)
+        if self.isVisible():
+            from nostr.ui.native_appearance import apply_chrome
+            apply_chrome(self, self.is_dark_theme, nostr=False)
         self._redraw_media_cards()
         for banner in getattr(self, "_tab_conflict_banners", {}).values():
             banner.apply_theme(self.is_dark_theme)
@@ -7678,6 +7682,11 @@ class MainWindow(QMainWindow):
         sheet = getattr(self, "_publish_sheet", None)
         if sheet is not None and shiboken6.isValid(sheet):
             sheet.apply_theme(self.is_dark_theme)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        from nostr.ui.native_appearance import apply_chrome
+        apply_chrome(self, self.is_dark_theme, nostr=False)
 
     def _on_os_color_scheme_changed(self, scheme):
         if not self._follow_os_theme:
@@ -8333,7 +8342,7 @@ class MainWindow(QMainWindow):
                 # typed now could be kept, so the window takes no more
                 # input while it says what it finishes (engine review M2).
                 self.setEnabled(False)
-                self.status.showMessage(_("Saving your list of sources…"))
+                self.status.showMessage(_("Saving your list of sources…"), nostr=True)
                 imports.subscriptions.wait_until_settled(QUIT_SYNC_WAIT_MS)
             # The inbox closes and its lock goes, so the next start (or a
             # second MyEditor) finds it free.
@@ -8534,7 +8543,7 @@ class MainWindow(QMainWindow):
         choice = ask(self, title=title, message=message, is_dark=self.is_dark_theme,
                      buttons=(Button(_("Create Account\u2026"), "create", DEFAULT),
                               Button(_("Connect Signer App\u2026"), "connect", NORMAL),
-                              Button(_("Cancel"), None, CANCEL)))
+                              Button(_("Cancel"), None, CANCEL)), nostr=True)
         if choice == "create":
             self._on_create_account()
         elif choice == "connect":
@@ -8576,7 +8585,7 @@ class MainWindow(QMainWindow):
         window.setAttribute(Qt.WA_DeleteOnClose, True)
 
         def saved() -> None:
-            self.status.showMessage(_("Profile saved."), 5000)
+            self.status.showMessage(_("Profile saved."), 5000, nostr=True)
             # Read back what was published, so the chip and menus show it.
             self._metadata_fetcher.fetch(active)
 
@@ -8611,7 +8620,7 @@ class MainWindow(QMainWindow):
     # -- relays that ask for a sign-in (NIP-42) -------------------------------
 
     def _on_relay_signing_in(self, relay: str) -> None:
-        self.status.showMessage(_("Signing in to {relay}…").format(relay=relay), 5000)
+        self.status.showMessage(_("Signing in to {relay}…").format(relay=relay), 5000, nostr=True)
 
     def _on_relay_sign_in_failed(self, relay: str, reason: str, answered: bool) -> None:
         if reason == NOT_CHOSEN:
@@ -8622,7 +8631,7 @@ class MainWindow(QMainWindow):
             text = _("{relay} asks you to sign in, and your signer app declined.")
         else:
             text = _("Couldn’t sign in to {relay}.")
-        self.status.showMessage(text.format(relay=relay), 8000)
+        self.status.showMessage(text.format(relay=relay), 8000, nostr=True, error=True)
 
     # -- association membership --------------------------------------------
 
@@ -8698,7 +8707,7 @@ class MainWindow(QMainWindow):
                                "you shared one before.").format(hosts=hosts),
                      buttons=(Button(_("Cancel"), False, CANCEL),
                               Button(_("Share List"), True, DEFAULT)),
-                     is_dark=self.is_dark_theme)
+                     is_dark=self.is_dark_theme, nostr=True)
         if choice is not True:
             return
         try:
@@ -8706,7 +8715,7 @@ class MainWindow(QMainWindow):
                 servers=servers, pool=self._relay_pool, directory=self._relay_directory,
                 session_pool=self._session_pool, profile=active, parent=self)
         except ValueError:
-            self.status.showMessage(_("There is no media server to share."), 5000)
+            self.status.showMessage(_("There is no media server to share."), 5000, nostr=True)
             return
         messages = {
             outbox_writer.WRITTEN: _("Your media server list is shared."),
@@ -8717,7 +8726,7 @@ class MainWindow(QMainWindow):
 
         def finished(outcome) -> None:
             self.status.showMessage(messages.get(outcome.status, _(
-                "The list wasn’t shared. Try again in a moment.")), 6000)
+                "The list wasn’t shared. Try again in a moment.")), 6000, nostr=True)
             if outcome.status == outbox_writer.WRITTEN:
                 self._server_list.refresh(active, force=True)
             writer.deleteLater()
@@ -8787,7 +8796,7 @@ class MainWindow(QMainWindow):
     def _on_media_save_started(self, target: str) -> None:
         if not self._media_window_open():
             self._media_save_said = _("Saving “{name}”…").format(name=os.path.basename(target))
-            self.status.showMessage(self._media_save_said, 0)
+            self.status.showMessage(self._media_save_said, 0, nostr=True)
 
     def _on_media_save_finished(self, target: str, why: str) -> None:
         """How a Save As went, when no library window is open to say it,
@@ -8803,7 +8812,7 @@ class MainWindow(QMainWindow):
         if announced or not self._media_window_open():
             self._media_save_said = (save_failure(why, target) if why
                                      else _("Saved: {path}").format(path=target))
-            self.status.showMessage(self._media_save_said, 0)
+            self.status.showMessage(self._media_save_said, 0, nostr=True, error=bool(why))
 
     def _on_media_saves_finished(self, total: int, failures: list) -> None:
         """A Save to Folder ended without every file: said at its end, where
@@ -8811,7 +8820,7 @@ class MainWindow(QMainWindow):
         if not failures or not (self._media_save_announced() or not self._media_window_open()):
             return
         self._media_save_said, tip = saves_failure(total, failures)
-        self.status.showMessage(self._media_save_said, 0)
+        self.status.showMessage(self._media_save_said, 0, nostr=True, error=True)
         self._message_tip.set(self._media_save_said, tip)
 
     def _media_save_announced(self) -> bool:
@@ -8835,7 +8844,7 @@ class MainWindow(QMainWindow):
             imports.open_window()
         elif imports.problem:
             inform(self, title=_("Imports aren't available"), message=imports.problem,
-                   is_dark=self.is_dark_theme)
+                   is_dark=self.is_dark_theme, nostr=True)
         else:
             self._offer_account(
                 title=_("Imports need a Nostr account"),
@@ -8913,7 +8922,7 @@ class MainWindow(QMainWindow):
         self._refresh_profile_chip_menu()
         self.status.showMessage(
             _("Connected as {name}").format(name=profile.display_name or profile.npub_short()),
-            5000
+            5000, nostr=True
         )
         # Kick off metadata + avatar fetch in the background. The chip will
         # refresh itself when the fetcher signals back.
@@ -9065,7 +9074,7 @@ class MainWindow(QMainWindow):
         content = content.strip()
         if not content:
             inform(self, title=_("Nothing to publish"),
-                   message=_("The current document is empty."))
+                   message=_("The current document is empty."), nostr=True)
             return
 
         dialog = PublishNoteDialog(
@@ -9850,7 +9859,7 @@ class MainWindow(QMainWindow):
             return
         if double or media_card.play_button_rect(asset.mime).contains(at):
             self._play_media(self._media_file_of(asset), asset.mime,
-                             asset.alt or asset.sha256[:12])
+                             asset.alt or asset.sha256[:12], nostr=asset.is_uploaded)
 
     def _play_media_url(self, url: str) -> None:
         """A player card in the preview clicked: it plays here; an address
@@ -9860,14 +9869,14 @@ class MainWindow(QMainWindow):
             if url_safety.is_safe_media_url(url):
                 QDesktopServices.openUrl(QUrl(url))
             return
-        self._play_media(*found)
+        self._play_media(*found, nostr=True)
 
-    def _play_media(self, media: MediaFile, mime: str, name: str) -> None:
+    def _play_media(self, media: MediaFile, mime: str, name: str, *, nostr: bool = False) -> None:
         if self._media_viewer is None:
             self._media_viewer = MediaViewer(loader=self._media_image_loader,
                                              visibility=self._media_visibility,
                                              is_dark=self.is_dark_theme, parent=self)
-        self._media_viewer.play(media, mime, name)
+        self._media_viewer.play(media, mime, name, nostr=nostr)
 
     def _redraw_media_cards(self) -> None:
         """Draw the cards of the audio and video in the open documents
@@ -9975,7 +9984,7 @@ class MainWindow(QMainWindow):
                    message=_("Anyone who has it can publish as its owner and read their "
                              "private messages, and once published it can never be taken "
                              "back. MyEditor did not paste it. Keep it in a password "
-                             "manager or a signer app."))
+                             "manager or a signer app."), nostr=True)
 
     def _on_nostr_note_published(self, _event_id_hex: str, results):
         self._say_published(results, article=False)
@@ -9995,7 +10004,7 @@ class MainWindow(QMainWindow):
         body = body.rstrip()
         if not body:
             inform(self, title=_("Nothing to publish"),
-                   message=_("The current document is empty."))
+                   message=_("The current document is empty."), nostr=True)
             return
 
         # Pre-fill metadata. Precedence:
@@ -10102,7 +10111,7 @@ class MainWindow(QMainWindow):
             message = ngettext("Your note is published; {accepted} of {total} relay took it.",
                                "Your note is published; {accepted} of {total} relays took it.",
                                total).format(accepted=accepted, total=total)
-        self.status.showMessage(message, 8000)
+        self.status.showMessage(message, 8000, nostr=True)
 
     # -- media (Blossom) --------------------------------------------------
 
@@ -10196,7 +10205,7 @@ class MainWindow(QMainWindow):
         )
         if not picked.ok:
             if picked.reason:
-                self.status.showMessage(picked.reason, 8000)
+                self.status.showMessage(picked.reason, 8000, nostr=True, error=True)
             return
         if editor is None:
             return
@@ -10344,7 +10353,7 @@ class MainWindow(QMainWindow):
         if waiting > 1:
             message += " " + ngettext("{count} file is waiting.", "{count} files are waiting.",
                                       waiting).format(count=waiting)
-        self.status.showMessage(message, 8000)
+        self.status.showMessage(message, 8000, nostr=True, error=True)
 
     # -- Blossom: paste image from clipboard ------------------------------
 
@@ -10541,7 +10550,7 @@ class MainWindow(QMainWindow):
 
     def _on_published_status(self, text: str) -> None:
         if text:
-            self.status.showMessage(text, 8000)
+            self.status.showMessage(text, 8000, nostr=True)
         else:
             self.status.clearMessage()
 
@@ -10579,7 +10588,7 @@ class MainWindow(QMainWindow):
                     _("The draft is still being decrypted. Choose Edit again once its title "
                       "shows in the Drafts panel, or open the version that is published now."),
                     buttons=(Button(_("Open Published Version"), "published", NORMAL),
-                             Button(_("Cancel"), None, DEFAULT)))
+                             Button(_("Cancel"), None, DEFAULT)), nostr=True)
             elif draft.content == str(item.event.get("content") or ""):
                 choice = "draft"
             else:
@@ -10590,7 +10599,7 @@ class MainWindow(QMainWindow):
                               "is published."),
                     buttons=(Button(_("Cancel"), None, CANCEL),
                              Button(_("Open Published Version"), "published", NORMAL),
-                             Button(_("Open Draft"), "draft", DEFAULT)))
+                             Button(_("Open Draft"), "draft", DEFAULT)), nostr=True)
             if choice == "draft":
                 self._on_panel_open_draft(item.identifier)
             if choice != "published":
@@ -10656,11 +10665,11 @@ class MainWindow(QMainWindow):
                             len(relays)).format(count=len(relays))
         else:
             text = _("Drafts are saved on your usual relays again.")
-        self.status.showMessage(text, 8000)
+        self.status.showMessage(text, 8000, nostr=True)
 
     def _on_panel_copy_event_id(self, event_id: str) -> None:
         if event_id:
-            self.status.showMessage(_("Copied event id {id}…").format(id=event_id[:10]), 3000)
+            self.status.showMessage(_("Copied event id {id}…").format(id=event_id[:10]), 3000, nostr=True)
 
     def _on_panel_open_draft(self, identifier: str) -> None:
         """Continue Editing: the draft, ready to type in.
@@ -10673,7 +10682,7 @@ class MainWindow(QMainWindow):
         record = self._draft_store.get(identifier)
         if record is None or record.state is not DraftState.READY:
             self.status.showMessage(
-                _("Draft isn't ready to open yet - still decrypting."), 4000
+                _("Draft isn't ready to open yet - still decrypting."), 4000, nostr=True
             )
             return
 
@@ -10744,7 +10753,7 @@ class MainWindow(QMainWindow):
         """
         self._draft_sync.retry_decrypt(identifier)
         self.status.showMessage(_("Trying again. Approve the request in your signer "
-                                  "app\u2026"), 6000)
+                                  "app\u2026"), 6000, nostr=True)
 
     def _on_panel_delete_drafts(self, identifiers: list) -> None:
         """Delete one draft or twenty, through one question and one run.
@@ -10790,7 +10799,7 @@ class MainWindow(QMainWindow):
                       "removing them from here might leave them visible in the other "
                       "client.\n\nTo remove them cleanly, open them in the app that "
                       "created them and delete them there."),
-            details="\n".join(skipped))
+            details="\n".join(skipped), nostr=True)
 
     def _confirm_draft_deletion(
         self, deletable: List[Tuple[str, int]], skipped: List[str],
@@ -10868,7 +10877,7 @@ class MainWindow(QMainWindow):
             self, title=heading, message="\n\n".join(lines),
             action=action,
             caution=True,
-            details=(_("Not included:") + "\n" + "\n".join(skipped)) if skipped else "")
+            details=(_("Not included:") + "\n" + "\n".join(skipped)) if skipped else "", nostr=True)
 
     def _run_draft_deletion(
         self, profile, deletable: List[Tuple[str, int]],
@@ -10887,7 +10896,7 @@ class MainWindow(QMainWindow):
         except ValueError as exc:
             inform(self, title=_("Couldn't start the deletion"),
                    message=_("These drafts can't be removed from here.\n\n{error}").format(
-                       error=exc))
+                       error=exc), nostr=True)
             return
 
         total = job.total
@@ -10966,7 +10975,7 @@ class MainWindow(QMainWindow):
         if not failures:
             self.status.showMessage(
                 ngettext("Draft deleted.", "{count} drafts deleted.",
-                         deleted).format(count=deleted), 5000,
+                         deleted).format(count=deleted), 5000, nostr=True
             )
             return
 
@@ -10988,7 +10997,7 @@ class MainWindow(QMainWindow):
                              "You can try again.", len(failures)).format(count=len(failures)),
             caution=True,
             details="\n".join(
-                f"{identifier[:16]}: {reason}" for identifier, reason in failures))
+                f"{identifier[:16]}: {reason}" for identifier, reason in failures), nostr=True)
 
     def _on_draft_sync_status(self, text: str) -> None:
         if self._drafts_panel is not None:
@@ -11013,7 +11022,7 @@ class MainWindow(QMainWindow):
             self._drafts_panel.set_signer_unsupported(True)
         # Surface in the main window status bar too - the user may not
         # have the panel open.
-        self.status.showMessage(message, 8000)
+        self.status.showMessage(message, 8000, nostr=True)
 
     # ----------------------------------------------------------------------
     # NOSTR - contextual Ctrl+Shift+S: disk vs. draft destination
@@ -11154,7 +11163,7 @@ class MainWindow(QMainWindow):
         in use (another may have been chosen while the files went up)."""
         current = self._profile_store.default()
         if current is None or current.user_pubkey != profile.user_pubkey:
-            self.status.showMessage(_("The draft was not saved: another account is in use."))
+            self.status.showMessage(_("The draft was not saved: another account is in use."), nostr=True)
             return
         flavor = "markdown" if choice.kind is StashKind.ARTICLE else "note"
         inner = self._build_inner_for_choice(
@@ -11179,7 +11188,7 @@ class MainWindow(QMainWindow):
             self, title=_("A draft named “{name}” already exists. Do you want to replace "
                           "it?").format(name=existing.title or identifier),
             message=_("Replacing it overwrites its text on all your devices."),
-            action=_("Replace"))
+            action=_("Replace"), nostr=True)
 
     def _restash_with_binding(self, ed, binding: DraftBinding) -> None:
         """Silent re-save of a draft-bound tab - no dialogs.
@@ -11239,7 +11248,7 @@ class MainWindow(QMainWindow):
         # publish-note and publish-article flows already use.
         if not str(inner.get("content", "")).strip():
             inform(self, title=_("Nothing to save as a draft"),
-                   message=_("The current document is empty. Add some content first."))
+                   message=_("The current document is empty. Add some content first."), nostr=True)
             return
         # Pre-flight the plaintext cap with a friendly message rather
         # than letting the publish job fail mid-pipeline. The job also
@@ -11248,13 +11257,13 @@ class MainWindow(QMainWindow):
             payload_bytes = len(serialize_inner_event(inner).encode("utf-8"))
         except (KeyError, TypeError, ValueError):
             inform(self, title=_("Couldn't prepare the draft"),
-                   message=_("Its contents could not be prepared for encryption."))
+                   message=_("Its contents could not be prepared for encryption."), nostr=True)
             return
         if payload_bytes > MAX_INNER_PAYLOAD_BYTES:
             inform(self, title=_("This draft is too large"),
                    message=_("It has {size} bytes, and encryption allows {limit}. "
                              "Split it into smaller drafts or publish it directly.").format(
-                       size=_number(payload_bytes), limit=_number(MAX_INNER_PAYLOAD_BYTES)))
+                       size=_number(payload_bytes), limit=_number(MAX_INNER_PAYLOAD_BYTES)), nostr=True)
             return
 
         job = DraftPublishJob(
@@ -11269,13 +11278,13 @@ class MainWindow(QMainWindow):
         )
         # Pass the editor + inner through the closure so the stashed
         # handler can bind the tab and update the store optimistically.
-        job.status_changed.connect(lambda s: self.status.showMessage(s, 5000))
+        job.status_changed.connect(lambda s: self.status.showMessage(s, 5000, nostr=True))
         job.stashed.connect(
             lambda ident, eid, ts, _ed=ed, _inner=inner, _choice=choice:
             self._on_draft_stashed(_ed, _choice, eid, ts, _inner)
         )
         job.failed.connect(
-            lambda reason: inform(self, title=_("Couldn't save the draft"), message=reason)
+            lambda reason: inform(self, title=_("Couldn't save the draft"), message=reason, nostr=True)
         )
         # Register before starting so a synchronous failure path can't
         # leave the tab thinking nothing is in flight.
@@ -11446,7 +11455,7 @@ class MainWindow(QMainWindow):
                 tags=tags,
             )
         except ValueError as exc:
-            inform(self, title=_("Couldn't prepare the draft"), message=str(exc))
+            inform(self, title=_("Couldn't prepare the draft"), message=str(exc), nostr=True)
             return None
 
     def _on_draft_stashed(
@@ -11530,7 +11539,7 @@ class MainWindow(QMainWindow):
         return getattr(ed, "_active_stash_job", None) is not None
 
     def _stash_already_running_message(self) -> None:
-        self.status.showMessage(_("Already saving this draft - wait for it to finish."), 4000)
+        self.status.showMessage(_("Already saving this draft - wait for it to finish."), 4000, nostr=True)
 
     def _attach_active_stash(self, ed, job) -> None:
         ed._active_stash_job = job
@@ -11613,7 +11622,7 @@ class MainWindow(QMainWindow):
                                                     active=active_label),
             message=_("Saving under the current account would create a separate "
                       "draft. How would you like to handle it?"),
-            buttons=buttons, caution=True)
+            buttons=buttons, caution=True, nostr=True)
 
     def _switch_active_profile_to(self, pubkey_hex: str) -> bool:
         """Switch the active Nostr profile by pubkey. Returns True on
@@ -11765,7 +11774,7 @@ class MainWindow(QMainWindow):
             return
         if ed.document().isModified() and not confirm_destructive(
                 self, title=_("Replace this draft with the newer version?"),
-                message=_("Your unsaved changes will be lost."), action=_("Replace")):
+                message=_("Your unsaved changes will be lost."), action=_("Replace"), nostr=True):
             banner = self._tab_conflict_banners.get(ed)
             if banner is not None:
                 banner.show()

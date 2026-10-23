@@ -239,7 +239,7 @@ class SettingsWindow(QDialog):
         upload_column.addWidget(self._help(
             _("Pictures, audio and video you add stay on this computer until you publish. "
               "Right Away puts them on your media servers as soon as you add them.")))
-        self._upload_label = self._label(_("Upload files:"), self.upload)
+        self._upload_label = self._label(_("Upload files:"), self.upload, nostr=True)
         form.addRow(self._upload_label, self._upload_box)
 
         # Where published posts open on the web: only while Nostr is in use.
@@ -257,7 +257,7 @@ class SettingsWindow(QDialog):
             _("Where your published posts open on the web, and the app a copied link "
               "points to. A post the app cannot show, such as a short note in Standup "
               "Discover, opens in njump.")))
-        self._reader_label = self._label(_("Open posts on the web in:"), self.reader)
+        self._reader_label = self._label(_("Open posts on the web in:"), self.reader, nostr=True)
         form.addRow(self._reader_label, self._reader_box)
 
         self._dictation = dictation
@@ -289,9 +289,10 @@ class SettingsWindow(QDialog):
     # -- building -------------------------------------------------------------
 
     @staticmethod
-    def _label(text: str, buddy: Optional[QComboBox] = None) -> QLabel:
+    def _label(text: str, buddy: Optional[QComboBox] = None, *, nostr: bool = False) -> QLabel:
         """A field's label; a pop-up menu (and the list it opens) is named by it."""
-        label = QLabel(text)
+        from nostr.ui.context_widgets import NostrLabel
+        label = NostrLabel(text) if nostr else QLabel(text)
         if buddy is not None:
             label.setBuddy(buddy)
             name = text.rstrip(":").strip()
@@ -494,9 +495,15 @@ class SettingsWindow(QDialog):
     def showEvent(self, event) -> None:  # noqa: N802, Qt's name
         self.refresh()
         super().showEvent(event)
+        from nostr.ui.native_appearance import apply_chrome
+        apply_chrome(self, self._is_dark, nostr=False)
 
     def apply_theme(self, is_dark: bool) -> None:
+        self._is_dark = is_dark
         muted = DARK_MUTED_FG if is_dark else LIGHT_MUTED_FG
         self.setStyleSheet(theme.dialog_stylesheet(is_dark)
                            + f"QLabel#help {{ color: {muted}; font-size: 11px; }}")
         self._fit_help()
+        if self.isVisible():
+            from nostr.ui.native_appearance import apply_chrome
+            apply_chrome(self, is_dark, nostr=False)

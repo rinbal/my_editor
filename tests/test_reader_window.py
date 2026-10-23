@@ -82,3 +82,26 @@ def test_a_cover_that_cant_be_had_says_so():
     loader.url_failed.emit(COVER, "gone")
     assert made.hero.note_text() == IMAGE_UNAVAILABLE
     made.close()
+
+
+@pytest.mark.parametrize("kind", [1, 30023])
+def test_live_appearance_recolors_document_and_keeps_selection(kind):
+    from nostr.preview import palette
+    from theme import contrast_ratio
+
+    made = ReaderWindow(fields=PreviewFields("Title", "", "", "", "", "", ""),
+                        kind=kind, content="Readable body", actions=(),
+                        size=QSize(480, 640), is_dark=True)
+    cursor = made.reader.textCursor()
+    cursor.setPosition(1)
+    cursor.setPosition(8, cursor.MoveMode.KeepAnchor)
+    made.reader.setTextCursor(cursor)
+    selected = cursor.selectedText()
+    for dark in (False, True, False):
+        made.apply_theme(dark)
+        fragment = made.reader.document().begin().begin().fragment()
+        ink = fragment.charFormat().foreground().color()
+        assert contrast_ratio(ink, QColor(palette(dark).background)) >= 4.5
+        assert made.reader.textCursor().selectedText() == selected
+        assert made.reader.toPlainText() == "Readable body"
+    made.close()

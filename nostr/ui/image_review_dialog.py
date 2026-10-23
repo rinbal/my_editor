@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
 
 import theme
 from alerts import answer_return_as_the_system_does
+from . import appearance
 from i18n import _, ngettext
 
 from ..imports.images import image_label
@@ -62,7 +63,8 @@ class ImageReviewDialog(QDialog):
         # A sheet on the window it belongs to.
         self.setWindowModality(Qt.WindowModality.WindowModal)
         # The app's dialog look: the default button in the accent color.
-        self.setStyleSheet(theme.dialog_stylesheet(theme.is_dark_active()))
+        self.apply_theme(theme.is_dark_active())
+        appearance.bind(self)
         self.resize(600, 460)
         if image_source is None:
             from ..imports.remote_images import RemoteImages
@@ -128,6 +130,21 @@ class ImageReviewDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self._update_count()
+        self.apply_theme(self._is_dark)
+
+    def apply_theme(self, is_dark: bool) -> None:
+        self._is_dark = is_dark
+        self.setStyleSheet(appearance.dialog_stylesheet(is_dark))
+        appearance.surface(self, is_dark)
+        if hasattr(self, "_list"):
+            r = appearance.roles(is_dark)
+            self._list.setStyleSheet(f"""
+                QListWidget {{ background: {r.list}; color: {r.text};
+                    border: 1px solid {r.edge}; selection-background-color: {r.selection};
+                    selection-color: #FFFFFF; }}
+                QListWidget::item:selected:!active {{ background: {r.soft}; color: {r.text}; }}
+            """)
+            self._list.setPalette(appearance.palette(is_dark, surface="list"))
 
     def skip_urls(self) -> Set[str]:
         """Addresses left unchecked: these stay where they are."""
@@ -162,7 +179,11 @@ class ImageReviewDialog(QDialog):
                               Qt.TransformationMode.SmoothTransformation)
         painter.drawImage((TILE - scaled.width()) // 2, (TILE - scaled.height()) // 2, scaled)
         painter.end()
-        row.setIcon(QIcon(tile))
+        icon = QIcon(tile)
+        # Qt synthesizes selected icons by tinting them with the system accent.
+        # Selection belongs to the label/ring; the image itself stays truthful.
+        icon.addPixmap(tile, QIcon.Mode.Selected)
+        row.setIcon(icon)
 
     def _placeholder(self) -> QIcon:
         tile = QPixmap(TILE, TILE)

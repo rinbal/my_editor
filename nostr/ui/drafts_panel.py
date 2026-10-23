@@ -134,6 +134,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import appearance
 from i18n import _, ngettext
 from segmented_control import Segment, SegmentedControl
 
@@ -1572,7 +1573,9 @@ class DraftsPanel(QFrame):
 
     def apply_theme(self, is_dark: bool) -> None:
         self._is_dark = is_dark
+        appearance.bind(self)
         self.setStyleSheet(_panel_css(is_dark))
+        appearance.surface(self, is_dark)
         self._view_switch.set_dark(is_dark)
         self._actions_menu.setStyleSheet(_menu_css(is_dark))
         self._apply_placeholder_colour(is_dark)

@@ -75,7 +75,8 @@ def closing_host(monkeypatch, order):
     """A stand-in for the main window with what closeEvent touches;
     ``order`` records the steps that matter for the list of sources."""
     import types
-    from PySide6.QtWidgets import QMainWindow, QStatusBar, QTabWidget
+    from PySide6.QtWidgets import QMainWindow, QTabWidget
+    from nostr.ui.context_widgets import ContextStatusBar
     import main_window
     monkeypatch.setattr(main_window.workspace, "discard_workspace", lambda: None)
     host = QMainWindow()
@@ -97,7 +98,7 @@ def closing_host(monkeypatch, order):
     host._remember_window_geometry = lambda: None
     host._release_file_tabs = lambda: None
     host.tabs = QTabWidget()
-    host.status = QStatusBar()
+    host.status = ContextStatusBar()
     host._session_pool = types.SimpleNamespace(
         close_all=lambda: order.append("signer closed"))
     host._relay_pool = types.SimpleNamespace(close_all=lambda: order.append("relays closed"))

@@ -38,6 +38,7 @@ from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
+from . import appearance
 from i18n import _
 
 from .drafts_common import THEME_TOKENS, scaled, secondary_font
@@ -117,6 +118,8 @@ class ReaderWindow(QWidget):
 
     def apply_theme(self, is_dark: bool) -> None:
         self._is_dark = bool(is_dark)
+        appearance.surface(self, is_dark)
+        appearance.bind(self)
         tokens = THEME_TOKENS[self._is_dark]
         self.setStyleSheet(preview_css(self._is_dark)
                            + f"QWidget#reader_window {{ background: {tokens['chrome_bg']}; }}")

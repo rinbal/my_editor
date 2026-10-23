@@ -45,7 +45,7 @@ from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, Q
 from PySide6.QtWidgets import QAbstractItemView, QStyle, QStyledItemDelegate, QToolTip
 
 import format_icons
-import theme
+from . import appearance
 from i18n import _
 
 from .drafts_common import (
@@ -271,8 +271,8 @@ class PostRowDelegate(QStyledItemDelegate):
             shape.addRoundedRect(QRectF(rect).adjusted(SELECTION_INSET, 0.5,
                                                        -SELECTION_INSET, -0.5),
                                  SELECTION_RADIUS, SELECTION_RADIUS)
-            fill = (theme.list_selection_color(self._dark) if focused
-                    else theme.inactive_selection_color(self._dark))
+            fill = (appearance.gradient(self._dark, QRectF(rect)) if focused
+                    else QColor(appearance.roles(self._dark).soft))
             painter.fillPath(shape, fill)
         elif self._separator_above(index, row):
             painter.setPen(QPen(QColor(tokens["border"]), 1))
@@ -281,7 +281,7 @@ class PostRowDelegate(QStyledItemDelegate):
                              QPointF(rect.right() - LIST_GUTTER + 1, y))
         on_accent = selected and focused
         strong = QColor("#FFFFFF") if on_accent else QColor(tokens["row_fg"])
-        muted = QColor(255, 255, 255, 210) if on_accent else QColor(tokens["muted"])
+        muted = QColor("#FFFFFF") if on_accent else QColor(tokens["muted"])
         title_colour = muted if row.state in (LOADING, FAILED, DELETING) else strong
         self._paint_lines(painter, option, rect, row, title_colour, strong, muted, tokens,
                           on_accent)

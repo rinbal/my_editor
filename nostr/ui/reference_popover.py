@@ -25,10 +25,7 @@ from PySide6.QtWidgets import (
 
 import announce
 import theme
-from constants import (
-    DARK_BG, DARK_BORDER, DARK_FG, DARK_MENU_BG, DARK_MUTED_FG, LIGHT_BG, LIGHT_BORDER, LIGHT_FG,
-    LIGHT_MUTED_FG,
-)
+from . import appearance
 from i18n import _
 from popup_placement import place_below
 
@@ -92,17 +89,20 @@ class ReferencePopover(QFrame):
         self._apply_colors()
 
     def _apply_colors(self) -> None:
-        dark = theme.is_dark_active()
-        background, border, field, text = (
-            (DARK_BG, DARK_BORDER, DARK_MENU_BG, DARK_FG) if dark
-            else (LIGHT_BG, LIGHT_BORDER, LIGHT_BG, LIGHT_FG))
+        self.apply_theme(theme.is_dark_active())
+        appearance.bind(self)
+
+    def apply_theme(self, dark: bool) -> None:
+        r = appearance.roles(dark)
+        background, border, field, text = r.popover, r.edge, r.field, r.text
         self.setStyleSheet(
-            theme.dialog_stylesheet(dark)
+            appearance.dialog_stylesheet(dark)
             + f"#ReferencePopover {{ background: {background}; border: 1px solid {border}; }}"
             + f"QLineEdit {{ background: {field}; color: {text}; border: 1px solid {border};"
               f" border-radius: 4px; padding: 3px 6px; }}"
             + f"#ReferenceProblem {{ color: {theme.error_text_color(dark)}; }}"
-            + f"#ReferenceHint {{ color: {DARK_MUTED_FG if dark else LIGHT_MUTED_FG}; }}")
+            + f"#ReferenceHint {{ color: {r.muted}; }}")
+        appearance.surface(self, dark, kind="popover")
 
     def reference(self) -> Optional[refs.Reference]:
         return refs.normalize_reference(self.field.text())[0]

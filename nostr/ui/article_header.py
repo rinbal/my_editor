@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
 from constants import DARK_BORDER, DARK_FG, DARK_MUTED_FG, LIGHT_BORDER, LIGHT_FG, LIGHT_MUTED_FG
 from editor_header import HeaderWidget
 from i18n import _
+from . import appearance
 
 from ..blossom.store import MediaStore
 from .cover_field import library_picture_hash
@@ -323,7 +324,7 @@ class ArticleHeader(HeaderWidget):
             f"QPlainTextEdit#article_header_summary {{ background: transparent; color: {muted};"
             f" border: none; padding: 0; }}"
             f"QFrame#article_header_rule {{ background: {line}; border: none; }}"
-            f"QToolButton#article_header_add_cover {{ color: {muted}; border: none;"
+            f"QToolButton#article_header_add_cover {{ color: {appearance.roles(dark).ink}; border: none;"
             f" padding: 2px 0; }}"
             "QPushButton#article_header_cover_action { color: white; background: rgba(0,0,0,150);"
             " border: none; border-radius: 6px; padding: 3px 10px; }")

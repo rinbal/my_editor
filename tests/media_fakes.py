@@ -170,8 +170,9 @@ def fake_alert(click: str | None = None):
 
     class _Alert:
         def __init__(self, parent, *, title, message="", buttons=(), caution=False,
-                     details="", checkbox="", is_dark=None) -> None:
+                     details="", checkbox="", is_dark=None, nostr=False) -> None:
             self.parent = parent
+            self.nostr = nostr
             self.title = title
             self.message = message
             self.buttons = tuple(buttons)

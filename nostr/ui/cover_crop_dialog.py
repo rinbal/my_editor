@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 
 import announce
 from alerts import answer_return_as_the_system_does
-from constants import DARK_MUTED_FG, LIGHT_MUTED_FG
+from . import appearance
 from i18n import _
 from popup_placement import fitting_size
 from ..media.cover_crop import WIDE_ASPECT, crop_rect, export_cover, output_size
@@ -150,7 +150,8 @@ class CoverCropDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(_("Adjust Cover Image"))
         make_sheet(self)
-        self.setStyleSheet(sheet_stylesheet(is_dark))
+        self.apply_theme(is_dark)
+        appearance.bind(self)
         self._jpeg = jpeg
         self.cover = None
         layout = QVBoxLayout(self)
@@ -197,10 +198,10 @@ class CoverCropDialog(QDialog):
         column.addWidget(self.dimensions)
         self.note = QLabel()
         self.note.setWordWrap(True)
-        muted = DARK_MUTED_FG if is_dark else LIGHT_MUTED_FG
+        muted = appearance.roles(is_dark).muted
         self.note.setStyleSheet(f"color: {muted};")
         column.addWidget(self.note)
-        disclosure = QLabel(_("This uploads a new still cover image. The original stays in your library. "
+        self.disclosure = disclosure = QLabel(_("This uploads a new still cover image. The original stays in your library. "
                               "Other Nostr apps may frame covers differently."))
         disclosure.setWordWrap(True)
         disclosure.setStyleSheet(f"color: {muted};")
@@ -228,6 +229,17 @@ class CoverCropDialog(QDialog):
         # An image editor needs more room than the compact publishing sheet.
         # Keep it on screen; its content scrolls when manually made smaller.
         self.resize(fitting_size(self, QSize(640, 680)))
+        self.apply_theme(is_dark)
+
+    def apply_theme(self, is_dark: bool) -> None:
+        self._is_dark = is_dark
+        self.setStyleSheet(sheet_stylesheet(is_dark))
+        appearance.surface(self, is_dark)
+        if hasattr(self, "note"):
+            for label in (self.note, self.disclosure):
+                label.setStyleSheet(f"color: {appearance.roles(is_dark).muted};")
+            self.canvas.setPalette(appearance.palette(is_dark))
+            self.canvas.update()
 
     def _format_changed(self, _index):
         self.canvas.set_framing(aspect=self.format.currentData())

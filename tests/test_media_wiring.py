@@ -339,7 +339,7 @@ def test_sharing_the_server_list_asks_first_then_publishes_what_uploads_use(monk
         _visible_media_library=lambda: None,
         _relay_pool=None, _relay_directory=None, _session_pool=None,
         _server_list=SimpleNamespace(refresh=lambda p, force=False: refreshed.append(force)),
-        status=SimpleNamespace(showMessage=lambda text, ms=0: shown.append(text)),
+        status=SimpleNamespace(showMessage=lambda text, ms=0, **context: shown.append(text)),
         is_dark_theme=False,
     )
     MainWindow._share_media_server_list(host)          # Cancel: nothing happens
@@ -425,7 +425,7 @@ def _saving_host(window_open=False):
     host = SimpleNamespace(
         _media_window_open=lambda: window_open,
         _media_saver=SimpleNamespace(current=""),
-        status=SimpleNamespace(showMessage=lambda text, ms=0: shown.append((text, ms)),
+        status=SimpleNamespace(showMessage=lambda text, ms=0, **context: shown.append((text, ms)),
                                currentMessage=lambda: shown[-1][0] if shown else ""),
         _media_save_said="",
     )
@@ -555,10 +555,11 @@ def _status_host():
     """A host with a real status bar, and a library window that opens
     and closes."""
     from types import SimpleNamespace
-    from PySide6.QtWidgets import QApplication, QStatusBar
+    from PySide6.QtWidgets import QApplication
+    from nostr.ui.context_widgets import ContextStatusBar
     QApplication.instance() or QApplication([])
     host = SimpleNamespace(window_open=False, _media_saver=SimpleNamespace(current=""),
-                           status=QStatusBar(), _media_save_said="")
+                           status=ContextStatusBar(), _media_save_said="")
     host._media_window_open = lambda: host.window_open
     for name in ("_on_media_save_started", "_on_media_save_finished", "_say_media_save_running",
                  "_media_save_announced"):

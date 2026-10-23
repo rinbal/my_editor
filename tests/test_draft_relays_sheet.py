@@ -614,7 +614,7 @@ def test_the_list_follows_the_apps_appearance_and_keeps_its_height():
     system's colors), and five rows high however tall the sheet grows, as
     a list in a settings sheet is."""
     from PySide6.QtGui import QColor
-    from constants import DARK_MENU_BG
+    from nostr.ui.appearance import roles
     sheet = DraftRelaysSheet(Lists([]), is_dark=True)
     sheet.resize(560, 560)
     sheet.show()
@@ -622,7 +622,7 @@ def test_the_list_follows_the_apps_appearance_and_keeps_its_height():
     height = sheet._list.height()
     image = sheet._list.viewport().grab().toImage()
     corner = image.pixelColor(image.width() - 8, image.height() - 8)
-    expected = QColor(DARK_MENU_BG)
+    expected = QColor(roles(True).field)
     assert all(abs(a - b) <= 4 for a, b in zip(corner.getRgb()[:3], expected.getRgb()[:3]))
     sheet.resize(560, 900)
     settle()

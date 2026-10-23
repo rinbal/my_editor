@@ -48,6 +48,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import appearance
 from i18n import _, ngettext
 
 from ..media.media_visibility import UNKNOWN, MediaVisibility
@@ -106,9 +107,8 @@ class PublishCopyDialog(QDialog):
         self.setWindowTitle(_("Share"))
         self.setModal(True)
         self.setMinimumWidth(380)
-        self.setStyleSheet(theme.dialog_stylesheet(is_dark) + (
-            "QLabel#copy_heading { font-size: 14px; font-weight: 600; }\n"
-            f"QLabel#copy_status {{ color: {theme.attention_color(is_dark)}; }}\n"))
+        self.apply_theme(is_dark)
+        appearance.bind(self)
 
         self._maker = maker
         self._blobs = list(blobs)
@@ -138,6 +138,13 @@ class PublishCopyDialog(QDialog):
         maker.run_progress.connect(self._on_run_progress)
 
     # -- what the caller reads ---------------------------------------------
+
+    def apply_theme(self, is_dark: bool) -> None:
+        self._is_dark = is_dark
+        self.setStyleSheet(appearance.dialog_stylesheet(is_dark) + (
+            "QLabel#copy_heading { font-size: 14px; font-weight: 600; }\n"
+            f"QLabel#copy_status {{ color: {theme.attention_color(is_dark)}; }}\n"))
+        appearance.surface(self, is_dark)
 
     @property
     def publish_set(self) -> Optional[PublishSet]:

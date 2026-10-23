@@ -39,6 +39,8 @@ from PySide6.QtWidgets import (
 
 import theme
 from i18n import _, ngettext
+import theme
+from . import appearance
 
 from ..imports.inbox_store import ROW_DONE, ROW_EXISTING, ROW_FAILED, Job
 from ..imports.jobs import (
@@ -164,7 +166,7 @@ def ring_icon(job: Optional[Job], palette: QPalette, size: int = 18,
     painter.setPen(QPen(track, 2))
     painter.drawEllipse(rect)
     share = done_count(job) / job.total if job.total else 0
-    painter.setPen(QPen(palette.color(QPalette.ColorRole.Highlight), 2,
+    painter.setPen(QPen(palette.color(QPalette.ColorRole.Accent), 2,
                         Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
     painter.drawArc(rect, 90 * 16, -int(360 * 16 * share))
     if job.count(ROW_FAILED):
@@ -263,6 +265,11 @@ class JobCard(QFrame):
         column.addLayout(buttons)
         self.setMinimumWidth(320)
         self.setMaximumWidth(420)
+        self.apply_theme(theme.is_dark_active())
+        appearance.bind(self)
+
+    def apply_theme(self, dark: bool) -> None:
+        appearance.popover(self, dark)
 
     def show_job(self, job: Optional[Job]) -> None:
         self._job = job

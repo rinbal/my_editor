@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
 )
 
 from alerts import answer_return_as_the_system_does
+from . import appearance
 from i18n import _
 
 
@@ -313,8 +314,34 @@ class SaveDestinationDialog(QDialog):
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        from .native_appearance import apply_chrome
+        apply_chrome(self, self._is_dark, nostr=False)
+
+    def apply_theme(self, is_dark: bool) -> None:
+        self._is_dark = is_dark
+        self._apply_theme()
+
     def _apply_theme(self) -> None:
-        self.setStyleSheet(_DARK_CSS if self._is_dark else _LIGHT_CSS)
+        dark = self._is_dark
+        appearance.bind(self)
+        appearance.neutral(self, dark)
+        css = _DARK_CSS if dark else _LIGHT_CSS
+        if self._destination is SaveDestination.NOSTR_DRAFT:
+            css += appearance.accent_button_css("QPushButton:default", dark)
+        self.setStyleSheet(css)
+        r = appearance.roles(dark)
+        if self.isVisible():
+            from .native_appearance import apply_chrome
+            apply_chrome(self, dark, nostr=False)
+        self._draft_card.setPalette(appearance.palette(dark))
+        self._draft_card.setStyleSheet(f"""
+            QFrame#save_dest_card {{ background: {r.panel}; border: 1px solid {r.edge}; border-radius: 8px; }}
+            QFrame#save_dest_card[selected="true"] {{ background: {r.soft}; border-color: {r.focus}; }}
+            QLabel#save_dest_option, QRadioButton {{ color: {r.text}; }}
+            QLabel#save_dest_hint {{ color: {r.muted}; }}
+        """)
 
     # -- behaviour ---------------------------------------------------------
 
@@ -324,6 +351,7 @@ class SaveDestinationDialog(QDialog):
         moved = self.focusWidget() in (self._local_card.radio, self._draft_card.radio)
         self._local_card.set_selected(is_local)
         self._draft_card.set_selected(not is_local)
+        self._apply_theme()
         if moved:
             # The keyboard focus goes with the choice, as in a radio group.
             (self._local_card if is_local else self._draft_card).radio.setFocus()

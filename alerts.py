@@ -105,7 +105,7 @@ class Alert(QDialog):
 
     def __init__(self, parent, *, title: str, message: str = "", buttons=(OK,),
                  caution: bool = False, details: str = "", checkbox: str = "",
-                 is_dark: bool = None):
+                 is_dark: bool = None, nostr: bool = False):
         super().__init__(parent)
         buttons = tuple(buttons)
         if sum(b.role == DEFAULT for b in buttons) != 1:
@@ -114,10 +114,11 @@ class Alert(QDialog):
         dark = theme.is_dark_active() if is_dark is None else is_dark
         self.setWindowTitle("")
         self.setWindowFlag(Qt.WindowCloseButtonHint, False)
-        self.setStyleSheet(
-            theme.dialog_stylesheet(dark) + _EXTRA_CSS
-            + f"QPushButton#alert_details {{ color: {theme.dialog_link_color(dark)}; }}"
-            + f"QPushButton#alert_details:focus {{ border-color: {theme.focus_ring_color(dark)}; }}")
+        self._nostr = nostr
+        self.apply_theme(dark)
+        if nostr:
+            from nostr.ui.appearance import bind
+            bind(self)
 
         cancel = next((b for b in buttons if b.role == CANCEL), None)
         default = next(b for b in buttons if b.role == DEFAULT)
@@ -177,6 +178,19 @@ class Alert(QDialog):
             [w for w in (self._details_toggle, self.details_view, self.checkbox)
              if w is not None] + self.ordered_buttons)
         start_on_default(next(b for role, b in made if role == DEFAULT))
+
+    def apply_theme(self, dark: bool) -> None:
+        if self._nostr:
+            from nostr.ui import appearance
+            appearance.surface(self, dark)
+            css = appearance.dialog_stylesheet(dark)
+            link, ring = appearance.roles(dark).ink, appearance.roles(dark).focus
+        else:
+            css = theme.dialog_stylesheet(dark)
+            link, ring = theme.dialog_link_color(dark), theme.focus_ring_color(dark)
+        self.setStyleSheet(css + _EXTRA_CSS
+            + f"QPushButton#alert_details {{ color: {link}; }}"
+            + f"QPushButton#alert_details:focus {{ border-color: {ring}; }}")
 
     # -- building ------------------------------------------------------------
     @staticmethod
@@ -328,35 +342,35 @@ def _icon_pixmap(caution: bool) -> QPixmap:
 # -- what call sites use -------------------------------------------------------
 
 def ask(parent, *, title: str, message: str = "", buttons, caution: bool = False,
-        details: str = "", is_dark: bool = None):
+        details: str = "", is_dark: bool = None, nostr: bool = False):
     """Show an alert with these buttons; return the chosen button's value."""
     return Alert(parent, title=title, message=message, buttons=buttons,
-                 caution=caution, details=details, is_dark=is_dark).run()
+                 caution=caution, details=details, is_dark=is_dark, nostr=nostr).run()
 
 
 def ask_with_checkbox(parent, *, title: str, message: str = "", buttons, checkbox: str,
-                      is_dark: bool = None):
+                      is_dark: bool = None, nostr: bool = False):
     """Like ask(), with a checkbox such as "Remember this choice".
     Returns ``(value, checked)``."""
     alert = Alert(parent, title=title, message=message, buttons=buttons,
-                  checkbox=checkbox, is_dark=is_dark)
+                  checkbox=checkbox, is_dark=is_dark, nostr=nostr)
     return alert.run(), alert.checked
 
 
 def inform(parent, *, title: str, message: str = "", caution: bool = False,
-           details: str = "", is_dark: bool = None) -> None:
+           details: str = "", is_dark: bool = None, nostr: bool = False) -> None:
     """Tell the person something that needs no decision: one OK button."""
     ask(parent, title=title, message=message, buttons=(OK,), caution=caution,
-        details=details, is_dark=is_dark)
+        details=details, is_dark=is_dark, nostr=nostr)
 
 
 def confirm_destructive(parent, *, title: str, message: str = "", action: str,
                         caution: bool = False, details: str = "",
-                        is_dark: bool = None) -> bool:
+                        is_dark: bool = None, nostr: bool = False) -> bool:
     """Ask before removing something. Cancel is the default, so Return never
     destroys anything. Pass ``caution`` when the loss can't be undone.
     True only when the action button was clicked."""
     return ask(parent, title=title, message=message, caution=caution, details=details,
-               is_dark=is_dark,
+               is_dark=is_dark, nostr=nostr,
                buttons=(Button(action, True, DESTRUCTIVE),
                         Button(_("Cancel"), False, DEFAULT))) is True

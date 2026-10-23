@@ -54,6 +54,7 @@ from PySide6.QtWidgets import (  # noqa: E402
 )
 
 import theme  # noqa: E402
+from nostr.ui.appearance import roles  # noqa: E402
 from nostr import bech32  # noqa: E402
 from nostr.article_details import AUTHOR_MARKER, ArticleDetails  # noqa: E402
 from nostr.blossom.store import MediaFile  # noqa: E402
@@ -298,7 +299,7 @@ def test_a_failure_is_said_in_red_and_publish_can_be_tried_again(tmp_path, captu
     sheet._on_completed([("wss://a.example", False, "blocked")])
     assert sheet._hashtags.isEnabled() and sheet._account.isEnabled()
     assert not sheet._status.isHidden() and "no relay took it" in sheet._status.text()
-    assert theme.error_text_color(False) in sheet._status.styleSheet()
+    assert roles(False).error in sheet._status.styleSheet()
     assert sheet._publish_btn.isEnabled()
 
 
@@ -463,7 +464,7 @@ def test_a_sheet_follows_the_appearance_while_it_is_open(tmp_path, make):
     sheet._set_status("It went wrong", error=True)
     sheet.apply_theme(True)
     assert sheet.styleSheet() == sheet_stylesheet(True)
-    assert theme.error_text_color(True) in sheet._status.styleSheet()
+    assert roles(True).error in sheet._status.styleSheet()
     assert sheet._account._is_dark
     if make is article:
         assert DARK_MENU_BG in sheet._card.styleSheet()

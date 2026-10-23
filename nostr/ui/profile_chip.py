@@ -2,9 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Round profile-avatar chip with chevron, sits in the editor header.
 
-The chip's hover state and its dropdown menu reuse the editor's existing
-CSS verbatim (the same blocks in ``widgets.py`` and ``editor.py``) so it
-reads as native to the app. Avatar + chevron rendering lives in
+The capsule uses the shared Nostr roles; the account menu keeps the
+editor's existing neutral presentation. Avatar + chevron rendering lives in
 ``avatar.py`` and is shared with the in-dialog profile switcher.
 """
 
@@ -16,6 +15,7 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import QMenu, QToolButton
 
+from . import appearance
 from i18n import _
 from nostr.profiles import short_npub
 
@@ -58,31 +58,6 @@ QMenu::item:disabled { color: #999999; }
 QMenu::separator { height: 1px; background: #E1E1E1; margin: 4px 0px; }
 """
 
-_DARK_CHIP_CSS = """
-QToolButton {
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    padding: 3px 6px;
-}
-QToolButton:hover { background: #3C3C3C; }
-QToolButton:pressed { background: #1E1E1E; }
-QToolButton::menu-indicator { image: none; width: 0; }
-"""
-
-_LIGHT_CHIP_CSS = """
-QToolButton {
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    padding: 3px 6px;
-}
-QToolButton:hover { background: #E1E1E1; }
-QToolButton:pressed { background: #D0D0D0; }
-QToolButton::menu-indicator { image: none; width: 0; }
-"""
-
-
 # --------------------------------------------------------------------------- #
 # ProfileChip widget                                                          #
 # --------------------------------------------------------------------------- #
@@ -114,6 +89,7 @@ class ProfileChip(QToolButton):
     def set_disconnected(self) -> None:
         self._disconnected = True
         avatar = make_disconnected_pixmap(is_dark=self._is_dark)
+        self._profile_avatar = avatar
         self.setIcon(compose_chip_icon(avatar, self._chevron_color()))
         self.setToolTip(_("Account"))
         self.setAccessibleDescription("")
@@ -126,6 +102,7 @@ class ProfileChip(QToolButton):
     ) -> None:
         self._disconnected = False
         avatar = pixmap_for_profile(display_name, user_pubkey_hex, avatar_pixmap)
+        self._profile_avatar = avatar
         self.setIcon(compose_chip_icon(avatar, self._chevron_color()))
 
         # The name people know the account by; the key only for one without.
@@ -136,21 +113,30 @@ class ProfileChip(QToolButton):
     # -- theme --------------------------------------------------------------
 
     def set_dark_theme(self, is_dark: bool) -> None:
-        if is_dark == self._is_dark:
-            return
         self._is_dark = is_dark
         self._apply_chip_style()
         self._apply_menu_style()
+        appearance.bind(self, "set_dark_theme")
         if self._disconnected:
             self.set_disconnected()
+        elif hasattr(self, "_profile_avatar"):
+            self.setIcon(compose_chip_icon(self._profile_avatar, self._chevron_color()))
 
     # -- internals ----------------------------------------------------------
 
     def _chevron_color(self) -> QColor:
-        return QColor("#CCCCCC") if self._is_dark else QColor("#555555")
+        return QColor(appearance.roles(self._is_dark).ink)
 
     def _apply_chip_style(self) -> None:
-        self.setStyleSheet(_DARK_CHIP_CSS if self._is_dark else _LIGHT_CHIP_CSS)
+        r = appearance.roles(self._is_dark)
+        self.setStyleSheet(f"""
+            QToolButton {{ background: {r.soft}; color: {r.ink}; border: 1px solid {r.edge};
+                border-radius: 13px; padding: 3px 8px; }}
+            QToolButton:hover {{ background: {r.hover}; }}
+            QToolButton:pressed {{ background: {r.tab}; }}
+            QToolButton:focus {{ border: 2px solid {r.focus}; padding: 2px 7px; }}
+            QToolButton::menu-indicator {{ image: none; width: 0; }}
+        """)
 
     def _apply_menu_style(self) -> None:
         self.menu().setStyleSheet(_DARK_MENU_CSS if self._is_dark else _LIGHT_MENU_CSS)

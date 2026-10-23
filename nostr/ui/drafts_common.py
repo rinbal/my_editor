@@ -25,21 +25,6 @@ from PySide6.QtGui import QFont, QFontInfo
 from PySide6.QtWidgets import QApplication
 
 import i18n
-import theme
-from constants import (
-    DARK_BG,
-    DARK_BORDER,
-    DARK_FG,
-    DARK_MENU_BG,
-    DARK_MENU_FG,
-    DARK_MUTED_FG,
-    DARK_SELECTION,
-    LIGHT_BG,
-    LIGHT_BORDER,
-    LIGHT_FG,
-    LIGHT_MUTED_FG,
-    LIGHT_SELECTION,
-)
 
 from ..draft_store import DraftRecord
 
@@ -48,69 +33,26 @@ from ..draft_store import DraftRecord
 # Theme tokens                                                                #
 # --------------------------------------------------------------------------- #
 
-# One table per theme, and every QSS template in the drafts surfaces is
-# filled from it. The panel used to carry two hand-maintained stylesheets
-# with about sixty literal hexes between them, which is exactly how the
-# two themes drifted apart: five text pairs failed the 4.5:1 minimum in
-# light and four in dark, and fixing one meant hunting for its twin in
-# the other sheet. Now a contrast fix is a single edit here, and the
-# preview popover inherits it without a table of its own.
-#
-# App-wide colours come from ``constants.py``, the same single source of
-# truth ``theme.py`` uses. Only roles with no app-wide token stay
-# literal, and each literal appears exactly once.
-#
-# ``accessibility.md``: "Text size / Text weight / Minimum contrast ratio
-# / Up to 17 pts / All / 4.5:1", and "If your app supports Dark Mode,
-# make sure to check the minimum contrast in both light and dark
-# appearances." Every text pair below clears 4.5:1 on the list
-# background, on the hover fill and on the selection fill, in both
-# themes. Disabled text sits deliberately below it so it still reads as
-# unavailable (``labels.md``: "Tertiary label: Text that describes an
-# unavailable item or behavior") but is legible rather than invisible.
-THEME_TOKENS = {
-    True: {
-        "panel_bg": DARK_BG,               # list surface and field fill
-        "chrome_bg": DARK_MENU_BG,          # the two bands above the list
-        "border": DARK_BORDER,
-        "chrome_fg": DARK_MENU_FG,
-        "field_fg": DARK_FG,
-        "muted": DARK_MUTED_FG,             # 5.15 list / 4.68 hover / 4.74 chrome
-        "disabled": "#7A7A7A",
-        "row_fg": "#FFFFFF",
-        # Was #2A2D2E, which put the repo's muted grey at a marginal
-        # 4.29:1. The fill is ours to choose and the token is not, so
-        # the fill moved and the token stayed.
-        "hover_bg": "#262626",
-        "control_hover_bg": DARK_BORDER,
-        "control_pressed_bg": DARK_BG,
-        "selected_bg": "#094771",
-        "selected_fg": "#FFFFFF",
-        "accent": "#007ACC",                # focus ring
-        "text_selection_bg": DARK_SELECTION,
-        "error_fg": "#F48771",
-        "link": theme.dialog_link_color(True),    # 6.28 list
-    },
-    False: {
-        "panel_bg": LIGHT_BG,
-        "chrome_bg": "#F8F8F8",
-        "border": LIGHT_BORDER,
-        "chrome_fg": LIGHT_FG,
-        "field_fg": LIGHT_FG,
-        "muted": LIGHT_MUTED_FG,            # 5.17 list / 4.66 hover / 4.87 chrome
-        "disabled": "#8A8A8A",
-        "row_fg": "#1A1A1A",
-        "hover_bg": "#F3F3F3",
-        "control_hover_bg": LIGHT_BORDER,
-        "control_pressed_bg": "#D0D0D0",
-        "selected_bg": "#DCEEFA",
-        "selected_fg": "#1A1A1A",
-        "accent": "#0078D4",
-        "text_selection_bg": LIGHT_SELECTION,
-        "error_fg": "#C8412A",
-        "link": theme.dialog_link_color(False),   # 4.53 list
-    },
-}
+# Compatibility mapping for the existing panel/preview templates. All appearance
+# values resolve through the shared semantic roles, including accessibility.
+def theme_tokens(dark: bool) -> dict:
+    from .appearance import roles
+    r = roles(dark)
+    return dict(panel_bg=r.panel, chrome_bg=r.chrome, border=r.line,
+                chrome_fg=r.text, field_fg=r.text, muted=r.muted,
+                disabled=r.disabled, row_fg=r.text, hover_bg=r.hover,
+                control_hover_bg=r.hover, control_pressed_bg=r.soft,
+                selected_bg=r.selection, selected_fg="#FFFFFF", accent=r.focus,
+                text_selection_bg=r.selection, error_fg=r.error,
+                link=r.ink)
+
+
+class _Tokens:
+    def __getitem__(self, dark):
+        return theme_tokens(dark)
+
+
+THEME_TOKENS = _Tokens()
 
 
 # --------------------------------------------------------------------------- #

@@ -147,10 +147,10 @@ class AccountController(QObject):
                        message=_("MyEditor can’t find the private key it kept for this "
                                  "account. If you saved a backup, restore the account "
                                  "from it."),
-                       is_dark=self._is_dark())
+                       is_dark=self._is_dark(), nostr=True)
             else:
                 inform(self._window, title=_("This account’s key is in your signer app"),
-                       message=_("Back it up there."), is_dark=self._is_dark())
+                       message=_("Back it up there."), is_dark=self._is_dark(), nostr=True)
             return None
         window = BackupAccountWindow(secret=secret, is_dark=self._is_dark(),
                                      parent=self._window)
@@ -169,7 +169,7 @@ class AccountController(QObject):
                    message=_("MyEditor can’t find the private key it kept for this "
                              "account. If you saved a backup, restore the account "
                              "from it."),
-                   is_dark=self._is_dark())
+                   is_dark=self._is_dark(), nostr=True)
             return None
         window = MoveToSignerWindow(secret=secret, name=active.display_name,
                                     connect_signer=self._pair_signer,
@@ -348,7 +348,7 @@ class AccountController(QObject):
                       ).format(hosts=hosts),
             buttons=(Button(_("Not Now"), False, CANCEL),
                      Button(_("Publish Relay List"), True, DEFAULT)),
-            is_dark=self._is_dark())
+            is_dark=self._is_dark(), nostr=True)
         if choice is not True:
             self._relay_list_declined.add(profile.user_pubkey)
             return
@@ -394,7 +394,7 @@ class AccountController(QObject):
             # without a backup, the signer app would hold the only copy.
             buttons=(Button(_("Delete Key"), True, DESTRUCTIVE),
                      Button(_("Keep Key"), False, DEFAULT)),
-            caution=True, is_dark=self._is_dark())
+            caution=True, is_dark=self._is_dark(), nostr=True)
         if choice is True:
             self._forget_key(profile.user_pubkey)
 
@@ -405,7 +405,7 @@ class AccountController(QObject):
             inform(self._window, title=_("The private key couldn’t be deleted"),
                    message=_("MyEditor couldn’t change the file it keeps keys in. Make "
                              "sure the disk isn’t full or read-only, then try again."),
-                   caution=True, is_dark=self._is_dark())
+                   caution=True, is_dark=self._is_dark(), nostr=True)
             return False
         return True
 
@@ -420,26 +420,26 @@ class AccountController(QObject):
                 self._window, title=title,
                 message=_("MyEditor deletes the private key it keeps for this account. "
                           "Without a backup, nobody can get this account back."),
-                action=_("Sign Out and Delete Key"), caution=True, is_dark=self._is_dark())
+                action=_("Sign Out and Delete Key"), caution=True, is_dark=self._is_dark(), nostr=True)
         elif has_key:
             confirmed = confirm_destructive(
                 self._window, title=title,
                 message=_("Your key stays in your signer app. MyEditor forgets this "
                           "connection "
                           "and deletes the copy of the key it keeps on this computer."),
-                action=_("Sign Out and Delete Key"), is_dark=self._is_dark())
+                action=_("Sign Out and Delete Key"), is_dark=self._is_dark(), nostr=True)
         elif profile.is_local:
             confirmed = confirm_destructive(
                 self._window, title=title,
                 message=_("This account’s private key isn’t on this computer. "
                           "MyEditor forgets the account."),
-                action=_("Sign Out"), is_dark=self._is_dark())
+                action=_("Sign Out"), is_dark=self._is_dark(), nostr=True)
         else:
             confirmed = confirm_destructive(
                 self._window, title=title,
                 message=_("Your key stays in your signer app. MyEditor only forgets "
                           "this connection."),
-                action=_("Sign Out"), is_dark=self._is_dark())
+                action=_("Sign Out"), is_dark=self._is_dark(), nostr=True)
         if not confirmed:
             return False
         if has_key and not self._forget_key(profile.user_pubkey):

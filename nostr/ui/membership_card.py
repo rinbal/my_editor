@@ -27,17 +27,17 @@ import datetime
 from typing import Optional
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen, QRadialGradient
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 
 import i18n
 from i18n import _
+from . import appearance
 from nostr.ui.assistant import text_label
 from nostr.ui.grouped_list import spoken
 
 # EINUNDZWANZIG's orange (Bitcoin's), and the card it is set on.
-ORANGE = QColor("#F7931A")
-_TOP, _BOTTOM = QColor("#2E2E31"), QColor("#18181A")
+ORANGE = QColor(appearance.roles(True).orange)
 ACTIVE = QColor("#32D74B")      # the dot before "Active"
 RADIUS = 12
 DOT = 8
@@ -96,26 +96,11 @@ class MembershipCard(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         card = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        shade = QLinearGradient(card.topLeft(), card.bottomRight())
-        shade.setColorAt(0, _TOP)
-        shade.setColorAt(1, _BOTTOM)
-        painter.setBrush(shade)
-        # Set off from a dark window by a hairline; on a light one the
-        # card itself is the edge.
-        painter.setPen(QPen(QColor(255, 255, 255, 30), 1) if self._is_dark
-                       else Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(card, RADIUS, RADIUS)
-        # A warm light in the far corner, the orange's only other place.
-        glow = QRadialGradient(QPointF(card.right() - RADIUS, card.top() + RADIUS),
-                               card.height() * 0.85)
-        warm = QColor(ORANGE)
-        warm.setAlpha(96)
-        glow.setColorAt(0, warm)
-        warm.setAlpha(0)
-        glow.setColorAt(1, warm)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(glow)
-        painter.drawRoundedRect(card, RADIUS, RADIUS)
+        painter.setPen(QPen(QColor(appearance.roles(self._is_dark).edge), 1)
+                       if self._is_dark else Qt.PenStyle.NoPen)
+        appearance.membership_background(painter, card, RADIUS)
+        appearance.relay_icon(True, 22).paint(painter,
+            int(card.right()) - 42, int(card.top()) + 16, 22, 22)
         # The dot before the status, at the middle of its capitals.
         metrics = self.status.fontMetrics()
         line = self.status.geometry()

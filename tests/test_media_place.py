@@ -240,7 +240,7 @@ class _Window:
     def __init__(self, tmp_path, *, nostr=True):
         self._asset_manager = _manager(tmp_path)
         self.nostr_state = types.SimpleNamespace(active=nostr)
-        self.status = types.SimpleNamespace(showMessage=lambda *a: None)
+        self.status = types.SimpleNamespace(showMessage=lambda *a, **context: None)
 
 
 def _places(win, ed, *names):

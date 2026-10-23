@@ -33,8 +33,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QStatusBar
+from PySide6.QtWidgets import QApplication, QPushButton
 
+from nostr.ui.context_widgets import ContextStatusBar
 from nostr.draft_store import DraftStore
 from nostr.drafts import DraftWrapMeta
 from nostr.profiles import Profile
@@ -305,7 +306,7 @@ def test_every_control_has_a_name_in_each_empty_state():
 
 def test_the_window_status_bar_stays_quiet():
     from main_window import MainWindow
-    host = SimpleNamespace(_drafts_panel=MagicMock(), status=QStatusBar())
+    host = SimpleNamespace(_drafts_panel=MagicMock(), status=ContextStatusBar())
     MainWindow._on_draft_sync_signer_unreachable(host, True)
     host._drafts_panel.set_signer_unreachable.assert_called_once_with(True)
     assert host.status.currentMessage() == ""

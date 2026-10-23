@@ -42,8 +42,8 @@ from PySide6.QtWidgets import (
 )
 
 import announce
-import theme
-from constants import DARK_BORDER, DARK_MUTED_FG, LIGHT_BORDER, LIGHT_MUTED_FG
+from . import appearance
+from constants import DARK_MUTED_FG, LIGHT_MUTED_FG
 from i18n import _
 from popup_placement import fitting_size
 
@@ -152,15 +152,16 @@ def scroll_area(page: QWidget) -> QScrollArea:
     scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
     scroll.setMinimumHeight(scroll.fontMetrics().lineSpacing() + 4)
     scroll.setWidget(page)
+    page.setAutoFillBackground(False)
+    scroll.viewport().setAutoFillBackground(False)
     _FocusInView(scroll)
     return scroll
 
 
 def sheet_stylesheet(is_dark: bool) -> str:
     """The app's dialog look (the assistants'), with the chips of people."""
-    border = DARK_BORDER if is_dark else LIGHT_BORDER
-    muted = DARK_MUTED_FG if is_dark else LIGHT_MUTED_FG
-    ring = theme.focus_ring_color(is_dark)
+    r = appearance.roles(is_dark)
+    border, muted, ring = r.soft, r.muted, r.focus
     return assistant_stylesheet(is_dark) + f"""
     QFrame#person_chip {{ background: {border}; border-radius: 11px; }}
     QLabel#person_role {{ color: {muted}; font-size: 11px; }}
@@ -170,8 +171,8 @@ def sheet_stylesheet(is_dark: bool) -> str:
     }}
     QToolButton#person_remove:focus {{ border-color: {ring}; }}
     QToolButton#profile_switch {{
-        background: transparent; border: 1px solid transparent; border-radius: 4px;
-        padding: 3px 6px;
+        background: {r.soft}; color: {r.ink}; border: 1px solid {r.edge}; border-radius: 12px;
+        padding: 3px 8px;
     }}
     QToolButton#profile_switch:hover {{ background: {border}; }}
     QToolButton#profile_switch:focus {{ border-color: {ring}; }}
@@ -428,7 +429,7 @@ class StatusLine(QLabel):
         self._color()
 
     def _color(self) -> None:
-        color = (theme.error_text_color(self._is_dark) if self._error
+        color = (appearance.roles(self._is_dark).error if self._error
                  else DARK_MUTED_FG if self._is_dark else LIGHT_MUTED_FG)
         self.setStyleSheet(f"color: {color};")
 

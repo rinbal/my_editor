@@ -38,6 +38,8 @@ from PySide6.QtWidgets import (
 )
 
 from i18n import _, ngettext
+import theme
+from . import appearance
 
 from .flow_layout import FlowLayout
 
@@ -172,6 +174,11 @@ class OptionsPopover(QFrame):
         column.addWidget(self.mixed)
         self.setMinimumWidth(300)
         self.setMaximumWidth(380)
+        self.apply_theme(theme.is_dark_active())
+        appearance.bind(self)
+
+    def apply_theme(self, dark: bool) -> None:
+        appearance.popover(self, dark)
 
     @staticmethod
     def _set(box: QCheckBox, value: Optional[bool]) -> None:

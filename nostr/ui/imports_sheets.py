@@ -59,7 +59,6 @@ from PySide6.QtWidgets import (
 
 import file_paths
 from alerts import answer_return_as_the_system_does
-from constants import DARK_BORDER, LIGHT_BORDER
 from i18n import _, ngettext
 
 from ..imports.checker import checks_automatically
@@ -195,14 +194,7 @@ class _Sheet(AssistantWindow):
     def __init__(self, controller, title: str, *, dark: bool, parent=None) -> None:
         super().__init__(title, is_dark=dark, min_width=500, parent=parent)
         self.setWindowModality(Qt.WindowModality.WindowModal)
-        border = DARK_BORDER if dark else LIGHT_BORDER
-        self.setStyleSheet(self.styleSheet() + f"""
-            QFrame#imports_card, QFrame#imports_drop {{
-                border: 1px solid {border}; border-radius: 8px;
-            }}
-            QFrame#imports_drop {{ border-style: dashed; }}
-            QFrame#imports_drop[active="true"] {{ border-style: solid; border-width: 2px; }}
-        """)
+        self.apply_theme(dark)
         self._controller = controller
         self._generation = 0
         self._shown_buttons: List[tuple] = []
@@ -210,6 +202,18 @@ class _Sheet(AssistantWindow):
         self.heading = text_label(title, "title")
         self.column.addWidget(self.heading)
         self.add_page(MAIN, widget)
+
+    def apply_theme(self, dark: bool) -> None:
+        from .appearance import roles
+        super().apply_theme(dark)
+        border = roles(dark).edge
+        self.setStyleSheet(self.styleSheet() + f"""
+            QFrame#imports_card, QFrame#imports_drop {{
+                border: 1px solid {border}; border-radius: 8px;
+            }}
+            QFrame#imports_drop {{ border-style: dashed; }}
+            QFrame#imports_drop[active="true"] {{ border-style: solid; border-width: 2px; }}
+        """)
 
     # -- parts ---------------------------------------------------------------------
 

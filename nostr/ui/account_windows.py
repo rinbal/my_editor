@@ -306,7 +306,7 @@ class BackupForm(QWidget):
                                "password-protected file is safer."),
                      caution=True, is_dark=self._is_dark, buttons=(
                          Button(_("Save Without Password"), True, DESTRUCTIVE),
-                         Button(_("Cancel"), False, ALERT_DEFAULT)))
+                         Button(_("Cancel"), False, ALERT_DEFAULT)), nostr=True)
         if choice is True:
             self._write(None)
 
@@ -636,7 +636,7 @@ class CreateAccountWindow(_AmberSteps, AssistantWindow):
                                "account back for you."),
                      caution=True, is_dark=self._is_dark, buttons=(
                          Button(_("Continue Without Backup"), True, DESTRUCTIVE),
-                         Button(_("Save a Backup"), False, ALERT_DEFAULT)))
+                         Button(_("Save a Backup"), False, ALERT_DEFAULT)), nostr=True)
         if choice is True:
             self._show_choose()
 

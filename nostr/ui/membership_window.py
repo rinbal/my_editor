@@ -80,6 +80,7 @@ from nostr.einundzwanzig import (
 )
 from nostr.qr import make_qr_pixmap
 from nostr.ui import grouped_list
+from . import appearance
 from nostr.ui.assistant import (
     DEFAULT, LEADING, NORMAL, AssistantWindow, busy_bar, link_button, page, text_label,
 )
@@ -168,7 +169,11 @@ class MembershipWindow(AssistantWindow):
                  prices=None,
                  parent=None):
         super().__init__(_("EINUNDZWANZIG Membership"), is_dark=is_dark, parent=parent)
-        self.setStyleSheet(self.styleSheet() + grouped_list.stylesheet(is_dark))
+        self.setProperty("nightVioletMembership", True)
+        self.setStyleSheet(self.styleSheet() + grouped_list.stylesheet(is_dark)
+                          + f"QLabel#amount {{ color: {appearance.roles(is_dark).amount}; }}"
+                          + appearance.accent_button_css('QPushButton[payment="true"]', is_dark, payment=True))
+        appearance.surface(self, is_dark, membership=True)
         self._watcher_factory = watcher_factory or (
             lambda api_, year, parent_: e21.PaymentWatcher(api_, year, parent=parent_))
         # Today's Bitcoin price, to show the fee in sats, CHF and EUR. None
@@ -204,6 +209,14 @@ class MembershipWindow(AssistantWindow):
     def pubkey(self) -> Optional[str]:
         """The identity the window speaks for, or None before a signer."""
         return self._pubkey
+
+    def apply_theme(self, is_dark: bool) -> None:
+        super().apply_theme(is_dark)
+        self.setProperty("nightVioletMembership", True)
+        self.setStyleSheet(self.styleSheet() + grouped_list.stylesheet(is_dark)
+                          + f"QLabel#amount {{ color: {appearance.roles(is_dark).amount}; }}"
+                          + appearance.accent_button_css('QPushButton[payment="true"]', is_dark, payment=True))
+        appearance.surface(self, is_dark, membership=True)
 
     def set_identity(self, api, *, pubkey: Optional[str], known_member: Optional[bool] = None,
                      handle: Optional[str] = None, signs_locally: bool = False,
@@ -419,7 +432,7 @@ class MembershipWindow(AssistantWindow):
     def _fail(self, error, back: Callable[[], None]) -> None:
         back()
         title, message = e21.humanize(error)
-        inform(self, title=title, message=message, is_dark=self._is_dark)
+        inform(self, title=title, message=message, is_dark=self._is_dark, nostr=True)
 
     # ------------------------------------------------------------------ #
     # Status                                                              #
@@ -679,7 +692,7 @@ class MembershipWindow(AssistantWindow):
             if shown:
                 return
         title, message = e21.humanize(error)
-        inform(self, title=title, message=message, is_dark=self._is_dark)
+        inform(self, title=title, message=message, is_dark=self._is_dark, nostr=True)
 
     # ------------------------------------------------------------------ #
     # Pay                                                                 #
@@ -710,6 +723,7 @@ class MembershipWindow(AssistantWindow):
         actions = QHBoxLayout()
         actions.addStretch(1)
         self._copy_button = QPushButton(_("Copy Invoice"))
+        self._copy_button.setProperty("payment", True)
         self._copy_button.setAutoDefault(False)
         self._copy_button.clicked.connect(self._copy_invoice)
         actions.addWidget(self._copy_button)
@@ -792,6 +806,9 @@ class MembershipWindow(AssistantWindow):
                     "new_invoice": self._create_invoice}
         self.show_page(PAY, [("close", _("Close"), NORMAL, self.reject),
                          (key, label, DEFAULT, handlers[key])])
+        self.buttons[key].setProperty("payment", True)
+        self.buttons[key].style().unpolish(self.buttons[key])
+        self.buttons[key].style().polish(self.buttons[key])
         self.buttons[key].setEnabled(enabled)
 
     def _set_pay_status(self, text: str, *, busy: bool = False) -> None:
@@ -851,7 +868,7 @@ class MembershipWindow(AssistantWindow):
         self._set_pay_status("")
         self._show_pay_buttons("paid", _("I’ve Paid"))
         title, message = e21.humanize(error)
-        inform(self, title=title, message=message, is_dark=self._is_dark)
+        inform(self, title=title, message=message, is_dark=self._is_dark, nostr=True)
 
     def _on_paid(self, _invoice) -> None:
         self._stop_watching()
@@ -1124,7 +1141,7 @@ class MembershipWindow(AssistantWindow):
                      message=message,
                      buttons=(Button(_("Not Now"), False, CANCEL),
                               Button(_("Show on Profile"), True, ALERT_DEFAULT)),
-                     is_dark=self._is_dark)
+                     is_dark=self._is_dark, nostr=True)
         if choice is True:
             self._show_address_on_profile()
 
@@ -1200,7 +1217,7 @@ class MembershipWindow(AssistantWindow):
                                                 indent=2))
         except OSError as exc:
             inform(self, title=_("Couldn’t save your data"), message=str(exc),
-                   is_dark=self._is_dark)
+                   is_dark=self._is_dark, nostr=True)
             return
         self._show_member(note=_("Your membership data is saved."))
 
@@ -1210,7 +1227,7 @@ class MembershipWindow(AssistantWindow):
                 message=_("EINUNDZWANZIG deletes the personal details of your "
                           "membership. Fees you paid stay on record for bookkeeping. "
                           "This can’t be undone."),
-                action=_("Delete Data"), caution=True, is_dark=self._is_dark):
+                action=_("Delete Data"), caution=True, is_dark=self._is_dark, nostr=True):
             return
         self._working(_("MyEditor is asking EINUNDZWANZIG to delete your data."),
                       back=self._show_member)
