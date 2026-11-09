@@ -17,7 +17,7 @@ import secrets
 
 from PySide6.QtCore import QCoreApplication
 
-from nostr import bunker, crypto, events, signer_limits
+from nostr import answer_size, bunker, crypto, events, signer_limits
 from nostr.signer_limits import SIGNER_NIP44_MAX_PLAINTEXT
 from tests.test_bunker_handshake import FakePool, FakeSigner
 
@@ -124,7 +124,7 @@ def test_an_oversized_request_fails_through_on_failure_instead_of_raising():
 
     reason = outcome.get("err", "")
     assert "too large" in reason and "sign_event" in reason, outcome
-    assert str(crypto.NIP44_MAX_PLAINTEXT_LEN) in reason
+    assert str(answer_size.SIGNER_ANSWER_MAX) in reason
     # Nothing was sent, nothing is left waiting for an answer.
     assert len(signer.seen) == sent_before
     assert client._pending == {}
@@ -183,24 +183,26 @@ def test_without_the_check_the_signer_never_answers():
     client.close()
 
 
-# -- what a signer app can hand back (RG-M0 R7) -------------------------------------
+# -- what a signer app can hand back (RG-M0 R7, contract 12.5 "Answer size") -------
 #
-# A signer app's answer carries its result as a JSON string, escaped. nak
-# bunker 0.20.7 writes it with json-iterator (fiatjaf.com/nostr nip46,
-# ``jsoniter.ConfigFastest``) and a signed event with easyjson: quotes and
-# backslashes two bytes, \n \r \t two, every other control character six,
-# <, >, & and U+2028 raw. JSON.stringify writes \b and \f in two.
+# A signer app's answer carries its result as a JSON string, escaped, and
+# encoders differ (Go's encoding/json writes <, >, & and U+2028 as \uXXXX,
+# json-iterator also \b and \f): every answer is measured with the
+# worst-case escaper of nostr/answer_size.py, at most 65,471 bytes.
 
-def test_an_answer_is_measured_as_a_signer_app_writes_it():
-    assert signer_limits._as_signer_writes('a"b\\c\n') == '"a\\"b\\\\c\\n"'
-    assert signer_limits._as_signer_writes("\b\f\x01") == '"\\u0008\\u000c\\u0001"'
-    assert signer_limits._as_signer_writes("<&>   ä") == '"<&>   ä"'
+def test_an_answer_is_measured_at_its_largest():
+    assert answer_size.escaped('a"b\\c\n') == '"a\\"b\\\\c\\n"'
+    assert answer_size.escaped("\b\f\x01") == '"\\u0008\\u000c\\u0001"'
+    assert answer_size.escaped("<&>") == '"\\u003c\\u0026\\u003e"'
     # A literal backslash before a b is not an escaped backspace.
-    assert signer_limits._as_signer_writes("\\b") == '"\\\\b"'
-    # nak bunker returned a 32,000-byte page of nothing but quotes, and
-    # not one of 32,800 (contract 13): the measure agrees with both.
-    assert signer_limits.signer_answer_size('"' * 32_000) <= crypto.NIP44_MAX_PLAINTEXT_LEN
-    assert signer_limits.signer_answer_size('"' * 32_800) > crypto.NIP44_MAX_PLAINTEXT_LEN
+    assert answer_size.escaped("\\b") == '"\\\\b"'
+    # A 32,000-byte page of quotes fits, one of 32,800 does not, and a
+    # 32,000-byte page of < does not either: pages are split by both
+    # measures (contract 13).
+    bound = answer_size.SIGNER_ANSWER_MAX
+    assert signer_limits.decrypt_answer_size('"' * 32_000) <= bound
+    assert signer_limits.decrypt_answer_size('"' * 32_800) > bound
+    assert signer_limits.decrypt_answer_size("<" * 32_000) > bound
 
 
 def test_what_can_be_read_back_depends_on_where_the_key_is():
@@ -232,8 +234,8 @@ class SigningSigner(EncryptingSigner):
             return
         self.seen.append(payload)
         signed = events.sign_event(json.loads(payload["params"][0]), self.user_sk)
-        answer = signer_limits._as_signer_writes(
-            {"id": payload["id"], "result": signer_limits._as_signer_writes(signed)})
+        answer = answer_size.escaped({"id": payload["id"],
+                                      "result": answer_size.escaped(signed)})
         try:
             self.send_raw(crypto.encrypt(answer, self.conv))
         except ValueError:
@@ -255,8 +257,9 @@ def _pair_signing():
     return client, signer
 
 
-# 65,143 bytes of content: the signed event's answer is exactly 65,535 bytes.
-_LARGEST_SIGNABLE = 65_143
+# 65,063 bytes of content: the signed event's answer is at most 65,471
+# bytes (contract 12.5), the bound with a 32-character request id.
+_LARGEST_SIGNABLE = 65_063
 
 
 def _note(size: int) -> dict:
@@ -281,15 +284,16 @@ def test_an_event_whose_signed_answer_cannot_be_sent_is_refused_at_once():
     assert failures == []
     _turn()
     assert answers == [] and len(failures) == 1
-    assert "sign_event" in failures[0] and "65536" in failures[0]
+    assert "sign_event" in failures[0] and str(answer_size.SIGNER_ANSWER_MAX) in failures[0]
     assert len(signer.seen) == sent and client._pending == {}
     client.close()
 
 
 def test_without_the_check_that_event_would_wait_out_the_timeout():
-    # The request itself fits one message; only the answer does not.
+    # The request itself fits one message; only the answer does not
+    # (beyond the 64 bytes the bound keeps for what a signer may add).
     client, signer = _pair_signing()
-    payload = json.dumps(_note(_LARGEST_SIGNABLE + 1), separators=(",", ":"))
+    payload = json.dumps(_note(_LARGEST_SIGNABLE + 100), separators=(",", ":"))
     answers, failures = [], []
     client._send_request(method="sign_event", params=[payload], on_success=answers.append,
                          on_failure=failures.append, timeout_ms=60_000)

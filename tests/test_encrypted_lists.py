@@ -21,11 +21,14 @@ from types import SimpleNamespace
 import pytest
 
 from nostr import crypto, events
+from nostr.answer_size import SIGNER_ANSWER_MAX, decrypt_answer_size
 from nostr.signer_limits import SIGNER_NIP44_MAX_PLAINTEXT
 from nostr.encrypted_lists import EncryptedList
 from nostr.list_relays import LIST_KIND
 from nostr.list_results import ListWords, PublishStatus, ReadStatus
-from nostr.paged_list import MAX_PAGES, PAGE_PAYLOAD_MAX, PAGE_PLAINTEXT_MAX, Paging, page_d_tag
+from nostr.paged_list import (
+    MAX_PAGES, PAGE_PAYLOAD_MAX, PAGE_PLAINTEXT_MAX, Paging, page_d_tag, split,
+)
 from tests.outbox_fakes import OTHER_SK, PK, SK, FakeRelayDirectory, settle
 from tests.test_imports_subscriptions import FakeSessionPool, FakeSigner
 
@@ -162,12 +165,25 @@ def page_count(relay, d_tag=D) -> int:
 # -- the page size --------------------------------------------------------------
 
 def test_a_page_fits_one_signer_call_even_when_every_byte_is_escaped():
-    # A page fits a signer's nip44_encrypt and nip44_decrypt, and twice a
-    # page (every quote escaped in the answer) plus the answer's frame
-    # still fits one NIP-44 message.
+    # A page fits a signer's nip44_encrypt and nip44_decrypt, and a page
+    # of quotes (each two bytes in the answer) plus the answer's frame
+    # fits the answer bound of contract 12.5.
     assert PAGE_PLAINTEXT_MAX <= SIGNER_NIP44_MAX_PLAINTEXT
-    frame = len(json.dumps({"id": "0" * 16, "result": ""}, separators=(",", ":")))
-    assert 2 * PAGE_PLAINTEXT_MAX + frame <= crypto.NIP44_MAX_PLAINTEXT_LEN
+    assert decrypt_answer_size('"' * PAGE_PLAINTEXT_MAX) <= SIGNER_ANSWER_MAX
+
+
+@pytest.mark.parametrize("ink", ["<", ">", "&"])
+def test_pages_are_split_by_the_answer_bound_too(ink):
+    # M1d, contract 12.5 and 13: a character one byte in the page and six
+    # in the answer makes a 32,000-byte page far too large to be handed
+    # back. (Control characters and U+2028 are escaped in the page
+    # already, so the 32,000 bytes bound them.)
+    payload = {"seen": {f"{ink * 40}{n:06d}": n for n in range(2_000)}}
+    pages = split(payload, Paging(field="seen"))
+    assert all(len(p.encode("utf-8")) <= PAGE_PLAINTEXT_MAX for p in pages)
+    assert all(decrypt_answer_size(p) <= SIGNER_ANSWER_MAX for p in pages)
+    by_plaintext = sum(len(p.encode("utf-8")) for p in pages) / PAGE_PLAINTEXT_MAX
+    assert len(pages) > by_plaintext + 1           # the answer bound decided
 
 
 # -- writing and reading pages ---------------------------------------------------

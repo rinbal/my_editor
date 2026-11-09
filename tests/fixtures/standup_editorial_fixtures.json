@@ -1279,6 +1279,37 @@
   "method": "POST",
   "url": "https://standup.example/api/submissions/5b84de4fe1ada3f4773092d95a3bb818c52b453dae4d4088214d40f04351bc6a/decision"
  },
+ "signer_answer": {
+  "escaped_content": "\"# Titel\\n\\n\\u003cp\\u003eBrot \\u0026 \\\"Butter\\\"\\u003c/p\\u003e\\tEnde\\u0008\\u000c\\u2028\\u0001 Café ❤️\"",
+  "max_answer_bytes": 65471,
+  "nip44_decrypt": {
+   "answer_bytes": 146,
+   "plaintext": "{\"items\":[{\"title\":\"A <b> & \\\"c\\\"\"}],\"page\":0,\"pages\":1,\"v\":1}"
+  },
+  "request_id": "00000000000000000000000000000000",
+  "sign_event": {
+   "answer_bytes": 610,
+   "event": {
+    "content": "# Titel\n\n<p>Brot & \"Butter\"</p>\tEnde\b\f \u0001 Café ❤️",
+    "created_at": 1762675200,
+    "id": "0000000000000000000000000000000000000000000000000000000000000000",
+    "kind": 30023,
+    "pubkey": "1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f",
+    "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "tags": [
+     [
+      "d",
+      "ein-jahr-mit-lightning"
+     ],
+     [
+      "title",
+      "Brot & Butter"
+     ]
+    ]
+   },
+   "json_stringify_bytes": 562
+  }
+ },
  "transitions": [
   {
    "action": "revise",
@@ -1443,6 +1474,18 @@
    "to": null
   },
   {
+   "action": "accept_public",
+   "from": "submitted",
+   "role": "redaktion",
+   "to": "published"
+  },
+  {
+   "action": "accept_public",
+   "from": "submitted",
+   "role": "curator",
+   "to": null
+  },
+  {
    "action": "request_changes",
    "from": "in_review",
    "role": "redaktion",
@@ -1479,6 +1522,18 @@
    "to": null
   },
   {
+   "action": "accept_public",
+   "from": "in_review",
+   "role": "redaktion",
+   "to": "published"
+  },
+  {
+   "action": "accept_public",
+   "from": "in_review",
+   "role": "curator",
+   "to": null
+  },
+  {
    "action": "take",
    "from": "submitted",
    "role": "redaktion",
@@ -1510,6 +1565,12 @@
   },
   {
    "action": "accept",
+   "from": "changes_requested",
+   "role": "redaktion",
+   "to": null
+  },
+  {
+   "action": "accept_public",
    "from": "changes_requested",
    "role": "redaktion",
    "to": null

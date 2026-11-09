@@ -9,23 +9,25 @@ With the key kept on this computer nothing travels: NIP-44's own 65,535
 bytes is the only bound. Through a signer app every NIP-46 request and
 every answer is one NIP-44 message of at most 65,535 bytes, so the answer
 bounds what can be asked: an encryption's ciphertext, a decryption's
-plaintext escaped as a JSON string, a signed event the same way.
+plaintext escaped as a JSON string, a signed event the same way, each
+measured at its largest (nostr/answer_size.py, contract 12.5 "Answer
+size") and at most 65,471 bytes.
 """
 
 from __future__ import annotations
 
-import json
-import re
 from typing import Callable, Optional
 
 from i18n import _, display_locale
 
 from . import crypto
+from .answer_size import SIGNER_ANSWER_MAX, decrypt_answer_size, sign_answer_size
 from .local_signer import LOCAL
 
 __all__ = [
-    "SIGNER_NIP44_MAX_PLAINTEXT", "nip44_plaintext_limit", "readable_back", "sign_answer_size",
-    "signable", "signer_answer_size", "size_problem", "through_signer_app",
+    "SIGNER_ANSWER_MAX", "SIGNER_NIP44_MAX_PLAINTEXT", "decrypt_answer_size",
+    "nip44_plaintext_limit", "readable_back", "sign_answer_size", "signable", "size_problem",
+    "through_signer_app",
 ]
 
 # The most plaintext a signer app can encrypt (``nip44_encrypt``) or
@@ -51,48 +53,9 @@ __all__ = [
 # are split into pages well below this (nostr/paged_list.py).
 SIGNER_NIP44_MAX_PLAINTEXT = 40_960
 
-# A signer app writes its answer as JSON, the result inside it a JSON
-# string: every quote and backslash takes two bytes there, a control
-# character two or six. ``nak bunker`` 0.20.7 writes the answer with
-# fiatjaf.com/nostr's nip46 (``var json = jsoniter.ConfigFastest``:
-# EscapeHTML false, so <, >, & and U+2028/U+2029 stay raw) and a signed
-# event with easyjson (``NoEscapeHTML: true``); json-iterator 1.1.12 and
-# easyjson 0.9 write \n, \r and \t short and every other control
-# character as \u00xx. JSON.stringify (nostr-tools, and contract 12.5's
-# formula) and Python's json.dumps also write \b and \f short. Measured at
-# the longer of the two.
-_ESCAPE = re.compile(r"\\(.)")
-_LONG = {"b": "\\u0008", "f": "\\u000c"}
-
-# What the answer to ``sign_event`` adds to the event asked for (12.5:
-# placeholders of their length): the id, the pubkey and the signature.
-_SIGNED = {"id": "0" * 64, "pubkey": "0" * 64, "sig": "0" * 128}
-
-
-def _as_signer_writes(value) -> str:
-    """``value`` as JSON the way a signer app writes it at its longest:
-    compact, raw UTF-8, \\b and \\f as \\u00xx. In JSON text a backslash
-    only ever starts an escape, so reading the escapes from the left
-    finds every one."""
-    text = json.dumps(value, separators=(",", ":"), ensure_ascii=False)
-    return _ESCAPE.sub(lambda m: _LONG.get(m.group(1), m.group(0)), text)
-
-
-def signer_answer_size(result: str) -> int:
-    """Bytes of a signer app's NIP-46 answer carrying ``result`` (the
-    answer echoes our 16-character request id). The answer is one NIP-44
-    message: at most ``crypto.NIP44_MAX_PLAINTEXT_LEN``."""
-    return len(_as_signer_writes({"id": "0" * 16, "result": result}).encode("utf-8"))
-
-
-def sign_answer_size(unsigned: dict) -> int:
-    """Bytes of a signer app's answer to ``sign_event`` for ``unsigned``
-    (contract 12.5): the signed event, escaped as a string. Our request
-    carries the same event once escaped, without what the signer adds,
-    so it is the smaller of the two."""
-    event = {"kind": unsigned["kind"], "content": unsigned.get("content", ""),
-             "tags": unsigned.get("tags", []), "created_at": int(unsigned["created_at"])}
-    return signer_answer_size(_as_signer_writes(dict(event, **_SIGNED)))
+# A decryption's plaintext and a signed event come back escaped inside
+# the signer app's answer, which must fit one NIP-44 message: measured
+# with the worst-case escaper of contract 12.5 (nostr/answer_size.py).
 
 
 def through_signer_app(profile) -> bool:
@@ -123,14 +86,14 @@ def readable_back(profile, plaintext: str) -> bool:
     if size > nip44_plaintext_limit(profile):
         return False
     return (not through_signer_app(profile)
-            or signer_answer_size(plaintext) <= crypto.NIP44_MAX_PLAINTEXT_LEN)
+            or decrypt_answer_size(plaintext) <= SIGNER_ANSWER_MAX)
 
 
 def signable(profile, unsigned: dict) -> bool:
     """Whether ``profile``'s signer can sign ``unsigned`` and answer: a key
     kept here signs anything; a signer app's answer must fit one message."""
     return (not through_signer_app(profile)
-            or sign_answer_size(unsigned) <= crypto.NIP44_MAX_PLAINTEXT_LEN)
+            or sign_answer_size(unsigned) <= SIGNER_ANSWER_MAX)
 
 
 def _never() -> bool:

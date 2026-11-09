@@ -6,12 +6,12 @@
 
 **Size.** A NIP-44 message carries at most 65,535 bytes, a signer app
 at most 40,960 (``signer_limits.SIGNER_NIP44_MAX_PLAINTEXT``), and the
-signer's answer to ``nip44_decrypt`` carries the plaintext as a JSON string, in
-which every quote and backslash takes two bytes. A page is therefore at
-most 32,000 bytes of plaintext: twice that, with the answer around it,
-still fits one message (``nak bunker`` 0.20.7 returned a 32,000-byte
-page of nothing but quotes, and not one of 32,800). A list has at most
-64 pages; a longer one is refused when written and unreadable when read.
+signer's answer to ``nip44_decrypt`` carries the plaintext as a JSON
+string, escaped. A page is therefore at most 32,000 bytes of plaintext,
+and its answer, measured with the worst-case escaper (contract 12.5,
+``nostr/answer_size.py``: a quote two bytes, a ``<`` six), at most
+65,471: a page is split by both. A list has at most 64 pages; a longer
+one is refused when written and unreadable when read.
 
 **Shape.** Page 0 has ``d`` = the list's own, page n > 0 ``<d>:<n>``.
 Every page's plaintext is ``{"v":1,"page":i,"pages":n,<field>:...}``,
@@ -38,6 +38,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
+from .answer_size import SIGNER_ANSWER_MAX, decrypt_answer_size, escaped_text_size
 from .crypto import payload_length
 
 __all__ = [
@@ -112,6 +113,12 @@ def serialize(payload: Any) -> str:
 
 def _size(value: Any) -> int:
     return len(serialize(value).encode("utf-8"))
+
+
+def _answer(value: Any) -> int:
+    """What ``value``'s text adds to a signer app's answer handing the
+    page back, escaped at its largest (nostr/answer_size.py)."""
+    return escaped_text_size(serialize(value))
 
 
 def _is_count(value: Any) -> bool:
@@ -250,32 +257,42 @@ def split(payload: Mapping[str, Any], paging: Paging) -> List[str]:
 def _fill(items: list, as_map: bool, header: Mapping[str, Any], parts: int,
           paging: Paging) -> List[list]:
     """The entries in pages, in order, page 0 measured with ``parts``
-    hashes. ``page`` and ``pages`` are measured at their widest (64)."""
+    hashes. ``page`` and ``pages`` are measured at their widest (64).
+    A page holds at most ``paging.max_bytes`` of plaintext, and the
+    signer app's answer handing it back at most 65,471 bytes (contract
+    12.5, 13: a page of ``<`` is six times its size there)."""
 
-    def shell(first: bool) -> int:
+    def shell(first: bool) -> Tuple[int, int]:
         page: Dict[str, Any] = {"v": PAGED_VERSION, "page": MAX_PAGES, "pages": MAX_PAGES}
         if first:
             page.update(header)
             page["parts"] = ["0" * 64] * parts
         page[paging.field] = {} if as_map else []
-        return _size(page)
+        return _size(page), decrypt_answer_size(serialize(page))
 
-    def cost(item: Any) -> int:
+    def cost(item: Any) -> Tuple[int, int]:
         if as_map:
-            return _size(str(item[0])) + 1 + _size(item[1])     # "key":value
-        return _size(item)
+            key, value = serialize(str(item[0])), serialize(item[1])
+            return (len(key.encode("utf-8")) + 1 + len(value.encode("utf-8")),
+                    escaped_text_size(key) + 1 + escaped_text_size(value))   # "key":value
+        return _size(item), _answer(item)
+
+    def fits(used: Tuple[int, int], grow: Tuple[int, int]) -> bool:
+        return (used[0] + grow[0] <= paging.max_bytes
+                and used[1] + grow[1] <= SIGNER_ANSWER_MAX)
 
     chunks: List[list] = [[]]
     used = shell(True)
     for item in items:
-        grow = cost(item) + (1 if chunks[-1] else 0)       # the comma before it
-        if used + grow > paging.max_bytes and (chunks[-1] or len(chunks) == 1):
+        size, answer = cost(item)
+        grow = (size + 1, answer + 1) if chunks[-1] else (size, answer)   # the comma
+        if not fits(used, grow) and (chunks[-1] or len(chunks) == 1):
             chunks.append([])
             used = shell(False)
-            grow = cost(item)
-        if used + grow > paging.max_bytes:
-            raise ValueError(f"an entry of {cost(item)} bytes does not fit a "
+            grow = (size, answer)
+        if not fits(used, grow):
+            raise ValueError(f"an entry of {size} bytes does not fit a "
                              f"{paging.max_bytes}-byte page")
         chunks[-1].append(item)
-        used += grow
+        used = (used[0] + grow[0], used[1] + grow[1])
     return chunks

@@ -42,7 +42,7 @@ from i18n import _
 
 from . import CLIENT_NAME, crypto, events, refs
 from .relay import KeySignIn, RelayPool, Subscription
-from .signer_limits import SIGNER_NIP44_MAX_PLAINTEXT, sign_answer_size
+from .signer_limits import SIGNER_ANSWER_MAX, SIGNER_NIP44_MAX_PLAINTEXT, sign_answer_size
 
 
 # --------------------------------------------------------------------------- #
@@ -715,11 +715,10 @@ class BunkerClient(QObject):
         # signer adds, does not, and we would wait out the timeout. What
         # the person is told comes earlier (signer_limits.size_problem).
         answer = sign_answer_size(payload)
-        if answer > crypto.NIP44_MAX_PLAINTEXT_LEN:
+        if answer > SIGNER_ANSWER_MAX:
             self._refuse(on_failure,
-                         f"too large for a signer app: sign_event would answer with {answer} "
-                         f"bytes, a NIP-46 message carries at most "
-                         f"{crypto.NIP44_MAX_PLAINTEXT_LEN}")
+                         f"too large for a signer app: sign_event would answer with up to "
+                         f"{answer} bytes, an answer may carry at most {SIGNER_ANSWER_MAX}")
             return
 
         def _ok(result: str) -> None:

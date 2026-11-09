@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The one limit helper (nostr/signer_limits.py): what a signer app can
-sign and answer (contract 12.5, feat/redaktion d5cc9a7), said in words
+sign and answer (contract 12.5, feat/redaktion 9c3447a), said in words
 before anything is asked, with the key kept here offered when there is
 one. The draft side of the same helper is pinned in
 test_publisher_draft.py, the measure against nak in
@@ -10,23 +10,25 @@ test_bunker_request_size.py.
 
 from __future__ import annotations
 
-import json
 import sys
 from types import SimpleNamespace
 
 import pytest
 from PySide6.QtWidgets import QApplication
 
-from nostr import crypto, signer_limits
+from nostr import answer_size, signer_limits
 from nostr.publisher import PublishJob
+from tests.standup_vectors import VECTORS
 from tests.outbox_fakes import (
     PK, FakeClient, FakePool, FakeRelayDirectory, FakeSessionPool, Profile, settle,
 )
 
-# 65,143 bytes of content: the signed event's answer is exactly 65,535 bytes.
-LARGEST = 65_143
+# 65,063 bytes of content: the signed event's answer is exactly 65,471
+# bytes, the most a signer app's answer may hold (contract 12.5).
+LARGEST = 65_063
 TOO_LONG = "This is too long to be signed through your signer app."
 OFFER = "Your key is also kept on this computer: signed with it here, this limit doesn't apply."
+ANSWER = VECTORS["signer_answer"]
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -42,34 +44,34 @@ REMOTE = SimpleNamespace(user_pubkey=PK, signer="remote")
 LOCAL = SimpleNamespace(user_pubkey=PK, signer="local")
 
 
-def contract_answer(event: dict) -> int:
-    """Contract 12.5's formula, as JSON.stringify writes it."""
-    signed = {"kind": event["kind"], "content": event["content"], "tags": event["tags"],
-              "created_at": event["created_at"], "id": "0" * 64, "pubkey": "0" * 64,
-              "sig": "0" * 128}
-    inner = json.dumps(signed, ensure_ascii=False, separators=(",", ":"))
-    return len(json.dumps({"id": "0" * 16, "result": inner}, ensure_ascii=False,
-                          separators=(",", ":")).encode("utf-8"))
+# -- the measure (contract 12.5 "Answer size", vector signer_answer) ---------------
+
+def test_the_escaper_is_the_contracts_worst_case():
+    assert answer_size.escaped(ANSWER["sign_event"]["event"]["content"]) == \
+        ANSWER["escaped_content"]
+    assert answer_size.escaped('a"b\\c\n') == '"a\\"b\\\\c\\n"'
+    assert answer_size.escaped("<&>\u2028\u2029\b\f\x01") == (
+        '"\\u003c\\u0026\\u003e\\u2028\\u2029\\u0008\\u000c\\u0001"')
+    assert answer_size.escaped("ä ❤️") == '"ä ❤️"'
+    assert answer_size.REQUEST_ID == ANSWER["request_id"]
+    assert answer_size.SIGNER_ANSWER_MAX == ANSWER["max_answer_bytes"] == 65_471
 
 
-# -- the measure -------------------------------------------------------------------
-
-def test_the_answer_is_measured_as_the_contract_computes_it():
-    for event in (note(10), note(LARGEST), note(100, 'ä"\\\n<&')):
-        assert signer_limits.sign_answer_size(event) == contract_answer(event)
-
-
-def test_backspace_and_form_feed_are_measured_as_nak_writes_them():
-    # json-iterator and easyjson write them as \u0008 and \u000c: four
-    # bytes more each, twice escaped or once.
-    event = note(10, "\b")
-    assert signer_limits.sign_answer_size(event) == contract_answer(event) + 10 * 4
+def test_the_vector_answers_are_measured_exactly():
+    assert signer_limits.sign_answer_size(ANSWER["sign_event"]["event"]) == \
+        ANSWER["sign_event"]["answer_bytes"]
+    assert signer_limits.decrypt_answer_size(ANSWER["nip44_decrypt"]["plaintext"]) == \
+        ANSWER["nip44_decrypt"]["answer_bytes"]
+    # JSON.stringify, which keeps <, > and & raw, would say less.
+    assert ANSWER["sign_event"]["json_stringify_bytes"] < ANSWER["sign_event"]["answer_bytes"]
 
 
 def test_the_largest_event_a_signer_app_can_answer():
-    assert signer_limits.sign_answer_size(note(LARGEST)) == crypto.NIP44_MAX_PLAINTEXT_LEN
+    assert signer_limits.sign_answer_size(note(LARGEST)) == answer_size.SIGNER_ANSWER_MAX
     assert signer_limits.signable(REMOTE, note(LARGEST))
     assert not signer_limits.signable(REMOTE, note(LARGEST + 1))
+    # A < is six bytes in the answer, escaped twice: seven.
+    assert not signer_limits.signable(REMOTE, note(LARGEST // 6, "<"))
     # With the key here nothing is answered.
     assert signer_limits.signable(LOCAL, note(200_000))
 

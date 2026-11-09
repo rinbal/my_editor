@@ -157,6 +157,10 @@ def transition(state: str, action: str, role: str) -> Optional[str]:
         return None
     if action == "accept":
         return "accepted" if redaktion and state in ("submitted", "in_review") else None
+    if action == "accept_public":
+        # A work already public (by link, a proposal) is published at once
+        # (11.3, feat/redaktion 5c11475).
+        return "published" if redaktion and state in ("submitted", "in_review") else None
     if action == "reopen":
         return "in_review" if redaktion and state == "declined" else None
     if action == "take":
