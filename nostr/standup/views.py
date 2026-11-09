@@ -129,10 +129,23 @@ class SubmissionView:
     published: Optional[Published]
     placed: bool
     proposal_by: Optional[str]
+    # The newest message or event (9.3: reactions, retractions and edits
+    # take a seq, but never make a row unread); for members also the
+    # newest internal note's internal_seq (None in a participant's View).
+    last_message_seq: int = 0
+    last_internal_message_seq: Optional[int] = None
 
     @property
     def is_open(self) -> bool:
         return self.state in OPEN_STATES
+
+    def unread(self, seen: int, internal_seen: int = 0) -> bool:
+        """Whether something to read came after ``seen`` (the read state's
+        seq for this sid) or ``internal_seen`` (its ``i:<sid>``): from
+        ``last_message_seq``, never from ``last_seq`` (contract 9.3)."""
+        if self.last_message_seq > seen:
+            return True
+        return (self.last_internal_message_seq or 0) > internal_seen
 
 
 def parse_turn(value: Any) -> Turn:
@@ -192,6 +205,9 @@ def parse_view(value: Any) -> SubmissionView:
         created_at=read_int(data.get("created_at"), "created_at"),
         updated_at=read_int(data.get("updated_at"), "updated_at"),
         last_seq=read_int(data.get("last_seq", 0), "last_seq"),
+        last_message_seq=read_int(data.get("last_message_seq", 0), "last_message_seq"),
+        last_internal_message_seq=None if data.get("last_internal_message_seq") is None
+        else read_int(data["last_internal_message_seq"], "last_internal_message_seq"),
         confirmations=confirmations,
         published=published,
         placed=placed,

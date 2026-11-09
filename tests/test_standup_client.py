@@ -617,6 +617,27 @@ def test_a_message_whose_seal_and_rumor_name_different_people_is_not_shown():
     assert timeline.not_shown == 1
 
 
+def test_only_messages_and_events_make_a_submission_unread():
+    # Contract 9.3 (feat/redaktion 3b00351): a reaction takes a seq but
+    # moves only last_seq; unread comes from last_message_seq.
+    world = World()
+    api = world.api()
+    prepared = submission_for(sk("writer"))
+    world.ok(lambda ok, fail: api.submit(prepared.body, ok, fail))
+    sid = prepared.body["submission_id"]
+    message, _ = _room_message(prepared, "Hallo Redaktion")
+    seen = world.ok(lambda ok, fail: api.send_message(sid, message, kind_hint="message",
+                                                      on_success=ok, on_failure=fail))
+    reaction, _ = _room_message(prepared, "+")
+    world.ok(lambda ok, fail: api.send_message(sid, reaction, kind_hint="reaction",
+                                               on_success=ok, on_failure=fail))
+    view = world.ok(lambda ok, fail: api.lookup([(prepared.status_key, 0)], ok, fail)
+                    ).found[prepared.status_key].submission
+    assert (view.last_seq, view.last_message_seq) == (seen + 1, seen)
+    assert not view.unread(seen) and view.unread(seen - 1)
+    assert view.last_internal_message_seq is None       # a participant's View
+
+
 def test_a_message_the_server_would_refuse_is_not_sent():
     world = World()
     prepared = submission_for(sk("writer"))

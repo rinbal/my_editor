@@ -285,6 +285,7 @@ class Record:
     placed: bool = False
     updated_at: int = 0
     seq: int = 0
+    last_message_seq: int = 0
 
     @property
     def revision(self) -> int:
@@ -538,8 +539,11 @@ class FakeStandupServer:
             "revision": record.revision, "round": record.round, "p_sub": record.p_sub,
             "epoch": record.epoch, "revision_hash": current["revision_hash"],
             "created_at": record.created_at, "updated_at": record.updated_at,
-            "last_seq": record.seq, "confirmations": {k: list(v) for k, v in
-                                                      record.confirmations.items()},
+            "last_seq": record.seq,
+            # Contract-ahead (feat/redaktion 3b00351, 9.3): only messages
+            # and events move it, never reactions, retractions or edits.
+            "last_message_seq": record.last_message_seq,
+            "confirmations": {k: list(v) for k, v in record.confirmations.items()},
             "published": record.published, "placed": record.placed, "proposal_by": None,
         }
 
@@ -550,9 +554,11 @@ class FakeStandupServer:
         return record.seq
 
     def _event(self, record: Record, name: str, who: Optional[Caller], **extra) -> int:
-        return self._append(record, {"type": "event", "wrap": None, "event": dict(
+        seq = self._append(record, {"type": "event", "wrap": None, "event": dict(
             {"name": name, "actor": who.pubkey if who else None,
              "revision": None, "to": None, "signed": who.signed if who else None}, **extra)})
+        record.last_message_seq = seq
+        return seq
 
     def _role(self, record: Record, pubkey: str) -> Optional[str]:
         if pubkey == record.writer:
@@ -972,6 +978,8 @@ class FakeStandupServer:
             record.state = new_state
         seq = self._append(record, {"type": "message" if channel == "conversation"
                                     else "internal", "wrap": wrap, "event": None})
+        if channel == "conversation" and body["kind_hint"] == "message":
+            record.last_message_seq = seq
         return _ok({"seq": seq})
 
     def _signed_record(self, who, body, params) -> Tuple[Optional[Record], Optional[FakeReply], str]:
