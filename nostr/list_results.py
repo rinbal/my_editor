@@ -71,7 +71,10 @@ class ListRead:
     read), ``event`` page 0's, ``stale`` the later pages that are missing
     or of another generation, ``later`` every later page that counts,
     ``words`` what the person is told when it is BLOCKED or UNREADABLE
-    (also said through the list's ``on_status``)."""
+    (also said through the list's ``on_status``), and ``found`` the
+    newest event the relays hold for each page, whether it counts or not
+    (too long, not a page of this list, emptied): a write replaces them
+    all, so it is dated after every one."""
 
     status: ReadStatus
     value: Any = None
@@ -79,6 +82,7 @@ class ListRead:
     stale: Tuple[int, ...] = ()
     later: Mapping[int, PageRead] = field(default_factory=dict)
     words: str = ""
+    found: Tuple[dict, ...] = ()
 
     @property
     def readable(self) -> bool:
@@ -86,9 +90,11 @@ class ListRead:
                                    ReadStatus.UNREADABLE)
 
     def events(self) -> List[dict]:
-        """Every event read, page 0's first."""
-        found = [self.event] if self.event else []
-        return found + [read.event for read in self.later.values()]
+        """Every event found, page 0's first: those that count and those
+        that do not."""
+        counted = ([self.event] if self.event else []) + [r.event for r in self.later.values()]
+        ids = {event["id"] for event in counted}
+        return counted + [event for event in self.found if event["id"] not in ids]
 
 
 @dataclass(frozen=True)

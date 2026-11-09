@@ -379,6 +379,8 @@ class _Reading:
         self._first: Optional[Page] = None
         self._found: Dict[int, dict] = {}
         self._later: Dict[int, PageRead] = {}
+        # The newest event of every page, whether it counts or not.
+        self._seen: Dict[str, dict] = {}
 
     def start(self) -> None:
         self._query([self._list.d_tag], self._on_first, limit=1)
@@ -395,6 +397,8 @@ class _Reading:
         return bool(answered) and not (self._own and not (answered & self._own))
 
     def _newest(self, events, d_tag: str) -> Optional[dict]:
+        """The newest event of the page ``d_tag`` that holds something;
+        kept in :attr:`_seen` either way, to date the next write after."""
         newest = None
         for event in events:
             if not is_list_of(event, self._profile.user_pubkey, d_tag, self._list._kind):
@@ -402,6 +406,8 @@ class _Reading:
             if newest is None or supersedes(int(event["created_at"]), event["id"],
                                             int(newest["created_at"]), newest["id"]):
                 newest = event
+        if newest is not None:
+            self._seen[d_tag] = newest
         if newest is not None and not str(newest.get("content") or "").strip():
             return None
         return newest
@@ -409,7 +415,8 @@ class _Reading:
     def _end(self, status: ReadStatus, value: Any = None, stale: Tuple[int, ...] = (),
              words: str = "") -> None:
         self._on_done(ListRead(status, value=value, event=self._event, stale=stale,
-                               later=dict(self._later), words=words))
+                               later=dict(self._later), words=words,
+                               found=tuple(self._seen.values())))
 
     def _unreadable(self, words: str, why: str = "") -> None:
         if why:
@@ -577,7 +584,9 @@ class _Writing:
         self._sign(list(range(len(self._plaintexts) - 1, 0, -1)) + [0])
 
     def _created_at(self) -> int:
-        """After every page read and after the last list seen, even when
+        """After every page found (those that count and those that do
+        not: a relay keeps the newer of two, so a write dated before one
+        would never replace it) and after the last list seen, even when
         this computer's clock runs behind; the same for every page."""
         if self._dated is None:
             known = self._state()[2] or (0, "")

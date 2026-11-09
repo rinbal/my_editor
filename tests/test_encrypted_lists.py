@@ -273,6 +273,26 @@ def test_every_new_page_is_dated_after_the_one_it_replaces_even_with_a_slow_cloc
     assert all(relay.stored[d]["created_at"] > newest for d in signed)
 
 
+@pytest.mark.parametrize("content", [
+    "ENC[" + "x" * PAGE_PAYLOAD_MAX + "]",                                  # too long
+    "ENC[" + json.dumps({"v": 1, "page": 1, "pages": 9, "seen": {}}) + "]",  # not this list's
+    "",                                                                     # emptied
+])
+def test_a_write_is_dated_after_pages_that_do_not_count_too(content):
+    # RG-M1 11: a relay keeps the newer of two, so a page dated before a
+    # (future-dated) page that did not count would never replace it, and
+    # every later read would stay incomplete.
+    relay = Relay()
+    store = read_state_list(relay)
+    publish(store, big_read_state(3_000))
+    relay.put(page_d_tag(D, 1), None, created_at=NOW + 500, content=content)
+    before = {d: event["id"] for d, event in relay.stored.items()}
+    assert publish(store, {**big_read_state(3_000), "new": 1})[0].status is PublishStatus.SENT
+    signed = [d for d in relay.stored if relay.stored[d]["id"] != before.get(d)]
+    assert page_d_tag(D, 1) in signed
+    assert all(relay.stored[d]["created_at"] > NOW + 500 for d in signed)
+
+
 def test_a_shorter_list_leaves_old_pages_unread():
     relay = Relay()
     store = read_state_list(relay)
