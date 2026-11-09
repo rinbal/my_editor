@@ -21,7 +21,11 @@ What fails a check is not shown (:class:`NotShown`).
 :func:`fold` turns what was read into what a conversation shows: edits
 by the author (newest wins), one reaction per person per message, a
 taking back honoured only from the reaction's author (09.md, on the seal
-pubkey), the server's ``seq`` for order.
+pubkey), the server's ``seq`` for order, and a structured note only from
+the sender its type names (9.4: a split proposal from the Redaktion, a
+revision note from the writer). The split a person confirms is only the
+one :func:`accepted_split` names: the proposal whose rumor id the
+verified accept decision signed.
 """
 
 from __future__ import annotations
@@ -30,7 +34,7 @@ import json
 import secrets
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .. import crypto as nostr_crypto
 from .. import events as nostr_events
@@ -51,6 +55,9 @@ REACTIONS = ("❤️", "\U0001f44d", "\U0001f44e", "\U0001f602", "‼️", "❓"
 MAX_BACKDATE_SECONDS = 172_800
 
 STRUCTURED_TYPES = ("split-proposal", "revision-note")
+# 9.4: who sends each structured type (the member list decides who is
+# in the Redaktion).
+_STRUCTURED_SENDER = {"split-proposal": "redaktion", "revision-note": "writer"}
 SHARE_ROLES = ("writer", "contributor", "publication")
 
 # What the messages endpoint is told about a wrap it cannot read (12.4).
@@ -428,8 +435,18 @@ def _structured_of(rumor: dict) -> Optional[Tuple[str, dict]]:
     return kind, content
 
 
-def fold(opened: Sequence[Opened]) -> List[Bubble]:
-    """The bubbles of a conversation, in ``seq`` order."""
+def _from_its_sender(kind: str, sender: str, writer: str, redaktion: frozenset) -> bool:
+    if _STRUCTURED_SENDER[kind] == "writer":
+        return sender == writer
+    return sender in redaktion
+
+
+def fold(opened: Sequence[Opened], *, writer: str, redaktion: Iterable[str]) -> List[Bubble]:
+    """The bubbles of a conversation, in ``seq`` order. ``writer`` is the
+    submission's (from its verified revision), ``redaktion`` the members
+    who may decide (from the member list); a structured note from anyone
+    else is dropped (9.4)."""
+    members = frozenset(redaktion)
     items = sorted(opened, key=lambda o: o.seq)
     bubbles: Dict[str, Bubble] = {}
     order: List[str] = []
@@ -448,6 +465,9 @@ def fold(opened: Sequence[Opened]) -> List[Bubble]:
             try:
                 structured = _structured_of(rumor)
             except NotShown:
+                continue
+            if structured is not None and not _from_its_sender(structured[0], item.sender,
+                                                               writer, members):
                 continue
             if rumor["id"] in bubbles:
                 continue
@@ -486,3 +506,23 @@ def fold(opened: Sequence[Opened]) -> List[Bubble]:
         if bubble is not None:
             bubble.reactions[who] = emoji
     return [bubbles[i] for i in order]
+
+
+def accepted_split(bubbles: Sequence[Bubble], decision: Optional[views.SignedRecord], *,
+                   submission_id: str, redaktion: Iterable[str]) -> Optional[Bubble]:
+    """The split to confirm, or None: the ``split-proposal`` whose rumor
+    id is the ``split_rumor_id`` of the accept decision ``decision`` (its
+    stored signed action, verified against the Redaktion ``redaktion``,
+    contract 10). Any other split proposal is never a split (9.4)."""
+    if decision is None:
+        return None
+    try:
+        body = views.signed_action_body(decision, path=views.action_path("accept", submission_id),
+                                        submission_id=submission_id, signers=set(redaktion))
+    except views.SignedActionInvalid:
+        return None
+    named = body.get("split_rumor_id")
+    if body.get("outcome") != "accept" or not formats.is_hex64(named):
+        return None
+    return next((b for b in bubbles if b.id == named and b.structured is not None
+                 and b.structured[0] == "split-proposal"), None)

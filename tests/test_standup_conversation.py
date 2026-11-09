@@ -14,6 +14,7 @@ import pytest
 
 from nostr import crypto as nostr_crypto
 from nostr import events as nostr_events
+from nostr import nip98
 from nostr.standup import conversation as conv
 from nostr.standup import formats, views
 from nostr.standup.formats import SecretKeyFound
@@ -224,6 +225,13 @@ def test_a_message_with_a_secret_key_is_refused():
 
 # -- what a conversation shows (9.3, 9.4) -------------------------------------------------------
 
+REDAKTION = frozenset({pk("editor")})
+
+
+def fold(items):
+    return conv.fold(items, writer=pk("writer"), redaktion=REDAKTION)
+
+
 def opened(rumor, seq, sender=None):
     return conv.Opened(rumor=rumor, sender=sender or rumor["pubkey"], wrap_id=f"w{seq}", seq=seq)
 
@@ -247,7 +255,7 @@ def take_back(reaction, who="writer", at=NOW):
 def test_the_vector_reaction_lands_on_its_message():
     items = [conv.open_item(S["message"]["wrap"], ROOM_SK, SID, seq=1),
              conv.open_item(S["reaction"]["wrap"], ROOM_SK, SID, seq=2)]
-    bubbles = conv.fold(items)
+    bubbles = fold(items)
     assert [b.id for b in bubbles] == [S["message"]["rumor"]["id"]]
     assert bubbles[0].reactions == {pk("writer"): "❤️"}
 
@@ -257,7 +265,7 @@ def test_a_reaction_replaces_the_same_persons_earlier_one():
     heart = react(first, "❤️", at=NOW + 1)
     thumbs = react(first, "\U0001f44d", at=NOW + 2)
     other = react(first, "❓", who="contributor", at=NOW + 3)
-    bubbles = conv.fold([opened(first, 1), opened(heart, 2), opened(thumbs, 3), opened(other, 4)])
+    bubbles = fold([opened(first, 1), opened(heart, 2), opened(thumbs, 3), opened(other, 4)])
     assert bubbles[0].reactions == {pk("writer"): "\U0001f44d", pk("contributor"): "❓"}
     assert conv.kind_hint(heart) == "reaction"
 
@@ -266,10 +274,10 @@ def test_only_the_reactions_author_takes_it_back():
     first = editor_message("x")
     heart = react(first, "❤️")
     by_someone_else = take_back(heart, who="editor", at=NOW + 1)
-    assert conv.fold([opened(first, 1), opened(heart, 2), opened(by_someone_else, 3)])[
+    assert fold([opened(first, 1), opened(heart, 2), opened(by_someone_else, 3)])[
         0].reactions == {pk("writer"): "❤️"}
     by_author = take_back(heart, at=NOW + 2)
-    assert conv.fold([opened(first, 1), opened(heart, 2), opened(by_someone_else, 3),
+    assert fold([opened(first, 1), opened(heart, 2), opened(by_someone_else, 3),
                       opened(by_author, 4)])[0].reactions == {}
     assert conv.kind_hint(by_author) == "retraction"
 
@@ -278,7 +286,7 @@ def test_reacting_again_after_taking_back_counts():
     first = editor_message("x")
     heart = react(first, "❤️", at=NOW + 1)
     again = react(first, "\U0001f602", at=NOW + 3)
-    bubbles = conv.fold([opened(first, 1), opened(heart, 2), opened(take_back(heart, at=NOW + 2), 3),
+    bubbles = fold([opened(first, 1), opened(heart, 2), opened(take_back(heart, at=NOW + 2), 3),
                          opened(again, 4)])
     assert bubbles[0].reactions == {pk("writer"): "\U0001f602"}
 
@@ -296,7 +304,7 @@ def test_the_newest_edit_by_the_author_wins_and_others_are_ignored():
                                created_at=NOW + 20, edit_of=first["id"])
     foreign = conv.message_rumor(room=ROOM, submission_id=SID, text="Fremd", sender=pk("writer"),
                                  created_at=NOW + 30, edit_of=first["id"])
-    bubbles = conv.fold([opened(first, 1), opened(edit2, 3), opened(edit1, 2), opened(foreign, 4)])
+    bubbles = fold([opened(first, 1), opened(edit2, 3), opened(edit1, 2), opened(foreign, 4)])
     assert len(bubbles) == 1
     assert bubbles[0].text == "Dritte" and bubbles[0].edited
     assert conv.kind_hint(edit1) == "edit"
@@ -305,7 +313,7 @@ def test_the_newest_edit_by_the_author_wins_and_others_are_ignored():
 def test_order_is_the_servers_seq_not_the_rumors_time():
     late = editor_message("später geschrieben", at=NOW + 500)
     early = editor_message("früher geschrieben", at=NOW)
-    bubbles = conv.fold([opened(early, 9), opened(late, 2)])
+    bubbles = fold([opened(early, 9), opened(late, 2)])
     assert [b.text for b in bubbles] == ["später geschrieben", "früher geschrieben"]
 
 
@@ -321,7 +329,7 @@ def test_structured_notes_read_back():
     assert rumor["tags"][-1] == ["standup", "split-proposal"]
     assert json.loads(rumor["content"]) == content
     wrap = send(rumor, KeySigner(sk("editor")))["ok"]
-    bubbles = conv.fold([conv.open_item(wrap, ROOM_SK, SID, seq=1), opened(note, 2)])
+    bubbles = fold([conv.open_item(wrap, ROOM_SK, SID, seq=1), opened(note, 2)])
     assert bubbles[0].structured == ("split-proposal", content)
     assert bubbles[1].structured == ("revision-note", {"v": 1, "revision": 2,
                                                        "note": "Absatz ergänzt"})
@@ -341,7 +349,7 @@ def test_a_split_off_the_contract_is_refused(shares):
 def test_an_unknown_structured_note_is_left_out():
     rumor = conv.build_rumor(14, "{}", [["p", ROOM], ["submission", SID], ["standup", "vote"]],
                              pk("editor"), NOW)
-    assert conv.fold([opened(rumor, 1)]) == []
+    assert fold([opened(rumor, 1)]) == []
 
 
 def test_open_items_counts_what_fails_and_sorts_by_seq():
@@ -359,3 +367,53 @@ def test_open_items_counts_what_fails_and_sorts_by_seq():
     timeline = conv.open_items(items, ROOM_SK, SID)
     assert [o.seq for o in timeline.opened] == [2, 5]
     assert timeline.not_shown == 1
+
+
+# -- structured notes only from their sender (9.4, RG-M1 4) --------------------------
+
+def split_rumor(sender="editor", weight=80, at=NOW):
+    content = conv.split_proposal_content(
+        "ab" * 32, [{"pubkey": pk("writer"), "weight": weight, "role": "writer"},
+                    {"pubkey": pk("publication"), "weight": 100 - weight,
+                     "role": "publication"}])
+    return conv.structured_rumor(room=ROOM, submission_id=SID, kind="split-proposal",
+                                 content=content, sender=pk(sender), created_at=at)
+
+
+def test_a_structured_note_from_anyone_but_its_sender_is_dropped():
+    split_by_writer = split_rumor(sender="writer")
+    note_by_editor = conv.structured_rumor(
+        room=ROOM, submission_id=SID, kind="revision-note",
+        content=conv.revision_note_content(2, "fremd"), sender=pk("editor"), created_at=NOW)
+    kept = split_rumor()
+    assert [b.id for b in fold([opened(split_by_writer, 1), opened(note_by_editor, 2),
+                                opened(kept, 3)])] == [kept["id"]]
+
+
+def decision(body, signer="editor"):
+    text = json.dumps(body, separators=(",", ":"))
+    unsigned = nip98.build_unsigned_auth_event(
+        f"https://standup.example/api/submissions/{SID}/decision", "POST", text.encode(), now=NOW)
+    return views.parse_signed({"event": nostr_events.sign_event(unsigned, sk(signer)),
+                               "body": text})
+
+
+def accept(split_id, **changes):
+    body = {"submission_id": SID, "outcome": "accept", "expected_revision": 1,
+            "message_wrap": None, "split_wrap": None, "split_rumor_id": split_id,
+            "section": None}
+    body.update(changes)
+    return body
+
+
+def test_the_split_to_confirm_is_only_the_one_the_accept_decision_names():
+    named, other = split_rumor(weight=80), split_rumor(weight=60, at=NOW + 1)
+    bubbles = fold([opened(named, 1), opened(other, 2)])
+    found = conv.accepted_split(bubbles, decision(accept(named["id"])), submission_id=SID,
+                                redaktion=REDAKTION)
+    assert found is not None and found.id == named["id"]
+    for record in (None, decision(accept(named["id"]), signer="writer"),
+                   decision(accept(named["id"], outcome="request_changes")),
+                   decision(accept(None)), decision(accept("cd" * 32))):
+        assert conv.accepted_split(bubbles, record, submission_id=SID,
+                                   redaktion=REDAKTION) is None
