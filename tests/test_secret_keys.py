@@ -353,6 +353,10 @@ def test_a_signer_app_is_never_asked_to_sign_a_key():
     client._send_request = lambda **kw: sent.append(kw)
     client.sign_event({"kind": 0, "content": f"{{\"name\": \"{NSEC}\"}}", "tags": [],
                        "created_at": 1_800_000_000}, lambda signed: None, refused.append)
+    # The refusal comes on the next turn of the event loop, like any
+    # answer (R6), and nothing is sent meanwhile.
+    assert refused == [] and sent == []
+    QApplication.processEvents()
     assert refused == [refs.SECRET_KEY_REFUSED] and sent == []
     client.sign_event({"kind": 1, "content": "hello", "tags": [], "created_at": 1_800_000_000},
                       lambda signed: None, refused.append)
