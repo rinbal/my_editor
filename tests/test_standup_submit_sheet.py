@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import List
 
 import pytest
+import shiboken6
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication
 
@@ -305,3 +306,54 @@ def test_an_earlier_try_never_sent_is_sent_again_or_discarded(tmp_path):
     sheet.discard_button.click()
     assert writer.discarded == [unsent] and writer.asked == asked + 1
     assert not sheet.unsent.isVisibleTo(sheet) and sheet.submit_button.isEnabled()
+
+
+class HeldWriter(Writer):
+    """A writer whose answers come only when the test says so."""
+
+    def __init__(self, **kw) -> None:
+        super().__init__(**kw)
+        self.held: List[tuple] = []
+
+    def instance(self, profile, on_operator) -> None:
+        self.held.append(("instance", profile, lambda: on_operator("Verein")))
+
+    def destinations(self, profile, on_done, on_failure) -> None:
+        listed = list(self._destinations)
+        self.held.append(("destinations", profile, lambda: on_done(listed, [])))
+
+    def round_for(self, profile, _publication, _d, on_done) -> None:
+        self.held.append(("round", profile, lambda: on_done(RoundAnswer(1))))
+
+    def answer(self, what=None, profile=None) -> None:
+        for name, asked, call in list(self.held):
+            if (what is None or name == what) and (profile is None or asked is profile):
+                self.held.remove((name, asked, call))
+                call()
+
+
+def test_answers_that_come_after_the_sheet_closed_change_nothing(tmp_path):
+    # RG-M2b 7: no "C++ object already deleted", nothing painted.
+    writer = HeldWriter()
+    sheet = _sheet(tmp_path, writer)
+    writer.answer("destinations")                    # asks the round
+    sheet.reject()
+    shiboken6.delete(sheet)                          # gone, as Qt deletes a closed sheet
+    assert not shiboken6.isValid(sheet)
+    writer.answer()                                  # instance and round, late
+
+
+def test_after_another_account_is_chosen_the_first_ones_answers_are_dropped(tmp_path):
+    writer = HeldWriter()
+    sheet = _sheet(tmp_path, writer)
+    first = sheet.account.profile()
+    other = Profile(user_pubkey="c" * 64, bunker_pubkey="d" * 64, display_name="Max",
+                    bunker_relays=["wss://bunker.example"], local_secret_hex="1" * 64)
+    sheet._store.upsert(other)
+    writer._destinations = []                        # the other account has none
+    sheet.account._switch(sheet._store.get(other.user_pubkey))
+    writer.answer(profile=first)                     # the first account's, late
+    assert sheet.picker.isEnabled() is False and sheet._operator == ""
+    writer.answer()
+    assert sheet._operator == "Verein" and sheet.status.text() == \
+        i18n._("No publication takes submissions right now.")

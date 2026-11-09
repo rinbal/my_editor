@@ -37,6 +37,7 @@ from __future__ import annotations
 
 from typing import Callable, List, Optional, Sequence
 
+import shiboken6
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPixmap, QStandardItemModel
 from PySide6.QtWidgets import (
@@ -173,7 +174,10 @@ class SubmitSheet(QDialog):
         # The round this text would go in at the chosen publication, as
         # StandupWriter.round_for answered: None while asking.
         self._round: Optional[RoundAnswer] = None
-        self._asked_for = ""
+        self._asked_for: object = None
+        # Every request this sheet sends is answered through _answer: it
+        # counts only while the sheet is open on the account it asked for.
+        self._generation = 0
         self._operator = ""
         self._load_problem = ""
         self.run: Optional[SubmissionRun] = None
@@ -352,7 +356,7 @@ class SubmitSheet(QDialog):
             else:
                 self.status.say(_(LIST_NOT_SAVED))
 
-        self._writer.discard(self.account.profile(), entry, done)
+        self._writer.discard(self.account.profile(), entry, self._answer(done))
 
     def _build_privacy(self) -> QFrame:
         box = self._privacy_box = QFrame()
@@ -409,7 +413,19 @@ class SubmitSheet(QDialog):
 
     # -- the publications ----------------------------------------------------
 
+    def _answer(self, handler: Callable) -> Callable:
+        """``handler`` for an answer to a request sent now: dropped once
+        the sheet closed (or is gone) or shows another account."""
+        generation = self._generation
+
+        def answer(*args) -> None:
+            if shiboken6.isValid(self) and self._generation == generation:
+                handler(*args)
+
+        return answer
+
     def _load(self) -> None:
+        self._generation += 1                       # the account asked for now
         self.retry_load.hide()
         self._load_problem = ""
         if not self._writer.server:
@@ -417,8 +433,9 @@ class SubmitSheet(QDialog):
             return
         self._show_destinations([], "", loading=True)
         profile = self.account.profile()
-        self._writer.instance(profile, self._on_instance)
-        self._writer.destinations(profile, self._on_destinations, self._on_load_failed)
+        self._writer.instance(profile, self._answer(self._on_instance))
+        self._writer.destinations(profile, self._answer(self._on_destinations),
+                                  self._answer(self._on_load_failed))
 
     def _on_instance(self, operator: str) -> None:
         self._operator = operator
@@ -488,15 +505,15 @@ class SubmitSheet(QDialog):
         self._show_by_hint()
         self._show_privacy(self.privacy_toggle.isChecked())
         self._round = None
-        self._asked_for = destination.address if destination is not None else ""
+        asked = self._asked_for = object()          # only the newest question counts
         if destination is not None and destination.usable:
             self._writer.round_for(
                 self.account.profile(), destination.address, self._draft.d,
-                lambda answer, a=destination.address: self._on_round(a, answer))
+                self._answer(lambda answer: self._on_round(asked, answer)))
         self._refresh()
 
-    def _on_round(self, address: str, answer: RoundAnswer) -> None:
-        if address == self._asked_for:
+    def _on_round(self, asked: object, answer: RoundAnswer) -> None:
+        if asked is self._asked_for:
             self._round = answer
             self._refresh()
 
@@ -614,6 +631,7 @@ class SubmitSheet(QDialog):
             self.reject()
 
     def done(self, result: int) -> None:  # noqa: N802, Qt's name
+        self._generation += 1                       # no answer counts after this
         if self.run is not None:
             self.run.changed.disconnect(self.handoff.show_progress)
             self._writer.in_background(self.run)
