@@ -112,6 +112,8 @@ class Tile:
     pixmap: Optional[QPixmap] = None
     # A picture that cannot be drawn here (HEIC on most systems).
     no_picture: bool = False
+    # A submission's encrypted file: shown apart, never inserted.
+    submission: bool = False
     mime: str = ""
 
     @property

@@ -60,6 +60,7 @@ from .plan import get_effective_max_file, lists_publicly, plan_upload, UploadPla
 from .settings import BlossomSettings
 from .upload_progress import UploadProgress
 from ..imports.workers import run_for_size
+from ..standup import crypto as scrypto
 
 
 # How long a fetched library stays "fresh". A second call within this
@@ -118,11 +119,12 @@ class BlobCache(Protocol):
     ``ThumbnailLoader`` is the implementation; it is a UI module and the
     store must not import it, so the object arrives as a constructor
     argument the way every other boundary in this codebase is crossed.
-    Only the write half is named here, because writing is all the store
-    does with it.
+    The write half, and where a blob's bytes are, to tell a submission's
+    encrypted file by its first bytes (:meth:`MediaStore.is_submission_file`).
     """
 
     def put_bytes(self, data: bytes) -> str: ...
+    def cache_path(self, sha256: str) -> Path: ...
 
 
 @dataclass
@@ -327,6 +329,10 @@ class MediaStore(QObject):
         # rather than from a /list response of unknown age, which is what
         # makes them safe to dedup against without listing again.
         self._committed: Set[str] = set()
+        # Submissions' encrypted files: uploaded for one this session, and
+        # what the cache's first bytes said (is_submission_file).
+        self._submission_files: Set[str] = set()
+        self._sealed_known: Dict[str, bool] = {}
 
         # Upload jobs by name, from upload_started until they end. The
         # asset manager names its own (an asset key); a file added to the
@@ -379,6 +385,28 @@ class MediaStore(QObject):
             if name:
                 return name
         return self._session_names.get(sha, "")
+
+    def is_submission_file(self, sha256: str) -> bool:
+        """Whether this file is a submission's encrypted file (SMF1,
+        contract 7): uploaded for a submission in this session, or its
+        cached bytes start like one. Such a file is never offered to
+        insert, and deleting it takes it from the editorial team."""
+        sha = (sha256 or "").lower()
+        if sha in self._submission_files:
+            return True
+        known = self._sealed_known.get(sha)
+        if known is not None:
+            return known
+        if self._blob_cache is None:
+            return False
+        try:
+            with self._blob_cache.cache_path(sha).open("rb") as cached:
+                head = cached.read(scrypto.MEDIA_HEADER_BYTES)
+        except OSError:
+            return False                    # not cached: asked again once it is
+        # A content address never changes its bytes: the answer is kept.
+        self._sealed_known[sha] = not scrypto.media_header_problem(head)
+        return self._sealed_known[sha]
 
     def added_here(self, sha256: str) -> bool:
         """Whether this file was added to the library on this computer
@@ -795,6 +823,8 @@ class MediaStore(QObject):
         self._last_fetch_at = 0.0
         self._last_targets = ()
         self._committed.clear()
+        self._submission_files.clear()
+        self._sealed_known.clear()
         self.library_changed.emit()
         self.listings_changed.emit()
 
@@ -942,6 +972,7 @@ class MediaStore(QObject):
         name: str,
         mime_type: str = "application/octet-stream",
         force: bool = False,
+        submission: bool = False,
     ) -> None:
         """Upload an in-memory buffer. Used by the drop handler when the
         bytes come from a QMimeData payload rather than a file path.
@@ -961,12 +992,14 @@ class MediaStore(QObject):
         ``force`` sends the bytes to every eligible server whatever the
         library says it holds: for a file a server said it is missing
         (a STANDUP receipt's ``blobs_missing``), where the library's word
-        would stand in for the server's.
+        would stand in for the server's. ``submission`` marks the file as
+        a submission's encrypted file (:meth:`is_submission_file`).
         """
-        self._dispatch(body, name, mime_type, None, force=force)
+        self._dispatch(body, name, mime_type, None, force=force, submission=submission)
 
     def _dispatch(self, body: bytes, name: str, mime_type: str,
-                  added: Optional[_Added], *, force: bool = False) -> None:
+                  added: Optional[_Added], *, force: bool = False,
+                  submission: bool = False) -> None:
         profile = self._profile_provider()
         if profile is None:
             self._refuse(name, ERROR_CODES.NO_SIGNER)
@@ -999,14 +1032,17 @@ class MediaStore(QObject):
         self._uploads[name] = state
         run_for_size(len(body), lambda: self._hash_and_keep(body),
                      lambda sha: self._upload_hashed(state, body, mime_type, profile, sha,
-                                                     servers, plan, force),
+                                                     servers, plan, force, submission),
                      parent=self)
 
     def _upload_hashed(self, state: UploadJobState, body: bytes, mime_type: str, profile,
-                       sha: str, servers, plan: UploadPlan, force: bool) -> None:
+                       sha: str, servers, plan: UploadPlan, force: bool,
+                       submission: bool) -> None:
         name = state.name
         if self._uploads.get(name) is not state:
             return                           # cancelled while it was hashed, or left
+        if submission:
+            self._submission_files.add(sha)
         eligible = [server for server in plan.eligible
                     if self._has_room(server, sha, len(body), name)]
         if not eligible:

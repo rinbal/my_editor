@@ -115,7 +115,8 @@ class BlossomUploads(QObject):
                 # Contract 7: never the plaintext's type. Sent whatever the
                 # library says: a server said it misses a file (12.4).
                 self._store.upload_bytes(picture.cipher, name=name,
-                                         mime_type="application/octet-stream", force=True)
+                                         mime_type="application/octet-stream", force=True,
+                                         submission=True)
         return lambda: self._stop(job)
 
     def _end(self, job: _Upload) -> None:

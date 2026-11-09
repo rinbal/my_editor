@@ -353,6 +353,9 @@ class MediaLibraryDialog(QDialog):
         for kind, label in (("all", _("All Items")), ("image", _("Images")),
                             ("video", _("Videos")), ("audio", _("Audio")), ("file", _("Files"))):
             self._filter_combo.addItem(label, kind)
+        if not self._pick_mode:
+            # Submissions' encrypted files, apart: never offered to insert.
+            self._filter_combo.addItem(_("Submission Files"), "submission")
         self._filter_combo.currentIndexChanged.connect(self._rebuild)
         self._filter_combo.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         bar.addWidget(self._filter_combo)
@@ -513,7 +516,10 @@ class MediaLibraryDialog(QDialog):
     def _matches(self, tile: Tile) -> bool:
         kind = self._filter_combo.currentData() or "all"
         text = self._search.text().strip().casefold()
-        return (kind == "all" or tile.kind == kind) and (not text or text in tile.name.casefold())
+        if tile.submission != (kind == "submission"):
+            return False                    # in their own group only
+        return (kind in ("all", "submission") or tile.kind == kind) and (
+            not text or text in tile.name.casefold())
 
     def _job_tiles(self) -> List[Tile]:
         return [tile for tile in self._jobs.values() if self._matches(tile)]
@@ -536,6 +542,11 @@ class MediaLibraryDialog(QDialog):
             and self._visibility.state_of(source) == PUBLISHED_COPY
 
     def _file_tile(self, media: MediaFile) -> Tile:
+        if self._store.is_submission_file(media.hash):
+            day = _day_of(media)
+            return Tile(key=media.hash, name=_("Encrypted file of a submission"),
+                        detail=" · ".join(filter(None, (day, format_size(media.size)))),
+                        kind="file", media=media, submission=True)
         name = self._store.name_of(media.hash) or self._visibility.name_of(media.hash)
         mime = (self._visibility.declared_mime(media.hash) or media.mime_type or "").lower().split(";", 1)[0].strip()
         if mime in ("", "application/octet-stream"):
@@ -742,7 +753,8 @@ class MediaLibraryDialog(QDialog):
 
     def _can_insert(self) -> bool:
         files = self._selected_files()
-        return len(files) == 1 and not self._visibility.is_unknown(files[0].key)
+        return len(files) == 1 and not files[0].submission \
+            and not self._visibility.is_unknown(files[0].key)
 
     def set_inserter(self, insert: Callable[[MediaFile, str], None],
                      can_take: Callable[[], bool]) -> None:
@@ -844,7 +856,9 @@ class MediaLibraryDialog(QDialog):
     def _link_of(self, tile: Tile) -> str:
         """The address that shows someone this file, or "": a shared
         original's is its public copy's (its own serves sealed bytes), and
-        a private file has none."""
+        a private file or a submission's encrypted file has none."""
+        if tile.submission:
+            return ""
         copy = self._visibility.public_copy_of(tile.key)
         if copy is not None:
             return copy.url
@@ -937,7 +951,13 @@ class MediaLibraryDialog(QDialog):
         title = (_("Delete “{name}”?").format(name=files[0].name) if len(files) == 1
                  else ngettext("Delete {count} item?", "Delete {count} items?",
                                len(files)).format(count=len(files)))
-        if all(self._visibility.state_of(tile.key) == PRIVATE for tile in files):
+        if any(tile.submission for tile in files):
+            message = ngettext(
+                "The editorial team can no longer open this file of your submission. You "
+                "can’t undo this action.",
+                "The editorial team can no longer open these files of your submissions. You "
+                "can’t undo this action.", len(files))
+        elif all(self._visibility.state_of(tile.key) == PRIVATE for tile in files):
             # Another app's private files (Lotus, say): gone from it too.
             message = ngettext(
                 "It’s also gone from the other app that keeps it privately. You can’t undo "

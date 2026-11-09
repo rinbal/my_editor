@@ -117,6 +117,9 @@ class FakeStore(QObject):
     def target_servers(self):
         return [SERVER, MEMBERS]
 
+    def is_submission_file(self, sha):
+        return False        # the real store's answer: test_submission_files_*
+
     def server_listings(self):
         return {s: ServerListing(origin=s, ok=self.listing_ok,
                                  truncated=getattr(self, "truncated", False))
@@ -1273,3 +1276,72 @@ class _ResizeWatcher(QObject):
         if event.type() == QEvent.Type.Resize:
             self._seen.append(event.size().width())
         return False
+
+
+# --------------------------------------------------------------------------- #
+# A submission's encrypted files, with the real store (RG-M2b 6)
+# --------------------------------------------------------------------------- #
+
+def _real_store(tmp_path, cache_dir):
+    from nostr.blossom.client import BlossomClient
+    from nostr.blossom.settings import BlossomSettings
+    from nostr.blossom.store import MediaStore
+    from nostr.ui.thumbnail_loader import ThumbnailLoader
+    from tests.blossom_fakes import (SERVER as BLOSSOM, FakeBlossomServer, FakeNam,
+                                     FakeProfile, FakeSessionPool, FakeSigner)
+    settings = BlossomSettings(tmp_path / "servers.json")
+    settings.set_custom_servers([BLOSSOM])
+    server = FakeBlossomServer(BLOSSOM)
+    nam = FakeNam(None, responder=server)
+    store = MediaStore(session_pool=FakeSessionPool(FakeSigner()), profile_provider=FakeProfile,
+                       settings=settings, client=BlossomClient(nam=nam),
+                       blob_cache=ThumbnailLoader(cache_dir=cache_dir, nam=FakeNam()))
+    return store, server, nam
+
+
+def _sealed_file():
+    from nostr.standup.drafting import LocalPicture, encrypt_pictures
+    picture, = encrypt_pictures([LocalPicture(key="k", name="cafe.jpg", mime="image/jpeg",
+                                              data=PNG_BYTES)])
+    return picture.cipher
+
+
+def test_submission_files_are_apart_never_offered_and_deleting_one_warns(tmp_path,
+                                                                          monkeypatch):
+    store, _server, nam = _real_store(tmp_path, tmp_path / "blobs")
+    sealed = _sealed_file()
+    store.upload_bytes(PNG_BYTES, name="garden.png", mime_type="image/png")
+    store.upload_bytes(sealed, name="a.smf1", force=True, submission=True)
+    nam.settle()
+    sealed_sha, picture_sha = sha_of(sealed), sha_of(PNG_BYTES)
+    assert set(store.files) == {sealed_sha, picture_sha}
+    world = build(tmp_path, monkeypatch, store)
+    assert [tile.key for tile in tiles(world)] == [picture_sha]        # not among All Items
+    combo = world.dialog._filter_combo
+    combo.setCurrentIndex(combo.findData("submission"))
+    assert [(tile.key, tile.name) for tile in tiles(world)] == [
+        (sealed_sha, "Encrypted file of a submission")]
+    select(world, sealed_sha)
+    assert not world.dialog._can_insert() and world.dialog._link_of(tiles(world)[0]) == ""
+    alert, shown = fake_alert(click="Cancel")
+    monkeypatch.setattr(alerts, "Alert", alert)
+    world.dialog._delete()
+    assert shown[0].message == ("The editorial team can no longer open this file of your "
+                                "submission. You can’t undo this action.")
+    picker = build(tmp_path, monkeypatch, store, pick=True)
+    assert picker.dialog._filter_combo.findData("submission") == -1
+    assert [tile.key for tile in tiles(picker)] == [picture_sha]      # never insertable
+
+
+def test_after_a_restart_a_submission_file_is_known_by_its_first_bytes(tmp_path):
+    first, _server, nam = _real_store(tmp_path, tmp_path / "blobs")
+    sealed = _sealed_file()
+    first.upload_bytes(sealed, name="a.smf1", force=True, submission=True)
+    nam.settle()
+    again, _server, _nam = _real_store(tmp_path, tmp_path / "blobs")   # a new session
+    assert again.is_submission_file(sha_of(sealed))
+    assert not again.is_submission_file(sha_of(PNG_BYTES))
+    first._blob_cache = None                         # no cache: only what it sent itself
+    assert first.is_submission_file(sha_of(sealed))
+    first.clear()                                    # another account: nothing it sent
+    assert not first.is_submission_file(sha_of(sealed))

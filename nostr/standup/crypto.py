@@ -179,6 +179,21 @@ def _media_header(chunk_size: int) -> bytes:
     return _MAGIC + int(chunk_size).to_bytes(4, "big")
 
 
+MEDIA_HEADER_BYTES = _HEADER
+
+
+def media_header_problem(header: bytes) -> str:
+    """Why ``header`` (the first :data:`MEDIA_HEADER_BYTES` bytes of a
+    file) does not start an SMF1 file, or ``""`` when it does: the one
+    rule for the decryptor and for telling a submission's file apart."""
+    if len(header) < MEDIA_HEADER_BYTES or header[:4] != _MAGIC:
+        return "not an SMF1 media file"
+    if not formats.MEDIA_CHUNK_MIN <= int.from_bytes(header[4:8], "big") <= \
+            formats.MEDIA_CHUNK_MAX:
+        return "the media file's chunk size is out of range"
+    return ""
+
+
 def _record_aad(header: bytes, index: int, final: bool) -> bytes:
     return header + int(index).to_bytes(8, "big") + (b"\x01" if final else b"\x00")
 
@@ -308,11 +323,10 @@ class _MediaDecryptor:
             if len(self._buffer) < _HEADER:
                 return b""
             header = bytes(self._buffer[:_HEADER])
-            if header[:4] != _MAGIC:
-                raise StandupCryptoError("not an SMF1 media file")
+            problem = media_header_problem(header)
+            if problem:
+                raise StandupCryptoError(problem)
             chunk_size = int.from_bytes(header[4:8], "big")
-            if not formats.MEDIA_CHUNK_MIN <= chunk_size <= formats.MEDIA_CHUNK_MAX:
-                raise StandupCryptoError("the media file's chunk size is out of range")
             self._header = header
             self._record_len = _NONCE + chunk_size + _TAG
             del self._buffer[:_HEADER]
@@ -529,9 +543,9 @@ def wraps_sha256(wraps: Dict[str, dict]) -> Dict[str, str]:
 
 
 __all__: List[str] = [
-    "MediaEncryptor", "SealedRevision", "StandupCryptoError", "WrapInvalid",
+    "MEDIA_HEADER_BYTES", "MediaEncryptor", "SealedRevision", "StandupCryptoError", "WrapInvalid",
     "check_history_chain", "check_redaktion_key", "content_key", "encrypt_envelope",
-    "encrypt_media", "make_wrap", "media_cipher_size", "media_entry", "new_secret_key",
-    "new_status_key", "pubkey_of", "redaktion_key_plaintext", "seal_revision",
+    "encrypt_media", "make_wrap", "media_cipher_size", "media_entry", "media_header_problem",
+    "new_secret_key", "new_status_key", "pubkey_of", "redaktion_key_plaintext", "seal_revision",
     "secret_from_hex", "submission_key_plaintext", "wrap_submission_key", "wraps_sha256",
 ]

@@ -64,8 +64,8 @@ class Store(QObject):
         self.sent: List[tuple] = []
         self.cancelled: List[str] = []
 
-    def upload_bytes(self, body, *, name, mime_type, force) -> None:
-        assert force
+    def upload_bytes(self, body, *, name, mime_type, force, submission) -> None:
+        assert force and submission
         self.sent.append((name, body, mime_type))
 
     def cancel_upload(self, name) -> bool:
