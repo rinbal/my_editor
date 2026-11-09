@@ -18,6 +18,7 @@ import i18n
 from nostr import events
 from nostr.standup import trust
 from nostr.standup.client import StandupApi
+from nostr.standup.servers import usable_server_url
 from nostr.standup.trust import KeyNotConfirmed, verify_key_event
 from tests.membership_fakes import FakeClock
 from tests.standup_fakes import SERVER, FakeStandupServer, SignAs, StandupNam
@@ -95,6 +96,12 @@ def test_an_older_epoch_than_seen_is_refused():
     (lambda e: key_event(True), "whole number"),
     (lambda e: key_event(3, content={"rules": None}), "rules"),
     (lambda e: key_event(3, server="http://standup.example"), "server"),
+    # 8.1 (0820f0d): an origin, nothing else and nothing mended.
+    (lambda e: key_event(3, server="https://standup.example/"), "server origin"),
+    (lambda e: key_event(3, server="https://standup.example/standup"), "server origin"),
+    (lambda e: key_event(3, server="https://Standup.example"), "server origin"),
+    (lambda e: key_event(3, server=" https://standup.example"), "server origin"),
+    (lambda e: key_event(3, server=None), "server origin"),
     (lambda e: key_event(3, d="standup:redaktion-key:other"), "d tag"),
     (lambda e: dict(key_event(3), tags=key_event(3)["tags"]
                     + [["d", "standup:redaktion-key:einundzwanzig-magazin"]]), "signature"),
@@ -224,6 +231,36 @@ def test_a_substituted_key_on_the_server_blocks_submitting():
     epochs, _ = store()
     kind, refusal = _confirm(api, nam, Relays(), epochs)
     assert kind == "refused" and refusal.words == trust.KEY_NOT_CONFIRMED
+
+
+def test_a_key_naming_another_server_is_never_submitted_to_here():
+    # RG-M1 3: any server can mint a receipt that mirrors the body, so
+    # only the key's own server may receive the submission (8.1).
+    server, nam, api = _world()
+    epochs, _ = store()
+    elsewhere = key_event(4, server="https://other.example")
+    kind, refusal = _confirm(api, nam, Relays([elsewhere]), epochs)
+    assert kind == "refused" and "another server" in refusal.reason
+    assert refusal.words == trust.KEY_NOT_CONFIRMED
+
+
+def test_a_destination_whose_key_names_another_server_is_not_usable():
+    server, nam, api = _world()
+    epochs, _ = store()
+    finder = trust.Destinations(api, Relays([key_event(4, server="https://other.example")]),
+                                epochs)
+    found = []
+    finder.find(found.append, lambda e: found.append(("err", e)))
+    nam.settle()
+    [destination] = found[0]
+    assert not destination.usable and destination.key is None
+    assert "another server" in destination.problem
+
+
+def test_a_port_is_part_of_the_origin():
+    assert usable_server_url("https://standup.example:8443") == "https://standup.example:8443"
+    assert usable_server_url("https://standup.example:8443/") == ""
+    assert usable_server_url("https://standup.example?x") == ""
 
 
 def test_relays_carry_the_key_when_the_server_cannot_be_asked():

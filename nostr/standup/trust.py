@@ -127,7 +127,7 @@ def verify_key_event(event: Any, address: str, *, highest_seen: int = 0,
     name = content.get("name")
     server = usable_server_url(content.get("server"), local_http=local_http)
     if not server:
-        raise KeyNotConfirmed("the key names no server this app may send to")
+        raise KeyNotConfirmed("the key names no server origin this app may send to")
     return RedaktionKey(address=address, publication_pubkey=pub_pubkey, site_d=site_d,
                         epoch=epoch, pubkey=content["pubkey"], server=server, owner=owner,
                         name=name if isinstance(name, str) else "", rules=dict(rules),
@@ -230,10 +230,23 @@ def relay_key_lookup(pool, directory, *, timeout_ms: int = 8_000) -> RelayLookup
     return lookup
 
 
+def key_for_server(key: RedaktionKey, server: str) -> RedaktionKey:
+    """``key`` when it names ``server``, the server a submission would
+    go to (or that listed the publication), else KeyNotConfirmed (8.1,
+    feat/redaktion 0820f0d: submit only to the key's server). A receipt
+    only mirrors the body's hashes, so any server could mint a matching
+    one; only the signed key event says which server is the
+    publication's."""
+    if not server or key.server != server:
+        raise KeyNotConfirmed("the key names another server than this one")
+    return key
+
+
 @dataclass(frozen=True)
 class Destination:
     """A publication one can submit to: as listed, with its verified key
-    (``key``), or why it cannot be used (``problem``, never shown)."""
+    (``key``, naming the server that listed it), or why it cannot be
+    used (``problem``, never shown)."""
 
     address: str
     name: str
@@ -302,8 +315,8 @@ class Destinations(QObject):
 
     def _destination(self, item: Listing, candidates: Sequence[Any]) -> Destination:
         try:
-            key = newest_key(candidates, item.address, self._store,
-                             local_http=self._local_http)
+            key = key_for_server(newest_key(candidates, item.address, self._store,
+                                            local_http=self._local_http), self._api.server)
         except KeyNotConfirmed as refusal:
             return Destination(address=item.address, name=item.name, picture=item.picture,
                                key=None, problem=refusal.reason)
@@ -317,9 +330,10 @@ def confirm_key(api: StandupApi, address: str, relay_lookup: RelayLookup, store:
                 local_http: Optional[bool] = None) -> None:
     """The key to submit to, checked right before submitting: the
     server's current key event (``GET .../settings``) and the relays',
-    the newest valid one. When the server cannot be asked, the relays'
-    alone count. ``on_refused`` with KeyNotConfirmed when none passes,
-    its reason naming the server's failure when there was one."""
+    the newest valid one, which must name ``api``'s server
+    (:func:`key_for_server`). When the server cannot be asked, the
+    relays' alone count. ``on_refused`` with KeyNotConfirmed when none
+    passes, its reason naming the server's failure when there was one."""
     try:
         pubkey, site_d = formats.parse_address(address)
     except FormatError as exc:
@@ -332,8 +346,8 @@ def confirm_key(api: StandupApi, address: str, relay_lookup: RelayLookup, store:
             return
         state["done"] = True
         try:
-            key = newest_key([state["server"], *state["relays"]], address, store,
-                             local_http=local_http)
+            key = key_for_server(newest_key([state["server"], *state["relays"]], address,
+                                            store, local_http=local_http), api.server)
         except KeyNotConfirmed as refusal:
             error = state.get("server_error")
             on_refused(refusal if error is None else KeyNotConfirmed(
@@ -360,6 +374,6 @@ def confirm_key(api: StandupApi, address: str, relay_lookup: RelayLookup, store:
 
 __all__ = [
     "Destination", "Destinations", "EpochStore", "KEY_NOT_CONFIRMED", "KeyNotConfirmed",
-    "RedaktionKey", "RelayLookup", "SETTINGS_KEY", "confirm_key", "newest_key",
+    "RedaktionKey", "RelayLookup", "SETTINGS_KEY", "confirm_key", "key_for_server", "newest_key",
     "relay_key_lookup", "verify_key_event",
 ]
