@@ -437,7 +437,7 @@ class BunkerClient(QObject):
         try:
             parsed = parse_bunker_uri(uri)
         except ValueError as exc:
-            on_failure(str(exc))
+            self._refuse(on_failure, str(exc))
             return
         self._setup_channel(
             bunker_pubkey=parsed.bunker_pubkey,
@@ -731,11 +731,11 @@ class BunkerClient(QObject):
         signer fills those in.
         """
         if not self._is_connected:
-            on_failure("not connected")
+            self._refuse(on_failure, "not connected")
             return
         refusal = refs.signing_refusal(unsigned_event)
         if refusal:
-            on_failure(refusal)
+            self._refuse(on_failure, refusal)
             return
 
         payload = {
@@ -795,18 +795,18 @@ class BunkerClient(QObject):
         signers without NIP-44 support).
         """
         if not self._is_connected:
-            on_failure("not connected")
+            self._refuse(on_failure, "not connected")
             return
         peer = peer_pubkey_hex.strip().lower()
         if len(peer) != 64 or not all(c in "0123456789abcdef" for c in peer):
-            on_failure(f"invalid peer pubkey: {peer_pubkey_hex!r}")
+            self._refuse(on_failure, f"invalid peer pubkey: {peer_pubkey_hex!r}")
             return
         size = len(plaintext.encode("utf-8"))
         if size > SIGNER_NIP44_MAX_PLAINTEXT:
             # The request itself may still fit, but the answer cannot: the
             # signer would encrypt and then have no message to send it in,
             # and we would wait out the whole timeout for nothing.
-            self._fail_later(
+            self._refuse(
                 on_failure,
                 f"too large to encrypt through a signer app: {size} bytes, "
                 f"at most {SIGNER_NIP44_MAX_PLAINTEXT}",
@@ -838,14 +838,14 @@ class BunkerClient(QObject):
     ) -> None:
         """Ask the signer to NIP-44 decrypt ``ciphertext_b64`` from ``peer_pubkey_hex``."""
         if not self._is_connected:
-            on_failure("not connected")
+            self._refuse(on_failure, "not connected")
             return
         peer = peer_pubkey_hex.strip().lower()
         if len(peer) != 64 or not all(c in "0123456789abcdef" for c in peer):
-            on_failure(f"invalid peer pubkey: {peer_pubkey_hex!r}")
+            self._refuse(on_failure, f"invalid peer pubkey: {peer_pubkey_hex!r}")
             return
         if not ciphertext_b64:
-            on_failure("ciphertext is empty")
+            self._refuse(on_failure, "ciphertext is empty")
             return
 
         def _ok(result: str) -> None:
@@ -880,14 +880,14 @@ class BunkerClient(QObject):
         (NIP-46 ``nip04_decrypt``): what an older app saved. Nothing is ever
         encrypted with NIP-04 here."""
         if not self._is_connected:
-            on_failure("not connected")
+            self._refuse(on_failure, "not connected")
             return
         peer = peer_pubkey_hex.strip().lower()
         if len(peer) != 64 or not all(c in "0123456789abcdef" for c in peer):
-            on_failure(f"invalid peer pubkey: {peer_pubkey_hex!r}")
+            self._refuse(on_failure, f"invalid peer pubkey: {peer_pubkey_hex!r}")
             return
         if not content:
-            on_failure("ciphertext is empty")
+            self._refuse(on_failure, "ciphertext is empty")
             return
 
         def _ok(result: str) -> None:
@@ -914,7 +914,7 @@ class BunkerClient(QObject):
     ) -> None:
         """Read a NIP-04 message the account sent to itself."""
         if self._user_pubkey is None:
-            on_failure("user pubkey not yet known")
+            self._refuse(on_failure, "user pubkey not yet known")
             return
         self.nip04_decrypt(self._user_pubkey, content, on_success, on_failure,
                            timeout_ms=timeout_ms)
@@ -929,7 +929,7 @@ class BunkerClient(QObject):
     ) -> None:
         """Self-encrypt, the NIP-37 case. Peer pubkey is the user's own."""
         if self._user_pubkey is None:
-            on_failure("user pubkey not yet known")
+            self._refuse(on_failure, "user pubkey not yet known")
             return
         self.nip44_encrypt(
             self._user_pubkey,
@@ -949,7 +949,7 @@ class BunkerClient(QObject):
     ) -> None:
         """Self-decrypt, the NIP-37 case. Peer pubkey is the user's own."""
         if self._user_pubkey is None:
-            on_failure("user pubkey not yet known")
+            self._refuse(on_failure, "user pubkey not yet known")
             return
         self.nip44_decrypt(
             self._user_pubkey,
@@ -1091,7 +1091,7 @@ class BunkerClient(QObject):
             # sent at all. ``crypto.encrypt`` would raise, and the caller,
             # written for an answer that comes later, would never hear of
             # it: a draft or a list that never finishes saving.
-            self._fail_later(
+            self._refuse(
                 on_failure,
                 f"request too large for a signer app: {method} needs "
                 f"{size} bytes, a NIP-46 message carries at most "
@@ -1183,13 +1183,17 @@ class BunkerClient(QObject):
     def _on_timeout(self, request_id: str) -> None:
         self._fail(request_id, "timed out waiting for signer")
 
-    def _fail_later(self, on_failure: Callable[[str], None], reason: str) -> None:
-        """Refuse a request that was never sent, on the next turn of the
-        event loop, as a signer's own refusal would arrive. A caller that
-        sets up its waiting state after the call (local_signer.py says why
-        that is the shape every caller has) then sees the failure after
-        that state, not before it."""
-        QTimer.singleShot(0, self, lambda: on_failure(reason))
+    @staticmethod
+    def _refuse(on_failure: Callable[[str], None], reason: str) -> None:
+        """Refuse a request that is never sent: every such refusal, on the
+        next turn of the event loop, as a signer's own refusal would
+        arrive. A caller that sets up its waiting state after the call
+        (local_signer.py says why that is the shape every caller has)
+        then sees the failure after that state, not before it. Not bound
+        to this client (as local_signer.py's answers are not): a client
+        closed and deleted in between must not take the refusal with
+        it, or its caller waits for good."""
+        QTimer.singleShot(0, lambda: on_failure(reason))
 
     def _succeed(self, request_id: str, result: str) -> None:
         pending = self._pending.pop(request_id, None)
