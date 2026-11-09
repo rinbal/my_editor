@@ -104,7 +104,12 @@ class SubmissionsList:
         self.later = later
         self.log = log
         self.entries = []
+        self.forgotten = []
         self.outcomes: List[RecordResult] = []
+
+    def forget(self, entry) -> None:
+        self.forgotten.append(entry)
+        self.log.append("forget")
 
     def record(self, entry, on_done) -> None:
         self.entries.append(entry)
@@ -176,7 +181,8 @@ class World:
             on_sent()
 
         return Ports(confirm_key=confirm_key, upload=self.uploads, record=self.list.record,
-                     submit=submit, lookup=lookup, send_message=send_message,
+                     forget=self.list.forget, submit=submit, lookup=lookup,
+                     send_message=send_message,
                      later=self.later, clock=self.clock)
 
     def settle(self, *, seconds: float = 0.0) -> None:
@@ -282,6 +288,9 @@ def test_abbrechen_until_the_request_is_on_its_way_sends_nothing(step):
     assert world.submitting.progress.step is Step.CANCELLED
     if step is Step.UPLOADING:
         assert world.uploads.calls[0]["stopped"]
+    # An entry recorded for it is taken back (RG-M2b 1); none was before.
+    recorded = step in (Step.RECORDING, Step.SIGNING)
+    assert world.list.forgotten == (world.list.entries[:1] if recorded else [])
 
 
 def test_once_the_request_is_on_its_way_abbrechen_changes_nothing():

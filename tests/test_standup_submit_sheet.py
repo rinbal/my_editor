@@ -28,6 +28,7 @@ from nostr.profiles import Profile, ProfileStore
 from nostr.standup.drafting import ArticleDraft
 from nostr.standup.submitting import Progress, Step
 from nostr.standup.trust import Destination, RedaktionKey
+from nostr.ui.standup_submit import RoundAnswer
 from nostr.ui.standup_submit_sheet import SubmitSheet, recent_first, rules_words
 from nostr import crypto as nostr_crypto
 from tests.standup_vectors import pk
@@ -89,6 +90,7 @@ class Writer:
         self.round, self.operator = round_, operator
         self.submitted: List[tuple] = []
         self.background: List[object] = []
+        self.on_its_way = None
 
     def instance(self, _profile, on_operator) -> None:
         if self.operator:
@@ -97,19 +99,24 @@ class Writer:
     def destinations(self, _profile, on_done, _on_failure) -> None:
         on_done(self._destinations, self._used)
 
-    def round_for(self, _profile, _publication, _d, on_done) -> None:
-        on_done(*self.round)
+    def running(self, _profile, _d, _publication=""):
+        return self.on_its_way
 
-    def submit(self, profile, draft, choice, round_):
-        self.submitted.append((profile, draft, choice, round_))
-        return Run()
+    def round_for(self, _profile, _publication, _d, on_done) -> None:
+        on_done(RoundAnswer(*self.round))
+
+    def submit(self, profile, draft, choice, answer):
+        self.submitted.append((profile, draft, choice, answer.round))
+        self.on_its_way = self.on_its_way or Run(choice)
+        return self.on_its_way
 
     def in_background(self, run) -> None:
         self.background.append(run)
 
 
 class Run:
-    def __init__(self) -> None:
+    def __init__(self, choice=None) -> None:
+        self.choice = choice
         from PySide6.QtCore import QObject, Signal
 
         class Changes(QObject):
@@ -117,11 +124,11 @@ class Run:
 
         self._changes = Changes()
         self.changed = self._changes.changed
-        self.started = False
+        self.started = 0
         self.progress = Progress(Step.SIGNING)
 
     def start(self) -> None:
-        self.started = True
+        self.started += 1
         self.changed.emit(self.progress)
 
 
@@ -240,7 +247,7 @@ def test_einreichen_hands_over_and_a_closed_sheet_lets_it_go_on(tmp_path):
     assert draft is DRAFT and round_ == 1
     assert (choice.publication, choice.signer, choice.message) == (
         MAGAZIN.address, "writer", "Passt zu eurer Reihe.")
-    assert sheet.run.started and sheet._pages.currentIndex() == 1
+    assert sheet.run.started == 1 and sheet._pages.currentIndex() == 1
     assert sheet.handoff.headline.text() == "Warte auf deine Signer-App."
     sheet.handoff.close_requested.emit()
     assert writer.background == [sheet.run]
@@ -265,3 +272,15 @@ def test_the_sheet_paints_in_both_themes(tmp_path, dark):
     assert not sheet.grab().isNull()
     sheet.apply_theme(not dark)
     assert not sheet.grab().isNull()
+
+
+def test_opened_again_on_a_work_on_its_way_the_sheet_shows_that_run(tmp_path):
+    # One run per work (RG-M2b 1): never a second with the same sid.
+    writer = Writer()
+    first = _sheet(tmp_path, writer)
+    first.submit_button.click()
+    first.handoff.close_requested.emit()            # closed while it goes on
+    again = _sheet(tmp_path, writer)
+    assert again.run is writer.on_its_way and again._pages.currentIndex() == 1
+    assert again.handoff.headline.text() == "Warte auf deine Signer-App."
+    assert len(writer.submitted) == 1 and again.run.started == 1

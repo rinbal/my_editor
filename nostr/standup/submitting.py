@@ -142,6 +142,8 @@ class Ports:
     - ``upload(pictures, on_progress(fraction), on_done({sha256: servers}),
       on_failure(words))`` returns a callable that stops it.
     - ``record(entry, on_done(RecordResult))``: SubmissionsList.record.
+    - ``forget(entry)``: SubmissionsList.forget, for an entry recorded for
+      a request that was cancelled before it was sent.
     - ``submit(body, on_sending(), on_success(receipt check),
       on_failure(StandupError))`` returns a callable that drops it.
     - ``lookup(entry, on_done(status), on_failure(StandupError))``:
@@ -155,6 +157,7 @@ class Ports:
     upload: Callable[[Sequence[EncryptedPicture], Callable[[float], None], UploadDone,
                       Callable[[str], None]], Callable[[], None]]
     record: Callable[[Any, Callable[[RecordResult], None]], None]
+    forget: Callable[[Any], None]
     submit: Callable[[Mapping[str, Any], Callable[[], None], Callable[[Any], None],
                       Callable[[StandupError], None]], Callable[[], None]]
     lookup: Callable[[Any, Callable[[Any], None], Callable[[StandupError], None]], None]
@@ -246,10 +249,15 @@ class Submitting:
         self._ask_key()
 
     def cancel(self) -> None:
-        """Until the request is on its way; then nothing changes."""
+        """Until the request is on its way; then nothing changes. An
+        entry recorded (or being recorded) for it is taken back from the
+        list: no device keeps the keys of a submission never sent."""
         if not self._progress.cancellable:
             return
+        recorded = self._progress.step in (Step.RECORDING, Step.SIGNING)
         self._halt()
+        if recorded and self._sealed is not None:
+            self._ports.forget(self._sealed.entry)
         self._show(Step.CANCELLED)
 
     def retry(self) -> None:

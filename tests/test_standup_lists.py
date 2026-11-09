@@ -685,3 +685,67 @@ def test_an_incomplete_read_state_is_written_whole_at_the_next_flush():
     assert store.flush(leaving=True)
     settle(60)
     assert relay.page(d)["pages"] == 1 and store.complete and not store.dirty
+
+
+# -- one run per submission: its keys are never replaced silently (RG-M2b 1) -----
+
+def _done(call):
+    results = []
+    call(results.append)
+    settle(60)
+    assert results, "the write never finished"
+    return results[0]
+
+
+def test_an_entry_with_other_keys_never_replaces_the_one_on_the_list():
+    store, relay, _clock = make()
+    load(store)
+    first = entry(1)
+    assert record(store, first).stored
+    second = entry(1)                               # the same sid, another run's keys
+    result = _done(lambda answer: store.record(second, answer))
+    assert result.status is RecordStatus.NOT_STORED
+    assert store.entry(first.sid).s_sub == first.s_sub
+    other, _relay, _clock = make(relay=relay)
+    assert [e.s_sub for e in load(other).value.entries] == [first.s_sub]
+
+
+def test_an_entry_proven_never_stored_may_be_replaced_by_name():
+    store, _relay, _clock = make()
+    load(store)
+    first = entry(1)
+    assert record(store, first).stored
+    second = entry(1)
+    result = _done(lambda answer: store.record(second, answer, replaces=first))
+    assert result.stored and store.entry(first.sid).s_sub == second.s_sub
+
+
+def test_another_devices_entry_with_other_keys_stays_and_this_write_is_superseded():
+    store, relay, _clock = make()
+    load(store)
+    elsewhere, _relay, _clock = make(relay=relay)
+    load(elsewhere)
+    theirs = entry(1)
+    assert record(elsewhere, theirs).stored
+    mine = entry(1, updated_at=NOW + 100)           # newer, but another run's keys
+    result = _done(lambda answer: store.record(mine, answer))
+    assert result.status is RecordStatus.SUPERSEDED
+    check, _relay, _clock = make(relay=relay)
+    assert [e.s_sub for e in load(check).value.entries] == [theirs.s_sub]
+
+
+def test_an_entry_taken_back_leaves_a_tombstone_and_another_runs_entry_is_kept():
+    store, relay, _clock = make()
+    load(store)
+    taken = entry(1)
+    assert record(store, taken).stored
+    assert _done(lambda answer: store.forget(taken, answer)).stored
+    assert store.entry(taken.sid) is None
+    other, _relay, _clock = make(relay=relay)
+    assert load(other).value.entries == ()
+    # A run with other keys is never taken back by this one's cancel.
+    kept = entry(2)
+    assert record(store, kept).stored
+    assert _done(lambda answer: store.forget(entry(2), answer)).status is \
+        RecordStatus.NOT_STORED
+    assert store.entry(kept.sid).s_sub == kept.s_sub

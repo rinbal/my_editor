@@ -35,7 +35,7 @@ background (StandupWriter.in_background).
 
 from __future__ import annotations
 
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import Callable, List, Optional, Sequence
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPixmap, QStandardItemModel
@@ -62,7 +62,7 @@ from .publish_sheet import (
     sheet_stylesheet,
 )
 from .standup_handoff import HandoffView
-from .standup_submit import StandupWriter, SubmissionRun
+from .standup_submit import RoundAnswer, StandupWriter, SubmissionRun
 
 _WIDTH = 780
 _LOGO = 20
@@ -171,14 +171,19 @@ class SubmitSheet(QDialog):
         self._destinations: List[Destination] = []
         # The round this text would go in at the chosen publication, as
         # StandupWriter.round_for answered: None while asking.
-        self._round: Optional[Tuple[Optional[int], str]] = None
+        self._round: Optional[RoundAnswer] = None
         self._asked_for = ""
         self._operator = ""
         self._load_problem = ""
         self.run: Optional[SubmissionRun] = None
         self._build(profile)
         avatars.avatar_added.connect(self._on_logo)
-        self._load()
+        running = writer.running(profile, draft.d)
+        if running is not None:
+            # One run per work: the one on its way is shown, not a second.
+            self._show_run(running)
+        else:
+            self._load()
         fit_to_window(self, QSize(_WIDTH, self._wanted_height()))
 
     # -- the sheet -----------------------------------------------------------
@@ -454,12 +459,12 @@ class SubmitSheet(QDialog):
         if destination is not None and destination.usable:
             self._writer.round_for(
                 self.account.profile(), destination.address, self._draft.d,
-                lambda round_, words, a=destination.address: self._on_round(a, round_, words))
+                lambda answer, a=destination.address: self._on_round(a, answer))
         self._refresh()
 
-    def _on_round(self, address: str, round_: Optional[int], words: str) -> None:
+    def _on_round(self, address: str, answer: RoundAnswer) -> None:
         if address == self._asked_for:
-            self._round = (round_, words)
+            self._round = answer
             self._refresh()
 
     # -- what the person chooses ---------------------------------------------
@@ -526,20 +531,19 @@ class SubmitSheet(QDialog):
             return [_(KEY_NOT_CONFIRMED)]
         if not can_choose(destination):
             return [rules_words(destination.key.rules)]
-        round_, words = self._round or (0, "")
-        if words:
-            return [words]
+        if self._round is not None and self._round.words:
+            return [self._round.words]
         rules = destination.key.rules
         return drafting.blockers(
             self._draft, writer=self.account.profile().user_pubkey,
             rights=self.rights.isChecked(), rights_required=bool(rules.get("rights_required")),
             private_names=self._private_names, message=self.message.toPlainText(),
-            submitted_to=destination.name if self._round is not None and round_ is None
-            else "")
+            submitted_to=destination.name if self._round is not None
+            and self._round.round is None else "")
 
     def round(self) -> Optional[int]:
         """The round to submit in, once known and free."""
-        return self._round[0] if self._round is not None else None
+        return self._round.round if self._round is not None else None
 
     def _refresh(self, *_args) -> None:
         blockers = self.blockers()
@@ -549,16 +553,25 @@ class SubmitSheet(QDialog):
     # -- submitting ----------------------------------------------------------
 
     def _on_submit(self) -> None:
-        choice, destination, round_ = self.choice(), self.destination(), self.round()
-        if choice is None or round_ is None or self.blockers():
+        choice = self.choice()
+        if choice is None or self.round() is None or self.blockers():
             return
-        self.run = self._writer.submit(self.account.profile(), self._draft, choice, round_)
+        run = self._writer.submit(self.account.profile(), self._draft, choice, self._round)
+        self._show_run(run)
+        run.start()
+
+    def _show_run(self, run: SubmissionRun) -> None:
+        """The handoff of ``run``, from where it is now."""
+        self.run = run
+        name, address = run.choice.name, run.choice.publication
         self.handoff.set_work(title=self._draft.title, summary=self._draft.summary,
-                              byline=self._byline, cover=self._cover, publication=choice.name,
-                              logo=self._logo_for(destination, 40))
-        self.run.changed.connect(self.handoff.show_progress)
+                              byline=self._byline, cover=self._cover, publication=name,
+                              logo=publication_logo(name, formats.parse_address(address)[0],
+                                                    self._avatars.get(
+                                                        formats.parse_address(address)[0]), 40))
+        run.changed.connect(self.handoff.show_progress)
         self._pages.setCurrentIndex(1)
-        self.run.start()
+        self.handoff.show_progress(run.progress)
         self.handoff.setFocus()
 
     def _cancel_run(self) -> None:

@@ -332,6 +332,15 @@ def holds_exactly(items: Optional[SubmissionItems], entry: SubmissionEntry) -> O
             and _same_secret(item.status_key, entry.status_key))
 
 
+def same_keys(a: SubmissionEntry, b: SubmissionEntry) -> bool:
+    """Whether two entries of one ``sid`` hold the same keys (role,
+    ``s_sub``, ``status_key``): the same run's submission, maybe at
+    another revision. Entries with other keys are another run's, and one
+    must never silently replace the other (RG-M2b 1)."""
+    return (a.role == b.role and _same_secret(a.s_sub, b.s_sub)
+            and _same_secret(a.status_key, b.status_key))
+
+
 def _same_secret(a: Optional[str], b: Optional[str]) -> bool:
     if a is None or b is None:
         return a is b
@@ -455,17 +464,53 @@ class SubmissionsList(_AccountList):
     def __init__(self, profile, **boundaries) -> None:
         super().__init__(
             profile, d_tag=formats.SUBMISSIONS_LIST_D, decode=_decode_items,
-            encode=_encode_items, merge=lambda base, local, remote: merge_items(
+            encode=_encode_items, merge=lambda base, local, remote: self._guarded(
                 remote or SubmissionItems(), local),
             words=_submissions_words(), paging=Paging(field="items"), empty=SubmissionItems,
             **boundaries)
-        # Entries recorded whose write has not ended yet, by sid: written
-        # with every write, held here only once stored.
-        self._pending: Dict[str, SubmissionEntry] = {}
+        # Entries (and tombstones) recorded whose write has not ended yet,
+        # by sid: written with every write, held here only once stored.
+        self._pending: Dict[str, Union[SubmissionEntry, Tombstone]] = {}
+        # Per pending sid, the entry whose keys it may take the place of:
+        # its own (a later revision), one proven never stored (replaces),
+        # or the one a tombstone takes back.
+        self._may_overwrite: Dict[str, SubmissionEntry] = {}
 
     def stop(self) -> None:
         super().stop()
         self._pending = {}
+        self._may_overwrite = {}
+
+    def _known(self, sid: str) -> Optional[ListItem]:
+        """The newest item of ``sid`` known here: held, last read, waiting."""
+        found = [item for source in (self._local, self._base or SubmissionItems())
+                 for item in source.items if item.sid == sid]
+        waiting = self._pending.get(sid)
+        if waiting is not None:
+            found.append(waiting)
+        return max(found, key=lambda item: item.updated_at, default=None)
+
+    def _overwrites_other_keys(self, item: Optional[ListItem], sid: str) -> bool:
+        """Whether writing the pending item of ``sid`` would replace
+        ``item``, an entry of another run (other keys) that it was not
+        allowed to replace."""
+        allowed = self._may_overwrite.get(sid)
+        return (isinstance(item, SubmissionEntry) and allowed is not None
+                and not same_keys(item, allowed))
+
+    def _guarded(self, remote: SubmissionItems, local: SubmissionItems) -> SubmissionItems:
+        """:func:`merge_items`, except that what waits here never takes
+        the place of another run's entry on the relays (another device
+        submitted the same text meanwhile): that one stays, and the write
+        here comes back SUPERSEDED."""
+        merged = merge_items(remote, local)
+        kept = {sid for sid in self._pending
+                if self._overwrites_other_keys(_item_for(remote, sid), sid)}
+        if not kept:
+            return merged
+        theirs = {item.sid: item for item in remote.items if item.sid in kept}
+        return SubmissionItems(items=tuple(theirs.get(item.sid, item) if item.sid in kept
+                                           else item for item in merged.items))
 
     def _merge_local(self, remote: SubmissionItems) -> SubmissionItems:
         return merge_items(remote, self._local)
@@ -479,25 +524,39 @@ class SubmissionsList(_AccountList):
     def entry(self, sid: str) -> Optional[SubmissionEntry]:
         return next((e for e in self._local.entries if e.sid == sid), None)
 
-    def record(self, entry: SubmissionEntry, on_done: Callable[[RecordResult], None]) -> None:
+    def record(self, entry: SubmissionEntry, on_done: Callable[[RecordResult], None], *,
+               replaces: Optional[SubmissionEntry] = None) -> None:
         """Add or update ``entry`` and write the list; ``on_done`` gets a
         :class:`RecordResult`. Send the submission only when it is
         ``stored``. ``updated_at`` becomes at least now, and later than
         every item of its ``sid`` known here (an entry, a tombstone, an
         item this app cannot read), so this edit wins the merge unless
         another device wrote a newer one meanwhile (13: the newest
-        ``updated_at`` wins); then it is SUPERSEDED."""
-        self.record_many([entry], lambda results: on_done(results[0]))
+        ``updated_at`` wins); then it is SUPERSEDED.
+
+        An entry of the same ``sid`` with other keys (another run's) is
+        never replaced: NOT_STORED here, SUPERSEDED when it is found on
+        the relays, unless ``replaces`` is that entry, proven never stored
+        by the server (12.4: not stored means it may be sent again)."""
+        self.record_many([entry], lambda results: on_done(results[0]),
+                         replaces=() if replaces is None else (replaces,))
 
     def record_many(self, entries: Sequence[SubmissionEntry],
-                    on_done: Callable[[List[RecordResult]], None]) -> None:
+                    on_done: Callable[[List[RecordResult]], None], *,
+                    replaces: Sequence[SubmissionEntry] = ()) -> None:
         """:meth:`record` for several entries, written at once (one
         signature per page changed, not per entry); ``on_done`` gets a
         result per entry, in order."""
         now = int(self._clock())
         fresh: List[SubmissionEntry] = []
+        allowed = {entry.sid: entry for entry in replaces}
         for entry in entries:
-            problem = entry_problem(entry)
+            known = self._known(entry.sid)
+            problem = entry_problem(entry) or (
+                "another submission's keys are on the list under this sid"
+                if isinstance(known, SubmissionEntry) and not same_keys(known, entry)
+                and not (entry.sid in allowed and same_keys(known, allowed[entry.sid]))
+                else None)
             if problem:
                 failed = PublishResult(PublishStatus.FAILED, reason=problem)
                 answer_later(on_done, [RecordResult(RecordStatus.NOT_STORED, e, failed)
@@ -507,6 +566,28 @@ class SubmissionsList(_AccountList):
                                                        self._latest(entry.sid) + 1)))
         for entry in fresh:
             self._pending[entry.sid] = entry
+            self._may_overwrite[entry.sid] = allowed.get(entry.sid, entry)
+        self._write(fresh, on_done)
+
+    def forget(self, entry: SubmissionEntry, on_done: Callable[[RecordResult], None]) -> None:
+        """Take back ``entry``, recorded for a request that was never sent
+        (12.4): a tombstone for its ``sid``, so no device takes the keys
+        of a submission that does not exist for one. Only while the list
+        holds exactly this entry: another run's keys are never removed
+        (NOT_STORED here, SUPERSEDED when the relays hold them)."""
+        known = self._known(entry.sid)
+        if isinstance(known, SubmissionEntry) and not same_keys(known, entry):
+            failed = PublishResult(PublishStatus.FAILED, reason="another run's entry")
+            answer_later(on_done, RecordResult(RecordStatus.NOT_STORED, entry, failed))
+            return
+        tombstone = Tombstone(sid=entry.sid, updated_at=max(int(self._clock()),
+                                                            self._latest(entry.sid) + 1))
+        self._pending[entry.sid] = tombstone
+        self._may_overwrite[entry.sid] = entry
+        self._write([tombstone], lambda results: on_done(replace(results[0], entry=entry)))
+
+    def _write(self, fresh: Sequence[Union[SubmissionEntry, Tombstone]],
+               on_done: Callable[[List[RecordResult]], None]) -> None:
         generation = self._generation
 
         def written(result: PublishResult) -> None:
@@ -515,7 +596,7 @@ class SubmissionsList(_AccountList):
             on_list = (result.value if result.status is PublishStatus.SENT
                        else result.remote if result.status is PublishStatus.UP_TO_DATE
                        else None)
-            outcomes = [self._settle(entry, result, on_list) for entry in fresh]
+            outcomes = [self._settle(item, result, on_list) for item in fresh]
             on_done(outcomes)
 
         self._publish(written)
@@ -538,9 +619,11 @@ class SubmissionsList(_AccountList):
         same sid took its place)."""
         if self._pending.get(entry.sid) is entry:
             del self._pending[entry.sid]
+            self._may_overwrite.pop(entry.sid, None)
         if on_list is None:
             return RecordResult(RecordStatus.NOT_STORED, entry, result)
-        if holds_exactly(on_list, entry):
+        if (_item_for(on_list, entry.sid) == entry if isinstance(entry, Tombstone)
+                else holds_exactly(on_list, entry)):
             self._local = merge_items(self._local, SubmissionItems((entry,)))
             return RecordResult(RecordStatus.STORED, entry, result)
         return RecordResult(RecordStatus.SUPERSEDED, entry, result,

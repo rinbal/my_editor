@@ -40,7 +40,7 @@ from ..standup import conversation, formats, trust, words
 from ..standup.client import StandupApi
 from ..standup import drafting
 from ..standup.drafting import ArticleDraft, Choice, EncryptedPicture, Sealed, round_after
-from ..standup.lists import SUBMISSIONS_UNREADABLE, ReadState, SubmissionsList
+from ..standup.lists import SUBMISSIONS_UNREADABLE, ReadState, SubmissionEntry, SubmissionsList
 from ..standup.opening import MediaKeys
 from ..standup.servers import configured_server
 from ..standup.submitting import Phase, Ports, Progress, Submitting
@@ -161,15 +161,31 @@ class _PoolSigner:
         self._sign(unsigned, on_success, on_failure)
 
 
+@dataclass(frozen=True)
+class RoundAnswer:
+    """The round a text goes to a publication in (drafting.round_after):
+    ``round``, or None while it is still open there or cannot be told
+    (``words`` say why then). ``replaces`` is the list's entry of an
+    earlier try of the same round that the server proved it never
+    stored: the one entry the new run may take the place of."""
+
+    round: Optional[int]
+    words: str = ""
+    replaces: Optional[SubmissionEntry] = None
+
+
 class SubmissionRun(QObject):
     """One submission on its way: :class:`Submitting` with its progress as
-    a Qt signal, for the sheet and for the window."""
+    a Qt signal, for the sheet and for the window. ``draft`` and
+    ``choice`` name the work and where it goes: one run per both."""
 
     changed = Signal(object)            # Progress
 
     def __init__(self, draft: ArticleDraft, choice: Choice, *, writer: str, round_: int,
                  ports: Ports, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
+        self.draft = draft
+        self._started = False
         self.submitting = Submitting(draft, choice, writer=writer, round_=round_,
                                      ports=ports, on_change=self.changed.emit)
 
@@ -186,7 +202,10 @@ class SubmissionRun(QObject):
         return self.progress.phase in (Phase.DONE, Phase.FAILED, Phase.CANCELLED)
 
     def start(self) -> None:
-        self.submitting.start()
+        """Once: a run shown again (one per work) goes on where it is."""
+        if not self._started:
+            self._started = True
+            self.submitting.start()
 
     def cancel(self) -> None:
         self.submitting.cancel()
@@ -292,51 +311,72 @@ class StandupWriter(QObject):
 
         account.destinations.find(found, on_failure)
 
+    def running(self, profile, d: str, publication: str = "") -> Optional[SubmissionRun]:
+        """The run of the work ``d`` (to ``publication``, or to any) that
+        has not ended: there is one per work and publication."""
+        account = self._account
+        if account is None or account.writer != profile.user_pubkey:
+            return None
+        return next((run for run in account.runs if not run.finished and run.draft.d == d
+                     and publication in ("", run.choice.publication)), None)
+
     def round_for(self, profile, publication: str, d: str,
-                  on_done: Callable[[Optional[int], str], None]) -> None:
-        """The round this text goes to ``publication`` in
-        (drafting.round_after): ``on_done(round, "")``, or ``(None, "")``
-        while it is still open there, or ``(None, words)`` when that
-        cannot be told now (the list or the server could not be read): a
-        guess could overwrite the entry, and with it the key, of a
-        submission sent before."""
+                  on_done: Callable[[RoundAnswer], None]) -> None:
+        """The round this text goes to ``publication`` in (see
+        :class:`RoundAnswer`). Never guessed: when the list or the server
+        cannot be read now, the answer says so, as a guess could take the
+        place of the entry, and with it the keys, of a submission sent
+        before (RG-M2b 1)."""
         account = self.account(profile)
+        if self.running(profile, d, publication) is not None:
+            answer_later(on_done, RoundAnswer(None))
+            return
 
         def known() -> None:
             mine = [e for e in account.submissions.entries()
                     if e.role == "writer" and e.publication == publication and e.d == d]
             entry = max(mine, key=lambda e: e.round, default=None)
             if entry is None:
-                on_done(1, "")
+                on_done(RoundAnswer(1))
                 return
 
             def found(answer) -> None:
                 if entry.status_key in answer.unreadable:
-                    on_done(None, "")       # the server has something: never "nothing"
+                    on_done(RoundAnswer(None))  # the server has something: never "nothing"
                     return
                 item = answer.found.get(entry.status_key)
-                on_done(round_after(entry, item.submission.state if item else None), "")
+                round_ = round_after(entry, item.submission.state if item else None)
+                # Nothing stored: the same round again, in this entry's place.
+                on_done(RoundAnswer(round_, replaces=entry if item is None else None))
 
             account.api.lookup([(entry.status_key, 0)], found,
-                               lambda _error: on_done(None, _(drafting.ROUND_UNKNOWN)))
+                               lambda _error: on_done(RoundAnswer(None,
+                                                                  _(drafting.ROUND_UNKNOWN))))
 
         def read(result) -> None:
             if result.readable:
                 known()
             else:
-                on_done(None, result.words or _(SUBMISSIONS_UNREADABLE))
+                on_done(RoundAnswer(None, result.words or _(SUBMISSIONS_UNREADABLE)))
 
         if account.submissions.loaded:
             answer_later(known)
         else:
             account.submissions.load(read)
 
-    def submit(self, profile, draft: ArticleDraft, choice: Choice, round_: int) -> SubmissionRun:
+    def submit(self, profile, draft: ArticleDraft, choice: Choice,
+               answer: RoundAnswer) -> SubmissionRun:
+        """A run for ``draft`` to ``choice``'s publication in the answered
+        round, or the one already on its way there (one per work and
+        publication: a second would record the same sid with other keys)."""
         account = self.account(profile)
+        running = self.running(profile, draft.d, choice.publication)
+        if running is not None:
+            return running
         # Owned by the list (and the sheet showing it), not by Qt: one that
         # has ended goes once nothing shows it.
-        run = SubmissionRun(draft, choice, writer=account.writer, round_=round_,
-                            ports=self._ports(account, choice.publication))
+        run = SubmissionRun(draft, choice, writer=account.writer, round_=answer.round,
+                            ports=self._ports(account, choice.publication, answer.replaces))
         account.runs = [r for r in account.runs if not r.finished] + [run]
         return run
 
@@ -381,7 +421,8 @@ class StandupWriter(QObject):
 
     # -- the ports -----------------------------------------------------------
 
-    def _ports(self, account: _Account, publication: str) -> Ports:
+    def _ports(self, account: _Account, publication: str,
+               replaces: Optional[SubmissionEntry]) -> Ports:
         api = account.api
 
         def confirm_key(on_key, on_refused) -> None:
@@ -398,9 +439,17 @@ class StandupWriter(QObject):
         def send_message(sealed: Sealed, text: str, on_sent, on_failure) -> None:
             self._send_message(account, sealed, text, on_sent, on_failure)
 
-        return Ports(confirm_key=confirm_key, upload=self._uploads,
-                     record=account.submissions.record, submit=submit, lookup=lookup,
-                     send_message=send_message, later=_later, clock=time.time)
+        def record(entry, on_done) -> None:
+            account.submissions.record(entry, on_done, replaces=replaces)
+
+        def forget(entry) -> None:
+            # Best effort: an entry left behind is found not stored and
+            # replaced by name the next time (RoundAnswer.replaces).
+            account.submissions.forget(entry, lambda _result: None)
+
+        return Ports(confirm_key=confirm_key, upload=self._uploads, record=record,
+                     forget=forget, submit=submit, lookup=lookup, send_message=send_message,
+                     later=_later, clock=time.time)
 
     @staticmethod
     def _send_message(account: _Account, sealed: Sealed, text: str, on_sent,
@@ -430,4 +479,4 @@ def _later(ms: int, callback: Callable[[], None]) -> None:
     QTimer.singleShot(max(0, int(ms)), callback)
 
 
-__all__ = ["BlossomUploads", "StandupWriter", "SubmissionRun", "thumbnail"]
+__all__ = ["BlossomUploads", "RoundAnswer", "StandupWriter", "SubmissionRun", "thumbnail"]

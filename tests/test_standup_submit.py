@@ -178,13 +178,18 @@ def _writer(submissions, api, **more) -> StandupWriter:
                          accounts=lambda _profile: account)
 
 
-def _round(writer) -> tuple:
+def _answer(writer):
     answers = []
     writer.round_for(SimpleNamespace(user_pubkey=WRITER), PUBLICATION, "ein-jahr",
-                     lambda round_, said: answers.append((round_, said)))
+                     answers.append)
     QApplication.processEvents()
     assert len(answers) == 1
     return answers[0]
+
+
+def _round(writer) -> tuple:
+    answer = _answer(writer)
+    return answer.round, answer.words
 
 
 @pytest.mark.parametrize("entries, api, expected", [
@@ -197,6 +202,28 @@ def _round(writer) -> tuple:
 ])
 def test_the_round_follows_the_list_and_the_server(entries, api, expected):
     assert _round(_writer(FakeList(entries), api)) == expected
+
+
+def test_only_an_entry_the_server_never_stored_may_be_replaced_by_the_next_try():
+    entry = _entry(1)
+    assert _answer(_writer(FakeList([entry]), FakeApi(None))).replaces is entry
+    assert _answer(_writer(FakeList([entry]), FakeApi("declined"))).replaces is None
+    assert _answer(_writer(FakeList([entry]), FakeApi("in_review"))).replaces is None
+
+
+def test_one_run_per_work_and_publication(german):
+    from nostr.standup.drafting import ArticleDraft, Choice
+    from nostr.ui.standup_submit import RoundAnswer
+    writer = _writer(FakeList(), FakeApi())
+    profile = SimpleNamespace(user_pubkey=WRITER)
+    draft = ArticleDraft(d="ein-jahr", title="T", summary="", content="x")
+    choice = Choice(publication=PUBLICATION, name="M", signer="writer", rights=True)
+    first = writer.submit(profile, draft, choice, RoundAnswer(1))
+    assert writer.submit(profile, draft, choice, RoundAnswer(1)) is first
+    assert writer.running(profile, "ein-jahr") is first
+    assert _round(writer) == (None, "")             # while it is on its way: still open
+    other = Choice(publication=f"30078:{'c4' * 32}:x", name="N", signer="writer", rights=True)
+    assert writer.submit(profile, draft, other, RoundAnswer(1)) is not first
 
 
 def test_a_round_that_cannot_be_told_is_not_guessed():
