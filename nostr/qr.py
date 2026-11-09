@@ -1,12 +1,12 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Render text (typically a ``nostrconnect://`` URI) to a QPixmap.
+"""Render text (typically a ``nostrconnect://`` link) to a QPixmap.
 
 We use ``segno`` to compute the QR matrix (pure Python, already in
 requirements.txt) and paint it ourselves with QPainter so there's no
 PNG decode round-trip and no Pillow dependency.
 
-The QR spec requires a 4-module quiet zone around the matrix — without
+The QR spec requires a 4-module quiet zone around the matrix: without
 it many scanners refuse to lock onto the code. We add it explicitly
 since segno's matrix iterator stops at the data modules.
 """
@@ -25,16 +25,16 @@ _QUIET_MODULES: int = 4
 def make_qr_pixmap(
     text: str,
     size: int = 280,
-    dark: QColor | str = "#FFFFFF",
-    light: QColor | str = "#1E1E1E",
+    dark: QColor | str = "#000000",
+    light: QColor | str = "#FFFFFF",
 ) -> QPixmap:
     """Encode ``text`` as a QR code and return a ``size``×``size`` QPixmap.
 
     ``dark`` / ``light`` follow QR convention (the dark modules are the
-    "data" pixels; light is the background). For our dark dialog theme
-    we want a light-on-dark code, which inverts the everyday
-    black-on-white convention — pass ``dark="#FFFFFF"`` and
-    ``light="#1E1E1E"``.
+    "data" pixels; light is the background, the quiet zone included).
+    The default is black on white, the way scanners read codes best,
+    whatever the window's theme: every window that shows a code draws
+    it so (Connect Signer App, the membership invoice, the key backup).
 
     Error-correction is set to **M** (medium, ~15%) which is the segno
     default for typical payloads and gives readers room to recover from
@@ -52,7 +52,7 @@ def make_qr_pixmap(
     total_modules = matrix_size + 2 * _QUIET_MODULES
 
     # Pick the largest integer module size that fits in ``size`` so all
-    # modules are pixel-aligned — fractional modules look smeary.
+    # modules are pixel-aligned: fractional modules look smeary.
     module_px = max(1, size // total_modules)
     pixmap_px = module_px * total_modules
 
