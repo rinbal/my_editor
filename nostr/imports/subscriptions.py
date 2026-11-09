@@ -42,6 +42,11 @@ Disciplines:
 Every external boundary (queries, publishing, signer, timer, clock,
 cache path) is injectable, so the whole store is testable without
 relays, a signer, or wall-clock time.
+
+Reading, checking, merging and writing the event itself is done by
+nostr/encrypted_lists.py, which every encrypted list of this kind
+shares; this store keeps what is particular to the sources: the cache,
+the debounce, the retries, read times and the older list.
 """
 
 from __future__ import annotations
@@ -50,21 +55,29 @@ import json
 import logging
 import time as _time
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QEventLoop, QObject, QTimer, Signal
 
 from atomic_file import write_json
 from i18n import _
 
-from .. import CLIENT_NAME
-from ..bunker import BunkerSessionPool, is_signer_silent
+from ..bunker import BunkerSessionPool
 from ..drafts import supersedes
-from ..events import build_event, verify_event
-from ..outbox import RelayDirectory, ask_private_relays
-from ..outbox.policy import normalize_relay_url, replacement_created_at
+from ..encrypted_lists import (
+    FAILED,
+    NO_ANSWER,
+    NOT_ACCEPTED,
+    UNREADABLE as _LIST_UNREADABLE,
+    UP_TO_DATE,
+    EncryptedList,
+    ListQuery,
+    ListWords,
+    event_mark,
+    publish_once,
+)
+from ..outbox import RelayDirectory
 from ..profiles import Profile
-from ..queries import fetch_events
 from ..relay import RelayPool
 from .constants import SUBSCRIPTIONS_DEBOUNCE_MS, SUBSCRIPTIONS_KIND
 from .feed_list import (
@@ -87,9 +100,9 @@ _log = logging.getLogger(__name__)
 _CACHE_DIR = Path.home() / ".config" / "my_editor"
 _CACHE_VERSION = 2
 
-# What a list read from the relays can turn out to be.
-_UNREADABLE = "unreadable"
-_NO_ANSWER = "no answer"
+# What a list read from the relays can turn out to be (encrypted_lists).
+_UNREADABLE = _LIST_UNREADABLE
+_NO_ANSWER = NO_ANSWER
 
 # What the list's status says (sync_status), in plain words: the window
 # shows it (CP2 review N3: nothing heard these since the Feeds page went).
@@ -105,36 +118,6 @@ SIGNER_SILENT = _("Your signer app didn't answer, so your list of sources couldn
 # Pauses before an unshared change is sent again, then every half hour.
 RETRY_DELAYS_MS = (2 * 60_000, 5 * 60_000, 15 * 60_000, 30 * 60_000)
 
-
-class _ListQuery(QObject):
-    """Asks relays for events and says which relays answered."""
-
-    def __init__(self, pool: RelayPool, parent: Optional[QObject] = None, *,
-                 timeout_ms: int = 8_000) -> None:
-        super().__init__(parent)
-        self._pool = pool
-        self._timeout_ms = timeout_ms
-
-    def events(self, relays, filters, on_done) -> None:
-        """``on_done(events, answered)``: every validly signed event, and
-        the relays that answered (sent all their stored events); one that
-        refused or could not be reached is not among them."""
-        try:
-            fetch_events(self._pool, list(relays), list(filters),
-                         lambda fetched: on_done(list(fetched.events), set(fetched.answered)),
-                         timeout_ms=self._timeout_ms, parent=self)
-        except Exception:  # noqa: BLE001, settle the callback contract
-            on_done([], set())
-
-
-def _mark(event: Optional[dict]) -> Optional[Tuple[int, str]]:
-    """Which event a list came from: its time and id."""
-    if not isinstance(event, dict):
-        return None
-    try:
-        return int(event.get("created_at", 0)), str(event.get("id") or "")
-    except (TypeError, ValueError):
-        return None
 
 _OLD_ENCRYPTION = _(
     "Your list of sources was saved with an older kind of encryption. Open "
@@ -177,11 +160,23 @@ class FeedSubscriptionStore(QObject):
         self._entitled_relays = entitled_relays
         self._cache_dir = Path(cache_dir) if cache_dir else _CACHE_DIR
         self._query = query if query is not None else (
-            _ListQuery(relay_pool, parent=self) if relay_pool is not None else None)
+            ListQuery(relay_pool, parent=self) if relay_pool is not None else None)
         self._publisher = publisher or self._default_publisher
         self._scheduler = scheduler or self._default_scheduler
         self._clock = clock or (lambda: int(_time.time()))
         self._debounce_ms = debounce_ms
+        # The shared list, and this app's older one (only ever read): one
+        # event each, in the format they have always had (not paged).
+        lists = dict(
+            decode=read_payload, encode=write_payload, merge=merge,
+            words=ListWords(unreadable=UNREADABLE, signer_silent=SIGNER_SILENT,
+                            old_encryption=_OLD_ENCRYPTION),
+            session_pool=session_pool, relay_directory=relay_directory, query=self._query,
+            publisher=self._publisher, clock=self._clock, entitled_relays=entitled_relays,
+            kind=SUBSCRIPTIONS_KIND, on_status=self.sync_status.emit, parent=self)
+        self._list = EncryptedList(d_tag=FEED_LIST_DTAG, name="of sources", **lists)
+        self._legacy_list = EncryptedList(d_tag=LEGACY_FEED_LIST_DTAG,
+                                          name="of sources (MyEditor's older one)", **lists)
 
         self._profile: Optional[Profile] = None
         # Bumped on every profile change; a callback for an older one
@@ -416,7 +411,7 @@ class FeedSubscriptionStore(QObject):
         def _on_relays(relays) -> None:
             if generation != self._generation:
                 return
-            self._read_list(profile, relays, FEED_LIST_DTAG,
+            self._list.read(profile, relays,
                             lambda result, event: _on_shared(relays, result, event))
 
         def _on_shared(relays, result, event) -> None:
@@ -437,8 +432,8 @@ class FeedSubscriptionStore(QObject):
                     self.sync_status.emit("")
                     self._mark_known()
                 return
-            self._read_list(profile, relays, LEGACY_FEED_LIST_DTAG,
-                            lambda legacy, _event: _on_legacy(legacy, result))
+            self._legacy_list.read(profile, relays,
+                                   lambda legacy, _event: _on_legacy(legacy, result))
 
         def _on_legacy(legacy, shared_result) -> None:
             if generation != self._generation:
@@ -453,14 +448,14 @@ class FeedSubscriptionStore(QObject):
                 self.sync_status.emit("")
                 self._mark_known()
 
-        self._with_relays(profile, _on_relays, reading=True)
+        self._list.relays(profile, _on_relays, reading=True)
 
     # -- internals: merging --------------------------------------------------
 
     def _newer_than_base(self, event: Optional[dict]) -> bool:
         """Whether a list read from the relays is newer than the last one
         seen (NIP-01: the later time, then the lower id)."""
-        mark = _mark(event)
+        mark = event_mark(event)
         if self._base_mark is None or mark is None:
             return True
         return supersedes(mark[0], mark[1], *self._base_mark)
@@ -477,7 +472,7 @@ class FeedSubscriptionStore(QObject):
         self._local = merged
         self._base = remote
         if event is not None:
-            self._base_mark = _mark(event)
+            self._base_mark = event_mark(event)
         self._dirty = not self._read_only and (
             not merged.same_sources(remote) or self._send_read_times)
         self._save_cache()
@@ -619,119 +614,6 @@ class FeedSubscriptionStore(QObject):
         # on the relays.
         write_json(path, data, indent=2)
 
-    # -- internals: relays ---------------------------------------------------
-
-    def _with_relays(self, profile: Profile, on_done: Callable[..., None], *,
-                     reading: bool = False) -> None:
-        """The account's private relays: where the list is written
-        (``on_done(relays)``), or with ``reading`` where it is read, which
-        also asks the relays a list written before the account's own was
-        known went: ``on_done((read, own))``, ``own`` being the relays it
-        is written to, the only ones whose answer counts."""
-        if not reading:
-            ask_private_relays(self._relay_directory, profile, on_done,
-                               entitled=self._entitled_relays, reading=False)
-            return
-
-        def _own(own: List[str]) -> None:
-            ask_private_relays(self._relay_directory, profile,
-                               lambda read: on_done((read, own)),
-                               entitled=self._entitled_relays, reading=True)
-
-        ask_private_relays(self._relay_directory, profile, _own,
-                           entitled=self._entitled_relays, reading=False)
-
-    def _read_list(self, profile: Profile, relays, d_tag: str, on_done) -> None:
-        """The newest list under ``d_tag``: ``on_done(result, event)`` with a
-        FeedList, None when there is none, _NO_ANSWER when none of the
-        account's own relays answered (never taken for "none"), or
-        _UNREADABLE (with the reason already reported).
-
-        ``relays`` is ``(read, own)``. Only the account's own lists count,
-        each checked (kind, ``d``, author, signature) before the newest is
-        chosen, so a relay can neither plant a list nor hide the real one
-        behind a newer forged one."""
-        read, own = relays
-        if self._query is None:
-            on_done(None, None)
-            return
-        counted = {normalize_relay_url(u) or u for u in own}
-
-        def _on_events(events, answered: Set[str]) -> None:
-            answered = {normalize_relay_url(u) or u for u in answered}
-            if not answered or (counted and not (answered & counted)):
-                on_done(_NO_ANSWER, None)
-                return
-            valid = [e for e in events if _is_list_of(e, profile, d_tag)]
-            newest = None
-            for event in valid:
-                if newest is None or supersedes(int(event["created_at"]), event["id"],
-                                                int(newest["created_at"]), newest["id"]):
-                    newest = event
-            if newest is None or not str(newest.get("content") or "").strip():
-                on_done(None, newest)
-                return
-            self._decrypt(profile, newest,
-                          lambda text: on_done(_parse(text), newest),
-                          lambda reason: _unreadable(reason, newest))
-
-        def _parse(text: str):
-            try:
-                payload = json.loads(text)
-            except (TypeError, ValueError):
-                payload = None
-            if not isinstance(payload, dict):
-                _log.warning("the list of sources is not a list")
-                self.sync_status.emit(UNREADABLE)
-                return _UNREADABLE
-            return read_payload(payload)
-
-        def _unreadable(reason: str, event) -> None:
-            self.sync_status.emit(reason)
-            on_done(_UNREADABLE, event)
-
-        self._query.events(read, [{
-            "kinds": [SUBSCRIPTIONS_KIND],
-            "authors": [profile.user_pubkey],
-            "#d": [d_tag],
-            "limit": 1,
-        }], _on_events)
-
-    def _decrypt(self, profile: Profile, event: dict, on_text, on_unreadable) -> None:
-        """The plaintext of a list, by its ``encrypted`` tag, as STANDUP
-        reads it: NIP-44, NIP-04 when the signer offers it, or none."""
-        algorithm = next((t[1] for t in event.get("tags", [])
-                          if isinstance(t, list) and len(t) >= 2 and t[0] == "encrypted"), "")
-        content = str(event.get("content") or "")
-        if algorithm not in ("nip44", "nip44_v2", "nip04"):
-            on_text(content)  # no encryption (a list from before it was used)
-            return
-
-        def failed(reason: str, words: str) -> None:
-            """A signer app that did not answer is said as such, whatever
-            else ``words`` would advise (CP3 review L9: a timeout read as
-            the older encryption)."""
-            _log.warning("the list of sources (%s) was not read: %s", algorithm, reason)
-            silent = is_signer_silent(reason) or reason == "not connected"
-            on_unreadable(SIGNER_SILENT if silent else words)
-
-        def _on_ready(client) -> None:
-            if algorithm == "nip04":
-                decrypt = getattr(client, "nip04_decrypt_self", None)
-                if decrypt is None:
-                    on_unreadable(_OLD_ENCRYPTION)
-                    return
-                # A signer app that refuses NIP-04: what to do is the same
-                # as without one.
-                decrypt(content, on_success=on_text,
-                        on_failure=lambda reason: failed(reason, _OLD_ENCRYPTION))
-                return
-            client.nip44_decrypt_self(content, on_success=on_text,
-                                      on_failure=lambda reason: failed(reason, UNREADABLE))
-
-        self._session_pool.get(profile, on_ready=_on_ready,
-                               on_error=lambda reason: failed(reason, SIGNER_SILENT))
-
     # -- internals: publishing -------------------------------------------------
 
     def _publish_now(self) -> None:
@@ -776,140 +658,65 @@ class FeedSubscriptionStore(QObject):
             if not self.is_busy:
                 self.settled.emit()
 
-        def _on_read_relays(relays) -> None:
-            self._read_list(profile, relays, FEED_LIST_DTAG, _on_remote)
+        def _state():
+            """What this publish merges: the store's state, or, after a
+            switch to another profile, what it started from."""
+            if current():
+                return self._base, self._local, self._base_mark
+            return snapshot["base"], snapshot["local"], snapshot["mark"]
 
-        def _on_remote(remote, event) -> None:
-            if remote == _UNREADABLE:
-                # Never write over a list that could not be read: it holds
-                # the other app's sources. The reason is on the status line.
-                _finish(None)
-                return
-            if remote == _NO_ANSWER:
-                # Never write over a list nobody answered for: a newer one
-                # may be on the relays. The change waits (dirty, cached).
-                _finish(NOT_SHARED)
-                return
-            base = self._base if current() else snapshot["base"]
-            local = self._local if current() else snapshot["local"]
-            base_mark = self._base_mark if current() else snapshot["mark"]
-            mark = _mark(event)
-            if (event is not None and base_mark is not None and mark is not None
-                    and not supersedes(mark[0], mark[1], *base_mark)):
-                # A copy no newer than the last seen (a slow or fallback
-                # relay's): it changes nothing; what is new here goes out.
-                remote, event = base, None
-            merged = merge(base, local, remote)
+        def _on_merged(merged: FeedList, remote: Optional[FeedList], event) -> None:
             if current():
                 changed = merged != self._local
                 self._local = merged
                 if remote is not None:
                     self._base = remote
                     if event is not None:
-                        self._base_mark = mark
+                        self._base_mark = event_mark(event)
                 if changed:
                     self.feeds_changed.emit()
-            if remote is not None and merged.same_sources(remote) and not snapshot["reads"]:
-                # Everything here is on the relays already.
+
+        def _up_to_date(merged: FeedList, remote: FeedList) -> bool:
+            # Everything here is on the relays already (read times travel
+            # only along with a real change, or when asked to).
+            return merged.same_sources(remote) and not snapshot["reads"]
+
+        def _on_done(result) -> None:
+            if result.status == _UNREADABLE:
+                # Never write over a list that could not be read: it holds
+                # the other app's sources. The reason is on the status line.
+                _finish(None)
+            elif result.status in (_NO_ANSWER, NOT_ACCEPTED):
+                # Nobody answered for the list (a newer one may be on the
+                # relays), or no relay took it: the change waits (dirty,
+                # cached).
+                _finish(NOT_SHARED)
+            elif result.status == UP_TO_DATE:
                 if current():
-                    self._dirty = not self._local.same_sources(remote)
+                    self._dirty = not self._local.same_sources(result.remote)
                 _finish(sent=True)
-                return
-            _sign_and_send(merged.copy(), event)
+            elif result.status == FAILED:
+                _finish(_("Your list of sources couldn't be saved online ({reason}). Your "
+                          "changes are kept on this computer.").format(reason=result.reason))
+            else:
+                _sent(result.value, result.signed)
 
-        def _sign_and_send(content: FeedList, remote_event) -> None:
-            plaintext = json.dumps(write_payload(content, int(self._clock())),
-                                   separators=(",", ":"))
+        def _sent(content: FeedList, signed: dict) -> None:
+            if current():
+                self._base = content
+                self._base_mark = event_mark(signed)
+                self._send_read_times = False
+                # Edits made while this was on its way go out next.
+                self._dirty = not self._local.same_sources(content)
+            else:
+                self._write_cache(profile.user_pubkey, content, content, False,
+                                  snapshot["legacy"], event_mark(signed))
+            _finish(sent=True)
 
-            def _on_ready(client) -> None:
-                client.nip44_encrypt_self(
-                    plaintext,
-                    on_success=lambda ciphertext: _sign(client, ciphertext),
-                    on_failure=_failed)
-
-            def _sign(client, ciphertext: str) -> None:
-                # After the list it replaces and after the last one seen,
-                # even when this computer's clock runs behind.
-                known = (self._base_mark if current() else snapshot["mark"]) or (0, "")
-                unsigned = build_event(
-                    kind=SUBSCRIPTIONS_KIND,
-                    content=ciphertext,
-                    tags=[["d", FEED_LIST_DTAG], ["client", CLIENT_NAME],
-                          ["encrypted", "nip44"]],
-                    pubkey_hex=profile.user_pubkey,
-                    created_at=max(replacement_created_at(remote_event, self._clock()),
-                                   known[0] + 1),
-                )
-                client.sign_event(unsigned, on_success=_publish, on_failure=_failed)
-
-            def _publish(signed: dict) -> None:
-                self._with_relays(profile, lambda relays: self._publisher(
-                    relays, signed, on_done=lambda accepted, total: _done(accepted, signed)))
-
-            def _done(accepted: int, signed: dict) -> None:
-                if accepted <= 0:
-                    _finish(NOT_SHARED)
-                    return
-                if current():
-                    self._base = content
-                    self._base_mark = _mark(signed)
-                    self._send_read_times = False
-                    # Edits made while this was on its way go out next.
-                    self._dirty = not self._local.same_sources(content)
-                else:
-                    self._write_cache(profile.user_pubkey, content, content, False,
-                                      snapshot["legacy"], _mark(signed))
-                _finish(sent=True)
-
-            self._session_pool.get(profile, on_ready=_on_ready, on_error=_failed)
-
-        def _failed(reason: str) -> None:
-            _finish(_("Your list of sources couldn't be saved online ({reason}). Your "
-                      "changes are kept on this computer.").format(reason=reason))
-
-        self._with_relays(profile, _on_read_relays, reading=True)
+        self._list.publish(profile, state=_state, on_merged=_on_merged,
+                           up_to_date=_up_to_date, on_done=_on_done)
 
     def _default_publisher(self, relays, signed, *, on_done) -> None:
-        """Publish ``signed`` and answer once: as soon as one relay accepted
-        it (the list is safe then; a relay that never answers must not hold
-        up quitting for the publish timeout), or when all have answered
-        and none did."""
-        relays = list(relays)
-        try:
-            job = self._relay_pool.publish(relays, signed)
-        except Exception as exc:  # noqa: BLE001, publish must never raise into UI
-            _log.warning("subscription publish failed: %s", exc)
-            on_done(0, len(relays))
-            return
-        answered = []
-
-        def accepted(_url: str) -> None:
-            if not answered:
-                answered.append(True)
-                on_done(1, len(relays))
-
-        def all_done(results) -> None:
-            if not answered:
-                answered.append(True)
-                on_done(sum(1 for _, ok, _ in results if ok), len(results))
-
-        job.first_accept.connect(accepted)
-        job.all_done.connect(all_done)
-
-
-def _is_list_of(event, profile: Profile, d_tag: str) -> bool:
-    """Whether ``event`` is the account's own list under ``d_tag``: the
-    kind, the ``d`` tag, the author and a valid signature."""
-    if not isinstance(event, dict) or event.get("kind") != SUBSCRIPTIONS_KIND:
-        return False
-    if str(event.get("pubkey", "")).lower() != profile.user_pubkey.lower():
-        return False
-    tag = next((t[1] for t in event.get("tags", [])
-                if isinstance(t, list) and len(t) >= 2 and t[0] == "d"), None)
-    if tag != d_tag:
-        return False
-    try:
-        int(event.get("created_at"))
-    except (TypeError, ValueError):
-        return False
-    return verify_event(event)
+        """Publish ``signed`` and answer once, as soon as one relay accepted
+        it (encrypted_lists.publish_once)."""
+        publish_once(self._relay_pool, relays, signed, on_done=on_done)
