@@ -559,3 +559,12 @@ def test_a_round_step_that_met_its_bounds_says_why_and_offers_no_try_again(tmp_p
 def test_a_round_that_is_told_offers_no_try_again(tmp_path):
     sheet = _sheet(tmp_path, Writer(round_=(1, "")))
     assert sheet.retry_load.isHidden()
+
+
+def test_the_privacy_lines_are_said_without_a_sheet_before_a_publication_is_chosen():
+    # RG-M2r 11: the lines moved out of the sheet (standup_privacy).
+    from nostr.ui.standup_privacy import privacy_words
+    words = privacy_words("", 0, 0, "")
+    assert words[0] == "Lesen können nur du und die Redaktion von der Publikation."
+    assert words[-1] == "Der Server bewahrt die Einreichung verschlüsselt auf."
+    assert len(words) == 4                          # no pictures: no line about them

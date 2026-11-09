@@ -15,7 +15,9 @@ app makes before it believes it (editorial contract 10, 11, 12.4).
   :class:`Receipt`, :class:`LookupItem`, :class:`RevisionRecord`) parse
   the server's JSON and raise FormatError for anything malformed.
 
-Pure: no Qt, no network, no clock.
+Pure: no Qt, no network, no clock. Each check reads the view it checks
+field by field, so the views and the checks stay together, and the
+module is longer than most.
 """
 
 from __future__ import annotations

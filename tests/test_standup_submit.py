@@ -356,6 +356,7 @@ def test_a_sign_out_hears_when_what_was_read_is_written():
     assert said == [] and len(waiting) == 1
     waiting[0](None)                                # written, or its wait passed
     assert said == ["written"]
+    QApplication.processEvents()                    # the session's answer, while it lives
 
 
 def test_the_clients_of_other_servers_are_made_once_and_let_go_with_their_account():
@@ -799,8 +800,7 @@ def test_the_first_message_is_sealed_by_the_writer_and_wrapped_to_the_submission
 
     s_sub = bytes(range(1, 33))
     sid = "ab" * 32
-    sealed = SimpleNamespace(body={"p_sub": nostr_crypto.get_public_key(s_sub).hex()},
-                             s_sub=s_sub, submission_id=sid)
+    sealed = _sealed(nostr_crypto.get_public_key(s_sub).hex(), s_sub, sid)
     signer, sent, said = SignAs(sk("writer")), [], []
 
     def send_message(submission_id, wrap, *, kind_hint, on_success, on_failure):
@@ -833,8 +833,7 @@ def test_a_message_refused_for_a_limit_says_how_long_to_wait(error, wait):
     from tests.standup_vectors import pk, sk
 
     s_sub = bytes(range(1, 33))
-    sealed = SimpleNamespace(body={"p_sub": nostr_crypto.get_public_key(s_sub).hex()},
-                             s_sub=s_sub, submission_id="ab" * 32)
+    sealed = _sealed(nostr_crypto.get_public_key(s_sub).hex(), s_sub, "ab" * 32)
     signer, waits = SignAs(sk("writer")), []
 
     def send_message(submission_id, wrap, *, kind_hint, on_success, on_failure):
@@ -857,13 +856,18 @@ def test_a_message_with_a_secret_key_in_it_is_never_sent():
     sent, said = [], []
     account = SimpleNamespace(writer=pk("writer"), api=SimpleNamespace(
         send_message=lambda *a, **k: sent.append(a)), signer=None, stopped=False)
-    sealed = SimpleNamespace(body={"p_sub": "00" * 32}, s_sub=s_sub, submission_id="ab" * 32)
+    sealed = _sealed("00" * 32, s_sub, "ab" * 32)
     nsec = encode_nsec(sk("writer").hex())
     StandupWriter._send_message(account, sealed, f"mein Schlüssel {nsec}",
                                 lambda: said.append("signed"), lambda: said.append("sent"),
                                 lambda: said.append("not sent"))
     QApplication.processEvents()
     assert sent == [] and said == ["not sent"]
+
+
+def _sealed(room: str, s_sub: bytes, sid: str) -> SimpleNamespace:
+    """What _send_message reads of a Sealed."""
+    return SimpleNamespace(body={"p_sub": room}, p_sub=room, s_sub=s_sub, submission_id=sid)
 
 
 def _wired_writer():
@@ -895,7 +899,7 @@ def test_a_first_message_sealed_after_the_account_was_let_go_is_never_posted(mon
     account = writer.account(profile)
     posted, said = [], []
     monkeypatch.setattr(account.api, "send_message", lambda *a, **k: posted.append(a))
-    sealed = SimpleNamespace(body={"p_sub": "ab" * 32}, submission_id="cd" * 32, s_sub=b"x")
+    sealed = _sealed("ab" * 32, b"x", "cd" * 32)
     StandupWriter._send_message(account, sealed, "Hallo", lambda: said.append("signed"),
                                 lambda: said.append("sent"), lambda: said.append("not sent"))
     writer.stop()

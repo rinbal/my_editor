@@ -157,6 +157,15 @@ def test_the_revision_carries_the_checklist_results_and_the_articles_language():
         ("lang", "ok")]
 
 
+def test_the_room_key_of_a_sealed_submission_is_read_by_its_name():
+    # RG-M2r 11: the first message read it from the body's dict.
+    from nostr import crypto as nostr_crypto
+    key = trust.verify_key_event(KEY_EVENT, ADDRESS)
+    sealed = drafting.seal(DRAFT, CHOICE, key, (), {}, writer=pk("writer"), round_=1, now=NOW)
+    assert sealed.p_sub == sealed.body["p_sub"] == nostr_crypto.get_public_key(
+        sealed.s_sub).hex()
+
+
 def test_the_rights_block_only_where_the_publication_requires_them():
     assert _blockers(rights=False, rights_required=False) == []
 

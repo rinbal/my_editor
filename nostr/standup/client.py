@@ -28,6 +28,10 @@ exactly one callback). What is STANDUP's own:
 The token lives in memory only, for this client: it is never written
 anywhere, and :meth:`StandupApi.stop` (sign-out, another account)
 forgets it.
+
+One class with one method per route of contract 12, in the contract's
+order, each bounding what it reads: the routes stay together so they
+read as the contract's list, so the module is longer than most.
 """
 
 from __future__ import annotations

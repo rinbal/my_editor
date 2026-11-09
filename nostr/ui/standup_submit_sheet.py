@@ -26,6 +26,9 @@ them. **Einreichen** is the default button, dimmed only by a blocker,
 whose reason is said above it (drafting.blockers, the Redaktion's key
 not confirmed, the server's address not known yet: "kommt vom Verein").
 
+The publications' logos and rules are :mod:`.standup_publications`'s,
+the lock line and its Details :mod:`.standup_privacy`'s.
+
 Einreichen turns the sheet into the handoff (standup_handoff.py), which
 shows the submission's progress and forwards the person's choices; the
 steps themselves are the table's (nostr/standup/submitting.py). Escape
@@ -41,15 +44,15 @@ from typing import Callable, List, Optional, Sequence
 
 import shiboken6
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPixmap, QStandardItemModel
+from PySide6.QtGui import QPixmap, QStandardItemModel
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel,
+    QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel,
     QPlainTextEdit, QPushButton, QRadioButton, QStackedWidget, QToolButton, QVBoxLayout,
     QWidget,
 )
 
 from alerts import answer_return_as_the_system_does
-from i18n import _, ngettext
+from i18n import _
 
 from ..avatar_store import AvatarStore
 from ..profiles import Profile, ProfileStore
@@ -59,98 +62,20 @@ from ..standup.submitting import MessageStatus
 from ..standup.trust import KEY_NOT_CONFIRMED, Destination
 from ..standup.words import LIST_NOT_SAVED
 from . import appearance
-from .avatar import color_for_pubkey, initials_for
-from .post_list import symbol_pixmap
 from .publish_article_dialog import ArticleCard, form_label, form_layout
 from .publish_sheet import (
     AccountRow, BottomRow, StatusLine, fit_margins, fit_to_window, make_sheet, scroll_area,
     sheet_stylesheet,
 )
 from .standup_handoff import HandoffView
+from .standup_privacy import PrivacyBox, privacy_words
+from .standup_publications import (
+    can_choose, publication_logo, publish_by, recent_first, rules_words,
+)
 from .standup_submit import RoundAnswer, StandupWriter, SubmissionRun
 
 _WIDTH = 780
 _LOGO = 20
-
-def publication_logo(name: str, pubkey: str, picture: Optional[QPixmap], size: int) -> QPixmap:
-    """A publication's logo as a rounded square: its picture, cropped to
-    a square, or a monogram of its name (as Contacts draws one)."""
-    out = QPixmap(size * 2, size * 2)
-    out.setDevicePixelRatio(2.0)
-    out.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(out)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    path = QPainterPath()
-    path.addRoundedRect(0, 0, size, size, size * 0.24, size * 0.24)
-    painter.setClipPath(path)
-    if picture is not None and not picture.isNull():
-        side = min(picture.width(), picture.height())
-        square = picture.copy((picture.width() - side) // 2, (picture.height() - side) // 2,
-                              side, side)
-        painter.drawPixmap(0, 0, size, size, square)
-    else:
-        painter.fillPath(path, color_for_pubkey(pubkey))
-        font = painter.font()
-        font.setBold(True)
-        font.setPixelSize(max(8, int(size * 0.45)))
-        painter.setFont(font)
-        painter.setPen(QColor("white"))
-        painter.drawText(0, 0, size, size, Qt.AlignmentFlag.AlignCenter, initials_for(name))
-    painter.end()
-    return out
-
-
-def _and(items: Sequence[str]) -> str:
-    if len(items) < 2:
-        return "".join(items)
-    return _("{items} and {last}").format(items=", ".join(items[:-1]), last=items[-1])
-
-
-def rules_words(rules) -> str:
-    """The rules of a publication, as the picker says them under it."""
-    if rules and not rules.get("open", False):
-        return _("Not taking submissions right now")
-    if "article" not in (rules.get("kinds") or ["article"]):
-        return _("Takes audio only") if rules.get("kinds") == ["audio"] \
-            else _("Takes no articles")
-    parts = []
-    asked = [str(item.get("label")) for item in rules.get("checklist") or ()
-             if isinstance(item, dict) and item.get("level") == "required" and item.get("label")]
-    if asked:
-        parts.append(_("Asks for {items}").format(items=_and(asked)))
-    most = rules.get("max_open_per_writer")
-    if formats.is_int(most, low=1):
-        parts.append(ngettext("at most {count} open submission",
-                              "at most {count} open submissions", most).format(count=most))
-    return " · ".join(parts)
-
-
-def takes_articles(destination: Destination) -> bool:
-    rules = destination.key.rules if destination.key is not None else {}
-    return "article" in (rules.get("kinds") or ["article"])
-
-
-def can_choose(destination: Destination) -> bool:
-    """Whether the picker offers it: open, for articles. One whose key
-    could not be confirmed is offered and says why it cannot be used."""
-    return destination.key is None or (destination.usable and takes_articles(destination))
-
-
-def publish_by(destination: Destination) -> str:
-    """Who publishes an accepted article: "writer", "publication" or
-    "both" (the writer chooses)."""
-    rules = destination.key.rules if destination.key is not None else {}
-    by = rules.get("publish_by")
-    value = by.get("article") if isinstance(by, dict) else by
-    return value if value in ("writer", "publication", "both") else "writer"
-
-
-def recent_first(destinations: Sequence[Destination], used: Sequence[str]) -> List[Destination]:
-    """The publications submitted to before first (``used``, newest
-    first), then the others in the server's order."""
-    rank = {address: i for i, address in enumerate(used)}
-    return sorted(destinations, key=lambda d: rank.get(d.address, len(rank)))
-
 
 class SubmitSheet(QDialog):
     """See the module docstring. ``submitted(d)`` when the work goes to a
@@ -248,7 +173,9 @@ class SubmitSheet(QDialog):
         columns.addWidget(self.card, 0, Qt.AlignmentFlag.AlignTop)
         columns.addLayout(self._build_form(), 1)
         inner.addLayout(columns)
-        inner.addWidget(self._build_privacy())
+        self.privacy = PrivacyBox(self.privacy_words, is_dark=self._is_dark)
+        self.privacy_toggle, self.privacy_lines = self.privacy.toggle, self.privacy.lines
+        inner.addWidget(self.privacy)
         inner.addStretch(1)
         self._scroll = scroll_area(content)
         column.addWidget(self._scroll, 1)
@@ -373,44 +300,6 @@ class SubmitSheet(QDialog):
 
         self._writer.discard(self.account.profile(), entry, self._answer(done))
 
-    def _build_privacy(self) -> QFrame:
-        box = self._privacy_box = QFrame()
-        box.setObjectName("privacy")
-        column = QVBoxLayout(box)
-        column.setContentsMargins(12, 8, 12, 10)
-        column.setSpacing(6)
-        line = QHBoxLayout()
-        self._lock = QLabel()
-        line.addWidget(self._lock)
-        words = QLabel(_("Content end-to-end encrypted. The server sees the title."))
-        words.setWordWrap(True)
-        line.addWidget(words, 1)
-        self.privacy_toggle = QToolButton()
-        self.privacy_toggle.setObjectName("disclosure")
-        self.privacy_toggle.setCheckable(True)
-        self.privacy_toggle.setText(_("Details"))
-        self.privacy_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.privacy_toggle.setArrowType(Qt.ArrowType.RightArrow)
-        self.privacy_toggle.setAccessibleName(_("Privacy details"))
-        self.privacy_toggle.toggled.connect(self._show_privacy)
-        line.addWidget(self.privacy_toggle)
-        column.addLayout(line)
-        self.privacy_lines = QLabel()
-        self.privacy_lines.setObjectName("muted")
-        self.privacy_lines.setWordWrap(True)
-        self.privacy_lines.setTextFormat(Qt.TextFormat.PlainText)
-        self.privacy_lines.hide()
-        column.addWidget(self.privacy_lines)
-        self._paint_privacy()
-        return box
-
-    def _paint_privacy(self) -> None:
-        r = appearance.roles(self._is_dark)
-        self._privacy_box.setStyleSheet(
-            f"QFrame#privacy {{ border: 1px solid {r.line}; border-radius: 10px;"
-            f" background: {r.field}; }}")
-        self._lock.setPixmap(symbol_pixmap("lock", 15, QColor(r.muted)))
-
     @staticmethod
     def _hint() -> QLabel:
         label = QLabel()
@@ -454,7 +343,7 @@ class SubmitSheet(QDialog):
 
     def _on_instance(self, operator: str) -> None:
         self._operator = operator
-        self._show_privacy(self.privacy_toggle.isChecked())
+        self.privacy.refresh()
 
     def _on_destinations(self, destinations: List[Destination], used: Sequence[str]) -> None:
         # Those that cannot be chosen are still listed, dimmed with why.
@@ -528,7 +417,7 @@ class SubmitSheet(QDialog):
                                  and publish_by(destination) == "both")
         self._form.setRowVisible(self._rights_row, bool(rules.get("rights_required")))
         self._show_by_hint()
-        self._show_privacy(self.privacy_toggle.isChecked())
+        self.privacy.refresh()
         self._round = None
         asked = self._asked_for = object()          # only the newest question counts
         if destination is not None and destination.usable:
@@ -557,45 +446,11 @@ class SubmitSheet(QDialog):
         if shown:
             self.message.setFocus()
 
-    def _show_privacy(self, shown: bool) -> None:
-        self.privacy_toggle.setArrowType(Qt.ArrowType.DownArrow if shown
-                                         else Qt.ArrowType.RightArrow)
-        self.privacy_lines.setText("\n".join(f"• {line}" for line in self.privacy_words()))
-        self.privacy_lines.setVisible(shown)
-
     def privacy_words(self) -> List[str]:
-        """The five lines behind the lock (plan 10.2, MyEditor's wording)."""
+        """The lines behind the lock, for the chosen publication."""
         destination = self.destination()
-        name = destination.name if destination is not None else _("the publication")
-        lines = [_("Only you and the editorial team of {publication} can read it.").format(
-                     publication=name),
-                 _("The server sees the title, the publication and who takes part, never "
-                   "the content.")]
-        count, public = len(self._draft.pictures), self._public_pictures
-        if count and not public:
-            lines.append(ngettext(
-                "The picture is encrypted on your media server. It sees when it is fetched, "
-                "never what is in it.",
-                "The pictures are encrypted on your media server. It sees when they are "
-                "fetched, never what is in them.", count))
-        elif count:
-            # Some stay public: the encrypted ones are counted, never all of
-            # them called encrypted (contract 7, feat/redaktion ee3e5d7).
-            lines.append(ngettext(
-                "{count} picture is encrypted on your media server. It sees when it is "
-                "fetched, never what is in it.",
-                "{count} pictures are encrypted on your media server. It sees when they are "
-                "fetched, never what is in them.", count).format(count=count))
-        if public:
-            lines.append(ngettext(
-                "{count} picture was already public on the web and stays public.",
-                "{count} pictures were already public on the web and stay public.",
-                public).format(count=public))
-        lines.append(_("Withdrawing deletes nothing the editorial team already has."))
-        lines.append(_("The server of {operator} keeps the submission encrypted.").format(
-            operator=self._operator) if self._operator
-            else _("The server keeps the submission encrypted."))
-        return lines
+        return privacy_words(destination.name if destination is not None else "",
+                             len(self._draft.pictures), self._public_pictures, self._operator)
 
     def choice(self) -> Optional[Choice]:
         destination = self.destination()
@@ -718,7 +573,7 @@ class SubmitSheet(QDialog):
         self.account.set_dark(is_dark)
         self.status.set_dark(is_dark)
         self.handoff.set_dark(is_dark)
-        self._paint_privacy()
+        self.privacy.set_dark(is_dark)
 
 
 __all__ = ["SubmitSheet", "publication_logo", "recent_first", "rules_words"]

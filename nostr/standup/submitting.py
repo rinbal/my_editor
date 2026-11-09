@@ -35,14 +35,18 @@ for a call it no longer waits for, a cancelled one, a second answer) is
 ignored, so a step never moves twice. The person can cancel until the
 request is on its way (:attr:`Progress.cancellable`); after a failure
 they can try again once, from where it failed (:attr:`Failure.retry`).
-The screen only shows :class:`Progress` and forwards :meth:`cancel`,
-:meth:`retry` and :meth:`retry_message`; it never composes a step.
+The screen only shows :class:`Progress` (:mod:`.progress`, the values it
+reads; the requests, :class:`Ports`, are :mod:`.ports`'s; both offered
+here too) and forwards :meth:`cancel`, :meth:`retry` and
+:meth:`retry_message`; it never composes a step.
+
+The module is one state machine: its table, the events the table names
+and their handlers stay together (lesson 10), so it is longer than most.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from enum import Enum
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from . import drafting, formats, views, words
@@ -51,6 +55,11 @@ from .errors import Code, StandupError
 from .formats import FormatError, SecretKeyFound
 from ..list_results import PublishStatus
 from .entries import RecordResult, RecordStatus
+from .ports import Ports
+from .progress import (
+    HELD_UNKNOWN_FIRST, HELD_WORDS, PHASE_OF, Failure, Held, HeldWords, MessageStatus, Phase,
+    Progress, Step,
+)
 from .rounds import RoundAnswer
 from .trust import KeyNotConfirmed, RedaktionKey
 from .watcher import Different, NotStored, StoredOther, Superseded
@@ -60,177 +69,6 @@ from .watcher import Different, NotStored, StoredOther, Superseded
 LOOKUP_DELAYS_MS = (0, 2_000, 10_000, 30_000, 60_000, 300_000)
 # Files a receipt misses are uploaded again this often before it fails.
 MAX_REUPLOADS = 2
-
-
-class Step(Enum):
-    KEY = "key"                     # the Redaktion's key (8.1)
-    ENCRYPTING = "encrypting"       # SMF1, each picture
-    UPLOADING = "uploading"         # to the writer's media servers
-    RECORDING = "recording"         # the entry on the list (13)
-    SIGNING = "signing"             # the NIP-98 request
-    SENDING = "sending"             # on its way: no cancelling now
-    ROUND = "round"                 # chosen again after stale_revision (contract 2)
-    CHECKING = "checking"           # no answer: asked by the status key
-    REUPLOADING = "reuploading"     # files the receipt missed
-    SUBMITTED = "submitted"         # a matching receipt, every file found
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
-
-class Phase(Enum):
-    """What the handoff shows (plan 10.3)."""
-
-    ENCRYPT = "encrypt"
-    UPLOAD = "upload"
-    SIGNER = "signer"
-    SEND = "send"
-    UNCONFIRMED = "unconfirmed"
-    DONE = "done"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
-
-PHASE_OF = {
-    Step.KEY: Phase.ENCRYPT, Step.ENCRYPTING: Phase.ENCRYPT, Step.UPLOADING: Phase.UPLOAD,
-    Step.REUPLOADING: Phase.UPLOAD, Step.RECORDING: Phase.SIGNER, Step.SIGNING: Phase.SIGNER,
-    Step.SENDING: Phase.SEND, Step.ROUND: Phase.SEND, Step.CHECKING: Phase.UNCONFIRMED,
-    Step.SUBMITTED: Phase.DONE,
-    Step.FAILED: Phase.FAILED, Step.CANCELLED: Phase.CANCELLED,
-}
-_CANCELLABLE = frozenset({Step.KEY, Step.ENCRYPTING, Step.UPLOADING, Step.RECORDING,
-                          Step.SIGNING})
-
-
-class Held(Enum):
-    """What the server holds of this submission, as far as the run knows
-    (lesson 32): the one fact every "nothing is submitted", "not
-    confirmed" and "is in" of a failure or of a stopped run is said
-    from (:data:`HELD_WORDS`), on every screen. Set when a request goes
-    out, by the receipt, by a refusal and by the lookup; never by a
-    step's name alone."""
-
-    NOTHING = "nothing"     # nothing went out, or the server said it has none of it
-    MAYBE = "maybe"         # a request went out with no answer to judge it by yet
-    STORED = "stored"       # a receipt: the server stores this revision (files may miss)
-    OTHER = "other"         # it holds another version of the work, or this one not as sent
-
-
-@dataclass(frozen=True)
-class HeldWords:
-    """What one :class:`Held` says (untranslated): ``failed``, the second
-    line of a failure; ``stopped``, the status bar's when the account was
-    let go while the run went on (``{publication}`` filled in)."""
-
-    failed: str
-    stopped: str
-
-
-HELD_WORDS = {
-    Held.NOTHING: HeldWords(words.NOTHING_SUBMITTED, words.STOPPED_NOTHING_SENT),
-    Held.MAYBE: HeldWords(words.MAYBE_RECEIVED, words.STOPPED_UNCONFIRMED),
-    Held.STORED: HeldWords(words.STORED_PICTURE_MISSING, words.STOPPED_PICTURES),
-    Held.OTHER: HeldWords(words.TEXT_STAYS, words.STOPPED_OTHER_VERSION),
-}
-# Furthest from known first: the run a stopped account names.
-HELD_UNKNOWN_FIRST = (Held.MAYBE, Held.STORED, Held.NOTHING, Held.OTHER)
-
-
-class MessageStatus(Enum):
-    NONE = "none"
-    SIGNING = "signing"             # the signer app is asked to seal it
-    SENDING = "sending"
-    SENT = "sent"
-    FAILED = "failed"
-
-
-@dataclass(frozen=True)
-class Failure:
-    """What did not happen: ``headline`` (untranslated words, with
-    ``{publication}`` filled in where they name it), ``detail`` (what the
-    server holds, :data:`HELD_WORDS`), ``said`` (the list's or the
-    upload's own words, already translated, or ""), and where trying
-    again goes on (``retry``; None when it would not help). The second
-    line shown is ``said`` followed by ``detail``. ``retry_at``: the
-    clock time before which trying again only meets the same limit (a
-    429's Retry-After, contract 15); None when it may at once."""
-
-    headline: str
-    retry: Optional[Step]
-    detail: str
-    said: str = ""
-    retry_at: Optional[float] = None
-
-
-@dataclass(frozen=True)
-class Progress:
-    step: Step
-    pictures: int = 0
-    uploaded: float = 0.0           # 0 to 1 while uploading
-    failure: Optional[Failure] = None
-    receipt: Optional[views.Receipt] = field(default=None, repr=False)
-    message: MessageStatus = MessageStatus.NONE
-    # A request was written to the network once: from then on nothing is
-    # cancelled, whatever the step (the server may hold it).
-    sent: bool = False
-    held: Held = Held.NOTHING
-    # The first message met a limit: sent again from this clock time on.
-    message_retry_at: Optional[float] = None
-
-    @property
-    def phase(self) -> Phase:
-        return PHASE_OF[self.step]
-
-    @property
-    def cancellable(self) -> bool:
-        return self.step in _CANCELLABLE and not self.sent
-
-
-UploadDone = Callable[[Mapping[str, Tuple[str, ...]]], None]
-
-
-@dataclass(frozen=True)
-class Ports:
-    """Every request, as the window wires it (tests: fakes).
-
-    - ``confirm_key(on_key, on_refused)``: trust.confirm_key for the
-      receiving server.
-    - ``upload(pictures, on_progress(fraction), on_done({sha256: servers}),
-      on_failure(words))`` returns a callable that stops it.
-    - ``held(sid)``: SubmissionsList.entry, the list's entry for a sid,
-      whose secrets a new revision 1 of it keeps (contract 2).
-    - ``record(entry, on_done(RecordResult))``: SubmissionsList.record.
-    - ``forget(entry)``: SubmissionsList.forget, for an entry recorded for
-      a request that was cancelled before it was sent, or that the
-      server refused for its round.
-    - ``submit(body, on_sending(), on_success(receipt check),
-      on_failure(StandupError))`` returns a callable that drops it.
-    - ``lookup(sealed, on_done(status), on_failure(StandupError))``:
-      watcher.resolve_unconfirmed for ``sealed.entry``, its receipt checked
-      against ``sealed.body``, what was sent.
-    - ``send_message(sealed, text, on_signed(), on_sent(), on_failure(wait))``:
-      ``on_signed`` once the signer sealed it, before it is sent; ``wait``
-      the seconds a limit asks for (a 429's Retry-After), or None.
-    - ``choose_round(entry, on_done(RoundAnswer))``: contract 2 from step
-      1 for the work of ``entry``, the entry of a revision 1 the server
-      refused as ``stale_revision`` (rounds.ask_round with ``stored``).
-    - ``later(ms, callback)``; ``clock()``.
-    """
-
-    confirm_key: Callable[[Callable[[RedaktionKey], None],
-                           Callable[[KeyNotConfirmed], None]], None]
-    upload: Callable[[Sequence[EncryptedPicture], Callable[[float], None], UploadDone,
-                      Callable[[str], None]], Callable[[], None]]
-    held: Callable[[str], Optional[Any]]
-    record: Callable[[Any, Callable[[RecordResult], None]], None]
-    forget: Callable[[Any], None]
-    submit: Callable[[Mapping[str, Any], Callable[[], None], Callable[[Any], None],
-                      Callable[[StandupError], None]], Callable[[], None]]
-    lookup: Callable[[Any, Callable[[Any], None], Callable[[StandupError], None]], None]
-    send_message: Callable[[Sealed, str, Callable[[], None], Callable[[], None],
-                            Callable[[], None]], None]
-    choose_round: Callable[[Any, Callable[[RoundAnswer], None]], None]
-    later: Callable[[int, Callable[[], None]], None]
-    clock: Callable[[], float]
 
 
 # The events that are not the domain's own values.

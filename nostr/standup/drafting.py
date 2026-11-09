@@ -220,6 +220,13 @@ class Sealed:
     def submission_id(self) -> str:
         return self.body["submission_id"]
 
+    @property
+    def p_sub(self) -> str:
+        """The submission's room key (hex), which its messages are wrapped
+        to (contract 9.2): the body carries it, checked when it was built
+        (submission.submission_body)."""
+        return self.body["p_sub"]
+
 
 def encrypt_pictures(pictures: Sequence[LocalPicture]) -> Tuple[EncryptedPicture, ...]:
     """Each picture under a fresh 32-byte key, as one SMF1 file."""

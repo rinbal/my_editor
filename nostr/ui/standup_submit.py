@@ -15,21 +15,17 @@ the receipt). :meth:`StandupWriter.stop` is the sign-out (13): the
 submissions on their way stop answering, the read state is written,
 then the lists stop, and the media keys are forgotten.
 
-:class:`BlossomUploads` sends the encrypted pictures to the writer's own
-media servers through the Media Library's store (the first server, then
-the mirrors), and :func:`thumbnail` makes the revision's small cover
-(about 128 px, JPEG, at most 24 KB).
+The pictures (:class:`BlossomUploads`, :func:`thumbnail`) are
+:mod:`.standup_uploads`'s, offered here too.
 """
 
 from __future__ import annotations
 
 import functools
 import time
-from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Dict, List, Optional, Sequence
 
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QObject, QTimer, Qt, Signal
-from PySide6.QtGui import QColor, QImage, QPainter
+from PySide6.QtCore import QObject, QTimer, Signal
 
 from i18n import _, ngettext
 
@@ -39,7 +35,7 @@ from ..later import answer_later
 from ..standup import conversation, formats, trust, words
 from ..standup.client import StandupApi
 from ..standup import drafting
-from ..standup.drafting import ArticleDraft, Choice, EncryptedPicture, Sealed
+from ..standup.drafting import ArticleDraft, Choice, Sealed
 from ..standup.entries import SubmissionEntry
 from ..standup.errors import Code, StandupError
 from ..standup.lists import SUBMISSIONS_UNREADABLE, ReadState, SubmissionsList
@@ -51,113 +47,7 @@ from ..standup.submitting import (
 from ..standup.rounds import RoundAnswer, ask_round
 from ..standup.trust import Destination
 from ..standup.watcher import resolve_unconfirmed
-
-THUMB_SIDE = 128
-
-
-def thumbnail(data: bytes) -> Optional[dict]:
-    """The revision's ``thumb`` (5) of a picture: at most 128 px, JPEG on
-    white, at most 24 KB; None when it cannot be read or made that small."""
-    image = QImage.fromData(QByteArray(data))
-    if image.isNull():
-        return None
-    image = image.scaled(min(THUMB_SIDE, image.width()), min(THUMB_SIDE, image.height()),
-                         Qt.AspectRatioMode.KeepAspectRatio,
-                         Qt.TransformationMode.SmoothTransformation)
-    flat = QImage(image.size(), QImage.Format.Format_RGB32)
-    flat.fill(QColor("white"))
-    painter = QPainter(flat)
-    painter.drawImage(0, 0, image)
-    painter.end()
-    for quality in (82, 68, 52, 36):
-        buffer = QBuffer()
-        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-        flat.save(buffer, "JPEG", quality)
-        raw = bytes(buffer.data())
-        if len(raw) <= formats.MAX_THUMB_BYTES:
-            return {"mime": "image/jpeg", "data": formats.b64encode(raw)}
-    return None
-
-
-@dataclass
-class _Upload:
-    on_progress: Callable[[float], None]
-    on_done: Callable[[Dict[str, Tuple[str, ...]]], None]
-    on_failure: Callable[[str], None]
-    expected: Dict[str, str]                        # name -> cipher sha256
-    sizes: Dict[str, int]
-    sent: Dict[str, int] = field(default_factory=dict)
-    servers: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
-    left: Set[str] = field(default_factory=set)
-
-
-class BlossomUploads(QObject):
-    """The ``upload`` port: each SMF1 file as a plain Blossom upload
-    through ``store`` (MediaStore), the first server, then the mirrors.
-    Answers the servers that hold each file, by its hash."""
-
-    def __init__(self, store, parent: Optional[QObject] = None) -> None:
-        super().__init__(parent)
-        self._store = store
-        self._jobs: Dict[str, _Upload] = {}
-        store.upload_progress.connect(self._progress)
-        store.upload_finished.connect(self._finished)
-        store.upload_failed.connect(self._failed)
-
-    def __call__(self, pictures: Sequence[EncryptedPicture], on_progress, on_done,
-                 on_failure) -> Callable[[], None]:
-        names = {f"{p.sha256[:16]}.smf1": p for p in pictures}
-        job = _Upload(on_progress, on_done, on_failure,
-                      expected={n: p.sha256 for n, p in names.items()},
-                      sizes={n: p.encryptor.cipher_size for n, p in names.items()},
-                      left=set(names))
-        for name in names:
-            self._jobs[name] = job
-        for name, picture in names.items():
-            if self._jobs.get(name) is job:
-                # Contract 7: never the plaintext's type. Sent whatever the
-                # library says: a server said it misses a file (12.4).
-                self._store.upload_bytes(picture.cipher, name=name,
-                                         mime_type="application/octet-stream", force=True,
-                                         submission=True)
-        return lambda: self._stop(job)
-
-    def _end(self, job: _Upload) -> None:
-        for name in [n for n, j in self._jobs.items() if j is job]:
-            del self._jobs[name]
-
-    def _stop(self, job: _Upload) -> None:
-        names = [n for n, j in self._jobs.items() if j is job]
-        self._end(job)
-        for name in names:
-            self._store.cancel_upload(name)
-
-    def _progress(self, name: str, sent: int, _total: int) -> None:
-        job = self._jobs.get(name)
-        if job is not None:
-            job.sent[name] = sent
-            job.on_progress(sum(job.sent.values()) / max(1, sum(job.sizes.values())))
-
-    def _finished(self, name: str, media) -> None:
-        job = self._jobs.get(name)
-        if job is None:
-            return
-        if media.hash != job.expected[name]:
-            self._failed(name, "")
-            return
-        job.servers[media.hash] = tuple(u.get("server", "") for u in media.urls
-                                        if u.get("server"))
-        job.left.discard(name)
-        if not job.left:
-            self._end(job)
-            job.on_done(dict(job.servers))
-
-    def _failed(self, name: str, reason: str) -> None:
-        job = self._jobs.get(name)
-        if job is not None:
-            self._stop(job)
-            job.on_failure(reason)
-
+from .standup_uploads import THUMB_SIDE, BlossomUploads, thumbnail
 
 class _PoolSigner:
     """The account's signer for sealing a message (conversation.py)."""
@@ -630,7 +520,7 @@ class StandupWriter(QObject):
         """The first message, after the receipt: sealed by the account
         (one signer prompt), wrapped to the submission's room, sent with a
         session; only the server's ``seq`` says it is there."""
-        room = sealed.body["p_sub"]
+        room = sealed.p_sub
         try:
             rumor = conversation.message_rumor(room=room, submission_id=sealed.submission_id,
                                                text=text, sender=account.writer,
@@ -677,4 +567,6 @@ def _later(ms: int, callback: Callable[[], None]) -> None:
     QTimer.singleShot(max(0, int(ms)), callback)
 
 
-__all__ = ["BlossomUploads", "RoundAnswer", "StandupWriter", "SubmissionRun", "thumbnail"]
+__all__ = [
+    "BlossomUploads", "RoundAnswer", "StandupWriter", "SubmissionRun", "THUMB_SIDE", "thumbnail",
+]
