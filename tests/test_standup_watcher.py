@@ -450,3 +450,39 @@ def test_answers_that_keep_saying_more_end_a_round_and_a_reading_alike():
     read_submission(world.writer, entry.sid, outcome.append, outcome.append)
     world.nam.settle()
     assert [o.message for o in outcome] == [too_long]
+
+
+# -- each channel counts apart (RG-M2a 7, feat/redaktion ceac858) ---------------------
+
+def test_internal_note_3_does_not_hide_message_3():
+    def item(seq, kind):
+        return {"seq": seq, "at": NOW, "type": kind, "wrap": {"kind": 1059}, "event": None}
+
+    channels = views.parse_channels([item(3, "message"), item(3, "internal"), item(1, "internal")])
+    assert [(i.seq, i.type) for i in channels["conversation"]] == [(3, "message")]
+    assert [(i.seq, i.type) for i in channels["internal"]] == [(1, "internal"), (3, "internal")]
+    assert views.parse_timeline([item(3, "message"), item(3, "internal")]) == \
+        channels["conversation"][:1]                    # a lookup never shows a note
+
+
+def test_a_writer_who_is_a_member_reads_both_channels_each_from_its_own_cursor():
+    # The page fills with internal notes the old reader dropped, so it
+    # never moved past them and failed with "nothing came".
+    world = World()
+    _p, entry = world.submit()
+    record = world.server.submissions[entry.sid]
+    world.server.publication().members[record.writer] = "redaktion"
+    for _ in range(3):
+        world.clock.advance(1)
+        world.server._append(record, {"type": "internal", "wrap": {"kind": 1059},
+                                      "event": None})
+    world.clock.advance(1)
+    world.server._event(record, "taken", None)
+    world.server.timeline_per_answer["get"] = 2
+    outcome = []
+    read_submission(world.writer, entry.sid, outcome.append, outcome.append)
+    world.nam.settle()
+    [detail] = outcome
+    assert [i.seq for i in detail.timeline] == [1, 2]
+    assert [i.seq for i in detail.internal] == [1, 2, 3]
+    assert len([r for r in world.server.requests if r[0] == "GET"]) == 3

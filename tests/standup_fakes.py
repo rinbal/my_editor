@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import heapq
 import json
 import re
 import secrets
@@ -297,6 +298,10 @@ class Record:
     updated_at: int = 0
     seq: int = 0
     last_message_seq: int = 0
+    # Internal notes count apart (contract 12.4, feat/redaktion ceac858).
+    internal_seq: int = 0
+    last_internal_message_seq: int = 0
+    activity_at: int = 0
 
     @property
     def revision(self) -> int:
@@ -593,9 +598,15 @@ class FakeStandupServer:
             return {"type": "releaser", "pubkey": None, "pending": []}
         return {"type": "none", "pubkey": None, "pending": []}
 
-    def view(self, record: Record) -> dict:
+    def view(self, record: Record, *, member: bool = False) -> dict:
+        """backend core/editorial_views.py submission_view (fde04a3): a
+        member's View also carries the internal counter and activity_at;
+        a participant's is the same with and without internal notes."""
         current = record.current
-        return {
+        internal = {"last_internal_seq": record.internal_seq, "activity_at": record.activity_at,
+                    # Contract-ahead (feat/redaktion 3b00351, 9.3).
+                    "last_internal_message_seq": record.last_internal_message_seq}
+        return dict(internal if member else {}, **{
             "submission_id": record.sid, "publication": record.publication,
             "kind": record.kind, "title": record.title, "writer": record.writer,
             "participants": list(record.participants), "state": record.state,
@@ -610,13 +621,22 @@ class FakeStandupServer:
             "last_message_seq": record.last_message_seq,
             "confirmations": {k: list(v) for k, v in record.confirmations.items()},
             "published": record.published, "placed": record.placed, "proposal_by": None,
-        }
+        })
 
     def _append(self, record: Record, item: dict) -> int:
-        record.seq += 1
-        record.updated_at = int(self.clock())
-        record.timeline.append(dict(item, seq=record.seq, at=int(self.clock())))
-        return record.seq
+        """backend db/editorial_submissions.py _append (fde04a3): an
+        internal note moves only the internal counter and activity_at."""
+        now = int(self.clock())
+        if item["type"] == "internal":
+            record.internal_seq += 1
+            seq = record.internal_seq
+        else:
+            record.seq += 1
+            record.updated_at = now
+            seq = record.seq
+        record.activity_at = now
+        record.timeline.append(dict(item, seq=seq, at=now))
+        return seq
 
     def _event(self, record: Record, name: str, who: Optional[Caller], **extra) -> int:
         # A revision's signed action is served with the Revision only.
@@ -1020,12 +1040,25 @@ class FakeStandupServer:
                 "timeline": timeline, "more": more})
         return _ok({"items": answers})
 
-    def _timeline(self, record: Record, since: int, *, limit: int,
-                  member: bool = False) -> List[dict]:
+    def _timeline(self, record: Record, since: int, *, limit: int, member: bool = False,
+                  since_internal: int = 0) -> List[dict]:
         """backend db/editorial_submissions.py timeline (fde04a3): the
-        items after ``since``, oldest first, at most ``limit``."""
-        return [dict(i) for i in record.timeline
-                if i["seq"] > since and (member or i["type"] != "internal")][:limit]
+        conversation after ``since``, and for a member the internal notes
+        after ``since_internal``, each channel in its own order, merged by
+        time, at most ``limit``."""
+        conversation = [dict(i) for i in record.timeline
+                        if i["type"] != "internal" and i["seq"] > since][:limit]
+        if not member:
+            return conversation
+        internal = [dict(i) for i in record.timeline
+                    if i["type"] == "internal" and i["seq"] > since_internal][:limit]
+        return list(heapq.merge(conversation, internal, key=lambda i: i["at"]))[:limit]
+
+    def _is_member(self, record: Record, pubkey: str) -> bool:
+        """backend api/editorial_context.py is_member: whatever the primary
+        role, a member reads internal notes (a writer who is one too)."""
+        return self.publications[record.publication].members.get(pubkey) in (
+            "owner", "redaktion", "curator")
 
     def _submission_get(self, who, body, params, query) -> FakeReply:
         record = self._record(params["sid"])
@@ -1033,27 +1066,31 @@ class FakeStandupServer:
             return _error(404, "not_found")
         role = self._role(record, who.pubkey)
         if role is None or role.startswith("invited:"):
-            return _error(403, "forbidden")
-        since = int((query.get("since") or ["0"])[0])
-        member = role in ("owner", "redaktion", "curator")
-        # Contract 12.4 (5c11475): the latest revision, or only ?revision=n.
-        asked = query.get("revision")
-        if asked and int(asked[0]) not in record.revisions:
+            # backend submission_access: nobody without a role learns it exists.
             return _error(404, "not_found")
-        numbers = [int(asked[0])] if asked else [max(record.revisions)]
-        revisions = []
-        for number in numbers:
-            revision = dict(record.revisions[number])
-            wraps = revision["wraps"]
-            mine = "redaktion" if member else ("writer" if role == "writer" else who.pubkey)
-            revision["wraps"] = {k: v for k, v in wraps.items() if k == mine}
-            revisions.append(revision)
+        numbers = {}
+        for name, default, high in (("since", 0, MAX_SAFE_INTEGER),
+                                    ("since_internal", 0, MAX_SAFE_INTEGER),
+                                    ("revision", record.revision, record.revision)):
+            raw = (query.get(name) or [None])[0]
+            if raw is not None and not (re.fullmatch(r"[0-9]{1,16}", raw)
+                                        and (name != "revision" or int(raw) >= 1)
+                                        and int(raw) <= high):
+                return _error(422, "invalid", detail={"field": name})
+            numbers[name] = default if raw is None else int(raw)
+        member = self._is_member(record, who.pubkey)
+        # Contract 12.4 (5c11475): the latest revision, or only ?revision=n.
+        revision = dict(record.revisions[numbers["revision"]])
+        # backend wrap_names: the writer's own wrap first, then a contributor's.
+        mine = {"writer": "writer", "contributor": who.pubkey}.get(role, "redaktion")
+        revision["wraps"] = {k: v for k, v in revision["wraps"].items() if k == mine}
         pub = self.publications[record.publication]
         limit = self.timeline_per_answer["get"]
         timeline, more = TimelineBudget(self.timeline_bytes).page(
-            self._timeline(record, since, limit=limit + 1, member=member), limit=limit)
-        return _ok({"submission": self.view(record), "my_role": role, "revisions": revisions,
-                    "timeline": timeline, "more": more,
+            self._timeline(record, numbers["since"], limit=limit + 1, member=member,
+                           since_internal=numbers["since_internal"]), limit=limit)
+        return _ok({"submission": self.view(record, member=member), "my_role": role,
+                    "revisions": [revision], "timeline": timeline, "more": more,
                     "members": [self._member(pub, p) for p in pub.members]})
 
     def _messages(self, who, body, params, query) -> FakeReply:
@@ -1069,7 +1106,7 @@ class FakeStandupServer:
                 or len(formats.canonical_bytes(wrap)) > formats.MAX_WRAP_EVENT_BYTES:
             return _error(422, "invalid")
         channel = body.get("channel")
-        if channel == "internal" and role not in ("owner", "redaktion", "curator"):
+        if channel == "internal" and not self._is_member(record, who.pubkey):
             return _error(403, "role")
         if channel not in ("conversation", "internal"):
             return _error(400, "bad_request")
@@ -1082,6 +1119,8 @@ class FakeStandupServer:
                                     else "internal", "wrap": wrap, "event": None})
         if channel == "conversation" and body["kind_hint"] == "message":
             record.last_message_seq = seq
+        elif body["kind_hint"] == "message":
+            record.last_internal_message_seq = seq
         return _ok({"seq": seq})
 
     def _signed_record(self, who, body, params) -> Tuple[Optional[Record], Optional[FakeReply], str]:

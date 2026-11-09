@@ -315,33 +315,42 @@ class SubmissionWatcher(QObject):
 def read_submission(api: StandupApi, submission_id: str,
                     on_done: Callable[[answers.SubmissionDetail], None],
                     on_failure: Callable[[StandupError], None], *, since: int = 0,
-                    revision: Optional[int] = None) -> None:
+                    since_internal: int = 0, revision: Optional[int] = None) -> None:
     """``GET /api/submissions/<sid>`` until the server says no more
     timeline items wait (``more``, contract 15): ``on_done`` once, with
-    the last answer's view, revisions and members and every timeline
-    item since ``since``, each ``seq`` once, in order. An answer that
-    promises more and brings nothing new is a failure, and so are
-    :data:`MAX_CONTINUATIONS` answers in a row that promise more (a
-    server must not hold the reader in a loop), as in a round."""
-    gathered: Dict[int, views.TimelineItem] = {}
+    the last answer's view, revisions and members and every item of each
+    channel after its own cursor (``since`` for the conversation,
+    ``since_internal`` for a member's internal notes, feat/redaktion
+    ceac858), each (channel, ``seq``) once, in order. An answer that
+    promises more and brings nothing new in either channel is a failure,
+    and so are :data:`MAX_CONTINUATIONS` answers in a row that promise
+    more (a server must not hold the reader in a loop), as in a round."""
+    gathered: Dict[str, Dict[int, views.TimelineItem]] = {"conversation": {}, "internal": {}}
 
-    def ask(after: int, continuation: int) -> None:
+    def ask(after: int, after_internal: int, continuation: int) -> None:
         def answered(detail: answers.SubmissionDetail) -> None:
-            gathered.update({item.seq: item for item in detail.timeline})
-            last = max(gathered, default=after)
-            if detail.more and last <= after:
+            gathered["conversation"].update({item.seq: item for item in detail.timeline})
+            gathered["internal"].update({item.seq: item for item in detail.internal})
+            last = max(gathered["conversation"], default=after)
+            last_internal = max(gathered["internal"], default=after_internal)
+            if detail.more and (last, last_internal) == (after, after_internal):
                 on_failure(_nothing_new())
             elif detail.more and continuation >= MAX_CONTINUATIONS:
                 on_failure(_too_long())
             elif detail.more:
-                ask(last, continuation + 1)
+                ask(last, last_internal, continuation + 1)
             else:
-                on_done(replace(detail, more=False,
-                                timeline=tuple(gathered[seq] for seq in sorted(gathered))))
+                on_done(replace(detail, more=False, timeline=_in_order(gathered["conversation"]),
+                                internal=_in_order(gathered["internal"])))
 
-        api.submission(submission_id, answered, on_failure, since=after, revision=revision)
+        api.submission(submission_id, answered, on_failure, since=after,
+                       since_internal=after_internal or None, revision=revision)
 
-    ask(since, 0)
+    ask(since, since_internal, 0)
+
+
+def _in_order(items: Dict[int, views.TimelineItem]) -> tuple:
+    return tuple(items[seq] for seq in sorted(items))
 
 
 # --------------------------------------------------------------------------- #

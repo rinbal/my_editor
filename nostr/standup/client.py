@@ -501,17 +501,21 @@ class StandupApi(SignedJsonApi):
     def submission(self, submission_id: str,
                    on_success: Callable[[answers.SubmissionDetail], None],
                    on_failure, *, since: Optional[int] = None,
+                   since_internal: Optional[int] = None,
                    revision: Optional[int] = None) -> StandupCall:
-        """``GET /api/submissions/<sid>?since=seq&revision=n`` with the
-        session: the latest revision, or only revision ``revision``. An
-        answer with ``more`` has timeline items beyond ``since`` waiting:
-        ask again from its last ``seq`` (``watcher.read_submission`` does)."""
+        """``GET /api/submissions/<sid>?since=seq&since_internal=n&revision=n``
+        with the session: the latest revision, or only revision
+        ``revision``. ``since`` is a seq of the conversation,
+        ``since_internal`` one of the internal notes (a member's). An
+        answer with ``more`` has items waiting: ask again from the last
+        ``seq`` of each channel (``watcher.read_submission`` does)."""
         path = f"/api/submissions/{_sid(submission_id)}"
         query = {}
-        if since is not None:
-            if not formats.is_int(since):
-                raise ValueError("since is a seq")
-            query["since"] = since
+        for name, value in (("since", since), ("since_internal", since_internal)):
+            if value is not None:
+                if not formats.is_int(value):
+                    raise ValueError(f"{name} is a seq")
+                query[name] = value
         if revision is not None:
             if not formats.is_int(revision, low=1):
                 raise ValueError("a revision number starts at 1")

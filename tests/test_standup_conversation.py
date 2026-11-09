@@ -363,7 +363,7 @@ def test_open_items_counts_what_fails_and_sorts_by_seq():
         message(3, S["must_fail"]["pubkey_mismatch"]),
         {"seq": 6, "at": NOW, "type": "event", "wrap": None,
          "event": {"name": "taken", "actor": pk("editor"), "revision": None, "to": None,
-                   "signed": None}}], internal=False)
+                   "signed": None}}])
     timeline = conv.open_items(items, ROOM_SK, SID)
     assert [o.seq for o in timeline.opened] == [2, 5]
     assert timeline.not_shown == 1

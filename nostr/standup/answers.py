@@ -365,9 +365,12 @@ def parse_editorial(data: Mapping[str, Any]) -> Editorial:
 @dataclass(frozen=True)
 class SubmissionDetail:
     """``GET /api/submissions/<sid>``: ``revisions`` holds the latest
-    revision, or only the one asked for; ``more`` says that timeline
-    items wait beyond this answer's budget (ask again with ``since``,
-    contract 12.4 and 15, feat/redaktion 5c11475)."""
+    revision, or only the one asked for; ``timeline`` the conversation's
+    items and ``internal`` the internal notes, each channel in its own
+    ``seq`` order (the server sends notes to every member, a writer who
+    is one among them; the writer's side shows none); ``more`` says that
+    items wait beyond this answer's budget (ask again with ``since`` and
+    ``since_internal``, contract 12.4 and 15, feat/redaktion ceac858)."""
 
     submission: views.SubmissionView
     my_role: str
@@ -375,18 +378,19 @@ class SubmissionDetail:
     timeline: Tuple[views.TimelineItem, ...]
     members: Tuple[Member, ...]
     more: bool = False
+    internal: Tuple[views.TimelineItem, ...] = ()
 
 
 def parse_submission_detail(data: Mapping[str, Any]) -> SubmissionDetail:
     role = read_one_of(data.get("my_role"), views.MEMBER_ROLES + views.PARTICIPANT_ROLES,
                        "my role")
+    channels = views.parse_channels(data.get("timeline", []))
     return SubmissionDetail(
         submission=parse_view(data),
         my_role=role,
         revisions=tuple(views.parse_revision_record(r)
                         for r in read_list(data.get("revisions", []), "the revisions")),
-        timeline=views.parse_timeline(data.get("timeline", []),
-                                      internal=role in views.MEMBER_ROLES),
+        timeline=channels["conversation"], internal=channels["internal"],
         members=tuple(parse_member(m) for m in read_list(data.get("members", []),
                                                          "the members", limit=_MAX_MEMBERS)),
         more=_read_more(data))

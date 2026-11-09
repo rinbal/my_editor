@@ -383,3 +383,73 @@ def test_lookups_from_one_address_are_limited_per_minute_and_a_large_body_refuse
     big = json.dumps({"items": [{"status_key": KEY, "since": 0}], "x": "a" * 16384}).encode()
     status, data, _ = _send(nam, "POST", "/api/submissions/lookup", big)
     assert (status, data["error"]["code"]) == (413, "too_large")
+
+
+# -- each channel counts apart (feat/redaktion ceac858, backend fde04a3) ---------------
+
+def _with_a_note(server, nam):
+    prepared = submission_for(sk("writer"))
+    assert _submit(nam, prepared.body)[0] == 201
+    record = server.submissions[prepared.body["submission_id"]]
+    server._event(record, "taken", None)                                  # seq 2
+    server._append(record, {"type": "internal", "wrap": {"id": "1" * 64}, "event": None})
+    return prepared, record
+
+
+def _read(nam, secret, sid, query=""):
+    token = _session(nam, secret)
+    return _send(nam, "GET", f"/api/submissions/{sid}{query}",
+                 authorization=f"Bearer {token}".encode())
+
+
+def test_the_timeline_is_read_from_a_cursor_in_pages():
+    # backend tests/test_editorial_reading.py, the same name.
+    _clock, server, nam = _setup()
+    prepared, record = _with_a_note(server, nam)
+    sid = prepared.body["submission_id"]
+
+    def page(query=""):
+        return [(i["seq"], i["type"]) for i in _read(nam, sk("editor"), sid, query)[1]["timeline"]]
+
+    assert page() == [(1, "event"), (2, "event"), (1, "internal")]
+    assert page("?since=2") == [(1, "internal")]
+    assert page("?since=2&since_internal=1") == []
+    assert page("?since_internal=1") == [(1, "event"), (2, "event")]
+    server.timeline_per_answer["get"] = 2
+    assert page() == [(1, "event"), (2, "event")]
+
+
+def test_an_internal_note_leaves_no_trace_for_participants():
+    # backend tests/test_editorial_acceptance.py: last_internal_seq for members only.
+    clock, server, nam = _setup()
+    prepared = submission_for(sk("writer"))
+    assert _submit(nam, prepared.body)[0] == 201
+    sid = prepared.body["submission_id"]
+    before = _read(nam, sk("writer"), sid)[1]["submission"]
+    clock.advance(5)
+    server._append(server.submissions[sid], {"type": "internal", "wrap": {}, "event": None})
+    after = _read(nam, sk("writer"), sid)[1]
+    assert after["submission"] == before and after["timeline"][-1]["type"] == "event"
+    member = _read(nam, sk("editor"), sid)[1]["submission"]
+    assert (member["last_internal_seq"], member["activity_at"]) == (1, NOW + 5)
+    assert member["last_seq"] == before["last_seq"] == 1
+
+
+@pytest.mark.parametrize("query", ["?since=-1", "?since=abc", "?revision=0", "?revision=2",
+                                   "?since=" + "9" * 17, "?since_internal=x"])
+def test_query_numbers_out_of_range_are_refused(query):
+    # backend tests/test_editorial_reading.py, the same name.
+    _clock, server, nam = _setup()
+    prepared = submission_for(sk("writer"))
+    assert _submit(nam, prepared.body)[0] == 201
+    status, data, _ = _read(nam, sk("writer"), prepared.body["submission_id"], query)
+    assert (status, data["error"]["code"]) == (422, "invalid")
+
+
+def test_strangers_learn_nothing():
+    # backend tests/test_editorial_reading.py: 404 not_found, not 403.
+    _clock, server, nam = _setup()
+    prepared = submission_for(sk("writer"))
+    assert _submit(nam, prepared.body)[0] == 201
+    status, data, _ = _read(nam, sk("contributor"), prepared.body["submission_id"])
+    assert (status, data["error"]["code"]) == (404, "not_found")

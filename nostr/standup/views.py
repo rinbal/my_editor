@@ -49,6 +49,7 @@ MARKS = ("already_public", "new_revision", "changed_since_acceptance", "proposal
 TURN_TYPES = ("writer", "editor", "redaktion", "contributors", "releaser", "none")
 # 12.4
 ITEM_TYPES = ("message", "internal", "event")
+CHANNELS = ("conversation", "internal")
 EVENT_NAMES = ("submitted", "revision", "taken", "handed_over", "handed_back", "named",
                "request_changes", "accept", "decline", "reopen", "withdrawn", "confirmed",
                "published", "placed", "correction", "reminder", "reupload_requested")
@@ -243,11 +244,18 @@ class TimelineEvent:
 
 @dataclass(frozen=True)
 class TimelineItem:
+    """One item of a channel: ``seq`` counts in that channel only (an
+    internal note's is its ``internal_seq``, contract 12.4)."""
+
     seq: int
     at: int
     type: str
     wrap: Optional[Mapping[str, Any]]
     event: Optional[TimelineEvent]
+
+    @property
+    def channel(self) -> str:
+        return "internal" if self.type == "internal" else "conversation"
 
 
 def parse_item(value: Any) -> Optional[TimelineItem]:
@@ -275,18 +283,26 @@ def parse_item(value: Any) -> Optional[TimelineItem]:
                         at=read_int(data.get("at"), "at"), type=kind, wrap=wrap, event=event)
 
 
-def parse_timeline(value: Any, *, internal: bool) -> Tuple[TimelineItem, ...]:
-    """The items, in ``seq`` order, each once. Internal notes only with
-    ``internal`` (a member's own view): the writer's side never shows
-    one, whatever a server sends (criterion 8 of the plan)."""
+def parse_channels(value: Any) -> Dict[str, Tuple[TimelineItem, ...]]:
+    """The items of each channel (``conversation``, ``internal``), each in
+    its own ``seq`` order and each (channel, ``seq``) once: the channels
+    count apart, so internal note 3 is not message 3 (contract 12.4,
+    feat/redaktion ceac858)."""
     need(isinstance(value, list), "the timeline must be a list")
-    items: Dict[int, TimelineItem] = {}
+    items: Dict[Tuple[str, int], TimelineItem] = {}
     for raw in value:
         item = parse_item(raw)
-        if item is None or (item.type == "internal" and not internal):
-            continue
-        items.setdefault(item.seq, item)
-    return tuple(items[seq] for seq in sorted(items))
+        if item is not None:
+            items.setdefault((item.channel, item.seq), item)
+    return {channel: tuple(items[key] for key in sorted(items) if key[0] == channel)
+            for channel in CHANNELS}
+
+
+def parse_timeline(value: Any) -> Tuple[TimelineItem, ...]:
+    """The conversation's items, in ``seq`` order, each once: a lookup's
+    timeline, which never holds internal notes (contract 12.4); one a
+    server sends anyway is left out, never shown on the writer's side."""
+    return parse_channels(value)["conversation"]
 
 
 @dataclass(frozen=True)
@@ -338,7 +354,7 @@ def parse_lookup_item(value: Any) -> LookupItem:
     need(isinstance(more, bool), "more is true or false")
     return LookupItem(status_key_hash=read_hex64(data.get("status_key_hash"), "the status key hash"),
                       submission=view, receipt=receipt,
-                      timeline=parse_timeline(data.get("timeline", []), internal=False),
+                      timeline=parse_timeline(data.get("timeline", [])),
                       more=more)
 
 
@@ -585,12 +601,12 @@ def signed_path(signed: SignedRecord) -> Optional[str]:
 
 
 __all__ = [
-    "ACTION_PATHS", "BlobsMissing", "Confirmed", "EVENT_NAMES", "ITEM_TYPES", "KIND_HINTS",
-    "LookupItem", "MARKS", "MEMBER_ROLES", "Mismatch", "OPEN_STATES", "PARTICIPANT_ROLES",
-    "RECEIPT_CLOCK_SKEW", "Receipt", "RevisionRecord", "STATES", "STEPS", "SignedRecord",
-    "SubmissionView", "TURN_TYPES", "TimelineEvent", "TimelineItem", "Turn",
+    "ACTION_PATHS", "BlobsMissing", "CHANNELS", "Confirmed", "EVENT_NAMES", "ITEM_TYPES",
+    "KIND_HINTS", "LookupItem", "MARKS", "MEMBER_ROLES", "Mismatch", "OPEN_STATES",
+    "PARTICIPANT_ROLES", "RECEIPT_CLOCK_SKEW", "Receipt", "RevisionRecord", "STATES", "STEPS",
+    "SignedRecord", "SubmissionView", "TURN_TYPES", "TimelineEvent", "TimelineItem", "Turn",
     "action_path", "check_receipt", "expected_receipt", "lookup_confirms", "parse_item",
     "parse_lookup_item", "parse_receipt", "parse_revision_record", "parse_signed",
-    "parse_timeline", "parse_turn", "parse_view", "SignedActionInvalid", "signed_action_body",
-    "signed_action_problem", "signed_path",
+    "parse_channels", "parse_timeline", "parse_turn", "parse_view", "SignedActionInvalid",
+    "signed_action_body", "signed_action_problem", "signed_path",
 ]
