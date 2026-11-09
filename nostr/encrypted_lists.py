@@ -512,7 +512,7 @@ class _Reading:
             value = self._list._decode(payload)
         except (AttributeError, KeyError, TypeError, ValueError) as exc:
             # The account's own, but not what this list holds: as
-            # unreadable as a page that cannot be decrypted.
+            # unreadable as a newer app's format, never written over.
             self._unreadable(self._list._words.unreadable, f"not taken in: {exc}")
             return
         self._end(ReadStatus.INCOMPLETE if stale else ReadStatus.COMPLETE, value, stale)
