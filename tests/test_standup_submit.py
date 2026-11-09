@@ -549,10 +549,12 @@ def test_a_run_ends_with_its_first_message(progress, finished):
     # Opened again for its work, the sheet shows a run whose message did
     # not go, with Send Again, instead of a new form.
     from nostr.ui.standup_submit import SubmissionRun
-    assert SubmissionRun.finished.fget(SimpleNamespace(progress=progress, _let_go=False)) is finished
+    def ended(let_go: bool) -> bool:
+        return SubmissionRun.finished.fget(SimpleNamespace(progress=progress, _let_go=let_go))
+
+    assert ended(False) is finished
     # Let go once a sheet showed it with Send Again: ended, if it ended.
-    ended = progress.phase.name in ("DONE", "FAILED", "CANCELLED")
-    assert SubmissionRun.finished.fget(SimpleNamespace(progress=progress, _let_go=True)) is ended
+    assert ended(True) is (progress.phase.name in ("DONE", "FAILED", "CANCELLED"))
 
 
 def test_in_the_background_a_failure_is_said_in_its_words(german):

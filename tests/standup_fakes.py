@@ -1100,8 +1100,9 @@ class FakeStandupServer:
         only what is stored)."""
         writer = who.pubkey
         body = self._parse_submission(data, writer)
-        for scope, subject, limit in (("address:submit", "fake", SUBMIT_REQUESTS_PER_ADDRESS_PER_HOUR),
-                                      ("submit_request", writer, SUBMIT_REQUESTS_PER_HOUR)):
+        for scope, subject, limit in (
+                ("address:submit", "fake", SUBMIT_REQUESTS_PER_ADDRESS_PER_HOUR),
+                ("submit_request", writer, SUBMIT_REQUESTS_PER_HOUR)):
             wait = self._hit(scope, subject, limit=limit, window=3600)
             if wait:
                 raise _Refused(429, "rate_limited", retry_after=wait,
