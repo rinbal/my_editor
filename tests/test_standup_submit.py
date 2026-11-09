@@ -29,7 +29,7 @@ from nostr.list_results import ListRead, ReadStatus
 from nostr.standup import formats, words
 from nostr.standup.answers import LookupAnswer
 from nostr.standup.drafting import ROUND_UNKNOWN, encrypt_pictures, LocalPicture
-from nostr.standup.lists import SUBMISSIONS_UNREADABLE, SubmissionEntry
+from nostr.standup.lists import SUBMISSIONS_MISSING_PAGE, SUBMISSIONS_UNREADABLE, SubmissionEntry
 from nostr.standup.submitting import Progress, Step
 from nostr.ui import standup_submit
 from nostr.ui.standup_submit import BlossomUploads, StandupWriter, thumbnail
@@ -134,13 +134,16 @@ def _entry(round_: int = 1) -> SubmissionEntry:
 
 
 class FakeList:
-    def __init__(self, entries=(), readable=True) -> None:
+    def __init__(self, entries=(), readable=True, complete=True) -> None:
         self.loaded = False
+        self.complete = complete
+        self.reads = 0
         self._entries = list(entries)
         self._readable = readable
         self.stopped = False
 
     def load(self, on_done) -> None:
+        self.reads += 1
         self.loaded = self._readable
         on_done(ListRead(ReadStatus.COMPLETE if self._readable else ReadStatus.UNREADABLE))
 
@@ -152,8 +155,8 @@ class FakeList:
 
 
 class FakeApi:
-    def __init__(self, state=None, *, unreadable=False, fails=False) -> None:
-        self.state, self.unreadable, self.fails = state, unreadable, fails
+    def __init__(self, state=None, *, unreadable=False, fails=False, sid="d4" * 32) -> None:
+        self.state, self.unreadable, self.fails, self.sid = state, unreadable, fails, sid
         self.stopped = False
 
     def lookup(self, items, on_success, on_failure) -> None:
@@ -164,7 +167,8 @@ class FakeApi:
         elif self.state is None:
             on_success(LookupAnswer(found={}, unreadable=frozenset()))
         else:
-            item = SimpleNamespace(submission=SimpleNamespace(state=self.state))
+            item = SimpleNamespace(submission=SimpleNamespace(state=self.state),
+                                   receipt=SimpleNamespace(submission_id=self.sid))
             on_success(LookupAnswer(found={KEY: item}, unreadable=frozenset()))
 
     def stop(self) -> None:
@@ -172,7 +176,8 @@ class FakeApi:
 
 
 def _writer(submissions, api, **more) -> StandupWriter:
-    account = SimpleNamespace(writer=WRITER, submissions=submissions, api=api, runs=[], **more)
+    account = SimpleNamespace(writer=WRITER, submissions=submissions, api=api, runs=[],
+                              list_problem="", **more)
     return StandupWriter(session_pool=None, relay_pool=None, relay_directory=None,
                          media_store=None, server="https://s.example", uploads=lambda *a: None,
                          accounts=lambda _profile: account)
@@ -198,7 +203,6 @@ def _round(writer) -> tuple:
     ((_entry(1),), FakeApi("declined"), (2, "")),           # closed: the next round
     ((_entry(1), _entry(2)), FakeApi("withdrawn"), (3, "")),
     ((_entry(1),), FakeApi("in_review"), (None, "")),       # still open there
-    ((_entry(1),), FakeApi(unreadable=True), (None, "")),   # the server has something
 ])
 def test_the_round_follows_the_list_and_the_server(entries, api, expected):
     assert _round(_writer(FakeList(entries), api)) == expected
@@ -226,10 +230,23 @@ def test_one_run_per_work_and_publication(german):
     assert writer.submit(profile, draft, other, RoundAnswer(1)) is not first
 
 
-def test_a_round_that_cannot_be_told_is_not_guessed():
-    assert _round(_writer(FakeList([_entry()]), FakeApi(fails=True))) == (None, ROUND_UNKNOWN)
-    assert _round(_writer(FakeList(readable=False), FakeApi())) == (
-        None, SUBMISSIONS_UNREADABLE)
+@pytest.mark.parametrize("submissions, api, said", [
+    (FakeList([_entry()]), FakeApi(fails=True), ROUND_UNKNOWN),           # no answer
+    (FakeList([_entry()]), FakeApi(unreadable=True), ROUND_UNKNOWN),      # has something
+    (FakeList([_entry()]), FakeApi("declined", sid="00" * 32), ROUND_UNKNOWN),  # another's
+    (FakeList(readable=False), FakeApi(), SUBMISSIONS_UNREADABLE),
+    (FakeList(complete=False), FakeApi(), SUBMISSIONS_MISSING_PAGE),      # a page missing
+], ids=["no answer", "unreadable", "another submission", "list unreadable", "list incomplete"])
+def test_a_round_that_cannot_be_told_is_not_guessed(submissions, api, said):
+    # RG-M2b 2: never "already submitted", never round 1 by default.
+    assert _round(_writer(submissions, api)) == (None, said)
+
+
+def test_a_list_that_could_not_be_read_is_said_again_without_asking_again():
+    submissions = FakeList(readable=False)
+    writer = _writer(submissions, FakeApi())
+    assert _round(writer) == _round(writer) == (None, SUBMISSIONS_UNREADABLE)
+    assert submissions.reads == 1
 
 
 # -- sign-out ---------------------------------------------------------------------

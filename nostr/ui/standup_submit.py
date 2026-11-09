@@ -40,12 +40,14 @@ from ..standup import conversation, formats, trust, words
 from ..standup.client import StandupApi
 from ..standup import drafting
 from ..standup.drafting import ArticleDraft, Choice, EncryptedPicture, Sealed, round_after
-from ..standup.lists import SUBMISSIONS_UNREADABLE, ReadState, SubmissionEntry, SubmissionsList
+from ..standup.lists import (
+    SUBMISSIONS_MISSING_PAGE, SUBMISSIONS_UNREADABLE, ReadState, SubmissionEntry, SubmissionsList,
+)
 from ..standup.opening import MediaKeys
 from ..standup.servers import configured_server
 from ..standup.submitting import Phase, Ports, Progress, Submitting
 from ..standup.trust import Destination
-from ..standup.watcher import resolve_unconfirmed
+from ..standup.watcher import look_up, resolve_unconfirmed
 
 THUMB_SIDE = 128
 
@@ -240,6 +242,9 @@ class _Account(QObject):
                                                parent=self)
         self.signer = _PoolSigner(session_pool, profile)
         self.runs: List[SubmissionRun] = []
+        # Why the list of submissions could not be read, once read for a
+        # sheet ("" when it could): said again without asking again.
+        self.list_problem = ""
 
 
 class StandupWriter(QObject):
@@ -298,16 +303,22 @@ class StandupWriter(QObject):
         (from its list, once read)."""
         account = self.account(profile)
 
+        account.list_problem = ""                   # read anew
+
         def found(destinations: List[Destination]) -> None:
             def used() -> None:
                 entries = sorted((e for e in account.submissions.entries() if e.role == "writer"),
                                  key=lambda e: e.updated_at, reverse=True)
                 on_done(destinations, list(dict.fromkeys(e.publication for e in entries)))
 
+            def read(result) -> None:
+                account.list_problem = _list_problem(result)
+                used()
+
             if account.submissions.loaded:
                 used()
             else:
-                account.submissions.load(lambda _read: used())
+                account.submissions.load(read)
 
         account.destinations.find(found, on_failure)
 
@@ -340,27 +351,34 @@ class StandupWriter(QObject):
                 on_done(RoundAnswer(1))
                 return
 
-            def found(answer) -> None:
-                if entry.status_key in answer.unreadable:
-                    on_done(RoundAnswer(None))  # the server has something: never "nothing"
-                    return
-                item = answer.found.get(entry.status_key)
+            def found(item) -> None:
                 round_ = round_after(entry, item.submission.state if item else None)
                 # Nothing stored: the same round again, in this entry's place.
                 on_done(RoundAnswer(round_, replaces=entry if item is None else None))
 
-            account.api.lookup([(entry.status_key, 0)], found,
-                               lambda _error: on_done(RoundAnswer(None,
-                                                                  _(drafting.ROUND_UNKNOWN))))
+            # The server has something it could not say, or nothing could
+            # be asked: not told, so not guessed.
+            look_up(account.api, entry, found,
+                    lambda _error: on_done(RoundAnswer(None, _(drafting.ROUND_UNKNOWN))))
+
+        def decide() -> None:
+            if account.list_problem:
+                on_done(RoundAnswer(None, account.list_problem))
+            elif not account.submissions.complete:
+                # A page of the list has not arrived: an entry of this
+                # text may be on it.
+                on_done(RoundAnswer(None, _(SUBMISSIONS_MISSING_PAGE)))
+            else:
+                known()
 
         def read(result) -> None:
-            if result.readable:
-                known()
-            else:
-                on_done(RoundAnswer(None, result.words or _(SUBMISSIONS_UNREADABLE)))
+            account.list_problem = _list_problem(result)
+            decide()
 
-        if account.submissions.loaded:
-            answer_later(known)
+        # A list read once for this sheet and not readable is said again,
+        # not asked again (another signer prompt); Try Again reads anew.
+        if account.submissions.loaded or account.list_problem:
+            answer_later(decide)
         else:
             account.submissions.load(read)
 
@@ -473,6 +491,11 @@ class StandupWriter(QObject):
 
         conversation.seal_and_wrap(account.signer, rumor, sealed.s_sub, room,
                                    on_success=wrapped, on_failure=lambda _why: on_failure())
+
+
+def _list_problem(read) -> str:
+    """Why the list of submissions could not be read, or ``""``."""
+    return "" if read.readable else (read.words or _(SUBMISSIONS_UNREADABLE))
 
 
 def _later(ms: int, callback: Callable[[], None]) -> None:
