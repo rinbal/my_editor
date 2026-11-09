@@ -13,6 +13,8 @@ msgid "OK"
 msgstr ""
 
 #: alerts.py:208
+#: nostr/ui/connect_dialog.py:371
+#: nostr/ui/connect_dialog.py:374
 #: nostr/ui/standup_privacy.py:81
 msgid "Details"
 msgstr ""
@@ -86,11 +88,11 @@ msgstr ""
 msgid "Purple"
 msgstr ""
 
-#: default_apps.py:198
+#: default_apps.py:225
 msgid "Show in File Manager"
 msgstr ""
 
-#: default_apps.py:195
+#: default_apps.py:222
 #: viewer_tabs.py:329
 #: viewer_tabs.py:466
 #: viewer_tabs.py:427
@@ -98,15 +100,15 @@ msgstr ""
 msgid "Show in Finder"
 msgstr ""
 
-#: default_apps.py:197
+#: default_apps.py:224
 msgid "Show in Explorer"
 msgstr ""
 
-#: default_apps.py:273
+#: default_apps.py:300
 msgid "Choose an App"
 msgstr ""
 
-#: default_apps.py:273
+#: default_apps.py:300
 msgid "Applications (*.app)"
 msgstr ""
 
@@ -616,7 +618,7 @@ msgstr ""
 #: update_flow.py:152
 #: update_flow.py:171
 #: update_flow.py:178
-#: nostr/ui/imports_sheets.py:831
+#: nostr/ui/connect_dialog.py:347
 msgid "Open"
 msgstr ""
 
@@ -2319,7 +2321,7 @@ msgid "Dictation"
 msgstr ""
 
 #: main_window.py:7553
-#: nostr/ui/connect_dialog.py:225
+#: nostr/ui/connect_dialog.py:383
 #: nostr/ui/media_library_dialog.py:747
 #: nostr/ui/published_view.py:930
 #: nostr/ui/published_view.py:842
@@ -6412,23 +6414,23 @@ msgstr ""
 msgid "Your key stays in your signer app. MyEditor only forgets this connection."
 msgstr ""
 
-#: nostr/bunker.py:127
+#: nostr/bunker.py:132
 msgid "Your signer app did not answer. Open it, make sure it is running, and try again."
 msgstr ""
 
-#: nostr/bunker.py:212
+#: nostr/bunker.py:226
 msgid "expected a bunker:// URI"
 msgstr ""
 
-#: nostr/bunker.py:217
+#: nostr/bunker.py:231
 msgid "bunker URI must contain a 32-byte hex pubkey"
 msgstr ""
 
-#: nostr/bunker.py:222
+#: nostr/bunker.py:236
 msgid "bunker URI must specify at least one relay"
 msgstr ""
 
-#: nostr/bunker.py:225
+#: nostr/bunker.py:239
 #, python-brace-format
 msgid "relay must be ws:// or wss://, got {relay}"
 msgstr ""
@@ -7055,7 +7057,6 @@ msgid "Taking longer than usual…"
 msgstr ""
 
 #: nostr/blossom/upload_progress.py:148
-#: nostr/ui/connect_dialog.py:301
 msgid "Waiting for your signer app…"
 msgstr ""
 
@@ -8785,117 +8786,162 @@ msgstr ""
 msgid "{name} has no lightning address in their profile, so they can’t be paid a share."
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:109
+#: nostr/ui/connect_dialog.py:184
 msgid "Connect Signer App"
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:157
-msgid "Scan Code"
+#: nostr/ui/connect_dialog.py:271
+msgid "Technical: a Nostr Connect connection. The code is a nostrconnect link and renews by itself. Connect with Bunker46 opens it on your Bunker46's connections page."
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:158
-msgid "Paste Link"
+#: nostr/ui/connect_dialog.py:295
+msgid "Code to scan with your phone"
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:159
-msgid "How to connect"
+#: nostr/ui/connect_dialog.py:297
+msgid "Scan with your phone"
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:186
-msgid "Connect"
+#: nostr/ui/connect_dialog.py:300
+msgid "Open Amber, Primal or Amethyst and scan the code."
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:209
-msgid "Code to scan with your signer app"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:219
+#: nostr/ui/connect_dialog.py:308
 msgid "New Code"
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:226
-msgid "For a signer app on this computer"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:239
-msgid "Connection link:"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:243
-msgid "Connection link"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:352
-msgid "Contacting your signer app. Approve the request there…"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:387
-msgid "Your signer app answered in a form MyEditor can’t read. An update of the signer app may help."
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:150
-msgid "Connect Your Signer App"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:152
-msgid "A signer app keeps your private key and asks you before anything is signed. MyEditor never sees the key."
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:249
-msgid "Some signer apps show a link instead of scanning a code. Copy it there and paste it here; it starts with bunker://."
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:317
-msgid "This code has expired."
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:339
-msgid "Link copied. Paste it in your signer app."
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:369
-msgid "Your signer app needs you to approve this in the browser window that just opened. Waiting…"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:375
-msgid "Your signer app asked for approval at an address that cannot be opened safely, so the connection was not continued."
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:172
-msgid "No signer app yet?"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:173
-msgid "Create an Account"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:174
-msgid "Restore from Backup"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:271
-msgid "That link can’t be used. Copy it again from your signer app: it starts with bunker://."
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:415
-#, python-brace-format
-msgid "Couldn’t connect: {reason}"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:201
-msgid "In your signer app, choose to connect an app (in Amber: Connect app, the scan icon)."
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:203
-msgid "Scan this code, then approve the request in the app."
+#: nostr/ui/connect_dialog.py:318
+msgid "Connect with Bunker46"
 msgstr ""
 
 #: nostr/ui/connect_dialog.py:321
+msgid "Open Signer App on This Computer"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:323
+msgid "Opens a signer app set up on this computer for connection links, for example Amber Desktop."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:337
+#: nostr/ui/connect_dialog.py:340
+msgid "Your Bunker46 address"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:352
+msgid "Cancel the Bunker46 address"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:384
+msgid "For a signer app that takes a pasted link"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:388
+msgid "Connection address:"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:392
+msgid "Connection address"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:398
+msgid "Connect"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:413
+msgid "Change"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:414
+msgid "Change the Bunker46 address"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:546
+msgid "That isn’t an address MyEditor can open. Use the one your Bunker46 runs at; it starts with https://."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:600
+msgid "Contacting your signer app. Approve the request there…"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:635
+msgid "Your signer app answered in a form MyEditor can’t read. An update of the signer app may help."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:241
+msgid "Connect Your Signer App"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:243
+msgid "Your key stays in your signer app. MyEditor asks it only when something has to be signed."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:359
+msgid "MyEditor keeps it, so it asks only this once."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:405
+msgid "Some signer apps show a connection address instead of scanning a code. Copy it there and paste it here; it starts with bunker://."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:475
+#: nostr/ui/connect_dialog.py:674
+msgid "This code has expired."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:501
+msgid "Link copied. Paste it in your signer app."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:520
+msgid "your signer app"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:521
+msgid "No signer app for connection links is set up on this computer."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:536
+msgid "Your browser couldn’t be opened."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:617
+msgid "Your signer app needs you to approve this in the browser window that just opened. Waiting…"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:623
+msgid "Your signer app asked for approval at an address that cannot be opened safely, so the connection was not continued."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:262
+msgid "No signer app yet?"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:263
+msgid "Create an Account"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:264
+msgid "Restore from Backup"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:432
 #, python-brace-format
-msgid "This code works for {seconds} more second."
-msgid_plural "This code works for {seconds} more seconds."
-msgstr[0] ""
-msgstr[1] ""
+msgid "Bunker46: {address}"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:516
+#, python-brace-format
+msgid "Waiting for {app}. Approve the connection there."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:588
+msgid "That address can’t be used. Copy it again from your signer app: it starts with bunker://."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:681
+#, python-brace-format
+msgid "Couldn’t connect: {reason}"
+msgstr ""
 
 #: nostr/ui/cover_crop_dialog.py:37
 msgid "Cover framing"
@@ -12405,4 +12451,8 @@ msgstr ""
 
 #: nostr/ui/thumbnail_loader.py:299
 msgid "empty response"
+msgstr ""
+
+#: nostr/ui/tips.py:60
+msgid "Help"
 msgstr ""

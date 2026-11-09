@@ -173,6 +173,33 @@ def choose_app_and_open(path: str, parent=None) -> bool:
 
 
 @_never_raises(False)
+def open_link(uri: str) -> bool:
+    """Hand a link of an app's own scheme (``nostrconnect://`` for a
+    signer app) to the app the system opens such links with; False when
+    none is set up, or the link is not one.
+
+    Not through QDesktopServices: QUrl refuses such a link, because its
+    key is a 64-character host label and a host label has at most 63
+    (tests/test_connect_dialog.py pins it), so every system would be
+    told nothing. ``open`` (macOS) and ``xdg-open`` (Linux) say whether
+    an app took it; Windows' shell raises when no app is registered."""
+    if not (uri.isascii() and uri.isprintable() and " " not in uri and "://" in uri
+            and uri.split("://", 1)[0].isalpha()):
+        return False
+    platform = _platform()
+    if platform == MAC:
+        return _start(["open", uri], wait=True)
+    if platform == WINDOWS:
+        try:
+            os.startfile(uri)               # ShellExecute: the protocol's handler
+        except OSError as error:
+            log.info("no app for %s links: %s", uri.split(":", 1)[0], error)
+            return False
+        return True
+    return _start(["xdg-open", uri], wait=True)
+
+
+@_never_raises(False)
 def reveal(path: str) -> bool:
     """Show ``path`` selected in the Finder, Explorer or the file manager."""
     platform = _platform()
