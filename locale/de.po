@@ -4386,7 +4386,7 @@ msgid "Preview As:"
 msgstr "Vorschau als:"
 
 #: preview_pane.py:98
-#: nostr/refs.py:151
+#: nostr/refs.py:160
 #: nostr/ui/article_details_panel.py:205
 #: nostr/ui/article_header.py:202
 #: nostr/ui/imports_article.py:121
@@ -6836,31 +6836,31 @@ msgstr "Der Entwurf konnte nicht vorbereitet werden: {reason}"
 msgid "Could not encrypt draft: {reason}"
 msgstr "Der Entwurf konnte nicht verschlüsselt werden: {reason}"
 
-#: nostr/refs.py:310
+#: nostr/refs.py:338
 msgid "It contains a secret key, and MyEditor never signs anything with a secret key in it. Remove the key and try again."
 msgstr "Darin steht ein geheimer Schlüssel, und MyEditor signiert nie etwas, in dem ein geheimer Schlüssel steht. Entferne den Schlüssel und versuche es noch einmal."
 
-#: nostr/refs.py:312
+#: nostr/refs.py:340
 msgid "Its text is too long or too deeply nested to check for a secret key, so MyEditor doesn't sign it."
 msgstr "Der Text ist zu lang oder zu tief verschachtelt, um ihn auf einen geheimen Schlüssel zu prüfen, deshalb signiert MyEditor ihn nicht."
 
-#: nostr/refs.py:149
+#: nostr/refs.py:158
 msgid "Quoted note"
 msgstr "Zitierte Notiz"
 
-#: nostr/refs.py:110
+#: nostr/refs.py:119
 msgid "Paste a link to a note or an article."
 msgstr "Füge einen Link zu einer Notiz oder einem Artikel ein."
 
-#: nostr/refs.py:113
+#: nostr/refs.py:122
 msgid "That is not a link to a note or an article on Nostr."
 msgstr "Das ist kein Link zu einer Notiz oder einem Artikel auf Nostr."
 
-#: nostr/refs.py:116
+#: nostr/refs.py:125
 msgid "That link is damaged: a part of it is missing or mistyped."
 msgstr "Dieser Link ist beschädigt: Ein Teil fehlt oder ist falsch geschrieben."
 
-#: nostr/refs.py:118
+#: nostr/refs.py:127
 msgid "That is a link to a person. To mention someone, type @ and their name."
 msgstr "Das ist ein Link zu einer Person. Um jemanden zu erwähnen, tippe @ und den Namen."
 
@@ -7791,6 +7791,10 @@ msgstr "Dein Konto ist bereit, aber dein Profil ist noch nicht veröffentlicht. 
 #: nostr/rss/dtag.py:62
 msgid "Cannot derive identifier: item has no guid, link, or title"
 msgstr "Keine Kennung möglich: Der Beitrag hat weder GUID noch Link noch Titel"
+
+#: nostr/standup/formats.py:84
+msgid "It contains a secret key, and MyEditor never sends a secret key to a publication. Remove the key and try again."
+msgstr "Darin steht ein geheimer Schlüssel, und MyEditor schickt nie einen geheimen Schlüssel an eine Publikation. Entferne den Schlüssel und versuche es noch einmal."
 
 #: nostr/ui/account_windows.py:95
 msgid "Your key couldn’t be saved on this computer. Make sure the disk has free space, then try again."
