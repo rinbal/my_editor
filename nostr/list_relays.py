@@ -14,7 +14,7 @@ from PySide6.QtCore import QObject
 from .events import verify_event
 from .outbox.policy import normalize_relay_url
 from .queries import fetch_events
-from .signed_api import answer_later
+from .later import answer_later
 
 __all__ = ["LIST_KIND", "ListQuery", "event_mark", "is_list_of", "publish_once", "relay_key"]
 

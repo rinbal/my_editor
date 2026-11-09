@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from PySide6.QtCore import QCoreApplication
 
 from nostr import crypto, events, nip98
 from nostr.standup import crypto as sc
@@ -75,6 +76,9 @@ def submitted():
 def open_key(verified, recipient, secret, **kw):
     got = []
     open_submission_key(KeySigner(secret), verified, recipient, got.append, got.append, **kw)
+    if got and isinstance(got[0], NotConfirmed):
+        raise AssertionError("a refusal answered inside the call (RG-M2a 6)")
+    QCoreApplication.processEvents()
     assert len(got) == 1
     return got[0]
 

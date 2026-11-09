@@ -35,7 +35,7 @@ from i18n import _
 
 from ..einundzwanzig_api.client import session_signer
 from ..list_relays import ListQuery, publish_once
-from ..signed_api import answer_later
+from ..later import answer_later
 from ..standup import conversation, formats, trust, words
 from ..standup.client import StandupApi
 from ..standup import drafting

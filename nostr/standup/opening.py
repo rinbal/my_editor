@@ -28,6 +28,7 @@ import weakref
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Iterable, Mapping, Optional, Tuple
 
+from ..later import answer_later
 from . import formats
 from .crypto import (
     StandupCryptoError,
@@ -199,11 +200,11 @@ def open_submission_key(client, verified: VerifiedRevision, recipient: str,
     _made_here(verified, VerifiedRevision, "verified revision")
     wrap = verified.wraps.get(recipient)
     if wrap is None:
-        on_failure(NotConfirmed("no key was signed for you"))
+        answer_later(on_failure, NotConfirmed("no key was signed for you"))
         return
     if served is not None and not (formats.is_wrap(dict(served)) and formats.canonical_json(
             dict(served)) == formats.canonical_json(wrap)):
-        on_failure(NotConfirmed("the key served is not the one signed"))
+        answer_later(on_failure, NotConfirmed("the key served is not the one signed"))
         return
 
     def opened(plaintext: dict) -> None:

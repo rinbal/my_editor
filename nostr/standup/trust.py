@@ -31,7 +31,7 @@ from i18n import N_
 
 from .. import events as nostr_events
 from .. import queries
-from ..signed_api import answer_later
+from ..later import answer_later
 from . import formats
 from .answers import Listing, SiteSettings
 from .client import StandupApi

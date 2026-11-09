@@ -874,3 +874,19 @@ def test_a_bug_in_publishing_is_not_hidden():
     with pytest.raises(TypeError):
         publish_once(_Pool(TypeError("a bug")), ["wss://relay.example"], {},
                      on_done=lambda took: None)
+
+
+def test_without_a_way_to_ask_relays_the_read_says_so_on_a_later_turn():
+    # RG-M2a 6: an answer known at once still comes after the call.
+    relay = Relay()
+    store = EncryptedList(
+        d_tag=D, decode=lambda payload: dict(payload["seen"]),
+        encode=lambda value, now: {"seen": dict(value)}, merge=max_merge, words=WORDS,
+        session_pool=FakeSessionPool(FakeSigner()), relay_directory=FakeRelayDirectory(),
+        query=None, publisher=relay, clock=lambda: NOW,
+        paging=Paging(field="seen", combine=max), name="read state")
+    answers = []
+    store.read(PROFILE, ((), ()), answers.append)
+    assert answers == []
+    settle(1)
+    assert [a.status for a in answers] == [ReadStatus.NO_ANSWER]

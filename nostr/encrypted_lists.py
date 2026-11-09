@@ -59,6 +59,7 @@ from . import CLIENT_NAME
 from .bunker import is_signer_silent
 from .drafts import supersedes
 from .events import build_event
+from .later import answer_later
 from .list_relays import LIST_KIND, event_mark, is_list_of, relay_key
 from .list_results import (
     ListRead,
@@ -220,7 +221,7 @@ class EncryptedList(QObject):
         """The newest list, as a :class:`ListRead`. ``relays`` is
         ``(read, own)`` (see :meth:`relays`)."""
         if self._query is None:
-            on_done(ListRead(ReadStatus.NO_ANSWER))
+            answer_later(on_done, ListRead(ReadStatus.NO_ANSWER))
             return
         _Reading(self, profile, relays, on_done).start()
 

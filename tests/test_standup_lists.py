@@ -438,6 +438,8 @@ def test_with_nothing_read_signing_out_does_not_wait():
     load(store)
     answers = []
     store.before_sign_out(answers.append)
+    assert answers == []                        # on a later turn (RG-M2a 6)
+    QCoreApplication.processEvents()
     assert answers == [None] and relay.published == []
 
 

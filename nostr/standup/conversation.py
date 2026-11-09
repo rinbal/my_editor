@@ -38,6 +38,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 
 from .. import crypto as nostr_crypto
 from .. import events as nostr_events
+from ..later import answer_later
 from . import formats, views
 from .formats import FormatError
 
@@ -254,26 +255,27 @@ def seal_and_wrap(signer, rumor: dict, room_sk: bytes, room: str, *,
                   rand: Callable[[int], int] = secrets.randbelow) -> None:
     """Seal ``rumor`` (signed through ``signer``, the one prompt) and wrap
     it to ``room``. ``on_success(wrap)``; ``on_failure(reason)``. Nothing
-    is asked of the signer when the rumor is too large."""
+    is asked of the signer when the rumor is too large. A refusal comes on
+    a later turn, also when the signer answers inside the call."""
     try:
         if nostr_crypto.get_public_key(bytes(room_sk)).hex() != room:
             raise MessageRefused("the room key does not match the room")
         unsigned = seal_unsigned(rumor, room_sk, now=clock(), rand=rand)
     except (FormatError, ValueError) as exc:
-        on_failure(str(exc))
+        answer_later(on_failure, str(exc))
         return
 
     def signed(event: dict) -> None:
         problem = seal_problem(event, unsigned)
         if problem:
-            on_failure(problem)
+            answer_later(on_failure, problem)
             return
         try:
             wrap = gift_wrap({k: event[k] for k in ("id", "pubkey", "created_at", "kind",
                                                     "tags", "content", "sig")},
                              room, now=clock(), rand=rand)
         except (FormatError, ValueError) as exc:
-            on_failure(str(exc))
+            answer_later(on_failure, str(exc))
             return
         on_success(wrap)
 

@@ -7,7 +7,7 @@ sent (``nostr/nip98.py``; an event id is accepted once and only for 60
 seconds), the request with exactly the bytes that were hashed, a reply
 read within a size limit, and exactly one of ``on_success`` and
 ``on_failure``, never inside the call that started it: a call refused
-before anything is sent answers on the next turn (:func:`answer_later`),
+before anything is sent answers on the next turn (``nostr/later.py``),
 like every other answer. A credential that took most of its window to be
 approved on the person's phone and then expired on the way is signed
 once more. A cancelled call fires nothing, unless it was made not to be
@@ -36,12 +36,13 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 from urllib.parse import urlsplit
 
-from PySide6.QtCore import QByteArray, QObject, QTimer, QUrl
+from PySide6.QtCore import QByteArray, QObject, QUrl
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
 from . import nip98
 from .bunker import is_signer_silent
 from .http_answers import clean_text
+from .later import answer_later
 
 # The generic failures every client reports, as plain strings: the
 # membership client's ErrorCode uses exactly these values.
@@ -81,16 +82,6 @@ class Call:
     # Told once, right before the request is written to the network: from
     # then on it may arrive whatever happens here.
     on_sending: Optional[Callable[[], None]] = None
-
-
-def answer_later(callback: Callable[..., None], *args: Any) -> None:
-    """``callback(*args)`` on the next turn of the event loop. For an
-    answer known before anything was sent (a refusal, nothing to do): it
-    still arrives after the call returned, as every other answer does, so
-    a caller never hears it while it is still setting up. Bound to no
-    object on purpose: whoever answers decides then whether the answer
-    still matters (a cancelled call is no longer live)."""
-    QTimer.singleShot(0, lambda: callback(*args))
 
 
 def json_body(payload: Any) -> bytes:

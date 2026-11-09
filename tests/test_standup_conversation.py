@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from PySide6.QtCore import QCoreApplication
 
 from nostr import crypto as nostr_crypto
 from nostr import events as nostr_events
@@ -65,12 +66,17 @@ def test_a_message_of_another_submission_is_not_shown():
 
 # -- writing ------------------------------------------------------------------------
 
-def send(rumor, signer=None, room_sk=ROOM_SK, room=ROOM, rand=lambda n: 0):
+def send(rumor, signer=None, room_sk=ROOM_SK, room=ROOM, rand=lambda n: 0, during=None):
+    """What seal_and_wrap answered, once the event loop turned;
+    ``during`` gets what it answered inside the call."""
     signer = signer or KeySigner(sk("writer"))
     got = {}
     conv.seal_and_wrap(signer, rumor, room_sk, room, on_success=lambda w: got.setdefault("ok", w),
                        on_failure=lambda r: got.setdefault("err", r), clock=lambda: NOW,
                        rand=rand)
+    if during is not None:
+        during.update(got)
+    QCoreApplication.processEvents()
     return got
 
 
@@ -120,16 +126,19 @@ def test_an_internal_note_is_wrapped_to_the_epoch_key():
 
 
 def test_a_room_key_that_is_not_the_rooms_is_refused_before_signing():
-    signer = KeySigner(sk("writer"))
-    got = send(writer_message(), signer, room_sk=EPOCH_SK, room=ROOM)
+    signer, during = KeySigner(sk("writer")), {}
+    got = send(writer_message(), signer, room_sk=EPOCH_SK, room=ROOM, during=during)
     assert "room" in got["err"] and signer.asked == []
+    assert during == {}                        # on a later turn (RG-M2a 6)
 
 
 def test_a_signer_that_changes_the_seal_is_not_trusted():
     for tamper in (lambda e: dict(e, content="x"), lambda e: dict(e, sig="00" * 64),
                    lambda e: dict(e, tags=[["p", ROOM]])):
-        got = send(writer_message(), KeySigner(sk("writer"), tamper=tamper))
+        during = {}
+        got = send(writer_message(), KeySigner(sk("writer"), tamper=tamper), during=during)
         assert "err" in got and "ok" not in got
+        assert during == {}                    # a signer answering in the call, refused later
 
 
 def test_a_signer_that_says_no_fails_the_send():

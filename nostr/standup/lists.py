@@ -56,7 +56,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from i18n import N_, _
 
 from ..encrypted_lists import EncryptedList
-from ..signed_api import answer_later
+from ..later import answer_later
 from ..list_results import ListRead, ListWords, PublishResult, PublishStatus, ReadStatus
 from ..paged_list import Paging
 from . import formats
@@ -674,7 +674,7 @@ class ReadState(_AccountList):
         now = self._clock()
         if not self.dirty or (not leaving and self._last_write is not None
                               and now - self._last_write < READ_STATE_INTERVAL_SECONDS):
-            done(None)
+            answer_later(done, None)
             return False
         self._last_write = now
         self._dirty = False

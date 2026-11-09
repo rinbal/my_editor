@@ -12,6 +12,7 @@ import io
 import json
 
 import pytest
+from PySide6.QtCore import QCoreApplication
 
 from nostr import crypto as nostr_crypto
 from nostr import refs
@@ -437,6 +438,8 @@ def test_a_wrap_opens_through_the_signer_too():
     sc._open_wrap_with_signer(signer, W["wraps"]["writer"], got.append, got.append)
     assert got[0]["type"] == "submission-key"
     sc._open_wrap_with_signer(signer, {"eph": "x", "ct": "y"}, got.append, got.append)
+    assert len(got) == 1                        # a refusal comes on a later turn
+    QCoreApplication.processEvents()
     assert got[1] == "not a key wrap"
 
 

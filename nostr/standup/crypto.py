@@ -39,6 +39,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from .. import crypto as nostr_crypto
+from ..later import answer_later
 from . import formats
 from .formats import FormatError
 
@@ -455,7 +456,7 @@ def _open_wrap_with_signer(client, wrap: Any, on_success: Callable[[dict], None]
     one or holds something else (without it, ``on_failure`` its words)."""
     invalid = on_invalid or (lambda exc: on_failure(str(exc)))
     if not formats.is_wrap(wrap):
-        invalid(WrapInvalid("not a key wrap"))
+        answer_later(invalid, WrapInvalid("not a key wrap"))
         return
 
     def opened(text: str) -> None:

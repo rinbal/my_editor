@@ -42,7 +42,8 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply
 
 from .. import events as nostr_events
 from ..http_answers import clean_text, parse_retry_after
-from ..signed_api import Call, SignedJsonApi, SignFn, answer_later, json_body, reply_header
+from ..later import answer_later
+from ..signed_api import Call, SignedJsonApi, SignFn, json_body, reply_header
 from . import answers, formats, views
 from .errors import Code, StandupError, error_from_answer, refused
 from .formats import FormatError, need
