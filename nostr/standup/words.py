@@ -34,6 +34,13 @@ UNCONFIRMED_DETAIL = N_("You can close the window, MyEditor keeps checking.")
 SUBMITTED = N_("Submitted. In the inbox of {publication}.")
 SUBMITTED_DETAIL = N_("The server confirmed receipt.")
 IN_THE_BACKGROUND = N_("Submitting …")
+# In the status bar while the sheet is closed: what a signer prompt is
+# for, and a first message that did not go (RG-M2b 11).
+MESSAGE_SIGNING_IN_THE_BACKGROUND = N_("Your submission to {publication} is in. Confirm your "
+                                       "message to the editorial team in your signer app.")
+MESSAGE_NOT_SENT_IN_THE_BACKGROUND = N_("Your message to the editorial team of {publication} "
+                                        "wasn’t sent. Open Submit to a Publication for this "
+                                        "text to send it again.")
 # The account was let go (sign-out, another account, a signer paired
 # anew) while a submission was on its way (RG-M2b 9).
 STOPPED_NOTHING_SENT = N_("Your submission to {publication} stopped when the account "
@@ -48,6 +55,7 @@ STOPPED_MESSAGE = N_("Your submission to {publication} is in, but your message m
 NOT_CONFIRMED = N_("Not confirmed")
 
 # The first message to the editorial team, after the receipt.
+MESSAGE_SIGNING = N_("Waiting for your signer app: confirm your message there.")
 MESSAGE_SENDING = N_("Sending your message …")
 MESSAGE_SENT = N_("Your message to the editorial team is sent.")
 MESSAGE_NOT_SENT = N_("Your message wasn’t sent.")

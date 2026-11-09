@@ -55,6 +55,7 @@ from ..avatar_store import AvatarStore
 from ..profiles import Profile, ProfileStore
 from ..standup import drafting, formats
 from ..standup.drafting import ArticleDraft, Choice
+from ..standup.submitting import MessageStatus
 from ..standup.trust import KEY_NOT_CONFIRMED, Destination
 from ..standup.words import LIST_NOT_SAVED
 from . import appearance
@@ -650,6 +651,7 @@ class SubmitSheet(QDialog):
                               logo=publication_logo(name, formats.parse_address(address)[0],
                                                     self._avatars.get(
                                                         formats.parse_address(address)[0]), 40))
+        run.behind_the_sheet(None)                  # the sheet says it now
         run.changed.connect(self.handoff.show_progress)
         self._pages.setCurrentIndex(1)
         self.handoff.show_progress(run.progress)
@@ -685,6 +687,8 @@ class SubmitSheet(QDialog):
         self._generation += 1                       # no answer counts after this
         if self.run is not None:
             self.run.changed.disconnect(self.handoff.show_progress)
+            if self.run.progress.message is MessageStatus.FAILED:
+                self.run.let_go()                   # Send Again was there
             self._writer.in_background(self.run)
         super().done(result)
 

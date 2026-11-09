@@ -191,8 +191,9 @@ class World:
             resolve_unconfirmed(self.api, sealed.entry, on_done, on_failure, body=sealed.body,
                                 clock=self.clock)
 
-        def send_message(sealed, text, on_sent, on_failure):
+        def send_message(sealed, text, on_signed, on_sent, on_failure):
             self.messages.append((sealed.submission_id, text))
+            on_signed()
             on_sent()
 
         return Ports(confirm_key=confirm_key, upload=self.uploads, held=self.list.held,
@@ -599,7 +600,9 @@ def test_the_message_goes_out_only_after_the_receipt():
     world.server.inject("submit", DROP_AFTER)
     progress = world.go()
     statuses = [(p.step, p.message) for p in world.seen if p.message is not MessageStatus.NONE]
-    assert statuses[0] == (Step.SUBMITTED, MessageStatus.SENDING)
+    # The signer app is asked first, and the words say so (RG-M2b 11).
+    assert statuses[:2] == [(Step.SUBMITTED, MessageStatus.SIGNING),
+                            (Step.SUBMITTED, MessageStatus.SENDING)]
     assert progress.message is MessageStatus.SENT
     assert world.messages == [(world.submitting.sealed.submission_id,
                                "Warum der Text zu euch passt.")]
@@ -609,7 +612,7 @@ def test_a_message_that_failed_can_be_sent_again_and_the_submission_stays_submit
     world = World(message="Hallo")
     answers = [False, True]
 
-    def send_message(sealed, text, on_sent, on_failure):
+    def send_message(sealed, text, on_signed, on_sent, on_failure):
         (on_sent if answers.pop(0) else on_failure)()
 
     world.submitting._ports = replace(world.submitting._ports, send_message=send_message)

@@ -29,7 +29,7 @@ from nostr.avatar_store import AvatarStore
 from nostr.profiles import Profile, ProfileStore
 from nostr.standup import drafting
 from nostr.standup.drafting import ArticleDraft
-from nostr.standup.submitting import Progress, Step
+from nostr.standup.submitting import MessageStatus, Progress, Step
 from nostr.standup.trust import Destination, RedaktionKey
 from nostr.ui.standup_submit import RoundAnswer
 from nostr.ui.standup_submit_sheet import SubmitSheet, recent_first, rules_words
@@ -143,7 +143,15 @@ class Run:
         self.changed = self._changes.changed
         self.started = 0
         self.cancelled = 0
+        self.let_go_ = 0
+        self.behind: List[object] = []
         self.progress = Progress(Step.SIGNING)
+
+    def behind_the_sheet(self, on_change) -> None:
+        self.behind.append(on_change)
+
+    def let_go(self) -> None:
+        self.let_go_ += 1
 
     def start(self) -> None:
         self.started += 1
@@ -413,6 +421,22 @@ def test_opened_again_on_a_work_on_its_way_the_sheet_shows_that_run(tmp_path):
     assert again.run is writer.on_its_way and again._pages.currentIndex() == 1
     assert again.handoff.headline.text() == "Warte auf deine Signer-App."
     assert len(writer.submitted) == 1 and again.run.started == 1
+    assert again.run.behind[-1] is None             # the sheet says it now, not the bar
+
+
+@pytest.mark.parametrize("message, let_go", [
+    (MessageStatus.FAILED, 1),                      # Send Again was there
+    (MessageStatus.SIGNING, 0),                     # it goes on, said in the bar
+    (MessageStatus.SENDING, 0),
+])
+def test_closed_on_a_first_message_that_did_not_go_the_run_is_let_go(tmp_path, message, let_go):
+    writer = Writer()
+    sheet = _sheet(tmp_path, writer)
+    sheet.submit_button.click()
+    sheet.run.progress = Progress(Step.SUBMITTED, sent=True, receipt=object(), message=message)
+    run = sheet.run
+    sheet.handoff.close_requested.emit()
+    assert run.let_go_ == let_go and writer.background == [run]
 
 
 def test_an_earlier_try_never_sent_is_sent_again_or_discarded(tmp_path):

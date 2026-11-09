@@ -299,7 +299,8 @@ def phase_words(progress: Progress, publication: str) -> tuple:
             _(lines[1]) if lines[1] else "")
 
 
-_MESSAGE_WORDS = {MessageStatus.SENDING: words.MESSAGE_SENDING,
+_MESSAGE_WORDS = {MessageStatus.SIGNING: words.MESSAGE_SIGNING,
+                  MessageStatus.SENDING: words.MESSAGE_SENDING,
                   MessageStatus.SENT: words.MESSAGE_SENT,
                   MessageStatus.FAILED: words.MESSAGE_NOT_SENT}
 

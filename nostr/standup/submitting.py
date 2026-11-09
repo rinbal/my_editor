@@ -93,6 +93,7 @@ _CANCELLABLE = frozenset({Step.KEY, Step.ENCRYPTING, Step.UPLOADING, Step.RECORD
 
 class MessageStatus(Enum):
     NONE = "none"
+    SIGNING = "signing"             # the signer app is asked to seal it
     SENDING = "sending"
     SENT = "sent"
     FAILED = "failed"
@@ -155,7 +156,8 @@ class Ports:
     - ``lookup(sealed, on_done(status), on_failure(StandupError))``:
       watcher.resolve_unconfirmed for ``sealed.entry``, its receipt checked
       against ``sealed.body``, what was sent.
-    - ``send_message(sealed, text, on_sent(), on_failure())``.
+    - ``send_message(sealed, text, on_signed(), on_sent(), on_failure())``:
+      ``on_signed`` once the signer sealed it, before it is sent.
     - ``later(ms, callback)``; ``clock()``.
     """
 
@@ -169,7 +171,8 @@ class Ports:
     submit: Callable[[Mapping[str, Any], Callable[[], None], Callable[[Any], None],
                       Callable[[StandupError], None]], Callable[[], None]]
     lookup: Callable[[Any, Callable[[Any], None], Callable[[StandupError], None]], None]
-    send_message: Callable[[Sealed, str, Callable[[], None], Callable[[], None]], None]
+    send_message: Callable[[Sealed, str, Callable[[], None], Callable[[], None],
+                            Callable[[], None]], None]
     later: Callable[[int, Callable[[], None]], None]
     clock: Callable[[], float]
 
@@ -198,6 +201,11 @@ class _Sending:
 @dataclass(frozen=True)
 class _MessageDone:
     sent: bool
+
+
+@dataclass(frozen=True)
+class _MessageSigned:
+    """The signer sealed the first message; it goes to the server now."""
 
 
 # Refusals that trying again could get past, and from where.
@@ -326,6 +334,7 @@ class Submitting:
         (Step.CHECKING, StandupError): "_lookup_failed",
         (Step.REUPLOADING, _Uploaded): "_reuploaded",
         (Step.REUPLOADING, _UploadFailed): "_upload_failed",
+        (Step.SUBMITTED, _MessageSigned): "_message_signed",
         (Step.SUBMITTED, _MessageDone): "_message_done",
     }
 
@@ -564,11 +573,18 @@ class Submitting:
     # -- the first message ---------------------------------------------------
 
     def _send_message(self) -> None:
-        self._show(Step.SUBMITTED, message=MessageStatus.SENDING)
+        # The signer app is asked first: the words say so while it waits
+        # (RG-M2b 11), as they do for the submission itself.
+        self._show(Step.SUBMITTED, message=MessageStatus.SIGNING)
         answer = self._answer()
         self._ports.send_message(self._sealed, self._choice.message.strip(),
+                                 lambda: answer(_MessageSigned()),
                                  lambda: answer(_MessageDone(True)),
                                  lambda: answer(_MessageDone(False)))
+
+    def _message_signed(self, _event: _MessageSigned) -> None:
+        if self._progress.message is MessageStatus.SIGNING:
+            self._show(Step.SUBMITTED, message=MessageStatus.SENDING)
 
     def _message_done(self, event: _MessageDone) -> None:
         self._show(Step.SUBMITTED,

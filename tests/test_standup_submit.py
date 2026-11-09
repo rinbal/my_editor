@@ -389,15 +389,16 @@ def test_signing_out_revokes_the_session_on_the_server():
 
 
 def _stopping(*progresses):
-    """A writer whose account has a run at each of ``progresses``."""
-    from nostr.standup.submitting import PHASE_OF, Phase
+    """A writer whose account has a run at each of ``progresses``, each
+    ended by SubmissionRun's own rule."""
+    from nostr.ui.standup_submit import SubmissionRun
     writer = _writer(FakeList(), FakeApi(), media_keys=SimpleNamespace(clear=lambda: None),
                      read_state=ReadStateList([]), destinations=SimpleNamespace(stop=lambda: None))
     account = writer.account(SimpleNamespace(user_pubkey=WRITER))
     for progress in progresses:
         account.runs.append(SimpleNamespace(
             submitting=SimpleNamespace(stop=lambda: None), progress=progress,
-            finished=PHASE_OF[progress.step] in (Phase.DONE, Phase.FAILED, Phase.CANCELLED),
+            finished=SubmissionRun.finished.fget(SimpleNamespace(progress=progress, _let_go=False)),
             choice=SimpleNamespace(name="Einundzwanzig Magazin")))
     return writer
 
@@ -423,12 +424,18 @@ def _stopping(*progresses):
     ((Progress(Step.SUBMITTED, sent=True, receipt=object(), message=MessageStatus.SENDING),),
      "Your submission to Einundzwanzig Magazin is in, but your message may not have reached "
      "the editorial team: the account changed."),
+    ((Progress(Step.SUBMITTED, sent=True, receipt=object(), message=MessageStatus.SIGNING),),
+     "Your submission to Einundzwanzig Magazin is in, but your message may not have reached "
+     "the editorial team: the account changed."),
+    ((Progress(Step.SUBMITTED, sent=True, receipt=object(), message=MessageStatus.FAILED),),
+     None),                                          # said when it failed
     ((Progress(Step.UPLOADING), Progress(Step.SENDING, sent=True)),
      "Your submission to Einundzwanzig Magazin stopped when the account changed, before the "
      "server confirmed it. Open Submit to a Publication with that account to see whether it "
      "arrived. 1 other submission stopped as well."),
     ((Progress(Step.SUBMITTED, sent=True, receipt=object()), Progress(Step.FAILED)), None),
-], ids=["uploading", "signing", "sending", "checking", "pictures", "message", "two", "none"])
+], ids=["uploading", "signing", "sending", "checking", "pictures", "message",
+        "message signing", "message failed", "two", "none"])
 def test_a_submission_stopped_with_its_account_is_said_by_what_reached_the_server(
         progresses, said):
     # RG-M2b 9: sign-out, another account or a signer paired anew stopped
@@ -469,12 +476,35 @@ def test_the_lookup_of_a_run_checks_the_receipt_against_the_body_it_sent(monkeyp
 # -- in the background --------------------------------------------------------------
 
 class Run(QObject):
+    """A run's signal and words; its watcher behind the sheet is the real one."""
+
     changed = Signal(object)
 
     def __init__(self) -> None:
         super().__init__()
         self.choice = SimpleNamespace(name="Einundzwanzig Magazin")
         self.finished = False
+        self.progress = Progress(Step.SIGNING)
+        self._behind = None
+
+    def behind_the_sheet(self, on_change) -> None:
+        from nostr.ui.standup_submit import SubmissionRun
+        SubmissionRun.behind_the_sheet(self, on_change)
+
+
+def test_a_sheet_closed_twice_on_a_run_says_each_change_once_and_none_while_it_shows_it():
+    # One watcher per run: closing the sheet again did not connect a
+    # second, and a sheet that shows the run again says it itself.
+    writer, run, said = _writer(FakeList(), FakeApi()), Run(), []
+    writer.status.connect(said.append)
+    writer.in_background(run)
+    run.behind_the_sheet(None)                       # shown again
+    run.changed.emit(Progress(Step.SENDING, sent=True))
+    assert said == ["Submitting …"]
+    writer.in_background(run)
+    run.changed.emit(Progress(Step.SUBMITTED, sent=True, receipt=object()))
+    assert said == ["Submitting …", "Submitting …",
+                    "Submitted. In the inbox of Einundzwanzig Magazin."]
 
 
 def test_in_the_background_the_status_bar_says_submitted_only_once_it_is_in(german):
@@ -486,6 +516,43 @@ def test_in_the_background_the_status_bar_says_submitted_only_once_it_is_in(germ
     assert said == ["Wird eingereicht …"]
     run.changed.emit(Progress(Step.SUBMITTED))
     assert said[-1] == "Eingereicht. Im Eingang von Einundzwanzig Magazin."
+
+
+def test_in_the_background_the_first_message_says_why_the_signer_asks_and_when_it_failed():
+    # RG-M2b 11: the prompt came out of context, and a failure was lost.
+    writer, run, said = _writer(FakeList(), FakeApi()), Run(), []
+    writer.status.connect(said.append)
+    writer.in_background(run)
+    run.changed.emit(Progress(Step.SUBMITTED, message=MessageStatus.SIGNING))
+    assert said[-1] == ("Your submission to Einundzwanzig Magazin is in. Confirm your message "
+                        "to the editorial team in your signer app.")
+    run.changed.emit(Progress(Step.SUBMITTED, message=MessageStatus.SENDING))
+    run.changed.emit(Progress(Step.SUBMITTED, message=MessageStatus.FAILED))
+    assert said[-1] == ("Your message to the editorial team of Einundzwanzig Magazin wasn’t "
+                        "sent. Open Submit to a Publication for this text to send it again.")
+    run.changed.emit(Progress(Step.SUBMITTED, message=MessageStatus.SENT))
+    assert said[-1] == "Submitted. In the inbox of Einundzwanzig Magazin."
+    assert all(a != b for a, b in zip(said, said[1:]))  # a change is said once
+
+
+@pytest.mark.parametrize("progress, finished", [
+    (Progress(Step.SUBMITTED), True),
+    (Progress(Step.SUBMITTED, message=MessageStatus.SENT), True),
+    (Progress(Step.SUBMITTED, message=MessageStatus.SIGNING), False),
+    (Progress(Step.SUBMITTED, message=MessageStatus.SENDING), False),
+    (Progress(Step.SUBMITTED, message=MessageStatus.FAILED), False),   # Send Again there
+    (Progress(Step.FAILED), True),
+    (Progress(Step.CANCELLED), True),
+    (Progress(Step.CHECKING, sent=True), False),
+])
+def test_a_run_ends_with_its_first_message(progress, finished):
+    # Opened again for its work, the sheet shows a run whose message did
+    # not go, with Send Again, instead of a new form.
+    from nostr.ui.standup_submit import SubmissionRun
+    assert SubmissionRun.finished.fget(SimpleNamespace(progress=progress, _let_go=False)) is finished
+    # Let go once a sheet showed it with Send Again: ended, if it ended.
+    ended = progress.phase.name in ("DONE", "FAILED", "CANCELLED")
+    assert SubmissionRun.finished.fget(SimpleNamespace(progress=progress, _let_go=True)) is ended
 
 
 def test_in_the_background_a_failure_is_said_in_its_words(german):
@@ -543,10 +610,11 @@ def test_the_first_message_is_sealed_by_the_writer_and_wrapped_to_the_submission
         signer=SimpleNamespace(sign_event=lambda unsigned, *, on_success, on_failure:
                                signer(unsigned, on_success, on_failure)))
     StandupWriter._send_message(account, sealed, "Passt zu eurer Reihe.",
-                                lambda: said.append("sent"), lambda: said.append("not sent"))
+                                lambda: said.append("signed"), lambda: said.append("sent"),
+                                lambda: said.append("not sent"))
     (submission_id, wrap, kind_hint), = sent
     opened = conversation.open_item(wrap, s_sub, sid)
-    assert (submission_id, kind_hint, said) == (sid, "message", ["sent"])
+    assert (submission_id, kind_hint, said) == (sid, "message", ["signed", "sent"])
     assert opened.sender == pk("writer")
     assert opened.rumor["content"] == "Passt zu eurer Reihe."
     assert len(signer.requests) == 1                # one prompt: the seal
@@ -563,7 +631,8 @@ def test_a_message_with_a_secret_key_in_it_is_never_sent():
     sealed = SimpleNamespace(body={"p_sub": "00" * 32}, s_sub=s_sub, submission_id="ab" * 32)
     nsec = encode_nsec(sk("writer").hex())
     StandupWriter._send_message(account, sealed, f"mein Schlüssel {nsec}",
-                                lambda: said.append("sent"), lambda: said.append("not sent"))
+                                lambda: said.append("signed"), lambda: said.append("sent"),
+                                lambda: said.append("not sent"))
     QApplication.processEvents()
     assert sent == [] and said == ["not sent"]
 

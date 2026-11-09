@@ -180,6 +180,8 @@ def test_each_state_has_its_buttons(view, progress, shown, enabled_cancel, defau
 def test_a_message_that_was_not_sent_can_be_sent_again_from_the_handoff(view):
     asked = []
     view.retry_message_requested.connect(lambda: asked.append(True))
+    view.show_progress(Progress(Step.SUBMITTED, message=MessageStatus.SIGNING))
+    assert view.send_again.isHidden() and view.message.text() == words.MESSAGE_SIGNING
     view.show_progress(Progress(Step.SUBMITTED, message=MessageStatus.SENDING))
     assert view.send_again.isHidden() and view.message.text() == words.MESSAGE_SENDING
     view.show_progress(Progress(Step.SUBMITTED, message=MessageStatus.FAILED))

@@ -192,6 +192,8 @@ class SubmissionRun(QObject):
         super().__init__(parent)
         self.draft = draft
         self._started = False
+        self._let_go = False
+        self._behind: Optional[Callable[[Progress], None]] = None
         self.submitting = Submitting(draft, choice, writer=writer, round_=round_,
                                      ports=ports, on_change=self.changed.emit)
 
@@ -205,7 +207,27 @@ class SubmissionRun(QObject):
 
     @property
     def finished(self) -> bool:
-        return self.progress.phase in (Phase.DONE, Phase.FAILED, Phase.CANCELLED)
+        """Ended, its first message included: a run whose message is still
+        being signed or sent, or did not go while no sheet showed it, is
+        shown again for its work (Send Again there) until :meth:`let_go`."""
+        return _ended(self.progress) and (self._let_go or self.progress.message
+                                          in (MessageStatus.NONE, MessageStatus.SENT))
+
+    def let_go(self) -> None:
+        """A sheet showing it in, its message not sent, was closed: the
+        person saw Send Again and chose not to; the text may be submitted
+        elsewhere."""
+        self._let_go = True
+
+    def behind_the_sheet(self, on_change: Optional[Callable[[Progress], None]]) -> None:
+        """What follows its progress while no sheet shows it (the status
+        bar's words), or ``None`` while a sheet shows it again: one at a
+        time, so a sheet closed twice says each change once."""
+        if self._behind is not None:
+            self.changed.disconnect(self._behind)
+        self._behind = on_change
+        if on_change is not None:
+            self.changed.connect(on_change)
 
     def start(self) -> None:
         """Once: a run shown again (one per work) goes on where it is."""
@@ -251,13 +273,21 @@ class _Account(QObject):
         self.list_problem = ""
 
 
+def _ended(progress: Progress) -> bool:
+    """In, failed or cancelled: nothing of the submission goes on (its
+    first message may)."""
+    return progress.phase in (Phase.DONE, Phase.FAILED, Phase.CANCELLED)
+
+
 def _stopped_words(runs: Sequence[SubmissionRun]) -> str:
     """What the status bar says when the account of ``runs`` is let go
     while some are on their way, or ``""``. The words follow what reached
     the server (lesson 8): nothing, a request it may hold (the submit
-    sheet, opened again with that account, finds out), or a receipt with
-    a picture still going up. The run furthest from known is named."""
-    going = [run for run in runs if not run.finished]
+    sheet, opened again with that account, finds out), a receipt with a
+    picture still going up, or a first message being signed or sent (one
+    that did not go was said then). The run furthest from known is
+    named."""
+    going = [run for run in runs if not _ended(run.progress)]
     if going:
         def known(run: SubmissionRun) -> int:
             progress = run.progress
@@ -271,7 +301,8 @@ def _stopped_words(runs: Sequence[SubmissionRun]) -> str:
                 else words.STOPPED_NOTHING_SENT)
         others = len(going) - 1
     else:
-        talking = [run for run in runs if run.progress.message is MessageStatus.SENDING]
+        talking = [run for run in runs if run.progress.message
+                   in (MessageStatus.SIGNING, MessageStatus.SENDING)]
         if not talking:
             return ""
         run, text, others = talking[0], words.STOPPED_MESSAGE, 0
@@ -447,19 +478,29 @@ class StandupWriter(QObject):
         return run
 
     def in_background(self, run: SubmissionRun) -> None:
-        """The sheet closed: say in the status bar how ``run`` goes on."""
+        """The sheet closed: say in the status bar how ``run`` goes on,
+        each change once: submitting, in, why the signer app asks for the
+        first message, that it did not go, or a failure."""
         if run.finished:
             return
-        self.status.emit(_(words.IN_THE_BACKGROUND))
+        name = run.choice.name
+        said = [""]
 
-        def changed(progress: Progress) -> None:
+        def say(text: str) -> None:
+            if text and text != said[0]:
+                said[0] = text
+                self.status.emit(text)
+
+        def words_of(progress: Progress) -> str:
             if progress.phase is Phase.DONE:
-                self.status.emit(_(words.SUBMITTED).format(publication=run.choice.name))
-            elif progress.phase is Phase.FAILED and progress.failure is not None:
-                self.status.emit(_(progress.failure.headline).format(
-                    publication=run.choice.name))
+                return (_background_message_words(progress, name)
+                        or _(words.SUBMITTED).format(publication=name))
+            if progress.phase is Phase.FAILED and progress.failure is not None:
+                return _(progress.failure.headline).format(publication=name)
+            return ""
 
-        run.changed.connect(changed)
+        say(words_of(run.progress) or _(words.IN_THE_BACKGROUND))
+        run.behind_the_sheet(lambda progress: say(words_of(progress)))
 
     def stop(self, on_done: Optional[Callable[[], None]] = None) -> None:
         """Sign-out or another account (13): nothing on its way answers
@@ -520,8 +561,8 @@ class StandupWriter(QObject):
         def lookup(sealed: Sealed, on_done, on_failure) -> None:
             resolve_unconfirmed(api, sealed.entry, on_done, on_failure, body=sealed.body)
 
-        def send_message(sealed: Sealed, text: str, on_sent, on_failure) -> None:
-            self._send_message(account, sealed, text, on_sent, on_failure)
+        def send_message(sealed: Sealed, text: str, on_signed, on_sent, on_failure) -> None:
+            self._send_message(account, sealed, text, on_signed, on_sent, on_failure)
 
         def forget(entry) -> None:
             # Best effort: an entry left behind is found not sent the next
@@ -534,7 +575,7 @@ class StandupWriter(QObject):
                      later=_later, clock=time.time)
 
     @staticmethod
-    def _send_message(account: _Account, sealed: Sealed, text: str, on_sent,
+    def _send_message(account: _Account, sealed: Sealed, text: str, on_signed, on_sent,
                       on_failure) -> None:
         """The first message, after the receipt: sealed by the account
         (one signer prompt), wrapped to the submission's room, sent with a
@@ -549,12 +590,24 @@ class StandupWriter(QObject):
             return
 
         def wrapped(wrap: dict) -> None:
+            on_signed()
             account.api.send_message(sealed.submission_id, wrap, kind_hint="message",
                                      on_success=lambda _seq: on_sent(),
                                      on_failure=lambda _error: on_failure())
 
         conversation.seal_and_wrap(account.signer, rumor, sealed.s_sub, room,
                                    on_success=wrapped, on_failure=lambda _why: on_failure())
+
+
+def _background_message_words(progress: Progress, publication: str) -> str:
+    """With the sheet closed, what the status bar says of the first
+    message: why the signer app asks now, or that it did not go; ``""``
+    otherwise (it is sent, or there is none)."""
+    if progress.message is MessageStatus.SIGNING:
+        return _(words.MESSAGE_SIGNING_IN_THE_BACKGROUND).format(publication=publication)
+    if progress.message is MessageStatus.FAILED:
+        return _(words.MESSAGE_NOT_SENT_IN_THE_BACKGROUND).format(publication=publication)
+    return ""
 
 
 def _list_problem(read) -> str:
