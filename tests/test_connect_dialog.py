@@ -35,7 +35,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QEvent, QObject, Qt, Signal  # noqa: E402
 from PySide6.QtGui import QDesktopServices, QFocusEvent  # noqa: E402
-from PySide6.QtWidgets import QApplication, QPushButton, QTabWidget  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QTabWidget  # noqa: E402
 
 import settings  # noqa: E402
 from nostr.bunker import BunkerClient  # noqa: E402
@@ -154,6 +154,9 @@ def test_one_page_opens_on_the_code_for_a_phone_with_no_way_off(tmp_path):
     pool = FakePool()
     dialog = dialog_for(tmp_path, pool, offer_alternatives=False)
     assert dialog.findChildren(QTabWidget) == []
+    # Headed as the window is named, as on the chosen design.
+    assert dialog.findChild(QLabel, "title").text() == dialog.windowTitle() == \
+        "Connect Signer App"
     assert pool.subscriptions and not dialog._qr_label.pixmap().isNull()
     shown = shown_words(dialog)
     assert "Scan with your phone" in shown

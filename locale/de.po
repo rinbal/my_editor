@@ -8819,6 +8819,7 @@ msgid "{name} has no lightning address in their profile, so they can’t be paid
 msgstr "{name} hat keine Lightning-Adresse im Profil, darum kann kein Anteil gezahlt werden."
 
 #: nostr/ui/connect_dialog.py:184
+#: nostr/ui/connect_dialog.py:241
 msgid "Connect Signer App"
 msgstr "Signer-App verbinden"
 
@@ -8898,10 +8899,6 @@ msgstr "Deine Signer-App wird kontaktiert. Bestätige die Anfrage dort …"
 #: nostr/ui/connect_dialog.py:635
 msgid "Your signer app answered in a form MyEditor can’t read. An update of the signer app may help."
 msgstr "Deine Signer-App hat in einer Form geantwortet, die MyEditor nicht lesen kann. Ein Update der Signer-App kann helfen."
-
-#: nostr/ui/connect_dialog.py:241
-msgid "Connect Your Signer App"
-msgstr "Verbinde deine Signer-App"
 
 #: nostr/ui/connect_dialog.py:243
 msgid "Your key stays in your signer app. MyEditor asks it only when something has to be signed."

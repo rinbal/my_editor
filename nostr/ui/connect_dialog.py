@@ -4,7 +4,7 @@
 Bunker46, ...) with MyEditor, on one page (the M1 layout the product
 owner chose on 2026-11-09; research/signer-pairing.md, section 9).
 
-    Connect Your Signer App
+    Connect Signer App
     Your key stays in your signer app. ...
     ┌──────────────────────────────────────┐
     │               [ code ]               │
@@ -238,7 +238,7 @@ class ConnectDialog(QDialog):
         layout.setContentsMargins(24, 22, 24, 18)
         layout.setSpacing(12)
 
-        layout.addWidget(text_label(_("Connect Your Signer App"), "title"))
+        layout.addWidget(text_label(_("Connect Signer App"), "title"))
         layout.addWidget(text_label(
             _("Your key stays in your signer app. MyEditor asks it only when something "
               "has to be signed.")))
