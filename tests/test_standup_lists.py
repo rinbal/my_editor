@@ -64,7 +64,11 @@ def entry(n: int = 0, *, updated_at: int = NOW, revision: int = 1, **changes) ->
         s_sub=scrypto.new_secret_key().hex(), status_key=scrypto.new_status_key(),
         title=f"Ein Jahr mit Lightning im Café, Teil {n}", kind="article",
         d=f"ein-jahr-mit-lightning-{n}", round=1, revision=revision,
-        revision_hash=formats.sha256_hex(f"rev-{n}-{revision}"), updated_at=updated_at)
+        revision_hash=formats.sha256_hex(f"rev-{n}-{revision}"),
+        envelope_sha256=formats.sha256_hex(f"envelope-{n}-{revision}"),
+        wraps_sha256={"redaktion": formats.sha256_hex(f"wrap-r-{n}-{revision}"),
+                      "writer": formats.sha256_hex(f"wrap-w-{n}-{revision}")},
+        updated_at=updated_at)
     return replace(value, **changes)
 
 
@@ -101,8 +105,42 @@ def test_an_entry_has_the_contracts_fields_and_round_trips():
     data = value.to_json()
     assert set(data) == {"sid", "publication", "server", "role", "s_sub", "status_key",
                          "title", "kind", "d", "round", "revision", "revision_hash",
-                         "updated_at"}
+                         "envelope_sha256", "wraps_sha256", "updated_at"}
     assert entry_from_json(data) == value
+
+
+def test_an_entry_without_what_was_sent_is_kept_as_it_came():
+    # Contract 13 (72d688b): a writer entry has every field, the
+    # envelope's and the wraps' hashes too, or it is not understood.
+    for name in ("envelope_sha256", "wraps_sha256"):
+        data = entry().to_json()
+        del data[name]
+        assert entry_from_json(data) is None
+        assert isinstance(item_from_json(data), ForeignItem)
+
+
+@pytest.mark.parametrize("envelope, wraps, understood", [
+    ("ab" * 32, {"redaktion": "cd" * 32, "writer": "ef" * 32}, True),
+    (None, None, True),                                     # a work by link
+    (None, {"writer": "ef" * 32}, False),
+    ("ab" * 32, None, False),
+    ("ab" * 32, {}, False),
+    ("ab" * 32, {"writer": "EF" * 32}, False),
+    ("ab" * 32, {"writer": None}, False),
+    ("ab" * 32, {"": "ef" * 32}, False),
+    ("ab" * 32, ["ef" * 32], False),
+    ("AB" * 32, {"writer": "ef" * 32}, False),
+    ("ab" * 31, {"writer": "ef" * 32}, False),
+    ("ab" * 32, {f"{n:064x}": "ef" * 32 for n in range(23)}, False),
+])
+def test_what_was_sent_is_an_envelope_hash_with_each_wraps_or_neither(envelope, wraps,
+                                                                       understood):
+    # As the web app reads them (list-entries.js sentHashes): null for a
+    # work by link, else a 64-hex envelope hash and a non-empty map of
+    # 64-hex wrap hashes, for a writer and an opened contributor alike.
+    for role in ({}, {"role": "contributor", "status_key": None}):
+        data = dict(entry().to_json(), envelope_sha256=envelope, wraps_sha256=wraps, **role)
+        assert (entry_from_json(data) is not None) is understood, role
 
 
 def test_an_entry_never_prints_its_secrets():
@@ -122,12 +160,15 @@ def test_a_malformed_entry_is_left_out(change):
 def test_a_contributor_has_no_status_key_and_no_key_or_revision_until_the_wrap_opened():
     # 13 (071f757): status_key null; s_sub, revision and revision_hash
     # null until the contributor opened their wrap, then all three.
+    # 72d688b: the envelope's and the wraps' hashes are null with them.
     unopened = dict(entry().to_json(), role="contributor", status_key=None, s_sub=None,
-                    revision=None, revision_hash=None)
+                    revision=None, revision_hash=None, envelope_sha256=None, wraps_sha256=None)
     assert entry_from_json(unopened).role == "contributor"
     opened = dict(entry().to_json(), role="contributor", status_key=None)
     assert entry_from_json(opened).s_sub == opened["s_sub"]
     for wrong in (dict(unopened, revision=1), dict(opened, s_sub=None),
+                  dict(unopened, envelope_sha256="ab" * 32),
+                  dict(unopened, wraps_sha256={"writer": "ab" * 32}),
                   dict(opened, status_key=scrypto.new_status_key()),
                   dict(entry().to_json(), revision=None, revision_hash=None)):
         assert entry_from_json(wrong) is None
@@ -256,9 +297,18 @@ def test_an_entry_held_is_exactly_the_one_recorded():
     value = entry(1)
     items = SubmissionItems((value,))
     assert holds_exactly(items, value)
+    # 72d688b: what was sent too, so a lookup after a restart compares
+    # what this run sent.
     for change in ({"revision": 2}, {"revision_hash": "00" * 32}, {"s_sub": "00" * 32},
-                   {"status_key": "00" * 32}, {"role": "contributor"}):
+                   {"status_key": "00" * 32}, {"role": "contributor"},
+                   {"envelope_sha256": "00" * 32},
+                   {"wraps_sha256": dict(value.wraps_sha256, writer="00" * 32)},
+                   {"wraps_sha256": {"writer": value.wraps_sha256["writer"]}},
+                   {"envelope_sha256": None, "wraps_sha256": None}):
         assert not holds_exactly(items, replace(value, **change)), change
+    by_link = replace(value, envelope_sha256=None, wraps_sha256=None)
+    assert holds_exactly(SubmissionItems((by_link,)), by_link)
+    assert not holds_exactly(SubmissionItems((by_link,)), value)
     assert holds_exactly(SubmissionItems(), value) is None
     assert not holds_exactly(SubmissionItems((Tombstone(value.sid, NOW + 1),)), value)
 
@@ -594,6 +644,13 @@ def test_the_vector_reads(name):
     answer = load(writers_list(SubmissionsList, relay))
     assert answer.status.value == case["status"]
     assert by_sid(item.to_json() for item in answer.value.items) == case["items"]
+    # 72d688b: every entry the vectors hold with what was sent is read as
+    # an entry, its hashes as they came, not kept as one not understood.
+    for item in case["items"]:
+        if "envelope_sha256" in item:
+            [read] = [e for e in answer.value.entries if e.sid == item["sid"]]
+            assert (read.envelope_sha256, read.wraps_sha256) \
+                == (item["envelope_sha256"], item["wraps_sha256"])
 
 
 def test_the_vector_merge_is_a_union():

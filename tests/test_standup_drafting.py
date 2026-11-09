@@ -12,7 +12,7 @@ import pytest
 
 from nostr import crypto as nostr_crypto
 from nostr.media.assets import asset_key
-from nostr.standup import drafting, formats, submission, trust
+from nostr.standup import drafting, formats, submission, trust, views
 from nostr.standup.drafting import ArticleDraft, Choice, LocalPicture
 from nostr.standup.entries import SubmissionEntry
 from tests.standup_fakes import ADDRESS, KEY_EVENT
@@ -165,7 +165,9 @@ def _entry(round_=1):
     return SubmissionEntry(sid="ab" * 32, publication=ADDRESS, server="https://s.example",
                            role="writer", s_sub="11" * 32, status_key="22" * 32, title="T",
                            kind="article", d="ein-jahr", round=round_, revision=1,
-                           revision_hash="33" * 32, updated_at=NOW)
+                           revision_hash="33" * 32, envelope_sha256="44" * 32,
+                           wraps_sha256={"redaktion": "55" * 32, "writer": "66" * 32},
+                           updated_at=NOW)
 
 
 def _round_of(entries_states):
@@ -225,6 +227,12 @@ def test_every_co_author_takes_part_with_a_wrap_of_their_own():
     assert submission.submission_body_problem(body) is None
     assert sealed.entry.sid == body["submission_id"] and sealed.entry.server == key.server
     assert sealed.entry.s_sub == sealed.s_sub.hex()
+    # 72d688b: the entry names what is sent as the receipt names it, each
+    # wrap by its name, so a lookup after a restart compares all of it.
+    expected = views.expected_receipt(body)
+    assert sealed.entry.envelope_sha256 == expected["envelope_sha256"] is not None
+    assert sealed.entry.wraps_sha256 == expected["wraps_sha256"]
+    assert set(sealed.entry.wraps_sha256) == {"redaktion", "writer", pk("contributor")}
 
 
 def test_a_revision_larger_than_the_publication_takes_is_refused_before_anything_is_sent():

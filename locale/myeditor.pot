@@ -8099,34 +8099,39 @@ msgstr ""
 msgid "{publication} already has another version of this submission."
 msgstr ""
 
-#: nostr/standup/words.py:81
+#: nostr/standup/words.py:83
+#, python-brace-format
+msgid "{publication} received this submission, but not as MyEditor sent it."
+msgstr ""
+
+#: nostr/standup/words.py:84
 msgid "The server didn’t take the submission."
 msgstr ""
 
-#: nostr/standup/words.py:83
+#: nostr/standup/words.py:86
 msgid "MyEditor couldn’t put this submission together."
 msgstr ""
 
-#: nostr/standup/words.py:87
+#: nostr/standup/words.py:90
 #, python-brace-format
 msgid "{publication} isn’t taking submissions right now."
 msgstr ""
 
-#: nostr/standup/words.py:88
+#: nostr/standup/words.py:91
 #, python-brace-format
 msgid "{publication} doesn’t take submissions from you."
 msgstr ""
 
-#: nostr/standup/words.py:89
+#: nostr/standup/words.py:92
 #, python-brace-format
 msgid "You already have as many open submissions at {publication} as it takes."
 msgstr ""
 
-#: nostr/standup/words.py:91
+#: nostr/standup/words.py:94
 msgid "Too many submissions in a short time. Try again later."
 msgstr ""
 
-#: nostr/standup/words.py:96
+#: nostr/standup/words.py:99
 #, python-brace-format
 msgid "Nobody at {publication} could decide on it: the only person who can is named among those who take part."
 msgstr ""

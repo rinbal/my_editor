@@ -8114,34 +8114,39 @@ msgstr "Diese Einreichung ist größer, als {publication} annimmt."
 msgid "{publication} already has another version of this submission."
 msgstr "{publication} hat schon eine andere Fassung dieser Einreichung."
 
-#: nostr/standup/words.py:81
+#: nostr/standup/words.py:83
+#, python-brace-format
+msgid "{publication} received this submission, but not as MyEditor sent it."
+msgstr "{publication} hat diese Einreichung erhalten, aber nicht so, wie MyEditor sie gesendet hat."
+
+#: nostr/standup/words.py:84
 msgid "The server didn’t take the submission."
 msgstr "Der Server hat die Einreichung nicht angenommen."
 
-#: nostr/standup/words.py:83
+#: nostr/standup/words.py:86
 msgid "MyEditor couldn’t put this submission together."
 msgstr "MyEditor konnte diese Einreichung nicht zusammenstellen."
 
-#: nostr/standup/words.py:87
+#: nostr/standup/words.py:90
 #, python-brace-format
 msgid "{publication} isn’t taking submissions right now."
 msgstr "{publication} nimmt gerade keine Einreichungen an."
 
-#: nostr/standup/words.py:88
+#: nostr/standup/words.py:91
 #, python-brace-format
 msgid "{publication} doesn’t take submissions from you."
 msgstr "{publication} nimmt von dir keine Einreichungen an."
 
-#: nostr/standup/words.py:89
+#: nostr/standup/words.py:92
 #, python-brace-format
 msgid "You already have as many open submissions at {publication} as it takes."
 msgstr "Du hast bei {publication} schon so viele offene Einreichungen, wie sie annimmt."
 
-#: nostr/standup/words.py:91
+#: nostr/standup/words.py:94
 msgid "Too many submissions in a short time. Try again later."
 msgstr "Zu viele Einreichungen in kurzer Zeit. Versuche es später noch einmal."
 
-#: nostr/standup/words.py:96
+#: nostr/standup/words.py:99
 #, python-brace-format
 msgid "Nobody at {publication} could decide on it: the only person who can is named among those who take part."
 msgstr "Niemand bei {publication} könnte darüber entscheiden: Die einzige Person, die das kann, ist unter den Beteiligten."

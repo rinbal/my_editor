@@ -47,7 +47,7 @@ from . import answers, formats, views
 from .answers import LookupAnswer
 from .client import StandupApi
 from .errors import Code, StandupError
-from .entries import SubmissionEntry
+from .entries import SubmissionEntry, same_sent
 
 REFRESH_INTERVAL_MS = 15 * 60 * 1000
 # Answers in a row that may say "more" before a round or a reading fails
@@ -92,15 +92,30 @@ class Different:
     receipt: views.Receipt
 
 
-EntryStatus = Union[views.Confirmed, views.BlobsMissing, NotStored, Superseded, Different]
+@dataclass(frozen=True)
+class StoredOther:
+    """This revision, its number and hash, is stored, but with another
+    envelope or other wraps than this app sent (12.4 "No answer after
+    sending"): never "Eingereicht"."""
+
+    receipt: views.Receipt
+
+
+EntryStatus = Union[views.Confirmed, views.BlobsMissing, NotStored, Superseded, Different,
+                    StoredOther]
 
 
 def classify(entry: SubmissionEntry, receipt: views.Receipt) -> EntryStatus:
     """What ``receipt``, the server's receipt of the submission's latest
-    revision, says about the revision ``entry`` records. Pure; the one
-    rule for the watcher and for a request that got no answer."""
-    if views.lookup_confirms(receipt, submission_id=entry.sid, revision=entry.revision,
-                             revision_hash=entry.revision_hash):
+    revision, says about the revision ``entry`` records: confirmed only
+    when its number, its hash, the envelope and every wrap are the ones
+    the entry says were sent (also after a restart, with no body to
+    compare). Pure; the one rule for the watcher and for a request that
+    got no answer."""
+    if views.same_revision(receipt, submission_id=entry.sid, revision=entry.revision,
+                           revision_hash=entry.revision_hash):
+        if not same_sent(entry, receipt):
+            return StoredOther(receipt)
         if receipt.blobs_missing:
             return views.BlobsMissing(receipt=receipt, missing=receipt.blobs_missing)
         return views.Confirmed(receipt=receipt, repeat=True)
@@ -409,11 +424,12 @@ def resolve_unconfirmed(api: StandupApi, entry: SubmissionEntry,
     ``on_done`` gets :class:`~.views.Confirmed` (same revision and hash,
     every file found), :class:`~.views.BlobsMissing` (stored, files
     missing: upload and send the same body again), :class:`NotStored`,
-    :class:`Superseded` or :class:`Different`. With ``body``, the one
-    that was sent, the receipt found must match it in every field, as
-    the answer to the request itself must (views.check_receipt): a server
-    that stored another envelope or other wraps of this revision has
-    :class:`Different`, never "Eingereicht" (RG-M2b 11). ``on_failure``
+    :class:`Superseded`, :class:`Different` or :class:`StoredOther`
+    (:func:`classify`, by the entry alone, as after a restart). With
+    ``body``, the one that was sent, the receipt found must match it in
+    every field as well, as the answer to the request itself must
+    (views.check_receipt): anything else of this revision is
+    :class:`StoredOther`, never "Eingereicht" (RG-M2b 11). ``on_failure``
     when the server could not be asked or its answer not read: the entry
     stays unconfirmed, ask later."""
     def found(item: Optional[views.LookupItem]) -> None:
@@ -423,7 +439,7 @@ def resolve_unconfirmed(api: StandupApi, entry: SubmissionEntry,
         status = classify(entry, item.receipt)
         if body is not None and isinstance(status, (views.Confirmed, views.BlobsMissing)):
             checked = views.check_receipt(body, item.receipt.raw, now=clock(), repeat=True)
-            status = Different(item.receipt) if isinstance(checked, views.Mismatch) else checked
+            status = StoredOther(item.receipt) if isinstance(checked, views.Mismatch) else checked
         on_done(status)
 
     look_up(api, entry, found, on_failure)
@@ -431,6 +447,7 @@ def resolve_unconfirmed(api: StandupApi, entry: SubmissionEntry,
 
 __all__ = [
     "Different", "EntryStatus", "Followed", "MAX_CONTINUATIONS", "NotStored",
-    "REFRESH_INTERVAL_MS", "SubmissionWatcher", "Superseded", "classify", "read_submission",
+    "REFRESH_INTERVAL_MS", "StoredOther", "SubmissionWatcher", "Superseded", "classify",
+    "read_submission",
     "look_up", "look_up_all", "resolve_unconfirmed",
 ]

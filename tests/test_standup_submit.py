@@ -162,7 +162,9 @@ def _entry(round_: int = 1) -> SubmissionEntry:
     return SubmissionEntry(sid=_sid(round_), publication=PUBLICATION, server="https://s.example",
                            role="writer", s_sub="e5" * 32, status_key=_key(round_), title="T",
                            kind="article", d="ein-jahr", round=round_, revision=1,
-                           revision_hash="f6" * 32, updated_at=1)
+                           revision_hash="f6" * 32, envelope_sha256="a7" * 32,
+                           wraps_sha256={"redaktion": "b8" * 32, "writer": "c9" * 32},
+                           updated_at=1)
 
 
 class FakeList:

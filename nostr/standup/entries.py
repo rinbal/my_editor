@@ -31,6 +31,10 @@ from .crypto import StandupCryptoError, secret_from_hex
 from .formats import FormatError
 
 _MAX_TEXT = 1_000
+# One wrap each for the Redaktion, the writer and every participant (15);
+# a contributor's name is their 64-hex key.
+_MAX_WRAPS = formats.MAX_PARTICIPANTS + 2
+_MAX_WRAP_NAME = 64
 
 
 # --------------------------------------------------------------------------- #
@@ -40,10 +44,14 @@ _MAX_TEXT = 1_000
 @dataclass(frozen=True)
 class SubmissionEntry:
     """One submission in the writer's list (13). ``s_sub`` and
-    ``status_key`` are hex. A contributor's entry has no status key, and
-    no ``s_sub``, ``revision`` or ``revision_hash`` until they opened
-    their wrap. ``extra`` holds the fields this app does not know (a
-    newer app's), written back as they came."""
+    ``status_key`` are hex. ``envelope_sha256`` and ``wraps_sha256`` are
+    what the app sent, as the receipt names them (12.4): a lookup after
+    a restart confirms the submission only by all four of revision,
+    revision hash and both (both None for a work by link, which has no
+    envelope). A contributor's entry has no status key, and none of
+    ``s_sub``, ``revision``, ``revision_hash`` or the two hashes until
+    they opened their wrap. ``extra`` holds the fields this app does not
+    know (a newer app's), written back as they came."""
 
     sid: str
     publication: str
@@ -57,11 +65,17 @@ class SubmissionEntry:
     round: int
     revision: Optional[int]
     revision_hash: Optional[str]
+    envelope_sha256: Optional[str]
+    # name -> hex; a mapping, so left out of the hash (as ``extra``).
+    wraps_sha256: Optional[Mapping[str, str]] = field(hash=False)
     updated_at: int
     extra: Mapping[str, Any] = field(default_factory=dict, repr=False, hash=False)
 
     def to_json(self) -> Dict[str, Any]:
-        return dict(self.extra, **{name: getattr(self, name) for name in _ENTRY_FIELDS})
+        value = dict(self.extra, **{name: getattr(self, name) for name in _ENTRY_FIELDS})
+        if self.wraps_sha256 is not None:
+            value["wraps_sha256"] = dict(self.wraps_sha256)
+        return value
 
 
 _ENTRY_FIELDS = tuple(f.name for f in fields(SubmissionEntry) if f.name != "extra")
@@ -84,10 +98,16 @@ def entry_problem(entry: SubmissionEntry) -> Optional[str]:
         if entry.role == "writer":
             formats.need(entry.status_key is not None and None not in opened,
                          "a writer keeps the submission key, the status key and the revision")
+            _need_sent_hashes(entry)
         else:
             formats.need(entry.status_key is None, "a contributor has no status key")
-            formats.need(None not in opened or opened == (None, None, None),
-                         "a contributor keeps the key and the revision once the wrap opened")
+            if None in opened:
+                formats.need(opened == (None, None, None) and entry.envelope_sha256 is None
+                             and entry.wraps_sha256 is None,
+                             "a contributor keeps the key, the revision and what was sent "
+                             "once the wrap opened")
+            else:
+                _need_sent_hashes(entry)
         formats.need(isinstance(entry.title, str) and len(entry.title) <= formats.MAX_TITLE_CHARS,
                      "the title")
         formats.need(entry.kind in formats.KINDS, "the kind")
@@ -102,6 +122,21 @@ def entry_problem(entry: SubmissionEntry) -> Optional[str]:
     except (FormatError, StandupCryptoError) as exc:
         return str(exc)
     return None
+
+
+def _need_sent_hashes(entry: SubmissionEntry) -> None:
+    """What was sent, as the receipt names it (12.4, 13): the envelope's
+    hash with the hash of each wrap by name, or both None for a work by
+    link, which has no envelope (as the web app reads them)."""
+    if entry.envelope_sha256 is None:
+        formats.need(entry.wraps_sha256 is None, "a work by link sends no envelope")
+        return
+    formats.need(formats.is_hex64(entry.envelope_sha256), "the envelope's hash")
+    wraps = entry.wraps_sha256
+    formats.need(isinstance(wraps, Mapping) and 0 < len(wraps) <= _MAX_WRAPS
+                 and all(isinstance(name, str) and 0 < len(name) <= _MAX_WRAP_NAME
+                         and formats.is_hex64(value) for name, value in wraps.items()),
+                 "the hashes of the wraps")
 
 
 def entry_from_json(value: Any) -> Optional[SubmissionEntry]:
@@ -254,15 +289,30 @@ class RecordResult:
 
 def holds_exactly(items: Optional[SubmissionItems], entry: SubmissionEntry) -> Optional[bool]:
     """Whether ``items`` hold exactly ``entry`` for its ``sid`` (the
-    fields a lookup and an opening need: revision, revision hash,
-    ``s_sub``, ``status_key``); None when they hold nothing for it."""
+    fields a lookup and an opening need: revision, revision hash, the
+    envelope's and the wraps' hashes, ``s_sub``, ``status_key``); None
+    when they hold nothing for it."""
     item = item_for(items, entry.sid)
     if item is None:
         return None
     return (isinstance(item, SubmissionEntry) and item.role == entry.role
             and item.revision == entry.revision and item.revision_hash == entry.revision_hash
+            and same_sent(item, entry)
             and _same_secret(item.s_sub, entry.s_sub)
             and _same_secret(item.status_key, entry.status_key))
+
+
+def same_sent(entry: SubmissionEntry, other: Any) -> bool:
+    """Whether ``other`` (an entry, or a ``views.Receipt``: both have
+    ``envelope_sha256`` and ``wraps_sha256``) names the same envelope and
+    the same wraps, by name, as ``entry`` sent (12.4). An entry of a work
+    by link names neither (it has no envelope): only that stays to
+    compare."""
+    if entry.wraps_sha256 is None:
+        return entry.envelope_sha256 is None and other.envelope_sha256 is None
+    return (other.envelope_sha256 == entry.envelope_sha256
+            and isinstance(other.wraps_sha256, Mapping)
+            and dict(other.wraps_sha256) == dict(entry.wraps_sha256))
 
 
 def same_keys(a: SubmissionEntry, b: SubmissionEntry) -> bool:
@@ -331,6 +381,5 @@ __all__ = [
     "ForeignItem", "ListItem", "RecordResult", "RecordStatus", "SubmissionEntry",
     "SubmissionItems", "Tombstone", "decode_items", "decode_seen", "encode_items",
     "entry_from_json", "entry_problem", "higher_seen", "holds_exactly", "item_for",
-    "item_from_json",
-    "merge_items", "merge_seen", "same_keys", "takes_place_of",
+    "item_from_json", "merge_items", "merge_seen", "same_keys", "same_sent", "takes_place_of",
 ]

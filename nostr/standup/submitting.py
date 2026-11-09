@@ -45,7 +45,7 @@ from .formats import FormatError, SecretKeyFound
 from ..list_results import PublishStatus
 from .entries import RecordResult, RecordStatus
 from .trust import KeyNotConfirmed, RedaktionKey
-from .watcher import Different, NotStored, Superseded
+from .watcher import Different, NotStored, StoredOther, Superseded
 
 # How long to wait before asking again by the status key, in turn; the
 # last one repeats until the server answers.
@@ -364,6 +364,7 @@ class Submitting:
         (Step.CHECKING, NotStored): "_not_stored",
         (Step.CHECKING, Superseded): "_elsewhere",
         (Step.CHECKING, Different): "_elsewhere",
+        (Step.CHECKING, StoredOther): "_stored_other",
         (Step.CHECKING, StandupError): "_lookup_failed",
         (Step.REUPLOADING, _Uploaded): "_reuploaded",
         (Step.REUPLOADING, _UploadFailed): "_reupload_failed",
@@ -603,6 +604,11 @@ class Submitting:
 
     def _elsewhere(self, _found: Any) -> None:
         self._fail(words.ANOTHER_VERSION, None)
+
+    def _stored_other(self, _found: StoredOther) -> None:
+        # This revision is stored, but not as it was sent (12.4): the
+        # server holds something of it, so never "nothing is submitted".
+        self._fail(words.STORED_OTHER, None, detail=words.TEXT_STAYS)
 
     # -- the first message ---------------------------------------------------
 

@@ -20,7 +20,7 @@ Pure: no Qt, no network, no clock.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 from urllib.parse import urlsplit
 
@@ -318,6 +318,19 @@ class Receipt:
     state: str
     seq: int
     received_at: int
+    # What the server stored: the envelope's hash (None for a work by
+    # link) and each wrap's, by name.
+    envelope_sha256: Optional[str]
+    wraps_sha256: Mapping[str, str] = field(hash=False)
+
+
+def _read_wrap_hashes(value: Any) -> Dict[str, str]:
+    data = read_object(value, "the wraps' hashes")
+    need(len(data) <= formats.MAX_PARTICIPANTS + 2, "too many wraps")
+    for name, digest in data.items():
+        need(isinstance(name, str) and 0 < len(name) <= 64, "a wrap's name")
+        read_hex64(digest, "a wrap's hash")
+    return dict(data)
 
 
 def parse_receipt(value: Any) -> Receipt:
@@ -331,7 +344,10 @@ def parse_receipt(value: Any) -> Receipt:
                    blobs_missing=read_hex64_list(data.get("blobs_missing", []), "missing files"),
                    state=read_one_of(data.get("state"), STATES, "the receipt's state"),
                    seq=read_int(data.get("seq"), "the receipt's seq", low=1),
-                   received_at=read_int(data.get("received_at"), "received_at", low=1))
+                   received_at=read_int(data.get("received_at"), "received_at", low=1),
+                   envelope_sha256=read_optional_hex64(data.get("envelope_sha256"),
+                                                       "the receipt's envelope hash"),
+                   wraps_sha256=_read_wrap_hashes(data.get("wraps_sha256")))
 
 
 @dataclass(frozen=True)
@@ -523,9 +539,12 @@ def check_receipt(body: Mapping[str, Any], receipt: Any, *, now: float,
     return Confirmed(receipt=parsed, repeat=repeat)
 
 
-def lookup_confirms(receipt: Receipt, *, submission_id: str, revision: int,
-                    revision_hash: str) -> bool:
-    """True when a looked-up receipt is for exactly this revision."""
+def same_revision(receipt: Receipt, *, submission_id: str, revision: int,
+                  revision_hash: str) -> bool:
+    """Whether a looked-up receipt is of this revision: its number and
+    hash. Confirmed only when the envelope and the wraps are the ones
+    sent as well (``entries.same_sent``, 12.4 "No answer after
+    sending")."""
     return (receipt.submission_id == submission_id and receipt.revision == revision
             and receipt.revision_hash == revision_hash)
 
@@ -605,7 +624,7 @@ __all__ = [
     "KIND_HINTS", "LookupItem", "MARKS", "MEMBER_ROLES", "Mismatch", "OPEN_STATES",
     "PARTICIPANT_ROLES", "RECEIPT_CLOCK_SKEW", "Receipt", "RevisionRecord", "STATES", "STEPS",
     "SignedRecord", "SubmissionView", "TURN_TYPES", "TimelineEvent", "TimelineItem", "Turn",
-    "action_path", "check_receipt", "expected_receipt", "lookup_confirms", "parse_item",
+    "action_path", "check_receipt", "expected_receipt", "same_revision", "parse_item",
     "parse_lookup_item", "parse_receipt", "parse_revision_record", "parse_signed",
     "parse_channels", "parse_timeline", "parse_turn", "parse_view", "SignedActionInvalid",
     "signed_action_body", "signed_action_problem", "signed_path",

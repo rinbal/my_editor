@@ -296,19 +296,21 @@ def seal(draft: ArticleDraft, choice: Choice, key: RedaktionKey,
         raise TooLarge("larger than the publication takes")
     people = participants_of(draft, writer)
     recipients = {"redaktion": key.pubkey, "writer": writer, **{p: p for p in people}}
+    wraps = crypto.wrap_submission_key(sid, s_sub, recipients)
     body = submission_body(
         writer=writer, publication=choice.publication, key_event_id=key.event_id,
         epoch=key.epoch, d=draft.d, round_=round_, revision=1,
         revision_hash=sealed.revision_hash, kind="article", title=draft.title,
         signer=choice.signer, participants=people, p_sub=crypto.pubkey_of(s_sub),
         envelope=sealed.envelope_b64, envelope_sha256=sealed.envelope_sha256,
-        wraps=crypto.wrap_submission_key(sid, s_sub, recipients),
-        blobs=[p.blob(servers.get(p.sha256, ())) for p in pictures],
+        wraps=wraps, blobs=[p.blob(servers.get(p.sha256, ())) for p in pictures],
         status_key=status_key, client=CLIENT)
     entry = SubmissionEntry(
         sid=sid, publication=choice.publication, server=key.server, role="writer",
         s_sub=s_sub.hex(), status_key=status_key, title=draft.title, kind="article",
         d=draft.d, round=round_, revision=1, revision_hash=sealed.revision_hash,
+        # What a lookup after a restart compares, with no body (12.4).
+        envelope_sha256=body["envelope_sha256"], wraps_sha256=crypto.wraps_sha256(body["wraps"]),
         updated_at=now)
     return Sealed(body=body, entry=entry, s_sub=s_sub)
 

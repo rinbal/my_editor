@@ -297,6 +297,29 @@ def test_a_receipt_that_differs_in_any_field_is_a_mismatch(name, value):
     assert expected in result.fields
 
 
+@pytest.mark.parametrize("name, value", [
+    ("envelope_sha256", "AB" * 32),
+    ("envelope_sha256", 7),
+    ("wraps_sha256", None),
+    ("wraps_sha256", ["ab" * 32]),
+    ("wraps_sha256", {"writer": "AB" * 32}),
+    ("wraps_sha256", {"": "ab" * 32}),
+    ("wraps_sha256", {f"{n:064x}": "ab" * 32 for n in range(23)}),
+])
+def test_a_receipt_names_what_it_stored_or_is_not_read(name, value):
+    # 12.4 (72d688b): a lookup confirms by the stored envelope and wraps,
+    # so a receipt is read only with both, as the contract shapes them.
+    prepared = submission_for(sk("writer"))
+    receipt = dict(views.expected_receipt(prepared.body), blobs_present=[], blobs_missing=[],
+                   received_at=NOW, state="submitted", seq=1)
+    read = views.parse_receipt(receipt)
+    assert (read.envelope_sha256, dict(read.wraps_sha256)) \
+        == (receipt["envelope_sha256"], receipt["wraps_sha256"])
+    assert views.parse_receipt(dict(receipt, envelope_sha256=None)).envelope_sha256 is None
+    with pytest.raises(formats.FormatError):
+        views.parse_receipt(dict(receipt, **{name: value}))
+
+
 def test_a_receipt_that_is_not_an_object_is_a_mismatch():
     world = World()
     world.server.tamper_receipt = lambda receipt: None
@@ -490,8 +513,11 @@ def test_the_lookup_carries_no_signature_and_answers_by_status_key():
                                                   ("ee" * 32, 0)], ok, fail))
     assert list(found.found) == [prepared.status_key] and not found.unreadable
     item = found.found[prepared.status_key]
-    assert views.lookup_confirms(item.receipt, submission_id=prepared.body["submission_id"],
-                                 revision=1, revision_hash=prepared.body["revision_hash"])
+    assert views.same_revision(item.receipt, submission_id=prepared.body["submission_id"],
+                               revision=1, revision_hash=prepared.body["revision_hash"])
+    expected = views.expected_receipt(prepared.body)
+    assert (item.receipt.envelope_sha256, item.receipt.wraps_sha256) \
+        == (expected["envelope_sha256"], expected["wraps_sha256"])
     assert [i.event.name for i in item.timeline] == ["submitted"]
     assert len(world.signers["writer"].requests) == signatures
     assert world.server.requests[-1][3]["Authorization"] is None

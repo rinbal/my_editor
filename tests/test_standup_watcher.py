@@ -13,7 +13,7 @@ from dataclasses import replace
 
 import pytest
 
-from nostr.standup import views
+from nostr.standup import crypto as scrypto, views
 from nostr.standup.client import StandupApi
 from nostr.standup.errors import Code
 from nostr.standup.entries import SubmissionEntry
@@ -21,6 +21,7 @@ from nostr.standup.watcher import (
     REFRESH_INTERVAL_MS,
     Different,
     NotStored,
+    StoredOther,
     Superseded,
     SubmissionWatcher,
     classify,
@@ -83,7 +84,9 @@ def entry_for(prepared) -> SubmissionEntry:
         sid=body["submission_id"], publication=body["publication"], server=SERVER,
         role="writer", s_sub=prepared.s_sub.hex(), status_key=prepared.status_key,
         title=body["title"], kind=body["kind"], d="d", round=body["round"],
-        revision=body["revision"], revision_hash=body["revision_hash"], updated_at=NOW)
+        revision=body["revision"], revision_hash=body["revision_hash"],
+        envelope_sha256=body["envelope_sha256"],
+        wraps_sha256=scrypto.wraps_sha256(body["wraps"]), updated_at=NOW)
 
 
 # -- polling ---------------------------------------------------------------------
@@ -273,6 +276,28 @@ def test_a_later_or_a_different_revision_on_the_server_is_told_apart():
     other = replace(entry_for(second), revision_hash="99" * 32)
     kind, result = _resolve(world, other)
     assert kind == "ok" and isinstance(result, Different)
+
+
+@pytest.mark.parametrize("change", [
+    {"envelope_sha256": "00" * 32},
+    {"wraps_sha256": {"redaktion": "00" * 32, "writer": "00" * 32}},
+    {"envelope_sha256": None, "wraps_sha256": None},
+])
+def test_after_a_restart_a_revision_stored_otherwise_is_never_submitted(change):
+    # Contract 12.4 (72d688b), RG-M2r 1: with no body to compare (after a
+    # restart), the entry's own envelope and wrap hashes decide. Only the
+    # number and the hash of the revision matching is "stored, not as
+    # this app sent it", never "Eingereicht".
+    world = World()
+    world.server.inject("submit", DROP_AFTER)
+    prepared = submission_for(sk("writer"))
+    world.writer.submit(prepared.body, lambda r: None, lambda e: None)
+    world.nam.settle()
+    entry = entry_for(prepared)
+    kind, result = _resolve(world, entry)
+    assert kind == "ok" and isinstance(result, views.Confirmed)
+    kind, result = _resolve(world, replace(entry, **change))
+    assert kind == "ok" and isinstance(result, StoredOther)
 
 
 def test_files_missing_after_no_answer_are_named():

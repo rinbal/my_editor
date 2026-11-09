@@ -406,7 +406,10 @@ def test_a_lookup_that_finds_another_envelope_or_other_wraps_is_never_submitted(
     world.server.tamper_receipt = _tamper(field, value)
     progress = world.go()
     assert Step.CHECKING in world.steps and Step.SUBMITTED not in world.steps
-    assert progress.step is Step.FAILED and progress.failure.headline == words.ANOTHER_VERSION
+    # 72d688b: this revision is stored, not as it was sent; the words say
+    # so, and never that nothing is submitted.
+    assert progress.step is Step.FAILED and progress.failure.headline == words.STORED_OTHER
+    assert progress.failure.detail == words.TEXT_STAYS
 
 
 def test_a_receipt_for_another_version_is_never_submitted():
