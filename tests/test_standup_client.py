@@ -853,6 +853,29 @@ def test_a_declined_round_is_reopened_only_while_it_is_the_works_latest():
     assert view.state == "in_review"
 
 
+def test_a_view_says_whether_a_later_round_of_the_work_is_stored():
+    # Contract 12.4 (feat/redaktion 795f825): later_round, as backend
+    # db/editorial_submissions.py later_rounds tells it. MyEditor offers
+    # no reopen, but reads the View whole.
+    world = World()
+    writer, editor = world.api("writer"), world.api("editor")
+    prepared = _after_submit(world)
+    sid = prepared.body["submission_id"]
+    declined = world.ok(lambda ok, fail: editor.decision(
+        sid, outcome="decline", expected_revision=1, on_success=ok, on_failure=fail))
+    assert declined.submission.later_round is False
+    later = submission_for(sk("writer"), round_=2)
+    world.ok(lambda ok, fail: writer.submit(later.body, ok, fail))
+    earlier = world.ok(lambda ok, fail: writer.submission(sid, ok, fail)).submission
+    latest = world.ok(lambda ok, fail: writer.submission(later.body["submission_id"], ok,
+                                                         fail)).submission
+    assert (earlier.later_round, latest.later_round) == (True, False)
+    view = world.server.view(world.server.submissions[sid])
+    del view["later_round"]
+    with pytest.raises(formats.FormatError):
+        views.parse_view(view)
+
+
 def test_an_accepted_work_is_published_only_in_its_step():
     # Contract 11.1/11.3 (f6f7569): published_by_writer in writer_publishes
     # only, as backend core/editorial_flow.py's rows say; the step is the

@@ -29,6 +29,7 @@ from . import formats
 from .formats import FormatError, is_hex64, is_int, need
 from .readers import (
     read_address,
+    read_bool,
     read_hex64,
     read_hex64_list,
     read_int,
@@ -130,6 +131,11 @@ class SubmissionView:
     published: Optional[Published]
     placed: bool
     proposal_by: Optional[str]
+    # A later round of the same work from the same submitter and
+    # publication is stored (12.4, feat/redaktion 795f825): Wieder öffnen
+    # is offered only on a declined View where it is false (11.3).
+    # MyEditor offers no reopen; it is read so a View is read whole.
+    later_round: bool
     # The newest message or event (9.3: reactions, retractions and edits
     # take a seq, but never make a row unread); for members also the
     # newest internal note's internal_seq (None in a participant's View).
@@ -213,6 +219,7 @@ def parse_view(value: Any) -> SubmissionView:
         published=published,
         placed=placed,
         proposal_by=read_optional_hex64(data.get("proposal_by"), "the proposer"),
+        later_round=read_bool(data.get("later_round"), "later_round"),
     )
 
 

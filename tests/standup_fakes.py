@@ -722,7 +722,16 @@ class FakeStandupServer:
             "last_message_seq": record.last_message_seq,
             "confirmations": {k: list(v) for k, v in record.confirmations.items()},
             "published": record.published, "placed": record.placed, "proposal_by": None,
+            "later_round": self._later_round(record),
         })
+
+    def _later_round(self, record: Record) -> bool:
+        """backend db/editorial_submissions.py later_rounds (12a5f91): the
+        same submitter handed the same work in to the same publication
+        again, in a later round (contract 12.4 ``later_round``, 795f825)."""
+        return any(other.publication == record.publication and other.writer == record.writer
+                   and other.coordinate_hash == record.coordinate_hash
+                   and other.round > record.round for other in self.submissions.values())
 
     def _append(self, record: Record, item: dict) -> int:
         """backend db/editorial_submissions.py _append (fde04a3): an

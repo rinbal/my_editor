@@ -54,7 +54,7 @@ def view_of(body: dict, **changes) -> views.SubmissionView:
         "round": body["round"], "p_sub": body["p_sub"], "epoch": body["epoch"],
         "revision_hash": body["revision_hash"], "created_at": NOW, "updated_at": NOW,
         "last_seq": 1, "confirmations": {}, "published": None, "placed": False,
-        "proposal_by": None}
+        "proposal_by": None, "later_round": False}
     data.update(changes)
     return views.parse_view(data)
 
