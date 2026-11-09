@@ -851,11 +851,13 @@ def test_the_timeline_carries_signed_actions_that_verify():
     world.ok(lambda ok, fail: world.api("editor").decision(
         sid, outcome="decline", expected_revision=1, on_success=ok, on_failure=fail))
     found = world.ok(lambda ok, fail: world.api().lookup([(prepared.status_key, 0)], ok, fail))
-    events_ = [i.event for i in found.found[prepared.status_key].timeline if i.type == "event"]
-    assert [e.name for e in events_] == ["submitted", "decline"]
-    for event in events_:
-        assert views.signed_action_problem(event.signed, path=views.action_path(event.name, sid),
-                                           submission_id=sid) is None
+    submitted, decline = [i.event for i in found.found[prepared.status_key].timeline
+                          if i.type == "event"]
+    # The backend (fde04a3, core/editorial_views.py REVISION_EVENTS) serves
+    # a revision's signed action with the Revision only, never again here.
+    assert (submitted.name, submitted.signed) == ("submitted", None)
+    assert decline.name == "decline" and views.signed_action_problem(
+        decline.signed, path=views.action_path("decline", sid), submission_id=sid) is None
 
 
 # -- answers this client cannot use -------------------------------------------------

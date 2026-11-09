@@ -384,3 +384,69 @@ def test_reading_a_submission_continues_while_the_server_says_more():
     [detail] = outcome
     assert [i.seq for i in detail.timeline] == [1, 2, 3, 4, 5] and not detail.more
     assert [r.revision for r in detail.revisions] == [1]
+
+
+# -- one byte budget for every item of a lookup (RG-M2a 1, backend fde04a3) -----------
+
+def _grow(world, entry, last):
+    record = world.server.submissions[entry.sid]
+    for seq in range(len(record.timeline) + 1, last + 1):
+        record.timeline.append(dict(record.timeline[0], seq=seq))
+    record.seq = last
+
+
+def _item_bytes(world, entry):
+    item = world.server.submissions[entry.sid].timeline[0]
+    return len(json.dumps(item, separators=(",", ":"), ensure_ascii=False).encode())
+
+
+def test_a_submission_behind_one_that_took_the_budget_is_asked_again_not_failed():
+    world = World()
+    _p, first = world.submit(0)
+    _p, second = world.submit(1)
+    _grow(world, first, 5)
+    _grow(world, second, 3)
+    # Room for three items an answer: the first takes it all, the second waits.
+    world.server.timeline_bytes = 3 * max(_item_bytes(world, first), _item_bytes(world, second))
+    watcher, _timer, updates, failures = world.watcher()
+    watcher.start()
+    world.nam.settle()
+    assert failures == []
+    followed = watcher.followed()
+    assert [i.seq for i in followed[first.sid].timeline] == [1, 2, 3, 4, 5]
+    assert [i.seq for i in followed[second.sid].timeline] == [1, 2, 3]
+    asked = [[item["status_key"] == first.status_key for item in json.loads(r[2])["items"]]
+             for r in world.lookups()]
+    assert asked[1][0] is False                   # the one that waited is served first
+    assert len(updates) == 1
+
+
+def test_a_submission_that_gets_nothing_with_nothing_ahead_of_it_fails():
+    world = World()
+    world.submit(0)
+    world.submit(1)
+    world.server.timeline_bytes = 1               # not one item fits: a server holding it
+    watcher, _timer, _updates, failures = world.watcher()
+    watcher.start()
+    world.nam.settle()
+    assert [f.message for f in failures] == ["more was promised and nothing came"] * 2
+    assert len(world.lookups()) == 1
+
+
+def test_answers_that_keep_saying_more_end_a_round_and_a_reading_alike():
+    # One rule (RG-M2a 8): the watcher no longer ends silently at the cap.
+    from nostr.standup.watcher import MAX_CONTINUATIONS
+    world = World()
+    _p, entry = world.submit()
+    _grow(world, entry, MAX_CONTINUATIONS + 5)
+    world.server.timeline_per_answer = {"lookup": 1, "get": 1}
+    watcher, _timer, _updates, failures = world.watcher()
+    watcher.start()
+    world.nam.settle()
+    too_long = f"more was still promised after {MAX_CONTINUATIONS} answers"
+    assert [f.message for f in failures] == [too_long]
+    assert len(world.lookups()) == MAX_CONTINUATIONS + 1
+    outcome = []
+    read_submission(world.writer, entry.sid, outcome.append, outcome.append)
+    world.nam.settle()
+    assert [o.message for o in outcome] == [too_long]

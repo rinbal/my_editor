@@ -284,3 +284,102 @@ def test_a_fourth_open_submission_and_a_paused_publication_are_refused():
     status, data, _ = _submit(nam, submission_for(sk("contributor"), d="text-4").body,
                               secret=sk("contributor"))
     assert (status, data["error"]["code"]) == (403, "paused")
+
+
+# -- the timeline, as the backend pages it (feat/redaktion-backend fde04a3) -------------
+
+def _size(item) -> int:
+    return len(json.dumps(item, separators=(",", ":"), ensure_ascii=False).encode())
+
+
+def _lookup(nam, keys, since=0):
+    body = json.dumps({"items": [{"status_key": k, "since": since} for k in keys]}).encode()
+    return _send(nam, "POST", "/api/submissions/lookup", body)
+
+
+def _two_submissions(server, nam):
+    keys = []
+    for name in ("writer", "contributor"):
+        prepared = submission_for(sk(name))
+        assert _submit(nam, prepared.body, secret=sk(name))[0] == 201
+        record = server.submissions[prepared.body["submission_id"]]
+        record.timeline.append(dict(record.timeline[0], seq=2))      # a second item
+        keys.append(prepared.status_key)
+    return keys
+
+
+def test_a_lookup_shares_one_byte_budget_across_its_items():
+    # backend tests/test_editorial_limits.py, the same name.
+    _clock, server, nam = _setup()
+    keys = _two_submissions(server, nam)
+    whole = _lookup(nam, keys)[1]["items"]
+    assert [(len(i["timeline"]), i["more"]) for i in whole] == [(2, False), (2, False)]
+    server.timeline_bytes = sum(_size(i) for i in whole[0]["timeline"])
+    shared = _lookup(nam, keys)[1]["items"]
+    assert [(len(i["timeline"]), i["more"]) for i in shared] == [(2, False), (0, True)]
+
+
+def test_the_byte_budget_ends_a_page_before_the_item_that_does_not_fit():
+    # backend tests/test_editorial_limits.py, the same name, for GET.
+    _clock, server, nam = _setup()
+    prepared = submission_for(sk("writer"))
+    assert _submit(nam, prepared.body)[0] == 201
+    record = server.submissions[prepared.body["submission_id"]]
+    for seq in (2, 3, 4):
+        record.timeline.append(dict(record.timeline[0], seq=seq))
+    token = _session(nam)
+    path = f"/api/submissions/{prepared.body['submission_id']}"
+    whole = _send(nam, "GET", path, authorization=f"Bearer {token}".encode())[1]["timeline"]
+    sizes = [_size(i) for i in whole]
+    server.timeline_bytes = sum(sizes[:3]) + sizes[3] - 1
+    page = _send(nam, "GET", path, authorization=f"Bearer {token}".encode())[1]
+    assert page["more"] is True and [i["seq"] for i in page["timeline"]] == [1, 2, 3]
+
+
+def test_a_revision_event_carries_no_signed_action_its_revision_has_it():
+    # backend core/editorial_views.py item_view and REVISION_EVENTS.
+    _clock, server, nam = _setup()
+    prepared = submission_for(sk("writer"))
+    assert _submit(nam, prepared.body)[0] == 201
+    item, = _lookup(nam, [prepared.status_key])[1]["items"]
+    assert item["timeline"][0]["event"]["name"] == "submitted"
+    assert item["timeline"][0]["event"]["signed"] is None
+
+
+KEY = "ab" * 32
+
+
+@pytest.mark.parametrize("body, detail", [
+    ({"items": [{"status_key": KEY}]}, {"fields": ["since"]}),
+    ({"items": [{"status_key": KEY, "since": 0, "x": 1}]}, {"fields": ["x"]}),
+    ({"items": [], "x": 1}, {"fields": ["x"]}),
+    ({}, {"fields": ["items"]}),
+    ({"items": []}, {"field": "items"}),
+    ({"items": [{"status_key": KEY, "since": 0}] * 2}, {"field": "items"}),
+    ({"items": [{"status_key": f"{n:064x}", "since": 0} for n in range(51)]},
+     {"field": "items"}),
+    ({"items": ["x"]}, {"field": "items"}),
+    ({"items": [{"status_key": "AB" * 32, "since": 0}]}, {"field": "status_key"}),
+    ({"items": [{"status_key": KEY, "since": -1}]}, {"field": "since"}),
+    ({"items": [{"status_key": KEY, "since": True}]}, {"field": "since"}),
+], ids=["since missing", "unknown in an item", "unknown field", "no items", "empty",
+        "a key twice", "51 keys", "not an object", "upper case", "negative", "a boolean"])
+def test_a_lookup_is_checked_as_the_backend_checks_it(body, detail):
+    # backend api/submission_reads.py _lookup_items and core/editorial.py.
+    _clock, _server, nam = _setup()
+    status, data, _ = _send(nam, "POST", "/api/submissions/lookup", json.dumps(body).encode())
+    assert (status, data["error"]["code"], data["error"]["detail"]) == (422, "invalid", detail)
+
+
+def test_lookups_from_one_address_are_limited_per_minute_and_a_large_body_refused():
+    clock, _server, nam = _setup()
+    asked = json.dumps({"items": [{"status_key": KEY, "since": 0}]}).encode()
+    answers = [_send(nam, "POST", "/api/submissions/lookup", asked) for _ in range(31)]
+    assert [a[0] for a in answers[:30]] == [200] * 30
+    status, data, reply = answers[30]
+    assert (status, data["error"]["code"]) == (429, "rate_limited")
+    assert int(bytes(reply.rawHeader("Retry-After"))) == 60 - NOW % 60
+    clock.advance(60)
+    big = json.dumps({"items": [{"status_key": KEY, "since": 0}], "x": "a" * 16384}).encode()
+    status, data, _ = _send(nam, "POST", "/api/submissions/lookup", big)
+    assert (status, data["error"]["code"]) == (413, "too_large")

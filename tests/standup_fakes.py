@@ -124,6 +124,17 @@ REDAKTION = ("owner", "redaktion")
 # Contract 15 (feat/redaktion 5c11475).
 MAX_REVISIONS = 30
 SUBMISSION_WRAP_CT_CHARS = 348
+# The backend's numbers (feat/redaktion-backend fde04a3): timeline items
+# per response (core/editorial_views.py), per lookup item and per GET,
+# and the lookup's own limits (api/submission_reads.py).
+MAX_TIMELINE_BYTES = 8 * 1024 * 1024
+LOOKUP_TIMELINE = 100
+TIMELINE_PAGE = 500
+LOOKUP_BODY_BYTES = 16 * 1024
+LOOKUPS_PER_ADDRESS_PER_MINUTE = 30
+MAX_SAFE_INTEGER = 2 ** 53 - 1
+# Events served once with their Revision, never again in the timeline.
+REVISION_EVENTS = ("submitted", "revision")
 
 DROP_BEFORE = "drop before"     # the connection fails before the request arrives
 DROP_AFTER = "drop after"       # the request is handled, the answer is lost
@@ -297,6 +308,27 @@ class Record:
 
 
 
+class TimelineBudget:
+    """backend core/editorial_views.py TimelineBudget (fde04a3): the bytes
+    of timeline items one response may still carry, shared by every item
+    of a lookup. An item counts as its compact JSON."""
+
+    def __init__(self, total: int) -> None:
+        self.left = total
+
+    def page(self, items: List[dict], *, limit: int) -> Tuple[List[dict], bool]:
+        """The first ``limit`` of ``items`` that fit, and ``more``. ``items``
+        is read with ``limit + 1``, so one more says there is more."""
+        shown = []
+        for item in items[:limit]:
+            size = len(json.dumps(item, separators=(",", ":"), ensure_ascii=False).encode())
+            if size > self.left:
+                return shown, True
+            self.left -= size
+            shown.append(item)
+        return shown, len(items) > limit
+
+
 @dataclass(frozen=True)
 class Caller:
     """Who a request is from: the session's or the signature's person.
@@ -314,6 +346,18 @@ class Caller:
 def _hexes(data: dict, *names: str) -> bool:
     return all(isinstance(data.get(n), str) and re.fullmatch(r"[0-9a-f]{64}", data[n])
                for n in names)
+
+
+def _fields(data: dict, allowed: set, required: set) -> Optional[FakeReply]:
+    """backend core/editorial.py require_keys (fde04a3)."""
+    unknown = sorted(set(data) - allowed)
+    if unknown:
+        return _error(422, "invalid", "Die Anfrage enthält unbekannte Felder.",
+                      detail={"fields": unknown})
+    missing = sorted(required - set(data))
+    if missing:
+        return _error(422, "invalid", "Der Anfrage fehlen Felder.", detail={"fields": missing})
+    return None
 
 
 def _whole(value: Any, low: int) -> bool:
@@ -351,8 +395,12 @@ class FakeStandupServer:
         self.handled: List[str] = []             # routes that changed or read state
         self.max_per_hour = 10
         # Timeline items per answer (contract 15: 500 for GET, 100 per
-        # lookup item, at most 8 MiB); "more": true when some wait.
-        self.timeline_per_answer = {"lookup": 100, "get": 500}
+        # lookup item) and the bytes one answer carries, shared by every
+        # lookup item; "more": true when some wait.
+        self.timeline_per_answer = {"lookup": LOOKUP_TIMELINE, "get": TIMELINE_PAGE}
+        self.timeline_bytes = MAX_TIMELINE_BYTES
+        # backend db/editorial.py hit_rate_limit: fixed windows.
+        self._counters: Dict[Tuple[str, str, int], int] = {}
         self.bote = {"pubkey": VECTORS["keys"]["bote"]["pubkey"], "npub": "npub1bote",
                      "nip05": "bote@standup.example"}
         self.publications: Dict[str, Publication] = {}
@@ -369,6 +417,18 @@ class FakeStandupServer:
         """The next request to ``route`` meets ``fault``: DROP_BEFORE,
         DROP_AFTER or a :class:`Fault`."""
         self.faults.setdefault(route, []).append(fault)
+
+    def _hit(self, scope: str, subject: str, *, limit: int, window: int,
+             cost: int = 1) -> Optional[int]:
+        """backend db/editorial.py hit_rate_limit (fde04a3): count ``cost``
+        in a fixed window; the seconds to wait when over ``limit``."""
+        now = int(self.clock())
+        start = now - now % window
+        key = (scope, subject, start)
+        self._counters[key] = self._counters.get(key, 0) + cost
+        if self._counters[key] > limit:
+            return max(1, start + window - now)
+        return None
 
     def expire_sessions(self) -> None:
         for token_hash, (pubkey, _expires) in list(self.sessions.items()):
@@ -442,6 +502,11 @@ class FakeStandupServer:
             return _error(fault.status, fault.code, fault.message, detail=fault.detail,
                           headers=headers_out)
 
+        early = getattr(self, "_before_" + name, None)
+        if early is not None:
+            refusal = early(body or b"")
+            if refusal is not None:
+                return refusal
         if nip98.has_body(body) and headers["Content-Type"] != b"application/json":
             return json_reply({"ok": False, "error": {"code": "bad_request",
                                                       "message": "Unsupported"}}, status=415)
@@ -554,9 +619,11 @@ class FakeStandupServer:
         return record.seq
 
     def _event(self, record: Record, name: str, who: Optional[Caller], **extra) -> int:
+        # A revision's signed action is served with the Revision only.
+        signed = who.signed if who and name not in REVISION_EVENTS else None
         seq = self._append(record, {"type": "event", "wrap": None, "event": dict(
             {"name": name, "actor": who.pubkey if who else None,
-             "revision": None, "to": None, "signed": who.signed if who else None}, **extra)})
+             "revision": None, "to": None, "signed": signed}, **extra)})
         record.last_message_seq = seq
         return seq
 
@@ -900,31 +967,65 @@ class FakeStandupServer:
         return _ok({"receipt": self._receipt(record, body["revision"], recheck=False)},
                    status=201)
 
+    def _before_lookup(self, raw: bytes) -> Optional[FakeReply]:
+        """backend api/submission_reads.py lookup (fde04a3): every request
+        counts against the address, then the body's size, before parsing."""
+        wait = self._hit("address:lookup", "fake", limit=LOOKUPS_PER_ADDRESS_PER_MINUTE,
+                         window=60)
+        if wait:
+            return _error(429, "rate_limited", "Zu viele Abfragen. Bitte gleich noch einmal.",
+                          headers={"Retry-After": str(wait)})
+        if len(raw) > LOOKUP_BODY_BYTES:
+            return _error(413, "too_large", detail={"max_bytes": LOOKUP_BODY_BYTES})
+        return None
+
     def _lookup(self, who, body, params, query) -> FakeReply:
-        items = body.get("items")
-        if not isinstance(items, list) or not 0 < len(items) <= formats.MAX_LOOKUP_ITEMS:
-            return _error(400, "bad_request")
-        answers = []
+        """backend api/submission_reads.py _lookup_items and lookup
+        (fde04a3): the items checked in order, the rows answered in the
+        order asked, one timeline budget shared by all of them."""
+        refusal = _fields(body, {"items"}, {"items"})
+        if refusal is not None:
+            return refusal
+        items = body["items"]
+        if not isinstance(items, list) or not 1 <= len(items) <= formats.MAX_LOOKUP_ITEMS:
+            return _error(422, "invalid", detail={"field": "items"})
+        wanted: Dict[str, int] = {}
         for item in items:
-            key = item.get("status_key") if isinstance(item, dict) else None
-            if not formats.is_hex64(key):
-                return _error(400, "bad_request")
-            key_hash = formats.status_key_hash(key)
-            since = item.get("since") or 0
-            for record in self.submissions.values():
-                if record.status_key_hash == key_hash:
-                    timeline, more = self._page([i for i in record.timeline
-                                                 if i["seq"] > since and i["type"] != "internal"],
-                                                "lookup")
-                    answers.append({
-                        "status_key_hash": key_hash, "submission": self.view(record),
-                        "receipt": self._receipt(record, record.revision, recheck=False),
-                        "timeline": timeline, "more": more})
+            if not isinstance(item, dict):
+                return _error(422, "invalid", detail={"field": "items"})
+            refusal = _fields(item, {"status_key", "since"}, {"status_key", "since"})
+            if refusal is not None:
+                return refusal
+            if not formats.is_hex64(item["status_key"]):
+                return _error(422, "invalid", detail={"field": "status_key"})
+            key_hash = formats.status_key_hash(item["status_key"])
+            if key_hash in wanted:
+                return _error(422, "invalid", detail={"field": "items"})
+            if type(item["since"]) is not int or not 0 <= item["since"] <= MAX_SAFE_INTEGER:
+                return _error(422, "invalid", detail={"field": "since"})
+            wanted[key_hash] = item["since"]
+        by_hash = {r.status_key_hash: r for r in self.submissions.values()}
+        budget = TimelineBudget(self.timeline_bytes)
+        limit = self.timeline_per_answer["lookup"]
+        answers = []
+        for key_hash, since in wanted.items():
+            record = by_hash.get(key_hash)
+            if record is None:
+                continue
+            timeline, more = budget.page(self._timeline(record, since, limit=limit + 1),
+                                         limit=limit)
+            answers.append({
+                "status_key_hash": key_hash, "submission": self.view(record),
+                "receipt": self._receipt(record, record.revision, recheck=False),
+                "timeline": timeline, "more": more})
         return _ok({"items": answers})
 
-    def _page(self, items: List[dict], answer: str) -> Tuple[List[dict], bool]:
-        limit = self.timeline_per_answer[answer]
-        return items[:limit], len(items) > limit
+    def _timeline(self, record: Record, since: int, *, limit: int,
+                  member: bool = False) -> List[dict]:
+        """backend db/editorial_submissions.py timeline (fde04a3): the
+        items after ``since``, oldest first, at most ``limit``."""
+        return [dict(i) for i in record.timeline
+                if i["seq"] > since and (member or i["type"] != "internal")][:limit]
 
     def _submission_get(self, who, body, params, query) -> FakeReply:
         record = self._record(params["sid"])
@@ -948,8 +1049,9 @@ class FakeStandupServer:
             revision["wraps"] = {k: v for k, v in wraps.items() if k == mine}
             revisions.append(revision)
         pub = self.publications[record.publication]
-        timeline, more = self._page([i for i in record.timeline if i["seq"] > since
-                                     and (member or i["type"] != "internal")], "get")
+        limit = self.timeline_per_answer["get"]
+        timeline, more = TimelineBudget(self.timeline_bytes).page(
+            self._timeline(record, since, limit=limit + 1, member=member), limit=limit)
         return _ok({"submission": self.view(record), "my_role": role, "revisions": revisions,
                     "timeline": timeline, "more": more,
                     "members": [self._member(pub, p) for p in pub.members]})

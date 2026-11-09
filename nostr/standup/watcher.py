@@ -24,10 +24,15 @@ its ``status``, and :func:`resolve_unconfirmed`, the rule of contract
 12.4 for a request that got no answer, asks it too: an entry recorded
 for a revision that never arrived never reads as the revision before.
 
-A lookup answers at most a byte budget of timeline items per submission
-(contract 15, feat/redaktion 5c11475); ``"more": true`` says to continue
-with ``since``, which a round does, for that submission only, until the
-server says there is no more.
+A lookup answers at most a byte budget of timeline items, shared by
+every submission it answers (contract 15; the backend's TimelineBudget,
+fde04a3): a submission behind others may come back with nothing and
+``"more": true``. A round asks again, with ``since``, for every
+submission that says more, those that got nothing first, until the
+server says there is no more. A submission that got nothing although
+none ahead of it took any of the budget makes the round fail for it,
+and so do :data:`MAX_CONTINUATIONS` answers in a row that say more: the
+one rule for a round and for :func:`read_submission`.
 """
 
 from __future__ import annotations
@@ -44,9 +49,18 @@ from .errors import Code, StandupError
 from .lists import SubmissionEntry
 
 REFRESH_INTERVAL_MS = 15 * 60 * 1000
-# A submission whose answers keep saying "more" without anything new is
-# asked no further in this round (a server must not hold a round open).
+# Answers in a row that may say "more" before a round or a reading fails
+# (a server must not hold the reader in a loop).
 MAX_CONTINUATIONS = 20
+
+
+def _nothing_new() -> StandupError:
+    return StandupError(Code.BAD_RESPONSE, message="more was promised and nothing came")
+
+
+def _too_long() -> StandupError:
+    return StandupError(Code.BAD_RESPONSE,
+                        message=f"more was still promised after {MAX_CONTINUATIONS} answers")
 
 
 # --------------------------------------------------------------------------- #
@@ -228,7 +242,9 @@ class SubmissionWatcher(QObject):
         def found(answer: LookupAnswer) -> None:
             if generation != self._generation:
                 return
-            more: List[SubmissionEntry] = []
+            waited: List[SubmissionEntry] = []      # got nothing: the budget was spent
+            grew: List[SubmissionEntry] = []
+            spent = False                           # an item ahead took some of the budget
             for key, item in answer.found.items():
                 entry = by_key[key]
                 if item.submission.submission_id != entry.sid:
@@ -238,14 +254,19 @@ class SubmissionWatcher(QObject):
                 before = self._since(entry, learned)
                 learned[entry.sid] = self._followed_with(entry, item, learned)
                 if item.more and learned[entry.sid].last_seq > before:
-                    more.append(entry)
+                    grew.append(entry)
+                elif item.more and spent:
+                    waited.append(entry)
                 elif item.more:
-                    self.failed.emit(StandupError(
-                        Code.BAD_RESPONSE, message="more was promised and nothing came"))
+                    self.failed.emit(_nothing_new())
+                spent = spent or bool(item.timeline)
             if answer.unreadable:
                 self.failed.emit(StandupError(
                     Code.BAD_RESPONSE, message=f"{len(answer.unreadable)} answers unreadable"))
-            if more and continuation < MAX_CONTINUATIONS:
+            more = waited + grew                    # those that waited are served first
+            if more and continuation >= MAX_CONTINUATIONS:
+                self.failed.emit(_too_long())
+            elif more:
                 self._ask(more, generation, learned, one_done, continuation + 1)
                 return
             one_done()
@@ -299,17 +320,19 @@ def read_submission(api: StandupApi, submission_id: str,
     timeline items wait (``more``, contract 15): ``on_done`` once, with
     the last answer's view, revisions and members and every timeline
     item since ``since``, each ``seq`` once, in order. An answer that
-    promises more and brings nothing new is a failure (a server must not
-    hold the reader in a loop)."""
+    promises more and brings nothing new is a failure, and so are
+    :data:`MAX_CONTINUATIONS` answers in a row that promise more (a
+    server must not hold the reader in a loop), as in a round."""
     gathered: Dict[int, views.TimelineItem] = {}
 
     def ask(after: int, continuation: int) -> None:
         def answered(detail: answers.SubmissionDetail) -> None:
             gathered.update({item.seq: item for item in detail.timeline})
             last = max(gathered, default=after)
-            if detail.more and (last <= after or continuation >= MAX_CONTINUATIONS):
-                on_failure(StandupError(Code.BAD_RESPONSE,
-                                        message="more was promised and nothing came"))
+            if detail.more and last <= after:
+                on_failure(_nothing_new())
+            elif detail.more and continuation >= MAX_CONTINUATIONS:
+                on_failure(_too_long())
             elif detail.more:
                 ask(last, continuation + 1)
             else:
