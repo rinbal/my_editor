@@ -209,7 +209,9 @@ class StandupApi(SignedJsonApi):
         return error_from_answer(status, raw, retry_after=retry_after)
 
     def _retry(self, call: StandupCall, error: StandupError, stale: bool) -> bool:
-        if call.auth == Auth.SESSION and not call.session_retried and (
+        # A call that carries a token of its own (close_session) is about
+        # that token: it never opens a session in its place.
+        if call.auth == Auth.SESSION and not call.bearer and not call.session_retried and (
                 error.code == Code.SESSION_EXPIRED
                 or (error.code == Code.AUTH_INVALID and error.reason == "session")):
             # The token ran out or the server no longer knows it: one new
@@ -321,9 +323,11 @@ class StandupApi(SignedJsonApi):
         and the server is asked to revoke it; ``on_done`` either way, on a
         later turn. The revocation is not cancelled by :meth:`stop` (the
         sign-out that follows must not keep the token alive on the
-        server), and ``on_done`` still comes."""
+        server), and ``on_done`` still comes. A token that ran out here is
+        not sent, and one the server no longer knows opens no new session
+        (RG-M2a 3)."""
         session, self._session = self._session, None
-        if session is None or not self._server:
+        if session is None or not self._server or session.expires_at <= self._clock():
             answer_later(on_done)
             return
         call = self._build("DELETE", "/api/session", None, Auth.SESSION,

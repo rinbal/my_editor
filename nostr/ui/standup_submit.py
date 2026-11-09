@@ -428,8 +428,10 @@ class StandupWriter(QObject):
     def stop(self, on_done: Optional[Callable[[], None]] = None) -> None:
         """Sign-out or another account (13): nothing on its way answers
         any more, the submissions list and the media keys are forgotten
-        at once, and what was read is written before its list stops;
-        ``on_done`` after that."""
+        at once, the server is asked to revoke the session (a token left
+        alive would act for the account for up to 12 hours), and what was
+        read is written before its list stops; ``on_done`` once both are
+        done."""
         account, self._account = self._account, None
         if account is None:
             if on_done is not None:
@@ -440,12 +442,19 @@ class StandupWriter(QObject):
         account.destinations.stop()
         account.submissions.stop()
         account.media_keys.clear()
+        waiting = {"session", "read state"}
+
+        def finished(what: str) -> None:
+            waiting.discard(what)
+            if not waiting and on_done is not None:
+                on_done()
+
+        account.api.close_session(lambda: finished("session"))
         account.api.stop()
 
         def written(_result) -> None:
             account.read_state.stop()
-            if on_done is not None:
-                on_done()
+            finished("read state")
 
         account.read_state.before_sign_out(written)
 

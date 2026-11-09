@@ -874,3 +874,32 @@ def test_an_answer_with_a_key_twice_is_refused():
     world.server._instance = doubled
     error = world.err(world.api().instance)
     assert error.code == Code.BAD_RESPONSE
+
+
+# -- closing a session (RG-M2a 3) ------------------------------------------------
+
+def test_closing_a_session_the_server_forgot_opens_no_new_one():
+    world = World()
+    api = world.api()
+    world.ok(api.my_submissions)
+    signed_before = len(world.signers["writer"].requests)
+    world.server.sessions.clear()           # pruned on the server (7 days, keep=20)
+    done = []
+    api.close_session(lambda: done.append(True))
+    api.stop()                              # sign-out
+    world.nam.settle()
+    assert done == [True]
+    assert len(world.signers["writer"].requests) == signed_before   # no signature
+    assert world.server.sessions == {} and not api.has_session
+
+
+def test_a_session_that_ran_out_here_is_not_sent_to_be_revoked():
+    world = World()
+    api = world.api()
+    world.ok(api.my_submissions)
+    world.clock.advance(13 * 3600)          # past its 12 hours
+    asked = len(world.server.requests)
+    done = []
+    api.close_session(lambda: done.append(True))
+    world.nam.settle()
+    assert done == [True] and len(world.server.requests) == asked

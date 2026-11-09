@@ -229,6 +229,10 @@ class FakeApi:
     def stop(self) -> None:
         self.stopped = True
 
+    def close_session(self, on_done) -> None:
+        assert not self.stopped                 # revoked before the calls stop
+        self.closed = on_done
+
 
 def _writer(submissions, api, **more) -> StandupWriter:
     account = SimpleNamespace(writer=WRITER, submissions=submissions, api=api, runs=[],
@@ -343,7 +347,27 @@ def test_signing_out_forgets_at_once_and_writes_what_was_read_first():
     assert log == ["run stops", "lookups stop", "media keys forgotten", "write what was read"]
     assert submissions.stopped and api.stopped and not done
     read_state.answer(None)
-    assert log[-1] == "read state stops" and done == [True]
+    assert log[-1] == "read state stops" and not done     # the session is still revoked
+    api.closed()
+    assert done == [True]
+
+
+def test_signing_out_revokes_the_session_on_the_server():
+    # RG-M2a 3: the production caller of close_session.
+    from tests.test_standup_client import World
+    world = World()
+    api = world.api()
+    world.ok(api.my_submissions)                          # a session is open
+    assert len(world.server.sessions) == 1
+    read_state = ReadStateList([])
+    writer = _writer(FakeList(), api, media_keys=SimpleNamespace(clear=lambda: None),
+                     read_state=read_state, destinations=SimpleNamespace(stop=lambda: None))
+    writer.account(SimpleNamespace(user_pubkey=WRITER))
+    done = []
+    writer.stop(lambda: done.append(True))
+    read_state.answer(None)
+    world.nam.settle()
+    assert world.server.sessions == {} and done == [True]
 
 
 # -- in the background --------------------------------------------------------------
@@ -463,5 +487,6 @@ def test_an_account_is_wired_to_the_app_and_left_whole_at_sign_out():
     assert account.submissions.account == WRITER == account.read_state.account
     done = []
     writer.stop(lambda: done.append(True))
+    QApplication.processEvents()
     assert done == [True]                                    # nothing read: nothing to write
     assert writer.account(profile) is not account            # a new one after signing out
