@@ -318,6 +318,21 @@ def test_a_list_that_could_not_be_read_is_said_again_without_asking_again():
     assert submissions.reads == 1
 
 
+def test_a_list_that_failed_for_the_publications_is_not_read_again_for_the_round():
+    # RG-M2b 11: the sheet asks for the publications first; a second read
+    # for the round would be a second signer prompt.
+    submissions = FakeList(readable=False)
+    writer = _writer(submissions, FakeApi(),
+                     destinations=SimpleNamespace(find=lambda found, _failed: found([])))
+    got = []
+    writer.destinations(SimpleNamespace(user_pubkey=WRITER),
+                        lambda destinations, used: got.append(used), print)
+    QApplication.processEvents()
+    assert got == [[]] and submissions.reads == 1
+    assert _round(writer) == (None, SUBMISSIONS_UNREADABLE)
+    assert submissions.reads == 1
+
+
 # -- sign-out ---------------------------------------------------------------------
 
 class ReadStateList(FakeList):
