@@ -152,8 +152,9 @@ class Ports:
       server refused for its round.
     - ``submit(body, on_sending(), on_success(receipt check),
       on_failure(StandupError))`` returns a callable that drops it.
-    - ``lookup(entry, on_done(status), on_failure(StandupError))``:
-      watcher.resolve_unconfirmed.
+    - ``lookup(sealed, on_done(status), on_failure(StandupError))``:
+      watcher.resolve_unconfirmed for ``sealed.entry``, its receipt checked
+      against ``sealed.body``, what was sent.
     - ``send_message(sealed, text, on_sent(), on_failure())``.
     - ``later(ms, callback)``; ``clock()``.
     """
@@ -545,7 +546,7 @@ class Submitting:
 
         def ask() -> None:
             if token == self._token and not self._stopped:
-                self._ports.lookup(self._sealed.entry, answer, answer)
+                self._ports.lookup(self._sealed, answer, answer)
 
         self._ports.later(delay, ask)
 

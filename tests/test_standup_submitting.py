@@ -186,9 +186,10 @@ class World:
             call = self.api.submit(body, on_success, on_failure, on_sending=on_sending)
             return lambda: self.api.drop(call)
 
-        def lookup(entry, on_done, on_failure):
+        def lookup(sealed, on_done, on_failure):
             self.log.append("lookup")
-            resolve_unconfirmed(self.api, entry, on_done, on_failure)
+            resolve_unconfirmed(self.api, sealed.entry, on_done, on_failure, body=sealed.body,
+                                clock=self.clock)
 
         def send_message(sealed, text, on_sent, on_failure):
             self.messages.append((sealed.submission_id, text))
@@ -377,12 +378,33 @@ def _tamper(name, value):
 
 def test_a_receipt_that_does_not_match_is_checked_and_confirmed_only_by_the_lookup():
     world = World()
-    world.server.tamper_receipt = _tamper("envelope_sha256", "00" * 32)
+    tamper, answers = _tamper("envelope_sha256", "00" * 32), []
+
+    def first_answer_only(receipt):
+        answers.append(receipt)
+        return tamper(receipt) if len(answers) == 1 else receipt
+
+    world.server.tamper_receipt = first_answer_only
     progress = world.go()
-    # The answer did not match: never "Eingereicht" from it. The lookup
-    # names the same revision and hash (12.4), and that confirms.
+    # The answer did not match: never "Eingereicht" from it. The lookup's
+    # receipt matches what was sent in every field, and that confirms.
     assert world.steps[-2:] == [Step.CHECKING, Step.SUBMITTED]
     assert progress.step is Step.SUBMITTED
+
+
+@pytest.mark.parametrize("field, value", [
+    ("envelope_sha256", "00" * 32),
+    ("wraps_sha256", {"writer": "00" * 32}),
+    ("blobs_present", []),
+])
+def test_a_lookup_that_finds_another_envelope_or_other_wraps_is_never_submitted(field, value):
+    # RG-M2b 11: the lookup compared revision and hash only, so a server
+    # holding other wraps of the same revision read as "Eingereicht".
+    world = World()
+    world.server.tamper_receipt = _tamper(field, value)
+    progress = world.go()
+    assert Step.CHECKING in world.steps and Step.SUBMITTED not in world.steps
+    assert progress.step is Step.FAILED and progress.failure.headline == words.ANOTHER_VERSION
 
 
 def test_a_receipt_for_another_version_is_never_submitted():

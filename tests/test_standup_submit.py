@@ -437,6 +437,19 @@ def test_without_an_account_nothing_is_said_to_have_stopped():
     assert told == [] and stopped == []
 
 
+def test_the_lookup_of_a_run_checks_the_receipt_against_the_body_it_sent(monkeypatch):
+    # RG-M2b 11: the production port, not only the table's fake.
+    import nostr.ui.standup_submit as module
+    asked = []
+    monkeypatch.setattr(module, "resolve_unconfirmed",
+                        lambda api, entry, on_done, on_failure, **kw: asked.append((entry, kw)))
+    writer = _writer(FakeList(), FakeApi())
+    account = writer.account(SimpleNamespace(user_pubkey=WRITER))
+    sealed = SimpleNamespace(entry=_entry(), body={"submission_id": _sid(1)})
+    writer._ports(account, PUBLICATION).lookup(sealed, print, print)
+    assert asked == [(sealed.entry, {"body": sealed.body})]
+
+
 # -- in the background --------------------------------------------------------------
 
 class Run(QObject):

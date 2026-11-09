@@ -513,8 +513,8 @@ class StandupWriter(QObject):
             call = api.submit(body, on_success, on_failure, on_sending=on_sending)
             return lambda: api.drop(call)
 
-        def lookup(entry, on_done, on_failure) -> None:
-            resolve_unconfirmed(api, entry, on_done, on_failure)
+        def lookup(sealed: Sealed, on_done, on_failure) -> None:
+            resolve_unconfirmed(api, sealed.entry, on_done, on_failure, body=sealed.body)
 
         def send_message(sealed: Sealed, text: str, on_sent, on_failure) -> None:
             self._send_message(account, sealed, text, on_sent, on_failure)

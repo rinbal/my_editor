@@ -37,8 +37,9 @@ one rule for a round and for :func:`read_submission`.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, replace
-from typing import Callable, Dict, List, Optional, Sequence, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Union
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
@@ -398,7 +399,9 @@ def look_up(api: StandupApi, entry: SubmissionEntry,
 
 def resolve_unconfirmed(api: StandupApi, entry: SubmissionEntry,
                         on_done: Callable[[object], None],
-                        on_failure: Callable[[StandupError], None]) -> None:
+                        on_failure: Callable[[StandupError], None], *,
+                        body: Optional[Mapping[str, Any]] = None,
+                        clock: Callable[[], float] = time.time) -> None:
     """Did the revision in ``entry`` arrive, although its request got no
     answer? Asked with the entry's status key (:func:`look_up`), so no
     signature.
@@ -406,12 +409,24 @@ def resolve_unconfirmed(api: StandupApi, entry: SubmissionEntry,
     ``on_done`` gets :class:`~.views.Confirmed` (same revision and hash,
     every file found), :class:`~.views.BlobsMissing` (stored, files
     missing: upload and send the same body again), :class:`NotStored`,
-    :class:`Superseded` or :class:`Different`. ``on_failure`` when the
-    server could not be asked or its answer not read: the entry stays
-    unconfirmed, ask later."""
-    look_up(api, entry,
-            lambda item: on_done(NotStored() if item is None else classify(entry, item.receipt)),
-            on_failure)
+    :class:`Superseded` or :class:`Different`. With ``body``, the one
+    that was sent, the receipt found must match it in every field, as
+    the answer to the request itself must (views.check_receipt): a server
+    that stored another envelope or other wraps of this revision has
+    :class:`Different`, never "Eingereicht" (RG-M2b 11). ``on_failure``
+    when the server could not be asked or its answer not read: the entry
+    stays unconfirmed, ask later."""
+    def found(item: Optional[views.LookupItem]) -> None:
+        if item is None:
+            on_done(NotStored())
+            return
+        status = classify(entry, item.receipt)
+        if body is not None and isinstance(status, (views.Confirmed, views.BlobsMissing)):
+            checked = views.check_receipt(body, item.receipt.raw, now=clock(), repeat=True)
+            status = Different(item.receipt) if isinstance(checked, views.Mismatch) else checked
+        on_done(status)
+
+    look_up(api, entry, found, on_failure)
 
 
 __all__ = [
