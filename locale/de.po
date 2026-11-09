@@ -7796,6 +7796,34 @@ msgstr "Keine Kennung möglich: Der Beitrag hat weder GUID noch Link noch Titel"
 msgid "It contains a secret key, and MyEditor never sends a secret key to a publication. Remove the key and try again."
 msgstr "Darin steht ein geheimer Schlüssel, und MyEditor schickt nie einen geheimen Schlüssel an eine Publikation. Entferne den Schlüssel und versuche es noch einmal."
 
+#: nostr/standup/lists.py:60
+msgid "Your list of submissions couldn't be read."
+msgstr "Deine Liste der Einreichungen konnte nicht gelesen werden."
+
+#: nostr/standup/lists.py:61
+msgid "Your signer app didn't answer, so your list of submissions couldn't be read."
+msgstr "Deine Signer-App hat nicht geantwortet, daher konnte deine Liste der Einreichungen nicht gelesen werden."
+
+#: nostr/standup/lists.py:63
+msgid "Your list of submissions was saved with an older kind of encryption. Open it once in the app that saved it; until then, nothing new can be submitted here."
+msgstr "Deine Liste der Einreichungen wurde mit einer älteren Verschlüsselung gespeichert. Öffne sie einmal in der App, die sie gespeichert hat; bis dahin kannst du hier nichts Neues einreichen."
+
+#: nostr/standup/lists.py:66
+msgid "Part of your list of submissions hasn't arrived yet. It is kept as it is."
+msgstr "Ein Teil deiner Liste der Einreichungen ist noch nicht angekommen. Er bleibt, wie er ist."
+
+#: nostr/standup/lists.py:68
+msgid "What you have read couldn't be loaded."
+msgstr "Was du schon gelesen hast, konnte nicht geladen werden."
+
+#: nostr/standup/lists.py:69
+msgid "Your signer app didn't answer, so what you have read couldn't be loaded."
+msgstr "Deine Signer-App hat nicht geantwortet, daher konnte nicht geladen werden, was du schon gelesen hast."
+
+#: nostr/standup/lists.py:71
+msgid "What you have read was saved with an older kind of encryption and is left as it is."
+msgstr "Was du schon gelesen hast, wurde mit einer älteren Verschlüsselung gespeichert und bleibt, wie es ist."
+
 #: nostr/standup/trust.py:36
 msgid "The editorial team's key is not confirmed. Submitting is not possible right now."
 msgstr "Der Schlüssel der Redaktion ist nicht bestätigt. Einreichen ist gerade nicht möglich."

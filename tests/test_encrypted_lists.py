@@ -538,3 +538,23 @@ def test_a_list_without_paging_is_one_event_exactly_as_encoded():
     assert publish(store, ["ä"])[0].status == SENT
     assert list(relay.stored) == ["test:flat"]
     assert relay.plaintext("test:flat") == '{"rows":["\\u00e4"],"updatedAt":%d}' % NOW
+
+
+def test_writing_over_the_list_last_seen_signs_only_the_pages_that_change():
+    # The relays hold exactly the list this device last saw; one entry is
+    # added at the end. Only the last page and page 0 (which always says
+    # there is something new) are signed again: through a signer app each
+    # page is a request.
+    relay = Relay()
+    store = submissions_list(relay)
+    items = [submission(n) for n in range(300)]
+    first, _ = publish(store, items)
+    assert first.status == SENT and first.signed
+    pages = relay.page("einundzwanzig:submissions")["pages"]
+    assert pages >= 3
+    mark = (first.signed["created_at"], first.signed["id"])
+    before = len(relay.published)
+    second, _ = publish(store, items + [submission(300)], base=first.value, mark=mark)
+    assert second.status == SENT
+    assert relay.published[before:] == [f"einundzwanzig:submissions:{pages - 1}",
+                                        "einundzwanzig:submissions"]

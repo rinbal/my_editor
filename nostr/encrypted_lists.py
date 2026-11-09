@@ -641,7 +641,12 @@ class EncryptedList(QObject):
                     and not supersedes(mark[0], mark[1], *base_mark)):
                 # A copy no newer than the last seen (a slow or fallback
                 # relay's): it changes nothing; what is new here goes out.
-                remote, event, written = base, None, []
+                # When it is the very list last seen, its pages are what
+                # the relays hold, so a page that would not change is not
+                # signed again (a long list then costs a signature per
+                # changed page, not per page).
+                same = tuple(mark) == tuple(base_mark)
+                remote, event, written = base, None, (pages if same else [])
             merged = self._merge(base, local, remote)
             if on_merged is not None:
                 on_merged(merged, remote, event)

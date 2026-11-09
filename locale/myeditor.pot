@@ -7781,6 +7781,34 @@ msgstr ""
 msgid "It contains a secret key, and MyEditor never sends a secret key to a publication. Remove the key and try again."
 msgstr ""
 
+#: nostr/standup/lists.py:60
+msgid "Your list of submissions couldn't be read."
+msgstr ""
+
+#: nostr/standup/lists.py:61
+msgid "Your signer app didn't answer, so your list of submissions couldn't be read."
+msgstr ""
+
+#: nostr/standup/lists.py:63
+msgid "Your list of submissions was saved with an older kind of encryption. Open it once in the app that saved it; until then, nothing new can be submitted here."
+msgstr ""
+
+#: nostr/standup/lists.py:66
+msgid "Part of your list of submissions hasn't arrived yet. It is kept as it is."
+msgstr ""
+
+#: nostr/standup/lists.py:68
+msgid "What you have read couldn't be loaded."
+msgstr ""
+
+#: nostr/standup/lists.py:69
+msgid "Your signer app didn't answer, so what you have read couldn't be loaded."
+msgstr ""
+
+#: nostr/standup/lists.py:71
+msgid "What you have read was saved with an older kind of encryption and is left as it is."
+msgstr ""
+
 #: nostr/standup/trust.py:36
 msgid "The editorial team's key is not confirmed. Submitting is not possible right now."
 msgstr ""

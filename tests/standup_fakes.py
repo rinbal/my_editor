@@ -1102,3 +1102,96 @@ def submission_for(writer_sk: bytes, *, key_event: Optional[dict] = None, revisi
         "status_key_hash": hashlib.sha256(bytes.fromhex(status_key)).hexdigest(),
         "client": "MyEditor tests"}
     return Prepared(body=body, s_sub=s_sub, status_key=status_key, revision=rev)
+
+
+# =========================================================================== #
+# A signer app on the other end of NIP-46                                     #
+# =========================================================================== #
+
+class Nip46SignerApp:
+    """A remote signer that answers ``sign_event``, ``nip44_encrypt`` and
+    ``nip44_decrypt`` with real keys over the handshake tests' FakePool,
+    the way a signer app does: every request and every answer is one
+    NIP-44 message, so an answer that would be larger than 65,535 bytes
+    is never sent (nostr-tools throws there), and the app waits for
+    nothing. ``too_large`` counts those. Use :func:`paired_bunker`."""
+
+    def __init__(self, pool, user_sk: bytes) -> None:
+        self.pool = pool
+        self.sk = crypto.generate_secret_key()
+        self.pk = crypto.get_public_key(self.sk).hex()
+        self.user_sk = bytes(user_sk)
+        self.user_pk = crypto.get_public_key(self.user_sk).hex()
+        self.seen: List[dict] = []
+        self.too_large = 0
+        self.largest_request = 0
+
+    def watch(self, client_pk: str) -> None:
+        self.client_pk = client_pk
+        self.conv = crypto.conversation_key(self.sk, bytes.fromhex(client_pk))
+        self._sub = self.pool.subscribe([], [{"kinds": [24133], "#p": [self.pk]}])
+        self._sub.event.connect(self._on_event)
+
+    def _on_event(self, event: dict) -> None:
+        if event.get("pubkey") == self.pk:
+            return
+        try:
+            text = crypto.decrypt(event["content"], self.conv)
+            payload = json.loads(text)
+        except (ValueError, KeyError):
+            return
+        if "method" not in payload:
+            return
+        self.largest_request = max(self.largest_request, len(text.encode("utf-8")))
+        self.seen.append({"method": payload["method"]})
+        rid, method, params = payload.get("id"), payload["method"], payload.get("params") or []
+        try:
+            if method == "connect":
+                result = "ack"
+            elif method == "get_public_key":
+                result = self.user_pk
+            elif method == "ping":
+                result = "pong"
+            elif method == "sign_event":
+                result = json.dumps(events.sign_event(json.loads(params[0]), self.user_sk))
+            elif method == "nip44_encrypt":
+                result = crypto.encrypt_to(params[1], self.user_sk, bytes.fromhex(params[0]))
+            elif method == "nip44_decrypt":
+                result = crypto.decrypt_from(params[1], self.user_sk, bytes.fromhex(params[0]))
+            else:
+                self._send({"id": rid, "error": "unknown method"})
+                return
+        except ValueError as exc:
+            self._send({"id": rid, "error": str(exc)})
+            return
+        self._send({"id": rid, "result": result})
+
+    def _send(self, payload: dict) -> None:
+        try:
+            content = crypto.encrypt(json.dumps(payload), self.conv)
+        except ValueError:
+            self.too_large += 1
+            return
+        self.pool.publish([], events.build_event(kind=24133, content=content,
+                                                 tags=[["p", self.client_pk]], sk=self.sk))
+
+
+def paired_bunker(user_sk: bytes):
+    """A real ``BunkerClient`` paired with a :class:`Nip46SignerApp` for
+    ``user_sk``: ``(client, signer_app)``."""
+    from nostr import bunker
+    from tests.test_bunker_handshake import FakePool
+
+    pool = FakePool()
+    app = Nip46SignerApp(pool, user_sk)
+    client = bunker.BunkerClient(pool)
+    local_sk = crypto.generate_secret_key()
+    app.watch(crypto.get_public_key(local_sk).hex())
+    outcome: Dict[str, str] = {}
+    client.connect_to_bunker(
+        f"bunker://{app.pk}?relay=wss%3A%2F%2Ffake&secret=abc",
+        on_success=lambda pk: outcome.setdefault("ok", pk),
+        on_failure=lambda r: outcome.setdefault("err", r),
+        local_sk=local_sk)
+    assert outcome.get("ok") == app.user_pk, outcome
+    return client, app
