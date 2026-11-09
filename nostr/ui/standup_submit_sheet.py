@@ -188,6 +188,8 @@ class SubmitSheet(QDialog):
         self._generation = 0
         self._operator = ""
         self._load_problem = ""
+        # The publications could not be loaded: Try Again loads them.
+        self._load_failed = False
         self.run: Optional[SubmissionRun] = None
         self._build(profile)
         avatars.avatar_added.connect(self._on_logo)
@@ -273,9 +275,12 @@ class SubmitSheet(QDialog):
         self.picker.setIconSize(QSize(_LOGO, _LOGO))
         self.picker.currentIndexChanged.connect(self._on_picked)
         self.rules = self._hint()
+        # Every answer that leaves the sheet waiting has its way out
+        # (lesson 12): the publications not loaded, a list not read or
+        # read in part, a round the server could not tell.
         self.retry_load = QPushButton(_("Try Again"))
         self.retry_load.setAutoDefault(False)
-        self.retry_load.clicked.connect(self._load)
+        self.retry_load.clicked.connect(self._try_again)
         self.retry_load.hide()
         to = QWidget()
         to_column = QVBoxLayout(to)
@@ -436,7 +441,7 @@ class SubmitSheet(QDialog):
 
     def _load(self) -> None:
         self._generation += 1                       # the account asked for now
-        self.retry_load.hide()
+        self._load_failed = False
         self._load_problem = ""
         if not self._writer.server:
             self._show_destinations([], _("The server’s address comes from the association."))
@@ -458,8 +463,18 @@ class SubmitSheet(QDialog):
                                 _("No publication takes submissions right now.") if none else "")
 
     def _on_load_failed(self, _error) -> None:
-        self.retry_load.show()
+        self._load_failed = True
         self._show_destinations([], _("The publications couldn’t be loaded."))
+
+    def _try_again(self) -> None:
+        """The publications loaded again, or the round asked again (the
+        list of submissions read again first when it could not tell)."""
+        if self._load_failed:
+            self._load()
+            return
+        if self._round is not None and self._round.from_list:
+            self._writer.reload(self.account.profile())
+        self._on_picked(self.picker.currentIndex())
 
     def _show_destinations(self, destinations: List[Destination], problem: str, *,
                            loading: bool = False) -> None:
@@ -621,6 +636,8 @@ class SubmitSheet(QDialog):
 
     def _refresh(self, *_args) -> None:
         self.unsent.setVisible(self._round is not None and self._round.unsent is not None)
+        self.retry_load.setVisible(self._load_failed or (
+            self._round is not None and bool(self._round.words)))
         blockers = self.blockers()
         self.submit_button.setEnabled(not blockers and self.round() is not None)
         first = blockers[0] if blockers else ""

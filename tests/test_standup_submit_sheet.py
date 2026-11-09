@@ -102,13 +102,23 @@ class Writer:
         self.on_its_way = None
         self.asked = 0
         self.discarded: List[object] = []
+        self.loads = 0
+        self.reloaded = 0
+        self.fail_destinations = False
 
     def instance(self, _profile, on_operator) -> None:
         if self.operator:
             on_operator(self.operator)
 
-    def destinations(self, _profile, on_done, _on_failure) -> None:
-        on_done(self._destinations, self._used)
+    def destinations(self, _profile, on_done, on_failure) -> None:
+        self.loads += 1
+        if self.fail_destinations:
+            on_failure(object())
+        else:
+            on_done(self._destinations, self._used)
+
+    def reload(self, _profile) -> None:
+        self.reloaded += 1
 
     def running(self, _profile, _d, _publication=""):
         return self.on_its_way
@@ -501,3 +511,42 @@ def test_after_another_account_is_chosen_the_first_ones_answers_are_dropped(tmp_
     writer.answer()
     assert sheet._operator == "Verein" and sheet.status.text() == \
         i18n._("No publication takes submissions right now.")
+
+
+# -- every wait has its way out (RG-M2r 4, lesson 12) ----------------------------
+
+@pytest.mark.parametrize("answer, from_list", [
+    ((None, "Deine Liste der Einreichungen konnte nicht gelesen werden.", None, True), True),
+    ((None, "Deine Signer-App hat nicht geantwortet.", None, True), True),     # blocked
+    ((None, i18n._(drafting.ROUND_LIST_INCOMPLETE), None, True), True),
+    ((None, i18n._(drafting.ROUND_UNKNOWN)), False),
+], ids=["list unreadable", "list blocked", "list in part", "round unknown"])
+def test_a_round_that_could_not_be_told_offers_try_again(tmp_path, answer, from_list):
+    writer = Writer(round_=answer)
+    sheet = _sheet(tmp_path, writer)
+    assert not sheet.retry_load.isHidden()
+    assert sheet.status.text() == answer[1] and not sheet.submit_button.isEnabled()
+    asked = writer.asked
+    writer.round = (1, "")
+    sheet.retry_load.click()
+    # The list is read again only when it could not tell; the round is
+    # asked again either way.
+    assert (writer.reloaded, writer.asked) == (int(from_list), asked + 1)
+    assert sheet.retry_load.isHidden() and sheet.submit_button.isEnabled()
+
+
+def test_publications_that_could_not_be_loaded_offer_try_again(tmp_path):
+    writer = Writer()
+    writer.fail_destinations = True
+    sheet = _sheet(tmp_path, writer)
+    assert not sheet.retry_load.isHidden()
+    assert sheet.status.text() == "Die Publikationen konnten nicht geladen werden."
+    writer.fail_destinations = False
+    sheet.retry_load.click()
+    assert writer.loads == 2 and sheet.retry_load.isHidden()
+    assert sheet.submit_button.isEnabled()
+
+
+def test_a_round_that_is_told_offers_no_try_again(tmp_path):
+    sheet = _sheet(tmp_path, Writer(round_=(1, "")))
+    assert sheet.retry_load.isHidden()

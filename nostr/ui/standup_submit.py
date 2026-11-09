@@ -41,9 +41,7 @@ from ..standup.client import StandupApi
 from ..standup import drafting
 from ..standup.drafting import ArticleDraft, Choice, EncryptedPicture, Sealed, choose_round
 from ..standup.entries import SubmissionEntry
-from ..standup.lists import (
-    SUBMISSIONS_MISSING_PAGE, SUBMISSIONS_UNREADABLE, ReadState, SubmissionsList,
-)
+from ..standup.lists import SUBMISSIONS_UNREADABLE, ReadState, SubmissionsList
 from ..standup.opening import MediaKeys
 from ..standup.servers import configured_server
 from ..standup.submitting import (
@@ -173,13 +171,17 @@ class _PoolSigner:
 class RoundAnswer:
     """The round a text goes to a publication in (drafting.choose_round):
     ``round``, or None while it is still open there or cannot be told
-    (``words`` say why then). ``unsent`` is the list's entry of an
-    earlier try the server has no receipt for: it is sent again, with its
-    own secrets (Erneut), or discarded (Verwerfen)."""
+    (``words`` say why then, and the sheet offers Try Again: lesson 12).
+    ``from_list``: the words are about the list of submissions, so Try
+    Again reads it again (:meth:`StandupWriter.reload`) before asking.
+    ``unsent`` is the list's entry of an earlier try the server has no
+    receipt for: it is sent again, with its own secrets (Erneut), or
+    discarded (Verwerfen)."""
 
     round: Optional[int]
     words: str = ""
     unsent: Optional[SubmissionEntry] = None
+    from_list: bool = False
 
 
 class SubmissionRun(QObject):
@@ -276,6 +278,8 @@ class _Account(QObject):
         # Let go (StandupWriter.stop): no answer that comes later reaches
         # its client, its lists or its signer again (lesson 31, _live).
         self.stopped = False
+        # Try Again asked for the list to be read again (reload).
+        self.read_again = False
 
 
 def _live(account: _Account, callback: Callable) -> Callable:
@@ -393,7 +397,10 @@ class StandupWriter(QObject):
                 account.list_problem = _list_problem(result)
                 used()
 
-            if account.submissions.loaded:
+            # A list read whole is not read again for another sheet; one
+            # that missed a page is, each time (RG-M2r 4): the page may
+            # have arrived.
+            if account.submissions.loaded and account.submissions.complete:
                 used()
             else:
                 account.submissions.load(_live(account, read))
@@ -445,24 +452,34 @@ class StandupWriter(QObject):
 
         def decide() -> None:
             if account.list_problem:
-                on_done(RoundAnswer(None, account.list_problem))
+                on_done(RoundAnswer(None, account.list_problem, from_list=True))
             elif not account.submissions.complete:
                 # A page of the list has not arrived: an entry of this
                 # text may be on it.
-                on_done(RoundAnswer(None, _(SUBMISSIONS_MISSING_PAGE)))
+                on_done(RoundAnswer(None, _(drafting.ROUND_LIST_INCOMPLETE), from_list=True))
             else:
                 known()
 
         def read(result) -> None:
+            account.read_again = False
             account.list_problem = _list_problem(result)
             decide()
 
-        # A list read once for this sheet and not readable is said again,
-        # not asked again (another signer prompt); Try Again reads anew.
-        if account.submissions.loaded or account.list_problem:
+        # A list read once for this sheet is not read again for another
+        # publication (each read may be a signer prompt): what it said is
+        # said again, and Try Again reads it anew (reload).
+        if (account.submissions.loaded or account.list_problem) and not account.read_again:
             answer_later(_live(account, decide))
         else:
             account.submissions.load(_live(account, read))
+
+    def reload(self, profile) -> None:
+        """Try Again on a round the list could not tell (RoundAnswer
+        ``from_list``): the next :meth:`round_for` reads the list of
+        submissions again, whatever it said before."""
+        account = self.account(profile)
+        account.list_problem = ""
+        account.read_again = True
 
     def discard(self, profile, entry: SubmissionEntry, on_done: Callable[[bool], None]) -> None:
         """Verwerfen (contract 13): a tombstone for ``entry``, an earlier

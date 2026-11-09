@@ -28,9 +28,11 @@ import i18n
 from nostr.list_results import ListRead, ReadStatus
 from nostr.standup import formats, words
 from nostr.standup.answers import LookupAnswer
-from nostr.standup.drafting import ROUND_UNKNOWN, encrypt_pictures, LocalPicture
+from nostr.standup.drafting import (
+    ROUND_LIST_INCOMPLETE, ROUND_UNKNOWN, LocalPicture, encrypt_pictures,
+)
 from nostr.standup.entries import SubmissionEntry
-from nostr.standup.lists import SUBMISSIONS_MISSING_PAGE, SUBMISSIONS_UNREADABLE
+from nostr.standup.lists import SUBMISSIONS_UNREADABLE
 from nostr.standup.submitting import Held, MessageStatus, Progress, Step
 from nostr.ui import standup_submit
 from nostr.ui.standup_submit import BlossomUploads, StandupWriter, thumbnail
@@ -240,7 +242,7 @@ class FakeApi:
 def _writer(submissions, api, **more) -> StandupWriter:
     more.setdefault("deleteLater", lambda: None)
     account = SimpleNamespace(writer=WRITER, submissions=submissions, api=api, runs=[],
-                              list_problem="", stopped=False, **more)
+                              list_problem="", stopped=False, read_again=False, **more)
     return StandupWriter(session_pool=None, relay_pool=None, relay_directory=None,
                          media_store=None, server="https://s.example", uploads=lambda *a: None,
                          accounts=lambda _profile: account)
@@ -306,11 +308,56 @@ def test_one_run_per_work_and_publication(german):
     (FakeList([_entry()]), FakeApi(unreadable=True), ROUND_UNKNOWN),      # has something
     (FakeList([_entry()]), FakeApi("declined", other_sid=True), ROUND_UNKNOWN),  # another's
     (FakeList(readable=False), FakeApi(), SUBMISSIONS_UNREADABLE),
-    (FakeList(complete=False), FakeApi(), SUBMISSIONS_MISSING_PAGE),      # a page missing
+    (FakeList(complete=False), FakeApi(), ROUND_LIST_INCOMPLETE),         # a page missing
 ], ids=["no answer", "unreadable", "another submission", "list unreadable", "list incomplete"])
 def test_a_round_that_cannot_be_told_is_not_guessed(submissions, api, said):
     # RG-M2b 2: never "already submitted", never round 1 by default.
-    assert _round(_writer(submissions, api)) == (None, said)
+    # RG-M2r 4: what the list could not tell is said as the list's, so Try
+    # Again reads it again; what the server could not, asks it again.
+    answer = _answer(_writer(submissions, api))
+    assert (answer.round, answer.words) == (None, said)
+    assert answer.from_list is (said is not ROUND_UNKNOWN)
+
+
+class HealingList(FakeList):
+    """Read in part once (a page had not arrived), whole from then on."""
+
+    def load(self, on_done) -> None:
+        self.reads += 1
+        self.loaded = True
+        self.complete = self.reads > 1
+        on_done(ListRead(ReadStatus.INCOMPLETE if self.reads == 1 else ReadStatus.COMPLETE))
+
+
+def test_a_list_read_in_part_is_read_again_when_the_sheet_opens_again():
+    # RG-M2r 4 (the reviewer's probe): read once in part, it was never
+    # read again in the session, and submitting stayed blocked.
+    submissions = HealingList()
+    writer = _writer(submissions, FakeApi(),
+                     destinations=SimpleNamespace(find=lambda found, _failed: found([])))
+    profile = SimpleNamespace(user_pubkey=WRITER)
+    writer.destinations(profile, lambda *a: None, print)
+    QApplication.processEvents()
+    assert _round(writer) == (None, ROUND_LIST_INCOMPLETE) and submissions.reads == 1
+    writer.destinations(profile, lambda *a: None, print)        # the sheet opened again
+    QApplication.processEvents()
+    assert submissions.reads == 2 and _round(writer) == (1, "")
+    writer.destinations(profile, lambda *a: None, print)        # whole: not read again
+    QApplication.processEvents()
+    assert submissions.reads == 2
+
+
+@pytest.mark.parametrize("submissions", [FakeList(readable=False), HealingList()],
+                         ids=["unreadable", "in part"])
+def test_try_again_on_a_round_the_list_could_not_tell_reads_it_again(submissions):
+    writer = _writer(submissions, FakeApi())
+    assert _answer(writer).from_list and submissions.reads == 1
+    assert _answer(writer).from_list and submissions.reads == 1     # said again, not read
+    writer.reload(SimpleNamespace(user_pubkey=WRITER))
+    _answer(writer)
+    assert submissions.reads == 2
+    _answer(writer)
+    assert submissions.reads == 2                   # once per Try Again
 
 
 def test_a_list_that_could_not_be_read_is_said_again_without_asking_again():

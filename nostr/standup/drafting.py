@@ -57,8 +57,11 @@ MESSAGE_TOO_LONG = N_("A message has at most {count} characters.")
 MESSAGE_TOO_LARGE = N_("Your message is too long to send. Shorten it to submit.")
 MESSAGE_TOO_LARGE_DETAIL = N_("It takes {size} bytes, and a message can take {limit}.")
 REQUIRED_MISSING = N_("{publication} asks for {items}. Add them in Article Details to submit.")
-ROUND_UNKNOWN = N_("Whether you have submitted this text before couldn’t be checked. "
-                   "Try again later.")
+ROUND_UNKNOWN = N_("Whether you have submitted this text before couldn’t be checked.")
+# A page of the list of submissions has not arrived: an entry of this
+# text may be on it (RG-M2r 4).
+ROUND_LIST_INCOMPLETE = N_("Part of your list of submissions hasn’t arrived yet, so whether "
+                           "you have submitted this text before can’t be told.")
 
 # A submission of a round that ended this way may be followed by the next
 # round (contract 2); in any other state it is still open there.

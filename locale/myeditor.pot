@@ -13,7 +13,7 @@ msgid "OK"
 msgstr ""
 
 #: alerts.py:208
-#: nostr/ui/standup_submit_sheet.py:386
+#: nostr/ui/standup_submit_sheet.py:391
 msgid "Details"
 msgstr ""
 
@@ -7902,7 +7902,11 @@ msgid "{publication} asks for {items}. Add them in Article Details to submit."
 msgstr ""
 
 #: nostr/standup/drafting.py:60
-msgid "Whether you have submitted this text before couldn’t be checked. Try again later."
+msgid "Whether you have submitted this text before couldn’t be checked."
+msgstr ""
+
+#: nostr/standup/drafting.py:63
+msgid "Part of your list of submissions hasn’t arrived yet, so whether you have submitted this text before can’t be told."
 msgstr ""
 
 #: nostr/standup/formats.py:95
@@ -12106,7 +12110,7 @@ msgstr ""
 msgid "In the inbox"
 msgstr ""
 
-#: nostr/ui/standup_submit.py:305
+#: nostr/ui/standup_submit.py:323
 #, python-brace-format
 msgid "{count} other submission stopped as well."
 msgid_plural "{count} other submissions stopped as well."
@@ -12131,116 +12135,116 @@ msgid "Takes no articles"
 msgstr ""
 
 #: nostr/ui/standup_submit_sheet.py:167
-#: nostr/ui/standup_submit_sheet.py:212
+#: nostr/ui/standup_submit_sheet.py:214
 msgid "Submit to a Publication"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:261
+#: nostr/ui/standup_submit_sheet.py:263
 msgid "Submit"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:272
+#: nostr/ui/standup_submit_sheet.py:274
 msgid "Publication"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:290
+#: nostr/ui/standup_submit_sheet.py:295
 msgid "me"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:291
-#: nostr/ui/standup_submit_sheet.py:554
+#: nostr/ui/standup_submit_sheet.py:296
+#: nostr/ui/standup_submit_sheet.py:569
 msgid "the publication"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:308
+#: nostr/ui/standup_submit_sheet.py:313
 msgid "Published by:"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:312
+#: nostr/ui/standup_submit_sheet.py:317
 msgid "I have the rights to the text and the pictures."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:321
 #: nostr/ui/standup_submit_sheet.py:326
+#: nostr/ui/standup_submit_sheet.py:331
 msgid "Message to the Editorial Team"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:325
+#: nostr/ui/standup_submit_sheet.py:330
 msgid "Optional. For example, why the text suits you."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:347
+#: nostr/ui/standup_submit_sheet.py:352
 msgid "An earlier try wasn’t sent. Submit sends it again."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:349
+#: nostr/ui/standup_submit_sheet.py:354
 msgid "Discard"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:380
+#: nostr/ui/standup_submit_sheet.py:385
 msgid "Content end-to-end encrypted. The server sees the title."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:389
+#: nostr/ui/standup_submit_sheet.py:394
 msgid "Privacy details"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:462
+#: nostr/ui/standup_submit_sheet.py:467
 msgid "The publications couldn’t be loaded."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:557
+#: nostr/ui/standup_submit_sheet.py:572
 msgid "The server sees the title, the publication and who takes part, never the content."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:579
+#: nostr/ui/standup_submit_sheet.py:594
 msgid "Withdrawing deletes nothing the editorial team already has."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:256
+#: nostr/ui/standup_submit_sheet.py:258
 msgid "Submitting as"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:256
+#: nostr/ui/standup_submit_sheet.py:258
 #, python-brace-format
 msgid "Submitting as {name}"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:288
+#: nostr/ui/standup_submit_sheet.py:293
 msgid "To:"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:314
+#: nostr/ui/standup_submit_sheet.py:319
 msgid "Rights:"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:442
+#: nostr/ui/standup_submit_sheet.py:447
 msgid "The server’s address comes from the association."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:458
+#: nostr/ui/standup_submit_sheet.py:463
 msgid "No publication takes submissions right now."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:486
+#: nostr/ui/standup_submit_sheet.py:501
 msgid "Recently used first"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:534
+#: nostr/ui/standup_submit_sheet.py:549
 msgid "After acceptance you publish it with your key."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:535
+#: nostr/ui/standup_submit_sheet.py:550
 msgid "At acceptance the editorial team proposes how zaps are split; you confirm it."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:561
+#: nostr/ui/standup_submit_sheet.py:576
 msgid "The picture is encrypted on your media server. It sees when it is fetched, never what is in it."
 msgid_plural "The pictures are encrypted on your media server. It sees when they are fetched, never what is in them."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/standup_submit_sheet.py:582
+#: nostr/ui/standup_submit_sheet.py:597
 msgid "The server keeps the submission encrypted."
 msgstr ""
 
@@ -12256,32 +12260,32 @@ msgid_plural "at most {count} open submissions"
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/standup_submit_sheet.py:473
+#: nostr/ui/standup_submit_sheet.py:488
 msgid "Loading publications …"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:473
+#: nostr/ui/standup_submit_sheet.py:488
 msgid "No publication"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:555
+#: nostr/ui/standup_submit_sheet.py:570
 #, python-brace-format
 msgid "Only you and the editorial team of {publication} can read it."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:575
+#: nostr/ui/standup_submit_sheet.py:590
 #, python-brace-format
 msgid "{count} picture was already public on the web and stays public."
 msgid_plural "{count} pictures were already public on the web and stay public."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/standup_submit_sheet.py:580
+#: nostr/ui/standup_submit_sheet.py:595
 #, python-brace-format
 msgid "The server of {operator} keeps the submission encrypted."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:569
+#: nostr/ui/standup_submit_sheet.py:584
 #, python-brace-format
 msgid "{count} picture is encrypted on your media server. It sees when it is fetched, never what is in it."
 msgid_plural "{count} pictures are encrypted on your media server. It sees when they are fetched, never what is in them."
