@@ -154,7 +154,7 @@ def gsettings(monkeypatch, tmp_path, gtk):
     monkeypatch.setattr(na.shutil, "which", lambda name: str(program))
     # A busy test machine starts a shell slower than dconf answers.
     monkeypatch.setattr(na, "GSETTINGS_TIMEOUT_MS", 5_000)
-    return SimpleNamespace(said=said, runs=lambda: seen.read_text().splitlines()
+    return SimpleNamespace(said=said, runs=lambda: seen.read_text(encoding="utf-8").splitlines()
                            if seen.exists() else [])
 
 
