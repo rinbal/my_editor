@@ -269,10 +269,8 @@ from nostr.first_publications import FirstPublications
 from nostr.drafts import (
     INNER_KIND_LONG_FORM,
     INNER_KIND_SHORT_NOTE,
-    MAX_INNER_PAYLOAD_BYTES,
     SUPPORTED_INNER_KINDS,
     build_inner_event,
-    serialize_inner_event,
 )
 from nostr.known_people import KnownPeople, Person
 from nostr.media.assets import ASSET_SCHEME, AssetState, asset_key, parse_asset_key
@@ -290,6 +288,7 @@ from nostr.publisher import (
     DraftBulkDeleteJob,
     DraftPublishJob,
     PublishedMedia,
+    draft_size_problem,
     file_link_names,
     library_audio_video_in,
     slugify,
@@ -11254,16 +11253,13 @@ class MainWindow(QMainWindow):
         # than letting the publish job fail mid-pipeline. The job also
         # checks, but doing it here means no signer round-trip wasted.
         try:
-            payload_bytes = len(serialize_inner_event(inner).encode("utf-8"))
+            too_large = draft_size_problem(inner, profile)
         except (KeyError, TypeError, ValueError):
             inform(self, title=_("Couldn't prepare the draft"),
                    message=_("Its contents could not be prepared for encryption."), nostr=True)
             return
-        if payload_bytes > MAX_INNER_PAYLOAD_BYTES:
-            inform(self, title=_("This draft is too large"),
-                   message=_("It has {size} bytes, and encryption allows {limit}. "
-                             "Split it into smaller drafts or publish it directly.").format(
-                       size=_number(payload_bytes), limit=_number(MAX_INNER_PAYLOAD_BYTES)), nostr=True)
+        if too_large:
+            inform(self, title=_("This draft is too large"), message=too_large, nostr=True)
             return
 
         job = DraftPublishJob(

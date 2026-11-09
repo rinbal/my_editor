@@ -99,6 +99,18 @@ AUTH_CHALLENGE_TIMEOUT_MS = 180_000
 # are split into pages well below this (nostr/encrypted_lists.py).
 SIGNER_NIP44_MAX_PLAINTEXT = 40_960
 
+
+def nip44_plaintext_limit(profile) -> int:
+    """The most plaintext one ``nip44_encrypt`` (or ``nip44_decrypt``)
+    can carry for ``profile``: NIP-44's own 65,535 bytes when the key is
+    kept on this computer, :data:`SIGNER_NIP44_MAX_PLAINTEXT` through a
+    signer app. The one place a caller asks before it encrypts, so what
+    it tells the person matches what the signer will do."""
+    from .local_signer import LOCAL
+    if getattr(profile, "signer", "remote") == LOCAL:
+        return crypto.NIP44_MAX_PLAINTEXT_LEN
+    return SIGNER_NIP44_MAX_PLAINTEXT
+
 # The failure reasons that mean nobody answered, as opposed to the signer
 # answering "no". Defined here, next to the code that produces them, so
 # the callers that have to recognise them cannot drift from the wording.

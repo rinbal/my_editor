@@ -37,6 +37,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from i18n import _
 
+from .crypto import NIP44_MAX_PLAINTEXT_LEN
+
 
 # --------------------------------------------------------------------------- #
 # Protocol constants                                                          #
@@ -74,11 +76,12 @@ def _as_supported_kind(kind: int) -> int:
 DEFAULT_EXPIRATION_SECONDS: int = 90 * 24 * 60 * 60  # 90 days
 
 # NIP-44 v2 caps the *plaintext* (pre-padding) at 65,535 bytes. The wrap
-# encrypts ``serialize_inner_event(inner)`` so this is the effective
-# ceiling on a draft's encoded inner-event size. Long-form articles can
-# approach this; we expose the constant so the publisher can pre-flight
-# rather than failing inside the bunker round-trip.
-MAX_INNER_PAYLOAD_BYTES: int = 65535
+# encrypts ``serialize_inner_event(inner)`` so this is the ceiling on a
+# draft's encoded inner-event size with the key kept on this computer.
+# Through a signer app the ceiling is lower (its answer is NIP-44 too):
+# a pre-check asks ``bunker.nip44_plaintext_limit(profile)``, which knows
+# both, rather than this number.
+MAX_INNER_PAYLOAD_BYTES: int = NIP44_MAX_PLAINTEXT_LEN
 
 
 # --------------------------------------------------------------------------- #

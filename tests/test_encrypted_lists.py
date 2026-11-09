@@ -33,6 +33,7 @@ from nostr.encrypted_lists import (
     EncryptedList,
     ListWords,
     Paging,
+    layout_pages,
     page_d_tag,
     split_pages,
 )
@@ -322,15 +323,100 @@ def test_a_shorter_list_leaves_old_pages_unread():
 
 # -- what is never written over ------------------------------------------------
 
-def test_a_missing_page_waits_instead_of_losing_what_is_on_it():
+def read_reporting(store):
+    """``read``, and which pages it said were missing."""
+    answers, missing = [], []
+    store.relays(PROFILE, lambda relays: store.read(
+        PROFILE, relays, lambda *answer: answers.append(answer), on_missing=missing.append),
+        reading=True)
+    settle(40)
+    assert answers, "the read never finished"
+    return answers[-1], missing
+
+
+def test_a_missing_page_is_reported_and_the_rest_is_read():
     relay = Relay()
     store = read_state_list(relay)
-    publish(store, big_read_state(3_000))
+    seen = big_read_state(3_000)
+    publish(store, seen)
+    lost = relay.page(page_d_tag(D, 1))["seen"]
     del relay.stored[page_d_tag(D, 1)]
+    statuses = []
+    store._words = ListWords("u", "s", "o", missing_page="a page is missing")
+    store._on_status = statuses.append
+    (value, event), missing = read_reporting(store)
+    assert missing == [[1]]
+    assert statuses == ["a page is missing"]
+    assert value == {k: v for k, v in seen.items() if k not in lost}
+    assert event["id"] == relay.stored[D]["id"]
+
+
+def test_a_missing_page_never_blocks_writing_and_is_never_written_over():
+    relay = Relay()
+    store = read_state_list(relay)
+    seen = big_read_state(3_000)
+    publish(store, seen)
+    count = relay.page(D)["pages"]
+    lost = relay.stored.pop(page_d_tag(D, 1))
     relay.published.clear()
-    assert read(store)[0] == NO_ANSWER
-    assert publish(store, {"x": 1})[0].status == NO_ANSWER
-    assert relay.published == []
+    result, _ = publish(store, {"x": 1})
+    assert result.status == SENT and result.missing == (1,)
+    assert page_d_tag(D, 1) not in relay.published        # never written over
+    assert relay.published[-1] == D
+    assert relay.page(D)["pages"] >= count
+    # Its place is kept: when the page turns up again, nothing on it is lost.
+    relay.stored[page_d_tag(D, 1)] = lost
+    value, _ = read(store)
+    assert value == {**seen, "x": 1}
+
+
+def test_the_places_before_a_missing_page_are_written_even_when_empty():
+    relay = Relay()
+    store = read_state_list(relay)
+    relay.put(D, {"v": 1, "page": 0, "pages": 4, "seen": {"a": 1}})
+    relay.put(page_d_tag(D, 1), {"v": 1, "page": 1, "pages": 4, "seen": {"b": 1}})
+    relay.put(page_d_tag(D, 2), {"v": 1, "page": 2, "pages": 4, "seen": {"c": 1}})
+    # Page 3 is missing. Everything known fits page 0 now, so pages 1 and
+    # 2 are written empty: left as they were, their entries would be read
+    # twice, or come back after being taken out.
+    result, _ = publish(store, {"x": 2})
+    assert result.status == SENT and result.missing == (3,)
+    assert relay.published == [page_d_tag(D, 2), page_d_tag(D, 1), D]
+    assert relay.page(D) == {"v": 1, "page": 0, "pages": 4,
+                             "seen": {"a": 1, "b": 1, "c": 1, "x": 2}}
+    for n in (1, 2):
+        assert relay.page(page_d_tag(D, n)) == {"v": 1, "page": n, "pages": 4, "seen": {}}
+    relay.put(page_d_tag(D, 3), {"v": 1, "page": 3, "pages": 4, "seen": {"d": 7}})
+    assert read(store)[0] == {"a": 1, "b": 1, "c": 1, "x": 2, "d": 7}
+
+
+def test_a_page_that_turns_up_again_with_older_values_keeps_the_newer():
+    relay = Relay()
+    store = EncryptedList(
+        d_tag=D, decode=lambda payload: dict(payload["seen"]),
+        encode=lambda value, now: {"seen": dict(value)}, merge=max_merge, words=WORDS,
+        session_pool=FakeSessionPool(FakeSigner()), relay_directory=FakeRelayDirectory(),
+        query=relay, publisher=relay, clock=lambda: NOW,
+        paging=Paging(field="seen", combine=max), name="read state")
+    relay.put(D, {"v": 1, "page": 0, "pages": 2, "seen": {"a": 9}})
+    relay.put(page_d_tag(D, 1), {"v": 1, "page": 1, "pages": 2, "seen": {"a": 3, "b": 1}})
+    assert read(store)[0] == {"a": 9, "b": 1}
+
+
+def test_layout_pages_keeps_the_places_it_is_told_to():
+    seen = big_read_state(3_000)
+    plain = split_pages({"seen": seen}, Paging("seen"))
+    laid = layout_pages({"seen": seen}, Paging("seen"), keep=[1])
+    assert 1 not in laid and sorted(laid) == [0] + list(range(2, len(plain) + 1))
+    assert {json.loads(t)["pages"] for t in laid.values()} == {len(plain) + 1}
+    assert [json.loads(t)["page"] for t in laid.values()] == sorted(laid)
+    joined = {}
+    for text in laid.values():
+        joined.update(json.loads(text)["seen"])
+    assert joined == seen
+    assert all(len(t.encode("utf-8")) <= PAGE_PLAINTEXT_MAX for t in laid.values())
+    # Page 0 is the list itself and is never kept out.
+    assert 0 in layout_pages({"seen": {"a": 1}}, Paging("seen"), keep=[0])
 
 
 def test_a_page_that_cannot_be_decrypted_is_never_written_over():

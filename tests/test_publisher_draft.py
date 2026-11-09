@@ -26,10 +26,12 @@ from nostr.drafts import (
     MAX_INNER_PAYLOAD_BYTES,
     build_inner_event,
 )
+from nostr.bunker import SIGNER_NIP44_MAX_PLAINTEXT, nip44_plaintext_limit
 from nostr.publisher import (
     DraftDeleteJob,
     DraftPublishJob,
     _safe_reason,
+    draft_size_problem,
 )
 
 
@@ -124,6 +126,82 @@ def test_oversized_plaintext_fails_before_bunker_call():
 
     fake_bunker.nip44_encrypt_self.assert_not_called()
     assert failures and "too large" in failures[0].lower()
+
+
+# -- the limit depends on who encrypts (M1b) -----------------------------------
+
+def _note_of_bytes(size: int) -> dict:
+    """A short note whose serialized inner event is exactly ``size`` bytes."""
+    empty = build_inner_event(kind=1, content="", pubkey_hex=PK, created_at=1)
+    from nostr.drafts import serialize_inner_event
+    frame = len(serialize_inner_event(empty).encode("utf-8"))
+    return build_inner_event(kind=1, content="x" * (size - frame), pubkey_hex=PK, created_at=1)
+
+
+def _local_profile():
+    profile = _make_profile()
+    profile.signer = "local"
+    return profile
+
+
+def test_the_limit_is_nip44s_with_a_key_here_and_lower_through_a_signer_app():
+    assert nip44_plaintext_limit(_local_profile()) == MAX_INNER_PAYLOAD_BYTES == 65535
+    assert nip44_plaintext_limit(_make_profile()) == SIGNER_NIP44_MAX_PLAINTEXT == 40_960
+    from types import SimpleNamespace
+    assert nip44_plaintext_limit(SimpleNamespace(signer="remote")) == SIGNER_NIP44_MAX_PLAINTEXT
+
+
+@pytest.mark.parametrize("size, remote, local", [
+    (SIGNER_NIP44_MAX_PLAINTEXT, None, None),
+    (SIGNER_NIP44_MAX_PLAINTEXT + 1, "signer app", None),
+    (MAX_INNER_PAYLOAD_BYTES, "signer app", None),
+    (MAX_INNER_PAYLOAD_BYTES + 1, "signer app", "encryption allows"),
+])
+def test_a_draft_is_measured_against_what_its_signer_can_encrypt(size, remote, local):
+    inner = _note_of_bytes(size)
+    for profile, words in ((_make_profile(), remote), (_local_profile(), local)):
+        problem = draft_size_problem(inner, profile)
+        if words is None:
+            assert problem is None
+        else:
+            assert words in problem and "Split it into smaller drafts" in problem
+
+
+def test_a_draft_too_large_for_a_signer_app_fails_before_anything_is_sent():
+    # Between 40,961 and 65,535 bytes a signer app cannot encrypt the
+    # draft: said at once, in words, with the real limit.
+    job = DraftPublishJob(
+        relay_pool=MagicMock(), relay_directory=MagicMock(), session_pool=MagicMock(),
+        profile=_make_profile(), inner_event=_note_of_bytes(50_000), identifier="big")
+    failures: List[str] = []
+    job.failed.connect(failures.append)
+    fake_bunker = MagicMock()
+    job._on_bunker_ready(fake_bunker, publish_relays=["wss://r/"])
+    fake_bunker.nip44_encrypt_self.assert_not_called()
+    assert failures == ["This draft is too large. It has 50,000 bytes, and your signer app "
+                        "can encrypt at most 40,960. Split it into smaller drafts or publish "
+                        "it directly."]
+
+
+def test_the_same_draft_with_the_key_here_is_encrypted():
+    job = DraftPublishJob(
+        relay_pool=MagicMock(), relay_directory=MagicMock(), session_pool=MagicMock(),
+        profile=_local_profile(), inner_event=_note_of_bytes(50_000), identifier="big")
+    fake_signer = MagicMock()
+    job._on_bunker_ready(fake_signer, publish_relays=["wss://r/"])
+    fake_signer.nip44_encrypt_self.assert_called_once()
+
+
+def test_the_signer_apps_limit_is_said_in_german_too():
+    import i18n
+    i18n.install("de")
+    try:
+        problem = draft_size_problem(_note_of_bytes(50_000), _make_profile())
+    finally:
+        i18n.install("en")
+    assert problem == ("Er hat 50.000 Bytes, deine Signer-App kann höchstens 40.960 "
+                       "verschlüsseln. Teile ihn in kleinere Entwürfe auf oder veröffentliche "
+                       "ihn direkt.")
 
 
 def test_payload_within_cap_proceeds_to_encrypt():
@@ -276,3 +354,21 @@ def test_publish_job_emits_stashed_before_publish_completes():
     job._on_signed(signed, publish_relays=["wss://r/"])
     assert stash_events == [("x", "evid-stashed", 42)]
     assert completed == []
+
+
+def test_the_save_command_says_the_signer_apps_limit_before_starting(monkeypatch):
+    """The editor's Save as Draft asks the same helper, so a draft a
+    signer app cannot encrypt is refused in words before any job starts."""
+    import types
+    import main_window
+    from main_window import MainWindow
+    shown, made = [], []
+    monkeypatch.setattr(main_window, "inform", lambda parent, **kw: shown.append(kw))
+    monkeypatch.setattr(main_window, "DraftPublishJob", lambda **kw: made.append(kw))
+    host = types.SimpleNamespace(_is_stash_in_flight_for=lambda _ed: False)
+    choice = types.SimpleNamespace(identifier="big")
+    MainWindow._fire_draft_publish_job(host, object(), _make_profile(), choice,
+                                       _note_of_bytes(50_000))
+    assert made == []
+    assert [kw["title"] for kw in shown] == ["This draft is too large"]
+    assert "your signer app can encrypt at most 40,960" in shown[0]["message"]

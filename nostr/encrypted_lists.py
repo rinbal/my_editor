@@ -38,6 +38,12 @@ STANDUP's docs/editorial-contract.md). A list that is not paged keeps
 the format it always had: one event, the plaintext exactly as
 ``encode`` gives it.
 
+A page that page 0 names but no relay has (lost, or not arrived yet) holds
+entries nobody here knows. It never stops the list: the other pages are
+read (the read says which are missing), and writing goes on for what is
+known, leaving that page's place as it is, never written over, so what
+is on it is still read once it turns up.
+
 Every boundary (relay queries, publishing, signer, clock) is passed in,
 so a list is testable without relays, a signer or wall-clock time.
 """
@@ -64,7 +70,7 @@ __all__ = [
     "APP_DATA_KIND", "PAGE_PLAINTEXT_MAX", "NO_ANSWER", "UNREADABLE",
     "UP_TO_DATE", "SENT", "NOT_ACCEPTED", "FAILED",
     "EncryptedList", "ListQuery", "ListWords", "Paging", "PublishResult",
-    "event_mark", "is_list_of", "page_d_tag", "publish_once", "split_pages",
+    "event_mark", "is_list_of", "layout_pages", "page_d_tag", "publish_once", "split_pages",
 ]
 
 _log = logging.getLogger(__name__)
@@ -99,15 +105,24 @@ class ListWords:
     unreadable: str
     signer_silent: str
     old_encryption: str
+    # A page of the list is missing (shown, when given, while the rest is
+    # read and written as usual).
+    missing_page: str = ""
 
 
 @dataclass(frozen=True)
 class Paging:
     """How a long list is split: ``field`` is the list or map in the
-    plaintext that is spread over pages, at most ``max_bytes`` each."""
+    plaintext that is spread over pages, at most ``max_bytes`` each.
+
+    ``combine(earlier, later)`` is the value of a map key found on two
+    pages (a page that was missing and turned up again holds an older
+    copy). Without it the later page's value counts. A list's entries
+    are all kept, in page order, for ``decode`` to sort out."""
 
     field: str
     max_bytes: int = PAGE_PLAINTEXT_MAX
+    combine: Optional[Callable[[Any, Any], Any]] = None
 
 
 @dataclass
@@ -117,6 +132,7 @@ class PublishResult:
     value: Any = None           # SENT: what was written
     signed: Optional[dict] = None   # SENT: the event of page 0
     reason: str = ""            # FAILED: why
+    missing: Tuple[int, ...] = ()   # pages no relay had, left as they are
 
 
 @dataclass
@@ -207,6 +223,12 @@ def page_d_tag(d_tag: str, page: int) -> str:
     return d_tag if page == 0 else f"{d_tag}:{page}"
 
 
+def _missing(pages) -> List[int]:
+    """The numbers of the pages read that no relay had (page 0 is the
+    list itself: without it there is no list)."""
+    return [n for n, page in enumerate(pages) if n > 0 and page.event is None]
+
+
 def _serialize(payload) -> str:
     # Compact, ASCII only (non-ASCII as \u escapes): the feed list has
     # always been written so, and every page is measured as written.
@@ -221,16 +243,28 @@ def split_pages(payload: dict, paging: Paging) -> List[str]:
     """The plaintext of each page of ``payload``, whose ``paging.field`` is
     a list or a map. Every other key goes on page 0. Raises ValueError for
     an entry too large for any page."""
+    return list(layout_pages(payload, paging).values())
+
+
+def layout_pages(payload: dict, paging: Paging, keep: Sequence[int] = ()) -> Dict[int, str]:
+    """``split_pages``, leaving the pages in ``keep`` (never 0) out: the
+    plaintext of every other page by its number, in order. The entries
+    fill the other places from page 0 on; a place below the highest kept
+    one that no entry needs gets an empty page, so no older page there
+    is read as part of the list, and ``pages`` counts every place, the
+    kept ones included, so readers still look for them."""
     entries = payload.get(paging.field)
     if not isinstance(entries, (list, dict)):
         raise ValueError(f"{paging.field!r} must be a list or a map")
+    kept = sorted({int(n) for n in keep if int(n) > 0})
     header = {k: v for k, v in payload.items() if k not in (paging.field, "v", "page", "pages")}
     as_map = isinstance(entries, dict)
     items = list(entries.items()) if as_map else list(entries)
     # ``page`` and ``pages`` are written as numbers no wider than this one
-    # (there are never more pages than entries), so no page written is
-    # longer than it was measured with it.
-    widest = max(1, len(items))
+    # (there are never more places than entries and kept pages, nor than
+    # the highest kept page), so no page written is longer than it was
+    # measured with it.
+    widest = max(1, len(items) + len(kept), (kept[-1] + 1) if kept else 0)
 
     def shell(first: bool) -> Dict[str, Any]:
         page = {"v": PAGED_VERSION, "page": widest, "pages": widest}
@@ -258,16 +292,24 @@ def split_pages(payload: dict, paging: Paging) -> List[str]:
         chunks[-1].append(item)
         used += grow
 
-    pages = []
-    for index, chunk in enumerate(chunks):
-        page = {"v": PAGED_VERSION, "page": index, "pages": len(chunks)}
+    places: List[int] = []
+    number = 0
+    while len(places) < len(chunks) or (kept and number < kept[-1]):
+        if number not in kept:
+            places.append(number)
+        number += 1
+    chunks += [[] for _ in range(len(places) - len(chunks))]
+    total = max(places[-1], kept[-1] if kept else 0) + 1
+    pages: Dict[int, str] = {}
+    for index, chunk in zip(places, chunks):
+        page = {"v": PAGED_VERSION, "page": index, "pages": total}
         if index == 0:
             page.update(header)
         page[paging.field] = dict(chunk) if as_map else chunk
         text = _serialize(page)
         if len(text.encode("utf-8")) > paging.max_bytes:  # measured too short
             raise ValueError(f"page {index} came to {len(text)} bytes")
-        pages.append(text)
+        pages[index] = text
     return pages
 
 
@@ -346,14 +388,23 @@ class EncryptedList(QObject):
 
     # -- reading -------------------------------------------------------------
 
-    def read(self, profile, relays, on_done) -> None:
+    def read(self, profile, relays, on_done,
+             on_missing: Optional[Callable[[List[int]], None]] = None) -> None:
         """The newest list: ``on_done(result, event)`` with the decoded
         value, None when there is none, NO_ANSWER when none of the
         account's own relays answered (never taken for "none"), or
         UNREADABLE (with the reason already reported). ``event`` is the
-        list's event (page 0's). ``relays`` is ``(read, own)``."""
-        self._read_pages(profile, relays,
-                         lambda result, pages: on_done(result, pages[0].event if pages else None))
+        list's event (page 0's). ``relays`` is ``(read, own)``.
+
+        A page no relay has leaves the value without its entries:
+        ``on_missing(numbers)`` hears which pages, before ``on_done``."""
+        def done(result, pages) -> None:
+            missing = _missing(pages)
+            if missing and on_missing is not None and result not in (UNREADABLE, NO_ANSWER):
+                on_missing(missing)
+            on_done(result, pages[0].event if pages else None)
+
+        self._read_pages(profile, relays, done)
 
     def _read_pages(self, profile, relays, on_done) -> None:
         """``read``, answering ``on_done(result, pages)`` with every page
@@ -420,13 +471,16 @@ class EncryptedList(QObject):
                 on_done(NO_ANSWER, [])
                 return
             pages = [first] + [_Page(newest_of(events, tag)) for tag in tags]
-            if any(page.event is None or not str(page.event.get("content") or "").strip()
-                   for page in pages[1:]):
-                # A page is missing: written but not (yet) on these relays.
-                # Writing now would drop what is on it, so it waits.
-                _log.info("the list %s is missing a page", self._name)
-                on_done(NO_ANSWER, [])
-                return
+            for page in pages[1:]:
+                if page.event is not None and not str(page.event.get("content") or "").strip():
+                    page.event = None
+            if _missing(pages):
+                # Written but not on these relays (lost, or not arrived
+                # yet): read without it, and written around it, so what
+                # is on it is neither lost nor in the way.
+                _log.info("the list %s is missing pages %s", self._name, _missing(pages))
+                if self._words.missing_page:
+                    self._on_status(self._words.missing_page)
             payloads = [payload]
 
             def next_page(index: int) -> None:
@@ -434,6 +488,9 @@ class EncryptedList(QObject):
                     _finish(self._joined(payloads), pages)
                     return
                 page = pages[index]
+                if page.event is None:
+                    next_page(index + 1)
+                    return
 
                 def got(text: str) -> None:
                     page.plaintext = text
@@ -495,10 +552,14 @@ class EncryptedList(QObject):
         keys, and the field put back together in page order."""
         name = self._paging.field
         joined = {k: v for k, v in payloads[0].items() if k not in ("v", "page", "pages")}
+        combine = self._paging.combine
         if isinstance(payloads[0][name], dict):
             together: Any = {}
             for page in payloads:
-                together.update(page[name])
+                for key, value in page[name].items():
+                    if combine is not None and key in together:
+                        value = combine(together[key], value)
+                    together[key] = value
         else:
             together = []
             for page in payloads:
@@ -592,11 +653,11 @@ class EncryptedList(QObject):
         self.relays(profile, lambda relays: self._read_pages(profile, relays, _on_remote),
                     reading=True)
 
-    def _plaintexts(self, value, now: int) -> List[str]:
+    def _plaintexts(self, value, now: int, keep: Sequence[int] = ()) -> Dict[int, str]:
         payload = self._encode(value, now)
         if self._paging is None:
-            return [_serialize(payload)]
-        return split_pages(payload, self._paging)
+            return {0: _serialize(payload)}
+        return layout_pages(payload, self._paging, keep)
 
     def _write(self, profile, content, remote_pages: List[_Page], read_pages: List[_Page],
                state, on_done) -> None:
@@ -606,8 +667,11 @@ class EncryptedList(QObject):
         def failed(reason: str) -> None:
             on_done(PublishResult(FAILED, reason=reason))
 
+        # A page no relay had is left as it is: its place stays in the
+        # list, and nothing is written over it.
+        missing = tuple(_missing(read_pages))
         try:
-            plaintexts = self._plaintexts(content, int(self._clock()))
+            plaintexts = self._plaintexts(content, int(self._clock()), missing)
         except ValueError as exc:
             failed(str(exc))
             return
@@ -617,9 +681,9 @@ class EncryptedList(QObject):
         # page after the first that reads as written already is not
         # signed again; page 0 always is, because only a newer page 0
         # tells the other devices there is something new.
-        later = [i for i in range(len(plaintexts) - 1, 0, -1)
-                 if not (i < len(remote_pages) and remote_pages[i].event is not None
-                         and remote_pages[i].plaintext == plaintexts[i])]
+        later = [i for i in sorted(plaintexts, reverse=True) if i > 0
+                 and not (i < len(remote_pages) and remote_pages[i].event is not None
+                          and remote_pages[i].plaintext == plaintexts[i])]
         order = later + [0]
         dated: List[int] = []
 
@@ -665,7 +729,7 @@ class EncryptedList(QObject):
                 if step + 1 < len(order):
                     page(step + 1)
                     return
-                on_done(PublishResult(SENT, value=content, signed=signed))
+                on_done(PublishResult(SENT, value=content, signed=signed, missing=missing))
 
             page(0)
 

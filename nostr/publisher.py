@@ -49,7 +49,7 @@ from . import CLIENT_NAME
 from .article_details import AUTHOR_MARKER
 from .bech32 import bech32_decode, decode_npub, decode_nprofile
 from .blossom.hashes import blob_url, hash_from_url
-from .bunker import BunkerClient, BunkerSessionPool
+from .bunker import BunkerClient, BunkerSessionPool, nip44_plaintext_limit
 from .drafts import (
     DRAFT_WRAP_KIND,
     MAX_INNER_PAYLOAD_BYTES,
@@ -810,6 +810,34 @@ class PublishJob(PublishPipeline):
 
 
 # --------------------------------------------------------------------------- #
+# How large a draft may be                                                    #
+# --------------------------------------------------------------------------- #
+
+def draft_size_problem(inner: dict, profile) -> Optional[str]:
+    """Why ``inner`` is too large to save as a draft of ``profile``, in
+    words to show, or None when it fits.
+
+    The encrypted part of a draft is one NIP-44 message: 65,535 bytes
+    with the key kept on this computer, 40,960 through a signer app,
+    whose answer is NIP-44 too (``bunker.nip44_plaintext_limit``). Said
+    here, before anything is sent, so the person learns the real limit
+    and not a signer app's technical refusal. Raises what
+    ``serialize_inner_event`` raises for an event it cannot serialize.
+    """
+    size = len(serialize_inner_event(inner).encode("utf-8"))
+    limit = nip44_plaintext_limit(profile)
+    if size <= limit:
+        return None
+    numbers = display_locale()
+    values = {"size": numbers.toString(size), "limit": numbers.toString(limit)}
+    if limit < MAX_INNER_PAYLOAD_BYTES:
+        return _("It has {size} bytes, and your signer app can encrypt at most {limit}. "
+                 "Split it into smaller drafts or publish it directly.").format(**values)
+    return _("It has {size} bytes, and encryption allows {limit}. "
+             "Split it into smaller drafts or publish it directly.").format(**values)
+
+
+# --------------------------------------------------------------------------- #
 # DraftPublishJob: stash an unsigned inner event as a NIP-37 draft            #
 # --------------------------------------------------------------------------- #
 
@@ -959,21 +987,17 @@ class DraftPublishJob(QObject):
             return
         try:
             plaintext = serialize_inner_event(self._inner_event)
+            # Pre-flight against what this account's signer can encrypt
+            # (65,535 bytes here, 40,960 through a signer app). The signer
+            # would refuse larger payloads anyway; said here, the person
+            # reads the real limit, and no approval prompt is spent on an
+            # inevitable failure.
+            too_large = draft_size_problem(self._inner_event, self._profile)
         except (KeyError, TypeError, ValueError) as exc:
             self._emit_failed(_("Could not serialize draft: {reason}").format(reason=exc))
             return
-        # Pre-flight against the NIP-44 v2 plaintext cap (65535 bytes
-        # post-encode). The bunker would reject larger payloads anyway,
-        # surfacing it here yields a clearer message and avoids one
-        # round-trip + approval prompt for an inevitable failure.
-        payload_bytes = len(plaintext.encode("utf-8"))
-        if payload_bytes > MAX_INNER_PAYLOAD_BYTES:
-            numbers = display_locale()
-            self._emit_failed(_(
-                "Draft is too large to encrypt ({size} of {limit} bytes). "
-                "Split it across smaller drafts or publish directly."
-            ).format(size=numbers.toString(payload_bytes),
-                     limit=numbers.toString(MAX_INNER_PAYLOAD_BYTES)))
+        if too_large:
+            self._emit_failed(_("This draft is too large. {reason}").format(reason=too_large))
             return
         self._emit_status(
             _("Encrypting the draft. Approve the request in your signer app if it asks…")
