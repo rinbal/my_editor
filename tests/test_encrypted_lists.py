@@ -293,7 +293,7 @@ def test_every_new_page_is_dated_after_the_one_it_replaces_even_with_a_slow_cloc
     "ENC[" + "x" * PAGE_PAYLOAD_MAX + "]",                                  # too long
     "ENC[" + json.dumps({"v": 1, "page": 1, "pages": 9, "seen": {}}) + "]",  # not this list's
     "",                                                                     # emptied
-])
+], ids=["too long", "not this list's", "emptied"])  # short: Windows keeps the test's name
 def test_a_write_is_dated_after_pages_that_do_not_count_too(content):
     # RG-M1 11: a relay keeps the newer of two, so a page dated before a
     # (future-dated) page that did not count would never replace it, and
