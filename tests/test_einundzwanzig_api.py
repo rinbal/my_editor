@@ -99,9 +99,11 @@ def make(*, script=None, signer=None, service=SERVICE, clock=None, server=True):
 
 
 def run(env, method, *args, **kwargs):
-    """Call ``method``, settle the transport, return (successes, failures)."""
+    """Call ``method``, settle the transport, return (successes, failures).
+    A call refused before sending answers on the next turn (signed_api)."""
     ok, failed = [], []
     getattr(env.api, method)(*args, ok.append, failed.append, **kwargs)
+    QCoreApplication.processEvents()
     env.nam.settle()
     return ok, failed
 

@@ -32,6 +32,7 @@ forgets it.
 
 from __future__ import annotations
 
+import hmac
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlencode
@@ -41,7 +42,7 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply
 
 from .. import events as nostr_events
 from ..http_answers import clean_text, parse_retry_after
-from ..signed_api import Call, SignedJsonApi, SignFn, json_body, reply_header
+from ..signed_api import Call, SignedJsonApi, SignFn, answer_later, json_body, reply_header
 from . import answers, formats, views
 from .errors import Code, StandupError, error_from_answer, refused
 from .formats import FormatError, need
@@ -66,14 +67,15 @@ SITE_VIEWS = ("mine", "open", "release", "done")
 MEMBERSHIP_FIELDS = frozenset({"away_until", "hand_back", "notices"})
 MESSAGE_CHANNELS = ("conversation", "internal")
 
-# Transport failures that happen before a request leaves this computer:
-# whatever it was, the server never saw it.
+# Transport failures that happen before a request is written: no
+# connection, no name, no TLS, no proxy, a scheme Qt has no way to send.
+# The server never saw it. Everything else (a network that went away, a
+# session of the system's network that failed) may come after the
+# request was written, so it may have been stored and goes to the lookup.
 _NOT_SENT = frozenset({
     QNetworkReply.NetworkError.ConnectionRefusedError,
     QNetworkReply.NetworkError.HostNotFoundError,
     QNetworkReply.NetworkError.SslHandshakeFailedError,
-    QNetworkReply.NetworkError.NetworkSessionFailedError,
-    QNetworkReply.NetworkError.TemporaryNetworkFailureError,
     QNetworkReply.NetworkError.ProxyConnectionRefusedError,
     QNetworkReply.NetworkError.ProxyNotFoundError,
     QNetworkReply.NetworkError.ProxyAuthenticationRequiredError,
@@ -97,6 +99,9 @@ class StandupCall(Call):
     auth: str = Auth.NONE
     # The token a call carries instead of the current session's.
     bearer: str = field(default="", repr=False)
+    # The token the call was sent with, so a late refusal of it does not
+    # throw away a session opened since.
+    carried: str = field(default="", repr=False)
     session_retried: bool = False
     # The answer's status (a receipt's 200 says "the server had it").
     status: int = 0
@@ -165,6 +170,7 @@ class StandupApi(SignedJsonApi):
         if call.auth != Auth.SESSION:
             return
         token = call.bearer or (self._session.token if self._session else "")
+        call.carried = token
         if token:
             request.setRawHeader(b"Authorization", b"Bearer " + token.encode("ascii"))
 
@@ -207,10 +213,15 @@ class StandupApi(SignedJsonApi):
                 error.code == Code.SESSION_EXPIRED
                 or (error.code == Code.AUTH_INVALID and error.reason == "session")):
             # The token ran out or the server no longer knows it: one new
-            # session, then the same call again.
+            # session, then the same call again. Only the token this call
+            # carried is forgotten: one opened meanwhile is kept and used.
             call.session_retried = True
-            self._session = None
-            self._with_session(call)
+            if self._carries_current(call):
+                self._session = None
+            if self._session_usable():
+                self._send(call, None)
+            else:
+                self._with_session(call)
             return True
         if (call.auth == Auth.SIGNED and stale and not call.resigned
                 and error.code == Code.AUTH_INVALID):
@@ -239,7 +250,7 @@ class StandupApi(SignedJsonApi):
             return call
         problem = self._unavailable(call)
         if problem is not None:
-            self._fail(call, problem)
+            answer_later(self._fail, call, problem)
         elif self._session_usable():
             self._send(call, None)
         else:
@@ -254,10 +265,15 @@ class StandupApi(SignedJsonApi):
 
     def _refuse(self, method: str, path: str, problem: str, on_success,
                 on_failure) -> StandupCall:
-        """A request that is not sent: ``on_failure`` with why."""
+        """A request that is not sent: ``on_failure`` with why, on the
+        next turn."""
         call = self._build(method, path, None, Auth.NONE, None, on_success, on_failure)
-        self._fail(call, refused(problem))
+        answer_later(self._fail, call, refused(problem))
         return call
+
+    def _carries_current(self, call: StandupCall) -> bool:
+        return (self._session is not None and bool(call.carried)
+                and hmac.compare_digest(call.carried, self._session.token))
 
     def _session_usable(self) -> bool:
         return (self._session is not None
@@ -302,15 +318,19 @@ class StandupApi(SignedJsonApi):
 
     def close_session(self, on_done: Callable[[], None]) -> None:
         """``DELETE /api/session``: the token is forgotten here at once,
-        and the server is asked to revoke it; ``on_done`` either way."""
+        and the server is asked to revoke it; ``on_done`` either way, on a
+        later turn. The revocation is not cancelled by :meth:`stop` (the
+        sign-out that follows must not keep the token alive on the
+        server), and ``on_done`` still comes."""
         session, self._session = self._session, None
         if session is None or not self._server:
-            on_done()
+            answer_later(on_done)
             return
         call = self._build("DELETE", "/api/session", None, Auth.SESSION,
                            answers.parse_acknowledged, lambda _v: on_done(),
                            lambda _e: on_done())
         call.bearer = session.token
+        call.cancellable = False
         self._send(call, None)
 
     # -- instance and publications (12.3) ------------------------------------

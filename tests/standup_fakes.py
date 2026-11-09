@@ -23,6 +23,7 @@ from dataclasses import field as dc_field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, urlsplit
 
+from PySide6.QtCore import QCoreApplication
 from PySide6.QtNetwork import QNetworkReply
 
 from nostr import crypto, events, nip98
@@ -208,6 +209,18 @@ class StandupNam(FakeNam):
     def sendCustomRequest(self, request, verb, data=None):
         verb = bytes(verb).decode("ascii")
         return self._issue(verb, request, bytes(data) if data is not None else None)
+
+    def settle(self, *, limit: int = 50) -> None:
+        """Finish every reply, and every answer the client gives on a
+        later turn (a refusal before sending) with whatever it starts."""
+        for _ in range(limit):
+            QCoreApplication.processEvents()
+            if not [r for r in self.issued if not r.settled]:
+                QCoreApplication.processEvents()
+                if not [r for r in self.issued if not r.settled]:
+                    return
+            super().settle(limit=limit)
+        raise AssertionError("fake transport did not settle")
 
 
 @dataclass

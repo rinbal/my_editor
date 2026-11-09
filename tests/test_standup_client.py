@@ -17,6 +17,7 @@ import json
 from dataclasses import replace
 
 import pytest
+from PySide6.QtNetwork import QNetworkReply
 
 from nostr import crypto, events
 from nostr.standup import answers, conversation, formats, views
@@ -24,6 +25,7 @@ from nostr.standup import crypto as scrypto
 from nostr.standup.client import StandupApi
 from nostr.standup.errors import Code, StandupError
 from tests.membership_fakes import FakeClock
+from tests.membership_fakes import transport_failure
 from tests.standup_fakes import (
     ADDRESS,
     DROP_AFTER,
@@ -192,6 +194,49 @@ def test_closing_a_session_revokes_it_on_the_server():
     assert done == [True] and world.server.sessions == {} and not api.has_session
 
 
+def test_closing_a_session_then_stopping_still_revokes_it_and_answers():
+    # RG-M1 7: sign-out closes the session and stops the client at once;
+    # the revocation must still reach the server and on_done still come.
+    world = World()
+    api = world.api()
+    world.ok(api.my_submissions)
+    done = []
+    api.close_session(lambda: done.append(True))
+    api.stop()
+    world.nam.settle()
+    assert done == [True] and world.server.sessions == {}
+
+
+def test_closing_without_a_session_answers_after_it_returned():
+    world = World()
+    order = []
+    world.api().close_session(lambda: order.append("done"))
+    order.append("returned")
+    world.nam.settle()
+    assert order == ["returned", "done"]
+
+
+def test_a_late_refusal_of_an_old_token_keeps_the_session_opened_since():
+    # RG-M1 9: the refusal is for the token the call carried, not for a
+    # session that was opened while it travelled.
+    world = World()
+    api = world.api()
+    world.ok(api.my_submissions)
+    world.server.expire_sessions()
+    late = []
+    api.my_submissions(lambda v: late.append(("ok", v)), lambda e: late.append(("err", e)))
+    refused_reply = world.nam.issued[-1]
+    opened = []
+    api.open_session(opened.append, opened.append)
+    world.nam.issued[-1].finish()                 # the new session is open first
+    assert opened and api.has_session
+    refused_reply.finish()                        # then the old token's refusal arrives
+    world.nam.settle()
+    assert late == [("ok", ())]
+    assert api.has_session
+    assert len(world.signers["writer"].requests) == 2   # no third session was opened
+
+
 # -- submitting -------------------------------------------------------------------
 
 def test_a_matching_receipt_is_confirmed():
@@ -309,6 +354,42 @@ def test_no_answer_after_sending_may_have_stored_it():
         submission_for(sk("writer")).body, ok, fail))
     assert error.code == Code.OFFLINE and error.maybe_stored
     assert len(world.server.submissions) == 1
+
+
+@pytest.mark.parametrize("error, stored", [
+    (QNetworkReply.NetworkError.ConnectionRefusedError, False),
+    (QNetworkReply.NetworkError.HostNotFoundError, False),
+    (QNetworkReply.NetworkError.SslHandshakeFailedError, False),
+    (QNetworkReply.NetworkError.ProxyNotFoundError, False),
+    # RG-M1 8: these may come after the request was written.
+    (QNetworkReply.NetworkError.TemporaryNetworkFailureError, True),
+    (QNetworkReply.NetworkError.NetworkSessionFailedError, True),
+    (QNetworkReply.NetworkError.RemoteHostClosedError, True),
+])
+def test_only_a_failure_before_writing_says_nothing_was_stored(error, stored):
+    world = World()
+    world.nam = StandupNam(responder=lambda verb, request, body: transport_failure(error))
+    failed = world.err(lambda ok, fail: world.api().submit(
+        submission_for(sk("writer")).body, ok, fail))
+    assert failed.maybe_stored is stored
+
+
+def test_a_refusal_before_sending_answers_after_the_call_returned():
+    # RG-M1 6: never inside the call, so a caller is never answered while
+    # it is still setting up.
+    world = World()
+    api = world.api()
+    unconfigured = StandupApi(SignAs(sk("writer")), server="", nam=world.nam,
+                              clock=world.clock)
+    for start in (lambda ok, fail: api.lookup([], ok, fail),
+                  lambda ok, fail: api.submit({"v": 1}, ok, fail),
+                  unconfigured.instance, unconfigured.my_submissions):
+        order = []
+        start(lambda v: order.append("ok"), lambda e: order.append("failed"))
+        order.append("returned")
+        world.nam.settle()
+        assert order == ["returned", "failed"]
+    assert world.server.requests == []
 
 
 @pytest.mark.parametrize("fault, code, stored", [

@@ -56,6 +56,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from i18n import N_, _
 
 from ..encrypted_lists import EncryptedList
+from ..signed_api import answer_later
 from ..list_results import ListRead, ListWords, PublishResult, PublishStatus, ReadStatus
 from ..paged_list import Paging
 from . import formats
@@ -499,7 +500,8 @@ class SubmissionsList(_AccountList):
             problem = entry_problem(entry)
             if problem:
                 failed = PublishResult(PublishStatus.FAILED, reason=problem)
-                on_done([RecordResult(RecordStatus.NOT_STORED, e, failed) for e in entries])
+                answer_later(on_done, [RecordResult(RecordStatus.NOT_STORED, e, failed)
+                                       for e in entries])
                 return
             fresh.append(replace(entry, updated_at=max(entry.updated_at, now,
                                                        self._latest(entry.sid) + 1)))

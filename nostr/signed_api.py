@@ -6,9 +6,13 @@ One call is: a fresh NIP-98 credential signed immediately before it is
 sent (``nostr/nip98.py``; an event id is accepted once and only for 60
 seconds), the request with exactly the bytes that were hashed, a reply
 read within a size limit, and exactly one of ``on_success`` and
-``on_failure``. A credential that took most of its window to be approved
-on the person's phone and then expired on the way is signed once more.
-A cancelled call fires nothing. Nothing a server sends raises into Qt.
+``on_failure``, never inside the call that started it: a call refused
+before anything is sent answers on the next turn (:func:`answer_later`),
+like every other answer. A credential that took most of its window to be
+approved on the person's phone and then expired on the way is signed
+once more. A cancelled call fires nothing, unless it was made not to be
+cancellable (a revocation that must still reach the server). Nothing a
+server sends raises into Qt.
 
 What differs between APIs is left to subclasses: where a request goes
 and which URL its signature names (``url_for``, ``request_url_for``),
@@ -32,7 +36,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 from urllib.parse import urlsplit
 
-from PySide6.QtCore import QByteArray, QObject, QUrl
+from PySide6.QtCore import QByteArray, QObject, QTimer, QUrl
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
 from . import nip98
@@ -72,6 +76,18 @@ class Call:
     max_response_bytes: Optional[int] = None
     # Who signed the request that was sent (the NIP-98 event's pubkey).
     signed_by: Optional[str] = None
+    # False for a call that cancel() leaves to finish and answer.
+    cancellable: bool = True
+
+
+def answer_later(callback: Callable[..., None], *args: Any) -> None:
+    """``callback(*args)`` on the next turn of the event loop. For an
+    answer known before anything was sent (a refusal, nothing to do): it
+    still arrives after the call returned, as every other answer does, so
+    a caller never hears it while it is still setting up. Bound to no
+    object on purpose: whoever answers decides then whether the answer
+    still matters (a cancelled call is no longer live)."""
+    QTimer.singleShot(0, lambda: callback(*args))
 
 
 def json_body(payload: Any) -> bytes:
@@ -229,7 +245,7 @@ class SignedJsonApi(QObject):
     def _run(self, call: Call) -> None:
         problem = self._unavailable(call)
         if problem is not None:
-            self._fail(call, problem)
+            answer_later(self._fail, call, problem)
             return
         if call.signed:
             self._sign_and_send(call)
@@ -237,7 +253,7 @@ class SignedJsonApi(QObject):
             self._send(call, None)
 
     def _live(self, call: Call) -> bool:
-        return not call.done and call.generation == self._generation
+        return not call.done and (not call.cancellable or call.generation == self._generation)
 
     def _sign_and_send(self, call: Call) -> None:
         # Built here, immediately before signing, every time: an event id
@@ -315,7 +331,8 @@ class SignedJsonApi(QObject):
             reply = self._nam.post(request, QByteArray())
 
         key = id(reply)
-        self._inflight[key] = reply
+        if call.cancellable:
+            self._inflight[key] = reply
         flags = {"oversize": False}
         limit = call.max_response_bytes or self.max_response_bytes
 

@@ -260,6 +260,15 @@ def test_an_entry_held_is_exactly_the_one_recorded():
     assert not holds_exactly(SubmissionItems((Tombstone(value.sid, NOW + 1),)), value)
 
 
+def test_a_malformed_entry_is_refused_after_the_call_returned():
+    store, relay, _clock = make()
+    order = []
+    store.record(replace(entry(1), sid="x"), lambda result: order.append(result.status))
+    order.append("returned")
+    settle(6)
+    assert order == ["returned", RecordStatus.NOT_STORED] and relay.published == []
+
+
 def test_a_recorded_entry_wins_over_its_older_self_even_in_the_same_second():
     store, relay, _clock = make()
     first = entry(revision=2)
