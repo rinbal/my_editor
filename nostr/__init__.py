@@ -13,5 +13,11 @@ via NIP-46. No private key ever lives inside the editor process.
 # out per-event.
 CLIENT_NAME: str = "MyEditor"
 
+# MyEditor's own page and icon, as a signer app shows them where the person
+# approves a connection (NIP-46 ``url`` and ``image``). The icon is the one
+# packaging/site/build_site.py publishes with the install guide.
+CLIENT_URL: str = "https://rinbal.github.io/my_editor/"
+CLIENT_IMAGE: str = "https://rinbal.github.io/my_editor/install/icon.png"
+
 # Which relays to use is nostr/outbox's answer, by role; the relays
 # MyEditor picks by itself are in nostr/outbox/defaults.py.

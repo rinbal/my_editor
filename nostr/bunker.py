@@ -40,7 +40,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from i18n import _
 
-from . import CLIENT_NAME, crypto, events, refs
+from . import CLIENT_IMAGE, CLIENT_NAME, CLIENT_URL, crypto, events, refs
 from .relay import KeySignIn, RelayPool, Subscription
 from .signer_limits import SIGNER_ANSWER_MAX, SIGNER_NIP44_MAX_PLAINTEXT, sign_answer_size
 
@@ -58,12 +58,17 @@ DEFAULT_CONNECT_TIMEOUT_MS = 90_000
 DEFAULT_RPC_TIMEOUT_MS = 30_000
 
 # ``ping`` is the one call no signer asks a human about, so the only thing
-# it waits on is a relay round-trip. Giving it the full RPC budget meant a
-# signer that simply does not implement ping (Amber does not) burned 30
-# seconds before ``reattach`` even tried the fallback that would have
-# worked, and a signer that is asleep cost 60 seconds to say nothing. This
-# is a liveness probe: if it has not come back in a few seconds, the answer
-# we need is somewhere else.
+# it waits on is a relay round-trip. Amber answers it (since 4.0.3, and
+# grants it on connect since 6.2.0), as do Primal, Amethyst, Aegis and
+# Bunker46 (research/signer-pairing.md, section 1). What stays silent is a
+# signer that is asleep (an Android app the system stopped, Primal on an
+# iPhone without its background sound), an Amber older than 4.0.3, or one
+# that drops a method it has no handler for, as nsec.app does with any it
+# does not know (whether it answers ping was not verified). Giving ping the
+# full RPC budget meant such a signer burned 30 seconds before
+# ``reattach`` even tried the fallback that would have worked. This is a
+# liveness probe: if it has not come back in a few seconds, the answer we
+# need is somewhere else.
 PING_TIMEOUT_MS = 6_000
 
 # A signer that answered anything this recently is taken to be there
@@ -135,11 +140,20 @@ def humanize_failure(reason: str) -> str:
 # Transport only, never anyone's home relay. theforest.nostr1.com and
 # relay.primal.net are among Amber's own defaults, so a phone that pairs
 # usually already listens on one of them.
+#
+# The ones that state no small content cap come first (contract 12.5, the
+# NIP-11 documents of 2026-11-09 in research/signer-pairing.md section 7):
+# relay.primal.net and relay.damus.io take messages of 1,000,000 bytes,
+# nos.lol 131,072 with no content cap, theforest.nostr1.com 262,140
+# characters of content. relay.nsec.app comes last: nsec.app answers only
+# there, whatever relays the link names, so without it nsec.app could
+# never reach MyEditor (it publishes no NIP-11 document).
 NIP46_RELAYS: tuple = (
     "wss://relay.primal.net",
     "wss://relay.damus.io",
     "wss://nos.lol",
     "wss://theforest.nostr1.com",
+    "wss://relay.nsec.app",
 )
 
 
@@ -238,13 +252,19 @@ def build_nostrconnect_uri(
     *,
     name: str = CLIENT_NAME,
     perms: str = DEFAULT_PERMS,
-    url: str = "",
-    image: str = "",
+    url: str = CLIENT_URL,
+    image: str = CLIENT_IMAGE,
 ) -> str:
     """Build a NIP-46 ``nostrconnect://`` URI from the client's keypair.
 
     Format:
         nostrconnect://<client-pubkey>?relay=<wss://...>&secret=<...>&perms=<...>&name=<...>
+            &url=<...>&image=<...>
+
+    ``url`` and ``image`` are MyEditor's own page and icon by default:
+    Amber, Amethyst, Aegis and nsec.app show them on the screen where the
+    person approves the connection, and nsec.app refuses a link without
+    any of name, url and image (research/signer-pairing.md, section 2).
 
     Multiple ``relay`` parameters are appended in order. URL-encoding is
     applied so signers parsing the URI with a standard query-string

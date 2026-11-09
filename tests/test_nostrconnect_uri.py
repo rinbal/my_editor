@@ -109,3 +109,25 @@ def test_custom_name_overrides_default():
     uri = build_nostrconnect_uri(PK, ["wss://r"], "s", name="Custom App")
     _, _, qs = _split(uri)
     assert qs["name"] == ["Custom App"]
+
+
+def test_the_link_names_myeditors_own_page_and_icon_by_default():
+    # P1: Amber, Amethyst, Aegis and nsec.app show them where the person
+    # approves the connection; nsec.app refuses a link with none of name,
+    # url and image (research/signer-pairing.md, section 2).
+    from nostr import CLIENT_IMAGE, CLIENT_URL
+    _, _, qs = _split(build_nostrconnect_uri(PK, ["wss://r"], "s"))
+    assert qs["url"] == [CLIENT_URL] == ["https://rinbal.github.io/my_editor/"]
+    assert qs["image"] == [CLIENT_IMAGE] == [
+        "https://rinbal.github.io/my_editor/install/icon.png"]
+    assert qs["name"] == ["MyEditor"]
+
+
+def test_the_pairing_relays_end_with_the_one_nsec_app_answers_on():
+    # Contract 12.5 (feat/redaktion 4076b9b): relays with no small content
+    # cap first, and relay.nsec.app, where nsec.app answers, whatever the
+    # link names.
+    from nostr.bunker import NIP46_RELAYS
+    assert NIP46_RELAYS[-1] == "wss://relay.nsec.app"
+    assert NIP46_RELAYS[:2] == ("wss://relay.primal.net", "wss://relay.damus.io")
+    assert "wss://relay.nip46.com" not in NIP46_RELAYS
