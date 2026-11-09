@@ -102,7 +102,7 @@ from .tag_field import TagField
 _WIDTH = 760
 
 
-class _ArticleCard(QFrame):
+class ArticleCard(QFrame):
     """The article as readers see it in a list: cover, title, summary, and
     the author with the reading time."""
 
@@ -209,7 +209,7 @@ _LABEL_ALIGNMENT = ((Qt.AlignmentFlag.AlignRight if sys.platform == "darwin"
                      else Qt.AlignmentFlag.AlignLeft) | Qt.AlignmentFlag.AlignTop)
 
 
-def _form() -> QFormLayout:
+def form_layout() -> QFormLayout:
     form = QFormLayout()
     form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
     form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
@@ -220,7 +220,7 @@ def _form() -> QFormLayout:
     return form
 
 
-def _label(text: str, buddy: QWidget) -> QLabel:
+def form_label(text: str, buddy: QWidget) -> QLabel:
     """A field's label: its words with a colon, beside the field's first
     line."""
     label = QLabel(text)
@@ -396,7 +396,7 @@ class PublishArticleDialog(QDialog):
         page.addLayout(self._columns, 1)
         self._columns.setContentsMargins(0, 0, 4, 0)
         self._columns.setSpacing(20)
-        self._card = _ArticleCard(self._is_dark)
+        self._card = ArticleCard(self._is_dark)
         self._columns.addWidget(self._card, 0, Qt.AlignmentFlag.AlignTop)
         # Made before the form, which names its account (the cover's
         # uploads are this account's), but placed after it in the sheet.
@@ -428,7 +428,7 @@ class PublishArticleDialog(QDialog):
         The labels and fields are kept here, so the form's own items are
         never wrapped (Python would hold items the form deletes)."""
         if label:
-            words = _label(label, buddy)
+            words = form_label(label, buddy)
             self._labels.append(words)
             self._form.addRow(words, field)
         else:
@@ -436,7 +436,7 @@ class PublishArticleDialog(QDialog):
         self._fields.append(field)
 
     def _build_form(self, default_title: str, default_slug: str) -> QFormLayout:
-        form = self._form = _form()
+        form = self._form = form_layout()
         self._labels: List[QLabel] = []
         self._fields: List[QWidget] = []
 

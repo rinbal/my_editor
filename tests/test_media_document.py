@@ -85,6 +85,7 @@ class _Window:
     _local_image_bytes = staticmethod(MainWindow._local_image_bytes)
     _local_objects = MainWindow._local_objects
     _uploads_needed = MainWindow._uploads_needed
+    _say_pictures_missing = MainWindow._say_pictures_missing
     _after_uploads = MainWindow._after_uploads
     _agree_to_upload = MainWindow._agree_to_upload
     _file_label = staticmethod(MainWindow._file_label)

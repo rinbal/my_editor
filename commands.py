@@ -152,6 +152,8 @@ NO_SHORTCUT: Tuple[Tuple[str, str, str], ...] = (
      "counterpart; a one-off."),
     ("nostr.insert_mention", "all",
      "Typing @ at the start of a word does it, as in every app that mentions people."),
+    ("nostr.submit_publication", "all",
+     "Once per finished text, and never by accident: a sheet asks where to first."),
     ("nostr.draft_relays", "all", "A one-off account setup."),
     ("nostr.imports_badge", "all", "A preference, set once."),
     ("nostr.membership", "all", "A one-off."),

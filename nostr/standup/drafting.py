@@ -47,6 +47,8 @@ TOO_MANY_PICTURES = N_("A submission has at most {count} pictures.")
 TOO_MANY_PEOPLE = N_("A submission names at most {count} co-authors.")
 ALREADY_SUBMITTED = N_("You have submitted this text to {publication} already.")
 MESSAGE_TOO_LONG = N_("A message has at most {count} characters.")
+ROUND_UNKNOWN = N_("Whether you have submitted this text before couldn’t be checked. "
+                   "Try again later.")
 
 # A submission of a round that ended this way may be followed by the next
 # round (contract 2); in any other state it is still open there.

@@ -334,15 +334,18 @@ class PeopleRow(QWidget):
 
 
 class AccountRow(QWidget):
-    """"Publishing as" and the account, with a menu of the others.
-    ``switched(profile)`` when another is chosen; it becomes the account
-    in use, as at the window's own account menu."""
+    """"Publishing as" (or ``label``, with ``accessible`` naming the
+    button, ``{name}`` the account's) and the account, with a menu of the
+    others. ``switched(profile)`` when another is chosen; it becomes the
+    account in use, as at the window's own account menu."""
 
     switched = Signal(object)
 
     def __init__(self, profile: Profile, store: ProfileStore, avatars: AvatarStore, *,
-                 is_dark: bool, parent: Optional[QWidget] = None) -> None:
+                 is_dark: bool, label: str = "", accessible: str = "",
+                 parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        self._accessible = accessible or _("Publishing as {name}")
         self._profile = profile
         self._store = store
         self._avatars = avatars
@@ -350,8 +353,7 @@ class AccountRow(QWidget):
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(4)
-        label = QLabel(_("Publishing as"))
-        row.addWidget(label)
+        row.addWidget(QLabel(label or _("Publishing as")))
         self.button = QToolButton()
         self.button.setObjectName("profile_switch")
         self.button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
@@ -380,7 +382,7 @@ class AccountRow(QWidget):
         name = profile.display_name or profile.npub_short()
         self.button.setText(f"  {name}")
         self.button.setToolTip(profile.npub_short())
-        self.button.setAccessibleName(_("Publishing as {name}").format(name=name))
+        self.button.setAccessibleName(self._accessible.format(name=name))
         self.menu.clear()
         profiles = self._store.list()
         if not profiles:

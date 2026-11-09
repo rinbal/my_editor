@@ -276,7 +276,7 @@ from nostr.known_people import KnownPeople, Person
 from nostr.media.assets import ASSET_SCHEME, AssetState, asset_key, parse_asset_key
 from nostr.imports.sources.nostr import RelayQueryAdapter
 from nostr.media.manager import MAX_MEDIA_BYTES, AssetManager
-from nostr.media.media_visibility import MediaVisibility
+from nostr.media.media_visibility import PRIVATE, MediaVisibility
 from nostr.media.private_library import PrivateLibrary
 from nostr.media.upload_wait import UploadWait
 from nostr.media.publish_copy import PublicCopyMaker
@@ -311,6 +311,9 @@ from nostr.ui.media_library_dialog import MediaLibraryDialog, format_size
 from nostr.ui.media_saver import MediaSaver, save_failure, saves_failure
 from nostr.ui.media_servers_dialog import MediaServersDialog
 from nostr.ui.publish_article_dialog import PublishArticleDialog
+from nostr.standup import drafting
+from nostr.ui.standup_submit import StandupWriter, thumbnail
+from nostr.ui.standup_submit_sheet import SubmitSheet
 from nostr.ui.publish_copy_dialog import resolve_pick
 from nostr.ui.publish_note_dialog import PublishNoteDialog
 from nostr.ui.save_destination_dialog import SaveDestination, SaveDestinationDialog
@@ -1788,6 +1791,7 @@ class MainWindow(QMainWindow):
         self._update_knit_actions()
         self._update_print_actions()
         self._update_zoom_commands()
+        self._update_submit_command()
         # The note a file viewer's Insert into Note goes to: the one in
         # front last.
         front = self.current_editor()
@@ -2746,6 +2750,13 @@ class MainWindow(QMainWindow):
             Command("nostr.publish_article", _("Publish as Article…"), NOSTR,
                     "Ctrl+Shift+A", nostr=True, listed_as=_("Publish as article"), keywords=("long", "blog")),
             triggered=self._on_nostr_publish_article)
+        # The article, end to end encrypted, to a STANDUP publication's
+        # editorial team: enabled for an article (see _update_submit_command).
+        self.act_nostr_submit = add(
+            Command("nostr.submit_publication", _("Submit to a Publication…"), NOSTR,
+                    nostr=True, listed_as=_("Submit to a publication"),
+                    keywords=("standup", "editorial", "redaktion")),
+            triggered=self._on_nostr_submit_publication)
         # Media (Blossom) - browse the user's uploaded blobs, upload new
         # ones, or insert one into the current document at the cursor.
         self.act_nostr_media = add(
@@ -3142,6 +3153,8 @@ class MainWindow(QMainWindow):
         m_nostr = self.menuBar().addMenu("&Nostr")
         m_nostr.addAction(self.act_nostr_publish_note)
         m_nostr.addAction(self.act_nostr_publish_article)
+        m_nostr.addAction(self.act_nostr_submit)
+        m_nostr.aboutToShow.connect(self._update_submit_command)
         m_nostr.addSeparator()
         m_nostr.addAction(self.act_nostr_media)
         m_nostr.addAction(self.act_nostr_insert_image)
@@ -4861,13 +4874,16 @@ class MainWindow(QMainWindow):
         why) when a picture of it cannot be found."""
         assets, missing = self._local_objects(ed)
         if missing:
-            inform(self, title=ngettext("A picture can’t be found",
-                                        "{count} pictures can’t be found",
-                                        len(missing)).format(count=len(missing)),
-                   message=_("“{name}” is not on this computer any more. Insert it again, "
-                             "or delete it, to go on.").format(name=missing[0]), nostr=True)
+            self._say_pictures_missing(missing)
             return None
         return assets
+
+    def _say_pictures_missing(self, missing) -> None:
+        inform(self, title=ngettext("A picture can’t be found",
+                                    "{count} pictures can’t be found",
+                                    len(missing)).format(count=len(missing)),
+               message=_("“{name}” is not on this computer any more. Insert it again, "
+                         "or delete it, to go on.").format(name=missing[0]), nostr=True)
 
     def _agree_to_upload(self, assets, *, draft: bool) -> bool:
         count = len(assets)
@@ -4959,7 +4975,7 @@ class MainWindow(QMainWindow):
         if waits:
             self.status.clearMessage()
 
-    def _publish_payload(self, ed, flavor: str) -> tuple[str, list]:
+    def _publish_payload(self, ed, flavor: str, *, keep_local: bool = False) -> tuple[str, list]:
         """Document text for a signed event, plus what its media is.
 
         toPlainText() emits U+FFFC for every image, so a published note
@@ -4979,7 +4995,9 @@ class MainWindow(QMainWindow):
         rewritten either way; the only effect is whether the image gets
         described. A picture beside the document's file goes out at the
         address publishing uploaded it to (_asset_named), its name in the
-        document unchanged.
+        document unchanged. With ``keep_local`` a file on this computer only
+        is written as its asset key (a submission encrypts and uploads it
+        itself, drafting.py) instead of being left out.
         """
         records: dict = {}
 
@@ -5007,8 +5025,10 @@ class MainWindow(QMainWindow):
                 if asset is not None:
                     remember(asset, name, fmt)
                 return name
-            if asset is None or not asset.is_uploaded:
+            if asset is None:
                 return None
+            if not asset.is_uploaded:
+                return asset.key if keep_local else None
             url = _published_address(asset)
             remember(asset, url, fmt)
             return url
@@ -6883,7 +6903,8 @@ class MainWindow(QMainWindow):
         "view.line_numbers", "view.syntax_highlighting", "view.paper_mode", "view.toolbar",
         "view.highlight_line", "view.write", "view.preview", "view.split",
         "edit.footnote_jump", "nostr.publish_note", "nostr.publish_article",
-        "nostr.insert_image", "nostr.insert_mention", "nostr.insert_reference",
+        "nostr.submit_publication", "nostr.insert_image", "nostr.insert_mention",
+        "nostr.insert_reference",
         "nostr.insert_audio_video"})
     _DOCUMENT_PREFIXES = ("format.", "insert.")
 
@@ -8493,6 +8514,8 @@ class MainWindow(QMainWindow):
             enabled = active
             if command.id in self._LOCAL_KEY_COMMANDS:
                 enabled = active and current is not None and current.is_local
+            elif command.id == "nostr.submit_publication":
+                enabled = active and bool(self._wants_article_header(self.current_editor()))
             if dimmed and self._is_document_command(command.id):
                 kept[command.id] = enabled
             else:
@@ -8964,6 +8987,10 @@ class MainWindow(QMainWindow):
         # The membership window speaks for one identity; never show one
         # account's membership, invoice or name to another.
         self._membership.close_window()
+        # Submissions on their way stop answering; the media keys and the
+        # list of submissions go, what was read is written first (13).
+        if getattr(self, "_standup_writer", None) is not None:
+            self._standup_writer.stop()
 
     def _on_nostr_select_profile(self, profile: Profile):
         previous = self._profile_store.default()
@@ -10061,6 +10088,97 @@ class MainWindow(QMainWindow):
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self._publish_sheet = dialog
         dialog.open()
+
+    # -- submitting to a STANDUP publication (plan 10.2) -----------------------
+
+    def _update_submit_command(self, *_args) -> None:
+        """Submit to a Publication… is for an article (as its head on the
+        page), while an account is in use."""
+        action = getattr(self, "act_nostr_submit", None)
+        state = getattr(self, "nostr_state", None)
+        if action is not None and state is not None \
+                and not getattr(self, "_document_commands_dimmed", False):
+            action.setEnabled(bool(state.active
+                                   and self._wants_article_header(self.current_editor())))
+
+    def _standup(self) -> StandupWriter:
+        writer = getattr(self, "_standup_writer", None)
+        if writer is None:
+            writer = self._standup_writer = StandupWriter(
+                session_pool=self._session_pool, relay_pool=self._relay_pool,
+                relay_directory=self._relay_directory, media_store=self._media_store,
+                entitled_relays=self._entitled_relays, parent=self)
+            writer.status.connect(lambda text: self.statusBar().showMessage(text, 8000))
+        return writer
+
+    def _on_nostr_submit_publication(self) -> None:
+        active = self._profile_store.default()
+        ed = self.current_editor()
+        if active is None or not self._wants_article_header(ed):
+            return
+        local = self._uploads_needed(ed)
+        if local is None:
+            return                              # a picture is gone: said why
+        draft, cover, pictures, private = self._submission_of(ed, active, local)
+        unreadable = [p.name for p in draft.pictures if not p.data]
+        if unreadable:
+            self._say_pictures_missing(unreadable)
+            return
+        if not draft.content.strip():
+            inform(self, title=_("Nothing to submit"),
+                   message=_("The current document is empty."), nostr=True)
+            return
+        name = active.display_name or active.npub_short()
+        byline = " · ".join([name, _("Article")] + ([ngettext(
+            "{count} picture", "{count} pictures", pictures).format(count=pictures)]
+            if pictures else []))
+        sheet = SubmitSheet(writer=self._standup(), draft=draft, cover=cover, byline=byline,
+                            private_names=private, profile=active, store=self._profile_store,
+                            avatars=self._avatars, request_logo=self._avatar_batcher.request,
+                            is_dark=self.is_dark_theme, parent=self)
+        sheet.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self._publish_sheet = sheet                 # follows the appearance while open
+        sheet.open()
+
+    def _submission_of(self, ed, profile, local) -> tuple:
+        """``(draft, cover, pictures, private)``: the article of ``ed`` as
+        drafting.ArticleDraft (its files on this computer only kept by
+        their asset keys, to be encrypted with it), its cover as a picture
+        for the card, how many pictures it shows, and the names of those
+        of the private library, which the editorial team could not open."""
+        content, _media = self._publish_payload(ed, "markdown", keep_local=True)
+        details = self._article_details_of(ed)
+        title = details.title or default_title(content, self._preview_name)
+        d = (details.identifier
+             or self._link_name_for_file(getattr(ed, "_file_path", None), profile.user_pubkey)
+             or slugify(title) or hashlib.sha256(title.encode()).hexdigest()[:16])
+        names = list(dict.fromkeys(iter_image_names(ed.document())))
+        cover_asset = self._asset_named(ed, details.image) if details.image else None
+        private = []
+        for name in names + ([details.image] if details.image else []):
+            asset = self._asset_named(ed, name)
+            if asset is not None and asset.is_uploaded \
+                    and self._media_visibility.state_of(asset.sha256) == PRIVATE:
+                private.append(self._file_label(asset))
+        if cover_asset is not None and not cover_asset.is_uploaded \
+                and cover_asset not in local:
+            local = [*local, cover_asset]
+        pictures = tuple(drafting.LocalPicture(
+            key=asset.key, name=os.path.basename(asset.local_path) or self._file_label(asset),
+            mime=asset.mime, alt=asset.alt, data=self._asset_manager.resolve_bytes(asset.key)
+            or b"") for asset in local)
+        cover_bytes = (self._asset_manager.resolve_bytes(cover_asset.key)
+                       if cover_asset is not None else None) or b""
+        cover = QPixmap()
+        cover.loadFromData(cover_bytes)
+        image = (cover_asset.key if cover_asset is not None and not cover_asset.is_uploaded
+                 else details.image)
+        draft = drafting.ArticleDraft(
+            d=d, title=title, summary=details.summary, content=content.rstrip(),
+            tags=tuple(details.hashtags), image=image, authors=tuple(details.coauthors),
+            pictures=pictures, thumb=thumbnail(cover_bytes) if cover_bytes else None,
+            published_at=details.published_at)
+        return draft, cover, len(names), list(dict.fromkeys(private))
 
     @staticmethod
     def _file_name(path: str) -> str:
