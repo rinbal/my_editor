@@ -28,6 +28,7 @@ from nostr.standup import crypto as scrypto
 from nostr.standup.client import StandupApi
 from nostr.standup.drafting import ArticleDraft, Choice, LocalPicture
 from nostr.standup.entries import RecordResult, RecordStatus, takes_place_of
+from nostr.standup.errors import Code, StandupError
 from nostr.standup.submitting import MessageStatus, Phase, Ports, Step, Submitting
 from nostr.standup.watcher import resolve_unconfirmed
 from tests.membership_fakes import FakeClock
@@ -642,6 +643,31 @@ def test_eingereicht_comes_only_from_the_receipts_handler():
         Submitting._confirmed = original
     first = next(i for i, p in enumerate(world.seen) if p.step is Step.SUBMITTED)
     assert len(calls) == 1 and world.seen[first].receipt is calls[0].receipt
+
+
+@pytest.mark.parametrize("error, handler", [
+    (StandupError(Code.OFFLINE, maybe_stored=True), "_check"),
+    (StandupError(Code.CONFLICT, detail={"round": 2, "open": False}), "_other_round"),
+    (StandupError(Code.CONFLICT, detail={"round": 2, "open": True}), "_round_open"),
+    (StandupError(Code.CONFLICT, detail={"round": 2}), "_refused"),
+    (StandupError(Code.CONFLICT, detail={"round": "2", "open": False}), "_refused"),
+    (StandupError(Code.STALE_REVISION, detail={"round": 2, "open": False}), "_refused"),
+    (StandupError(Code.OFFLINE), "_refused"),
+], ids=["maybe stored", "closed round", "open round", "no open", "round as text", "not a conflict",
+        "offline"])
+def test_what_a_refusal_leads_to_is_read_from_the_table(error, handler):
+    # Lesson 10: no handler decides what follows a refusal; each kind is an
+    # event of its own, and the table names its handler, before and once
+    # the request went out.
+    from nostr.standup.submitting import _refusal
+    for step in (Step.SIGNING, Step.SENDING):
+        assert Submitting._TABLE[(step, type(_refusal(error)))] == handler
+
+
+def test_an_upload_failure_is_tried_again_from_where_it_happened_by_the_table():
+    from nostr.standup.submitting import _UploadFailed
+    assert Submitting._TABLE[(Step.UPLOADING, _UploadFailed)] == "_upload_failed"
+    assert Submitting._TABLE[(Step.REUPLOADING, _UploadFailed)] == "_reupload_failed"
 
 
 def test_after_stop_nothing_more_is_asked_or_said():

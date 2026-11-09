@@ -208,6 +208,30 @@ class _MessageSigned:
     """The signer sealed the first message; it goes to the server now."""
 
 
+@dataclass(frozen=True)
+class _MaybeStored:
+    """A request that went out got no answer it could be judged by: the
+    server may hold the body, so the lookup says."""
+
+    error: StandupError
+
+
+@dataclass(frozen=True)
+class _OtherRound:
+    """A 409 ``conflict`` naming the round the server stores for this work
+    (contract 2), closed: nothing of this body was stored."""
+
+    latest: int
+
+
+@dataclass(frozen=True)
+class _RoundOpen:
+    """As :class:`_OtherRound`, the round still open: the work is handed
+    in there already."""
+
+    latest: int
+
+
 # Refusals that trying again could get past, and from where.
 _RETRY_AT = {
     Code.OFFLINE: Step.SIGNING, Code.TIMEOUT: Step.SIGNING, Code.SERVER: Step.SIGNING,
@@ -217,15 +241,18 @@ _RETRY_AT = {
 }
 
 
-def _expected_round(error: StandupError) -> Optional[Tuple[int, bool]]:
-    """``(round, open)`` of a 409 ``conflict`` that names the round the
-    server stores for this work (contract 2), or None for any other
-    refusal (one without both is not taken as one)."""
+def _refusal(error: StandupError) -> Any:
+    """What a failed submit is for the table (lesson 10): one that may be
+    stored (:class:`_MaybeStored`), a conflict naming the round the server
+    stores for this work, closed or open (one without both is not taken
+    as one), or the refusal itself."""
+    if error.maybe_stored:
+        return _MaybeStored(error)
     latest, still_open = error.detail.get("round"), error.detail.get("open")
     if error.code != Code.CONFLICT or not formats.is_int(latest) \
             or not isinstance(still_open, bool):
-        return None
-    return latest, still_open
+        return error
+    return _RoundOpen(latest) if still_open else _OtherRound(latest)
 
 
 class Submitting:
@@ -322,10 +349,16 @@ class Submitting:
         (Step.RECORDING, RecordResult): "_recorded",
         (Step.SIGNING, _Sending): "_sending",
         (Step.SIGNING, StandupError): "_refused",
+        (Step.SIGNING, _MaybeStored): "_check",
+        (Step.SIGNING, _OtherRound): "_other_round",
+        (Step.SIGNING, _RoundOpen): "_round_open",
         (Step.SENDING, views.Confirmed): "_confirmed",
         (Step.SENDING, views.BlobsMissing): "_blobs_missing",
         (Step.SENDING, views.Mismatch): "_check",
         (Step.SENDING, StandupError): "_refused",
+        (Step.SENDING, _MaybeStored): "_check",
+        (Step.SENDING, _OtherRound): "_other_round",
+        (Step.SENDING, _RoundOpen): "_round_open",
         (Step.CHECKING, views.Confirmed): "_confirmed",
         (Step.CHECKING, views.BlobsMissing): "_blobs_missing",
         (Step.CHECKING, NotStored): "_not_stored",
@@ -333,7 +366,7 @@ class Submitting:
         (Step.CHECKING, Different): "_elsewhere",
         (Step.CHECKING, StandupError): "_lookup_failed",
         (Step.REUPLOADING, _Uploaded): "_reuploaded",
-        (Step.REUPLOADING, _UploadFailed): "_upload_failed",
+        (Step.REUPLOADING, _UploadFailed): "_reupload_failed",
         (Step.SUBMITTED, _MessageSigned): "_message_signed",
         (Step.SUBMITTED, _MessageDone): "_message_done",
     }
@@ -431,8 +464,10 @@ class Submitting:
         self._seal_and_record()
 
     def _upload_failed(self, event: _UploadFailed) -> None:
-        retry = Step.REUPLOADING if self._progress.step is Step.REUPLOADING else Step.UPLOADING
-        self._fail(words.UPLOAD_FAILED, retry, said=event.said)
+        self._fail(words.UPLOAD_FAILED, Step.UPLOADING, said=event.said)
+
+    def _reupload_failed(self, event: _UploadFailed) -> None:
+        self._fail(words.UPLOAD_FAILED, Step.REUPLOADING, said=event.said)
 
     # -- 3. and 4. the revision, and the entry on the list -------------------
 
@@ -482,36 +517,34 @@ class Submitting:
         self._show(Step.SIGNING, failure=None)
         answer = self._answer()
         self._stop = self._ports.submit(self._sealed.body, lambda: answer(_Sending()),
-                                        answer, answer)
+                                        answer, lambda error: answer(_refusal(error)))
 
     def _sending(self, _event: _Sending) -> None:
         self._show(Step.SENDING, sent=True)
 
     def _refused(self, error: StandupError) -> None:
         self._stop = None
-        if error.maybe_stored:
-            self._check(error)
-            return
-        expected = _expected_round(error)
-        if expected is not None:
-            self._other_round(*expected)
-            return
         self._fail(words.refusal(error.code), _RETRY_AT.get(error.code))
 
-    def _other_round(self, latest: int, still_open: bool) -> None:
-        """The server expects another round (contract 2): its latest for
-        this work is ``latest``, still open or not. Nothing of this body
-        was stored, so its entry goes; the run builds round ``latest + 1``
-        once, or says the work is handed in there."""
+    def _round_open(self, _conflict: _RoundOpen) -> None:
+        """The work is handed in in the server's latest round, still open
+        (contract 2): nothing of this body was stored, so its entry goes."""
+        self._stop = None
         self._ports.forget(self._sealed.entry)
-        if still_open:
-            self._fail(drafting.ALREADY_SUBMITTED, None, detail=words.TEXT_STAYS)
-            return
-        if self._rebuilt or latest + 1 == self._round:
+        self._fail(drafting.ALREADY_SUBMITTED, None, detail=words.TEXT_STAYS)
+
+    def _other_round(self, conflict: _OtherRound) -> None:
+        """The server expects another round (contract 2): its latest for
+        this work is closed. Nothing of this body was stored, so its entry
+        goes; the run builds round ``latest + 1`` once (a server that names
+        the same round again must not hold it in a loop)."""
+        self._stop = None
+        self._ports.forget(self._sealed.entry)
+        if self._rebuilt or conflict.latest + 1 == self._round:
             self._fail(words.NOT_TAKEN, None)
             return
         self._rebuilt = True
-        self._round = latest + 1
+        self._round = conflict.latest + 1
         self._seal_and_record()
 
     # -- 6. the receipt, or the lookup ---------------------------------------
@@ -543,6 +576,7 @@ class Submitting:
         self._send()                # the same body, a new signature (12.4)
 
     def _check(self, _why: Any) -> None:
+        self._stop = None
         self._lookups = 0
         self._show(Step.CHECKING)
         self._look_up()
@@ -583,8 +617,7 @@ class Submitting:
                                  lambda: answer(_MessageDone(False)))
 
     def _message_signed(self, _event: _MessageSigned) -> None:
-        if self._progress.message is MessageStatus.SIGNING:
-            self._show(Step.SUBMITTED, message=MessageStatus.SENDING)
+        self._show(Step.SUBMITTED, message=MessageStatus.SENDING)
 
     def _message_done(self, event: _MessageDone) -> None:
         self._show(Step.SUBMITTED,
