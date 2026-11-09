@@ -502,10 +502,15 @@ def action_path(name: str, submission_id: str) -> Optional[str]:
     return template.format(sid=submission_id) if template else None
 
 
-def signed_action_problem(signed: Optional[SignedRecord], *, path: str, submission_id: str,
-                          method: str = "POST",
-                          signers: Optional[Iterable[str]] = None) -> Optional[str]:
-    """Why a stored signed action cannot be shown as confirmed, or None.
+class SignedActionInvalid(ValueError):
+    """Why a stored signed action does not count (:func:`signed_action_body`)."""
+
+
+def signed_action_body(signed: Optional[SignedRecord], *, path: str, submission_id: str,
+                       method: str = "POST",
+                       signers: Optional[Iterable[str]] = None) -> Dict[str, Any]:
+    """The body of a stored signed action, once it is verified; raises
+    :class:`SignedActionInvalid` with the reason otherwise.
 
     Contract 10: a valid kind 27235 signature; one ``payload`` tag equal
     to SHA-256 of the stored body; the URL's path is the action's (the
@@ -513,32 +518,49 @@ def signed_action_problem(signed: Optional[SignedRecord], *, path: str, submissi
     ``submission_id``; and, when ``signers`` is given, a signer who holds
     the role shown (the member list comes from the server)."""
     if signed is None:
-        return "nothing signed is stored"
+        raise SignedActionInvalid("nothing signed is stored")
     event = signed.event
     if not nostr_events.is_verified_event(event, kind=27235):
-        return "the signature does not verify"
+        raise SignedActionInvalid("the signature does not verify")
     payloads = formats.tag_values(event, "payload")
     if payloads != [formats.sha256_hex(signed.body)]:
-        return "the signature covers another body"
+        raise SignedActionInvalid("the signature covers another body")
     methods = formats.tag_values(event, "method")
     if len(methods) != 1 or methods[0].upper() != method.upper():
-        return "the signature is for another method"
-    urls = formats.tag_values(event, "u")
-    try:
-        signed_path = urlsplit(urls[0]).path if len(urls) == 1 else None
-    except ValueError:
-        signed_path = None
-    if signed_path != path:
-        return "the signature is for another action"
+        raise SignedActionInvalid("the signature is for another method")
+    if signed_path(signed) != path:
+        raise SignedActionInvalid("the signature is for another action")
     try:
         body = formats.strict_json(signed.body, limit=_MAX_SIGNED_BODY)
     except FormatError:
-        return "the stored body is not JSON"
+        raise SignedActionInvalid("the stored body is not JSON") from None
     if not isinstance(body, dict) or body.get("submission_id") != submission_id:
-        return "the stored body is for another submission"
+        raise SignedActionInvalid("the stored body is for another submission")
     if signers is not None and event["pubkey"] not in set(signers):
-        return "signed by someone without that role"
+        raise SignedActionInvalid("signed by someone without that role")
+    return body
+
+
+def signed_action_problem(signed: Optional[SignedRecord], *, path: str, submission_id: str,
+                          method: str = "POST",
+                          signers: Optional[Iterable[str]] = None) -> Optional[str]:
+    """Why a stored signed action cannot be shown as confirmed, or None
+    (:func:`signed_action_body`)."""
+    try:
+        signed_action_body(signed, path=path, submission_id=submission_id, method=method,
+                           signers=signers)
+    except SignedActionInvalid as exc:
+        return str(exc)
     return None
+
+
+def signed_path(signed: SignedRecord) -> Optional[str]:
+    """The path of the one URL a signed action was signed for, or None."""
+    urls = formats.tag_values(signed.event, "u")
+    try:
+        return urlsplit(urls[0]).path if len(urls) == 1 else None
+    except ValueError:
+        return None
 
 
 __all__ = [
@@ -548,5 +570,6 @@ __all__ = [
     "SubmissionView", "TURN_TYPES", "TimelineEvent", "TimelineItem", "Turn",
     "action_path", "check_receipt", "expected_receipt", "lookup_confirms", "parse_item",
     "parse_lookup_item", "parse_receipt", "parse_revision_record", "parse_signed",
-    "parse_timeline", "parse_turn", "parse_view", "signed_action_problem",
+    "parse_timeline", "parse_turn", "parse_view", "SignedActionInvalid", "signed_action_body",
+    "signed_action_problem", "signed_path",
 ]

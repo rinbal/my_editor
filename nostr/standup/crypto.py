@@ -428,18 +428,22 @@ def open_wrap_local(wrap: Any, recipient_sk: bytes) -> dict:
 
 
 def open_wrap_with_signer(client, wrap: Any, on_success: Callable[[dict], None],
-                          on_failure: Callable[[str], None]) -> None:
+                          on_failure: Callable[[str], None], *,
+                          on_invalid: Optional[Callable[[WrapInvalid], None]] = None) -> None:
     """A wrap's plaintext, opened by the account's signer
-    (``nip44_decrypt(eph, ct)``). ``on_failure`` gets a short reason."""
+    (``nip44_decrypt(eph, ct)``). ``on_failure`` gets the signer's short
+    reason; ``on_invalid`` a :class:`WrapInvalid` for a wrap that is not
+    one or holds something else (without it, ``on_failure`` its words)."""
+    invalid = on_invalid or (lambda exc: on_failure(str(exc)))
     if not formats.is_wrap(wrap):
-        on_failure("not a key wrap")
+        invalid(WrapInvalid("not a key wrap"))
         return
 
     def opened(text: str) -> None:
         try:
             value = read_wrap_plaintext(text)
         except WrapInvalid as exc:
-            on_failure(str(exc))
+            invalid(exc)
             return
         on_success(value)
 

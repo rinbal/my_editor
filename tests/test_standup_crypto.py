@@ -440,6 +440,18 @@ def test_a_wrap_opens_through_the_signer_too():
     assert got[1] == "not a key wrap"
 
 
+def test_a_wrap_that_holds_something_else_is_told_apart_from_a_signer_saying_no():
+    from tests.standup_fakes import KeySigner
+    invalid, failed = [], []
+    other = sc.make_wrap({"v": 2, "type": "submission-key"}, pk("writer"))
+    sc.open_wrap_with_signer(KeySigner(sk("writer")), other, failed.append, failed.append,
+                             on_invalid=invalid.append)
+    assert isinstance(invalid[0], sc.WrapInvalid) and failed == []
+    sc.open_wrap_with_signer(KeySigner(sk("writer"), refuse="declined"), W["wraps"]["writer"],
+                             failed.append, failed.append, on_invalid=invalid.append)
+    assert failed == ["declined"] and len(invalid) == 1
+
+
 @pytest.mark.parametrize("wrap", [None, {}, {"eph": "0" * 64, "ct": "x"},
                                   {"eph": pk("writer"), "ct": "x", "extra": 1}])
 def test_a_wrap_of_the_wrong_shape_is_not_opened(wrap):
