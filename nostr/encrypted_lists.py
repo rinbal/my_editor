@@ -146,6 +146,26 @@ class ListRead:
         return found + [read.event for read in self.later.values()]
 
 
+@dataclass
+class _Request:
+    """A publish asked for: what it merges and who hears how it ended. A
+    request that waits takes over the hooks of a newer one and keeps
+    every listener (each hears the outcome of the write that carried
+    its state)."""
+
+    profile: Any
+    state: Callable[[], Tuple[Any, Any, Optional[Tuple[int, str]]]]
+    on_done: List[Callable[["PublishResult"], None]]
+    on_merged: Optional[Callable[[Any, Any, Optional[dict]], None]]
+    up_to_date: Optional[Callable[[Any, Any], bool]]
+
+    def carrying(self, earlier: Optional["_Request"]) -> "_Request":
+        if earlier is None:
+            return self
+        return _Request(self.profile, self.state, earlier.on_done + self.on_done,
+                        self.on_merged, self.up_to_date)
+
+
 @dataclass(frozen=True)
 class PublishResult:
     status: PublishStatus
@@ -218,6 +238,21 @@ class EncryptedList(QObject):
         self._untagged = untagged or ""
         self._on_status = on_status or (lambda _text: None)
         self._name = name or d_tag
+        # One write at a time per account (13): two at once would date
+        # their pages alike and mix them. Accounts with a write on its
+        # way, and the request that goes next for each.
+        self._running: set = set()
+        self._next: Dict[str, _Request] = {}
+
+    @property
+    def busy(self) -> bool:
+        """Whether a write is on its way, for any account."""
+        return bool(self._running)
+
+    def is_writing(self, profile) -> bool:
+        """Whether a write for ``profile``'s account is on its way (it
+        carries the latest state: what comes now goes next)."""
+        return profile.user_pubkey.lower() in self._running
 
     # -- relays ------------------------------------------------------------
 
@@ -305,7 +340,37 @@ class EncryptedList(QObject):
         ``up_to_date(merged, remote)`` says when nothing needs writing
         (default: ``same``); an incomplete list is always written, so it
         is complete again. ``on_done`` gets a PublishResult.
+
+        One write runs at a time per account. A publish asked while one
+        runs waits and goes next, with ``state()`` asked then; several
+        asked meanwhile go as one, the newest's hooks, every ``on_done``
+        answered with its outcome.
         """
+        account = profile.user_pubkey.lower()
+        request = _Request(profile, state, [on_done], on_merged, up_to_date)
+        if account in self._running:
+            self._next[account] = request.carrying(self._next.get(account))
+            return
+        self._running.add(account)
+        self._run(account, request)
+
+    def _run(self, account: str, request: _Request) -> None:
+        def finished(result: PublishResult) -> None:
+            following = self._next.pop(account, None)
+            if following is None:
+                self._running.discard(account)
+            for listener in request.on_done:
+                listener(result)
+            if following is not None:
+                # What a listener asked for meanwhile goes along with it.
+                asked = self._next.pop(account, None)
+                self._run(account, asked.carrying(following) if asked else following)
+
+        self._write(request, finished)
+
+    def _write(self, request: _Request, on_done: Callable[[PublishResult], None]) -> None:
+        profile, state = request.profile, request.state
+        on_merged, up_to_date = request.on_merged, request.up_to_date
 
         def _on_read(read: ListRead) -> None:
             if not read.readable:

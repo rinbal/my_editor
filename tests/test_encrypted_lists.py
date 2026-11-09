@@ -611,3 +611,77 @@ def test_writing_over_the_list_last_seen_signs_only_the_pages_that_change():
     second, _ = publish(store, items + [submission(300)], base=first.value, mark=mark)
     assert second.status is PublishStatus.SENT
     assert [e["tags"][0][1] for e in signer.signed] == [f"{SUBS}:{pages - 1}", SUBS]
+
+
+# -- one write at a time (RG-M0 finding 4) ------------------------------------------
+
+def test_one_write_runs_at_a_time_and_what_comes_meanwhile_goes_next_as_one():
+    # Two writes at once dated their pages alike, and the NIP-01 tie
+    # break (the lower id) mixed their pages.
+    relay = Relay()
+    signer = FakeSigner(hold=True)
+    store = read_state_list(relay, signer=signer)
+    local = {"a": 1}
+    answers = {"first": [], "second": [], "third": []}
+
+    def ask(name):
+        store.publish(PROFILE, state=lambda: (None, dict(local), None),
+                      on_done=answers[name].append)
+
+    ask("first")
+    settle(20)
+    assert signer.waiting and store.is_writing(PROFILE)
+    local["b"] = 2
+    ask("second")
+    local["c"] = 3
+    ask("third")
+    settle(20)
+    reads = len(relay.queries)
+    signer.release()
+    settle(20)
+    assert [len(a) for a in answers.values()] == [1, 0, 0]
+    assert len(relay.queries) == reads + 1          # the next write, as one
+    signer.release()
+    settle(20)
+    assert [len(a) for a in answers.values()] == [1, 1, 1]
+    assert answers["second"][0] is answers["third"][0]
+    assert answers["third"][0].status is PublishStatus.SENT
+    assert relay.published.count(D) == 2
+    assert relay.page(D)["seen"] == {"a": 1, "b": 2, "c": 3}
+    assert not store.busy and not store.is_writing(PROFILE)
+
+
+def test_a_write_asked_for_by_a_listener_goes_next_with_the_waiting_one():
+    relay = Relay()
+    signer = FakeSigner(hold=True)
+    store = read_state_list(relay, signer=signer)
+    answers = []
+
+    def again(result):
+        answers.append(("first", result.status))
+        store.publish(PROFILE, state=lambda: (None, {"c": 3}, None),
+                      on_done=lambda r: answers.append(("asked", r.status)))
+
+    store.publish(PROFILE, state=lambda: (None, {"a": 1}, None), on_done=again)
+    settle(20)
+    store.publish(PROFILE, state=lambda: (None, {"b": 2}, None),
+                  on_done=lambda r: answers.append(("waiting", r.status)))
+    for _ in range(3):
+        signer.release()
+        settle(20)
+    assert answers == [("first", PublishStatus.SENT), ("waiting", PublishStatus.SENT),
+                       ("asked", PublishStatus.SENT)]
+    assert relay.published.count(D) == 2 and relay.page(D)["seen"] == {"a": 1, "c": 3}
+
+
+def test_another_accounts_write_does_not_wait():
+    relay = Relay()
+    signer = FakeSigner(hold=True)
+    store = read_state_list(relay, signer=signer)
+    store.publish(PROFILE, state=lambda: (None, {"a": 1}, None), on_done=print)
+    settle(20)
+    reads = len(relay.queries)
+    other = SimpleNamespace(user_pubkey="ee" * 32, bunker_relays=[])
+    store.publish(other, state=lambda: (None, {"b": 1}, None), on_done=print)
+    settle(20)
+    assert len(relay.queries) == reads + 1 and store.is_writing(other)

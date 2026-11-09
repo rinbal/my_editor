@@ -490,10 +490,14 @@ class TestMerging:
         assert store.is_busy
         signer.release()
         settle()
+        # One write at a time (the shared list's rule): the second is
+        # signed only once the first is done.
+        assert len(relay.published) == 1 and len(signer.waiting) == 1
         signer.release()
         settle()
         assert [f["url"] for f in relay.payload()["feeds"]] == [
             FEED_URL, "https://later.example/feed"]
+        assert len(relay.published) == 2
         assert not store.is_busy
 
     def test_nothing_is_published_when_the_relays_have_it_already(self, tmp_path):

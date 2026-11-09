@@ -55,7 +55,7 @@ import json
 import logging
 import time as _time
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QEventLoop, QObject, QTimer, Signal
 
@@ -183,10 +183,6 @@ class FeedSubscriptionStore(QObject):
         self._send_read_times = False
         self._legacy_merged = False
         self._cancel_timer: Optional[Callable[[], None]] = None
-        # Publishes on their way, by generation; one at a time per account.
-        self._runs: Dict[int, int] = {}
-        # Edits made while a publish was on its way go out right after it.
-        self._publish_after_run = False
         self._read_only = False
 
     # -- profile binding ---------------------------------------------------
@@ -208,7 +204,6 @@ class FeedSubscriptionStore(QObject):
         self._dirty = self._send_read_times = self._legacy_merged = False
         self._retries = 0
         self._known = False
-        self._publish_after_run = False
         if profile is None:
             self.feeds_changed.emit()
             return
@@ -296,7 +291,7 @@ class FeedSubscriptionStore(QObject):
     @property
     def is_busy(self) -> bool:
         """Whether something is still waiting to be published, or on its way."""
-        return self._cancel_timer is not None or any(self._runs.values())
+        return self._cancel_timer is not None or self._list.busy
 
     # -- mutations ---------------------------------------------------------
 
@@ -481,7 +476,7 @@ class FeedSubscriptionStore(QObject):
         """The relays answered a read: a change waiting here goes out now,
         also while the pause after a try that failed runs (CP3 review L3:
         it waited up to half an hour)."""
-        if (self._dirty and not any(self._runs.values())
+        if (self._dirty and not self._list.busy
                 and (self._cancel_timer is None or self._retry_waiting)):
             self._schedule_publish()
 
@@ -605,13 +600,9 @@ class FeedSubscriptionStore(QObject):
         if profile is None:
             return
         generation = self._generation
-        if self._runs.get(generation):
-            # The latest state still ships, right after the publish on
-            # its way settles.
-            self._publish_after_run = True
-            return
-        self._runs[generation] = 1
-        # What this publish starts from, kept for the case the profile is
+        # One write runs at a time per account (EncryptedList): asked
+        # while one is on its way, this one goes right after it, with the
+        # latest state. What this publish starts from, kept for the case the profile is
         # switched before it is done.
         snapshot = {"base": self._base, "local": self._local.copy(),
                     "legacy": self._legacy_merged, "reads": self._send_read_times,
@@ -622,7 +613,6 @@ class FeedSubscriptionStore(QObject):
 
         def _finish(status: Optional[str] = "", *, sent: bool = False) -> None:
             """``status`` None leaves the status line as it is."""
-            self._runs.pop(generation, None)
             if current():
                 if not sent:
                     self._dirty = True
@@ -631,13 +621,11 @@ class FeedSubscriptionStore(QObject):
                 self._save_cache()
                 if status is not None:
                     self.sync_status.emit(status)
-                again, self._publish_after_run = self._publish_after_run, False
-                if self._dirty and self._cancel_timer is None and (sent or again):
-                    if again:
-                        self._publish_now()
-                        return
+                # A write still on its way carries what changed since.
+                going = self._list.is_writing(profile)
+                if self._dirty and self._cancel_timer is None and sent and not going:
                     self._schedule_publish()
-                elif self._dirty and not sent and status == NOT_SHARED:
+                elif self._dirty and not sent and status == NOT_SHARED and not going:
                     self._retry_later()
             if not self.is_busy:
                 self.settled.emit()
