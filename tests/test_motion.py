@@ -3,30 +3,39 @@
 """Reduce Motion: asked of macOS, Windows and GTK the way their own toolkits
 ask, kept on the application, and read again after the app returns.
 
-Every system is played by a fake, so the whole file runs on any computer.
+Every system is played by a fake, so the whole file runs on any computer;
+GSettings by a small ``gsettings`` script run as the real one would be.
 """
 from __future__ import annotations
 
 import ctypes
-import subprocess
+import os
+import sys
+import threading
+import time
 from types import SimpleNamespace
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtWidgets import QApplication
 
 from nostr.ui import motion, native_appearance as na
+
+
+def _forget(app) -> None:
+    kept = getattr(app, "_motion_preference", None)
+    if kept is not None:
+        del app._motion_preference
+        kept.deleteLater()
 
 
 @pytest.fixture(autouse=True)
 def fresh_preference():
     """Each test asks anew; none leaves an answer behind for the next."""
     app = QApplication.instance()
-    if hasattr(app, "_reduce_motion_preference"):
-        del app._reduce_motion_preference
+    _forget(app)
     yield
-    if hasattr(app, "_reduce_motion_preference"):
-        del app._reduce_motion_preference
+    _forget(app)
 
 
 # -- macOS ---------------------------------------------------------------------
@@ -125,49 +134,134 @@ def _settings_ini(folder, version: str, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _fake_gsettings(monkeypatch, *, stdout: str = "", returncode: int = 0, raises=None):
-    seen = []
+@pytest.fixture
+def gsettings(monkeypatch, tmp_path, gtk):
+    """A ``gsettings`` that prints ``answer`` after ``delay`` seconds and
+    exits with ``code``, all read from the environment it is given (which
+    is the app's ``program_environment``, as for the real one)."""
+    if sys.platform == "win32":
+        pytest.skip("GSettings is asked on GTK desktops")
+    program = tmp_path / "bin" / "gsettings"
+    program.parent.mkdir()
+    program.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$SEEN"\nsleep "$DELAY"\n'
+                       'echo "$ANSWER"\nexit "$CODE"\n', encoding="utf-8")
+    program.chmod(0o755)
+    seen = tmp_path / "seen"
+    said = {"ANSWER": "false", "DELAY": "0", "CODE": "0"}
+    import rmd_toolchain
+    monkeypatch.setattr(rmd_toolchain, "program_environment",
+                        lambda: dict(os.environ, SEEN=str(seen), **said))
+    monkeypatch.setattr(na.shutil, "which", lambda name: str(program))
+    # A busy test machine starts a shell slower than dconf answers.
+    monkeypatch.setattr(na, "GSETTINGS_TIMEOUT_MS", 5_000)
+    return SimpleNamespace(said=said, runs=lambda: seen.read_text().splitlines()
+                           if seen.exists() else [])
 
-    def run(args, **kwargs):
-        seen.append((args, kwargs))
-        if raises is not None:
-            raise raises
-        return subprocess.CompletedProcess(args, returncode, stdout=stdout, stderr="")
 
-    monkeypatch.setattr(na.shutil, "which", lambda name: "/usr/bin/gsettings")
-    monkeypatch.setattr(na.subprocess, "run", run)
-    return seen
+def _gtk_preference():
+    return na._MotionPreference(QApplication.instance(), "linux")
 
 
-def test_gtk_reads_gnomes_switch_through_gsettings(monkeypatch, gtk):
-    seen = _fake_gsettings(monkeypatch, stdout="false\n")
-    assert na._read_reduce_motion("linux") is True
-    args, kwargs = seen[0]
-    assert args == ["/usr/bin/gsettings", "get", "org.gnome.desktop.interface",
-                    "enable-animations"]
-    assert kwargs["timeout"] <= 1.0
-    # The person's own environment, not a packaged build's libraries.
-    assert "env" in kwargs
+def _until(done, seconds: float = 5.0) -> None:
+    end = time.monotonic() + seconds
+    while not done() and time.monotonic() < end:
+        QCoreApplication.processEvents()
+        time.sleep(0.005)
 
 
-def test_gtk_animations_on_in_gsettings_keeps_motion(monkeypatch, gtk):
-    _fake_gsettings(monkeypatch, stdout="true\n")
+def test_gsettings_output_is_read_as_a_boolean():
+    assert na._gsettings_answer("false\n") is False
+    assert na._gsettings_answer("true\n") is True
+    assert na._gsettings_answer("uint32 0\n") is None
+    assert na._gsettings_answer("") is None
+
+
+def test_gtk_reads_gnomes_switch_through_gsettings_without_waiting_for_it(gsettings):
+    gsettings.said["DELAY"] = "0.3"
+    preference = _gtk_preference()
+    started = time.monotonic()
+    # Nothing set in the settings.ini files: motion, at once.
+    assert preference.value() is False
+    assert time.monotonic() - started < 0.2
+    _until(lambda: preference._process is None)
+    assert preference.value() is True
+    assert gsettings.runs() == ["get org.gnome.desktop.interface enable-animations"]
+
+
+def test_gtk_animations_on_in_gsettings_keeps_motion(gsettings, gtk):
+    gsettings.said["ANSWER"] = "true"
     # Even a settings.ini that says otherwise: GSettings is what GTK reads
-    # when a desktop provides it.
+    # when a desktop provides it. Until it answers, the file counts.
     _settings_ini(gtk.home, "gtk-3.0", "[Settings]\ngtk-enable-animations=false\n")
-    assert na._read_reduce_motion("linux") is False
+    preference = _gtk_preference()
+    assert preference.value() is True
+    _until(lambda: preference._process is None)
+    assert preference.value() is False
 
 
-@pytest.mark.parametrize("outcome", [
-    {"raises": subprocess.TimeoutExpired(["gsettings"], 1.0)},
-    {"raises": OSError("cannot run")},
-    {"returncode": 1, "stdout": ""},   # No such schema
-    {"stdout": "uint32 0\n"},          # not a boolean
+@pytest.mark.parametrize("said", [
+    {"CODE": "1", "ANSWER": ""},       # No such schema
+    {"ANSWER": "uint32 0"},            # not a boolean
 ])
-def test_gtk_falls_back_to_settings_ini_when_gsettings_gives_no_answer(monkeypatch, gtk, outcome):
-    _fake_gsettings(monkeypatch, **outcome)
+def test_gtk_falls_back_to_settings_ini_when_gsettings_gives_no_answer(gsettings, gtk, said):
+    gsettings.said.update(said)
     _settings_ini(gtk.home, "gtk-3.0", "[Settings]\ngtk-enable-animations=false\n")
-    assert na._read_reduce_motion("linux") is True
+    preference = _gtk_preference()
+    preference.value()
+    _until(lambda: preference._process is None)
+    assert preference.value() is True
+
+
+def test_a_gsettings_that_cannot_start_falls_back_to_settings_ini(monkeypatch, gtk, tmp_path):
+    missing = tmp_path / "no-such-gsettings"
+    monkeypatch.setattr(na.shutil, "which", lambda name: str(missing))
+    _settings_ini(gtk.home, "gtk-3.0", "[Settings]\ngtk-enable-animations=false\n")
+    preference = _gtk_preference()
+    assert preference.value() is True
+    _until(lambda: preference._process is None)
+    assert preference._process is None and preference.value() is True
+
+
+def test_a_gsettings_that_hangs_is_stopped_and_the_last_answer_stays(monkeypatch, gsettings):
+    preference = _gtk_preference()
+    preference.value()
+    _until(lambda: preference._process is None)
+    assert preference.value() is True                    # GSettings said off
+    monkeypatch.setattr(na, "GSETTINGS_TIMEOUT_MS", 300)
+    gsettings.said.update(DELAY="30", ANSWER="true")
+    preference.stale()
+    started = time.monotonic()
+    assert preference.value() is True                    # kept while it runs
+    _until(lambda: preference._process is None)
+    assert time.monotonic() - started < 2
+    assert preference.value() is True                    # no answer changes nothing
+
+
+def test_after_the_app_returns_the_last_answer_counts_until_gsettings_answers(gsettings):
+    preference = _gtk_preference()
+    preference.value()
+    _until(lambda: preference._process is None)
+    assert preference.value() is True
+    gsettings.said.update(ANSWER="true", DELAY="0.2")
+    preference.stale()
+    assert preference.value() is True
+    # Asked again while it runs: no second run.
+    preference.stale()
+    assert preference.value() is True
+    _until(lambda: preference._process is None)
+    assert preference.value() is False
+    assert len(gsettings.runs()) == 2
+
+
+def test_asked_from_another_thread_it_says_what_is_kept_and_starts_nothing(monkeypatch):
+    monkeypatch.setattr(na, "_read_reduce_motion", lambda platform="": True)
+    answers = []
+    worker = threading.Thread(target=lambda: answers.append(na.reduce_motion_preference()))
+    worker.start()
+    worker.join()
+    assert answers == [False]
+    assert not hasattr(QApplication.instance(), "_motion_preference")
+    assert na.reduce_motion_preference() is True
 
 
 @pytest.mark.parametrize("value,reduced", [
@@ -219,6 +313,7 @@ def test_gtk_settings_files_are_where_gtks_documentation_puts_them(monkeypatch):
 # -- kept, and read again ------------------------------------------------------
 
 def test_the_answer_is_kept_and_read_again_after_the_app_returns(monkeypatch):
+    monkeypatch.setattr(na.sys, "platform", "darwin")
     answers = iter([True, False])
     reads = []
 

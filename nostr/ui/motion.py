@@ -6,8 +6,8 @@ Someone who turned motion down in the system's settings (macOS Reduce
 motion, Windows Animation effects, GTK's enable-animations) gets the same
 states and the same words, without the movement: what would travel or
 scale is where it ends at once, and a change the eye should still notice
-cross-fades instead. The handoff of a submission to a publication is
-built on that swap.
+cross-fades instead. The handoff of a submission to a publication will
+be built on that swap.
 
 How the preference is read, kept and read again lives with the other
 native preferences in native_appearance.py. Here is what an animation does
@@ -16,8 +16,9 @@ with it:
     animation.setDuration(motion.duration(160))                   # lifts
     fade.setDuration(motion.duration(320, cross_fade=True))       # travels
 
-It lives in nostr/ui beside native_appearance.py and the app's animations
-(drafts_preview.py today, the handoff next).
+No animation asks it yet: the handoff of a submission, still to come, will
+be the first. The drafts preview (drafts_preview.py) predates it and does
+not ask: its fades need no reducing, its geometry swap still moves.
 """
 from __future__ import annotations
 

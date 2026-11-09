@@ -9,16 +9,20 @@ The preferences read here: increased contrast and reduced transparency (for
 Night Violet), and Reduce Motion (for nostr/ui/motion.py), on macOS, Windows
 and desktops that follow GTK's settings. Each is read once, kept on the
 application, and read again after the app comes back to the front, which is
-when someone who changed it in the system's settings returns.
+when someone who changed it in the system's settings returns. GTK's GSettings
+answer takes a program run, which happens in the background: until it
+answers, the last answer counts, so nothing on screen waits for it.
+
+GUI thread only: what is kept lives on the QApplication, as QObjects that are
+its children (they go when it goes).
 """
 from __future__ import annotations
 
 import logging
 import os
 import shutil
-import subprocess
 import sys
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication
 
@@ -80,8 +84,9 @@ GTK_SCHEMA = "org.gnome.desktop.interface"
 GTK_KEY = "enable-animations"
 GTK_SETTING = "gtk-enable-animations"
 # gsettings answers from dconf in a few milliseconds; one that hangs (no
-# session bus, a broken dconf) must not hold up the animation that asked.
-GSETTINGS_TIMEOUT_S = 1.0
+# session bus, a broken dconf) is stopped after this, and the last answer
+# stays.
+GSETTINGS_TIMEOUT_MS = 1_000
 
 
 def _windows_animations_off() -> bool:
@@ -103,23 +108,10 @@ def _windows_animations_off() -> bool:
         return False
 
 
-def _gsettings_animations() -> bool | None:
-    """GNOME's switch as gsettings reads it: True, False, or None when there
-    is no answer (no gsettings, no such schema, too slow)."""
-    program = shutil.which("gsettings")
-    if program is None:
-        return None
-    import rmd_toolchain
-    try:
-        done = subprocess.run([program, "get", GTK_SCHEMA, GTK_KEY], capture_output=True,
-                              text=True, timeout=GSETTINGS_TIMEOUT_S, check=False,
-                              stdin=subprocess.DEVNULL,
-                              env=rmd_toolchain.program_environment())
-    except (OSError, subprocess.SubprocessError) as exc:
-        _log.debug("gsettings gave no answer: %s", exc)
-        return None
-    answer = done.stdout.strip() if done.returncode == 0 else ""
-    return {"true": True, "false": False}.get(answer)
+def _gsettings_answer(output: str) -> bool | None:
+    """What ``gsettings get`` printed for a boolean key: True, False, or
+    None for anything else."""
+    return {"true": True, "false": False}.get(output.strip())
 
 
 def _gtk_settings_files() -> list[str]:
@@ -145,19 +137,20 @@ def _settings_ini_animations() -> bool | None:
     return None
 
 
-def _gtk_animations_off() -> bool:
-    """True when the desktop turned GTK's animations off: GSettings first
-    (what GNOME and KDE set), then the settings.ini files (what GTK reads
-    where nothing else answers). The Settings portal's reduced-motion
-    (xdg-desktop-portal 1.21) needs D-Bus and is not asked yet."""
-    enabled = _gsettings_animations()
-    if enabled is None:
-        enabled = _settings_ini_animations()
+def _gtk_reduce_motion(gsettings: bool | None) -> bool:
+    """True when the desktop turned GTK's animations off: GSettings when
+    it answered (what GNOME and KDE set), else the settings.ini files
+    (what GTK reads where nothing else answers). The Settings portal's
+    reduced-motion (xdg-desktop-portal 1.21) needs D-Bus and is not
+    asked yet."""
+    enabled = gsettings if gsettings is not None else _settings_ini_animations()
     return enabled is False
 
 
 def _read_reduce_motion(platform: str = "") -> bool:
-    """Ask the system (``platform`` defaults to this one's ``sys.platform``)."""
+    """What the system says at once (``platform`` defaults to this one's
+    ``sys.platform``): macOS and Windows all of it; on GTK desktops the
+    settings.ini files, GSettings coming later (:class:`_MotionPreference`)."""
     platform = platform or sys.platform
     if platform == "darwin":
         workspace = _workspace()
@@ -168,19 +161,110 @@ def _read_reduce_motion(platform: str = "") -> bool:
             return False
     if platform == "win32":
         return _windows_animations_off()
-    return _gtk_animations_off()
+    return _gtk_reduce_motion(None)
+
+
+class _MotionPreference(QObject):
+    """Reduce Motion as the system last said it: one per application, its
+    child (``reduce_motion_preference``). GUI thread only.
+
+    Asked when an animation needs it, and again after the app came back
+    to the front (:meth:`stale`). On a GTK desktop the GSettings answer
+    comes from a ``gsettings`` run in a QProcess; until it arrives the last
+    answer counts (at first the settings.ini files'), one that hangs is
+    stopped after ``GSETTINGS_TIMEOUT_MS`` and changes nothing."""
+
+    def __init__(self, parent: QObject, platform: str) -> None:
+        super().__init__(parent)
+        self._platform = platform
+        self._value: bool | None = None
+        self._stale = True
+        self._process: QProcess | None = None
+
+    @property
+    def kept(self) -> bool:
+        return bool(self._value)
+
+    def value(self) -> bool:
+        if self._stale:
+            self._stale = False
+            self._read()
+        return self.kept
+
+    def stale(self) -> None:
+        """Read again when next asked."""
+        self._stale = True
+
+    def _read(self) -> None:
+        if self._platform in ("darwin", "win32"):
+            self._value = _read_reduce_motion(self._platform)
+            return
+        if self._value is None:
+            self._value = _read_reduce_motion(self._platform)
+        self._ask_gsettings()
+
+    def _ask_gsettings(self) -> None:
+        if self._process is not None:
+            return                                  # one is on its way
+        program = shutil.which("gsettings")
+        if program is None:
+            self._value = _gtk_reduce_motion(None)
+            return
+        import rmd_toolchain
+        environment = QProcessEnvironment()
+        for name, value in rmd_toolchain.program_environment().items():
+            environment.insert(name, value)
+        process = self._process = QProcess(self)
+        process.setProcessEnvironment(environment)
+        process.setStandardInputFile(QProcess.nullDevice())
+        process.finished.connect(lambda code, status: self._finished(process, code, status))
+        process.errorOccurred.connect(lambda error: self._error(process, error))
+        QTimer.singleShot(GSETTINGS_TIMEOUT_MS, process, lambda: self._too_slow(process))
+        process.start(program, ["get", GTK_SCHEMA, GTK_KEY])
+
+    def _finished(self, process: QProcess, code: int, status) -> None:
+        if process is not self._process:
+            return
+        answer = None
+        if status == QProcess.ExitStatus.NormalExit and code == 0:
+            answer = _gsettings_answer(
+                process.readAllStandardOutput().data().decode("utf-8", "replace"))
+        self._value = _gtk_reduce_motion(answer)
+        self._done(process)
+
+    def _error(self, process: QProcess, error) -> None:
+        # A run that never started gets no ``finished``; a crash gets one.
+        if process is self._process and error == QProcess.ProcessError.FailedToStart:
+            _log.debug("gsettings did not start: %s", process.errorString())
+            self._value = _gtk_reduce_motion(None)
+            self._done(process)
+
+    def _too_slow(self, process: QProcess) -> None:
+        if process is self._process:
+            _log.debug("gsettings gave no answer in %d ms", GSETTINGS_TIMEOUT_MS)
+            self._done(process)
+            process.kill()
+
+    def _done(self, process: QProcess) -> None:
+        self._process = None
+        process.deleteLater()
 
 
 def reduce_motion_preference() -> bool:
     """Whether the system asks for less motion, read once and kept until
-    the app comes back to the front (see ``observe_preferences``)."""
+    the app comes back to the front (see ``observe_preferences``). GUI
+    thread only; asked from another thread, it says what is kept and
+    starts nothing."""
     app = QApplication.instance()
     if app is None:
         return False
+    kept = getattr(app, "_motion_preference", None)
+    if not app.thread().isCurrentThread():
+        return kept is not None and kept.kept
     observe_preferences()
-    if not hasattr(app, "_reduce_motion_preference"):
-        app._reduce_motion_preference = _read_reduce_motion()
-    return app._reduce_motion_preference
+    if kept is None:
+        kept = app._motion_preference = _MotionPreference(app, sys.platform)
+    return kept.value()
 
 
 def apply_chrome(widget, dark: bool, *, nostr: bool = True) -> bool:
@@ -219,10 +303,11 @@ def preferences() -> tuple[bool, bool]:
 class _PreferenceObserver(QObject):
     def refresh(self, *_):
         app = QApplication.instance()
-        if hasattr(app, "_reduce_motion_preference"):
+        motion = getattr(app, "_motion_preference", None)
+        if motion is not None:
             # Read again when next asked, not here: on Linux the answer
             # costs a gsettings run, and most returns start no animation.
-            del app._reduce_motion_preference
+            motion.stale()
         before = preferences()
         app._night_violet_preferences = _read_preferences()
         if before != app._night_violet_preferences:
@@ -231,6 +316,9 @@ class _PreferenceObserver(QObject):
             refresh_windows(theme.is_dark_active())
 
 def observe_preferences() -> None:
+    """Read the preferences again whenever the application's state or the
+    contrast preference changes. GUI thread only. Once per application:
+    the observer is the application's child and goes with it."""
     app = QApplication.instance()
     if app is None or hasattr(app, "_night_violet_observer"):
         return
