@@ -49,7 +49,7 @@ from . import CLIENT_NAME
 from .article_details import AUTHOR_MARKER
 from .bech32 import bech32_decode, decode_npub, decode_nprofile
 from .blossom.hashes import blob_url, hash_from_url
-from .bunker import BunkerClient, BunkerSessionPool, nip44_plaintext_limit
+from .bunker import BunkerClient, BunkerSessionPool, nip44_plaintext_limit, readable_back
 from .drafts import (
     DRAFT_WRAP_KIND,
     MAX_INNER_PAYLOAD_BYTES,
@@ -819,17 +819,25 @@ def draft_size_problem(inner: dict, profile) -> Optional[str]:
 
     The encrypted part of a draft is one NIP-44 message: 65,535 bytes
     with the key kept on this computer, 40,960 through a signer app,
-    whose answer is NIP-44 too (``bunker.nip44_plaintext_limit``). Said
-    here, before anything is sent, so the person learns the real limit
-    and not a signer app's technical refusal. Raises what
+    whose answer is NIP-44 too (``bunker.nip44_plaintext_limit``). And a
+    draft is read back through the signer app, whose answer carries the
+    plaintext escaped (``bunker.readable_back``): a draft full of quotes
+    may be encrypted and then never read again. Said here, before
+    anything is sent, so the person learns the real limit and not a
+    signer app's technical refusal, or a draft lost later. Raises what
     ``serialize_inner_event`` raises for an event it cannot serialize.
     """
-    size = len(serialize_inner_event(inner).encode("utf-8"))
-    limit = nip44_plaintext_limit(profile)
-    if size <= limit:
+    text = serialize_inner_event(inner)
+    if readable_back(profile, text):
         return None
+    size = len(text.encode("utf-8"))
+    limit = nip44_plaintext_limit(profile)
     numbers = display_locale()
     values = {"size": numbers.toString(size), "limit": numbers.toString(limit)}
+    if size <= limit:
+        return _("It has {size} bytes, more than your signer app can hand back in one answer "
+                 "once its quotes and line breaks are counted. Split it into smaller drafts or "
+                 "publish it directly.").format(**values)
     if limit < MAX_INNER_PAYLOAD_BYTES:
         return _("It has {size} bytes, and your signer app can encrypt at most {limit}. "
                  "Split it into smaller drafts or publish it directly.").format(**values)

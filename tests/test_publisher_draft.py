@@ -372,3 +372,36 @@ def test_the_save_command_says_the_signer_apps_limit_before_starting(monkeypatch
     assert made == []
     assert [kw["title"] for kw in shown] == ["This draft is too large"]
     assert "your signer app can encrypt at most 40,960" in shown[0]["message"]
+
+
+def _note_of_quotes(count: int) -> dict:
+    """A short note of ``count`` quotes: two bytes each in the draft's
+    plaintext, four in a signer app's answer to ``nip44_decrypt``."""
+    return build_inner_event(kind=1, content='"' * count, pubkey_hex=PK, created_at=1)
+
+
+def test_a_draft_the_signer_app_could_encrypt_but_not_hand_back_is_refused():
+    # RG-M0 R7: 40,0xx bytes pass the 40,960 limit, but the answer that
+    # carries them back would be 80,0xx bytes: the draft would be saved
+    # and never read again.
+    from nostr.drafts import serialize_inner_event
+    inner = _note_of_quotes(20_000)
+    assert len(serialize_inner_event(inner).encode("utf-8")) <= SIGNER_NIP44_MAX_PLAINTEXT
+    problem = draft_size_problem(inner, _make_profile())
+    assert "hand back in one answer" in problem and "Split it into smaller drafts" in problem
+    # With the key on this computer nothing is handed back.
+    assert draft_size_problem(inner, _local_profile()) is None
+    # And a draft of quotes that does come back is saved.
+    assert draft_size_problem(_note_of_quotes(16_000), _make_profile()) is None
+
+
+def test_such_a_draft_fails_before_anything_is_sent():
+    job = DraftPublishJob(
+        relay_pool=MagicMock(), relay_directory=MagicMock(), session_pool=MagicMock(),
+        profile=_make_profile(), inner_event=_note_of_quotes(20_000), identifier="quotes")
+    failures: List[str] = []
+    job.failed.connect(failures.append)
+    fake_bunker = MagicMock()
+    job._on_bunker_ready(fake_bunker, publish_relays=["wss://r/"])
+    fake_bunker.nip44_encrypt_self.assert_not_called()
+    assert len(failures) == 1 and "hand back" in failures[0]

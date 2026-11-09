@@ -30,6 +30,7 @@ timeout/error).
 from __future__ import annotations
 
 import json
+import re
 import secrets
 import time
 from dataclasses import dataclass
@@ -98,6 +99,50 @@ AUTH_CHALLENGE_TIMEOUT_MS = 180_000
 # at 40,961. Anything larger travels encrypted some other way, and lists
 # are split into pages well below this (nostr/encrypted_lists.py).
 SIGNER_NIP44_MAX_PLAINTEXT = 40_960
+
+# A signer app writes its answer as JSON, the result inside it a JSON
+# string: every quote and backslash takes two bytes there, a control
+# character two or six. ``nak bunker`` 0.20.7 writes the answer with
+# fiatjaf.com/nostr's nip46 (``var json = jsoniter.ConfigFastest``:
+# EscapeHTML false, so <, >, & and U+2028/U+2029 stay raw) and a signed
+# event with easyjson (``NoEscapeHTML: true``); json-iterator 1.1.12 and
+# easyjson 0.9 write \n, \r and \t short and every other control
+# character as \u00xx. JSON.stringify (nostr-tools) and Python's json.dumps
+# also write \b and \f short. Measured at the longer of the two.
+_ESCAPE = re.compile(r"\\(.)")
+_LONG = {"b": "\\u0008", "f": "\\u000c"}
+
+
+def _as_signer_writes(value) -> str:
+    """``value`` as JSON the way a signer app writes it at its longest:
+    compact, raw UTF-8, \\b and \\f as \\u00xx. In JSON text a backslash
+    only ever starts an escape, so reading the escapes from the left
+    finds every one."""
+    text = json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+    return _ESCAPE.sub(lambda m: _LONG.get(m.group(1), m.group(0)), text)
+
+
+def signer_answer_size(result: str) -> int:
+    """Bytes of a signer app's NIP-46 answer carrying ``result`` (the
+    answer echoes our 16-character request id). The answer is one NIP-44
+    message: at most ``crypto.NIP44_MAX_PLAINTEXT_LEN``."""
+    return len(_as_signer_writes({"id": "0" * 16, "result": result}).encode("utf-8"))
+
+
+def readable_back(profile, plaintext: str) -> bool:
+    """Whether ``plaintext``, encrypted for ``profile`` itself, can be read
+    back by it: NIP-44's 65,535 bytes with the key kept on this computer;
+    through a signer app 40,960 bytes, and the answer to ``nip44_decrypt``,
+    which carries the plaintext escaped, must fit one message too (a
+    40,000-byte text of quotes the app can encrypt is 80,000 bytes in that
+    answer, and the read would wait out its timeout). What drafts and
+    private lists ask before they encrypt."""
+    from .local_signer import LOCAL
+    size = len(plaintext.encode("utf-8"))
+    if getattr(profile, "signer", "remote") == LOCAL:
+        return size <= crypto.NIP44_MAX_PLAINTEXT_LEN
+    return (size <= SIGNER_NIP44_MAX_PLAINTEXT
+            and signer_answer_size(plaintext) <= crypto.NIP44_MAX_PLAINTEXT_LEN)
 
 
 def nip44_plaintext_limit(profile) -> int:
@@ -744,6 +789,17 @@ class BunkerClient(QObject):
             "tags": unsigned_event.get("tags", []),
             "created_at": int(unsigned_event["created_at"]),
         }
+        # The answer is the signed event, escaped as a string: our request
+        # may fit while the answer, with the id, pubkey and signature the
+        # signer adds, does not, and we would wait out the timeout.
+        answer = signer_answer_size(_as_signer_writes(
+            dict(payload, id="0" * 64, pubkey="0" * 64, sig="0" * 128)))
+        if answer > crypto.NIP44_MAX_PLAINTEXT_LEN:
+            self._refuse(on_failure,
+                         f"too large for a signer app: sign_event would answer with {answer} "
+                         f"bytes, a NIP-46 message carries at most "
+                         f"{crypto.NIP44_MAX_PLAINTEXT_LEN}")
+            return
 
         def _ok(result: str) -> None:
             try:

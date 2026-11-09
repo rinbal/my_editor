@@ -25,7 +25,7 @@ from nostr.bunker import SIGNER_NIP44_MAX_PLAINTEXT
 from nostr.encrypted_lists import EncryptedList
 from nostr.list_relays import LIST_KIND
 from nostr.list_results import ListWords, PublishStatus, ReadStatus
-from nostr.paged_list import MAX_PAGES, PAGE_PLAINTEXT_MAX, Paging, page_d_tag
+from nostr.paged_list import MAX_PAGES, PAGE_PAYLOAD_MAX, PAGE_PLAINTEXT_MAX, Paging, page_d_tag
 from tests.outbox_fakes import OTHER_SK, PK, SK, FakeRelayDirectory, settle
 from tests.test_imports_subscriptions import FakeSessionPool, FakeSigner
 
@@ -686,3 +686,72 @@ def test_another_accounts_write_does_not_wait():
     store.publish(other, state=lambda: (None, {"b": 1}, None), on_done=print)
     settle(20)
     assert len(relay.queries) == reads + 1 and store.is_writing(other)
+
+
+# -- what a signer app can hand back (RG-M0 R7) -----------------------------------
+
+class CountingSigner(FakeSigner):
+    def __init__(self):
+        super().__init__()
+        self.encrypted = []
+        self.decrypted = []
+
+    def nip44_encrypt_self(self, plaintext, on_success, on_failure, **kw):
+        self.encrypted.append(plaintext)
+        super().nip44_encrypt_self(plaintext, on_success, on_failure, **kw)
+
+    def nip44_decrypt_self(self, ciphertext, on_success, on_failure, **kw):
+        self.decrypted.append(ciphertext)
+        super().nip44_decrypt_self(ciphertext, on_success, on_failure, **kw)
+
+
+def _flat_list(relay, signer):
+    return EncryptedList(
+        d_tag="test:flat", decode=lambda payload: payload["rows"],
+        encode=lambda value, now: {"rows": value},
+        merge=lambda base, local, remote: local, words=WORDS,
+        session_pool=FakeSessionPool(signer), relay_directory=FakeRelayDirectory(),
+        query=relay, publisher=relay, clock=lambda: NOW)
+
+
+def test_a_list_the_signer_app_could_not_hand_back_is_never_written():
+    # 40,0xx bytes encrypt, but the answer to nip44_decrypt would carry
+    # them as 80,0xx: written, the list would be unreadable for good.
+    relay, signer = Relay(), CountingSigner()
+    rows = ['"' * 20_000]
+    result, _ = publish(_flat_list(relay, signer), rows)
+    assert result.status is PublishStatus.FAILED and "read back" in result.reason
+    assert signer.encrypted == [] and relay.published == []
+
+
+def test_the_same_list_with_the_key_here_is_written():
+    relay, signer = Relay(), CountingSigner()
+    store = _flat_list(relay, signer)
+    results = []
+    local = SimpleNamespace(user_pubkey=PK, bunker_relays=[], signer="local")
+    store.publish(local, state=lambda: (None, ['"' * 20_000], None), on_done=results.append,
+                  on_merged=lambda *_: None)
+    settle(40)
+    assert results[-1].status is PublishStatus.SENT and len(signer.encrypted) == 1
+
+
+def test_a_first_page_longer_than_a_page_is_unreadable_without_asking_the_signer():
+    relay, signer = Relay(), CountingSigner()
+    relay.put(D, None, content="ENC[" + "x" * PAGE_PAYLOAD_MAX + "]")
+    store = read_state_list(relay, signer=signer)
+    assert read(store).status is ReadStatus.UNREADABLE
+    assert signer.decrypted == []
+    assert publish(store, {"a": 1})[0].status is PublishStatus.UNREADABLE
+
+
+def test_a_later_page_longer_than_a_page_counts_as_missing_without_asking_the_signer():
+    relay, signer = Relay(), CountingSigner()
+    store = read_state_list(relay, signer=signer)
+    publish(store, big_read_state(3_000))
+    relay.put(page_d_tag(D, 1), None, created_at=NOW + 5,
+              content="ENC[" + "x" * PAGE_PAYLOAD_MAX + "]")
+    signer.decrypted.clear()
+    answer = read(store)
+    assert answer.status is ReadStatus.INCOMPLETE and answer.stale == (1,)
+    assert all(len(ciphertext) <= PAGE_PAYLOAD_MAX for ciphertext in signer.decrypted)
+    assert len(signer.decrypted) == page_count(relay) - 1

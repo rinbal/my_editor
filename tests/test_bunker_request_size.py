@@ -17,7 +17,7 @@ import secrets
 
 from PySide6.QtCore import QCoreApplication
 
-from nostr import bunker, crypto
+from nostr import bunker, crypto, events
 from nostr.bunker import SIGNER_NIP44_MAX_PLAINTEXT
 from tests.test_bunker_handshake import FakePool, FakeSigner
 
@@ -180,4 +180,120 @@ def test_without_the_check_the_signer_never_answers():
     _turn()
     assert outcome == {}
     assert len(client._pending) == 1
+    client.close()
+
+
+# -- what a signer app can hand back (RG-M0 R7) -------------------------------------
+#
+# A signer app's answer carries its result as a JSON string, escaped. nak
+# bunker 0.20.7 writes it with json-iterator (fiatjaf.com/nostr nip46,
+# ``jsoniter.ConfigFastest``) and a signed event with easyjson: quotes and
+# backslashes two bytes, \n \r \t two, every other control character six,
+# <, >, & and U+2028 raw. JSON.stringify writes \b and \f in two.
+
+def test_an_answer_is_measured_as_a_signer_app_writes_it():
+    assert bunker._as_signer_writes('a"b\\c\n') == '"a\\"b\\\\c\\n"'
+    assert bunker._as_signer_writes("\b\f\x01") == '"\\u0008\\u000c\\u0001"'
+    assert bunker._as_signer_writes("<&>   ä") == '"<&>   ä"'
+    # A literal backslash before a b is not an escaped backspace.
+    assert bunker._as_signer_writes("\\b") == '"\\\\b"'
+    # nak bunker returned a 32,000-byte page of nothing but quotes, and
+    # not one of 32,800 (contract 13): the measure agrees with both.
+    assert bunker.signer_answer_size('"' * 32_000) <= crypto.NIP44_MAX_PLAINTEXT_LEN
+    assert bunker.signer_answer_size('"' * 32_800) > crypto.NIP44_MAX_PLAINTEXT_LEN
+
+
+def test_what_can_be_read_back_depends_on_where_the_key_is():
+    from types import SimpleNamespace
+    remote, local = SimpleNamespace(signer="remote"), SimpleNamespace(signer="local")
+    assert bunker.readable_back(remote, "x" * SIGNER_NIP44_MAX_PLAINTEXT)
+    assert not bunker.readable_back(remote, "x" * (SIGNER_NIP44_MAX_PLAINTEXT + 1))
+    # Encrypted fine, but the answer to nip44_decrypt would be 80,000 bytes.
+    assert not bunker.readable_back(remote, '"' * 40_000)
+    assert bunker.readable_back(remote, '"' * 32_000)
+    # With the key here nothing is answered: NIP-44's own bound.
+    assert bunker.readable_back(local, '"' * crypto.NIP44_MAX_PLAINTEXT_LEN)
+    assert not bunker.readable_back(local, "x" * (crypto.NIP44_MAX_PLAINTEXT_LEN + 1))
+
+
+class SigningSigner(EncryptingSigner):
+    """Signs for real and answers compactly, as a signer app does; an
+    answer too large for one NIP-44 message is never sent."""
+
+    def _on_event(self, event):
+        if event.get("pubkey") == self.pk:
+            return
+        try:
+            payload = json.loads(crypto.decrypt(event["content"], self.conv))
+        except (ValueError, json.JSONDecodeError, KeyError):
+            payload = {}
+        if payload.get("method") != "sign_event":
+            super()._on_event(event)
+            return
+        self.seen.append(payload)
+        signed = events.sign_event(json.loads(payload["params"][0]), self.user_sk)
+        answer = bunker._as_signer_writes(
+            {"id": payload["id"], "result": bunker._as_signer_writes(signed)})
+        try:
+            self.send_raw(crypto.encrypt(answer, self.conv))
+        except ValueError:
+            pass  # no message can carry this answer
+
+
+def _pair_signing():
+    pool = FakePool()
+    signer = SigningSigner(pool)
+    client = bunker.BunkerClient(pool)
+    local_sk = crypto.generate_secret_key()
+    signer.watch(crypto.get_public_key(local_sk).hex())
+    outcome = {}
+    client.connect_to_bunker(
+        f"bunker://{signer.pk}?relay=wss%3A%2F%2Ffake&secret=abc",
+        on_success=lambda pk: outcome.setdefault("ok", pk),
+        on_failure=lambda r: outcome.setdefault("err", r), local_sk=local_sk)
+    assert outcome.get("ok") == signer.user_pk, outcome
+    return client, signer
+
+
+# 65,143 bytes of content: the signed event's answer is exactly 65,535 bytes.
+_LARGEST_SIGNABLE = 65_143
+
+
+def _note(size: int) -> dict:
+    return {"kind": 1, "content": "x" * size, "tags": [], "created_at": 1}
+
+
+def test_the_largest_event_whose_signed_answer_fits_is_signed():
+    client, signer = _pair_signing()
+    answers, failures = [], []
+    client.sign_event(_note(_LARGEST_SIGNABLE), answers.append, failures.append)
+    _turn()
+    assert failures == [] and len(answers) == 1
+    assert len(answers[0]["content"]) == _LARGEST_SIGNABLE and events.verify_event(answers[0])
+    client.close()
+
+
+def test_an_event_whose_signed_answer_cannot_be_sent_is_refused_at_once():
+    client, signer = _pair_signing()
+    sent = len(signer.seen)
+    answers, failures = [], []
+    client.sign_event(_note(_LARGEST_SIGNABLE + 1), answers.append, failures.append)
+    assert failures == []
+    _turn()
+    assert answers == [] and len(failures) == 1
+    assert "sign_event" in failures[0] and "65536" in failures[0]
+    assert len(signer.seen) == sent and client._pending == {}
+    client.close()
+
+
+def test_without_the_check_that_event_would_wait_out_the_timeout():
+    # The request itself fits one message; only the answer does not.
+    client, signer = _pair_signing()
+    payload = json.dumps(_note(_LARGEST_SIGNABLE + 1), separators=(",", ":"))
+    answers, failures = [], []
+    client._send_request(method="sign_event", params=[payload], on_success=answers.append,
+                         on_failure=failures.append, timeout_ms=60_000)
+    assert signer.seen[-1]["method"] == "sign_event"
+    _turn()
+    assert answers == [] and failures == [] and len(client._pending) == 1
     client.close()

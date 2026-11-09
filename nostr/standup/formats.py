@@ -22,6 +22,7 @@ from coincurve import PublicKeyXOnly
 from i18n import N_
 
 from .. import refs
+from ..paged_list import PAGE_PAYLOAD_MAX
 
 # --------------------------------------------------------------------------- #
 # Limits (section 15, and where else the contract names one)                  #
@@ -38,7 +39,7 @@ MAX_PARTICIPANTS = 20                       # 15
 MAX_LOOKUP_ITEMS = 50                       # 12.4 lookup
 MAX_THUMB_BYTES = 24 * 1024                 # 5: thumb, at most 24 KB
 MAX_PEAKS = 512                             # 5: audio peaks
-MAX_KEYRING_PAGE_CHARS = 43_780             # 12.3: the NIP-44 payload of a 32,000-byte page
+MAX_KEYRING_PAGE_CHARS = PAGE_PAYLOAD_MAX   # 12.3: 43,780, the payload of a 32,000-byte page
 
 # Media files (7).
 MEDIA_CHUNK_SIZE = 1_048_576                # new files

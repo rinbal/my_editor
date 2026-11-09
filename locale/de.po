@@ -6405,30 +6405,30 @@ msgstr "Der private Schlüssel dieses Kontos ist nicht auf diesem Computer. MyEd
 msgid "Your key stays in your signer app. MyEditor only forgets this connection."
 msgstr "Dein Schlüssel bleibt in deiner Signer-App. MyEditor vergisst nur diese Verbindung."
 
-#: nostr/bunker.py:161
+#: nostr/bunker.py:206
 msgid "Your signer app did not answer. Open it, make sure it is running, and try again."
 msgstr "Deine Signer-App hat nicht geantwortet. Öffne sie, stelle sicher, dass sie läuft, und versuche es erneut."
 
-#: nostr/bunker.py:246
+#: nostr/bunker.py:291
 msgid "expected a bunker:// URI"
 msgstr "Erwartet wird ein bunker://-Link"
 
-#: nostr/bunker.py:251
+#: nostr/bunker.py:296
 msgid "bunker URI must contain a 32-byte hex pubkey"
 msgstr "Der bunker-Link muss einen öffentlichen Schlüssel aus 64 Hex-Zeichen enthalten"
 
-#: nostr/bunker.py:256
+#: nostr/bunker.py:301
 msgid "bunker URI must specify at least one relay"
 msgstr "Der bunker-Link muss mindestens ein Relay nennen"
 
-#: nostr/bunker.py:259
+#: nostr/bunker.py:304
 #, python-brace-format
 msgid "relay must be ws:// or wss://, got {relay}"
 msgstr "Ein Relay muss mit ws:// oder wss:// beginnen (erhalten: {relay})"
 
 #: nostr/deletion.py:242
-#: nostr/publisher.py:1189
-#: nostr/publisher.py:1234
+#: nostr/publisher.py:1197
+#: nostr/publisher.py:1242
 msgid "Waiting for your signer app. Approve the deletion there…"
 msgstr "Warten auf deine Signer-App. Bestätige das Löschen dort …"
 
@@ -6451,9 +6451,9 @@ msgid "Untitled note"
 msgstr "Notiz ohne Titel"
 
 #: nostr/draft_sync.py:212
-#: nostr/publisher.py:935
-#: nostr/publisher.py:953
-#: nostr/publisher.py:1145
+#: nostr/publisher.py:943
+#: nostr/publisher.py:961
+#: nostr/publisher.py:1153
 msgid "Looking up your relay list…"
 msgstr "Deine Relay-Liste wird abgerufen …"
 
@@ -6463,7 +6463,7 @@ msgstr "Entwürfe werden aktualisiert …"
 
 #: nostr/draft_sync.py:409
 #: nostr/publish_pipeline.py:153
-#: nostr/publisher.py:978
+#: nostr/publisher.py:986
 msgid "Connecting to your signer app…"
 msgstr "Verbindung zu deiner Signer-App wird hergestellt …"
 
@@ -6722,7 +6722,7 @@ msgid "Your profile wasn’t changed. Try again in a moment."
 msgstr "Dein Profil wurde nicht geändert. Versuche es gleich noch einmal."
 
 #: nostr/publish_pipeline.py:177
-#: nostr/publisher.py:1036
+#: nostr/publisher.py:1044
 msgid "Waiting for your signer app. Approve the request there…"
 msgstr "Warten auf deine Signer-App. Bestätige die Anfrage dort …"
 
@@ -6749,16 +6749,16 @@ msgstr "Deine Signer-App hat die Anfrage nicht signiert."
 msgid "unknown error"
 msgstr "unbekannter Fehler"
 
-#: nostr/publisher.py:836
+#: nostr/publisher.py:844
 #, python-brace-format
 msgid "It has {size} bytes, and encryption allows {limit}. Split it into smaller drafts or publish it directly."
 msgstr "Er hat {size} Bytes, die Verschlüsselung erlaubt höchstens {limit}. Teile ihn in kleinere Entwürfe auf oder veröffentliche ihn direkt."
 
-#: nostr/publisher.py:1003
+#: nostr/publisher.py:1011
 msgid "Encrypting the draft. Approve the request in your signer app if it asks…"
 msgstr "Der Entwurf wird verschlüsselt. Bestätige die Anfrage in deiner Signer-App, wenn sie fragt …"
 
-#: nostr/publisher.py:1435
+#: nostr/publisher.py:1443
 msgid "no relay accepted the deletion"
 msgstr "kein Relay hat das Löschen angenommen"
 
@@ -6774,64 +6774,69 @@ msgid_plural "Published. {accepted}/{total} relays accepted."
 msgstr[0] "Veröffentlicht. Angenommen von {accepted}/{total} Relay."
 msgstr[1] "Veröffentlicht. Angenommen von {accepted}/{total} Relays."
 
-#: nostr/publisher.py:834
+#: nostr/publisher.py:838
+#, python-brace-format
+msgid "It has {size} bytes, more than your signer app can hand back in one answer once its quotes and line breaks are counted. Split it into smaller drafts or publish it directly."
+msgstr "Er hat {size} Bytes, mehr als deine Signer-App in einer Antwort zurückgeben kann, wenn ihre Anführungszeichen und Zeilenumbrüche mitgezählt werden. Teile ihn in kleinere Entwürfe auf oder veröffentliche ihn direkt."
+
+#: nostr/publisher.py:842
 #, python-brace-format
 msgid "It has {size} bytes, and your signer app can encrypt at most {limit}. Split it into smaller drafts or publish it directly."
 msgstr "Er hat {size} Bytes, deine Signer-App kann höchstens {limit} verschlüsseln. Teile ihn in kleinere Entwürfe auf oder veröffentliche ihn direkt."
 
-#: nostr/publisher.py:1227
+#: nostr/publisher.py:1235
 msgid "This draft can’t be deleted: its link name holds a secret key, and the version on your relays isn’t known here. Refresh your drafts and try again."
 msgstr "Dieser Entwurf lässt sich nicht löschen: In seinem Linknamen steht ein geheimer Schlüssel, und die Fassung auf deinen Relays ist hier nicht bekannt. Lade deine Entwürfe neu und versuche es noch einmal."
 
-#: nostr/publisher.py:1055
+#: nostr/publisher.py:1063
 #, python-brace-format
 msgid "Publishing draft to {n} relay…"
 msgid_plural "Publishing draft to {n} relays…"
 msgstr[0] "Der Entwurf wird auf {n} Relay gespeichert …"
 msgstr[1] "Der Entwurf wird auf {n} Relays gespeichert …"
 
-#: nostr/publisher.py:1066
+#: nostr/publisher.py:1074
 #, python-brace-format
 msgid "Draft saved to {accepted}/{total} relay."
 msgid_plural "Draft saved to {accepted}/{total} relays."
 msgstr[0] "Entwurf auf {accepted}/{total} Relay gespeichert."
 msgstr[1] "Entwurf auf {accepted}/{total} Relays gespeichert."
 
-#: nostr/publisher.py:1244
+#: nostr/publisher.py:1252
 #, python-brace-format
 msgid "Removing draft from {n} relay…"
 msgid_plural "Removing draft from {n} relays…"
 msgstr[0] "Der Entwurf wird von {n} Relay entfernt …"
 msgstr[1] "Der Entwurf wird von {n} Relays entfernt …"
 
-#: nostr/publisher.py:1258
+#: nostr/publisher.py:1266
 #, python-brace-format
 msgid "Draft removed on {accepted}/{total} relay."
 msgid_plural "Draft removed on {accepted}/{total} relays."
 msgstr[0] "Entwurf auf {accepted}/{total} Relay entfernt."
 msgstr[1] "Entwurf auf {accepted}/{total} Relays entfernt."
 
-#: nostr/publisher.py:1433
+#: nostr/publisher.py:1441
 #, python-brace-format
 msgid "no relay accepted the deletion ({reasons})"
 msgstr "kein Relay hat das Löschen angenommen ({reasons})"
 
-#: nostr/publisher.py:1000
+#: nostr/publisher.py:1008
 #, python-brace-format
 msgid "This draft is too large. {reason}"
 msgstr "Dieser Entwurf ist zu groß. {reason}"
 
-#: nostr/publisher.py:997
+#: nostr/publisher.py:1005
 #, python-brace-format
 msgid "Could not serialize draft: {reason}"
 msgstr "Der Entwurf konnte nicht vorbereitet werden: {reason}"
 
-#: nostr/publisher.py:1032
+#: nostr/publisher.py:1040
 #, python-brace-format
 msgid "Couldn’t prepare the draft: {reason}"
 msgstr "Der Entwurf konnte nicht vorbereitet werden: {reason}"
 
-#: nostr/publisher.py:1009
+#: nostr/publisher.py:1017
 #, python-brace-format
 msgid "Could not encrypt draft: {reason}"
 msgstr "Der Entwurf konnte nicht verschlüsselt werden: {reason}"
@@ -7475,31 +7480,31 @@ msgstr "Neueste {n}"
 msgid "All (up to {n})"
 msgstr "Alle (bis {n})"
 
-#: nostr/imports/subscriptions.py:95
+#: nostr/imports/subscriptions.py:96
 msgid "Reading your list of sources…"
 msgstr "Deine Quellenliste wird gelesen …"
 
-#: nostr/imports/subscriptions.py:96
+#: nostr/imports/subscriptions.py:97
 msgid "Your list of sources couldn't be read online, so MyEditor shows the copy kept on this computer."
 msgstr "Deine Quellenliste konnte online nicht gelesen werden. MyEditor zeigt die Kopie auf diesem Computer."
 
-#: nostr/imports/subscriptions.py:98
+#: nostr/imports/subscriptions.py:99
 msgid "Your latest changes to your sources are kept on this computer for now: the list couldn't be saved online. MyEditor tries again on its own."
 msgstr "Deine letzten Änderungen an deinen Quellen bleiben vorerst auf diesem Computer: Die Liste konnte online nicht gespeichert werden. MyEditor versucht es von selbst erneut."
 
-#: nostr/imports/subscriptions.py:102
+#: nostr/imports/subscriptions.py:103
 msgid "Your list of sources couldn't be read."
 msgstr "Deine Quellenliste konnte nicht gelesen werden."
 
-#: nostr/imports/subscriptions.py:103
+#: nostr/imports/subscriptions.py:104
 msgid "Your signer app didn't answer, so your list of sources couldn't be read."
 msgstr "Deine Signer-App hat nicht geantwortet, daher konnte deine Quellenliste nicht gelesen werden."
 
-#: nostr/imports/subscriptions.py:108
+#: nostr/imports/subscriptions.py:109
 msgid "Your list of sources was saved with an older kind of encryption. Open it once in the app that saved it; until then, changes made here stay on this computer."
 msgstr "Deine Liste der Quellen wurde mit einer älteren Verschlüsselung gespeichert. Öffne sie einmal in der App, die sie gespeichert hat; bis dahin bleiben Änderungen von hier auf diesem Computer."
 
-#: nostr/imports/subscriptions.py:683
+#: nostr/imports/subscriptions.py:672
 #, python-brace-format
 msgid "Your list of sources couldn't be saved online ({reason}). Your changes are kept on this computer."
 msgstr "Deine Quellenliste konnte online nicht gespeichert werden ({reason}). Deine Änderungen bleiben auf diesem Computer."
@@ -7792,35 +7797,35 @@ msgstr "Dein Konto ist bereit, aber dein Profil ist noch nicht veröffentlicht. 
 msgid "Cannot derive identifier: item has no guid, link, or title"
 msgstr "Keine Kennung möglich: Der Beitrag hat weder GUID noch Link noch Titel"
 
-#: nostr/standup/formats.py:84
+#: nostr/standup/formats.py:85
 msgid "It contains a secret key, and MyEditor never sends a secret key to a publication. Remove the key and try again."
 msgstr "Darin steht ein geheimer Schlüssel, und MyEditor schickt nie einen geheimen Schlüssel an eine Publikation. Entferne den Schlüssel und versuche es noch einmal."
 
-#: nostr/standup/lists.py:63
+#: nostr/standup/lists.py:57
 msgid "Your list of submissions couldn't be read."
 msgstr "Deine Liste der Einreichungen konnte nicht gelesen werden."
 
-#: nostr/standup/lists.py:64
+#: nostr/standup/lists.py:58
 msgid "Your signer app didn't answer, so your list of submissions couldn't be read."
 msgstr "Deine Signer-App hat nicht geantwortet, daher konnte deine Liste der Einreichungen nicht gelesen werden."
 
-#: nostr/standup/lists.py:66
+#: nostr/standup/lists.py:60
 msgid "Your list of submissions was saved with an older kind of encryption. Open it once in the app that saved it; until then, nothing new can be submitted here."
 msgstr "Deine Liste der Einreichungen wurde mit einer älteren Verschlüsselung gespeichert. Öffne sie einmal in der App, die sie gespeichert hat; bis dahin kannst du hier nichts Neues einreichen."
 
-#: nostr/standup/lists.py:69
+#: nostr/standup/lists.py:63
 msgid "Part of your list of submissions hasn't arrived yet. What did is shown, and the list is made whole again the next time it is saved."
 msgstr "Ein Teil deiner Liste der Einreichungen ist noch nicht angekommen. Was angekommen ist, wird gezeigt, und beim nächsten Speichern wird die Liste wieder vollständig."
 
-#: nostr/standup/lists.py:72
+#: nostr/standup/lists.py:66
 msgid "What you have read couldn't be loaded."
 msgstr "Was du schon gelesen hast, konnte nicht geladen werden."
 
-#: nostr/standup/lists.py:73
+#: nostr/standup/lists.py:67
 msgid "Your signer app didn't answer, so what you have read couldn't be loaded."
 msgstr "Deine Signer-App hat nicht geantwortet, daher konnte nicht geladen werden, was du schon gelesen hast."
 
-#: nostr/standup/lists.py:75
+#: nostr/standup/lists.py:69
 msgid "What you have read was saved with an older kind of encryption and is left as it is."
 msgstr "Was du schon gelesen hast, wurde mit einer älteren Verschlüsselung gespeichert und bleibt, wie es ist."
 

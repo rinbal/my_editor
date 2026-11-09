@@ -49,7 +49,7 @@ from typing import Any, Callable, Collection, Dict, List, Mapping, Optional, Seq
 from PySide6.QtCore import QObject
 
 from . import CLIENT_NAME
-from .bunker import is_signer_silent
+from .bunker import is_signer_silent, readable_back
 from .drafts import supersedes
 from .events import build_event
 from .list_relays import LIST_KIND, event_mark, is_list_of, relay_key
@@ -64,6 +64,7 @@ from .list_results import (
 from .outbox import ask_private_relays
 from .outbox.policy import replacement_created_at
 from .paged_list import (
+    PAGE_PAYLOAD_MAX,
     Page,
     PageError,
     Paging,
@@ -411,7 +412,15 @@ class _Reading:
         if self._event is None:
             self._end(ReadStatus.MISSING)
             return
+        if self._too_long(self._event):
+            self._unreadable(self._list._words.unreadable, "its first page is longer than a page")
+            return
         self._list._decrypt(self._profile, self._event, self._on_first_text, self._unreadable)
+
+    def _too_long(self, event: dict) -> bool:
+        """A page whose ciphertext holds more than a page (13): never
+        sent to a signer app, whose answer might not fit."""
+        return self._list._paging is not None and len(event["content"]) > PAGE_PAYLOAD_MAX
 
     def _on_first_text(self, text: str) -> None:
         paging = self._list._paging
@@ -440,7 +449,10 @@ class _Reading:
             return
         for index in range(1, self._first.pages):
             newest = self._newest(events, page_d_tag(self._list.d_tag, index))
-            if newest is not None:
+            if newest is not None and self._too_long(newest):
+                _log.info("page %d of the list %s is longer than a page", index,
+                          self._list._name)
+            elif newest is not None:
                 self._found[index] = newest
         self._next(sorted(self._found))
 
@@ -527,6 +539,14 @@ class _Writing:
         except ValueError as exc:
             self._fail(str(exc))
             return
+        # Written only what this account can read again: a list the signer
+        # app encrypts but cannot hand back would be unreadable, and an
+        # unreadable list is never written over (contract 12.5, 13).
+        for index, text in enumerate(self._plaintexts):
+            if not readable_back(self._profile, text):
+                self._fail(f"page {index} ({len(text.encode('utf-8'))} bytes) is too large "
+                           f"for this account to read back")
+                return
         self._list._session_pool.get(self._profile, on_ready=self._ready, on_error=self._fail)
 
     def _fail(self, reason: str) -> None:

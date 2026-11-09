@@ -38,12 +38,18 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
+from .crypto import payload_length
+
 __all__ = [
-    "MAX_PAGES", "PAGE_PLAINTEXT_MAX", "PAGED_VERSION", "Page", "PageError", "Paging",
-    "digest", "join", "page_d_tag", "parse_page", "serialize", "split", "stale_pages",
+    "MAX_PAGES", "PAGE_PAYLOAD_MAX", "PAGE_PLAINTEXT_MAX", "PAGED_VERSION", "Page", "PageError",
+    "Paging", "digest", "join", "page_d_tag", "parse_page", "serialize", "split", "stale_pages",
 ]
 
 PAGE_PLAINTEXT_MAX = 32_000
+# The longest NIP-44 payload a page can be (43,780 characters): one that
+# is longer holds more than a page and is never sent to a signer app to
+# decrypt (its answer might not fit, and the read would wait it out).
+PAGE_PAYLOAD_MAX = payload_length(PAGE_PLAINTEXT_MAX)
 MAX_PAGES = 64
 # The paged format's version, in every page.
 PAGED_VERSION = 1
