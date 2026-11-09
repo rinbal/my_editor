@@ -681,8 +681,10 @@ class BunkerClient(QObject):
         timeout_ms: int,
     ) -> None:
         """Prove the channel: ``ping``, then ``get_public_key`` if the ping
-        fails. Not every signer answers ping (Amber does not); every signer
-        implements ``get_public_key``, and we already hold permission for it."""
+        fails. Not every signer answers ping (one asleep, an Amber before
+        4.0.3, one that drops methods it has no handler for: see
+        PING_TIMEOUT_MS); every signer implements ``get_public_key``, and we
+        already hold permission for it."""
 
         def _ping_failed(_reason: str) -> None:
             self._send_request(

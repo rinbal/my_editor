@@ -424,8 +424,9 @@ def _asked(client, **kw):
 
 
 def test_a_signer_that_answered_just_now_is_not_asked_again():
-    # Amber does not answer ping: asking again right after the channel was
-    # proven would cost six seconds before the first draft opens.
+    # A signer that leaves ping unanswered (one asleep, an Amber before
+    # 4.0.3): asking again right after the channel was proven would cost
+    # six seconds before the first draft opens.
     signer, client, _outcome = _reattach(signer_answers_ping=False)
     before = len(signer.seen)
     assert _asked(client) == {"answered": True}
