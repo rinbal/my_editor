@@ -9022,9 +9022,26 @@ class MainWindow(QMainWindow):
 
     def _on_nostr_sign_out(self):
         active = self._profile_store.default()
-        # The controller asks, then forgets every key kept for the account,
-        # its signer and its profile.
-        if active is None or not self._accounts.sign_out(active):
+        # The controller asks first; nothing is let go before the person
+        # agrees, and a second Sign Out while one waits asks nothing.
+        if active is None or getattr(self, "_signing_out", False) \
+                or not self._accounts.confirm_sign_out(active):
+            return
+        # What the account read of its submissions is written with its
+        # signer (13), so the submission writer stops first and the
+        # account is forgotten once that is written, or its 5 seconds
+        # passed (RG-M2r 8).
+        self._signing_out = True
+        writer = getattr(self, "_standup_writer", None)
+        if writer is None:
+            self._finish_sign_out(active)
+        else:
+            writer.stop(on_written=lambda: self._finish_sign_out(active))
+
+    def _finish_sign_out(self, active: Profile) -> None:
+        self._signing_out = False
+        # Every key kept for the account, its signer and its profile.
+        if not self._accounts.forget_account(active):
             return
         self._avatars.pop(active.user_pubkey, None)
         self._update_profile_chip()

@@ -523,15 +523,20 @@ class StandupWriter(QObject):
         say(words_of(run.progress) or _(words.IN_THE_BACKGROUND))
         run.behind_the_sheet(lambda progress: say(words_of(progress)))
 
-    def stop(self, on_done: Optional[Callable[[], None]] = None) -> None:
+    def stop(self, on_done: Optional[Callable[[], None]] = None, *,
+             on_written: Optional[Callable[[], None]] = None) -> None:
         """Sign-out or another account (13): nothing on its way answers
         any more, the submissions list and the media keys are forgotten
         at once, the server is asked to revoke the session (a token left
         alive would act for the account for up to 12 hours), and what was
         read is written before its list stops; ``on_done`` once both are
-        done."""
+        done. ``on_written`` once what was read is written, or its wait
+        (lists.SIGN_OUT_WAIT_MS) passed: the writing needs the account's
+        signer, so a sign-out forgets the signer only then (RG-M2r 8)."""
         account, self._account = self._account, None
         if account is None:
+            if on_written is not None:
+                on_written()
             if on_done is not None:
                 on_done()
             return
@@ -560,6 +565,8 @@ class StandupWriter(QObject):
 
         def written(_result) -> None:
             account.read_state.stop()
+            if on_written is not None:
+                on_written()
             finished("read state")
 
         account.read_state.before_sign_out(written)

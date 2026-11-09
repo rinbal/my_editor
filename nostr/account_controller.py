@@ -412,6 +412,12 @@ class AccountController(QObject):
     def sign_out(self, profile) -> bool:
         """Ask, then forget the account: every key kept for it here, its
         signer, and its profile. True when it was signed out."""
+        return self.confirm_sign_out(profile) and self.forget_account(profile)
+
+    def confirm_sign_out(self, profile) -> bool:
+        """Ask whether to sign out of ``profile``; nothing is forgotten
+        yet, so what still needs its signer (a read state written before
+        sign-out) can go first. :meth:`forget_account` then."""
         name = profile.display_name or profile.npub_short()
         title = _("Sign out of {name}?").format(name=name)
         has_key = self._vault.has(profile.user_pubkey)
@@ -440,9 +446,13 @@ class AccountController(QObject):
                 message=_("Your key stays in your signer app. MyEditor only forgets "
                           "this connection."),
                 action=_("Sign Out"), is_dark=self._is_dark(), nostr=True)
-        if not confirmed:
-            return False
-        if has_key and not self._forget_key(profile.user_pubkey):
+        return bool(confirmed)
+
+    def forget_account(self, profile) -> bool:
+        """Forget every key kept here for ``profile``, its signer and its
+        profile, once the person confirmed. False when the key could not
+        be deleted (they were told): the account stays."""
+        if self._vault.has(profile.user_pubkey) and not self._forget_key(profile.user_pubkey):
             return False
         self._session_pool.drop(profile.user_pubkey)
         try:

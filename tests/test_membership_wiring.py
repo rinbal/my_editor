@@ -863,7 +863,7 @@ def test_identity_teardown_names_the_drafts_the_media_keys_and_the_window():
 @pytest.mark.parametrize("handler", [
     "_on_nostr_select_profile",
     "_on_nostr_profile_connected",
-    "_on_nostr_sign_out",
+    "_finish_sign_out",                 # the sign-out's end, once the person confirmed
 ])
 def test_every_identity_transition_releases_the_previous_account(handler):
     # Three separate paths change the active account. Missing any one of
@@ -888,3 +888,52 @@ def test_reselecting_the_same_account_does_not_tear_it_down():
         )
     ]
     assert guarded, "the teardown is unconditional, so re-selecting costs prompts"
+
+
+class SignOutStandIn:
+    """The parts of MainWindow its sign-out touches, each step logged."""
+
+    _on_nostr_sign_out = MainWindow._on_nostr_sign_out
+    _finish_sign_out = MainWindow._finish_sign_out
+
+    def __init__(self, *, confirmed=True, forgotten=True, writer=True) -> None:
+        self.log = []
+        self.written = []
+        active = SimpleNamespace(user_pubkey="a1" * 32)
+        self._profile_store = SimpleNamespace(default=lambda: None if self.log.count("forget")
+                                              else active)
+        self._accounts = SimpleNamespace(
+            confirm_sign_out=lambda _p: self.log.append("ask") or confirmed,
+            forget_account=lambda _p: self.log.append("forget") or forgotten)
+        if writer:
+            self._standup_writer = SimpleNamespace(
+                stop=lambda on_written: (self.log.append("stop writer"),
+                                         self.written.append(on_written)))
+        self._avatars = {}
+        self._drafts_panel = None
+        self._update_profile_chip = self._refresh_profile_chip_menu = lambda: None
+        self._release_identity_state = lambda: self.log.append("release")
+
+
+def test_the_signer_is_forgotten_only_after_the_read_state_is_written():
+    # RG-M2r 8: the controller forgot the signer before the submission
+    # writer wrote what was read (lists.py: before_sign_out comes first).
+    window = SignOutStandIn()
+    window._on_nostr_sign_out()
+    assert window.log == ["ask", "stop writer"]
+    window._on_nostr_sign_out()                     # Sign Out again while it waits
+    assert window.log == ["ask", "stop writer"]
+    window.written[0]()                             # written, or its 5 seconds passed
+    assert window.log == ["ask", "stop writer", "forget", "release"]
+
+
+@pytest.mark.parametrize("confirmed, forgotten, writer, log", [
+    (False, True, True, ["ask"]),                               # nothing is let go
+    (True, False, False, ["ask", "forget"]),                    # the key stayed
+    (True, True, False, ["ask", "forget", "release"]),          # no writer to wait for
+], ids=["declined", "key not deleted", "no writer"])
+def test_a_sign_out_lets_go_only_what_it_should(confirmed, forgotten, writer, log):
+    window = SignOutStandIn(confirmed=confirmed, forgotten=forgotten, writer=writer)
+    window._on_nostr_sign_out()
+    assert window.log == log
+    assert getattr(window, "_signing_out", False) is False     # a later one asks again

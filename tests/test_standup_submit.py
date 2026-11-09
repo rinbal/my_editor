@@ -311,6 +311,20 @@ def test_a_lookup_never_asks_one_server_about_anothers_entry():
                     print, print)
 
 
+def test_a_sign_out_hears_when_what_was_read_is_written():
+    # RG-M2r 8: the window forgets the signer only then.
+    writer, profile = _wired_writer()
+    said = []
+    writer.stop(on_written=lambda: said.append("written"), on_done=lambda: said.append("done"))
+    assert said == ["written", "done"]              # no account: at once
+    account, said, waiting = writer.account(profile), [], []
+    account.read_state.before_sign_out = waiting.append
+    writer.stop(on_written=lambda: said.append("written"))
+    assert said == [] and len(waiting) == 1
+    waiting[0](None)                                # written, or its wait passed
+    assert said == ["written"]
+
+
 def test_the_clients_of_other_servers_are_made_once_and_let_go_with_their_account():
     # Lesson 31: a client of another server refuses once its account stopped.
     from nostr.standup.errors import Code
