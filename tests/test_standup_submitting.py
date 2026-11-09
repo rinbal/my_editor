@@ -32,7 +32,7 @@ from nostr.standup.submitting import MessageStatus, Phase, Ports, Step, Submitti
 from nostr.standup.watcher import resolve_unconfirmed
 from tests.membership_fakes import FakeClock
 from tests.standup_fakes import (
-    ADDRESS, DROP_AFTER, DROP_BEFORE, KEY_EVENT, SERVER, FakeStandupServer, Fault, SignAs,
+    ADDRESS, DROP_AFTER, DROP_BEFORE, KEY_EVENT, LOST, SERVER, FakeStandupServer, Fault, SignAs,
     StandupNam, submission_for,
 )
 from tests.standup_vectors import NOW, pk, sk
@@ -457,6 +457,20 @@ def test_an_answer_to_an_earlier_request_is_ignored():
     world.settle()
     assert world.submitting.progress.step is Step.UPLOADING
     world.uploads.finish()
+    world.settle()
+    assert world.submitting.progress.step is Step.SUBMITTED
+
+
+def test_a_request_the_server_never_got_is_said_not_received_and_can_be_sent_again():
+    # RG-M2b 11: the lookup answered, so it is not "no connection".
+    world = World()
+    world.server.inject("submit", LOST)
+    progress = world.go()
+    assert Step.CHECKING in world.steps and progress.step is Step.FAILED
+    assert progress.failure.headline == words.NOT_RECEIVED
+    assert progress.failure.detail == words.NOTHING_SUBMITTED
+    assert progress.failure.retry is Step.SIGNING
+    world.submitting.retry()
     world.settle()
     assert world.submitting.progress.step is Step.SUBMITTED
 

@@ -152,6 +152,7 @@ REVISION_EVENTS = ("submitted", "revision")
 
 DROP_BEFORE = "drop before"     # the connection fails before the request arrives
 DROP_AFTER = "drop after"       # the request is handled, the answer is lost
+LOST = "lost"                   # the request went out, the server never got it
 
 
 @dataclass
@@ -463,7 +464,7 @@ class FakeStandupServer:
 
     def inject(self, route: str, fault: Any) -> None:
         """The next request to ``route`` meets ``fault``: DROP_BEFORE,
-        DROP_AFTER or a :class:`Fault`."""
+        DROP_AFTER, LOST or a :class:`Fault`."""
         self.faults.setdefault(route, []).append(fault)
 
     def _hit(self, scope: str, subject: str, *, limit: int, window: int,
@@ -545,6 +546,8 @@ class FakeStandupServer:
         fault = faults.pop(0) if faults else None
         if fault == DROP_BEFORE:
             return transport_failure(QNetworkReply.NetworkError.ConnectionRefusedError)
+        if fault == LOST:
+            return transport_failure(QNetworkReply.NetworkError.RemoteHostClosedError)
         if isinstance(fault, Fault):
             headers_out = {"Retry-After": str(fault.retry_after)} if fault.retry_after else None
             return _error(fault.status, fault.code, fault.message, detail=fault.detail,

@@ -60,6 +60,8 @@ LIST_ENTRY_UNUSABLE = N_("Your list of submissions holds an entry for this text 
 TEXT_STAYS = N_("Your text stays in the editor.")
 STORED_PICTURE_MISSING = N_("The server has your submission; a picture is still missing.")
 NOT_SENT = N_("Not sent. No connection to the server.")
+# Sent, but the server, asked by the status key, has nothing of it.
+NOT_RECEIVED = N_("The server didn’t receive your submission.")
 SIGNER_DECLINED = N_("Not sent. Your signer app declined the request.")
 SIGNER_SILENT = N_("Not sent. Your signer app didn’t answer.")
 LIST_NOT_SAVED = N_("Your list of submissions couldn’t be saved.")
@@ -100,7 +102,7 @@ def refusal(code: str) -> str:
 __all__ = [
     "ANOTHER_VERSION", "ENCRYPTING", "IN_THE_BACKGROUND", "LIST_CHANGED_ELSEWHERE",
     "LIST_ENTRY_UNUSABLE", "LIST_NOT_SAVED", "MESSAGE_NOT_SENT", "MESSAGE_SENDING", "MESSAGE_SENT",
-    "NOTHING_SUBMITTED", "NOT_CONFIRMED", "NOT_SENT", "NOT_TAKEN", "PICTURE_MISSING", "SENDING",
+    "NOTHING_SUBMITTED", "NOT_CONFIRMED", "NOT_RECEIVED", "NOT_SENT", "NOT_TAKEN", "PICTURE_MISSING", "SENDING",
     "SIGNER_DECLINED", "SIGNER_SILENT", "STOPPED_MESSAGE", "STOPPED_NOTHING_SENT",
     "STOPPED_PICTURES", "STOPPED_UNCONFIRMED", "STORED_PICTURE_MISSING", "SUBMITTED",
     "SUBMITTED_DETAIL",

@@ -8029,64 +8029,68 @@ msgstr "Der Server hat deine Einreichung, ein Bild fehlt noch."
 msgid "Not sent. No connection to the server."
 msgstr "Nicht gesendet. Keine Verbindung zum Server."
 
-#: nostr/standup/words.py:63
+#: nostr/standup/words.py:64
+msgid "The server didn’t receive your submission."
+msgstr "Der Server hat deine Einreichung nicht erhalten."
+
+#: nostr/standup/words.py:65
 msgid "Not sent. Your signer app declined the request."
 msgstr "Nicht gesendet. Deine Signer-App hat die Anfrage abgelehnt."
 
-#: nostr/standup/words.py:64
+#: nostr/standup/words.py:66
 msgid "Not sent. Your signer app didn’t answer."
 msgstr "Nicht gesendet. Deine Signer-App hat nicht geantwortet."
 
-#: nostr/standup/words.py:65
+#: nostr/standup/words.py:67
 msgid "Your list of submissions couldn’t be saved."
 msgstr "Deine Liste der Einreichungen konnte nicht gespeichert werden."
 
-#: nostr/standup/words.py:66
+#: nostr/standup/words.py:68
 msgid "Another device changed this submission just now."
 msgstr "Ein anderes Gerät hat diese Einreichung gerade geändert."
 
-#: nostr/standup/words.py:67
+#: nostr/standup/words.py:69
 msgid "A picture couldn’t be uploaded."
 msgstr "Ein Bild konnte nicht hochgeladen werden."
 
-#: nostr/standup/words.py:68
+#: nostr/standup/words.py:70
 msgid "A picture can’t be found on your media server."
 msgstr "Ein Bild ist auf deinem Medienserver nicht zu finden."
 
-#: nostr/standup/words.py:69
+#: nostr/standup/words.py:71
 #, python-brace-format
 msgid "This submission is larger than {publication} takes."
 msgstr "Diese Einreichung ist größer, als {publication} annimmt."
 
-#: nostr/standup/words.py:70
+#: nostr/standup/words.py:72
 #, python-brace-format
 msgid "{publication} already has another version of this submission."
 msgstr "{publication} hat schon eine andere Fassung dieser Einreichung."
 
-#: nostr/standup/words.py:71
+#: nostr/standup/words.py:73
 msgid "The server didn’t take the submission."
 msgstr "Der Server hat die Einreichung nicht angenommen."
 
-#: nostr/standup/words.py:75
+#: nostr/standup/words.py:77
 #, python-brace-format
 msgid "{publication} isn’t taking submissions right now."
 msgstr "{publication} nimmt gerade keine Einreichungen an."
 
-#: nostr/standup/words.py:76
+#: nostr/standup/words.py:78
 #, python-brace-format
 msgid "{publication} doesn’t take submissions from you."
 msgstr "{publication} nimmt von dir keine Einreichungen an."
 
-#: nostr/standup/words.py:77
+#: nostr/standup/words.py:79
 #, python-brace-format
 msgid "You already have as many open submissions at {publication} as it takes."
 msgstr "Du hast bei {publication} schon so viele offene Einreichungen, wie sie annimmt."
 
-#: nostr/standup/words.py:79
+#: nostr/standup/words.py:81
 msgid "Too many submissions in a short time. Try again later."
 msgstr "Zu viele Einreichungen in kurzer Zeit. Versuche es später noch einmal."
 
-#: nostr/standup/words.py:84
+#: nostr/standup/words.py:86
 #, python-brace-format
 msgid "Nobody at {publication} could decide on it: the only person who can is named among those who take part."
 msgstr "Niemand bei {publication} könnte darüber entscheiden: Die einzige Person, die das kann, ist unter den Beteiligten."

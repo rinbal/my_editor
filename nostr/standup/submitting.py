@@ -551,7 +551,9 @@ class Submitting:
         self._look_up()             # the entry stays unconfirmed: ask again later
 
     def _not_stored(self, _found: NotStored) -> None:
-        self._fail(words.NOT_SENT, Step.SIGNING)
+        # The server answered the lookup: there was a connection, it has
+        # nothing of this submission (RG-M2b 11).
+        self._fail(words.NOT_RECEIVED, Step.SIGNING)
 
     def _elsewhere(self, _found: Any) -> None:
         self._fail(words.ANOTHER_VERSION, None)
