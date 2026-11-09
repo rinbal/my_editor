@@ -159,7 +159,8 @@ DRAFT = ArticleDraft(d="ein-jahr", title="Ein Jahr mit Lightning im Café",
                      content="Ein Text.")
 
 
-def _sheet(tmp_path, writer=None, *, draft=DRAFT, dark=False, private=()) -> SubmitSheet:
+def _sheet(tmp_path, writer=None, *, draft=DRAFT, dark=False, private=(),
+           public=0) -> SubmitSheet:
     store = ProfileStore(path=tmp_path / "profiles.json")
     profile = Profile(user_pubkey=WRITER, bunker_pubkey="b" * 64, display_name="Jana Roth",
                       bunker_relays=["wss://bunker.example"], local_secret_hex="0" * 64)
@@ -167,7 +168,7 @@ def _sheet(tmp_path, writer=None, *, draft=DRAFT, dark=False, private=()) -> Sub
     return SubmitSheet(writer=writer or Writer(), draft=draft, cover=QPixmap(),
                        byline="Jana Roth · Artikel · 1 Bild", private_names=private,
                        profile=profile, store=store, avatars=AvatarStore(),
-                       request_logo=lambda *_a: None, is_dark=dark)
+                       request_logo=lambda *_a: None, is_dark=dark, public_pictures=public)
 
 
 def _entries(sheet) -> List[tuple]:
@@ -270,6 +271,22 @@ def test_the_five_privacy_lines_name_the_publication_and_the_operator(tmp_path):
     assert sheet.privacy_lines.isHidden()
     sheet.privacy_toggle.setChecked(True)
     assert not sheet.privacy_lines.isHidden()
+
+
+def test_pictures_that_stay_public_are_counted_and_never_called_encrypted(tmp_path):
+    # Contract 7 (feat/redaktion ee3e5d7): the lines called every picture
+    # encrypted, public links too.
+    from nostr.standup.drafting import LocalPicture
+    one = LocalPicture(key="k", name="a.jpg", mime="image/jpeg", data=b"1")
+    words = _sheet(tmp_path, draft=ArticleDraft(d="a", title="T", summary="", content="x",
+                                                pictures=(one,)), public=2).privacy_words()
+    assert words[2:4] == [
+        "1 Bild liegt verschlüsselt auf deinem Medienserver. Er sieht, wann es abgerufen "
+        "wird, nie was darin ist.",
+        "2 Bilder waren schon öffentlich im Netz und bleiben öffentlich."]
+    only_public = _sheet(tmp_path, public=1).privacy_words()
+    assert "1 Bild war schon öffentlich im Netz und bleibt öffentlich." in only_public
+    assert not any("verschlüsselt auf deinem Medienserver" in line for line in only_public)
 
 
 def test_einreichen_hands_over_and_a_closed_sheet_lets_it_go_on(tmp_path):

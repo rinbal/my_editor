@@ -161,7 +161,7 @@ class SubmitSheet(QDialog):
                  byline: str, private_names: Sequence[str], profile: Profile,
                  store: ProfileStore, avatars: AvatarStore,
                  request_logo: Callable[[str, str], None], is_dark: bool,
-                 parent: Optional[QWidget] = None) -> None:
+                 public_pictures: int = 0, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(_("Submit to a Publication"))
         make_sheet(self)
@@ -171,6 +171,8 @@ class SubmitSheet(QDialog):
         self._cover = cover
         self._byline = byline
         self._private_names = list(private_names)
+        # Pictures that are public links already: they stay public.
+        self._public_pictures = max(0, int(public_pictures))
         self._store = store
         self._avatars = avatars
         self._request_logo = request_logo
@@ -553,13 +555,26 @@ class SubmitSheet(QDialog):
                      publication=name),
                  _("The server sees the title, the publication and who takes part, never "
                    "the content.")]
-        count = len(self._draft.pictures)
-        if count:
+        count, public = len(self._draft.pictures), self._public_pictures
+        if count and not public:
             lines.append(ngettext(
                 "The picture is encrypted on your media server. It sees when it is fetched, "
                 "never what is in it.",
                 "The pictures are encrypted on your media server. It sees when they are "
                 "fetched, never what is in them.", count))
+        elif count:
+            # Some stay public: the encrypted ones are counted, never all of
+            # them called encrypted (contract 7, feat/redaktion ee3e5d7).
+            lines.append(ngettext(
+                "{count} picture is encrypted on your media server. It sees when it is "
+                "fetched, never what is in it.",
+                "{count} pictures are encrypted on your media server. It sees when they are "
+                "fetched, never what is in them.", count).format(count=count))
+        if public:
+            lines.append(ngettext(
+                "{count} picture was already public on the web and stays public.",
+                "{count} pictures were already public on the web and stay public.",
+                public).format(count=public))
         lines.append(_("Withdrawing deletes nothing the editorial team already has."))
         lines.append(_("The server of {operator} keeps the submission encrypted.").format(
             operator=self._operator) if self._operator

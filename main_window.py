@@ -10119,7 +10119,7 @@ class MainWindow(QMainWindow):
         local = self._uploads_needed(ed)
         if local is None:
             return                              # a picture is gone: said why
-        draft, cover, pictures, private = self._submission_of(ed, active, local)
+        draft, cover, pictures, private, public = self._submission_of(ed, active, local)
         unreadable = [p.name for p in draft.pictures if not p.data]
         if unreadable:
             self._say_pictures_missing(unreadable)
@@ -10133,7 +10133,8 @@ class MainWindow(QMainWindow):
             "{count} picture", "{count} pictures", pictures).format(count=pictures)]
             if pictures else []))
         sheet = SubmitSheet(writer=self._standup(), draft=draft, cover=cover, byline=byline,
-                            private_names=private, profile=active, store=self._profile_store,
+                            private_names=private, public_pictures=public, profile=active,
+                            store=self._profile_store,
                             avatars=self._avatars, request_logo=self._avatar_batcher.request,
                             is_dark=self.is_dark_theme, parent=self)
         sheet.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -10152,11 +10153,14 @@ class MainWindow(QMainWindow):
             self._set_article_details(ed, details.with_changes(identifier=d))
 
     def _submission_of(self, ed, profile, local) -> tuple:
-        """``(draft, cover, pictures, private)``: the article of ``ed`` as
-        drafting.ArticleDraft (its files on this computer only kept by
-        their asset keys, to be encrypted with it), its cover as a picture
-        for the card, how many pictures it shows, and the names of those
-        of the private library, which the editorial team could not open."""
+        """``(draft, cover, pictures, private, public)``: the article of
+        ``ed`` as drafting.ArticleDraft (its files on this computer only
+        kept by their asset keys, to be encrypted with it), its cover as a
+        picture for the card, how many pictures it shows, the names of
+        those of the private library, which the editorial team could not
+        open, and how many of its pictures (the cover too) are public links
+        already and stay so: they are never called encrypted (contract 7,
+        feat/redaktion ee3e5d7)."""
         content, _media = self._publish_payload(ed, "markdown", keep_local=True)
         details = self._article_details_of(ed)
         title = details.title or default_title(content, self._preview_name)
@@ -10165,12 +10169,14 @@ class MainWindow(QMainWindow):
              or slugify(title) or hashlib.sha256(title.encode()).hexdigest()[:16])
         names = list(dict.fromkeys(iter_image_names(ed.document())))
         cover_asset = self._asset_named(ed, details.image) if details.image else None
-        private = []
-        for name in names + ([details.image] if details.image else []):
+        private, public = [], 0
+        for name in list(dict.fromkeys(names + ([details.image] if details.image else []))):
             asset = self._asset_named(ed, name)
             if asset is not None and asset.is_uploaded \
                     and self._media_visibility.state_of(asset.sha256) == PRIVATE:
                 private.append(self._file_label(asset))
+            elif asset is None or asset.is_uploaded:
+                public += 1             # a web address, or a file of the media servers
         if cover_asset is not None and not cover_asset.is_uploaded \
                 and cover_asset not in local:
             local = [*local, cover_asset]
@@ -10189,7 +10195,7 @@ class MainWindow(QMainWindow):
             tags=tuple(details.hashtags), image=image, authors=tuple(details.coauthors),
             pictures=pictures, thumb=thumbnail(cover_bytes) if cover_bytes else None,
             published_at=details.published_at)
-        return draft, cover, len(names), list(dict.fromkeys(private))
+        return draft, cover, len(names), list(dict.fromkeys(private)), public
 
     @staticmethod
     def _file_name(path: str) -> str:

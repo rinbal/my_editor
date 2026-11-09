@@ -54,7 +54,8 @@ def test_a_local_picture_goes_with_the_text_by_its_key_and_an_uploaded_one_by_ad
         coauthors=(CO_AUTHOR,), published_at=1700000000))
     hosted, local = win.uploaded_asset(alt="hosted"), win.local_asset(alt="sketch")
     ed = _editor_with(hosted, local, text="Look:")
-    draft, _cover, pictures, private = win._submission_of(ed, PROFILE, win._uploads_needed(ed))
+    draft, _cover, pictures, private, public = win._submission_of(ed, PROFILE,
+                                                                   win._uploads_needed(ed))
     assert hosted.remote_url in draft.content and local.key in draft.content
     assert [(p.key, p.data, p.alt) for p in draft.pictures] == [
         (local.key, GIF_BYTES, "sketch")]
@@ -63,6 +64,7 @@ def test_a_local_picture_goes_with_the_text_by_its_key_and_an_uploaded_one_by_ad
             draft.published_at) == ("ein-jahr", "Ein Jahr", "Kurz", ("bitcoin",),
                                     (CO_AUTHOR,), 1700000000)
     assert pictures == 2 and private == []
+    assert public == 1                             # the hosted one stays a public link
 
 
 def test_a_cover_on_this_computer_is_a_picture_of_the_submission_and_its_small_cover(
@@ -71,11 +73,12 @@ def test_a_cover_on_this_computer_is_a_picture_of_the_submission_and_its_small_c
     cover = win._asset_manager.adopt_bytes(PNG_BYTES, alt="")
     win._details = ArticleDetails(title="T", image=cover.key)
     ed = _editor_with(text="Just words.")
-    draft, pixmap, pictures, _private = win._submission_of(ed, PROFILE, win._uploads_needed(ed))
+    draft, pixmap, pictures, _private, public = win._submission_of(ed, PROFILE,
+                                                                    win._uploads_needed(ed))
     assert draft.image == cover.key and [p.key for p in draft.pictures] == [cover.key]
     assert draft.thumb is not None and draft.thumb["mime"] == "image/jpeg"
     assert isinstance(pixmap, QPixmap) and not pixmap.isNull()
-    assert pictures == 0
+    assert pictures == 0 and public == 0           # the cover goes encrypted
     assert draft.d                                  # a title makes the identifier
 
 
@@ -85,8 +88,9 @@ def test_a_picture_of_the_private_library_is_named(tmp_path):
     win._media_visibility = types.SimpleNamespace(
         state_of=lambda sha: PRIVATE if sha == hosted.sha256 else PUBLIC)
     ed = _editor_with(hosted)
-    *_rest, private = win._submission_of(ed, PROFILE, win._uploads_needed(ed))
+    *_rest, private, public = win._submission_of(ed, PROFILE, win._uploads_needed(ed))
     assert private == ["Café"]                     # as the picture is called, never its key
+    assert public == 0                             # private: never counted as public
 
 
 class _Kept(_Submitting):
@@ -139,6 +143,7 @@ def test_the_submit_command_keeps_the_identifier_its_sheet_sent(tmp_path, monkey
         def __init__(self, **kw) -> None:
             super().__init__()
             self.draft = kw["draft"]
+            self.public = kw["public_pictures"]
 
         def setAttribute(self, *_args) -> None:  # noqa: N802, Qt's name
             pass
@@ -160,5 +165,6 @@ def test_the_submit_command_keeps_the_identifier_its_sheet_sent(tmp_path, monkey
     win.is_dark_theme = False
     MainWindow._on_nostr_submit_publication(win)
     sheet, = Sheet.opened
+    assert sheet.public == 0                       # the count reaches the sheet
     sheet.submitted.emit(sheet.draft.d)
     assert tab_details.details_of(ed).identifier == "ein-jahr"
