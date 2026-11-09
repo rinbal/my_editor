@@ -17,6 +17,13 @@ as a :class:`VerifiedRevision`; the openers take nothing else:
 - :class:`MediaKeys`: media keys only from an envelope so opened, kept
   per submission and ``cipher_sha256``.
 
+A work that is already public has no envelope (contract 12.4, feat/redaktion
+3b00351): a submission by link carries the signed kind 30023 in its body,
+a proposal is signed by the View's ``proposal_by``. The same verification
+holds, with ``revision_hash`` the id of that event, its signature, kind
+and address checked, and the sid recomputed from the signer and the
+event's coordinate; its submission key opens like any other.
+
 Whatever fails is :class:`NotConfirmed`: shown as "nicht bestätigt", and
 nothing is opened. A signer that cannot open a wrap right now is
 :class:`NotOpened`, which asking again may change.
@@ -28,6 +35,8 @@ import weakref
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple
 
+from .. import events as nostr_events
+from ..bech32 import decode_naddr
 from ..later import answer_later
 from . import formats
 from .crypto import (
@@ -93,7 +102,8 @@ def _made_here(value: object, kind: type, what: str) -> None:
 @dataclass(frozen=True)
 class VerifiedRevision:
     """A revision's values, taken from its verified signed body.
-    ``envelope_sha256`` is None for a submission by link (no envelope);
+    ``envelope_sha256`` is None for a work already public (no envelope;
+    ``revision_hash`` is then the id of its signed kind 30023);
     ``correction`` when a Redaktion member signed it, whose body names no
     ``p_sub``, kind or title (those are the writer's verified revision's)."""
 
@@ -137,19 +147,37 @@ def verify_revision(view: SubmissionView, record: RevisionRecord, *,
     ``kind`` and ``title`` must equal what is shown: the record's, and the
     View's for the revision it shows. A View shows only the current
     revision, so an older one's title is not compared; show the verified
-    one this returns."""
+    one this returns.
+
+    A work already public (3b00351): a body with a ``source`` (submit by
+    link) has its event checked by :func:`_public_work`, ``revision_hash``
+    its id and ``coordinate_hash`` its coordinate; its signer is one of
+    the event's authors and the View's writer, or, for a proposal, the
+    View's ``proposal_by`` with the event's author as the View's writer.
+    A proposal made on the publication (``.../proposals``) is signed by
+    ``proposal_by``; it is revision 1 of an article, and its sid
+    recomputes from the signer, the View's publication, the event's
+    coordinate and its round."""
     if writer_revision is not None:
         _made_here(writer_revision, VerifiedRevision, "verified revision")
     sid = view.submission_id
-    correction_path = action_path("correction", sid)
     signed = record.signed
-    correction = signed is not None and signed_path(signed) == correction_path
+    path = signed_path(signed) if signed is not None else None
+    correction = path == action_path("correction", sid)
+    proposed = path == _proposals_path(view.publication)
+    if correction:
+        signers = set(redaktion)
+    else:
+        signers = {view.proposal_by if view.proposal_by is not None else view.writer}
     try:
         body = signed_action_body(
-            signed, path=correction_path if correction else action_path("submitted", sid),
-            submission_id=sid, signers=set(redaktion) if correction else {view.writer})
+            signed, path=path if correction or proposed else action_path("submitted", sid),
+            submission_id=sid, signers=signers)
     except SignedActionInvalid as exc:
         raise NotConfirmed(str(exc)) from None
+    signer = signed.event["pubkey"]
+    if proposed:
+        return _proposal(view, record, body, signer)
     _need(formats.is_int(body.get("revision"), low=1) and body["revision"] == record.revision,
           "the revision signed is another")
     _need(body.get("revision_hash") == record.revision_hash, "the revision hash signed is another")
@@ -163,7 +191,8 @@ def verify_revision(view: SubmissionView, record: RevisionRecord, *,
               and not writer_revision.correction, "the writer's revision is not verified")
         p_sub, kind, title = writer_revision.p_sub, writer_revision.kind, writer_revision.title
     else:
-        _writer_binding(body, view, signed.event["pubkey"])
+        _writer_binding(body, view, signer)
+        _source_binding(body, view, record, signer)
         p_sub, kind, title = body.get("p_sub"), body.get("kind"), body.get("title")
     _need(p_sub == view.p_sub, "the submission key signed is another")
     _need(kind == view.kind, "the kind signed is another")
@@ -174,7 +203,91 @@ def verify_revision(view: SubmissionView, record: RevisionRecord, *,
         submission_id=sid, revision=record.revision, revision_hash=record.revision_hash,
         envelope_sha256=record.envelope_sha256, p_sub=p_sub, kind=kind, title=title,
         wraps={name: dict(wrap) for name, wrap in wraps.items()},
-        signer=signed.event["pubkey"], correction=correction, _token=_MINTED))
+        signer=signer, correction=correction, _token=_MINTED))
+
+
+def _proposals_path(publication: str) -> Optional[str]:
+    try:
+        return formats.site_path(publication) + "/proposals"
+    except formats.FormatError:
+        return None
+
+
+def _public_work(source: Any) -> Tuple[Mapping[str, Any], str]:
+    """The signed kind 30023 of a work already public and its ``d``: its
+    signature verifies and its ``naddr`` names it (kind, author, ``d``),
+    as the server checked (core/editorial_submission.link_source)."""
+    _need(isinstance(source, dict), "the public work signed is missing")
+    event = source.get("event")
+    _need(nostr_events.is_verified_event(event, kind=formats.ARTICLE_KIND),
+          "the public work's signature does not verify")
+    d = next((tag[1] for tag in event["tags"] if tag and tag[0] == "d"), None)
+    _need(isinstance(d, str), "the public work has no identifier")
+    try:
+        identifier, author, kind, _relays = decode_naddr(source.get("naddr"))
+    except (TypeError, ValueError):
+        raise NotConfirmed("the link to the public work is malformed") from None
+    _need((identifier, author, kind) == (d, event["pubkey"], formats.ARTICLE_KIND),
+          "the link names another work")
+    return event, d
+
+
+def _is_author(event: Mapping[str, Any], pubkey: str) -> bool:
+    """The event's author or a co-author ``["p", pk, relay, "author"]``."""
+    return pubkey == event["pubkey"] or any(
+        len(tag) >= 4 and tag[0] == "p" and tag[1] == pubkey and tag[3] == "author"
+        for tag in event["tags"])
+
+
+def _source_binding(body: Mapping, view: SubmissionView, record: RevisionRecord,
+                    signer: str) -> None:
+    """A writer's body with an envelope, or a work already public by link
+    whose revision is its event; who signed it matches what the View says
+    of the writer and the proposer (12.4, D17)."""
+    if "source" not in body:
+        _need(formats.is_hex64(record.envelope_sha256) and view.proposal_by is None,
+              "no envelope was signed")
+        return
+    event, d = _public_work(body["source"])
+    _need(record.envelope_sha256 is None and record.revision_hash == event["id"],
+          "the revision signed is not the public work")
+    _need(body.get("coordinate_hash") == formats.coordinate_hash(event["pubkey"], d),
+          "the address signed is not the public work's")
+    if view.proposal_by is None:
+        _need(_is_author(event, signer), "the work was handed in by someone not its author")
+    else:
+        _need(not _is_author(event, signer) and view.writer == event["pubkey"],
+              "the proposal names another writer")
+
+
+def _proposal(view: SubmissionView, record: RevisionRecord, body: Mapping,
+              signer: str) -> VerifiedRevision:
+    """A proposal made on the publication (``POST .../proposals``): its
+    body names no publication, revision or hash; the path, revision 1 and
+    the event stand for them (12.4, core/editorial_submission.parse_proposal)."""
+    event, d = _public_work({"naddr": body.get("naddr"), "event": body.get("event")})
+    _need(record.revision == 1 and record.envelope_sha256 is None
+          and record.revision_hash == event["id"], "the revision signed is not the public work")
+    _need(body.get("round") == view.round and formats.is_int(view.round, low=1),
+          "the round signed is another")
+    coordinate = formats.coordinate_hash(event["pubkey"], d)
+    _need(formats.submission_id(signer, view.publication, coordinate, view.round)
+          == view.submission_id, "the submission id does not belong to its proposer")
+    _need(view.writer == event["pubkey"], "the proposal names another writer")
+    wraps = body.get("wraps")
+    _need(isinstance(wraps, dict) and all(formats.is_wrap(w) for w in wraps.values()),
+          "the wraps signed are malformed")
+    p_sub, title = body.get("p_sub"), body.get("title")
+    _need(p_sub == view.p_sub, "the submission key signed is another")
+    _need(view.kind == "article", "the kind signed is another")
+    if record.revision == view.revision:
+        _need(record.revision_hash == view.revision_hash and title == view.title,
+              "the revision shown is not the one signed")
+    return _made(VerifiedRevision(
+        submission_id=view.submission_id, revision=1, revision_hash=record.revision_hash,
+        envelope_sha256=None, p_sub=p_sub, kind="article", title=title,
+        wraps={name: dict(wrap) for name, wrap in wraps.items()},
+        signer=signer, correction=False, _token=_MINTED))
 
 
 def _writer_binding(body: Mapping, view: SubmissionView, signer: str) -> None:
@@ -218,9 +331,9 @@ def open_submission_key(client, verified: VerifiedRevision, recipient: str,
                         on_failure: Callable[[ValueError], None], *,
                         served: Optional[Mapping[str, str]] = None) -> None:
     """The submission key from the wrap for ``recipient`` (``"writer"``,
-    ``"redaktion"`` or a contributor's pubkey), the signed body's, opened
-    by the account's signer ``client``. ``served`` is the wrap the server
-    handed out for it, which must be canonically the same.
+    ``"proposer"``, ``"redaktion"`` or a contributor's pubkey), the signed
+    body's, opened by the account's signer ``client``. ``served`` is the
+    wrap the server handed out for it, which must be canonically the same.
     ``on_failure`` gets :class:`NotConfirmed` or :class:`NotOpened`."""
     _made_here(verified, VerifiedRevision, "verified revision")
     wrap = verified.wraps.get(recipient)

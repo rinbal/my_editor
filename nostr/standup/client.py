@@ -355,8 +355,7 @@ class StandupApi(SignedJsonApi):
 
     @staticmethod
     def _site(address: str) -> str:
-        pubkey, site_d = formats.parse_address(address)
-        return "/api/sites/" + formats.route_key(pubkey, site_d)
+        return formats.site_path(address)
 
     def site_settings(self, address: str, on_success: Callable[[answers.SiteSettings], None],
                       on_failure) -> StandupCall:

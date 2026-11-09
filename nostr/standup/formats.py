@@ -226,6 +226,12 @@ def route_key(pubkey: str, site_d: str) -> str:
     return f"by/{pubkey}/{encoded}"
 
 
+def site_path(address: str) -> str:
+    """``/api/sites/<route key>`` of the publication ``address``."""
+    pubkey, site_d = parse_address(address)
+    return "/api/sites/" + route_key(pubkey, site_d)
+
+
 def coordinate_hash(writer: str, d: str) -> str:
     return sha256_hex(f"{ARTICLE_KIND}:{writer}:{d}")
 

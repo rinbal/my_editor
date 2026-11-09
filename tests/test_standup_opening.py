@@ -27,7 +27,7 @@ from nostr.standup.opening import (
     open_submission_key,
     verify_revision,
 )
-from tests.standup_fakes import KeySigner, submission_for
+from tests.standup_fakes import ADDRESS, KEY_EVENT, KeySigner, submission_for
 from tests.standup_vectors import NOW, VECTORS, pk, sk
 
 SERVER = "https://standup.example"
@@ -248,6 +248,214 @@ def test_a_correction_by_the_redaktion_takes_its_key_from_the_writers_revision(s
         verify_revision(view, record, redaktion={pk("editor")})
     with pytest.raises(NotConfirmed):
         verify_revision(view, record, redaktion={STRANGER}, writer_revision=writer)
+
+
+# -- works already public (3b00351) ---------------------------------------------------
+
+PUBLIC_D = "ein-jahr-mit-lightning"
+
+
+def public_event(author_sk: bytes = None, *, d: str = PUBLIC_D, tags=()) -> dict:
+    """A published kind 30023, signed by its author (the writer)."""
+    unsigned = {"kind": formats.ARTICLE_KIND, "created_at": NOW, "content": "# Ein Jahr\n\nText.",
+                "tags": [["d", d], ["title", "Ein Jahr mit Lightning im Café"], *tags]}
+    return events.sign_event(unsigned, author_sk or sk("writer"))
+
+
+def naddr_of(event: dict, d: str = PUBLIC_D) -> str:
+    from nostr.bech32 import encode_naddr
+    return encode_naddr(d, event["pubkey"], formats.ARTICLE_KIND)
+
+
+def _public_parts(signer: str, event: dict, recipients: dict, round_: int = 1):
+    coordinate = formats.coordinate_hash(event["pubkey"], PUBLIC_D)
+    sid = formats.submission_id(signer, ADDRESS, coordinate, round_)
+    s_sub = sc.new_secret_key()
+    return sid, s_sub, coordinate, sc.wrap_submission_key(sid, s_sub, recipients)
+
+
+def by_link(signer_sk: bytes = None, *, event: dict = None):
+    """``POST /api/submissions`` with a ``source`` (D17): its revision is
+    the event; built as core/editorial_submission.parse_submission reads it."""
+    signer_sk = signer_sk or sk("writer")
+    signer = crypto.get_public_key(signer_sk).hex()
+    event = event or public_event()
+    key = json.loads(KEY_EVENT["content"])
+    sid, s_sub, coordinate, wraps = _public_parts(
+        signer, event, {"redaktion": key["pubkey"], "writer": signer})
+    body = {"v": 1, "submission_id": sid, "round": 1, "revision": 1, "revision_hash": event["id"],
+            "publication": ADDRESS, "key_event_id": KEY_EVENT["id"], "epoch": key["epoch"],
+            "kind": "article", "title": "Ein Jahr mit Lightning im Café",
+            "coordinate_hash": coordinate, "signer": "writer", "participants": [],
+            "p_sub": sc.pubkey_of(s_sub), "wraps": wraps, "status_key_hash": "ab" * 32,
+            "client": "MyEditor tests", "source": {"naddr": naddr_of(event), "event": event}}
+    return body, s_sub, signed(body, "/api/submissions", signer_sk)
+
+
+def proposed(proposer_sk: bytes = None, *, event: dict = None, round_: int = 1,
+             path: str = None):
+    """``POST /api/sites/<route>/proposals`` by a member
+    (core/editorial_submission.parse_proposal)."""
+    proposer_sk = proposer_sk or sk("contributor")
+    proposer = crypto.get_public_key(proposer_sk).hex()
+    event = event or public_event()
+    key = json.loads(KEY_EVENT["content"])
+    sid, s_sub, _coordinate, wraps = _public_parts(
+        proposer, event, {"redaktion": key["pubkey"], "proposer": proposer}, round_)
+    body = {"naddr": naddr_of(event), "event": event, "round": round_, "submission_id": sid,
+            "p_sub": sc.pubkey_of(s_sub), "wraps": wraps,
+            "title": "Ein Jahr mit Lightning im Café"}
+    action = signed(body, path or formats.site_path(ADDRESS) + "/proposals", proposer_sk)
+    return body, s_sub, action
+
+
+def public_view(body: dict, *, writer: str = None, proposal_by: str = None,
+                **changes) -> views.SubmissionView:
+    data = dict(submission_id=body["submission_id"], publication=ADDRESS, kind="article",
+                title=body["title"], participants=[], revision=1, round=body["round"],
+                p_sub=body["p_sub"], epoch=1, revision_hash=_revision_hash(body),
+                marks=["already_public"] + (["proposal"] if proposal_by else []),
+                writer=writer or pk("writer"), proposal_by=proposal_by)
+    data.update(changes)
+    return view_of({"submission_id": data["submission_id"], "publication": ADDRESS,
+                    "kind": "article", "title": data["title"], "participants": [],
+                    "revision": 1, "round": data["round"], "p_sub": data["p_sub"],
+                    "epoch": 1, "revision_hash": data["revision_hash"]}, **data)
+
+
+def _revision_hash(body: dict) -> str:
+    """A link body names its revision; a proposal's is its event's id."""
+    return body.get("revision_hash") or body["event"]["id"]
+
+
+def public_record(body: dict, action: dict, **changes) -> views.RevisionRecord:
+    data = {"revision": 1, "revision_hash": _revision_hash(body), "envelope": None,
+            "envelope_sha256": None, "wraps": body["wraps"], "blobs": [], "created_at": NOW,
+            "signed": action}
+    data.update(changes)
+    return views.parse_revision_record(data)
+
+
+def test_a_work_handed_in_by_link_is_verified_by_its_event_and_its_key_opens():
+    body, s_sub, action = by_link()
+    verified = verify_revision(public_view(body), public_record(body, action))
+    assert (verified.envelope_sha256, verified.revision_hash, verified.signer) == (
+        None, body["source"]["event"]["id"], pk("writer"))
+    assert open_key(verified, "writer", sk("writer"), served=body["wraps"]["writer"]) == s_sub
+    with pytest.raises(NotConfirmed, match="no envelope"):
+        open_envelope(verified, None, s_sub)        # nothing to open: it is public
+
+
+def test_a_proposal_on_the_publication_is_verified_by_its_proposer_and_its_key_opens():
+    body, s_sub, action = proposed()
+    view = public_view(body, proposal_by=pk("contributor"))
+    verified = verify_revision(view, public_record(body, action))
+    assert (verified.signer, verified.kind, verified.revision) == (pk("contributor"), "article", 1)
+    assert open_key(verified, "proposer", sk("contributor"),
+                    served=body["wraps"]["proposer"]) == s_sub
+
+
+def test_a_link_handed_in_by_someone_not_its_author_is_a_proposal_and_verified_as_one():
+    body, s_sub, action = by_link(sk("contributor"))
+    view = public_view(body, writer=pk("writer"), proposal_by=pk("contributor"))
+    assert verify_revision(view, public_record(body, action)).signer == pk("contributor")
+    # The same body shown as the contributor's own work hides the proposal.
+    with pytest.raises(NotConfirmed, match="not its author"):
+        verify_revision(public_view(body, writer=pk("contributor")), public_record(body, action))
+    with pytest.raises(NotConfirmed, match="another writer"):
+        verify_revision(public_view(body, writer=STRANGER, proposal_by=pk("contributor")),
+                        public_record(body, action))
+    # And the author's own link shown as a proposal of theirs is not one.
+    own, _s_sub, own_action = by_link()
+    with pytest.raises(NotConfirmed, match="another writer"):
+        verify_revision(public_view(own, proposal_by=pk("writer")),
+                        public_record(own, own_action))
+
+
+def test_a_co_author_hands_a_work_in_by_link_as_its_writer():
+    event = public_event(tags=[["p", pk("contributor"), "", "author"]])
+    body, _s_sub, action = by_link(sk("contributor"), event=event)
+    view = public_view(body, writer=pk("contributor"))
+    assert verify_revision(view, public_record(body, action)).signer == pk("contributor")
+
+
+def _forged_event(event: dict) -> dict:
+    return dict(event, content=event["content"] + " Und mehr.")
+
+
+@pytest.mark.parametrize("change, reason", [
+    (lambda body: body["source"].update(event=_forged_event(body["source"]["event"])),
+     "signature"),
+    (lambda body: body["source"].update(naddr=naddr_of(body["source"]["event"], "anderes")),
+     "another work"),
+    (lambda body: body["source"].update(naddr="naddr1kaputt"), "malformed"),
+    (lambda body: body.update(
+        coordinate_hash=formats.coordinate_hash(pk("writer"), "anderes"),
+        submission_id=formats.submission_id(pk("writer"), body["publication"],
+                                            formats.coordinate_hash(pk("writer"), "anderes"), 1)),
+     "address"),
+    (lambda body: body.update(source="nichts"), "missing"),
+], ids=["event forged", "naddr of another work", "naddr malformed", "coordinate", "no source"])
+def test_a_link_whose_event_is_not_the_work_signed_opens_nothing(change, reason):
+    body, _s_sub, _action = by_link()
+    change(body)
+    action = signed(body, "/api/submissions", sk("writer"))     # the writer signed even that
+    with pytest.raises(NotConfirmed, match=reason):
+        verify_revision(public_view(body), public_record(body, action))
+
+
+def test_a_link_whose_revision_is_not_its_event_or_that_has_an_envelope_opens_nothing():
+    body, _s_sub, action = by_link()
+    with pytest.raises(NotConfirmed, match="envelope"):
+        verify_revision(public_view(body), public_record(body, action,
+                                                         envelope_sha256="ab" * 32))
+    other = "cd" * 32
+    body["revision_hash"] = other
+    action = signed(body, "/api/submissions", sk("writer"))
+    with pytest.raises(NotConfirmed, match="not the public work"):
+        verify_revision(public_view(body, revision_hash=other),
+                        public_record(body, action, revision_hash=other))
+
+
+def test_an_envelope_shown_as_a_proposal_or_without_its_hash_opens_nothing(submitted):
+    prepared, action = submitted
+    body = prepared.body
+    with pytest.raises(NotConfirmed, match="signed by someone"):
+        verify_revision(view_of(body, proposal_by=pk("contributor")), record_of(body, action))
+    del body["envelope_sha256"]
+    action = signed(body, "/api/submissions", sk("writer"))
+    with pytest.raises(NotConfirmed, match="no envelope"):
+        verify_revision(view_of(body), record_of(dict(body, envelope_sha256=None), action))
+
+
+@pytest.mark.parametrize("make, view_changes, record_changes, reason", [
+    (lambda: proposed(), {"proposal_by": None}, {}, "signed by someone"),
+    (lambda: proposed(), {"proposal_by": STRANGER}, {}, "signed by someone"),
+    (lambda: proposed(), {"writer": STRANGER}, {}, "another writer"),
+    (lambda: proposed(), {"round": 2}, {}, "round"),
+    (lambda: proposed(round_=2), {"round": 2, "submission_id": None}, {}, "proposer"),
+    (lambda: proposed(), {"p_sub": STRANGER}, {}, "submission key"),
+    (lambda: proposed(), {"title": "Ein anderer Titel"}, {}, "not the one signed"),
+    (lambda: proposed(), {"kind": "audio"}, {}, "kind"),
+    (lambda: proposed(), {}, {"revision": 2}, "not the public work"),
+    (lambda: proposed(), {}, {"envelope_sha256": "ab" * 32}, "not the public work"),
+    (lambda: proposed(path="/api/sites/by/" + "ab" * 32 + "/eA/proposals"), {}, {},
+     "another action"),
+], ids=["no proposer shown", "another proposer", "another writer", "another round",
+        "sid of another round", "another key", "another title", "another kind",
+        "revision 2", "an envelope", "another publication"])
+def test_a_proposal_shown_other_than_signed_opens_nothing(make, view_changes, record_changes,
+                                                          reason):
+    body, _s_sub, action = make()
+    changes = {"proposal_by": pk("contributor"), **view_changes}
+    if changes.get("submission_id", "") is None:
+        # The sid of round 1 shown for a body signed for round 2.
+        changes["submission_id"] = proposed()[0]["submission_id"]
+        body = dict(body, submission_id=changes["submission_id"])
+        action = signed(body, formats.site_path(ADDRESS) + "/proposals", sk("contributor"))
+    with pytest.raises(NotConfirmed, match=reason):
+        verify_revision(public_view(body, **changes), public_record(body, action,
+                                                                    **record_changes))
 
 
 # -- media keys ------------------------------------------------------------------------
