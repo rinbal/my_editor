@@ -157,9 +157,19 @@ def test_when_no_relay_answers_the_submission_is_not_sent():
     assert relay.published == []
 
 
-def test_an_unreadable_list_is_never_written_over_and_blocks_sending():
+def test_a_list_that_cannot_be_opened_is_never_written_over_and_blocks_sending():
     relay = Relay()
     relay.put(formats.SUBMISSIONS_LIST_D, None, content="not a ciphertext")
+    store, _relay, _clock = make(relay=relay)
+    result = record(store, entry())
+    assert result.status is PublishStatus.BLOCKED and not stored(result)
+    assert result.reason == "Your list of submissions couldn't be read."
+    assert relay.published == []
+
+
+def test_a_list_in_a_newer_format_is_never_written_over_and_blocks_sending():
+    relay = Relay()
+    relay.put(formats.SUBMISSIONS_LIST_D, {"v": 2, "page": 0, "pages": 1, "items": []})
     store, _relay, _clock = make(relay=relay)
     result = record(store, entry())
     assert result.status is PublishStatus.UNREADABLE and not stored(result)

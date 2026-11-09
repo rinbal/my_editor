@@ -23,7 +23,13 @@ class ReadStatus(Enum):
     INCOMPLETE = "incomplete"
     MISSING = "missing"             # no list (no page 0)
     NO_ANSWER = "no answer"         # none of the account's own relays answered
-    UNREADABLE = "unreadable"       # the reason is said already (on_status)
+    # A page the relays returned could not be opened now (the signer
+    # refused, failed or did not answer): nothing is written until a
+    # later read opens it (13). ``words`` say why; asking again may help.
+    BLOCKED = "blocked"
+    # Opened, but not this list (another format, not a page, more than
+    # 64 pages, not taken in): never written over. ``words`` say so.
+    UNREADABLE = "unreadable"
 
 
 class PublishStatus(Enum):
@@ -34,6 +40,7 @@ class PublishStatus(Enum):
     NOT_ACCEPTED = "not accepted"   # no relay took every page
     FAILED = "failed"               # the signer refused, or the list cannot be written
     NO_ANSWER = "no answer"         # the read had no answer: nothing written
+    BLOCKED = "blocked"             # a page could not be opened now: nothing written
     UNREADABLE = "unreadable"       # the list cannot be read: never written over
 
 
@@ -62,17 +69,21 @@ class PageRead:
 class ListRead:
     """A read: ``value`` the decoded list (None when MISSING or not
     read), ``event`` page 0's, ``stale`` the later pages that are missing
-    or of another generation, ``later`` every later page that counts."""
+    or of another generation, ``later`` every later page that counts,
+    ``words`` what the person is told when it is BLOCKED or UNREADABLE
+    (also said through the list's ``on_status``)."""
 
     status: ReadStatus
     value: Any = None
     event: Optional[dict] = None
     stale: Tuple[int, ...] = ()
     later: Mapping[int, PageRead] = field(default_factory=dict)
+    words: str = ""
 
     @property
     def readable(self) -> bool:
-        return self.status not in (ReadStatus.NO_ANSWER, ReadStatus.UNREADABLE)
+        return self.status not in (ReadStatus.NO_ANSWER, ReadStatus.BLOCKED,
+                                   ReadStatus.UNREADABLE)
 
     def events(self) -> List[dict]:
         """Every event read, page 0's first."""
@@ -86,4 +97,4 @@ class PublishResult:
     remote: Any = None          # UP_TO_DATE: the list read from the relays
     value: Any = None           # SENT: what was written
     signed: Optional[dict] = None   # SENT: the event of page 0
-    reason: str = ""            # FAILED: why
+    reason: str = ""            # FAILED: why; BLOCKED, UNREADABLE: the read's words

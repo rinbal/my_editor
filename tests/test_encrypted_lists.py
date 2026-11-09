@@ -477,10 +477,65 @@ def test_a_page_that_cannot_be_decrypted_is_never_written_over():
     relay.published.clear()
     statuses = []
     store._on_status = statuses.append
-    assert read(store).status is ReadStatus.UNREADABLE
+    answer = read(store)
+    assert answer.status is ReadStatus.BLOCKED and answer.words == "unreadable words"
     assert statuses == ["unreadable words"]
-    assert publish(store, {"x": 1})[0].status is PublishStatus.UNREADABLE
+    result = publish(store, {"x": 1})[0]
+    assert result.status is PublishStatus.BLOCKED and result.reason == "unreadable words"
     assert relay.published == []
+
+
+class DecliningSigner(FakeSigner):
+    """Declines to decrypt the ciphertexts in ``decline`` (a prompt the
+    person said no to, or one that timed out with ``reason``)."""
+
+    def __init__(self, reason="user declined"):
+        super().__init__()
+        self.decline = set()
+        self.reason = reason
+
+    def nip44_decrypt_self(self, ciphertext, on_success, on_failure, **kw):
+        if ciphertext in self.decline:
+            on_failure(self.reason)
+            return
+        super().nip44_decrypt_self(ciphertext, on_success, on_failure, **kw)
+
+
+@pytest.mark.parametrize("reason,words", [
+    ("user declined", "unreadable words"),
+    ("timed out waiting for signer", "silent words"),
+])
+def test_a_page_the_signer_declines_blocks_the_list_until_it_opens(reason, words):
+    # Contract 13 (d5cc9a7): a page the relays return but that cannot be
+    # opened now is not missing. Taking it for missing, the next write
+    # would drop the entries it still holds.
+    relay, signer = Relay(), DecliningSigner(reason)
+    store = read_state_list(relay, signer=signer)
+    seen = big_read_state(3_000)
+    publish(store, seen)
+    signer.decline.add(relay.stored[page_d_tag(D, 1)]["content"])
+    relay.published.clear()
+    answer = read(store)
+    assert answer.status is ReadStatus.BLOCKED and not answer.readable
+    assert answer.words == words and answer.stale == ()
+    assert publish(store, {"new": 1})[0].status is PublishStatus.BLOCKED
+    assert relay.published == []
+    # Asked again, the signer opens it: the list is whole, nothing lost.
+    signer.decline.clear()
+    answer = read(store)
+    assert answer.status is ReadStatus.COMPLETE and answer.value == seen
+    result, _ = publish(store, {"new": 1})
+    assert result.status is PublishStatus.SENT
+    assert read(store).value == dict(seen, new=1)
+
+
+def test_a_first_page_the_signer_declines_blocks_the_list():
+    relay, signer = Relay(), DecliningSigner()
+    store = read_state_list(relay, signer=signer)
+    publish(store, {"a": 1})
+    signer.decline.add(relay.stored[D]["content"])
+    assert read(store).status is ReadStatus.BLOCKED
+    assert publish(store, {"b": 1})[0].status is PublishStatus.BLOCKED
 
 
 def test_a_newer_apps_format_is_never_written_over():

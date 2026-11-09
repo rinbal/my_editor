@@ -303,8 +303,9 @@ class _AccountList(QObject):
     def load(self, on_done: Callable[[ListRead], None]) -> None:
         """Read the list: ``on_done(read)``, its ``value`` what is here
         now (the list read merged with what was here), or ``read.status``
-        NO_ANSWER / UNREADABLE (the reason already said through
-        :attr:`status`)."""
+        NO_ANSWER, BLOCKED (a page could not be opened now: offer to try
+        again) or UNREADABLE, with ``read.words`` (also said through
+        :attr:`status`). Nothing is written while it is not readable."""
         generation = self._generation
 
         def read(result: ListRead) -> None:

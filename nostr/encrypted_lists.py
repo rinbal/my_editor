@@ -14,9 +14,13 @@ for every such list, and lives here once:
   one.
 - No answer is never "no list": a read counts only when one of the
   account's own relays answered. Then nothing is written.
-- A list that cannot be read (older encryption, a signer that does not
-  answer, a format from a newer app) is never written over: that would
-  delete what is in it.
+- A list that cannot be read is never written over: that would delete
+  what is in it. A page the relays returned that cannot be opened now
+  (the signer refused, failed or did not answer, or the older
+  encryption it needs is not offered) blocks the list
+  (``ReadStatus.BLOCKED``) until a later read opens it; one that opens
+  to something that is not this list (a newer app's format) makes it
+  unreadable.
 - Only a newer list counts: a copy no newer than the last one seen (a
   slow or a fallback relay's) changes nothing.
 - Writing reads first and merges, so neither side's edits are lost, and
@@ -31,7 +35,10 @@ to the relays that took every later page, so no relay ever holds a page
 0 whose pages it lacks. A read that finds a page missing or of another
 generation is incomplete (``ReadStatus.INCOMPLETE``): it keeps every
 page that is the account's own, and the next write builds a complete
-generation from them. A list that is not paged keeps the format it
+generation from them. Missing is only a page no relay returned, or one
+that opened to something that is not a page of this list; a page that
+could not be opened blocks the list instead (contract 13), so the next
+write never drops what it holds. A list that is not paged keeps the format it
 always had: one event, the plaintext exactly as ``encode`` gives it.
 
 Every boundary (relay queries, publishing, signer, clock) is passed in,
@@ -82,6 +89,7 @@ _log = logging.getLogger(__name__)
 
 
 _NOT_READ = {ReadStatus.NO_ANSWER: PublishStatus.NO_ANSWER,
+             ReadStatus.BLOCKED: PublishStatus.BLOCKED,
              ReadStatus.UNREADABLE: PublishStatus.UNREADABLE}
 
 
@@ -215,9 +223,12 @@ class EncryptedList(QObject):
             return
         _Reading(self, profile, relays, on_done).start()
 
-    def _decrypt(self, profile, event: dict, on_text, on_unreadable) -> None:
+    def _decrypt(self, profile, event: dict, on_text, on_blocked) -> None:
         """The plaintext of a list, by its ``encrypted`` tag: NIP-44, NIP-04
-        when the signer offers it, or none (see ``untagged``)."""
+        when the signer offers it, or none (see ``untagged``).
+        ``on_blocked(words)`` when it cannot be opened now, whatever the
+        reason: the signer refused, failed or did not answer, or offers
+        no NIP-04."""
         algorithm = next((t[1] for t in event.get("tags", [])
                           if isinstance(t, list) and len(t) >= 2 and t[0] == "encrypted"),
                          self._untagged)
@@ -232,13 +243,13 @@ class EncryptedList(QObject):
             the older encryption)."""
             _log.warning("the list %s (%s) was not read: %s", self._name, algorithm, reason)
             silent = is_signer_silent(reason) or reason == "not connected"
-            on_unreadable(self._words.signer_silent if silent else words)
+            on_blocked(self._words.signer_silent if silent else words)
 
         def _on_ready(client) -> None:
             if algorithm == "nip04":
                 decrypt = getattr(client, "nip04_decrypt_self", None)
                 if decrypt is None:
-                    on_unreadable(self._words.old_encryption)
+                    on_blocked(self._words.old_encryption)
                     return
                 # A signer app that refuses NIP-04: what to do is the same
                 # as without one.
@@ -306,7 +317,7 @@ class EncryptedList(QObject):
             if not read.readable:
                 # Never write over a list that could not be read, or one
                 # nobody answered for: a newer one may be on the relays.
-                on_done(PublishResult(_NOT_READ[read.status]))
+                on_done(PublishResult(_NOT_READ[read.status], reason=read.words))
                 return
             base, local, base_mark = state()
             remote, event, reusable = read.value, read.event, read.later
@@ -394,15 +405,22 @@ class _Reading:
             return None
         return newest
 
-    def _end(self, status: ReadStatus, value: Any = None, stale: Tuple[int, ...] = ()) -> None:
+    def _end(self, status: ReadStatus, value: Any = None, stale: Tuple[int, ...] = (),
+             words: str = "") -> None:
         self._on_done(ListRead(status, value=value, event=self._event, stale=stale,
-                               later=dict(self._later)))
+                               later=dict(self._later), words=words))
 
     def _unreadable(self, words: str, why: str = "") -> None:
         if why:
             _log.warning("the list %s is not a list (%s)", self._list._name, why)
         self._list._on_status(words)
-        self._end(ReadStatus.UNREADABLE)
+        self._end(ReadStatus.UNREADABLE, words=words)
+
+    def _blocked(self, words: str) -> None:
+        """A page the relays returned could not be opened now: not
+        missing (13). Nothing is written until a later read opens it."""
+        self._list._on_status(words)
+        self._end(ReadStatus.BLOCKED, words=words)
 
     def _on_first(self, events, answered) -> None:
         if not self._answered_by_own(answered):
@@ -415,7 +433,7 @@ class _Reading:
         if self._too_long(self._event):
             self._unreadable(self._list._words.unreadable, "its first page is longer than a page")
             return
-        self._list._decrypt(self._profile, self._event, self._on_first_text, self._unreadable)
+        self._list._decrypt(self._profile, self._event, self._on_first_text, self._blocked)
 
     def _too_long(self, event: dict) -> bool:
         """A page whose ciphertext holds more than a page (13): never
@@ -475,10 +493,9 @@ class _Reading:
                 self._later[index] = PageRead(event, page)
             self._next(rest)
 
-        # A page that cannot be decrypted is unreadable, not missing: it
-        # is the account's own, and writing a new generation would put
-        # something else in its place.
-        self._list._decrypt(self._profile, event, got, self._unreadable)
+        # A page that cannot be opened now is not missing: it is the
+        # account's own, and a new generation would drop what it holds.
+        self._list._decrypt(self._profile, event, got, self._blocked)
 
     def _joined(self) -> None:
         later = {index: read.page for index, read in self._later.items()}

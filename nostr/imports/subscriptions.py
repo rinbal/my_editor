@@ -655,9 +655,10 @@ class FeedSubscriptionStore(QObject):
             return merged.same_sources(remote) and not snapshot["reads"]
 
         def _on_done(result) -> None:
-            if result.status is PublishStatus.UNREADABLE:
-                # Never write over a list that could not be read: it holds
-                # the other app's sources. The reason is on the status line.
+            if result.status in (PublishStatus.UNREADABLE, PublishStatus.BLOCKED):
+                # Never write over a list that could not be read, or not
+                # opened now: it holds the other app's sources. The reason
+                # is on the status line.
                 _finish(None)
             elif result.status in (PublishStatus.NO_ANSWER, PublishStatus.NOT_ACCEPTED):
                 # Nobody answered for the list (a newer one may be on the
