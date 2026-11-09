@@ -202,9 +202,13 @@ class Fault:
     detail: Optional[dict] = None
 
 
-def transition(state: str, action: str, role: str) -> Optional[str]:
+def transition(state: str, action: str, role: str,
+               phase: Optional[str] = None) -> Optional[str]:
     """The state after ``action`` by someone in ``role``, or None when it
-    is refused (contract 11.3)."""
+    is refused (contract 11.3). ``phase`` is the condition the fixture's
+    rows carry (feat/redaktion f6f7569, section 17): for ``reopen``
+    whether the declined round is the work's latest, for publishing the
+    acceptance step."""
     redaktion = role in REDAKTION
     if action == "revise":
         if role != "writer":
@@ -226,7 +230,9 @@ def transition(state: str, action: str, role: str) -> Optional[str]:
         # (11.3, feat/redaktion 5c11475).
         return "published" if redaktion and state in ("submitted", "in_review") else None
     if action == "reopen":
-        return "in_review" if redaktion and state == "declined" else None
+        # Never a declined round when a later round of the work exists.
+        return ("in_review" if redaktion and state == "declined" and phase != "earlier_round"
+                else None)
     if action == "take":
         if not redaktion or state not in OPEN:
             return None
@@ -238,9 +244,12 @@ def transition(state: str, action: str, role: str) -> Optional[str]:
     if action in ("internal_note", "react"):
         return state
     if action == "published_by_writer":
-        return "published" if role == "writer" and state == "accepted" else None
+        return ("published" if role == "writer" and state == "accepted"
+                and phase == "writer_publishes" else None)
     if action == "published_by_release":
-        return "published" if role == "releaser" and state == "accepted" else None
+        # Released only once every creator confirmed (step ready_for_release).
+        return ("published" if role == "releaser" and state == "accepted"
+                and phase == "ready_for_release" else None)
     if action == "placed":
         return "published" if role == "releaser" and state == "published" else None
     return None
@@ -957,15 +966,16 @@ class FakeStandupServer:
                        for member, role in pub.members.items())
 
     def _work_round(self, address: str, writer: str, coordinate: str) -> Tuple[int, bool]:
-        """The round a work is in at a publication and whether it is
-        still open (backend core/editorial_intake.py work_round)."""
-        earlier = sorted((r for r in self.submissions.values() if r.publication == address
-                          and r.writer == writer and r.coordinate_hash == coordinate),
-                         key=lambda r: r.round)
-        still_open = [r for r in earlier if r.state not in ROUND_CLOSED]
-        if still_open:
-            return still_open[-1].round, True
-        return (earlier[-1].round + 1 if earlier else 1), False
+        """The latest round of a work at a publication by the same
+        submitter (0 for none) and whether it is still open (backend
+        db/editorial_submissions.py work_round, 607c941): only the latest
+        round is ever open."""
+        rounds = [r for r in self.submissions.values() if r.publication == address
+                  and r.writer == writer and r.coordinate_hash == coordinate]
+        if not rounds:
+            return 0, False
+        latest = max(rounds, key=lambda r: r.round)
+        return latest.round, latest.state not in ROUND_CLOSED
 
     def _parse_submission(self, data: dict, writer: str) -> dict:
         """backend core/editorial_submission.py parse_submission (fde04a3),
@@ -1063,11 +1073,10 @@ class FakeStandupServer:
                                                   "Einreichungen an.")
         if body["revision"] != 1:
             raise _Refused(409, "stale_revision", {"revision": 0})
-        round_, still_open = self._work_round(pub.address, writer, body["coordinate_hash"])
-        if still_open or body["round"] != round_:
-            # "open" is contract-ahead (feat/redaktion 3b00351, section 2).
-            raise _Refused(409, "conflict", {"round": round_ if still_open else round_ - 1,
-                                             "open": still_open},
+        latest, still_open = self._work_round(pub.address, writer, body["coordinate_hash"])
+        if still_open or body["round"] != latest + 1:
+            # backend core/editorial_intake.py _check_new (607c941).
+            raise _Refused(409, "conflict", {"round": latest, "open": still_open},
                            message="Dieses Werk liegt hier schon vor.")
         limit = pub.content["rules"].get("max_open_per_writer", 3)
         if len([r for r in self.submissions.values() if r.writer == writer
@@ -1368,7 +1377,10 @@ class FakeStandupServer:
         action = outcome
         if outcome == "request_changes" and not body.get("message_wrap"):
             action = "request_changes_without_message"
-        new_state = transition(record.state, action, role)
+        latest, _open = self._work_round(record.publication, record.writer,
+                                         record.coordinate_hash)
+        new_state = transition(record.state, action, role,
+                               "latest_round" if record.round == latest else "earlier_round")
         if new_state is None:
             if action == "request_changes_without_message":
                 return _error(422, "invalid", "Änderungen brauchen eine Nachricht.")
@@ -1448,7 +1460,7 @@ class FakeStandupServer:
         else:
             role = "releaser" if who.pubkey in pub.releasers else role
             action = "published_by_release"
-        new_state = transition(record.state, action, role)
+        new_state = transition(record.state, action, role, record.step)
         if new_state is None:
             return _error(409, "invalid_transition")
         record.state = new_state

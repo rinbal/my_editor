@@ -806,6 +806,48 @@ def test_the_writer_is_refused_what_only_the_editorial_team_may_do():
     assert error.code == Code.INVALID_TRANSITION
 
 
+
+def test_a_declined_round_is_reopened_only_while_it_is_the_works_latest():
+    # Contract 11.3 (feat/redaktion f6f7569): phase latest_round, as
+    # backend core/editorial_workflow.py phase_of tells it.
+    world = World()
+    editor = world.api("editor")
+    prepared = _after_submit(world)
+    sid = prepared.body["submission_id"]
+    world.ok(lambda ok, fail: editor.decision(sid, outcome="decline", expected_revision=1,
+                                              on_success=ok, on_failure=fail))
+    later = submission_for(sk("writer"), round_=2)
+    world.ok(lambda ok, fail: world.api("writer").submit(later.body, ok, fail))
+    error = world.err(lambda ok, fail: editor.decision(
+        sid, outcome="reopen", expected_revision=1, on_success=ok, on_failure=fail))
+    assert error.code == Code.INVALID_TRANSITION
+    del world.server.submissions[later.body["submission_id"]]
+    view = world.ok(lambda ok, fail: editor.decision(
+        sid, outcome="reopen", expected_revision=1, on_success=ok, on_failure=fail)).submission
+    assert view.state == "in_review"
+
+
+def test_an_accepted_work_is_published_only_in_its_step():
+    # Contract 11.1/11.3 (f6f7569): published_by_writer in writer_publishes
+    # only, as backend core/editorial_flow.py's rows say; the step is the
+    # stored one.
+    world = World()
+    writer, editor = world.api("writer"), world.api("editor")
+    prepared = _after_submit(world)
+    sid = prepared.body["submission_id"]
+    world.ok(lambda ok, fail: editor.decision(sid, outcome="accept", expected_revision=1,
+                                              on_success=ok, on_failure=fail))
+    article = events.sign_event({"kind": 30023, "created_at": NOW, "content": "Text",
+                                 "tags": [["d", "ein-jahr-mit-lightning"]]}, sk("writer"))
+    world.server.submissions[sid].step = "confirm"
+    error = world.err(lambda ok, fail: writer.published(
+        sid, naddr="naddr1test", event=article, on_success=ok, on_failure=fail))
+    assert error.code == Code.INVALID_TRANSITION
+    world.server.submissions[sid].step = "writer_publishes"
+    view = world.ok(lambda ok, fail: writer.published(
+        sid, naddr="naddr1test", event=article, on_success=ok, on_failure=fail))
+    assert view.state == "published"
+
 # -- signed actions (10) -------------------------------------------------------------
 
 def _fixture_action():

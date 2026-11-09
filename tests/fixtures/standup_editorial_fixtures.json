@@ -1314,336 +1314,406 @@
   {
    "action": "revise",
    "from": "submitted",
+   "phase": null,
    "role": "writer",
    "to": "submitted"
   },
   {
    "action": "revise",
    "from": "submitted",
+   "phase": null,
    "role": "contributor",
    "to": null
   },
   {
    "action": "withdraw",
    "from": "submitted",
+   "phase": null,
    "role": "writer",
    "to": "withdrawn"
   },
   {
    "action": "withdraw",
    "from": "submitted",
+   "phase": null,
    "role": "contributor",
    "to": null
   },
   {
    "action": "withdraw",
    "from": "submitted",
+   "phase": null,
    "role": "redaktion",
    "to": null
   },
   {
    "action": "decline",
    "from": "submitted",
+   "phase": null,
    "role": "redaktion",
    "to": "declined"
   },
   {
    "action": "decline",
    "from": "submitted",
+   "phase": null,
    "role": "curator",
    "to": null
   },
   {
    "action": "revise",
    "from": "in_review",
+   "phase": null,
    "role": "writer",
    "to": "in_review"
   },
   {
    "action": "revise",
    "from": "in_review",
+   "phase": null,
    "role": "contributor",
    "to": null
   },
   {
    "action": "withdraw",
    "from": "in_review",
+   "phase": null,
    "role": "writer",
    "to": "withdrawn"
   },
   {
    "action": "withdraw",
    "from": "in_review",
+   "phase": null,
    "role": "contributor",
    "to": null
   },
   {
    "action": "withdraw",
    "from": "in_review",
+   "phase": null,
    "role": "redaktion",
    "to": null
   },
   {
    "action": "decline",
    "from": "in_review",
+   "phase": null,
    "role": "redaktion",
    "to": "declined"
   },
   {
    "action": "decline",
    "from": "in_review",
+   "phase": null,
    "role": "curator",
    "to": null
   },
   {
    "action": "revise",
    "from": "changes_requested",
+   "phase": null,
    "role": "writer",
    "to": "in_review"
   },
   {
    "action": "revise",
    "from": "changes_requested",
+   "phase": null,
    "role": "contributor",
    "to": null
   },
   {
    "action": "withdraw",
    "from": "changes_requested",
+   "phase": null,
    "role": "writer",
    "to": "withdrawn"
   },
   {
    "action": "withdraw",
    "from": "changes_requested",
+   "phase": null,
    "role": "contributor",
    "to": null
   },
   {
    "action": "withdraw",
    "from": "changes_requested",
+   "phase": null,
    "role": "redaktion",
    "to": null
   },
   {
    "action": "decline",
    "from": "changes_requested",
+   "phase": null,
    "role": "redaktion",
    "to": "declined"
   },
   {
    "action": "decline",
    "from": "changes_requested",
+   "phase": null,
    "role": "curator",
    "to": null
   },
   {
    "action": "request_changes",
    "from": "submitted",
+   "phase": null,
    "role": "redaktion",
    "to": "changes_requested"
   },
   {
    "action": "request_changes_without_message",
    "from": "submitted",
+   "phase": null,
    "role": "redaktion",
    "to": null
   },
   {
    "action": "accept",
    "from": "submitted",
+   "phase": null,
    "role": "redaktion",
    "to": "accepted"
   },
   {
    "action": "accept",
    "from": "submitted",
+   "phase": null,
    "role": "owner",
    "to": "accepted"
   },
   {
    "action": "accept",
    "from": "submitted",
+   "phase": null,
    "role": "curator",
    "to": null
   },
   {
    "action": "accept",
    "from": "submitted",
+   "phase": null,
    "role": "writer",
    "to": null
   },
   {
    "action": "accept_public",
    "from": "submitted",
+   "phase": null,
    "role": "redaktion",
    "to": "published"
   },
   {
    "action": "accept_public",
    "from": "submitted",
+   "phase": null,
    "role": "curator",
    "to": null
   },
   {
    "action": "request_changes",
    "from": "in_review",
+   "phase": null,
    "role": "redaktion",
    "to": "changes_requested"
   },
   {
    "action": "request_changes_without_message",
    "from": "in_review",
+   "phase": null,
    "role": "redaktion",
    "to": null
   },
   {
    "action": "accept",
    "from": "in_review",
+   "phase": null,
    "role": "redaktion",
    "to": "accepted"
   },
   {
    "action": "accept",
    "from": "in_review",
+   "phase": null,
    "role": "owner",
    "to": "accepted"
   },
   {
    "action": "accept",
    "from": "in_review",
+   "phase": null,
    "role": "curator",
    "to": null
   },
   {
    "action": "accept",
    "from": "in_review",
+   "phase": null,
    "role": "writer",
    "to": null
   },
   {
    "action": "accept_public",
    "from": "in_review",
+   "phase": null,
    "role": "redaktion",
    "to": "published"
   },
   {
    "action": "accept_public",
    "from": "in_review",
+   "phase": null,
    "role": "curator",
    "to": null
   },
   {
    "action": "take",
    "from": "submitted",
+   "phase": null,
    "role": "redaktion",
    "to": "in_review"
   },
   {
    "action": "message",
    "from": "submitted",
+   "phase": null,
    "role": "redaktion",
    "to": "in_review"
   },
   {
    "action": "internal_note",
    "from": "submitted",
+   "phase": null,
    "role": "redaktion",
    "to": "submitted"
   },
   {
    "action": "react",
    "from": "submitted",
+   "phase": null,
    "role": "redaktion",
    "to": "submitted"
   },
   {
    "action": "message",
    "from": "submitted",
+   "phase": null,
    "role": "curator",
    "to": "submitted"
   },
   {
    "action": "accept",
    "from": "changes_requested",
+   "phase": null,
    "role": "redaktion",
    "to": null
   },
   {
    "action": "accept_public",
    "from": "changes_requested",
+   "phase": null,
    "role": "redaktion",
    "to": null
   },
   {
    "action": "reopen",
    "from": "declined",
+   "phase": "latest_round",
    "role": "redaktion",
    "to": "in_review"
   },
   {
    "action": "reopen",
    "from": "declined",
+   "phase": "earlier_round",
+   "role": "redaktion",
+   "to": null
+  },
+  {
+   "action": "reopen",
+   "from": "declined",
+   "phase": null,
    "role": "writer",
    "to": null
   },
   {
    "action": "revise",
    "from": "declined",
+   "phase": null,
    "role": "writer",
    "to": null
   },
   {
    "action": "reopen",
    "from": "withdrawn",
+   "phase": null,
    "role": "redaktion",
    "to": null
   },
   {
    "action": "withdraw",
    "from": "accepted",
+   "phase": null,
    "role": "writer",
    "to": null
   },
   {
    "action": "revise",
    "from": "accepted",
+   "phase": null,
    "role": "writer",
    "to": null
   },
   {
    "action": "published_by_writer",
    "from": "accepted",
+   "phase": "writer_publishes",
    "role": "writer",
    "to": "published"
   },
   {
    "action": "published_by_release",
    "from": "accepted",
+   "phase": "ready_for_release",
    "role": "releaser",
    "to": "published"
   },
   {
    "action": "published_by_release",
    "from": "accepted",
+   "phase": "confirm",
+   "role": "releaser",
+   "to": null
+  },
+  {
+   "action": "published_by_release",
+   "from": "accepted",
+   "phase": null,
    "role": "redaktion",
    "to": null
   },
   {
    "action": "placed",
    "from": "published",
+   "phase": null,
    "role": "releaser",
    "to": "published"
   },
   {
    "action": "placed",
    "from": "published",
+   "phase": null,
    "role": "curator",
    "to": null
   },
   {
    "action": "decline",
    "from": "published",
+   "phase": null,
    "role": "redaktion",
    "to": null
   }

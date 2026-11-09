@@ -35,9 +35,22 @@ from tests.standup_vectors import NOW, VECTORS, pk, sk
 
 
 @pytest.mark.parametrize("row", VECTORS["transitions"],
-                         ids=lambda r: f"{r['action']}-{r['from']}-{r['role']}")
+                         ids=lambda r: f"{r['action']}-{r['from']}-{r['role']}-{r['phase']}")
 def test_the_state_machine_is_the_contracts(row):
-    assert transition(row["from"], row["action"], row["role"]) == row["to"]
+    assert transition(row["from"], row["action"], row["role"], row["phase"]) == row["to"]
+
+
+@pytest.mark.parametrize("action, role, phase", [
+    ("published_by_writer", "writer", "confirm"),
+    ("published_by_writer", "writer", "ready_for_release"),
+    ("published_by_writer", "writer", None),
+    ("published_by_release", "releaser", "writer_publishes"),
+    ("published_by_release", "releaser", None),
+])
+def test_an_accepted_work_is_published_in_no_other_phase(action, role, phase):
+    # backend core/editorial_flow.py (607c941): each publishing row names
+    # its one phase; the fixture lists only the allowed ones.
+    assert transition("accepted", action, role, phase) is None
 
 
 def test_the_fixtures_signed_action_passes_the_same_check():
