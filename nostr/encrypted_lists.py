@@ -43,8 +43,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
 from typing import Any, Callable, Collection, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QObject
@@ -54,6 +53,14 @@ from .bunker import is_signer_silent
 from .drafts import supersedes
 from .events import build_event
 from .list_relays import LIST_KIND, event_mark, is_list_of, relay_key
+from .list_results import (
+    ListRead,
+    ListWords,
+    PageRead,
+    PublishResult,
+    PublishStatus,
+    ReadStatus,
+)
 from .outbox import ask_private_relays
 from .outbox.policy import replacement_created_at
 from .paged_list import (
@@ -68,82 +75,13 @@ from .paged_list import (
     stale_pages,
 )
 
-__all__ = [
-    "EncryptedList", "ListRead", "ListWords", "PageRead", "PublishResult", "PublishStatus",
-    "ReadStatus",
-]
+__all__ = ["EncryptedList"]
 
 _log = logging.getLogger(__name__)
 
 
-class ReadStatus(Enum):
-    """What a read found."""
-
-    COMPLETE = "complete"
-    # Paged: a page is missing or of another generation. The value holds
-    # every entry of every page that is the account's own.
-    INCOMPLETE = "incomplete"
-    MISSING = "missing"             # no list (no page 0)
-    NO_ANSWER = "no answer"         # none of the account's own relays answered
-    UNREADABLE = "unreadable"       # the reason is said already (on_status)
-
-
-class PublishStatus(Enum):
-    """How a publish ended."""
-
-    UP_TO_DATE = "up to date"       # what is here is on the relays already
-    SENT = "sent"                   # a complete generation, page 0 accepted
-    NOT_ACCEPTED = "not accepted"   # no relay took every page
-    FAILED = "failed"               # the signer refused, or the list cannot be written
-    NO_ANSWER = "no answer"         # the read had no answer: nothing written
-    UNREADABLE = "unreadable"       # the list cannot be read: never written over
-
-
 _NOT_READ = {ReadStatus.NO_ANSWER: PublishStatus.NO_ANSWER,
              ReadStatus.UNREADABLE: PublishStatus.UNREADABLE}
-
-
-@dataclass(frozen=True)
-class ListWords:
-    """What the person is told when the list cannot be read, in the
-    caller's words (they name the list)."""
-
-    unreadable: str
-    signer_silent: str
-    old_encryption: str
-    # Part of the list is missing (shown, when given, while the rest is
-    # read and written as usual).
-    missing_page: str = ""
-
-
-@dataclass(frozen=True)
-class PageRead:
-    """A later page as read: its event and what it says."""
-
-    event: dict
-    page: Page
-
-
-@dataclass(frozen=True)
-class ListRead:
-    """A read: ``value`` the decoded list (None when MISSING or not
-    read), ``event`` page 0's, ``stale`` the later pages that are missing
-    or of another generation, ``later`` every later page that counts."""
-
-    status: ReadStatus
-    value: Any = None
-    event: Optional[dict] = None
-    stale: Tuple[int, ...] = ()
-    later: Mapping[int, PageRead] = field(default_factory=dict)
-
-    @property
-    def readable(self) -> bool:
-        return self.status not in _NOT_READ
-
-    def events(self) -> List[dict]:
-        """Every event read, page 0's first."""
-        found = [self.event] if self.event else []
-        return found + [read.event for read in self.later.values()]
 
 
 @dataclass
@@ -155,7 +93,7 @@ class _Request:
 
     profile: Any
     state: Callable[[], Tuple[Any, Any, Optional[Tuple[int, str]]]]
-    on_done: List[Callable[["PublishResult"], None]]
+    on_done: List[Callable[[PublishResult], None]]
     on_merged: Optional[Callable[[Any, Any, Optional[dict]], None]]
     up_to_date: Optional[Callable[[Any, Any], bool]]
 
@@ -164,15 +102,6 @@ class _Request:
             return self
         return _Request(self.profile, self.state, earlier.on_done + self.on_done,
                         self.on_merged, self.up_to_date)
-
-
-@dataclass(frozen=True)
-class PublishResult:
-    status: PublishStatus
-    remote: Any = None          # UP_TO_DATE: the list read from the relays
-    value: Any = None           # SENT: what was written
-    signed: Optional[dict] = None   # SENT: the event of page 0
-    reason: str = ""            # FAILED: why
 
 
 class EncryptedList(QObject):

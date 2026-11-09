@@ -22,8 +22,9 @@ import pytest
 
 from nostr import crypto, events
 from nostr.bunker import SIGNER_NIP44_MAX_PLAINTEXT
-from nostr.encrypted_lists import EncryptedList, ListWords, PublishStatus, ReadStatus
+from nostr.encrypted_lists import EncryptedList
 from nostr.list_relays import LIST_KIND
+from nostr.list_results import ListWords, PublishStatus, ReadStatus
 from nostr.paged_list import MAX_PAGES, PAGE_PLAINTEXT_MAX, Paging, page_d_tag
 from tests.outbox_fakes import OTHER_SK, PK, SK, FakeRelayDirectory, settle
 from tests.test_imports_subscriptions import FakeSessionPool, FakeSigner

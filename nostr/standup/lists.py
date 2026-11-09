@@ -47,14 +47,8 @@ from PySide6.QtCore import QObject, Signal
 
 from i18n import N_, _
 
-from ..encrypted_lists import (
-    EncryptedList,
-    ListRead,
-    ListWords,
-    PublishResult,
-    PublishStatus,
-    ReadStatus,
-)
+from ..encrypted_lists import EncryptedList
+from ..list_results import ListRead, ListWords, PublishResult, PublishStatus, ReadStatus
 from ..paged_list import Paging
 from . import formats
 from .crypto import StandupCryptoError, secret_from_hex

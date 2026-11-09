@@ -20,7 +20,7 @@ import pytest
 
 from nostr import crypto, events
 from nostr.bunker import SIGNER_NIP44_MAX_PLAINTEXT
-from nostr.encrypted_lists import PublishStatus, ReadStatus
+from nostr.list_results import PublishStatus, ReadStatus
 from nostr.local_signer import LocalSigner
 from nostr.paged_list import MAX_PAGES, PAGE_PLAINTEXT_MAX, PageError, Paging, digest, parse_page
 from nostr.standup import conversation, formats

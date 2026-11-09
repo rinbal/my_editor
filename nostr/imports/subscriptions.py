@@ -64,8 +64,9 @@ from i18n import _
 
 from ..bunker import BunkerSessionPool
 from ..drafts import supersedes
-from ..encrypted_lists import EncryptedList, ListRead, ListWords, PublishStatus, ReadStatus
+from ..encrypted_lists import EncryptedList
 from ..list_relays import ListQuery, event_mark, publish_once
+from ..list_results import ListRead, ListWords, PublishStatus, ReadStatus
 from ..outbox import RelayDirectory
 from ..profiles import Profile
 from ..relay import RelayPool
