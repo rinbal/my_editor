@@ -20,6 +20,7 @@ from typing import List
 
 import pytest
 import shiboken6
+from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication
 
@@ -81,11 +82,17 @@ PODCAST = _destination("podcast", "Der Podcast", kinds=["audio"])
 BLOG = _destination("blog", "Ein Blog", publish_by={"article": "both"}, rights_required=True)
 
 
+class _Stops(QObject):
+    stopped = Signal(str)
+
+
 class Writer:
     """StandupWriter as the sheet sees it, answering at once."""
 
     def __init__(self, *, server="https://standup.example", destinations=(MAGAZIN,),
                  used=(), round_=(1, ""), operator="Einundzwanzig e.V.") -> None:
+        self._stops = _Stops()
+        self.stopped = self._stops.stopped
         self.server = server
         self._destinations, self._used = list(destinations), list(used)
         self.round, self.operator = round_, operator
@@ -263,6 +270,31 @@ def test_einreichen_hands_over_and_a_closed_sheet_lets_it_go_on(tmp_path):
     assert sheet.handoff.headline.text() == "Warte auf deine Signer-App."
     sheet.handoff.close_requested.emit()
     assert writer.background == [sheet.run]
+
+
+def test_a_sheet_whose_account_was_let_go_closes_and_sends_nothing_to_the_background(
+        tmp_path):
+    # RG-M2b 9: signed out, the sheet stayed at "Sending" with no way to
+    # close it, and its run answered nobody.
+    writer = Writer()
+    sheet = _sheet(tmp_path, writer)
+    sheet.show()
+    sheet.submit_button.click()
+    writer.stopped.emit(WRITER)
+    assert not sheet.isVisible() and sheet.run is None and writer.background == []
+    form_writer = Writer()
+    form = _sheet(tmp_path, form_writer)                 # still choosing: closes as well
+    form.show()
+    form_writer.stopped.emit(WRITER)
+    assert not form.isVisible()
+
+
+def test_another_account_chosen_in_the_sheet_lets_the_first_go_and_the_sheet_stays(tmp_path):
+    writer = Writer()
+    sheet = _sheet(tmp_path, writer)
+    sheet.show()
+    writer.stopped.emit("c" * 64)                        # not the one it submits as
+    assert sheet.isVisible()
 
 
 def test_without_einreichen_nothing_goes_on(tmp_path):

@@ -31,7 +31,7 @@ from nostr.standup.answers import LookupAnswer
 from nostr.standup.drafting import ROUND_UNKNOWN, encrypt_pictures, LocalPicture
 from nostr.standup.entries import SubmissionEntry
 from nostr.standup.lists import SUBMISSIONS_MISSING_PAGE, SUBMISSIONS_UNREADABLE
-from nostr.standup.submitting import Progress, Step
+from nostr.standup.submitting import MessageStatus, Progress, Step
 from nostr.ui import standup_submit
 from nostr.ui.standup_submit import BlossomUploads, StandupWriter, thumbnail
 
@@ -336,7 +336,8 @@ class ReadStateList(FakeList):
 def test_signing_out_forgets_at_once_and_writes_what_was_read_first():
     log: List[str] = []
     keys = SimpleNamespace(clear=lambda: log.append("media keys forgotten"))
-    run = SimpleNamespace(submitting=SimpleNamespace(stop=lambda: log.append("run stops")))
+    run = SimpleNamespace(submitting=SimpleNamespace(stop=lambda: log.append("run stops")),
+                          finished=True, progress=Progress(Step.SUBMITTED))
     read_state = ReadStateList(log)
     submissions = FakeList()
     api = FakeApi()
@@ -369,6 +370,71 @@ def test_signing_out_revokes_the_session_on_the_server():
     read_state.answer(None)
     world.nam.settle()
     assert world.server.sessions == {} and done == [True]
+
+
+def _stopping(*progresses):
+    """A writer whose account has a run at each of ``progresses``."""
+    from nostr.standup.submitting import PHASE_OF, Phase
+    writer = _writer(FakeList(), FakeApi(), media_keys=SimpleNamespace(clear=lambda: None),
+                     read_state=ReadStateList([]), destinations=SimpleNamespace(stop=lambda: None))
+    account = writer.account(SimpleNamespace(user_pubkey=WRITER))
+    for progress in progresses:
+        account.runs.append(SimpleNamespace(
+            submitting=SimpleNamespace(stop=lambda: None), progress=progress,
+            finished=PHASE_OF[progress.step] in (Phase.DONE, Phase.FAILED, Phase.CANCELLED),
+            choice=SimpleNamespace(name="Einundzwanzig Magazin")))
+    return writer
+
+
+@pytest.mark.parametrize("progresses, said", [
+    ((Progress(Step.UPLOADING),),
+     "Your submission to Einundzwanzig Magazin stopped when the account changed. "
+     "Nothing was sent."),
+    ((Progress(Step.SIGNING),),
+     "Your submission to Einundzwanzig Magazin stopped when the account changed. "
+     "Nothing was sent."),
+    ((Progress(Step.SENDING, sent=True),),
+     "Your submission to Einundzwanzig Magazin stopped when the account changed, before the "
+     "server confirmed it. Open Submit to a Publication with that account to see whether it "
+     "arrived."),
+    ((Progress(Step.CHECKING, sent=True),),
+     "Your submission to Einundzwanzig Magazin stopped when the account changed, before the "
+     "server confirmed it. Open Submit to a Publication with that account to see whether it "
+     "arrived."),
+    ((Progress(Step.REUPLOADING, sent=True, receipt=object()),),
+     "Your submission to Einundzwanzig Magazin is in, but a picture was still being uploaded "
+     "when the account changed."),
+    ((Progress(Step.SUBMITTED, sent=True, receipt=object(), message=MessageStatus.SENDING),),
+     "Your submission to Einundzwanzig Magazin is in, but your message may not have reached "
+     "the editorial team: the account changed."),
+    ((Progress(Step.UPLOADING), Progress(Step.SENDING, sent=True)),
+     "Your submission to Einundzwanzig Magazin stopped when the account changed, before the "
+     "server confirmed it. Open Submit to a Publication with that account to see whether it "
+     "arrived. 1 other submission stopped as well."),
+    ((Progress(Step.SUBMITTED, sent=True, receipt=object()), Progress(Step.FAILED)), None),
+], ids=["uploading", "signing", "sending", "checking", "pictures", "message", "two", "none"])
+def test_a_submission_stopped_with_its_account_is_said_by_what_reached_the_server(
+        progresses, said):
+    # RG-M2b 9: sign-out, another account or a signer paired anew stopped
+    # runs without a word; the words follow what was sent (lesson 8).
+    writer = _stopping(*progresses)
+    told, stopped = [], []
+    writer.status.connect(told.append)
+    writer.stopped.connect(stopped.append)
+    writer.stop()
+    assert stopped == [WRITER] and told == []      # after the account change is done
+    QApplication.processEvents()
+    assert told == ([said] if said else [])
+
+
+def test_without_an_account_nothing_is_said_to_have_stopped():
+    writer = _writer(FakeList(), FakeApi())
+    told, stopped = [], []
+    writer.status.connect(told.append)
+    writer.stopped.connect(stopped.append)
+    writer.stop()
+    QApplication.processEvents()
+    assert told == [] and stopped == []
 
 
 # -- in the background --------------------------------------------------------------

@@ -31,7 +31,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QObject, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter
 
-from i18n import _
+from i18n import _, ngettext
 
 from ..einundzwanzig_api.client import session_signer
 from ..list_relays import ListQuery, publish_once
@@ -46,7 +46,7 @@ from ..standup.lists import (
 )
 from ..standup.opening import MediaKeys
 from ..standup.servers import configured_server
-from ..standup.submitting import Phase, Ports, Progress, Submitting
+from ..standup.submitting import MessageStatus, Phase, Ports, Progress, Submitting
 from ..standup.trust import Destination
 from ..standup.watcher import look_up_all, resolve_unconfirmed
 
@@ -251,6 +251,38 @@ class _Account(QObject):
         self.list_problem = ""
 
 
+def _stopped_words(runs: Sequence[SubmissionRun]) -> str:
+    """What the status bar says when the account of ``runs`` is let go
+    while some are on their way, or ``""``. The words follow what reached
+    the server (lesson 8): nothing, a request it may hold (the submit
+    sheet, opened again with that account, finds out), or a receipt with
+    a picture still going up. The run furthest from known is named."""
+    going = [run for run in runs if not run.finished]
+    if going:
+        def known(run: SubmissionRun) -> int:
+            progress = run.progress
+            return (0 if progress.sent and progress.receipt is None
+                    else 1 if progress.receipt is not None else 2)
+
+        run = min(going, key=known)
+        progress = run.progress
+        text = (words.STOPPED_PICTURES if progress.receipt is not None
+                else words.STOPPED_UNCONFIRMED if progress.sent
+                else words.STOPPED_NOTHING_SENT)
+        others = len(going) - 1
+    else:
+        talking = [run for run in runs if run.progress.message is MessageStatus.SENDING]
+        if not talking:
+            return ""
+        run, text, others = talking[0], words.STOPPED_MESSAGE, 0
+    said = _(text).format(publication=run.choice.name)
+    if others:
+        said += " " + ngettext("{count} other submission stopped as well.",
+                               "{count} other submissions stopped as well.",
+                               others).format(count=others)
+    return said
+
+
 class StandupWriter(QObject):
     """See the module docstring. ``server``, ``uploads`` and
     ``accounts(profile)`` (what belongs to one account, as _Account has
@@ -258,6 +290,9 @@ class StandupWriter(QObject):
     names, or none."""
 
     status = Signal(str)
+    # The account of this pubkey was let go (sign-out, another account, a
+    # signer paired anew): a sheet still open for it closes (RG-M2b 9).
+    stopped = Signal(str)
 
     def __init__(self, *, session_pool, relay_pool, relay_directory, media_store,
                  entitled_relays=None, server: Optional[str] = None, nam=None,
@@ -438,6 +473,7 @@ class StandupWriter(QObject):
             if on_done is not None:
                 on_done()
             return
+        said = _stopped_words(account.runs)
         for run in account.runs:
             run.submitting.stop()
         account.destinations.stop()
@@ -458,6 +494,11 @@ class StandupWriter(QObject):
             finished("read state")
 
         account.read_state.before_sign_out(written)
+        self.stopped.emit(account.writer)
+        if said:
+            # After the account change is done, so what the window says
+            # about that change does not cover what was lost.
+            answer_later(self.status.emit, said)
 
     # -- the ports -----------------------------------------------------------
 

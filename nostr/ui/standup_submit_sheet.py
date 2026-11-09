@@ -186,6 +186,7 @@ class SubmitSheet(QDialog):
         self.run: Optional[SubmissionRun] = None
         self._build(profile)
         avatars.avatar_added.connect(self._on_logo)
+        writer.stopped.connect(self._on_account_stopped)
         running = writer.running(profile, draft.d)
         if running is not None:
             # One run per work: the one on its way is shown, not a second.
@@ -633,6 +634,19 @@ class SubmitSheet(QDialog):
         if self.run is not None and self.run.progress.cancellable:
             self.run.cancel()
             self.reject()
+
+    def _on_account_stopped(self, writer: str) -> None:
+        """The account this sheet submits as was let go (sign-out, another
+        account, a signer paired anew): what it shows belongs to nobody
+        now, so it closes; the status bar says what stopped (RG-M2b 9).
+        An account chosen in this sheet lets the previous one go too, and
+        the sheet stays."""
+        if self.account.profile().user_pubkey != writer:
+            return
+        if self.run is not None:
+            self.run.changed.disconnect(self.handoff.show_progress)
+            self.run = None                         # stopped, not in the background
+        self.reject()
 
     def done(self, result: int) -> None:  # noqa: N802, Qt's name
         self._generation += 1                       # no answer counts after this

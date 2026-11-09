@@ -34,6 +34,17 @@ UNCONFIRMED_DETAIL = N_("You can close the window, MyEditor keeps checking.")
 SUBMITTED = N_("Submitted. In the inbox of {publication}.")
 SUBMITTED_DETAIL = N_("The server confirmed receipt.")
 IN_THE_BACKGROUND = N_("Submitting …")
+# The account was let go (sign-out, another account, a signer paired
+# anew) while a submission was on its way (RG-M2b 9).
+STOPPED_NOTHING_SENT = N_("Your submission to {publication} stopped when the account "
+                          "changed. Nothing was sent.")
+STOPPED_UNCONFIRMED = N_("Your submission to {publication} stopped when the account changed, "
+                         "before the server confirmed it. Open Submit to a Publication with "
+                         "that account to see whether it arrived.")
+STOPPED_PICTURES = N_("Your submission to {publication} is in, but a picture was still being "
+                      "uploaded when the account changed.")
+STOPPED_MESSAGE = N_("Your submission to {publication} is in, but your message may not have "
+                     "reached the editorial team: the account changed.")
 NOT_CONFIRMED = N_("Not confirmed")
 
 # The first message to the editorial team, after the receipt.
@@ -90,7 +101,9 @@ __all__ = [
     "ANOTHER_VERSION", "ENCRYPTING", "IN_THE_BACKGROUND", "LIST_CHANGED_ELSEWHERE",
     "LIST_ENTRY_UNUSABLE", "LIST_NOT_SAVED", "MESSAGE_NOT_SENT", "MESSAGE_SENDING", "MESSAGE_SENT",
     "NOTHING_SUBMITTED", "NOT_CONFIRMED", "NOT_SENT", "NOT_TAKEN", "PICTURE_MISSING", "SENDING",
-    "SIGNER_DECLINED", "SIGNER_SILENT", "STORED_PICTURE_MISSING", "SUBMITTED", "SUBMITTED_DETAIL",
+    "SIGNER_DECLINED", "SIGNER_SILENT", "STOPPED_MESSAGE", "STOPPED_NOTHING_SENT",
+    "STOPPED_PICTURES", "STOPPED_UNCONFIRMED", "STORED_PICTURE_MISSING", "SUBMITTED",
+    "SUBMITTED_DETAIL",
     "TEXT_STAYS", "TOO_LARGE", "UNCONFIRMED", "UNCONFIRMED_DETAIL", "UPLOADING_DETAIL",
     "UPLOADING_PICTURE", "UPLOADING_PICTURES", "UPLOAD_FAILED", "WAITING_DETAIL",
     "WAITING_FOR_SIGNER", "refusal",
