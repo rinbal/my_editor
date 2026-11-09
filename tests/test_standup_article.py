@@ -51,7 +51,8 @@ def test_a_local_picture_goes_with_the_text_by_its_key_and_an_uploaded_one_by_ad
         tmp_path):
     win = _Submitting(tmp_path / "cache", ArticleDetails(
         identifier="ein-jahr", title="Ein Jahr", summary="Kurz", hashtags=("bitcoin",),
-        coauthors=(CO_AUTHOR,), published_at=1700000000))
+        coauthors=(CO_AUTHOR,), published_at=1700000000,
+        carried=(("l", "de", "ISO-639-1"),)))
     hosted, local = win.uploaded_asset(alt="hosted"), win.local_asset(alt="sketch")
     ed = _editor_with(hosted, local, text="Look:")
     draft, _cover, pictures, private, public = win._submission_of(ed, PROFILE,
@@ -64,6 +65,7 @@ def test_a_local_picture_goes_with_the_text_by_its_key_and_an_uploaded_one_by_ad
             draft.published_at) == ("ein-jahr", "Ein Jahr", "Kurz", ("bitcoin",),
                                     (CO_AUTHOR,), 1700000000)
     assert pictures == 2 and private == []
+    assert draft.lang == "de"                      # the article's own label (RG-M2b 11)
     assert public == 1                             # the hosted one stays a public link
 
 

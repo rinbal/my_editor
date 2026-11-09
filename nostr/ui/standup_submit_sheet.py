@@ -611,7 +611,8 @@ class SubmitSheet(QDialog):
             rights=self.rights.isChecked(), rights_required=bool(rules.get("rights_required")),
             private_names=self._private_names, message=self.message.toPlainText(),
             submitted_to=destination.name if self._round is not None
-            and self._round.round is None else "")
+            and self._round.round is None else "",
+            checklist=rules.get("checklist"), publication=destination.name)
 
     def round(self) -> Optional[int]:
         """The round to submit in, once known and free."""

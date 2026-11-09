@@ -7903,6 +7903,11 @@ msgid "A message has at most {count} characters."
 msgstr "Eine Nachricht hat höchstens {count} Zeichen."
 
 #: nostr/standup/drafting.py:57
+#, python-brace-format
+msgid "{publication} asks for {items}. Add them in Article Details to submit."
+msgstr "{publication} verlangt {items}. Ergänze sie in den Artikeldetails, um einzureichen."
+
+#: nostr/standup/drafting.py:58
 msgid "Whether you have submitted this text before couldn’t be checked. Try again later."
 msgstr "Ob du diesen Text schon eingereicht hast, konnte nicht geprüft werden. Versuche es später noch einmal."
 

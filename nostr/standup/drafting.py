@@ -25,7 +25,7 @@ the rights when the publication requires them.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from i18n import N_, _
 
@@ -54,6 +54,7 @@ COAUTHOR_INVALID = N_("A co-author can’t be named: their account isn’t valid
 COAUTHOR_INVALID_DETAIL = N_("Not a valid public key: {key}")
 ALREADY_SUBMITTED = N_("You have submitted this text to {publication} already.")
 MESSAGE_TOO_LONG = N_("A message has at most {count} characters.")
+REQUIRED_MISSING = N_("{publication} asks for {items}. Add them in Article Details to submit.")
 ROUND_UNKNOWN = N_("Whether you have submitted this text before couldn’t be checked. "
                    "Try again later.")
 
@@ -73,6 +74,37 @@ class Blocker(str):
         made = super().__new__(cls, words)
         made.detail = detail
         return made
+
+
+# What a publication's checklist (contract 8.1) can be checked against
+# in the work itself, by the ids STANDUP's own writer checks
+# (src/services/editorial/submission-work.js, feat/redaktion-f4); any
+# other point is "unchecked". Article Details sets all but the language,
+# which only an article's own label names.
+_CHECKS: Dict[str, Callable[["ArticleDraft"], bool]] = {
+    "title": lambda draft: bool(draft.title.strip()),
+    "summary": lambda draft: bool(draft.summary.strip()),
+    "image": lambda draft: bool(draft.image),
+    "tags": lambda draft: bool(draft.tags),
+    "lang": lambda draft: bool(draft.lang),
+}
+_FIXED_IN_DETAILS = ("title", "summary", "image", "tags")
+
+
+def checklist_results(checklist: Any, draft: "ArticleDraft") -> List[dict]:
+    """The publication's checklist with each point's result (5):
+    ``ok``, ``missing``, or ``unchecked`` for what the work cannot say."""
+    found = []
+    for item in checklist if isinstance(checklist, list) else ():
+        if not (isinstance(item, dict) and isinstance(item.get("id"), str)
+                and isinstance(item.get("label"), str)
+                and item.get("level") in ("recommended", "required")):
+            continue
+        check = _CHECKS.get(item["id"])
+        found.append({"id": item["id"], "label": item["label"], "level": item["level"],
+                      "result": "unchecked" if check is None
+                      else "ok" if check(draft) else "missing"})
+    return found
 
 
 def picture_type_refused(picture: LocalPicture) -> bool:
@@ -252,6 +284,7 @@ def seal(draft: ArticleDraft, choice: Choice, key: RedaktionKey,
     revision = formats.build_revision(
         submission_id=sid, revision=1, kind="article", work=_work(draft, pictures),
         rights={"confirmed": choice.rights, "license": None},
+        checklist=checklist_results(key.rules.get("checklist"), draft),
         thumb=dict(draft.thumb) if draft.thumb else None,
         media=[p.entry(servers.get(p.sha256, ())) for p in pictures], client=CLIENT)
     sealed = crypto.seal_revision(revision, s_sub)
@@ -315,12 +348,14 @@ def choose_round(entries: Sequence[SubmissionEntry],
 
 def blockers(draft: ArticleDraft, *, writer: str, rights: bool, rights_required: bool,
              private_names: Sequence[str] = (), message: str = "",
-             submitted_to: str = "") -> List[str]:
+             submitted_to: str = "", checklist: Any = (), publication: str = "") -> List[str]:
     """Why the article cannot be submitted as it is, in the person's
     words (translated), most pressing first; empty when it can.
     ``private_names`` are the names of its pictures that are private in
     the Media Library; ``submitted_to`` names the publication when this
-    text is submitted there already and still open."""
+    text is submitted there already and still open; ``checklist`` is the
+    one of ``publication``, whose required points Article Details can
+    set must be there (as STANDUP's writer asks)."""
     found: List[str] = []
     title = draft.title.strip()
     if not title:
@@ -343,6 +378,11 @@ def blockers(draft: ArticleDraft, *, writer: str, rights: bool, rights_required:
         found.append(_(TOO_MANY_PEOPLE).format(count=formats.MAX_PARTICIPANTS))
     if len(message) > formats.MAX_MESSAGE_CHARS:
         found.append(_(MESSAGE_TOO_LONG).format(count=formats.MAX_MESSAGE_CHARS))
+    asked = [item["label"] for item in checklist_results(checklist, draft)
+             if item["level"] == "required" and item["result"] == "missing"
+             and item["id"] in _FIXED_IN_DETAILS]
+    if asked:
+        found.append(_(REQUIRED_MISSING).format(publication=publication, items=", ".join(asked)))
     if submitted_to:
         found.append(_(ALREADY_SUBMITTED).format(publication=submitted_to))
     if rights_required and not rights:
@@ -353,6 +393,6 @@ def blockers(draft: ArticleDraft, *, writer: str, rights: bool, rights_required:
 __all__ = [
     "ALREADY_SUBMITTED", "ArticleDraft", "Blocker", "CLIENT", "CLOSED_STATES", "Choice",
     "EncryptedPicture", "HeldNotUsable", "LocalPicture", "RoundChoice", "Sealed", "TooLarge",
-    "blockers", "choose_round", "encrypt_pictures", "invalid_coauthors", "participants_of",
-    "picture_type_refused", "seal", "submission_id_of",
+    "blockers", "checklist_results", "choose_round", "encrypt_pictures", "invalid_coauthors",
+    "participants_of", "picture_type_refused", "seal", "submission_id_of",
 ]

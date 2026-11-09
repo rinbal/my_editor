@@ -441,3 +441,17 @@ def test_the_link_name_shown_before_one_is_typed_is_the_sheets():
     panel.show_article(ArticleDetails(title="Hello"), fixed_identifier=False)
     assert panel.identifier_edit.placeholderText() == "hello"
     assert "made_identifier=" in inspect.getsource(MainWindow._fill_article_details_panel)
+
+
+@pytest.mark.parametrize("tags, language", [
+    ([["L", "ISO-639-1"], ["l", "de", "ISO-639-1"]], "de"),
+    ([["l", "en-US", "ISO-639-1"]], "en"),
+    ([["l", "pt_BR", "ISO-639-1"]], "pt"),
+    ([["l", "de"]], ""),                                    # a bare label is some other label
+    ([["l", "german", "ISO-639-1"]], ""),
+    ([["l", "de", "other"]], ""),
+    ([], ""),
+])
+def test_an_article_names_its_language_only_by_its_own_iso_label(tags, language):
+    # NIP-32 as STANDUP reads it: no language is better than a wrong one.
+    assert ArticleDetails.from_tags(tags).language == language

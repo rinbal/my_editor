@@ -250,6 +250,16 @@ def test_what_exactly_is_wrong_is_in_the_tooltip_not_the_words(tmp_path):
     assert clean.status.toolTip() == "" and clean.submit_button.isEnabled()
 
 
+def test_a_required_point_of_the_publications_checklist_that_is_missing_blocks(tmp_path):
+    from dataclasses import replace
+    asking = _destination("magazin", "Einundzwanzig Magazin", checklist=[
+        {"id": "summary", "label": "Zusammenfassung", "level": "required"}])
+    sheet = _sheet(tmp_path, Writer(destinations=(asking,)), draft=replace(DRAFT, summary=""))
+    assert sheet.status.text() == i18n._(drafting.REQUIRED_MISSING).format(
+        publication="Einundzwanzig Magazin", items="Zusammenfassung")
+    assert not sheet.submit_button.isEnabled()
+
+
 def test_a_private_picture_blocks(tmp_path):
     sheet = _sheet(tmp_path, private=("cafe.jpg",))
     assert not sheet.submit_button.isEnabled()

@@ -87,6 +87,51 @@ def test_the_five_picture_types_are_taken(mime):
     assert _blockers(replace(DRAFT, pictures=(picture,))) == []
 
 
+CHECKLIST = [{"id": "title", "label": "Titel", "level": "required"},
+             {"id": "summary", "label": "Zusammenfassung", "level": "required"},
+             {"id": "image", "label": "Titelbild", "level": "required"},
+             {"id": "tags", "label": "Schlagwörter", "level": "recommended"},
+             {"id": "lang", "label": "Sprache", "level": "required"},
+             {"id": "quellen", "label": "Quellen", "level": "required"},
+             {"id": 3, "label": "kaputt", "level": "required"},
+             {"id": "x", "label": "Ebene", "level": "sometimes"}]
+
+
+def test_each_checklist_point_the_work_can_say_is_checked_the_others_are_unchecked():
+    # RG-M2b 11: the revision carried no results. The ids are the ones
+    # STANDUP's own writer checks; a broken point is left out.
+    draft = replace(DRAFT, summary="", tags=("bitcoin",), lang="de")
+    assert [(i["id"], i["result"]) for i in drafting.checklist_results(CHECKLIST, draft)] == [
+        ("title", "ok"), ("summary", "missing"), ("image", "missing"), ("tags", "ok"),
+        ("lang", "ok"), ("quellen", "unchecked")]
+    assert drafting.checklist_results(None, draft) == []
+
+
+def test_a_required_point_article_details_sets_blocks_and_one_it_cannot_does_not():
+    draft = replace(DRAFT, summary="")
+    (found,) = _blockers(draft, checklist=CHECKLIST, publication="Einundzwanzig Magazin")
+    assert found == drafting.REQUIRED_MISSING.format(publication="Einundzwanzig Magazin",
+                                                     items="Zusammenfassung, Titelbild")
+    # The language has no place in Article Details: never a dead end.
+    complete = replace(DRAFT, image="https://media.example/a.jpg")
+    assert _blockers(complete, checklist=CHECKLIST, publication="M") == []
+
+
+def test_the_revision_carries_the_checklist_results_and_the_articles_language():
+    from nostr.standup import crypto as sc
+    key = replace(trust.verify_key_event(KEY_EVENT, ADDRESS),
+                  rules=dict(trust.verify_key_event(KEY_EVENT, ADDRESS).rules,
+                             checklist=CHECKLIST[:5]))
+    draft = replace(DRAFT, lang="de")
+    sealed = drafting.seal(draft, CHOICE, key, (), {}, writer=pk("writer"), round_=1, now=NOW)
+    revision = sc._open_revision(sealed.body["envelope"], sealed.s_sub,
+                                 submission_id=sealed.body["submission_id"], revision=1)
+    assert revision["work"]["lang"] == "de"
+    assert [(i["id"], i["result"]) for i in revision["checklist"]] == [
+        ("title", "ok"), ("summary", "ok"), ("image", "missing"), ("tags", "missing"),
+        ("lang", "ok")]
+
+
 def test_the_rights_block_only_where_the_publication_requires_them():
     assert _blockers(rights=False, rights_required=False) == []
 
