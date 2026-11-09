@@ -36,7 +36,6 @@ from nostr.ui.standup_submit import BlossomUploads, StandupWriter, thumbnail
 
 WRITER = "a1" * 32
 PUBLICATION = f"30078:{'b2' * 32}:magazin"
-KEY = "c3" * 32
 
 
 @pytest.fixture(autouse=True)
@@ -126,9 +125,17 @@ def test_stopping_cancels_what_is_on_its_way():
 
 # -- the round -----------------------------------------------------------------
 
+def _sid(round_: int) -> str:
+    return f"{round_:x}".rjust(64, "d")
+
+
+def _key(round_: int) -> str:
+    return f"{round_:x}".rjust(64, "c")
+
+
 def _entry(round_: int = 1) -> SubmissionEntry:
-    return SubmissionEntry(sid="d4" * 32, publication=PUBLICATION, server="https://s.example",
-                           role="writer", s_sub="e5" * 32, status_key=KEY, title="T",
+    return SubmissionEntry(sid=_sid(round_), publication=PUBLICATION, server="https://s.example",
+                           role="writer", s_sub="e5" * 32, status_key=_key(round_), title="T",
                            kind="article", d="ein-jahr", round=round_, revision=1,
                            revision_hash="f6" * 32, updated_at=1)
 
@@ -141,6 +148,7 @@ class FakeList:
         self._entries = list(entries)
         self._readable = readable
         self.stopped = False
+        self.forgotten = []
 
     def load(self, on_done) -> None:
         self.reads += 1
@@ -150,26 +158,49 @@ class FakeList:
     def entries(self):
         return self._entries
 
+    def record(self, entry, on_done) -> None:
+        self._entries.append(entry)
+
+    def entry(self, sid):
+        return next((e for e in self._entries if e.sid == sid), None)
+
+    def forget(self, entry, on_done) -> None:
+        self.forgotten.append(entry)
+        on_done(SimpleNamespace(stored=True))
+
     def stop(self) -> None:
         self.stopped = True
 
 
 class FakeApi:
-    def __init__(self, state=None, *, unreadable=False, fails=False, sid="d4" * 32) -> None:
-        self.state, self.unreadable, self.fails, self.sid = state, unreadable, fails, sid
+    """The lookup: ``states`` per round (one state: for every round
+    asked), None where the server stored nothing."""
+
+    def __init__(self, states=None, *, unreadable=False, fails=False, other_sid=False) -> None:
+        self.states, self.unreadable, self.fails = states, unreadable, fails
+        self.other_sid = other_sid
+        self.asked = []
         self.stopped = False
 
     def lookup(self, items, on_success, on_failure) -> None:
+        keys = [key for key, _since in items]
+        self.asked.append(keys)
         if self.fails:
             on_failure(RuntimeError("offline"))
-        elif self.unreadable:
-            on_success(LookupAnswer(found={}, unreadable=frozenset({KEY})))
-        elif self.state is None:
-            on_success(LookupAnswer(found={}, unreadable=frozenset()))
-        else:
-            item = SimpleNamespace(submission=SimpleNamespace(state=self.state),
-                                   receipt=SimpleNamespace(submission_id=self.sid))
-            on_success(LookupAnswer(found={KEY: item}, unreadable=frozenset()))
+            return
+        if self.unreadable:
+            on_success(LookupAnswer(found={}, unreadable=frozenset(keys[:1])))
+            return
+        found = {}
+        for key in keys:
+            round_ = int(key.lstrip("c") or "0", 16)
+            state = self.states.get(round_) if isinstance(self.states, dict) else self.states
+            if state is not None:
+                found[key] = SimpleNamespace(
+                    submission=SimpleNamespace(state=state),
+                    receipt=SimpleNamespace(submission_id="00" * 32 if self.other_sid
+                                            else _sid(round_)))
+        on_success(LookupAnswer(found=found, unreadable=frozenset()))
 
     def stop(self) -> None:
         self.stopped = True
@@ -203,16 +234,24 @@ def _round(writer) -> tuple:
     ((_entry(1),), FakeApi("declined"), (2, "")),           # closed: the next round
     ((_entry(1), _entry(2)), FakeApi("withdrawn"), (3, "")),
     ((_entry(1),), FakeApi("in_review"), (None, "")),       # still open there
-])
-def test_the_round_follows_the_list_and_the_server(entries, api, expected):
+    ((_entry(2), _entry(1)), FakeApi({1: "in_review", 2: None}), (None, "")),
+], ids=["none", "unsent", "declined", "withdrawn", "open", "an earlier round open"])
+def test_the_round_follows_what_the_server_says_of_every_entry(entries, api, expected):
+    # Contract 2: every entry of the work is asked about, in one lookup.
     assert _round(_writer(FakeList(entries), api)) == expected
+    if entries:
+        assert sorted(api.asked[0]) == sorted(e.status_key for e in entries)
 
 
-def test_only_an_entry_the_server_never_stored_may_be_replaced_by_the_next_try():
+def test_an_entry_the_server_has_no_receipt_for_is_sent_again_or_discarded():
     entry = _entry(1)
-    assert _answer(_writer(FakeList([entry]), FakeApi(None))).replaces is entry
-    assert _answer(_writer(FakeList([entry]), FakeApi("declined"))).replaces is None
-    assert _answer(_writer(FakeList([entry]), FakeApi("in_review"))).replaces is None
+    assert _answer(_writer(FakeList([entry]), FakeApi(None))).unsent is entry
+    assert _answer(_writer(FakeList([entry]), FakeApi("declined"))).unsent is None
+    submissions = FakeList([entry])
+    discarded = []
+    _writer(submissions, FakeApi()).discard(SimpleNamespace(user_pubkey=WRITER), entry,
+                                            discarded.append)
+    assert submissions.forgotten == [entry] and discarded == [True]
 
 
 def test_one_run_per_work_and_publication(german):
@@ -233,7 +272,7 @@ def test_one_run_per_work_and_publication(german):
 @pytest.mark.parametrize("submissions, api, said", [
     (FakeList([_entry()]), FakeApi(fails=True), ROUND_UNKNOWN),           # no answer
     (FakeList([_entry()]), FakeApi(unreadable=True), ROUND_UNKNOWN),      # has something
-    (FakeList([_entry()]), FakeApi("declined", sid="00" * 32), ROUND_UNKNOWN),  # another's
+    (FakeList([_entry()]), FakeApi("declined", other_sid=True), ROUND_UNKNOWN),  # another's
     (FakeList(readable=False), FakeApi(), SUBMISSIONS_UNREADABLE),
     (FakeList(complete=False), FakeApi(), SUBMISSIONS_MISSING_PAGE),      # a page missing
 ], ids=["no answer", "unreadable", "another submission", "list unreadable", "list incomplete"])

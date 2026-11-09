@@ -53,6 +53,7 @@ from ..profiles import Profile, ProfileStore
 from ..standup import drafting, formats
 from ..standup.drafting import ArticleDraft, Choice
 from ..standup.trust import KEY_NOT_CONFIRMED, Destination
+from ..standup.words import LIST_NOT_SAVED
 from . import appearance
 from .avatar import color_for_pubkey, initials_for
 from .post_list import symbol_pixmap
@@ -269,6 +270,7 @@ class SubmitSheet(QDialog):
         to_column.addWidget(self.picker)
         to_column.addWidget(self.rules)
         to_column.addWidget(self.retry_load, 0, Qt.AlignmentFlag.AlignLeft)
+        to_column.addWidget(self._build_unsent())
         form.addRow(form_label(_("To:"), self.picker), to)
 
         self.by_me = QRadioButton(_("me"))
@@ -320,6 +322,37 @@ class SubmitSheet(QDialog):
         form.addRow("", message)
         self._form = form
         return form
+
+    def _build_unsent(self) -> QWidget:
+        """An earlier try the server has no receipt for (contract 13):
+        Einreichen sends it again, Verwerfen takes it off the list."""
+        self.unsent = QWidget()
+        row = QHBoxLayout(self.unsent)
+        row.setContentsMargins(0, 0, 0, 0)
+        hint = self._hint()
+        hint.setText(_("An earlier try wasn’t sent. Submit sends it again."))
+        row.addWidget(hint, 1)
+        self.discard_button = QPushButton(_("Discard"))
+        self.discard_button.setAutoDefault(False)
+        self.discard_button.clicked.connect(self._on_discard)
+        row.addWidget(self.discard_button, 0, Qt.AlignmentFlag.AlignTop)
+        self.unsent.hide()
+        return self.unsent
+
+    def _on_discard(self) -> None:
+        entry = self._round.unsent if self._round is not None else None
+        if entry is None:
+            return
+        self.discard_button.setEnabled(False)
+
+        def done(stored: bool) -> None:
+            self.discard_button.setEnabled(True)
+            if stored:
+                self._on_picked(self.picker.currentIndex())     # ask again
+            else:
+                self.status.say(_(LIST_NOT_SAVED))
+
+        self._writer.discard(self.account.profile(), entry, done)
 
     def _build_privacy(self) -> QFrame:
         box = self._privacy_box = QFrame()
@@ -546,6 +579,7 @@ class SubmitSheet(QDialog):
         return self._round.round if self._round is not None else None
 
     def _refresh(self, *_args) -> None:
+        self.unsent.setVisible(self._round is not None and self._round.unsent is not None)
         blockers = self.blockers()
         self.submit_button.setEnabled(not blockers and self.round() is not None)
         self.status.say(blockers[0] if blockers else "")

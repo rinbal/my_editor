@@ -325,33 +325,43 @@ def read_submission(api: StandupApi, submission_id: str,
 # No answer after sending (12.4)                                               #
 # --------------------------------------------------------------------------- #
 
+def look_up_all(api: StandupApi, entries: Sequence[SubmissionEntry],
+                on_found: Callable[[Dict[str, Optional[views.LookupItem]]], None],
+                on_failure: Callable[[StandupError], None]) -> None:
+    """What the server has for each of the writer's ``entries`` (1 to
+    ``MAX_LOOKUP_ITEMS``), asked with their status keys in one lookup (no
+    signature): ``on_found({sid: item})``, item None where it stored
+    nothing. ``on_failure`` when the server could not be asked, when it
+    has something whose answer could not be read (never "not stored",
+    12.4), or when an answer is for another submission. Every lookup of
+    entries goes through here (RG-M2b 2). ValueError for an entry
+    without a status key."""
+    if not entries or any(not entry.status_key for entry in entries):
+        raise ValueError("only a writer's entries have a status key")
+
+    def found(answer: LookupAnswer) -> None:
+        if any(entry.status_key in answer.unreadable for entry in entries):
+            on_failure(StandupError(Code.BAD_RESPONSE, message="an answer is unreadable",
+                                    maybe_stored=True))
+            return
+        items = {entry.sid: answer.found.get(entry.status_key) for entry in entries}
+        if any(item is not None and item.receipt.submission_id != sid
+               for sid, item in items.items()):
+            on_failure(StandupError(Code.BAD_RESPONSE,
+                                    message="an answer is for another submission",
+                                    maybe_stored=True))
+            return
+        on_found(items)
+
+    api.lookup([(entry.status_key, 0) for entry in entries], found, on_failure)
+
+
 def look_up(api: StandupApi, entry: SubmissionEntry,
             on_found: Callable[[Optional[views.LookupItem]], None],
             on_failure: Callable[[StandupError], None]) -> None:
-    """What the server has for ``entry``, asked with its status key (no
-    signature): ``on_found(item)``, or ``on_found(None)`` when it stored
-    nothing for it. ``on_failure`` when the server could not be asked,
-    when it has something whose answer could not be read (never "not
-    stored", 12.4), or when the answer is for another submission. Every
-    lookup of one entry goes through here (RG-M2b 2). Only a writer's
-    entry can be asked about (ValueError for another)."""
-    if not entry.status_key:
-        raise ValueError("only a writer's entry has a status key")
-
-    def found(answer: LookupAnswer) -> None:
-        if entry.status_key in answer.unreadable:
-            on_failure(StandupError(Code.BAD_RESPONSE, message="the answer is unreadable",
-                                    maybe_stored=True))
-            return
-        item = answer.found.get(entry.status_key)
-        if item is not None and item.receipt.submission_id != entry.sid:
-            on_failure(StandupError(Code.BAD_RESPONSE,
-                                    message="the answer is for another submission",
-                                    maybe_stored=True))
-            return
-        on_found(item)
-
-    api.lookup([(entry.status_key, 0)], found, on_failure)
+    """:func:`look_up_all` for one entry: ``on_found(item)``, or
+    ``on_found(None)`` when the server stored nothing for it."""
+    look_up_all(api, [entry], lambda items: on_found(items[entry.sid]), on_failure)
 
 
 def resolve_unconfirmed(api: StandupApi, entry: SubmissionEntry,
@@ -375,5 +385,5 @@ def resolve_unconfirmed(api: StandupApi, entry: SubmissionEntry,
 __all__ = [
     "Different", "EntryStatus", "Followed", "MAX_CONTINUATIONS", "NotStored",
     "REFRESH_INTERVAL_MS", "SubmissionWatcher", "Superseded", "classify", "read_submission",
-    "look_up", "resolve_unconfirmed",
+    "look_up", "look_up_all", "resolve_unconfirmed",
 ]

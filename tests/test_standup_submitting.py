@@ -23,17 +23,17 @@ import pytest
 
 from nostr.list_results import PublishResult, PublishStatus
 from nostr.media.assets import asset_key
-from nostr.standup import formats, submitting, trust, views, words
+from nostr.standup import drafting, formats, submitting, trust, views, words
 from nostr.standup import crypto as scrypto
 from nostr.standup.client import StandupApi
 from nostr.standup.drafting import ArticleDraft, Choice, LocalPicture
-from nostr.standup.lists import RecordResult, RecordStatus
+from nostr.standup.lists import RecordResult, RecordStatus, takes_place_of
 from nostr.standup.submitting import MessageStatus, Phase, Ports, Step, Submitting
 from nostr.standup.watcher import resolve_unconfirmed
 from tests.membership_fakes import FakeClock
 from tests.standup_fakes import (
     ADDRESS, DROP_AFTER, DROP_BEFORE, KEY_EVENT, SERVER, FakeStandupServer, Fault, SignAs,
-    StandupNam,
+    StandupNam, submission_for,
 )
 from tests.standup_vectors import NOW, pk, sk
 
@@ -98,24 +98,37 @@ class Uploads:
 
 class SubmissionsList:
     """The writer's list: records and answers STORED on a later turn,
-    unless the test sets another outcome."""
+    unless the test sets another outcome. Like the real one it holds an
+    entry per sid (``held``) and refuses other secrets for a sid held
+    (lists.takes_place_of)."""
 
     def __init__(self, later: Later, log: List[str]) -> None:
         self.later = later
         self.log = log
         self.entries = []
         self.forgotten = []
+        self.on_list = {}
         self.outcomes: List[RecordResult] = []
+
+    def held(self, sid):
+        return self.on_list.get(sid)
 
     def forget(self, entry) -> None:
         self.forgotten.append(entry)
+        self.on_list.pop(entry.sid, None)
         self.log.append("forget")
 
     def record(self, entry, on_done) -> None:
         self.entries.append(entry)
         self.log.append("record")
-        result = (self.outcomes.pop(0) if self.outcomes else
-                  RecordResult(RecordStatus.STORED, entry, PublishResult(PublishStatus.SENT)))
+        if takes_place_of(self.on_list.get(entry.sid), entry):
+            result = RecordResult(RecordStatus.NOT_STORED, entry,
+                                  PublishResult(PublishStatus.FAILED, reason="other secrets"))
+        else:
+            result = (self.outcomes.pop(0) if self.outcomes else
+                      RecordResult(RecordStatus.STORED, entry, PublishResult(PublishStatus.SENT)))
+        if result.status is RecordStatus.STORED:
+            self.on_list[entry.sid] = entry
         self.later(0, lambda: on_done(result))
 
 
@@ -135,7 +148,7 @@ class HeldSigner(SignAs):
 
 
 class World:
-    def __init__(self, *, signer=None, message: str = "", pictures=True) -> None:
+    def __init__(self, *, signer=None, message: str = "", pictures=True, round_: int = 1) -> None:
         self.clock = FakeClock(NOW)
         self.server = FakeStandupServer(self.clock)
         self.nam = StandupNam(responder=self.server)
@@ -157,7 +170,7 @@ class World:
                                    alt="Das Café", data=PICTURE),) if pictures else ())
         self.choice = Choice(publication=ADDRESS, name="Einundzwanzig Magazin", signer="writer",
                              rights=True, message=message)
-        self.submitting = Submitting(draft, self.choice, writer=pk("writer"), round_=1,
+        self.submitting = Submitting(draft, self.choice, writer=pk("writer"), round_=round_,
                                      ports=self.ports(), on_change=self.seen.append)
 
     def ports(self) -> Ports:
@@ -180,8 +193,8 @@ class World:
             self.messages.append((sealed.submission_id, text))
             on_sent()
 
-        return Ports(confirm_key=confirm_key, upload=self.uploads, record=self.list.record,
-                     forget=self.list.forget, submit=submit, lookup=lookup,
+        return Ports(confirm_key=confirm_key, upload=self.uploads, held=self.list.held,
+                     record=self.list.record, forget=self.list.forget, submit=submit, lookup=lookup,
                      send_message=send_message,
                      later=self.later, clock=self.clock)
 
@@ -215,6 +228,14 @@ class World:
 
     def nip98(self) -> List[dict]:
         return [r for r in self.signer.requests if r["kind"] == 27235]
+
+    def on_server(self, round_: int, state: str) -> None:
+        """A submission of this work in ``round_`` that the server holds
+        in ``state``, sent from elsewhere (the list here knows nothing)."""
+        prepared = submission_for(sk("writer"), round_=round_)
+        self.api.submit(prepared.body, lambda _r: None, lambda _e: None)
+        self.nam.settle()
+        self.server.submissions[prepared.body["submission_id"]].state = state
 
 
 def test_an_article_goes_out_in_the_protocols_order_and_counts_only_with_its_receipt():
@@ -586,3 +607,59 @@ def test_after_stop_nothing_more_is_asked_or_said():
     said = len(world.seen)
     world.settle(seconds=600)
     assert len(world.seen) == said
+
+
+# -- the round the server expects, and one set of secrets per sid ------------------
+
+def test_built_again_after_a_key_change_it_keeps_the_secrets_of_its_sid():
+    # Contract 2: a new body for a sid the list names keeps its keys;
+    # new ones would be refused by the list (RG-M2b 1).
+    world = World(pictures=False)
+    world.server.inject("submit", Fault(409, "epoch"))
+    progress = world.go()
+    assert progress.failure.retry is Step.KEY
+    world.submitting.retry()
+    world.settle()
+    assert world.submitting.progress.step is Step.SUBMITTED
+    first, second = world.list.entries
+    assert (first.s_sub, first.status_key) == (second.s_sub, second.status_key)
+    assert world.posted()[0]["p_sub"] == world.posted()[1]["p_sub"]
+
+
+def test_the_round_the_server_expects_is_built_once_and_the_refused_entry_goes():
+    # The list here said round 3; the server's latest round of the work
+    # is 1, declined: 409 conflict {"round": 1, "open": false}.
+    world = World(pictures=False, round_=3)
+    world.on_server(1, "declined")
+    progress = world.go()
+    assert progress.step is Step.SUBMITTED
+    refused, sent = world.posted()[-2:]
+    assert (refused["round"], sent["round"]) == (3, 2)
+    assert refused["p_sub"] != sent["p_sub"]        # another sid, its own secrets
+    assert [e.round for e in world.list.forgotten] == [3]
+    assert world.list.held(sent["submission_id"]).round == 2
+
+
+def test_a_round_still_open_there_is_said_and_never_sent_again():
+    world = World(pictures=False, round_=2)
+    world.on_server(1, "in_review")
+    progress = world.go()
+    assert progress.step is Step.FAILED and progress.failure.retry is None
+    assert progress.failure.headline == drafting.ALREADY_SUBMITTED
+    assert progress.failure.detail == words.TEXT_STAYS
+    assert [body["round"] for body in world.posted()[1:]] == [2]
+    assert [e.round for e in world.list.forgotten] == [2]
+
+
+@pytest.mark.parametrize("said, rounds, headline", [
+    ({"round": 1, "open": False}, [1, 2], words.NOT_TAKEN),     # then it wants round 1
+    ({"round": 0, "open": False}, [1], words.NOT_TAKEN),        # the round just refused
+    ({"round": 1}, [1], words.refusal("conflict")),             # half an answer: a refusal
+], ids=["twice", "the same round", "half an answer"])
+def test_the_round_is_built_again_once_never_twice(said, rounds, headline):
+    world = World(pictures=False)
+    world.server.inject("submit", Fault(409, "conflict", detail=said))
+    progress = world.go()
+    assert progress.step is Step.FAILED and progress.failure.headline == headline
+    assert progress.failure.retry is None
+    assert [body["round"] for body in world.posted()] == rounds

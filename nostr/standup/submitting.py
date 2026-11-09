@@ -38,7 +38,7 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from . import drafting, views, words
+from . import drafting, formats, views, words
 from .drafting import ArticleDraft, Choice, EncryptedPicture, Sealed
 from .errors import Code, StandupError
 from .formats import FormatError, SecretKeyFound
@@ -144,9 +144,12 @@ class Ports:
       receiving server.
     - ``upload(pictures, on_progress(fraction), on_done({sha256: servers}),
       on_failure(words))`` returns a callable that stops it.
+    - ``held(sid)``: SubmissionsList.entry, the list's entry for a sid,
+      whose secrets a new revision 1 of it keeps (contract 2).
     - ``record(entry, on_done(RecordResult))``: SubmissionsList.record.
     - ``forget(entry)``: SubmissionsList.forget, for an entry recorded for
-      a request that was cancelled before it was sent.
+      a request that was cancelled before it was sent, or that the
+      server refused for its round.
     - ``submit(body, on_sending(), on_success(receipt check),
       on_failure(StandupError))`` returns a callable that drops it.
     - ``lookup(entry, on_done(status), on_failure(StandupError))``:
@@ -159,6 +162,7 @@ class Ports:
                            Callable[[KeyNotConfirmed], None]], None]
     upload: Callable[[Sequence[EncryptedPicture], Callable[[float], None], UploadDone,
                       Callable[[str], None]], Callable[[], None]]
+    held: Callable[[str], Optional[Any]]
     record: Callable[[Any, Callable[[RecordResult], None]], None]
     forget: Callable[[Any], None]
     submit: Callable[[Mapping[str, Any], Callable[[], None], Callable[[Any], None],
@@ -204,6 +208,17 @@ _RETRY_AT = {
 }
 
 
+def _expected_round(error: StandupError) -> Optional[Tuple[int, bool]]:
+    """``(round, open)`` of a 409 ``conflict`` that names the round the
+    server stores for this work (contract 2), or None for any other
+    refusal (one without both is not taken as one)."""
+    latest, still_open = error.detail.get("round"), error.detail.get("open")
+    if error.code != Code.CONFLICT or not formats.is_int(latest) \
+            or not isinstance(still_open, bool):
+        return None
+    return latest, still_open
+
+
 class Submitting:
     """One article on its way to one publication (see the module
     docstring). ``on_change(progress)`` after every step; the first
@@ -235,6 +250,9 @@ class Submitting:
         # The server said it stored the revision (a receipt with files
         # missing): no failure after that says "nothing is submitted".
         self._stored = False
+        # Built again once for the round the server expects (409
+        # ``conflict``, contract 2): never twice, never the same body.
+        self._rebuilt = False
 
     # -- what the screen asks ------------------------------------------------
 
@@ -409,10 +427,12 @@ class Submitting:
     # -- 3. and 4. the revision, and the entry on the list -------------------
 
     def _seal_and_record(self) -> None:
+        sid = drafting.submission_id_of(self._draft, self._choice, self._writer, self._round)
         try:
             self._sealed = drafting.seal(self._draft, self._choice, self._key, self._pictures,
                                          self._servers, writer=self._writer,
-                                         round_=self._round, now=int(self._ports.clock()))
+                                         round_=self._round, now=int(self._ports.clock()),
+                                         held=self._ports.held(sid))
         except SecretKeyFound as refusal:
             self._fail(str(refusal), None)
             return
@@ -421,6 +441,9 @@ class Submitting:
             return
         except FormatError:
             self._fail(words.NOT_TAKEN, None)
+            return
+        except drafting.HeldNotUsable:
+            self._fail(words.LIST_ENTRY_UNUSABLE, None)
             return
         self._record()
 
@@ -457,7 +480,27 @@ class Submitting:
         if error.maybe_stored:
             self._check(error)
             return
+        expected = _expected_round(error)
+        if expected is not None:
+            self._other_round(*expected)
+            return
         self._fail(words.refusal(error.code), _RETRY_AT.get(error.code))
+
+    def _other_round(self, latest: int, still_open: bool) -> None:
+        """The server expects another round (contract 2): its latest for
+        this work is ``latest``, still open or not. Nothing of this body
+        was stored, so its entry goes; the run builds round ``latest + 1``
+        once, or says the work is handed in there."""
+        self._ports.forget(self._sealed.entry)
+        if still_open:
+            self._fail(drafting.ALREADY_SUBMITTED, None, detail=words.TEXT_STAYS)
+            return
+        if self._rebuilt or latest + 1 == self._round:
+            self._fail(words.NOT_TAKEN, None)
+            return
+        self._rebuilt = True
+        self._round = latest + 1
+        self._seal_and_record()
 
     # -- 6. the receipt, or the lookup ---------------------------------------
 

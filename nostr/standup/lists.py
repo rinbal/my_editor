@@ -341,6 +341,16 @@ def same_keys(a: SubmissionEntry, b: SubmissionEntry) -> bool:
             and _same_secret(a.status_key, b.status_key))
 
 
+def takes_place_of(item: Optional[ListItem], entry: SubmissionEntry) -> bool:
+    """Whether writing ``entry`` would replace ``item`` of its ``sid``
+    with other secrets: an entry with other keys, or one this app cannot
+    read (it may hold the keys of a stored revision). One ``sid`` has one
+    set of secrets for ever (contract 2, 13 "Entries")."""
+    if isinstance(item, ForeignItem):
+        return True
+    return isinstance(item, SubmissionEntry) and not same_keys(item, entry)
+
+
 def _same_secret(a: Optional[str], b: Optional[str]) -> bool:
     if a is None or b is None:
         return a is b
@@ -492,11 +502,9 @@ class SubmissionsList(_AccountList):
 
     def _overwrites_other_keys(self, item: Optional[ListItem], sid: str) -> bool:
         """Whether writing the pending item of ``sid`` would replace
-        ``item``, an entry of another run (other keys) that it was not
-        allowed to replace."""
-        allowed = self._may_overwrite.get(sid)
-        return (isinstance(item, SubmissionEntry) and allowed is not None
-                and not same_keys(item, allowed))
+        ``item`` with other secrets (:func:`takes_place_of`)."""
+        mine = self._may_overwrite.get(sid)
+        return mine is not None and takes_place_of(item, mine)
 
     def _guarded(self, remote: SubmissionItems, local: SubmissionItems) -> SubmissionItems:
         """:func:`merge_items`, except that what waits here never takes
@@ -524,8 +532,7 @@ class SubmissionsList(_AccountList):
     def entry(self, sid: str) -> Optional[SubmissionEntry]:
         return next((e for e in self._local.entries if e.sid == sid), None)
 
-    def record(self, entry: SubmissionEntry, on_done: Callable[[RecordResult], None], *,
-               replaces: Optional[SubmissionEntry] = None) -> None:
+    def record(self, entry: SubmissionEntry, on_done: Callable[[RecordResult], None]) -> None:
         """Add or update ``entry`` and write the list; ``on_done`` gets a
         :class:`RecordResult`. Send the submission only when it is
         ``stored``. ``updated_at`` becomes at least now, and later than
@@ -534,29 +541,23 @@ class SubmissionsList(_AccountList):
         another device wrote a newer one meanwhile (13: the newest
         ``updated_at`` wins); then it is SUPERSEDED.
 
-        An entry of the same ``sid`` with other keys (another run's) is
-        never replaced: NOT_STORED here, SUPERSEDED when it is found on
-        the relays, unless ``replaces`` is that entry, proven never stored
-        by the server (12.4: not stored means it may be sent again)."""
-        self.record_many([entry], lambda results: on_done(results[0]),
-                         replaces=() if replaces is None else (replaces,))
+        An item of the same ``sid`` with other secrets is never replaced
+        (:func:`takes_place_of`): NOT_STORED when it is known here,
+        SUPERSEDED when it is found on the relays. A new entry for a
+        ``sid`` held keeps that entry's keys (drafting.seal)."""
+        self.record_many([entry], lambda results: on_done(results[0]))
 
     def record_many(self, entries: Sequence[SubmissionEntry],
-                    on_done: Callable[[List[RecordResult]], None], *,
-                    replaces: Sequence[SubmissionEntry] = ()) -> None:
+                    on_done: Callable[[List[RecordResult]], None]) -> None:
         """:meth:`record` for several entries, written at once (one
         signature per page changed, not per entry); ``on_done`` gets a
         result per entry, in order."""
         now = int(self._clock())
         fresh: List[SubmissionEntry] = []
-        allowed = {entry.sid: entry for entry in replaces}
         for entry in entries:
-            known = self._known(entry.sid)
             problem = entry_problem(entry) or (
-                "another submission's keys are on the list under this sid"
-                if isinstance(known, SubmissionEntry) and not same_keys(known, entry)
-                and not (entry.sid in allowed and same_keys(known, allowed[entry.sid]))
-                else None)
+                "other secrets are on the list under this sid"
+                if takes_place_of(self._known(entry.sid), entry) else None)
             if problem:
                 failed = PublishResult(PublishStatus.FAILED, reason=problem)
                 answer_later(on_done, [RecordResult(RecordStatus.NOT_STORED, e, failed)
@@ -566,7 +567,7 @@ class SubmissionsList(_AccountList):
                                                        self._latest(entry.sid) + 1)))
         for entry in fresh:
             self._pending[entry.sid] = entry
-            self._may_overwrite[entry.sid] = allowed.get(entry.sid, entry)
+            self._may_overwrite[entry.sid] = entry
         self._write(fresh, on_done)
 
     def forget(self, entry: SubmissionEntry, on_done: Callable[[RecordResult], None]) -> None:
@@ -575,8 +576,7 @@ class SubmissionsList(_AccountList):
         of a submission that does not exist for one. Only while the list
         holds exactly this entry: another run's keys are never removed
         (NOT_STORED here, SUPERSEDED when the relays hold them)."""
-        known = self._known(entry.sid)
-        if isinstance(known, SubmissionEntry) and not same_keys(known, entry):
+        if takes_place_of(self._known(entry.sid), entry):
             failed = PublishResult(PublishStatus.FAILED, reason="another run's entry")
             answer_later(on_done, RecordResult(RecordStatus.NOT_STORED, entry, failed))
             return
@@ -742,5 +742,5 @@ __all__ = [
     "READ_STATE_INTERVAL_SECONDS", "SIGN_OUT_WAIT_MS", "ForeignItem", "ListItem", "ReadState",
     "RecordResult", "RecordStatus", "SubmissionEntry", "SubmissionItems", "SubmissionsList",
     "Tombstone", "entry_from_json", "entry_problem", "holds_exactly", "item_from_json",
-    "merge_items", "merge_seen",
+    "merge_items", "merge_seen", "same_keys", "takes_place_of",
 ]

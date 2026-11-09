@@ -91,6 +91,8 @@ class Writer:
         self.submitted: List[tuple] = []
         self.background: List[object] = []
         self.on_its_way = None
+        self.asked = 0
+        self.discarded: List[object] = []
 
     def instance(self, _profile, on_operator) -> None:
         if self.operator:
@@ -103,7 +105,13 @@ class Writer:
         return self.on_its_way
 
     def round_for(self, _profile, _publication, _d, on_done) -> None:
+        self.asked += 1
         on_done(RoundAnswer(*self.round))
+
+    def discard(self, _profile, entry, on_done) -> None:
+        self.discarded.append(entry)
+        self.round = (1, "")
+        on_done(True)
 
     def submit(self, profile, draft, choice, answer):
         self.submitted.append((profile, draft, choice, answer.round))
@@ -284,3 +292,16 @@ def test_opened_again_on_a_work_on_its_way_the_sheet_shows_that_run(tmp_path):
     assert again.run is writer.on_its_way and again._pages.currentIndex() == 1
     assert again.handoff.headline.text() == "Warte auf deine Signer-App."
     assert len(writer.submitted) == 1 and again.run.started == 1
+
+
+def test_an_earlier_try_never_sent_is_sent_again_or_discarded(tmp_path):
+    # Contract 13: an entry the server has no receipt for is shown as not
+    # sent, with Erneut (Submit reuses it) and Verwerfen.
+    unsent = object()
+    writer = Writer(round_=(1, "", unsent))
+    sheet = _sheet(tmp_path, writer)
+    assert sheet.unsent.isVisibleTo(sheet) and sheet.submit_button.isEnabled()
+    asked = writer.asked
+    sheet.discard_button.click()
+    assert writer.discarded == [unsent] and writer.asked == asked + 1
+    assert not sheet.unsent.isVisibleTo(sheet) and sheet.submit_button.isEnabled()

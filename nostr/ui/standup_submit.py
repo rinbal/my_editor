@@ -39,7 +39,7 @@ from ..signed_api import answer_later
 from ..standup import conversation, formats, trust, words
 from ..standup.client import StandupApi
 from ..standup import drafting
-from ..standup.drafting import ArticleDraft, Choice, EncryptedPicture, Sealed, round_after
+from ..standup.drafting import ArticleDraft, Choice, EncryptedPicture, Sealed, choose_round
 from ..standup.lists import (
     SUBMISSIONS_MISSING_PAGE, SUBMISSIONS_UNREADABLE, ReadState, SubmissionEntry, SubmissionsList,
 )
@@ -47,7 +47,7 @@ from ..standup.opening import MediaKeys
 from ..standup.servers import configured_server
 from ..standup.submitting import Phase, Ports, Progress, Submitting
 from ..standup.trust import Destination
-from ..standup.watcher import look_up, resolve_unconfirmed
+from ..standup.watcher import look_up_all, resolve_unconfirmed
 
 THUMB_SIDE = 128
 
@@ -165,15 +165,15 @@ class _PoolSigner:
 
 @dataclass(frozen=True)
 class RoundAnswer:
-    """The round a text goes to a publication in (drafting.round_after):
+    """The round a text goes to a publication in (drafting.choose_round):
     ``round``, or None while it is still open there or cannot be told
-    (``words`` say why then). ``replaces`` is the list's entry of an
-    earlier try of the same round that the server proved it never
-    stored: the one entry the new run may take the place of."""
+    (``words`` say why then). ``unsent`` is the list's entry of an
+    earlier try the server has no receipt for: it is sent again, with its
+    own secrets (Erneut), or discarded (Verwerfen)."""
 
     round: Optional[int]
     words: str = ""
-    replaces: Optional[SubmissionEntry] = None
+    unsent: Optional[SubmissionEntry] = None
 
 
 class SubmissionRun(QObject):
@@ -344,22 +344,26 @@ class StandupWriter(QObject):
             return
 
         def known() -> None:
-            mine = [e for e in account.submissions.entries()
-                    if e.role == "writer" and e.publication == publication and e.d == d]
-            entry = max(mine, key=lambda e: e.round, default=None)
-            if entry is None:
+            mine = sorted((e for e in account.submissions.entries()
+                           if e.role == "writer" and e.publication == publication
+                           and e.d == d and e.status_key),
+                          key=lambda e: e.round)[-formats.MAX_LOOKUP_ITEMS:]
+            if not mine:
                 on_done(RoundAnswer(1))
                 return
 
-            def found(item) -> None:
-                round_ = round_after(entry, item.submission.state if item else None)
-                # Nothing stored: the same round again, in this entry's place.
-                on_done(RoundAnswer(round_, replaces=entry if item is None else None))
+            def found(items) -> None:
+                states = {sid: item.submission.state if item else None
+                          for sid, item in items.items()}
+                choice = choose_round(mine, states)
+                on_done(RoundAnswer(choice.round, unsent=choice.unsent))
 
-            # The server has something it could not say, or nothing could
-            # be asked: not told, so not guessed.
-            look_up(account.api, entry, found,
-                    lambda _error: on_done(RoundAnswer(None, _(drafting.ROUND_UNKNOWN))))
+            # Every entry of this work is asked about (contract 2): the
+            # server has something it could not say, or nothing could be
+            # asked: not told, so not guessed. Rounds before the newest
+            # 50 are closed (a round opens only after the last closed).
+            look_up_all(account.api, mine, found,
+                        lambda _error: on_done(RoundAnswer(None, _(drafting.ROUND_UNKNOWN))))
 
         def decide() -> None:
             if account.list_problem:
@@ -382,6 +386,11 @@ class StandupWriter(QObject):
         else:
             account.submissions.load(read)
 
+    def discard(self, profile, entry: SubmissionEntry, on_done: Callable[[bool], None]) -> None:
+        """Verwerfen (contract 13): a tombstone for ``entry``, an earlier
+        try the server has no receipt for; ``on_done(stored)``."""
+        self.account(profile).submissions.forget(entry, lambda result: on_done(result.stored))
+
     def submit(self, profile, draft: ArticleDraft, choice: Choice,
                answer: RoundAnswer) -> SubmissionRun:
         """A run for ``draft`` to ``choice``'s publication in the answered
@@ -394,7 +403,7 @@ class StandupWriter(QObject):
         # Owned by the list (and the sheet showing it), not by Qt: one that
         # has ended goes once nothing shows it.
         run = SubmissionRun(draft, choice, writer=account.writer, round_=answer.round,
-                            ports=self._ports(account, choice.publication, answer.replaces))
+                            ports=self._ports(account, choice.publication))
         account.runs = [r for r in account.runs if not r.finished] + [run]
         return run
 
@@ -439,8 +448,7 @@ class StandupWriter(QObject):
 
     # -- the ports -----------------------------------------------------------
 
-    def _ports(self, account: _Account, publication: str,
-               replaces: Optional[SubmissionEntry]) -> Ports:
+    def _ports(self, account: _Account, publication: str) -> Ports:
         api = account.api
 
         def confirm_key(on_key, on_refused) -> None:
@@ -457,15 +465,13 @@ class StandupWriter(QObject):
         def send_message(sealed: Sealed, text: str, on_sent, on_failure) -> None:
             self._send_message(account, sealed, text, on_sent, on_failure)
 
-        def record(entry, on_done) -> None:
-            account.submissions.record(entry, on_done, replaces=replaces)
-
         def forget(entry) -> None:
-            # Best effort: an entry left behind is found not stored and
-            # replaced by name the next time (RoundAnswer.replaces).
+            # Best effort: an entry left behind is found not sent the next
+            # time, and sent again with its own secrets (contract 2).
             account.submissions.forget(entry, lambda _result: None)
 
-        return Ports(confirm_key=confirm_key, upload=self._uploads, record=record,
+        return Ports(confirm_key=confirm_key, upload=self._uploads,
+                     held=account.submissions.entry, record=account.submissions.record,
                      forget=forget, submit=submit, lookup=lookup, send_message=send_message,
                      later=_later, clock=time.time)
 

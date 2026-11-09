@@ -13,7 +13,7 @@ msgid "OK"
 msgstr "OK"
 
 #: alerts.py:208
-#: nostr/ui/standup_submit_sheet.py:339
+#: nostr/ui/standup_submit_sheet.py:372
 msgid "Details"
 msgstr "Details"
 
@@ -7976,71 +7976,79 @@ msgid "Nothing is submitted, your text stays in the editor."
 msgstr "Nichts ist eingereicht, dein Text bleibt im Editor."
 
 #: nostr/standup/words.py:47
+msgid "Your list of submissions holds an entry for this text that MyEditor cannot use."
+msgstr "Deine Liste der Einreichungen hat zu diesem Text einen Eintrag, den MyEditor nicht verwenden kann."
+
+#: nostr/standup/words.py:49
+msgid "Your text stays in the editor."
+msgstr "Dein Text bleibt im Editor."
+
+#: nostr/standup/words.py:50
 msgid "The server has your submission; a picture is still missing."
 msgstr "Der Server hat deine Einreichung, ein Bild fehlt noch."
 
-#: nostr/standup/words.py:48
+#: nostr/standup/words.py:51
 msgid "Not sent. No connection to the server."
 msgstr "Nicht gesendet. Keine Verbindung zum Server."
 
-#: nostr/standup/words.py:49
+#: nostr/standup/words.py:52
 msgid "Not sent. Your signer app declined the request."
 msgstr "Nicht gesendet. Deine Signer-App hat die Anfrage abgelehnt."
 
-#: nostr/standup/words.py:50
+#: nostr/standup/words.py:53
 msgid "Not sent. Your signer app didn’t answer."
 msgstr "Nicht gesendet. Deine Signer-App hat nicht geantwortet."
 
-#: nostr/standup/words.py:51
+#: nostr/standup/words.py:54
 msgid "Your list of submissions couldn’t be saved."
 msgstr "Deine Liste der Einreichungen konnte nicht gespeichert werden."
 
-#: nostr/standup/words.py:52
+#: nostr/standup/words.py:55
 msgid "Another device changed this submission just now."
 msgstr "Ein anderes Gerät hat diese Einreichung gerade geändert."
 
-#: nostr/standup/words.py:53
+#: nostr/standup/words.py:56
 msgid "A picture couldn’t be uploaded."
 msgstr "Ein Bild konnte nicht hochgeladen werden."
 
-#: nostr/standup/words.py:54
+#: nostr/standup/words.py:57
 msgid "A picture can’t be found on your media server."
 msgstr "Ein Bild ist auf deinem Medienserver nicht zu finden."
 
-#: nostr/standup/words.py:55
+#: nostr/standup/words.py:58
 #, python-brace-format
 msgid "This submission is larger than {publication} takes."
 msgstr "Diese Einreichung ist größer, als {publication} annimmt."
 
-#: nostr/standup/words.py:56
+#: nostr/standup/words.py:59
 #, python-brace-format
 msgid "{publication} already has another version of this submission."
 msgstr "{publication} hat schon eine andere Fassung dieser Einreichung."
 
-#: nostr/standup/words.py:57
+#: nostr/standup/words.py:60
 msgid "The server didn’t take the submission."
 msgstr "Der Server hat die Einreichung nicht angenommen."
 
-#: nostr/standup/words.py:61
+#: nostr/standup/words.py:64
 #, python-brace-format
 msgid "{publication} isn’t taking submissions right now."
 msgstr "{publication} nimmt gerade keine Einreichungen an."
 
-#: nostr/standup/words.py:62
+#: nostr/standup/words.py:65
 #, python-brace-format
 msgid "{publication} doesn’t take submissions from you."
 msgstr "{publication} nimmt von dir keine Einreichungen an."
 
-#: nostr/standup/words.py:63
+#: nostr/standup/words.py:66
 #, python-brace-format
 msgid "You already have as many open submissions at {publication} as it takes."
 msgstr "Du hast bei {publication} schon so viele offene Einreichungen, wie sie annimmt."
 
-#: nostr/standup/words.py:65
+#: nostr/standup/words.py:68
 msgid "Too many submissions in a short time. Try again later."
 msgstr "Zu viele Einreichungen in kurzer Zeit. Versuche es später noch einmal."
 
-#: nostr/standup/words.py:70
+#: nostr/standup/words.py:73
 #, python-brace-format
 msgid "Nobody at {publication} could decide on it: the only person who can is named among those who take part."
 msgstr "Niemand bei {publication} könnte darüber entscheiden: Die einzige Person, die das kann, ist unter den Beteiligten."
@@ -11994,155 +12002,163 @@ msgstr "Eingang der Redaktion"
 msgid "In the inbox"
 msgstr "Im Eingang"
 
-#: nostr/ui/standup_submit_sheet.py:107
+#: nostr/ui/standup_submit_sheet.py:108
 msgid "Not taking submissions right now"
 msgstr "Nimmt gerade keine Einreichungen"
 
-#: nostr/ui/standup_submit_sheet.py:101
+#: nostr/ui/standup_submit_sheet.py:102
 #, python-brace-format
 msgid "{items} and {last}"
 msgstr "{items} und {last}"
 
-#: nostr/ui/standup_submit_sheet.py:109
+#: nostr/ui/standup_submit_sheet.py:110
 msgid "Takes audio only"
 msgstr "Nimmt nur Audio"
 
-#: nostr/ui/standup_submit_sheet.py:110
+#: nostr/ui/standup_submit_sheet.py:111
 msgid "Takes no articles"
 msgstr "Nimmt keine Artikel"
 
-#: nostr/ui/standup_submit_sheet.py:159
-#: nostr/ui/standup_submit_sheet.py:198
+#: nostr/ui/standup_submit_sheet.py:160
+#: nostr/ui/standup_submit_sheet.py:199
 msgid "Submit to a Publication"
 msgstr "Bei Publikation einreichen"
 
-#: nostr/ui/standup_submit_sheet.py:246
+#: nostr/ui/standup_submit_sheet.py:247
 msgid "Submit"
 msgstr "Einreichen"
 
-#: nostr/ui/standup_submit_sheet.py:257
+#: nostr/ui/standup_submit_sheet.py:258
 msgid "Publication"
 msgstr "Publikation"
 
-#: nostr/ui/standup_submit_sheet.py:274
+#: nostr/ui/standup_submit_sheet.py:276
 msgid "me"
 msgstr "mir"
 
-#: nostr/ui/standup_submit_sheet.py:275
-#: nostr/ui/standup_submit_sheet.py:494
+#: nostr/ui/standup_submit_sheet.py:277
+#: nostr/ui/standup_submit_sheet.py:527
 msgid "the publication"
 msgstr "der Publikation"
 
-#: nostr/ui/standup_submit_sheet.py:292
+#: nostr/ui/standup_submit_sheet.py:294
 msgid "Published by:"
 msgstr "Veröffentlicht von:"
 
-#: nostr/ui/standup_submit_sheet.py:296
+#: nostr/ui/standup_submit_sheet.py:298
 msgid "I have the rights to the text and the pictures."
 msgstr "Ich habe die Rechte an Text und Bildern."
 
-#: nostr/ui/standup_submit_sheet.py:305
-#: nostr/ui/standup_submit_sheet.py:310
+#: nostr/ui/standup_submit_sheet.py:307
+#: nostr/ui/standup_submit_sheet.py:312
 msgid "Message to the Editorial Team"
 msgstr "Nachricht an die Redaktion"
 
-#: nostr/ui/standup_submit_sheet.py:309
+#: nostr/ui/standup_submit_sheet.py:311
 msgid "Optional. For example, why the text suits you."
 msgstr "Optional. Zum Beispiel, warum der Text zu euch passt."
 
 #: nostr/ui/standup_submit_sheet.py:333
+msgid "An earlier try wasn’t sent. Submit sends it again."
+msgstr "Ein früherer Versuch wurde nicht gesendet. Einreichen sendet ihn erneut."
+
+#: nostr/ui/standup_submit_sheet.py:335
+msgid "Discard"
+msgstr "Verwerfen"
+
+#: nostr/ui/standup_submit_sheet.py:366
 msgid "Content end-to-end encrypted. The server sees the title."
 msgstr "Inhalt Ende-zu-Ende verschlüsselt. Den Titel sieht der Server."
 
-#: nostr/ui/standup_submit_sheet.py:342
+#: nostr/ui/standup_submit_sheet.py:375
 msgid "Privacy details"
 msgstr "Details zum Datenschutz"
 
-#: nostr/ui/standup_submit_sheet.py:402
+#: nostr/ui/standup_submit_sheet.py:435
 msgid "The publications couldn’t be loaded."
 msgstr "Die Publikationen konnten nicht geladen werden."
 
-#: nostr/ui/standup_submit_sheet.py:497
+#: nostr/ui/standup_submit_sheet.py:530
 msgid "The server sees the title, the publication and who takes part, never the content."
 msgstr "Der Server sieht Titel, Publikation und Beteiligte, nie den Inhalt."
 
-#: nostr/ui/standup_submit_sheet.py:506
+#: nostr/ui/standup_submit_sheet.py:539
 msgid "Withdrawing deletes nothing the editorial team already has."
 msgstr "Zurückziehen löscht nichts, was die Redaktion schon hat."
 
-#: nostr/ui/standup_submit_sheet.py:241
+#: nostr/ui/standup_submit_sheet.py:242
 msgid "Submitting as"
 msgstr "Einreichen als"
 
-#: nostr/ui/standup_submit_sheet.py:241
+#: nostr/ui/standup_submit_sheet.py:242
 #, python-brace-format
 msgid "Submitting as {name}"
 msgstr "Einreichen als {name}"
 
-#: nostr/ui/standup_submit_sheet.py:272
+#: nostr/ui/standup_submit_sheet.py:274
 msgid "To:"
 msgstr "An:"
 
-#: nostr/ui/standup_submit_sheet.py:298
+#: nostr/ui/standup_submit_sheet.py:300
 msgid "Rights:"
 msgstr "Rechte:"
 
-#: nostr/ui/standup_submit_sheet.py:383
+#: nostr/ui/standup_submit_sheet.py:416
 msgid "The server’s address comes from the association."
 msgstr "Die Adresse des Servers kommt vom Verein."
 
-#: nostr/ui/standup_submit_sheet.py:398
+#: nostr/ui/standup_submit_sheet.py:431
 msgid "No publication takes submissions right now."
 msgstr "Gerade nimmt keine Publikation Einreichungen an."
 
-#: nostr/ui/standup_submit_sheet.py:426
+#: nostr/ui/standup_submit_sheet.py:459
 msgid "Recently used first"
 msgstr "Zuletzt verwendete zuerst"
 
-#: nostr/ui/standup_submit_sheet.py:474
+#: nostr/ui/standup_submit_sheet.py:507
 msgid "After acceptance you publish it with your key."
 msgstr "Nach der Annahme veröffentlichst du mit deinem Schlüssel."
 
-#: nostr/ui/standup_submit_sheet.py:475
+#: nostr/ui/standup_submit_sheet.py:508
 msgid "At acceptance the editorial team proposes how zaps are split; you confirm it."
 msgstr "Die Redaktion schlägt bei der Annahme die Aufteilung der Zaps vor, du bestätigst sie."
 
-#: nostr/ui/standup_submit_sheet.py:501
+#: nostr/ui/standup_submit_sheet.py:534
 msgid "The picture is encrypted on your media server. It sees when it is fetched, never what is in it."
 msgid_plural "The pictures are encrypted on your media server. It sees when they are fetched, never what is in them."
 msgstr[0] "Das Bild liegt verschlüsselt auf deinem Medienserver. Er sieht, wann es abgerufen wird, nie was darin ist."
 msgstr[1] "Die Bilder liegen verschlüsselt auf deinem Medienserver. Er sieht, wann sie abgerufen werden, nie was darin ist."
 
-#: nostr/ui/standup_submit_sheet.py:509
+#: nostr/ui/standup_submit_sheet.py:542
 msgid "The server keeps the submission encrypted."
 msgstr "Der Server bewahrt die Einreichung verschlüsselt auf."
 
-#: nostr/ui/standup_submit_sheet.py:115
+#: nostr/ui/standup_submit_sheet.py:116
 #, python-brace-format
 msgid "Asks for {items}"
 msgstr "Verlangt {items}"
 
-#: nostr/ui/standup_submit_sheet.py:118
+#: nostr/ui/standup_submit_sheet.py:119
 #, python-brace-format
 msgid "at most {count} open submission"
 msgid_plural "at most {count} open submissions"
 msgstr[0] "höchstens {count} offene Einreichung"
 msgstr[1] "höchstens {count} offene Einreichungen"
 
-#: nostr/ui/standup_submit_sheet.py:413
+#: nostr/ui/standup_submit_sheet.py:446
 msgid "Loading publications …"
 msgstr "Publikationen werden geladen …"
 
-#: nostr/ui/standup_submit_sheet.py:413
+#: nostr/ui/standup_submit_sheet.py:446
 msgid "No publication"
 msgstr "Keine Publikation"
 
-#: nostr/ui/standup_submit_sheet.py:495
+#: nostr/ui/standup_submit_sheet.py:528
 #, python-brace-format
 msgid "Only you and the editorial team of {publication} can read it."
 msgstr "Lesen können nur du und die Redaktion von {publication}."
 
-#: nostr/ui/standup_submit_sheet.py:507
+#: nostr/ui/standup_submit_sheet.py:540
 #, python-brace-format
 msgid "The server of {operator} keeps the submission encrypted."
 msgstr "Der Server von {operator} bewahrt die Einreichung verschlüsselt auf."

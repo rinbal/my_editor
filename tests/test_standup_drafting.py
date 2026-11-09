@@ -64,16 +64,50 @@ def _entry(round_=1):
                            revision_hash="33" * 32, updated_at=NOW)
 
 
-@pytest.mark.parametrize("entry, state, expected", [
-    (None, None, 1),                         # never submitted there
-    (_entry(2), None, 2),                    # the server stored nothing: send again
-    (_entry(2), "declined", 3),
-    (_entry(2), "withdrawn", 3),
-    (_entry(2), "submitted", None),          # still open there
-    (_entry(2), "accepted", None),
-])
-def test_the_round_follows_how_the_last_one_ended(entry, state, expected):
-    assert drafting.round_after(entry, state) == expected
+def _round_of(entries_states):
+    entries = [replace(_entry(round_), sid=f"{round_:064x}") for round_, _state in entries_states]
+    states = {entry.sid: state for entry, (_r, state) in zip(entries, entries_states)}
+    choice = drafting.choose_round(entries, states)
+    return choice.round, choice.unsent.round if choice.unsent else None, \
+        choice.open.round if choice.open else None
+
+
+@pytest.mark.parametrize("entries, expected", [
+    ([], (1, None, None)),                                  # never submitted there
+    ([(2, None)], (2, 2, None)),                            # no receipt: sent again
+    ([(2, "declined")], (3, None, None)),
+    ([(1, "declined"), (2, "withdrawn")], (3, None, None)),
+    ([(2, "submitted")], (None, None, 2)),                  # still open there
+    ([(1, "declined"), (2, "accepted")], (None, None, 2)),
+    ([(1, None), (2, "declined")], (3, None, None)),        # before the last closed: never
+    ([(1, "declined"), (3, None), (2, None)], (2, 2, None)),  # the next one first
+], ids=["none", "unsent", "declined", "withdrawn", "open", "accepted", "stale unsent",
+        "next unsent"])
+def test_the_round_comes_from_what_the_server_reports(entries, expected):
+    # Contract 2, "Choosing the round and the secrets".
+    assert _round_of(entries) == expected
+
+
+def test_a_round_is_never_taken_from_the_list_alone():
+    with pytest.raises(KeyError):
+        drafting.choose_round([_entry(1)], {})
+
+
+def test_a_body_built_again_keeps_the_secrets_its_sid_holds_on_the_list():
+    key = trust.verify_key_event(KEY_EVENT, ADDRESS)
+    first = drafting.seal(DRAFT, CHOICE, key, (), {}, writer=pk("writer"), round_=1, now=NOW)
+    again = drafting.seal(replace(DRAFT, title="Neu"), CHOICE, key, (), {}, writer=pk("writer"),
+                          round_=1, now=NOW, held=first.entry)
+    assert (again.entry.s_sub, again.entry.status_key) == (first.entry.s_sub,
+                                                           first.entry.status_key)
+    assert again.body["p_sub"] == first.body["p_sub"]
+    fresh = drafting.seal(DRAFT, CHOICE, key, (), {}, writer=pk("writer"), round_=1, now=NOW)
+    assert fresh.entry.s_sub != first.entry.s_sub
+    for wrong in (replace(first.entry, sid="ab" * 32), replace(first.entry, status_key=None),
+                  replace(first.entry, role="contributor")):
+        with pytest.raises(drafting.HeldNotUsable):
+            drafting.seal(DRAFT, CHOICE, key, (), {}, writer=pk("writer"), round_=1, now=NOW,
+                          held=wrong)
 
 
 def test_every_co_author_takes_part_with_a_wrap_of_their_own():

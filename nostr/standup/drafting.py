@@ -55,6 +55,11 @@ ROUND_UNKNOWN = N_("Whether you have submitted this text before couldn’t be ch
 CLOSED_STATES = ("declined", "withdrawn")
 
 
+class HeldNotUsable(ValueError):
+    """The list holds an entry for the submission whose secrets this app
+    cannot take (another role, keys missing): nothing is built."""
+
+
 class TooLarge(FormatError):
     """The encrypted revision is larger than the publication takes."""
 
@@ -176,23 +181,46 @@ def _work(draft: ArticleDraft, pictures: Sequence[EncryptedPicture]) -> dict:
             "extra_tags": []}
 
 
+def submission_id_of(draft: ArticleDraft, choice: Choice, writer: str, round_: int) -> str:
+    """The ``submission_id`` of ``draft`` in ``round_`` at the chosen
+    publication (contract 2)."""
+    return formats.submission_id(writer, choice.publication,
+                                 formats.coordinate_hash(writer, draft.d), round_)
+
+
+def _secrets(sid: str, held: Optional[SubmissionEntry]) -> Tuple[bytes, str]:
+    """``s_sub`` and the status key of ``sid``: the ones the list holds
+    for it, or new ones when it holds none. One ``submission_id`` has one
+    set of secrets for ever (contract 2): new ones for a sid already
+    named could take the place of the keys of a revision the server
+    stored. :class:`HeldNotUsable` for an entry of another sid, or one
+    without both."""
+    if held is None:
+        return crypto.new_secret_key(), crypto.new_status_key()
+    if held.sid != sid or held.role != "writer" or not formats.is_hex64(held.s_sub) \
+            or not formats.is_hex64(held.status_key):
+        raise HeldNotUsable("the entry held is not this submission's")
+    return bytes.fromhex(held.s_sub), held.status_key
+
+
 def seal(draft: ArticleDraft, choice: Choice, key: RedaktionKey,
          pictures: Sequence[EncryptedPicture], servers: Mapping[str, Sequence[str]], *,
-         writer: str, round_: int, now: int) -> Sealed:
+         writer: str, round_: int, now: int, held: Optional[SubmissionEntry] = None) -> Sealed:
     """The revision (revision 1 of ``round_``), encrypted, and the body
     and list entry naming it. ``servers`` names, per picture's
-    ``sha256``, the media servers that hold it. Raises FormatError (a
+    ``sha256``, the media servers that hold it; ``held`` is the list's
+    entry for this submission, whose secrets it keeps (see
+    :func:`_secrets`). Raises FormatError (a
     :class:`~.formats.SecretKeyFound` for a secret key in the text) when
     the revision cannot be built, :class:`TooLarge` when it is larger
     than the publication takes."""
-    sid = formats.submission_id(writer, choice.publication,
-                                formats.coordinate_hash(writer, draft.d), round_)
+    sid = submission_id_of(draft, choice, writer, round_)
+    s_sub, status_key = _secrets(sid, held)
     revision = formats.build_revision(
         submission_id=sid, revision=1, kind="article", work=_work(draft, pictures),
         rights={"confirmed": choice.rights, "license": None},
         thumb=dict(draft.thumb) if draft.thumb else None,
         media=[p.entry(servers.get(p.sha256, ())) for p in pictures], client=CLIENT)
-    s_sub = crypto.new_secret_key()
     sealed = crypto.seal_revision(revision, s_sub)
     room = key.rules.get("max_envelope_bytes")
     room = room if formats.is_int(room, low=1) else formats.MAX_ENVELOPE_BYTES
@@ -200,7 +228,6 @@ def seal(draft: ArticleDraft, choice: Choice, key: RedaktionKey,
         raise TooLarge("larger than the publication takes")
     people = participants_of(draft, writer)
     recipients = {"redaktion": key.pubkey, "writer": writer, **{p: p for p in people}}
-    status_key = crypto.new_status_key()
     body = submission_body(
         writer=writer, publication=choice.publication, key_event_id=key.event_id,
         epoch=key.epoch, d=draft.d, round_=round_, revision=1,
@@ -218,17 +245,39 @@ def seal(draft: ArticleDraft, choice: Choice, key: RedaktionKey,
     return Sealed(body=body, entry=entry, s_sub=s_sub)
 
 
-def round_after(entry: Optional[SubmissionEntry], state: Optional[str]) -> Optional[int]:
-    """The round to submit the text in, given the writer's ``entry`` for
-    it at this publication (None: never submitted there) and the state
-    the server has for that entry's submission (None: the server stored
-    nothing of it, so it may be sent again, contract 12.4). None while it
-    is still open there."""
-    if entry is None:
-        return 1
-    if state is None:
-        return entry.round
-    return entry.round + 1 if state in CLOSED_STATES else None
+@dataclass(frozen=True)
+class RoundChoice:
+    """The round revision 1 of a work goes in (contract 2, "Choosing the
+    round and the secrets"): ``round``, or None while a round of it is
+    still open there (``open`` names that entry: the work is handed in).
+    ``unsent`` is the entry the server has no receipt for that is sent
+    again, with its own secrets ("not sent": Erneut or Verwerfen)."""
+
+    round: Optional[int]
+    open: Optional[SubmissionEntry] = None
+    unsent: Optional[SubmissionEntry] = None
+
+
+def choose_round(entries: Sequence[SubmissionEntry],
+                 states: Mapping[str, Optional[str]]) -> RoundChoice:
+    """The round for the writer's ``entries`` of one work at one
+    publication, given ``states``: per entry's sid, the state the server
+    reports (None: it has no receipt, the entry was never stored). Every
+    entry must have been asked about (KeyError otherwise): a round is
+    never taken from the list alone."""
+    asked = [(entry, states[entry.sid]) for entry in entries]
+    still_open = [entry for entry, state in asked
+                  if state is not None and state not in CLOSED_STATES]
+    if still_open:
+        return RoundChoice(None, open=max(still_open, key=lambda e: e.round))
+    closed = max((entry.round for entry, state in asked if state is not None), default=0)
+    # An entry of a round before the last closed one can never be sent:
+    # the server expects the next round.
+    unsent = [entry for entry, state in asked if state is None and entry.round > closed]
+    if unsent:
+        entry = min(unsent, key=lambda e: e.round)
+        return RoundChoice(entry.round, unsent=entry)
+    return RoundChoice(closed + 1)
 
 
 def blockers(draft: ArticleDraft, *, writer: str, rights: bool, rights_required: bool,
@@ -263,7 +312,7 @@ def blockers(draft: ArticleDraft, *, writer: str, rights: bool, rights_required:
 
 
 __all__ = [
-    "ArticleDraft", "CLIENT", "CLOSED_STATES", "Choice", "EncryptedPicture", "LocalPicture",
-    "Sealed", "TooLarge", "blockers", "encrypt_pictures", "participants_of", "round_after",
-    "seal",
+    "ALREADY_SUBMITTED", "ArticleDraft", "HeldNotUsable", "CLIENT", "CLOSED_STATES", "Choice",
+    "EncryptedPicture", "LocalPicture", "RoundChoice", "Sealed", "TooLarge", "blockers",
+    "choose_round", "encrypt_pictures", "participants_of", "seal", "submission_id_of",
 ]

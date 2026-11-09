@@ -710,14 +710,27 @@ def test_an_entry_with_other_keys_never_replaces_the_one_on_the_list():
     assert [e.s_sub for e in load(other).value.entries] == [first.s_sub]
 
 
-def test_an_entry_proven_never_stored_may_be_replaced_by_name():
+def test_a_later_entry_of_a_sid_keeps_its_keys_and_takes_its_place():
     store, _relay, _clock = make()
     load(store)
     first = entry(1)
     assert record(store, first).stored
-    second = entry(1)
-    result = _done(lambda answer: store.record(second, answer, replaces=first))
-    assert result.stored and store.entry(first.sid).s_sub == second.s_sub
+    later = replace(first, revision=2, revision_hash=formats.sha256_hex("rev-1-2"))
+    assert record(store, later).stored
+    assert store.entry(first.sid).revision == 2
+
+
+def test_an_entry_this_app_cannot_read_is_never_replaced_under_its_sid():
+    # It may hold the keys of a stored revision (a newer app's entry).
+    mine = entry(1)
+    newer = dict(mine.to_json(), kind="video", s_sub="77" * 32)
+    relay = Relay()
+    relay.put(formats.SUBMISSIONS_LIST_D, {"v": 1, "page": 0, "pages": 1, "items": [newer]})
+    store, _relay, _clock = make(relay=relay)
+    load(store)
+    result = _done(lambda answer: store.record(mine, answer))
+    assert result.status is RecordStatus.NOT_STORED
+    assert relay.page(formats.SUBMISSIONS_LIST_D)["items"] == [newer]
 
 
 def test_another_devices_entry_with_other_keys_stays_and_this_write_is_superseded():
@@ -749,3 +762,31 @@ def test_an_entry_taken_back_leaves_a_tombstone_and_another_runs_entry_is_kept()
     assert _done(lambda answer: store.forget(entry(2), answer)).status is \
         RecordStatus.NOT_STORED
     assert store.entry(kept.sid).s_sub == kept.s_sub
+
+
+def test_an_entry_a_later_page_let_out_keeps_its_keys_and_nothing_takes_their_place():
+    # RG-M2a 4: page 0 refused, the later pages taken: the entry reaches
+    # the list though its write failed. Under contract 2 that is
+    # harmless: it was never sent, so another device sends it again with
+    # its own keys (Erneut) or discards it, and an entry with other keys
+    # never takes the place of one it reads.
+    store, relay, _clock = make()
+    load(store)
+    assert record(store, *[entry(n) for n in range(300)]).stored
+    relay.refuse = {formats.SUBMISSIONS_LIST_D}     # page 0 only
+    let_out = entry(999)
+    assert record(store, let_out).status is RecordStatus.NOT_STORED
+    relay.refuse = set()
+    elsewhere, _relay, _clock = make(relay=relay)
+    read = load(elsewhere).value
+    assert [e.s_sub for e in read.entries if e.sid == let_out.sid] == [let_out.s_sub]
+    other_keys = entry(999)
+    assert _done(lambda answer: elsewhere.record(other_keys, answer)).status is \
+        RecordStatus.NOT_STORED
+    assert record(elsewhere, replace(let_out, title="Erneut")).stored
+    # The device that let it out, not knowing: its new keys never win.
+    assert _done(lambda answer: store.record(other_keys, answer)).status is \
+        RecordStatus.SUPERSEDED
+    check, _relay, _clock = make(relay=relay)
+    assert [e.s_sub for e in load(check).value.entries if e.sid == let_out.sid] == [
+        let_out.s_sub]

@@ -118,6 +118,7 @@ ADDRESS = VECTORS["key_event"]["address"]
 SESSION_SECONDS = 12 * 3600
 
 OPEN = ("submitted", "in_review", "changes_requested")
+ROUND_CLOSED = ("declined", "withdrawn")
 REDAKTION = ("owner", "redaktion")
 
 # Contract 15 (feat/redaktion 5c11475).
@@ -136,6 +137,7 @@ class Fault:
     code: str
     retry_after: Optional[int] = None
     message: str = "Nicht möglich."
+    detail: Optional[dict] = None
 
 
 def transition(state: str, action: str, role: str) -> Optional[str]:
@@ -436,7 +438,8 @@ class FakeStandupServer:
             return transport_failure(QNetworkReply.NetworkError.ConnectionRefusedError)
         if isinstance(fault, Fault):
             headers_out = {"Retry-After": str(fault.retry_after)} if fault.retry_after else None
-            return _error(fault.status, fault.code, fault.message, headers=headers_out)
+            return _error(fault.status, fault.code, fault.message, detail=fault.detail,
+                          headers=headers_out)
 
         if nip98.has_body(body) and headers["Content-Type"] != b"application/json":
             return json_reply({"ok": False, "error": {"code": "bad_request",
@@ -797,6 +800,17 @@ class FakeStandupServer:
         return not any(role in ("owner", "redaktion") and member not in named
                        for member, role in pub.members.items())
 
+    def _work_round(self, address: str, writer: str, coordinate: str) -> Tuple[int, bool]:
+        """The round a work is in at a publication and whether it is
+        still open (backend core/editorial_intake.py work_round)."""
+        earlier = sorted((r for r in self.submissions.values() if r.publication == address
+                          and r.writer == writer and r.coordinate_hash == coordinate),
+                         key=lambda r: r.round)
+        still_open = [r for r in earlier if r.state not in ROUND_CLOSED]
+        if still_open:
+            return still_open[-1].round, True
+        return (earlier[-1].round + 1 if earlier else 1), False
+
     def _submit(self, who, body, params, query) -> FakeReply:
         writer = who.pubkey
         refusal = self._check_body(body, writer)
@@ -838,6 +852,13 @@ class FakeStandupServer:
         else:
             if body["revision"] != 1:
                 return _error(409, "stale_revision")
+            round_, still_open = self._work_round(pub.address, writer, body["coordinate_hash"])
+            if still_open or body["round"] != round_:
+                # backend core/editorial_intake.py _check_new; "open" is
+                # contract-ahead (feat/redaktion 3b00351, section 2).
+                return _error(409, "conflict", "Dieses Werk liegt hier schon vor.",
+                              detail={"round": round_ if still_open else round_ - 1,
+                                      "open": still_open})
             open_here = [r for r in self.submissions.values()
                          if r.writer == writer and r.publication == pub.address
                          and r.state in OPEN]
