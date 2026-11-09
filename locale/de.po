@@ -7042,7 +7042,25 @@ msgstr "Dein Medienserver behält von einem solchen Bild nur eine Kopie. Füge u
 msgid "Your media servers didn’t list your files. Try again later."
 msgstr "Deine Medienserver haben deine Dateien nicht aufgelistet. Versuche es später erneut."
 
-#: nostr/blossom/store.py:962
+#: nostr/blossom/store.py:89
+msgid "too large"
+msgstr "zu groß"
+
+#: nostr/blossom/store.py:90
+msgid "not a type it takes"
+msgstr "nimmt diese Art Datei nicht"
+
+#: nostr/blossom/store.py:1787
+#, python-brace-format
+msgid "No media server took the file: {servers}. Add another one in Media Servers."
+msgstr "Kein Medienserver hat die Datei angenommen: {servers}. Füge unter „Medienserver“ einen weiteren hinzu."
+
+#: nostr/blossom/store.py:1784
+#, python-brace-format
+msgid "{server}: {reason}"
+msgstr "{server}: {reason}"
+
+#: nostr/blossom/store.py:990
 #, python-brace-format
 msgid "This file is larger than your media servers take ({size})."
 msgstr "Diese Datei ist größer, als deine Medienserver annehmen ({size})."

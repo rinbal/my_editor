@@ -38,7 +38,7 @@ from PySide6.QtCore import QObject, Signal
 
 import media_files
 import url_safety
-from i18n import _
+from i18n import N_, _
 
 from ..bunker import BunkerClient, BunkerSessionPool
 from ..profiles import Profile
@@ -81,7 +81,14 @@ _MAX_UPLOAD_ATTEMPTS = 2
 # Failures worth trying the next server for. 413 is here because it is
 # precisely the case the size planner cannot know about: a server whose
 # real cap is below its published one.
-_RETRYABLE_STATUSES = frozenset({0, 413, 429, 502, 503})
+_RETRYABLE_STATUSES = frozenset({0, 413, 415, 429, 502, 503})
+
+# A server's refusal of the file itself (BUD-02: 413 too large, 415 a
+# type it does not take), with the short reason a list of servers says.
+_FILE_REFUSALS = {
+    ERROR_CODES.SERVER_TOO_LARGE: N_("too large"),
+    ERROR_CODES.UNSUPPORTED_TYPE: N_("not a type it takes"),
+}
 
 # 401 and 403 are deliberately absent: they usually mean the signer or
 # the clock is the problem, so the next server would demand auth too and
@@ -778,6 +785,7 @@ class MediaStore(QObject):
         account being left, and the next fetch starts a walk of its own
         instead of being folded into that one.
         """
+        self._stop_uploads()
         self._fetch_generation += 1
         self._fetch_in_flight = False
         self._fetch_requested = False
@@ -789,6 +797,20 @@ class MediaStore(QObject):
         self._committed.clear()
         self.library_changed.emit()
         self.listings_changed.emit()
+
+    def _stop_uploads(self) -> None:
+        """Every upload of the account being left stops: what is on its
+        way is aborted, a signer, a hash or a read answering later goes
+        nowhere (the job is gone), and each is reported cancelled."""
+        jobs, self._uploads = self._uploads, {}
+        added, self._added = self._added, {}
+        for job in jobs.values():
+            if job.sending is not None:
+                job.sending.abort()
+        # Files being read, and added files that failed, go too: a retry
+        # would send them as the next account.
+        for name in dict.fromkeys([*jobs, *added]):
+            self.upload_cancelled.emit(name)
 
     # ------------------------------------------------------------------
     # Upload
@@ -919,6 +941,7 @@ class MediaStore(QObject):
         *,
         name: str,
         mime_type: str = "application/octet-stream",
+        force: bool = False,
     ) -> None:
         """Upload an in-memory buffer. Used by the drop handler when the
         bytes come from a QMimeData payload rather than a file path.
@@ -934,11 +957,16 @@ class MediaStore(QObject):
         might not, the upload walks to the next one. It only ever walks
         the servers the planner accepted, so a server skipped for size
         can never be reached by a retry.
+
+        ``force`` sends the bytes to every eligible server whatever the
+        library says it holds: for a file a server said it is missing
+        (a STANDUP receipt's ``blobs_missing``), where the library's word
+        would stand in for the server's.
         """
-        self._dispatch(body, name, mime_type, None)
+        self._dispatch(body, name, mime_type, None, force=force)
 
     def _dispatch(self, body: bytes, name: str, mime_type: str,
-                  added: Optional[_Added]) -> None:
+                  added: Optional[_Added], *, force: bool = False) -> None:
         profile = self._profile_provider()
         if profile is None:
             self._refuse(name, ERROR_CODES.NO_SIGNER)
@@ -964,25 +992,28 @@ class MediaStore(QObject):
             ).format(size=media_files.format_size(limit)))
             return
 
-        # Hashing a large file, and keeping it in the cache, happens off
-        # the UI thread; the upload goes on from here once it is done.
+        # The job exists from here on, before the hash: Cancel and
+        # clear() reach it while a large file is hashed off the UI
+        # thread, and nothing goes on for a job that is gone.
+        state = UploadJobState(name=name, status="queued")
+        self._uploads[name] = state
         run_for_size(len(body), lambda: self._hash_and_keep(body),
-                     lambda sha: self._upload_hashed(body, name, mime_type, profile, sha,
-                                                     servers, plan, added),
+                     lambda sha: self._upload_hashed(state, body, mime_type, profile, sha,
+                                                     servers, plan, force),
                      parent=self)
 
-    def _upload_hashed(self, body: bytes, name: str, mime_type: str, profile, sha: str,
-                       servers, plan: UploadPlan, added: Optional[_Added] = None) -> None:
-        if added is not None and self._added.get(name) is not added:
-            return                           # cancelled while it was hashed
+    def _upload_hashed(self, state: UploadJobState, body: bytes, mime_type: str, profile,
+                       sha: str, servers, plan: UploadPlan, force: bool) -> None:
+        name = state.name
+        if self._uploads.get(name) is not state:
+            return                           # cancelled while it was hashed, or left
         eligible = [server for server in plan.eligible
                     if self._has_room(server, sha, len(body), name)]
         if not eligible:
-            self._refuse(name, ERROR_CODES.QUOTA_FULL)
+            self._fail_upload(name, ERROR_CODES.QUOTA_FULL)
             return
-        state = UploadJobState(name=name, status="queued", hash=sha)
+        state.hash = sha
         state.meter.expect(len(eligible) - 1)
-        self._uploads[name] = state
         self.upload_started.emit(name)
         self.upload_status.emit(name, state.status)
         if self._uploads.get(name) is not state:
@@ -995,7 +1026,7 @@ class MediaStore(QObject):
             profile=profile,
             sha=sha,
             eligible=eligible,
-            present=self._servers_holding(sha, eligible),
+            present=[] if force else self._servers_holding(sha, eligible),
             configured_primary=servers[0],
         )
 
@@ -1199,16 +1230,16 @@ class MediaStore(QObject):
             exhausted.append(missing[index])
             missed.append((_hostname(missing[index]), _error_code(err)))
             next_index = index + 1
-            if (
-                next_index < _MAX_UPLOAD_ATTEMPTS
-                and next_index < len(missing)
-                and _is_retryable(err)
-            ):
+            # A server that refused the file itself (413, 415) says
+            # nothing of the others: every one is tried (BUD-02).
+            attempts = len(missing) if _refused_file(err) else _MAX_UPLOAD_ATTEMPTS
+            if next_index < min(attempts, len(missing)) and _is_retryable(err):
                 if job is not None:
                     job.meter.retrying()
                 attempt(next_index)
                 return
-            self._fail_upload(name, _error_code(err), _format_err(err))
+            self._fail_upload(name, _error_code(err),
+                              _refusals(missed, err) if _refused_file(err) else _format_err(err))
 
         attempt(0)
 
@@ -1368,7 +1399,12 @@ class MediaStore(QObject):
             state.meter.copying(len(mirror_servers))
             self.upload_status.emit(name, state.status)
 
+        def live() -> bool:
+            return self._uploads.get(name) is state
+
         def step(index: int) -> None:
+            if not live():
+                return                       # its account was left: no more copies
             if state is not None and index > 0:
                 state.meter.copied()
             if index >= len(mirror_servers):
@@ -1402,6 +1438,7 @@ class MediaStore(QObject):
                     sha256=media.hash,
                     on_success=lambda result, o=o, i=i: on_ok(result, o, i),
                     on_failure=lambda err2, o=o, i=i: on_err(err2, o, i),
+                    live=live,
                 )
 
             replicate.mirror_to_server(
@@ -1413,6 +1450,7 @@ class MediaStore(QObject):
                 sha256=media.hash,
                 on_success=on_ok,
                 on_failure=on_mirror_err,
+                live=live,
             )
 
         step(0)
@@ -1732,6 +1770,22 @@ def _delete_failure_code(failures) -> str:
         if wanted in codes:
             return wanted
     return codes[0] if codes else ERROR_CODES.UPLOAD_FAILED
+
+
+def _refused_file(err) -> bool:
+    return isinstance(err, BlossomError) and err.status in (413, 415)
+
+
+def _refusals(missed: Sequence[tuple], err: BlossomError) -> str:
+    """Which servers refused the file and why (contract 7: named, never
+    the plaintext uploaded instead): the one server with the remedy, or
+    every server with its reason."""
+    if len(missed) == 1:
+        return _("{server}: {reason}").format(server=missed[0][0], reason=_format_err(err))
+    named = [f"{host} ({_(_FILE_REFUSALS[code])})" if code in _FILE_REFUSALS else host
+             for host, code in missed]
+    return _("No media server took the file: {servers}. Add another one in Media "
+             "Servers.").format(servers=", ".join(named))
 
 
 def _is_retryable(err) -> bool:

@@ -7027,7 +7027,25 @@ msgstr ""
 msgid "Your media servers didn’t list your files. Try again later."
 msgstr ""
 
-#: nostr/blossom/store.py:962
+#: nostr/blossom/store.py:89
+msgid "too large"
+msgstr ""
+
+#: nostr/blossom/store.py:90
+msgid "not a type it takes"
+msgstr ""
+
+#: nostr/blossom/store.py:1787
+#, python-brace-format
+msgid "No media server took the file: {servers}. Add another one in Media Servers."
+msgstr ""
+
+#: nostr/blossom/store.py:1784
+#, python-brace-format
+msgid "{server}: {reason}"
+msgstr ""
+
+#: nostr/blossom/store.py:990
 #, python-brace-format
 msgid "This file is larger than your media servers take ({size})."
 msgstr ""

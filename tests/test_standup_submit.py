@@ -64,7 +64,8 @@ class Store(QObject):
         self.sent: List[tuple] = []
         self.cancelled: List[str] = []
 
-    def upload_bytes(self, body, *, name, mime_type) -> None:
+    def upload_bytes(self, body, *, name, mime_type, force) -> None:
+        assert force
         self.sent.append((name, body, mime_type))
 
     def cancel_upload(self, name) -> bool:
@@ -112,6 +113,29 @@ def test_a_file_the_server_names_by_another_hash_fails_and_the_others_stop():
     assert set(store.cancelled) == {first, second}
     store.finish(second, pictures[1].sha256)        # heard no more
     assert seen["done"] == []
+
+
+def test_a_file_the_server_misses_goes_up_again_through_the_real_library(tmp_path):
+    # RG-M2b 4, against the real MediaStore: its own record of the file
+    # never stands in for the server's word that it is missing.
+    from nostr.blossom.client import BlossomClient
+    from nostr.blossom.settings import BlossomSettings
+    from nostr.blossom.store import MediaStore
+    from tests.blossom_fakes import (SERVER, FakeBlossomServer, FakeNam, FakeProfile,
+                                     FakeSessionPool, FakeSigner)
+    settings = BlossomSettings(tmp_path / "servers.json")
+    settings.set_custom_servers([SERVER])
+    server = FakeBlossomServer(SERVER)
+    nam = FakeNam(None, responder=server)
+    store = MediaStore(session_pool=FakeSessionPool(FakeSigner()), profile_provider=FakeProfile,
+                       settings=settings, client=BlossomClient(nam=nam))
+    pictures = _pictures(1)
+    for _attempt in range(2):                       # sent, then the receipt says missing
+        seen, _stop = _upload(store, pictures)
+        nam.settle()
+        assert seen["done"] == [{pictures[0].sha256: (SERVER,)}]
+    assert server.uploads == [pictures[0].cipher] * 2
+    assert all(body[:4] == b"SMF1" for body in server.uploads)     # never the plaintext
 
 
 def test_stopping_cancels_what_is_on_its_way():

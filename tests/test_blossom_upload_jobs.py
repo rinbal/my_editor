@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 
 import pytest
 
@@ -233,3 +234,99 @@ def test_a_file_is_remembered_by_its_name_once_its_first_server_has_it(tmp_path)
     jobs.nam.settle_one()
     assert jobs.store.upload_job(name).status == "mirroring"
     assert MediaNames(tmp_path / "media_names.json").get(SHA) == "Holiday 2026.png"
+
+
+# -- uploads that must not outlive their account, and files sent again -----------
+
+from nostr.imports import workers  # noqa: E402
+
+THIRD = "https://third.example"
+BIG = b"\x07" * workers.BACKGROUND_FROM_BYTES     # hashed on a worker thread
+
+
+def _hashed() -> bool:
+    """Every hash on a worker thread has been delivered."""
+    deadline = time.monotonic() + 20
+    while workers._ACTIVE_HOLDERS and time.monotonic() < deadline:
+        QApplication.processEvents()
+        time.sleep(0.005)
+    QApplication.processEvents()
+    return not workers._ACTIVE_HOLDERS
+
+
+def _servers(jobs, *servers):
+    by_host = {s.host: s for s in servers}
+    jobs.nam._responder = lambda verb, request, body: by_host[request.url().host()](
+        verb, request, body)
+
+
+def test_cancel_while_a_large_file_is_hashed_sends_nothing(tmp_path):
+    # RG-M2b 5: the job exists before its hash, so Cancel reaches it.
+    jobs = Jobs(tmp_path)
+    jobs.store.upload_bytes(BIG, name="big.smf1")
+    assert jobs.store.cancel_upload("big.smf1") is True
+    assert _hashed()
+    jobs.nam.settle()
+    assert jobs.signer.requests == [] and jobs.server.uploads == []
+    assert jobs.kinds("big.smf1") == ["cancelled"]
+
+
+@pytest.mark.parametrize("when", ["hashing", "signing", "copying"])
+def test_leaving_the_account_stops_its_uploads_and_its_files_stay_out(tmp_path, when):
+    # RG-M2b 5: nothing is signed as, sent for or put in the library of
+    # the account after.
+    mirror = FakeBlossomServer(MIRROR)
+    jobs = Jobs(tmp_path, servers=(SERVER, MIRROR), defer=True)
+    _servers(jobs, jobs.server, mirror)
+    jobs.store.upload_bytes(BIG if when == "hashing" else BODY, name="a.smf1")
+    if when != "hashing":
+        jobs.signer.release()                       # the upload's token
+        if when == "copying":
+            jobs.nam.settle_one()                   # the first server has it
+            assert jobs.store.upload_job("a.smf1").status == "mirroring"
+    jobs.store.clear()                              # sign-out or another account
+    assert _hashed()
+    jobs.signer.release_all()
+    jobs.nam.settle()
+    assert jobs.store.files == {} and jobs.store.upload_job("a.smf1") is None
+    assert mirror.uploads == [] and mirror.mirrors == []
+    assert "finished" not in jobs.kinds("a.smf1") and jobs.kinds("a.smf1")[-1] == "cancelled"
+    if when == "hashing":
+        assert jobs.signer.requests == []
+
+
+def test_a_file_a_server_says_is_missing_is_sent_again_though_the_library_has_it(tmp_path):
+    # RG-M2b 4: force skips the library's word; without it nothing goes.
+    jobs = Jobs(tmp_path)
+    jobs.store.upload_bytes(BODY, name="a.smf1")
+    jobs.nam.settle()
+    assert len(jobs.server.uploads) == 1
+    jobs.store.upload_bytes(BODY, name="b.smf1")
+    jobs.nam.settle()
+    assert len(jobs.server.uploads) == 1            # the library knows: no PUT
+    jobs.store.upload_bytes(BODY, name="c.smf1", force=True)
+    jobs.nam.settle()
+    assert len(jobs.server.uploads) == 2 and jobs.kinds("c.smf1")[-1] == "finished"
+
+
+def test_a_server_that_refuses_the_file_hands_it_to_every_other_and_names_them(tmp_path):
+    # Contract 7 (ee3e5d7): 413 or 415 tries the writer's other servers;
+    # when none takes it, the servers and the reasons are named.
+    too_large = FakeBlossomServer(SERVER, fail_with=413)
+    wrong_type = FakeBlossomServer(MIRROR, fail_with=415)
+    third = FakeBlossomServer(THIRD, fail_with=413)
+    jobs = Jobs(tmp_path, servers=(SERVER, MIRROR, THIRD))
+    _servers(jobs, too_large, wrong_type, third)
+    said = []
+    jobs.store.upload_failed.connect(lambda _n, reason: said.append(reason))
+    jobs.store.upload_bytes(BODY, name="a.smf1")
+    jobs.nam.settle()
+    assert len(jobs.signer.requests) == 3           # every server was asked
+    assert said == ["No media server took the file: good.example (too large), "
+                    "mirror.example (not a type it takes), third.example (too large). "
+                    "Add another one in Media Servers."]
+    taken = FakeBlossomServer(THIRD)
+    _servers(jobs, too_large, wrong_type, taken)
+    jobs.store.upload_bytes(BODY, name="b.smf1")
+    jobs.nam.settle()
+    assert len(taken.uploads) == 1 and jobs.kinds("b.smf1")[-1] == "finished"

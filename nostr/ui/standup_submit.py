@@ -112,8 +112,10 @@ class BlossomUploads(QObject):
             self._jobs[name] = job
         for name, picture in names.items():
             if self._jobs.get(name) is job:
+                # Contract 7: never the plaintext's type. Sent whatever the
+                # library says: a server said it misses a file (12.4).
                 self._store.upload_bytes(picture.cipher, name=name,
-                                         mime_type="application/octet-stream")
+                                         mime_type="application/octet-stream", force=True)
         return lambda: self._stop(job)
 
     def _end(self, job: _Upload) -> None:
