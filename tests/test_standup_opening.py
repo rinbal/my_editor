@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Verify before opening anything (contract 12.4, feat/redaktion 071f757):
+"""Verify before opening anything (contract 12.4, feat/redaktion 0820f0d):
 nothing is opened on the strength of a View, only from a revision's
 verified signed body. The attack it stops: a server that mints its own
 submission key, puts its pubkey in the View and serves wraps of it.
@@ -104,6 +104,38 @@ def test_a_view_naming_a_key_the_writer_did_not_sign_opens_nothing(submitted):
     record = record_of(body, action, wraps=dict(body["wraps"], **{CONTRIBUTOR: forged}))
     with pytest.raises(NotConfirmed, match="submission key"):
         verify_revision(view, record)
+
+
+def test_a_writer_the_server_picked_for_a_real_submission_id_opens_nothing():
+    # RG-M1 2: the server keeps a real sid and serves a body of a writer
+    # it controls, with its own key and envelope. The sid does not
+    # recompute from that writer, so nothing opens.
+    real = submission_for(sk("writer"), participants=(CONTRIBUTOR,))
+    sid = real.body["submission_id"]
+    puppet_sk = crypto.generate_secret_key()
+    puppet = crypto.get_public_key(puppet_sk).hex()
+    minted = sc.new_secret_key()
+    forged = submission_for(puppet_sk, participants=(CONTRIBUTOR,), s_sub=minted,
+                            content="Vom Server erfunden")
+    body = dict(forged.body, submission_id=sid)
+    sealed = sc.seal_revision(dict(forged.revision, submission_id=sid), minted)
+    body.update(revision_hash=sealed.revision_hash, envelope=sealed.envelope_b64,
+                envelope_sha256=sealed.envelope_sha256,
+                wraps=sc.wrap_submission_key(sid, minted, {"redaktion": pk("writer"),
+                                                           "writer": puppet,
+                                                           CONTRIBUTOR: CONTRIBUTOR}))
+    action = signed(body, "/api/submissions", puppet_sk)
+    with pytest.raises(NotConfirmed, match="does not belong"):
+        verify_revision(view_of(body, writer=puppet), record_of(body, action))
+
+
+@pytest.mark.parametrize("field, value", [
+    ("publication", f"{formats.SITE_KIND}:" + "ab" * 32 + ":andere"), ("round", 2)])
+def test_a_body_for_another_publication_or_round_is_not_confirmed(submitted, field, value):
+    prepared, action = submitted
+    body = prepared.body
+    with pytest.raises(NotConfirmed, match=f"the {field} signed is another"):
+        verify_revision(view_of(body, **{field: value}), record_of(body, action))
 
 
 def test_a_wrap_served_other_than_the_one_signed_is_not_opened(submitted):

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Verify before opening anything (editorial contract 12.4, feat/redaktion
-071f757).
+0820f0d).
 
 The server holds no keys, but it serves every binding: a View's ``p_sub``
 and the wraps next to it could be ones it minted itself. So nothing is
@@ -95,7 +95,11 @@ def verify_revision(view: SubmissionView, record: RevisionRecord, *,
     signed by the View's writer; a correction (``.../corrections``) by a
     member of the Redaktion (``redaktion``, from the member list), and it
     takes ``p_sub``, kind and title from ``writer_revision``, the writer's
-    verified revision it corrects. The body's ``submission_id``,
+    verified revision it corrects. A writer's body must name the View's
+    ``publication`` and ``round``, and its ``submission_id`` must
+    recompute from the signer, that ``publication``, its
+    ``coordinate_hash`` and ``round`` (section 2): else a server could
+    hand any sid to a writer it chose. The body's ``submission_id``,
     ``revision``, ``revision_hash``, ``envelope_sha256``, ``p_sub``,
     ``kind`` and ``title`` must equal what is shown: the record's, and the
     View's for the revision it shows. A View shows only the current
@@ -124,6 +128,7 @@ def verify_revision(view: SubmissionView, record: RevisionRecord, *,
               and not writer_revision.correction, "the writer's revision is not verified")
         p_sub, kind, title = writer_revision.p_sub, writer_revision.kind, writer_revision.title
     else:
+        _writer_binding(body, view, signed.event["pubkey"])
         p_sub, kind, title = body.get("p_sub"), body.get("kind"), body.get("title")
     _need(p_sub == view.p_sub, "the submission key signed is another")
     _need(kind == view.kind, "the kind signed is another")
@@ -135,6 +140,17 @@ def verify_revision(view: SubmissionView, record: RevisionRecord, *,
         envelope_sha256=record.envelope_sha256, p_sub=p_sub, kind=kind, title=title,
         wraps={name: dict(wrap) for name, wrap in wraps.items()},
         signer=signed.event["pubkey"], correction=correction)
+
+
+def _writer_binding(body: Mapping, view: SubmissionView, signer: str) -> None:
+    """A writer's body is bound to its sid (12.4, section 2)."""
+    _need(body.get("publication") == view.publication, "the publication signed is another")
+    _need(body.get("round") == view.round, "the round signed is another")
+    coordinate = body.get("coordinate_hash")
+    _need(formats.is_hex64(coordinate) and formats.is_int(body.get("round"), low=1),
+          "the submission's binding is malformed")
+    _need(formats.submission_id(signer, view.publication, coordinate, view.round)
+          == view.submission_id, "the submission id does not belong to its writer")
 
 
 def open_submission_key(client, verified: VerifiedRevision, recipient: str,
