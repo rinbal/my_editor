@@ -71,6 +71,8 @@ PICTURE_MISSING = N_("A picture can’t be found on your media server.")
 TOO_LARGE = N_("This submission is larger than {publication} takes.")
 ANOTHER_VERSION = N_("{publication} already has another version of this submission.")
 NOT_TAKEN = N_("The server didn’t take the submission.")
+# The revision could not be built here: nothing went out (lesson 8).
+NOT_BUILT = N_("MyEditor couldn’t put this submission together.")
 
 # Refusals by the contract's codes (12.2), each in the writer's words.
 _REFUSALS = {
@@ -102,11 +104,10 @@ def refusal(code: str) -> str:
 __all__ = [
     "ANOTHER_VERSION", "ENCRYPTING", "IN_THE_BACKGROUND", "LIST_CHANGED_ELSEWHERE",
     "LIST_ENTRY_UNUSABLE", "LIST_NOT_SAVED", "MESSAGE_NOT_SENT", "MESSAGE_SENDING", "MESSAGE_SENT",
-    "NOTHING_SUBMITTED", "NOT_CONFIRMED", "NOT_RECEIVED", "NOT_SENT", "NOT_TAKEN", "PICTURE_MISSING", "SENDING",
-    "SIGNER_DECLINED", "SIGNER_SILENT", "STOPPED_MESSAGE", "STOPPED_NOTHING_SENT",
-    "STOPPED_PICTURES", "STOPPED_UNCONFIRMED", "STORED_PICTURE_MISSING", "SUBMITTED",
-    "SUBMITTED_DETAIL",
-    "TEXT_STAYS", "TOO_LARGE", "UNCONFIRMED", "UNCONFIRMED_DETAIL", "UPLOADING_DETAIL",
-    "UPLOADING_PICTURE", "UPLOADING_PICTURES", "UPLOAD_FAILED", "WAITING_DETAIL",
-    "WAITING_FOR_SIGNER", "refusal",
+    "NOTHING_SUBMITTED", "NOT_BUILT", "NOT_CONFIRMED", "NOT_RECEIVED", "NOT_SENT", "NOT_TAKEN",
+    "PICTURE_MISSING", "SENDING", "SIGNER_DECLINED", "SIGNER_SILENT", "STOPPED_MESSAGE",
+    "STOPPED_NOTHING_SENT", "STOPPED_PICTURES", "STOPPED_UNCONFIRMED", "STORED_PICTURE_MISSING",
+    "SUBMITTED", "SUBMITTED_DETAIL", "TEXT_STAYS", "TOO_LARGE", "UNCONFIRMED",
+    "UNCONFIRMED_DETAIL", "UPLOADING_DETAIL", "UPLOADING_PICTURE", "UPLOADING_PICTURES",
+    "UPLOAD_FAILED", "WAITING_DETAIL", "WAITING_FOR_SIGNER", "refusal",
 ]

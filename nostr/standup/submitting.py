@@ -440,7 +440,9 @@ class Submitting:
             self._fail(words.TOO_LARGE, None)
             return
         except FormatError:
-            self._fail(words.NOT_TAKEN, None)
+            # Built here and refused here: nothing went out, so it is
+            # never the server's refusal (RG-M2b 11).
+            self._fail(words.NOT_BUILT, None)
             return
         except drafting.HeldNotUsable:
             self._fail(words.LIST_ENTRY_UNUSABLE, None)

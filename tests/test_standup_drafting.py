@@ -10,6 +10,7 @@ from dataclasses import replace
 
 import pytest
 
+from nostr import crypto as nostr_crypto
 from nostr.media.assets import asset_key
 from nostr.standup import drafting, formats, submission, trust
 from nostr.standup.drafting import ArticleDraft, Choice, LocalPicture
@@ -42,7 +43,8 @@ def test_an_article_with_its_title_and_rights_has_no_blocker():
     (replace(DRAFT, pictures=tuple(LocalPicture(key=asset_key(f"{i:064x}"), name="p",
                                                 mime="image/png") for i in range(65))),
      {}, drafting.TOO_MANY_PICTURES.format(count=64)),
-    (replace(DRAFT, authors=tuple((f"{i + 1:064x}", "") for i in range(21))), {},
+    (replace(DRAFT, authors=tuple((nostr_crypto.get_public_key(bytes([i + 1]) * 32).hex(), "")
+                                  for i in range(21))), {},
      drafting.TOO_MANY_PEOPLE.format(count=20)),
     (DRAFT, {"message": "x" * 16_001}, drafting.MESSAGE_TOO_LONG.format(count=16_000)),
     (DRAFT, {"submitted_to": "Einundzwanzig Magazin"},
@@ -51,6 +53,38 @@ def test_an_article_with_its_title_and_rights_has_no_blocker():
 ])
 def test_each_blocker_says_why(draft, kw, words):
     assert _blockers(draft, **kw) == [words]
+
+
+@pytest.mark.parametrize("key", ["ff" * 32, "AB" * 32, "npub1xyz", ""])
+def test_a_coauthor_whose_key_is_not_one_blocks_and_names_it_in_the_detail(key):
+    # RG-M2b 11: an address imported from another app's tags reached the
+    # seal and read as the server's refusal, with no way on.
+    draft = replace(DRAFT, authors=((key, ""),))
+    (found,) = _blockers(draft)
+    assert found == drafting.COAUTHOR_INVALID and isinstance(found, drafting.Blocker)
+    assert found.detail == drafting.COAUTHOR_INVALID_DETAIL.format(key=key)
+    key_event = trust.verify_key_event(KEY_EVENT, ADDRESS)
+    with pytest.raises(formats.FormatError):
+        drafting.seal(draft, CHOICE, key_event, (), {}, writer=pk("writer"), round_=1, now=NOW)
+
+
+@pytest.mark.parametrize("mime", ["image/svg+xml", "image/tiff", "image/heic", ""])
+def test_a_picture_of_a_type_the_editorial_team_cannot_show_blocks_naming_the_file(mime):
+    # Contract 5 (feat/redaktion ee3e5d7): an SVG can carry script.
+    picture = LocalPicture(key=asset_key("a" * 64), name="logo.svg", mime=mime, data=b"x")
+    (found,) = _blockers(replace(DRAFT, pictures=(picture,)))
+    assert found == drafting.PICTURE_TYPE.format(name="logo.svg")
+    assert found.detail == drafting.PICTURE_TYPE_DETAIL.format(type=mime or "?")
+    key_event = trust.verify_key_event(KEY_EVENT, ADDRESS)
+    with pytest.raises(formats.FormatError):
+        drafting.seal(DRAFT, CHOICE, key_event, drafting.encrypt_pictures((picture,)), {},
+                      writer=pk("writer"), round_=1, now=NOW)
+
+
+@pytest.mark.parametrize("mime", formats.PICTURE_MIMES + ("IMAGE/PNG",))
+def test_the_five_picture_types_are_taken(mime):
+    picture = LocalPicture(key=asset_key("a" * 64), name="p", mime=mime, data=b"x")
+    assert _blockers(replace(DRAFT, pictures=(picture,))) == []
 
 
 def test_the_rights_block_only_where_the_publication_requires_them():

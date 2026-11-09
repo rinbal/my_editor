@@ -606,7 +606,13 @@ class SubmitSheet(QDialog):
         self.unsent.setVisible(self._round is not None and self._round.unsent is not None)
         blockers = self.blockers()
         self.submit_button.setEnabled(not blockers and self.round() is not None)
-        self.status.say(blockers[0] if blockers else "")
+        first = blockers[0] if blockers else ""
+        self.status.say(first)
+        # What exactly is wrong (a key, a file's type) in the tooltip, not
+        # in the words (lesson 27).
+        detail = getattr(first, "detail", "")
+        self.status.setToolTip(detail)
+        self.status.setAccessibleDescription(detail)
 
     # -- submitting ----------------------------------------------------------
 

@@ -148,7 +148,8 @@ class HeldSigner(SignAs):
 
 
 class World:
-    def __init__(self, *, signer=None, message: str = "", pictures=True, round_: int = 1) -> None:
+    def __init__(self, *, signer=None, message: str = "", pictures=True, round_: int = 1,
+                 authors=()) -> None:
         self.clock = FakeClock(NOW)
         self.server = FakeStandupServer(self.clock)
         self.nam = StandupNam(responder=self.server)
@@ -165,7 +166,7 @@ class World:
             d="ein-jahr-mit-lightning", title="Ein Jahr mit Lightning im Café",
             summary="Wie ein Café in Fürth Bitcoin annimmt.",
             content=f"Seit einem Jahr.\n\n![Das Café]({PICTURE_KEY})\n" if pictures else "Text.",
-            tags=("bitcoin",), image=PICTURE_KEY if pictures else "",
+            tags=("bitcoin",), image=PICTURE_KEY if pictures else "", authors=tuple(authors),
             pictures=(LocalPicture(key=PICTURE_KEY, name="cafe.jpg", mime="image/jpeg",
                                    alt="Das Café", data=PICTURE),) if pictures else ())
         self.choice = Choice(publication=ADDRESS, name="Einundzwanzig Magazin", signer="writer",
@@ -459,6 +460,15 @@ def test_an_answer_to_an_earlier_request_is_ignored():
     world.uploads.finish()
     world.settle()
     assert world.submitting.progress.step is Step.SUBMITTED
+
+
+def test_a_revision_that_cannot_be_built_here_never_reads_as_the_servers_refusal():
+    # RG-M2b 11: nothing went out (lesson 8), so not "the server didn't take it".
+    world = World(authors=(("ff" * 32, ""),))
+    progress = world.go()
+    assert progress.step is Step.FAILED and progress.failure.headline == words.NOT_BUILT
+    assert progress.failure.detail == words.NOTHING_SUBMITTED and not progress.sent
+    assert "submit" not in world.server.handled
 
 
 def test_a_request_the_server_never_got_is_said_not_received_and_can_be_sent_again():

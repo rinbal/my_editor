@@ -7870,24 +7870,43 @@ msgstr "Eine Einreichung hat höchstens {count} Bilder."
 
 #: nostr/standup/drafting.py:47
 #, python-brace-format
+msgid "“{name}” can’t be submitted: the editorial team’s app shows only PNG, JPEG, GIF, WebP and AVIF pictures. Save it in one of these formats, or take it out of the text, to submit."
+msgstr "„{name}“ kann nicht eingereicht werden: Die App der Redaktion zeigt nur Bilder im Format PNG, JPEG, GIF, WebP und AVIF. Speichere es in einem dieser Formate oder nimm es aus dem Text, um einzureichen."
+
+#: nostr/standup/drafting.py:50
+#, python-brace-format
+msgid "Its type: {type}"
+msgstr "Sein Typ: {type}"
+
+#: nostr/standup/drafting.py:51
+#, python-brace-format
 msgid "A submission names at most {count} co-authors."
 msgstr "Eine Einreichung nennt höchstens {count} Mitautoren."
 
-#: nostr/standup/drafting.py:48
+#: nostr/standup/drafting.py:52
+msgid "A co-author can’t be named: their account isn’t valid. Remove them in Article Details, or add them again, to submit."
+msgstr "Ein Mitautor kann nicht genannt werden: Sein Konto ist ungültig. Entferne ihn in den Artikeldetails oder füge ihn erneut hinzu, um einzureichen."
+
+#: nostr/standup/drafting.py:54
+#, python-brace-format
+msgid "Not a valid public key: {key}"
+msgstr "Kein gültiger öffentlicher Schlüssel: {key}"
+
+#: nostr/standup/drafting.py:55
 #, python-brace-format
 msgid "You have submitted this text to {publication} already."
 msgstr "Du hast diesen Text schon bei {publication} eingereicht."
 
-#: nostr/standup/drafting.py:49
+#: nostr/standup/drafting.py:56
 #, python-brace-format
 msgid "A message has at most {count} characters."
 msgstr "Eine Nachricht hat höchstens {count} Zeichen."
 
-#: nostr/standup/drafting.py:50
+#: nostr/standup/drafting.py:57
 msgid "Whether you have submitted this text before couldn’t be checked. Try again later."
 msgstr "Ob du diesen Text schon eingereicht hast, konnte nicht geprüft werden. Versuche es später noch einmal."
 
-#: nostr/standup/formats.py:89
+#: nostr/standup/formats.py:95
 msgid "It contains a secret key, and MyEditor never sends a secret key to a publication. Remove the key and try again."
 msgstr "Darin steht ein geheimer Schlüssel, und MyEditor schickt nie einen geheimen Schlüssel an eine Publikation. Entferne den Schlüssel und versuche es noch einmal."
 
@@ -8071,26 +8090,30 @@ msgstr "{publication} hat schon eine andere Fassung dieser Einreichung."
 msgid "The server didn’t take the submission."
 msgstr "Der Server hat die Einreichung nicht angenommen."
 
-#: nostr/standup/words.py:77
+#: nostr/standup/words.py:75
+msgid "MyEditor couldn’t put this submission together."
+msgstr "MyEditor konnte diese Einreichung nicht zusammenstellen."
+
+#: nostr/standup/words.py:79
 #, python-brace-format
 msgid "{publication} isn’t taking submissions right now."
 msgstr "{publication} nimmt gerade keine Einreichungen an."
 
-#: nostr/standup/words.py:78
+#: nostr/standup/words.py:80
 #, python-brace-format
 msgid "{publication} doesn’t take submissions from you."
 msgstr "{publication} nimmt von dir keine Einreichungen an."
 
-#: nostr/standup/words.py:79
+#: nostr/standup/words.py:81
 #, python-brace-format
 msgid "You already have as many open submissions at {publication} as it takes."
 msgstr "Du hast bei {publication} schon so viele offene Einreichungen, wie sie annimmt."
 
-#: nostr/standup/words.py:81
+#: nostr/standup/words.py:83
 msgid "Too many submissions in a short time. Try again later."
 msgstr "Zu viele Einreichungen in kurzer Zeit. Versuche es später noch einmal."
 
-#: nostr/standup/words.py:86
+#: nostr/standup/words.py:88
 #, python-brace-format
 msgid "Nobody at {publication} could decide on it: the only person who can is named among those who take part."
 msgstr "Niemand bei {publication} könnte darüber entscheiden: Die einzige Person, die das kann, ist unter den Beteiligten."

@@ -27,6 +27,7 @@ from PySide6.QtWidgets import QApplication
 import i18n
 from nostr.avatar_store import AvatarStore
 from nostr.profiles import Profile, ProfileStore
+from nostr.standup import drafting
 from nostr.standup.drafting import ArticleDraft
 from nostr.standup.submitting import Progress, Step
 from nostr.standup.trust import Destination, RedaktionKey
@@ -233,6 +234,19 @@ def test_what_cannot_be_submitted_says_why(tmp_path, writer, said):
     sheet = _sheet(tmp_path, writer)
     assert not sheet.submit_button.isEnabled()
     assert sheet.status.text() == said
+
+
+def test_what_exactly_is_wrong_is_in_the_tooltip_not_the_words(tmp_path):
+    # Lesson 27: the key goes in the tooltip and the accessible description.
+    from dataclasses import replace
+    sheet = _sheet(tmp_path, draft=replace(DRAFT, authors=(("ff" * 32, ""),)))
+    assert sheet.status.text() == i18n._(drafting.COAUTHOR_INVALID)
+    assert "ff" * 32 not in sheet.status.text()
+    assert "ff" * 32 in sheet.status.toolTip()
+    assert sheet.status.accessibleDescription() == sheet.status.toolTip()
+    assert not sheet.submit_button.isEnabled()
+    clean = _sheet(tmp_path)
+    assert clean.status.toolTip() == "" and clean.submit_button.isEnabled()
 
 
 def test_a_private_picture_blocks(tmp_path):

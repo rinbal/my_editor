@@ -70,6 +70,12 @@ AUDIO_MEDIUMS = ("podcast", "music", "audiobook")
 CHECK_LEVELS = ("recommended", "required")
 CHECK_RESULTS = ("ok", "missing", "unchecked")
 THUMB_MIMES = ("image/webp", "image/jpeg")
+# 5 (feat/redaktion ee3e5d7): the types a revision's media may have. A
+# writer refuses a local file of another type (an SVG can carry script;
+# the Redaktion's app would not show it).
+PICTURE_MIMES = ("image/png", "image/jpeg", "image/gif", "image/webp", "image/avif")
+AUDIO_MIMES = ("audio/mpeg", "audio/mp4", "audio/ogg", "audio/opus", "audio/wav", "audio/flac",
+               "audio/aac", "audio/webm")
 SIGNERS = ("writer", "publication")
 ROLES = ("writer", "contributor")
 

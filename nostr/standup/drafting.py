@@ -44,7 +44,14 @@ RIGHTS_MISSING = N_("Confirm the rights to submit.")
 PRIVATE_PICTURE = N_("“{name}” is private in your Media Library. Share it, or take it "
                      "out of the text, to submit.")
 TOO_MANY_PICTURES = N_("A submission has at most {count} pictures.")
+PICTURE_TYPE = N_("“{name}” can’t be submitted: the editorial team’s app shows only PNG, "
+                  "JPEG, GIF, WebP and AVIF pictures. Save it in one of these formats, or "
+                  "take it out of the text, to submit.")
+PICTURE_TYPE_DETAIL = N_("Its type: {type}")
 TOO_MANY_PEOPLE = N_("A submission names at most {count} co-authors.")
+COAUTHOR_INVALID = N_("A co-author can’t be named: their account isn’t valid. Remove them "
+                      "in Article Details, or add them again, to submit.")
+COAUTHOR_INVALID_DETAIL = N_("Not a valid public key: {key}")
 ALREADY_SUBMITTED = N_("You have submitted this text to {publication} already.")
 MESSAGE_TOO_LONG = N_("A message has at most {count} characters.")
 ROUND_UNKNOWN = N_("Whether you have submitted this text before couldn’t be checked. "
@@ -53,6 +60,30 @@ ROUND_UNKNOWN = N_("Whether you have submitted this text before couldn’t be ch
 # A submission of a round that ended this way may be followed by the next
 # round (contract 2); in any other state it is still open there.
 CLOSED_STATES = ("declined", "withdrawn")
+
+
+class Blocker(str):
+    """A blocker's words, and the technical fact behind them (``detail``,
+    for a tooltip and the accessible description, never the words
+    themselves: lesson 27)."""
+
+    detail: str
+
+    def __new__(cls, words: str, detail: str = "") -> "Blocker":
+        made = super().__new__(cls, words)
+        made.detail = detail
+        return made
+
+
+def picture_type_refused(picture: LocalPicture) -> bool:
+    """Whether ``picture`` is of a type a revision may not name (5)."""
+    return (picture.mime or "").lower() not in formats.PICTURE_MIMES
+
+
+def invalid_coauthors(draft: "ArticleDraft") -> List[str]:
+    """The co-authors whose key is not one (an address imported from
+    another app's tags may be anything)."""
+    return [pubkey for pubkey, _relay in draft.authors if not formats.is_pubkey(pubkey)]
 
 
 class HeldNotUsable(ValueError):
@@ -212,8 +243,10 @@ def seal(draft: ArticleDraft, choice: Choice, key: RedaktionKey,
     entry for this submission, whose secrets it keeps (see
     :func:`_secrets`). Raises FormatError (a
     :class:`~.formats.SecretKeyFound` for a secret key in the text) when
-    the revision cannot be built, :class:`TooLarge` when it is larger
-    than the publication takes."""
+    the revision cannot be built (a picture of a type it may not name,
+    a co-author whose key is not one: :func:`blockers` says so first),
+    :class:`TooLarge` when it is larger than the publication takes."""
+    formats.need(not any(picture_type_refused(p) for p in pictures), "a picture's type")
     sid = submission_id_of(draft, choice, writer, round_)
     s_sub, status_key = _secrets(sid, held)
     revision = formats.build_revision(
@@ -298,8 +331,14 @@ def blockers(draft: ArticleDraft, *, writer: str, rights: bool, rights_required:
         found.append(_(formats.SECRET_KEY_IN_SUBMISSION))
     for name in private_names[:1]:
         found.append(_(PRIVATE_PICTURE).format(name=name))
+    for picture in [p for p in draft.pictures if picture_type_refused(p)][:1]:
+        found.append(Blocker(_(PICTURE_TYPE).format(name=picture.name),
+                             _(PICTURE_TYPE_DETAIL).format(type=picture.mime or "?")))
     if len(draft.pictures) > formats.MAX_BLOBS:
         found.append(_(TOO_MANY_PICTURES).format(count=formats.MAX_BLOBS))
+    for key in invalid_coauthors(draft)[:1]:
+        found.append(Blocker(_(COAUTHOR_INVALID),
+                             _(COAUTHOR_INVALID_DETAIL).format(key=key[:100])))
     if len(participants_of(draft, writer)) > formats.MAX_PARTICIPANTS:
         found.append(_(TOO_MANY_PEOPLE).format(count=formats.MAX_PARTICIPANTS))
     if len(message) > formats.MAX_MESSAGE_CHARS:
@@ -312,7 +351,8 @@ def blockers(draft: ArticleDraft, *, writer: str, rights: bool, rights_required:
 
 
 __all__ = [
-    "ALREADY_SUBMITTED", "ArticleDraft", "HeldNotUsable", "CLIENT", "CLOSED_STATES", "Choice",
-    "EncryptedPicture", "LocalPicture", "RoundChoice", "Sealed", "TooLarge", "blockers",
-    "choose_round", "encrypt_pictures", "participants_of", "seal", "submission_id_of",
+    "ALREADY_SUBMITTED", "ArticleDraft", "Blocker", "CLIENT", "CLOSED_STATES", "Choice",
+    "EncryptedPicture", "HeldNotUsable", "LocalPicture", "RoundChoice", "Sealed", "TooLarge",
+    "blockers", "choose_round", "encrypt_pictures", "invalid_coauthors", "participants_of",
+    "picture_type_refused", "seal", "submission_id_of",
 ]
