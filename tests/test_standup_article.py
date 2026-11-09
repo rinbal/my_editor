@@ -14,7 +14,10 @@ the work's identifier, so a new title makes no other work."""
 
 from __future__ import annotations
 
+import inspect
 import types
+
+import pytest
 
 from PySide6.QtGui import QPixmap
 
@@ -131,6 +134,77 @@ def test_a_submitted_work_keeps_its_identifier_when_its_title_changes(tmp_path):
     closed = _editor_with(text="Gone.")
     win._keep_submitted_identifier(closed, "gone")    # its tab was closed meanwhile
     assert tab_details.details_of(closed) is None
+
+
+class _Details:
+    """The parts of MainWindow that fill Article Details."""
+
+    _fill_article_details_panel = MainWindow._fill_article_details_panel
+
+    def __init__(self, writer, details: ArticleDetails) -> None:
+        self.shown = []
+        self._article_details_panel = types.SimpleNamespace(
+            isVisible=lambda: True, set_derived_title=lambda _title: None,
+            show_article=lambda _details, **kw: self.shown.append(kw))
+        self.act_article_details = types.SimpleNamespace(isChecked=lambda: True)
+        self._ed = types.SimpleNamespace()
+        self._profile_store = types.SimpleNamespace(default=lambda: PROFILE)
+        self._standup_writer = writer
+        self._details = details
+
+    def current_editor(self):
+        return self._ed
+
+    def current_path(self):
+        return None
+
+    def _published_article_of(self, _ed):
+        return None
+
+    def _article_details_of(self, _ed) -> ArticleDetails:
+        return self._details
+
+    def _link_name_for_file(self, _path, _author) -> str:
+        return ""
+
+    def _derived_title_of(self, _ed) -> str:
+        return ""
+
+
+@pytest.mark.parametrize("identifier, writer, submitted", [
+    ("ein-jahr", True, True),
+    ("anders", True, False),
+    ("ein-jahr", False, False),                     # nothing submitted here yet
+], ids=["submitted", "another text", "no writer"])
+def test_article_details_fixes_the_link_name_of_a_submitted_text(identifier, writer,
+                                                                 submitted):
+    # RG-M2r 10: a hand-edited link name made the next Submit another sid,
+    # a second submission of the same text.
+    asked = []
+
+    def has_writer_entry(profile, d):
+        asked.append((profile, d))
+        return d == "ein-jahr"
+
+    win = _Details(types.SimpleNamespace(has_writer_entry=has_writer_entry) if writer else None,
+                   ArticleDetails(identifier=identifier, title="Ein Jahr"))
+    win._fill_article_details_panel()
+    assert win.shown[-1]["submitted"] is submitted
+    assert asked == ([(PROFILE, identifier)] if writer else [])
+    # The writer's list read, or a recorded entry, shows it again.
+    assert "listed.connect" in inspect.getsource(MainWindow._standup)
+
+
+def test_a_submitted_text_whose_link_name_was_kept_shows_it_fixed_at_once(tmp_path):
+    win = _Kept(tmp_path / "cache")
+    ed = _editor_with(text="Just words.")
+    win.open_tabs.append(ed)
+    win._set_article_details(ed, ArticleDetails(title="Ein Jahr", identifier="ein-jahr"))
+    filled = []
+    win.current_editor = lambda: ed
+    win._fill_article_details_panel = lambda: filled.append(True)
+    win._keep_submitted_identifier(ed, "ein-jahr")  # unchanged: nothing else refreshes it
+    assert filled == [True]
 
 
 def test_the_submit_command_keeps_the_identifier_its_sheet_sent(tmp_path, monkeypatch):

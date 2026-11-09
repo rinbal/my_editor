@@ -9215,8 +9215,11 @@ class MainWindow(QMainWindow):
             profile = self._profile_store.default()
             made = (self._link_name_for_file(self.current_path(), profile.user_pubkey)
                     if not details.identifier and profile is not None else "")
+            writer = getattr(self, "_standup_writer", None)
+            submitted = (writer is not None and profile is not None
+                         and writer.has_writer_entry(profile, details.identifier))
             panel.show_article(details, fixed_identifier=fixed, kept_in_file=details.kept,
-                               document=ed, made_identifier=made)
+                               document=ed, made_identifier=made, submitted=submitted)
             panel.set_derived_title(self._derived_title_of(ed))
 
     def _derived_title_of(self, ed) -> str:
@@ -10126,6 +10129,8 @@ class MainWindow(QMainWindow):
                 relay_directory=self._relay_directory, media_store=self._media_store,
                 entitled_relays=self._entitled_relays, parent=self)
             writer.status.connect(lambda text: self.statusBar().showMessage(text, 8000))
+            # A text submitted before keeps its link name (RG-M2r 10).
+            writer.listed.connect(lambda _writer: self._fill_article_details_panel())
         return writer
 
     def _on_nostr_submit_publication(self) -> None:
@@ -10168,6 +10173,8 @@ class MainWindow(QMainWindow):
         details = self._article_details_of(ed)
         if details.identifier != d:
             self._set_article_details(ed, details.with_changes(identifier=d))
+        elif ed is self.current_editor():
+            self._fill_article_details_panel()      # its link name is fixed from now on
 
     def _submission_of(self, ed, profile, local) -> tuple:
         """``(draft, cover, pictures, private, public)``: the article of

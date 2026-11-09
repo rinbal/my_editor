@@ -337,6 +337,9 @@ class StandupWriter(QObject):
     # The account of this pubkey was let go (sign-out, another account, a
     # signer paired anew): a sheet still open for it closes (RG-M2b 9).
     stopped = Signal(str)
+    # The submissions list of this pubkey was read, or a run recorded an
+    # entry on it: what has_writer_entry says may have changed.
+    listed = Signal(str)
 
     def __init__(self, *, session_pool, relay_pool, relay_directory, media_store,
                  entitled_relays=None, server: Optional[str] = None, nam=None,
@@ -396,6 +399,7 @@ class StandupWriter(QObject):
 
             def read(result) -> None:
                 account.list_problem = _list_problem(result)
+                self.listed.emit(account.writer)
                 used()
 
             # A list read whole is not read again for another sheet; one
@@ -407,6 +411,17 @@ class StandupWriter(QObject):
                 account.submissions.load(_live(account, read))
 
         account.destinations.find(_live(account, found), _live(account, on_failure))
+
+    def has_writer_entry(self, profile, d: str) -> bool:
+        """Whether the text ``d`` has a writer entry of this account: the
+        list as read names it, or a run of it is on its way. Its link name
+        is fixed then (RG-M2r 10): the sid comes from it. Asked without
+        reading anything (an account not in use here says no)."""
+        account = self._account
+        if not d or account is None or account.writer != profile.user_pubkey:
+            return False
+        return any(run.draft.d == d for run in account.runs) or any(
+            entry.role == "writer" and entry.d == d for entry in account.submissions.entries())
 
     def running(self, profile, d: str, publication: str = "") -> Optional[SubmissionRun]:
         """The run of the work ``d`` (to ``publication``, or to any) that
@@ -457,6 +472,7 @@ class StandupWriter(QObject):
         def read(result) -> None:
             account.read_again = False
             account.list_problem = _list_problem(result)
+            self.listed.emit(account.writer)
             decide()
 
         # A list read once for this sheet is not read again for another

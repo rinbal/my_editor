@@ -311,6 +311,39 @@ def test_a_lookup_never_asks_one_server_about_anothers_entry():
                     print, print)
 
 
+def test_a_text_has_a_writer_entry_once_listed_or_on_its_way():
+    # RG-M2r 10: Article Details fixes its link name then. Nothing is read
+    # to answer, and another account says no.
+    from nostr.standup.drafting import ArticleDraft, Choice
+    from nostr.ui.standup_submit import RoundAnswer
+    from dataclasses import replace
+    # Another's text this account takes part in is not its own.
+    taking_part = replace(_entry(), sid="ee" * 32, role="contributor", d="ihr-text",
+                          status_key=None)
+    submissions = FakeList([_entry(), taking_part])
+    writer = _writer(submissions, FakeApi())
+    profile, other = SimpleNamespace(user_pubkey=WRITER), SimpleNamespace(user_pubkey="b3" * 32)
+    assert not writer.has_writer_entry(profile, "ein-jahr")     # no account in use yet
+    writer.account(profile)
+    assert writer.has_writer_entry(profile, "ein-jahr")
+    assert not writer.has_writer_entry(profile, "anders") and not writer.has_writer_entry(
+        other, "ein-jahr") and not writer.has_writer_entry(profile, "")
+    assert not writer.has_writer_entry(profile, "ihr-text")
+    assert submissions.reads == 0
+    draft = ArticleDraft(d="neu", title="T", summary="", content="x")
+    writer.submit(profile, draft, Choice(publication=PUBLICATION, name="M", signer="writer",
+                                         rights=True), RoundAnswer(1))
+    assert writer.has_writer_entry(profile, "neu")
+
+
+def test_reading_the_list_says_so_for_article_details():
+    writer = _writer(FakeList([_entry()]), FakeApi())
+    heard = []
+    writer.listed.connect(heard.append)
+    _answer(writer)
+    assert heard == [WRITER]
+
+
 def test_a_sign_out_hears_when_what_was_read_is_written():
     # RG-M2r 8: the window forgets the signer only then.
     writer, profile = _wired_writer()

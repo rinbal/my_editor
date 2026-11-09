@@ -213,3 +213,22 @@ def test_a_hashtag_holding_a_comma_is_shown_and_handed_back_whole():
     QTest.keyClicks(panel.hashtags.entry, "d")
     QTest.keyClick(panel.hashtags.entry, Qt.Key.Key_Return)
     assert sent[-1].hashtags == ("a", "b, c", "d")
+
+
+@pytest.mark.parametrize("submitted, fixed, read_only, why", [
+    (True, False, True, True),
+    (True, True, True, True),                       # submitted says more than saved
+    (False, False, False, False),
+], ids=["submitted", "submitted and saved", "neither"])
+def test_a_submitted_articles_link_name_is_fixed_and_says_why(submitted, fixed, read_only, why):
+    # RG-M2r 10: another link name would be another submission.
+    panel = ArticleDetailsPanel()
+    panel.show_article(DETAILS, fixed_identifier=fixed, submitted=submitted)
+    assert panel.identifier_edit.isReadOnly() is read_only
+    assert bool(panel.identifier_edit.toolTip()) is why
+    assert panel.identifier_edit.accessibleDescription() == panel.identifier_edit.toolTip()
+    if submitted:
+        assert panel.identifier_note.text() == "A submitted article keeps its link name."
+        assert not panel.identifier_note.isHidden()
+    panel.show_article(DETAILS, fixed_identifier=False)
+    assert not panel.identifier_edit.isReadOnly() and panel.identifier_edit.toolTip() == ""

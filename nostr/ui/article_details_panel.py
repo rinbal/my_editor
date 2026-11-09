@@ -379,10 +379,13 @@ class ArticleDetailsPanel(QFrame):
 
     def show_article(self, details: ArticleDetails, *, fixed_identifier: bool,
                      kept_in_file: frozenset = frozenset(), document: object = None,
-                     made_identifier: str = "") -> None:
+                     made_identifier: str = "", submitted: bool = False) -> None:
         """Show ``details``, the article in the tab in front, without
         handing them back. ``fixed_identifier``: the article has its
         address already (a saved draft, a published article).
+        ``submitted``: it went to a publication under its link name (the
+        writer's list names it): another one would be another submission,
+        and the publication publishes it under this one (RG-M2r 10).
         ``kept_in_file``: the details its file writes in a way that stays as
         written (article_details.kept_in_file), shown read-only.
         ``document``: whose article it is, which a cover dropped for it
@@ -406,14 +409,28 @@ class ArticleDetailsPanel(QFrame):
                 self._fill_fields(details)
             else:
                 self._show_people(details)
-            self.identifier_edit.setReadOnly(fixed_identifier or "slug" in self._kept)
-            self.identifier_note.setText(
-                _("A saved or published article keeps its link name; saving it under "
-                  "another one makes another article.") if fixed_identifier else "")
-            self.identifier_note.setVisible(fixed_identifier)
+            self.identifier_edit.setReadOnly(fixed_identifier or submitted
+                                             or "slug" in self._kept)
+            if submitted:
+                note = _("A submitted article keeps its link name.")
+            elif fixed_identifier:
+                note = _("A saved or published article keeps its link name; saving it under "
+                         "another one makes another article.")
+            else:
+                note = ""
+            self.identifier_note.setText(note)
+            self.identifier_note.setVisible(bool(note))
             self._show_first_published(details.published_at)
             self._check_identifier()
             self._suggest_identifier()
+            # Why, in the field's tooltip (lesson 26), and read with it
+            # unless a problem with it is read there.
+            why = _("The publication knows this article by its link name. Another one would "
+                    "be another submission, and once accepted it is published under this "
+                    "one.") if submitted else ""
+            self.identifier_edit.setToolTip(why)
+            if why and self.identifier_problem.isHidden():
+                self.identifier_edit.setAccessibleDescription(why)
         finally:
             self._filling = False
         self._pages.setCurrentWidget(self._form)
