@@ -19,6 +19,8 @@ from nostr.standup.opening import (
     MediaKeys,
     NotConfirmed,
     NotOpened,
+    OpenedRevision,
+    VerifiedRevision,
     open_envelope,
     open_submission_key,
     verify_revision,
@@ -291,3 +293,47 @@ def test_two_revisions_naming_the_same_file_keep_both_keys(submitted):
     assert len(keys.keys(body["submission_id"], right["cipher_sha256"])) == 2
     assert keys.decrypt(body["submission_id"], data, right["cipher_sha256"]) == b"Ton"
 
+
+# -- no way around the verification (RG-M1 12) ------------------------------------
+
+def test_a_verified_revision_comes_only_from_the_verification(submitted):
+    prepared, action = submitted
+    body = prepared.body
+    verified = verify_revision(view_of(body), record_of(body, action))
+    with pytest.raises(TypeError):
+        VerifiedRevision(submission_id=body["submission_id"], revision=1,
+                         revision_hash=body["revision_hash"],
+                         envelope_sha256=body["envelope_sha256"], p_sub=body["p_sub"],
+                         kind="article", title="x", wraps={}, signer=pk("writer"),
+                         correction=False)
+    with pytest.raises(TypeError):
+        OpenedRevision(verified=verified, revision=prepared.revision)
+    with pytest.raises(TypeError):
+        MediaKeys().add(type("Forged", (), {"verified": verified,
+                                            "revision": prepared.revision})())
+
+
+def test_the_openers_are_not_offered_to_other_modules():
+    for name in ("open_revision", "open_wrap_with_signer", "open_wrap_local",
+                 "decrypt_media", "check_submission_key", "decrypt_envelope",
+                 "MediaDecryptor"):
+        assert name not in sc.__all__ and not hasattr(sc, name), name
+
+
+def test_media_keys_are_forgotten_on_sign_out(submitted):
+    prepared, _action = submitted
+    key = bytes(range(32))
+    encryptor = sc.MediaEncryptor(key, chunk_size=formats.MEDIA_CHUNK_MIN)
+    data = encryptor.update(b"Bild") + encryptor.finish()
+    entry = sc.media_entry(key=key, encryptor=encryptor, name="a.png", mime="image/png")
+    sealed = sc.seal_revision(dict(prepared.revision, media=[entry]), prepared.s_sub)
+    body = dict(prepared.body, revision_hash=sealed.revision_hash,
+                envelope=sealed.envelope_b64, envelope_sha256=sealed.envelope_sha256)
+    verified = verify_revision(view_of(body), record_of(
+        body, signed(body, "/api/submissions", sk("writer"))))
+    keys = MediaKeys()
+    keys.add(open_envelope(verified, body["envelope"], prepared.s_sub))
+    assert keys.decrypt(body["submission_id"], data, entry["cipher_sha256"]) == b"Bild"
+    keys.clear()
+    with pytest.raises(NotConfirmed):
+        keys.decrypt(body["submission_id"], data, entry["cipher_sha256"])

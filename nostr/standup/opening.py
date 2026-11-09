@@ -24,17 +24,17 @@ nothing is opened. A signer that cannot open a wrap right now is
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Dict, Iterable, Mapping, Optional, Tuple
 
 from . import formats
 from .crypto import (
     StandupCryptoError,
     WrapInvalid,
-    check_submission_key,
-    decrypt_media,
-    open_revision,
-    open_wrap_with_signer,
+    _check_submission_key,
+    _decrypt_media,
+    _open_revision,
+    _open_wrap_with_signer,
     pubkey_of,
 )
 from .views import (
@@ -61,6 +61,17 @@ class NotOpened(ValueError):
     """The signer could not open the wrap now (refused, failed, no answer)."""
 
 
+# Only this module mints a VerifiedRevision or an OpenedRevision: one
+# built from a server's values elsewhere would open what nothing checked
+# (RG-M1 12).
+_MINTED = object()
+
+
+def _minted_here(token: object, what: str) -> None:
+    if token is not _MINTED:
+        raise TypeError(f"a {what} comes only from nostr/standup/opening.py")
+
+
 @dataclass(frozen=True)
 class VerifiedRevision:
     """A revision's values, taken from its verified signed body.
@@ -78,6 +89,10 @@ class VerifiedRevision:
     wraps: Mapping[str, Mapping[str, str]]
     signer: str
     correction: bool
+    _token: object = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        _minted_here(self._token, "verified revision")
 
 
 def _need(condition: bool, reason: str) -> None:
@@ -139,7 +154,7 @@ def verify_revision(view: SubmissionView, record: RevisionRecord, *,
         submission_id=sid, revision=record.revision, revision_hash=record.revision_hash,
         envelope_sha256=record.envelope_sha256, p_sub=p_sub, kind=kind, title=title,
         wraps={name: dict(wrap) for name, wrap in wraps.items()},
-        signer=signed.event["pubkey"], correction=correction)
+        signer=signed.event["pubkey"], correction=correction, _token=_MINTED)
 
 
 def _writer_binding(body: Mapping, view: SubmissionView, signer: str) -> None:
@@ -173,7 +188,7 @@ def open_submission_key(client, verified: VerifiedRevision, recipient: str,
 
     def opened(plaintext: dict) -> None:
         try:
-            secret = check_submission_key(plaintext, submission_id=verified.submission_id,
+            secret = _check_submission_key(plaintext, submission_id=verified.submission_id,
                                           p_sub=verified.p_sub)
         except WrapInvalid as exc:
             on_failure(NotConfirmed(str(exc)))
@@ -182,7 +197,7 @@ def open_submission_key(client, verified: VerifiedRevision, recipient: str,
 
     # The signer said no or did not answer: asking again may change that.
     # The wrap holds something else: it never will.
-    open_wrap_with_signer(client, wrap, opened, lambda reason: on_failure(NotOpened(reason)),
+    _open_wrap_with_signer(client, wrap, opened, lambda reason: on_failure(NotOpened(reason)),
                           on_invalid=lambda exc: on_failure(NotConfirmed(str(exc))))
 
 
@@ -193,6 +208,10 @@ class OpenedRevision:
 
     verified: VerifiedRevision
     revision: Mapping
+    _token: object = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        _minted_here(self._token, "opened revision")
 
 
 def open_envelope(verified: VerifiedRevision, envelope_b64: Optional[str],
@@ -205,13 +224,13 @@ def open_envelope(verified: VerifiedRevision, envelope_b64: Optional[str],
           "no envelope was signed")
     _need(pubkey_of(s_sub) == verified.p_sub, "the key is not the submission's")
     try:
-        revision = open_revision(envelope_b64, s_sub, submission_id=verified.submission_id,
+        revision = _open_revision(envelope_b64, s_sub, submission_id=verified.submission_id,
                                  revision=verified.revision,
                                  revision_hash=verified.revision_hash,
                                  envelope_sha256=verified.envelope_sha256)
     except (StandupCryptoError, formats.FormatError) as exc:
         raise NotConfirmed(str(exc)) from None
-    return OpenedRevision(verified=verified, revision=revision)
+    return OpenedRevision(verified=verified, revision=revision, _token=_MINTED)
 
 
 class MediaKeys:
@@ -224,7 +243,13 @@ class MediaKeys:
     def __init__(self) -> None:
         self._keys: Dict[Tuple[str, str], Tuple[bytes, ...]] = {}
 
+    def clear(self) -> None:
+        """Sign-out or another account: no key outlives the account."""
+        self._keys = {}
+
     def add(self, opened: OpenedRevision) -> None:
+        if not isinstance(opened, OpenedRevision):
+            raise TypeError("media keys come only from an opened revision")
         sid = opened.verified.submission_id
         for entry in opened.revision.get("media", ()):
             where = (sid, entry["cipher_sha256"])
@@ -244,7 +269,7 @@ class MediaKeys:
         _need(formats.sha256_hex(data) == cipher_sha256, "the media file is not the one named")
         for key in keys:
             try:
-                return decrypt_media(data, key, cipher_sha256=cipher_sha256)
+                return _decrypt_media(data, key, cipher_sha256=cipher_sha256)
             except (StandupCryptoError, formats.FormatError):
                 continue
         raise NotConfirmed("the media file does not open with the key signed for it")

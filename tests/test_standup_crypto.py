@@ -110,7 +110,7 @@ def test_envelope_vector_decrypts_and_hashes():
     data = base64.b64decode(env["envelope"])
     assert formats.sha256_hex(data) == env["envelope_sha256"]
     assert formats.envelope_aad(SID, env["revision"]["revision"]).decode() == env["aad"]
-    plaintext = sc.decrypt_envelope(bytes.fromhex(env["k"]), data, SID, 1)
+    plaintext = sc._decrypt_envelope(bytes.fromhex(env["k"]), data, SID, 1)
     assert plaintext.decode("utf-8") == env["plaintext"]
     assert formats.sha256_hex(plaintext) == env["revision_hash"]
     assert formats.revision_hash(env["revision"]) == env["revision_hash"]
@@ -129,27 +129,27 @@ def test_envelope_with_the_wrong_aad_fails():
     data = base64.b64decode(env["envelope"])
     assert env["must_fail"]["wrong_aad"].endswith(":2")
     with pytest.raises(sc.StandupCryptoError):
-        sc.decrypt_envelope(bytes.fromhex(env["k"]), data, SID, 2)
+        sc._decrypt_envelope(bytes.fromhex(env["k"]), data, SID, 2)
     with pytest.raises(sc.StandupCryptoError):
-        sc.decrypt_envelope(bytes.fromhex(env["k"]), data, "0" * 64, 1)
+        sc._decrypt_envelope(bytes.fromhex(env["k"]), data, "0" * 64, 1)
     flipped = bytearray(data)
     flipped[20] ^= 1
     with pytest.raises(sc.StandupCryptoError):
-        sc.decrypt_envelope(bytes.fromhex(env["k"]), bytes(flipped), SID, 1)
+        sc._decrypt_envelope(bytes.fromhex(env["k"]), bytes(flipped), SID, 1)
 
 
 def test_open_revision_checks_every_name():
     env = V["envelope"]
     s_sub = bytes.fromhex(V["content_key"]["s_sub"])
-    opened = sc.open_revision(env["envelope"], s_sub, submission_id=SID, revision=1,
+    opened = sc._open_revision(env["envelope"], s_sub, submission_id=SID, revision=1,
                               revision_hash=env["revision_hash"],
                               envelope_sha256=env["envelope_sha256"])
     assert opened == env["revision"]
     with pytest.raises(sc.StandupCryptoError):
-        sc.open_revision(env["envelope"], s_sub, submission_id=SID, revision=1,
+        sc._open_revision(env["envelope"], s_sub, submission_id=SID, revision=1,
                          revision_hash="0" * 64)
     with pytest.raises(sc.StandupCryptoError):
-        sc.open_revision(env["envelope"], s_sub, submission_id=SID, revision=1,
+        sc._open_revision(env["envelope"], s_sub, submission_id=SID, revision=1,
                          envelope_sha256="0" * 64)
 
 
@@ -168,7 +168,7 @@ def test_seal_revision_round_trips():
     sealed = sc.seal_revision(rev, s_sub)
     assert sealed.revision_hash == V["envelope"]["revision_hash"]
     assert sealed.envelope_sha256 == formats.sha256_hex(sealed.envelope)
-    assert sc.open_revision(sealed.envelope_b64, s_sub, submission_id=SID, revision=1,
+    assert sc._open_revision(sealed.envelope_b64, s_sub, submission_id=SID, revision=1,
                             revision_hash=sealed.revision_hash) == rev
 
 
@@ -222,7 +222,7 @@ def test_an_envelope_larger_than_four_mib_is_refused():
     with pytest.raises(sc.StandupCryptoError):
         sc.encrypt_envelope(bytes(32), b"x" * formats.MAX_ENVELOPE_BYTES, SID, 1)
     with pytest.raises(sc.StandupCryptoError):
-        sc.decrypt_envelope(bytes(32), b"x" * (formats.MAX_ENVELOPE_BYTES + 1), SID, 1)
+        sc._decrypt_envelope(bytes(32), b"x" * (formats.MAX_ENVELOPE_BYTES + 1), SID, 1)
 
 
 # -- secret keys never reach a publication (5) ---------------------------------------------
@@ -274,7 +274,7 @@ MEDIA_KEY = base64.b64decode(M["key"])
 def test_media_vector_decrypts():
     data = bytes.fromhex(M["file_hex"])
     assert formats.sha256_hex(data) == M["cipher_sha256"]
-    plain = sc.decrypt_media(data, MEDIA_KEY, cipher_sha256=M["cipher_sha256"],
+    plain = sc._decrypt_media(data, MEDIA_KEY, cipher_sha256=M["cipher_sha256"],
                              plain_sha256=M["plain_sha256"])
     assert plain.hex() == M["plaintext_hex"]
 
@@ -288,16 +288,16 @@ def test_media_encrypts_to_the_vector_with_its_nonces():
 
 
 def test_an_empty_media_file_is_one_empty_last_record():
-    assert sc.decrypt_media(bytes.fromhex(M["empty_file_hex"]), MEDIA_KEY) == b""
+    assert sc._decrypt_media(bytes.fromhex(M["empty_file_hex"]), MEDIA_KEY) == b""
     made = sc.encrypt_media(b"", MEDIA_KEY, chunk_size=4096)
     assert len(made) == 8 + 12 + 16 == sc.media_cipher_size(0, 4096)
-    assert sc.decrypt_media(made, MEDIA_KEY) == b""
+    assert sc._decrypt_media(made, MEDIA_KEY) == b""
 
 
 @pytest.mark.parametrize("name", sorted(M["must_fail"]))
 def test_media_vectors_that_must_fail(name):
     with pytest.raises(sc.StandupCryptoError):
-        sc.decrypt_media(bytes.fromhex(M["must_fail"][name]), MEDIA_KEY)
+        sc._decrypt_media(bytes.fromhex(M["must_fail"][name]), MEDIA_KEY)
 
 
 def test_media_cut_at_any_record_boundary_or_extended_fails():
@@ -306,18 +306,18 @@ def test_media_cut_at_any_record_boundary_or_extended_fails():
     record = 12 + 4096 + 16
     for records in range(1, 4):
         with pytest.raises(sc.StandupCryptoError):
-            sc.decrypt_media(file[:8 + records * record], MEDIA_KEY)
+            sc._decrypt_media(file[:8 + records * record], MEDIA_KEY)
     with pytest.raises(sc.StandupCryptoError):
-        sc.decrypt_media(file + file[8:8 + record], MEDIA_KEY)
+        sc._decrypt_media(file + file[8:8 + record], MEDIA_KEY)
     with pytest.raises(sc.StandupCryptoError):
-        sc.decrypt_media(file + b"\x00", MEDIA_KEY)
+        sc._decrypt_media(file + b"\x00", MEDIA_KEY)
     with pytest.raises(sc.StandupCryptoError):
-        sc.decrypt_media(b"SMF2" + file[4:], MEDIA_KEY)
+        sc._decrypt_media(b"SMF2" + file[4:], MEDIA_KEY)
     with pytest.raises(sc.StandupCryptoError):
-        sc.decrypt_media(b"SMF1" + (1024).to_bytes(4, "big") + file[8:], MEDIA_KEY)
+        sc._decrypt_media(b"SMF1" + (1024).to_bytes(4, "big") + file[8:], MEDIA_KEY)
     with pytest.raises(sc.StandupCryptoError):
-        sc.decrypt_media(file, bytes(32))
-    assert sc.decrypt_media(file, MEDIA_KEY) == plain
+        sc._decrypt_media(file, bytes(32))
+    assert sc._decrypt_media(file, MEDIA_KEY) == plain
 
 
 def test_media_streams_in_pieces_of_any_size():
@@ -331,7 +331,7 @@ def test_media_streams_in_pieces_of_any_size():
     assert encryptor.cipher_sha256 == formats.sha256_hex(file)
     assert encryptor.plain_sha256 == formats.sha256_hex(plain)
     assert encryptor.cipher_size == len(file) == sc.media_cipher_size(len(plain), 8192)
-    decryptor = sc.MediaDecryptor(MEDIA_KEY)
+    decryptor = sc._MediaDecryptor(MEDIA_KEY)
     back = io.BytesIO()
     for start in range(0, len(file), 777):
         back.write(decryptor.update(file[start:start + 777]))
@@ -358,31 +358,31 @@ W = V["key_wrap"]
 @pytest.mark.parametrize("name", sorted(W["wraps"]))
 def test_wrap_vectors_open_for_each_recipient(name):
     wrap = W["wraps"][name]
-    plain = sc.open_wrap_local(wrap, bytes.fromhex(W["recipients"][name]))
+    plain = sc._open_wrap_local(wrap, bytes.fromhex(W["recipients"][name]))
     assert formats.canonical_json(plain) == W["plaintext_canonical"]
     assert formats.wrap_sha256(wrap) == W["wraps_sha256"][name]
-    assert sc.check_submission_key(plain, submission_id=SID, p_sub=pk("submission")) == sk(
+    assert sc._check_submission_key(plain, submission_id=SID, p_sub=pk("submission")) == sk(
         "submission")
 
 
 def test_a_wrap_for_another_submission_must_fail():
-    plain = sc.open_wrap_local(W["must_fail"]["wrong_binding"], sk("writer"))
+    plain = sc._open_wrap_local(W["must_fail"]["wrong_binding"], sk("writer"))
     with pytest.raises(sc.WrapInvalid):
-        sc.check_submission_key(plain, submission_id=SID, p_sub=pk("submission"))
+        sc._check_submission_key(plain, submission_id=SID, p_sub=pk("submission"))
 
 
 def test_a_wrap_whose_key_is_not_the_submissions_must_fail():
-    plain = sc.open_wrap_local(W["wraps"]["writer"], sk("writer"))
+    plain = sc._open_wrap_local(W["wraps"]["writer"], sk("writer"))
     with pytest.raises(sc.WrapInvalid):
-        sc.check_submission_key(plain, submission_id=SID, p_sub=pk("writer"))
+        sc._check_submission_key(plain, submission_id=SID, p_sub=pk("writer"))
     with pytest.raises(sc.WrapInvalid):
-        sc.open_wrap_local(W["wraps"]["writer"], sk("contributor"))
+        sc._open_wrap_local(W["wraps"]["writer"], sk("contributor"))
 
 
 def test_redaktion_key_and_history_chain_vectors():
     key_event = json.loads(V["key_event"]["valid"]["content"])
     older = json.loads(V["key_event"]["older_epoch"]["content"])
-    plain = sc.open_wrap_local(W["epoch_wrap"], sk("editor"))
+    plain = sc._open_wrap_local(W["epoch_wrap"], sk("editor"))
     # The owner's app writes the same plaintext when it wraps an epoch key.
     assert plain == sc.redaktion_key_plaintext(ADDRESS, 3, sk("epoch3"))
     assert sc.check_redaktion_key(plain, publication=ADDRESS, epoch=3,
@@ -396,8 +396,8 @@ def test_redaktion_key_and_history_chain_vectors():
     # Contract 4: a history chain is addressed to the member, never to an
     # epoch key (anyone holding that epoch could open older secrets).
     with pytest.raises(sc.StandupCryptoError):
-        sc.open_wrap_local(W["history_wrap"], sk("epoch3"))
-    chain = sc.open_wrap_local(W["history_wrap"], sk("editor"))
+        sc._open_wrap_local(W["history_wrap"], sk("epoch3"))
+    chain = sc._open_wrap_local(W["history_wrap"], sk("editor"))
     assert sc.check_history_chain(chain, publication=ADDRESS, member=pk("editor"), epoch=3,
                                   epoch_pubkeys={2: older["pubkey"]}) == {2: sk("epoch2")}
     with pytest.raises(sc.WrapInvalid, match="another member"):
@@ -413,7 +413,7 @@ def test_redaktion_key_and_history_chain_vectors():
                                    member=pk("editor"), epoch=3,
                                    epoch_pubkeys={2: older["pubkey"], 3: key_event["pubkey"]})
     with pytest.raises(sc.WrapInvalid):
-        sc.check_submission_key(plain, submission_id=SID, p_sub=pk("epoch3"))
+        sc._check_submission_key(plain, submission_id=SID, p_sub=pk("epoch3"))
 
 
 def test_wraps_made_here_open_for_each_recipient():
@@ -424,7 +424,7 @@ def test_wraps_made_here_open_for_each_recipient():
     assert len({w["eph"] for w in wraps.values()}) == 3        # a fresh key per wrap
     for name, secret in (("redaktion", "epoch3"), ("writer", "writer"),
                          (pk("contributor"), "contributor")):
-        plain = sc.open_wrap_local(wraps[name], sk(secret))
+        plain = sc._open_wrap_local(wraps[name], sk(secret))
         assert plain == {"v": 1, "type": "submission-key", "submission_id": SID,
                          "sk": KEYS["submission"]["sk"]}
     assert sc.wraps_sha256(wraps)["writer"] == formats.wrap_sha256(wraps["writer"])
@@ -434,9 +434,9 @@ def test_a_wrap_opens_through_the_signer_too():
     from tests.standup_fakes import KeySigner
     signer = KeySigner(sk("writer"))
     got = []
-    sc.open_wrap_with_signer(signer, W["wraps"]["writer"], got.append, got.append)
+    sc._open_wrap_with_signer(signer, W["wraps"]["writer"], got.append, got.append)
     assert got[0]["type"] == "submission-key"
-    sc.open_wrap_with_signer(signer, {"eph": "x", "ct": "y"}, got.append, got.append)
+    sc._open_wrap_with_signer(signer, {"eph": "x", "ct": "y"}, got.append, got.append)
     assert got[1] == "not a key wrap"
 
 
@@ -444,10 +444,10 @@ def test_a_wrap_that_holds_something_else_is_told_apart_from_a_signer_saying_no(
     from tests.standup_fakes import KeySigner
     invalid, failed = [], []
     other = sc.make_wrap({"v": 2, "type": "submission-key"}, pk("writer"))
-    sc.open_wrap_with_signer(KeySigner(sk("writer")), other, failed.append, failed.append,
+    sc._open_wrap_with_signer(KeySigner(sk("writer")), other, failed.append, failed.append,
                              on_invalid=invalid.append)
     assert isinstance(invalid[0], sc.WrapInvalid) and failed == []
-    sc.open_wrap_with_signer(KeySigner(sk("writer"), refuse="declined"), W["wraps"]["writer"],
+    sc._open_wrap_with_signer(KeySigner(sk("writer"), refuse="declined"), W["wraps"]["writer"],
                              failed.append, failed.append, on_invalid=invalid.append)
     assert failed == ["declined"] and len(invalid) == 1
 
@@ -456,7 +456,7 @@ def test_a_wrap_that_holds_something_else_is_told_apart_from_a_signer_saying_no(
                                   {"eph": pk("writer"), "ct": "x", "extra": 1}])
 def test_a_wrap_of_the_wrong_shape_is_not_opened(wrap):
     with pytest.raises(sc.WrapInvalid):
-        sc.open_wrap_local(wrap, sk("writer"))
+        sc._open_wrap_local(wrap, sk("writer"))
 
 
 def test_status_and_submission_keys_are_fresh():

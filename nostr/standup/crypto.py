@@ -9,11 +9,16 @@
 - Images and audio are SMF1 files: fixed-size chunks under a random
   per-file key, each chunk's number and "last" flag bound in, so a file
   that was cut short, extended or reordered does not decrypt (7). The
-  :class:`MediaEncryptor` and :class:`MediaDecryptor` take the data in
+  :class:`MediaEncryptor` and :class:`_MediaDecryptor` take the data in
   pieces, so a 90 MB episode is never held twice.
 - A key wrap carries a secret to one recipient without a signer call
   (fresh ephemeral key, NIP-44), and its plaintext names its purpose and
   what it belongs to, which the recipient checks (4).
+
+What opens anything (an envelope, a wrap, a media file, a submission key
+in a wrap) is private to this module and nostr/standup/opening.py, which
+calls it only for a revision it verified (12.4): nothing else may open on
+the strength of what a server serves (RG-M1 12).
 
 AES-GCM is the ``cryptography`` package's, as in nostr/media/filecrypto.py.
 Pure: no Qt, no network. Errors are :class:`StandupCryptoError` (a
@@ -109,7 +114,7 @@ def encrypt_envelope(key: bytes, plaintext: bytes, submission_id: str, revision:
     return sealed
 
 
-def decrypt_envelope(key: bytes, envelope: bytes, submission_id: str, revision: int) -> bytes:
+def _decrypt_envelope(key: bytes, envelope: bytes, submission_id: str, revision: int) -> bytes:
     if not isinstance(envelope, (bytes, bytearray)):
         raise StandupCryptoError("an envelope is bytes")
     if len(envelope) > formats.MAX_ENVELOPE_BYTES:
@@ -147,7 +152,7 @@ def seal_revision(revision: dict, s_sub: bytes, *, nonce: Optional[bytes] = None
                           envelope_sha256=formats.sha256_hex(envelope))
 
 
-def open_revision(envelope_b64: str, s_sub: bytes, *, submission_id: str, revision: int,
+def _open_revision(envelope_b64: str, s_sub: bytes, *, submission_id: str, revision: int,
                   revision_hash: Optional[str] = None,
                   envelope_sha256: Optional[str] = None) -> dict:
     """The revision in an envelope, with every check: the envelope's hash
@@ -156,7 +161,7 @@ def open_revision(envelope_b64: str, s_sub: bytes, *, submission_id: str, revisi
     envelope = formats.b64decode(envelope_b64, limit=formats.MAX_ENVELOPE_BYTES)
     if envelope_sha256 is not None and formats.sha256_hex(envelope) != envelope_sha256:
         raise StandupCryptoError("the envelope is not the one named")
-    plaintext = decrypt_envelope(content_key(s_sub), envelope, submission_id, revision)
+    plaintext = _decrypt_envelope(content_key(s_sub), envelope, submission_id, revision)
     if revision_hash is not None and formats.sha256_hex(plaintext) != revision_hash:
         raise StandupCryptoError("the revision is not the one named")
     try:
@@ -259,7 +264,7 @@ class MediaEncryptor:
         return self._cipher.hexdigest()
 
 
-class MediaDecryptor:
+class _MediaDecryptor:
     """An SMF1 file read piece by piece: ``update`` takes file bytes and
     returns the plaintext of every record known not to be the last,
     ``finish`` the last one. Refuses a wrong header, a damaged, reordered
@@ -344,13 +349,13 @@ def encrypt_media(plaintext: bytes, key: bytes, *, chunk_size: int = formats.MED
     return encryptor.update(plaintext) + encryptor.finish()
 
 
-def decrypt_media(data: bytes, key: bytes, *, cipher_sha256: Optional[str] = None,
+def _decrypt_media(data: bytes, key: bytes, *, cipher_sha256: Optional[str] = None,
                   plain_sha256: Optional[str] = None) -> bytes:
     """The plaintext of a whole SMF1 file, with the hashes the revision
     names when given."""
     if cipher_sha256 is not None and formats.sha256_hex(data) != cipher_sha256:
         raise StandupCryptoError("the media file is not the one named")
-    decryptor = MediaDecryptor(key)
+    decryptor = _MediaDecryptor(key)
     plaintext = decryptor.update(data) + decryptor.finish()
     if plain_sha256 is not None and decryptor.plain_sha256 != plain_sha256:
         raise StandupCryptoError("the media file decrypted to something else")
@@ -415,7 +420,7 @@ def read_wrap_plaintext(text: str) -> dict:
     return value
 
 
-def open_wrap_local(wrap: Any, recipient_sk: bytes) -> dict:
+def _open_wrap_local(wrap: Any, recipient_sk: bytes) -> dict:
     """A wrap's plaintext, opened with a secret held here (no signer)."""
     if not formats.is_wrap(wrap):
         raise WrapInvalid("not a key wrap")
@@ -427,7 +432,7 @@ def open_wrap_local(wrap: Any, recipient_sk: bytes) -> dict:
     return read_wrap_plaintext(text)
 
 
-def open_wrap_with_signer(client, wrap: Any, on_success: Callable[[dict], None],
+def _open_wrap_with_signer(client, wrap: Any, on_success: Callable[[dict], None],
                           on_failure: Callable[[str], None], *,
                           on_invalid: Optional[Callable[[WrapInvalid], None]] = None) -> None:
     """A wrap's plaintext, opened by the account's signer
@@ -450,7 +455,7 @@ def open_wrap_with_signer(client, wrap: Any, on_success: Callable[[dict], None],
     client.nip44_decrypt(wrap["eph"], wrap["ct"], on_success=opened, on_failure=on_failure)
 
 
-def check_submission_key(plaintext: dict, *, submission_id: str, p_sub: str) -> bytes:
+def _check_submission_key(plaintext: dict, *, submission_id: str, p_sub: str) -> bytes:
     """The submission key in a wrap's plaintext, when it is for this
     submission and matches its ``p_sub`` (4)."""
     if plaintext.get("type") != "submission-key":
@@ -524,11 +529,9 @@ def wraps_sha256(wraps: Dict[str, dict]) -> Dict[str, str]:
 
 
 __all__: List[str] = [
-    "MediaDecryptor", "MediaEncryptor", "SealedRevision", "StandupCryptoError", "WrapInvalid",
-    "check_history_chain", "check_redaktion_key", "check_submission_key", "content_key",
-    "decrypt_envelope", "decrypt_media", "encrypt_envelope", "encrypt_media", "make_wrap",
-    "media_cipher_size", "media_entry", "new_secret_key", "new_status_key", "open_revision",
-    "open_wrap_local", "open_wrap_with_signer", "pubkey_of", "redaktion_key_plaintext",
-    "seal_revision", "secret_from_hex", "submission_key_plaintext", "wrap_submission_key",
-    "wraps_sha256",
+    "MediaEncryptor", "SealedRevision", "StandupCryptoError", "WrapInvalid",
+    "check_history_chain", "check_redaktion_key", "content_key", "encrypt_envelope",
+    "encrypt_media", "make_wrap", "media_cipher_size", "media_entry", "new_secret_key",
+    "new_status_key", "pubkey_of", "redaktion_key_plaintext", "seal_revision",
+    "secret_from_hex", "submission_key_plaintext", "wrap_submission_key", "wraps_sha256",
 ]
