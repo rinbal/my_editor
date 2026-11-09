@@ -29,7 +29,7 @@ from tests.standup_fakes import (
     submission_for,
     transition,
 )
-from tests.standup_vectors import NOW, VECTORS, sk
+from tests.standup_vectors import NOW, VECTORS, pk, sk
 
 
 @pytest.mark.parametrize("row", VECTORS["transitions"],
@@ -178,6 +178,73 @@ def test_a_submission_signed_by_someone_else_than_the_writer_is_refused():
     status, data, _ = _submit(nam, prepared.body, secret=sk("contributor"))
     assert (status, data["error"]["code"]) == (422, "invalid")
     assert server.submissions == {}
+
+
+OFF_CURVE = "ff" * 32                     # 64 hex digits, no point on secp256k1
+
+
+def _with_contributor(**changes):
+    prepared = submission_for(sk("writer"), participants=(pk("contributor"),))
+    return dict(prepared.body, **changes)
+
+
+def _wraps(body, **changes):
+    wraps = dict(body["wraps"])
+    for name, value in changes.items():
+        if value is None:
+            wraps.pop(name, None)
+        else:
+            wraps[name] = value
+    return wraps
+
+
+@pytest.mark.parametrize("change, problem", [
+    (lambda b: dict(b, p_sub=OFF_CURVE), "p_sub"),
+    (lambda b: dict(b, participants=[pk("writer")]), "participants"),
+    (lambda b: dict(b, participants=[pk("contributor"), pk("contributor")]), "participants"),
+    (lambda b: dict(b, participants=[OFF_CURVE]), "participants"),
+])
+def test_keys_and_participants_are_checked_as_the_server_does(change, problem):
+    # RG-M1 13: on the curve, not merely 64 hex digits; no participant
+    # twice, none who is the writer.
+    _clock, server, nam = _setup()
+    status, data, _ = _submit(nam, change(_with_contributor()))
+    assert (status, data["error"]["code"]) == (422, "invalid")
+    assert data["error"]["detail"]["problem"] == problem and server.submissions == {}
+
+
+@pytest.mark.parametrize("wraps", [
+    lambda b: _wraps(b, **{pk("contributor"): None}),                     # a wrap missing
+    lambda b: _wraps(b, **{pk("editor"): b["wraps"]["writer"]}),          # one for nobody
+    lambda b: _wraps(b, writer=dict(b["wraps"]["writer"], eph=OFF_CURVE)),
+    lambda b: _wraps(b, writer=dict(b["wraps"]["writer"], ct=b["wraps"]["writer"]["ct"] + "A")),
+])
+def test_a_wrap_per_recipient_name_exactly_each_of_the_right_shape(wraps):
+    _clock, server, nam = _setup()
+    body = _with_contributor()
+    status, data, _ = _submit(nam, dict(body, wraps=wraps(body)))
+    assert (status, data["error"]["code"]) == (422, "wrap_invalid")
+
+
+def test_without_anyone_who_could_decide_a_submission_is_refused():
+    # 12.4 (5c11475): the only owner is named as a contributor.
+    _clock, server, nam = _setup()
+    owner = next(iter(server.publication().members))
+    server.publication().members = {owner: "owner"}
+    prepared = submission_for(sk("writer"), participants=(owner,))
+    status, data, _ = _submit(nam, prepared.body)
+    assert (status, data["error"]["code"]) == (409, "no_decider")
+
+
+def test_a_revision_keeps_its_round_and_participants():
+    _clock, server, nam = _setup()
+    first = submission_for(sk("writer"))
+    assert _submit(nam, first.body)[0] == 201
+    second = submission_for(sk("writer"), revision=2, s_sub=first.s_sub,
+                            status_key=first.status_key, participants=(pk("contributor"),),
+                            content="# Zwei")
+    status, data, _ = _submit(nam, second.body)
+    assert (status, data["error"]["detail"]["problem"]) == (422, "round")
 
 
 def test_a_dropped_connection_before_sending_leaves_nothing_behind():

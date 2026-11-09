@@ -23,6 +23,7 @@ from dataclasses import field as dc_field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, urlsplit
 
+from coincurve import PublicKeyXOnly
 from PySide6.QtCore import QCoreApplication
 from PySide6.QtNetwork import QNetworkReply
 
@@ -118,6 +119,10 @@ SESSION_SECONDS = 12 * 3600
 
 OPEN = ("submitted", "in_review", "changes_requested")
 REDAKTION = ("owner", "redaktion")
+
+# Contract 15 (feat/redaktion 5c11475).
+MAX_REVISIONS = 30
+SUBMISSION_WRAP_CT_CHARS = 348
 
 DROP_BEFORE = "drop before"     # the connection fails before the request arrives
 DROP_AFTER = "drop after"       # the request is handled, the answer is lost
@@ -298,6 +303,26 @@ class Caller:
     @property
     def signed(self) -> Optional[dict]:
         return {"event": self.event, "body": self.body} if self.event else None
+
+def _hexes(data: dict, *names: str) -> bool:
+    return all(isinstance(data.get(n), str) and re.fullmatch(r"[0-9a-f]{64}", data[n])
+               for n in names)
+
+
+def _whole(value: Any, low: int) -> bool:
+    return type(value) is int and value >= low
+
+
+def _on_curve(value: Any) -> bool:
+    """An x-only public key on secp256k1, checked with coincurve."""
+    if not (isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)):
+        return False
+    try:
+        PublicKeyXOnly(bytes.fromhex(value))
+    except ValueError:
+        return False
+    return True
+
 
 class FakeStandupServer:
     """See the comment above. Use as ``StandupNam(responder=server)``."""
@@ -701,32 +726,55 @@ class FakeStandupServer:
         return receipt
 
     def _check_body(self, body: dict, writer: str) -> Optional[FakeReply]:
-        """The server's own checks (12.4), written apart from the
-        client's, so a mistake in one is not repeated by the other."""
+        """The server's own checks (12.4, 15), written apart from the
+        client's, so a mistake in one is not repeated by the other. Keys
+        are checked on the curve with coincurve itself, not with the
+        client's helpers."""
         if body.get("v") != 1:
             return _error(400, "bad_request")
-        hex64 = re.compile(r"[0-9a-f]{64}")
-
-        def hexes(*names):
-            return all(isinstance(body.get(n), str) and hex64.fullmatch(body[n]) for n in names)
-
-        wraps = body.get("wraps")
-        if not isinstance(wraps, dict) or not {"redaktion", "writer"} <= set(wraps) or not all(
-                isinstance(w, dict) and set(w) == {"eph", "ct"} and isinstance(w["ct"], str)
-                and isinstance(w["eph"], str) and hex64.fullmatch(w["eph"])
-                for w in wraps.values()):
-            return _error(422, "wrap_invalid")
         title = body.get("title")
         participants = body.get("participants")
-        blobs = body.get("blobs")
-        if not (hexes("submission_id", "revision_hash", "coordinate_hash", "p_sub",
-                      "key_event_id", "status_key_hash", "envelope_sha256")
+        if not (_hexes(body, "submission_id", "revision_hash", "coordinate_hash", "p_sub",
+                       "key_event_id", "status_key_hash", "envelope_sha256")
                 and isinstance(title, str) and 0 < len(title) <= 300
                 and isinstance(participants, list) and len(participants) <= 20
-                and isinstance(blobs, list)
-                and all(isinstance(b, dict) and isinstance(b.get("sha256"), str) for b in blobs)
                 and body.get("kind") in ("article", "audio")
-                and type(body.get("revision")) is int and type(body.get("round")) is int):
+                and _whole(body.get("revision"), 1) and _whole(body.get("round"), 1)
+                and _whole(body.get("epoch"), 1)):
+            return _error(422, "invalid")
+        if not _on_curve(body["p_sub"]):
+            return _error(422, "invalid", detail={"problem": "p_sub"})
+        if len(set(participants)) != len(participants) or writer in participants or not all(
+                _on_curve(p) for p in participants):
+            return _error(422, "invalid", detail={"problem": "participants"})
+        refusal = self._check_revision_parts(body, {"redaktion", "writer", *participants})
+        if refusal is not None:
+            return refusal
+        if formats.submission_id(writer, body["publication"], body["coordinate_hash"],
+                                 body["round"]) != body["submission_id"]:
+            return _error(422, "invalid", detail={"problem": "submission_id"})
+        return None
+
+    def _check_revision_parts(self, body: dict, names: set) -> Optional[FakeReply]:
+        """What a revision body and a correction body share: the wraps
+        (exactly one per recipient name, each on the curve, a submission
+        key's ``ct`` exactly 348 characters), the files (at most 64, each
+        on at most 10 https servers) and the envelope (12.4, 15)."""
+        wraps = body.get("wraps")
+        if not isinstance(wraps, dict) or set(wraps) != names or not all(
+                isinstance(w, dict) and set(w) == {"eph", "ct"} and isinstance(w["ct"], str)
+                and len(w["ct"]) == SUBMISSION_WRAP_CT_CHARS and _on_curve(w.get("eph"))
+                for w in wraps.values()):
+            return _error(422, "wrap_invalid")
+        blobs = body.get("blobs")
+        if not (isinstance(blobs, list) and len(blobs) <= 64 and all(
+                isinstance(b, dict) and _hexes(b, "sha256") and isinstance(b.get("servers"), list)
+                and len(b["servers"]) <= 10
+                and all(isinstance(u, str) and u.startswith("https://") for u in b["servers"])
+                for b in blobs)):
+            return _error(422, "invalid", detail={"problem": "blobs"})
+        if not _hexes(body, "revision_hash", "envelope_sha256") or not _whole(
+                body.get("revision"), 1):
             return _error(422, "invalid")
         try:
             envelope = base64.b64decode(body.get("envelope") or "", validate=True)
@@ -736,10 +784,14 @@ class FakeStandupServer:
             return _error(413, "too_large")
         if hashlib.sha256(envelope).hexdigest() != body["envelope_sha256"]:
             return _error(422, "invalid", detail={"problem": "envelope_sha256"})
-        if formats.submission_id(writer, body["publication"], body["coordinate_hash"],
-                                 body["round"]) != body["submission_id"]:
-            return _error(422, "invalid", detail={"problem": "submission_id"})
         return None
+
+    def _no_decider(self, pub: "Publication", writer: str, participants: List[str]) -> bool:
+        """12.4 (5c11475): nobody in the Redaktion outside the writer and
+        the contributors could decide."""
+        named = {writer, *participants}
+        return not any(role in ("owner", "redaktion") and member not in named
+                       for member, role in pub.members.items())
 
     def _submit(self, who, body, params, query) -> FakeReply:
         writer = who.pubkey
@@ -755,6 +807,8 @@ class FakeStandupServer:
             return _error(403, "paused", "Diese Publikation nimmt gerade nichts an.")
         if writer in pub.blocked:
             return _error(403, "blocked")
+        if self._no_decider(pub, writer, body["participants"]):
+            return _error(409, "no_decider")
         now = int(self.clock())
         record = self._record(body["submission_id"])
         if record is not None:
@@ -766,6 +820,10 @@ class FakeStandupServer:
             if body["revision"] != record.revision + 1 or \
                     body["revision_hash"] == record.current["revision_hash"]:
                 return _error(409, "stale_revision")
+            if body["revision"] > MAX_REVISIONS:
+                return _error(422, "invalid", detail={"problem": "revisions"})
+            if body["round"] != record.round or body["participants"] != record.participants:
+                return _error(422, "invalid", detail={"problem": "round"})
             new_state = transition(record.state, "revise", "writer")
             if new_state is None:
                 return _error(409, "invalid_transition")
@@ -1020,8 +1078,14 @@ class FakeStandupServer:
             return refusal
         if role not in REDAKTION:
             return _error(403, "role")
+        refusal = self._check_revision_parts(
+            body, {"redaktion", "writer", *record.participants})
+        if refusal is not None:
+            return refusal
         if body.get("revision") != record.revision + 1:
             return _error(409, "stale_revision")
+        if body["revision"] > MAX_REVISIONS:
+            return _error(422, "invalid", detail={"problem": "revisions"})
         record.revisions[body["revision"]] = {k: body.get(k) for k in (
             "revision", "revision_hash", "envelope", "envelope_sha256", "wraps", "blobs")}
         record.revisions[body["revision"]].update(
