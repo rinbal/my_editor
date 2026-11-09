@@ -120,6 +120,9 @@ class Progress:
     failure: Optional[Failure] = None
     receipt: Optional[views.Receipt] = field(default=None, repr=False)
     message: MessageStatus = MessageStatus.NONE
+    # A request was written to the network once: from then on nothing is
+    # cancelled, whatever the step (the server may hold it).
+    sent: bool = False
 
     @property
     def phase(self) -> Phase:
@@ -127,7 +130,7 @@ class Progress:
 
     @property
     def cancellable(self) -> bool:
-        return self.step in _CANCELLABLE
+        return self.step in _CANCELLABLE and not self.sent
 
 
 UploadDone = Callable[[Mapping[str, Tuple[str, ...]]], None]
@@ -229,6 +232,9 @@ class Submitting:
         self._busy = False
         self._stop: Optional[Callable[[], None]] = None
         self._stopped = False
+        # The server said it stored the revision (a receipt with files
+        # missing): no failure after that says "nothing is submitted".
+        self._stored = False
 
     # -- what the screen asks ------------------------------------------------
 
@@ -339,8 +345,10 @@ class Submitting:
             stop()
 
     def _fail(self, headline: str, retry: Optional[Step], *, said: str = "",
-              detail: str = words.NOTHING_SUBMITTED) -> None:
+              detail: str = "") -> None:
         self._stop = None
+        detail = detail or (words.STORED_PICTURE_MISSING if self._stored
+                            else words.NOTHING_SUBMITTED)
         self._show(Step.FAILED, failure=Failure(headline, retry, detail=detail, said=said))
 
     # -- 1. the key ----------------------------------------------------------
@@ -442,7 +450,7 @@ class Submitting:
                                         answer, answer)
 
     def _sending(self, _event: _Sending) -> None:
-        self._show(Step.SENDING)
+        self._show(Step.SENDING, sent=True)
 
     def _refused(self, error: StandupError) -> None:
         self._stop = None
@@ -461,6 +469,7 @@ class Submitting:
             self._send_message()
 
     def _blobs_missing(self, missing: views.BlobsMissing) -> None:
+        self._stored = True
         if self._reuploads >= MAX_REUPLOADS:
             self._fail(words.PICTURE_MISSING, Step.REUPLOADING)
             return

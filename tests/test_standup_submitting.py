@@ -400,6 +400,28 @@ def test_a_file_that_stays_missing_fails_with_a_retry():
     assert world.submitting.progress.step is Step.SUBMITTED
 
 
+def test_once_the_server_stored_it_nothing_is_cancelled_or_called_not_submitted():
+    # RG-M2b 3: after a receipt with a file missing the run goes back to
+    # the signer for the same body; it is not cancellable, and a failure
+    # after it says what the server has.
+    world = World(signer=HeldSigner(sk("writer")))
+    world.uploads.lose = 1
+    world.submitting.start()
+    world.settle()
+    world.signer.release()
+    world.settle()
+    progress = world.submitting.progress
+    assert progress.step is Step.SIGNING and len(world.posted()) == 1
+    assert not progress.cancellable
+    world.submitting.cancel()
+    assert world.submitting.progress.step is Step.SIGNING
+    world.signer.held[0][2]("declined")             # the person says no on the phone
+    world.settle()
+    failure = world.submitting.progress.failure
+    assert failure is not None and failure.detail == words.STORED_PICTURE_MISSING
+    assert world.list.forgotten == []               # its entry stays: the server has it
+
+
 def test_an_answer_to_an_earlier_request_is_ignored():
     world = World()
     world.uploads.fail = "The server is full."

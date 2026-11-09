@@ -44,6 +44,7 @@ MESSAGE_NOT_SENT = N_("Your message wasn’t sent.")
 # -- what did not happen ------------------------------------------------------
 
 NOTHING_SUBMITTED = N_("Nothing is submitted, your text stays in the editor.")
+STORED_PICTURE_MISSING = N_("The server has your submission; a picture is still missing.")
 NOT_SENT = N_("Not sent. No connection to the server.")
 SIGNER_DECLINED = N_("Not sent. Your signer app declined the request.")
 SIGNER_SILENT = N_("Not sent. Your signer app didn’t answer.")
@@ -86,7 +87,7 @@ __all__ = [
     "ANOTHER_VERSION", "ENCRYPTING", "IN_THE_BACKGROUND", "LIST_CHANGED_ELSEWHERE",
     "LIST_NOT_SAVED", "MESSAGE_NOT_SENT", "MESSAGE_SENDING", "MESSAGE_SENT", "NOTHING_SUBMITTED",
     "NOT_CONFIRMED", "NOT_SENT", "NOT_TAKEN", "PICTURE_MISSING", "SENDING", "SIGNER_DECLINED",
-    "SIGNER_SILENT", "SUBMITTED", "SUBMITTED_DETAIL", "TOO_LARGE", "UNCONFIRMED",
+    "SIGNER_SILENT", "STORED_PICTURE_MISSING", "SUBMITTED", "SUBMITTED_DETAIL", "TOO_LARGE", "UNCONFIRMED",
     "UNCONFIRMED_DETAIL", "UPLOADING_DETAIL", "UPLOADING_PICTURE", "UPLOADING_PICTURES",
     "UPLOAD_FAILED", "WAITING_DETAIL", "WAITING_FOR_SIGNER", "refusal",
 ]
