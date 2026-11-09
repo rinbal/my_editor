@@ -38,7 +38,7 @@ from __future__ import annotations
 from typing import Callable, List, Optional, Sequence
 
 import shiboken6
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPixmap, QStandardItemModel
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel,
@@ -150,7 +150,10 @@ def recent_first(destinations: Sequence[Destination], used: Sequence[str]) -> Li
 
 
 class SubmitSheet(QDialog):
-    """See the module docstring."""
+    """See the module docstring. ``submitted(d)`` when the work goes to a
+    publication under ``d``: the tab keeps it as its identifier."""
+
+    submitted = Signal(str)
 
     def __init__(self, *, writer: StandupWriter, draft: ArticleDraft, cover: QPixmap,
                  byline: str, private_names: Sequence[str], profile: Profile,
@@ -608,6 +611,7 @@ class SubmitSheet(QDialog):
         if choice is None or self.round() is None or self.blockers():
             return
         run = self._writer.submit(self.account.profile(), self._draft, choice, self._round)
+        self.submitted.emit(run.draft.d)
         self._show_run(run)
         run.start()
 

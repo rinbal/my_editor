@@ -116,7 +116,7 @@ class Writer:
 
     def submit(self, profile, draft, choice, answer):
         self.submitted.append((profile, draft, choice, answer.round))
-        self.on_its_way = self.on_its_way or Run(choice)
+        self.on_its_way = self.on_its_way or Run(choice, draft)
         return self.on_its_way
 
     def in_background(self, run) -> None:
@@ -124,8 +124,8 @@ class Writer:
 
 
 class Run:
-    def __init__(self, choice=None) -> None:
-        self.choice = choice
+    def __init__(self, choice=None, draft=None) -> None:
+        self.choice, self.draft = choice, draft
         from PySide6.QtCore import QObject, Signal
 
         class Changes(QObject):
@@ -251,7 +251,10 @@ def test_einreichen_hands_over_and_a_closed_sheet_lets_it_go_on(tmp_path):
     sheet = _sheet(tmp_path, writer)
     sheet.message_toggle.setChecked(True)
     sheet.message.setPlainText("Passt zu eurer Reihe.")
+    kept = []
+    sheet.submitted.connect(kept.append)             # RG-M2b 8: the tab keeps its d
     sheet.submit_button.click()
+    assert kept == ["ein-jahr"]
     (_profile, draft, choice, round_), = writer.submitted
     assert draft is DRAFT and round_ == 1
     assert (choice.publication, choice.signer, choice.message) == (

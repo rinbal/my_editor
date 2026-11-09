@@ -9,7 +9,8 @@ upload first); one on the media servers already stays its address; a
 cover on this computer becomes a picture of the submission and its
 small cover; the article's identifier, details and co-authors are
 those Article Details has; a picture of the private library is named,
-as the editorial team could not open it."""
+as the editorial team could not open it. Once submitted, the tab keeps
+the work's identifier, so a new title makes no other work."""
 
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ import types
 
 from PySide6.QtGui import QPixmap
 
+import tab_details
 from main_window import MainWindow
 from nostr.article_details import ArticleDetails
 from nostr.media.media_visibility import PRIVATE, PUBLIC
@@ -85,3 +87,78 @@ def test_a_picture_of_the_private_library_is_named(tmp_path):
     ed = _editor_with(hosted)
     *_rest, private = win._submission_of(ed, PROFILE, win._uploads_needed(ed))
     assert private == ["Café"]                     # as the picture is called, never its key
+
+
+class _Kept(_Submitting):
+    """The tab's own details, as the window keeps them (tab_details)."""
+
+    _article_details_of = MainWindow._article_details_of
+    _set_article_details = MainWindow._set_article_details
+    _keep_submitted_identifier = MainWindow._keep_submitted_identifier
+
+    def __init__(self, cache_dir) -> None:
+        super().__init__(cache_dir, ArticleDetails())
+        self.open_tabs = []
+
+    def _published_article_of(self, _ed):
+        return None
+
+    def _editor_widget_index(self, ed) -> int:
+        return 0 if ed in self.open_tabs else -1
+
+    def _on_article_changed(self, _ed) -> None:
+        pass
+
+
+def test_a_submitted_work_keeps_its_identifier_when_its_title_changes(tmp_path):
+    # RG-M2b 8: the identifier was the title's slug, made again each time.
+    win = _Kept(tmp_path / "cache")
+    ed = _editor_with(text="Just words.")
+    win.open_tabs.append(ed)
+    win._set_article_details(ed, ArticleDetails(title="Ein Jahr"))
+    draft, *_rest = win._submission_of(ed, PROFILE, win._uploads_needed(ed))
+    assert draft.d == "ein-jahr"
+    win._keep_submitted_identifier(ed, draft.d)
+    win._set_article_details(ed, win._article_details_of(ed).with_changes(title="Zwei Jahre"))
+    again, *_rest = win._submission_of(ed, PROFILE, win._uploads_needed(ed))
+    assert (again.d, again.title) == ("ein-jahr", "Zwei Jahre")
+    closed = _editor_with(text="Gone.")
+    win._keep_submitted_identifier(closed, "gone")    # its tab was closed meanwhile
+    assert tab_details.details_of(closed) is None
+
+
+def test_the_submit_command_keeps_the_identifier_its_sheet_sent(tmp_path, monkeypatch):
+    # The production caller: Nostr > Submit to a Publication.
+    import main_window
+    from PySide6.QtCore import QObject, Signal
+
+    class Sheet(QObject):
+        submitted = Signal(str)
+        opened = []
+
+        def __init__(self, **kw) -> None:
+            super().__init__()
+            self.draft = kw["draft"]
+
+        def setAttribute(self, *_args) -> None:  # noqa: N802, Qt's name
+            pass
+
+        def open(self) -> None:
+            Sheet.opened.append(self)
+
+    monkeypatch.setattr(main_window, "SubmitSheet", Sheet)
+    win = _Kept(tmp_path / "cache")
+    ed = _editor_with(text="Just words.")
+    win.open_tabs.append(ed)
+    win._set_article_details(ed, ArticleDetails(title="Ein Jahr"))
+    win._profile_store = types.SimpleNamespace(default=lambda: types.SimpleNamespace(
+        user_pubkey="a" * 64, display_name="Anna"))
+    win.current_editor = lambda: ed
+    win._wants_article_header = lambda _ed: True
+    win._standup = lambda: None
+    win._avatars = win._avatar_batcher = types.SimpleNamespace(request=None)
+    win.is_dark_theme = False
+    MainWindow._on_nostr_submit_publication(win)
+    sheet, = Sheet.opened
+    sheet.submitted.emit(sheet.draft.d)
+    assert tab_details.details_of(ed).identifier == "ein-jahr"

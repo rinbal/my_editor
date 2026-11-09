@@ -10137,8 +10137,19 @@ class MainWindow(QMainWindow):
                             avatars=self._avatars, request_logo=self._avatar_batcher.request,
                             is_dark=self.is_dark_theme, parent=self)
         sheet.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        sheet.submitted.connect(lambda d, ed=ed: self._keep_submitted_identifier(ed, d))
         self._publish_sheet = sheet                 # follows the appearance while open
         sheet.open()
+
+    def _keep_submitted_identifier(self, ed, d: str) -> None:
+        """The work in ``ed`` went to a publication under ``d``: the tab
+        keeps it as its identifier, so a later title or file name makes no
+        other work, and publishing it once accepted names this one."""
+        if ed is None or not shiboken6.isValid(ed) or self._editor_widget_index(ed) < 0:
+            return
+        details = self._article_details_of(ed)
+        if details.identifier != d:
+            self._set_article_details(ed, details.with_changes(identifier=d))
 
     def _submission_of(self, ed, profile, local) -> tuple:
         """``(draft, cover, pictures, private)``: the article of ``ed`` as
