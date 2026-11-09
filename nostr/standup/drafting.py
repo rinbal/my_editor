@@ -29,7 +29,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from i18n import N_, _
 
-from . import crypto, formats
+from . import conversation, crypto, formats
 from .formats import FormatError
 from .entries import SubmissionEntry
 from .submission import submission_body
@@ -54,6 +54,8 @@ COAUTHOR_INVALID = N_("A co-author can’t be named: their account isn’t valid
 COAUTHOR_INVALID_DETAIL = N_("Not a valid public key: {key}")
 ALREADY_SUBMITTED = N_("You have submitted this text to {publication} already.")
 MESSAGE_TOO_LONG = N_("A message has at most {count} characters.")
+MESSAGE_TOO_LARGE = N_("Your message is too long to send. Shorten it to submit.")
+MESSAGE_TOO_LARGE_DETAIL = N_("It takes {size} bytes, and a message can take {limit}.")
 REQUIRED_MISSING = N_("{publication} asks for {items}. Add them in Article Details to submit.")
 ROUND_UNKNOWN = N_("Whether you have submitted this text before couldn’t be checked. "
                    "Try again later.")
@@ -376,8 +378,15 @@ def blockers(draft: ArticleDraft, *, writer: str, rights: bool, rights_required:
                              _(COAUTHOR_INVALID_DETAIL).format(key=key[:100])))
     if len(participants_of(draft, writer)) > formats.MAX_PARTICIPANTS:
         found.append(_(TOO_MANY_PEOPLE).format(count=formats.MAX_PARTICIPANTS))
+    size = conversation.message_size(message.strip(), sender=writer)
     if len(message) > formats.MAX_MESSAGE_CHARS:
         found.append(_(MESSAGE_TOO_LONG).format(count=formats.MAX_MESSAGE_CHARS))
+    elif message.strip() and size > formats.MAX_RUMOR_BYTES:
+        # Letters outside Latin script take more bytes: within the
+        # characters it would still fail after the receipt, where Send
+        # Again could never help (RG-M2b 11).
+        found.append(Blocker(_(MESSAGE_TOO_LARGE), _(MESSAGE_TOO_LARGE_DETAIL).format(
+            size=size, limit=formats.MAX_RUMOR_BYTES)))
     asked = [item["label"] for item in checklist_results(checklist, draft)
              if item["level"] == "required" and item["result"] == "missing"
              and item["id"] in _FIXED_IN_DETAILS]

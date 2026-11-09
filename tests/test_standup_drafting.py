@@ -55,6 +55,31 @@ def test_each_blocker_says_why(draft, kw, words):
     assert _blockers(draft, **kw) == [words]
 
 
+def test_a_message_within_its_characters_but_too_large_to_send_blocks_before_submitting():
+    # RG-M2b 11: 12,000 characters of three bytes each pass the character
+    # count, but their rumor is larger than the server takes; it failed
+    # after the receipt, where Send Again could never help.
+    from nostr.standup import conversation
+    text = "€" * 12_000
+    size = conversation.message_size(text, sender=pk("writer"))
+    assert size > formats.MAX_RUMOR_BYTES
+    found = _blockers(DRAFT, message=text)
+    assert found == [drafting.MESSAGE_TOO_LARGE]
+    assert found[0].detail == drafting.MESSAGE_TOO_LARGE_DETAIL.format(
+        size=size, limit=formats.MAX_RUMOR_BYTES)
+    assert _blockers(DRAFT, message="x" * 16_000) == []        # what the count allows
+    # The size measured is the one message_rumor builds and refuses.
+    rumor = conversation.message_rumor(room=conversation._MEASURING_ROOM,
+                                       submission_id="ab" * 32, text="x" * 16_000,
+                                       sender=pk("writer"), created_at=1_790_000_000)
+    assert conversation.rumor_size(rumor) == conversation.message_size(
+        "x" * 16_000, sender=pk("writer"))
+    with pytest.raises(conversation.MessageRefused):
+        conversation.message_rumor(room=conversation._MEASURING_ROOM, submission_id="ab" * 32,
+                                   text=text, sender=pk("writer"),
+                                   created_at=1_790_000_000)
+
+
 @pytest.mark.parametrize("key", ["ff" * 32, "AB" * 32, "npub1xyz", ""])
 def test_a_coauthor_whose_key_is_not_one_blocks_and_names_it_in_the_detail(key):
     # RG-M2b 11: an address imported from another app's tags reached the

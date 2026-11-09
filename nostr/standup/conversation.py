@@ -101,6 +101,19 @@ def check_rumor_size(rumor: dict) -> None:
         raise MessageRefused(f"the message is larger than {formats.MAX_RUMOR_BYTES} bytes")
 
 
+# A valid room key of the length every room has (the x of secp256k1's G),
+# for measuring a message before its submission, and so its room, exists.
+_MEASURING_ROOM = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+
+
+def message_size(text: str, *, sender: str) -> int:
+    """Bytes the rumor of a message of ``text`` from ``sender`` takes, as
+    :func:`message_rumor` builds it: its room and submission id are 64 hex
+    digits each and its time 10 digits, so the size is the real one."""
+    return rumor_size(build_rumor(MESSAGE_KIND, text, _room_tags(_MEASURING_ROOM, "0" * 64),
+                                  sender, 2_000_000_000))
+
+
 def _room_tags(room: str, submission_id: str) -> List[List[str]]:
     if not formats.is_pubkey(room):
         raise MessageRefused("the room is not a valid key")
