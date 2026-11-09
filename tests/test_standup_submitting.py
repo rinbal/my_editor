@@ -800,7 +800,9 @@ def test_a_round_still_open_there_is_said_and_never_sent_again():
     ({"round": 1, "open": False}, [1, 2], words.NOT_TAKEN),     # then it wants round 1
     ({"round": 0, "open": False}, [1], words.NOT_TAKEN),        # the round just refused
     ({"round": 1}, [1], words.refusal("conflict")),             # half an answer: a refusal
-], ids=["twice", "the same round", "half an answer"])
+    # Contract f171b52: a revision under another status key stores nothing.
+    ({"field": "status_key_hash"}, [1], words.refusal("conflict")),
+], ids=["twice", "the same round", "half an answer", "another status key"])
 def test_the_round_is_built_again_once_never_twice(said, rounds, headline):
     world = World(pictures=False)
     world.server.inject("submit", Fault(409, "conflict", detail=said))

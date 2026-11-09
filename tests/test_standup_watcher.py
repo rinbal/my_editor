@@ -101,7 +101,8 @@ def test_launch_looks_at_once_without_a_signature_and_again_every_15_minutes():
     assert world.lookups()[0][3]["Authorization"] is None
     [update] = updates
     followed = update[entry.sid]
-    assert followed.item.submission.state == "submitted" and followed.last_seq == 1
+    # submitted, then the editor the server named (backend name_editor)
+    assert followed.item.submission.state == "submitted" and followed.last_seq == 2
     assert timer.started[-1] == REFRESH_INTERVAL_MS
     timer.fire()
     world.nam.settle()
@@ -133,9 +134,9 @@ def test_only_what_is_new_is_asked_for():
     timer.fire()
     world.nam.settle()
     sent = json.loads(world.lookups()[-1][2])
-    assert sent == {"items": [{"status_key": prepared.status_key, "since": 1}]}
+    assert sent == {"items": [{"status_key": prepared.status_key, "since": 2}]}
     followed = watcher.followed()[entry.sid]
-    assert [i.seq for i in followed.timeline] == [1, 2]
+    assert [i.seq for i in followed.timeline] == [1, 2, 3]
     assert followed.item.submission.state == "in_review"
 
 
@@ -508,6 +509,6 @@ def test_a_writer_who_is_a_member_reads_both_channels_each_from_its_own_cursor()
     read_submission(world.writer, entry.sid, outcome.append, outcome.append)
     world.nam.settle()
     [detail] = outcome
-    assert [i.seq for i in detail.timeline] == [1, 2]
+    assert [i.seq for i in detail.timeline] == [1, 2, 3]       # submitted, named, taken
     assert [i.seq for i in detail.internal] == [1, 2, 3]
     assert len([r for r in world.server.requests if r[0] == "GET"]) == 3

@@ -546,7 +546,10 @@ def test_the_lookup_carries_no_signature_and_answers_by_status_key():
     expected = views.expected_receipt(prepared.body)
     assert (item.receipt.envelope_sha256, item.receipt.wraps_sha256) \
         == (expected["envelope_sha256"], expected["wraps_sha256"])
-    assert [i.event.name for i in item.timeline] == ["submitted"]
+    # The server names an editor on hand-in (backend name_editor): its own event.
+    assert [(i.event.name, i.event.actor) for i in item.timeline] == [
+        ("submitted", pk("writer")), ("named", None)]
+    assert item.submission.turn.type == "editor" and item.submission.last_message_seq == 2
     assert len(world.signers["writer"].requests) == signatures
     assert world.server.requests[-1][3]["Authorization"] is None
 
@@ -584,7 +587,7 @@ def test_internal_notes_never_reach_the_writer_even_when_a_server_sends_them():
     world.server._lookup = leaky
     found = world.ok(lambda ok, fail: api.lookup([(prepared.status_key, 0)], ok, fail))
     assert all(i.type != "internal" for i in found.found[prepared.status_key].timeline)
-    assert record.seq == 1
+    assert record.seq == 2                                    # submitted, named
 
 
 def test_an_answer_that_cannot_be_read_is_never_taken_for_not_stored():
@@ -645,7 +648,7 @@ def test_a_message_is_sent_with_its_kind_and_only_a_seq_confirms_it():
     seq = world.ok(lambda ok, fail: api.send_message(prepared.body["submission_id"], wrap,
                                                      kind_hint="message", on_success=ok,
                                                      on_failure=fail))
-    assert seq == 2
+    assert seq == 3                                           # after submitted and named
     sent = json.loads(world.server.requests[-1][2])
     assert sent == {"channel": "conversation", "wrap": wrap, "kind_hint": "message"}
     assert world.server.requests[-1][3]["Authorization"].startswith(b"Bearer ")
@@ -970,8 +973,9 @@ def test_the_timeline_carries_signed_actions_that_verify():
     world.ok(lambda ok, fail: world.api("editor").decision(
         sid, outcome="decline", expected_revision=1, on_success=ok, on_failure=fail))
     found = world.ok(lambda ok, fail: world.api().lookup([(prepared.status_key, 0)], ok, fail))
-    submitted, decline = [i.event for i in found.found[prepared.status_key].timeline
-                          if i.type == "event"]
+    submitted, named, decline = [i.event for i in found.found[prepared.status_key].timeline
+                                 if i.type == "event"]
+    assert (named.name, named.actor, named.signed) == ("named", None, None)   # the server's
     # The backend (fde04a3, core/editorial_views.py REVISION_EVENTS) serves
     # a revision's signed action with the Revision only, never again here.
     assert (submitted.name, submitted.signed) == ("submitted", None)

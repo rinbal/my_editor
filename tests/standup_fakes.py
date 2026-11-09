@@ -19,6 +19,7 @@ import heapq
 import json
 import re
 import secrets
+from contextlib import contextmanager
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -108,6 +109,13 @@ class KeySigner:
 # through the states of 11.3 (``transition``, tested on the fixture's
 # transition table), with receipts, idempotency and the limits.
 #
+# The rules are the backend's, ported from feat/redaktion-backend 3229d9d
+# and named where they come from: the request limits, the stored bytes on
+# the day of whoever sent them, the sessions, the editor named on
+# hand-in, ``no_decider`` and the gate (tests/test_standup_fake_parity.py
+# holds one case of each, RG-M2r 6). Not modelled: works by link and
+# proposals, notices, timers and releaser requests (MyEditor sends none).
+#
 # Faults are injected per route (``inject``): the connection dropped
 # before the server saw the request, dropped after it stored it (no
 # answer), or a given refusal; ``tamper_receipt`` changes what a receipt
@@ -174,7 +182,21 @@ LOOKUPS_PER_ADDRESS_PER_MINUTE = 30
 SUBMIT_REQUESTS_PER_HOUR = 60
 SUBMIT_REQUESTS_PER_ADDRESS_PER_HOUR = 120
 REVISIONS_PER_HOUR = 10
+# Per participant and publication (contract 142a85b), and apart from it
+# what the Redaktion's members store, per publication.
 STORED_BYTES_PER_DAY = 64 * 1024 * 1024
+REDAKTION_STORED_BYTES_PER_DAY = 64 * 1024 * 1024
+DAY = 86400
+# api/submission_messages.py, core/editorial_messages.py, core/editorial_quota.py.
+MESSAGES_PER_MINUTE = 30
+MESSAGES_PER_ADDRESS_PER_MINUTE = 60
+MESSAGES_PER_SUBMISSION_PER_DAY = 200
+MESSAGE_BODY_BYTES = 2 * formats.MAX_WRAP_EVENT_BYTES
+# api/editorial.py and db/editorial.py create_session.
+SESSION_BODY_BYTES = 1024
+SESSIONS_PER_HOUR = 30
+MAX_LIVE_SESSIONS = 20
+SESSIONS_PURGED_AFTER = 7 * 86400
 MAX_ENVELOPE_BYTES = 4 * 1024 * 1024
 SUBMIT_BODY_BYTES = (MAX_ENVELOPE_BYTES + 2) // 3 * 4 + 1024 * 1024 + 512 * 1024
 ENVELOPE_OVERHEAD = 12 + 16
@@ -284,6 +306,17 @@ def _ok(payload: dict, *, status: int = 200) -> FakeReply:
     return json_reply(dict({"ok": True}, **payload), status=status)
 
 
+def _stored_json(value: Any) -> str:
+    """backend core/editorial_json.py canonical_json and db/editorial.py
+    _dumps: a value as the server stores it."""
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def _stored_size(*texts: str) -> int:
+    """backend core/editorial_quota.py stored_size: the UTF-8 bytes stored."""
+    return sum(len(text.encode()) for text in texts)
+
+
 class StandupNam(FakeNam):
     """FakeNam with the custom verbs (PUT, PATCH) Qt sends through
     ``sendCustomRequest``."""
@@ -316,6 +349,13 @@ class Publication:
     members: Dict[str, str] = dc_field(default_factory=dict)
     releasers: set = dc_field(default_factory=set)
     epoch_keys: List[dict] = dc_field(default_factory=list)
+    # A member who sees "since_join": the epoch they joined in.
+    since_join: Dict[str, int] = dc_field(default_factory=dict)
+    away_until: Dict[str, int] = dc_field(default_factory=dict)
+    last_named_at: Dict[str, int] = dc_field(default_factory=dict)
+    # The settings' ``assignment`` (contract 8.2): naming an editor.
+    auto_assign: bool = True
+    assign_exclude: set = dc_field(default_factory=set)
 
     @property
     def content(self) -> dict:
@@ -489,6 +529,9 @@ class FakeStandupServer:
         self.accepted: List[dict] = []           # verified NIP-98 events
         self.requests: List[Tuple[str, str, Optional[bytes], Dict[str, Optional[bytes]]]] = []
         self.sessions: Dict[str, Tuple[str, int]] = {}   # sha256(token) -> (pubkey, expires)
+        self._session_made: Dict[str, int] = {}           # sha256(token) -> created_at
+        # Whom the instance's Redaktion gate keeps out (contract 12.2).
+        self.below_gate: set = set()
         self.last_session = ""
         self.keyrings: Dict[str, dict] = {}
         self.submissions: Dict[str, Record] = {}
@@ -531,6 +574,73 @@ class FakeStandupServer:
         if self._counters[key] > limit:
             return max(1, start + window - now)
         return None
+
+    @contextmanager
+    def _transaction(self):
+        """backend db/editorial.py write_transaction: what a refusal inside
+        it counted is not kept (a refusal stores nothing, counts nothing)."""
+        counted = dict(self._counters)
+        try:
+            yield
+        except _Refused:
+            self._counters = counted
+            raise
+
+    def _charge(self, publication: str, sender: str, *, redaktion: bool, size: int) -> None:
+        """backend core/editorial_quota.py charge (3229d9d): stored bytes on
+        the day of the participant who sent them, at this publication
+        (contract 142a85b), or on the Redaktion's own counter."""
+        if size <= 0:
+            return
+        if redaktion:
+            scope, subject, limit = ("stored_bytes_redaktion", publication,
+                                     REDAKTION_STORED_BYTES_PER_DAY)
+            message = "Für heute hat die Redaktion hier genug gespeichert. Bitte morgen weiter."
+        else:
+            scope, subject, limit = "stored_bytes", f"{sender}:{publication}", STORED_BYTES_PER_DAY
+            message = "Für heute ist hier genug gespeichert. Bitte morgen weiter."
+        wait = self._hit(scope, subject, limit=limit, window=DAY, cost=size)
+        if wait:
+            raise _Refused(429, "rate_limited", message=message, retry_after=wait)
+
+    def _reads_epoch(self, pub: "Publication", pubkey: str, epoch: int) -> bool:
+        """backend core/editorial_members.py reads_epoch: an active member,
+        from the join epoch for one who sees "since_join"."""
+        role = pub.members.get(pubkey)
+        if role is None or role.startswith("invited:"):
+            return False
+        return pubkey not in pub.since_join or epoch >= pub.since_join[pubkey]
+
+    def _could_decide(self, pub: "Publication", pubkey: str, epoch: int) -> bool:
+        """backend could_decide, of the members the gate admits."""
+        return pub.members.get(pubkey) in REDAKTION and pubkey not in self.below_gate \
+            and self._reads_epoch(pub, pubkey, epoch)
+
+    def _name_editor(self, record: "Record", *, now: int) -> Optional[str]:
+        """backend core/editorial_workflow.py name_editor and
+        core/editorial_assignment.py choose_editor (3229d9d): with
+        automatic naming, the member the gate admits, a decider, active,
+        not away, not excluded nor of the writer side, who reads the
+        submission's epoch, with the fewest editor turns, then named least
+        recently, then by pubkey; a ``named`` event without an actor."""
+        pub = self.publications[record.publication]
+        chosen = None
+        if pub.auto_assign:
+            exclude = pub.assign_exclude | {record.writer, *record.participants}
+            turns: Dict[str, int] = {}
+            for other in self.submissions.values():
+                turn = self._turn(other)
+                if other.publication == pub.address and turn["type"] == "editor":
+                    turns[turn["pubkey"]] = turns.get(turn["pubkey"], 0) + 1
+            able = [pk for pk in pub.members if self._could_decide(pub, pk, record.epoch)
+                    and pk not in exclude and not pub.away_until.get(pk, 0) > now]
+            chosen = min(able, key=lambda pk: (turns.get(pk, 0), pub.last_named_at.get(pk, 0), pk),
+                         default=None)
+        record.responsible = chosen
+        if chosen is not None:
+            pub.last_named_at[chosen] = now
+            self._event(record, "named", None, to=chosen)
+        return chosen
 
     def expire_sessions(self) -> None:
         for token_hash, (pubkey, _expires) in list(self.sessions.items()):
@@ -616,7 +726,7 @@ class FakeStandupServer:
         # address limit), after the signature as the backend's decorators.
         early = getattr(self, "_before_" + name, None)
         if early is not None:
-            refusal = early(body or b"")
+            refusal = early(body or b"", who)
             if refusal is not None:
                 return refusal
         payload: Any = {}
@@ -758,25 +868,69 @@ class FakeStandupServer:
         return seq
 
     def _role(self, record: Record, pubkey: str) -> Optional[str]:
+        """backend api/editorial_context.py submission_access and
+        core/editorial_flow.py roles_on (3229d9d): the writer side first;
+        a member only while active, reading the submission's epoch and
+        admitted by the gate."""
         if pubkey == record.writer:
             return "writer"
         if pubkey in record.participants:
             return "contributor"
-        return self.publications[record.publication].members.get(pubkey)
+        pub = self.publications[record.publication]
+        role = pub.members.get(pubkey)
+        if role is not None and not role.startswith("invited:") and (
+                pubkey in self.below_gate or not self._reads_epoch(pub, pubkey, record.epoch)):
+            return None
+        return role
 
     def _record(self, sid: str) -> Optional[Record]:
         return self.submissions.get(sid)
 
     # -- sessions and the instance -----------------------------------------
 
+    def _before_session(self, raw: bytes, who) -> Optional[FakeReply]:
+        if len(raw) > SESSION_BODY_BYTES:
+            return _error(413, "too_large", "Die Anfrage ist zu groß.",
+                          detail={"max_bytes": SESSION_BODY_BYTES})
+        return None
+
     def _session(self, who, payload, params, query) -> FakeReply:
+        """backend api/editorial.py create_session and db/editorial.py
+        create_session (3229d9d): the body is ``{}``, 30 an hour per
+        person (counted when one is made), at most 20 live per person (the
+        oldest go), and sessions expired a week ago are deleted."""
+        if payload:
+            return _error(422, "invalid", "Zum Anmelden ist der Inhalt »{}«.")
+        try:
+            with self._transaction():
+                wait = self._hit("session", who.pubkey, limit=SESSIONS_PER_HOUR, window=3600)
+                if wait:
+                    raise _Refused(429, "rate_limited", retry_after=wait,
+                                   message="Zu viele Anmeldungen. Bitte später noch einmal.")
+        except _Refused as refusal:
+            return refusal.reply
+        now = int(self.clock())
+        for token_hash, (_pubkey, expires) in list(self.sessions.items()):
+            if expires < now - SESSIONS_PURGED_AFTER:
+                self._drop_session(token_hash)
+        live = sorted((h for h, (pk, expires) in self.sessions.items()
+                       if pk == who.pubkey and expires > now),
+                      key=lambda h: (-self._session_made.get(h, 0), h))
+        for stale in live[MAX_LIVE_SESSIONS - 1:]:
+            self._drop_session(stale)
         token = secrets.token_hex(32)
-        expires = int(self.clock()) + SESSION_SECONDS
-        self.sessions[hashlib.sha256(bytes.fromhex(token)).hexdigest()] = (who.pubkey, expires)
+        expires = now + SESSION_SECONDS
+        token_hash = hashlib.sha256(bytes.fromhex(token)).hexdigest()
+        self.sessions[token_hash] = (who.pubkey, expires)
+        self._session_made[token_hash] = now
         return _ok({"token": token, "pubkey": who.pubkey, "expires_at": expires})
 
+    def _drop_session(self, token_hash: str) -> None:
+        self.sessions.pop(token_hash, None)
+        self._session_made.pop(token_hash, None)
+
     def _session_delete(self, who, payload, params, query) -> FakeReply:
-        self.sessions.pop(self.last_session, None)
+        self._drop_session(self.last_session)
         return _ok({})
 
     def _instance(self, who, payload, params, query) -> FakeReply:
@@ -849,8 +1003,9 @@ class FakeStandupServer:
         role = pub.members[pubkey]
         return {"pubkey": pubkey, "role": role.split(":")[-1],
                 "status": "invited" if role.startswith("invited:") else "active",
-                "sees": "all", "invited_by": None, "accepted_at": None, "away_until": None,
-                "releaser": pubkey in pub.releasers}
+                "sees": "since_join" if pubkey in pub.since_join else "all",
+                "invited_by": None, "accepted_at": None,
+                "away_until": pub.away_until.get(pubkey), "releaser": pubkey in pub.releasers}
 
     def _members_post(self, who, payload, params, query) -> FakeReply:
         pub, role = self._member_of(params, who.pubkey)
@@ -924,16 +1079,35 @@ class FakeStandupServer:
         missing = [b["sha256"] for b in blobs if b["sha256"] not in self.blobs_present]
         return present, missing
 
-    def _receipt(self, record: Record, revision: int, *, recheck: bool) -> dict:
-        stored = record.receipts[revision]
-        if recheck:
-            present, missing = self._blob_check(record.revisions[revision]["blobs"])
-            stored["blobs_present"], stored["blobs_missing"] = present, missing
-        stored["state"] = record.state
-        receipt = json.loads(json.dumps(stored))
+    def _receipt(self, record: Record, revision: int) -> dict:
+        """The receipt as first returned (backend SubmissionRevision
+        ``receipt_json``): never rewritten but for files found since."""
+        receipt = json.loads(json.dumps(record.receipts[revision]))
         if self.tamper_receipt is not None:
             receipt = self.tamper_receipt(receipt)
         return receipt
+
+    def _repeat(self, record: Record, revision: int) -> dict:
+        """backend core/editorial_intake.py blobs_still_missing and repeat
+        (3229d9d): only the files its receipt reported missing are looked
+        for again, and those found since are moved over."""
+        stored = record.receipts[revision]
+        missing = list(stored["blobs_missing"])
+        present, _ = self._blob_check([b for b in record.revisions[revision]["blobs"]
+                                       if b["sha256"] in missing])
+        found = [sha for sha in missing if sha in present]
+        if found:
+            stored["blobs_present"] = list(stored["blobs_present"]) + found
+            stored["blobs_missing"] = [sha for sha in missing if sha not in found]
+        return self._receipt(record, revision)
+
+    def _latest_receipt(self, record: Record) -> Optional[dict]:
+        """backend db/editorial_submissions.py receipts_of (3229d9d): the
+        submitter's latest revision that has a receipt; a correction
+        stores none and never replaces it."""
+        if not record.receipts:
+            return None
+        return self._receipt(record, max(record.receipts))
 
     def _check_revision_parts(self, body: dict, names: set) -> Optional[FakeReply]:
         """A correction body's checks (submit has _parse_submission, from
@@ -967,12 +1141,20 @@ class FakeStandupServer:
             return _error(422, "invalid", detail={"problem": "envelope_sha256"})
         return None
 
-    def _no_decider(self, pub: "Publication", writer: str, participants: List[str]) -> bool:
-        """12.4 (5c11475): nobody in the Redaktion outside the writer and
-        the contributors could decide."""
-        named = {writer, *participants}
-        return not any(role in ("owner", "redaktion") and member not in named
-                       for member, role in pub.members.items())
+    def _refuse_without_decider(self, pub: "Publication", body: dict,
+                                record: Optional["Record"], submitter: str, writer: str) -> None:
+        """backend core/editorial_intake.py refuse_without_decider
+        (3229d9d): a new submission, or a change of participants, when
+        nobody outside the writer side could decide: an owner or Redaktion
+        member, active, admitted by the gate and reading the body's epoch.
+        A revision that keeps its participants is never refused here."""
+        if record is not None and set(body["participants"]) == set(record.participants):
+            return
+        able = [pk for pk in pub.members if self._could_decide(pub, pk, body["epoch"])]
+        besides = {submitter, writer, *body["participants"]}
+        if not any(pk not in besides for pk in able):
+            raise _Refused(409, "no_decider", message="Hier könnte niemand aus der Redaktion "
+                                                      "entscheiden.")
 
     def _work_round(self, address: str, writer: str, coordinate: str) -> Tuple[int, bool]:
         """The latest round of a work at a publication by the same
@@ -1098,7 +1280,7 @@ class FakeStandupServer:
         if record.revision >= MAX_REVISIONS:
             raise _Refused(403, "forbidden", {"limit": MAX_REVISIONS})
 
-    def _before_submit(self, raw: bytes) -> Optional[FakeReply]:
+    def _before_submit(self, raw: bytes, who) -> Optional[FakeReply]:
         if len(raw) > SUBMIT_BODY_BYTES:
             return _error(413, "too_large", "Die Anfrage ist zu groß.",
                           detail={"max_bytes": SUBMIT_BODY_BYTES})
@@ -1112,15 +1294,18 @@ class FakeStandupServer:
 
     def _hand_in(self, who, data: dict) -> FakeReply:
         """backend api/submissions.py submit and core/editorial_intake.py
-        (fde04a3), in their order: the body, the request limits (refused
+        (3229d9d), in their order: the body, the request limits (refused
         requests count), the publication, a repeat before anything else,
-        the refusals that read only, then storing (whose limits count
-        only what is stored)."""
-        writer = who.pubkey
-        body = self._parse_submission(data, writer)
+        the refusals that read only (refuse_early), the files looked for;
+        then, in one transaction, the signed event and body charged as
+        stored (store_action), hand_in's checks, the revision counted, the
+        timeline event, an editor named, and the wraps, files and receipt
+        charged. A refusal in the transaction stores and counts nothing."""
+        submitter = who.pubkey
+        body = self._parse_submission(data, submitter)
         for scope, subject, limit in (
                 ("address:submit", "fake", SUBMIT_REQUESTS_PER_ADDRESS_PER_HOUR),
-                ("submit_request", writer, SUBMIT_REQUESTS_PER_HOUR)):
+                ("submit_request", submitter, SUBMIT_REQUESTS_PER_HOUR)):
             wait = self._hit(scope, subject, limit=limit, window=3600)
             if wait:
                 raise _Refused(429, "rate_limited", retry_after=wait,
@@ -1131,46 +1316,42 @@ class FakeStandupServer:
                            message="Diese Publikation nimmt hier keine Einreichungen an.")
         record = self._record(body["submission_id"])
         stored = record.revisions.get(body["revision"]) if record is not None else None
-        if stored is not None and stored["revision_hash"] == body["revision_hash"]:
-            # The same revision again (12.4): the stored receipt, the files
-            # it reported missing looked for again.
-            return _ok({"receipt": self._receipt(record, body["revision"], recheck=True)})
-        owner = record.writer if record is not None else writer
-        self._check_destination(pub, body, {writer, owner})
-        if self._no_decider(pub, writer, body["participants"]):
-            raise _Refused(409, "no_decider")
+        if stored is not None and stored["revision_hash"] == body["revision_hash"] \
+                and body["revision"] in record.receipts:
+            # The same revision again (12.4): its stored receipt.
+            return _ok({"receipt": self._repeat(record, body["revision"])})
+        writer = record.writer if record is not None else submitter
+        self._check_destination(pub, body, {submitter, writer})
+        self._refuse_without_decider(pub, body, record, submitter, writer)
         if record is None:
-            self._check_new(pub, body, writer)
+            self._check_new(pub, body, submitter)
         else:
             self._refuse_over_cap(record)
-        if any(r.status_key_hash == body["status_key_hash"] and r.sid != body["submission_id"]
-               for r in self.submissions.values()):
-            raise _Refused(409, "conflict", {"field": "status_key_hash"})
+        present, missing = self._blob_check(body["blobs"])
         now = int(self.clock())
-        if record is not None:
-            if body["revision"] != record.revision + 1 or \
-                    body["revision_hash"] == record.current["revision_hash"]:
-                raise _Refused(409, "stale_revision", {"revision": record.revision})
-            if (body["kind"], body["p_sub"]) != (record.kind, record.p_sub):
-                raise _Refused(409, "conflict")
-            new_state = transition(record.state, "revise", "writer")
-            if new_state is None:
-                raise _Refused(409, "invalid_transition",
-                               {"action": "revise", "state": record.state})
-        counted = dict(self._counters)          # the transaction: kept only when stored
-        try:
-            wait = self._hit("submit", writer, limit=REVISIONS_PER_HOUR, window=3600) or \
-                self._hit("stored_bytes", f"{owner}:{pub.address}", limit=STORED_BYTES_PER_DAY,
-                          window=86400, cost=len(body["envelope"]) + sum(
-                              len(formats.canonical_bytes(w)) for w in body["wraps"].values()))
+        with self._transaction():
+            self._charge(pub.address, submitter, redaktion=False,
+                         size=_stored_size(_stored_json(who.event), who.body))
+            if any(r.status_key_hash == body["status_key_hash"] and r.sid != body["submission_id"]
+                   for r in self.submissions.values()):
+                raise _Refused(409, "conflict", {"field": "status_key_hash"})
+            new_state = "submitted" if record is None else self._revise_checks(record, body)
+            wait = self._hit("submit", submitter, limit=REVISIONS_PER_HOUR, window=3600)
             if wait:
-                raise _Refused(429, "rate_limited", retry_after=wait)
-        except _Refused:
-            self._counters = counted
-            raise
+                raise _Refused(429, "rate_limited", retry_after=wait,
+                               message="Zu viele Einreichungen in einer Stunde.")
+            receipt = {
+                "v": 1, "submission_id": body["submission_id"], "revision": body["revision"],
+                "revision_hash": body["revision_hash"],
+                "envelope_sha256": body["envelope_sha256"],
+                "wraps_sha256": {n: formats.wrap_sha256(w) for n, w in body["wraps"].items()},
+                "blobs_present": present, "blobs_missing": missing, "received_at": now,
+                "state": new_state, "seq": (record.seq if record is not None else 0) + 1}
+            self._charge(pub.address, submitter, redaktion=False, size=_stored_size(
+                _stored_json(body["wraps"]), _stored_json(body["blobs"]), _stored_json(receipt)))
         if record is None:
             record = Record(
-                sid=body["submission_id"], writer=writer, publication=pub.address,
+                sid=body["submission_id"], writer=submitter, publication=pub.address,
                 title=body["title"], kind=body["kind"], round=body["round"],
                 signer=body["signer"], participants=list(body["participants"]),
                 p_sub=body["p_sub"], epoch=body["epoch"],
@@ -1182,8 +1363,7 @@ class FakeStandupServer:
             if record.state != "changes_requested" and "new_revision" not in record.marks:
                 record.marks.append("new_revision")
             record.state = new_state
-            record.title, record.signer = body["title"], body["signer"]
-            record.status_key_hash, record.epoch = body["status_key_hash"], body["epoch"]
+            record.title, record.signer, record.epoch = body["title"], body["signer"], body["epoch"]
             event_name = "revision"
         record.participants = list(body["participants"])     # set_participants
         record.revisions[body["revision"]] = {
@@ -1192,18 +1372,31 @@ class FakeStandupServer:
             "wraps": body["wraps"], "blobs": body["blobs"], "created_at": now,
             "signed": who.signed}
         seq = self._event(record, event_name, who, revision=body["revision"])
-        present, missing = self._blob_check(body["blobs"])
-        record.receipts[body["revision"]] = {
-            "v": 1, "submission_id": record.sid, "revision": body["revision"],
-            "revision_hash": body["revision_hash"],
-            "envelope_sha256": body["envelope_sha256"],
-            "wraps_sha256": {n: formats.wrap_sha256(w) for n, w in body["wraps"].items()},
-            "blobs_present": present, "blobs_missing": missing, "received_at": now,
-            "state": record.state, "seq": seq}
-        return _ok({"receipt": self._receipt(record, body["revision"], recheck=False)},
-                   status=201)
+        assert seq == receipt["seq"]
+        if record.responsible is None and record.state in ("submitted", "in_review"):
+            self._name_editor(record, now=now)
+        record.receipts[body["revision"]] = receipt
+        return _ok({"receipt": self._receipt(record, body["revision"])}, status=201)
 
-    def _before_lookup(self, raw: bytes) -> Optional[FakeReply]:
+    def _revise_checks(self, record: Record, body: dict) -> str:
+        """backend core/editorial_intake.py _revise (3229d9d), its checks
+        in order; the state the revision moves the submission to."""
+        self._refuse_over_cap(record)
+        if body["revision"] != record.revision + 1 or \
+                body["revision_hash"] == record.current["revision_hash"]:
+            raise _Refused(409, "stale_revision", {"revision": record.revision})
+        if body["status_key_hash"] != record.status_key_hash:
+            # Contract f171b52: one submission keeps its status key.
+            raise _Refused(409, "conflict", {"field": "status_key_hash"},
+                           message="Eine Einreichung behält ihren Statusschlüssel.")
+        if (body["kind"], body["p_sub"]) != (record.kind, record.p_sub):
+            raise _Refused(409, "conflict")
+        new_state = transition(record.state, "revise", "writer")
+        if new_state is None:
+            raise _Refused(409, "invalid_transition", {"action": "revise", "state": record.state})
+        return new_state
+
+    def _before_lookup(self, raw: bytes, who) -> Optional[FakeReply]:
         """backend api/submission_reads.py lookup (fde04a3): every request
         counts against the address, then the body's size, before parsing."""
         wait = self._hit("address:lookup", "fake", limit=LOOKUPS_PER_ADDRESS_PER_MINUTE,
@@ -1252,7 +1445,7 @@ class FakeStandupServer:
                                          limit=limit)
             answers.append({
                 "status_key_hash": key_hash, "submission": self.view(record),
-                "receipt": self._receipt(record, record.revision, recheck=False),
+                "receipt": self._latest_receipt(record),
                 "timeline": timeline, "more": more})
         return _ok({"items": answers})
 
@@ -1309,12 +1502,30 @@ class FakeStandupServer:
                     "revisions": [revision], "timeline": timeline, "more": more,
                     "members": [self._member(pub, p) for p in pub.members]})
 
+    def _before_messages(self, raw: bytes, who) -> Optional[FakeReply]:
+        """backend post_message before the body is read: the address, then
+        the person, each counted in its own transaction (refused requests
+        count too), then the body's size (core/editorial.py parse_body)."""
+        for scope, subject, limit in (
+                ("address:message", "fake", MESSAGES_PER_ADDRESS_PER_MINUTE),
+                ("message", who.pubkey, MESSAGES_PER_MINUTE)):
+            wait = self._hit(scope, subject, limit=limit, window=60)
+            if wait:
+                return _error(429, "rate_limited", "Zu viele Nachrichten in einer Minute.",
+                              headers={"Retry-After": str(wait)})
+        if len(raw) > MESSAGE_BODY_BYTES:
+            return _error(413, "too_large", "Die Anfrage ist zu groß.",
+                          detail={"max_bytes": MESSAGE_BODY_BYTES})
+        return None
+
     def _messages(self, who, body, params, query) -> FakeReply:
-        """backend api/submission_messages.py post_message (607c941), in its
-        order: the body (core/editorial_messages.py parse_message), then
-        who may see it (404 for anyone without a role), a wrap stored
-        already (its seq, 200), the move, the room, and 201. Its rate
-        limits and message quotas are not counted here."""
+        """backend api/submission_messages.py post_message (3229d9d), in its
+        order: the limits (_before_messages), the body (core/
+        editorial_messages.py parse_message), then who may see it (404 for
+        anyone without a role), a wrap stored already (its seq, 200), the
+        move, the room, the day's messages of the submission and the
+        stored bytes (core/editorial_quota.py, in the transaction that
+        stores it), and 201."""
         keys = {"channel", "wrap", "kind_hint"}
         if set(body) != keys:
             return _error(422, "invalid", detail={"fields": sorted(set(body) ^ keys)})
@@ -1356,6 +1567,19 @@ class FakeStandupServer:
             if room in {key.get("pubkey") for key in publication.epoch_keys}:
                 return _error(409, "epoch", detail={"epoch": publication.epoch})
             return _error(422, "invalid", detail={"field": "wrap.tags"})
+        member = role in _MEMBERS
+        try:
+            with self._transaction():
+                wait = self._hit("submission_internal" if channel == "internal"
+                                 else "submission_messages", record.sid,
+                                 limit=MESSAGES_PER_SUBMISSION_PER_DAY, window=DAY)
+                if wait:
+                    raise _Refused(429, "rate_limited", retry_after=wait, message=(
+                        "Zu viele Nachrichten zu dieser Einreichung an einem Tag."))
+                self._charge(record.publication, who.pubkey, redaktion=member,
+                             size=_stored_size(_stored_json(wrap)))
+        except _Refused as refusal:
+            return refusal.reply
         record.state = new_state
         seq = self._append(record, {"type": "message" if channel == "conversation"
                                     else "internal", "wrap": wrap, "event": None})

@@ -500,7 +500,7 @@ def _two_submissions(server, nam):
         prepared = submission_for(sk(name))
         assert _submit(nam, prepared.body, secret=sk(name))[0] == 201
         record = server.submissions[prepared.body["submission_id"]]
-        record.timeline.append(dict(record.timeline[0], seq=2))      # a second item
+        assert record.timeline[1]["event"]["name"] == "named"        # a second item
         keys.append(prepared.status_key)
     return keys
 
@@ -522,7 +522,7 @@ def test_the_byte_budget_ends_a_page_before_the_item_that_does_not_fit():
     prepared = submission_for(sk("writer"))
     assert _submit(nam, prepared.body)[0] == 201
     record = server.submissions[prepared.body["submission_id"]]
-    for seq in (2, 3, 4):
+    for seq in (3, 4):                                    # 2: the editor named
         record.timeline.append(dict(record.timeline[0], seq=seq))
     token = _session(nam)
     path = f"/api/submissions/{prepared.body['submission_id']}"
@@ -588,7 +588,7 @@ def _with_a_note(server, nam):
     prepared = submission_for(sk("writer"))
     assert _submit(nam, prepared.body)[0] == 201
     record = server.submissions[prepared.body["submission_id"]]
-    server._event(record, "taken", None)                                  # seq 2
+    assert record.timeline[-1]["seq"] == 2                    # the editor named on hand-in
     server._append(record, {"type": "internal", "wrap": {"id": "1" * 64}, "event": None})
     return prepared, record
 
@@ -629,7 +629,7 @@ def test_an_internal_note_leaves_no_trace_for_participants():
     assert after["submission"] == before and after["timeline"][-1]["type"] == "event"
     member = _read(nam, sk("editor"), sid)[1]["submission"]
     assert (member["last_internal_seq"], member["activity_at"]) == (1, NOW + 5)
-    assert member["last_seq"] == before["last_seq"] == 1
+    assert member["last_seq"] == before["last_seq"] == 2    # submitted, named
 
 
 @pytest.mark.parametrize("query", ["?since=-1", "?since=abc", "?revision=0", "?revision=2",
@@ -699,9 +699,9 @@ def _conversation(**changes):
 def test_an_item_is_taken_once_and_a_repeat_gets_its_seq():
     server, nam, record, body = _conversation()
     status, data, _ = _item(nam, sk("writer"), record.sid, body)
-    assert (status, data["seq"]) == (201, 2)
+    assert (status, data["seq"]) == (201, 3)                  # after submitted and named
     status, data, _ = _item(nam, sk("writer"), record.sid, body)
-    assert (status, data["seq"], len(record.timeline)) == (200, 2, 2)
+    assert (status, data["seq"], len(record.timeline)) == (200, 3, 3)
 
 
 @pytest.mark.parametrize("change, status, code", [
@@ -723,8 +723,9 @@ def test_an_item_is_taken_once_and_a_repeat_gets_its_seq():
 def test_a_body_is_checked_as_parse_message_checks_it(change, status, code):
     server, nam, record, body = _conversation()
     change(body, record.p_sub)
+    before = len(record.timeline)
     got, data, _ = _item(nam, sk("writer"), record.sid, body)
-    assert (got, data["error"]["code"]) == (status, code) and len(record.timeline) == 1
+    assert (got, data["error"]["code"]) == (status, code) and len(record.timeline) == before
 
 
 def test_the_body_is_checked_before_who_may_see_it_and_a_stranger_learns_nothing():
