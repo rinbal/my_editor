@@ -128,8 +128,9 @@ def test_pairing_relays_are_separate_from_home_relays():
     assert "wss://nostr.oxtr.dev" not in bunker.NIP46_RELAYS
     assert "sign_event:0" in bunker.DEFAULT_PERMS and "sign_event:10002" in bunker.DEFAULT_PERMS
     # Every kind the app signs is asked for when pairing, so a signer that
-    # enforces the list neither prompts nor refuses for media or feed sync.
-    for kind in (1, 30023, 31234, 27235, 24242, 10063, 30078, 10013):
+    # enforces the list neither prompts nor refuses for media or feed sync,
+    # nor for the seal of a message to a publication (NIP-59, kind 13).
+    for kind in (1, 30023, 31234, 27235, 24242, 10063, 30078, 10013, 13):
         assert f"sign_event:{kind}" in bunker.DEFAULT_PERMS
 
 

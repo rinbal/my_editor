@@ -76,6 +76,29 @@ ANSWERED_RECENTLY_MS = 30_000
 # held open this long rather than failing.
 AUTH_CHALLENGE_TIMEOUT_MS = 180_000
 
+# The most plaintext a signer app can encrypt (``nip44_encrypt``) or
+# decrypt (``nip44_decrypt``) for us: 40,960 bytes, not NIP-44's 65,535.
+#
+# Every NIP-46 request and every answer is itself one NIP-44 message, and
+# NIP-44 carries at most 65,535 bytes (``crypto.NIP44_MAX_PLAINTEXT_LEN``;
+# nostr-tools stops at the same number in ``nip44.js``, and Bunker46, for
+# one, encrypts its answers with it). A NIP-44 ciphertext is base64 of a
+# version byte, a 32-byte nonce, a 2-byte length, the padded plaintext and
+# a 32-byte MAC. Above 32,768 bytes the padding rounds up to a multiple of
+# 8,192, so:
+#
+#   40,960 bytes pad to 40,960 -> a 54,704-character ciphertext, which fits
+#   40,961 bytes pad to 49,152 -> a 65,628-character ciphertext, which is
+#                                 larger than a whole NIP-46 message may be
+#
+# The ciphertext rides inside the signer's answer to ``nip44_encrypt`` and
+# inside our request for ``nip44_decrypt``, so either way 40,960 bytes is
+# the end (tests/test_bunker_request_size.py measures it with the real
+# encryption). ``nak bunker`` 0.20.7 answered at 40,960 and did not answer
+# at 40,961. Anything larger travels encrypted some other way, and lists
+# are split into pages well below this (nostr/encrypted_lists.py).
+SIGNER_NIP44_MAX_PLAINTEXT = 40_960
+
 # The failure reasons that mean nobody answered, as opposed to the signer
 # answering "no". Defined here, next to the code that produces them, so
 # the callers that have to recognise them cannot drift from the wording.
@@ -153,6 +176,7 @@ NIP46_RELAYS: tuple = (
 #   get_public_key    required for the post-connect user-pubkey lookup
 #   ping              keepalive
 #   sign_event:22242  signing in to the account's relays that ask (NIP-42)
+#   sign_event:13     sealing a private message (NIP-59)
 #
 # Signers that don't recognise an entry typically ignore it silently;
 # the actual capability check happens lazily when we invoke each method.
@@ -171,6 +195,11 @@ DEFAULT_PERMS = (
     "sign_event:30078,sign_event:10013,"
     # Signing in to the account's own relays that ask for it (NIP-42).
     "sign_event:22242,"
+    # Sealing a message for a publication's editors (NIP-59): the seal is
+    # the one part of a gift wrap the sender's own key signs. The list is
+    # sent only when pairing, so a signer paired before this was added
+    # decides at the first seal whether to ask the person or refuse.
+    "sign_event:13,"
     "nip44_encrypt,nip44_decrypt,"
     # Reading a list of sources an older app saved with NIP-04 (never
     # used to encrypt anything).
@@ -760,6 +789,17 @@ class BunkerClient(QObject):
         if len(peer) != 64 or not all(c in "0123456789abcdef" for c in peer):
             on_failure(f"invalid peer pubkey: {peer_pubkey_hex!r}")
             return
+        size = len(plaintext.encode("utf-8"))
+        if size > SIGNER_NIP44_MAX_PLAINTEXT:
+            # The request itself may still fit, but the answer cannot: the
+            # signer would encrypt and then have no message to send it in,
+            # and we would wait out the whole timeout for nothing.
+            self._fail_later(
+                on_failure,
+                f"too large to encrypt through a signer app: {size} bytes, "
+                f"at most {SIGNER_NIP44_MAX_PLAINTEXT}",
+            )
+            return
 
         def _ok(result: str) -> None:
             if not result:
@@ -1033,6 +1073,19 @@ class BunkerClient(QObject):
             separators=(",", ":"),
             ensure_ascii=False,
         )
+        size = len(inner.encode("utf-8"))
+        if size > crypto.NIP44_MAX_PLAINTEXT_LEN:
+            # A request is one NIP-44 message, so a larger one cannot be
+            # sent at all. ``crypto.encrypt`` would raise, and the caller,
+            # written for an answer that comes later, would never hear of
+            # it: a draft or a list that never finishes saving.
+            self._fail_later(
+                on_failure,
+                f"request too large for a signer app: {method} needs "
+                f"{size} bytes, a NIP-46 message carries at most "
+                f"{crypto.NIP44_MAX_PLAINTEXT_LEN}",
+            )
+            return request_id
         ciphertext = crypto.encrypt(inner, self._conv_key)
         event = events.build_event(
             kind=24133,
@@ -1117,6 +1170,14 @@ class BunkerClient(QObject):
 
     def _on_timeout(self, request_id: str) -> None:
         self._fail(request_id, "timed out waiting for signer")
+
+    def _fail_later(self, on_failure: Callable[[str], None], reason: str) -> None:
+        """Refuse a request that was never sent, on the next turn of the
+        event loop, as a signer's own refusal would arrive. A caller that
+        sets up its waiting state after the call (local_signer.py says why
+        that is the shape every caller has) then sees the failure after
+        that state, not before it."""
+        QTimer.singleShot(0, self, lambda: on_failure(reason))
 
     def _succeed(self, request_id: str, result: str) -> None:
         pending = self._pending.pop(request_id, None)

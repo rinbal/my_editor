@@ -30,6 +30,13 @@ def test_basic_uri_shape():
     assert qs["name"] == ["MyEditor"]
 
 
+def test_the_qr_asks_for_sealing_messages():
+    # A seal (NIP-59, kind 13) is signed by the sender's own key; a signer
+    # that enforces the pairing's list would refuse it otherwise.
+    _, _, qs = _split(build_nostrconnect_uri(PK, ["wss://relay.example"], "s"))
+    assert "sign_event:13" in qs["perms"][0].split(",")
+
+
 def test_multiple_relays_preserve_order():
     uri = build_nostrconnect_uri(
         PK, ["wss://r1", "wss://r2", "wss://r3"], "s",
@@ -40,7 +47,7 @@ def test_multiple_relays_preserve_order():
 
 def test_relay_urls_are_url_encoded():
     """A relay URL with a query string would otherwise corrupt the parent
-    URI's query parsing — make sure we encode the embedded '?', '&', '='."""
+    URI's query parsing; make sure we encode the embedded '?', '&', '='."""
     weird = "wss://relay.example/?foo=bar&baz=qux"
     uri = build_nostrconnect_uri(PK, [weird], "s")
     _, _, qs = _split(uri)
@@ -50,7 +57,7 @@ def test_relay_urls_are_url_encoded():
 def test_perms_default_preserved_commas():
     uri = build_nostrconnect_uri(PK, ["wss://r"], "s")
     _, _, qs = _split(uri)
-    # Commas (and the colon in sign_event:1) must round-trip — they're
+    # Commas (and the colon in sign_event:1) must round-trip: they're
     # part of the perms grammar.
     assert "sign_event:1" in qs["perms"][0]
     assert "sign_event:30023" in qs["perms"][0]
@@ -92,7 +99,7 @@ def test_rejects_no_relays():
 
 
 def test_rejects_empty_secret():
-    """The spec requires the secret to prevent connection spoofing —
+    """The spec requires the secret to prevent connection spoofing;
     silently issuing a URI without one would be dangerous."""
     with pytest.raises(ValueError):
         build_nostrconnect_uri(PK, ["wss://r"], "")
