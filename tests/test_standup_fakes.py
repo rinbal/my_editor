@@ -651,3 +651,107 @@ def test_a_body_refused_for_the_days_storage_counts_no_revision(monkeypatch):
     assert (status, data["error"]["code"]) == (429, "rate_limited") and server.submissions == {}
     monkeypatch.setattr(fakes, "STORED_BYTES_PER_DAY", 64 * 1024 * 1024)
     assert _submit(nam, first.body)[0] == 201
+
+
+# -- the conversation, as the backend takes it (api/submission_messages.py, fde04a3) ---
+
+_EPH = bytes(range(7, 39))
+
+
+def _item(nam, secret, sid, body):
+    token = _session(nam, secret)
+    return _send(nam, "POST", f"/api/submissions/{sid}/messages", json.dumps(body).encode(),
+                 authorization=f"Bearer {token}".encode())
+
+
+def _gift(room, **changes):
+    """A gift wrap to ``room`` as conversation.gift_wrap builds it, with
+    ``changes`` signed in by the same ephemeral key."""
+    from nostr.standup import conversation
+    wrap = conversation.gift_wrap({"kind": 13, "content": "versiegelt", "tags": []}, room,
+                                  now=NOW, eph_sk=_EPH)
+    return events.sign_event(dict(wrap, **changes), _EPH) if changes else wrap
+
+
+def _conversation(**changes):
+    _clock, server, nam = _setup()
+    prepared = submission_for(sk("writer"))
+    assert _submit(nam, prepared.body)[0] == 201
+    record = server.submissions[prepared.body["submission_id"]]
+    body = {"channel": "conversation", "kind_hint": "message", "wrap": _gift(record.p_sub)}
+    body.update(changes)
+    return server, nam, record, body
+
+
+def test_an_item_is_taken_once_and_a_repeat_gets_its_seq():
+    server, nam, record, body = _conversation()
+    status, data, _ = _item(nam, sk("writer"), record.sid, body)
+    assert (status, data["seq"]) == (201, 2)
+    status, data, _ = _item(nam, sk("writer"), record.sid, body)
+    assert (status, data["seq"], len(record.timeline)) == (200, 2, 2)
+
+
+@pytest.mark.parametrize("change, status, code", [
+    (lambda body, room: body.pop("kind_hint"), 422, "invalid"),
+    (lambda body, room: body.update(client="x"), 422, "invalid"),
+    (lambda body, room: body.update(channel="public"), 422, "invalid"),
+    (lambda body, room: body.update(kind_hint="vote"), 422, "invalid"),
+    (lambda body, room: body.update(wrap=_gift(room, kind=1)), 422, "invalid"),
+    (lambda body, room: body.update(wrap=_gift(room, tags=[["p", room], ["p", room]])),
+     422, "invalid"),
+    (lambda body, room: body.update(wrap=_gift(room, created_at=NOW - 4 * 86400)),
+     422, "invalid"),
+    (lambda body, room: body.update(wrap=_gift(room, created_at=NOW + 3600)), 422, "invalid"),
+    (lambda body, room: body.update(wrap=_gift(room, content="AgAA")), 422, "invalid"),
+    (lambda body, room: body.update(wrap=_gift(room, content="A" * 100_000)),
+     413, "too_large"),
+], ids=["a key missing", "a key unknown", "channel", "kind_hint", "not a wrap", "two rooms",
+        "too old", "ahead", "not nip-44", "too large"])
+def test_a_body_is_checked_as_parse_message_checks_it(change, status, code):
+    server, nam, record, body = _conversation()
+    change(body, record.p_sub)
+    got, data, _ = _item(nam, sk("writer"), record.sid, body)
+    assert (got, data["error"]["code"]) == (status, code) and len(record.timeline) == 1
+
+
+def test_the_body_is_checked_before_who_may_see_it_and_a_stranger_learns_nothing():
+    server, nam, record, body = _conversation()
+    status, data, _ = _item(nam, sk("contributor"), record.sid, body)
+    assert (status, data["error"]["code"]) == (404, "not_found")      # not 403
+    status, data, _ = _item(nam, sk("contributor"), record.sid, dict(body, channel="x"))
+    assert (status, data["error"]["code"]) == (422, "invalid")
+
+
+def test_what_goes_into_the_timeline_follows_the_backends_rows():
+    server, nam, record, body = _conversation()
+    status, data, _ = _item(nam, sk("writer"), record.sid,
+                            dict(body, channel="internal",
+                                 wrap=_gift(server.publications[record.publication]
+                                            .content["pubkey"])))
+    assert (status, data["error"]["code"]) == (403, "role")           # no row for a writer
+    status, _data, _ = _item(nam, sk("editor"), record.sid,
+                             dict(body, kind_hint="edit", wrap=_gift(record.p_sub)))
+    assert status == 201 and record.state == "submitted"              # an edit moves nothing
+    assert _item(nam, sk("editor"), record.sid, dict(body, wrap=_gift(record.p_sub)))[0] == 201
+    assert record.state == "in_review"                                # a message does
+    record.state = "withdrawn"
+    status, data, _ = _item(nam, sk("writer"), record.sid, dict(body, wrap=_gift(record.p_sub)))
+    assert (status, data["error"]["code"]) == (409, "invalid_transition")
+
+
+def test_an_item_goes_to_its_room_and_a_note_to_the_current_epoch():
+    server, nam, record, body = _conversation()
+    status, data, _ = _item(nam, sk("writer"), record.sid,
+                            dict(body, wrap=_gift(pk("contributor"))))
+    assert (status, data["error"]["code"]) == (422, "invalid")
+    publication = server.publications[record.publication]
+    publication.epoch_keys.append({"pubkey": pk("contributor")})      # an earlier epoch's
+    note = dict(body, channel="internal")
+    status, data, _ = _item(nam, sk("editor"), record.sid,
+                            dict(note, wrap=_gift(pk("contributor"))))
+    assert (status, data["error"]["code"]) == (409, "epoch")
+    status, data, _ = _item(nam, sk("editor"), record.sid, dict(note, wrap=_gift(pk("editor"))))
+    assert (status, data["error"]["code"]) == (422, "invalid")
+    status, data, _ = _item(nam, sk("editor"), record.sid,
+                            dict(note, wrap=_gift(publication.content["pubkey"])))
+    assert (status, data["seq"], record.internal_seq) == (201, 1, 1)

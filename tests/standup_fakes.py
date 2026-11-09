@@ -122,6 +122,42 @@ OPEN = ("submitted", "in_review", "changes_requested")
 ROUND_CLOSED = ("declined", "withdrawn")
 REDAKTION = ("owner", "redaktion")
 
+# backend core/editorial_flow.py TRANSITIONS (fde04a3), the rows of what
+# goes into the timeline: (action, from states, roles, to or None for the
+# same state). ACTIVE is OPEN and accepted; FINAL the rest.
+_ACTIVE = OPEN + ("accepted",)
+_FINAL = ("published", "declined", "withdrawn")
+_MEMBERS = REDAKTION + ("curator",)
+_PARTICIPANTS = ("writer", "contributor")
+_TIMELINE_ROWS = (
+    ("message", ("submitted",), REDAKTION, "in_review"),
+    ("message", tuple(s for s in _ACTIVE if s != "submitted"), REDAKTION, None),
+    ("message", _FINAL, REDAKTION, None),
+    ("message", _ACTIVE + _FINAL, ("curator",), None),
+    ("message", _ACTIVE, _PARTICIPANTS, None),
+    *((quiet, _ACTIVE + _FINAL, _MEMBERS, None) for quiet in ("react", "edit")),
+    *((quiet, _ACTIVE, _PARTICIPANTS, None) for quiet in ("react", "edit")),
+    ("internal_note", _ACTIVE + _FINAL, _MEMBERS, None),
+)
+# backend core/editorial_messages.py: the item each hint is.
+_CONVERSATION_ACTIONS = {"message": "message", "reaction": "react", "retraction": "react",
+                         "edit": "edit"}
+WRAP_MAX_AGE = 3 * 86400
+WRAP_MAX_AHEAD = 600
+
+
+def _timeline_move(action: str, state: str, role: str) -> Tuple[Optional[str], Optional[dict]]:
+    """backend core/editorial_flow.py next_state for these rows: the state
+    after, or a refusal (403 ``role`` when no row allows the role the
+    action at all, else 409 ``invalid_transition``)."""
+    allowed = [row for row in _TIMELINE_ROWS if row[0] == action and role in row[2]]
+    if not allowed:
+        return None, {"status": 403, "code": "role"}
+    for _action, states, _roles, to in allowed:
+        if state in states:
+            return to or state, None
+    return None, {"status": 409, "code": "invalid_transition"}
+
 # Contract 15 (feat/redaktion 5c11475).
 MAX_REVISIONS = 30
 SUBMISSION_WRAP_CT_CHARS = 348
@@ -385,14 +421,22 @@ def _plain(value: Any, low: int, high: int) -> bool:
         ord(ch) < 0x20 or ord(ch) == 0x7f for ch in value)
 
 
+_NIP44_PADDED = frozenset(crypto.calc_padded_len(n) for n in range(1, 65536))
+
+
 def _nip44_shaped(payload: Any) -> bool:
-    """What a server can check of a NIP-44 v2 payload it cannot open:
-    canonical base64 and version 2 (backend core/nip44.py)."""
+    """What a server can check of a NIP-44 v2 payload it cannot open
+    (backend core/nip44.py payload_shape_ok, fde04a3): its length,
+    canonical base64, version 2, and a ciphertext as long as NIP-44
+    padding makes one."""
+    if not isinstance(payload, str) or not 132 <= len(payload) <= 87472 or payload[0] == "#":
+        return False
     try:
         raw = base64.b64decode(payload, validate=True)
     except (ValueError, TypeError):
         return False
-    return base64.b64encode(raw).decode("ascii") == payload and raw[:1] == b"\x02"
+    return (99 <= len(raw) <= 65603 and base64.b64encode(raw).decode("ascii") == payload
+            and raw[:1] == b"\x02" and len(raw) - 65 - 2 in _NIP44_PADDED)
 
 
 class _Refused(Exception):
@@ -1247,34 +1291,60 @@ class FakeStandupServer:
                     "members": [self._member(pub, p) for p in pub.members]})
 
     def _messages(self, who, body, params, query) -> FakeReply:
+        """backend api/submission_messages.py post_message (fde04a3), in its
+        order: the body (core/editorial_messages.py parse_message), then
+        who may see it (404 for anyone without a role), a wrap stored
+        already (its seq, 200), the move, the room, and 201. Its rate
+        limits and message quotas are not counted here."""
+        keys = {"channel", "wrap", "kind_hint"}
+        if set(body) != keys:
+            return _error(422, "invalid", detail={"fields": sorted(set(body) ^ keys)})
+        for name, allowed in (("channel", ("conversation", "internal")),
+                              ("kind_hint", tuple(_CONVERSATION_ACTIONS))):
+            if not isinstance(body[name], str) or body[name] not in allowed:
+                return _error(422, "invalid", detail={"field": name})
+        channel, wrap = body["channel"], body["wrap"]
+        if not _signed(wrap, 1059):
+            return _error(422, "invalid", detail={"field": "wrap"})
+        if len(formats.canonical_bytes(wrap)) > formats.MAX_WRAP_EVENT_BYTES:
+            return _error(413, "too_large", detail={"max_bytes": formats.MAX_WRAP_EVENT_BYTES})
+        tags, now = wrap["tags"], int(self.clock())
+        if len(tags) != 1 or len(tags[0]) != 2 or tags[0][0] != "p" \
+                or not formats.is_pubkey(tags[0][1]):
+            return _error(422, "invalid", detail={"field": "wrap.tags"})
+        if not now - WRAP_MAX_AGE <= wrap["created_at"] <= now + WRAP_MAX_AHEAD:
+            return _error(422, "invalid", detail={"field": "wrap.created_at"})
+        if not _nip44_shaped(wrap["content"]):
+            return _error(422, "invalid", detail={"field": "wrap.content"})
         record = self._record(params["sid"])
-        if record is None:
-            return _error(404, "not_found")
-        role = self._role(record, who.pubkey)
+        role = None if record is None else self._role(record, who.pubkey)
         if role is None:
-            return _error(403, "forbidden")
-        wrap = body.get("wrap")
-        if body.get("kind_hint") not in ("message", "reaction", "retraction", "edit") \
-                or not _signed(wrap, 1059) \
-                or len(formats.canonical_bytes(wrap)) > formats.MAX_WRAP_EVENT_BYTES:
-            return _error(422, "invalid")
-        channel = body.get("channel")
-        if channel == "internal" and not self._is_member(record, who.pubkey):
-            return _error(403, "role")
-        if channel not in ("conversation", "internal"):
-            return _error(400, "bad_request")
-        action = {"internal": "internal_note"}.get(channel) or (
-            "message" if body["kind_hint"] in ("message", "edit") else "react")
-        new_state = transition(record.state, action, role)
-        if new_state is not None:
-            record.state = new_state
+            return _error(404, "not_found")
+        stored = next((item["seq"] for item in record.timeline
+                       if (item.get("wrap") or {}).get("id") == wrap["id"]), None)
+        if stored is not None:
+            return _ok({"seq": stored})
+        action = "internal_note" if channel == "internal" else \
+            _CONVERSATION_ACTIONS[body["kind_hint"]]
+        new_state, refusal = _timeline_move(action, record.state, role)
+        if refusal is not None:
+            return _error(refusal["status"], refusal["code"])
+        room = tags[0][1]
+        if channel == "conversation" and room != record.p_sub:
+            return _error(422, "invalid", detail={"field": "wrap.tags"})
+        publication = self.publications[record.publication]
+        if channel == "internal" and room != publication.content["pubkey"]:
+            if room in {key.get("pubkey") for key in publication.epoch_keys}:
+                return _error(409, "epoch", detail={"epoch": publication.epoch})
+            return _error(422, "invalid", detail={"field": "wrap.tags"})
+        record.state = new_state
         seq = self._append(record, {"type": "message" if channel == "conversation"
                                     else "internal", "wrap": wrap, "event": None})
-        if channel == "conversation" and body["kind_hint"] == "message":
+        if action == "message" and channel == "conversation":
             record.last_message_seq = seq
-        elif body["kind_hint"] == "message":
+        elif body["kind_hint"] == "message" and channel == "internal":
             record.last_internal_message_seq = seq
-        return _ok({"seq": seq})
+        return _ok({"seq": seq}, status=201)
 
     def _signed_record(self, who, body, params) -> Tuple[Optional[Record], Optional[FakeReply], str]:
         record = self._record(params["sid"])
