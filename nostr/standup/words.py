@@ -15,6 +15,8 @@ kept, one retry).
 
 from __future__ import annotations
 
+from typing import Optional
+
 from i18n import N_
 
 from .errors import Code
@@ -111,6 +113,28 @@ _REFUSALS = {
 }
 
 
+# A limit of the server (429, contract 15). Every limit of a submission
+# but the day's stored bytes counts in a window of an hour or less, so a
+# wait of more than an hour is the day's; a shorter one says "right now",
+# which holds for every limit. When trying again helps is said apart
+# (TRY_AGAIN_AT), with the time.
+RATE_LIMITED_NOW = N_("{publication} can’t take more from you right now.")
+RATE_LIMITED_TODAY = N_("You’ve sent {publication} as much as it takes in one day.")
+TRY_AGAIN_AT = N_("You can try again at {time}.")
+TRY_AGAIN_TOMORROW_AT = N_("You can try again tomorrow at {time}.")
+SEND_AGAIN_AT = N_("You can send it again at {time}.")
+SEND_AGAIN_TOMORROW_AT = N_("You can send it again tomorrow at {time}.")
+HOUR_S = 3600
+
+
+def rate_limited(wait: Optional[int]) -> str:
+    """The words (untranslated) for a refusal for a limit whose wait is
+    ``wait`` seconds (a 429's Retry-After; None without one)."""
+    if not wait:
+        return refusal(Code.RATE_LIMITED)
+    return RATE_LIMITED_TODAY if wait > HOUR_S else RATE_LIMITED_NOW
+
+
 def refusal(code: str) -> str:
     """The words (untranslated) for a refusal with ``code``; every code
     not named has the same plain sentence."""
@@ -118,13 +142,15 @@ def refusal(code: str) -> str:
 
 
 __all__ = [
-    "ANOTHER_VERSION", "ENCRYPTING", "IN_THE_BACKGROUND", "LIST_CHANGED_ELSEWHERE",
+    "ANOTHER_VERSION", "ENCRYPTING", "HOUR_S", "IN_THE_BACKGROUND", "LIST_CHANGED_ELSEWHERE",
     "LIST_ENTRY_UNUSABLE", "LIST_NOT_SAVED", "MAYBE_RECEIVED", "MESSAGE_NOT_SENT",
     "MESSAGE_SENDING", "MESSAGE_SENT", "NOTHING_SUBMITTED", "NOT_BUILT", "NOT_CONFIRMED",
-    "NOT_RECEIVED", "NOT_SENT", "NOT_TAKEN", "PICTURE_MISSING", "SENDING", "SIGNER_DECLINED",
+    "NOT_RECEIVED", "NOT_SENT", "NOT_TAKEN", "PICTURE_MISSING", "RATE_LIMITED_NOW",
+    "RATE_LIMITED_TODAY", "SENDING", "SEND_AGAIN_AT", "SEND_AGAIN_TOMORROW_AT", "SIGNER_DECLINED",
     "SIGNER_SILENT", "STOPPED_MESSAGE", "STOPPED_NOTHING_SENT", "STOPPED_OTHER_VERSION",
     "STOPPED_PICTURES", "STOPPED_UNCONFIRMED", "STORED_OTHER", "STORED_PICTURE_MISSING",
-    "SUBMITTED", "SUBMITTED_DETAIL", "TEXT_STAYS", "TOO_LARGE", "UNCONFIRMED",
-    "UNCONFIRMED_DETAIL", "UPLOADING_DETAIL", "UPLOADING_PICTURE", "UPLOADING_PICTURES",
-    "UPLOAD_FAILED", "WAITING_DETAIL", "WAITING_FOR_SIGNER", "refusal",
+    "SUBMITTED", "SUBMITTED_DETAIL", "TEXT_STAYS", "TOO_LARGE", "TRY_AGAIN_AT",
+    "TRY_AGAIN_TOMORROW_AT", "UNCONFIRMED", "UNCONFIRMED_DETAIL", "UPLOADING_DETAIL",
+    "UPLOADING_PICTURE", "UPLOADING_PICTURES", "UPLOAD_FAILED", "WAITING_DETAIL",
+    "WAITING_FOR_SIGNER", "rate_limited", "refusal",
 ]

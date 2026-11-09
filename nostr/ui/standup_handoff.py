@@ -29,15 +29,20 @@ the buttons each state has (Abbrechen while it can still be taken back,
 dimmed once the request is on its way, and beside it Im Hintergrund
 fortsetzen; Schließen and Erneut versuchen after a failure; Schließen
 while it is being checked; Fertig once it is in). It only shows the
-state and forwards the person's choice.
+state and forwards the person's choice. After a refusal for a server's
+limit, Erneut versuchen (and Erneut senden for the first message) stays
+dimmed until the limit's wait is over, and the words say when that is.
 """
 
 from __future__ import annotations
 
+import math
+import time
 from typing import Dict, Optional
 
 from PySide6.QtCore import (
-    Property, QEasingCurve, QPointF, QPropertyAnimation, QRectF, Qt, Signal,
+    Property, QDateTime, QEasingCurve, QLocale, QPointF, QPropertyAnimation, QRectF, Qt, QTimer,
+    Signal,
 )
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
@@ -45,6 +50,7 @@ from PySide6.QtWidgets import (
 )
 
 import announce
+import i18n
 from i18n import _
 
 from ..standup import words
@@ -301,6 +307,23 @@ def phase_words(progress: Progress, publication: str) -> tuple:
             _(lines[1]) if lines[1] else "")
 
 
+def _now() -> float:
+    return time.time()
+
+
+def wait_words(until: Optional[float], now: float, today: str, tomorrow: str) -> str:
+    """When a limit's wait is over, in the language's clock time, rounded
+    up to the minute shown (``today`` or ``tomorrow``, untranslated, with
+    ``{time}``); "" when there is no wait or it is over."""
+    if until is None or until <= now:
+        return ""
+    shown = QDateTime.fromSecsSinceEpoch(int(math.ceil(until / 60) * 60))
+    locale = i18n.display_locale()
+    clock = locale.toString(shown.time(), locale.timeFormat(QLocale.FormatType.ShortFormat))
+    later_day = shown.date() > QDateTime.fromSecsSinceEpoch(int(now)).date()
+    return _(tomorrow if later_day else today).format(time=clock)
+
+
 _MESSAGE_WORDS = {MessageStatus.SIGNING: words.MESSAGE_SIGNING,
                   MessageStatus.SENDING: words.MESSAGE_SENDING,
                   MessageStatus.SENT: words.MESSAGE_SENT,
@@ -322,6 +345,11 @@ class HandoffView(QWidget):
         self._is_dark = is_dark
         self._phase: Optional[Phase] = None
         self._said = ""
+        self._progress: Optional[Progress] = None
+        # Shows the state again once a limit's wait is over (RG-M2r 7).
+        self._wait = QTimer(self)
+        self._wait.setSingleShot(True)
+        self._wait.timeout.connect(self._wait_over)
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(8)
@@ -380,10 +408,23 @@ class HandoffView(QWidget):
         self.headline.setStyleSheet(f"color: {color}; font-weight: 700; font-size: 14px;")
 
     def show_progress(self, progress: Progress) -> None:
+        self._progress = progress
         phase = progress.phase
         first, second = phase_words(progress, self.track.publication)
         message = (_(_MESSAGE_WORDS[progress.message])
                    if phase is Phase.DONE and progress.message in _MESSAGE_WORDS else "")
+        now = _now()
+        retry_at, message_at = self._waits(progress)
+        second = " ".join(part for part in (second, wait_words(
+            retry_at, now, words.TRY_AGAIN_AT, words.TRY_AGAIN_TOMORROW_AT)) if part)
+        message = " ".join(part for part in (message, wait_words(
+            message_at, now, words.SEND_AGAIN_AT, words.SEND_AGAIN_TOMORROW_AT)) if part)
+        self.send_again.setEnabled(not message_at or message_at <= now)
+        future = [at for at in (retry_at, message_at) if at and at > now]
+        if future:
+            self._wait.start(max(1, int(math.ceil((min(future) - now) * 1000))))
+        else:
+            self._wait.stop()
         self.headline.setText(first)
         self.detail.setText(second)
         self.detail.setVisible(bool(second))
@@ -401,6 +442,18 @@ class HandoffView(QWidget):
         if said != self._said:
             self._said = said
             announce.announce(self, said)
+
+    @staticmethod
+    def _waits(progress: Progress) -> tuple:
+        """The limits' waits this state has: Try Again's, Send Again's."""
+        failure = progress.failure if progress.phase is Phase.FAILED else None
+        message_failed = progress.phase is Phase.DONE and progress.message is MessageStatus.FAILED
+        return (failure.retry_at if failure is not None else None,
+                progress.message_retry_at if message_failed else None)
+
+    def _wait_over(self) -> None:
+        if self._progress is not None:
+            self.show_progress(self._progress)
 
     @staticmethod
     def _bar(progress: Progress) -> Optional[float]:
@@ -447,12 +500,15 @@ class HandoffView(QWidget):
         self.cancel_button.setEnabled(progress.cancellable)
         self.close_button.setVisible(phase in (Phase.FAILED, Phase.UNCONFIRMED))
         self.retry_button.setVisible(retry)
+        retry_at = progress.failure.retry_at if retry else None
+        waiting = retry_at is not None and retry_at > _now()
+        self.retry_button.setEnabled(not waiting)
         self.done_button.setVisible(phase is Phase.DONE)
         default = (self.done_button if phase is Phase.DONE
-                   else self.retry_button if retry else None)
+                   else self.retry_button if retry and not waiting else None)
         for button in (self.cancel_button, self.close_button, self.retry_button,
                        self.done_button):
             button.setDefault(button is default)
 
 
-__all__ = ["HandoffTrack", "HandoffView", "phase_words"]
+__all__ = ["HandoffTrack", "HandoffView", "phase_words", "wait_words"]

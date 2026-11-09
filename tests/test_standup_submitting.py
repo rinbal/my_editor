@@ -607,9 +607,51 @@ def test_each_refusal_says_what_it_is_and_whether_trying_again_helps(set_up, cod
     set_up(world)
     progress = world.go()
     assert progress.step is Step.FAILED
-    assert progress.failure.headline == words.refusal(code)
+    assert progress.failure.headline == (words.rate_limited(600) if code == "rate_limited"
+                                         else words.refusal(code))
     assert progress.failure.retry is retry
     assert Step.SUBMITTED not in world.steps
+
+
+# -- a limit's wait (RG-M2r 7, contract 15) -----------------------------------------
+
+@pytest.mark.parametrize("wait, headline", [
+    (600, words.RATE_LIMITED_NOW),          # an hour's limit, or the day's near its end
+    (7 * 3600, words.RATE_LIMITED_TODAY),   # only the day's stored bytes wait that long
+    (None, words.refusal("rate_limited")),  # no Retry-After: nothing to go by
+])
+def test_a_limit_says_which_it_is_and_trying_again_waits_for_it(wait, headline):
+    world = World(pictures=False)
+    world.server.inject("submit", Fault(429, "rate_limited", retry_after=wait))
+    progress = world.go()
+    failure = progress.failure
+    assert failure.headline == headline and failure.retry is Step.SIGNING
+    assert failure.retry_at == (None if wait is None else NOW + wait)
+    prompts, posted = len(world.nip98()), len(world.posted())
+    if wait is not None:
+        world.settle(seconds=wait - 1)
+        world.submitting.retry()            # before the wait: no prompt, no request
+        world.settle()
+        assert (len(world.nip98()), len(world.posted())) == (prompts, posted)
+        world.settle(seconds=1)
+    world.submitting.retry()
+    world.settle()
+    assert len(world.posted()) == posted + 1
+    assert world.submitting.progress.step is Step.SUBMITTED
+
+
+def test_a_lookup_refused_for_its_limit_asks_again_only_after_the_wait():
+    world = World(pictures=False)
+    world.server.inject("submit", DROP_AFTER)
+    world.server.inject("lookup", Fault(429, "rate_limited", retry_after=120))
+    world.submitting.start()
+    world.settle()
+    asked = world.log.count("lookup")
+    world.settle(seconds=119)
+    assert world.log.count("lookup") == asked
+    world.settle(seconds=1)
+    assert world.log.count("lookup") == asked + 1
+    assert world.submitting.progress.step is Step.SUBMITTED
 
 
 def test_a_key_that_is_not_confirmed_stops_everything_before_it_starts():
@@ -687,6 +729,28 @@ def test_a_message_that_failed_can_be_sent_again_and_the_submission_stays_submit
     assert progress.step is Step.SUBMITTED and progress.message is MessageStatus.FAILED
     world.submitting.retry_message()
     assert world.submitting.progress.message is MessageStatus.SENT
+
+
+def test_a_message_refused_for_its_limit_is_sent_again_only_after_the_wait():
+    world = World(message="Hallo")
+    answers = [90, None]
+    sent = []
+
+    def send_message(sealed, text, on_signed, on_sent, on_failure):
+        sent.append(text)
+        wait = answers.pop(0)
+        on_failure(wait) if wait else on_sent()
+
+    world.submitting._ports = replace(world.submitting._ports, send_message=send_message)
+    progress = world.go()
+    assert progress.message is MessageStatus.FAILED and progress.message_retry_at == NOW + 90
+    world.submitting.retry_message()                # before the wait: nothing is sealed
+    assert sent == ["Hallo"]
+    world.settle(seconds=90)
+    world.submitting.retry_message()
+    assert sent == ["Hallo", "Hallo"]
+    progress = world.submitting.progress
+    assert progress.message is MessageStatus.SENT and progress.message_retry_at is None
 
 
 def test_eingereicht_comes_only_from_the_receipts_handler():

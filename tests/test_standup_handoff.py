@@ -200,3 +200,62 @@ def test_painting_every_state_in_both_themes_does_not_fail(view):
             view.show_progress(Progress(step, pictures=1, failure=NOT_SENT))
             assert not view.grab().isNull()
     assert Phase.DONE.value == "done"
+
+
+# -- a limit's wait (RG-M2r 7) --------------------------------------------------
+
+def _at(hour: int, minute: int, second: int = 0, *, days: int = 0) -> float:
+    from PySide6.QtCore import QDate, QDateTime, QTime
+    moment = QDateTime(QDate(2026, 11, 9).addDays(days), QTime(hour, minute, second))
+    return float(moment.toSecsSinceEpoch())
+
+
+def _clock(monkeypatch, at):
+    now = {"at": at}
+    monkeypatch.setattr(standup_handoff, "_now", lambda: now["at"])
+    return now
+
+
+def test_try_again_waits_for_the_limit_and_the_words_say_until_when(view, monkeypatch):
+    now = _clock(monkeypatch, _at(14, 20))
+    limited = Failure(words.RATE_LIMITED_NOW, Step.SIGNING, detail=words.NOTHING_SUBMITTED,
+                      retry_at=_at(14, 29, 30))
+    view.show_progress(Progress(Step.FAILED, failure=limited))
+    assert not view.retry_button.isHidden() and not view.retry_button.isEnabled()
+    assert not view.retry_button.isDefault()
+    clock = standup_handoff.wait_words(_at(14, 29, 30), now["at"], "{time}", "{time}")
+    assert clock in ("2:30\u202fPM", "2:30 PM", "14:30")       # the minute shown, rounded up
+    assert view.detail.text() == f"{words.NOTHING_SUBMITTED} You can try again at {clock}."
+    assert view._wait.isActive()
+    now["at"] = _at(14, 29, 30)
+    view._wait.timeout.emit()
+    assert view.retry_button.isEnabled() and view.retry_button.isDefault()
+    assert view.detail.text() == words.NOTHING_SUBMITTED
+    assert not view._wait.isActive()
+
+
+def test_a_wait_past_midnight_says_tomorrow(german, view, monkeypatch):
+    _clock(monkeypatch, _at(23, 50))
+    limited = Failure(words.RATE_LIMITED_TODAY, Step.SIGNING, detail=words.NOTHING_SUBMITTED,
+                      retry_at=_at(0, 5, days=1))
+    view.show_progress(Progress(Step.FAILED, failure=limited))
+    assert view.headline.text() == ("Du hast Einundzwanzig Magazin so viel gesendet, wie es "
+                                    "an einem Tag annimmt.")
+    assert view.detail.text().endswith("Du kannst es morgen um 00:05 noch einmal versuchen.")
+
+
+def test_send_again_waits_for_the_limit_of_messages(view, monkeypatch):
+    now = _clock(monkeypatch, _at(9, 0))
+    asked = []
+    view.retry_message_requested.connect(lambda: asked.append(True))
+    view.show_progress(Progress(Step.SUBMITTED, message=MessageStatus.FAILED,
+                                message_retry_at=_at(9, 1)))
+    assert not view.send_again.isHidden() and not view.send_again.isEnabled()
+    assert view.message.text().startswith(words.MESSAGE_NOT_SENT + " You can send it again at ")
+    view.send_again.click()
+    assert asked == []
+    now["at"] = _at(9, 1)
+    view._wait.timeout.emit()
+    assert view.send_again.isEnabled() and view.message.text() == words.MESSAGE_NOT_SENT
+    view.send_again.click()
+    assert asked == [True]

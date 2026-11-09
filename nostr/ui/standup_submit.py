@@ -41,6 +41,7 @@ from ..standup.client import StandupApi
 from ..standup import drafting
 from ..standup.drafting import ArticleDraft, Choice, EncryptedPicture, Sealed, choose_round
 from ..standup.entries import SubmissionEntry
+from ..standup.errors import Code, StandupError
 from ..standup.lists import SUBMISSIONS_UNREADABLE, ReadState, SubmissionsList
 from ..standup.opening import MediaKeys
 from ..standup.servers import configured_server
@@ -620,13 +621,18 @@ class StandupWriter(QObject):
             on_signed()
             account.api.send_message(sealed.submission_id, wrap, kind_hint="message",
                                      on_success=lambda _seq: on_sent(),
-                                     on_failure=lambda _error: on_failure())
+                                     on_failure=lambda error: on_failure(_limit_wait(error)))
 
         # The signer app may answer after the account was let go: then the
         # message is not posted (no new session for an account left).
         conversation.seal_and_wrap(account.signer, rumor, sealed.s_sub, room,
                                    on_success=_live(account, wrapped),
                                    on_failure=_live(account, lambda _why: on_failure()))
+
+
+def _limit_wait(error: StandupError) -> Optional[int]:
+    """The seconds a refusal for a limit asks to wait, or None."""
+    return error.retry_after if error.code == Code.RATE_LIMITED else None
 
 
 def _background_message_words(progress: Progress, publication: str) -> str:

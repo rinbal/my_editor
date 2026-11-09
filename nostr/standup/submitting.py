@@ -140,12 +140,15 @@ class Failure:
     server holds, :data:`HELD_WORDS`), ``said`` (the list's or the
     upload's own words, already translated, or ""), and where trying
     again goes on (``retry``; None when it would not help). The second
-    line shown is ``said`` followed by ``detail``."""
+    line shown is ``said`` followed by ``detail``. ``retry_at``: the
+    clock time before which trying again only meets the same limit (a
+    429's Retry-After, contract 15); None when it may at once."""
 
     headline: str
     retry: Optional[Step]
     detail: str
     said: str = ""
+    retry_at: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -160,6 +163,8 @@ class Progress:
     # cancelled, whatever the step (the server may hold it).
     sent: bool = False
     held: Held = Held.NOTHING
+    # The first message met a limit: sent again from this clock time on.
+    message_retry_at: Optional[float] = None
 
     @property
     def phase(self) -> Phase:
@@ -192,8 +197,9 @@ class Ports:
     - ``lookup(sealed, on_done(status), on_failure(StandupError))``:
       watcher.resolve_unconfirmed for ``sealed.entry``, its receipt checked
       against ``sealed.body``, what was sent.
-    - ``send_message(sealed, text, on_signed(), on_sent(), on_failure())``:
-      ``on_signed`` once the signer sealed it, before it is sent.
+    - ``send_message(sealed, text, on_signed(), on_sent(), on_failure(wait))``:
+      ``on_signed`` once the signer sealed it, before it is sent; ``wait``
+      the seconds a limit asks for (a 429's Retry-After), or None.
     - ``later(ms, callback)``; ``clock()``.
     """
 
@@ -237,6 +243,7 @@ class _Sending:
 @dataclass(frozen=True)
 class _MessageDone:
     sent: bool
+    retry_after: Optional[int] = None       # a limit's wait, in seconds
 
 
 @dataclass(frozen=True)
@@ -355,7 +362,8 @@ class Submitting:
 
     def retry(self) -> None:
         failure = self._progress.failure
-        if self._progress.step is not Step.FAILED or failure is None or failure.retry is None:
+        if self._progress.step is not Step.FAILED or failure is None or failure.retry is None \
+                or self._waits(failure.retry_at):
             return
         self._reuploads = 0
         {Step.KEY: self._ask_key, Step.UPLOADING: self._upload, Step.REUPLOADING: self._reupload,
@@ -363,8 +371,17 @@ class Submitting:
 
     def retry_message(self) -> None:
         if self._progress.step is Step.SUBMITTED and \
-                self._progress.message is MessageStatus.FAILED:
+                self._progress.message is MessageStatus.FAILED and \
+                not self._waits(self._progress.message_retry_at):
             self._send_message()
+
+    def _waits(self, until: Optional[float]) -> bool:
+        """Whether a limit's wait is not over: another request now would
+        be another signer prompt meeting the same limit (RG-M2r 7)."""
+        return until is not None and self._ports.clock() < until
+
+    def _after(self, seconds: Optional[int]) -> Optional[float]:
+        return None if not seconds else self._ports.clock() + seconds
 
     def stop(self) -> None:
         """Sign-out: nothing more is asked, nothing more is said."""
@@ -440,13 +457,13 @@ class Submitting:
             stop()
 
     def _fail(self, headline: str, retry: Optional[Step], *, said: str = "",
-              held: Optional[Held] = None) -> None:
+              held: Optional[Held] = None, retry_at: Optional[float] = None) -> None:
         """Failed, with what the server holds now (``held``, when this
         answer told; else as it was): the second line comes from it."""
         self._stop = None
         held = held or self._progress.held
         self._show(Step.FAILED, held=held, failure=Failure(
-            headline, retry, detail=HELD_WORDS[held].failed, said=said))
+            headline, retry, detail=HELD_WORDS[held].failed, said=said, retry_at=retry_at))
 
     def _refused_held(self, error: Optional[StandupError] = None) -> Held:
         """What the server holds after a refusal of the request just made:
@@ -569,6 +586,11 @@ class Submitting:
 
     def _refused(self, error: StandupError) -> None:
         self._stop = None
+        if error.code == Code.RATE_LIMITED:
+            # The limit's wait says which one it is and when trying again helps.
+            self._fail(words.rate_limited(error.retry_after), _RETRY_AT[error.code],
+                       held=self._refused_held(error), retry_at=self._after(error.retry_after))
+            return
         self._fail(words.refusal(error.code), _RETRY_AT.get(error.code),
                    held=self._refused_held(error))
 
@@ -630,8 +652,9 @@ class Submitting:
         self._show(Step.CHECKING)
         self._look_up()
 
-    def _look_up(self) -> None:
-        delay = LOOKUP_DELAYS_MS[min(self._lookups, len(LOOKUP_DELAYS_MS) - 1)]
+    def _look_up(self, *, wait_s: Optional[int] = None) -> None:
+        delay = max(LOOKUP_DELAYS_MS[min(self._lookups, len(LOOKUP_DELAYS_MS) - 1)],
+                    (wait_s or 0) * 1000)
         self._lookups += 1
         answer = self._answer()
         token = self._token
@@ -642,8 +665,10 @@ class Submitting:
 
         self._ports.later(delay, ask)
 
-    def _lookup_failed(self, _error: StandupError) -> None:
-        self._look_up()             # the entry stays unconfirmed: ask again later
+    def _lookup_failed(self, error: StandupError) -> None:
+        # The entry stays unconfirmed: ask again later, never before a
+        # limit's wait is over (contract 15: 30 lookups a minute).
+        self._look_up(wait_s=error.retry_after if error.code == Code.RATE_LIMITED else None)
 
     def _not_stored(self, _found: NotStored) -> None:
         # The server answered the lookup: there was a connection, it has
@@ -667,14 +692,15 @@ class Submitting:
         self._ports.send_message(self._sealed, self._choice.message.strip(),
                                  lambda: answer(_MessageSigned()),
                                  lambda: answer(_MessageDone(True)),
-                                 lambda: answer(_MessageDone(False)))
+                                 lambda wait=None: answer(_MessageDone(False, wait)))
 
     def _message_signed(self, _event: _MessageSigned) -> None:
         self._show(Step.SUBMITTED, message=MessageStatus.SENDING)
 
     def _message_done(self, event: _MessageDone) -> None:
         self._show(Step.SUBMITTED,
-                   message=MessageStatus.SENT if event.sent else MessageStatus.FAILED)
+                   message=MessageStatus.SENT if event.sent else MessageStatus.FAILED,
+                   message_retry_at=None if event.sent else self._after(event.retry_after))
 
 
 __all__ = [

@@ -27,6 +27,7 @@ from PySide6.QtWidgets import QApplication
 import i18n
 from nostr.list_results import ListRead, ReadStatus
 from nostr.standup import formats, words
+from nostr.standup.errors import Code, StandupError
 from nostr.standup.answers import LookupAnswer
 from nostr.standup.drafting import (
     ROUND_LIST_INCOMPLETE, ROUND_UNKNOWN, LocalPicture, encrypt_pictures,
@@ -699,6 +700,33 @@ def test_the_first_message_is_sealed_by_the_writer_and_wrapped_to_the_submission
     assert opened.sender == pk("writer")
     assert opened.rumor["content"] == "Passt zu eurer Reihe."
     assert len(signer.requests) == 1                # one prompt: the seal
+
+
+@pytest.mark.parametrize("error, wait", [
+    (StandupError(Code.RATE_LIMITED, retry_after=45), 45),     # a limit: its wait goes on
+    (StandupError(Code.RATE_LIMITED), None),
+    (StandupError(Code.SERVER, retry_after=45), None),         # not a limit: no wait
+])
+def test_a_message_refused_for_a_limit_says_how_long_to_wait(error, wait):
+    from nostr import crypto as nostr_crypto
+    from tests.standup_fakes import SignAs
+    from tests.standup_vectors import pk, sk
+
+    s_sub = bytes(range(1, 33))
+    sealed = SimpleNamespace(body={"p_sub": nostr_crypto.get_public_key(s_sub).hex()},
+                             s_sub=s_sub, submission_id="ab" * 32)
+    signer, waits = SignAs(sk("writer")), []
+
+    def send_message(submission_id, wrap, *, kind_hint, on_success, on_failure):
+        on_failure(error)
+
+    account = SimpleNamespace(
+        writer=pk("writer"), api=SimpleNamespace(send_message=send_message), stopped=False,
+        signer=SimpleNamespace(sign_event=lambda unsigned, *, on_success, on_failure:
+                               signer(unsigned, on_success, on_failure)))
+    StandupWriter._send_message(account, sealed, "Hallo", lambda: None, lambda: None,
+                                lambda wait=None: waits.append(wait))
+    assert waits == [wait]
 
 
 def test_a_message_with_a_secret_key_in_it_is_never_sent():

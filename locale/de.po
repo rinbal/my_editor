@@ -413,7 +413,7 @@ msgstr "Seite {number} von {count}"
 
 #: file_kinds.py:152
 #: media_files.py:113
-#: nostr/ui/media_library_dialog.py:1393
+#: nostr/ui/media_library_dialog.py:1394
 msgid "File"
 msgstr "Datei"
 
@@ -1563,7 +1563,7 @@ msgstr "Hochladen und veröffentlichen"
 
 #: main_window.py:5185
 #: sheet_window.py:188
-#: nostr/ui/media_library_dialog.py:916
+#: nostr/ui/media_library_dialog.py:917
 msgid "Save As"
 msgstr "Speichern unter"
 
@@ -1686,7 +1686,7 @@ msgstr "Neuer Versuch. Bestätige die Anfrage in deiner Signer-App …"
 #: main_window.py:2222
 #: main_window.py:7402
 #: nostr/ui/media_library_dialog.py:757
-#: nostr/ui/media_library_dialog.py:1004
+#: nostr/ui/media_library_dialog.py:1005
 #: nostr/ui/published_view.py:762
 msgid "Delete"
 msgstr "Löschen"
@@ -2149,7 +2149,7 @@ msgstr "Es gibt keine Datei zum Löschen"
 #: main_window.py:10379
 #: main_window.py:4702
 #: media_files.py:109
-#: nostr/ui/media_library_dialog.py:1393
+#: nostr/ui/media_library_dialog.py:1394
 msgid "Image"
 msgstr "Bild"
 
@@ -2908,7 +2908,7 @@ msgid "The list wasn’t shared. Try again in a moment."
 msgstr "Die Liste wurde nicht geteilt. Versuche es gleich noch einmal."
 
 #: main_window.py:8820
-#: nostr/ui/media_library_dialog.py:939
+#: nostr/ui/media_library_dialog.py:940
 #, python-brace-format
 msgid "Saving “{name}”…"
 msgstr "„{name}“ wird gespeichert …"
@@ -3727,11 +3727,11 @@ msgstr "MyEditor kann Audio- und Videodateien dieser Arten lesen: {kinds}."
 
 #: main_window.py:9672
 #: nostr/blossom/upload_progress.py:148
-#: nostr/ui/media_library_dialog.py:1171
-#: nostr/ui/media_library_dialog.py:1210
-#: nostr/ui/media_library_dialog.py:1138
-#: nostr/ui/media_library_dialog.py:1157
-#: nostr/ui/media_library_dialog.py:1188
+#: nostr/ui/media_library_dialog.py:1172
+#: nostr/ui/media_library_dialog.py:1211
+#: nostr/ui/media_library_dialog.py:1139
+#: nostr/ui/media_library_dialog.py:1158
+#: nostr/ui/media_library_dialog.py:1189
 msgid "Preparing…"
 msgstr "Wird vorbereitet …"
 
@@ -4055,13 +4055,13 @@ msgid "Open Draft"
 msgstr "Entwurf öffnen"
 
 #: media_files.py:109
-#: nostr/ui/media_library_dialog.py:1393
+#: nostr/ui/media_library_dialog.py:1394
 msgid "Video"
 msgstr "Video"
 
 #: media_files.py:109
 #: nostr/ui/media_library_dialog.py:354
-#: nostr/ui/media_library_dialog.py:1393
+#: nostr/ui/media_library_dialog.py:1394
 msgid "Audio"
 msgstr "Audio"
 
@@ -7960,206 +7960,236 @@ msgstr "Was du schon gelesen hast, wurde mit einer älteren Verschlüsselung ges
 msgid "The editorial team's key is not confirmed. Submitting is not possible right now."
 msgstr "Der Schlüssel der Redaktion ist nicht bestätigt. Einreichen ist gerade nicht möglich."
 
-#: nostr/standup/words.py:25
+#: nostr/standup/words.py:27
 msgid "Encrypting …"
 msgstr "Wird verschlüsselt …"
 
-#: nostr/standup/words.py:26
+#: nostr/standup/words.py:28
 msgid "Uploading picture …"
 msgstr "Bild wird hochgeladen …"
 
-#: nostr/standup/words.py:27
+#: nostr/standup/words.py:29
 msgid "Uploading pictures …"
 msgstr "Bilder werden hochgeladen …"
 
-#: nostr/standup/words.py:28
+#: nostr/standup/words.py:30
 msgid "Encrypted, to your media server."
 msgstr "Verschlüsselt, auf deinen Medienserver."
 
-#: nostr/standup/words.py:29
+#: nostr/standup/words.py:31
 msgid "Waiting for your signer app."
 msgstr "Warte auf deine Signer-App."
 
-#: nostr/standup/words.py:30
+#: nostr/standup/words.py:32
 msgid "Confirm the request there."
 msgstr "Bestätige dort die Anfrage."
 
-#: nostr/standup/words.py:31
+#: nostr/standup/words.py:33
 #, python-brace-format
 msgid "Sending to {publication} …"
 msgstr "Wird an {publication} gesendet …"
 
-#: nostr/standup/words.py:32
+#: nostr/standup/words.py:34
 msgid "Not confirmed yet. Checking …"
 msgstr "Noch nicht bestätigt. Wird geprüft …"
 
-#: nostr/standup/words.py:33
+#: nostr/standup/words.py:35
 msgid "You can close the window, MyEditor keeps checking."
 msgstr "Du kannst das Fenster schließen, MyEditor prüft weiter."
 
-#: nostr/standup/words.py:34
+#: nostr/standup/words.py:36
 #, python-brace-format
 msgid "Submitted. In the inbox of {publication}."
 msgstr "Eingereicht. Im Eingang von {publication}."
 
-#: nostr/standup/words.py:35
+#: nostr/standup/words.py:37
 msgid "The server confirmed receipt."
 msgstr "Der Server hat den Empfang bestätigt."
 
-#: nostr/standup/words.py:36
+#: nostr/standup/words.py:38
 msgid "Submitting …"
 msgstr "Wird eingereicht …"
 
-#: nostr/standup/words.py:39
+#: nostr/standup/words.py:41
 #, python-brace-format
 msgid "Your submission to {publication} is in. Confirm your message to the editorial team in your signer app."
 msgstr "Deine Einreichung bei {publication} ist angekommen. Bestätige deine Nachricht an die Redaktion in deiner Signer-App."
 
-#: nostr/standup/words.py:41
+#: nostr/standup/words.py:43
 #, python-brace-format
 msgid "Your message to the editorial team of {publication} wasn’t sent. Open Submit to a Publication for this text to send it again."
 msgstr "Deine Nachricht an die Redaktion von {publication} wurde nicht gesendet. Öffne „Bei Publikation einreichen“ für diesen Text, um sie erneut zu senden."
 
-#: nostr/standup/words.py:46
+#: nostr/standup/words.py:48
 #, python-brace-format
 msgid "Your submission to {publication} stopped when the account changed. Nothing was sent."
 msgstr "Deine Einreichung bei {publication} wurde beim Kontowechsel angehalten. Es wurde nichts gesendet."
 
-#: nostr/standup/words.py:48
+#: nostr/standup/words.py:50
 #, python-brace-format
 msgid "Your submission to {publication} stopped when the account changed, before the server confirmed it. Open Submit to a Publication with that account to see whether it arrived."
 msgstr "Deine Einreichung bei {publication} wurde beim Kontowechsel angehalten, bevor der Server sie bestätigt hat. Öffne „Bei Publikation einreichen“ mit diesem Konto, um zu sehen, ob sie angekommen ist."
 
-#: nostr/standup/words.py:51
+#: nostr/standup/words.py:53
 #, python-brace-format
 msgid "Your submission to {publication} stopped when the account changed. {publication} already has another version of it."
 msgstr "Deine Einreichung bei {publication} wurde beim Kontowechsel angehalten. {publication} hat schon eine andere Fassung davon."
 
-#: nostr/standup/words.py:53
+#: nostr/standup/words.py:55
 #, python-brace-format
 msgid "Your submission to {publication} is in, but a picture was still being uploaded when the account changed."
 msgstr "Deine Einreichung bei {publication} ist angekommen, aber beim Kontowechsel wurde noch ein Bild hochgeladen."
 
-#: nostr/standup/words.py:55
+#: nostr/standup/words.py:57
 #, python-brace-format
 msgid "Your submission to {publication} is in, but your message may not have reached the editorial team: the account changed."
 msgstr "Deine Einreichung bei {publication} ist angekommen, aber deine Nachricht hat die Redaktion vielleicht nicht erreicht: Das Konto wurde gewechselt."
 
-#: nostr/standup/words.py:57
+#: nostr/standup/words.py:59
 msgid "Not confirmed"
 msgstr "Nicht bestätigt"
 
-#: nostr/standup/words.py:60
+#: nostr/standup/words.py:62
 msgid "Waiting for your signer app: confirm your message there."
 msgstr "Warte auf deine Signer-App: Bestätige dort deine Nachricht."
 
-#: nostr/standup/words.py:61
+#: nostr/standup/words.py:63
 msgid "Sending your message …"
 msgstr "Deine Nachricht wird gesendet …"
 
-#: nostr/standup/words.py:62
+#: nostr/standup/words.py:64
 msgid "Your message to the editorial team is sent."
 msgstr "Deine Nachricht an die Redaktion ist gesendet."
 
-#: nostr/standup/words.py:63
+#: nostr/standup/words.py:65
 msgid "Your message wasn’t sent."
 msgstr "Deine Nachricht wurde nicht gesendet."
 
-#: nostr/standup/words.py:67
+#: nostr/standup/words.py:69
 msgid "Nothing is submitted, your text stays in the editor."
 msgstr "Nichts ist eingereicht, dein Text bleibt im Editor."
 
-#: nostr/standup/words.py:68
+#: nostr/standup/words.py:70
 msgid "Your list of submissions holds an entry for this text that MyEditor cannot use."
 msgstr "Deine Liste der Einreichungen hat zu diesem Text einen Eintrag, den MyEditor nicht verwenden kann."
 
-#: nostr/standup/words.py:70
+#: nostr/standup/words.py:72
 msgid "Your text stays in the editor."
 msgstr "Dein Text bleibt im Editor."
 
-#: nostr/standup/words.py:72
+#: nostr/standup/words.py:74
 msgid "It may have arrived. Open Submit to a Publication again to see whether it did."
 msgstr "Sie ist vielleicht angekommen. Öffne „Bei Publikation einreichen“ noch einmal, um es zu sehen."
 
-#: nostr/standup/words.py:74
+#: nostr/standup/words.py:76
 msgid "The server has your submission; a picture is still missing."
 msgstr "Der Server hat deine Einreichung, ein Bild fehlt noch."
 
-#: nostr/standup/words.py:75
+#: nostr/standup/words.py:77
 msgid "Not sent. No connection to the server."
 msgstr "Nicht gesendet. Keine Verbindung zum Server."
 
-#: nostr/standup/words.py:77
+#: nostr/standup/words.py:79
 msgid "The server didn’t receive your submission."
 msgstr "Der Server hat deine Einreichung nicht erhalten."
 
-#: nostr/standup/words.py:78
+#: nostr/standup/words.py:80
 msgid "Not sent. Your signer app declined the request."
 msgstr "Nicht gesendet. Deine Signer-App hat die Anfrage abgelehnt."
 
-#: nostr/standup/words.py:79
+#: nostr/standup/words.py:81
 msgid "Not sent. Your signer app didn’t answer."
 msgstr "Nicht gesendet. Deine Signer-App hat nicht geantwortet."
 
-#: nostr/standup/words.py:80
+#: nostr/standup/words.py:82
 msgid "Your list of submissions couldn’t be saved."
 msgstr "Deine Liste der Einreichungen konnte nicht gespeichert werden."
 
-#: nostr/standup/words.py:81
+#: nostr/standup/words.py:83
 msgid "Another device changed this submission just now."
 msgstr "Ein anderes Gerät hat diese Einreichung gerade geändert."
 
-#: nostr/standup/words.py:82
+#: nostr/standup/words.py:84
 msgid "A picture couldn’t be uploaded."
 msgstr "Ein Bild konnte nicht hochgeladen werden."
 
-#: nostr/standup/words.py:83
+#: nostr/standup/words.py:85
 msgid "A picture can’t be found on your media server."
 msgstr "Ein Bild ist auf deinem Medienserver nicht zu finden."
 
-#: nostr/standup/words.py:84
+#: nostr/standup/words.py:86
 #, python-brace-format
 msgid "This submission is larger than {publication} takes."
 msgstr "Diese Einreichung ist größer, als {publication} annimmt."
 
-#: nostr/standup/words.py:85
+#: nostr/standup/words.py:87
 #, python-brace-format
 msgid "{publication} already has another version of this submission."
 msgstr "{publication} hat schon eine andere Fassung dieser Einreichung."
 
-#: nostr/standup/words.py:88
+#: nostr/standup/words.py:90
 #, python-brace-format
 msgid "{publication} received this submission, but not as MyEditor sent it."
 msgstr "{publication} hat diese Einreichung erhalten, aber nicht so, wie MyEditor sie gesendet hat."
 
-#: nostr/standup/words.py:89
+#: nostr/standup/words.py:91
 msgid "The server didn’t take the submission."
 msgstr "Der Server hat die Einreichung nicht angenommen."
 
-#: nostr/standup/words.py:91
+#: nostr/standup/words.py:93
 msgid "MyEditor couldn’t put this submission together."
 msgstr "MyEditor konnte diese Einreichung nicht zusammenstellen."
 
-#: nostr/standup/words.py:95
+#: nostr/standup/words.py:121
+#, python-brace-format
+msgid "{publication} can’t take more from you right now."
+msgstr "{publication} nimmt gerade nichts mehr von dir an."
+
+#: nostr/standup/words.py:122
+#, python-brace-format
+msgid "You’ve sent {publication} as much as it takes in one day."
+msgstr "Du hast {publication} so viel gesendet, wie es an einem Tag annimmt."
+
+#: nostr/standup/words.py:123
+#, python-brace-format
+msgid "You can try again at {time}."
+msgstr "Du kannst es um {time} noch einmal versuchen."
+
+#: nostr/standup/words.py:124
+#, python-brace-format
+msgid "You can try again tomorrow at {time}."
+msgstr "Du kannst es morgen um {time} noch einmal versuchen."
+
+#: nostr/standup/words.py:125
+#, python-brace-format
+msgid "You can send it again at {time}."
+msgstr "Du kannst sie um {time} noch einmal senden."
+
+#: nostr/standup/words.py:126
+#, python-brace-format
+msgid "You can send it again tomorrow at {time}."
+msgstr "Du kannst sie morgen um {time} noch einmal senden."
+
+#: nostr/standup/words.py:97
 #, python-brace-format
 msgid "{publication} isn’t taking submissions right now."
 msgstr "{publication} nimmt gerade keine Einreichungen an."
 
-#: nostr/standup/words.py:96
+#: nostr/standup/words.py:98
 #, python-brace-format
 msgid "{publication} doesn’t take submissions from you."
 msgstr "{publication} nimmt von dir keine Einreichungen an."
 
-#: nostr/standup/words.py:97
+#: nostr/standup/words.py:99
 #, python-brace-format
 msgid "You already have as many open submissions at {publication} as it takes."
 msgstr "Du hast bei {publication} schon so viele offene Einreichungen, wie sie annimmt."
 
-#: nostr/standup/words.py:99
+#: nostr/standup/words.py:101
 msgid "Too many submissions in a short time. Try again later."
 msgstr "Zu viele Einreichungen in kurzer Zeit. Versuche es später noch einmal."
 
-#: nostr/standup/words.py:104
+#: nostr/standup/words.py:106
 #, python-brace-format
 msgid "Nobody at {publication} could decide on it: the only person who can is named among those who take part."
 msgstr "Niemand bei {publication} könnte darüber entscheiden: Die einzige Person, die das kann, ist unter den Beteiligten."
@@ -10483,17 +10513,17 @@ msgstr "Nur du kannst das sehen"
 msgid "couldn’t upload: {reason}"
 msgstr "nicht hochgeladen: {reason}"
 
-#: nostr/ui/media_library_dialog.py:1034
+#: nostr/ui/media_library_dialog.py:1035
 msgid "Anyone with the link will no longer see it, and anything you published with it will no longer show it."
 msgid_plural "Anyone with the link will no longer see them, and anything you published with them will no longer show them."
 msgstr[0] "Wer den Link hat, sieht es dann nicht mehr, und was du damit veröffentlicht hast, zeigt es nicht mehr."
 msgstr[1] "Wer den Link hat, sieht sie dann nicht mehr, und was du damit veröffentlicht hast, zeigt sie nicht mehr."
 
-#: nostr/ui/media_library_dialog.py:1421
+#: nostr/ui/media_library_dialog.py:1422
 msgid "A media server it’s on didn’t let your account delete it."
 msgstr "Ein Medienserver, auf dem es liegt, hat deinem Konto das Löschen nicht erlaubt."
 
-#: nostr/ui/media_library_dialog.py:1505
+#: nostr/ui/media_library_dialog.py:1506
 #, python-brace-format
 msgid "At least {used} of {quota} used"
 msgstr "Mindestens {used} von {quota} belegt"
@@ -10523,39 +10553,39 @@ msgstr "Sortieren nach"
 msgid "Search Media"
 msgstr "Medien durchsuchen"
 
-#: nostr/ui/media_library_dialog.py:979
+#: nostr/ui/media_library_dialog.py:980
 msgid "The editorial team can no longer open this file of your submission. You can’t undo this action."
 msgid_plural "The editorial team can no longer open these files of your submissions. You can’t undo this action."
 msgstr[0] "Die Redaktion kann diese Datei deiner Einreichung dann nicht mehr öffnen. Das kann nicht rückgängig gemacht werden."
 msgstr[1] "Die Redaktion kann diese Dateien deiner Einreichungen dann nicht mehr öffnen. Das kann nicht rückgängig gemacht werden."
 
-#: nostr/ui/media_library_dialog.py:1073
+#: nostr/ui/media_library_dialog.py:1074
 #, python-brace-format
 msgid "“{name}” is still on one of your media servers. {reason}"
 msgstr "„{name}“ ist noch auf einem deiner Medienserver. {reason}"
 
-#: nostr/ui/media_library_dialog.py:1075
+#: nostr/ui/media_library_dialog.py:1076
 #, python-brace-format
 msgid "“{name}” wasn’t deleted. {reason}"
 msgstr "„{name}“ wurde nicht gelöscht. {reason}"
 
-#: nostr/ui/media_library_dialog.py:1082
+#: nostr/ui/media_library_dialog.py:1083
 msgid "The file"
 msgstr "Die Datei"
 
-#: nostr/ui/media_library_dialog.py:1093
+#: nostr/ui/media_library_dialog.py:1094
 msgid "Add to Media Library"
 msgstr "Zur Mediathek hinzufügen"
 
-#: nostr/ui/media_library_dialog.py:1291
+#: nostr/ui/media_library_dialog.py:1292
 msgid "Couldn’t reach your media servers. Check your internet connection."
 msgstr "Deine Medienserver sind nicht erreichbar. Prüfe deine Internetverbindung."
 
-#: nostr/ui/media_library_dialog.py:1321
+#: nostr/ui/media_library_dialog.py:1322
 msgid "Anyone with the link can see the files you add here."
 msgstr "Alle, die den Link haben, können die Dateien sehen, die du hier hinzufügst."
 
-#: nostr/ui/media_library_dialog.py:1507
+#: nostr/ui/media_library_dialog.py:1508
 #, python-brace-format
 msgid "Full: {used} of {quota} used"
 msgstr "Voll: {used} von {quota} belegt"
@@ -10632,39 +10662,39 @@ msgstr "In Ordner speichern …"
 msgid "MyEditor is still checking whether this image is private. One moment."
 msgstr "MyEditor prüft noch, ob dieses Bild privat ist. Einen Moment."
 
-#: nostr/ui/media_library_dialog.py:916
+#: nostr/ui/media_library_dialog.py:917
 msgid "All Files (*)"
 msgstr "Alle Dateien (*)"
 
-#: nostr/ui/media_library_dialog.py:919
+#: nostr/ui/media_library_dialog.py:920
 msgid "Choose a Folder"
 msgstr "Ordner auswählen"
 
-#: nostr/ui/media_library_dialog.py:986
+#: nostr/ui/media_library_dialog.py:987
 msgid "If this is a file of one of your submissions, the editorial team can no longer open it. You can’t undo this action."
 msgid_plural "If these are files of your submissions, the editorial team can no longer open them. You can’t undo this action."
 msgstr[0] "Wenn das eine Datei einer deiner Einreichungen ist, kann die Redaktion sie nicht mehr öffnen. Du kannst diese Aktion nicht widerrufen."
 msgstr[1] "Wenn das Dateien deiner Einreichungen sind, kann die Redaktion sie nicht mehr öffnen. Du kannst diese Aktion nicht widerrufen."
 
-#: nostr/ui/media_library_dialog.py:1039
+#: nostr/ui/media_library_dialog.py:1040
 #: nostr/ui/media_library_dialog.py:756
 msgid "Stop Sharing"
 msgstr "Teilen beenden"
 
-#: nostr/ui/media_library_dialog.py:1126
+#: nostr/ui/media_library_dialog.py:1127
 msgid "The pasted image couldn’t be read."
 msgstr "Das eingesetzte Bild konnte nicht gelesen werden."
 
-#: nostr/ui/media_library_dialog.py:1286
+#: nostr/ui/media_library_dialog.py:1287
 msgid "Your media servers may not have listed every file. Refresh to look again."
 msgstr "Deine Medienserver haben vielleicht nicht jede Datei aufgelistet. Aktualisiere, um noch einmal nachzusehen."
 
-#: nostr/ui/media_library_dialog.py:1509
+#: nostr/ui/media_library_dialog.py:1510
 #, python-brace-format
 msgid "Almost full: {used} of {quota} used"
 msgstr "Fast voll: {used} von {quota} belegt"
 
-#: nostr/ui/media_library_dialog.py:1511
+#: nostr/ui/media_library_dialog.py:1512
 #, python-brace-format
 msgid "{used} of {quota} used"
 msgstr "{used} von {quota} belegt"
@@ -10689,54 +10719,54 @@ msgstr "MyEditor prüft diese Datei noch. Einen Moment."
 msgid "This image can’t be used until your signer app lets MyEditor check whether it is private."
 msgstr "Dieses Bild kann erst verwendet werden, wenn deine Signer-App MyEditor prüfen lässt, ob es privat ist."
 
-#: nostr/ui/media_library_dialog.py:975
+#: nostr/ui/media_library_dialog.py:976
 #, python-brace-format
 msgid "Delete “{name}”?"
 msgstr "„{name}“ löschen?"
 
-#: nostr/ui/media_library_dialog.py:976
+#: nostr/ui/media_library_dialog.py:977
 #, python-brace-format
 msgid "Delete {count} item?"
 msgid_plural "Delete {count} items?"
 msgstr[0] "{count} Objekt löschen?"
 msgstr[1] "{count} Objekte löschen?"
 
-#: nostr/ui/media_library_dialog.py:993
+#: nostr/ui/media_library_dialog.py:994
 msgid "It’s also gone from the other app that keeps it privately. You can’t undo this action."
 msgid_plural "They’re also gone from the other apps that keep them privately. You can’t undo this action."
 msgstr[0] "Sie ist dann auch aus der anderen App verschwunden, die sie privat aufbewahrt. Das kann nicht rückgängig gemacht werden."
 msgstr[1] "Sie sind dann auch aus den anderen Apps verschwunden, die sie privat aufbewahren. Das kann nicht rückgängig gemacht werden."
 
-#: nostr/ui/media_library_dialog.py:999
+#: nostr/ui/media_library_dialog.py:1000
 msgid "Anything you published with it will no longer show it. You can’t undo this action."
 msgid_plural "Anything you published with them will no longer show them. You can’t undo this action."
 msgstr[0] "Was du damit veröffentlicht hast, zeigt es dann nicht mehr. Das kann nicht rückgängig gemacht werden."
 msgstr[1] "Was du damit veröffentlicht hast, zeigt sie dann nicht mehr. Das kann nicht rückgängig gemacht werden."
 
-#: nostr/ui/media_library_dialog.py:1031
+#: nostr/ui/media_library_dialog.py:1032
 #, python-brace-format
 msgid "Stop sharing “{name}”?"
 msgstr "Teilen von „{name}“ beenden?"
 
-#: nostr/ui/media_library_dialog.py:1032
+#: nostr/ui/media_library_dialog.py:1033
 #, python-brace-format
 msgid "Stop sharing {count} item?"
 msgid_plural "Stop sharing {count} items?"
 msgstr[0] "Teilen von {count} Objekt beenden?"
 msgstr[1] "Teilen von {count} Objekten beenden?"
 
-#: nostr/ui/media_library_dialog.py:1094
+#: nostr/ui/media_library_dialog.py:1095
 #, python-brace-format
 msgid "Images, Videos, Audio and Files ({patterns})"
 msgstr "Bilder, Videos, Audio und Dateien ({patterns})"
 
-#: nostr/ui/media_library_dialog.py:1246
-#: nostr/ui/media_library_dialog.py:1146
+#: nostr/ui/media_library_dialog.py:1247
+#: nostr/ui/media_library_dialog.py:1147
 #, python-brace-format
 msgid "“{name}” wasn’t added. {reason}"
 msgstr "„{name}“ wurde nicht hinzugefügt. {reason}"
 
-#: nostr/ui/media_library_dialog.py:1261
+#: nostr/ui/media_library_dialog.py:1262
 #, python-brace-format
 msgid "“{name}” is added, but one of your media servers didn’t keep a copy."
 msgstr "„{name}“ ist hinzugefügt, aber einer deiner Medienserver hat keine Kopie behalten."
@@ -10755,24 +10785,24 @@ msgstr "Links kopieren"
 msgid "Open in Browser"
 msgstr "Im Browser öffnen"
 
-#: nostr/ui/media_library_dialog.py:1060
+#: nostr/ui/media_library_dialog.py:1061
 #, python-brace-format
 msgid "“{name}” is no longer shared."
 msgstr "„{name}“ ist nicht mehr geteilt."
 
-#: nostr/ui/media_library_dialog.py:1065
+#: nostr/ui/media_library_dialog.py:1066
 #, python-brace-format
 msgid "“{name}” is still shared. {reason}"
 msgstr "„{name}“ ist noch geteilt. {reason}"
 
-#: nostr/ui/media_library_dialog.py:1111
+#: nostr/ui/media_library_dialog.py:1112
 #, python-brace-format
 msgid "“{name}” wasn’t added. Choose a supported image, video, audio or document file."
 msgid_plural "{count} files weren’t added. Choose supported images, videos, audio or document files."
 msgstr[0] "„{name}“ wurde nicht hinzugefügt. Wähle eine unterstützte Bild-, Video-, Audio- oder Dokumentdatei."
 msgstr[1] "{count} Dateien wurden nicht hinzugefügt. Wähle unterstützte Bild-, Video-, Audio- oder Dokumentdateien."
 
-#: nostr/ui/media_library_dialog.py:1131
+#: nostr/ui/media_library_dialog.py:1132
 msgid "Pasted Image"
 msgstr "Eingesetztes Bild"
 
@@ -12129,23 +12159,23 @@ msgstr "Wer ihn hat, kann im Namen seines Besitzers veröffentlichen, und einmal
 msgid "Replace with Public Key"
 msgstr "Durch öffentlichen Schlüssel ersetzen"
 
-#: nostr/ui/standup_handoff.py:341
+#: nostr/ui/standup_handoff.py:369
 msgid "Send Again"
 msgstr "Erneut senden"
 
-#: nostr/ui/standup_handoff.py:352
+#: nostr/ui/standup_handoff.py:380
 msgid "Continue in Background"
 msgstr "Im Hintergrund fortsetzen"
 
-#: nostr/ui/standup_handoff.py:279
+#: nostr/ui/standup_handoff.py:285
 msgid "Editorial inbox"
 msgstr "Eingang der Redaktion"
 
-#: nostr/ui/standup_handoff.py:276
+#: nostr/ui/standup_handoff.py:282
 msgid "In the inbox"
 msgstr "Im Eingang"
 
-#: nostr/ui/standup_submit.py:323
+#: nostr/ui/standup_submit.py:324
 #, python-brace-format
 msgid "{count} other submission stopped as well."
 msgid_plural "{count} other submissions stopped as well."
