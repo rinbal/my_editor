@@ -461,6 +461,26 @@ def test_a_submission_stopped_with_its_account_is_said_by_what_reached_the_serve
     assert told == ([said] if said else [])
 
 
+def test_a_real_run_stopped_while_its_missing_picture_goes_up_is_said_to_be_in():
+    # RG-M2r 2 (the reviewer's probe, through a real run): stored, the
+    # run signs the same body again for the picture the receipt missed.
+    from tests.standup_vectors import sk
+    from tests.test_standup_submitting import HeldSigner, World as SubmittingWorld
+
+    world = SubmittingWorld(signer=HeldSigner(sk("writer")))
+    world.uploads.lose = 1
+    world.submitting.start()
+    world.settle()
+    world.signer.release()
+    world.settle()
+    progress = world.submitting.progress
+    assert progress.step is Step.SIGNING and progress.receipt is None
+    run = SimpleNamespace(progress=progress, choice=SimpleNamespace(name="Magazin"))
+    assert standup_submit._stopped_words([run]) == (
+        "Your submission to Magazin is in, but a picture was still being uploaded when the "
+        "account changed.")
+
+
 def test_without_an_account_nothing_is_said_to_have_stopped():
     writer = _writer(FakeList(), FakeApi())
     told, stopped = [], []
