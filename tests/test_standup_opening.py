@@ -313,6 +313,27 @@ def test_a_verified_revision_comes_only_from_the_verification(submitted):
                                             "revision": prepared.revision})())
 
 
+def test_a_copy_with_other_values_opens_nothing(submitted):
+    # RG-M2a 5: dataclasses.replace() kept the token, so it minted a
+    # VerifiedRevision around the verification.
+    from dataclasses import replace
+    prepared, action = submitted
+    body = prepared.body
+    verified = verify_revision(view_of(body), record_of(body, action))
+    forged = replace(verified, p_sub="11" * 32, wraps={"writer": {"eph": "x", "ct": "y"}})
+    with pytest.raises(TypeError):
+        open_submission_key(KeySigner(sk("writer")), forged, "writer", print, print)
+    with pytest.raises(TypeError):
+        open_envelope(forged, body["envelope"], prepared.s_sub)
+    with pytest.raises(TypeError):
+        verify_revision(view_of(body), record_of(body, action), writer_revision=forged)
+    opened = open_envelope(verified, body["envelope"], prepared.s_sub)
+    with pytest.raises(TypeError):
+        MediaKeys().add(replace(opened, revision={"media": [{"cipher_sha256": "a" * 64,
+                                                             "key": "AAAA"}]}))
+    MediaKeys().add(opened)                                 # what was opened here counts
+
+
 def test_the_openers_are_not_offered_to_other_modules():
     for name in ("open_revision", "open_wrap_with_signer", "open_wrap_local",
                  "decrypt_media", "check_submission_key", "decrypt_envelope",

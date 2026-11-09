@@ -24,6 +24,7 @@ nothing is opened. A signer that cannot open a wrap right now is
 
 from __future__ import annotations
 
+import weakref
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Iterable, Mapping, Optional, Tuple
 
@@ -63,12 +64,28 @@ class NotOpened(ValueError):
 
 # Only this module mints a VerifiedRevision or an OpenedRevision: one
 # built from a server's values elsewhere would open what nothing checked
-# (RG-M1 12).
+# (RG-M1 12). The token refuses one built elsewhere; the register of
+# those made here, by identity, refuses a copy with other values
+# (dataclasses.replace keeps the token, RG-M2a 5). Every opener and
+# MediaKeys.add takes only what is in it.
 _MINTED = object()
+_MADE: Dict[int, "weakref.ReferenceType"] = {}
 
 
 def _minted_here(token: object, what: str) -> None:
     if token is not _MINTED:
+        raise TypeError(f"a {what} comes only from nostr/standup/opening.py")
+
+
+def _made(value):
+    key = id(value)
+    _MADE[key] = weakref.ref(value, lambda _gone, key=key: _MADE.pop(key, None))
+    return value
+
+
+def _made_here(value: object, kind: type, what: str) -> None:
+    ref = _MADE.get(id(value))
+    if not isinstance(value, kind) or ref is None or ref() is not value:
         raise TypeError(f"a {what} comes only from nostr/standup/opening.py")
 
 
@@ -120,6 +137,8 @@ def verify_revision(view: SubmissionView, record: RevisionRecord, *,
     View's for the revision it shows. A View shows only the current
     revision, so an older one's title is not compared; show the verified
     one this returns."""
+    if writer_revision is not None:
+        _made_here(writer_revision, VerifiedRevision, "verified revision")
     sid = view.submission_id
     correction_path = action_path("correction", sid)
     signed = record.signed
@@ -150,11 +169,11 @@ def verify_revision(view: SubmissionView, record: RevisionRecord, *,
     if record.revision == view.revision:
         _need(record.revision_hash == view.revision_hash and title == view.title,
               "the revision shown is not the one signed")
-    return VerifiedRevision(
+    return _made(VerifiedRevision(
         submission_id=sid, revision=record.revision, revision_hash=record.revision_hash,
         envelope_sha256=record.envelope_sha256, p_sub=p_sub, kind=kind, title=title,
         wraps={name: dict(wrap) for name, wrap in wraps.items()},
-        signer=signed.event["pubkey"], correction=correction, _token=_MINTED)
+        signer=signed.event["pubkey"], correction=correction, _token=_MINTED))
 
 
 def _writer_binding(body: Mapping, view: SubmissionView, signer: str) -> None:
@@ -177,6 +196,7 @@ def open_submission_key(client, verified: VerifiedRevision, recipient: str,
     by the account's signer ``client``. ``served`` is the wrap the server
     handed out for it, which must be canonically the same.
     ``on_failure`` gets :class:`NotConfirmed` or :class:`NotOpened`."""
+    _made_here(verified, VerifiedRevision, "verified revision")
     wrap = verified.wraps.get(recipient)
     if wrap is None:
         on_failure(NotConfirmed("no key was signed for you"))
@@ -220,6 +240,7 @@ def open_envelope(verified: VerifiedRevision, envelope_b64: Optional[str],
     ``envelope_sha256``, it opens with the submission key whose pubkey is
     ``p_sub``, and its plaintext hashes to ``revision_hash``; else
     :class:`NotConfirmed`."""
+    _made_here(verified, VerifiedRevision, "verified revision")
     _need(verified.envelope_sha256 is not None and isinstance(envelope_b64, str),
           "no envelope was signed")
     _need(pubkey_of(s_sub) == verified.p_sub, "the key is not the submission's")
@@ -230,7 +251,7 @@ def open_envelope(verified: VerifiedRevision, envelope_b64: Optional[str],
                                  envelope_sha256=verified.envelope_sha256)
     except (StandupCryptoError, formats.FormatError) as exc:
         raise NotConfirmed(str(exc)) from None
-    return OpenedRevision(verified=verified, revision=revision, _token=_MINTED)
+    return _made(OpenedRevision(verified=verified, revision=revision, _token=_MINTED))
 
 
 class MediaKeys:
@@ -248,8 +269,7 @@ class MediaKeys:
         self._keys = {}
 
     def add(self, opened: OpenedRevision) -> None:
-        if not isinstance(opened, OpenedRevision):
-            raise TypeError("media keys come only from an opened revision")
+        _made_here(opened, OpenedRevision, "opened revision")
         sid = opened.verified.submission_id
         for entry in opened.revision.get("media", ()):
             where = (sid, entry["cipher_sha256"])
