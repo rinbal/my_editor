@@ -133,6 +133,19 @@ LOOKUP_TIMELINE = 100
 TIMELINE_PAGE = 500
 LOOKUP_BODY_BYTES = 16 * 1024
 LOOKUPS_PER_ADDRESS_PER_MINUTE = 30
+# api/submissions.py, core/editorial_submission.py, core/editorial_intake.py,
+# core/editorial_quota.py and core/editorial_trust.py.
+SUBMIT_REQUESTS_PER_HOUR = 60
+SUBMIT_REQUESTS_PER_ADDRESS_PER_HOUR = 120
+REVISIONS_PER_HOUR = 10
+STORED_BYTES_PER_DAY = 64 * 1024 * 1024
+MAX_ENVELOPE_BYTES = 4 * 1024 * 1024
+SUBMIT_BODY_BYTES = (MAX_ENVELOPE_BYTES + 2) // 3 * 4 + 1024 * 1024 + 512 * 1024
+ENVELOPE_OVERHEAD = 12 + 16
+SUBMIT_FIELDS = {"v", "submission_id", "round", "revision", "revision_hash", "publication",
+                 "key_event_id", "epoch", "kind", "title", "coordinate_hash", "signer",
+                 "participants", "p_sub", "wraps", "status_key_hash", "client"}
+ENVELOPE_FIELDS = {"envelope", "envelope_sha256", "blobs"}
 MAX_SAFE_INTEGER = 2 ** 53 - 1
 # Events served once with their Revision, never again in the timeline.
 REVISION_EVENTS = ("submitted", "revision")
@@ -365,6 +378,37 @@ def _fields(data: dict, allowed: set, required: set) -> Optional[FakeReply]:
     return None
 
 
+def _plain(value: Any, low: int, high: int) -> bool:
+    """backend core/editorial.py is_plain_text: one line, no control characters."""
+    return isinstance(value, str) and low <= len(value) <= high and not any(
+        ord(ch) < 0x20 or ord(ch) == 0x7f for ch in value)
+
+
+def _nip44_shaped(payload: Any) -> bool:
+    """What a server can check of a NIP-44 v2 payload it cannot open:
+    canonical base64 and version 2 (backend core/nip44.py)."""
+    try:
+        raw = base64.b64decode(payload, validate=True)
+    except (ValueError, TypeError):
+        return False
+    return base64.b64encode(raw).decode("ascii") == payload and raw[:1] == b"\x02"
+
+
+class _Refused(Exception):
+    """A refusal of the backend, raised where it raises its EditorialError."""
+
+    def __init__(self, status: int, code: str, detail: Optional[dict] = None,
+                 message: str = "Nicht möglich.", retry_after: Optional[int] = None) -> None:
+        super().__init__(code)
+        self.reply = _error(status, code, message, detail=detail, headers=(
+            {"Retry-After": str(retry_after)} if retry_after else None))
+
+
+def _need(ok: bool, field: str, code: str = "invalid", status: int = 422) -> None:
+    if not ok:
+        raise _Refused(status, code, {"field": field})
+
+
 def _whole(value: Any, low: int) -> bool:
     return type(value) is int and value >= low
 
@@ -398,7 +442,6 @@ class FakeStandupServer:
         self.faults: Dict[str, List[Any]] = {}
         self.tamper_receipt: Optional[Callable[[dict], dict]] = None
         self.handled: List[str] = []             # routes that changed or read state
-        self.max_per_hour = 10
         # Timeline items per answer (contract 15: 500 for GET, 100 per
         # lookup item) and the bytes one answer carries, shared by every
         # lookup item; "more": true when some wait.
@@ -507,17 +550,19 @@ class FakeStandupServer:
             return _error(fault.status, fault.code, fault.message, detail=fault.detail,
                           headers=headers_out)
 
-        early = getattr(self, "_before_" + name, None)
-        if early is not None:
-            refusal = early(body or b"")
-            if refusal is not None:
-                return refusal
         if nip98.has_body(body) and headers["Content-Type"] != b"application/json":
             return json_reply({"ok": False, "error": {"code": "bad_request",
                                                       "message": "Unsupported"}}, status=415)
         who = self._authorize(auth, verb, url, body, headers["Authorization"])
         if isinstance(who, FakeReply):
             return who
+        # What a route checks before the body is parsed (its size, an
+        # address limit), after the signature as the backend's decorators.
+        early = getattr(self, "_before_" + name, None)
+        if early is not None:
+            refusal = early(body or b"")
+            if refusal is not None:
+                return refusal
         payload: Any = {}
         if nip98.has_body(body):
             try:
@@ -825,38 +870,9 @@ class FakeStandupServer:
             receipt = self.tamper_receipt(receipt)
         return receipt
 
-    def _check_body(self, body: dict, writer: str) -> Optional[FakeReply]:
-        """The server's own checks (12.4, 15), written apart from the
-        client's, so a mistake in one is not repeated by the other. Keys
-        are checked on the curve with coincurve itself, not with the
-        client's helpers."""
-        if body.get("v") != 1:
-            return _error(400, "bad_request")
-        title = body.get("title")
-        participants = body.get("participants")
-        if not (_hexes(body, "submission_id", "revision_hash", "coordinate_hash", "p_sub",
-                       "key_event_id", "status_key_hash", "envelope_sha256")
-                and isinstance(title, str) and 0 < len(title) <= 300
-                and isinstance(participants, list) and len(participants) <= 20
-                and body.get("kind") in ("article", "audio")
-                and _whole(body.get("revision"), 1) and _whole(body.get("round"), 1)
-                and _whole(body.get("epoch"), 1)):
-            return _error(422, "invalid")
-        if not _on_curve(body["p_sub"]):
-            return _error(422, "invalid", detail={"problem": "p_sub"})
-        if len(set(participants)) != len(participants) or writer in participants or not all(
-                _on_curve(p) for p in participants):
-            return _error(422, "invalid", detail={"problem": "participants"})
-        refusal = self._check_revision_parts(body, {"redaktion", "writer", *participants})
-        if refusal is not None:
-            return refusal
-        if formats.submission_id(writer, body["publication"], body["coordinate_hash"],
-                                 body["round"]) != body["submission_id"]:
-            return _error(422, "invalid", detail={"problem": "submission_id"})
-        return None
-
     def _check_revision_parts(self, body: dict, names: set) -> Optional[FakeReply]:
-        """What a revision body and a correction body share: the wraps
+        """A correction body's checks (submit has _parse_submission, from
+        the backend; corrections are not yet diffed against it): the wraps
         (exactly one per recipient name, each on the curve, a submission
         key's ``ct`` exactly 348 characters), the files (at most 64, each
         on at most 10 https servers) and the envelope (12.4, 15)."""
@@ -904,63 +920,189 @@ class FakeStandupServer:
             return still_open[-1].round, True
         return (earlier[-1].round + 1 if earlier else 1), False
 
+    def _parse_submission(self, data: dict, writer: str) -> dict:
+        """backend core/editorial_submission.py parse_submission (fde04a3),
+        check for check in its order: the shape and the body's own
+        consistency. Written apart from the client's code, keys checked on
+        the curve with coincurve. A body by link (``source``) is not
+        modelled: MyEditor never sends one."""
+        unknown = sorted(set(data) - SUBMIT_FIELDS - ENVELOPE_FIELDS)
+        if unknown:
+            raise _Refused(422, "invalid", {"fields": unknown})
+        missing = sorted((SUBMIT_FIELDS - {"client"} | ENVELOPE_FIELDS) - set(data))
+        if missing:
+            raise _Refused(422, "invalid", {"fields": missing})
+        _need(type(data["v"]) is int and data["v"] == 1, "v")
+        _need(_whole(data["round"], 1) and data["round"] <= MAX_SAFE_INTEGER, "round")
+        parts = data["publication"].split(":", 2) if isinstance(data["publication"], str) else []
+        _need(len(parts) == 3 and parts[0] == "30004" and bool(parts[2]), "publication")
+        _need(_on_curve(parts[1]), "publication")
+        participants = data["participants"]
+        _need(isinstance(participants, list) and len(participants) <= 20, "participants")
+        for key in participants:
+            _need(_on_curve(key), "participants")
+        _need(len(set(participants)) == len(participants) and writer not in participants,
+              "participants")
+        for name in ("coordinate_hash", "revision_hash", "submission_id"):
+            _need(formats.is_hex64(data[name]), name)
+        _need(data["submission_id"] == formats.submission_id(
+            writer, data["publication"], data["coordinate_hash"], data["round"]),
+            "submission_id")
+        text = data["envelope"]
+        _need(isinstance(text, str), "envelope")
+        if len(text) > (MAX_ENVELOPE_BYTES + 2) // 3 * 4:
+            raise _Refused(413, "too_large", {"max_bytes": MAX_ENVELOPE_BYTES})
+        try:
+            raw = base64.b64decode(text, validate=True)
+        except (ValueError, TypeError):
+            raise _Refused(422, "invalid", {"field": "envelope"}) from None
+        _need(len(raw) > ENVELOPE_OVERHEAD, "envelope")
+        _need(formats.is_hex64(data["envelope_sha256"]), "envelope_sha256")
+        _need(hashlib.sha256(raw).hexdigest() == data["envelope_sha256"], "envelope_sha256")
+        _need(_whole(data["revision"], 1) and data["revision"] <= MAX_SAFE_INTEGER, "revision")
+        _need(formats.is_hex64(data["key_event_id"]), "key_event_id")
+        _need(_whole(data["epoch"], 1) and data["epoch"] <= MAX_SAFE_INTEGER, "epoch")
+        _need(data["kind"] in ("article", "audio"), "kind")
+        _need(_plain(data["title"], 1, 300), "title")
+        _need(data["signer"] in ("writer", "publication"), "signer")
+        _need(_on_curve(data["p_sub"]), "p_sub")
+        names = {"redaktion", "writer", *participants}
+        wraps = data["wraps"]
+        _need(isinstance(wraps, dict) and set(wraps) == names, "wraps")
+        for name in sorted(names):
+            wrap = wraps[name]
+            _need(isinstance(wrap, dict) and set(wrap) == {"eph", "ct"}
+                  and _on_curve(wrap["eph"]) and isinstance(wrap["ct"], str)
+                  and len(wrap["ct"]) == SUBMISSION_WRAP_CT_CHARS and _nip44_shaped(wrap["ct"]),
+                  f"wraps.{name}", code="wrap_invalid")
+        _need(formats.is_hex64(data["status_key_hash"]), "status_key_hash")
+        _need(_plain(data.get("client", ""), 0, 64), "client")
+        blobs = data["blobs"]
+        _need(isinstance(blobs, list) and len(blobs) <= 64, "blobs")
+        for blob in blobs:
+            _need(isinstance(blob, dict), "blobs")
+            unknown = sorted(set(blob) - {"sha256", "size", "servers"})
+            missing = sorted({"sha256", "size", "servers"} - set(blob))
+            if unknown or missing:
+                raise _Refused(422, "invalid", {"fields": unknown or missing})
+            servers = blob["servers"]
+            _need(isinstance(servers, list) and 1 <= len(servers) <= 10
+                  and all(isinstance(u, str) and u.startswith("https://") and len(u) <= 512
+                          for u in servers) and len(set(servers)) == len(servers),
+                  "blobs.servers")
+            _need(formats.is_hex64(blob["sha256"]), "blobs.sha256")
+            _need(_whole(blob["size"], 1) and blob["size"] <= MAX_SAFE_INTEGER, "blobs.size")
+        _need(len({b["sha256"] for b in blobs}) == len(blobs), "blobs")
+        return dict(data, envelope_size=len(raw))
+
+    def _check_destination(self, pub: "Publication", body: dict, writers: set) -> None:
+        """backend core/editorial_intake.py check_destination (fde04a3)."""
+        rules = pub.content["rules"]
+        if writers & pub.blocked:
+            raise _Refused(403, "blocked")
+        if (body["epoch"], body["key_event_id"]) != (pub.epoch, pub.key_event["id"]):
+            raise _Refused(409, "epoch", {"epoch": pub.epoch, "key_event_id": pub.key_event["id"]})
+        if body["kind"] not in rules["kinds"]:
+            raise _Refused(403, "forbidden", {"field": "kind"})
+        if rules["publish_by"][body["kind"]] not in (body["signer"], "both"):
+            raise _Refused(403, "forbidden", {"field": "signer"})
+        if body["envelope_size"] > rules["max_envelope_bytes"]:
+            raise _Refused(413, "too_large", {"max_bytes": rules["max_envelope_bytes"]})
+
+    def _check_new(self, pub: "Publication", body: dict, writer: str) -> None:
+        """backend core/editorial_intake.py _check_new (fde04a3)."""
+        if pub.paused or not pub.open:
+            raise _Refused(403, "paused", message="Die Publikation nimmt gerade keine "
+                                                  "Einreichungen an.")
+        if body["revision"] != 1:
+            raise _Refused(409, "stale_revision", {"revision": 0})
+        round_, still_open = self._work_round(pub.address, writer, body["coordinate_hash"])
+        if still_open or body["round"] != round_:
+            # "open" is contract-ahead (feat/redaktion 3b00351, section 2).
+            raise _Refused(409, "conflict", {"round": round_ if still_open else round_ - 1,
+                                             "open": still_open},
+                           message="Dieses Werk liegt hier schon vor.")
+        limit = pub.content["rules"].get("max_open_per_writer", 3)
+        if len([r for r in self.submissions.values() if r.writer == writer
+                and r.publication == pub.address and r.state in OPEN]) >= limit:
+            raise _Refused(403, "limit_open", {"limit": limit})
+
+    @staticmethod
+    def _refuse_over_cap(record: Record) -> None:
+        """backend core/editorial_quota.py refuse_revision_over_cap."""
+        if record.revision >= MAX_REVISIONS:
+            raise _Refused(403, "forbidden", {"limit": MAX_REVISIONS})
+
+    def _before_submit(self, raw: bytes) -> Optional[FakeReply]:
+        if len(raw) > SUBMIT_BODY_BYTES:
+            return _error(413, "too_large", "Die Anfrage ist zu groß.",
+                          detail={"max_bytes": SUBMIT_BODY_BYTES})
+        return None
+
     def _submit(self, who, body, params, query) -> FakeReply:
+        try:
+            return self._hand_in(who, body)
+        except _Refused as refusal:
+            return refusal.reply
+
+    def _hand_in(self, who, data: dict) -> FakeReply:
+        """backend api/submissions.py submit and core/editorial_intake.py
+        (fde04a3), in their order: the body, the request limits (refused
+        requests count), the publication, a repeat before anything else,
+        the refusals that read only, then storing (whose limits count
+        only what is stored)."""
         writer = who.pubkey
-        refusal = self._check_body(body, writer)
-        if refusal is not None:
-            return refusal
+        body = self._parse_submission(data, writer)
+        for scope, subject, limit in (("address:submit", "fake", SUBMIT_REQUESTS_PER_ADDRESS_PER_HOUR),
+                                      ("submit_request", writer, SUBMIT_REQUESTS_PER_HOUR)):
+            wait = self._hit(scope, subject, limit=limit, window=3600)
+            if wait:
+                raise _Refused(429, "rate_limited", retry_after=wait,
+                               message="Zu viele Einreichungen. Bitte später noch einmal.")
         pub = self.publications.get(body["publication"])
         if pub is None:
-            return _error(404, "not_found")
-        if body["key_event_id"] != pub.key_event["id"] or body["epoch"] != pub.epoch:
-            return _error(409, "epoch")
-        if pub.paused or not pub.open:
-            return _error(403, "paused", "Diese Publikation nimmt gerade nichts an.")
-        if writer in pub.blocked:
-            return _error(403, "blocked")
-        if self._no_decider(pub, writer, body["participants"]):
-            return _error(409, "no_decider")
-        now = int(self.clock())
+            raise _Refused(404, "not_found",
+                           message="Diese Publikation nimmt hier keine Einreichungen an.")
         record = self._record(body["submission_id"])
+        stored = record.revisions.get(body["revision"]) if record is not None else None
+        if stored is not None and stored["revision_hash"] == body["revision_hash"]:
+            # The same revision again (12.4): the stored receipt, the files
+            # it reported missing looked for again.
+            return _ok({"receipt": self._receipt(record, body["revision"], recheck=True)})
+        owner = record.writer if record is not None else writer
+        self._check_destination(pub, body, {writer, owner})
+        if self._no_decider(pub, writer, body["participants"]):
+            raise _Refused(409, "no_decider")
+        if record is None:
+            self._check_new(pub, body, writer)
+        else:
+            self._refuse_over_cap(record)
+        if any(r.status_key_hash == body["status_key_hash"] and r.sid != body["submission_id"]
+               for r in self.submissions.values()):
+            raise _Refused(409, "conflict", {"field": "status_key_hash"})
+        now = int(self.clock())
         if record is not None:
-            stored = record.revisions.get(body["revision"])
-            if stored is not None and stored["revision_hash"] == body["revision_hash"]:
-                # The same revision again (12.4): the stored receipt, the
-                # files looked for again.
-                return _ok({"receipt": self._receipt(record, body["revision"], recheck=True)})
             if body["revision"] != record.revision + 1 or \
                     body["revision_hash"] == record.current["revision_hash"]:
-                return _error(409, "stale_revision")
-            if body["revision"] > MAX_REVISIONS:
-                return _error(422, "invalid", detail={"problem": "revisions"})
-            if body["round"] != record.round or body["participants"] != record.participants:
-                return _error(422, "invalid", detail={"problem": "round"})
+                raise _Refused(409, "stale_revision", {"revision": record.revision})
+            if (body["kind"], body["p_sub"]) != (record.kind, record.p_sub):
+                raise _Refused(409, "conflict")
             new_state = transition(record.state, "revise", "writer")
             if new_state is None:
-                return _error(409, "invalid_transition")
-            if record.state != "changes_requested" and "new_revision" not in record.marks:
-                record.marks.append("new_revision")
-            record.state = new_state
-            event_name = "revision"
-        else:
-            if body["revision"] != 1:
-                return _error(409, "stale_revision")
-            round_, still_open = self._work_round(pub.address, writer, body["coordinate_hash"])
-            if still_open or body["round"] != round_:
-                # backend core/editorial_intake.py _check_new; "open" is
-                # contract-ahead (feat/redaktion 3b00351, section 2).
-                return _error(409, "conflict", "Dieses Werk liegt hier schon vor.",
-                              detail={"round": round_ if still_open else round_ - 1,
-                                      "open": still_open})
-            open_here = [r for r in self.submissions.values()
-                         if r.writer == writer and r.publication == pub.address
-                         and r.state in OPEN]
-            if len(open_here) >= pub.content["rules"].get("max_open_per_writer", 3):
-                return _error(403, "limit_open", "Du hast schon drei offene Einreichungen.")
-            this_hour = [r for r in self.submissions.values()
-                         if r.writer == writer and r.created_at > now - 3600]
-            if len(this_hour) >= self.max_per_hour:
-                return _error(429, "rate_limited", headers={"Retry-After": "600"})
+                raise _Refused(409, "invalid_transition",
+                               {"action": "revise", "state": record.state})
+        counted = dict(self._counters)          # the transaction: kept only when stored
+        try:
+            wait = self._hit("submit", writer, limit=REVISIONS_PER_HOUR, window=3600) or \
+                self._hit("stored_bytes", f"{owner}:{pub.address}", limit=STORED_BYTES_PER_DAY,
+                          window=86400, cost=len(body["envelope"]) + sum(
+                              len(formats.canonical_bytes(w)) for w in body["wraps"].values()))
+            if wait:
+                raise _Refused(429, "rate_limited", retry_after=wait)
+        except _Refused:
+            self._counters = counted
+            raise
+        if record is None:
             record = Record(
                 sid=body["submission_id"], writer=writer, publication=pub.address,
                 title=body["title"], kind=body["kind"], round=body["round"],
@@ -970,9 +1112,17 @@ class FakeStandupServer:
                 coordinate_hash=body["coordinate_hash"], created_at=now)
             self.submissions[record.sid] = record
             event_name = "submitted"
+        else:
+            if record.state != "changes_requested" and "new_revision" not in record.marks:
+                record.marks.append("new_revision")
+            record.state = new_state
+            record.title, record.signer = body["title"], body["signer"]
+            record.status_key_hash, record.epoch = body["status_key_hash"], body["epoch"]
+            event_name = "revision"
+        record.participants = list(body["participants"])     # set_participants
         record.revisions[body["revision"]] = {
             "revision": body["revision"], "revision_hash": body["revision_hash"],
-            "envelope": body.get("envelope"), "envelope_sha256": body.get("envelope_sha256"),
+            "envelope": body["envelope"], "envelope_sha256": body["envelope_sha256"],
             "wraps": body["wraps"], "blobs": body["blobs"], "created_at": now,
             "signed": who.signed}
         seq = self._event(record, event_name, who, revision=body["revision"])
@@ -980,7 +1130,7 @@ class FakeStandupServer:
         record.receipts[body["revision"]] = {
             "v": 1, "submission_id": record.sid, "revision": body["revision"],
             "revision_hash": body["revision_hash"],
-            "envelope_sha256": body.get("envelope_sha256"),
+            "envelope_sha256": body["envelope_sha256"],
             "wraps_sha256": {n: formats.wrap_sha256(w) for n, w in body["wraps"].items()},
             "blobs_present": present, "blobs_missing": missing, "received_at": now,
             "state": record.state, "seq": seq}

@@ -11,6 +11,8 @@ one dropped after it leaves the submission stored."""
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 
 import pytest
@@ -198,32 +200,40 @@ def _wraps(body, **changes):
     return wraps
 
 
-@pytest.mark.parametrize("change, problem", [
+@pytest.mark.parametrize("change, field", [
     (lambda b: dict(b, p_sub=OFF_CURVE), "p_sub"),
     (lambda b: dict(b, participants=[pk("writer")]), "participants"),
     (lambda b: dict(b, participants=[pk("contributor"), pk("contributor")]), "participants"),
     (lambda b: dict(b, participants=[OFF_CURVE]), "participants"),
 ])
-def test_keys_and_participants_are_checked_as_the_server_does(change, problem):
+def test_keys_and_participants_are_checked_as_the_server_does(change, field):
     # RG-M1 13: on the curve, not merely 64 hex digits; no participant
-    # twice, none who is the writer.
+    # twice, none who is the writer (backend require_pubkey, _participants).
     _clock, server, nam = _setup()
     status, data, _ = _submit(nam, change(_with_contributor()))
-    assert (status, data["error"]["code"]) == (422, "invalid")
-    assert data["error"]["detail"]["problem"] == problem and server.submissions == {}
+    assert (status, data["error"]["code"], data["error"]["detail"]) == (
+        422, "invalid", {"field": field})
+    assert server.submissions == {}
 
 
-@pytest.mark.parametrize("wraps", [
-    lambda b: _wraps(b, **{pk("contributor"): None}),                     # a wrap missing
-    lambda b: _wraps(b, **{pk("editor"): b["wraps"]["writer"]}),          # one for nobody
-    lambda b: _wraps(b, writer=dict(b["wraps"]["writer"], eph=OFF_CURVE)),
-    lambda b: _wraps(b, writer=dict(b["wraps"]["writer"], ct=b["wraps"]["writer"]["ct"] + "A")),
-])
-def test_a_wrap_per_recipient_name_exactly_each_of_the_right_shape(wraps):
+@pytest.mark.parametrize("wraps, code, field", [
+    (lambda b: _wraps(b, **{pk("contributor"): None}), "invalid", "wraps"),   # one missing
+    (lambda b: _wraps(b, **{pk("editor"): b["wraps"]["writer"]}), "invalid", "wraps"),
+    (lambda b: _wraps(b, writer=dict(b["wraps"]["writer"], eph=OFF_CURVE)),
+     "wrap_invalid", "wraps.writer"),
+    (lambda b: _wraps(b, writer=dict(b["wraps"]["writer"], ct=b["wraps"]["writer"]["ct"] + "A")),
+     "wrap_invalid", "wraps.writer"),
+    (lambda b: _wraps(b, writer=dict(b["wraps"]["writer"], ct="AgAA")), "wrap_invalid",
+     "wraps.writer"),
+], ids=["one missing", "one for nobody", "eph off the curve", "ct too long", "ct too short"])
+def test_a_wrap_per_recipient_name_exactly_each_of_the_right_shape(wraps, code, field):
+    # backend _wraps: the names wrong is invalid; a wrap of the wrong
+    # shape is wrap_invalid naming it (RG-M2a 2).
     _clock, server, nam = _setup()
     body = _with_contributor()
     status, data, _ = _submit(nam, dict(body, wraps=wraps(body)))
-    assert (status, data["error"]["code"]) == (422, "wrap_invalid")
+    assert (status, data["error"]["code"]) == (422, code)
+    assert data["error"]["detail"] == {"field": field}
 
 
 def test_without_anyone_who_could_decide_a_submission_is_refused():
@@ -236,15 +246,189 @@ def test_without_anyone_who_could_decide_a_submission_is_refused():
     assert (status, data["error"]["code"]) == (409, "no_decider")
 
 
-def test_a_revision_keeps_its_round_and_participants():
+def _next(first, content="# Zwei", revision=2, **kw):
+    return submission_for(sk("writer"), revision=revision, s_sub=kw.pop("s_sub", first.s_sub),
+                          status_key=first.status_key, content=content, **kw)
+
+
+def test_kind_and_submission_key_stay_while_title_and_contributors_may_change():
+    # backend tests/test_editorial_submit.py, the same name (RG-M2a 2).
     _clock, server, nam = _setup()
     first = submission_for(sk("writer"))
     assert _submit(nam, first.body)[0] == 201
-    second = submission_for(sk("writer"), revision=2, s_sub=first.s_sub,
-                            status_key=first.status_key, participants=(pk("contributor"),),
-                            content="# Zwei")
-    status, data, _ = _submit(nam, second.body)
-    assert (status, data["error"]["detail"]["problem"]) == (422, "round")
+    for change in ({"kind": "audio", "signer": "publication"},
+                   {"p_sub": _next(first, s_sub=b"\x07" * 32).body["p_sub"]}):
+        status, data, _ = _submit(nam, dict(_next(first).body, **change))
+        assert (status, data["error"]["code"]) == (409, "conflict"), change
+    revised = _next(first, title="Neuer Titel", participants=(pk("contributor"),))
+    assert _submit(nam, revised.body)[0] == 201
+    record = server.submissions[first.body["submission_id"]]
+    assert (record.title, record.participants) == ("Neuer Titel", [pk("contributor")])
+
+
+def test_revisions_follow_one_another():
+    # backend tests/test_editorial_submit.py, the same name.
+    _clock, server, nam = _setup()
+    first = submission_for(sk("writer"))
+    assert _submit(nam, first.body)[0] == 201
+    second = _next(first)
+    assert _submit(nam, second.body)[0] == 201
+    for stale in (_next(first, content="# Drei").body,                # revision 2, other hash
+                  _next(first, content="# Vier", revision=4).body,    # skips 3
+                  dict(_next(first, content="# X", revision=3).body,
+                       revision_hash=second.body["revision_hash"])):   # the same hash
+        status, data, _ = _submit(nam, stale)
+        assert (status, data["error"]["code"], data["error"]["detail"]) == (
+            409, "stale_revision", {"revision": 2})
+
+
+def test_a_repeat_gets_its_stored_receipt_before_any_other_check():
+    # backend api/submissions.py: stored_repeat before refuse_early, so a
+    # paused or blocking publication, a new epoch or a lost decider
+    # still answer the body the server already has.
+    _clock, server, nam = _setup()
+    first = submission_for(sk("writer"))
+    status, stored, _ = _submit(nam, first.body)
+    assert status == 201
+    pub = server.publication()
+    pub.paused, pub.open = True, False
+    pub.blocked.add(pk("writer"))
+    pub.members = {}
+    status, again, _ = _submit(nam, first.body)
+    assert (status, again["receipt"]) == (200, stored["receipt"])
+
+
+def test_the_revision_cap_is_forbidden_before_a_stale_revision():
+    # backend core/editorial_quota.py refuse_revision_over_cap, in
+    # refuse_early before _revise (RG-M2a 2).
+    _clock, server, nam = _setup()
+    first = submission_for(sk("writer"))
+    assert _submit(nam, first.body)[0] == 201
+    record = server.submissions[first.body["submission_id"]]
+    record.revisions[30] = dict(record.current, revision=30)
+    status, data, _ = _submit(nam, _next(first, revision=5).body)      # stale too
+    assert (status, data["error"]["code"], data["error"]["detail"]) == (
+        403, "forbidden", {"limit": 30})
+
+
+def test_what_the_publication_takes():
+    # backend tests/test_editorial_submit.py, the same name.
+    _clock, server, nam = _setup()
+    pub = server.publication()
+    content = pub.content
+
+    def rules(**changes):
+        event = dict(pub.key_event, content=json.dumps(dict(
+            content, rules=dict(content["rules"], **changes))))
+        pub.key_event = dict(event, id=pub.key_event["id"])
+
+    body = submission_for(sk("writer")).body
+    rules(kinds=["audio"])
+    assert _submit(nam, body)[1]["error"]["detail"] == {"field": "kind"}
+    rules(kinds=["article"], publish_by={"article": "publication", "audio": "publication"})
+    status, data, _ = _submit(nam, body)
+    assert (status, data["error"]["code"], data["error"]["detail"]) == (
+        403, "forbidden", {"field": "signer"})
+    rules(max_envelope_bytes=100)
+    status, data, _ = _submit(nam, body)
+    assert (status, data["error"]["detail"]) == (413, {"max_bytes": 100})
+    rules()
+    pub.open = False
+    assert _submit(nam, body)[1]["error"]["code"] == "paused"
+    assert server.submissions == {}
+
+
+def test_a_blocked_writer_is_refused_even_for_a_revision_and_a_paused_one_may_revise():
+    # backend check_destination for every body; paused only in _check_new.
+    _clock, server, nam = _setup()
+    first = submission_for(sk("writer"))
+    assert _submit(nam, first.body)[0] == 201
+    server.publication().open = False
+    assert _submit(nam, _next(first).body)[0] == 201
+    server.publication().blocked.add(pk("writer"))
+    assert _submit(nam, _next(first, content="# Drei", revision=3).body)[1]["error"]["code"] \
+        == "blocked"
+
+
+def test_a_status_key_belongs_to_one_submission():
+    # backend tests/test_editorial_submit.py, the same name.
+    _clock, server, nam = _setup()
+    first = submission_for(sk("writer"))
+    assert _submit(nam, first.body)[0] == 201
+    other = submission_for(sk("writer"), d="anderes", status_key=first.status_key)
+    status, data, _ = _submit(nam, other.body)
+    assert (status, data["error"]["code"], data["error"]["detail"]) == (
+        409, "conflict", {"field": "status_key_hash"})
+
+
+def test_revisions_an_hour_are_counted_and_refusals_and_repeats_do_not_count(monkeypatch):
+    # backend tests/test_editorial_submit.py, the same rule.
+    import tests.standup_fakes as fakes
+    monkeypatch.setattr(fakes, "REVISIONS_PER_HOUR", 2)
+    _clock, server, nam = _setup()
+    first = submission_for(sk("writer"))
+    assert _submit(nam, first.body)[0] == 201
+    status, data, _ = _submit(nam, dict(_next(first).body, kind="audio", signer="publication"))
+    assert data["error"]["code"] == "conflict"
+    assert _submit(nam, first.body)[0] == 200                       # a repeat
+    assert _submit(nam, _next(first).body)[0] == 201
+    status, data, reply = _submit(nam, _next(first, content="# Drei", revision=3).body)
+    assert (status, data["error"]["code"]) == (429, "rate_limited")
+    assert int(bytes(reply.rawHeader("Retry-After"))) >= 1
+
+
+def test_every_submit_request_counts_against_the_signer_and_the_address(monkeypatch):
+    # backend api/submissions.py: repeats included, refused ones too.
+    import tests.standup_fakes as fakes
+    monkeypatch.setattr(fakes, "SUBMIT_REQUESTS_PER_HOUR", 2)
+    _clock, server, nam = _setup()
+    first = submission_for(sk("writer"))
+    assert [_submit(nam, first.body)[0] for _ in range(2)] == [201, 200]
+    assert _submit(nam, first.body)[1]["error"]["code"] == "rate_limited"
+    monkeypatch.setattr(fakes, "SUBMIT_REQUESTS_PER_ADDRESS_PER_HOUR", 3)
+    other = submission_for(sk("contributor"))
+    status, data, _ = _submit(nam, other.body, secret=sk("contributor"))
+    assert data["error"]["code"] == "rate_limited" and server.submissions.keys() == {
+        first.body["submission_id"]}
+
+
+def test_an_unknown_publication_is_not_found():
+    _clock, server, nam = _setup()
+    server.publications.clear()
+    status, data, _ = _submit(nam, submission_for(sk("writer")).body)
+    assert (status, data["error"]["code"]) == (404, "not_found")
+
+
+@pytest.mark.parametrize("change, code, detail", [
+    (lambda b: dict(b, submission_id="a" * 64), "invalid", {"field": "submission_id"}),
+    (lambda b: dict(b, envelope_sha256="b" * 64), "invalid", {"field": "envelope_sha256"}),
+    (lambda b: dict(b, envelope="***"), "invalid", {"field": "envelope"}),
+    (lambda b: dict(b, envelope=base64.b64encode(b"x" * 28).decode(),
+                    envelope_sha256=hashlib.sha256(b"x" * 28).hexdigest()),
+     "invalid", {"field": "envelope"}),
+    (lambda b: dict(b, title="T" * 301), "invalid", {"field": "title"}),
+    (lambda b: dict(b, title="a\nb"), "invalid", {"field": "title"}),
+    (lambda b: dict(b, blobs=[{"sha256": "c" * 64, "size": 1,
+                               "servers": ["http://media.example"]}]),
+     "invalid", {"field": "blobs.servers"}),
+    (lambda b: dict(b, note="x"), "invalid", {"fields": ["note"]}),
+    (lambda b: {k: v for k, v in b.items() if k != "blobs"}, "invalid", {"fields": ["blobs"]}),
+    (lambda b: dict(b, v=2), "invalid", {"field": "v"}),
+    (lambda b: dict(b, kind="video"), "invalid", {"field": "kind"}),
+    (lambda b: dict(b, client="c" * 65), "invalid", {"field": "client"}),
+    (lambda b: dict(b, epoch=2), "epoch", None),
+    (lambda b: dict(b, key_event_id="d" * 64), "epoch", None),
+], ids=["wrong id", "envelope hash", "envelope not base64", "empty envelope", "long title",
+        "title with a line break", "http blob server", "unknown field", "a field missing",
+        "version 2", "kind", "long client", "old epoch", "other key event"])
+def test_bodies_that_are_refused_store_nothing(change, code, detail):
+    # backend tests/test_editorial_submit.py _body_problems, the same cases.
+    _clock, server, nam = _setup()
+    status, data, _ = _submit(nam, change(submission_for(sk("writer")).body))
+    assert data["error"]["code"] == code, data
+    if detail is not None:
+        assert data["error"]["detail"] == detail
+    assert server.submissions == {}
 
 
 def test_a_dropped_connection_before_sending_leaves_nothing_behind():
@@ -453,3 +637,17 @@ def test_strangers_learn_nothing():
     assert _submit(nam, prepared.body)[0] == 201
     status, data, _ = _read(nam, sk("contributor"), prepared.body["submission_id"])
     assert (status, data["error"]["code"]) == (404, "not_found")
+
+
+def test_a_body_refused_for_the_days_storage_counts_no_revision(monkeypatch):
+    # backend core/editorial_intake.py hand_in: count_revision and
+    # charge_storage share the transaction; a refusal keeps neither.
+    import tests.standup_fakes as fakes
+    monkeypatch.setattr(fakes, "REVISIONS_PER_HOUR", 1)
+    monkeypatch.setattr(fakes, "STORED_BYTES_PER_DAY", 10)
+    _clock, server, nam = _setup()
+    first = submission_for(sk("writer"))
+    status, data, _ = _submit(nam, first.body)
+    assert (status, data["error"]["code"]) == (429, "rate_limited") and server.submissions == {}
+    monkeypatch.setattr(fakes, "STORED_BYTES_PER_DAY", 64 * 1024 * 1024)
+    assert _submit(nam, first.body)[0] == 201
