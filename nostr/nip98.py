@@ -207,32 +207,6 @@ class AuthRefused(ValueError):
         self.reason = reason
 
 
-def _is_int(value: object) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
-
-
-def _is_well_formed(event: object) -> bool:
-    """True when ``event`` has the shape of a Nostr event at all: the
-    fields every later check reads, each of the type it must be. Checked
-    before any of them is read, so a credential with ``tags: null`` or a
-    tag that is a number is refused like any other, not a crash."""
-    if not isinstance(event, dict):
-        return False
-    if not _is_int(event.get("kind")) or not _is_int(event.get("created_at")):
-        return False
-    if not isinstance(event.get("content"), str):
-        return False
-    tags = event.get("tags")
-    if not isinstance(tags, list):
-        return False
-    for entry in tags:
-        if not isinstance(entry, list) or not entry:
-            return False
-        if not all(isinstance(item, str) for item in entry):
-            return False
-    return all(isinstance(event.get(name), str) for name in ("id", "pubkey", "sig"))
-
-
 def _tag_values(event: dict, name: str) -> List[str]:
     return [entry[1] for entry in event["tags"] if len(entry) >= 2 and entry[0] == name]
 
@@ -284,7 +258,7 @@ def check_auth_header(
                            .decode("utf-8"))
     except (ValueError, binascii.Error, UnicodeDecodeError, RecursionError):
         raise AuthRefused("unreadable credential") from None
-    if not _is_well_formed(event):
+    if not events.has_event_shape(event):
         raise AuthRefused("malformed event")
 
     if event["kind"] != NIP98_KIND:

@@ -52,10 +52,10 @@ from nostr.einundzwanzig_api import (
     parse_invoice,
     parse_membership,
     parse_payments,
-    parse_retry_after,
     service_url,
     session_signer,
 )
+from nostr.http_answers import parse_retry_after
 from tests.membership_fakes import (
     PREFIX,
     SERVICE,

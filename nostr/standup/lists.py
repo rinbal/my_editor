@@ -36,8 +36,8 @@ print their secrets (``repr``).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from dataclasses import dataclass, field, fields, replace
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QObject, Signal
 
@@ -55,7 +55,8 @@ from ..encrypted_lists import (
     PublishResult,
 )
 from . import formats
-from .crypto import secret_from_hex
+from .crypto import StandupCryptoError, secret_from_hex
+from .formats import FormatError
 
 SUBMISSIONS_UNREADABLE = N_("Your list of submissions couldn't be read.")
 SUBMISSIONS_SIGNER_SILENT = N_(
@@ -115,15 +116,10 @@ class SubmissionEntry:
     updated_at: int
 
     def to_json(self) -> Dict[str, Any]:
-        return {"sid": self.sid, "publication": self.publication, "server": self.server,
-                "role": self.role, "s_sub": self.s_sub, "status_key": self.status_key,
-                "title": self.title, "kind": self.kind, "d": self.d, "round": self.round,
-                "revision": self.revision, "revision_hash": self.revision_hash,
-                "updated_at": self.updated_at}
+        return {name: getattr(self, name) for name in _ENTRY_FIELDS}
 
-    @property
-    def secret(self) -> Optional[bytes]:
-        return bytes.fromhex(self.s_sub) if self.s_sub else None
+
+_ENTRY_FIELDS = tuple(f.name for f in fields(SubmissionEntry))
 
 
 def entry_problem(entry: SubmissionEntry) -> Optional[str]:
@@ -150,23 +146,39 @@ def entry_problem(entry: SubmissionEntry) -> Optional[str]:
         formats.need(formats.is_int(entry.revision, low=1), "the revision")
         formats.need(formats.is_hex64(entry.revision_hash), "the revision hash")
         formats.need(formats.is_int(entry.updated_at), "updated_at")
-    except (formats.FormatError, ValueError) as exc:
+    except (FormatError, StandupCryptoError) as exc:
         return str(exc)
     return None
 
 
 def entry_from_json(value: Any) -> Optional[SubmissionEntry]:
-    """An entry read from the list, or None when it is malformed (one bad
-    entry, from a broken or a newer app, does not hide the others)."""
+    """An entry read from the list, or None when this app cannot read it
+    (a broken one, or a newer app's)."""
     if not isinstance(value, dict):
         return None
-    try:
-        entry = SubmissionEntry(**{name: value.get(name) for name in (
-            "sid", "publication", "server", "role", "s_sub", "status_key", "title", "kind",
-            "d", "round", "revision", "revision_hash", "updated_at")})
-    except TypeError:
-        return None
+    entry = SubmissionEntry(**{name: value.get(name) for name in _ENTRY_FIELDS})
     return None if entry_problem(entry) else entry
+
+
+@dataclass(frozen=True)
+class SubmissionItems:
+    """What the list holds: the entries this app reads, and the items it
+    cannot (``unread``: a broken one, or a newer app's), kept as they
+    came and written back unchanged, so this app never deletes what
+    another wrote."""
+
+    entries: Tuple[SubmissionEntry, ...] = ()
+    unread: Tuple[Mapping[str, Any], ...] = ()
+
+
+def merge_items(remote: SubmissionItems, local: SubmissionItems) -> SubmissionItems:
+    """The entries by :func:`merge_entries`; every unread item of either,
+    once."""
+    unread: Dict[str, Mapping[str, Any]] = {}
+    for item in remote.unread + local.unread:
+        unread.setdefault(formats.canonical_json(item), item)
+    return SubmissionItems(entries=tuple(merge_entries(remote.entries, local.entries)),
+                           unread=tuple(unread.values()))
 
 
 def merge_entries(remote: Sequence[SubmissionEntry],
@@ -185,16 +197,32 @@ def merge_entries(remote: Sequence[SubmissionEntry],
     return list(merged.values())
 
 
-def _decode_entries(payload: dict) -> List[SubmissionEntry]:
+def _decode_items(payload: dict) -> SubmissionItems:
     items = payload.get("items")
     if not isinstance(items, list):
         raise ValueError("the submissions list has no items")
-    found = [entry for entry in (entry_from_json(item) for item in items) if entry]
-    return merge_entries(found, [])
+    entries, unread = [], []
+    for item in items:
+        entry = entry_from_json(item)
+        if entry is not None:
+            entries.append(entry)
+        elif _canonical(item):
+            unread.append(item)
+    return merge_items(SubmissionItems(entries=tuple(entries), unread=tuple(unread)),
+                       SubmissionItems())
 
 
-def _encode_entries(value: Sequence[SubmissionEntry], now: int) -> dict:
-    return {"items": [entry.to_json() for entry in value]}
+def _canonical(item: Any) -> bool:
+    """An item canonical JSON can hold (so it can be written back)."""
+    try:
+        formats.canonical_json(item)
+    except FormatError:
+        return False
+    return True
+
+
+def _encode_items(value: SubmissionItems, now: int) -> dict:
+    return {"items": [entry.to_json() for entry in value.entries] + list(value.unread)}
 
 
 def stored(result: PublishResult) -> bool:
@@ -303,19 +331,20 @@ class SubmissionsList(_AccountList):
 
     def __init__(self, profile, **boundaries) -> None:
         super().__init__(
-            profile, d_tag=formats.SUBMISSIONS_LIST_D, decode=_decode_entries,
-            encode=_encode_entries, merge=lambda base, local, remote: merge_entries(
-                remote or [], local),
-            words=_submissions_words(), paging=Paging(field="items"), empty=list, **boundaries)
+            profile, d_tag=formats.SUBMISSIONS_LIST_D, decode=_decode_items,
+            encode=_encode_items, merge=lambda base, local, remote: merge_items(
+                remote or SubmissionItems(), local),
+            words=_submissions_words(), paging=Paging(field="items"), empty=SubmissionItems,
+            **boundaries)
 
-    def _merge_local(self, remote):
-        return merge_entries(remote, self._local)
+    def _merge_local(self, remote: SubmissionItems) -> SubmissionItems:
+        return merge_items(remote, self._local)
 
     def entries(self) -> List[SubmissionEntry]:
-        return list(self._local)
+        return list(self._local.entries)
 
     def entry(self, sid: str) -> Optional[SubmissionEntry]:
-        return next((e for e in self._local if e.sid == sid), None)
+        return next((e for e in self._local.entries if e.sid == sid), None)
 
     def record(self, entry: SubmissionEntry, on_done: Callable[[PublishResult], None]) -> None:
         """Add or update ``entry`` and write the list. Send the submission
@@ -339,7 +368,7 @@ class SubmissionsList(_AccountList):
             known = self.entry(entry.sid)
             floor = max(now, known.updated_at + 1 if known else 0)
             fresh.append(replace(entry, updated_at=max(entry.updated_at, floor)))
-        self._local = merge_entries(self._local, fresh)
+        self._local = merge_items(self._local, SubmissionItems(entries=tuple(fresh)))
         self._publish(on_done)
 
 
@@ -363,8 +392,11 @@ class ReadState(_AccountList):
         return int(self._local.get(sid, 0))
 
     def mark(self, sid: str, seq: int) -> None:
-        """``sid`` read up to ``seq`` (kept here until :meth:`flush`)."""
-        if formats.is_hex64(sid) and formats.is_int(seq) and seq > self.seen(sid):
+        """``sid`` read up to ``seq`` (kept here until :meth:`flush`); a
+        ``seq`` not beyond the one known changes nothing."""
+        if not (formats.is_hex64(sid) and formats.is_int(seq)):
+            raise ValueError("a submission id and a seq")
+        if seq > self.seen(sid):
             self._local = dict(self._local, **{sid: seq})
             self._dirty = True
 
@@ -422,6 +454,7 @@ def _max_merge(remote: Dict[str, int], local: Dict[str, int]) -> Dict[str, int]:
 
 
 __all__ = [
-    "READ_STATE_INTERVAL_SECONDS", "ReadState", "SubmissionEntry", "SubmissionsList",
-    "entry_from_json", "entry_problem", "merge_entries", "stored",
+    "READ_STATE_INTERVAL_SECONDS", "ReadState", "SubmissionEntry", "SubmissionItems",
+    "SubmissionsList", "entry_from_json", "entry_problem", "merge_entries", "merge_items",
+    "stored",
 ]

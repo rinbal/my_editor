@@ -24,8 +24,20 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 from urllib.parse import urlsplit
 
+from .. import events as nostr_events
 from . import formats
 from .formats import FormatError, is_hex64, is_int, need
+from .readers import (
+    read_address,
+    read_hex64,
+    read_hex64_list,
+    read_int,
+    read_object,
+    read_one_of,
+    read_optional_hex64,
+    read_optional_text,
+    read_text,
+)
 
 # 11.1
 STATES = ("submitted", "in_review", "changes_requested", "accepted", "published",
@@ -72,55 +84,16 @@ _MAX_SIGNED_BODY = formats.MAX_ENVELOPE_BYTES * 2
 
 
 # --------------------------------------------------------------------------- #
-# Small readers                                                                #
-# --------------------------------------------------------------------------- #
-
-def _obj(value: Any, what: str) -> Mapping[str, Any]:
-    need(isinstance(value, dict), f"{what} must be an object")
-    return value
-
-
-def _hex(value: Any, what: str) -> str:
-    need(is_hex64(value), f"{what} must be 64 hex digits")
-    return value
-
-
-def _opt_hex(value: Any, what: str) -> Optional[str]:
-    return None if value is None else _hex(value, what)
-
-
-def _int(value: Any, what: str, *, low: int = 0) -> int:
-    need(is_int(value, low=low), f"{what} must be a whole number of at least {low}")
-    return value
-
-
-def _text(value: Any, what: str, *, limit: int = 2_000) -> str:
-    need(isinstance(value, str) and len(value) <= limit, f"{what} must be text")
-    return value
-
-
-def _opt_text(value: Any, what: str, *, limit: int = 2_000) -> Optional[str]:
-    return None if value is None else _text(value, what, limit=limit)
-
-
-def _one_of(value: Any, allowed: Tuple[str, ...], what: str) -> str:
-    need(value in allowed, f"{what} is not one of {', '.join(allowed)}")
-    return value
-
-
-def _hex_list(value: Any, what: str, *, limit: int = 1_000) -> Tuple[str, ...]:
-    need(isinstance(value, list) and len(value) <= limit, f"{what} must be a list")
-    return tuple(_hex(item, what) for item in value)
-
-
-def _address(value: Any) -> str:
-    formats.parse_address(value)
-    return value
-
-
-# --------------------------------------------------------------------------- #
 # Views (12.4)                                                                 #
 # --------------------------------------------------------------------------- #
+
+@dataclass(frozen=True)
+class Published:
+    """Where the published work is: its ``naddr`` and event id."""
+
+    naddr: str
+    event_id: str
+
 
 @dataclass(frozen=True)
 class Turn:
@@ -153,7 +126,7 @@ class SubmissionView:
     updated_at: int
     last_seq: int
     confirmations: Mapping[str, Tuple[str, ...]]
-    published: Optional[Mapping[str, str]]
+    published: Optional[Published]
     placed: bool
     proposal_by: Optional[str]
 
@@ -163,65 +136,66 @@ class SubmissionView:
 
 
 def parse_turn(value: Any) -> Turn:
-    data = _obj(value, "the turn")
-    return Turn(type=_one_of(data.get("type"), TURN_TYPES, "the turn"),
-                pubkey=_opt_hex(data.get("pubkey"), "the turn's person"),
-                pending=_hex_list(data.get("pending", []), "the turn's pending",
-                                  limit=formats.MAX_PARTICIPANTS + 1))
+    data = read_object(value, "the turn")
+    return Turn(type=read_one_of(data.get("type"), TURN_TYPES, "the turn"),
+                pubkey=read_optional_hex64(data.get("pubkey"), "the turn's person"),
+                pending=read_hex64_list(data.get("pending", []), "the turn's pending",
+                                        limit=formats.MAX_PARTICIPANTS + 1))
 
 
 def parse_view(value: Any) -> SubmissionView:
-    data = _obj(value, "a submission")
-    state = _one_of(data.get("state"), STATES, "the state")
+    data = read_object(value, "a submission")
+    state = read_one_of(data.get("state"), STATES, "the state")
     step = data.get("step")
     if step is not None:
-        _one_of(step, STEPS, "the step")
+        read_one_of(step, STEPS, "the step")
     confirmations = {}
     raw_confirmations = data.get("confirmations") or {}
     need(isinstance(raw_confirmations, dict) and len(raw_confirmations) <= 64,
          "confirmations must be an object")
     for pubkey, what in raw_confirmations.items():
-        _hex(pubkey, "a confirming person")
+        read_hex64(pubkey, "a confirming person")
         need(isinstance(what, list) and all(isinstance(x, str) and len(x) <= 32 for x in what),
              "a confirmation must be a list of words")
         confirmations[pubkey] = tuple(what)
     published = data.get("published")
     if published is not None:
-        published = _obj(published, "the publication record")
-        published = {"naddr": _text(published.get("naddr"), "the naddr"),
-                     "event_id": _hex(published.get("event_id"), "the published event")}
+        published = read_object(published, "the publication record")
+        published = Published(naddr=read_text(published.get("naddr"), "the naddr"),
+                              event_id=read_hex64(published.get("event_id"),
+                                                  "the published event"))
     marks = data.get("marks") or []
     need(isinstance(marks, list), "marks must be a list")
     placed = data.get("placed", False)
     need(isinstance(placed, bool), "placed must be true or false")
     return SubmissionView(
-        submission_id=_hex(data.get("submission_id"), "the submission id"),
-        publication=_address(data.get("publication")),
-        kind=_one_of(data.get("kind"), formats.KINDS, "the kind"),
-        title=_text(data.get("title"), "the title", limit=formats.MAX_TITLE_CHARS),
-        writer=_hex(data.get("writer"), "the writer"),
-        participants=_hex_list(data.get("participants", []), "the participants",
-                               limit=formats.MAX_PARTICIPANTS),
+        submission_id=read_hex64(data.get("submission_id"), "the submission id"),
+        publication=read_address(data.get("publication")),
+        kind=read_one_of(data.get("kind"), formats.KINDS, "the kind"),
+        title=read_text(data.get("title"), "the title", limit=formats.MAX_TITLE_CHARS),
+        writer=read_hex64(data.get("writer"), "the writer"),
+        participants=read_hex64_list(data.get("participants", []), "the participants",
+                                     limit=formats.MAX_PARTICIPANTS),
         state=state,
         step=step,
         turn=parse_turn(data.get("turn")),
-        responsible=_opt_hex(data.get("responsible"), "the responsible editor"),
+        responsible=read_optional_hex64(data.get("responsible"), "the responsible editor"),
         # A mark this app does not know (a newer server's) is left out.
         marks=tuple(m for m in marks if m in MARKS),
-        signer=_one_of(data.get("signer"), formats.SIGNERS, "who signs"),
-        section=_opt_text(data.get("section"), "the section", limit=300),
-        revision=_int(data.get("revision"), "the revision", low=1),
-        round=_int(data.get("round"), "the round", low=1),
-        p_sub=_hex(data.get("p_sub"), "the submission key"),
-        epoch=_int(data.get("epoch"), "the epoch"),
-        revision_hash=_hex(data.get("revision_hash"), "the revision hash"),
-        created_at=_int(data.get("created_at"), "created_at"),
-        updated_at=_int(data.get("updated_at"), "updated_at"),
-        last_seq=_int(data.get("last_seq", 0), "last_seq"),
+        signer=read_one_of(data.get("signer"), formats.SIGNERS, "who signs"),
+        section=read_optional_text(data.get("section"), "the section", limit=300),
+        revision=read_int(data.get("revision"), "the revision", low=1),
+        round=read_int(data.get("round"), "the round", low=1),
+        p_sub=read_hex64(data.get("p_sub"), "the submission key"),
+        epoch=read_int(data.get("epoch"), "the epoch"),
+        revision_hash=read_hex64(data.get("revision_hash"), "the revision hash"),
+        created_at=read_int(data.get("created_at"), "created_at"),
+        updated_at=read_int(data.get("updated_at"), "updated_at"),
+        last_seq=read_int(data.get("last_seq", 0), "last_seq"),
         confirmations=confirmations,
         published=published,
         placed=placed,
-        proposal_by=_opt_hex(data.get("proposal_by"), "the proposer"),
+        proposal_by=read_optional_hex64(data.get("proposal_by"), "the proposer"),
     )
 
 
@@ -236,10 +210,10 @@ class SignedRecord:
 def parse_signed(value: Any) -> Optional[SignedRecord]:
     if value is None:
         return None
-    data = _obj(value, "a signed action")
-    event = _obj(data.get("event"), "a signed action's event")
-    return SignedRecord(event=event, body=_text(data.get("body"), "a signed body",
-                                                  limit=_MAX_SIGNED_BODY))
+    data = read_object(value, "a signed action")
+    event = read_object(data.get("event"), "a signed action's event")
+    return SignedRecord(event=event, body=read_text(data.get("body"), "a signed body",
+                                                    limit=_MAX_SIGNED_BODY))
 
 
 @dataclass(frozen=True)
@@ -262,27 +236,27 @@ class TimelineItem:
 
 def parse_item(value: Any) -> Optional[TimelineItem]:
     """One timeline item, or None for an event this app does not know."""
-    data = _obj(value, "a timeline item")
-    kind = _one_of(data.get("type"), ITEM_TYPES, "the item's type")
+    data = read_object(value, "a timeline item")
+    kind = read_one_of(data.get("type"), ITEM_TYPES, "the item's type")
     wrap = data.get("wrap")
     if wrap is not None:
-        wrap = _obj(wrap, "a wrapped message")
+        wrap = read_object(wrap, "a wrapped message")
     event = data.get("event")
     if event is not None:
-        event = _obj(event, "a timeline event")
+        event = read_object(event, "a timeline event")
         if event.get("name") not in EVENT_NAMES:
             return None
         revision = event.get("revision")
         event = TimelineEvent(
             name=event["name"],
-            actor=_opt_hex(event.get("actor"), "the actor"),
-            revision=None if revision is None else _int(revision, "the revision", low=1),
-            to=_opt_hex(event.get("to"), "to whom"),
+            actor=read_optional_hex64(event.get("actor"), "the actor"),
+            revision=None if revision is None else read_int(revision, "the revision", low=1),
+            to=read_optional_hex64(event.get("to"), "to whom"),
             signed=parse_signed(event.get("signed")))
     need(kind == "event" or wrap is not None, "a message without its wrap")
     need(kind != "event" or event is not None, "an event without its record")
-    return TimelineItem(seq=_int(data.get("seq"), "seq", low=1),
-                        at=_int(data.get("at"), "at"), type=kind, wrap=wrap, event=event)
+    return TimelineItem(seq=read_int(data.get("seq"), "seq", low=1),
+                        at=read_int(data.get("at"), "at"), type=kind, wrap=wrap, event=event)
 
 
 def parse_timeline(value: Any, *, internal: bool) -> Tuple[TimelineItem, ...]:
@@ -315,17 +289,17 @@ class Receipt:
 
 
 def parse_receipt(value: Any) -> Receipt:
-    data = _obj(value, "a receipt")
+    data = read_object(value, "a receipt")
     need(data.get("v") == formats.CONTRACT_VERSION and is_int(data.get("v")),
          "the receipt is of another version")
     return Receipt(raw=dict(data),
-                   submission_id=_hex(data.get("submission_id"), "the receipt's submission"),
-                   revision=_int(data.get("revision"), "the receipt's revision", low=1),
-                   revision_hash=_hex(data.get("revision_hash"), "the receipt's revision hash"),
-                   blobs_missing=_hex_list(data.get("blobs_missing", []), "missing files"),
-                   state=_one_of(data.get("state"), STATES, "the receipt's state"),
-                   seq=_int(data.get("seq"), "the receipt's seq", low=1),
-                   received_at=_int(data.get("received_at"), "received_at", low=1))
+                   submission_id=read_hex64(data.get("submission_id"), "the receipt's submission"),
+                   revision=read_int(data.get("revision"), "the receipt's revision", low=1),
+                   revision_hash=read_hex64(data.get("revision_hash"), "the receipt's revision hash"),
+                   blobs_missing=read_hex64_list(data.get("blobs_missing", []), "missing files"),
+                   state=read_one_of(data.get("state"), STATES, "the receipt's state"),
+                   seq=read_int(data.get("seq"), "the receipt's seq", low=1),
+                   received_at=read_int(data.get("received_at"), "received_at", low=1))
 
 
 @dataclass(frozen=True)
@@ -337,14 +311,32 @@ class LookupItem:
 
 
 def parse_lookup_item(value: Any) -> LookupItem:
-    data = _obj(value, "a lookup answer")
+    data = read_object(value, "a lookup answer")
     view = parse_view(data.get("submission"))
     receipt = parse_receipt(data.get("receipt"))
     need(receipt.submission_id == view.submission_id,
          "the receipt is for another submission")
-    return LookupItem(status_key_hash=_hex(data.get("status_key_hash"), "the status key hash"),
+    return LookupItem(status_key_hash=read_hex64(data.get("status_key_hash"), "the status key hash"),
                       submission=view, receipt=receipt,
                       timeline=parse_timeline(data.get("timeline", []), internal=False))
+
+
+@dataclass(frozen=True)
+class Blob:
+    """A file of a revision: its hash, size and where it was uploaded."""
+
+    sha256: str
+    size: int
+    servers: Tuple[str, ...]
+
+
+def parse_blob(value: Any) -> Blob:
+    data = read_object(value, "a file")
+    servers = data.get("servers", [])
+    need(isinstance(servers, list) and len(servers) <= 20, "a file's servers must be a list")
+    return Blob(sha256=read_hex64(data.get("sha256"), "a file's hash"),
+                size=read_int(data.get("size", 0), "a file's size"),
+                servers=tuple(read_text(s, "a file's server") for s in servers))
 
 
 @dataclass(frozen=True)
@@ -354,32 +346,29 @@ class RevisionRecord:
     envelope: Optional[str]
     envelope_sha256: Optional[str]
     wraps: Mapping[str, Mapping[str, str]]
-    blobs: Tuple[Mapping[str, Any], ...]
+    blobs: Tuple[Blob, ...]
     created_at: int
     signed: Optional[SignedRecord]
 
 
 def parse_revision_record(value: Any) -> RevisionRecord:
-    data = _obj(value, "a revision")
-    wraps = _obj(data.get("wraps", {}), "the wraps")
+    data = read_object(value, "a revision")
+    wraps = read_object(data.get("wraps", {}), "the wraps")
     for name, wrap in wraps.items():
         need(isinstance(name, str) and formats.is_wrap(wrap), "a wrap is malformed")
     blobs = data.get("blobs") or []
     need(isinstance(blobs, list), "the files must be a list")
-    for blob in blobs:
-        blob = _obj(blob, "a file")
-        _hex(blob.get("sha256"), "a file's hash")
     envelope = data.get("envelope")
     need(envelope is None or (isinstance(envelope, str)
                               and len(envelope) <= formats.MAX_ENVELOPE_BYTES * 4 // 3 + 4),
          "the envelope must be base64 text")
     return RevisionRecord(
-        revision=_int(data.get("revision"), "the revision", low=1),
-        revision_hash=_hex(data.get("revision_hash"), "the revision hash"),
+        revision=read_int(data.get("revision"), "the revision", low=1),
+        revision_hash=read_hex64(data.get("revision_hash"), "the revision hash"),
         envelope=envelope,
-        envelope_sha256=_opt_hex(data.get("envelope_sha256"), "the envelope hash"),
-        wraps=dict(wraps), blobs=tuple(blobs),
-        created_at=_int(data.get("created_at"), "created_at"),
+        envelope_sha256=read_optional_hex64(data.get("envelope_sha256"), "the envelope hash"),
+        wraps=dict(wraps), blobs=tuple(parse_blob(b) for b in blobs),
+        created_at=read_int(data.get("created_at"), "created_at"),
         signed=parse_signed(data.get("signed")))
 
 
@@ -526,7 +515,7 @@ def signed_action_problem(signed: Optional[SignedRecord], *, path: str, submissi
     if signed is None:
         return "nothing signed is stored"
     event = signed.event
-    if not formats.is_signed_event(event, kind=27235):
+    if not nostr_events.is_verified_event(event, kind=27235):
         return "the signature does not verify"
     payloads = formats.tag_values(event, "payload")
     if payloads != [formats.sha256_hex(signed.body)]:

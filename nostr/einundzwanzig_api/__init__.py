@@ -110,7 +110,6 @@ from .models import (
     parse_invoice,
     parse_membership,
     parse_payments,
-    parse_retry_after,
 )
 from .prices import (
     CHF,
@@ -144,6 +143,6 @@ __all__ = [
     "handle_field_message", "humanize",
     "nip05_handle_problem", "parse_config",
     "parse_erasure", "parse_export", "parse_fee_entry", "parse_invoice",
-    "parse_membership", "parse_payments", "parse_prices", "parse_retry_after", "service_url",
+    "parse_membership", "parse_payments", "parse_prices", "service_url",
     "session_signer", "upstream_url",
 ]

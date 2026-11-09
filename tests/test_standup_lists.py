@@ -176,11 +176,28 @@ def test_loading_reads_the_entries_and_stop_forgets_them():
     relay = Relay()
     value = entry()
     relay.put(formats.SUBMISSIONS_LIST_D, {"v": 1, "page": 0, "pages": 1,
-                                           "items": [value.to_json(), {"sid": "broken"}]})
+                                           "items": [value.to_json()]})
     store, _relay, _clock = make(relay=relay)
-    assert load(store) == [value]
+    assert load(store).entries == (value,)
     store.stop()
     assert store.entries() == [] and not store.loaded
+
+
+def test_an_item_this_app_cannot_read_is_written_back_unchanged():
+    # A newer app's entry (a kind this one does not know) or a broken
+    # one: never shown, never deleted.
+    relay = Relay()
+    newer = dict(entry(7).to_json(), kind="video", chapters=[1, 2])
+    relay.put(formats.SUBMISSIONS_LIST_D, {"v": 1, "page": 0, "pages": 1,
+                                           "items": [newer, {"sid": "broken"}]})
+    store, _relay, _clock = make(relay=relay)
+    loaded = load(store)
+    assert loaded.entries == () and loaded.unread == (newer, {"sid": "broken"})
+    mine = entry(1)
+    record(store, mine)
+    items = relay.page(formats.SUBMISSIONS_LIST_D)["items"]
+    assert items == [mine.to_json(), newer, {"sid": "broken"}]
+    assert store.entries() == [mine]
 
 
 def test_an_answer_for_an_account_that_was_left_changes_nothing():
@@ -272,7 +289,7 @@ def test_a_list_of_500_submissions_goes_through_a_signer_app():
     other = SubmissionsList(profile, session_pool=FakeSessionPool(client),
                             relay_directory=FakeRelayDirectory(), query=relay, publisher=relay,
                             clock=FakeClock(NOW))
-    assert load(other) == entries
+    assert list(load(other).entries) == entries
 
     # One more submission rewrites the last page and page 0, not all.
     before = len(relay.published)

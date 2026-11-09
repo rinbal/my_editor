@@ -11,8 +11,11 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 
+import pytest
+
 from nostr.standup import views
 from nostr.standup.client import StandupApi
+from nostr.standup.errors import Code
 from nostr.standup.lists import SubmissionEntry
 from nostr.standup.watcher import (
     REFRESH_INTERVAL_MS,
@@ -27,6 +30,7 @@ from tests.standup_fakes import (
     DROP_AFTER,
     DROP_BEFORE,
     SERVER,
+    Caller,
     FakeStandupServer,
     SignAs,
     StandupNam,
@@ -120,7 +124,7 @@ def test_only_what_is_new_is_asked_for():
     watcher.start()
     world.nam.settle()
     world.server.submissions[entry.sid].state = "in_review"
-    world.server._event(world.server.submissions[entry.sid], "taken", "ee" * 32)
+    world.server._event(world.server.submissions[entry.sid], "taken", Caller("ee" * 32))
     timer.fire()
     world.nam.settle()
     sent = json.loads(world.lookups()[-1][2])
@@ -289,9 +293,30 @@ def test_when_the_server_cannot_be_asked_the_entry_stays_unconfirmed():
     assert kind == "err" and error.code == "offline"
 
 
-def test_an_entry_without_a_status_key_cannot_be_resolved():
+def test_only_a_writers_entry_can_be_resolved():
     world = World()
     _prepared, mine = world.submit()
-    kind, error = _resolve(world, replace(mine, role="contributor", status_key=None))
-    assert kind == "err" and error.code == "refused"
+    with pytest.raises(ValueError):
+        resolve_unconfirmed(world.reader, replace(mine, role="contributor", status_key=None),
+                            print, print)
     assert world.lookups() == []
+
+
+def test_an_answer_that_cannot_be_read_leaves_the_entry_unconfirmed():
+    world = World()
+    world.server.inject("submit", DROP_AFTER)
+    prepared = submission_for(sk("writer"))
+    world.writer.submit(prepared.body, lambda r: None, lambda e: None)
+    world.nam.settle()
+    original = world.server._lookup
+
+    def broken(who, body, params, query):
+        reply = original(who, body, params, query)
+        data = json.loads(reply._body)
+        data["items"][0]["receipt"]["state"] = "lost"
+        reply._body = json.dumps(data).encode("utf-8")
+        return reply
+
+    world.server._lookup = broken
+    kind, error = _resolve(world, entry_for(prepared))
+    assert kind == "err" and error.code == Code.BAD_RESPONSE and error.maybe_stored

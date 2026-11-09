@@ -34,7 +34,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from .. import crypto as nostr_crypto
 from .. import events as nostr_events
-from . import formats
+from . import formats, views
 from .formats import FormatError
 
 MESSAGE_KIND = 14
@@ -318,18 +318,20 @@ def _is_rumor(value: dict) -> bool:
 
 def open_item(wrap: Any, room_sk: bytes, submission_id: str, *, seq: int = 0) -> Opened:
     """The rumor in a gift wrap, with every check of 9.2, or NotShown."""
-    if not isinstance(wrap, dict) or wrap.get("kind") != GIFT_WRAP_KIND:
-        raise NotShown("not a gift wrap")
-    if len(formats.canonical_bytes(wrap)) > formats.MAX_WRAP_EVENT_BYTES:
+    if not nostr_events.is_verified_event(wrap, kind=GIFT_WRAP_KIND):
+        raise NotShown("not a gift wrap whose signature verifies")
+    try:
+        size = len(formats.canonical_bytes(wrap))
+    except FormatError:
+        raise NotShown("the gift wrap holds what JSON does not") from None
+    if size > formats.MAX_WRAP_EVENT_BYTES:
         raise NotShown("larger than a conversation item may be")
-    if not nostr_events.verify_event(wrap):
-        raise NotShown("the gift wrap's signature does not verify")
     room = nostr_crypto.get_public_key(bytes(room_sk)).hex()
     if formats.tag_value(wrap, "p") != room:
         raise NotShown("the gift wrap is for another room")
     seal = _decrypt_json(wrap["content"], nostr_crypto.conversation_key(
         bytes(room_sk), bytes.fromhex(wrap["pubkey"])), "gift wrap")
-    if seal.get("kind") != SEAL_KIND or not nostr_events.verify_event(seal):
+    if not nostr_events.is_verified_event(seal, kind=SEAL_KIND):
         raise NotShown("the seal does not verify")
     if not _seal_tags_allowed(seal.get("tags")):
         raise NotShown("the seal carries tags")
@@ -349,19 +351,31 @@ def open_item(wrap: Any, room_sk: bytes, submission_id: str, *, seq: int = 0) ->
     return Opened(rumor=rumor, sender=seal["pubkey"], wrap_id=wrap["id"], seq=int(seq))
 
 
-def open_items(items: Sequence[dict], room_sk: bytes, submission_id: str) -> List[Opened]:
-    """Every gift wrap of a timeline (``{"seq", "wrap", ...}``) that passes
-    the checks, in ``seq`` order; the others are left out."""
-    opened = []
+@dataclass(frozen=True)
+class OpenedTimeline:
+    """The messages of a timeline that passed every check, in ``seq``
+    order, and how many did not (9.2: they are not shown, and the person
+    can be told that some could not be read)."""
+
+    opened: Tuple[Opened, ...]
+    not_shown: int
+
+
+def open_items(items: Sequence[views.TimelineItem], room_sk: bytes,
+               submission_id: str) -> OpenedTimeline:
+    """Every message of ``items`` that passes the checks of 9.2; the
+    timeline's events (no wrap) are not messages."""
+    opened: List[Opened] = []
+    not_shown = 0
     for item in items:
-        if not isinstance(item, dict) or not isinstance(item.get("wrap"), dict):
+        if item.wrap is None:
             continue
         try:
-            opened.append(open_item(item["wrap"], room_sk, submission_id,
-                                    seq=int(item.get("seq") or 0)))
-        except (NotShown, ValueError, TypeError):
-            continue
-    return sorted(opened, key=lambda o: o.seq)
+            opened.append(open_item(item.wrap, room_sk, submission_id, seq=item.seq))
+        except NotShown:
+            not_shown += 1
+    return OpenedTimeline(opened=tuple(sorted(opened, key=lambda o: o.seq)),
+                          not_shown=not_shown)
 
 
 # --------------------------------------------------------------------------- #

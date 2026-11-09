@@ -29,8 +29,13 @@ from PySide6.QtCore import QObject
 
 from i18n import N_
 
+from .. import events as nostr_events
+from .. import queries
 from . import formats
-from .client import StandupApi, usable_server_url
+from .answers import Listing, SiteSettings
+from .client import StandupApi
+from .errors import StandupError
+from .servers import usable_server_url
 from .formats import FormatError
 
 KEY_NOT_CONFIRMED = N_(
@@ -91,7 +96,7 @@ def verify_key_event(event: Any, address: str, *, highest_seen: int = 0,
         raise KeyNotConfirmed(f"the address: {exc}") from None
     if not isinstance(event, dict) or event.get("kind") != formats.APP_DATA_KIND:
         raise KeyNotConfirmed("not a kind 30078 event")
-    if not formats.is_signed_event(event, kind=formats.APP_DATA_KIND):
+    if not nostr_events.is_verified_event(event, kind=formats.APP_DATA_KIND):
         raise KeyNotConfirmed("the signature does not verify")
     if event["pubkey"] != pub_pubkey:
         raise KeyNotConfirmed("signed by another key than the publication's")
@@ -206,20 +211,19 @@ def relay_key_lookup(pool, directory, *, timeout_ms: int = 8_000) -> RelayLookup
     """A :data:`RelayLookup` over the app's relay pool: the publication's
     outbox relays (``RelayDirectory.outbox_of``), one query, only validly
     signed events by that key (``queries.fetch_events``)."""
-    from ..queries import fetch_events
 
     def lookup(pubkey: str, d_tag: str, on_done: Callable[[Sequence[dict]], None]) -> None:
         def got_relays(relays: List[str]) -> None:
             if not relays:
                 on_done([])
                 return
-            fetch_events(pool, relays,
-                         [{"kinds": [formats.APP_DATA_KIND], "authors": [pubkey],
-                           "#d": [d_tag]}],
-                         lambda fetched: on_done(list(fetched.events)),
-                         accept=lambda e: e.get("pubkey") == pubkey
-                         and e.get("kind") == formats.APP_DATA_KIND,
-                         timeout_ms=timeout_ms)
+            queries.fetch_events(pool, relays,
+                                 [{"kinds": [formats.APP_DATA_KIND], "authors": [pubkey],
+                                   "#d": [d_tag]}],
+                                 lambda fetched: on_done(list(fetched.events)),
+                                 accept=lambda e: e.get("pubkey") == pubkey
+                                 and e.get("kind") == formats.APP_DATA_KIND,
+                                 timeout_ms=timeout_ms)
 
         directory.outbox_of(pubkey, got_relays)
 
@@ -261,13 +265,14 @@ class Destinations(QObject):
         self._generation = 0
 
     def stop(self) -> None:
+        """Answers still on their way change nothing. The client is
+        shared (a submission may be on its way), so it is not cancelled."""
         self._generation += 1
-        self._api.cancel()
 
     def find(self, on_done: Callable[[List[Destination]], None], on_failure) -> None:
         generation = self._generation
 
-        def listed(items: List[Mapping[str, Any]]) -> None:
+        def listed(items: Sequence[Listing]) -> None:
             if generation != self._generation:
                 return
             results: Dict[int, Destination] = {}
@@ -275,35 +280,35 @@ class Destinations(QObject):
                 on_done([])
                 return
 
-            def one(index: int, item: Mapping[str, Any]) -> None:
+            def one(index: int, item: Listing) -> None:
                 def found(events: Sequence[dict]) -> None:
                     if generation != self._generation or index in results:
                         return
-                    results[index] = self._destination(item, [item["key_event"], *events])
+                    results[index] = self._destination(item, [item.key_event, *events])
                     if len(results) == len(items):
                         on_done([results[i] for i in range(len(items))])
 
-                pubkey, site_d = formats.parse_address(item["address"])
+                pubkey, site_d = formats.parse_address(item.address)
                 self._relay_lookup(pubkey, formats.key_event_d(site_d), found)
 
             for index, item in enumerate(items):
                 one(index, item)
 
-        def failed(error) -> None:
+        def failed(error: StandupError) -> None:
             if generation == self._generation:
                 on_failure(error)
 
         self._api.destinations(listed, failed)
 
-    def _destination(self, item: Mapping[str, Any], candidates: Sequence[Any]) -> Destination:
+    def _destination(self, item: Listing, candidates: Sequence[Any]) -> Destination:
         try:
-            key = newest_key(candidates, item["address"], self._store,
+            key = newest_key(candidates, item.address, self._store,
                              local_http=self._local_http)
         except KeyNotConfirmed as refusal:
-            return Destination(address=item["address"], name=item.get("name") or "",
-                               picture=item.get("picture"), key=None, problem=refusal.reason)
-        return Destination(address=item["address"], name=key.name or item.get("name") or "",
-                           picture=item.get("picture"), key=key)
+            return Destination(address=item.address, name=item.name, picture=item.picture,
+                               key=None, problem=refusal.reason)
+        return Destination(address=item.address, name=key.name or item.name,
+                           picture=item.picture, key=key)
 
 
 def confirm_key(api: StandupApi, address: str, relay_lookup: RelayLookup, store: EpochStore,
@@ -312,8 +317,9 @@ def confirm_key(api: StandupApi, address: str, relay_lookup: RelayLookup, store:
                 local_http: Optional[bool] = None) -> None:
     """The key to submit to, checked right before submitting: the
     server's current key event (``GET .../settings``) and the relays',
-    the newest valid one. ``on_refused`` with KeyNotConfirmed when none
-    passes, or the server could not be asked and no relay had one."""
+    the newest valid one. When the server cannot be asked, the relays'
+    alone count. ``on_refused`` with KeyNotConfirmed when none passes,
+    its reason naming the server's failure when there was one."""
     try:
         pubkey, site_d = formats.parse_address(address)
     except FormatError as exc:
@@ -329,16 +335,19 @@ def confirm_key(api: StandupApi, address: str, relay_lookup: RelayLookup, store:
             key = newest_key([state["server"], *state["relays"]], address, store,
                              local_http=local_http)
         except KeyNotConfirmed as refusal:
-            on_refused(refusal)
+            error = state.get("server_error")
+            on_refused(refusal if error is None else KeyNotConfirmed(
+                f"{refusal.reason}; the server could not be asked ({error.code})"))
             return
         on_done(key)
 
-    def from_server(data: Mapping[str, Any]) -> None:
-        state["server"] = data.get("key_event")
+    def from_server(settings: SiteSettings) -> None:
+        state["server"] = settings.key_event
         maybe_done()
 
-    def server_failed(_error) -> None:
+    def server_failed(error: StandupError) -> None:
         state["server"] = None
+        state["server_error"] = error
         maybe_done()
 
     def from_relays(events: Sequence[dict]) -> None:

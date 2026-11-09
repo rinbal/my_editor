@@ -29,7 +29,9 @@ from typing import Callable, Dict, List, Optional, Sequence
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from . import formats, views
-from .client import StandupApi, StandupError
+from .answers import LookupAnswer
+from .client import StandupApi
+from .errors import Code, StandupError
 from .lists import SubmissionEntry
 
 REFRESH_INTERVAL_MS = 15 * 60 * 1000
@@ -59,8 +61,9 @@ class SubmissionWatcher(QObject):
 
     Signals:
       updated(dict)   sid -> Followed, after each round that learned something.
-      failed(object)  a server could not be asked (StandupError); the
-                      next round tries again.
+      failed(object)  a server could not be asked, or its answer for a
+                      submission could not be read (StandupError); what
+                      was known stays, and the next round tries again.
     """
 
     updated = Signal(object)
@@ -159,18 +162,19 @@ class SubmissionWatcher(QObject):
              learned: Dict[str, Followed], one_done: Callable[[], None]) -> None:
         by_key = {entry.status_key: entry for entry in batch}
 
-        def found(items: Dict[str, views.LookupItem]) -> None:
+        def found(answer: LookupAnswer) -> None:
             if generation != self._generation:
                 return
-            for key, item in items.items():
-                entry = by_key.get(key)
-                if entry is None or item.submission.submission_id != entry.sid:
+            for key, item in answer.found.items():
+                entry = by_key[key]
+                if item.submission.submission_id != entry.sid:
+                    self.failed.emit(StandupError(
+                        Code.BAD_RESPONSE, message="the answer is for another submission"))
                     continue
-                known = self._followed.get(entry.sid)
-                timeline = {i.seq: i for i in (known.timeline if known else ())}
-                timeline.update({i.seq: i for i in item.timeline})
-                learned[entry.sid] = Followed(entry=entry, item=item,
-                                              timeline=tuple(timeline[s] for s in sorted(timeline)))
+                learned[entry.sid] = self._followed_with(entry, item)
+            if answer.unreadable:
+                self.failed.emit(StandupError(
+                    Code.BAD_RESPONSE, message=f"{len(answer.unreadable)} answers unreadable"))
             one_done()
 
         def failed(error: StandupError) -> None:
@@ -179,12 +183,17 @@ class SubmissionWatcher(QObject):
             self.failed.emit(error)
             one_done()
 
-        try:
-            client = self._client_for(batch[0].server)
-        except ValueError as exc:
-            failed(StandupError("unavailable", message=str(exc)))
-            return
-        client.lookup([(e.status_key, self._since(e)) for e in batch], found, failed)
+        self._client_for(batch[0].server).lookup(
+            [(e.status_key, self._since(e)) for e in batch], found, failed)
+
+    def _followed_with(self, entry: SubmissionEntry, item: views.LookupItem) -> Followed:
+        """What is known of ``entry`` with ``item`` added: its timeline
+        grows by what is new, each ``seq`` once."""
+        known = self._followed.get(entry.sid)
+        timeline = {i.seq: i for i in (known.timeline if known else ())}
+        timeline.update({i.seq: i for i in item.timeline})
+        return Followed(entry=entry, item=item,
+                        timeline=tuple(timeline[seq] for seq in sorted(timeline)))
 
     def _since(self, entry: SubmissionEntry) -> int:
         known = self._followed.get(entry.sid)
@@ -238,15 +247,26 @@ def resolve_unconfirmed(api: StandupApi, entry: SubmissionEntry,
     every file found), :class:`~.views.BlobsMissing` (stored, files
     missing: upload and send the same body again), :class:`NotStored`,
     :class:`Superseded` or :class:`Different`. ``on_failure`` when the
-    server could not be asked: the entry stays unconfirmed, ask later."""
+    server could not be asked or its answer not read: the entry stays
+    unconfirmed, ask later. Only a writer's entry can be asked about
+    (ValueError for another)."""
     if not entry.status_key:
-        on_failure(StandupError("refused", message="the entry has no status key"))
-        return
+        raise ValueError("only a writer's entry has a status key")
 
-    def found(items: Dict[str, views.LookupItem]) -> None:
-        item = items.get(entry.status_key)
-        if item is None or item.receipt.submission_id != entry.sid:
+    def found(answer: LookupAnswer) -> None:
+        if entry.status_key in answer.unreadable:
+            # The server has something for this key: never "not stored".
+            on_failure(StandupError(Code.BAD_RESPONSE, message="the answer is unreadable",
+                                    maybe_stored=True))
+            return
+        item = answer.found.get(entry.status_key)
+        if item is None:
             on_done(NotStored())
+            return
+        if item.receipt.submission_id != entry.sid:
+            on_failure(StandupError(Code.BAD_RESPONSE,
+                                    message="the answer is for another submission",
+                                    maybe_stored=True))
             return
         receipt = item.receipt
         if views.lookup_confirms(receipt, submission_id=entry.sid, revision=entry.revision,

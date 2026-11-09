@@ -271,6 +271,21 @@ class Record:
         return self.revisions[self.revision]
 
 
+
+@dataclass(frozen=True)
+class Caller:
+    """Who a request is from: the session's or the signature's person.
+    A signed action keeps its event and exact body, as the server stores
+    them (10)."""
+
+    pubkey: str
+    event: Optional[dict] = None
+    body: str = ""
+
+    @property
+    def signed(self) -> Optional[dict]:
+        return {"event": self.event, "body": self.body} if self.event else None
+
 class FakeStandupServer:
     """See the comment above. Use as ``StandupNam(responder=server)``."""
 
@@ -424,7 +439,7 @@ class FakeStandupServer:
             if auth == "session" and expires <= self.clock():
                 return _error(401, "session_expired",
                               "Die Sitzung ist abgelaufen. Bitte melde dich neu an.")
-            return pubkey
+            return Caller(pubkey=pubkey)
         if text.startswith("Bearer "):
             return _error(401, "auth_invalid", "Diese Aktion braucht eine Signatur.",
                           detail={"reason": "scheme"})
@@ -440,8 +455,7 @@ class FakeStandupServer:
             return self._refuse("replay")
         self.seen_ids.add(event["id"])
         self.accepted.append(event)
-        return {"pubkey": event["pubkey"], "event": event,
-                "body": (body or b"").decode("utf-8")}
+        return Caller(pubkey=event["pubkey"], event=event, body=(body or b"").decode("utf-8"))
 
     # -- views ---------------------------------------------------------------
 
@@ -487,11 +501,10 @@ class FakeStandupServer:
         record.timeline.append(dict(item, seq=record.seq, at=int(self.clock())))
         return record.seq
 
-    def _event(self, record: Record, name: str, who: Optional[dict], **extra) -> int:
-        signed = {"event": who["event"], "body": who["body"]} if isinstance(who, dict) else None
+    def _event(self, record: Record, name: str, who: Optional[Caller], **extra) -> int:
         return self._append(record, {"type": "event", "wrap": None, "event": dict(
-            {"name": name, "actor": who["pubkey"] if isinstance(who, dict) else who,
-             "revision": None, "to": None, "signed": signed}, **extra)})
+            {"name": name, "actor": who.pubkey if who else None,
+             "revision": None, "to": None, "signed": who.signed if who else None}, **extra)})
 
     def _role(self, record: Record, pubkey: str) -> Optional[str]:
         if pubkey == record.writer:
@@ -508,8 +521,8 @@ class FakeStandupServer:
     def _session(self, who, payload, params, query) -> FakeReply:
         token = secrets.token_hex(32)
         expires = int(self.clock()) + SESSION_SECONDS
-        self.sessions[hashlib.sha256(bytes.fromhex(token)).hexdigest()] = (who["pubkey"], expires)
-        return _ok({"token": token, "pubkey": who["pubkey"], "expires_at": expires})
+        self.sessions[hashlib.sha256(bytes.fromhex(token)).hexdigest()] = (who.pubkey, expires)
+        return _ok({"token": token, "pubkey": who.pubkey, "expires_at": expires})
 
     def _session_delete(self, who, payload, params, query) -> FakeReply:
         self.sessions.pop(self.last_session, None)
@@ -551,7 +564,7 @@ class FakeStandupServer:
         pub = self._site(params)
         if pub is None:
             return _error(404, "not_found")
-        if pub.members.get(who["pubkey"]) != "owner":
+        if pub.members.get(who.pubkey) != "owner":
             return _error(403, "role")
         event = payload.get("key_event")
         if event is not None:
@@ -574,7 +587,7 @@ class FakeStandupServer:
         return pub, (pub.members.get(pubkey) if pub else None)
 
     def _members_get(self, who, payload, params, query) -> FakeReply:
-        pub, role = self._member_of(params, who)
+        pub, role = self._member_of(params, who.pubkey)
         if pub is None:
             return _error(404, "not_found")
         if role is None:
@@ -589,7 +602,7 @@ class FakeStandupServer:
                 "releaser": pubkey in pub.releasers}
 
     def _members_post(self, who, payload, params, query) -> FakeReply:
-        pub, role = self._member_of(params, who["pubkey"])
+        pub, role = self._member_of(params, who.pubkey)
         if pub is None or role != "owner":
             return _error(403, "role")
         if not formats.is_pubkey(payload.get("pubkey")) or \
@@ -599,33 +612,33 @@ class FakeStandupServer:
         return _ok({"member": self._member(pub, payload["pubkey"])})
 
     def _members_accept(self, who, payload, params, query) -> FakeReply:
-        pub, role = self._member_of(params, who["pubkey"])
+        pub, role = self._member_of(params, who.pubkey)
         if pub is None or not (role or "").startswith("invited:"):
             return _error(403, "not_member")
-        pub.members[who["pubkey"]] = role.split(":", 1)[1]
-        return _ok({"member": self._member(pub, who["pubkey"])})
+        pub.members[who.pubkey] = role.split(":", 1)[1]
+        return _ok({"member": self._member(pub, who.pubkey)})
 
     def _members_remove(self, who, payload, params, query) -> FakeReply:
-        pub, role = self._member_of(params, who["pubkey"])
+        pub, role = self._member_of(params, who.pubkey)
         if pub is None or role != "owner":
             return _error(403, "role")
         pub.members.pop(payload.get("pubkey"), None)
         return _ok({"epoch": pub.epoch + 1})
 
     def _members_me(self, who, payload, params, query) -> FakeReply:
-        pub, role = self._member_of(params, who["pubkey"])
+        pub, role = self._member_of(params, who.pubkey)
         if pub is None or role is None:
             return _error(403, "not_member")
-        return _ok({"member": self._member(pub, who["pubkey"])})
+        return _ok({"member": self._member(pub, who.pubkey)})
 
     def _epochs(self, who, payload, params, query) -> FakeReply:
-        pub, role = self._member_of(params, who["pubkey"])
+        pub, role = self._member_of(params, who.pubkey)
         if pub is None or role != "owner":
             return _error(403, "role")
         return _ok({"epoch": pub.epoch + 1})
 
     def _keys(self, who, payload, params, query) -> FakeReply:
-        pub, role = self._member_of(params, who)
+        pub, role = self._member_of(params, who.pubkey)
         if pub is None or role is None:
             return _error(403, "not_member")
         content = pub.content
@@ -633,14 +646,14 @@ class FakeStandupServer:
                                 "key_event": pub.key_event, "wrap": None, "history": None}]})
 
     def _keyring_get(self, who, payload, params, query) -> FakeReply:
-        ring = self.keyrings.get(who, {"version": 0, "pages": []})
+        ring = self.keyrings.get(who.pubkey, {"version": 0, "pages": []})
         return _ok(dict(ring))
 
     def _keyring_put(self, who, payload, params, query) -> FakeReply:
-        ring = self.keyrings.get(who["pubkey"], {"version": 0, "pages": []})
+        ring = self.keyrings.get(who.pubkey, {"version": 0, "pages": []})
         if payload.get("expected_version") != ring["version"]:
             return _error(409, "conflict")
-        self.keyrings[who["pubkey"]] = {"version": ring["version"] + 1,
+        self.keyrings[who.pubkey] = {"version": ring["version"] + 1,
                                         "pages": list(payload.get("pages") or [])}
         return _ok({"version": ring["version"] + 1})
 
@@ -704,7 +717,7 @@ class FakeStandupServer:
         return None
 
     def _submit(self, who, body, params, query) -> FakeReply:
-        writer = who["pubkey"]
+        writer = who.pubkey
         refusal = self._check_body(body, writer)
         if refusal is not None:
             return refusal
@@ -760,7 +773,7 @@ class FakeStandupServer:
             "revision": body["revision"], "revision_hash": body["revision_hash"],
             "envelope": body.get("envelope"), "envelope_sha256": body.get("envelope_sha256"),
             "wraps": body["wraps"], "blobs": body["blobs"], "created_at": now,
-            "signed": {"event": who["event"], "body": who["body"]}}
+            "signed": who.signed}
         seq = self._event(record, event_name, who, revision=body["revision"])
         present, missing = self._blob_check(body["blobs"])
         record.receipts[body["revision"]] = {
@@ -797,7 +810,7 @@ class FakeStandupServer:
         record = self._record(params["sid"])
         if record is None:
             return _error(404, "not_found")
-        role = self._role(record, who)
+        role = self._role(record, who.pubkey)
         if role is None or role.startswith("invited:"):
             return _error(403, "forbidden")
         since = int((query.get("since") or ["0"])[0])
@@ -806,7 +819,7 @@ class FakeStandupServer:
         for number in sorted(record.revisions):
             revision = dict(record.revisions[number])
             wraps = revision["wraps"]
-            mine = "redaktion" if member else ("writer" if role == "writer" else who)
+            mine = "redaktion" if member else ("writer" if role == "writer" else who.pubkey)
             revision["wraps"] = {k: v for k, v in wraps.items() if k == mine}
             revisions.append(revision)
         pub = self.publications[record.publication]
@@ -819,7 +832,7 @@ class FakeStandupServer:
         record = self._record(params["sid"])
         if record is None:
             return _error(404, "not_found")
-        role = self._role(record, who)
+        role = self._role(record, who.pubkey)
         if role is None:
             return _error(403, "forbidden")
         wrap = body.get("wrap")
@@ -847,7 +860,7 @@ class FakeStandupServer:
             return None, _error(404, "not_found"), ""
         if body.get("submission_id") != record.sid:
             return None, _error(422, "invalid", detail={"problem": "submission_id"}), ""
-        role = self._role(record, who["pubkey"]) or ""
+        role = self._role(record, who.pubkey) or ""
         return record, None, role
 
     def _decision(self, who, body, params, query) -> FakeReply:
@@ -885,7 +898,7 @@ class FakeStandupServer:
         if body.get("revision_hash") != record.current["revision_hash"]:
             return _error(409, "stale_revision")
         confirms = body.get("confirms") or []
-        known = record.confirmations.setdefault(who["pubkey"], [])
+        known = record.confirmations.setdefault(who.pubkey, [])
         known.extend(c for c in confirms if c not in known)
         creators = [record.writer] + record.participants
         if record.state == "accepted" and record.step == "confirm" and \
@@ -906,7 +919,7 @@ class FakeStandupServer:
             return _error(403 if role not in REDAKTION else 409,
                           "role" if role not in REDAKTION else "invalid_transition")
         record.state = new_state
-        record.responsible = {"take": who["pubkey"], "hand_over": body.get("to"),
+        record.responsible = {"take": who.pubkey, "hand_over": body.get("to"),
                               "hand_back": None}[action]
         self._event(record, {"take": "taken", "hand_over": "handed_over",
                              "hand_back": "handed_back"}[action], who)
@@ -940,7 +953,7 @@ class FakeStandupServer:
                 return _error(422, "invalid")
             action = "published_by_writer"
         else:
-            role = "releaser" if who["pubkey"] in pub.releasers else role
+            role = "releaser" if who.pubkey in pub.releasers else role
             action = "published_by_release"
         new_state = transition(record.state, action, role)
         if new_state is None:
@@ -956,7 +969,7 @@ class FakeStandupServer:
         if refusal is not None:
             return refusal
         pub = self.publications[record.publication]
-        role = "releaser" if who["pubkey"] in pub.releasers else role
+        role = "releaser" if who.pubkey in pub.releasers else role
         if transition(record.state, "placed", role) is None:
             return _error(409 if role == "releaser" else 403,
                           "invalid_transition" if role == "releaser" else "role")
@@ -975,7 +988,7 @@ class FakeStandupServer:
         record.revisions[body["revision"]] = {k: body.get(k) for k in (
             "revision", "revision_hash", "envelope", "envelope_sha256", "wraps", "blobs")}
         record.revisions[body["revision"]].update(
-            created_at=int(self.clock()), signed={"event": who["event"], "body": who["body"]})
+            created_at=int(self.clock()), signed=who.signed)
         if "changed_since_acceptance" not in record.marks:
             record.marks.append("changed_since_acceptance")
         seq = self._event(record, "correction", who, revision=body["revision"])
@@ -998,35 +1011,36 @@ class FakeStandupServer:
         return _ok({})
 
     def _proposals(self, who, body, params, query) -> FakeReply:
-        pub, role = self._member_of(params, who["pubkey"])
+        pub, role = self._member_of(params, who.pubkey)
         if pub is None or role not in ("owner", "redaktion", "curator"):
             return _error(403, "role")
         return _error(422, "invalid", "Vorschläge kann diese Testumgebung nicht.")
 
     def _site_submissions(self, who, body, params, query) -> FakeReply:
-        pub, role = self._member_of(params, who)
+        pub, role = self._member_of(params, who.pubkey)
         if pub is None or role is None:
             return _error(403, "not_member")
         return _ok({"items": [self.view(r) for r in self.submissions.values()
                               if r.publication == pub.address], "next": None})
 
     def _me_editorial(self, who, body, params, query) -> FakeReply:
+        me = who.pubkey
         mine = [self.view(r) for r in self.submissions.values()
-                if self._turn(r).get("pubkey") == who]
+                if self._turn(r).get("pubkey") == me]
         invited = [p for p in self.publications.values()
-                   if p.members.get(who, "").startswith("invited:")]
+                   if p.members.get(me, "").startswith("invited:")]
         return _ok({"turns": mine, "counts": {"mine": len(mine)},
-                    "publications": [{"address": p.address, "role": p.members[who],
+                    "publications": [{"address": p.address, "role": p.members[me],
                                       "name": p.content.get("name")}
                                      for p in self.publications.values()
-                                     if who in p.members and p not in invited],
+                                     if me in p.members and p not in invited],
                     "invitations": [{"address": p.address, "name": p.content.get("name"),
-                                     "role": p.members[who].split(":", 1)[1], "sees": "all",
+                                     "role": p.members[me].split(":", 1)[1], "sees": "all",
                                      "invited_by": None, "invited_at": None} for p in invited]})
 
     def _me_submissions(self, who, body, params, query) -> FakeReply:
         return _ok({"items": [self.view(r) for r in self.submissions.values()
-                              if who == r.writer or who in r.participants]})
+                              if who.pubkey == r.writer or who.pubkey in r.participants]})
 
 
 # =========================================================================== #

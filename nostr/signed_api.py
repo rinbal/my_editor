@@ -28,7 +28,7 @@ import json
 import re
 import time
 import traceback
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 from urllib.parse import urlsplit
 
@@ -37,6 +37,7 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequ
 
 from . import nip98
 from .bunker import is_signer_silent
+from .http_answers import clean_text
 
 # The generic failures every client reports, as plain strings: the
 # membership client's ErrorCode uses exactly these values.
@@ -53,7 +54,9 @@ SignFn = Callable[[dict, Callable[[dict], None], Callable[[str], None]], None]
 
 @dataclass
 class Call:
-    """One API call, from the first signature to the one callback."""
+    """One API call, from the first signature to the one callback. A
+    client that keeps more about its calls subclasses this and names the
+    subclass in :attr:`SignedJsonApi.call_type`."""
 
     method: str
     path: str
@@ -65,8 +68,10 @@ class Call:
     generation: int
     resigned: bool = False
     done: bool = False
-    # What a subclass keeps about the call (how it authorizes, retries).
-    extra: Dict[str, Any] = field(default_factory=dict)
+    # The answer is refused beyond this size (None: the client's limit).
+    max_response_bytes: Optional[int] = None
+    # Who signed the request that was sent (the NIP-98 event's pubkey).
+    signed_by: Optional[str] = None
 
 
 def json_body(payload: Any) -> bytes:
@@ -146,6 +151,7 @@ class SignedJsonApi(QObject):
     max_response_bytes: int = 1024 * 1024
     max_redirects: int = 3
     user_agent: bytes = b"my-editor/1"
+    call_type: type = Call
 
     def __init__(self, sign: SignFn, *, nam: Optional[QNetworkAccessManager] = None,
                  clock: Optional[Callable[[], float]] = None,
@@ -191,7 +197,7 @@ class SignedJsonApi(QObject):
         return False
 
     def _signer_error(self, reason: str) -> Any:
-        return self._error(signer_failure_code(reason), message=_clean(reason))
+        return self._error(signer_failure_code(reason), message=clean_text(reason))
 
     # -- the pipeline -------------------------------------------------------
 
@@ -209,8 +215,11 @@ class SignedJsonApi(QObject):
             except RuntimeError:  # already deleted on the C++ side
                 pass
 
-    def _new_call(self, method, path, body, signed, parse, on_success, on_failure) -> Call:
-        return Call(method, path, body, signed, parse, on_success, on_failure, self._generation)
+    def _new_call(self, method, path, body, signed, parse, on_success, on_failure,
+                  **fields) -> Call:
+        """A call of :attr:`call_type`; ``fields`` are the subclass's own."""
+        return self.call_type(method, path, body, signed, parse, on_success, on_failure,
+                              self._generation, **fields)
 
     def _start(self, method, path, body, signed, parse, on_success, on_failure) -> Call:
         call = self._new_call(method, path, body, signed, parse, on_success, on_failure)
@@ -266,7 +275,7 @@ class SignedJsonApi(QObject):
                 answered["done"] = True
                 if self._live(call):
                     self._fail(call, self._error(
-                        SIGNER_UNREACHABLE, message=_clean(f"signer unavailable: {exc}")))
+                        SIGNER_UNREACHABLE, message=clean_text(f"signer unavailable: {exc}")))
 
     def _send(self, call: Call, signed: Optional[dict]) -> None:
         request = QNetworkRequest(QUrl(self.request_url_for(call.path)))
@@ -285,7 +294,7 @@ class SignedJsonApi(QObject):
         if signed is not None:
             request.setRawHeader(b"Authorization", nip98.authorization_header_value(signed))
             stale = (self._clock() - signed["created_at"]) > self.stale_signature_seconds
-            call.extra["signed_by"] = signed["pubkey"]
+            call.signed_by = signed["pubkey"]
         self._prepare_request(call, request)
 
         if nip98.has_body(call.body):
@@ -308,7 +317,7 @@ class SignedJsonApi(QObject):
         key = id(reply)
         self._inflight[key] = reply
         flags = {"oversize": False}
-        limit = int(call.extra.get("max_response_bytes", self.max_response_bytes))
+        limit = call.max_response_bytes or self.max_response_bytes
 
         def _guard(received: int, total: int) -> None:
             if flags["oversize"]:
@@ -390,10 +399,3 @@ class SignedJsonApi(QObject):
             call.on_failure(error)
         except Exception:  # noqa: BLE001
             traceback.print_exc()
-
-
-def _clean(value: Any) -> str:
-    """Server or signer text, safe to keep in an error (the membership
-    models' rule: control characters go, whitespace collapses, capped)."""
-    from .einundzwanzig_api.models import _clean_text
-    return _clean_text(value)

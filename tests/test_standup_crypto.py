@@ -383,6 +383,8 @@ def test_redaktion_key_and_history_chain_vectors():
     key_event = json.loads(V["key_event"]["valid"]["content"])
     older = json.loads(V["key_event"]["older_epoch"]["content"])
     plain = sc.open_wrap_local(W["epoch_wrap"], sk("editor"))
+    # The owner's app writes the same plaintext when it wraps an epoch key.
+    assert plain == sc.redaktion_key_plaintext(ADDRESS, 3, sk("epoch3"))
     assert sc.check_redaktion_key(plain, publication=ADDRESS, epoch=3,
                                   epoch_pubkey=key_event["pubkey"]) == sk("epoch3")
     with pytest.raises(sc.WrapInvalid):

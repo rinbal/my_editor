@@ -22,6 +22,7 @@ from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequ
 import url_safety
 
 from ..signed_api import Call as _Call
+from ..http_answers import clean_text, parse_retry_after
 from ..signed_api import SignedJsonApi, SignFn, json_body, reply_header, usable_base_url
 from .messages import application_text_problem, email_problem, nip05_handle_problem
 from .models import (
@@ -34,14 +35,12 @@ from .models import (
     MembershipExport,
     MembershipStatus,
     _clean_field_errors,
-    _clean_text,
     parse_config,
     parse_erasure,
     parse_export,
     parse_invoice,
     parse_membership,
     parse_payments,
-    parse_retry_after,
 )
 
 
@@ -151,10 +150,6 @@ class _Unset:
 
 
 UNSET: Any = _Unset()
-
-
-_json_body = json_body
-_reply_header = reply_header
 
 
 def _year_segment(year: int) -> str:
@@ -320,7 +315,7 @@ class MembershipApi(SignedJsonApi):
                 problem = check(value)
                 if problem:
                     problems[name] = [problem]
-        call = self._new_call("POST", "/applications", _json_body(payload), True,
+        call = self._new_call("POST", "/applications", json_body(payload), True,
                               parse_membership, on_success, on_failure)
         # A missing service outranks a field problem: without one nothing
         # works, and fixing the field would only lead to the next refusal.
@@ -345,7 +340,7 @@ class MembershipApi(SignedJsonApi):
         body is left out entirely, as the spec allows. Raises ValueError
         for a year that is not four digits.
         """
-        body = _json_body({"return_url": return_url}) if return_url else None
+        body = json_body({"return_url": return_url}) if return_url else None
         self._start("POST", f"/payments/{_year_segment(year)}/invoice", body, True,
                     parse_invoice, on_success, on_failure)
 
@@ -407,7 +402,7 @@ class MembershipApi(SignedJsonApi):
             return (call.parse(envelope["data"]),)
         except (ValueError, TypeError, KeyError, AttributeError, RecursionError) as exc:
             return ApiError(ErrorCode.BAD_RESPONSE, status=status,
-                            message=_clean_text(str(exc)))
+                            message=clean_text(str(exc)))
 
     def _http_error(self, status: int, raw: bytes, reply) -> ApiError:
         try:
@@ -416,12 +411,12 @@ class MembershipApi(SignedJsonApi):
             body = {}
         if not isinstance(body, dict):
             body = {}
-        message = _clean_text(body.get("message"))
+        message = clean_text(body.get("message"))
 
         retry_after = None
         if status in (429, 503):
             retry_after = parse_retry_after(
-                _reply_header(reply, "Retry-After"), now=self._clock(),
+                reply_header(reply, "Retry-After"), now=self._clock(),
             )
 
         service_code = body.get("code")

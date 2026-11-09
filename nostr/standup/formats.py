@@ -15,13 +15,12 @@ import binascii
 import hashlib
 import json
 import re
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Iterable, List, Optional, Sequence, Tuple
 
 from coincurve import PublicKeyXOnly
 
 from i18n import N_
 
-from .. import events as nostr_events
 from .. import refs
 
 # --------------------------------------------------------------------------- #
@@ -39,7 +38,6 @@ MAX_PARTICIPANTS = 20                       # 15
 MAX_LOOKUP_ITEMS = 50                       # 12.4 lookup
 MAX_THUMB_BYTES = 24 * 1024                 # 5: thumb, at most 24 KB
 MAX_PEAKS = 512                             # 5: audio peaks
-MAX_OPEN_PER_WRITER = 3                     # 15, rule max_open_per_writer (default)
 
 # Media files (7).
 MEDIA_CHUNK_SIZE = 1_048_576                # new files
@@ -209,10 +207,6 @@ def parse_address(address: Any) -> Tuple[str, str]:
     return parts[1], parts[2]
 
 
-def publication_address(pubkey: str, site_d: str) -> str:
-    return f"{SITE_KIND}:{pubkey}:{site_d}"
-
-
 def route_key(pubkey: str, site_d: str) -> str:
     """STANDUP's ``site_route_key``: ``by/<pubkey>/<urlsafe base64 of d
     without padding>``, used in ``/api/sites/<route key>/...``."""
@@ -359,8 +353,22 @@ def check_revision(revision: Any, *, submission_id_: Optional[str] = None,
     if revision_number is not None:
         need(revision["revision"] == revision_number, "another revision than the one named")
     need(revision.get("kind") in KINDS, "revision kind")
+    _check_work(revision.get("work"))
+    _check_audio(revision.get("audio"), revision["kind"])
+    _check_people(revision.get("credits"), revision.get("rights"))
+    _check_checklist(revision.get("checklist"))
+    summary = revision.get("change_summary")
+    need(summary is None or isinstance(summary, str), "revision change_summary")
+    _check_thumb(revision.get("thumb"))
+    media = revision.get("media")
+    need(isinstance(media, list), "revision media")
+    for entry in media:
+        check_media_entry(entry)
+    _check_str(revision.get("client"), "revision client")
+    return revision
 
-    work = revision.get("work")
+
+def _check_work(work: Any) -> None:
     need(isinstance(work, dict), "revision work")
     _check_str(work.get("d"), "work d", empty=False)
     _check_str(work.get("title"), "work title", limit=MAX_TITLE_CHARS)
@@ -383,46 +391,44 @@ def check_revision(revision: Any, *, submission_id_: Optional[str] = None,
         isinstance(t, list) and t and all(isinstance(x, str) for x in t) for t in extra),
         "work extra_tags")
 
-    audio = revision.get("audio")
-    if revision["kind"] == "article":
-        need(audio is None, "an article has no audio")
-    else:
-        need(isinstance(audio, dict), "an audio submission has audio")
-        need(audio.get("medium") in AUDIO_MEDIUMS, "audio medium")
-        _check_media_ref(audio.get("media"), "audio media")
-        need(is_int(audio.get("duration")), "audio duration")
-        peaks = audio.get("peaks")
-        need(isinstance(peaks, list) and len(peaks) <= MAX_PEAKS
-             and all(is_int(p, high=255) for p in peaks), "audio peaks")
 
-    credits = revision.get("credits")
+def _check_audio(audio: Any, kind: str) -> None:
+    if kind == "article":
+        need(audio is None, "an article has no audio")
+        return
+    need(isinstance(audio, dict), "an audio submission has audio")
+    need(audio.get("medium") in AUDIO_MEDIUMS, "audio medium")
+    _check_media_ref(audio.get("media"), "audio media")
+    need(is_int(audio.get("duration")), "audio duration")
+    peaks = audio.get("peaks")
+    need(isinstance(peaks, list) and len(peaks) <= MAX_PEAKS
+         and all(is_int(p, high=255) for p in peaks), "audio peaks")
+
+
+def _check_people(credits: Any, rights: Any) -> None:
     need(isinstance(credits, list), "revision credits")
     for credit in credits:
         need(isinstance(credit, dict) and is_pubkey(credit.get("pubkey"))
              and isinstance(credit.get("part"), str), "a credit")
-    rights = revision.get("rights")
     need(isinstance(rights, dict) and isinstance(rights.get("confirmed"), bool)
          and (rights.get("license") is None or isinstance(rights.get("license"), str)),
          "revision rights")
-    checklist = revision.get("checklist")
+
+
+def _check_checklist(checklist: Any) -> None:
     need(isinstance(checklist, list), "revision checklist")
     for item in checklist:
         need(isinstance(item, dict) and isinstance(item.get("id"), str)
              and isinstance(item.get("label"), str) and item.get("level") in CHECK_LEVELS
              and item.get("result") in CHECK_RESULTS, "a checklist item")
-    summary = revision.get("change_summary")
-    need(summary is None or isinstance(summary, str), "revision change_summary")
-    thumb = revision.get("thumb")
-    if thumb is not None:
-        need(isinstance(thumb, dict) and thumb.get("mime") in THUMB_MIMES, "revision thumb")
-        need(len(b64decode(thumb.get("data"), limit=MAX_THUMB_BYTES)) <= MAX_THUMB_BYTES,
-             "a thumbnail larger than 24 KB")
-    media = revision.get("media")
-    need(isinstance(media, list), "revision media")
-    for entry in media:
-        check_media_entry(entry)
-    _check_str(revision.get("client"), "revision client")
-    return revision
+
+
+def _check_thumb(thumb: Any) -> None:
+    if thumb is None:
+        return
+    need(isinstance(thumb, dict) and thumb.get("mime") in THUMB_MIMES, "revision thumb")
+    need(len(b64decode(thumb.get("data"), limit=MAX_THUMB_BYTES)) <= MAX_THUMB_BYTES,
+         "a thumbnail larger than 24 KB")
 
 
 def build_revision(
@@ -526,26 +532,6 @@ def strict_json(raw: Any, *, limit: int) -> Any:
         raise FormatError(f"not valid JSON: {exc}") from None
 
 
-def is_signed_event(event: Any, *, kind: Optional[int] = None) -> bool:
-    """A Nostr event exactly as NIP-01 shapes it (integers that are
-    integers, lowercase hex), whose id and signature verify, and of
-    ``kind`` when given. ``events.verify_event`` alone converts with
-    ``int()``, so a kind sent as text would pass it."""
-    if not isinstance(event, dict):
-        return False
-    if not (is_hex64(event.get("id")) and is_hex64(event.get("pubkey"))
-            and is_hex128(event.get("sig")) and is_int(event.get("created_at"))
-            and is_int(event.get("kind")) and isinstance(event.get("content"), str)):
-        return False
-    if kind is not None and event["kind"] != kind:
-        return False
-    tags = event.get("tags")
-    if not isinstance(tags, list) or not all(
-            isinstance(t, list) and all(isinstance(x, str) for x in t) for t in tags):
-        return False
-    return nostr_events.verify_event(event)
-
-
 def tag_values(event: dict, name: str) -> List[str]:
     """Every value of the tags ``name`` in ``event``."""
     return [entry[1] for entry in event.get("tags") or ()
@@ -560,7 +546,3 @@ def tag_value(event: dict, name: str) -> Optional[str]:
             return entry[1] if isinstance(entry[1], str) else None
     return None
 
-
-def as_dict(value: Any, what: str) -> Dict[str, Any]:
-    need(isinstance(value, dict), f"{what} must be an object")
-    return value

@@ -14,13 +14,13 @@ Pure: no Qt, no network, no clock.
 from __future__ import annotations
 
 import copy
-import email.utils
-import math
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 import url_safety
+
+from ..http_answers import clean_text
 
 from .bolt11 import bolt11_amount_sats
 
@@ -29,11 +29,6 @@ from .bolt11 import bolt11_amount_sats
 # Limits                                                                       #
 # --------------------------------------------------------------------------- #
 
-# A Retry-After further out than this is treated as this. Invoice creation
-# has a daily quota, so a day is the longest wait that means anything.
-_MAX_RETRY_AFTER_SECONDS: int = 24 * 60 * 60
-
-_MAX_MESSAGE_CHARS: int = 300
 _MAX_FIELD_ERRORS: int = 20
 _MAX_MESSAGES_PER_FIELD: int = 5
 
@@ -85,18 +80,6 @@ class ApiError:
     retry_after: Optional[int] = None
 
 
-_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]+")
-
-
-def _clean_text(value: Any) -> str:
-    """Server or signer text, made safe to keep in an error: control
-    characters go, whitespace collapses, and the result is capped."""
-    if not isinstance(value, str):
-        return ""
-    text = " ".join(_CONTROL_CHARS.sub(" ", value).split())
-    return text[:_MAX_MESSAGE_CHARS]
-
-
 def _clean_field_errors(value: Any) -> Dict[str, List[str]]:
     """``{"field": ["reason", ...]}`` from a 422 body, whatever arrived."""
     if not isinstance(value, dict):
@@ -109,37 +92,10 @@ def _clean_field_errors(value: Any) -> Dict[str, List[str]]:
             reasons = [reasons]
         if not isinstance(reasons, list):
             continue
-        texts = [_clean_text(r) for r in reasons[:_MAX_MESSAGES_PER_FIELD]]
+        texts = [clean_text(r) for r in reasons[:_MAX_MESSAGES_PER_FIELD]]
         texts = [t for t in texts if t]
-        cleaned[_clean_text(name)] = texts
+        cleaned[clean_text(name)] = texts
     return cleaned
-
-
-def parse_retry_after(value: Any, *, now: float) -> Optional[int]:
-    """Seconds to wait from a Retry-After header, or None.
-
-    Either form the HTTP spec allows: a number of seconds or a date.
-    Clamped to a day, and never negative.
-    """
-    if isinstance(value, (bytes, bytearray)):
-        value = bytes(value).decode("latin-1", errors="replace")
-    text = str(value or "").strip()
-    if not text:
-        return None
-    if text.isdigit():
-        seconds = int(text)
-    else:
-        try:
-            when = email.utils.parsedate_to_datetime(text)
-        except (TypeError, ValueError, IndexError, OverflowError):
-            return None
-        if when is None:
-            return None
-        if when.tzinfo is None:
-            from datetime import timezone
-            when = when.replace(tzinfo=timezone.utc)
-        seconds = math.ceil(when.timestamp() - now)
-    return max(0, min(seconds, _MAX_RETRY_AFTER_SECONDS))
 
 
 # --------------------------------------------------------------------------- #

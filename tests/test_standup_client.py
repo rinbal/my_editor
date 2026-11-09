@@ -14,14 +14,15 @@ verified before it is believed (contract 10)."""
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 
 from nostr import crypto, events
-from nostr.standup import client as sc
-from nostr.standup import conversation, formats, views
+from nostr.standup import answers, conversation, formats, views
 from nostr.standup import crypto as scrypto
-from nostr.standup.client import Code, StandupApi
+from nostr.standup.client import StandupApi
+from nostr.standup.errors import Code, StandupError
 from tests.membership_fakes import FakeClock
 from tests.standup_fakes import (
     ADDRESS,
@@ -70,7 +71,7 @@ class World:
         assert kind == "ok", value
         return value
 
-    def err(self, start) -> sc.StandupError:
+    def err(self, start) -> StandupError:
         kind, value = self.run(start)
         assert kind == "err", value
         return value
@@ -81,39 +82,6 @@ def _authorizations(world):
 
 
 # -- where requests go -------------------------------------------------------------
-
-@pytest.mark.parametrize("value, local, expected", [
-    ("https://standup.example/", False, "https://standup.example"),
-    ("https://standup.example/base", False, "https://standup.example/base"),
-    ("http://standup.example", True, ""),
-    ("http://127.0.0.1:5000", False, ""),
-    ("http://127.0.0.1:5000", True, "http://127.0.0.1:5000"),
-    ("http://localhost:5000", True, ""),
-    ("http://127.0.0.1.evil.example", True, ""),
-    ("http://127.0.0.1@evil.example", True, ""),
-    ("https://user@standup.example", False, ""),
-    ("https://standup.example/?x=1", False, ""),
-    ("https://standup.example/#x", False, ""),
-    ("ftp://standup.example", False, ""),
-    (None, False, ""),
-])
-def test_only_https_or_this_computer_with_the_developer_setting(value, local, expected):
-    assert sc.usable_server_url(value, local_http=local) == expected
-
-
-def test_the_developer_setting_comes_from_the_environment(monkeypatch):
-    monkeypatch.delenv(sc.ENV_LOCAL_HTTP, raising=False)
-    assert sc.usable_server_url("http://127.0.0.1:5000") == ""
-    monkeypatch.setenv(sc.ENV_LOCAL_HTTP, "1")
-    assert sc.usable_server_url("http://127.0.0.1:5000") == "http://127.0.0.1:5000"
-
-
-def test_no_server_address_is_built_in(monkeypatch):
-    monkeypatch.delenv(sc.ENV_SERVER, raising=False)
-    assert sc.configured_server() == ""
-    monkeypatch.setenv(sc.ENV_SERVER, "https://standup.local.example")
-    assert sc.configured_server() == "https://standup.local.example"
-
 
 def test_without_a_usable_server_nothing_is_sent():
     world = World()
@@ -131,13 +99,13 @@ def test_instance_destinations_and_the_notice_account_need_no_signature():
     api = world.api()
     instance = world.ok(api.instance)
     assert instance.operator == "Einundzwanzig e.V." and instance.server == SERVER
-    assert instance.bote["pubkey"] == pk("bote")
+    assert instance.bote.pubkey == pk("bote")
     listed = world.ok(api.destinations)
-    assert [d["address"] for d in listed] == [ADDRESS]
-    assert listed[0]["key_event"] == KEY_EVENT
+    assert [d.address for d in listed] == [ADDRESS]
+    assert listed[0].key_event == KEY_EVENT
     assert world.ok(api.bote_pubkey) == pk("bote")
     settings = world.ok(lambda ok, fail: api.site_settings(ADDRESS, ok, fail))
-    assert settings["key_event"] == KEY_EVENT
+    assert settings.key_event == KEY_EVENT and settings.members_count >= 1
     assert _authorizations(world) == [None, None, None, None]
     assert world.signers["writer"].requests == []
 
@@ -147,8 +115,8 @@ def test_instance_destinations_and_the_notice_account_need_no_signature():
 def test_reading_opens_one_session_and_then_needs_no_signature():
     world = World()
     api = world.api()
-    assert world.ok(api.my_submissions) == []
-    assert world.ok(api.my_submissions) == []
+    assert world.ok(api.my_submissions) == ()
+    assert world.ok(api.my_submissions) == ()
     assert len(world.signers["writer"].requests) == 1      # the session, once
     auths = _authorizations(world)
     assert auths[0].startswith(b"Nostr ") and all(a.startswith(b"Bearer ") for a in auths[1:])
@@ -162,7 +130,7 @@ def test_calls_waiting_for_a_session_share_one():
     for _ in range(3):
         api.my_submissions(outcomes.append, outcomes.append)
     world.nam.settle()
-    assert outcomes == [[], [], []]
+    assert outcomes == [(), (), ()]
     assert len(world.signers["writer"].requests) == 1
 
 
@@ -171,7 +139,7 @@ def test_an_expired_session_is_replaced_once_by_itself():
     api = world.api()
     world.ok(api.my_submissions)
     world.server.expire_sessions()
-    assert world.ok(api.my_submissions) == []
+    assert world.ok(api.my_submissions) == ()
     assert len(world.signers["writer"].requests) == 2
     codes = [r for r in world.server.requests if r[1] == "/api/session"]
     assert len(codes) == 2
@@ -194,7 +162,7 @@ def test_a_session_for_someone_else_is_refused(monkeypatch):
     original = world.server._session
 
     def other(who, payload, params, query):
-        return original(dict(who, pubkey=pk("editor")), payload, params, query)
+        return original(replace(who, pubkey=pk("editor")), payload, params, query)
 
     monkeypatch.setattr(world.server, "_session", other)
     error = world.err(api.my_submissions)
@@ -225,39 +193,6 @@ def test_closing_a_session_revokes_it_on_the_server():
 
 
 # -- submitting -------------------------------------------------------------------
-
-def test_the_client_builds_the_body_the_contract_describes():
-    # submission_for assembles it by hand from 12.4; the client derives
-    # the ids itself.
-    prepared = submission_for(sk("writer"), participants=(pk("contributor"),))
-    hand = prepared.body
-    built = sc.submission_body(
-        writer=pk("writer"), publication=hand["publication"], key_event_id=hand["key_event_id"],
-        epoch=hand["epoch"], d="ein-jahr-mit-lightning", round_=1, revision=1,
-        revision_hash=hand["revision_hash"], kind="article", title=hand["title"],
-        signer="writer", participants=hand["participants"], p_sub=hand["p_sub"],
-        envelope=hand["envelope"], envelope_sha256=hand["envelope_sha256"], wraps=hand["wraps"],
-        blobs=[], status_key=prepared.status_key, client="MyEditor tests")
-    assert built == hand
-    assert built["submission_id"] == SID and built["coordinate_hash"] == \
-        VECTORS["ids"]["coordinate_hash"]
-
-
-@pytest.mark.parametrize("change", [
-    lambda b: dict(b, envelope_sha256="00" * 32),
-    lambda b: dict(b, wraps={"writer": b["wraps"]["writer"]}),
-    lambda b: dict(b, wraps=dict(b["wraps"], stranger=b["wraps"]["writer"])),
-    lambda b: dict(b, participants=[pk("contributor")] * 2),
-    lambda b: dict(b, participants=["ab" * 32] * 21),
-    lambda b: dict(b, blobs=[{"sha256": "ab" * 32}, {"sha256": "ab" * 32}]),
-    lambda b: dict(b, kind="video"),
-    lambda b: dict(b, revision=0),
-    lambda b: dict(b, revision=True),
-    lambda b: dict(b, v=2),
-])
-def test_a_body_the_server_would_refuse_has_a_problem(change):
-    assert sc.submission_body_problem(change(submission_for(sk("writer")).body))
-
 
 def test_a_matching_receipt_is_confirmed():
     world = World()
@@ -447,8 +382,8 @@ def test_the_lookup_carries_no_signature_and_answers_by_status_key():
     signatures = len(world.signers["writer"].requests)
     found = world.ok(lambda ok, fail: api.lookup([(prepared.status_key, 0),
                                                   ("ee" * 32, 0)], ok, fail))
-    assert list(found) == [prepared.status_key]
-    item = found[prepared.status_key]
+    assert list(found.found) == [prepared.status_key] and not found.unreadable
+    item = found.found[prepared.status_key]
     assert views.lookup_confirms(item.receipt, submission_id=prepared.body["submission_id"],
                                  revision=1, revision_hash=prepared.body["revision_hash"])
     assert [i.event.name for i in item.timeline] == ["submitted"]
@@ -465,7 +400,7 @@ def test_the_lookup_returns_the_latest_receipt():
                             status_key=first.status_key)
     world.ok(lambda ok, fail: api.submit(second.body, ok, fail))
     found = world.ok(lambda ok, fail: api.lookup([(first.status_key, 0)], ok, fail))
-    receipt = found[first.status_key].receipt
+    receipt = found.found[first.status_key].receipt
     assert (receipt.revision, receipt.revision_hash) == (2, second.body["revision_hash"])
 
 
@@ -488,8 +423,30 @@ def test_internal_notes_never_reach_the_writer_even_when_a_server_sends_them():
 
     world.server._lookup = leaky
     found = world.ok(lambda ok, fail: api.lookup([(prepared.status_key, 0)], ok, fail))
-    assert all(i.type != "internal" for i in found[prepared.status_key].timeline)
+    assert all(i.type != "internal" for i in found.found[prepared.status_key].timeline)
     assert record.seq == 1
+
+
+def test_an_answer_that_cannot_be_read_is_never_taken_for_not_stored():
+    # 12.4: "nothing stored" may be concluded only from a key the server
+    # does not know, never from an answer this app could not read.
+    world = World()
+    api = world.api()
+    prepared = submission_for(sk("writer"))
+    world.ok(lambda ok, fail: api.submit(prepared.body, ok, fail))
+    original = world.server._lookup
+
+    def broken(who, body, params, query):
+        reply = original(who, body, params, query)
+        data = json.loads(reply._body)
+        data["items"][0]["receipt"]["seq"] = "eins"
+        reply._body = json.dumps(data).encode("utf-8")
+        return reply
+
+    world.server._lookup = broken
+    found = world.ok(lambda ok, fail: api.lookup([(prepared.status_key, 0),
+                                                  ("ee" * 32, 0)], ok, fail))
+    assert found.found == {} and found.unreadable == {prepared.status_key}
 
 
 @pytest.mark.parametrize("items", [[], [("ab" * 32, 0)] * 51, [("xyz", 0)], [("ab" * 32, -1)]])
@@ -548,22 +505,30 @@ def test_a_message_whose_seal_and_rumor_name_different_people_is_not_shown():
         world.ok(lambda ok, fail, wrap=wrap: api.send_message(
             sid, wrap, kind_hint="message", on_success=ok, on_failure=fail))
     found = world.ok(lambda ok, fail: api.lookup([(prepared.status_key, 0)], ok, fail))
-    wraps = [{"seq": i.seq, "wrap": i.wrap} for i in found[prepared.status_key].timeline
-             if i.type == "message"]
-    assert len(wraps) == 2
-    opened = conversation.open_items(wraps, prepared.s_sub, sid)
-    assert [o.rumor["content"] for o in opened] == ["Echt"]
+    timeline = conversation.open_items(found.found[prepared.status_key].timeline,
+                                       prepared.s_sub, sid)
+    assert [o.rumor["content"] for o in timeline.opened] == ["Echt"]
+    assert timeline.not_shown == 1
 
 
-@pytest.mark.parametrize("hint, wrap", [("vote", None), ("message", {"kind": 1059})])
-def test_a_message_the_server_would_refuse_is_not_sent(hint, wrap):
+def test_a_message_the_server_would_refuse_is_not_sent():
     world = World()
     prepared = submission_for(sk("writer"))
-    if wrap is None:
-        wrap, _ = _room_message(prepared, "x")
     error = world.err(lambda ok, fail: world.api().send_message(
-        prepared.body["submission_id"], wrap, kind_hint=hint, on_success=ok, on_failure=fail))
+        prepared.body["submission_id"], {"kind": 1059}, kind_hint="message",
+        on_success=ok, on_failure=fail))
     assert error.code == Code.REFUSED and world.server.requests == []
+
+
+@pytest.mark.parametrize("hint, channel", [("vote", "conversation"), ("message", "public")])
+def test_a_kind_or_channel_the_contract_does_not_name_is_a_bug_of_the_caller(hint, channel):
+    world = World()
+    prepared = submission_for(sk("writer"))
+    wrap, _ = _room_message(prepared, "x")
+    with pytest.raises(ValueError):
+        world.api().send_message(prepared.body["submission_id"], wrap, kind_hint=hint,
+                                 channel=channel, on_success=print, on_failure=print)
+    assert world.server.requests == []
 
 
 # -- every endpoint ----------------------------------------------------------------
@@ -586,10 +551,12 @@ def test_every_endpoint_of_the_contract_goes_through_the_checking_server():
     detail = world.ok(lambda ok, fail: writer.submission(sid, ok, fail))
     assert detail.my_role == "writer" and detail.submission.state == "submitted"
     assert list(detail.revisions[0].wraps) == ["writer"]
-    view, seq = world.ok(lambda ok, fail: editor.decision(
+    recorded = world.ok(lambda ok, fail: editor.decision(
         sid, outcome="request_changes", expected_revision=1, message_wrap=wrap,
         on_success=ok, on_failure=fail))
-    assert view.state == "changes_requested" and view.turn.type == "writer" and seq >= 2
+    view = recorded.submission
+    assert view.state == "changes_requested" and view.turn.type == "writer"
+    assert recorded.seq >= 2
     second = submission_for(sk("writer"), revision=2, content="Kürzer.",
                             s_sub=prepared.s_sub, status_key=prepared.status_key)
     assert isinstance(world.ok(lambda ok, fail: writer.submit(second.body, ok, fail)),
@@ -597,8 +564,8 @@ def test_every_endpoint_of_the_contract_goes_through_the_checking_server():
     view = world.ok(lambda ok, fail: editor.responsible(sid, action="take", on_success=ok,
                                                         on_failure=fail))
     assert view.responsible == pk("editor") and view.state == "in_review"
-    view, _seq = world.ok(lambda ok, fail: editor.decision(
-        sid, outcome="accept", expected_revision=2, on_success=ok, on_failure=fail))
+    view = world.ok(lambda ok, fail: editor.decision(
+        sid, outcome="accept", expected_revision=2, on_success=ok, on_failure=fail)).submission
     assert (view.state, view.step) == ("accepted", "writer_publishes")
     view = world.ok(lambda ok, fail: writer.confirm(
         sid, revision_hash=second.body["revision_hash"], confirms=["split"],
@@ -606,7 +573,7 @@ def test_every_endpoint_of_the_contract_goes_through_the_checking_server():
     assert view.confirmations[pk("writer")] == ("split",)
     view = world.ok(lambda ok, fail: writer.published(
         sid, naddr="naddr1test", event=article, on_success=ok, on_failure=fail))
-    assert view.state == "published" and view.published["event_id"] == article["id"]
+    assert view.state == "published" and view.published.event_id == article["id"]
     site = events.sign_event({"kind": 30004, "created_at": NOW, "content": "",
                               "tags": [["d", "einundzwanzig-magazin"]]}, sk("publication"))
     view = world.ok(lambda ok, fail: editor.placed(sid, site_event=site, on_success=ok,
@@ -614,10 +581,14 @@ def test_every_endpoint_of_the_contract_goes_through_the_checking_server():
     assert view.placed and view.turn.type == "none"
     correction = submission_for(sk("writer"), revision=3, content="Korrigiert.",
                                 s_sub=prepared.s_sub, status_key=prepared.status_key).body
-    view, _seq = world.ok(lambda ok, fail: editor.correction(sid, correction, ok, fail))
+    view = world.ok(lambda ok, fail: editor.correction(
+        sid, revision=3, revision_hash=correction["revision_hash"],
+        envelope=correction["envelope"], envelope_sha256=correction["envelope_sha256"],
+        wraps=correction["wraps"], blobs=correction["blobs"], on_success=ok,
+        on_failure=fail)).submission
     assert "changed_since_acceptance" in view.marks
     assert world.ok(lambda ok, fail: editor.request_reupload(
-        sid, sha256="ab" * 32, on_success=ok, on_failure=fail)) == {}
+        sid, sha256="ab" * 32, on_success=ok, on_failure=fail)) is None
 
     # The other writer-side calls.
     other = submission_for(sk("writer"), d="zweiter-text")
@@ -628,39 +599,41 @@ def test_every_endpoint_of_the_contract_goes_through_the_checking_server():
     assert {v.submission_id for v in mine} == {sid, other.body["submission_id"]}
 
     # The member side.
-    assert [m["pubkey"] for m in world.ok(lambda ok, fail: editor.members(ADDRESS, ok, fail))] \
+    assert [m.pubkey for m in world.ok(lambda ok, fail: editor.members(ADDRESS, ok, fail))] \
         == [pk("editor")]
-    assert world.ok(lambda ok, fail: editor.keys(ADDRESS, ok, fail))["epochs"][0]["epoch"] == 3
+    assert world.ok(lambda ok, fail: editor.keys(ADDRESS, ok, fail))[0].epoch == 3
     assert world.ok(lambda ok, fail: editor.invite_member(
         ADDRESS, pubkey=pk("contributor"), role="redaktion", sees="all", wraps=[],
-        history=None, on_success=ok, on_failure=fail))["member"]["status"] == "invited"
+        history=None, on_success=ok, on_failure=fail)).status == "invited"
     contributor = world.api("contributor")
     invited = world.ok(contributor.my_editorial)
-    assert [i["address"] for i in invited["invitations"]] == [ADDRESS]
-    assert invited["publications"] == []
+    assert [i.address for i in invited.invitations] == [ADDRESS]
+    assert invited.publications == ()
     assert world.ok(lambda ok, fail: contributor.accept_membership(
-        ADDRESS, ok, fail))["member"]["status"] == "active"
+        ADDRESS, ok, fail)).status == "active"
     assert world.ok(lambda ok, fail: contributor.update_my_membership(
-        ADDRESS, {"away_until": None, "secret": 1}, ok, fail))["member"]["role"] == "redaktion"
+        ADDRESS, {"away_until": None}, ok, fail)).role == "redaktion"
     assert json.loads(world.server.requests[-1][2]) == {"away_until": None}
+    with pytest.raises(ValueError):
+        contributor.update_my_membership(ADDRESS, {"role": "owner"}, print, print)
     assert world.ok(lambda ok, fail: editor.new_epoch(ADDRESS, {"key_event": None}, ok,
-                                                      fail)) == {"epoch": 4}
+                                                      fail)) == 4
     assert world.ok(lambda ok, fail: editor.remove_member(
-        ADDRESS, pubkey=pk("contributor"), epoch={}, on_success=ok,
-        on_failure=fail)) == {"epoch": 4}
+        ADDRESS, pubkey=pk("contributor"), epoch={}, on_success=ok, on_failure=fail)) == 4
     assert world.ok(lambda ok, fail: editor.put_site_settings(
         ADDRESS, key_event=None, settings_event=None, on_success=ok,
-        on_failure=fail))["key_event"] == KEY_EVENT
+        on_failure=fail)).key_event == KEY_EVENT
     assert json.loads(world.server.requests[-1][2])["owner_wrap"] is None
-    assert world.ok(lambda ok, fail: editor.keyring(ok, fail)) == {"version": 0, "pages": []}
+    assert world.ok(lambda ok, fail: editor.keyring(ok, fail)) == answers.Keyring(0, ())
     assert world.ok(lambda ok, fail: editor.put_keyring(
-        expected_version=0, pages=["ct"], on_success=ok, on_failure=fail)) == {"version": 1}
+        expected_version=0, pages=["ct"], on_success=ok, on_failure=fail)) == 1
+    assert world.ok(lambda ok, fail: editor.keyring(ok, fail)) == answers.Keyring(1, ("ct",))
     assert world.err(lambda ok, fail: editor.put_keyring(
         expected_version=0, pages=["ct"], on_success=ok, on_failure=fail)).code == Code.CONFLICT
     listed = world.ok(lambda ok, fail: editor.site_submissions(ADDRESS, on_success=ok,
                                                                on_failure=fail))
-    assert len(listed["items"]) == 2 and listed["next"] is None
-    assert world.ok(editor.my_editorial)["publications"][0]["role"] == "owner"
+    assert len(listed.items) == 2 and listed.next is None
+    assert world.ok(editor.my_editorial).publications[0].role == "owner"
     assert world.err(lambda ok, fail: editor.propose(
         ADDRESS, naddr="naddr1x", event=article, p_sub=prepared.body["p_sub"], wraps={},
         title="Vorschlag", on_success=ok, on_failure=fail)).code == Code.INVALID
@@ -735,7 +708,7 @@ def test_the_timeline_carries_signed_actions_that_verify():
     world.ok(lambda ok, fail: world.api("editor").decision(
         sid, outcome="decline", expected_revision=1, on_success=ok, on_failure=fail))
     found = world.ok(lambda ok, fail: world.api().lookup([(prepared.status_key, 0)], ok, fail))
-    events_ = [i.event for i in found[prepared.status_key].timeline if i.type == "event"]
+    events_ = [i.event for i in found.found[prepared.status_key].timeline if i.type == "event"]
     assert [e.name for e in events_] == ["submitted", "decline"]
     for event in events_:
         assert views.signed_action_problem(event.signed, path=views.action_path(event.name, sid),
@@ -756,9 +729,3 @@ def test_an_answer_with_a_key_twice_is_refused():
     world.server._instance = doubled
     error = world.err(world.api().instance)
     assert error.code == Code.BAD_RESPONSE
-
-
-def test_detail_is_kept_flat_and_clean():
-    error = sc._clean_detail({"reason": "a\nb", "n": 3, "nested": {"x": 1}, "list": ["a", "b"],
-                              5: "no"})
-    assert error == {"reason": "a b", "n": 3, "list": ("a", "b")}

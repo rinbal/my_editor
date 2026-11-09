@@ -19,10 +19,15 @@ No user interface lives here; the windows build on it.
 - ``conversation``: rumors, seals and gift wraps (NIP-59) for messages,
   reactions, edits and structured notes, and reading them with every
   check;
-- ``client``: the submission server's HTTP API (session, signed actions,
-  the submission body), on the app's shared pipeline (``nostr/signed_api.py``);
-- ``views``: the server's answers read defensively, receipts compared
-  with what was sent, stored signed actions verified;
+- ``servers``: where requests may go (no address built in);
+- ``submission``: the body of a submission, its ids derived, checked
+  before anything is signed;
+- ``client``: the submission server's HTTP API (sessions, signed
+  actions), on the app's shared pipeline (``nostr/signed_api.py``);
+- ``errors``: what a refusal says (the contract's codes);
+- ``readers``, ``views`` and ``answers``: every answer parsed once into
+  its type; receipts compared with what was sent, stored signed actions
+  verified;
 - ``trust``: the Redaktion's key event, checked, with the highest epoch
   seen kept per publication;
 - ``lists``: the writer's encrypted submissions list and read state;

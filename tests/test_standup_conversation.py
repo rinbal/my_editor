@@ -15,7 +15,7 @@ import pytest
 from nostr import crypto as nostr_crypto
 from nostr import events as nostr_events
 from nostr.standup import conversation as conv
-from nostr.standup import formats
+from nostr.standup import formats, views
 from nostr.standup.formats import SecretKeyFound
 from tests.standup_fakes import KeySigner
 from tests.standup_vectors import NOW, SID, VECTORS, pk, sk
@@ -344,9 +344,18 @@ def test_an_unknown_structured_note_is_left_out():
     assert conv.fold([opened(rumor, 1)]) == []
 
 
-def test_open_items_leaves_out_what_fails_and_sorts_by_seq():
+def test_open_items_counts_what_fails_and_sorts_by_seq():
     good = send(writer_message("eins"))["ok"]
-    items = [{"seq": 5, "wrap": S["message"]["wrap"]}, {"seq": 2, "wrap": good},
-             {"seq": 3, "wrap": S["must_fail"]["pubkey_mismatch"]}, {"seq": 4, "wrap": None},
-             {"seq": 6, "type": "event"}]
-    assert [o.seq for o in conv.open_items(items, ROOM_SK, SID)] == [2, 5]
+
+    def message(seq, wrap):
+        return {"seq": seq, "at": NOW, "type": "message", "wrap": wrap, "event": None}
+
+    items = views.parse_timeline([
+        message(5, S["message"]["wrap"]), message(2, good),
+        message(3, S["must_fail"]["pubkey_mismatch"]),
+        {"seq": 6, "at": NOW, "type": "event", "wrap": None,
+         "event": {"name": "taken", "actor": pk("editor"), "revision": None, "to": None,
+                   "signed": None}}], internal=False)
+    timeline = conv.open_items(items, ROOM_SK, SID)
+    assert [o.seq for o in timeline.opened] == [2, 5]
+    assert timeline.not_shown == 1
