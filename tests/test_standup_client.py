@@ -601,7 +601,8 @@ def test_every_endpoint_of_the_contract_goes_through_the_checking_server():
     # The member side.
     assert [m.pubkey for m in world.ok(lambda ok, fail: editor.members(ADDRESS, ok, fail))] \
         == [pk("editor")]
-    assert world.ok(lambda ok, fail: editor.keys(ADDRESS, ok, fail))[0].epoch == 3
+    keys = world.ok(lambda ok, fail: editor.keys(ADDRESS, ok, fail))
+    assert keys.epochs[0].epoch == 3 and keys.history is None
     assert world.ok(lambda ok, fail: editor.invite_member(
         ADDRESS, pubkey=pk("contributor"), role="redaktion", sees="all", wraps=[],
         history=None, on_success=ok, on_failure=fail)).status == "invited"
@@ -616,10 +617,16 @@ def test_every_endpoint_of_the_contract_goes_through_the_checking_server():
     assert json.loads(world.server.requests[-1][2]) == {"away_until": None}
     with pytest.raises(ValueError):
         contributor.update_my_membership(ADDRESS, {"role": "owner"}, print, print)
-    assert world.ok(lambda ok, fail: editor.new_epoch(ADDRESS, {"key_event": None}, ok,
-                                                      fail)) == 4
+    assert world.ok(lambda ok, fail: editor.new_epoch(
+        ADDRESS, key_event=KEY_EVENT, wraps={}, on_success=ok, on_failure=fail)) == 4
+    assert json.loads(world.server.requests[-1][2]) == {"key_event": KEY_EVENT, "wraps": {}}
+    with pytest.raises(ValueError):
+        editor.invite_member(ADDRESS, pubkey=pk("contributor"), role="curator",
+                             sees="since_join", wraps=[], history={"eph": "x", "ct": "y"},
+                             on_success=print, on_failure=print)
     assert world.ok(lambda ok, fail: editor.remove_member(
-        ADDRESS, pubkey=pk("contributor"), epoch={}, on_success=ok, on_failure=fail)) == 4
+        ADDRESS, pubkey=pk("contributor"), key_event=KEY_EVENT, wraps={}, on_success=ok,
+        on_failure=fail)) == 4
     assert world.ok(lambda ok, fail: editor.put_site_settings(
         ADDRESS, key_event=None, settings_event=None, on_success=ok,
         on_failure=fail)).key_event == KEY_EVENT
@@ -630,6 +637,15 @@ def test_every_endpoint_of_the_contract_goes_through_the_checking_server():
     assert world.ok(lambda ok, fail: editor.keyring(ok, fail)) == answers.Keyring(1, ("ct",))
     assert world.err(lambda ok, fail: editor.put_keyring(
         expected_version=0, pages=["ct"], on_success=ok, on_failure=fail)).code == Code.CONFLICT
+    sent = len(world.server.requests)
+    assert world.err(lambda ok, fail: editor.put_keyring(
+        expected_version=1, pages=["x" * (formats.MAX_KEYRING_PAGE_CHARS + 1)], on_success=ok,
+        on_failure=fail)).code == Code.REFUSED
+    assert len(world.server.requests) == sent
+    # A keyring is written only by a member (12.3).
+    assert world.err(lambda ok, fail: writer.put_keyring(
+        expected_version=0, pages=["ct"], on_success=ok,
+        on_failure=fail)).code == Code.NOT_MEMBER
     listed = world.ok(lambda ok, fail: editor.site_submissions(ADDRESS, on_success=ok,
                                                                on_failure=fail))
     assert len(listed.items) == 2 and listed.next is None

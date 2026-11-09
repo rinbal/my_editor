@@ -606,7 +606,8 @@ class FakeStandupServer:
         if pub is None or role != "owner":
             return _error(403, "role")
         if not formats.is_pubkey(payload.get("pubkey")) or \
-                payload.get("role") not in ("redaktion", "curator"):
+                payload.get("role") not in ("redaktion", "curator") or \
+                (payload.get("sees") == "since_join" and payload.get("history") is not None):
             return _error(422, "invalid")
         pub.members[payload["pubkey"]] = "invited:" + payload["role"]
         return _ok({"member": self._member(pub, payload["pubkey"])})
@@ -643,13 +644,21 @@ class FakeStandupServer:
             return _error(403, "not_member")
         content = pub.content
         return _ok({"epochs": [{"epoch": content["epoch"], "pubkey": content["pubkey"],
-                                "key_event": pub.key_event, "wrap": None, "history": None}]})
+                                "key_event": pub.key_event, "wrap": None}], "history": None})
 
     def _keyring_get(self, who, payload, params, query) -> FakeReply:
         ring = self.keyrings.get(who.pubkey, {"version": 0, "pages": []})
         return _ok(dict(ring))
 
     def _keyring_put(self, who, payload, params, query) -> FakeReply:
+        # 12.3: only a member writes a keyring, each page a 32,000-byte
+        # plaintext's NIP-44 payload at most.
+        if not any(who.pubkey in pub.members for pub in self.publications.values()):
+            return _error(403, "not_member")
+        pages = payload.get("pages")
+        if not isinstance(pages, list) or any(
+                not isinstance(p, str) or len(p) > formats.MAX_KEYRING_PAGE_CHARS for p in pages):
+            return _error(422, "invalid")
         ring = self.keyrings.get(who.pubkey, {"version": 0, "pages": []})
         if payload.get("expected_version") != ring["version"]:
             return _error(409, "conflict")

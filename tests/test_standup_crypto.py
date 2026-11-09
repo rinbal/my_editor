@@ -393,12 +393,25 @@ def test_redaktion_key_and_history_chain_vectors():
     with pytest.raises(sc.WrapInvalid):
         sc.check_redaktion_key(plain, publication=ADDRESS, epoch=3,
                                epoch_pubkey=older["pubkey"])
-    chain = sc.open_wrap_local(W["history_wrap"], sk("epoch3"))
-    assert sc.check_history_chain(chain, publication=ADDRESS, epoch=3,
+    # Contract 4: a history chain is addressed to the member, never to an
+    # epoch key (anyone holding that epoch could open older secrets).
+    with pytest.raises(sc.StandupCryptoError):
+        sc.open_wrap_local(W["history_wrap"], sk("epoch3"))
+    chain = sc.open_wrap_local(W["history_wrap"], sk("editor"))
+    assert sc.check_history_chain(chain, publication=ADDRESS, member=pk("editor"), epoch=3,
                                   epoch_pubkeys={2: older["pubkey"]}) == {2: sk("epoch2")}
+    with pytest.raises(sc.WrapInvalid, match="another member"):
+        sc.check_history_chain(chain, publication=ADDRESS, member=pk("writer"), epoch=3,
+                               epoch_pubkeys={2: older["pubkey"]})
     with pytest.raises(sc.WrapInvalid):
-        sc.check_history_chain(chain, publication=ADDRESS, epoch=3,
+        sc.check_history_chain(chain, publication=ADDRESS, member=pk("editor"), epoch=3,
                                epoch_pubkeys={2: key_event["pubkey"]})
+    for keys in ([{"epoch": 3, "sk": sk("epoch3").hex()}],
+                 [{"epoch": 2, "sk": sk("epoch2").hex()}] * 2):
+        with pytest.raises(sc.WrapInvalid, match="cannot hold"):
+            sc.check_history_chain(dict(chain, keys=keys), publication=ADDRESS,
+                                   member=pk("editor"), epoch=3,
+                                   epoch_pubkeys={2: older["pubkey"], 3: key_event["pubkey"]})
     with pytest.raises(sc.WrapInvalid):
         sc.check_submission_key(plain, submission_id=SID, p_sub=pk("epoch3"))
 
@@ -438,3 +451,9 @@ def test_status_and_submission_keys_are_fresh():
     assert formats.is_hex64(sc.new_status_key()) and sc.new_status_key() != sc.new_status_key()
     s = sc.new_secret_key()
     assert len(s) == 32 and nostr_crypto.get_public_key(s).hex() == sc.pubkey_of(s)
+
+
+def test_a_keyring_page_is_the_payload_of_one_list_page():
+    # 12.3: 43,780 characters, the NIP-44 payload of a 32,000-byte page.
+    assert formats.MAX_KEYRING_PAGE_CHARS == nostr_crypto.payload_length(32_000)
+    assert len(nostr_crypto.encrypt("x" * 32_000, b"k" * 32)) == formats.MAX_KEYRING_PAGE_CHARS

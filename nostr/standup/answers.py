@@ -211,26 +211,33 @@ def parse_epoch_number(data: Mapping[str, Any]) -> int:
 
 @dataclass(frozen=True)
 class EpochKey:
-    """One epoch of ``GET .../keys``: its key and the member's wraps."""
+    """One epoch of ``GET .../keys``: its key and the member's wrap."""
 
     epoch: int
     pubkey: str
     key_event: Mapping[str, Any]
     wrap: Optional[Mapping[str, str]]
+
+
+@dataclass(frozen=True)
+class EpochKeys:
+    """``GET .../keys``: every epoch, and the member's own history chain
+    (12.3: addressed to the member; None for "since joining")."""
+
+    epochs: Tuple[EpochKey, ...]
     history: Optional[Mapping[str, str]]
 
 
-def parse_epoch_keys(data: Mapping[str, Any]) -> Tuple[EpochKey, ...]:
-    keys = []
+def parse_epoch_keys(data: Mapping[str, Any]) -> EpochKeys:
+    epochs = []
     for value in read_list(data.get("epochs"), "the epochs"):
         item = read_object(value, "an epoch")
-        keys.append(EpochKey(epoch=read_int(item.get("epoch"), "the epoch", low=1),
-                             pubkey=read_pubkey(item.get("pubkey"), "the epoch's key"),
-                             key_event=read_object(item.get("key_event"), "the key event"),
-                             wrap=read_optional_wrap(item.get("wrap"), "the epoch's wrap"),
-                             history=read_optional_wrap(item.get("history"),
-                                                        "the epoch's history")))
-    return tuple(keys)
+        epochs.append(EpochKey(epoch=read_int(item.get("epoch"), "the epoch", low=1),
+                               pubkey=read_pubkey(item.get("pubkey"), "the epoch's key"),
+                               key_event=read_object(item.get("key_event"), "the key event"),
+                               wrap=read_optional_wrap(item.get("wrap"), "the epoch's wrap")))
+    return EpochKeys(epochs=tuple(epochs),
+                     history=read_optional_wrap(data.get("history"), "the history chain"))
 
 
 @dataclass(frozen=True)

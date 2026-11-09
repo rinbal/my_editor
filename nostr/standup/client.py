@@ -33,7 +33,7 @@ forgets it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any, Callable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import urlencode
 
 from PySide6.QtCore import QObject
@@ -357,8 +357,13 @@ class StandupApi(SignedJsonApi):
                           limit=MAX_LIST_ANSWER_BYTES)
 
     def invite_member(self, address: str, *, pubkey: str, role: str, sees: str,
-                      wraps: Sequence[Mapping[str, Any]], history: Optional[Mapping[str, Any]],
+                      wraps: Sequence[Mapping[str, Any]], history: Optional[Mapping[str, str]],
                       on_success: Callable[[answers.Member], None], on_failure) -> StandupCall:
+        """``history`` is the member's own chain of older epoch keys
+        (12.3): for ``"all"`` once the epoch is above 1, never for
+        ``"since_join"``, who must not get any older secret."""
+        if sees == "since_join" and history is not None:
+            raise ValueError("a member who sees only what follows gets no history chain")
         return self._call("POST", self._site(address) + "/members",
                           {"pubkey": pubkey, "role": role, "sees": sees, "wraps": list(wraps),
                            "history": history},
@@ -369,12 +374,15 @@ class StandupApi(SignedJsonApi):
         return self._call("POST", self._site(address) + "/members/accept", {}, Auth.SIGNED,
                           answers.parse_one_member, on_success, on_failure)
 
-    def remove_member(self, address: str, *, pubkey: str, epoch: Mapping[str, Any],
+    def remove_member(self, address: str, *, pubkey: str, key_event: Mapping[str, Any],
+                      wraps: Mapping[str, Mapping[str, str]],
                       on_success: Callable[[int], None], on_failure) -> StandupCall:
-        """``on_success(epoch)``: the epoch now current."""
+        """Remove ``pubkey`` and start the next epoch, whose ``wraps``
+        cover every member who keeps access. ``on_success(epoch)``: the
+        epoch now current."""
         return self._call("POST", self._site(address) + "/members/remove",
-                          {"pubkey": pubkey, "epoch": dict(epoch)}, Auth.SIGNED,
-                          answers.parse_epoch_number, on_success, on_failure)
+                          {"pubkey": pubkey, "epoch": _new_epoch(key_event, wraps)},
+                          Auth.SIGNED, answers.parse_epoch_number, on_success, on_failure)
 
     def update_my_membership(self, address: str, changes: Mapping[str, Any],
                              on_success: Callable[[answers.Member], None],
@@ -386,12 +394,14 @@ class StandupApi(SignedJsonApi):
         return self._call("PATCH", self._site(address) + "/members/me", dict(changes),
                           Auth.SIGNED, answers.parse_one_member, on_success, on_failure)
 
-    def new_epoch(self, address: str, epoch: Mapping[str, Any],
+    def new_epoch(self, address: str, *, key_event: Mapping[str, Any],
+                  wraps: Mapping[str, Mapping[str, str]],
                   on_success: Callable[[int], None], on_failure) -> StandupCall:
-        return self._call("POST", self._site(address) + "/epochs", dict(epoch), Auth.SIGNED,
+        return self._call("POST", self._site(address) + "/epochs",
+                          _new_epoch(key_event, wraps), Auth.SIGNED,
                           answers.parse_epoch_number, on_success, on_failure)
 
-    def keys(self, address: str, on_success: Callable[[Tuple[answers.EpochKey, ...]], None],
+    def keys(self, address: str, on_success: Callable[[answers.EpochKeys], None],
              on_failure) -> StandupCall:
         return self._call("GET", self._site(address) + "/keys", None, Auth.SESSION,
                           answers.parse_epoch_keys, on_success, on_failure,
@@ -405,7 +415,12 @@ class StandupApi(SignedJsonApi):
     def put_keyring(self, *, expected_version: int, pages: Sequence[str],
                     on_success: Callable[[int], None], on_failure) -> StandupCall:
         """``on_success(version)``; a 409 ``conflict`` when another device
-        wrote first."""
+        wrote first. A page longer than the server takes is not sent."""
+        if any(not isinstance(page, str) or len(page) > formats.MAX_KEYRING_PAGE_CHARS
+               for page in pages):
+            return self._refuse("PUT", "/api/me/keyring",
+                                f"a keyring page is at most {formats.MAX_KEYRING_PAGE_CHARS} "
+                                "characters", on_success, on_failure)
         return self._call("PUT", "/api/me/keyring",
                           {"expected_version": expected_version, "pages": list(pages)},
                           Auth.SIGNED, answers.parse_keyring_version, on_success, on_failure)
@@ -601,5 +616,14 @@ def _sid(value: str) -> str:
         raise ValueError("a submission id is 64 hex digits")
     return value
 
+
+
+def _new_epoch(key_event: Mapping[str, Any],
+               wraps: Mapping[str, Mapping[str, str]]) -> Dict[str, Any]:
+    """``NewEpoch`` (12.3): the key event and a wrap per member who keeps
+    access. A rotation carries no history: those members hold the older
+    secrets already."""
+    return {"key_event": dict(key_event), "wraps": {pubkey: dict(wrap)
+                                                    for pubkey, wrap in wraps.items()}}
 
 __all__ = ["Auth", "MAX_ANSWER_BYTES", "StandupApi", "StandupCall"]

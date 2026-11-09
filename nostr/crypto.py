@@ -240,6 +240,14 @@ def _hmac_aad(hmac_key: bytes, nonce_32: bytes, ciphertext: bytes) -> bytes:
 # NIP-44 v2: public API                                                       #
 # --------------------------------------------------------------------------- #
 
+def payload_length(plaintext_len: int) -> int:
+    """The length of the base64 payload ``encrypt`` makes of
+    ``plaintext_len`` bytes: version, nonce, the padded plaintext with its
+    2-byte length, and the MAC."""
+    raw = 1 + 32 + 2 + calc_padded_len(plaintext_len) + 32
+    return 4 * ((raw + 2) // 3)
+
+
 def encrypt(plaintext: str, conv_key: bytes, nonce: bytes | None = None) -> str:
     """Encrypt ``plaintext`` (UTF-8) under ``conv_key``. Returns base64 payload.
 

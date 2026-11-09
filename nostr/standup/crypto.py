@@ -474,22 +474,31 @@ def check_redaktion_key(plaintext: dict, *, publication: str, epoch: int,
     return secret
 
 
-def check_history_chain(plaintext: dict, *, publication: str, epoch: int,
+def check_history_chain(plaintext: dict, *, publication: str, member: str, epoch: int,
                         epoch_pubkeys: Dict[int, str]) -> Dict[int, bytes]:
     """The older epochs' keys in a history chain, each matching the
-    verified key event of its epoch (4). ``epoch_pubkeys`` maps an epoch
-    to the ``pubkey`` of its verified key event."""
+    verified key event of its epoch (4). A chain is addressed to one
+    member, never to an epoch key: ``member`` is the account that opened
+    it, and the chain must name it, so a chain copied to someone else's
+    account (or to a "since joining" member) is refused. ``epoch`` is the
+    epoch of the invitation; the keys are of earlier epochs only.
+    ``epoch_pubkeys`` maps an epoch to the ``pubkey`` of its verified key
+    event."""
     if plaintext.get("type") != "redaktion-history":
         raise WrapInvalid("not a history chain")
     if plaintext.get("publication") != publication or plaintext.get("epoch") != epoch:
         raise WrapInvalid("a chain for another publication or epoch")
+    if plaintext.get("member") != member:
+        raise WrapInvalid("a chain for another member")
     keys = plaintext.get("keys")
     if not isinstance(keys, list):
         raise WrapInvalid("a history chain without keys")
     found: Dict[int, bytes] = {}
     for item in keys:
-        if not isinstance(item, dict) or not formats.is_int(item.get("epoch")):
+        if not isinstance(item, dict) or not formats.is_int(item.get("epoch"), low=1):
             raise WrapInvalid("a history entry without an epoch")
+        if item["epoch"] >= epoch or item["epoch"] in found:
+            raise WrapInvalid("a history entry for an epoch it cannot hold")
         expected = epoch_pubkeys.get(item["epoch"])
         secret = _secret_of(item.get("sk"))
         if expected is None or pubkey_of(secret) != expected:
