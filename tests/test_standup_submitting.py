@@ -443,6 +443,9 @@ def test_a_file_the_server_misses_is_uploaded_again_and_the_same_body_sent_again
     assert first == second                       # the same body (12.4)
     assert len(world.nip98()) == 2               # with a new signature
     assert progress.step is Step.SUBMITTED and not progress.receipt.blobs_missing
+    # An exact repeat of the stored revision 1 is its receipt, never
+    # stale_revision (contract 5ddb799): no round is chosen again.
+    assert world.log.count("round") == 0
 
 
 def test_a_file_that_stays_missing_fails_with_a_retry():
@@ -899,6 +902,11 @@ def test_a_revision_1_at_a_sid_stored_elsewhere_chooses_the_round_again_once(els
     refused = world.posted()[placed]["revision_hash"]
     assert [body["revision_hash"] for body in world.posted()].count(refused) == 1
     assert {s.held for s in world.seen if s.step is Step.ROUND} == {Held.OTHER}
+    # Contract 5ddb799: the refused round asked by GET with no timeline.
+    work = formats.coordinate_hash(pk("writer"), "ein-jahr-mit-lightning")
+    first = formats.submission_id(pk("writer"), ADDRESS, work, 1)
+    assert [url for verb, url in world.server.urls if verb == "GET"][0] == (
+        f"/api/submissions/{first}?since=9007199254740991&since_internal=9007199254740991")
     if step is Step.FAILED:
         assert progress.failure.headline == drafting.ALREADY_SUBMITTED
         assert progress.failure.retry is None and progress.held is Held.OTHER

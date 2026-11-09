@@ -528,6 +528,8 @@ class FakeStandupServer:
         self.refusals: List[str] = []
         self.accepted: List[dict] = []           # verified NIP-98 events
         self.requests: List[Tuple[str, str, Optional[bytes], Dict[str, Optional[bytes]]]] = []
+        # Each request's path with its query, as sent.
+        self.urls: List[Tuple[str, str]] = []
         self.sessions: Dict[str, Tuple[str, int]] = {}   # sha256(token) -> (pubkey, expires)
         self._session_made: Dict[str, int] = {}           # sha256(token) -> created_at
         # Whom the instance's Redaktion gate keeps out (contract 12.2).
@@ -701,6 +703,7 @@ class FakeStandupServer:
         path, query = parts.path, parse_qs(parts.query)
         headers = {name: header(request, name) for name in ("Authorization", "Content-Type")}
         self.requests.append((verb, path, body, headers))
+        self.urls.append((verb, path + ("?" + parts.query if parts.query else "")))
         name, auth, params = self.route_of(verb, path)
         if name is None:
             return _error(404, "not_found")

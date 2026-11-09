@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The fake STANDUP server against the backend's own rules, one case each
-(RG-M2r 6, lesson 19): feat/redaktion-backend 3229d9d, contract bde1274.
+(RG-M2r 6, lesson 19): feat/redaktion-backend 3229d9d, contract 5ddb799.
 
 Where the backend has a test for the rule, the case carries its name:
 messages per person, per address and per submission (api/
@@ -421,6 +421,17 @@ def test_a_revision_1_at_a_stored_sid_is_stale_and_stores_nothing(same_key):
         409, "stale_revision", {"revision": 1})
     assert (record.revision, record.current["revision_hash"], len(record.timeline)) == (
         1, prepared.body["revision_hash"], 2)
+
+
+def test_an_exact_repeat_of_a_stored_revision_1_is_its_receipt_never_stale():
+    # Contract 5ddb799 (backend repeat before _revise): the same
+    # revision_hash returns the stored receipt with 200 and stores nothing.
+    _clock, server, nam, prepared, record = _case()
+    first = record.receipts[1]
+    status, data, _ = _submit(nam, prepared.body)
+    assert (status, data["receipt"]["seq"], data["receipt"]["revision_hash"]) == (
+        200, first["seq"], prepared.body["revision_hash"])
+    assert (record.revision, len(record.timeline)) == (1, 2)
 
 
 def test_the_round_steps_questions_leave_both_timelines_out():
