@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The fake STANDUP server against the backend's own rules, one case each
-(RG-M2r 6, lesson 19): feat/redaktion-backend 3229d9d, contract f171b52.
+(RG-M2r 6, lesson 19): feat/redaktion-backend 3229d9d, contract bde1274.
 
 Where the backend has a test for the rule, the case carries its name:
 messages per person, per address and per submission (api/
@@ -11,7 +11,9 @@ editorial_context.py store_action), sessions (api/editorial.py), the
 editor named on hand-in (core/editorial_workflow.py name_editor), a
 repeat (core/editorial_intake.py repeat), the lookup after a correction
 (db/editorial_submissions.py receipts_of), ``no_decider``
-(refuse_without_decider) and the status key a submission keeps."""
+(refuse_without_decider), the status key a submission keeps, and the
+answers of contract 2's round step (a revision 1 at a stored sid is
+``stale_revision``)."""
 
 from __future__ import annotations
 
@@ -20,6 +22,7 @@ import json
 import pytest
 
 from nostr.standup import formats
+from nostr.standup.watcher import AT_THE_END
 from tests import standup_fakes as fakes
 from tests.standup_fakes import _stored_json, submission_for
 from tests.standup_vectors import NOW, pk, sk
@@ -401,3 +404,40 @@ def test_a_member_below_the_gate_reads_nothing_of_a_submission():
     status, data, _ = _send(nam, "GET", f"/api/submissions/{record.sid}",
                             authorization=f"Bearer {_session(nam, sk('editor'))}".encode())
     assert (status, data["error"]["code"]) == (404, "not_found")
+
+
+# -- the round step (contract 2, bde1274; core/editorial_intake.py _revise) --------
+
+@pytest.mark.parametrize("same_key", [True, False], ids=["its key", "another key"])
+def test_a_revision_1_at_a_stored_sid_is_stale_and_stores_nothing(same_key):
+    # backend _revise: an existing sid takes revision n + 1 only, checked
+    # before its status key, so a second device's revision 1 under its own
+    # secrets is stale_revision too, with the revision the server holds.
+    _clock, server, nam, prepared, record = _case()
+    again = submission_for(ME, content="# Anders", status_key=prepared.status_key
+                           if same_key else None)
+    status, data, _ = _submit(nam, again.body)
+    assert (status, data["error"]["code"], data["error"]["detail"]) == (
+        409, "stale_revision", {"revision": 1})
+    assert (record.revision, record.current["revision_hash"], len(record.timeline)) == (
+        1, prepared.body["revision_hash"], 2)
+
+
+def test_the_round_steps_questions_leave_both_timelines_out():
+    # Contract 2 step 2: a lookup or a GET asked from the end of the
+    # timelines answers the View and nothing of the conversation.
+    _clock, server, nam, prepared, record = _case()
+    end = AT_THE_END
+    body = json.dumps({"items": [{"status_key": prepared.status_key, "since": end}]}).encode()
+    status, data, _ = _send(nam, "POST", "/api/submissions/lookup", body)
+    (item,) = data["items"]
+    assert (status, item["timeline"], item["more"], item["submission"]["later_round"]) == (
+        200, [], False, False)
+    status, data, _ = _send(nam, "GET", f"/api/submissions/{record.sid}?since={end}"
+                            f"&since_internal={end}",
+                            authorization=f"Bearer {_session(nam)}".encode())
+    assert (status, data["timeline"], data["more"], data["submission"]["round"]) == (
+        200, [], False, 1)
+    status, data, _ = _send(nam, "GET", f"/api/submissions/{'ef' * 32}",
+                            authorization=f"Bearer {_session(nam)}".encode())
+    assert (status, data["ok"], data["error"]["code"]) == (404, False, "not_found")

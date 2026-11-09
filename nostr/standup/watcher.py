@@ -53,6 +53,8 @@ REFRESH_INTERVAL_MS = 15 * 60 * 1000
 # Answers in a row that may say "more" before a round or a reading fails
 # (a server must not hold the reader in a loop).
 MAX_CONTINUATIONS = 20
+# ``since`` past every seq: an answer with the timeline left out.
+AT_THE_END = 2 ** 53 - 1
 
 
 def _nothing_new() -> StandupError:
@@ -222,14 +224,8 @@ class SubmissionWatcher(QObject):
             self._again = True
             return
         self._timer.stop()
-        entries = [e for e in self._entries() if e.role == "writer" and e.status_key]
-        batches: List[List[SubmissionEntry]] = []
-        by_server: Dict[str, List[SubmissionEntry]] = {}
-        for entry in entries:
-            by_server.setdefault(entry.server, []).append(entry)
-        for server, group in by_server.items():
-            for start in range(0, len(group), formats.MAX_LOOKUP_ITEMS):
-                batches.append(group[start:start + formats.MAX_LOOKUP_ITEMS])
+        batches = lookup_batches([e for e in self._entries()
+                                  if e.role == "writer" and e.status_key])
         if not batches:
             self._round_done()
             return
@@ -373,35 +369,56 @@ def _in_order(items: Dict[int, views.TimelineItem]) -> tuple:
 # No answer after sending (12.4)                                               #
 # --------------------------------------------------------------------------- #
 
+def lookup_batches(entries: Sequence[SubmissionEntry]) -> List[List[SubmissionEntry]]:
+    """``entries`` by the server each names, at most ``MAX_LOOKUP_ITEMS``
+    to a batch: one batch is one lookup, of its entries' own server. An
+    entry asked of another server reads as one it never stored, so every
+    lookup of a list's entries is batched here (RG-M2r 9)."""
+    by_server: Dict[str, List[SubmissionEntry]] = {}
+    for entry in entries:
+        by_server.setdefault(entry.server, []).append(entry)
+    return [group[start:start + formats.MAX_LOOKUP_ITEMS] for group in by_server.values()
+            for start in range(0, len(group), formats.MAX_LOOKUP_ITEMS)]
+
+
 def look_up_all(api: StandupApi, entries: Sequence[SubmissionEntry],
                 on_found: Callable[[Dict[str, Optional[views.LookupItem]]], None],
-                on_failure: Callable[[StandupError], None]) -> None:
-    """What the server has for each of the writer's ``entries`` (1 to
-    ``MAX_LOOKUP_ITEMS``), asked with their status keys in one lookup (no
-    signature): ``on_found({sid: item})``, item None where it stored
-    nothing. ``on_failure`` when the server could not be asked, when it
-    has something whose answer could not be read (never "not stored",
-    12.4), or when an answer is for another submission. Every lookup of
-    entries goes through here (RG-M2b 2). ValueError for an entry
-    without a status key."""
+                on_failure: Callable[[StandupError], None], *,
+                limit: Optional[int] = None,
+                on_bytes: Optional[Callable[[int], None]] = None) -> None:
+    """What ``api``'s server has for each of the writer's ``entries`` (1
+    to ``MAX_LOOKUP_ITEMS``, all of that server: :func:`lookup_batches`),
+    asked with their status keys in one lookup (no signature) and their
+    timelines left out: ``on_found({sid: item})``, item None where it
+    stored nothing. ``on_failure`` when the server could not be asked,
+    when it has something whose answer could not be read (never "not
+    stored", 12.4), or when an answer is for another submission or
+    round. Every lookup of entries goes through here (RG-M2b 2).
+    ``limit`` and ``on_bytes`` as for :meth:`StandupApi.lookup`.
+    ValueError for an entry without a status key, or of another server."""
     if not entries or any(not entry.status_key for entry in entries):
         raise ValueError("only a writer's entries have a status key")
+    if any(entry.server != api.server for entry in entries):
+        raise ValueError("an entry is asked of its own server (lookup_batches)")
 
     def found(answer: LookupAnswer) -> None:
         if any(entry.status_key in answer.unreadable for entry in entries):
             on_failure(StandupError(Code.BAD_RESPONSE, message="an answer is unreadable",
                                     maybe_stored=True))
             return
-        items = {entry.sid: answer.found.get(entry.status_key) for entry in entries}
-        if any(item is not None and item.receipt.submission_id != sid
-               for sid, item in items.items()):
+        asked = [(entry, answer.found.get(entry.status_key)) for entry in entries]
+        if any(item is not None and (item.receipt.submission_id != entry.sid
+                                     or item.submission.submission_id != entry.sid
+                                     or item.submission.round != entry.round)
+               for entry, item in asked):
             on_failure(StandupError(Code.BAD_RESPONSE,
                                     message="an answer is for another submission",
                                     maybe_stored=True))
             return
-        on_found(items)
+        on_found({entry.sid: item for entry, item in asked})
 
-    api.lookup([(entry.status_key, 0) for entry in entries], found, on_failure)
+    api.lookup([(entry.status_key, AT_THE_END) for entry in entries], found, on_failure,
+               limit=limit, on_bytes=on_bytes)
 
 
 def look_up(api: StandupApi, entry: SubmissionEntry,
@@ -449,5 +466,5 @@ __all__ = [
     "Different", "EntryStatus", "Followed", "MAX_CONTINUATIONS", "NotStored",
     "REFRESH_INTERVAL_MS", "StoredOther", "SubmissionWatcher", "Superseded", "classify",
     "read_submission",
-    "look_up", "look_up_all", "resolve_unconfirmed",
+    "AT_THE_END", "look_up", "look_up_all", "lookup_batches", "resolve_unconfirmed",
 ]

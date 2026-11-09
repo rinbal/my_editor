@@ -89,7 +89,9 @@ class StandupError:
     server's detail, cleaned; ``maybe_stored`` says the request may have
     reached the server although no answer came back, which for a
     submission means: look it up (12.4), do not tell the person it
-    failed."""
+    failed. ``own`` says the server's own envelope named ``code``: a
+    proxy's page with the same status only has the status, so its 404 is
+    no ``not_found`` of the server (contract 2, bde1274)."""
 
     code: str
     status: Optional[int] = None
@@ -97,6 +99,7 @@ class StandupError:
     detail: Mapping[str, Any] = field(default_factory=dict)
     retry_after: Optional[int] = None
     maybe_stored: bool = False
+    own: bool = False
 
     @property
     def reason(self) -> str:
@@ -131,9 +134,11 @@ def error_from_answer(status: int, raw: bytes, *,
     else:
         # 415 and the rest: only a bug or a changed server.
         code = Code.BAD_RESPONSE
+    own = (isinstance(body, dict) and body.get("ok") is False and allowed is not None
+           and server_code in allowed)
     return StandupError(code, status=status, message=clean_text(error.get("message")),
                         detail=_clean_detail(error.get("detail")),
-                        retry_after=retry_after, maybe_stored=status >= 500)
+                        retry_after=retry_after, maybe_stored=status >= 500, own=own)
 
 
 def _clean_detail(value: Any) -> Dict[str, Any]:

@@ -30,6 +30,7 @@ from nostr.standup.drafting import ArticleDraft, Choice, LocalPicture
 from nostr.standup.entries import RecordResult, RecordStatus, takes_place_of
 from nostr.standup.errors import Code, StandupError
 from nostr.standup.submitting import Held, MessageStatus, Phase, Ports, Step, Submitting
+from nostr.standup.rounds import ask_round
 from nostr.standup.watcher import resolve_unconfirmed
 from tests.membership_fakes import FakeClock
 from tests.standup_fakes import (
@@ -197,9 +198,18 @@ class World:
             on_signed()
             on_sent()
 
+        def choose_round(entry, on_done):
+            # The writer's port: contract 2 from step 1, the list read anew.
+            self.log.append("round")
+            mine = [e for e in self.list.on_list.values()
+                    if e.role == "writer" and e.publication == entry.publication
+                    and e.d == entry.d and e.status_key]
+            ask_round(lambda _server: self.api, mine, on_done, writer=pk("writer"),
+                      stored=entry)
+
         return Ports(confirm_key=confirm_key, upload=self.uploads, held=self.list.held,
                      record=self.list.record, forget=self.list.forget, submit=submit, lookup=lookup,
-                     send_message=send_message,
+                     send_message=send_message, choose_round=choose_round,
                      later=self.later, clock=self.clock)
 
     def settle(self, *, seconds: float = 0.0) -> None:
@@ -781,10 +791,11 @@ def test_eingereicht_comes_only_from_the_receipts_handler():
     (StandupError(Code.CONFLICT, detail={"round": 2, "open": True}), "_round_open"),
     (StandupError(Code.CONFLICT, detail={"round": 2}), "_refused"),
     (StandupError(Code.CONFLICT, detail={"round": "2", "open": False}), "_refused"),
-    (StandupError(Code.STALE_REVISION, detail={"round": 2, "open": False}), "_refused"),
+    (StandupError(Code.STALE_REVISION, detail={"round": 2, "open": False}), "_stale"),
+    (StandupError(Code.STALE_REVISION, detail={"revision": 1}), "_stale"),
     (StandupError(Code.OFFLINE), "_refused"),
 ], ids=["maybe stored", "closed round", "open round", "no open", "round as text", "not a conflict",
-        "offline"])
+        "stale", "offline"])
 def test_what_a_refusal_leads_to_is_read_from_the_table(error, handler):
     # Lesson 10: no handler decides what follows a refusal; each kind is an
     # event of its own, and the table names its handler, before and once
@@ -858,6 +869,115 @@ def test_a_round_still_open_there_is_said_and_never_sent_again():
     assert progress.failure.detail == words.TEXT_STAYS and progress.held is Held.OTHER
     assert [body["round"] for body in world.posted()[1:]] == [2]
     assert [e.round for e in world.list.forgotten] == [2]
+
+
+# -- a revision 1 at a sid the server stores (contract 2, bde1274) ----------------
+
+def _sent_here(world, placed: int) -> List[int]:
+    """The rounds of the bodies the run sent, after ``placed`` from elsewhere."""
+    return [body["round"] for body in world.posted()[placed:]]
+
+
+@pytest.mark.parametrize("elsewhere, step, rounds", [
+    ({1: "declined"}, Step.SUBMITTED, [1, 2]),
+    ({1: "declined", 2: "withdrawn"}, Step.SUBMITTED, [1, 3]),   # asked round by round
+    ({1: "in_review"}, Step.FAILED, [1]),                        # handed in there, open
+], ids=["declined", "two closed", "open"])
+def test_a_revision_1_at_a_sid_stored_elsewhere_chooses_the_round_again_once(elsewhere, step,
+                                                                          rounds):
+    # Another device handed the work in; this list does not know it, so the
+    # run built round 1 with secrets of its own. The fake answers as the
+    # backend does (409 stale_revision {"revision": 1}); the run asks again
+    # from step 1, never sends that body again, and builds once.
+    world = World(pictures=False)
+    for round_, state in elsewhere.items():
+        world.on_server(round_, state)
+    placed = len(world.posted())
+    progress = world.go()
+    assert progress.step is step and _sent_here(world, placed) == rounds
+    assert world.log.count("round") == 1 and Step.ROUND in world.steps
+    refused = world.posted()[placed]["revision_hash"]
+    assert [body["revision_hash"] for body in world.posted()].count(refused) == 1
+    assert {s.held for s in world.seen if s.step is Step.ROUND} == {Held.OTHER}
+    if step is Step.FAILED:
+        assert progress.failure.headline == drafting.ALREADY_SUBMITTED
+        assert progress.failure.retry is None and progress.held is Held.OTHER
+    else:
+        # Nothing of the rebuilt body is held until it goes (lesson 32).
+        rebuilt = world.seen[[s.step for s in world.seen].index(Step.ROUND) + 1:]
+        assert {s.held for s in rebuilt if s.step is Step.RECORDING} == {Held.NOTHING}
+    # Its entry stays: it may hold the secrets the server has.
+    assert world.list.forgotten == []
+
+
+def test_a_second_stale_after_the_round_chosen_again_is_not_built_again():
+    world = World(pictures=False)
+    world.on_server(1, "declined")
+    ports = world.submitting._ports
+
+    def and_meanwhile(entry, on_done):
+        def chosen(answer):
+            world.on_server(answer.round, "submitted")      # another device, again
+            on_done(answer)
+        ports.choose_round(entry, chosen)
+
+    world.submitting._ports = replace(ports, choose_round=and_meanwhile)
+    placed = len(world.posted())
+    progress = world.go()
+    # Round 1 refused, round 2 placed from elsewhere meanwhile, round 2 refused.
+    assert progress.step is Step.FAILED and _sent_here(world, placed) == [1, 2, 2]
+    assert world.log.count("submit") == 2
+    assert progress.failure.headline == words.ANOTHER_VERSION
+    assert progress.failure.retry is None and progress.held is Held.OTHER
+    assert world.log.count("round") == 1
+
+
+def test_a_round_that_cannot_be_chosen_again_says_why_and_try_again_asks_again():
+    world = World(pictures=False)
+    world.on_server(1, "declined")
+    world.server.inject("submission_get", Fault(503, "server"))
+    placed = len(world.posted())
+    progress = world.go()
+    assert progress.step is Step.FAILED and progress.failure.retry is Step.ROUND
+    assert progress.failure.headline == words.ANOTHER_VERSION
+    assert progress.failure.said == drafting.ROUND_UNKNOWN and progress.held is Held.OTHER
+    world.submitting.retry()
+    world.settle()
+    assert world.submitting.progress.step is Step.SUBMITTED
+    assert _sent_here(world, placed) == [1, 2] and world.log.count("round") == 2
+
+
+def test_a_bound_met_while_choosing_the_round_again_ends_it(monkeypatch):
+    from nostr.standup import rounds
+    monkeypatch.setattr(rounds, "MAX_ROUNDS_ASKED", 1)      # the refused entry is that one
+    world = World(pictures=False)
+    world.on_server(1, "declined")
+    placed = len(world.posted())
+    progress = world.go()
+    assert progress.step is Step.FAILED and progress.failure.retry is None
+    assert progress.failure.said == drafting.ROUND_LIMIT
+    assert _sent_here(world, placed) == [1]
+
+
+def test_a_stale_revision_after_a_receipt_chooses_no_other_round():
+    # The server stored this revision (a receipt, a picture missing); a
+    # stale_revision for the same body sent again says another version
+    # came since: the work is there, no new round.
+    world = World()
+    world.uploads.lose = 1
+    original = world.submitting._ports.submit
+    sent = []
+
+    def second_is_stale(body, on_sending, on_success, on_failure):
+        sent.append(body)
+        if len(sent) == 2:
+            world.server.inject("submit", Fault(409, "stale_revision", detail={"revision": 2}))
+        return original(body, on_sending, on_success, on_failure)
+
+    world.submitting._ports = replace(world.submitting._ports, submit=second_is_stale)
+    progress = world.go()
+    assert progress.step is Step.FAILED and progress.failure.headline == words.ANOTHER_VERSION
+    assert world.log.count("round") == 0 and progress.held is Held.OTHER
 
 
 @pytest.mark.parametrize("said, rounds, headline", [

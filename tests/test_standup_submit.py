@@ -28,6 +28,7 @@ import i18n
 from nostr.list_results import ListRead, ReadStatus
 from nostr.standup import formats, words
 from nostr.standup.errors import Code, StandupError
+from nostr.standup.watcher import AT_THE_END
 from nostr.standup.answers import LookupAnswer
 from nostr.standup.drafting import (
     ROUND_LIST_INCOMPLETE, ROUND_UNKNOWN, LocalPicture, encrypt_pictures,
@@ -204,17 +205,26 @@ class FakeList:
 
 class FakeApi:
     """The lookup: ``states`` per round (one state: for every round
-    asked), None where the server stored nothing."""
+    asked), None where the server stored nothing. Each answer takes
+    ``size`` bytes."""
 
-    def __init__(self, states=None, *, unreadable=False, fails=False, other_sid=False) -> None:
+    def __init__(self, states=None, *, unreadable=False, fails=False, other_sid=False,
+                 server="https://s.example", size=100) -> None:
         self.states, self.unreadable, self.fails = states, unreadable, fails
         self.other_sid = other_sid
+        self.server, self.size = server, size
         self.asked = []
+        self.limits = []
+        self.since = set()
         self.stopped = False
 
-    def lookup(self, items, on_success, on_failure) -> None:
+    def lookup(self, items, on_success, on_failure, *, limit=None, on_bytes=None) -> None:
         keys = [key for key, _since in items]
         self.asked.append(keys)
+        self.limits.append(limit)
+        self.since.update(since for _key, since in items)
+        if on_bytes is not None:
+            on_bytes(self.size)
         if self.fails:
             on_failure(RuntimeError("offline"))
             return
@@ -226,10 +236,10 @@ class FakeApi:
             round_ = int(key.lstrip("c") or "0", 16)
             state = self.states.get(round_) if isinstance(self.states, dict) else self.states
             if state is not None:
+                sid = "00" * 32 if self.other_sid else _sid(round_)
                 found[key] = SimpleNamespace(
-                    submission=SimpleNamespace(state=state),
-                    receipt=SimpleNamespace(submission_id="00" * 32 if self.other_sid
-                                            else _sid(round_)))
+                    submission=SimpleNamespace(state=state, submission_id=sid, round=round_),
+                    receipt=SimpleNamespace(submission_id=sid))
         on_success(LookupAnswer(found=found, unreadable=frozenset()))
 
     def stop(self) -> None:
@@ -242,6 +252,8 @@ class FakeApi:
 
 def _writer(submissions, api, **more) -> StandupWriter:
     more.setdefault("deleteLater", lambda: None)
+    more.setdefault("client_for", lambda _server: api)
+    more.setdefault("clients", {})
     account = SimpleNamespace(writer=WRITER, submissions=submissions, api=api, runs=[],
                               list_problem="", stopped=False, read_again=False, **more)
     return StandupWriter(session_pool=None, relay_pool=None, relay_directory=None,
@@ -276,6 +288,67 @@ def test_the_round_follows_what_the_server_says_of_every_entry(entries, api, exp
     assert _round(_writer(FakeList(entries), api)) == expected
     if entries:
         assert sorted(api.asked[0]) == sorted(e.status_key for e in entries)
+
+
+def test_each_entry_is_asked_of_the_server_it_names():
+    # RG-M2r 9: an entry of another server was asked of this one, read as
+    # never stored and sent again with its keys.
+    from dataclasses import replace
+    here, there = FakeApi("declined"), FakeApi("in_review", server="https://other.example")
+    elsewhere = replace(_entry(2), server=there.server)
+    writer = _writer(FakeList([_entry(1), elsewhere]), here,
+                     client_for={here.server: here, there.server: there}.get)
+    assert _round(writer) == (None, "")             # still open there
+    assert (here.asked, there.asked) == ([[_key(1)]], [[_key(2)]])
+    assert here.since == there.since == {AT_THE_END}
+
+
+def test_a_lookup_never_asks_one_server_about_anothers_entry():
+    from dataclasses import replace
+    from nostr.standup.watcher import look_up_all
+    with pytest.raises(ValueError):
+        look_up_all(FakeApi(), [replace(_entry(1), server="https://other.example")],
+                    print, print)
+
+
+def test_the_clients_of_other_servers_are_made_once_and_let_go_with_their_account():
+    # Lesson 31: a client of another server refuses once its account stopped.
+    from nostr.standup.errors import Code
+    writer, profile = _wired_writer()
+    account = writer.account(profile)
+    assert account.client_for("https://standup.example") is account.api
+    other = account.client_for("https://other.example")
+    assert other is not account.api and account.client_for("https://other.example") is other
+    writer.stop()
+    refused = []
+    other.lookup([("cc" * 32, 0)], print, refused.append)
+    QApplication.processEvents()
+    assert [error.code for error in refused] == [Code.STOPPED]
+
+
+def test_the_round_chosen_again_reads_the_list_anew_and_asks_the_refused_round():
+    # Contract 2 (bde1274): after stale_revision for a revision 1 the round
+    # is chosen from step 1 again: the list read anew, every entry asked
+    # about, then the refused round by GET, both timelines left out.
+    submissions, api, gets = FakeList([_entry(1)]), FakeApi(None), []
+
+    def submission(sid, on_success, on_failure, **asked):
+        gets.append((sid, asked["since"], asked["since_internal"]))
+        on_success(SimpleNamespace(submission=SimpleNamespace(
+            submission_id=sid, round=1, state="declined", later_round=False)))
+
+    api.submission = submission
+    writer = _writer(submissions, api)
+    profile = SimpleNamespace(user_pubkey=WRITER)
+    assert _round(writer) == (1, "")                # its entry never stored, it thinks
+    said = []
+    writer._ports(writer.account(profile), PUBLICATION).choose_round(_entry(1), said.append)
+    QApplication.processEvents()
+    assert submissions.reads == 2 and len(api.asked) == 2
+    sid = formats.submission_id(WRITER, PUBLICATION, formats.coordinate_hash(WRITER, "ein-jahr"),
+                                1)
+    assert gets == [(sid, AT_THE_END, AT_THE_END)]
+    assert [answer.round for answer in said] == [2]
 
 
 def test_an_entry_the_server_has_no_receipt_for_is_sent_again_or_discarded():
@@ -819,11 +892,11 @@ def test_no_late_answer_of_an_account_let_go_reaches_the_sheet_or_reads_its_list
 
 @pytest.mark.parametrize("when", ["deciding", "asking the server"])
 def test_a_round_answered_after_the_account_was_let_go_is_never_said(monkeypatch, when):
-    from nostr.ui import standup_submit as module
+    from nostr.standup import rounds as module
 
     asked = {}
     monkeypatch.setattr(module, "look_up_all",
-                        lambda api, entries, found, failed: asked.update(found=found))
+                        lambda api, entries, found, failed, **_k: asked.update(found=found))
     writer, profile = _wired_writer()
     account = writer.account(profile)
     account.submissions.loaded = True

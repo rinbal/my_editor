@@ -82,6 +82,10 @@ class Call:
     # Told once, right before the request is written to the network: from
     # then on it may arrive whatever happens here.
     on_sending: Optional[Callable[[], None]] = None
+    # Told the bytes of the answer once it is read, before the callback:
+    # one past the limit for an answer refused as too large, so a reader
+    # with a budget for several answers knows it is spent.
+    on_bytes: Optional[Callable[[int], None]] = None
 
 
 def json_body(payload: Any) -> bytes:
@@ -373,6 +377,7 @@ class SignedJsonApi(QObject):
         """``(value,)`` on success, else the error."""
         status = int(reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute) or 0)
         if flags["oversize"]:
+            self._read_bytes(call, limit + 1)
             return self._error(BAD_RESPONSE, status=status or None,
                                message="the answer was larger than allowed")
         if 300 <= status < 400:
@@ -382,12 +387,21 @@ class SignedJsonApi(QObject):
             return self._transport_error(reply.error())
 
         raw = bytes(reply.readAll())
+        self._read_bytes(call, len(raw))
         if len(raw) > limit:
             return self._error(BAD_RESPONSE, status=status,
                                message="the answer was larger than allowed")
         if not 200 <= status < 300:
             return self._http_error(status, raw, reply)
         return self._parse_success(call, status, raw)
+
+    @staticmethod
+    def _read_bytes(call: Call, count: int) -> None:
+        if call.on_bytes is not None:
+            try:
+                call.on_bytes(count)
+            except Exception:  # noqa: BLE001, a caller's bug must not unwind into Qt
+                traceback.print_exc()
 
     def _transport_error(self, error) -> Any:
         if error in (QNetworkReply.NetworkError.TimeoutError,

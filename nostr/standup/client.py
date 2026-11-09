@@ -248,13 +248,14 @@ class StandupApi(SignedJsonApi):
 
     def _build(self, method: str, path: str, payload: Optional[Mapping[str, Any]], auth: str,
                parse: Optional[Callable[[Any], Any]], on_success, on_failure, *,
-               limit: Optional[int] = None, in_envelope: bool = True) -> StandupCall:
+               limit: Optional[int] = None, in_envelope: bool = True,
+               on_bytes: Optional[Callable[[int], None]] = None) -> StandupCall:
         if auth == Auth.SIGNED and payload is None:
             payload = {}   # contract 10: a signed action always has a payload tag
         body = None if payload is None else json_body(payload)
         return self._new_call(method, path, body, auth == Auth.SIGNED, parse, on_success,
                               on_failure, auth=auth, max_response_bytes=limit,
-                              in_envelope=in_envelope)
+                              in_envelope=in_envelope, on_bytes=on_bytes)
 
     def _dispatch(self, call: StandupCall) -> StandupCall:
         if call.auth != Auth.SESSION:
@@ -271,9 +272,10 @@ class StandupApi(SignedJsonApi):
 
     def _call(self, method: str, path: str, payload: Optional[Mapping[str, Any]], auth: str,
               parse: Callable[[Any], Any], on_success, on_failure, *,
-              limit: Optional[int] = None) -> StandupCall:
+              limit: Optional[int] = None,
+              on_bytes: Optional[Callable[[int], None]] = None) -> StandupCall:
         return self._dispatch(self._build(method, path, payload, auth, parse, on_success,
-                                          on_failure, limit=limit))
+                                          on_failure, limit=limit, on_bytes=on_bytes))
 
     def _refuse(self, method: str, path: str, problem: str, on_success,
                 on_failure) -> StandupCall:
@@ -492,10 +494,13 @@ class StandupApi(SignedJsonApi):
 
     def lookup(self, items: Sequence[Tuple[str, int]],
                on_success: Callable[[answers.LookupAnswer], None],
-               on_failure) -> StandupCall:
+               on_failure, *, limit: Optional[int] = None,
+               on_bytes: Optional[Callable[[int], None]] = None) -> StandupCall:
         """``POST /api/submissions/lookup`` with ``(status_key, since)``
         pairs, at most 50, and no signature. Internal notes are dropped
-        whatever the server sends."""
+        whatever the server sends. ``limit``: fewer bytes of answer than
+        a lookup may take (a reader's budget for several answers),
+        ``on_bytes`` told the bytes read (``Call.on_bytes``)."""
         items = list(items)
         path = "/api/submissions/lookup"
         if not items or len(items) > formats.MAX_LOOKUP_ITEMS:
@@ -509,19 +514,22 @@ class StandupApi(SignedJsonApi):
         return self._call("POST", path,
                           {"items": [{"status_key": k, "since": s} for k, s in items]},
                           Auth.NONE, lambda data: answers.parse_lookup(data, asked=asked),
-                          on_success, on_failure, limit=MAX_LOOKUP_ANSWER_BYTES)
+                          on_success, on_failure, limit=_within(limit, MAX_LOOKUP_ANSWER_BYTES),
+                          on_bytes=on_bytes)
 
     def submission(self, submission_id: str,
                    on_success: Callable[[answers.SubmissionDetail], None],
                    on_failure, *, since: Optional[int] = None,
                    since_internal: Optional[int] = None,
-                   revision: Optional[int] = None) -> StandupCall:
+                   revision: Optional[int] = None, limit: Optional[int] = None,
+                   on_bytes: Optional[Callable[[int], None]] = None) -> StandupCall:
         """``GET /api/submissions/<sid>?since=seq&since_internal=n&revision=n``
         with the session: the latest revision, or only revision
         ``revision``. ``since`` is a seq of the conversation,
         ``since_internal`` one of the internal notes (a member's). An
         answer with ``more`` has items waiting: ask again from the last
-        ``seq`` of each channel (``watcher.read_submission`` does)."""
+        ``seq`` of each channel (``watcher.read_submission`` does).
+        ``limit`` and ``on_bytes`` as for :meth:`lookup`."""
         path = f"/api/submissions/{_sid(submission_id)}"
         query = {}
         for name, value in (("since", since), ("since_internal", since_internal)):
@@ -536,7 +544,8 @@ class StandupApi(SignedJsonApi):
         if query:
             path += "?" + urlencode(query)
         return self._call("GET", path, None, Auth.SESSION, answers.parse_submission_detail,
-                          on_success, on_failure, limit=MAX_DETAIL_ANSWER_BYTES)
+                          on_success, on_failure, limit=_within(limit, MAX_DETAIL_ANSWER_BYTES),
+                          on_bytes=on_bytes)
 
     def send_message(self, submission_id: str, wrap: Mapping[str, Any], *, kind_hint: str,
                      on_success: Callable[[int], None], on_failure,
@@ -661,6 +670,17 @@ class StandupApi(SignedJsonApi):
         return self._call("GET", "/api/me/submissions", None, Auth.SESSION,
                           answers.parse_views, on_success, on_failure,
                           limit=MAX_LIST_ANSWER_BYTES)
+
+
+def _within(limit: Optional[int], most: int) -> int:
+    """The answer limit of a call: ``most``, or less where the caller's
+    budget has less left. ValueError for a budget with nothing left (the
+    caller stops asking then)."""
+    if limit is None:
+        return most
+    if not formats.is_int(limit, low=1):
+        raise ValueError("an answer limit is a positive number of bytes")
+    return min(limit, most)
 
 
 def _sid(value: str) -> str:

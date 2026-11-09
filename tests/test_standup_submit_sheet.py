@@ -547,6 +547,15 @@ def test_publications_that_could_not_be_loaded_offer_try_again(tmp_path):
     assert sheet.submit_button.isEnabled()
 
 
+def test_a_round_step_that_met_its_bounds_says_why_and_offers_no_try_again(tmp_path):
+    # Contract 2 (bde1274): asking again would meet the same 100 rounds
+    # or 32 MiB; nothing is submitted, and the words say why.
+    words = i18n._(drafting.ROUND_LIMIT)
+    sheet = _sheet(tmp_path, Writer(round_=(None, words, None, False, True)))
+    assert sheet.retry_load.isHidden() and not sheet.submit_button.isEnabled()
+    assert sheet.status.text() == words
+
+
 def test_a_round_that_is_told_offers_no_try_again(tmp_path):
     sheet = _sheet(tmp_path, Writer(round_=(1, "")))
     assert sheet.retry_load.isHidden()

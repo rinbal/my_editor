@@ -636,8 +636,9 @@ class SubmitSheet(QDialog):
 
     def _refresh(self, *_args) -> None:
         self.unsent.setVisible(self._round is not None and self._round.unsent is not None)
+        # A round step that met its bounds meets them again (final).
         self.retry_load.setVisible(self._load_failed or (
-            self._round is not None and bool(self._round.words)))
+            self._round is not None and bool(self._round.words) and not self._round.final))
         blockers = self.blockers()
         self.submit_button.setEnabled(not blockers and self.round() is not None)
         first = blockers[0] if blockers else ""

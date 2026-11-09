@@ -7924,6 +7924,10 @@ msgstr "Ob du diesen Text schon eingereicht hast, konnte nicht geprüft werden."
 msgid "Part of your list of submissions hasn’t arrived yet, so whether you have submitted this text before can’t be told."
 msgstr "Ein Teil deiner Liste der Einreichungen ist noch nicht angekommen, darum lässt sich nicht sagen, ob du diesen Text schon eingereicht hast."
 
+#: nostr/standup/drafting.py:67
+msgid "This text was submitted here so often that its earlier submissions can’t all be checked."
+msgstr "Dieser Text wurde hier so oft eingereicht, dass sich nicht alle früheren Einreichungen prüfen lassen."
+
 #: nostr/standup/formats.py:95
 msgid "It contains a secret key, and MyEditor never sends a secret key to a publication. Remove the key and try again."
 msgstr "Darin steht ein geheimer Schlüssel, und MyEditor schickt nie einen geheimen Schlüssel an eine Publikation. Entferne den Schlüssel und versuche es noch einmal."

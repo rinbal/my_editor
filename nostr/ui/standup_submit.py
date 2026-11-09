@@ -39,7 +39,7 @@ from ..later import answer_later
 from ..standup import conversation, formats, trust, words
 from ..standup.client import StandupApi
 from ..standup import drafting
-from ..standup.drafting import ArticleDraft, Choice, EncryptedPicture, Sealed, choose_round
+from ..standup.drafting import ArticleDraft, Choice, EncryptedPicture, Sealed
 from ..standup.entries import SubmissionEntry
 from ..standup.errors import Code, StandupError
 from ..standup.lists import SUBMISSIONS_UNREADABLE, ReadState, SubmissionsList
@@ -48,8 +48,9 @@ from ..standup.servers import configured_server
 from ..standup.submitting import (
     HELD_UNKNOWN_FIRST, HELD_WORDS, MessageStatus, Phase, Ports, Progress, Submitting,
 )
+from ..standup.rounds import RoundAnswer, ask_round
 from ..standup.trust import Destination
-from ..standup.watcher import look_up_all, resolve_unconfirmed
+from ..standup.watcher import resolve_unconfirmed
 
 THUMB_SIDE = 128
 
@@ -168,23 +169,6 @@ class _PoolSigner:
         self._sign(unsigned, on_success, on_failure)
 
 
-@dataclass(frozen=True)
-class RoundAnswer:
-    """The round a text goes to a publication in (drafting.choose_round):
-    ``round``, or None while it is still open there or cannot be told
-    (``words`` say why then, and the sheet offers Try Again: lesson 12).
-    ``from_list``: the words are about the list of submissions, so Try
-    Again reads it again (:meth:`StandupWriter.reload`) before asking.
-    ``unsent`` is the list's entry of an earlier try the server has no
-    receipt for: it is sent again, with its own secrets (Erneut), or
-    discarded (Verwerfen)."""
-
-    round: Optional[int]
-    words: str = ""
-    unsent: Optional[SubmissionEntry] = None
-    from_list: bool = False
-
-
 class SubmissionRun(QObject):
     """One submission on its way: :class:`Submitting` with its progress as
     a Qt signal, for the sheet and for the window. ``draft`` and
@@ -258,8 +242,12 @@ class _Account(QObject):
         super().__init__(parent)
         self.profile = profile
         self.writer = profile.user_pubkey
-        self.api = StandupApi(session_signer(session_pool, profile), server=server, nam=nam,
-                              parent=self)
+        self._sign = session_signer(session_pool, profile)
+        self._nam = nam
+        self.api = StandupApi(self._sign, server=server, nam=nam, parent=self)
+        # Clients of other servers an entry of the list names, made when
+        # one is asked about (RG-M2r 9), let go with the account.
+        self.clients: Dict[str, StandupApi] = {}
         lists = dict(session_pool=session_pool, relay_directory=relay_directory,
                      query=ListQuery(relay_pool, parent=self),
                      publisher=functools.partial(publish_once, relay_pool), clock=time.time,
@@ -281,6 +269,18 @@ class _Account(QObject):
         self.stopped = False
         # Try Again asked for the list to be read again (reload).
         self.read_again = False
+
+    def client_for(self, server: str) -> StandupApi:
+        """The client of ``server``: the account's own, or, for an entry
+        of another server, one of its own, asked about that entry only
+        (an entry asked of another server reads as never stored)."""
+        if server == self.api.server:
+            return self.api
+        client = self.clients.get(server)
+        if client is None:
+            client = self.clients[server] = StandupApi(self._sign, server=server,
+                                                       nam=self._nam, parent=self)
+        return client
 
 
 def _live(account: _Account, callback: Callable) -> Callable:
@@ -428,28 +428,21 @@ class StandupWriter(QObject):
         if self.running(profile, d, publication) is not None:
             answer_later(on_done, RoundAnswer(None))
             return
+        self._choose(account, publication, d, on_done)
 
+    def _choose(self, account: _Account, publication: str, d: str,
+                on_done: Callable[[RoundAnswer], None], *,
+                stored: Optional[SubmissionEntry] = None) -> None:
+        """Contract 2 from step 1: the list read whole, then every entry
+        of this work at ``publication`` asked about (rounds.ask_round).
+        ``stored``: the entry of a revision 1 the server refused as
+        ``stale_revision``; the list is read anew for it."""
         def known() -> None:
-            mine = sorted((e for e in account.submissions.entries()
-                           if e.role == "writer" and e.publication == publication
-                           and e.d == d and e.status_key),
-                          key=lambda e: e.round)[-formats.MAX_LOOKUP_ITEMS:]
-            if not mine:
-                on_done(RoundAnswer(1))
-                return
-
-            def found(items) -> None:
-                states = {sid: item.submission.state if item else None
-                          for sid, item in items.items()}
-                choice = choose_round(mine, states)
-                on_done(RoundAnswer(choice.round, unsent=choice.unsent))
-
-            # Every entry of this work is asked about (contract 2): the
-            # server has something it could not say, or nothing could be
-            # asked: not told, so not guessed. Rounds before the newest
-            # 50 are closed (a round opens only after the last closed).
-            look_up_all(account.api, mine, _live(account, found), _live(
-                account, lambda _error: on_done(RoundAnswer(None, _(drafting.ROUND_UNKNOWN)))))
+            mine = [e for e in account.submissions.entries()
+                    if e.role == "writer" and e.publication == publication and e.d == d
+                    and e.status_key]
+            ask_round(account.client_for, mine, _live(account, on_done), writer=account.writer,
+                      stored=stored)
 
         def decide() -> None:
             if account.list_problem:
@@ -469,7 +462,8 @@ class StandupWriter(QObject):
         # A list read once for this sheet is not read again for another
         # publication (each read may be a signer prompt): what it said is
         # said again, and Try Again reads it anew (reload).
-        if (account.submissions.loaded or account.list_problem) and not account.read_again:
+        if stored is None and (account.submissions.loaded or account.list_problem) \
+                and not account.read_again:
             answer_later(_live(account, decide))
         else:
             account.submissions.load(_live(account, read))
@@ -561,6 +555,8 @@ class StandupWriter(QObject):
 
         account.api.close_session(lambda: finished("session"))
         account.api.stop()
+        for client in account.clients.values():
+            client.stop()                           # they only looked up: no session
 
         def written(_result) -> None:
             account.read_state.stop()
@@ -597,10 +593,13 @@ class StandupWriter(QObject):
             # time, and sent again with its own secrets (contract 2).
             account.submissions.forget(entry, lambda _result: None)
 
+        def choose_round(entry: SubmissionEntry, on_done) -> None:
+            self._choose(account, publication, entry.d, on_done, stored=entry)
+
         return Ports(confirm_key=confirm_key, upload=self._uploads,
                      held=account.submissions.entry, record=account.submissions.record,
                      forget=forget, submit=submit, lookup=lookup, send_message=send_message,
-                     later=_later, clock=time.time)
+                     choose_round=choose_round, later=_later, clock=time.time)
 
     @staticmethod
     def _send_message(account: _Account, sealed: Sealed, text: str, on_signed, on_sent,

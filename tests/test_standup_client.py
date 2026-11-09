@@ -554,6 +554,42 @@ def test_the_lookup_carries_no_signature_and_answers_by_status_key():
     assert world.server.requests[-1][3]["Authorization"] is None
 
 
+def test_a_lookup_and_a_get_tell_their_bytes_and_keep_to_a_smaller_limit():
+    # Contract 2 (bde1274): the round step reads at most 32 MiB of answers
+    # together, so each answer is counted and bounded by what is left.
+    world = World()
+    api = world.api()
+    prepared = submission_for(sk("writer"))
+    world.ok(lambda ok, fail: api.submit(prepared.body, ok, fail))
+    sid = prepared.body["submission_id"]
+    for ask in (lambda ok, fail, **kw: api.lookup([(prepared.status_key, 0)], ok, fail, **kw),
+                lambda ok, fail, **kw: api.submission(sid, ok, fail, **kw)):
+        counted = []
+        world.ok(lambda ok, fail: ask(ok, fail, on_bytes=counted.append))
+        (size,) = counted
+        assert size > 0
+        world.ok(lambda ok, fail: ask(ok, fail, limit=size))       # exactly its bytes
+        counted = []
+        error = world.err(lambda ok, fail: ask(ok, fail, limit=size - 1,
+                                               on_bytes=counted.append))
+        assert error.code == Code.BAD_RESPONSE and counted == [size]
+        with pytest.raises(ValueError):
+            ask(print, print, limit=0)
+
+
+def test_an_answer_aborted_past_its_limit_is_told_as_one_byte_too_many():
+    # The reader's budget learns it is spent though nothing was read.
+    world = World()
+    api = world.api()
+    counted, failed = [], []
+    api.lookup([("cc" * 32, 0)], print, failed.append, limit=1000, on_bytes=counted.append)
+    reply = world.nam.issued[-1]
+    reply.downloadProgress.emit(1500, -1)
+    world.nam.settle()
+    assert reply.aborted and counted == [1001]
+    assert [error.code for error in failed] == [Code.BAD_RESPONSE]
+
+
 def test_the_lookup_returns_the_latest_receipt():
     world = World()
     api = world.api()

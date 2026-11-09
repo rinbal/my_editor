@@ -62,6 +62,10 @@ ROUND_UNKNOWN = N_("Whether you have submitted this text before couldn’t be ch
 # text may be on it (RG-M2r 4).
 ROUND_LIST_INCOMPLETE = N_("Part of your list of submissions hasn’t arrived yet, so whether "
                            "you have submitted this text before can’t be told.")
+# The round step met its bounds (contract 2, bde1274: 100 rounds, 32 MiB
+# of answers together).
+ROUND_LIMIT = N_("This text was submitted here so often that its earlier submissions can’t "
+                 "all be checked.")
 
 # A submission of a round that ended this way may be followed by the next
 # round (contract 2); in any other state it is still open there.

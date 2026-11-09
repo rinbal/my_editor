@@ -22,6 +22,13 @@ The order is fixed:
    server says what it has. Files it misses are uploaded again and the
    same body is sent again.
 
+A refusal for the round (409 ``conflict`` naming the server's round, or
+``stale_revision`` for this revision 1: the server stores its sid
+already) builds the revision once more, for the round the server names
+or, after ``stale_revision``, the one chosen again from step 1 of
+contract 2 (:mod:`.rounds`); never twice, and the refused body never
+goes out again.
+
 :class:`Submitting` is that order as a table (``_TABLE``) of what may
 happen in each :class:`Step` and what follows. Anything else (an answer
 for a call it no longer waits for, a cancelled one, a second answer) is
@@ -44,6 +51,7 @@ from .errors import Code, StandupError
 from .formats import FormatError, SecretKeyFound
 from ..list_results import PublishStatus
 from .entries import RecordResult, RecordStatus
+from .rounds import RoundAnswer
 from .trust import KeyNotConfirmed, RedaktionKey
 from .watcher import Different, NotStored, StoredOther, Superseded
 
@@ -61,6 +69,7 @@ class Step(Enum):
     RECORDING = "recording"         # the entry on the list (13)
     SIGNING = "signing"             # the NIP-98 request
     SENDING = "sending"             # on its way: no cancelling now
+    ROUND = "round"                 # chosen again after stale_revision (contract 2)
     CHECKING = "checking"           # no answer: asked by the status key
     REUPLOADING = "reuploading"     # files the receipt missed
     SUBMITTED = "submitted"         # a matching receipt, every file found
@@ -84,7 +93,8 @@ class Phase(Enum):
 PHASE_OF = {
     Step.KEY: Phase.ENCRYPT, Step.ENCRYPTING: Phase.ENCRYPT, Step.UPLOADING: Phase.UPLOAD,
     Step.REUPLOADING: Phase.UPLOAD, Step.RECORDING: Phase.SIGNER, Step.SIGNING: Phase.SIGNER,
-    Step.SENDING: Phase.SEND, Step.CHECKING: Phase.UNCONFIRMED, Step.SUBMITTED: Phase.DONE,
+    Step.SENDING: Phase.SEND, Step.ROUND: Phase.SEND, Step.CHECKING: Phase.UNCONFIRMED,
+    Step.SUBMITTED: Phase.DONE,
     Step.FAILED: Phase.FAILED, Step.CANCELLED: Phase.CANCELLED,
 }
 _CANCELLABLE = frozenset({Step.KEY, Step.ENCRYPTING, Step.UPLOADING, Step.RECORDING,
@@ -200,6 +210,9 @@ class Ports:
     - ``send_message(sealed, text, on_signed(), on_sent(), on_failure(wait))``:
       ``on_signed`` once the signer sealed it, before it is sent; ``wait``
       the seconds a limit asks for (a 429's Retry-After), or None.
+    - ``choose_round(entry, on_done(RoundAnswer))``: contract 2 from step
+      1 for the work of ``entry``, the entry of a revision 1 the server
+      refused as ``stale_revision`` (rounds.ask_round with ``stored``).
     - ``later(ms, callback)``; ``clock()``.
     """
 
@@ -215,6 +228,7 @@ class Ports:
     lookup: Callable[[Any, Callable[[Any], None], Callable[[StandupError], None]], None]
     send_message: Callable[[Sealed, str, Callable[[], None], Callable[[], None],
                             Callable[[], None]], None]
+    choose_round: Callable[[Any, Callable[[RoundAnswer], None]], None]
     later: Callable[[int, Callable[[], None]], None]
     clock: Callable[[], float]
 
@@ -275,6 +289,14 @@ class _RoundOpen:
     latest: int
 
 
+@dataclass(frozen=True)
+class _StaleRound:
+    """A 409 ``stale_revision``: the server holds another revision at
+    this sid (``detail.revision``, contract 2, bde1274)."""
+
+    error: StandupError
+
+
 # Refusals that trying again could get past, and from where.
 _RETRY_AT = {
     Code.OFFLINE: Step.SIGNING, Code.TIMEOUT: Step.SIGNING, Code.SERVER: Step.SIGNING,
@@ -291,6 +313,8 @@ def _refusal(error: StandupError) -> Any:
     as one), or the refusal itself."""
     if error.maybe_stored:
         return _MaybeStored(error)
+    if error.code == Code.STALE_REVISION:
+        return _StaleRound(error)
     latest, still_open = error.detail.get("round"), error.detail.get("open")
     if error.code != Code.CONFLICT or not formats.is_int(latest) \
             or not isinstance(still_open, bool):
@@ -327,8 +351,11 @@ class Submitting:
         self._stop: Optional[Callable[[], None]] = None
         self._stopped = False
         # Built again once for the round the server expects (409
-        # ``conflict``, contract 2): never twice, never the same body.
+        # ``conflict``, contract 2) or for the round chosen again after
+        # ``stale_revision``: never twice, never the same body.
         self._rebuilt = False
+        # The round a revision 1 was refused in as stale_revision.
+        self._stale_round = 0
 
     # -- what the screen asks ------------------------------------------------
 
@@ -367,7 +394,8 @@ class Submitting:
             return
         self._reuploads = 0
         {Step.KEY: self._ask_key, Step.UPLOADING: self._upload, Step.REUPLOADING: self._reupload,
-         Step.RECORDING: self._record, Step.SIGNING: self._send}[failure.retry]()
+         Step.RECORDING: self._record, Step.SIGNING: self._send,
+         Step.ROUND: self._choose_round}[failure.retry]()
 
     def retry_message(self) -> None:
         if self._progress.step is Step.SUBMITTED and \
@@ -402,6 +430,7 @@ class Submitting:
         (Step.SIGNING, _MaybeStored): "_check",
         (Step.SIGNING, _OtherRound): "_other_round",
         (Step.SIGNING, _RoundOpen): "_round_open",
+        (Step.SIGNING, _StaleRound): "_stale",
         (Step.SENDING, views.Confirmed): "_confirmed",
         (Step.SENDING, views.BlobsMissing): "_blobs_missing",
         (Step.SENDING, views.Mismatch): "_check",
@@ -409,6 +438,8 @@ class Submitting:
         (Step.SENDING, _MaybeStored): "_check",
         (Step.SENDING, _OtherRound): "_other_round",
         (Step.SENDING, _RoundOpen): "_round_open",
+        (Step.SENDING, _StaleRound): "_stale",
+        (Step.ROUND, RoundAnswer): "_round_chosen",
         (Step.CHECKING, views.Confirmed): "_confirmed",
         (Step.CHECKING, views.BlobsMissing): "_blobs_missing",
         (Step.CHECKING, NotStored): "_not_stored",
@@ -616,6 +647,44 @@ class Submitting:
         self._round = conflict.latest + 1
         self._progress = replace(self._progress, held=self._refused_held())
         self._seal_and_record()
+
+    def _stale(self, stale: _StaleRound) -> None:
+        """409 ``stale_revision``. For this revision 1, never stored (no
+        receipt said so), the server stores its sid already under secrets
+        the list did not hold for it: another device handed the work in
+        meanwhile, or the list lost the entry. The round is chosen again
+        from step 1 of contract 2, once (bde1274); the entry stays, as it
+        may hold the secrets the server has. Anything else is a refusal."""
+        self._stop = None
+        if self._rebuilt or self._sealed.body.get("revision") != 1 \
+                or self._progress.held is Held.STORED:
+            self._refused(stale.error)
+            return
+        self._rebuilt = True
+        self._stale_round = self._round
+        self._choose_round()
+
+    def _choose_round(self) -> None:
+        self._show(Step.ROUND, failure=None, held=Held.OTHER)
+        self._ports.choose_round(self._sealed.entry, self._answer())
+
+    def _round_chosen(self, answer: RoundAnswer) -> None:
+        """What step 1 of contract 2, asked again, says: a later round,
+        built once; the work still open there; or, when the round cannot
+        be told, why (Try Again asks again unless a bound was met). A
+        round not after the refused one would be the refused sid again."""
+        self._stop = None
+        if answer.words:
+            self._fail(words.ANOTHER_VERSION, None if answer.final else Step.ROUND,
+                       said=answer.words, held=Held.OTHER)
+        elif answer.round is None:
+            self._fail(drafting.ALREADY_SUBMITTED, None, held=Held.OTHER)
+        elif answer.round <= self._stale_round:
+            self._fail(words.ANOTHER_VERSION, None, held=Held.OTHER)
+        else:
+            self._round = answer.round
+            self._progress = replace(self._progress, held=Held.NOTHING)
+            self._seal_and_record()
 
     # -- 6. the receipt, or the lookup ---------------------------------------
 

@@ -7909,6 +7909,10 @@ msgstr ""
 msgid "Part of your list of submissions hasn’t arrived yet, so whether you have submitted this text before can’t be told."
 msgstr ""
 
+#: nostr/standup/drafting.py:67
+msgid "This text was submitted here so often that its earlier submissions can’t all be checked."
+msgstr ""
+
 #: nostr/standup/formats.py:95
 msgid "It contains a secret key, and MyEditor never sends a secret key to a publication. Remove the key and try again."
 msgstr ""

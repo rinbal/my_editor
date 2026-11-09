@@ -44,6 +44,20 @@ def test_a_proxys_page_still_has_its_status():
     assert error.code == Code.SERVER and error.maybe_stored and error.message == ""
 
 
+@pytest.mark.parametrize("raw, own", [
+    (None, True),                                           # the server's own envelope
+    (b"<html>Not Found</html>", False),                     # a proxy's page
+    (b"", False),
+    (b'{"error": {"code": "not_found"}}', False),           # no "ok": false
+    (b'{"ok": false, "error": {"code": "gone"}}', False),   # a code 404 does not carry
+], ids=["envelope", "page", "empty", "no ok", "unknown code"])
+def test_only_the_servers_own_envelope_is_its_own_not_found(raw, own):
+    # Contract 2 (bde1274): a round is free only on the server's own
+    # not_found; a proxy's 404 says nothing about what the server holds.
+    error = error_from_answer(404, envelope("not_found") if raw is None else raw)
+    assert (error.code, error.own) == (Code.NOT_FOUND, own)
+
+
 @pytest.mark.parametrize("status, stored", [(409, False), (429, False), (500, True), (504, True)])
 def test_only_a_server_failure_may_have_stored_the_request(status, stored):
     assert error_from_answer(status, envelope("conflict")).maybe_stored is stored
