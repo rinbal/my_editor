@@ -98,3 +98,10 @@ class PublishResult:
     value: Any = None           # SENT: what was written
     signed: Optional[dict] = None   # SENT: the event of page 0
     reason: str = ""            # FAILED: why; BLOCKED, UNREADABLE: the read's words
+
+    @property
+    def on_relays(self) -> bool:
+        """The write ended with what was here on the relays (written now,
+        or there already). Whether a given entry survived the merge is
+        the caller's question (a newer copy from another device wins)."""
+        return self.status in (PublishStatus.SENT, PublishStatus.UP_TO_DATE)

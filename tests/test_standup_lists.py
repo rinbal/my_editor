@@ -38,9 +38,10 @@ from nostr.standup.lists import (
     Tombstone,
     entry_from_json,
     item_from_json,
+    RecordStatus,
+    holds_exactly,
     merge_items,
     merge_seen,
-    stored,
 )
 from tests.membership_fakes import FakeClock
 from tests.outbox_fakes import PK, FakeRelayDirectory, settle
@@ -73,11 +74,13 @@ def make(cls=SubmissionsList, *, relay=None, signer=None, profile=PROFILE, clock
 
 
 def record(store, *entries):
+    """The last entry's RecordResult (all share one write)."""
     results = []
     store.record_many(list(entries), results.append)
     settle(60)
     assert results, "the write never finished"
-    return results[-1]
+    assert len(results) == 1 and len(results[0]) == len(entries)
+    return results[0][-1]
 
 
 def load(store):
@@ -152,7 +155,7 @@ def test_an_entry_is_on_the_relays_before_the_submission_may_be_sent():
     store, relay, _clock = make()
     value = entry()
     result = record(store, value)
-    assert result.status is PublishStatus.SENT and stored(result)
+    assert result.publish.status is PublishStatus.SENT and result.stored
     page = relay.page(formats.SUBMISSIONS_LIST_D)
     assert (page["v"], page["page"], page["pages"], page["parts"]) == (1, 0, 1, [])
     [item] = page["items"]
@@ -166,7 +169,7 @@ def test_when_no_relay_answers_the_submission_is_not_sent():
     relay.answers = False
     store, _relay, _clock = make(relay=relay)
     result = record(store, entry())
-    assert result.status is PublishStatus.NO_ANSWER and not stored(result)
+    assert result.publish.status is PublishStatus.NO_ANSWER and not result.stored
     assert relay.published == []
 
 
@@ -175,7 +178,7 @@ def test_a_list_that_cannot_be_opened_is_never_written_over_and_blocks_sending()
     relay.put(formats.SUBMISSIONS_LIST_D, None, content="not a ciphertext")
     store, _relay, _clock = make(relay=relay)
     result = record(store, entry())
-    assert result.status is PublishStatus.BLOCKED and not stored(result)
+    assert result.publish.status is PublishStatus.BLOCKED and not result.stored
     assert result.reason == "Your list of submissions couldn't be read."
     assert relay.published == []
 
@@ -185,8 +188,76 @@ def test_a_list_in_a_newer_format_is_never_written_over_and_blocks_sending():
     relay.put(formats.SUBMISSIONS_LIST_D, {"v": 2, "page": 0, "pages": 1, "items": []})
     store, _relay, _clock = make(relay=relay)
     result = record(store, entry())
-    assert result.status is PublishStatus.UNREADABLE and not stored(result)
+    assert result.publish.status is PublishStatus.UNREADABLE and not result.stored
     assert relay.published == []
+
+
+def test_an_entry_another_device_replaced_meanwhile_is_superseded_not_stored():
+    # RG-M1 1: another device (its clock ten minutes ahead) recorded a
+    # different revision 2 of the same submission. This device has not
+    # read the list since; its own revision 2 loses the merge, so the
+    # list does not hold what it would send.
+    mine = entry(1)
+    other, relay, _clock = make()
+    load(other)
+    theirs = replace(mine, revision=2, revision_hash="cd" * 32, updated_at=NOW + 600)
+    assert record(other, theirs).stored
+    here, _relay, _clock = make(relay=relay)
+    ours = replace(mine, revision=2, revision_hash="ef" * 32)
+    result = record(here, ours)
+    assert result.status is RecordStatus.SUPERSEDED and not result.stored
+    assert result.on_list.revision_hash == "cd" * 32
+    assert here.entry(mine.sid).revision_hash == "cd" * 32
+    [kept] = [e for e in load(make(relay=relay)[0]).value.entries if e.sid == mine.sid]
+    assert kept.revision_hash == "cd" * 32
+
+
+def test_the_same_second_on_two_devices_is_superseded_too():
+    # A tie goes to what the relays hold (13), so it is not ours.
+    mine = entry(1)
+    other, relay, _clock = make()
+    assert record(other, replace(mine, s_sub="11" * 32)).stored
+    here, _relay, _clock = make(relay=relay)
+    result = record(here, mine)
+    assert result.status is RecordStatus.SUPERSEDED
+
+
+def test_an_entry_that_was_not_stored_never_goes_out_with_a_later_record():
+    # RG-M1 1: the caller did not send it, so the list must not hold it.
+    store, relay, _clock = make()
+    load(store)
+    relay.refuse = {formats.SUBMISSIONS_LIST_D}
+    first = entry(1)
+    result = record(store, first)
+    assert result.status is RecordStatus.NOT_STORED and not result.stored
+    assert store.entry(first.sid) is None
+    relay.refuse = set()
+    assert record(store, entry(2)).stored
+    on_relays = {e.sid for e in load(make(relay=relay)[0]).value.entries}
+    assert first.sid not in on_relays
+
+
+def test_a_record_is_dated_after_every_item_of_its_sid_a_tombstone_too():
+    value = entry(1)
+    gone = Tombstone(sid=value.sid, updated_at=NOW + 300)
+    relay = Relay()
+    relay.put(formats.SUBMISSIONS_LIST_D, {"v": 1, "page": 0, "pages": 1,
+                                           "items": [gone.to_json()]})
+    store, _relay, _clock = make(relay=relay)
+    load(store)
+    result = record(store, value)
+    assert result.stored and result.entry.updated_at == NOW + 301
+
+
+def test_an_entry_held_is_exactly_the_one_recorded():
+    value = entry(1)
+    items = SubmissionItems((value,))
+    assert holds_exactly(items, value)
+    for change in ({"revision": 2}, {"revision_hash": "00" * 32}, {"s_sub": "00" * 32},
+                   {"status_key": "00" * 32}, {"role": "contributor"}):
+        assert not holds_exactly(items, replace(value, **change)), change
+    assert holds_exactly(SubmissionItems(), value) is None
+    assert not holds_exactly(SubmissionItems((Tombstone(value.sid, NOW + 1),)), value)
 
 
 def test_a_recorded_entry_wins_over_its_older_self_even_in_the_same_second():
@@ -307,7 +378,7 @@ def test_what_was_read_is_written_before_signing_out():
     answers = []
     store.before_sign_out(answers.append)
     settle(60)
-    assert len(answers) == 1 and stored(answers[0])
+    assert len(answers) == 1 and answers[0].on_relays
     assert relay.page(formats.read_state_d(PK))["seen"] == {sid: 5}
     settle(60)
     assert len(answers) == 1                  # once, the timer changes nothing
@@ -370,7 +441,7 @@ def test_a_list_of_500_submissions_goes_through_a_signer_app():
     store, relay, app, client, profile = _through_signer_app(SubmissionsList, sk("writer"))
     entries = [entry(n) for n in range(500)]
     result = record(store, *entries)
-    assert result.status is PublishStatus.SENT, result.reason
+    assert result.stored and result.publish.status is PublishStatus.SENT, result.reason
     sizes = _page_sizes(relay, formats.SUBMISSIONS_LIST_D, app)
     assert len(sizes) >= 10 and max(sizes) <= PAGE_PLAINTEXT_MAX
     assert app.too_large == 0 and app.largest_request <= crypto.NIP44_MAX_PLAINTEXT_LEN
@@ -520,7 +591,7 @@ def test_the_vector_list_of_65_pages_is_unreadable():
          "tags": [["d", formats.SUBMISSIONS_LIST_D]]}, writer_sk)
     store = writers_list(SubmissionsList, relay)
     assert load(store).status is ReadStatus.UNREADABLE
-    assert not stored(record(store, entry()))
+    assert not record(store, entry()).stored
 
 
 def test_the_vector_entry_of_a_newer_app_is_kept_by_sid_and_written_back_unchanged():
@@ -549,7 +620,7 @@ def test_a_field_this_app_does_not_know_is_kept_with_the_entry():
     relay = Relay()
     store = writers_list(SubmissionsList, relay)
     load(store)
-    assert stored(record(store, newer))
+    assert record(store, newer).stored
     again = load(writers_list(SubmissionsList, relay)).value.entries[0]
     assert again.title == "Neu" and again.to_json()["x_future_field"] == [1, 2]
 
@@ -572,7 +643,7 @@ def test_an_incomplete_list_is_made_whole_by_the_next_write():
         relay.stored[event["tags"][0][1]] = event
     store = writers_list(SubmissionsList, relay)
     assert load(store).status is ReadStatus.INCOMPLETE and not store.complete
-    assert stored(record(store, entry()))
+    assert record(store, entry()).stored
     assert store.complete
     again = load(writers_list(SubmissionsList, relay))
     assert again.status is ReadStatus.COMPLETE

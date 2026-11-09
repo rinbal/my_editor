@@ -24,8 +24,14 @@ still holds every entry it found, and the next write is complete again.
 submission is sent (12.4, "No answer after sending"): only with
 ``s_sub`` and ``status_key`` stored can the app find out later whether a
 request that got no answer arrived, and read what it sent. So
-:meth:`SubmissionsList.record` answers whether the entry is on the
-relays (:func:`stored`), and the caller sends only then.
+:meth:`SubmissionsList.record` answers a :class:`RecordResult`, and the
+caller sends only when it is ``stored``: when the list now on the relays
+holds exactly that entry (its ``sid``, revision, revision hash,
+``s_sub`` and ``status_key``). Another device may hold the same ``sid``
+with a newer ``updated_at``, or a tombstone, and win the merge; then the
+entry is ``SUPERSEDED`` and must not be sent. Until it is stored, an
+entry waits apart from what the list holds here (``pending``), so one
+that was never stored is not written later by an unrelated record.
 
 **Where the secrets live.** In memory, for the account that is signed
 in, and in the encrypted list; never in a plain file. There is no local
@@ -39,8 +45,10 @@ print their secrets (``repr``).
 
 from __future__ import annotations
 
+import hmac
 import json
 from dataclasses import dataclass, field, fields, replace
+from enum import Enum
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -279,10 +287,58 @@ def _encode_items(value: SubmissionItems, now: int) -> dict:
     return {"items": [item.to_json() for item in value.items]}
 
 
-def stored(result: PublishResult) -> bool:
-    """True when the entry recorded is on the relays: the submission may
-    be sent."""
-    return result.status in (PublishStatus.SENT, PublishStatus.UP_TO_DATE)
+class RecordStatus(Enum):
+    """What recording an entry came to."""
+
+    STORED = "stored"            # the list on the relays holds exactly this entry
+    SUPERSEDED = "superseded"    # it holds another copy of this sid, newer: do not send
+    NOT_STORED = "not stored"    # the write did not end on the relays (``publish`` says why)
+
+
+@dataclass(frozen=True)
+class RecordResult:
+    """One entry recorded: ``entry`` as recorded (its ``updated_at``
+    raised), the write's ``publish`` result, and, when SUPERSEDED, what
+    the list holds for its ``sid`` instead (``on_list``: another
+    device's entry, a tombstone or an item this app cannot read)."""
+
+    status: RecordStatus
+    entry: SubmissionEntry
+    publish: PublishResult
+    on_list: Optional[Any] = field(default=None, repr=False)
+
+    @property
+    def stored(self) -> bool:
+        """The submission may be sent: the list holds exactly this entry."""
+        return self.status is RecordStatus.STORED
+
+    @property
+    def reason(self) -> str:
+        return self.publish.reason
+
+
+def holds_exactly(items: Optional[SubmissionItems], entry: SubmissionEntry) -> Optional[bool]:
+    """Whether ``items`` hold exactly ``entry`` for its ``sid`` (the
+    fields a lookup and an opening need: revision, revision hash,
+    ``s_sub``, ``status_key``); None when they hold nothing for it."""
+    item = next((i for i in (items.items if items is not None else ()) if i.sid == entry.sid),
+                None)
+    if item is None:
+        return None
+    return (isinstance(item, SubmissionEntry) and item.role == entry.role
+            and item.revision == entry.revision and item.revision_hash == entry.revision_hash
+            and _same_secret(item.s_sub, entry.s_sub)
+            and _same_secret(item.status_key, entry.status_key))
+
+
+def _same_secret(a: Optional[str], b: Optional[str]) -> bool:
+    if a is None or b is None:
+        return a is b
+    return hmac.compare_digest(a, b)
+
+
+def _item_for(items: Optional[SubmissionItems], sid: str) -> Optional[ListItem]:
+    return next((i for i in (items.items if items is not None else ()) if i.sid == sid), None)
 
 
 # --------------------------------------------------------------------------- #
@@ -361,13 +417,20 @@ class _AccountList(QObject):
     def _merge_local(self, remote):
         raise NotImplementedError
 
+    def _outgoing(self):
+        """What a write puts on the relays from here: what the list holds
+        here (a subclass adds what waits to be stored)."""
+        return self._local
+
     def _publish(self, on_done: Callable[[PublishResult], None]) -> None:
         generation = self._generation
 
         def merged(value, remote, event) -> None:
-            if generation != self._generation:
+            if generation != self._generation or remote is None:
                 return
-            self._local = value
+            # What the relays had joins what is here; what this write
+            # adds joins it only once the write has stored it.
+            self._local = self._merge_local(remote)
 
         def done(result: PublishResult) -> None:
             if generation != self._generation:
@@ -381,7 +444,7 @@ class _AccountList(QObject):
             on_done(result)
 
         self._list.publish(self._profile,
-                           state=lambda: (self._base, self._local, self._base_mark),
+                           state=lambda: (self._base, self._outgoing(), self._base_mark),
                            on_done=done, on_merged=merged)
 
 
@@ -395,9 +458,19 @@ class SubmissionsList(_AccountList):
                 remote or SubmissionItems(), local),
             words=_submissions_words(), paging=Paging(field="items"), empty=SubmissionItems,
             **boundaries)
+        # Entries recorded whose write has not ended yet, by sid: written
+        # with every write, held here only once stored.
+        self._pending: Dict[str, SubmissionEntry] = {}
+
+    def stop(self) -> None:
+        super().stop()
+        self._pending = {}
 
     def _merge_local(self, remote: SubmissionItems) -> SubmissionItems:
         return merge_items(remote, self._local)
+
+    def _outgoing(self) -> SubmissionItems:
+        return merge_items(self._local, SubmissionItems(tuple(self._pending.values())))
 
     def entries(self) -> List[SubmissionEntry]:
         return list(self._local.entries)
@@ -405,30 +478,71 @@ class SubmissionsList(_AccountList):
     def entry(self, sid: str) -> Optional[SubmissionEntry]:
         return next((e for e in self._local.entries if e.sid == sid), None)
 
-    def record(self, entry: SubmissionEntry, on_done: Callable[[PublishResult], None]) -> None:
-        """Add or update ``entry`` and write the list. Send the submission
-        only when :func:`stored` says so. ``updated_at`` becomes at least
-        now, and later than the entry it replaces, so this edit wins the
-        merge (13: the newest ``updated_at`` wins)."""
-        self.record_many([entry], on_done)
+    def record(self, entry: SubmissionEntry, on_done: Callable[[RecordResult], None]) -> None:
+        """Add or update ``entry`` and write the list; ``on_done`` gets a
+        :class:`RecordResult`. Send the submission only when it is
+        ``stored``. ``updated_at`` becomes at least now, and later than
+        every item of its ``sid`` known here (an entry, a tombstone, an
+        item this app cannot read), so this edit wins the merge unless
+        another device wrote a newer one meanwhile (13: the newest
+        ``updated_at`` wins); then it is SUPERSEDED."""
+        self.record_many([entry], lambda results: on_done(results[0]))
 
     def record_many(self, entries: Sequence[SubmissionEntry],
-                    on_done: Callable[[PublishResult], None]) -> None:
+                    on_done: Callable[[List[RecordResult]], None]) -> None:
         """:meth:`record` for several entries, written at once (one
-        signature per page changed, not per entry)."""
+        signature per page changed, not per entry); ``on_done`` gets a
+        result per entry, in order."""
         now = int(self._clock())
-        fresh = []
+        fresh: List[SubmissionEntry] = []
         for entry in entries:
             problem = entry_problem(entry)
             if problem:
-                on_done(PublishResult(PublishStatus.FAILED, reason=problem))
+                failed = PublishResult(PublishStatus.FAILED, reason=problem)
+                on_done([RecordResult(RecordStatus.NOT_STORED, e, failed) for e in entries])
                 return
-            # Later than the entry it replaces, even within one second.
-            known = self.entry(entry.sid)
-            floor = max(now, known.updated_at + 1 if known else 0)
-            fresh.append(replace(entry, updated_at=max(entry.updated_at, floor)))
-        self._local = merge_items(self._local, SubmissionItems(items=tuple(fresh)))
-        self._publish(on_done)
+            fresh.append(replace(entry, updated_at=max(entry.updated_at, now,
+                                                       self._latest(entry.sid) + 1)))
+        for entry in fresh:
+            self._pending[entry.sid] = entry
+        generation = self._generation
+
+        def written(result: PublishResult) -> None:
+            if generation != self._generation:
+                return
+            on_list = (result.value if result.status is PublishStatus.SENT
+                       else result.remote if result.status is PublishStatus.UP_TO_DATE
+                       else None)
+            outcomes = [self._settle(entry, result, on_list) for entry in fresh]
+            on_done(outcomes)
+
+        self._publish(written)
+
+    def _latest(self, sid: str) -> int:
+        """The newest ``updated_at`` of any item of ``sid`` known here
+        (held, last seen on the relays, waiting), or -1."""
+        known = [item.updated_at for source in (self._local, self._base or SubmissionItems())
+                 for item in source.items if item.sid == sid]
+        waiting = self._pending.get(sid)
+        if waiting is not None:
+            known.append(waiting.updated_at)
+        return max(known, default=-1)
+
+    def _settle(self, entry: SubmissionEntry, result: PublishResult,
+                on_list: Optional[SubmissionItems]) -> RecordResult:
+        """The outcome of ``entry``'s write: stored only when the list now
+        on the relays holds exactly it; then, and only then, it is held
+        here. Either way it no longer waits (unless a newer record of the
+        same sid took its place)."""
+        if self._pending.get(entry.sid) is entry:
+            del self._pending[entry.sid]
+        if on_list is None:
+            return RecordResult(RecordStatus.NOT_STORED, entry, result)
+        if holds_exactly(on_list, entry):
+            self._local = merge_items(self._local, SubmissionItems((entry,)))
+            return RecordResult(RecordStatus.STORED, entry, result)
+        return RecordResult(RecordStatus.SUPERSEDED, entry, result,
+                            on_list=_item_for(on_list, entry.sid))
 
 
 class ReadState(_AccountList):
@@ -480,7 +594,7 @@ class ReadState(_AccountList):
         self._dirty = False
 
         def written(result: PublishResult) -> None:
-            if not stored(result):
+            if not result.on_relays:
                 self._dirty = True
             done(result)
 
@@ -536,6 +650,7 @@ def merge_seen(remote: Dict[str, int], local: Dict[str, int]) -> Dict[str, int]:
 
 __all__ = [
     "READ_STATE_INTERVAL_SECONDS", "SIGN_OUT_WAIT_MS", "ForeignItem", "ListItem", "ReadState",
-    "SubmissionEntry", "SubmissionItems", "SubmissionsList", "Tombstone", "entry_from_json",
-    "entry_problem", "item_from_json", "merge_items", "merge_seen", "stored",
+    "RecordResult", "RecordStatus", "SubmissionEntry", "SubmissionItems", "SubmissionsList",
+    "Tombstone", "entry_from_json", "entry_problem", "holds_exactly", "item_from_json",
+    "merge_items", "merge_seen",
 ]
