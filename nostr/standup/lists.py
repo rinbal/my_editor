@@ -43,7 +43,7 @@ import json
 from dataclasses import dataclass, field, fields, replace
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 
 from i18n import N_, _
 
@@ -69,8 +69,10 @@ READ_STATE_SIGNER_SILENT = N_(
 READ_STATE_OLD_ENCRYPTION = N_(
     "What you have read was saved with an older kind of encryption and is left as it is.")
 
-# 13: written at most this often, and when leaving the app.
+# 13: written at most this often, when leaving the app, and before signing
+# out, which waits for that write at most this long.
 READ_STATE_INTERVAL_SECONDS = 5 * 60
+SIGN_OUT_WAIT_MS = 5_000
 
 _MAX_TEXT = 1_000
 
@@ -455,6 +457,25 @@ class ReadState(_AccountList):
         self._publish(written)
         return True
 
+    def before_sign_out(self, on_done: Callable[[Optional[PublishResult]], None], *,
+                        wait_ms: int = SIGN_OUT_WAIT_MS) -> None:
+        """Write what was read before the account signs out (13), and
+        answer ``on_done`` once: with the write's result when it ends
+        within ``wait_ms``, else (or with nothing to write) with None.
+        Sign out, and :meth:`stop`, after that answer; a write that comes
+        later is not heard (the signer goes with the account)."""
+        answered = []
+
+        def answer(result: Optional[PublishResult]) -> None:
+            if not answered:
+                answered.append(result)
+                on_done(result)
+
+        if self.flush(answer, leaving=True):
+            # Not bound to this list: deleted meanwhile, it must not keep
+            # the sign-out waiting.
+            QTimer.singleShot(max(0, int(wait_ms)), lambda: answer(None))
+
     def stop(self) -> None:
         super().stop()
         self._dirty = False
@@ -484,7 +505,7 @@ def merge_seen(remote: Dict[str, int], local: Dict[str, int]) -> Dict[str, int]:
 
 
 __all__ = [
-    "READ_STATE_INTERVAL_SECONDS", "ForeignItem", "ListItem", "ReadState", "SubmissionEntry",
-    "SubmissionItems", "SubmissionsList", "Tombstone", "entry_from_json", "entry_problem",
-    "item_from_json", "merge_items", "merge_seen", "stored",
+    "READ_STATE_INTERVAL_SECONDS", "SIGN_OUT_WAIT_MS", "ForeignItem", "ListItem", "ReadState",
+    "SubmissionEntry", "SubmissionItems", "SubmissionsList", "Tombstone", "entry_from_json",
+    "entry_problem", "item_from_json", "merge_items", "merge_seen", "stored",
 ]

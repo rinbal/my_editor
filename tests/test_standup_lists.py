@@ -13,10 +13,12 @@ message."""
 
 from __future__ import annotations
 
+import time
 from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
+from PySide6.QtCore import QCoreApplication
 
 from nostr import crypto, events
 from nostr.bunker import SIGNER_NIP44_MAX_PLAINTEXT
@@ -27,6 +29,7 @@ from nostr.standup import conversation, formats
 from nostr.standup import crypto as scrypto
 from nostr.standup.lists import (
     READ_STATE_INTERVAL_SECONDS,
+    SIGN_OUT_WAIT_MS,
     ForeignItem,
     ReadState,
     SubmissionEntry,
@@ -279,6 +282,56 @@ def test_the_read_state_is_written_at_most_every_five_minutes_and_when_leaving()
     settle(60)
     assert relay.page(formats.read_state_d(PK))["seen"] == {sid: 3}
     assert not store.flush()                      # nothing new
+
+
+def test_what_was_read_is_written_before_signing_out():
+    # Contract 13 (d5cc9a7): before signing out, at most 5 s.
+    assert SIGN_OUT_WAIT_MS == 5_000
+    store, relay, _clock = make(ReadState)
+    load(store)
+    sid = formats.sha256_hex("a")
+    store.mark(sid, 4)
+    store.flush()
+    settle(60)
+    store.mark(sid, 5)                        # read within the five minutes
+    answers = []
+    store.before_sign_out(answers.append)
+    settle(60)
+    assert len(answers) == 1 and stored(answers[0])
+    assert relay.page(formats.read_state_d(PK))["seen"] == {sid: 5}
+    settle(60)
+    assert len(answers) == 1                  # once, the timer changes nothing
+
+
+def wait_until(done, seconds: float) -> None:
+    end = time.monotonic() + seconds
+    while not done() and time.monotonic() < end:
+        QCoreApplication.processEvents()
+        time.sleep(0.005)
+
+
+def test_signing_out_waits_for_a_slow_signer_at_most_the_bound():
+    signer = FakeSigner(hold=True)
+    store, relay, _clock = make(ReadState, signer=signer)
+    load(store)
+    store.mark(formats.sha256_hex("a"), 1)
+    answers = []
+    store.before_sign_out(answers.append, wait_ms=50)
+    settle(10)
+    assert answers == []
+    wait_until(lambda: answers, 2.0)
+    assert answers == [None] and relay.published == []
+    signer.release()                          # the phone answers late
+    settle(60)
+    assert answers == [None]
+
+
+def test_with_nothing_read_signing_out_does_not_wait():
+    store, relay, _clock = make(ReadState)
+    load(store)
+    answers = []
+    store.before_sign_out(answers.append)
+    assert answers == [None] and relay.published == []
 
 
 # -- sizes through a signer app (criterion 22) ---------------------------------------
