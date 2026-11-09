@@ -48,6 +48,8 @@ STOPPED_NOTHING_SENT = N_("Your submission to {publication} stopped when the acc
 STOPPED_UNCONFIRMED = N_("Your submission to {publication} stopped when the account changed, "
                          "before the server confirmed it. Open Submit to a Publication with "
                          "that account to see whether it arrived.")
+STOPPED_OTHER_VERSION = N_("Your submission to {publication} stopped when the account changed. "
+                           "{publication} already has another version of it.")
 STOPPED_PICTURES = N_("Your submission to {publication} is in, but a picture was still being "
                       "uploaded when the account changed.")
 STOPPED_MESSAGE = N_("Your submission to {publication} is in, but your message may not have "
@@ -66,6 +68,9 @@ NOTHING_SUBMITTED = N_("Nothing is submitted, your text stays in the editor.")
 LIST_ENTRY_UNUSABLE = N_("Your list of submissions holds an entry for this text that "
                          "MyEditor cannot use.")
 TEXT_STAYS = N_("Your text stays in the editor.")
+# A request went out and nothing has said yet whether it arrived.
+MAYBE_RECEIVED = N_("It may have arrived. Open Submit to a Publication again to see whether "
+                    "it did.")
 STORED_PICTURE_MISSING = N_("The server has your submission; a picture is still missing.")
 NOT_SENT = N_("Not sent. No connection to the server.")
 # Sent, but the server, asked by the status key, has nothing of it.
@@ -114,11 +119,12 @@ def refusal(code: str) -> str:
 
 __all__ = [
     "ANOTHER_VERSION", "ENCRYPTING", "IN_THE_BACKGROUND", "LIST_CHANGED_ELSEWHERE",
-    "LIST_ENTRY_UNUSABLE", "LIST_NOT_SAVED", "MESSAGE_NOT_SENT", "MESSAGE_SENDING", "MESSAGE_SENT",
-    "NOTHING_SUBMITTED", "NOT_BUILT", "NOT_CONFIRMED", "NOT_RECEIVED", "NOT_SENT", "NOT_TAKEN",
-    "PICTURE_MISSING", "SENDING", "SIGNER_DECLINED", "SIGNER_SILENT", "STOPPED_MESSAGE",
-    "STOPPED_NOTHING_SENT", "STOPPED_PICTURES", "STOPPED_UNCONFIRMED", "STORED_OTHER",
-    "STORED_PICTURE_MISSING", "SUBMITTED", "SUBMITTED_DETAIL", "TEXT_STAYS", "TOO_LARGE",
-    "UNCONFIRMED", "UNCONFIRMED_DETAIL", "UPLOADING_DETAIL", "UPLOADING_PICTURE",
-    "UPLOADING_PICTURES", "UPLOAD_FAILED", "WAITING_DETAIL", "WAITING_FOR_SIGNER", "refusal",
+    "LIST_ENTRY_UNUSABLE", "LIST_NOT_SAVED", "MAYBE_RECEIVED", "MESSAGE_NOT_SENT",
+    "MESSAGE_SENDING", "MESSAGE_SENT", "NOTHING_SUBMITTED", "NOT_BUILT", "NOT_CONFIRMED",
+    "NOT_RECEIVED", "NOT_SENT", "NOT_TAKEN", "PICTURE_MISSING", "SENDING", "SIGNER_DECLINED",
+    "SIGNER_SILENT", "STOPPED_MESSAGE", "STOPPED_NOTHING_SENT", "STOPPED_OTHER_VERSION",
+    "STOPPED_PICTURES", "STOPPED_UNCONFIRMED", "STORED_OTHER", "STORED_PICTURE_MISSING",
+    "SUBMITTED", "SUBMITTED_DETAIL", "TEXT_STAYS", "TOO_LARGE", "UNCONFIRMED",
+    "UNCONFIRMED_DETAIL", "UPLOADING_DETAIL", "UPLOADING_PICTURE", "UPLOADING_PICTURES",
+    "UPLOAD_FAILED", "WAITING_DETAIL", "WAITING_FOR_SIGNER", "refusal",
 ]

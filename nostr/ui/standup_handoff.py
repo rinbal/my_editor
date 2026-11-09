@@ -284,7 +284,9 @@ def phase_words(progress: Progress, publication: str) -> tuple:
     phase = progress.phase
     if phase is Phase.FAILED and progress.failure is not None:
         failure = progress.failure
-        second = failure.said or _(failure.detail)
+        # The list's or the upload's own words, then what the server
+        # holds (lesson 32): never one in place of the other.
+        second = " ".join(part for part in (failure.said, _(failure.detail)) if part)
         return _(failure.headline).format(publication=publication), second
     lines = {
         Phase.ENCRYPT: (words.ENCRYPTING, ""),

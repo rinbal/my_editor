@@ -46,7 +46,9 @@ from ..standup.lists import (
 )
 from ..standup.opening import MediaKeys
 from ..standup.servers import configured_server
-from ..standup.submitting import MessageStatus, Phase, Ports, Progress, Submitting
+from ..standup.submitting import (
+    HELD_UNKNOWN_FIRST, HELD_WORDS, MessageStatus, Phase, Ports, Progress, Submitting,
+)
 from ..standup.trust import Destination
 from ..standup.watcher import look_up_all, resolve_unconfirmed
 
@@ -281,24 +283,16 @@ def _ended(progress: Progress) -> bool:
 
 def _stopped_words(runs: Sequence[SubmissionRun]) -> str:
     """What the status bar says when the account of ``runs`` is let go
-    while some are on their way, or ``""``. The words follow what reached
-    the server (lesson 8): nothing, a request it may hold (the submit
-    sheet, opened again with that account, finds out), a receipt with a
-    picture still going up, or a first message being signed or sent (one
-    that did not go was said then). The run furthest from known is
-    named."""
+    while some are on their way, or ``""``. The words come from what the
+    server holds (``Progress.held``, lesson 32, the same fact a failure
+    says): nothing, a request it may hold (the submit sheet, opened again
+    with that account, finds out), the revision with a picture still
+    going up, or, once in, a first message being signed or sent (one that
+    did not go was said then). The run furthest from known is named."""
     going = [run for run in runs if not _ended(run.progress)]
     if going:
-        def known(run: SubmissionRun) -> int:
-            progress = run.progress
-            return (0 if progress.sent and progress.receipt is None
-                    else 1 if progress.receipt is not None else 2)
-
-        run = min(going, key=known)
-        progress = run.progress
-        text = (words.STOPPED_PICTURES if progress.receipt is not None
-                else words.STOPPED_UNCONFIRMED if progress.sent
-                else words.STOPPED_NOTHING_SENT)
+        run = min(going, key=lambda r: HELD_UNKNOWN_FIRST.index(r.progress.held))
+        text = HELD_WORDS[run.progress.held].stopped
         others = len(going) - 1
     else:
         talking = [run for run in runs if run.progress.message

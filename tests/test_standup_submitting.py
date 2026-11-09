@@ -29,7 +29,7 @@ from nostr.standup.client import StandupApi
 from nostr.standup.drafting import ArticleDraft, Choice, LocalPicture
 from nostr.standup.entries import RecordResult, RecordStatus, takes_place_of
 from nostr.standup.errors import Code, StandupError
-from nostr.standup.submitting import MessageStatus, Phase, Ports, Step, Submitting
+from nostr.standup.submitting import Held, MessageStatus, Phase, Ports, Step, Submitting
 from nostr.standup.watcher import resolve_unconfirmed
 from tests.membership_fakes import FakeClock
 from tests.standup_fakes import (
@@ -471,6 +471,69 @@ def test_once_the_server_stored_it_nothing_is_cancelled_or_called_not_submitted(
     assert world.list.forgotten == []               # its entry stays: the server has it
 
 
+# -- what the server holds (RG-M2r 2, lesson 32) ----------------------------------
+
+def test_every_held_fact_has_its_words_and_its_place():
+    assert set(submitting.HELD_WORDS) == set(Held)
+    assert sorted(submitting.HELD_UNKNOWN_FIRST, key=lambda h: h.value) \
+        == sorted(Held, key=lambda h: h.value)
+
+
+@pytest.mark.parametrize("set_up, held", [
+    (lambda w: setattr(w.server.publication(), "paused", True), Held.NOTHING),
+    (lambda w: w.server.inject("submit", Fault(429, "rate_limited", retry_after=60)),
+     Held.NOTHING),
+    (lambda w: setattr(w.uploads, "lose", 10), Held.STORED),
+    (lambda w: w.server.inject("submit", Fault(409, "stale_revision")), Held.OTHER),
+    (lambda w: setattr(w.server, "tamper_receipt", _tamper("revision_hash", "ab" * 32)),
+     Held.OTHER),
+    (lambda w: setattr(w.server, "tamper_receipt", _tamper("revision", 2)), Held.OTHER),
+    (lambda w: setattr(w.server, "tamper_receipt", _tamper("envelope_sha256", "00" * 32)),
+     Held.OTHER),
+], ids=["refused", "rate limited", "stored, a picture missing", "stale after sending",
+        "another version", "a later version", "not as sent"])
+def test_a_failure_says_what_the_server_holds(set_up, held):
+    # RG-M2r 2: a lookup that finds another version, or a stale refusal
+    # after sending, said "Nothing is submitted": the server holds one.
+    world = World()
+    set_up(world)
+    progress = world.go()
+    assert progress.step is Step.FAILED and progress.held is held
+    assert progress.failure.detail == submitting.HELD_WORDS[held].failed
+    if held is not Held.NOTHING:
+        assert progress.failure.detail != words.NOTHING_SUBMITTED
+
+
+def test_what_the_server_holds_follows_each_answer():
+    # Nothing until the request goes out; maybe while it has no answer;
+    # stored once a receipt says so, also while the same body goes again
+    # for a picture it missed; nothing again when the lookup finds none.
+    world = World()
+    world.uploads.lose = 1
+    progress = world.go()
+    held = {}
+    for seen in world.seen:
+        held.setdefault(seen.step, set()).add(seen.held)
+    assert held[Step.RECORDING] == {Held.NOTHING}
+    assert held[Step.SENDING] == {Held.MAYBE, Held.STORED}
+    assert held[Step.REUPLOADING] == {Held.STORED}
+    assert progress.step is Step.SUBMITTED and progress.held is Held.STORED
+
+    world = World()
+    world.server.inject("submit", DROP_BEFORE)
+    world.go()
+    # (DROP_BEFORE never reaches the server: nothing.)
+    assert world.submitting.progress.held is Held.NOTHING
+    world = World()
+    world.server.inject("submit", LOST)
+    world.submitting.start()
+    world.settle()
+    progress = world.submitting.progress
+    assert progress.step is Step.FAILED and progress.failure.headline == words.NOT_RECEIVED
+    assert {s.held for s in world.seen if s.step is Step.CHECKING} == {Held.MAYBE}
+    assert progress.held is Held.NOTHING
+
+
 def test_an_answer_to_an_earlier_request_is_ignored():
     world = World()
     world.uploads.fail = "The server is full."
@@ -716,6 +779,10 @@ def test_the_round_the_server_expects_is_built_once_and_the_refused_entry_goes()
     assert refused["p_sub"] != sent["p_sub"]        # another sid, its own secrets
     assert [e.round for e in world.list.forgotten] == [3]
     assert world.list.held(sent["submission_id"]).round == 2
+    # Nothing of the refused body is held: the rebuilt one starts from
+    # nothing (lesson 32), so a stop meanwhile says nothing was sent.
+    rebuilt = world.seen[[s.step for s in world.seen].index(Step.SENDING) + 1:]
+    assert {s.held for s in rebuilt if s.step is Step.RECORDING} == {Held.NOTHING}
 
 
 def test_a_round_still_open_there_is_said_and_never_sent_again():
@@ -724,7 +791,7 @@ def test_a_round_still_open_there_is_said_and_never_sent_again():
     progress = world.go()
     assert progress.step is Step.FAILED and progress.failure.retry is None
     assert progress.failure.headline == drafting.ALREADY_SUBMITTED
-    assert progress.failure.detail == words.TEXT_STAYS
+    assert progress.failure.detail == words.TEXT_STAYS and progress.held is Held.OTHER
     assert [body["round"] for body in world.posted()[1:]] == [2]
     assert [e.round for e in world.list.forgotten] == [2]
 

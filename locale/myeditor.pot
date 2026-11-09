@@ -8013,125 +8013,134 @@ msgstr ""
 
 #: nostr/standup/words.py:51
 #, python-brace-format
-msgid "Your submission to {publication} is in, but a picture was still being uploaded when the account changed."
+msgid "Your submission to {publication} stopped when the account changed. {publication} already has another version of it."
 msgstr ""
 
 #: nostr/standup/words.py:53
 #, python-brace-format
-msgid "Your submission to {publication} is in, but your message may not have reached the editorial team: the account changed."
+msgid "Your submission to {publication} is in, but a picture was still being uploaded when the account changed."
 msgstr ""
 
 #: nostr/standup/words.py:55
+#, python-brace-format
+msgid "Your submission to {publication} is in, but your message may not have reached the editorial team: the account changed."
+msgstr ""
+
+#: nostr/standup/words.py:57
 msgid "Not confirmed"
 msgstr ""
 
-#: nostr/standup/words.py:58
+#: nostr/standup/words.py:60
 msgid "Waiting for your signer app: confirm your message there."
 msgstr ""
 
-#: nostr/standup/words.py:59
+#: nostr/standup/words.py:61
 msgid "Sending your message …"
 msgstr ""
 
-#: nostr/standup/words.py:60
+#: nostr/standup/words.py:62
 msgid "Your message to the editorial team is sent."
 msgstr ""
 
-#: nostr/standup/words.py:61
+#: nostr/standup/words.py:63
 msgid "Your message wasn’t sent."
 msgstr ""
 
-#: nostr/standup/words.py:65
+#: nostr/standup/words.py:67
 msgid "Nothing is submitted, your text stays in the editor."
 msgstr ""
 
-#: nostr/standup/words.py:66
+#: nostr/standup/words.py:68
 msgid "Your list of submissions holds an entry for this text that MyEditor cannot use."
 msgstr ""
 
-#: nostr/standup/words.py:68
+#: nostr/standup/words.py:70
 msgid "Your text stays in the editor."
 msgstr ""
 
-#: nostr/standup/words.py:69
-msgid "The server has your submission; a picture is still missing."
-msgstr ""
-
-#: nostr/standup/words.py:70
-msgid "Not sent. No connection to the server."
-msgstr ""
-
 #: nostr/standup/words.py:72
-msgid "The server didn’t receive your submission."
-msgstr ""
-
-#: nostr/standup/words.py:73
-msgid "Not sent. Your signer app declined the request."
+msgid "It may have arrived. Open Submit to a Publication again to see whether it did."
 msgstr ""
 
 #: nostr/standup/words.py:74
-msgid "Not sent. Your signer app didn’t answer."
+msgid "The server has your submission; a picture is still missing."
 msgstr ""
 
 #: nostr/standup/words.py:75
-msgid "Your list of submissions couldn’t be saved."
-msgstr ""
-
-#: nostr/standup/words.py:76
-msgid "Another device changed this submission just now."
+msgid "Not sent. No connection to the server."
 msgstr ""
 
 #: nostr/standup/words.py:77
-msgid "A picture couldn’t be uploaded."
+msgid "The server didn’t receive your submission."
 msgstr ""
 
 #: nostr/standup/words.py:78
-msgid "A picture can’t be found on your media server."
+msgid "Not sent. Your signer app declined the request."
 msgstr ""
 
 #: nostr/standup/words.py:79
+msgid "Not sent. Your signer app didn’t answer."
+msgstr ""
+
+#: nostr/standup/words.py:80
+msgid "Your list of submissions couldn’t be saved."
+msgstr ""
+
+#: nostr/standup/words.py:81
+msgid "Another device changed this submission just now."
+msgstr ""
+
+#: nostr/standup/words.py:82
+msgid "A picture couldn’t be uploaded."
+msgstr ""
+
+#: nostr/standup/words.py:83
+msgid "A picture can’t be found on your media server."
+msgstr ""
+
+#: nostr/standup/words.py:84
 #, python-brace-format
 msgid "This submission is larger than {publication} takes."
 msgstr ""
 
-#: nostr/standup/words.py:80
+#: nostr/standup/words.py:85
 #, python-brace-format
 msgid "{publication} already has another version of this submission."
 msgstr ""
 
-#: nostr/standup/words.py:83
+#: nostr/standup/words.py:88
 #, python-brace-format
 msgid "{publication} received this submission, but not as MyEditor sent it."
 msgstr ""
 
-#: nostr/standup/words.py:84
+#: nostr/standup/words.py:89
 msgid "The server didn’t take the submission."
 msgstr ""
 
-#: nostr/standup/words.py:86
+#: nostr/standup/words.py:91
 msgid "MyEditor couldn’t put this submission together."
 msgstr ""
 
-#: nostr/standup/words.py:90
+#: nostr/standup/words.py:95
 #, python-brace-format
 msgid "{publication} isn’t taking submissions right now."
 msgstr ""
 
-#: nostr/standup/words.py:91
+#: nostr/standup/words.py:96
 #, python-brace-format
 msgid "{publication} doesn’t take submissions from you."
 msgstr ""
 
-#: nostr/standup/words.py:92
+#: nostr/standup/words.py:97
 #, python-brace-format
 msgid "You already have as many open submissions at {publication} as it takes."
 msgstr ""
 
-#: nostr/standup/words.py:94
+#: nostr/standup/words.py:99
 msgid "Too many submissions in a short time. Try again later."
 msgstr ""
 
-#: nostr/standup/words.py:99
+#: nostr/standup/words.py:104
 #, python-brace-format
 msgid "Nobody at {publication} could decide on it: the only person who can is named among those who take part."
 msgstr ""
@@ -12081,11 +12090,11 @@ msgstr ""
 msgid "Replace with Public Key"
 msgstr ""
 
-#: nostr/ui/standup_handoff.py:339
+#: nostr/ui/standup_handoff.py:341
 msgid "Send Again"
 msgstr ""
 
-#: nostr/ui/standup_handoff.py:350
+#: nostr/ui/standup_handoff.py:352
 msgid "Continue in Background"
 msgstr ""
 
@@ -12097,7 +12106,7 @@ msgstr ""
 msgid "In the inbox"
 msgstr ""
 
-#: nostr/ui/standup_submit.py:311
+#: nostr/ui/standup_submit.py:305
 #, python-brace-format
 msgid "{count} other submission stopped as well."
 msgid_plural "{count} other submissions stopped as well."

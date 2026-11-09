@@ -31,7 +31,7 @@ from nostr.standup.answers import LookupAnswer
 from nostr.standup.drafting import ROUND_UNKNOWN, encrypt_pictures, LocalPicture
 from nostr.standup.entries import SubmissionEntry
 from nostr.standup.lists import SUBMISSIONS_MISSING_PAGE, SUBMISSIONS_UNREADABLE
-from nostr.standup.submitting import MessageStatus, Progress, Step
+from nostr.standup.submitting import Held, MessageStatus, Progress, Step
 from nostr.ui import standup_submit
 from nostr.ui.standup_submit import BlossomUploads, StandupWriter, thumbnail
 
@@ -412,32 +412,41 @@ def _stopping(*progresses):
     ((Progress(Step.SIGNING),),
      "Your submission to Einundzwanzig Magazin stopped when the account changed. "
      "Nothing was sent."),
-    ((Progress(Step.SENDING, sent=True),),
+    ((Progress(Step.SENDING, sent=True, held=Held.MAYBE),),
      "Your submission to Einundzwanzig Magazin stopped when the account changed, before the "
      "server confirmed it. Open Submit to a Publication with that account to see whether it "
      "arrived."),
-    ((Progress(Step.CHECKING, sent=True),),
+    ((Progress(Step.CHECKING, sent=True, held=Held.MAYBE),),
      "Your submission to Einundzwanzig Magazin stopped when the account changed, before the "
      "server confirmed it. Open Submit to a Publication with that account to see whether it "
      "arrived."),
-    ((Progress(Step.REUPLOADING, sent=True, receipt=object()),),
+    ((Progress(Step.REUPLOADING, sent=True, held=Held.STORED),),
      "Your submission to Einundzwanzig Magazin is in, but a picture was still being uploaded "
      "when the account changed."),
-    ((Progress(Step.SUBMITTED, sent=True, receipt=object(), message=MessageStatus.SENDING),),
+    # RG-M2r 2: stored, then signing the same body again for a picture
+    # the receipt missed: in, never "before the server confirmed it".
+    ((Progress(Step.SIGNING, sent=True, held=Held.STORED),),
+     "Your submission to Einundzwanzig Magazin is in, but a picture was still being uploaded "
+     "when the account changed."),
+    # A request refused for sure, signed again: nothing was sent.
+    ((Progress(Step.SIGNING, sent=True, held=Held.NOTHING),),
+     "Your submission to Einundzwanzig Magazin stopped when the account changed. "
+     "Nothing was sent."),
+    ((Progress(Step.SUBMITTED, sent=True, held=Held.STORED, message=MessageStatus.SENDING),),
      "Your submission to Einundzwanzig Magazin is in, but your message may not have reached "
      "the editorial team: the account changed."),
-    ((Progress(Step.SUBMITTED, sent=True, receipt=object(), message=MessageStatus.SIGNING),),
+    ((Progress(Step.SUBMITTED, sent=True, held=Held.STORED, message=MessageStatus.SIGNING),),
      "Your submission to Einundzwanzig Magazin is in, but your message may not have reached "
      "the editorial team: the account changed."),
-    ((Progress(Step.SUBMITTED, sent=True, receipt=object(), message=MessageStatus.FAILED),),
+    ((Progress(Step.SUBMITTED, sent=True, held=Held.STORED, message=MessageStatus.FAILED),),
      None),                                          # said when it failed
-    ((Progress(Step.UPLOADING), Progress(Step.SENDING, sent=True)),
+    ((Progress(Step.UPLOADING), Progress(Step.SENDING, sent=True, held=Held.MAYBE)),
      "Your submission to Einundzwanzig Magazin stopped when the account changed, before the "
      "server confirmed it. Open Submit to a Publication with that account to see whether it "
      "arrived. 1 other submission stopped as well."),
-    ((Progress(Step.SUBMITTED, sent=True, receipt=object()), Progress(Step.FAILED)), None),
-], ids=["uploading", "signing", "sending", "checking", "pictures", "message",
-        "message signing", "message failed", "two", "none"])
+    ((Progress(Step.SUBMITTED, sent=True, held=Held.STORED), Progress(Step.FAILED)), None),
+], ids=["uploading", "signing", "sending", "checking", "pictures", "stored re-signing",
+        "refused re-signing", "message", "message signing", "message failed", "two", "none"])
 def test_a_submission_stopped_with_its_account_is_said_by_what_reached_the_server(
         progresses, said):
     # RG-M2b 9: sign-out, another account or a signer paired anew stopped
@@ -564,7 +573,8 @@ def test_in_the_background_a_failure_is_said_in_its_words(german):
     writer, run, said = _writer(FakeList(), FakeApi()), Run(), []
     writer.status.connect(said.append)
     writer.in_background(run)
-    run.changed.emit(Progress(Step.FAILED, failure=Failure(words.NOT_SENT, Step.SIGNING)))
+    run.changed.emit(Progress(Step.FAILED, failure=Failure(words.NOT_SENT, Step.SIGNING,
+                                                          detail=words.NOTHING_SUBMITTED)))
     assert said[-1] == "Nicht gesendet. Keine Verbindung zum Server."
 
 

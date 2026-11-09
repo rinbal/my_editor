@@ -56,7 +56,7 @@ def moving(monkeypatch):
     monkeypatch.setattr(motion, "reduce_motion", lambda: False)
 
 
-NOT_SENT = Failure(words.NOT_SENT, Step.SIGNING)
+NOT_SENT = Failure(words.NOT_SENT, Step.SIGNING, detail=words.NOTHING_SUBMITTED)
 
 
 @pytest.mark.parametrize("progress, expected", [
@@ -82,9 +82,12 @@ def test_each_state_says_the_plans_words(german, progress, expected):
 
 
 def test_a_list_that_could_not_be_read_says_it_in_its_own_words(german):
-    failure = Failure(words.LIST_NOT_SAVED, Step.RECORDING, said="Deine Liste …")
+    # Its own words, then what the server holds (lesson 32): both.
+    failure = Failure(words.LIST_NOT_SAVED, Step.RECORDING, said="Deine Liste …",
+                      detail=words.NOTHING_SUBMITTED)
     assert phase_words(Progress(Step.FAILED, failure=failure), PUBLICATION) == (
-        "Deine Liste der Einreichungen konnte nicht gespeichert werden.", "Deine Liste …")
+        "Deine Liste der Einreichungen konnte nicht gespeichert werden.",
+        "Deine Liste … " + i18n._(words.NOTHING_SUBMITTED))
 
 
 @pytest.mark.parametrize("step", [s for s in Step if s is not Step.SUBMITTED])
@@ -163,8 +166,8 @@ def _shown(view):
     (Progress(Step.SENDING), {"background", "cancel"}, False, None),
     (Progress(Step.CHECKING), {"close"}, None, None),
     (Progress(Step.FAILED, failure=NOT_SENT), {"close", "retry"}, None, "retry"),
-    (Progress(Step.FAILED, failure=Failure(words.ANOTHER_VERSION, None)), {"close"}, None,
-     None),
+    (Progress(Step.FAILED, failure=Failure(words.ANOTHER_VERSION, None,
+                                           detail=words.TEXT_STAYS)), {"close"}, None, None),
     (Progress(Step.SUBMITTED), {"done"}, None, "done"),
 ])
 def test_each_state_has_its_buttons(view, progress, shown, enabled_cancel, default):

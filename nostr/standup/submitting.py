@@ -91,6 +91,40 @@ _CANCELLABLE = frozenset({Step.KEY, Step.ENCRYPTING, Step.UPLOADING, Step.RECORD
                           Step.SIGNING})
 
 
+class Held(Enum):
+    """What the server holds of this submission, as far as the run knows
+    (lesson 32): the one fact every "nothing is submitted", "not
+    confirmed" and "is in" of a failure or of a stopped run is said
+    from (:data:`HELD_WORDS`), on every screen. Set when a request goes
+    out, by the receipt, by a refusal and by the lookup; never by a
+    step's name alone."""
+
+    NOTHING = "nothing"     # nothing went out, or the server said it has none of it
+    MAYBE = "maybe"         # a request went out with no answer to judge it by yet
+    STORED = "stored"       # a receipt: the server stores this revision (files may miss)
+    OTHER = "other"         # it holds another version of the work, or this one not as sent
+
+
+@dataclass(frozen=True)
+class HeldWords:
+    """What one :class:`Held` says (untranslated): ``failed``, the second
+    line of a failure; ``stopped``, the status bar's when the account was
+    let go while the run went on (``{publication}`` filled in)."""
+
+    failed: str
+    stopped: str
+
+
+HELD_WORDS = {
+    Held.NOTHING: HeldWords(words.NOTHING_SUBMITTED, words.STOPPED_NOTHING_SENT),
+    Held.MAYBE: HeldWords(words.MAYBE_RECEIVED, words.STOPPED_UNCONFIRMED),
+    Held.STORED: HeldWords(words.STORED_PICTURE_MISSING, words.STOPPED_PICTURES),
+    Held.OTHER: HeldWords(words.TEXT_STAYS, words.STOPPED_OTHER_VERSION),
+}
+# Furthest from known first: the run a stopped account names.
+HELD_UNKNOWN_FIRST = (Held.MAYBE, Held.STORED, Held.NOTHING, Held.OTHER)
+
+
 class MessageStatus(Enum):
     NONE = "none"
     SIGNING = "signing"             # the signer app is asked to seal it
@@ -102,14 +136,15 @@ class MessageStatus(Enum):
 @dataclass(frozen=True)
 class Failure:
     """What did not happen: ``headline`` (untranslated words, with
-    ``{publication}`` filled in where they name it), ``detail`` (words,
-    or the list's own, already translated, in ``said``), and where
-    trying again goes on (``retry``; None when it would not help).
-    The second line shown is ``said`` when there is one, else ``detail``."""
+    ``{publication}`` filled in where they name it), ``detail`` (what the
+    server holds, :data:`HELD_WORDS`), ``said`` (the list's or the
+    upload's own words, already translated, or ""), and where trying
+    again goes on (``retry``; None when it would not help). The second
+    line shown is ``said`` followed by ``detail``."""
 
     headline: str
     retry: Optional[Step]
-    detail: str = words.NOTHING_SUBMITTED
+    detail: str
     said: str = ""
 
 
@@ -124,6 +159,7 @@ class Progress:
     # A request was written to the network once: from then on nothing is
     # cancelled, whatever the step (the server may hold it).
     sent: bool = False
+    held: Held = Held.NOTHING
 
     @property
     def phase(self) -> Phase:
@@ -283,9 +319,6 @@ class Submitting:
         self._busy = False
         self._stop: Optional[Callable[[], None]] = None
         self._stopped = False
-        # The server said it stored the revision (a receipt with files
-        # missing): no failure after that says "nothing is submitted".
-        self._stored = False
         # Built again once for the round the server expects (409
         # ``conflict``, contract 2): never twice, never the same body.
         self._rebuilt = False
@@ -407,11 +440,21 @@ class Submitting:
             stop()
 
     def _fail(self, headline: str, retry: Optional[Step], *, said: str = "",
-              detail: str = "") -> None:
+              held: Optional[Held] = None) -> None:
+        """Failed, with what the server holds now (``held``, when this
+        answer told; else as it was): the second line comes from it."""
         self._stop = None
-        detail = detail or (words.STORED_PICTURE_MISSING if self._stored
-                            else words.NOTHING_SUBMITTED)
-        self._show(Step.FAILED, failure=Failure(headline, retry, detail=detail, said=said))
+        held = held or self._progress.held
+        self._show(Step.FAILED, held=held, failure=Failure(
+            headline, retry, detail=HELD_WORDS[held].failed, said=said))
+
+    def _refused_held(self, error: Optional[StandupError] = None) -> Held:
+        """What the server holds after a refusal of the request just made:
+        nothing of it (as before it, when a receipt already said the
+        revision is stored), or another version (``stale_revision``)."""
+        if error is not None and error.code == Code.STALE_REVISION:
+            return Held.OTHER
+        return Held.STORED if self._progress.held is Held.STORED else Held.NOTHING
 
     # -- 1. the key ----------------------------------------------------------
 
@@ -521,18 +564,21 @@ class Submitting:
                                         answer, lambda error: answer(_refusal(error)))
 
     def _sending(self, _event: _Sending) -> None:
-        self._show(Step.SENDING, sent=True)
+        held = Held.STORED if self._progress.held is Held.STORED else Held.MAYBE
+        self._show(Step.SENDING, sent=True, held=held)
 
     def _refused(self, error: StandupError) -> None:
         self._stop = None
-        self._fail(words.refusal(error.code), _RETRY_AT.get(error.code))
+        self._fail(words.refusal(error.code), _RETRY_AT.get(error.code),
+                   held=self._refused_held(error))
 
     def _round_open(self, _conflict: _RoundOpen) -> None:
         """The work is handed in in the server's latest round, still open
-        (contract 2): nothing of this body was stored, so its entry goes."""
+        (contract 2): nothing of this body was stored, so its entry goes;
+        the server holds the work in that round."""
         self._stop = None
         self._ports.forget(self._sealed.entry)
-        self._fail(drafting.ALREADY_SUBMITTED, None, detail=words.TEXT_STAYS)
+        self._fail(drafting.ALREADY_SUBMITTED, None, held=Held.OTHER)
 
     def _other_round(self, conflict: _OtherRound) -> None:
         """The server expects another round (contract 2): its latest for
@@ -542,10 +588,11 @@ class Submitting:
         self._stop = None
         self._ports.forget(self._sealed.entry)
         if self._rebuilt or conflict.latest + 1 == self._round:
-            self._fail(words.NOT_TAKEN, None)
+            self._fail(words.NOT_TAKEN, None, held=self._refused_held())
             return
         self._rebuilt = True
         self._round = conflict.latest + 1
+        self._progress = replace(self._progress, held=self._refused_held())
         self._seal_and_record()
 
     # -- 6. the receipt, or the lookup ---------------------------------------
@@ -553,12 +600,13 @@ class Submitting:
     def _confirmed(self, confirmed: views.Confirmed) -> None:
         """The one way to "Eingereicht": a matching receipt (the server's
         answer, or the lookup by the status key), every file found."""
-        self._show(Step.SUBMITTED, receipt=confirmed.receipt, failure=None)
+        self._show(Step.SUBMITTED, receipt=confirmed.receipt, failure=None, held=Held.STORED)
         if self._choice.message.strip():
             self._send_message()
 
     def _blobs_missing(self, missing: views.BlobsMissing) -> None:
-        self._stored = True
+        # A receipt: the server stores this revision, files missing.
+        self._progress = replace(self._progress, held=Held.STORED)
         if self._reuploads >= MAX_REUPLOADS:
             self._fail(words.PICTURE_MISSING, Step.REUPLOADING)
             return
@@ -600,15 +648,14 @@ class Submitting:
     def _not_stored(self, _found: NotStored) -> None:
         # The server answered the lookup: there was a connection, it has
         # nothing of this submission (RG-M2b 11).
-        self._fail(words.NOT_RECEIVED, Step.SIGNING)
+        self._fail(words.NOT_RECEIVED, Step.SIGNING, held=Held.NOTHING)
 
     def _elsewhere(self, _found: Any) -> None:
-        self._fail(words.ANOTHER_VERSION, None)
+        self._fail(words.ANOTHER_VERSION, None, held=Held.OTHER)
 
     def _stored_other(self, _found: StoredOther) -> None:
-        # This revision is stored, but not as it was sent (12.4): the
-        # server holds something of it, so never "nothing is submitted".
-        self._fail(words.STORED_OTHER, None, detail=words.TEXT_STAYS)
+        # This revision is stored, but not as it was sent (12.4).
+        self._fail(words.STORED_OTHER, None, held=Held.OTHER)
 
     # -- the first message ---------------------------------------------------
 
@@ -631,6 +678,6 @@ class Submitting:
 
 
 __all__ = [
-    "LOOKUP_DELAYS_MS", "MAX_REUPLOADS", "Failure", "MessageStatus", "PHASE_OF", "Phase",
-    "Ports", "Progress", "Step", "Submitting",
+    "HELD_UNKNOWN_FIRST", "HELD_WORDS", "Held", "HeldWords", "LOOKUP_DELAYS_MS", "MAX_REUPLOADS",
+    "Failure", "MessageStatus", "PHASE_OF", "Phase", "Ports", "Progress", "Step", "Submitting",
 ]
