@@ -483,8 +483,12 @@ class StandupWriter(QObject):
 
         def finished(what: str) -> None:
             waiting.discard(what)
-            if not waiting and on_done is not None:
-                on_done()
+            if not waiting:
+                # Its server client, its lists and their queries go with it
+                # (RG-M2b 11: every account signed in once stayed alive).
+                account.deleteLater()
+                if on_done is not None:
+                    on_done()
 
         account.api.close_session(lambda: finished("session"))
         account.api.stop()

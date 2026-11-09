@@ -20,7 +20,7 @@ from types import SimpleNamespace
 from typing import List
 
 import pytest
-from PySide6.QtCore import QBuffer, QIODevice, QObject, Signal
+from PySide6.QtCore import QBuffer, QEvent, QIODevice, QObject, Signal
 from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QApplication
 
@@ -236,6 +236,7 @@ class FakeApi:
 
 
 def _writer(submissions, api, **more) -> StandupWriter:
+    more.setdefault("deleteLater", lambda: None)
     account = SimpleNamespace(writer=WRITER, submissions=submissions, api=api, runs=[],
                               list_problem="", **more)
     return StandupWriter(session_pool=None, relay_pool=None, relay_directory=None,
@@ -565,8 +566,12 @@ def test_an_account_is_wired_to_the_app_and_left_whole_at_sign_out():
     assert writer.account(profile) is account               # one per account
     assert account.api.server == "https://standup.example"
     assert account.submissions.account == WRITER == account.read_state.account
+    gone = []
+    account.api.destroyed.connect(lambda *_a: gone.append("api"))
     done = []
     writer.stop(lambda: done.append(True))
     QApplication.processEvents()
     assert done == [True]                                    # nothing read: nothing to write
+    QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    assert gone == ["api"]                                   # deleted with its account
     assert writer.account(profile) is not account            # a new one after signing out
