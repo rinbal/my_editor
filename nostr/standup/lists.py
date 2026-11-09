@@ -127,6 +127,9 @@ class _AccountList(QObject):
         self._base_mark: Optional[Tuple[int, str]] = None
         self._local: Any = empty()
         self._generation = 0
+        # Stopped with its account: never read or written again, so a late
+        # caller never asks the account's signer (lesson 31).
+        self._stopped = False
         self.loaded = False
         # False after a read that missed a page or found one of another
         # generation, until a write made the list whole again.
@@ -137,7 +140,11 @@ class _AccountList(QObject):
         return self._profile.user_pubkey
 
     def stop(self) -> None:
-        """Sign-out or another account: forget everything, answer nothing."""
+        """Sign-out or another account: forget everything, answer nothing
+        still on its way, and never read or write again: a later read or
+        write is refused on a later turn, so a late caller asks no signer
+        for an account that was let go (RG-M2r 3, lesson 31)."""
+        self._stopped = True
         self._generation += 1
         self._base = None
         self._base_mark = None
@@ -151,6 +158,9 @@ class _AccountList(QObject):
         NO_ANSWER, BLOCKED (a page could not be opened now: offer to try
         again) or UNREADABLE, with ``read.words`` (also said through
         :attr:`status`). Nothing is written while it is not readable."""
+        if self._stopped:
+            answer_later(on_done, ListRead(ReadStatus.NO_ANSWER))
+            return
         generation = self._generation
 
         def read(result: ListRead) -> None:
@@ -180,6 +190,10 @@ class _AccountList(QObject):
         return self._local
 
     def _publish(self, on_done: Callable[[PublishResult], None]) -> None:
+        if self._stopped:
+            answer_later(on_done, PublishResult(PublishStatus.FAILED,
+                                                reason="the account was let go"))
+            return
         generation = self._generation
 
         def merged(value, remote, event) -> None:

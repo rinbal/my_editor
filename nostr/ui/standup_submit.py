@@ -273,6 +273,20 @@ class _Account(QObject):
         # Why the list of submissions could not be read, once read for a
         # sheet ("" when it could): said again without asking again.
         self.list_problem = ""
+        # Let go (StandupWriter.stop): no answer that comes later reaches
+        # its client, its lists or its signer again (lesson 31, _live).
+        self.stopped = False
+
+
+def _live(account: _Account, callback: Callable) -> Callable:
+    """``callback``, answered only while ``account`` is not let go: a late
+    answer (a signer app, a relay, the server) never opens a session,
+    posts, signs or reads for it, and never touches an object deleted
+    with it (RG-M2r 3)."""
+    def guarded(*args) -> None:
+        if not account.stopped:
+            callback(*args)
+    return guarded
 
 
 def _ended(progress: Progress) -> bool:
@@ -382,9 +396,9 @@ class StandupWriter(QObject):
             if account.submissions.loaded:
                 used()
             else:
-                account.submissions.load(read)
+                account.submissions.load(_live(account, read))
 
-        account.destinations.find(found, on_failure)
+        account.destinations.find(_live(account, found), _live(account, on_failure))
 
     def running(self, profile, d: str, publication: str = "") -> Optional[SubmissionRun]:
         """The run of the work ``d`` (to ``publication``, or to any) that
@@ -426,8 +440,8 @@ class StandupWriter(QObject):
             # server has something it could not say, or nothing could be
             # asked: not told, so not guessed. Rounds before the newest
             # 50 are closed (a round opens only after the last closed).
-            look_up_all(account.api, mine, found,
-                        lambda _error: on_done(RoundAnswer(None, _(drafting.ROUND_UNKNOWN))))
+            look_up_all(account.api, mine, _live(account, found), _live(
+                account, lambda _error: on_done(RoundAnswer(None, _(drafting.ROUND_UNKNOWN)))))
 
         def decide() -> None:
             if account.list_problem:
@@ -446,14 +460,15 @@ class StandupWriter(QObject):
         # A list read once for this sheet and not readable is said again,
         # not asked again (another signer prompt); Try Again reads anew.
         if account.submissions.loaded or account.list_problem:
-            answer_later(decide)
+            answer_later(_live(account, decide))
         else:
-            account.submissions.load(read)
+            account.submissions.load(_live(account, read))
 
     def discard(self, profile, entry: SubmissionEntry, on_done: Callable[[bool], None]) -> None:
         """Verwerfen (contract 13): a tombstone for ``entry``, an earlier
         try the server has no receipt for; ``on_done(stored)``."""
-        self.account(profile).submissions.forget(entry, lambda result: on_done(result.stored))
+        account = self.account(profile)
+        account.submissions.forget(entry, _live(account, lambda result: on_done(result.stored)))
 
     def submit(self, profile, draft: ArticleDraft, choice: Choice,
                answer: RoundAnswer) -> SubmissionRun:
@@ -509,6 +524,7 @@ class StandupWriter(QObject):
                 on_done()
             return
         said = _stopped_words(account.runs)
+        account.stopped = True
         for run in account.runs:
             run.submitting.stop()
         account.destinations.stop()
@@ -589,8 +605,11 @@ class StandupWriter(QObject):
                                      on_success=lambda _seq: on_sent(),
                                      on_failure=lambda _error: on_failure())
 
+        # The signer app may answer after the account was let go: then the
+        # message is not posted (no new session for an account left).
         conversation.seal_and_wrap(account.signer, rumor, sealed.s_sub, room,
-                                   on_success=wrapped, on_failure=lambda _why: on_failure())
+                                   on_success=_live(account, wrapped),
+                                   on_failure=_live(account, lambda _why: on_failure()))
 
 
 def _background_message_words(progress: Progress, publication: str) -> str:

@@ -207,6 +207,34 @@ def test_closing_a_session_then_stopping_still_revokes_it_and_answers():
     assert done == [True] and world.server.sessions == {}
 
 
+def test_after_stop_no_call_opens_a_session_signs_or_is_sent():
+    # RG-M2r 3, lesson 31: a late caller (a first message whose seal the
+    # signer app confirmed after the account was left) opened a new
+    # session for the account let go, with another signer prompt.
+    world = World()
+    api = world.api()
+    world.ok(api.my_submissions)
+    api.close_session(lambda: None)
+    api.stop()
+    world.nam.settle()
+    signed, sent = len(world.signers["writer"].requests), len(world.server.requests)
+    prepared = submission_for(sk("writer"))
+    outcome = []
+
+    def answer(kind):
+        return lambda value: outcome.append((kind, value))
+
+    api.my_submissions(answer("ok"), answer("err"))
+    api.submit(prepared.body, answer("ok"), answer("err"))
+    api.lookup([(prepared.status_key, 0)], answer("ok"), answer("err"))
+    api.open_session(answer("ok"), answer("err"))
+    assert outcome == []                            # on a later turn
+    world.nam.settle()
+    assert [(kind, value.code) for kind, value in outcome] == [("err", Code.STOPPED)] * 4
+    assert len(world.signers["writer"].requests) == signed
+    assert len(world.server.requests) == sent and world.server.sessions == {}
+
+
 def test_closing_without_a_session_answers_after_it_returned():
     world = World()
     order = []

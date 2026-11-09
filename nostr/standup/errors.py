@@ -34,6 +34,7 @@ class Code:
     SIGNER_UNREACHABLE = SIGNER_UNREACHABLE
     SERVER = "server"                      # 5xx
     REFUSED = "refused"                    # refused here, before sending
+    STOPPED = "stopped"                    # the account was let go: nothing more goes out
     # The contract's.
     BAD_REQUEST = "bad_request"
     AUTH_REQUIRED = "auth_required"

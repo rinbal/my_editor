@@ -240,7 +240,7 @@ class FakeApi:
 def _writer(submissions, api, **more) -> StandupWriter:
     more.setdefault("deleteLater", lambda: None)
     account = SimpleNamespace(writer=WRITER, submissions=submissions, api=api, runs=[],
-                              list_problem="", **more)
+                              list_problem="", stopped=False, **more)
     return StandupWriter(session_pool=None, relay_pool=None, relay_directory=None,
                          media_store=None, server="https://s.example", uploads=lambda *a: None,
                          accounts=lambda _profile: account)
@@ -620,7 +620,7 @@ def test_the_first_message_is_sealed_by_the_writer_and_wrapped_to_the_submission
         on_success(7)                               # only a seq says it is there
 
     account = SimpleNamespace(
-        writer=pk("writer"), api=SimpleNamespace(send_message=send_message),
+        writer=pk("writer"), api=SimpleNamespace(send_message=send_message), stopped=False,
         signer=SimpleNamespace(sign_event=lambda unsigned, *, on_success, on_failure:
                                signer(unsigned, on_success, on_failure)))
     StandupWriter._send_message(account, sealed, "Passt zu eurer Reihe.",
@@ -641,7 +641,7 @@ def test_a_message_with_a_secret_key_in_it_is_never_sent():
     s_sub = bytes(range(1, 33))
     sent, said = [], []
     account = SimpleNamespace(writer=pk("writer"), api=SimpleNamespace(
-        send_message=lambda *a, **k: sent.append(a)), signer=None)
+        send_message=lambda *a, **k: sent.append(a)), signer=None, stopped=False)
     sealed = SimpleNamespace(body={"p_sub": "00" * 32}, s_sub=s_sub, submission_id="ab" * 32)
     nsec = encode_nsec(sk("writer").hex())
     StandupWriter._send_message(account, sealed, f"mein Schlüssel {nsec}",
@@ -649,6 +649,121 @@ def test_a_message_with_a_secret_key_in_it_is_never_sent():
                                 lambda: said.append("not sent"))
     QApplication.processEvents()
     assert sent == [] and said == ["not sent"]
+
+
+def _wired_writer():
+    from nostr.profiles import Profile
+    from tests.outbox_fakes import FakeClient, FakePool, FakeRelayDirectory, FakeSessionPool
+
+    writer = StandupWriter(session_pool=FakeSessionPool(FakeClient()), relay_pool=FakePool(),
+                           relay_directory=FakeRelayDirectory(), media_store=Store(),
+                           server="https://standup.example")
+    profile = Profile(user_pubkey=WRITER, bunker_pubkey="b" * 64,
+                      bunker_relays=["wss://bunker.example"], local_secret_hex="0" * 64)
+    return writer, profile
+
+
+@pytest.mark.parametrize("deleted", [False, True], ids=["let go", "deleted"])
+def test_a_first_message_sealed_after_the_account_was_let_go_is_never_posted(monkeypatch,
+                                                                              deleted):
+    # RG-M2r 3, lesson 31: the person confirms the seal on the phone after
+    # switching account; nothing is posted, no session opened for the
+    # account left, and nothing touches what was deleted with it.
+    from nostr.ui import standup_submit as module
+
+    pending = {}
+    monkeypatch.setattr(module.conversation, "message_rumor", lambda **kw: {"rumor": kw})
+    monkeypatch.setattr(module.conversation, "seal_and_wrap",
+                        lambda signer, rumor, s_sub, room, on_success, on_failure:
+                        pending.update(on_success=on_success, on_failure=on_failure))
+    writer, profile = _wired_writer()
+    account = writer.account(profile)
+    posted, said = [], []
+    monkeypatch.setattr(account.api, "send_message", lambda *a, **k: posted.append(a))
+    sealed = SimpleNamespace(body={"p_sub": "ab" * 32}, submission_id="cd" * 32, s_sub=b"x")
+    StandupWriter._send_message(account, sealed, "Hallo", lambda: said.append("signed"),
+                                lambda: said.append("sent"), lambda: said.append("not sent"))
+    writer.stop()
+    QApplication.processEvents()
+    if deleted:
+        QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    pending["on_success"]({"kind": 1059})            # the signer app answers late
+    pending["on_failure"]("timeout")
+    QApplication.processEvents()
+    assert posted == [] and said == []
+
+
+def test_no_late_answer_of_an_account_let_go_reaches_the_sheet_or_reads_its_list():
+    # Lesson 31: the publications, the list read for them and for a round,
+    # and a removal each answer after the account changed; none goes on.
+    from nostr.list_results import ListRead, ReadStatus
+
+    writer, profile = _wired_writer()
+    account = writer.account(profile)
+    later, loads, said = {}, [], []
+    account.destinations.find = lambda found, failed: later.update(found=found, failed=failed)
+    account.submissions.load = loads.append
+    account.submissions.forget = lambda entry, done: later.update(forgot=done)
+    writer.destinations(profile, lambda *a: said.append("publications"), said.append)
+    writer.destinations(profile, lambda *a: said.append("publications"), said.append)
+    later["found"]([])                              # the list is read for them
+    writer.discard(profile, _entry(), lambda stored: said.append("discarded"))
+    writer.round_for(profile, PUBLICATION, "ein-jahr", lambda answer: said.append("round"))
+    QApplication.processEvents()
+    assert len(loads) == 2
+    writer.stop()
+    QApplication.processEvents()
+    later["found"]([])
+    later["failed"](object())
+    for read in loads:
+        read(ListRead(ReadStatus.COMPLETE, value=None))
+    later["forgot"](SimpleNamespace(stored=True))
+    QApplication.processEvents()
+    assert said == [] and len(loads) == 2
+
+
+@pytest.mark.parametrize("when", ["deciding", "asking the server"])
+def test_a_round_answered_after_the_account_was_let_go_is_never_said(monkeypatch, when):
+    from nostr.ui import standup_submit as module
+
+    asked = {}
+    monkeypatch.setattr(module, "look_up_all",
+                        lambda api, entries, found, failed: asked.update(found=found))
+    writer, profile = _wired_writer()
+    account = writer.account(profile)
+    account.submissions.loaded = True
+    account.submissions.entries = lambda: [_entry()]
+    said = []
+    writer.round_for(profile, PUBLICATION, "ein-jahr", said.append)
+    if when == "asking the server":
+        QApplication.processEvents()
+        assert "found" in asked
+    writer.stop()
+    QApplication.processEvents()
+    if when == "deciding":
+        assert asked == {}                          # nothing asked for the account left
+    else:
+        asked["found"]({_entry().sid: None})
+    QApplication.processEvents()
+    assert said == []
+
+
+def test_a_list_of_an_account_let_go_is_never_read_or_written_again():
+    # Lesson 31: a late caller asks no signer for the account left; it is
+    # refused on a later turn.
+    from tests.test_standup_lists import entry
+
+    writer, profile = _wired_writer()
+    account = writer.account(profile)
+    reached, answers = [], []
+    account.submissions._list.relays = lambda *a, **k: reached.append("read")
+    account.submissions._list.publish = lambda *a, **k: reached.append("write")
+    writer.stop()
+    account.submissions.load(lambda read: answers.append(read.readable))
+    account.submissions.record(entry(), lambda result: answers.append(result.status.value))
+    assert answers == []
+    QApplication.processEvents()
+    assert reached == [] and answers == [False, "not stored"]
 
 
 def test_an_account_is_wired_to_the_app_and_left_whole_at_sign_out():

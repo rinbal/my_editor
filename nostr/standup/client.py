@@ -132,6 +132,9 @@ class StandupApi(SignedJsonApi):
         self._session: Optional[answers.Session] = None
         self._session_call: Optional[StandupCall] = None
         self._waiting: List[StandupCall] = []
+        # Stopped with its account: nothing more is signed or sent, no
+        # session opened (lesson 31).
+        self._closed = False
 
     @property
     def server(self) -> str:
@@ -151,9 +154,13 @@ class StandupApi(SignedJsonApi):
         self._session_call = None
 
     def stop(self) -> None:
-        """Sign-out or another account: drop every call, forget the token."""
+        """Sign-out or another account: drop every call, forget the token,
+        and refuse every call made after it (on a later turn, Code.STOPPED):
+        a late caller never opens a session, signs or posts for an account
+        that was let go (RG-M2r 3, lesson 31)."""
         self.cancel()
         self._session = None
+        self._closed = True
 
     @property
     def has_session(self) -> bool:
@@ -165,6 +172,8 @@ class StandupApi(SignedJsonApi):
         return StandupError(code, **fields)
 
     def _unavailable(self, call: StandupCall) -> Optional[StandupError]:
+        if self._closed:
+            return StandupError(Code.STOPPED)
         return None if self._server else StandupError(Code.UNAVAILABLE)
 
     def _prepare_request(self, call: StandupCall, request) -> None:
