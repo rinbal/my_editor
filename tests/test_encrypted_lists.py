@@ -846,3 +846,31 @@ def test_a_later_page_longer_than_a_page_counts_as_missing_without_asking_the_si
     assert answer.status is ReadStatus.INCOMPLETE and answer.stale == (1,)
     assert all(len(ciphertext) <= PAGE_PAYLOAD_MAX for ciphertext in signer.decrypted)
     assert len(signer.decrypted) == page_count(relay) - 1
+
+
+# -- publishing one event (list_relays.publish_once) ------------------------------
+
+class _Pool:
+    def __init__(self, error):
+        self.error = error
+
+    def publish(self, relays, signed):
+        raise self.error
+
+
+def test_an_event_the_pool_refuses_is_taken_by_no_relay_on_the_next_turn():
+    from nostr.list_relays import publish_once
+    for error in (ValueError("PublishJob requires a fully signed event"),
+                  RuntimeError("Internal C++ object already deleted")):
+        took = []
+        publish_once(_Pool(error), ["wss://relay.example"], {}, on_done=took.append)
+        assert took == []                          # never inside the call
+        settle()
+        assert took == [frozenset()]
+
+
+def test_a_bug_in_publishing_is_not_hidden():
+    from nostr.list_relays import publish_once
+    with pytest.raises(TypeError):
+        publish_once(_Pool(TypeError("a bug")), ["wss://relay.example"], {},
+                     on_done=lambda took: None)

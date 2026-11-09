@@ -14,6 +14,7 @@ from PySide6.QtCore import QObject
 from .events import verify_event
 from .outbox.policy import normalize_relay_url
 from .queries import fetch_events
+from .signed_api import answer_later
 
 __all__ = ["LIST_KIND", "ListQuery", "event_mark", "is_list_of", "publish_once", "relay_key"]
 
@@ -48,13 +49,16 @@ def publish_once(relay_pool, relays, signed, *, on_done: Callable[[Collection[st
     """Publish ``signed`` and answer once with the relays that took it:
     as soon as one did (a relay that never answers must not hold up
     quitting for the publish timeout), or, with ``every_relay``, when
-    every relay has answered or timed out."""
+    every relay has answered or timed out. An event the pool refuses
+    (not signed: ValueError) or a pool already gone at shutdown
+    (RuntimeError) is taken by no relay, answered on the next turn;
+    anything else is a bug and raises."""
     relays = list(relays)
     try:
         job = relay_pool.publish(relays, signed)
-    except Exception as exc:  # noqa: BLE001, publish must never raise into UI
+    except (ValueError, RuntimeError) as exc:
         _log.warning("list publish failed: %s", exc)
-        on_done(frozenset())
+        answer_later(on_done, frozenset())
         return
     answered = []
 
