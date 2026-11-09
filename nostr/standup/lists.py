@@ -8,14 +8,17 @@ encrypted to itself, on the shared store (``nostr/encrypted_lists.py``):
   entry per submission with what following and revising it needs, the
   secrets included (``s_sub``, the submission key, and ``status_key``,
   which the lookup takes instead of a signature). Merged by ``sid``, the
-  newest ``updated_at`` wins.
+  newest ``updated_at`` wins; a removal is a tombstone that stays.
 - :class:`ReadState` (``d`` = SHA-256 of
   ``"einundzwanzig:read-state:v1:" + pubkey``, so relays cannot tell
   what it is): the last ``seq`` read per submission, merged by the
   highest. Written at most every 5 minutes, and when leaving the app.
 
 Both are split into pages of at most 32,000 bytes, so every page fits
-one call through a signer app (criterion 22 of the plan).
+one call through a signer app (criterion 22 of the plan), bound into
+one generation by page 0's ``parts`` (``nostr/paged_list.py``). Both
+merges are unions, so a read that missed a page (``complete`` False)
+still holds every entry it found, and the next write is complete again.
 
 **Before sending.** A submission's entry is written before the
 submission is sent (12.4, "No answer after sending"): only with
@@ -36,24 +39,23 @@ print their secrets (``repr``).
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field, fields, replace
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from PySide6.QtCore import QObject, Signal
 
 from i18n import N_, _
 
 from ..encrypted_lists import (
-    FAILED,
-    NO_ANSWER,
-    SENT,
-    UNREADABLE,
-    UP_TO_DATE,
     EncryptedList,
+    ListRead,
     ListWords,
-    Paging,
     PublishResult,
+    PublishStatus,
+    ReadStatus,
 )
+from ..paged_list import Paging
 from . import formats
 from .crypto import StandupCryptoError, secret_from_hex
 from .formats import FormatError
@@ -65,7 +67,8 @@ SUBMISSIONS_OLD_ENCRYPTION = N_(
     "Your list of submissions was saved with an older kind of encryption. Open it once "
     "in the app that saved it; until then, nothing new can be submitted here.")
 SUBMISSIONS_MISSING_PAGE = N_(
-    "Part of your list of submissions hasn't arrived yet. It is kept as it is.")
+    "Part of your list of submissions hasn't arrived yet. What did is shown, and the list "
+    "is made whole again the next time it is saved.")
 READ_STATE_UNREADABLE = N_("What you have read couldn't be loaded.")
 READ_STATE_SIGNER_SILENT = N_(
     "Your signer app didn't answer, so what you have read couldn't be loaded.")
@@ -154,81 +157,106 @@ def entry_problem(entry: SubmissionEntry) -> Optional[str]:
 def entry_from_json(value: Any) -> Optional[SubmissionEntry]:
     """An entry read from the list, or None when this app cannot read it
     (a broken one, or a newer app's)."""
-    if not isinstance(value, dict):
+    if not isinstance(value, dict) or value.get("deleted") is not None:
         return None
     entry = SubmissionEntry(**{name: value.get(name) for name in _ENTRY_FIELDS})
     return None if entry_problem(entry) else entry
 
 
 @dataclass(frozen=True)
-class SubmissionItems:
-    """What the list holds: the entries this app reads, and the items it
-    cannot (``unread``: a broken one, or a newer app's), kept as they
-    came and written back unchanged, so this app never deletes what
-    another wrote."""
+class Tombstone:
+    """A removed submission (13): it stays in the list, so the removal
+    wins over every older copy of the entry, on every device."""
 
-    entries: Tuple[SubmissionEntry, ...] = ()
-    unread: Tuple[Mapping[str, Any], ...] = ()
+    sid: str
+    updated_at: int
+
+    def to_json(self) -> Dict[str, Any]:
+        return {"sid": self.sid, "deleted": True, "updated_at": self.updated_at}
+
+
+@dataclass(frozen=True)
+class ForeignItem:
+    """An item this app cannot read: a newer app's, or a broken one. Kept
+    as it came and written back unchanged, so this app never deletes
+    what another wrote. Merged by ``sid`` like any item when it has one
+    and an ``updated_at``; ``sid`` None: kept once, as it is."""
+
+    sid: Optional[str]
+    updated_at: int
+    raw: Any = field(repr=False)
+
+    def to_json(self) -> Any:
+        return self.raw
+
+
+ListItem = Union[SubmissionEntry, Tombstone, ForeignItem]
+
+
+def item_from_json(value: Any) -> ListItem:
+    """One item of the list, read once into its type."""
+    entry = entry_from_json(value)
+    if entry is not None:
+        return entry
+    sid = value.get("sid") if isinstance(value, dict) else None
+    updated_at = value.get("updated_at") if isinstance(value, dict) else None
+    keyed = formats.is_hex64(sid) and formats.is_int(updated_at)
+    if keyed and value.get("deleted") is True and set(value) == {"sid", "deleted", "updated_at"}:
+        return Tombstone(sid=sid, updated_at=updated_at)
+    return ForeignItem(sid=sid if keyed else None, updated_at=updated_at if keyed else 0,
+                       raw=value)
+
+
+@dataclass(frozen=True)
+class SubmissionItems:
+    """What the list holds, one item per ``sid``: the entries this app
+    reads, the tombstones, and the items it cannot read."""
+
+    items: Tuple[ListItem, ...] = ()
+
+    @property
+    def entries(self) -> Tuple[SubmissionEntry, ...]:
+        return tuple(item for item in self.items if isinstance(item, SubmissionEntry))
+
+    @property
+    def unread(self) -> Tuple[ForeignItem, ...]:
+        return tuple(item for item in self.items if isinstance(item, ForeignItem))
 
 
 def merge_items(remote: SubmissionItems, local: SubmissionItems) -> SubmissionItems:
-    """The entries by :func:`merge_entries`; every unread item of either,
-    once."""
-    unread: Dict[str, Mapping[str, Any]] = {}
-    for item in remote.unread + local.unread:
-        unread.setdefault(formats.canonical_json(item), item)
-    return SubmissionItems(entries=tuple(merge_entries(remote.entries, local.entries)),
-                           unread=tuple(unread.values()))
-
-
-def merge_entries(remote: Sequence[SubmissionEntry],
-                  local: Sequence[SubmissionEntry]) -> List[SubmissionEntry]:
-    """By ``sid``, the newest ``updated_at`` wins (13); on a tie, the
-    higher revision, then the remote one. The order of ``remote`` is
-    kept and new entries go at the end, so recording one rewrites only
-    the last page and page 0, not every page: each page written costs a
-    signature, through a signer app each one a request."""
-    merged: Dict[str, SubmissionEntry] = {}
-    for entry in list(remote) + list(local):
-        known = merged.get(entry.sid)
-        if known is None or (entry.updated_at, entry.revision) > (known.updated_at,
-                                                                   known.revision):
-            merged[entry.sid] = entry
-    return list(merged.values())
+    """The union of both (13): by ``sid`` the newest ``updated_at`` wins,
+    on a tie the remote one; an item without a ``sid`` is kept once. The
+    order of ``remote`` is kept and new items go at the end, so the pages
+    before the change read as they did and are not signed again: each
+    page signed costs a request through a signer app."""
+    merged: Dict[str, ListItem] = {}
+    for item in remote.items + local.items:
+        key = item.sid if item.sid is not None else "raw:" + json.dumps(
+            item.to_json(), sort_keys=True)
+        known = merged.get(key)
+        if known is None or item.updated_at > known.updated_at:
+            merged[key] = item
+    return SubmissionItems(items=tuple(merged.values()))
 
 
 def _decode_items(payload: dict) -> SubmissionItems:
     items = payload.get("items")
     if not isinstance(items, list):
         raise ValueError("the submissions list has no items")
-    entries, unread = [], []
-    for item in items:
-        entry = entry_from_json(item)
-        if entry is not None:
-            entries.append(entry)
-        elif _canonical(item):
-            unread.append(item)
-    return merge_items(SubmissionItems(entries=tuple(entries), unread=tuple(unread)),
+    # A read across two generations may hold an entry twice: the merge
+    # keeps the newest.
+    return merge_items(SubmissionItems(tuple(item_from_json(item) for item in items)),
                        SubmissionItems())
 
 
-def _canonical(item: Any) -> bool:
-    """An item canonical JSON can hold (so it can be written back)."""
-    try:
-        formats.canonical_json(item)
-    except FormatError:
-        return False
-    return True
-
-
 def _encode_items(value: SubmissionItems, now: int) -> dict:
-    return {"items": [entry.to_json() for entry in value.entries] + list(value.unread)}
+    return {"items": [item.to_json() for item in value.items]}
 
 
 def stored(result: PublishResult) -> bool:
     """True when the entry recorded is on the relays: the submission may
     be sent."""
-    return result.status in (SENT, UP_TO_DATE)
+    return result.status in (PublishStatus.SENT, PublishStatus.UP_TO_DATE)
 
 
 # --------------------------------------------------------------------------- #
@@ -254,13 +282,16 @@ class _AccountList(QObject):
             d_tag=d_tag, decode=decode, encode=encode, merge=merge, words=words,
             session_pool=session_pool, relay_directory=relay_directory, query=query,
             publisher=publisher, clock=lambda: int(clock()), entitled_relays=entitled_relays,
-            paging=paging, on_status=self.status.emit, name=d_tag, parent=self)
+            paging=paging, untagged="nip44", on_status=self.status.emit, name=d_tag,
+            parent=self)
         self._base: Any = None
         self._base_mark: Optional[Tuple[int, str]] = None
         self._local: Any = empty()
         self._generation = 0
         self.loaded = False
-        self.missing: Tuple[int, ...] = ()
+        # False after a read that missed a page or found one of another
+        # generation, until a write made the list whole again.
+        self.complete = True
 
     @property
     def account(self) -> str:
@@ -273,30 +304,32 @@ class _AccountList(QObject):
         self._base_mark = None
         self._local = self._empty()
         self.loaded = False
+        self.complete = True
 
-    def load(self, on_done: Callable[[Any], None]) -> None:
-        """Read the list: ``on_done(value)``, or NO_ANSWER / UNREADABLE
-        (the reason already said through :attr:`status`)."""
+    def load(self, on_done: Callable[[ListRead], None]) -> None:
+        """Read the list: ``on_done(read)``, its ``value`` what is here
+        now (the list read merged with what was here), or ``read.status``
+        NO_ANSWER / UNREADABLE (the reason already said through
+        :attr:`status`)."""
         generation = self._generation
 
-        def read(result, event) -> None:
+        def read(result: ListRead) -> None:
             if generation != self._generation:
                 return
-            if result in (NO_ANSWER, UNREADABLE):
+            if not result.readable:
                 on_done(result)
                 return
-            remote = result if result is not None else self._empty()
+            remote = result.value if result.value is not None else self._empty()
             self._base = remote
+            event = result.event
             self._base_mark = (int(event["created_at"]), event["id"]) if event else None
             self._local = self._merge_local(remote)
             self.loaded = True
-            on_done(self._local)
-
-        def missing(numbers) -> None:
-            self.missing = tuple(numbers)
+            self.complete = result.status is not ReadStatus.INCOMPLETE
+            on_done(replace(result, value=self._local))
 
         self._list.relays(self._profile, lambda relays: self._list.read(
-            self._profile, relays, read, on_missing=missing), reading=True)
+            self._profile, relays, read), reading=True)
 
     def _merge_local(self, remote):
         raise NotImplementedError
@@ -312,12 +345,11 @@ class _AccountList(QObject):
         def done(result: PublishResult) -> None:
             if generation != self._generation:
                 return
-            if result.status == SENT:
+            if result.status is PublishStatus.SENT:
                 self._base = result.value
-                if result.signed:
-                    self._base_mark = (int(result.signed["created_at"]), result.signed["id"])
-                self.missing = result.missing
-            elif result.status == UP_TO_DATE:
+                self._base_mark = (int(result.signed["created_at"]), result.signed["id"])
+                self.complete = True
+            elif result.status is PublishStatus.UP_TO_DATE:
                 self._base = result.remote
             on_done(result)
 
@@ -362,13 +394,13 @@ class SubmissionsList(_AccountList):
         for entry in entries:
             problem = entry_problem(entry)
             if problem:
-                on_done(PublishResult(FAILED, reason=problem))
+                on_done(PublishResult(PublishStatus.FAILED, reason=problem))
                 return
             # Later than the entry it replaces, even within one second.
             known = self.entry(entry.sid)
             floor = max(now, known.updated_at + 1 if known else 0)
             fresh.append(replace(entry, updated_at=max(entry.updated_at, floor)))
-        self._local = merge_items(self._local, SubmissionItems(entries=tuple(fresh)))
+        self._local = merge_items(self._local, SubmissionItems(items=tuple(fresh)))
         self._publish(on_done)
 
 
@@ -379,14 +411,14 @@ class ReadState(_AccountList):
         super().__init__(
             profile, d_tag=formats.read_state_d(profile.user_pubkey),
             decode=_decode_seen, encode=lambda value, now: {"seen": dict(value)},
-            merge=lambda base, local, remote: _max_merge(remote or {}, local),
+            merge=lambda base, local, remote: merge_seen(remote or {}, local),
             words=_read_state_words(), paging=Paging(field="seen", combine=_higher),
             empty=dict, **boundaries)
         self._dirty = False
         self._last_write: Optional[float] = None
 
     def _merge_local(self, remote):
-        return _max_merge(remote, self._local)
+        return merge_seen(remote, self._local)
 
     def seen(self, sid: str) -> int:
         return int(self._local.get(sid, 0))
@@ -402,7 +434,9 @@ class ReadState(_AccountList):
 
     @property
     def dirty(self) -> bool:
-        return self._dirty
+        """Something to write: a seq read here, or a list read incomplete,
+        which the next write makes whole."""
+        return self._dirty or not self.complete
 
     def flush(self, on_done: Optional[Callable[[Optional[PublishResult]], None]] = None, *,
               leaving: bool = False) -> bool:
@@ -411,15 +445,15 @@ class ReadState(_AccountList):
         yet; True when a write started."""
         done = on_done or (lambda _result: None)
         now = self._clock()
-        if not self._dirty or (not leaving and self._last_write is not None
-                               and now - self._last_write < READ_STATE_INTERVAL_SECONDS):
+        if not self.dirty or (not leaving and self._last_write is not None
+                              and now - self._last_write < READ_STATE_INTERVAL_SECONDS):
             done(None)
             return False
         self._last_write = now
         self._dirty = False
 
         def written(result: PublishResult) -> None:
-            if result.status not in (SENT, UP_TO_DATE):
+            if not stored(result):
                 self._dirty = True
             done(result)
 
@@ -446,7 +480,8 @@ def _decode_seen(payload: dict) -> Dict[str, int]:
             if formats.is_hex64(sid) and formats.is_int(seq)}
 
 
-def _max_merge(remote: Dict[str, int], local: Dict[str, int]) -> Dict[str, int]:
+def merge_seen(remote: Dict[str, int], local: Dict[str, int]) -> Dict[str, int]:
+    """The read state's union (13): the highest ``seq`` per ``sid``."""
     merged = dict(remote)
     for sid, seq in local.items():
         merged[sid] = max(seq, merged.get(sid, seq))
@@ -454,7 +489,7 @@ def _max_merge(remote: Dict[str, int], local: Dict[str, int]) -> Dict[str, int]:
 
 
 __all__ = [
-    "READ_STATE_INTERVAL_SECONDS", "ReadState", "SubmissionEntry", "SubmissionItems",
-    "SubmissionsList", "entry_from_json", "entry_problem", "merge_entries", "merge_items",
-    "stored",
+    "READ_STATE_INTERVAL_SECONDS", "ForeignItem", "ListItem", "ReadState", "SubmissionEntry",
+    "SubmissionItems", "SubmissionsList", "Tombstone", "entry_from_json", "entry_problem",
+    "item_from_json", "merge_items", "merge_seen", "stored",
 ]

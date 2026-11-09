@@ -7460,31 +7460,31 @@ msgstr ""
 msgid "All (up to {n})"
 msgstr ""
 
-#: nostr/imports/subscriptions.py:109
+#: nostr/imports/subscriptions.py:95
 msgid "Reading your list of sources…"
 msgstr ""
 
-#: nostr/imports/subscriptions.py:110
+#: nostr/imports/subscriptions.py:96
 msgid "Your list of sources couldn't be read online, so MyEditor shows the copy kept on this computer."
 msgstr ""
 
-#: nostr/imports/subscriptions.py:112
+#: nostr/imports/subscriptions.py:98
 msgid "Your latest changes to your sources are kept on this computer for now: the list couldn't be saved online. MyEditor tries again on its own."
 msgstr ""
 
-#: nostr/imports/subscriptions.py:116
+#: nostr/imports/subscriptions.py:102
 msgid "Your list of sources couldn't be read."
 msgstr ""
 
-#: nostr/imports/subscriptions.py:117
+#: nostr/imports/subscriptions.py:103
 msgid "Your signer app didn't answer, so your list of sources couldn't be read."
 msgstr ""
 
-#: nostr/imports/subscriptions.py:122
+#: nostr/imports/subscriptions.py:108
 msgid "Your list of sources was saved with an older kind of encryption. Open it once in the app that saved it; until then, changes made here stay on this computer."
 msgstr ""
 
-#: nostr/imports/subscriptions.py:699
+#: nostr/imports/subscriptions.py:683
 #, python-brace-format
 msgid "Your list of sources couldn't be saved online ({reason}). Your changes are kept on this computer."
 msgstr ""
@@ -7777,39 +7777,39 @@ msgstr ""
 msgid "Cannot derive identifier: item has no guid, link, or title"
 msgstr ""
 
-#: nostr/standup/formats.py:85
+#: nostr/standup/formats.py:84
 msgid "It contains a secret key, and MyEditor never sends a secret key to a publication. Remove the key and try again."
 msgstr ""
 
-#: nostr/standup/lists.py:60
+#: nostr/standup/lists.py:63
 msgid "Your list of submissions couldn't be read."
 msgstr ""
 
-#: nostr/standup/lists.py:61
+#: nostr/standup/lists.py:64
 msgid "Your signer app didn't answer, so your list of submissions couldn't be read."
 msgstr ""
 
-#: nostr/standup/lists.py:63
+#: nostr/standup/lists.py:66
 msgid "Your list of submissions was saved with an older kind of encryption. Open it once in the app that saved it; until then, nothing new can be submitted here."
 msgstr ""
 
-#: nostr/standup/lists.py:66
-msgid "Part of your list of submissions hasn't arrived yet. It is kept as it is."
+#: nostr/standup/lists.py:69
+msgid "Part of your list of submissions hasn't arrived yet. What did is shown, and the list is made whole again the next time it is saved."
 msgstr ""
 
-#: nostr/standup/lists.py:68
+#: nostr/standup/lists.py:72
 msgid "What you have read couldn't be loaded."
 msgstr ""
 
-#: nostr/standup/lists.py:69
+#: nostr/standup/lists.py:73
 msgid "Your signer app didn't answer, so what you have read couldn't be loaded."
 msgstr ""
 
-#: nostr/standup/lists.py:71
+#: nostr/standup/lists.py:75
 msgid "What you have read was saved with an older kind of encryption and is left as it is."
 msgstr ""
 
-#: nostr/standup/trust.py:36
+#: nostr/standup/trust.py:41
 msgid "The editorial team's key is not confirmed. Submitting is not possible right now."
 msgstr ""
 

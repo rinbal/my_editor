@@ -99,13 +99,13 @@ class FakeRelay:
         stored = self.stored.get(d_tag)
         on_done([stored] if stored else [], set(relays))
 
-    # The publisher seam.
-    def __call__(self, relays, signed, *, on_done):
+    # The publisher seam: the relays that took it.
+    def __call__(self, relays, signed, *, on_done, every_relay=False):
         self.published.append((list(relays), signed))
         if self.accepted:
             d_tag = next(t[1] for t in signed["tags"] if t[0] == "d")
             self.stored[d_tag] = signed
-        on_done(1 if self.accepted else 0, 2)
+        on_done(frozenset(relays) if self.accepted else frozenset())
 
     def put(self, d_tag, payload, *, tag=("encrypted", "nip44"), created_at=NOW - 100,
             sk=SK, encrypt=True):

@@ -18,24 +18,31 @@ from types import SimpleNamespace
 
 import pytest
 
-from nostr import crypto
+from nostr import crypto, events
 from nostr.bunker import SIGNER_NIP44_MAX_PLAINTEXT
-from nostr.encrypted_lists import NO_ANSWER, PAGE_PLAINTEXT_MAX, SENT, UNREADABLE
+from nostr.encrypted_lists import PublishStatus, ReadStatus
+from nostr.local_signer import LocalSigner
+from nostr.paged_list import MAX_PAGES, PAGE_PLAINTEXT_MAX, PageError, Paging, digest, parse_page
 from nostr.standup import conversation, formats
 from nostr.standup import crypto as scrypto
 from nostr.standup.lists import (
     READ_STATE_INTERVAL_SECONDS,
+    ForeignItem,
     ReadState,
     SubmissionEntry,
+    SubmissionItems,
     SubmissionsList,
+    Tombstone,
     entry_from_json,
-    merge_entries,
+    item_from_json,
+    merge_items,
+    merge_seen,
     stored,
 )
 from tests.membership_fakes import FakeClock
 from tests.outbox_fakes import PK, FakeRelayDirectory, settle
 from tests.standup_fakes import paired_bunker
-from tests.standup_vectors import ADDRESS, NOW, sk
+from tests.standup_vectors import ADDRESS, NOW, VECTORS, sk
 from tests.test_encrypted_lists import Relay
 from tests.test_imports_subscriptions import FakeSessionPool, FakeSigner
 
@@ -112,8 +119,18 @@ def test_entries_merge_by_id_and_the_newest_wins_in_place():
     a, b, c = entry(1), entry(2), entry(3)
     newer_b = replace(b, revision=2, updated_at=NOW + 5)
     older_a = replace(a, title="älter", updated_at=NOW - 5)
-    merged = merge_entries([a, b], [older_a, newer_b, c])
-    assert merged == [a, newer_b, c]
+    merged = merge_items(SubmissionItems((a, b)), SubmissionItems((older_a, newer_b, c)))
+    assert merged.entries == (a, newer_b, c)
+
+
+def test_a_removal_is_a_tombstone_that_wins_over_older_copies():
+    a = entry(1)
+    gone = Tombstone(sid=a.sid, updated_at=NOW + 1)
+    assert item_from_json(gone.to_json()) == gone
+    merged = merge_items(SubmissionItems((a,)), SubmissionItems((gone,)))
+    assert merged.items == (gone,) and merged.entries == ()
+    # An older copy from another device brings nothing back.
+    assert merge_items(merged, SubmissionItems((a,))).items == (gone,)
 
 
 # -- written before sending ------------------------------------------------------
@@ -122,9 +139,9 @@ def test_an_entry_is_on_the_relays_before_the_submission_may_be_sent():
     store, relay, _clock = make()
     value = entry()
     result = record(store, value)
-    assert result.status == SENT and stored(result)
+    assert result.status is PublishStatus.SENT and stored(result)
     page = relay.page(formats.SUBMISSIONS_LIST_D)
-    assert page["v"] == 1 and page["page"] == 0 and page["pages"] == 1
+    assert (page["v"], page["page"], page["pages"], page["parts"]) == (1, 0, 1, [])
     [item] = page["items"]
     assert (item["sid"], item["s_sub"], item["status_key"], item["revision"],
             item["revision_hash"]) == (value.sid, value.s_sub, value.status_key,
@@ -136,7 +153,7 @@ def test_when_no_relay_answers_the_submission_is_not_sent():
     relay.answers = False
     store, _relay, _clock = make(relay=relay)
     result = record(store, entry())
-    assert result.status == NO_ANSWER and not stored(result)
+    assert result.status is PublishStatus.NO_ANSWER and not stored(result)
     assert relay.published == []
 
 
@@ -145,7 +162,7 @@ def test_an_unreadable_list_is_never_written_over_and_blocks_sending():
     relay.put(formats.SUBMISSIONS_LIST_D, None, content="not a ciphertext")
     store, _relay, _clock = make(relay=relay)
     result = record(store, entry())
-    assert result.status == UNREADABLE and not stored(result)
+    assert result.status is PublishStatus.UNREADABLE and not stored(result)
     assert relay.published == []
 
 
@@ -178,7 +195,7 @@ def test_loading_reads_the_entries_and_stop_forgets_them():
     relay.put(formats.SUBMISSIONS_LIST_D, {"v": 1, "page": 0, "pages": 1,
                                            "items": [value.to_json()]})
     store, _relay, _clock = make(relay=relay)
-    assert load(store).entries == (value,)
+    assert load(store).value.entries == (value,)
     store.stop()
     assert store.entries() == [] and not store.loaded
 
@@ -191,12 +208,13 @@ def test_an_item_this_app_cannot_read_is_written_back_unchanged():
     relay.put(formats.SUBMISSIONS_LIST_D, {"v": 1, "page": 0, "pages": 1,
                                            "items": [newer, {"sid": "broken"}]})
     store, _relay, _clock = make(relay=relay)
-    loaded = load(store)
-    assert loaded.entries == () and loaded.unread == (newer, {"sid": "broken"})
+    loaded = load(store).value
+    assert loaded.entries == ()
+    assert [item.to_json() for item in loaded.unread] == [newer, {"sid": "broken"}]
     mine = entry(1)
     record(store, mine)
     items = relay.page(formats.SUBMISSIONS_LIST_D)["items"]
-    assert items == [mine.to_json(), newer, {"sid": "broken"}]
+    assert items == [newer, {"sid": "broken"}, mine.to_json()]
     assert store.entries() == [mine]
 
 
@@ -220,7 +238,7 @@ def test_the_read_state_has_an_opaque_d_and_keeps_the_highest_seq():
     sid_a, sid_b = formats.sha256_hex("a"), formats.sha256_hex("b")
     relay.put(d, {"v": 1, "page": 0, "pages": 1, "seen": {sid_a: 9, sid_b: 2}})
     store, _relay, clock = make(ReadState, relay=relay)
-    assert load(store) == {sid_a: 9, sid_b: 2}
+    assert load(store).value == {sid_a: 9, sid_b: 2}
     store.mark(sid_a, 4)          # older: ignored
     store.mark(sid_b, 5)
     assert store.seen(sid_a) == 9 and store.seen(sid_b) == 5
@@ -279,7 +297,7 @@ def test_a_list_of_500_submissions_goes_through_a_signer_app():
     store, relay, app, client, profile = _through_signer_app(SubmissionsList, sk("writer"))
     entries = [entry(n) for n in range(500)]
     result = record(store, *entries)
-    assert result.status == SENT, result.reason
+    assert result.status is PublishStatus.SENT, result.reason
     sizes = _page_sizes(relay, formats.SUBMISSIONS_LIST_D, app)
     assert len(sizes) >= 10 and max(sizes) <= PAGE_PLAINTEXT_MAX
     assert app.too_large == 0 and app.largest_request <= crypto.NIP44_MAX_PLAINTEXT_LEN
@@ -289,13 +307,13 @@ def test_a_list_of_500_submissions_goes_through_a_signer_app():
     other = SubmissionsList(profile, session_pool=FakeSessionPool(client),
                             relay_directory=FakeRelayDirectory(), query=relay, publisher=relay,
                             clock=FakeClock(NOW))
-    assert list(load(other).entries) == entries
+    assert list(load(other).value.entries) == entries
 
-    # One more submission rewrites the last page and page 0, not all.
-    before = len(relay.published)
+    # One more submission signs the last page and page 0 again, not all.
+    before = {d: event["id"] for d, event in relay.stored.items()}
     record(other, entry(500))
-    written = relay.published[before:]
-    assert written[-1] == formats.SUBMISSIONS_LIST_D and len(written) <= 3
+    signed = {d for d, event in relay.stored.items() if before.get(d) != event["id"]}
+    assert formats.SUBMISSIONS_LIST_D in signed and len(signed) <= 3
     client.close()
 
 
@@ -360,3 +378,106 @@ def test_a_message_at_the_largest_size_goes_through_a_signer_app(shape):
     assert len(app.seen) == seen
     client.close()
 
+
+
+# -- the contract's vectors (paged_list, contract 13) ----------------------------------
+
+PL = VECTORS["paged_list"]
+WRITER = SimpleNamespace(user_pubkey=PL["writer"], bunker_relays=[])
+
+
+def by_sid(items):
+    return sorted(items, key=lambda item: item["sid"])
+
+
+def writers_list(cls, relay):
+    """The vector writer's list, decrypted with the writer's own key."""
+    return cls(WRITER, session_pool=FakeSessionPool(LocalSigner(sk("writer"))),
+               relay_directory=FakeRelayDirectory(), query=relay, publisher=relay,
+               clock=FakeClock(NOW))
+
+
+def test_the_vectors_name_these_limits():
+    assert (PL["max_pages"], PL["max_page_plaintext_bytes"]) == (MAX_PAGES, PAGE_PLAINTEXT_MAX)
+
+
+def test_the_vector_pages_are_bound_by_their_parts():
+    first = parse_page(PL["plaintexts"][0], index=0, paging=Paging("items"))
+    assert first.parts == tuple(PL["parts"])
+    assert first.parts == tuple(digest(text) for text in PL["plaintexts"][1:])
+
+
+@pytest.mark.parametrize("name", sorted(PL["cases"]))
+def test_the_vector_reads(name):
+    # The events carry no "encrypted" tag: contract 13 says NIP-44 to
+    # self, so STANDUP's web app writes none.
+    case = PL["cases"][name]
+    relay = Relay()
+    for ref in case["pages"]:
+        event = case["old_1"] if ref == "old_1" else PL["events"][ref]
+        relay.stored[event["tags"][0][1]] = event
+    answer = load(writers_list(SubmissionsList, relay))
+    assert answer.status.value == case["status"]
+    assert by_sid(item.to_json() for item in answer.value.items) == case["items"]
+
+
+def test_the_vector_merge_is_a_union():
+    def items(name):
+        return SubmissionItems(tuple(item_from_json(i) for i in PL["merge"][name]))
+
+    merged = merge_items(items("remote"), items("local"))
+    assert by_sid(item.to_json() for item in merged.items) == PL["merge"]["merged"]
+    assert any(isinstance(item, Tombstone) for item in merged.items)
+
+
+def test_the_vector_read_state_merge():
+    merge = PL["read_state_merge"]
+    assert merge_seen(merge["remote"], merge["local"]) == merge["merged"]
+
+
+def test_the_vector_list_of_65_pages_is_unreadable():
+    with pytest.raises(PageError):
+        parse_page(PL["too_many_pages"]["plaintext"], index=0, paging=Paging("items"))
+    writer_sk = sk("writer")
+    content = crypto.encrypt(PL["too_many_pages"]["plaintext"], crypto.conversation_key(
+        writer_sk, bytes.fromhex(PL["writer"])))
+    relay = Relay()
+    relay.stored[formats.SUBMISSIONS_LIST_D] = events.sign_event(
+        {"kind": 30078, "content": content, "created_at": NOW,
+         "tags": [["d", formats.SUBMISSIONS_LIST_D]]}, writer_sk)
+    store = writers_list(SubmissionsList, relay)
+    assert load(store).status is ReadStatus.UNREADABLE
+    assert not stored(record(store, entry()))
+
+
+def test_the_vector_items_this_app_cannot_read_are_kept_by_sid():
+    # The vectors' items say "kind": 30023 where a submission's kind is
+    # "article" or "audio" (12.4): this app keeps them as items it cannot
+    # read, merged by sid and written back unchanged.
+    item = item_from_json(PL["merge"]["local"][0])
+    assert isinstance(item, ForeignItem) and item.sid == PL["merge"]["local"][0]["sid"]
+
+
+def test_an_incomplete_list_is_made_whole_by_the_next_write():
+    relay = Relay()
+    for ref in PL["cases"]["missing_page_2"]["pages"]:
+        event = PL["events"][ref]
+        relay.stored[event["tags"][0][1]] = event
+    store = writers_list(SubmissionsList, relay)
+    assert load(store).status is ReadStatus.INCOMPLETE and not store.complete
+    assert stored(record(store, entry()))
+    assert store.complete
+    again = load(writers_list(SubmissionsList, relay))
+    assert again.status is ReadStatus.COMPLETE
+    assert len(again.value.items) == len(PL["cases"]["missing_page_2"]["items"]) + 1
+
+
+def test_an_incomplete_read_state_is_written_whole_at_the_next_flush():
+    relay = Relay()
+    d = formats.read_state_d(PK)
+    relay.put(d, {"v": 1, "page": 0, "pages": 2, "parts": ["ab" * 32], "seen": {}})
+    store, _relay, _clock = make(ReadState, relay=relay)
+    assert load(store).status is ReadStatus.INCOMPLETE and store.dirty
+    assert store.flush(leaving=True)
+    settle(60)
+    assert relay.page(d)["pages"] == 1 and store.complete and not store.dirty

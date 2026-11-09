@@ -64,18 +64,8 @@ from i18n import _
 
 from ..bunker import BunkerSessionPool
 from ..drafts import supersedes
-from ..encrypted_lists import (
-    FAILED,
-    NO_ANSWER,
-    NOT_ACCEPTED,
-    UNREADABLE as _LIST_UNREADABLE,
-    UP_TO_DATE,
-    EncryptedList,
-    ListQuery,
-    ListWords,
-    event_mark,
-    publish_once,
-)
+from ..encrypted_lists import EncryptedList, ListRead, ListWords, PublishStatus, ReadStatus
+from ..list_relays import ListQuery, event_mark, publish_once
 from ..outbox import RelayDirectory
 from ..profiles import Profile
 from ..relay import RelayPool
@@ -99,10 +89,6 @@ _log = logging.getLogger(__name__)
 
 _CACHE_DIR = Path.home() / ".config" / "my_editor"
 _CACHE_VERSION = 2
-
-# What a list read from the relays can turn out to be (encrypted_lists).
-_UNREADABLE = _LIST_UNREADABLE
-_NO_ANSWER = NO_ANSWER
 
 # What the list's status says (sync_status), in plain words: the window
 # shows it (CP2 review N3: nothing heard these since the Feeds page went).
@@ -411,40 +397,38 @@ class FeedSubscriptionStore(QObject):
         def _on_relays(relays) -> None:
             if generation != self._generation:
                 return
-            self._list.read(profile, relays,
-                            lambda result, event: _on_shared(relays, result, event))
+            self._list.read(profile, relays, lambda shared: _on_shared(relays, shared))
 
-        def _on_shared(relays, result, event) -> None:
+        def _on_shared(relays, shared: ListRead) -> None:
             if generation != self._generation:
                 return
-            if result == _NO_ANSWER:
+            if shared.status is ReadStatus.NO_ANSWER:
                 # Asked again on the next launch or refresh; until then the
                 # list is not known and nothing is taken for missing.
                 self.sync_status.emit(NOT_READ)
                 return
-            if isinstance(result, FeedList):
-                self._adopt(result, event)
-            if result != _UNREADABLE:
+            if isinstance(shared.value, FeedList):
+                self._adopt(shared.value, shared.event)
+            if shared.readable:
                 # Answered: a change that waits here goes out now.
                 self._send_waiting()
             if self._legacy_merged:
-                if result != _UNREADABLE:
+                if shared.readable:
                     self.sync_status.emit("")
                     self._mark_known()
                 return
-            self._legacy_list.read(profile, relays,
-                                   lambda legacy, _event: _on_legacy(legacy, result))
+            self._legacy_list.read(profile, relays, lambda legacy: _on_legacy(legacy, shared))
 
-        def _on_legacy(legacy, shared_result) -> None:
+        def _on_legacy(legacy: ListRead, shared: ListRead) -> None:
             if generation != self._generation:
                 return
-            if legacy in (_UNREADABLE, _NO_ANSWER):
+            if not legacy.readable:
                 return  # tried again on the next launch, never marked done
-            if isinstance(legacy, FeedList):
-                self._merge_legacy(legacy)
+            if isinstance(legacy.value, FeedList):
+                self._merge_legacy(legacy.value)
             self._legacy_merged = True
             self._save_cache()
-            if shared_result != _UNREADABLE:
+            if shared.readable:
                 self.sync_status.emit("")
                 self._mark_known()
 
@@ -682,20 +666,20 @@ class FeedSubscriptionStore(QObject):
             return merged.same_sources(remote) and not snapshot["reads"]
 
         def _on_done(result) -> None:
-            if result.status == _UNREADABLE:
+            if result.status is PublishStatus.UNREADABLE:
                 # Never write over a list that could not be read: it holds
                 # the other app's sources. The reason is on the status line.
                 _finish(None)
-            elif result.status in (_NO_ANSWER, NOT_ACCEPTED):
+            elif result.status in (PublishStatus.NO_ANSWER, PublishStatus.NOT_ACCEPTED):
                 # Nobody answered for the list (a newer one may be on the
                 # relays), or no relay took it: the change waits (dirty,
                 # cached).
                 _finish(NOT_SHARED)
-            elif result.status == UP_TO_DATE:
+            elif result.status is PublishStatus.UP_TO_DATE:
                 if current():
                     self._dirty = not self._local.same_sources(result.remote)
                 _finish(sent=True)
-            elif result.status == FAILED:
+            elif result.status is PublishStatus.FAILED:
                 _finish(_("Your list of sources couldn't be saved online ({reason}). Your "
                           "changes are kept on this computer.").format(reason=result.reason))
             else:
@@ -716,7 +700,6 @@ class FeedSubscriptionStore(QObject):
         self._list.publish(profile, state=_state, on_merged=_on_merged,
                            up_to_date=_up_to_date, on_done=_on_done)
 
-    def _default_publisher(self, relays, signed, *, on_done) -> None:
-        """Publish ``signed`` and answer once, as soon as one relay accepted
-        it (encrypted_lists.publish_once)."""
-        publish_once(self._relay_pool, relays, signed, on_done=on_done)
+    def _default_publisher(self, relays, signed, *, on_done, every_relay: bool = False) -> None:
+        """Publish ``signed`` and answer once (list_relays.publish_once)."""
+        publish_once(self._relay_pool, relays, signed, on_done=on_done, every_relay=every_relay)

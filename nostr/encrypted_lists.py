@@ -23,26 +23,16 @@ for every such list, and lives here once:
   each new version is dated after the one it replaces, even when this
   computer's clock runs behind.
 
-A long list is split into pages (``Paging``). A NIP-44 message carries
-at most 65,535 bytes, a signer app at most 40,960
-(``bunker.SIGNER_NIP44_MAX_PLAINTEXT``), and the signer's answer to
-``nip44_decrypt`` carries the plaintext as a JSON string, in which every
-quote and backslash takes two bytes. A page is therefore at most 32,000
-bytes of plaintext: twice that, with the answer around it, still fits
-one message (``nak bunker`` 0.20.7 returned a 32,000-byte page of
-nothing but quotes, and not one of 32,800). Page 0 has ``d`` = the
-list's own; page n > 0 has ``d`` = ``<d>:<n>``. Every page's plaintext
-is ``{"v":1,"page":i,"pages":n,<field>:...}``, the field being a list
-or a map split across the pages (the contract both apps follow,
-STANDUP's docs/editorial-contract.md). A list that is not paged keeps
-the format it always had: one event, the plaintext exactly as
-``encode`` gives it.
-
-A page that page 0 names but no relay has (lost, or not arrived yet) holds
-entries nobody here knows. It never stops the list: the other pages are
-read (the read says which are missing), and writing goes on for what is
-known, leaving that page's place as it is, never written over, so what
-is on it is still read once it turns up.
+A long list is split into pages (``Paging``; the rules are
+``nostr/paged_list.py``'s, from STANDUP's editorial contract 13). A
+write is one complete generation: the later pages go to every relay
+first, and page 0, which binds them by their hashes, goes last and only
+to the relays that took every later page, so no relay ever holds a page
+0 whose pages it lacks. A read that finds a page missing or of another
+generation is incomplete (``ReadStatus.INCOMPLETE``): it keeps every
+page that is the account's own, and the next write builds a complete
+generation from them. A list that is not paged keeps the format it
+always had: one event, the plaintext exactly as ``encode`` gives it.
 
 Every boundary (relay queries, publishing, signer, clock) is passed in,
 so a list is testable without relays, a signer or wall-clock time.
@@ -53,48 +43,64 @@ from __future__ import annotations
 import copy
 import json
 import logging
-from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Callable, Collection, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QObject
 
 from . import CLIENT_NAME
 from .bunker import is_signer_silent
 from .drafts import supersedes
-from .events import build_event, verify_event
+from .events import build_event
+from .list_relays import LIST_KIND, event_mark, is_list_of, relay_key
 from .outbox import ask_private_relays
-from .outbox.policy import normalize_relay_url, replacement_created_at
-from .queries import fetch_events
+from .outbox.policy import replacement_created_at
+from .paged_list import (
+    Page,
+    PageError,
+    Paging,
+    join,
+    page_d_tag,
+    parse_page,
+    serialize,
+    split,
+    stale_pages,
+)
 
 __all__ = [
-    "APP_DATA_KIND", "PAGE_PLAINTEXT_MAX", "NO_ANSWER", "UNREADABLE",
-    "UP_TO_DATE", "SENT", "NOT_ACCEPTED", "FAILED",
-    "EncryptedList", "ListQuery", "ListWords", "Paging", "PublishResult",
-    "event_mark", "is_list_of", "layout_pages", "page_d_tag", "publish_once", "split_pages",
+    "EncryptedList", "ListRead", "ListWords", "PageRead", "PublishResult", "PublishStatus",
+    "ReadStatus",
 ]
 
 _log = logging.getLogger(__name__)
 
-APP_DATA_KIND = 30078           # NIP-78 application data
 
-# Most plaintext in one page (see the module's docstring for why).
-PAGE_PLAINTEXT_MAX = 32_000
-# The paged format's version, in every page. A page with a higher one is
-# a newer app's: unreadable here, so never written over.
-PAGED_VERSION = 1
-# A sane end for ``pages``: 100 pages are 3.2 MB of plaintext, and a
-# number larger than that is a broken list, not a long one.
-MAX_PAGES = 100
+class ReadStatus(Enum):
+    """What a read found."""
 
-# What a read can turn out to be, besides the value or None (no list).
-UNREADABLE = "unreadable"
-NO_ANSWER = "no answer"
+    COMPLETE = "complete"
+    # Paged: a page is missing or of another generation. The value holds
+    # every entry of every page that is the account's own.
+    INCOMPLETE = "incomplete"
+    MISSING = "missing"             # no list (no page 0)
+    NO_ANSWER = "no answer"         # none of the account's own relays answered
+    UNREADABLE = "unreadable"       # the reason is said already (on_status)
 
-# How a publish ended (PublishResult.status).
-UP_TO_DATE = "up to date"       # what is here is on the relays already
-SENT = "sent"                   # every page accepted by at least one relay
-NOT_ACCEPTED = "not accepted"   # no relay took a page
-FAILED = "failed"               # the signer refused or could not be reached
+
+class PublishStatus(Enum):
+    """How a publish ended."""
+
+    UP_TO_DATE = "up to date"       # what is here is on the relays already
+    SENT = "sent"                   # a complete generation, page 0 accepted
+    NOT_ACCEPTED = "not accepted"   # no relay took every page
+    FAILED = "failed"               # the signer refused, or the list cannot be written
+    NO_ANSWER = "no answer"         # the read had no answer: nothing written
+    UNREADABLE = "unreadable"       # the list cannot be read: never written over
+
+
+_NOT_READ = {ReadStatus.NO_ANSWER: PublishStatus.NO_ANSWER,
+             ReadStatus.UNREADABLE: PublishStatus.UNREADABLE}
 
 
 @dataclass(frozen=True)
@@ -105,212 +111,48 @@ class ListWords:
     unreadable: str
     signer_silent: str
     old_encryption: str
-    # A page of the list is missing (shown, when given, while the rest is
+    # Part of the list is missing (shown, when given, while the rest is
     # read and written as usual).
     missing_page: str = ""
 
 
 @dataclass(frozen=True)
-class Paging:
-    """How a long list is split: ``field`` is the list or map in the
-    plaintext that is spread over pages, at most ``max_bytes`` each.
+class PageRead:
+    """A later page as read: its event and what it says."""
 
-    ``combine(earlier, later)`` is the value of a map key found on two
-    pages (a page that was missing and turned up again holds an older
-    copy). Without it the later page's value counts. A list's entries
-    are all kept, in page order, for ``decode`` to sort out."""
-
-    field: str
-    max_bytes: int = PAGE_PLAINTEXT_MAX
-    combine: Optional[Callable[[Any, Any], Any]] = None
+    event: dict
+    page: Page
 
 
-@dataclass
+@dataclass(frozen=True)
+class ListRead:
+    """A read: ``value`` the decoded list (None when MISSING or not
+    read), ``event`` page 0's, ``stale`` the later pages that are missing
+    or of another generation, ``later`` every later page that counts."""
+
+    status: ReadStatus
+    value: Any = None
+    event: Optional[dict] = None
+    stale: Tuple[int, ...] = ()
+    later: Mapping[int, PageRead] = field(default_factory=dict)
+
+    @property
+    def readable(self) -> bool:
+        return self.status not in _NOT_READ
+
+    def events(self) -> List[dict]:
+        """Every event read, page 0's first."""
+        found = [self.event] if self.event else []
+        return found + [read.event for read in self.later.values()]
+
+
+@dataclass(frozen=True)
 class PublishResult:
-    status: str
+    status: PublishStatus
     remote: Any = None          # UP_TO_DATE: the list read from the relays
     value: Any = None           # SENT: what was written
     signed: Optional[dict] = None   # SENT: the event of page 0
     reason: str = ""            # FAILED: why
-    missing: Tuple[int, ...] = ()   # pages no relay had, left as they are
-
-
-@dataclass
-class _Page:
-    event: Optional[dict]       # newest valid event for the page's d tag
-    plaintext: Optional[str] = None
-
-
-class ListQuery(QObject):
-    """Asks relays for events and says which relays answered."""
-
-    def __init__(self, pool, parent: Optional[QObject] = None, *,
-                 timeout_ms: int = 8_000) -> None:
-        super().__init__(parent)
-        self._pool = pool
-        self._timeout_ms = timeout_ms
-
-    def events(self, relays, filters, on_done) -> None:
-        """``on_done(events, answered)``: every validly signed event, and
-        the relays that answered (sent all their stored events); one that
-        refused or could not be reached is not among them."""
-        try:
-            fetch_events(self._pool, list(relays), list(filters),
-                         lambda fetched: on_done(list(fetched.events), set(fetched.answered)),
-                         timeout_ms=self._timeout_ms, parent=self)
-        except Exception:  # noqa: BLE001, settle the callback contract
-            on_done([], set())
-
-
-def publish_once(relay_pool, relays, signed, *, on_done) -> None:
-    """Publish ``signed`` and answer once: as soon as one relay accepted
-    it (the list is safe then; a relay that never answers must not hold
-    up quitting for the publish timeout), or when all have answered and
-    none did."""
-    relays = list(relays)
-    try:
-        job = relay_pool.publish(relays, signed)
-    except Exception as exc:  # noqa: BLE001, publish must never raise into UI
-        _log.warning("list publish failed: %s", exc)
-        on_done(0, len(relays))
-        return
-    answered = []
-
-    def accepted(_url: str) -> None:
-        if not answered:
-            answered.append(True)
-            on_done(1, len(relays))
-
-    def all_done(results) -> None:
-        if not answered:
-            answered.append(True)
-            on_done(sum(1 for _, ok, _ in results if ok), len(results))
-
-    job.first_accept.connect(accepted)
-    job.all_done.connect(all_done)
-
-
-def event_mark(event: Optional[dict]) -> Optional[Tuple[int, str]]:
-    """Which event a list came from: its time and id."""
-    if not isinstance(event, dict):
-        return None
-    try:
-        return int(event.get("created_at", 0)), str(event.get("id") or "")
-    except (TypeError, ValueError):
-        return None
-
-
-def is_list_of(event, pubkey: str, d_tag: str, kind: int = APP_DATA_KIND) -> bool:
-    """Whether ``event`` is ``pubkey``'s own list under ``d_tag``: the
-    kind, the ``d`` tag, the author and a valid signature."""
-    if not isinstance(event, dict) or event.get("kind") != kind:
-        return False
-    if str(event.get("pubkey", "")).lower() != pubkey.lower():
-        return False
-    tag = next((t[1] for t in event.get("tags", [])
-                if isinstance(t, list) and len(t) >= 2 and t[0] == "d"), None)
-    if tag != d_tag:
-        return False
-    try:
-        int(event.get("created_at"))
-    except (TypeError, ValueError):
-        return False
-    return verify_event(event)
-
-
-def page_d_tag(d_tag: str, page: int) -> str:
-    """The ``d`` tag of a page: the list's own for page 0, ``<d>:<n>`` after."""
-    return d_tag if page == 0 else f"{d_tag}:{page}"
-
-
-def _missing(pages) -> List[int]:
-    """The numbers of the pages read that no relay had (page 0 is the
-    list itself: without it there is no list)."""
-    return [n for n, page in enumerate(pages) if n > 0 and page.event is None]
-
-
-def _serialize(payload) -> str:
-    # Compact, ASCII only (non-ASCII as \u escapes): the feed list has
-    # always been written so, and every page is measured as written.
-    return json.dumps(payload, separators=(",", ":"))
-
-
-def _size(value) -> int:
-    return len(_serialize(value).encode("utf-8"))
-
-
-def split_pages(payload: dict, paging: Paging) -> List[str]:
-    """The plaintext of each page of ``payload``, whose ``paging.field`` is
-    a list or a map. Every other key goes on page 0. Raises ValueError for
-    an entry too large for any page."""
-    return list(layout_pages(payload, paging).values())
-
-
-def layout_pages(payload: dict, paging: Paging, keep: Sequence[int] = ()) -> Dict[int, str]:
-    """``split_pages``, leaving the pages in ``keep`` (never 0) out: the
-    plaintext of every other page by its number, in order. The entries
-    fill the other places from page 0 on; a place below the highest kept
-    one that no entry needs gets an empty page, so no older page there
-    is read as part of the list, and ``pages`` counts every place, the
-    kept ones included, so readers still look for them."""
-    entries = payload.get(paging.field)
-    if not isinstance(entries, (list, dict)):
-        raise ValueError(f"{paging.field!r} must be a list or a map")
-    kept = sorted({int(n) for n in keep if int(n) > 0})
-    header = {k: v for k, v in payload.items() if k not in (paging.field, "v", "page", "pages")}
-    as_map = isinstance(entries, dict)
-    items = list(entries.items()) if as_map else list(entries)
-    # ``page`` and ``pages`` are written as numbers no wider than this one
-    # (there are never more places than entries and kept pages, nor than
-    # the highest kept page), so no page written is longer than it was
-    # measured with it.
-    widest = max(1, len(items) + len(kept), (kept[-1] + 1) if kept else 0)
-
-    def shell(first: bool) -> Dict[str, Any]:
-        page = {"v": PAGED_VERSION, "page": widest, "pages": widest}
-        if first:
-            page.update(header)
-        page[paging.field] = {} if as_map else []
-        return page
-
-    def cost(item) -> int:
-        if as_map:
-            return _size(str(item[0])) + 1 + _size(item[1])   # "key":value
-        return _size(item)
-
-    chunks: List[list] = [[]]
-    used = _size(shell(True))
-    for item in items:
-        grow = cost(item) + (1 if chunks[-1] else 0)   # the comma before it
-        if used + grow > paging.max_bytes and chunks[-1]:
-            chunks.append([])
-            used = _size(shell(False))
-            grow = cost(item)
-        if used + grow > paging.max_bytes:
-            raise ValueError(f"an entry of {cost(item)} bytes does not fit a "
-                             f"{paging.max_bytes}-byte page")
-        chunks[-1].append(item)
-        used += grow
-
-    places: List[int] = []
-    number = 0
-    while len(places) < len(chunks) or (kept and number < kept[-1]):
-        if number not in kept:
-            places.append(number)
-        number += 1
-    chunks += [[] for _ in range(len(places) - len(chunks))]
-    total = max(places[-1], kept[-1] if kept else 0) + 1
-    pages: Dict[int, str] = {}
-    for index, chunk in zip(places, chunks):
-        page = {"v": PAGED_VERSION, "page": index, "pages": total}
-        if index == 0:
-            page.update(header)
-        page[paging.field] = dict(chunk) if as_map else chunk
-        text = _serialize(page)
-        if len(text.encode("utf-8")) > paging.max_bytes:  # measured too short
-            raise ValueError(f"page {index} came to {len(text)} bytes")
-        pages[index] = text
-    return pages
 
 
 class EncryptedList(QObject):
@@ -323,7 +165,17 @@ class EncryptedList(QObject):
     now)`` the plaintext JSON object of a value, ``merge(base, local,
     remote)`` both sides' edits since ``base`` in one value (``remote`` may
     be None: no list yet), and ``same(a, b)`` whether two values say the
-    same (default ``==``).
+    same (default ``==``). A paged list's ``merge`` must be a union: an
+    incomplete read's value lacks what was on the pages it did not find.
+
+    ``publisher(relays, signed, *, on_done, every_relay=False)`` publishes
+    one event and answers ``on_done(relays that took it)``, see
+    ``list_relays.publish_once``.
+
+    ``untagged`` is what an event without an ``encrypted`` tag holds:
+    None, plaintext (the feed list before it was encrypted), or
+    ``"nip44"`` (a list whose format says NIP-44 to self without a tag,
+    as STANDUP's do). Events written here always carry the tag.
     """
 
     def __init__(
@@ -342,7 +194,8 @@ class EncryptedList(QObject):
         entitled_relays=None,
         same: Optional[Callable[[Any, Any], bool]] = None,
         paging: Optional[Paging] = None,
-        kind: int = APP_DATA_KIND,
+        kind: int = LIST_KIND,
+        untagged: Optional[str] = None,
         on_status: Optional[Callable[[str], None]] = None,
         name: str = "",
         parent: Optional[QObject] = None,
@@ -362,6 +215,7 @@ class EncryptedList(QObject):
         self._entitled_relays = entitled_relays
         self._paging = paging
         self._kind = kind
+        self._untagged = untagged or ""
         self._on_status = on_status or (lambda _text: None)
         self._name = name or d_tag
 
@@ -388,190 +242,20 @@ class EncryptedList(QObject):
 
     # -- reading -------------------------------------------------------------
 
-    def read(self, profile, relays, on_done,
-             on_missing: Optional[Callable[[List[int]], None]] = None) -> None:
-        """The newest list: ``on_done(result, event)`` with the decoded
-        value, None when there is none, NO_ANSWER when none of the
-        account's own relays answered (never taken for "none"), or
-        UNREADABLE (with the reason already reported). ``event`` is the
-        list's event (page 0's). ``relays`` is ``(read, own)``.
-
-        A page no relay has leaves the value without its entries:
-        ``on_missing(numbers)`` hears which pages, before ``on_done``."""
-        def done(result, pages) -> None:
-            missing = _missing(pages)
-            if missing and on_missing is not None and result not in (UNREADABLE, NO_ANSWER):
-                on_missing(missing)
-            on_done(result, pages[0].event if pages else None)
-
-        self._read_pages(profile, relays, done)
-
-    def _read_pages(self, profile, relays, on_done) -> None:
-        """``read``, answering ``on_done(result, pages)`` with every page
-        read (its event and plaintext), for writing only what changed."""
-        read, own = relays
+    def read(self, profile, relays, on_done: Callable[[ListRead], None]) -> None:
+        """The newest list, as a :class:`ListRead`. ``relays`` is
+        ``(read, own)`` (see :meth:`relays`)."""
         if self._query is None:
-            on_done(None, [])
+            on_done(ListRead(ReadStatus.NO_ANSWER))
             return
-        counted = {normalize_relay_url(u) or u for u in own}
-
-        def answered_by_own(answered) -> bool:
-            answered = {normalize_relay_url(u) or u for u in answered}
-            return bool(answered) and not (counted and not (answered & counted))
-
-        def newest_of(events, d_tag: str) -> Optional[dict]:
-            newest = None
-            for event in events:
-                if not is_list_of(event, profile.user_pubkey, d_tag, self._kind):
-                    continue
-                if newest is None or supersedes(int(event["created_at"]), event["id"],
-                                                int(newest["created_at"]), newest["id"]):
-                    newest = event
-            return newest
-
-        def _on_first(events, answered: Set[str]) -> None:
-            if not answered_by_own(answered):
-                on_done(NO_ANSWER, [])
-                return
-            newest = newest_of(events, self.d_tag)
-            if newest is None or not str(newest.get("content") or "").strip():
-                on_done(None, [_Page(newest)])
-                return
-            self._decrypt(profile, newest,
-                          lambda text: _on_first_text(newest, text),
-                          lambda reason: _unreadable(reason, [_Page(newest)]))
-
-        def _on_first_text(event: dict, text: str) -> None:
-            payload = _parse(text)
-            if payload is None:
-                on_done(UNREADABLE, [_Page(event, text)])
-                return
-            first = _Page(event, text)
-            if self._paging is None:
-                _finish(payload, [first])
-                return
-            count = payload.get("pages")
-            if (payload.get("v") != PAGED_VERSION or not isinstance(count, int)
-                    or isinstance(count, bool) or not 1 <= count <= MAX_PAGES
-                    or not isinstance(payload.get(self._paging.field), (list, dict))):
-                _not_a_list("its first page")
-                on_done(UNREADABLE, [first])
-                return
-            if count == 1:
-                _finish(self._joined([payload]), [first])
-                return
-            tags = [page_d_tag(self.d_tag, n) for n in range(1, count)]
-            self._query.events(read, [{"kinds": [self._kind], "authors": [profile.user_pubkey],
-                                       "#d": tags}],
-                               lambda found, answered: _on_rest(found, answered, first, payload,
-                                                                tags))
-
-        def _on_rest(events, answered, first: _Page, payload: dict, tags) -> None:
-            if not answered_by_own(answered):
-                on_done(NO_ANSWER, [])
-                return
-            pages = [first] + [_Page(newest_of(events, tag)) for tag in tags]
-            for page in pages[1:]:
-                if page.event is not None and not str(page.event.get("content") or "").strip():
-                    page.event = None
-            if _missing(pages):
-                # Written but not on these relays (lost, or not arrived
-                # yet): read without it, and written around it, so what
-                # is on it is neither lost nor in the way.
-                _log.info("the list %s is missing pages %s", self._name, _missing(pages))
-                if self._words.missing_page:
-                    self._on_status(self._words.missing_page)
-            payloads = [payload]
-
-            def next_page(index: int) -> None:
-                if index == len(pages):
-                    _finish(self._joined(payloads), pages)
-                    return
-                page = pages[index]
-                if page.event is None:
-                    next_page(index + 1)
-                    return
-
-                def got(text: str) -> None:
-                    page.plaintext = text
-                    parsed = _parse(text)
-                    kind = type(payload[self._paging.field])
-                    if (parsed is None or parsed.get("v") != PAGED_VERSION
-                            or not isinstance(parsed.get(self._paging.field), kind)):
-                        if parsed is not None:
-                            _not_a_list(f"page {index}")
-                        on_done(UNREADABLE, pages)
-                        return
-                    payloads.append(parsed)
-                    next_page(index + 1)
-
-                self._decrypt(profile, page.event, got,
-                              lambda reason: _unreadable(reason, pages))
-
-            next_page(1)
-
-        def _finish(payload: dict, pages) -> None:
-            try:
-                value = self._decode(payload)
-            except (AttributeError, KeyError, TypeError, ValueError) as exc:
-                # The account's own, but not what this list holds: as
-                # unreadable as a page that cannot be decrypted.
-                _log.warning("the list %s could not be taken in: %s", self._name, exc)
-                self._on_status(self._words.unreadable)
-                on_done(UNREADABLE, pages)
-                return
-            on_done(value, pages)
-
-        def _parse(text: str) -> Optional[dict]:
-            try:
-                payload = json.loads(text)
-            except (TypeError, ValueError):
-                payload = None
-            if not isinstance(payload, dict):
-                _not_a_list("it")
-                return None
-            return payload
-
-        def _not_a_list(what: str) -> None:
-            _log.warning("the list %s is not a list (%s)", self._name, what)
-            self._on_status(self._words.unreadable)
-
-        def _unreadable(reason: str, pages) -> None:
-            self._on_status(reason)
-            on_done(UNREADABLE, pages)
-
-        self._query.events(read, [{
-            "kinds": [self._kind],
-            "authors": [profile.user_pubkey],
-            "#d": [self.d_tag],
-            "limit": 1,
-        }], _on_first)
-
-    def _joined(self, payloads: Sequence[dict]) -> dict:
-        """One plaintext object from a paged list's pages: page 0's other
-        keys, and the field put back together in page order."""
-        name = self._paging.field
-        joined = {k: v for k, v in payloads[0].items() if k not in ("v", "page", "pages")}
-        combine = self._paging.combine
-        if isinstance(payloads[0][name], dict):
-            together: Any = {}
-            for page in payloads:
-                for key, value in page[name].items():
-                    if combine is not None and key in together:
-                        value = combine(together[key], value)
-                    together[key] = value
-        else:
-            together = []
-            for page in payloads:
-                together.extend(page[name])
-        joined[name] = together
-        return joined
+        _Reading(self, profile, relays, on_done).start()
 
     def _decrypt(self, profile, event: dict, on_text, on_unreadable) -> None:
-        """The plaintext of a list, by its ``encrypted`` tag, as STANDUP
-        reads it: NIP-44, NIP-04 when the signer offers it, or none."""
+        """The plaintext of a list, by its ``encrypted`` tag: NIP-44, NIP-04
+        when the signer offers it, or none (see ``untagged``)."""
         algorithm = next((t[1] for t in event.get("tags", [])
-                          if isinstance(t, list) and len(t) >= 2 and t[0] == "encrypted"), "")
+                          if isinstance(t, list) and len(t) >= 2 and t[0] == "encrypted"),
+                         self._untagged)
         content = str(event.get("content") or "")
         if algorithm not in ("nip44", "nip44_v2", "nip04"):
             on_text(content)  # no encryption (a list from before it was used)
@@ -619,123 +303,308 @@ class EncryptedList(QObject):
         anything is written (``remote`` is the base again when what the
         relays had was not newer, and ``event`` then None).
         ``up_to_date(merged, remote)`` says when nothing needs writing
-        (default: ``same``). ``on_done`` gets a PublishResult.
+        (default: ``same``); an incomplete list is always written, so it
+        is complete again. ``on_done`` gets a PublishResult.
         """
 
-        def _on_remote(remote, pages) -> None:
-            if remote == UNREADABLE:
-                # Never write over a list that could not be read. The
-                # reason is reported already.
-                on_done(PublishResult(UNREADABLE))
-                return
-            if remote == NO_ANSWER:
-                # Never write over a list nobody answered for: a newer one
-                # may be on the relays.
-                on_done(PublishResult(NO_ANSWER))
+        def _on_read(read: ListRead) -> None:
+            if not read.readable:
+                # Never write over a list that could not be read, or one
+                # nobody answered for: a newer one may be on the relays.
+                on_done(PublishResult(_NOT_READ[read.status]))
                 return
             base, local, base_mark = state()
-            event = pages[0].event if pages else None
+            remote, event, reusable = read.value, read.event, read.later
             mark = event_mark(event)
-            written = pages
             if (event is not None and base_mark is not None and mark is not None
                     and not supersedes(mark[0], mark[1], *base_mark)):
                 # A copy no newer than the last seen (a slow or fallback
                 # relay's): it changes nothing; what is new here goes out.
-                # When it is the very list last seen, its pages are what
-                # the relays hold, so a page that would not change is not
-                # signed again (a long list then costs a signature per
-                # changed page, not per page).
-                same = tuple(mark) == tuple(base_mark)
-                remote, event, written = base, None, (pages if same else [])
+                # Its pages are reused only when it is the very list last
+                # seen: then they are what the relays hold.
+                if tuple(mark) != tuple(base_mark):
+                    reusable = {}
+                remote, event = base, None
             merged = self._merge(base, local, remote)
             if on_merged is not None:
                 on_merged(merged, remote, event)
-            if remote is not None and (up_to_date or self._same)(merged, remote):
-                on_done(PublishResult(UP_TO_DATE, remote=remote))
+            if (read.status is ReadStatus.COMPLETE and remote is not None
+                    and (up_to_date or self._same)(merged, remote)):
+                on_done(PublishResult(PublishStatus.UP_TO_DATE, remote=remote))
                 return
-            self._write(profile, copy.deepcopy(merged), written, pages, state, on_done)
+            _Writing(self, profile, copy.deepcopy(merged), read, reusable, state,
+                     on_done).start()
 
-        self.relays(profile, lambda relays: self._read_pages(profile, relays, _on_remote),
-                    reading=True)
+        self.relays(profile, lambda relays: self.read(profile, relays, _on_read), reading=True)
 
-    def _plaintexts(self, value, now: int, keep: Sequence[int] = ()) -> Dict[int, str]:
+    def _plaintexts(self, value, now: int) -> List[str]:
+        """Page 0's plaintext first. Raises ValueError when the list
+        cannot be written (an entry too large, too many pages)."""
         payload = self._encode(value, now)
         if self._paging is None:
-            return {0: _serialize(payload)}
-        return layout_pages(payload, self._paging, keep)
+            return [serialize(payload)]
+        return split(payload, self._paging)
 
-    def _write(self, profile, content, remote_pages: List[_Page], read_pages: List[_Page],
-               state, on_done) -> None:
-        """Write ``content``. ``remote_pages`` are the pages on the relays
-        that count (none when they were older than the last list seen),
-        ``read_pages`` every page read, which each new page is dated after."""
-        def failed(reason: str) -> None:
-            on_done(PublishResult(FAILED, reason=reason))
+    def _page_event(self, profile, index: int, ciphertext: str, created_at: int) -> dict:
+        return build_event(
+            kind=self._kind, content=ciphertext,
+            tags=[["d", page_d_tag(self.d_tag, index)], ["client", CLIENT_NAME],
+                  ["encrypted", "nip44"]],
+            pubkey_hex=profile.user_pubkey, created_at=created_at)
 
-        # A page no relay had is left as it is: its place stays in the
-        # list, and nothing is written over it.
-        missing = tuple(_missing(read_pages))
-        try:
-            plaintexts = self._plaintexts(content, int(self._clock()), missing)
-        except ValueError as exc:
-            failed(str(exc))
+
+# --------------------------------------------------------------------------- #
+# One read and one write                                                       #
+# --------------------------------------------------------------------------- #
+
+class _Reading:
+    """One read: page 0, then the later pages it names, one decryption
+    at a time."""
+
+    def __init__(self, owner: EncryptedList, profile, relays,
+                 on_done: Callable[[ListRead], None]) -> None:
+        self._list = owner
+        self._profile = profile
+        self._read_relays, own = relays
+        self._own = {relay_key(u) for u in own}
+        self._on_done = on_done
+        self._event: Optional[dict] = None
+        self._first: Optional[Page] = None
+        self._found: Dict[int, dict] = {}
+        self._later: Dict[int, PageRead] = {}
+
+    def start(self) -> None:
+        self._query([self._list.d_tag], self._on_first, limit=1)
+
+    def _query(self, d_tags: Sequence[str], on_done, limit: Optional[int] = None) -> None:
+        filter_: Dict[str, Any] = {"kinds": [self._list._kind],
+                                   "authors": [self._profile.user_pubkey], "#d": list(d_tags)}
+        if limit is not None:
+            filter_["limit"] = limit
+        self._list._query.events(self._read_relays, [filter_], on_done)
+
+    def _answered_by_own(self, answered) -> bool:
+        answered = {relay_key(u) for u in answered}
+        return bool(answered) and not (self._own and not (answered & self._own))
+
+    def _newest(self, events, d_tag: str) -> Optional[dict]:
+        newest = None
+        for event in events:
+            if not is_list_of(event, self._profile.user_pubkey, d_tag, self._list._kind):
+                continue
+            if newest is None or supersedes(int(event["created_at"]), event["id"],
+                                            int(newest["created_at"]), newest["id"]):
+                newest = event
+        if newest is not None and not str(newest.get("content") or "").strip():
+            return None
+        return newest
+
+    def _end(self, status: ReadStatus, value: Any = None, stale: Tuple[int, ...] = ()) -> None:
+        self._on_done(ListRead(status, value=value, event=self._event, stale=stale,
+                               later=dict(self._later)))
+
+    def _unreadable(self, words: str, why: str = "") -> None:
+        if why:
+            _log.warning("the list %s is not a list (%s)", self._list._name, why)
+        self._list._on_status(words)
+        self._end(ReadStatus.UNREADABLE)
+
+    def _on_first(self, events, answered) -> None:
+        if not self._answered_by_own(answered):
+            self._on_done(ListRead(ReadStatus.NO_ANSWER))
             return
-        # The pages after the first go out first, and page 0, which says
-        # how many there are and is the one a reader starts from, last:
-        # a reader who sees the new page 0 finds the pages it names. A
-        # page after the first that reads as written already is not
-        # signed again; page 0 always is, because only a newer page 0
-        # tells the other devices there is something new.
-        later = [i for i in sorted(plaintexts, reverse=True) if i > 0
-                 and not (i < len(remote_pages) and remote_pages[i].event is not None
-                          and remote_pages[i].plaintext == plaintexts[i])]
-        order = later + [0]
-        dated: List[int] = []
+        self._event = self._newest(events, self._list.d_tag)
+        if self._event is None:
+            self._end(ReadStatus.MISSING)
+            return
+        self._list._decrypt(self._profile, self._event, self._on_first_text, self._unreadable)
 
-        def created_at() -> int:
-            if not dated:
-                # After the list it replaces and after the last one seen,
-                # even when this computer's clock runs behind.
-                known = state()[2] or (0, "")
-                replaced = [page.event for page in read_pages if page.event] or [None]
-                dated.append(max(max(replacement_created_at(event, self._clock())
-                                     for event in replaced), known[0] + 1))
-            return dated[0]
+    def _on_first_text(self, text: str) -> None:
+        paging = self._list._paging
+        if paging is None:
+            try:
+                payload = _parse_object(text)
+            except PageError as exc:
+                self._unreadable(self._list._words.unreadable, str(exc))
+                return
+            self._decoded(payload, ())
+            return
+        try:
+            self._first = parse_page(text, index=0, paging=paging)
+        except PageError as exc:
+            self._unreadable(self._list._words.unreadable, f"its first page: {exc}")
+            return
+        if self._first.pages == 1:
+            self._joined()
+            return
+        tags = [page_d_tag(self._list.d_tag, n) for n in range(1, self._first.pages)]
+        self._query(tags, self._on_rest)
 
-        def _on_ready(client) -> None:
-            def page(step: int) -> None:
-                index = order[step]
-                client.nip44_encrypt_self(
-                    plaintexts[index],
-                    on_success=lambda ciphertext: _sign(step, index, ciphertext),
-                    on_failure=failed)
+    def _on_rest(self, events, answered) -> None:
+        if not self._answered_by_own(answered):
+            self._on_done(ListRead(ReadStatus.NO_ANSWER))
+            return
+        for index in range(1, self._first.pages):
+            newest = self._newest(events, page_d_tag(self._list.d_tag, index))
+            if newest is not None:
+                self._found[index] = newest
+        self._next(sorted(self._found))
 
-            def _sign(step: int, index: int, ciphertext: str) -> None:
-                unsigned = build_event(
-                    kind=self._kind,
-                    content=ciphertext,
-                    tags=[["d", page_d_tag(self.d_tag, index)], ["client", CLIENT_NAME],
-                          ["encrypted", "nip44"]],
-                    pubkey_hex=profile.user_pubkey,
-                    created_at=created_at(),
-                )
-                client.sign_event(unsigned, on_success=lambda signed: _publish(step, signed),
-                                  on_failure=failed)
+    def _next(self, indices: List[int]) -> None:
+        if not indices:
+            self._joined()
+            return
+        index, rest = indices[0], indices[1:]
+        event = self._found[index]
 
-            def _publish(step: int, signed: dict) -> None:
-                self.relays(profile, lambda relays: self._publisher(
-                    relays, signed,
-                    on_done=lambda accepted, total: _done(step, accepted, signed)))
+        def got(text: str) -> None:
+            try:
+                page = parse_page(text, index=index, paging=self._list._paging,
+                                  first=self._first)
+            except PageError as exc:
+                # Not a page of this list: it counts as missing (13).
+                _log.info("page %d of the list %s does not count: %s", index,
+                          self._list._name, exc)
+            else:
+                self._later[index] = PageRead(event, page)
+            self._next(rest)
 
-            def _done(step: int, accepted: int, signed: dict) -> None:
-                if accepted <= 0:
-                    on_done(PublishResult(NOT_ACCEPTED))
-                    return
-                if step + 1 < len(order):
-                    page(step + 1)
-                    return
-                on_done(PublishResult(SENT, value=content, signed=signed, missing=missing))
+        # A page that cannot be decrypted is unreadable, not missing: it
+        # is the account's own, and writing a new generation would put
+        # something else in its place.
+        self._list._decrypt(self._profile, event, got, self._unreadable)
 
-            page(0)
+    def _joined(self) -> None:
+        later = {index: read.page for index, read in self._later.items()}
+        stale = stale_pages(self._first, later)
+        if stale:
+            _log.info("the list %s is incomplete: pages %s", self._list._name, stale)
+            if self._list._words.missing_page:
+                self._list._on_status(self._list._words.missing_page)
+        self._decoded(join(self._first, list(later.values()), self._list._paging), stale)
 
-        self._session_pool.get(profile, on_ready=_on_ready, on_error=failed)
+    def _decoded(self, payload: dict, stale: Tuple[int, ...]) -> None:
+        try:
+            value = self._list._decode(payload)
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            # The account's own, but not what this list holds: as
+            # unreadable as a page that cannot be decrypted.
+            self._unreadable(self._list._words.unreadable, f"not taken in: {exc}")
+            return
+        self._end(ReadStatus.INCOMPLETE if stale else ReadStatus.COMPLETE, value, stale)
+
+
+def _parse_object(text: str) -> dict:
+    """An unpaged list's plaintext: a JSON object, or PageError."""
+    try:
+        payload = json.loads(text)
+    except (TypeError, ValueError, RecursionError):
+        raise PageError("not JSON") from None
+    if not isinstance(payload, dict):
+        raise PageError("not a JSON object")
+    return payload
+
+
+class _Writing:
+    """One write of a complete generation: every page signed (a later
+    page whose plaintext is on the relays already is not signed again),
+    the later pages published to every relay, then page 0 to the relays
+    that took all of them."""
+
+    def __init__(self, owner: EncryptedList, profile, value, read: ListRead,
+                 reusable: Mapping[int, PageRead], state, on_done) -> None:
+        self._list = owner
+        self._profile = profile
+        self._value = value
+        self._read = read
+        self._reusable = reusable
+        self._state = state
+        self._on_done = on_done
+        self._plaintexts: List[str] = []
+        self._signed: Dict[int, dict] = {}
+        self._dated: Optional[int] = None
+        self._client = None
+        self._pending: set = set()
+        self._took: Dict[str, str] = {}
+
+    def start(self) -> None:
+        try:
+            self._plaintexts = self._list._plaintexts(self._value, int(self._list._clock()))
+        except ValueError as exc:
+            self._fail(str(exc))
+            return
+        self._list._session_pool.get(self._profile, on_ready=self._ready, on_error=self._fail)
+
+    def _fail(self, reason: str) -> None:
+        self._on_done(PublishResult(PublishStatus.FAILED, reason=reason))
+
+    def _ready(self, client) -> None:
+        self._client = client
+        # The later pages first, page 0 last: it is the one that says how
+        # many pages there are and binds them.
+        self._sign(list(range(len(self._plaintexts) - 1, 0, -1)) + [0])
+
+    def _created_at(self) -> int:
+        """After every page read and after the last list seen, even when
+        this computer's clock runs behind; the same for every page."""
+        if self._dated is None:
+            known = self._state()[2] or (0, "")
+            replaced = self._read.events() or [None]
+            self._dated = max(max(replacement_created_at(event, self._list._clock())
+                                  for event in replaced), known[0] + 1)
+        return self._dated
+
+    def _sign(self, order: List[int]) -> None:
+        if not order:
+            self._list.relays(self._profile, self._publish_later)
+            return
+        index, rest = order[0], order[1:]
+        reused = self._reusable.get(index) if index > 0 else None
+        if reused is not None and reused.page.plaintext == self._plaintexts[index]:
+            self._signed[index] = reused.event
+            self._sign(rest)
+            return
+
+        def encrypted(ciphertext: str) -> None:
+            unsigned = self._list._page_event(self._profile, index, ciphertext,
+                                              self._created_at())
+            self._client.sign_event(unsigned, on_success=signed, on_failure=self._fail)
+
+        def signed(event: dict) -> None:
+            self._signed[index] = event
+            self._sign(rest)
+
+        self._client.nip44_encrypt_self(self._plaintexts[index], on_success=encrypted,
+                                        on_failure=self._fail)
+
+    def _publish_later(self, relays: List[str]) -> None:
+        later = [index for index in self._signed if index > 0]
+        if not later:
+            self._publish_first(list(relays))
+            return
+        self._pending = set(later)
+        self._took = {relay_key(url): url for url in relays}
+        for index in later:
+            self._list._publisher(relays, self._signed[index], every_relay=True,
+                                  on_done=lambda accepted, n=index: self._later_done(n, accepted))
+
+    def _later_done(self, index: int, accepted: Collection[str]) -> None:
+        took = {relay_key(url) for url in accepted}
+        self._took = {key: url for key, url in self._took.items() if key in took}
+        self._pending.discard(index)
+        if self._pending:
+            return
+        if not self._took:
+            self._on_done(PublishResult(PublishStatus.NOT_ACCEPTED))
+            return
+        self._publish_first(list(self._took.values()))
+
+    def _publish_first(self, relays: List[str]) -> None:
+        def done(accepted: Collection[str]) -> None:
+            if not accepted:
+                self._on_done(PublishResult(PublishStatus.NOT_ACCEPTED))
+                return
+            self._on_done(PublishResult(PublishStatus.SENT, value=self._value,
+                                        signed=self._signed[0]))
+
+        self._list._publisher(relays, self._signed[0], on_done=done)
