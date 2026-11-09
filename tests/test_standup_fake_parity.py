@@ -213,7 +213,7 @@ def _login(nam, secret, body=b"{}"):
     (b'{"a":1}', 422, "invalid"),
     (b'{"a":1,"a":1}', 400, "bad_request"),
     (b"{" + b" " * 2000 + b"}", 413, "too_large"),
-])
+], ids=["a list", "a key", "a key twice", "too large"])
 def test_login_body_must_be_an_empty_object(body, status, code):
     _clock, server, nam = _setup()
     got, data, _ = _login(nam, ME, body)
