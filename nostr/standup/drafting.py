@@ -31,7 +31,7 @@ from i18n import N_, _
 
 from . import crypto, formats
 from .formats import FormatError
-from .lists import SubmissionEntry
+from .entries import SubmissionEntry
 from .submission import submission_body
 from .trust import RedaktionKey
 

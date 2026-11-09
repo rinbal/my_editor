@@ -16,7 +16,7 @@ import pytest
 from nostr.standup import views
 from nostr.standup.client import StandupApi
 from nostr.standup.errors import Code
-from nostr.standup.lists import SubmissionEntry
+from nostr.standup.entries import SubmissionEntry
 from nostr.standup.watcher import (
     REFRESH_INTERVAL_MS,
     Different,

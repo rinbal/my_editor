@@ -670,6 +670,18 @@ def test_an_entry_too_large_for_a_page_fails_cleanly():
     assert relay.published == []
 
 
+def test_an_entry_that_fits_a_page_but_not_the_signer_apps_answer_says_so():
+    # RG-M2a 8: 12,000 bytes fit a 32,000-byte page; escaped in the
+    # signer app's answer they come to about 72,000, and the reason
+    # named the page bound that held.
+    relay = Relay()
+    store = submissions_list(relay)
+    result, _ = publish(store, [{"sid": "x", "updated_at": 1, "title": "<" * 12_000}])
+    assert result.status is PublishStatus.FAILED
+    assert "does not fit" not in result.reason and "signer app's answer" in result.reason
+    assert relay.published == []
+
+
 # -- a list that is not paged -------------------------------------------------
 
 def test_a_list_without_paging_is_one_event_exactly_as_encoded():

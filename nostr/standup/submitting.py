@@ -43,7 +43,7 @@ from .drafting import ArticleDraft, Choice, EncryptedPicture, Sealed
 from .errors import Code, StandupError
 from .formats import FormatError, SecretKeyFound
 from ..list_results import PublishStatus
-from .lists import RecordResult, RecordStatus
+from .entries import RecordResult, RecordStatus
 from .trust import KeyNotConfirmed, RedaktionKey
 from .watcher import Different, NotStored, Superseded
 

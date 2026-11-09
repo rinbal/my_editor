@@ -29,7 +29,8 @@ from nostr.list_results import ListRead, ReadStatus
 from nostr.standup import formats, words
 from nostr.standup.answers import LookupAnswer
 from nostr.standup.drafting import ROUND_UNKNOWN, encrypt_pictures, LocalPicture
-from nostr.standup.lists import SUBMISSIONS_MISSING_PAGE, SUBMISSIONS_UNREADABLE, SubmissionEntry
+from nostr.standup.entries import SubmissionEntry
+from nostr.standup.lists import SUBMISSIONS_MISSING_PAGE, SUBMISSIONS_UNREADABLE
 from nostr.standup.submitting import Progress, Step
 from nostr.ui import standup_submit
 from nostr.ui.standup_submit import BlossomUploads, StandupWriter, thumbnail

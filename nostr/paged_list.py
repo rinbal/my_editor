@@ -249,8 +249,9 @@ def split(payload: Mapping[str, Any], paging: Paging) -> List[str]:
     first[paging.field] = body(chunks[0])
     texts = [serialize(first)] + later
     for index, text in enumerate(texts):
-        if len(text.encode("utf-8")) > paging.max_bytes:
-            raise ValueError(f"page {index} came to {len(text)} bytes")
+        size = len(text.encode("utf-8"))
+        if size > paging.max_bytes:
+            raise ValueError(f"page {index} came to {size} bytes")
     return texts
 
 
@@ -290,9 +291,14 @@ def _fill(items: list, as_map: bool, header: Mapping[str, Any], parts: int,
             chunks.append([])
             used = shell(False)
             grow = (size, answer)
-        if not fits(used, grow):
+        if used[0] + grow[0] > paging.max_bytes:
             raise ValueError(f"an entry of {size} bytes does not fit a "
                              f"{paging.max_bytes}-byte page")
+        if used[1] + grow[1] > SIGNER_ANSWER_MAX:
+            # It fits the page, but not the signer app's answer handing
+            # the page back (escaped, it grows).
+            raise ValueError(f"an entry of {size} bytes takes {answer} bytes in the signer "
+                             f"app's answer, more than a page's {SIGNER_ANSWER_MAX}")
         chunks[-1].append(item)
         used = (used[0] + grow[0], used[1] + grow[1])
     return chunks

@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The writer's submissions list and read state (nostr/standup/lists.py,
-editorial contract 13), on the shared encrypted list store.
+what they hold in nostr/standup/entries.py, editorial contract 13), on
+the shared encrypted list store.
 
 Pinned here: an entry is on the relays before its submission may be
 sent; entries merge by ``sid`` with the newest ``updated_at``; the read
@@ -27,21 +28,23 @@ from nostr.local_signer import LocalSigner
 from nostr.paged_list import MAX_PAGES, PAGE_PLAINTEXT_MAX, PageError, Paging, digest, parse_page
 from nostr.standup import conversation, formats
 from nostr.standup import crypto as scrypto
+from nostr.standup.entries import (
+    ForeignItem,
+    RecordStatus,
+    SubmissionEntry,
+    SubmissionItems,
+    Tombstone,
+    entry_from_json,
+    holds_exactly,
+    item_from_json,
+    merge_items,
+    merge_seen,
+)
 from nostr.standup.lists import (
     READ_STATE_INTERVAL_SECONDS,
     SIGN_OUT_WAIT_MS,
-    ForeignItem,
     ReadState,
-    SubmissionEntry,
-    SubmissionItems,
     SubmissionsList,
-    Tombstone,
-    entry_from_json,
-    item_from_json,
-    RecordStatus,
-    holds_exactly,
-    merge_items,
-    merge_seen,
 )
 from tests.membership_fakes import FakeClock
 from tests.outbox_fakes import PK, FakeRelayDirectory, settle

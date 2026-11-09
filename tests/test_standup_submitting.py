@@ -27,7 +27,7 @@ from nostr.standup import drafting, formats, submitting, trust, views, words
 from nostr.standup import crypto as scrypto
 from nostr.standup.client import StandupApi
 from nostr.standup.drafting import ArticleDraft, Choice, LocalPicture
-from nostr.standup.lists import RecordResult, RecordStatus, takes_place_of
+from nostr.standup.entries import RecordResult, RecordStatus, takes_place_of
 from nostr.standup.submitting import MessageStatus, Phase, Ports, Step, Submitting
 from nostr.standup.watcher import resolve_unconfirmed
 from tests.membership_fakes import FakeClock

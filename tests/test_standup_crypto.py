@@ -449,12 +449,13 @@ def test_a_keyring_page_is_the_payload_of_one_list_page():
     assert len(nostr_crypto.encrypt("x" * 32_000, b"k" * 32)) == formats.MAX_KEYRING_PAGE_CHARS
 
 
-def test_the_crypto_loads_without_qt():
-    # crypto.py says it is pure: it may not pull Qt in.
+def test_the_crypto_and_the_list_entries_load_without_qt():
+    # crypto.py says it is pure, and the entries were split from the Qt
+    # lists for that (RG-M2a 8): neither may pull Qt in.
     import subprocess
     import sys
     from pathlib import Path
-    code = ("import sys; import nostr.standup.crypto, "
+    code = ("import sys; import nostr.standup.crypto, nostr.standup.entries, "
             "nostr.standup.formats; print(any(m.startswith('PySide6') for m in sys.modules))")
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                          cwd=Path(__file__).resolve().parent.parent, check=True)

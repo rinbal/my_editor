@@ -13,7 +13,7 @@ import pytest
 from nostr.media.assets import asset_key
 from nostr.standup import drafting, formats, submission, trust
 from nostr.standup.drafting import ArticleDraft, Choice, LocalPicture
-from nostr.standup.lists import SubmissionEntry
+from nostr.standup.entries import SubmissionEntry
 from tests.standup_fakes import ADDRESS, KEY_EVENT
 from tests.standup_vectors import NOW, pk
 

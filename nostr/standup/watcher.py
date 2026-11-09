@@ -46,7 +46,7 @@ from . import answers, formats, views
 from .answers import LookupAnswer
 from .client import StandupApi
 from .errors import Code, StandupError
-from .lists import SubmissionEntry
+from .entries import SubmissionEntry
 
 REFRESH_INTERVAL_MS = 15 * 60 * 1000
 # Answers in a row that may say "more" before a round or a reading fails

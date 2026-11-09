@@ -40,8 +40,9 @@ from ..standup import conversation, formats, trust, words
 from ..standup.client import StandupApi
 from ..standup import drafting
 from ..standup.drafting import ArticleDraft, Choice, EncryptedPicture, Sealed, choose_round
+from ..standup.entries import SubmissionEntry
 from ..standup.lists import (
-    SUBMISSIONS_MISSING_PAGE, SUBMISSIONS_UNREADABLE, ReadState, SubmissionEntry, SubmissionsList,
+    SUBMISSIONS_MISSING_PAGE, SUBMISSIONS_UNREADABLE, ReadState, SubmissionsList,
 )
 from ..standup.opening import MediaKeys
 from ..standup.servers import configured_server
