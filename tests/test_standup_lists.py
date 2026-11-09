@@ -113,9 +113,19 @@ def test_a_malformed_entry_is_left_out(change):
     assert entry_from_json(dict(entry().to_json(), **change)) is None
 
 
-def test_a_contributor_may_have_no_status_key_and_no_key_yet():
-    data = dict(entry().to_json(), role="contributor", status_key=None, s_sub=None)
-    assert entry_from_json(data).role == "contributor"
+def test_a_contributor_has_no_status_key_and_no_key_or_revision_until_the_wrap_opened():
+    # 13 (071f757): status_key null; s_sub, revision and revision_hash
+    # null until the contributor opened their wrap, then all three.
+    unopened = dict(entry().to_json(), role="contributor", status_key=None, s_sub=None,
+                    revision=None, revision_hash=None)
+    assert entry_from_json(unopened).role == "contributor"
+    opened = dict(entry().to_json(), role="contributor", status_key=None)
+    assert entry_from_json(opened).s_sub == opened["s_sub"]
+    for wrong in (dict(unopened, revision=1), dict(opened, s_sub=None),
+                  dict(opened, status_key=scrypto.new_status_key()),
+                  dict(entry().to_json(), revision=None, revision_hash=None)):
+        assert entry_from_json(wrong) is None
+        assert isinstance(item_from_json(wrong), ForeignItem)
 
 
 def test_entries_merge_by_id_and_the_newest_wins_in_place():
@@ -513,12 +523,46 @@ def test_the_vector_list_of_65_pages_is_unreadable():
     assert not stored(record(store, entry()))
 
 
-def test_the_vector_items_this_app_cannot_read_are_kept_by_sid():
-    # The vectors' items say "kind": 30023 where a submission's kind is
-    # "article" or "audio" (12.4): this app keeps them as items it cannot
-    # read, merged by sid and written back unchanged.
-    item = item_from_json(PL["merge"]["local"][0])
-    assert isinstance(item, ForeignItem) and item.sid == PL["merge"]["local"][0]["sid"]
+def test_the_vector_entry_of_a_newer_app_is_kept_by_sid_and_written_back_unchanged():
+    newer = next(i for i in PL["cases"]["complete"]["items"] if i.get("v") == 2)
+    item = item_from_json(newer)
+    assert isinstance(item, ForeignItem) and item.sid == newer["sid"]
+    assert item.to_json() == newer
+
+
+@pytest.mark.parametrize("change", [
+    {"kind": "video"}, {"kind": 30023}, {"role": "translator"}, {"v": 2}, {"v": "1"},
+    {"round": "1"}, {"updated_at": True},
+])
+def test_an_entry_this_app_cannot_interpret_is_kept_as_it_came(change):
+    data = dict(entry().to_json(), **change)
+    item = item_from_json(data)
+    assert isinstance(item, ForeignItem) and item.to_json() == data
+
+
+def test_a_field_this_app_does_not_know_is_kept_with_the_entry():
+    future = next(i for i in PL["cases"]["complete"]["items"] if "x_future_field" in i)
+    item = item_from_json(future)
+    assert isinstance(item, SubmissionEntry) and item.to_json() == future
+    newer = replace(item, title="Neu", updated_at=item.updated_at + 1)
+    assert newer.to_json()["x_future_field"] == [1, 2]
+    relay = Relay()
+    store = writers_list(SubmissionsList, relay)
+    load(store)
+    assert stored(record(store, newer))
+    again = load(writers_list(SubmissionsList, relay)).value.entries[0]
+    assert again.title == "Neu" and again.to_json()["x_future_field"] == [1, 2]
+
+
+def test_an_item_without_sid_or_updated_at_is_kept_once_by_its_canonical_text():
+    one = {"note": "kaputt", "n": [1, 2]}
+    same = {"n": [1, 2], "note": "kaputt"}
+    floats = {"x": 1.5}
+    merged = merge_items(SubmissionItems((item_from_json(one), item_from_json(floats))),
+                         SubmissionItems((item_from_json(same), item_from_json(dict(floats)))))
+    assert [item.to_json() for item in merged.items] == [one, floats]
+    keyless = dict(entry().to_json(), updated_at="gestern")
+    assert item_from_json(keyless).sid is None
 
 
 def test_an_incomplete_list_is_made_whole_by_the_next_write():

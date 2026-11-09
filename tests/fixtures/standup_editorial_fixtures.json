@@ -42,6 +42,18 @@
     "neg": -42,
     "zero": 0
    }
+  },
+  {
+   "canonical": "{\"00\":\"zero-zero\",\"10\":\"ten\",\"9\":\"nine\",\"a\":{\"10\":10,\"2\":2}}",
+   "input": {
+    "00": "zero-zero",
+    "10": "ten",
+    "9": "nine",
+    "a": {
+     "10": 10,
+     "2": 2
+    }
+   }
   }
  ],
  "content_key": {
@@ -393,7 +405,7 @@
      },
      {
       "d": "artikel-a",
-      "kind": 30023,
+      "kind": "article",
       "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
       "revision": 1,
       "revision_hash": "7fc48afd7334dcd8cd5389eb949470cb661a7db24b333afe4a86d8d3c0c58bac",
@@ -408,7 +420,7 @@
      },
      {
       "d": "artikel-b",
-      "kind": 30023,
+      "kind": "article",
       "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
       "revision": 1,
       "revision_hash": "466208f21d586217242175136e93cc293711ca15683b2960e6ac63a38a248478",
@@ -423,7 +435,7 @@
      },
      {
       "d": "artikel-e",
-      "kind": 30023,
+      "kind": "article",
       "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
       "revision": 1,
       "revision_hash": "cf2e95c005c5f7ce242c6816fa42d6941d82b3dbcd90deb23f18fbb82e47e288",
@@ -434,11 +446,30 @@
       "sid": "72e48c8721549cf7d1011668cc4dc3569e47a3095f26e045f2b98a6f3b2a2e19",
       "status_key": "fac98fe700d7559bb8ecdab7e706197a8e691ee09aea05f4de65081e7f1edddf",
       "title": "Fünfter",
-      "updated_at": 1762674700
+      "updated_at": 1762674700,
+      "x_future_field": [
+       1,
+       2
+      ]
+     },
+     {
+      "d": "artikel-h",
+      "kind": "article",
+      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+      "revision": null,
+      "revision_hash": null,
+      "role": "contributor",
+      "round": 1,
+      "s_sub": null,
+      "server": "https://standup.example",
+      "sid": "77bdd27c8f283cbbac91e602b5632a40255de38cc8607e46c603fb9aec30570b",
+      "status_key": null,
+      "title": "Gemeinsam",
+      "updated_at": 1762674750
      },
      {
       "d": "artikel-c",
-      "kind": 30023,
+      "kind": "article",
       "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
       "revision": 1,
       "revision_hash": "0cee7c15e189ff35e5950349e9e9314d5841c5992f1f47844b43cf634647d818",
@@ -452,8 +483,15 @@
       "updated_at": 1762674500
      },
      {
+      "note": "an entry from a newer app, kept unchanged",
+      "role": "translator",
+      "sid": "dd60a915b63e85e852cf5b9e8006de66a68acc3177a0714a7bc549e81040b7d7",
+      "updated_at": 1762674780,
+      "v": 2
+     },
+     {
       "d": "artikel-d",
-      "kind": 30023,
+      "kind": "article",
       "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
       "revision": 1,
       "revision_hash": "38d5d0c1b6991925026fe9e931fcde722e4d73e7690779197a365e4f17d89f9b",
@@ -478,7 +516,7 @@
     "items": [
      {
       "d": "artikel-a",
-      "kind": 30023,
+      "kind": "article",
       "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
       "revision": 1,
       "revision_hash": "7fc48afd7334dcd8cd5389eb949470cb661a7db24b333afe4a86d8d3c0c58bac",
@@ -493,7 +531,7 @@
      },
      {
       "d": "artikel-b",
-      "kind": 30023,
+      "kind": "article",
       "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
       "revision": 1,
       "revision_hash": "466208f21d586217242175136e93cc293711ca15683b2960e6ac63a38a248478",
@@ -508,7 +546,7 @@
      },
      {
       "d": "artikel-c",
-      "kind": 30023,
+      "kind": "article",
       "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
       "revision": 1,
       "revision_hash": "0cee7c15e189ff35e5950349e9e9314d5841c5992f1f47844b43cf634647d818",
@@ -523,7 +561,7 @@
      },
      {
       "d": "artikel-d",
-      "kind": 30023,
+      "kind": "article",
       "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
       "revision": 1,
       "revision_hash": "38d5d0c1b6991925026fe9e931fcde722e4d73e7690779197a365e4f17d89f9b",
@@ -552,7 +590,7 @@
      },
      {
       "d": "artikel-a",
-      "kind": 30023,
+      "kind": "article",
       "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
       "revision": 1,
       "revision_hash": "7fc48afd7334dcd8cd5389eb949470cb661a7db24b333afe4a86d8d3c0c58bac",
@@ -567,7 +605,7 @@
      },
      {
       "d": "artikel-b",
-      "kind": 30023,
+      "kind": "article",
       "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
       "revision": 1,
       "revision_hash": "466208f21d586217242175136e93cc293711ca15683b2960e6ac63a38a248478",
@@ -582,7 +620,7 @@
      },
      {
       "d": "artikel-e",
-      "kind": 30023,
+      "kind": "article",
       "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
       "revision": 1,
       "revision_hash": "cf2e95c005c5f7ce242c6816fa42d6941d82b3dbcd90deb23f18fbb82e47e288",
@@ -593,11 +631,30 @@
       "sid": "72e48c8721549cf7d1011668cc4dc3569e47a3095f26e045f2b98a6f3b2a2e19",
       "status_key": "fac98fe700d7559bb8ecdab7e706197a8e691ee09aea05f4de65081e7f1edddf",
       "title": "Fünfter",
-      "updated_at": 1762674700
+      "updated_at": 1762674700,
+      "x_future_field": [
+       1,
+       2
+      ]
+     },
+     {
+      "d": "artikel-h",
+      "kind": "article",
+      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+      "revision": null,
+      "revision_hash": null,
+      "role": "contributor",
+      "round": 1,
+      "s_sub": null,
+      "server": "https://standup.example",
+      "sid": "77bdd27c8f283cbbac91e602b5632a40255de38cc8607e46c603fb9aec30570b",
+      "status_key": null,
+      "title": "Gemeinsam",
+      "updated_at": 1762674750
      },
      {
       "d": "artikel-c",
-      "kind": 30023,
+      "kind": "article",
       "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
       "revision": 1,
       "revision_hash": "0cee7c15e189ff35e5950349e9e9314d5841c5992f1f47844b43cf634647d818",
@@ -611,8 +668,15 @@
       "updated_at": 1762674500
      },
      {
+      "note": "an entry from a newer app, kept unchanged",
+      "role": "translator",
+      "sid": "dd60a915b63e85e852cf5b9e8006de66a68acc3177a0714a7bc549e81040b7d7",
+      "updated_at": 1762674780,
+      "v": 2
+     },
+     {
       "d": "artikel-d",
-      "kind": 30023,
+      "kind": "article",
       "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
       "revision": 1,
       "revision_hash": "38d5d0c1b6991925026fe9e931fcde722e4d73e7690779197a365e4f17d89f9b",
@@ -627,12 +691,12 @@
      }
     ],
     "old_1": {
-     "content": "AjEvoY4BpGuHPJz0h3JQFzOAiC0sdXTYqhlm6r/tYtLPngjlm6RqxMJgRNC9CYj/j+TAUklAJK9TlOmRWTjeFajRwIwf9VGixVcKLGQcT6yMkEAGFoBq3sI6oXXXz2NO7DVihoLhrHZCO9vYRmWHvxruHYW8nx/TaVZSXLSj8V2Unu0QlTfuDaVHSnm29S9G94EyM/D/oD4FJCcRYLtUl5hkMJocvDtroXVNi+xGkUEXInUj9xNhZ/8aPRjSN8av24UI7dbqr0bpmJpuwrkq0Il+CIgskDlNU/PBJeBsuEpXVieZYjjFyACBtFy4LaLyKaSZH34yYyrsQZ642/QbrbjIHA756lEVVn3YSfwaJFRbixTcINsmHJtG57lUgIaia7aIgTjUMJKWIa7QjTZIo/mD6Zphb9W4N/HQjM2PS14Skn+PIHPCxN5kEUu44R7m8BxhP76ZBwFANy7/wQZsJdpKfQBMfKxAwDIYzHJVNvwfdA53aJ64aYuR95K0UsL+0TObH4fT0dZk4hSbyG/RYsfm8jwUG8OVN7ybs5Hnc3Soh5dVI6Jd9rpf85zaQOVK03bUQwsN3ox+MZh8qYPHxT1wCH0yBnFzuHDUNDpRhHGCe6562DxWMbtwJGgrnQCEYfSUawWfcxX1jVBK6au6CYW7CdALVR34y6LkX01xBn3QkuZDhwCzMEJevh3Kb7G90QQaIkMSFgAJj1Uedm2lbKvWUgeHTx4Pi/EFi3KQx2ZumHrXW5ViUGinAdGmD1gswr0AxiHlQJeRKPsMlZesIZD1/8BZi+b3DX+S2NoyHYqpl2GAuF50hEk2Xw2AKN40vk3h5bbXEuB4AgD11x8oBl4nZ6W5crEjrUdOZNCF9xUc05p8DSGmDmSDtWMqPAwOSvJVwFHHZU4tEcMF56d9/oux0Bj+E+U3xE/F8Ug4cCxz8Lp3Na5BLQ7jFcdoj4tfrhNPp0uazExolAQmolFQSdsMCTEdE3rSUCxqh41KQoZPhtGGZQymF18/n9ST/y4nGt5HupuwPNi3D8CiLe4+x+SS10tUBkucwAXWYZ+sHksysRKrMwut2DEPxeB/9+4JbSNfZk/xbbdO2JMo15LC5HhYoLyZrJs24jXTIAlYiGm/s5Hz2WdPi7B+XFwnLjWD3ZRq5qybY/pfpr0SVxpCoAm29zDx8sIzWFsi2E/ia4PZAHw3lMj5SiDQ1eqY8WLF8G+cgwIL+CE4W2rus1iCx7jz/Rn1Cv4XoG1BF6+Z+ORTMo4MnzVmHezu6ZzFiPTcZ9kQWgMVXLER97KSZUX0IwPgYN555G/Wa+DZeL3Dc65JozsJFZAOQWVigOQBE0y1qrVEwoRg0H9o0TRVVng0XxLr0AVqs+0KZ9Rkk28rLSaImeaZVn8sSVK9ELiR8QKDTdLeE6OI9Qf/S3Yf6MA3gsiHUZZAA8wvg9c6VeeHBJ2LYk1DtG8WS6mOvBWG9dkz7zTEmWqu5FY2U3sDTlfhlCkoHK3FnYie/L20eqDm/jSk4A0K9wArurhsmqSVCUGcbSmJ2An3pk9wd9CvkWWnX63Q2BxpHk+3M7KBB0ihxrdDPvIMPxZvEf5eQDhdcDxruPoBxPeUIGGH9wXdtaM+sxGO43/rgubiJr1AVtYoC0p/y2N9aV0H5EVtjBJkheeTuVji6/1MmOtM6cIJ/ftj6FWN88IYScIX5Ct3G4R4mZKwBhuAbmbN96hlMMlOdtROxMTu1RnLAMs0V/7H1UbvMh5NSKvhbfLZ4hsH9trzHW2wPdwk2AbjIzsPHA97T6kYo5XU",
+     "content": "AjEvoY4BpGuHPJz0h3JQFzOAiC0sdXTYqhlm6r/tYtLPngDlm6RqxMJgRNC9CYj/j+TAUklAJK9TlOmRWTjeFajRwIwf5ADggw1FYnFLAeKVhkMeFoxliJF3/Gfd3WRE7zZhi4nlriBIO97dEjCB7hroHoPpyEjTOFFWDeOu8wyRxOoRxGXsCqJEGXzo9iwV/oIzMvf49GVRJXcQYb1YmsEzYcFTtzZ/o3pHi/JA0lYfIjk0/xoiMbQGekKZNsq23NRbs5Tq5xKz05ti274G0YdjP8J3wWEMDLTGJbQ86hheWiTOaTTGmwqB4Vq1Iff4eKTPFy9vZSPsFMi11vxK/rCXGl/wuFFAWnqPTf4acwRZj0TSJdRgCIgMqvkT0NPseebb1yrUe8rRIeOJwSAF7KbL6dMPMIKpSriHi42EDwoVkyCKJibJwN5gGk+/tUK28Rw3YuuZUgEUYH2nwVBtIoobeAUcf69BlGEdmiFUM6seJAQlPc/hbIjAp4SsFIC5j2eNCNeflswyrEaAhjSOYomosysVCoOUOq3YpoXjPCjmkdwdI+sWpaEAsJLQFLNB0HTUQAld3d4uM54p+tGQlW8gXCI1UCFyvnXTO2BR1ieJeKJ4iDZYMOAvcz8jylXUYqSXPlXIfAe6mRscpP28DrukGdp2BFqw3qz1DxxwDSuCkugVhlOwMEVd7UrKPrPo0QhMeEcdQQlc3FYeczryOKiBAVCHShle16gBjC+Qn2U5xXfVX8g0FnO9F5r+QUlnjPMhlnKzcICKfqNLksXkYpHg//5MmqCSXTyG0N0yH42vkCiZ80xtigg2Wl3OY9QjpgnuovbYHas6REmmiks6Dk9qN6Glc7Ev7AoYfcqJuUZdgd4lUnu+B3WHsmstPVcPTvUGngTEMRp+FJRQtvN7+tvigR70FeVlk0qVpUA9dnoiobguNf4Xeg7hR8ls2tEMqBcV8kzGwBQ5yVIw/g0fBN8LHS0UWm3EViNqh4RFA8Vagt2GeEflWw9g2JHC5CQ/UZcf+dedMc+tFIv3YYJuwqKexRJHV0XBzFDfMJv+GkRt5RL8PwiuiDQOmbJ09rpbanAJNEr1MbMd2Jl82ZOa53la/LnGqs1h7DnQLQ1Lky/15ZuvmX9B3rB4RFx3NjvW3ZJr7bqbdekB67sjQE0asx+2tVi2t5AmAEx3jUjlYoKOB3ozw874GiSGgLWd8zmR8WqSjgcA+Hc5WDa74gPUmrqkoBmiXq0W9mBLQPWYqeQGa54WhXA0V6rquZLd2fnaZcwRQhYYR7EE6aXdOkTiLwPjdMds6CaMeeTNNuLDOrgI/T4bGtRTFGZs07ZSQRfiqrhFk4Bggi9qgzQHVX1kDxnp1AFo5+kEa9Jgz2p+Kiffz+WTUncrQ1O4FOnE+kWcDZCeEODOpHS2XXtcppciuMeGHIMeGZgu04U3AbCNU8qKbEUVtThFQK2H6RGAqdk77DOYyW325QU1B3BbTlTjxit/GqGVzombqrq5e/ri6CzjplxKolArrLhOmrWLGAbUbVPCyAvnokk3P627lSP8Gv+CtUsqCEO2NPnuHV3lkeAWYZURMUR+F/wZCStLYWAoqb1I17CnDEPx1T/syKM+sxGO43/rgubiJr1AVtYoC0p/y2N9aV0H5EVtjBJkheeTuVji6/1MmOtM6cIJ/ftj6FWN88IYScIX5Ct3G4R4mZKwBhuAbmbN96hlMMlOdtROxMTu1RnLAMs0V/7H1UbvMh5NSFALBgcSJRGb+WgFsg7RkmyffIs+epGCVFhjhr4QLHM3",
      "created_at": 1762674600,
-     "id": "300fceebd8db8d2b74de37b5ab37fe80c3a84860a265ea0ce56e4edbe66dca09",
+     "id": "eddacfd123fba01ac9156cdf3136e8037e37cc30ed3b8fd0e0b8f116e7af0c39",
      "kind": 30078,
      "pubkey": "1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f",
-     "sig": "d5948f5fb835ef9b30f62db2f037cd6efcd4bdfcfeea4f441d969cdb2451107b450f4fc23b0a36a4e79d3d4a594c55cc41ebe10d804967840a6dd75abfec4ea1",
+     "sig": "b216f75f59a26b65d506acdc72cb533ea86f5130556aad852cadb4286d45315a07a234aca601f8624838a3aa43ec5eca26ee86f660944ed05849094910038732",
      "tags": [
       [
        "d",
@@ -640,7 +704,7 @@
       ]
      ]
     },
-    "old_1_plaintext": "{\"items\":[{\"d\":\"artikel-c\",\"kind\":30023,\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"0cee7c15e189ff35e5950349e9e9314d5841c5992f1f47844b43cf634647d818\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"eb1f1e094ce20ca94d5ede53905f9db5ad44f4e1cdf2b0574c42cbd8175a44d1\",\"server\":\"https://standup.example\",\"sid\":\"79ea9317203712c4cba2613efcc19d5a8b0f7804a338cc96b8fa5014e3a70c68\",\"status_key\":\"1743af587456a5f5a2ef624dc282967e0cdf0f31dedb3eaeb98aed89f3e4d78b\",\"title\":\"Dritter\",\"updated_at\":1762674500},{\"d\":\"artikel-d\",\"kind\":30023,\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"38d5d0c1b6991925026fe9e931fcde722e4d73e7690779197a365e4f17d89f9b\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"174007b5db379652bfd18f1d79a3c20a94d8cd1bea5c59358ab7f8e82686780a\",\"server\":\"https://standup.example\",\"sid\":\"e427a05f8a192bf4c61433b41f3f3aa1a68d7ecee84b39f0b9c403b8e3b14b73\",\"status_key\":\"fedd47d82d469c32e358152e6811d14960268a3a7c1b393b513555c144e28495\",\"title\":\"Vierter\",\"updated_at\":1762674600}],\"page\":1,\"pages\":3,\"v\":1}",
+    "old_1_plaintext": "{\"items\":[{\"d\":\"artikel-c\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"0cee7c15e189ff35e5950349e9e9314d5841c5992f1f47844b43cf634647d818\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"eb1f1e094ce20ca94d5ede53905f9db5ad44f4e1cdf2b0574c42cbd8175a44d1\",\"server\":\"https://standup.example\",\"sid\":\"79ea9317203712c4cba2613efcc19d5a8b0f7804a338cc96b8fa5014e3a70c68\",\"status_key\":\"1743af587456a5f5a2ef624dc282967e0cdf0f31dedb3eaeb98aed89f3e4d78b\",\"title\":\"Dritter\",\"updated_at\":1762674500},{\"d\":\"artikel-d\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"38d5d0c1b6991925026fe9e931fcde722e4d73e7690779197a365e4f17d89f9b\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"174007b5db379652bfd18f1d79a3c20a94d8cd1bea5c59358ab7f8e82686780a\",\"server\":\"https://standup.example\",\"sid\":\"e427a05f8a192bf4c61433b41f3f3aa1a68d7ecee84b39f0b9c403b8e3b14b73\",\"status_key\":\"fedd47d82d469c32e358152e6811d14960268a3a7c1b393b513555c144e28495\",\"title\":\"Vierter\",\"updated_at\":1762674600}],\"page\":1,\"pages\":3,\"v\":1}",
     "pages": [
      0,
      "old_1",
@@ -659,12 +723,12 @@
   },
   "events": [
    {
-    "content": "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",
+    "content": "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",
     "created_at": 1762675140,
-    "id": "e74570fc6da94a0522f50aadda826a818e141529cdb8d24a379df720f7f1ef94",
+    "id": "0eff78fea00c8bdfc84dacaed6f41c633a57314e6e3ffcfd36543e6dd6dc0e5c",
     "kind": 30078,
     "pubkey": "1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f",
-    "sig": "4676f3b1aba093a0bb0d8e604d6a1cd85f94985195b92871e71a44b9e2b5c155bac90e1f4a3506e530e6b7e997a45f99ed6316501f37f0b3255a70311d8faa38",
+    "sig": "3f19c87bbde873f3513f5cdfcdd17816075d191c0046ccbc35b3847ed69dc39044d54f860dbebdd13d682ae31f4951018ada9f298fe05ac7f40d9aa099614058",
     "tags": [
      [
       "d",
@@ -673,12 +737,12 @@
     ]
    },
    {
-    "content": "AhIJ5+27iLJPaw2o9T4Ao6U+DhoBRKQjILI3E4/V1xEABo5umZqW46YOfewMYqNzhAGGIUM2F3D4OMEeguEdTqvvQobZsEoj0WImOo8XhTHik/HLPSl4EZCJ0jG/iLBCTLND7gvmakIhxbvxALIb0nHCEd2XeKpTsSENJWisTaKZOXl0JSlCxNOg38UYmD/+7VSxc2kZB5VBuT/tujgC6vTc72pFEz2R4rkzOlNGxdwA4ywOCvKa58l5iUiekt9H4UTxYZn969MUOZ39Qp40VAk18wdUsUy2Z8Yw/UI/PUiLyL2rhq+PptPpepDp+J0fUrMvdqCYW8TP8yVPlWI2+rTpwDPcQVSbN3OYVmK7cw6UnoIltXYkGrIOSZY6D9Ydh3BZaaFJdIh+QZjCUrkYMviJRb8RVJYDWJ3yIJcl9bATnLxby2WMjAkeGFonKTBjHXFkQw4djs7ViHmJJve7gsnxG3FsLSQTfnh3Isxfvs3atTmXaNeeWfAjtMtHJ08qEKwHkWOQhY92N7EnicMWTuN6b7s2Qh29tbidw61nt+BQoK4AbyZM9xA2+hgfedZydDnBN5qBOmyTA/igxScBJpPWAoPKuJJLBThK3NBct65cC2NKlt8Jwdn5hf4hNTv1fhEguAhoKmOjMZOfVVFll+ZWMFQa6D24klNaT8enmVHIReinIuXVqPiF5W7AgwgK1cpm1JTbFG9Zg4CPuGL58cSV0AAwzgEdQuatDaiLg4H/MAkv0fMJi4hqD4NKx884nPKUGcoa3gM2b0n2bZbdidGNoP13mumHjKkpFExJZqyDOQFUHDhfrfxytGfYmPhA5/udVbYYVBil5jaR7WsOOKzRLC93yxp10N+urZbf9975fWQe2LiuLEbmBV71FBLt3oWHPrxm9ypdxce++Nf8Da4ui/unDsI8AjmyfgFlnLfQentHFNQ9PmdGxbwWHsi4AtQ7cigSF7dLSLTZcjX0y/n8hKS7nhBH7kRXSt5Sszc6zOzcgJ6W2a377mMyeM+uhp6sJAvBNokQKR4PiRs8x4vGt3zrZLu8TQ1y4rMG1tk0g9coCbz3siuI6lv7BthIx+lOK00vE1fYl2Z5C6gF+gZQ7jUtW83xUsIx/GDLRPScv5g0ASnqZzg18v+o+dwVM8SQwbdZAGxkD8zV5V7Bha4dcydKQveTmYwJHdEl0/dOdQ03RE4VkQ1Kr/vNnyxXfqLOCvk2TkYXn/vHvgZUcerLBQBgJdjLQ8ZexqxWJEUz0xj4VusYfLWutXsH2fV9LO0tp5LXizUbGFI8OjfXXDsGxSpNfGZ8DeopVFBJ3UHzGQpQEZbD/i0yQf96ZCYnskhLuN9Q5QUdY30uTW7VGqH1sAcSw1852nDyEIAynav56ZiE+aI0ZsWMcgYgKe/XdAFgotFpcvjX4cdV4pONUEGYfx7fALTZvQa6kU3E4TZynuvrIizXqi1bneZaJt1Br4q2OnMIagz9Kh26SUHWUdnjktShBx83iWL+NBGPHVz6edcblfn9SMO0HiI0DBOQiIu6OFLak1YkKn8aA9uZqowclgXlmZ9vPQxH/XyVTyXerWx+YXRsSermAWTmejN+hxALacKZvtQz2dfXX/2oBdh8Xhx9n1Psbz01cnbf/vdX5pFjMeHeTTwAskgFh/YkANNFa1mDyvHrwiTkFPgXGThPdbD1exMG0VeG8HE/ojxqSHgBH9/x3GlvupJR9IcTFgrrqwc/wNKGbOEqVo6oFdhPDRrJZbhaivsXnZGHKZqrCZ5i5qsQzDOXAkeOicDYL1Y4",
+    "content": "AhIJ5+27iLJPaw2o9T4Ao6U+DhoBRKQjILI3E4/V1xEABoZumZqW46YOfewMYqNzhAGGIUM2F3D4OMEeguEdTqvvQobZoRthlzhpdJpAy3/7hfLTPSV3R8PEjyO1mrdIT7BA4wDiaBQrxb70VOcdg3HEEtvCL/1T4CYJdD+hT/OcY351dHtAw9SjjMBGmzyt5Fewcm4eU84VuG/suz4O562LvjEKGDCF4LY5Ok1AhssI42AZAvvZsYJlzhLVk9Ne5hWiP9v9o4dOcpzxW5kYVQcoxE0P4BT3OIE3/RZvbxqCxL78jaOM9dnpL5bk9MgVA7N5fvHFXc3PpnNCmGpnqby2xmLVE1TOO3TPUmC7JF6WmtIrsHliDqFEBNZ9X4NTlSAKP7NJP9A5QdWbHq9VfafBRfZ/C8ESJdSlJ9cuseQUneNezTCHiAkaE14gfWwzHHEyHlsd286B3yrRJqG6hZmgHnQ8LicSKitydJ9eu5rb5TPFPYbHXPNy5N1fYQ1tTvgRhjPcwpUgeeM8x5hJTq00Lqw3U128uKne1rlj+LwetuVIb28HpAtpuRYVLYB5dzvBNJjROT7DAf71lnVWdsGGVtzN7sJKAz1N04pc5fhXCG9IxtUHwIKm0qkpYm6lfUEj7Vg/JXHsJdjJGAdjkNhJIF5nuXrwh11LH5amkgeaRebxI7bWqP+GtjnA0gpf1cYwjpDUQ2YM0IOPvTWupcfCg1cwywZMHr+pCvWL24KobQQt1a5fzZNwGcgSid5z0ry1SZlM7hQtORGxasSVytCYoMNii6/i3Oo9HEtJZKuFPkhNVypGo71ysTeW0/JX/7+SEvYXW1PnoH/CsD8cML2cfCtryhp5kZL4tIzTuY24LyBHh+K2JVfiAlbyFUns2oLUYOllo34OwJDrqYP6Cf592v2tCMJuVTziKglgmuGBK3keFIRraWdEl7ISS5LrBNBhJy9OG+8aFeLPLmm7hv37kLiy1wdR6EtXStdd8nQvyODcndXVlf2kqSZjY8W2zdf0Z0fsO54KMlVaxXdsws3KpSX4NbXhQVh7s7dU0tZr19d/Bb/04i6JtgnwB4wawLoYeUgrT1OLl2wtBald+QdSsjByXZumXM4y8WTYX7LW6ZJoQTHkMjgz6v/44dJAM8KRyqFZFn86Qsrk8gmZlrgdMU8NB6WGwZtcSNYi2vYZcgszE0gUwQkc+qTInXcDf6fAB/w9ThAWnKeS710CLOicWAA3cYvKFctUkfZXdUVmigjiTK5KNvOq5XUfiPh7Lvgsv4fakDUOBkVzZTbBUDsF0TNYcC8mH+49Gg9JlFeyRw9CHtKeqy48Eq0pNn1wskVK6dtQt1UfMX18TmuFSqr3tAMQl1s31nb2TIVnmqquv5uO/aozbMSJdld1IqjINEMgoZIvI4ue98oWrMSYak6ZMguBGuDY7VS3xRrOtmFzkOO9I3uEoSlSyOJcet1JrI3qanRQa1/+fhbiSULUA9u0lNjxVB4y32XzNUuLC0S9P4ZbwKn9XsOWHjMqHVTYhv29OFWM2gZ9enUeApzR15gY0F6gy80Cak9Q9n2SBErEuCkuNiEzLvfoU3XgeHQ3lAYaNYGI+Z0gnuT7fYuKP+kBXhx9n1Psbz01cnbf/vdX5pFjMeHeTTwAskgFh/YkANNFa1mDyvHrwiTkFPgXGThPdbD1exMG0VeG8HE/ojxqSHgBH9/x3GlvupJR9IcTFgrrqwc/wNKGbOEqVo6oFdhPDaN+fHnfY7P4TteirgIfXl42CZ+/ah9bj6Q0EXPofk+Y",
     "created_at": 1762675139,
-    "id": "5a21b4e822e97ed57f5bd5accf8bd7bf8dc47a52fde9815fb19181f7dfb9bee2",
+    "id": "8b189b76f7bd3380e909e9d6afcbe52ab20192fbbbd89dd251044aa7a3f84d47",
     "kind": 30078,
     "pubkey": "1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f",
-    "sig": "70ad45a72157d650f51c70e345eb459a781cc74273aa111e80c97b3a718b951b8b958199451913de728f0be52e72dc43a95b0576fedf696af93eaf74a0e3cfe8",
+    "sig": "915bf9ed6de749c8f64824b1303064966cdad9bd982b01bf732b80b672f171d467eacfbd053f7b965e6a118be418fffb4de768b3a491bdc8242471e731e6b997",
     "tags": [
      [
       "d",
@@ -687,12 +751,12 @@
     ]
    },
    {
-    "content": "ApB/qHwD90isyyp8qNzN433alLLeOzJuwNSamyrQvGTSkev2M/jyIbAjJ38uljp96YAdP/A98jpyOksbH7b//9YBss29zPJpKODN/RDWOZ9o26oQq3+kfuILiWpDWSLJ5z4iQgB+NC4biQ46JVVFnJQvooxo0+kIPA8r9pIIk32V/NiDCEjBZZzCG4sWRSONzsBLUB7SC0ju29cL6c32hsRwxn5PIZLdWz0ghcgZKpVZo9OPgwTdNrdQ2CRiY/740fsc+0WM7uHa/0h0XZj9J+8/jQGmcixl6yfD4zNi3JSXROv9zZbtqZX/ppe17OT8E8fAK3HgZuzLhMhvtR0uSx5t8OQ/LKe/5uLly6wUi1GnyI8KnD09Jtjdl04fZZT0+wMMOZjLD2iUge6iw94l6yF9LAJeVR1Ow8UP6epSNJa8y7EnJ2qlzgu/SDxhqsznl4Nk/OfZlf9xoqVAqO9g1Cm29+c0KnBtp2n6E6GtkdTX8zoZ3gA5oCOQm5FOVZ2OkWLkdHPc5mlEjskgXIic9z5CQkKlm2EZguqegW6aTfz5n3Y48D9zWQKiNZkHdjOXVFpDqmUz3RMd1vq2I0vXgd1TIEgqeFqEMz9pTGigfBUadhSlZoXIsZ3V96GlFCbJ7FF8aFlu2qr14IIeb30IIBw7Ofn0clsUZrlsXWB/TTXSIudZSDGR3Y4+78x1YcQ1H7rkbQhhp1V/6p8TKFAYwIQe9By9IGYFcf4l35ChNzTaum6sqJckEJgENkkzB5UJkgAG/EJ1qgVPFRzkfhUUtufa09crrGR1UUKeAmghvlRAXX5p1/RbUzI13LQXPV1QSyVnKBklDtV1vU5KjWL4QY1zdizKOqNzuQDdjMZs1BICB6M60BqztT97Mmk6qQjkkBjTlZ6SO7mMR1OG9pLlRAARyjCvGXoO7EmQkgDK4+fQbOPQw5xaai/LnoSwdjK98EfZR3ToqKALZMqgYEhdLeAROxQGuHY6Elm7uqgwafhBhDAc1VMd5ZPMuOVD0nEE4aVquZAq/n98ixCed7KQ7teE9SAUV5WUnmem8toCubq+P+zQPpTncz2HNNSZ96sGitKquL9rom4AMxRNZrGw8zWq3g==",
+    "content": "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",
     "created_at": 1762675138,
-    "id": "a93ed3f5f97da2991d7906db7529db3c24a12bcc5d069e01a7ac57a58be2fa76",
+    "id": "e1dae622cd2b3fa754df0549ad67417d0ea5d0e910c90cf1b4f148cb1b52d01a",
     "kind": 30078,
     "pubkey": "1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f",
-    "sig": "90fbae2cd97df81dc3214d1f4f14fb054c70355c9e91ac3cf6337943a3c65cadae2dfd59ecf5b14298bee0c8b20dcce0be45b8ac6f3ed27600cf04b74926982f",
+    "sig": "d1bbba97735facba76a18aec7290cdbc9e938afe473dbd3258a58909ccc7a265d1969d4147c0cde4a93bb148c1fc8ff8db811bb430e7cd20042a3f2208babca0",
     "tags": [
      [
       "d",
@@ -707,7 +771,7 @@
    "local": [
     {
      "d": "artikel-g",
-     "kind": 30023,
+     "kind": "article",
      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
      "revision": 1,
      "revision_hash": "bbf751387ef0a90c1e5f9dd7f14d06433cb2f64c84ae09a167a9cd1255356706",
@@ -727,7 +791,7 @@
     },
     {
      "d": "artikel-d",
-     "kind": 30023,
+     "kind": "article",
      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
      "revision": 1,
      "revision_hash": "38d5d0c1b6991925026fe9e931fcde722e4d73e7690779197a365e4f17d89f9b",
@@ -749,7 +813,7 @@
     },
     {
      "d": "artikel-g",
-     "kind": 30023,
+     "kind": "article",
      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
      "revision": 1,
      "revision_hash": "bbf751387ef0a90c1e5f9dd7f14d06433cb2f64c84ae09a167a9cd1255356706",
@@ -769,7 +833,7 @@
     },
     {
      "d": "artikel-b",
-     "kind": 30023,
+     "kind": "article",
      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
      "revision": 1,
      "revision_hash": "466208f21d586217242175136e93cc293711ca15683b2960e6ac63a38a248478",
@@ -784,7 +848,7 @@
     },
     {
      "d": "artikel-e",
-     "kind": 30023,
+     "kind": "article",
      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
      "revision": 1,
      "revision_hash": "cf2e95c005c5f7ce242c6816fa42d6941d82b3dbcd90deb23f18fbb82e47e288",
@@ -795,11 +859,30 @@
      "sid": "72e48c8721549cf7d1011668cc4dc3569e47a3095f26e045f2b98a6f3b2a2e19",
      "status_key": "fac98fe700d7559bb8ecdab7e706197a8e691ee09aea05f4de65081e7f1edddf",
      "title": "Fünfter",
-     "updated_at": 1762674700
+     "updated_at": 1762674700,
+     "x_future_field": [
+      1,
+      2
+     ]
+    },
+    {
+     "d": "artikel-h",
+     "kind": "article",
+     "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+     "revision": null,
+     "revision_hash": null,
+     "role": "contributor",
+     "round": 1,
+     "s_sub": null,
+     "server": "https://standup.example",
+     "sid": "77bdd27c8f283cbbac91e602b5632a40255de38cc8607e46c603fb9aec30570b",
+     "status_key": null,
+     "title": "Gemeinsam",
+     "updated_at": 1762674750
     },
     {
      "d": "artikel-c",
-     "kind": 30023,
+     "kind": "article",
      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
      "revision": 1,
      "revision_hash": "0cee7c15e189ff35e5950349e9e9314d5841c5992f1f47844b43cf634647d818",
@@ -813,8 +896,15 @@
      "updated_at": 1762674500
     },
     {
+     "note": "an entry from a newer app, kept unchanged",
+     "role": "translator",
+     "sid": "dd60a915b63e85e852cf5b9e8006de66a68acc3177a0714a7bc549e81040b7d7",
+     "updated_at": 1762674780,
+     "v": 2
+    },
+    {
      "d": "artikel-d",
-     "kind": 30023,
+     "kind": "article",
      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
      "revision": 1,
      "revision_hash": "38d5d0c1b6991925026fe9e931fcde722e4d73e7690779197a365e4f17d89f9b",
@@ -836,7 +926,7 @@
     },
     {
      "d": "artikel-a",
-     "kind": 30023,
+     "kind": "article",
      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
      "revision": 1,
      "revision_hash": "7fc48afd7334dcd8cd5389eb949470cb661a7db24b333afe4a86d8d3c0c58bac",
@@ -851,7 +941,7 @@
     },
     {
      "d": "artikel-b",
-     "kind": 30023,
+     "kind": "article",
      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
      "revision": 1,
      "revision_hash": "466208f21d586217242175136e93cc293711ca15683b2960e6ac63a38a248478",
@@ -866,7 +956,7 @@
     },
     {
      "d": "artikel-e",
-     "kind": 30023,
+     "kind": "article",
      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
      "revision": 1,
      "revision_hash": "cf2e95c005c5f7ce242c6816fa42d6941d82b3dbcd90deb23f18fbb82e47e288",
@@ -877,11 +967,30 @@
      "sid": "72e48c8721549cf7d1011668cc4dc3569e47a3095f26e045f2b98a6f3b2a2e19",
      "status_key": "fac98fe700d7559bb8ecdab7e706197a8e691ee09aea05f4de65081e7f1edddf",
      "title": "Fünfter",
-     "updated_at": 1762674700
+     "updated_at": 1762674700,
+     "x_future_field": [
+      1,
+      2
+     ]
+    },
+    {
+     "d": "artikel-h",
+     "kind": "article",
+     "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+     "revision": null,
+     "revision_hash": null,
+     "role": "contributor",
+     "round": 1,
+     "s_sub": null,
+     "server": "https://standup.example",
+     "sid": "77bdd27c8f283cbbac91e602b5632a40255de38cc8607e46c603fb9aec30570b",
+     "status_key": null,
+     "title": "Gemeinsam",
+     "updated_at": 1762674750
     },
     {
      "d": "artikel-c",
-     "kind": 30023,
+     "kind": "article",
      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
      "revision": 1,
      "revision_hash": "0cee7c15e189ff35e5950349e9e9314d5841c5992f1f47844b43cf634647d818",
@@ -895,8 +1004,15 @@
      "updated_at": 1762674500
     },
     {
+     "note": "an entry from a newer app, kept unchanged",
+     "role": "translator",
+     "sid": "dd60a915b63e85e852cf5b9e8006de66a68acc3177a0714a7bc549e81040b7d7",
+     "updated_at": 1762674780,
+     "v": 2
+    },
+    {
      "d": "artikel-d",
-     "kind": 30023,
+     "kind": "article",
      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
      "revision": 1,
      "revision_hash": "38d5d0c1b6991925026fe9e931fcde722e4d73e7690779197a365e4f17d89f9b",
@@ -912,13 +1028,13 @@
    ]
   },
   "parts": [
-   "43d50f8284fc722519c2ed4109294e18a67c354c0b6575d6f507f8ee759af1f0",
-   "6e8c988beb1f021aaf8dff5384410f760704d78ddd35dffc30a1e657a732b3e8"
+   "ed8b1849307c69f5358c6af9d33489bac9941fd4240a707cf951d2456f4e41df",
+   "26a61e31e2a13f9fb0e03b7920978d5fc641b2d5f28456aa76ae72218599a60b"
   ],
   "plaintexts": [
-   "{\"items\":[{\"d\":\"artikel-a\",\"kind\":30023,\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"7fc48afd7334dcd8cd5389eb949470cb661a7db24b333afe4a86d8d3c0c58bac\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"abbd932fce3c71978e22f0d37d1faf299a15d05105348e52fcdd4eeff494d797\",\"server\":\"https://standup.example\",\"sid\":\"63d3dd532acb823cf38234dd8722766799a2d0ed9c99e4e88de1b7e4436d60a8\",\"status_key\":\"4131affa26542f7f79f624332f4057e53b2c10f714ec570eeca710d6d83d3466\",\"title\":\"Erster\",\"updated_at\":1762674300},{\"d\":\"artikel-b\",\"kind\":30023,\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"466208f21d586217242175136e93cc293711ca15683b2960e6ac63a38a248478\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"b077be5830abd36218857a9f54a2887a02260a08ea76e18aa27f3c82239b6c7f\",\"server\":\"https://standup.example\",\"sid\":\"6b652e9894fd075eebec6fea0a074b733a93f29414836634d6813986f6fee133\",\"status_key\":\"48a3bd8a302376cc360dec1b740b666c494553657028166e734ac7948d9e16e4\",\"title\":\"Zweiter\",\"updated_at\":1762674400}],\"page\":0,\"pages\":3,\"parts\":[\"43d50f8284fc722519c2ed4109294e18a67c354c0b6575d6f507f8ee759af1f0\",\"6e8c988beb1f021aaf8dff5384410f760704d78ddd35dffc30a1e657a732b3e8\"],\"v\":1}",
-   "{\"items\":[{\"d\":\"artikel-c\",\"kind\":30023,\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"0cee7c15e189ff35e5950349e9e9314d5841c5992f1f47844b43cf634647d818\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"eb1f1e094ce20ca94d5ede53905f9db5ad44f4e1cdf2b0574c42cbd8175a44d1\",\"server\":\"https://standup.example\",\"sid\":\"79ea9317203712c4cba2613efcc19d5a8b0f7804a338cc96b8fa5014e3a70c68\",\"status_key\":\"1743af587456a5f5a2ef624dc282967e0cdf0f31dedb3eaeb98aed89f3e4d78b\",\"title\":\"Dritter\",\"updated_at\":1762674500},{\"d\":\"artikel-d\",\"kind\":30023,\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"38d5d0c1b6991925026fe9e931fcde722e4d73e7690779197a365e4f17d89f9b\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"174007b5db379652bfd18f1d79a3c20a94d8cd1bea5c59358ab7f8e82686780a\",\"server\":\"https://standup.example\",\"sid\":\"e427a05f8a192bf4c61433b41f3f3aa1a68d7ecee84b39f0b9c403b8e3b14b73\",\"status_key\":\"fedd47d82d469c32e358152e6811d14960268a3a7c1b393b513555c144e28495\",\"title\":\"Vierter, neu\",\"updated_at\":1762675100}],\"page\":1,\"pages\":3,\"v\":1}",
-   "{\"items\":[{\"d\":\"artikel-e\",\"kind\":30023,\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"cf2e95c005c5f7ce242c6816fa42d6941d82b3dbcd90deb23f18fbb82e47e288\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"5cec8aa0b7c4735e50586354e600b5a57e37e9b0e0c705eb4abc8d2ceac87bbe\",\"server\":\"https://standup.example\",\"sid\":\"72e48c8721549cf7d1011668cc4dc3569e47a3095f26e045f2b98a6f3b2a2e19\",\"status_key\":\"fac98fe700d7559bb8ecdab7e706197a8e691ee09aea05f4de65081e7f1edddf\",\"title\":\"Fünfter\",\"updated_at\":1762674700},{\"deleted\":true,\"sid\":\"13fefd808aaa4404ca0106a470ec49117bf543564f188794b5cb17b8d3e211ca\",\"updated_at\":1762674800}],\"page\":2,\"pages\":3,\"v\":1}"
+   "{\"items\":[{\"d\":\"artikel-a\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"7fc48afd7334dcd8cd5389eb949470cb661a7db24b333afe4a86d8d3c0c58bac\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"abbd932fce3c71978e22f0d37d1faf299a15d05105348e52fcdd4eeff494d797\",\"server\":\"https://standup.example\",\"sid\":\"63d3dd532acb823cf38234dd8722766799a2d0ed9c99e4e88de1b7e4436d60a8\",\"status_key\":\"4131affa26542f7f79f624332f4057e53b2c10f714ec570eeca710d6d83d3466\",\"title\":\"Erster\",\"updated_at\":1762674300},{\"d\":\"artikel-b\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"466208f21d586217242175136e93cc293711ca15683b2960e6ac63a38a248478\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"b077be5830abd36218857a9f54a2887a02260a08ea76e18aa27f3c82239b6c7f\",\"server\":\"https://standup.example\",\"sid\":\"6b652e9894fd075eebec6fea0a074b733a93f29414836634d6813986f6fee133\",\"status_key\":\"48a3bd8a302376cc360dec1b740b666c494553657028166e734ac7948d9e16e4\",\"title\":\"Zweiter\",\"updated_at\":1762674400}],\"page\":0,\"pages\":3,\"parts\":[\"ed8b1849307c69f5358c6af9d33489bac9941fd4240a707cf951d2456f4e41df\",\"26a61e31e2a13f9fb0e03b7920978d5fc641b2d5f28456aa76ae72218599a60b\"],\"v\":1}",
+   "{\"items\":[{\"d\":\"artikel-c\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"0cee7c15e189ff35e5950349e9e9314d5841c5992f1f47844b43cf634647d818\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"eb1f1e094ce20ca94d5ede53905f9db5ad44f4e1cdf2b0574c42cbd8175a44d1\",\"server\":\"https://standup.example\",\"sid\":\"79ea9317203712c4cba2613efcc19d5a8b0f7804a338cc96b8fa5014e3a70c68\",\"status_key\":\"1743af587456a5f5a2ef624dc282967e0cdf0f31dedb3eaeb98aed89f3e4d78b\",\"title\":\"Dritter\",\"updated_at\":1762674500},{\"d\":\"artikel-d\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"38d5d0c1b6991925026fe9e931fcde722e4d73e7690779197a365e4f17d89f9b\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"174007b5db379652bfd18f1d79a3c20a94d8cd1bea5c59358ab7f8e82686780a\",\"server\":\"https://standup.example\",\"sid\":\"e427a05f8a192bf4c61433b41f3f3aa1a68d7ecee84b39f0b9c403b8e3b14b73\",\"status_key\":\"fedd47d82d469c32e358152e6811d14960268a3a7c1b393b513555c144e28495\",\"title\":\"Vierter, neu\",\"updated_at\":1762675100}],\"page\":1,\"pages\":3,\"v\":1}",
+   "{\"items\":[{\"d\":\"artikel-e\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"cf2e95c005c5f7ce242c6816fa42d6941d82b3dbcd90deb23f18fbb82e47e288\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"5cec8aa0b7c4735e50586354e600b5a57e37e9b0e0c705eb4abc8d2ceac87bbe\",\"server\":\"https://standup.example\",\"sid\":\"72e48c8721549cf7d1011668cc4dc3569e47a3095f26e045f2b98a6f3b2a2e19\",\"status_key\":\"fac98fe700d7559bb8ecdab7e706197a8e691ee09aea05f4de65081e7f1edddf\",\"title\":\"Fünfter\",\"updated_at\":1762674700,\"x_future_field\":[1,2]},{\"deleted\":true,\"sid\":\"13fefd808aaa4404ca0106a470ec49117bf543564f188794b5cb17b8d3e211ca\",\"updated_at\":1762674800},{\"d\":\"artikel-h\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":null,\"revision_hash\":null,\"role\":\"contributor\",\"round\":1,\"s_sub\":null,\"server\":\"https://standup.example\",\"sid\":\"77bdd27c8f283cbbac91e602b5632a40255de38cc8607e46c603fb9aec30570b\",\"status_key\":null,\"title\":\"Gemeinsam\",\"updated_at\":1762674750},{\"note\":\"an entry from a newer app, kept unchanged\",\"role\":\"translator\",\"sid\":\"dd60a915b63e85e852cf5b9e8006de66a68acc3177a0714a7bc549e81040b7d7\",\"updated_at\":1762674780,\"v\":2}],\"page\":2,\"pages\":3,\"v\":1}"
   ],
   "read_state_merge": {
    "local": {

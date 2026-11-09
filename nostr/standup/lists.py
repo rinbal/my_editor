@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field, fields, replace
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
@@ -97,8 +97,10 @@ def _read_state_words() -> ListWords:
 @dataclass(frozen=True)
 class SubmissionEntry:
     """One submission in the writer's list (13). ``s_sub`` and
-    ``status_key`` are hex; a contributor's entry has no status key, and
-    no ``s_sub`` until they opened their wrap."""
+    ``status_key`` are hex. A contributor's entry has no status key, and
+    no ``s_sub``, ``revision`` or ``revision_hash`` until they opened
+    their wrap. ``extra`` holds the fields this app does not know (a
+    newer app's), written back as they came."""
 
     sid: str
     publication: str
@@ -110,15 +112,16 @@ class SubmissionEntry:
     kind: str
     d: str
     round: int
-    revision: int
-    revision_hash: str
+    revision: Optional[int]
+    revision_hash: Optional[str]
     updated_at: int
+    extra: Mapping[str, Any] = field(default_factory=dict, repr=False, hash=False)
 
     def to_json(self) -> Dict[str, Any]:
-        return {name: getattr(self, name) for name in _ENTRY_FIELDS}
+        return dict(self.extra, **{name: getattr(self, name) for name in _ENTRY_FIELDS})
 
 
-_ENTRY_FIELDS = tuple(f.name for f in fields(SubmissionEntry))
+_ENTRY_FIELDS = tuple(f.name for f in fields(SubmissionEntry) if f.name != "extra")
 
 
 def entry_problem(entry: SubmissionEntry) -> Optional[str]:
@@ -134,17 +137,25 @@ def entry_problem(entry: SubmissionEntry) -> Optional[str]:
             secret_from_hex(entry.s_sub)
         formats.need(entry.status_key is None or formats.is_hex64(entry.status_key),
                      "the status key")
+        opened = (entry.s_sub, entry.revision, entry.revision_hash)
         if entry.role == "writer":
-            formats.need(entry.s_sub is not None and entry.status_key is not None,
-                         "a writer keeps the submission key and the status key")
+            formats.need(entry.status_key is not None and None not in opened,
+                         "a writer keeps the submission key, the status key and the revision")
+        else:
+            formats.need(entry.status_key is None, "a contributor has no status key")
+            formats.need(None not in opened or opened == (None, None, None),
+                         "a contributor keeps the key and the revision once the wrap opened")
         formats.need(isinstance(entry.title, str) and len(entry.title) <= formats.MAX_TITLE_CHARS,
                      "the title")
         formats.need(entry.kind in formats.KINDS, "the kind")
         formats.need(isinstance(entry.d, str) and len(entry.d) <= _MAX_TEXT, "the d tag")
         formats.need(formats.is_int(entry.round, low=1), "the round")
-        formats.need(formats.is_int(entry.revision, low=1), "the revision")
-        formats.need(formats.is_hex64(entry.revision_hash), "the revision hash")
+        if entry.revision is not None:
+            formats.need(formats.is_int(entry.revision, low=1), "the revision")
+            formats.need(formats.is_hex64(entry.revision_hash), "the revision hash")
         formats.need(formats.is_int(entry.updated_at), "updated_at")
+        formats.need(isinstance(entry.extra, Mapping)
+                     and not set(entry.extra) & set(_ENTRY_FIELDS), "the other fields")
     except (FormatError, StandupCryptoError) as exc:
         return str(exc)
     return None
@@ -152,10 +163,17 @@ def entry_problem(entry: SubmissionEntry) -> Optional[str]:
 
 def entry_from_json(value: Any) -> Optional[SubmissionEntry]:
     """An entry read from the list, or None when this app cannot read it
-    (a broken one, or a newer app's)."""
+    (a broken one, or a newer app's: another ``v``, role or kind). Fields
+    it does not know are kept in ``extra``."""
     if not isinstance(value, dict) or value.get("deleted") is not None:
         return None
-    entry = SubmissionEntry(**{name: value.get(name) for name in _ENTRY_FIELDS})
+    if "v" in value and not (formats.is_int(value["v"]) and value["v"] == 1):
+        return None
+    if not set(_ENTRY_FIELDS) <= set(value):
+        return None
+    entry = SubmissionEntry(
+        **{name: value[name] for name in _ENTRY_FIELDS},
+        extra={key: item for key, item in value.items() if key not in _ENTRY_FIELDS})
     return None if entry_problem(entry) else entry
 
 
@@ -175,8 +193,9 @@ class Tombstone:
 class ForeignItem:
     """An item this app cannot read: a newer app's, or a broken one. Kept
     as it came and written back unchanged, so this app never deletes
-    what another wrote. Merged by ``sid`` like any item when it has one
-    and an ``updated_at``; ``sid`` None: kept once, as it is."""
+    what another wrote. Merged by ``sid`` like any item when it has a
+    64-hex one and an integer ``updated_at``; else (``sid`` None) kept
+    once per canonical text (:func:`_raw_key`)."""
 
     sid: Optional[str]
     updated_at: int
@@ -227,12 +246,23 @@ def merge_items(remote: SubmissionItems, local: SubmissionItems) -> SubmissionIt
     page signed costs a request through a signer app."""
     merged: Dict[str, ListItem] = {}
     for item in remote.items + local.items:
-        key = item.sid if item.sid is not None else "raw:" + json.dumps(
-            item.to_json(), sort_keys=True)
+        key = item.sid if item.sid is not None else _raw_key(item.to_json())
         known = merged.get(key)
         if known is None or item.updated_at > known.updated_at:
             merged[key] = item
     return SubmissionItems(items=tuple(merged.values()))
+
+
+def _raw_key(value: Any) -> str:
+    """The key an item without ``sid`` or ``updated_at`` is kept once by:
+    its canonical text (13). JSON that canonical JSON cannot hold (a
+    float, a non-ASCII key) is still JSON, so it gets the same form with
+    sorted keys; the two forms never meet, the prefix tells them apart."""
+    try:
+        return "raw:" + formats.canonical_json(value)
+    except FormatError:
+        return "json:" + json.dumps(value, ensure_ascii=False, separators=(",", ":"),
+                                    sort_keys=True)
 
 
 def _decode_items(payload: dict) -> SubmissionItems:
