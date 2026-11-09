@@ -453,6 +453,31 @@ def test_a_signer_that_says_no_sends_nothing():
     assert world.server.requests == []
 
 
+def test_on_sending_comes_once_the_request_is_signed_and_before_its_answer():
+    world = World()
+    order = []
+    body = submission_for(sk("writer")).body
+    world.ok(lambda ok, fail: world.api().submit(
+        body, lambda v: (order.append("answer"), ok(v)), fail,
+        on_sending=lambda: order.append(("sending", len(world.server.requests)))))
+    assert order == [("sending", 0), "answer"]
+
+
+def test_a_dropped_submission_waiting_for_its_signature_is_never_sent():
+    world = World()
+    held = []
+    api = StandupApi(lambda unsigned, ok, fail: held.append((unsigned, ok)), server=SERVER,
+                     nam=world.nam, clock=world.clock)
+    outcome = []
+    call = api.submit(submission_for(sk("writer")).body, outcome.append, outcome.append,
+                      on_sending=lambda: outcome.append("sending"))
+    api.drop(call)
+    unsigned, ok = held[0]
+    ok(events.sign_event(dict(unsigned), sk("writer")))
+    world.nam.settle()
+    assert outcome == [] and world.server.requests == []
+
+
 # -- the lookup --------------------------------------------------------------------
 
 def test_the_lookup_carries_no_signature_and_answers_by_status_key():

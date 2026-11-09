@@ -78,6 +78,9 @@ class Call:
     signed_by: Optional[str] = None
     # False for a call that cancel() leaves to finish and answer.
     cancellable: bool = True
+    # Told once, right before the request is written to the network: from
+    # then on it may arrive whatever happens here.
+    on_sending: Optional[Callable[[], None]] = None
 
 
 def answer_later(callback: Callable[..., None], *args: Any) -> None:
@@ -231,6 +234,11 @@ class SignedJsonApi(QObject):
             except RuntimeError:  # already deleted on the C++ side
                 pass
 
+    def drop(self, call: Call) -> None:
+        """``call`` is answered no more, and a call still waiting for its
+        signature is never sent. One already sent is not taken back."""
+        call.done = True
+
     def _new_call(self, method, path, body, signed, parse, on_success, on_failure,
                   **fields) -> Call:
         """A call of :attr:`call_type`; ``fields`` are the subclass's own."""
@@ -312,6 +320,13 @@ class SignedJsonApi(QObject):
             stale = (self._clock() - signed["created_at"]) > self.stale_signature_seconds
             call.signed_by = signed["pubkey"]
         self._prepare_request(call, request)
+
+        if call.on_sending is not None:
+            on_sending, call.on_sending = call.on_sending, None
+            try:
+                on_sending()
+            except Exception:  # noqa: BLE001, a caller's bug must not unwind into Qt
+                traceback.print_exc()
 
         if nip98.has_body(call.body):
             # Exactly this value: anything else is refused with 415.

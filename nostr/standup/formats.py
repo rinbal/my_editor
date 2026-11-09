@@ -39,6 +39,10 @@ MAX_PARTICIPANTS = 20                       # 15
 MAX_LOOKUP_ITEMS = 50                       # 12.4 lookup
 MAX_THUMB_BYTES = 24 * 1024                 # 5: thumb, at most 24 KB
 MAX_PEAKS = 512                             # 5: audio peaks
+MAX_BLOBS = 64                              # 15: files per revision
+MAX_BLOB_SERVERS = 10                       # 15: servers named per file
+SUBMISSION_WRAP_CT_CHARS = 348              # 15: a submission-key wrap's ct, exactly
+MAX_CLIENT_CHARS = 64                       # 15: client (and section)
 MAX_KEYRING_PAGE_CHARS = PAGE_PAYLOAD_MAX   # 12.3: 43,780, the payload of a 32,000-byte page
 
 # Media files (7).

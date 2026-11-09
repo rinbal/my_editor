@@ -6412,8 +6412,8 @@ msgid "relay must be ws:// or wss://, got {relay}"
 msgstr ""
 
 #: nostr/deletion.py:242
-#: nostr/publisher.py:1179
-#: nostr/publisher.py:1224
+#: nostr/publisher.py:1185
+#: nostr/publisher.py:1230
 msgid "Waiting for your signer app. Approve the deletion there…"
 msgstr ""
 
@@ -6438,7 +6438,7 @@ msgstr ""
 #: nostr/draft_sync.py:212
 #: nostr/publisher.py:923
 #: nostr/publisher.py:941
-#: nostr/publisher.py:1135
+#: nostr/publisher.py:1141
 msgid "Looking up your relay list…"
 msgstr ""
 
@@ -6448,7 +6448,7 @@ msgstr ""
 
 #: nostr/draft_sync.py:409
 #: nostr/publish_pipeline.py:164
-#: nostr/publisher.py:966
+#: nostr/publisher.py:972
 msgid "Connecting to your signer app…"
 msgstr ""
 
@@ -6707,7 +6707,7 @@ msgid "Your profile wasn’t changed. Try again in a moment."
 msgstr ""
 
 #: nostr/publish_pipeline.py:188
-#: nostr/publisher.py:1026
+#: nostr/publisher.py:1032
 msgid "Waiting for your signer app. Approve the request there…"
 msgstr ""
 
@@ -6734,11 +6734,11 @@ msgstr ""
 msgid "unknown error"
 msgstr ""
 
-#: nostr/publisher.py:993
+#: nostr/publisher.py:999
 msgid "Encrypting the draft. Approve the request in your signer app if it asks…"
 msgstr ""
 
-#: nostr/publisher.py:1425
+#: nostr/publisher.py:1431
 msgid "no relay accepted the deletion"
 msgstr ""
 
@@ -6754,59 +6754,59 @@ msgid_plural "Published. {accepted}/{total} relays accepted."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/publisher.py:1217
+#: nostr/publisher.py:1223
 msgid "This draft can’t be deleted: its link name holds a secret key, and the version on your relays isn’t known here. Refresh your drafts and try again."
 msgstr ""
 
-#: nostr/publisher.py:1045
+#: nostr/publisher.py:1051
 #, python-brace-format
 msgid "Publishing draft to {n} relay…"
 msgid_plural "Publishing draft to {n} relays…"
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/publisher.py:1056
+#: nostr/publisher.py:1062
 #, python-brace-format
 msgid "Draft saved to {accepted}/{total} relay."
 msgid_plural "Draft saved to {accepted}/{total} relays."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/publisher.py:1234
+#: nostr/publisher.py:1240
 #, python-brace-format
 msgid "Removing draft from {n} relay…"
 msgid_plural "Removing draft from {n} relays…"
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/publisher.py:1248
+#: nostr/publisher.py:1254
 #, python-brace-format
 msgid "Draft removed on {accepted}/{total} relay."
 msgid_plural "Draft removed on {accepted}/{total} relays."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/publisher.py:1423
+#: nostr/publisher.py:1429
 #, python-brace-format
 msgid "no relay accepted the deletion ({reasons})"
 msgstr ""
 
-#: nostr/publisher.py:990
+#: nostr/publisher.py:996
 #, python-brace-format
 msgid "This draft is too large. {reason}"
 msgstr ""
 
-#: nostr/publisher.py:987
+#: nostr/publisher.py:993
 #, python-brace-format
 msgid "Could not serialize draft: {reason}"
 msgstr ""
 
-#: nostr/publisher.py:1022
+#: nostr/publisher.py:1028
 #, python-brace-format
 msgid "Couldn’t prepare the draft: {reason}"
 msgstr ""
 
-#: nostr/publisher.py:999
+#: nostr/publisher.py:1005
 #, python-brace-format
 msgid "Could not encrypt draft: {reason}"
 msgstr ""
@@ -6885,25 +6885,25 @@ msgstr ""
 msgid "Your account has a relay list after all, so nothing was published. Add the members’ relay to it instead."
 msgstr ""
 
-#: nostr/signer_limits.py:155
+#: nostr/signer_limits.py:118
 msgid "This is too long to be signed through your signer app. Shorten it, or split it into parts."
 msgstr ""
 
-#: nostr/signer_limits.py:160
+#: nostr/signer_limits.py:123
 msgid "Your key is also kept on this computer: signed with it here, this limit doesn't apply."
 msgstr ""
 
-#: nostr/signer_limits.py:176
+#: nostr/signer_limits.py:139
 #, python-brace-format
 msgid "It has {size} bytes, and encryption allows {limit}. Split it into smaller drafts or publish it directly."
 msgstr ""
 
-#: nostr/signer_limits.py:170
+#: nostr/signer_limits.py:133
 #, python-brace-format
 msgid "It has {size} bytes, more than your signer app can hand back in one answer once its quotes and line breaks are counted. Split it into smaller drafts or publish it directly."
 msgstr ""
 
-#: nostr/signer_limits.py:174
+#: nostr/signer_limits.py:137
 #, python-brace-format
 msgid "It has {size} bytes, and your signer app can encrypt at most {limit}. Split it into smaller drafts or publish it directly."
 msgstr ""
@@ -7790,40 +7790,214 @@ msgstr ""
 msgid "Cannot derive identifier: item has no guid, link, or title"
 msgstr ""
 
-#: nostr/standup/formats.py:85
+#: nostr/standup/drafting.py:41
+msgid "Give the article a title to submit it."
+msgstr ""
+
+#: nostr/standup/drafting.py:42
+#, python-brace-format
+msgid "A title has at most {count} characters."
+msgstr ""
+
+#: nostr/standup/drafting.py:43
+msgid "Confirm the rights to submit."
+msgstr ""
+
+#: nostr/standup/drafting.py:44
+#, python-brace-format
+msgid "“{name}” is private in your Media Library. Share it, or take it out of the text, to submit."
+msgstr ""
+
+#: nostr/standup/drafting.py:46
+#, python-brace-format
+msgid "A submission has at most {count} pictures."
+msgstr ""
+
+#: nostr/standup/drafting.py:47
+#, python-brace-format
+msgid "A submission names at most {count} co-authors."
+msgstr ""
+
+#: nostr/standup/drafting.py:48
+#, python-brace-format
+msgid "You have submitted this text to {publication} already."
+msgstr ""
+
+#: nostr/standup/drafting.py:49
+#, python-brace-format
+msgid "A message has at most {count} characters."
+msgstr ""
+
+#: nostr/standup/formats.py:89
 msgid "It contains a secret key, and MyEditor never sends a secret key to a publication. Remove the key and try again."
 msgstr ""
 
-#: nostr/standup/lists.py:57
+#: nostr/standup/lists.py:66
 msgid "Your list of submissions couldn't be read."
 msgstr ""
 
-#: nostr/standup/lists.py:58
+#: nostr/standup/lists.py:67
 msgid "Your signer app didn't answer, so your list of submissions couldn't be read."
 msgstr ""
 
-#: nostr/standup/lists.py:60
+#: nostr/standup/lists.py:69
 msgid "Your list of submissions was saved with an older kind of encryption. Open it once in the app that saved it; until then, nothing new can be submitted here."
 msgstr ""
 
-#: nostr/standup/lists.py:63
+#: nostr/standup/lists.py:72
 msgid "Part of your list of submissions hasn't arrived yet. What did is shown, and the list is made whole again the next time it is saved."
 msgstr ""
 
-#: nostr/standup/lists.py:66
+#: nostr/standup/lists.py:75
 msgid "What you have read couldn't be loaded."
 msgstr ""
 
-#: nostr/standup/lists.py:67
+#: nostr/standup/lists.py:76
 msgid "Your signer app didn't answer, so what you have read couldn't be loaded."
 msgstr ""
 
-#: nostr/standup/lists.py:69
+#: nostr/standup/lists.py:78
 msgid "What you have read was saved with an older kind of encryption and is left as it is."
 msgstr ""
 
-#: nostr/standup/trust.py:41
+#: nostr/standup/trust.py:42
 msgid "The editorial team's key is not confirmed. Submitting is not possible right now."
+msgstr ""
+
+#: nostr/standup/words.py:25
+msgid "Encrypting …"
+msgstr ""
+
+#: nostr/standup/words.py:26
+msgid "Uploading picture …"
+msgstr ""
+
+#: nostr/standup/words.py:27
+msgid "Uploading pictures …"
+msgstr ""
+
+#: nostr/standup/words.py:28
+msgid "Encrypted, to your media server."
+msgstr ""
+
+#: nostr/standup/words.py:29
+msgid "Waiting for your signer app."
+msgstr ""
+
+#: nostr/standup/words.py:30
+msgid "Confirm the request there."
+msgstr ""
+
+#: nostr/standup/words.py:31
+#, python-brace-format
+msgid "Sending to {publication} …"
+msgstr ""
+
+#: nostr/standup/words.py:32
+msgid "Not confirmed yet. Checking …"
+msgstr ""
+
+#: nostr/standup/words.py:33
+msgid "You can close the window, MyEditor keeps checking."
+msgstr ""
+
+#: nostr/standup/words.py:34
+#, python-brace-format
+msgid "Submitted. In the inbox of {publication}."
+msgstr ""
+
+#: nostr/standup/words.py:35
+msgid "The server confirmed receipt."
+msgstr ""
+
+#: nostr/standup/words.py:36
+msgid "Submitting …"
+msgstr ""
+
+#: nostr/standup/words.py:37
+msgid "Not confirmed"
+msgstr ""
+
+#: nostr/standup/words.py:40
+msgid "Sending your message …"
+msgstr ""
+
+#: nostr/standup/words.py:41
+msgid "Your message to the editorial team is sent."
+msgstr ""
+
+#: nostr/standup/words.py:42
+msgid "Your message wasn’t sent."
+msgstr ""
+
+#: nostr/standup/words.py:46
+msgid "Nothing is submitted, your text stays in the editor."
+msgstr ""
+
+#: nostr/standup/words.py:47
+msgid "Not sent. No connection to the server."
+msgstr ""
+
+#: nostr/standup/words.py:48
+msgid "Not sent. Your signer app declined the request."
+msgstr ""
+
+#: nostr/standup/words.py:49
+msgid "Not sent. Your signer app didn’t answer."
+msgstr ""
+
+#: nostr/standup/words.py:50
+msgid "Your list of submissions couldn’t be saved."
+msgstr ""
+
+#: nostr/standup/words.py:51
+msgid "Another device changed this submission just now."
+msgstr ""
+
+#: nostr/standup/words.py:52
+msgid "A picture couldn’t be uploaded."
+msgstr ""
+
+#: nostr/standup/words.py:53
+msgid "A picture can’t be found on your media server."
+msgstr ""
+
+#: nostr/standup/words.py:54
+#, python-brace-format
+msgid "This submission is larger than {publication} takes."
+msgstr ""
+
+#: nostr/standup/words.py:55
+#, python-brace-format
+msgid "{publication} already has another version of this submission."
+msgstr ""
+
+#: nostr/standup/words.py:56
+msgid "The server didn’t take the submission."
+msgstr ""
+
+#: nostr/standup/words.py:60
+#, python-brace-format
+msgid "{publication} isn’t taking submissions right now."
+msgstr ""
+
+#: nostr/standup/words.py:61
+#, python-brace-format
+msgid "{publication} doesn’t take submissions from you."
+msgstr ""
+
+#: nostr/standup/words.py:62
+#, python-brace-format
+msgid "You already have as many open submissions at {publication} as it takes."
+msgstr ""
+
+#: nostr/standup/words.py:64
+msgid "Too many submissions in a short time. Try again later."
+msgstr ""
+
+#: nostr/standup/words.py:69
+#, python-brace-format
+msgid "Nobody at {publication} could decide on it: the only person who can is named among those who take part."
 msgstr ""
 
 #: nostr/ui/account_windows.py:95
@@ -11755,6 +11929,18 @@ msgstr ""
 
 #: nostr/ui/secret_key_check.py:69
 msgid "Replace with Public Key"
+msgstr ""
+
+#: nostr/ui/standup_handoff.py:329
+msgid "Send Again"
+msgstr ""
+
+#: nostr/ui/standup_handoff.py:272
+msgid "Editorial inbox"
+msgstr ""
+
+#: nostr/ui/standup_handoff.py:269
+msgid "In the inbox"
 msgstr ""
 
 #: nostr/ui/stash_kind_dialog.py:202

@@ -47,6 +47,31 @@ def test_a_body_the_server_would_refuse_has_a_problem(change):
     assert submission.submission_body_problem(change(submission_for(sk("writer")).body))
 
 
+def _blob(index, servers=("https://media.example",)):
+    return {"sha256": f"{index:064x}", "size": 10, "servers": list(servers)}
+
+
+@pytest.mark.parametrize("change, allowed", [
+    # Contract 15 (feat/redaktion 5c11475): 64 files per revision, each on
+    # at most 10 https servers; a submission-key wrap's ct is exactly 348
+    # characters; the client name at most 64.
+    (lambda b: dict(b, blobs=[_blob(i) for i in range(64)]), True),
+    (lambda b: dict(b, blobs=[_blob(i) for i in range(65)]), False),
+    (lambda b: dict(b, blobs=[_blob(1, [f"https://m{i}.example" for i in range(10)])]), True),
+    (lambda b: dict(b, blobs=[_blob(1, [f"https://m{i}.example" for i in range(11)])]), False),
+    (lambda b: dict(b, blobs=[_blob(1, ["http://media.example"])]), False),
+    (lambda b: dict(b, blobs=[{"sha256": "ab" * 32, "servers": []}]), False),
+    (lambda b: dict(b, wraps=dict(b["wraps"], writer=dict(b["wraps"]["writer"],
+                                                          ct=b["wraps"]["writer"]["ct"] + "A"))),
+     False),
+    (lambda b: dict(b, client="M" * 64), True),
+    (lambda b: dict(b, client="M" * 65), False),
+])
+def test_the_limits_of_contract_15_are_checked_before_sending(change, allowed):
+    problem = submission.submission_body_problem(change(submission_for(sk("writer")).body))
+    assert (problem is None) is allowed, problem
+
+
 def test_a_body_that_cannot_be_built_raises():
     hand = submission_for(sk("writer")).body
     with pytest.raises(FormatError):

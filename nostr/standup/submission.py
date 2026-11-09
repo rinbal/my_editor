@@ -89,11 +89,17 @@ def submission_body_problem(body: Any) -> Optional[str]:
                      "the wraps for the editorial team and the writer")
         formats.need(set(wraps) - {"redaktion", "writer"} <= set(participants),
                      "a wrap for someone who does not take part")
+        formats.need(all(len(w["ct"]) == formats.SUBMISSION_WRAP_CT_CHARS
+                         for w in wraps.values()), "a wrap that holds no submission key")
         blobs = body.get("blobs")
-        formats.need(isinstance(blobs, list) and all(
-            isinstance(b, dict) and formats.is_hex64(b.get("sha256")) for b in blobs),
-            "the files")
+        formats.need(isinstance(blobs, list) and len(blobs) <= formats.MAX_BLOBS
+                     and all(_blob_ok(b) for b in blobs),
+                     f"at most {formats.MAX_BLOBS} files, each on at most "
+                     f"{formats.MAX_BLOB_SERVERS} https servers")
         formats.need(len({b["sha256"] for b in blobs}) == len(blobs), "a file listed twice")
+        client = body.get("client")
+        formats.need(isinstance(client, str) and len(client) <= formats.MAX_CLIENT_CHARS,
+                     f"the client has at most {formats.MAX_CLIENT_CHARS} characters")
         formats.need(formats.is_hex64(body.get("status_key_hash")), "the status key hash")
         if "source" in body:
             formats.need(isinstance(body["source"], dict), "the source")
@@ -105,6 +111,17 @@ def submission_body_problem(body: Any) -> Optional[str]:
     except FormatError as exc:
         return str(exc)
     return None
+
+
+def _blob_ok(blob: Any) -> bool:
+    """A file of the body (12.4, 15): its hash, its size, and at most
+    ten servers, each https."""
+    if not isinstance(blob, dict) or not formats.is_hex64(blob.get("sha256")):
+        return False
+    servers = blob.get("servers")
+    return (formats.is_int(blob.get("size")) and isinstance(servers, list)
+            and len(servers) <= formats.MAX_BLOB_SERVERS
+            and all(isinstance(s, str) and s.startswith("https://") for s in servers))
 
 
 __all__ = ["submission_body", "submission_body_problem"]

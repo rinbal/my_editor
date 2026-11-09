@@ -31,6 +31,7 @@ from i18n import N_
 
 from .. import events as nostr_events
 from .. import queries
+from ..signed_api import answer_later
 from . import formats
 from .answers import Listing, SiteSettings
 from .client import StandupApi
@@ -333,11 +334,12 @@ def confirm_key(api: StandupApi, address: str, relay_lookup: RelayLookup, store:
     the newest valid one, which must name ``api``'s server
     (:func:`key_for_server`). When the server cannot be asked, the
     relays' alone count. ``on_refused`` with KeyNotConfirmed when none
-    passes, its reason naming the server's failure when there was one."""
+    passes, its reason naming the server's failure when there was one;
+    always after this returned."""
     try:
         pubkey, site_d = formats.parse_address(address)
     except FormatError as exc:
-        on_refused(KeyNotConfirmed(f"the address: {exc}"))
+        answer_later(on_refused, KeyNotConfirmed(f"the address: {exc}"))
         return
     state: Dict[str, Any] = {}
 

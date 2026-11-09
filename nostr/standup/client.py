@@ -454,20 +454,24 @@ class StandupApi(SignedJsonApi):
     # -- submissions (12.4) --------------------------------------------------
 
     def submit(self, body: Mapping[str, Any], on_success: Callable[[Any], None],
-               on_failure: Callable[[StandupError], None]) -> StandupCall:
+               on_failure: Callable[[StandupError], None], *,
+               on_sending: Optional[Callable[[], None]] = None) -> StandupCall:
         """``POST /api/submissions`` with ``body`` (see
         :func:`~.submission.submission_body`).
 
         ``on_success`` gets :class:`~.views.Confirmed`, :class:`~.views.BlobsMissing`
         or :class:`~.views.Mismatch`. Sending the same body again (after
         uploading missing files, or after no answer) is safe: the server
-        answers the stored receipt (criterion 5).
+        answers the stored receipt (criterion 5). ``on_sending`` is told
+        once the request is signed and written to the network; until then
+        :meth:`drop` keeps it from being sent at all.
         """
         problem = submission_body_problem(body)
         if problem:
             return self._refuse("POST", "/api/submissions", problem, on_success, on_failure)
         call = self._build("POST", "/api/submissions", dict(body), Auth.SIGNED, None,
                            on_success, on_failure)
+        call.on_sending = on_sending
         call.parse = lambda data: views.check_receipt(body, data.get("receipt"),
                                                       now=self._clock(),
                                                       repeat=call.status == 200)

@@ -212,6 +212,17 @@ def _confirm(api, nam, relays, epochs):
     return outcome[0]
 
 
+def test_a_malformed_address_is_refused_after_the_call_returned():
+    _server, nam, api = _world()
+    epochs, _ = store()
+    outcome = []
+    trust.confirm_key(api, "30004:nonsense", Relays(), epochs, outcome.append,
+                      outcome.append)
+    assert outcome == []
+    nam.settle()
+    assert isinstance(outcome[0], trust.KeyNotConfirmed) and "address" in outcome[0].reason
+
+
 def test_the_key_to_submit_to_comes_from_the_server_and_the_relays():
     server, nam, api = _world()
     relays = Relays([key_event(4)])
