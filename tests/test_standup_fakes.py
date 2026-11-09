@@ -653,7 +653,7 @@ def test_a_body_refused_for_the_days_storage_counts_no_revision(monkeypatch):
     assert _submit(nam, first.body)[0] == 201
 
 
-# -- the conversation, as the backend takes it (api/submission_messages.py, fde04a3) ---
+# -- the conversation, as the backend takes it (api/submission_messages.py, 607c941) ---
 
 _EPH = bytes(range(7, 39))
 

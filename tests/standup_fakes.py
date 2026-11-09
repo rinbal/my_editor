@@ -122,7 +122,7 @@ OPEN = ("submitted", "in_review", "changes_requested")
 ROUND_CLOSED = ("declined", "withdrawn")
 REDAKTION = ("owner", "redaktion")
 
-# backend core/editorial_flow.py TRANSITIONS (fde04a3), the rows of what
+# backend core/editorial_flow.py TRANSITIONS (607c941), the rows of what
 # goes into the timeline: (action, from states, roles, to or None for the
 # same state). ACTIVE is OPEN and accepted; FINAL the rest.
 _ACTIVE = OPEN + ("accepted",)
@@ -426,7 +426,7 @@ _NIP44_PADDED = frozenset(crypto.calc_padded_len(n) for n in range(1, 65536))
 
 def _nip44_shaped(payload: Any) -> bool:
     """What a server can check of a NIP-44 v2 payload it cannot open
-    (backend core/nip44.py payload_shape_ok, fde04a3): its length,
+    (backend core/nip44.py payload_shape_ok, 607c941): its length,
     canonical base64, version 2, and a ciphertext as long as NIP-44
     padding makes one."""
     if not isinstance(payload, str) or not 132 <= len(payload) <= 87472 or payload[0] == "#":
@@ -1292,7 +1292,7 @@ class FakeStandupServer:
                     "members": [self._member(pub, p) for p in pub.members]})
 
     def _messages(self, who, body, params, query) -> FakeReply:
-        """backend api/submission_messages.py post_message (fde04a3), in its
+        """backend api/submission_messages.py post_message (607c941), in its
         order: the body (core/editorial_messages.py parse_message), then
         who may see it (404 for anyone without a role), a wrap stored
         already (its seq, 200), the move, the room, and 201. Its rate
