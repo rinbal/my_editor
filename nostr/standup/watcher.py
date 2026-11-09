@@ -17,34 +17,96 @@ window calls it from ``_release_identity_state``) stops the timer,
 ignores every answer still on its way and forgets what it learned
 (criterion 19 of the plan).
 
-:func:`resolve_unconfirmed` is the rule of contract 12.4 for a request
-that got no answer: the lookup decides whether it arrived.
+:func:`classify` says what the server's latest receipt means for the
+revision an entry records: confirmed, stored with files missing, not
+stored, superseded or different. Every :class:`Followed` carries it as
+its ``status``, and :func:`resolve_unconfirmed`, the rule of contract
+12.4 for a request that got no answer, asks it too: an entry recorded
+for a revision that never arrived never reads as the revision before.
+
+A lookup answers at most a byte budget of timeline items per submission
+(contract 15, feat/redaktion 5c11475); ``"more": true`` says to continue
+with ``since``, which a round does, for that submission only, until the
+server says there is no more.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Sequence
+from dataclasses import dataclass, replace
+from typing import Callable, Dict, List, Optional, Sequence, Union
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from . import formats, views
+from . import answers, formats, views
 from .answers import LookupAnswer
 from .client import StandupApi
 from .errors import Code, StandupError
 from .lists import SubmissionEntry
 
 REFRESH_INTERVAL_MS = 15 * 60 * 1000
+# A submission whose answers keep saying "more" without anything new is
+# asked no further in this round (a server must not hold a round open).
+MAX_CONTINUATIONS = 20
+
+
+# --------------------------------------------------------------------------- #
+# What a receipt says about an entry (12.4)                                    #
+# --------------------------------------------------------------------------- #
+
+@dataclass(frozen=True)
+class NotStored:
+    """The server has no such revision: nothing was stored, and the
+    submission may be sent again (also as a newly built revision)."""
+
+    receipt: Optional[views.Receipt] = None
+
+
+@dataclass(frozen=True)
+class Superseded:
+    """A later revision is stored, so this one arrived before it (from
+    this or another device): read the submission again."""
+
+    receipt: views.Receipt
+
+
+@dataclass(frozen=True)
+class Different:
+    """A revision with this number but another hash is stored (another
+    device sent one): sending this one again would be refused as stale."""
+
+    receipt: views.Receipt
+
+
+EntryStatus = Union[views.Confirmed, views.BlobsMissing, NotStored, Superseded, Different]
+
+
+def classify(entry: SubmissionEntry, receipt: views.Receipt) -> EntryStatus:
+    """What ``receipt``, the server's receipt of the submission's latest
+    revision, says about the revision ``entry`` records. Pure; the one
+    rule for the watcher and for a request that got no answer."""
+    if views.lookup_confirms(receipt, submission_id=entry.sid, revision=entry.revision,
+                             revision_hash=entry.revision_hash):
+        if receipt.blobs_missing:
+            return views.BlobsMissing(receipt=receipt, missing=receipt.blobs_missing)
+        return views.Confirmed(receipt=receipt, repeat=True)
+    if receipt.revision < entry.revision:
+        return NotStored(receipt)
+    if receipt.revision > entry.revision:
+        return Superseded(receipt)
+    return Different(receipt)
 
 
 @dataclass(frozen=True)
 class Followed:
     """What the server says about one submission: its view, the receipt
-    of its latest revision, and every timeline item seen so far."""
+    of its latest revision, every timeline item seen so far, and what
+    that receipt says about the revision the entry records
+    (:func:`classify`): only :class:`~.views.Confirmed` is "Eingereicht"."""
 
     entry: SubmissionEntry
     item: views.LookupItem
     timeline: tuple
+    status: EntryStatus
 
     @property
     def last_seq(self) -> int:
@@ -159,22 +221,33 @@ class SubmissionWatcher(QObject):
             self._ask(batch, generation, learned, one_done)
 
     def _ask(self, batch: List[SubmissionEntry], generation: int,
-             learned: Dict[str, Followed], one_done: Callable[[], None]) -> None:
+             learned: Dict[str, Followed], one_done: Callable[[], None],
+             continuation: int = 0) -> None:
         by_key = {entry.status_key: entry for entry in batch}
 
         def found(answer: LookupAnswer) -> None:
             if generation != self._generation:
                 return
+            more: List[SubmissionEntry] = []
             for key, item in answer.found.items():
                 entry = by_key[key]
                 if item.submission.submission_id != entry.sid:
                     self.failed.emit(StandupError(
                         Code.BAD_RESPONSE, message="the answer is for another submission"))
                     continue
-                learned[entry.sid] = self._followed_with(entry, item)
+                before = self._since(entry, learned)
+                learned[entry.sid] = self._followed_with(entry, item, learned)
+                if item.more and learned[entry.sid].last_seq > before:
+                    more.append(entry)
+                elif item.more:
+                    self.failed.emit(StandupError(
+                        Code.BAD_RESPONSE, message="more was promised and nothing came"))
             if answer.unreadable:
                 self.failed.emit(StandupError(
                     Code.BAD_RESPONSE, message=f"{len(answer.unreadable)} answers unreadable"))
+            if more and continuation < MAX_CONTINUATIONS:
+                self._ask(more, generation, learned, one_done, continuation + 1)
+                return
             one_done()
 
         def failed(error: StandupError) -> None:
@@ -184,19 +257,24 @@ class SubmissionWatcher(QObject):
             one_done()
 
         self._client_for(batch[0].server).lookup(
-            [(e.status_key, self._since(e)) for e in batch], found, failed)
+            [(e.status_key, self._since(e, learned)) for e in batch], found, failed)
 
-    def _followed_with(self, entry: SubmissionEntry, item: views.LookupItem) -> Followed:
+    def _known(self, sid: str, learned: Dict[str, Followed]) -> Optional[Followed]:
+        return learned.get(sid) or self._followed.get(sid)
+
+    def _followed_with(self, entry: SubmissionEntry, item: views.LookupItem,
+                       learned: Dict[str, Followed]) -> Followed:
         """What is known of ``entry`` with ``item`` added: its timeline
         grows by what is new, each ``seq`` once."""
-        known = self._followed.get(entry.sid)
+        known = self._known(entry.sid, learned)
         timeline = {i.seq: i for i in (known.timeline if known else ())}
         timeline.update({i.seq: i for i in item.timeline})
         return Followed(entry=entry, item=item,
-                        timeline=tuple(timeline[seq] for seq in sorted(timeline)))
+                        timeline=tuple(timeline[seq] for seq in sorted(timeline)),
+                        status=classify(entry, item.receipt))
 
-    def _since(self, entry: SubmissionEntry) -> int:
-        known = self._followed.get(entry.sid)
+    def _since(self, entry: SubmissionEntry, learned: Dict[str, Followed]) -> int:
+        known = self._known(entry.sid, learned)
         return known.last_seq if known else 0
 
     def _round_done(self) -> None:
@@ -210,32 +288,42 @@ class SubmissionWatcher(QObject):
 
 
 # --------------------------------------------------------------------------- #
-# No answer after sending (12.4)                                               #
+# Reading one submission whole                                                 #
 # --------------------------------------------------------------------------- #
 
-@dataclass(frozen=True)
-class NotStored:
-    """The server has no such revision: nothing was stored, and the
-    submission may be sent again (also as a newly built revision)."""
+def read_submission(api: StandupApi, submission_id: str,
+                    on_done: Callable[[answers.SubmissionDetail], None],
+                    on_failure: Callable[[StandupError], None], *, since: int = 0,
+                    revision: Optional[int] = None) -> None:
+    """``GET /api/submissions/<sid>`` until the server says no more
+    timeline items wait (``more``, contract 15): ``on_done`` once, with
+    the last answer's view, revisions and members and every timeline
+    item since ``since``, each ``seq`` once, in order. An answer that
+    promises more and brings nothing new is a failure (a server must not
+    hold the reader in a loop)."""
+    gathered: Dict[int, views.TimelineItem] = {}
 
-    receipt: Optional[views.Receipt] = None
+    def ask(after: int, continuation: int) -> None:
+        def answered(detail: answers.SubmissionDetail) -> None:
+            gathered.update({item.seq: item for item in detail.timeline})
+            last = max(gathered, default=after)
+            if detail.more and (last <= after or continuation >= MAX_CONTINUATIONS):
+                on_failure(StandupError(Code.BAD_RESPONSE,
+                                        message="more was promised and nothing came"))
+            elif detail.more:
+                ask(last, continuation + 1)
+            else:
+                on_done(replace(detail, more=False,
+                                timeline=tuple(gathered[seq] for seq in sorted(gathered))))
+
+        api.submission(submission_id, answered, on_failure, since=after, revision=revision)
+
+    ask(since, 0)
 
 
-@dataclass(frozen=True)
-class Superseded:
-    """A later revision is stored, so this one arrived before it (from
-    this or another device): read the submission again."""
-
-    receipt: views.Receipt
-
-
-@dataclass(frozen=True)
-class Different:
-    """A revision with this number but another hash is stored (another
-    device sent one): sending this one again would be refused as stale."""
-
-    receipt: views.Receipt
-
+# --------------------------------------------------------------------------- #
+# No answer after sending (12.4)                                               #
+# --------------------------------------------------------------------------- #
 
 def resolve_unconfirmed(api: StandupApi, entry: SubmissionEntry,
                         on_done: Callable[[object], None],
@@ -268,24 +356,13 @@ def resolve_unconfirmed(api: StandupApi, entry: SubmissionEntry,
                                     message="the answer is for another submission",
                                     maybe_stored=True))
             return
-        receipt = item.receipt
-        if views.lookup_confirms(receipt, submission_id=entry.sid, revision=entry.revision,
-                                 revision_hash=entry.revision_hash):
-            if receipt.blobs_missing:
-                on_done(views.BlobsMissing(receipt=receipt, missing=receipt.blobs_missing))
-            else:
-                on_done(views.Confirmed(receipt=receipt, repeat=True))
-        elif receipt.revision < entry.revision:
-            on_done(NotStored(receipt))
-        elif receipt.revision > entry.revision:
-            on_done(Superseded(receipt))
-        else:
-            on_done(Different(receipt))
+        on_done(classify(entry, item.receipt))
 
     api.lookup([(entry.status_key, 0)], found, on_failure)
 
 
 __all__ = [
-    "Different", "Followed", "NotStored", "REFRESH_INTERVAL_MS", "SubmissionWatcher",
-    "Superseded", "resolve_unconfirmed",
+    "Different", "EntryStatus", "Followed", "MAX_CONTINUATIONS", "NotStored",
+    "REFRESH_INTERVAL_MS", "SubmissionWatcher", "Superseded", "classify", "read_submission",
+    "resolve_unconfirmed",
 ]

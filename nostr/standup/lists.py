@@ -564,7 +564,8 @@ class ReadState(_AccountList):
         return merge_seen(remote, self._local)
 
     def seen(self, sid: str) -> int:
-        return int(self._local.get(sid, 0))
+        value = self._local.get(sid, 0)
+        return value if formats.is_int(value) else 0
 
     def mark(self, sid: str, seq: int) -> None:
         """``sid`` read up to ``seq`` (kept here until :meth:`flush`); a
@@ -634,19 +635,23 @@ def _higher(earlier: Any, later: Any) -> Any:
     return later if formats.is_int(later) else earlier
 
 
-def _decode_seen(payload: dict) -> Dict[str, int]:
+def _decode_seen(payload: dict) -> Dict[str, Any]:
+    """Every key as it came: this app reads ``<sid>`` keys, and keeps the
+    rest (STANDUP writes ``i:<sid>`` for a member's internal notes,
+    contract 13, feat/redaktion 5c11475) so a write never drops them."""
     seen = payload.get("seen")
     if not isinstance(seen, dict):
         raise ValueError("the read state has no map")
-    return {sid: seq for sid, seq in seen.items()
-            if formats.is_hex64(sid) and formats.is_int(seq)}
+    return dict(seen)
 
 
-def merge_seen(remote: Dict[str, int], local: Dict[str, int]) -> Dict[str, int]:
-    """The read state's union (13): the highest ``seq`` per ``sid``."""
+def merge_seen(remote: Dict[str, Any], local: Dict[str, Any]) -> Dict[str, Any]:
+    """The read state's union (13): the highest whole number per key, for
+    the keys this app reads and those it only keeps (where one side holds
+    something else, the whole number; where neither does, the relays')."""
     merged = dict(remote)
-    for sid, seq in local.items():
-        merged[sid] = max(seq, merged.get(sid, seq))
+    for key, value in local.items():
+        merged[key] = _higher(merged[key], value) if key in merged else value
     return merged
 
 

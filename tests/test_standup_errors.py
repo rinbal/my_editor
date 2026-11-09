@@ -25,6 +25,7 @@ def envelope(code, message="Nicht möglich.", detail=None) -> bytes:
     (404, "not_found", Code.NOT_FOUND),
     (405, "method_not_allowed", Code.METHOD_NOT_ALLOWED),
     (409, "stale_revision", Code.STALE_REVISION),
+    (409, "no_decider", Code.NO_DECIDER),
     (413, "too_large", Code.TOO_LARGE),
     (422, "wrap_invalid", Code.WRAP_INVALID),
     (429, "rate_limited", Code.RATE_LIMITED),

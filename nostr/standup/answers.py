@@ -364,13 +364,17 @@ def parse_editorial(data: Mapping[str, Any]) -> Editorial:
 
 @dataclass(frozen=True)
 class SubmissionDetail:
-    """``GET /api/submissions/<sid>``."""
+    """``GET /api/submissions/<sid>``: ``revisions`` holds the latest
+    revision, or only the one asked for; ``more`` says that timeline
+    items wait beyond this answer's budget (ask again with ``since``,
+    contract 12.4 and 15, feat/redaktion 5c11475)."""
 
     submission: views.SubmissionView
     my_role: str
     revisions: Tuple[views.RevisionRecord, ...]
     timeline: Tuple[views.TimelineItem, ...]
     members: Tuple[Member, ...]
+    more: bool = False
 
 
 def parse_submission_detail(data: Mapping[str, Any]) -> SubmissionDetail:
@@ -384,7 +388,14 @@ def parse_submission_detail(data: Mapping[str, Any]) -> SubmissionDetail:
         timeline=views.parse_timeline(data.get("timeline", []),
                                       internal=role in views.MEMBER_ROLES),
         members=tuple(parse_member(m) for m in read_list(data.get("members", []),
-                                                         "the members", limit=_MAX_MEMBERS)))
+                                                         "the members", limit=_MAX_MEMBERS)),
+        more=_read_more(data))
+
+
+def _read_more(data: Mapping[str, Any]) -> bool:
+    more = data.get("more", False)
+    need(isinstance(more, bool), "more is true or false")
+    return more
 
 
 @dataclass(frozen=True)

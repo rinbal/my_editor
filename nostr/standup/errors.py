@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What went wrong with a STANDUP request (editorial contract 12.2).
+"""What went wrong with a STANDUP request (editorial contract 12.2,
+feat/redaktion 5c11475).
 
 :class:`StandupError` is the one failure value of the client: the
 contract's code where the server gave one, the app's own otherwise, and
@@ -50,6 +51,7 @@ class Code:
     INVALID_TRANSITION = "invalid_transition"
     CONFLICT = "conflict"
     EPOCH = "epoch"
+    NO_DECIDER = "no_decider"   # nobody outside the writer and contributors could decide
     TOO_LARGE = "too_large"
     INVALID = "invalid"
     KEY_EVENT_INVALID = "key_event_invalid"
@@ -68,7 +70,8 @@ _CODES_BY_STATUS = {
           Code.ROLE),
     404: (Code.NOT_FOUND,),
     405: (Code.METHOD_NOT_ALLOWED,),
-    409: (Code.CONFLICT, Code.STALE_REVISION, Code.INVALID_TRANSITION, Code.EPOCH),
+    409: (Code.CONFLICT, Code.STALE_REVISION, Code.INVALID_TRANSITION, Code.EPOCH,
+          Code.NO_DECIDER),
     413: (Code.TOO_LARGE,),
     422: (Code.INVALID, Code.KEY_EVENT_INVALID, Code.SETTINGS_INVALID, Code.WRAP_INVALID),
     429: (Code.RATE_LIMITED,),

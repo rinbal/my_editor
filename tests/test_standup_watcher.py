@@ -23,6 +23,8 @@ from nostr.standup.watcher import (
     NotStored,
     Superseded,
     SubmissionWatcher,
+    classify,
+    read_submission,
     resolve_unconfirmed,
 )
 from tests.membership_fakes import FakeClock, FakeTimer
@@ -320,3 +322,65 @@ def test_an_answer_that_cannot_be_read_leaves_the_entry_unconfirmed():
     world.server._lookup = broken
     kind, error = _resolve(world, entry_for(prepared))
     assert kind == "err" and error.code == Code.BAD_RESPONSE and error.maybe_stored
+
+
+# -- what a receipt says about an entry (RG-M1 5) ----------------------------------
+
+def test_an_entry_recorded_for_a_revision_that_never_arrived_is_not_shown_as_submitted():
+    world = World()
+    prepared, entry = world.submit()
+    unsent = replace(entry, revision=2, revision_hash="ab" * 32)
+    watcher, _timer, updates, _ = world.watcher(entries=lambda: [unsent])
+    watcher.start()
+    world.nam.settle()
+    followed = updates[-1][entry.sid]
+    assert isinstance(followed.status, NotStored)
+    assert followed.status.receipt.revision == 1
+
+
+def test_the_watcher_and_the_no_answer_rule_read_a_receipt_alike():
+    world = World()
+    _prepared, entry = world.submit()
+    watcher, _timer, updates, _ = world.watcher()
+    watcher.start()
+    world.nam.settle()
+    followed = updates[-1][entry.sid]
+    assert isinstance(followed.status, views.Confirmed)
+    for recorded, kind in ((entry, views.Confirmed),
+                           (replace(entry, revision_hash="ab" * 32), Different),
+                           (replace(entry, revision=2), NotStored),
+                           (replace(entry, revision=0), Superseded)):
+        assert isinstance(classify(recorded, followed.item.receipt), kind)
+        _ok, resolved = _resolve(world, recorded)
+        assert isinstance(resolved, kind)
+
+
+# -- more than one answer holds (contract 15, 5c11475) ----------------------------
+
+def test_a_round_continues_while_the_server_says_more():
+    world = World()
+    prepared, entry = world.submit()
+    record = world.server.submissions[entry.sid]
+    for seq in range(2, 8):
+        record.timeline.append(dict(record.timeline[0], seq=seq))
+    world.server.timeline_per_answer["lookup"] = 3
+    watcher, _timer, updates, failures = world.watcher()
+    watcher.start()
+    world.nam.settle()
+    assert [i.seq for i in watcher.followed()[entry.sid].timeline] == list(range(1, 8))
+    assert len(world.lookups()) == 3 and len(updates) == 1 and failures == []
+
+
+def test_reading_a_submission_continues_while_the_server_says_more():
+    world = World()
+    prepared, entry = world.submit()
+    record = world.server.submissions[entry.sid]
+    for seq in range(2, 6):
+        record.timeline.append(dict(record.timeline[0], seq=seq))
+    world.server.timeline_per_answer["get"] = 2
+    outcome = []
+    read_submission(world.writer, entry.sid, outcome.append, outcome.append)
+    world.nam.settle()
+    [detail] = outcome
+    assert [i.seq for i in detail.timeline] == [1, 2, 3, 4, 5] and not detail.more
+    assert [r.revision for r in detail.revisions] == [1]

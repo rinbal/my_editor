@@ -318,6 +318,9 @@ class FakeStandupServer:
         self.tamper_receipt: Optional[Callable[[dict], dict]] = None
         self.handled: List[str] = []             # routes that changed or read state
         self.max_per_hour = 10
+        # Timeline items per answer (contract 15: 500 for GET, 100 per
+        # lookup item, at most 8 MiB); "more": true when some wait.
+        self.timeline_per_answer = {"lookup": 100, "get": 500}
         self.bote = {"pubkey": VECTORS["keys"]["bote"]["pubkey"], "npub": "npub1bote",
                      "nip05": "bote@standup.example"}
         self.publications: Dict[str, Publication] = {}
@@ -821,12 +824,18 @@ class FakeStandupServer:
             since = item.get("since") or 0
             for record in self.submissions.values():
                 if record.status_key_hash == key_hash:
+                    timeline, more = self._page([i for i in record.timeline
+                                                 if i["seq"] > since and i["type"] != "internal"],
+                                                "lookup")
                     answers.append({
                         "status_key_hash": key_hash, "submission": self.view(record),
                         "receipt": self._receipt(record, record.revision, recheck=False),
-                        "timeline": [i for i in record.timeline
-                                     if i["seq"] > since and i["type"] != "internal"]})
+                        "timeline": timeline, "more": more})
         return _ok({"items": answers})
+
+    def _page(self, items: List[dict], answer: str) -> Tuple[List[dict], bool]:
+        limit = self.timeline_per_answer[answer]
+        return items[:limit], len(items) > limit
 
     def _submission_get(self, who, body, params, query) -> FakeReply:
         record = self._record(params["sid"])
@@ -837,17 +846,23 @@ class FakeStandupServer:
             return _error(403, "forbidden")
         since = int((query.get("since") or ["0"])[0])
         member = role in ("owner", "redaktion", "curator")
+        # Contract 12.4 (5c11475): the latest revision, or only ?revision=n.
+        asked = query.get("revision")
+        if asked and int(asked[0]) not in record.revisions:
+            return _error(404, "not_found")
+        numbers = [int(asked[0])] if asked else [max(record.revisions)]
         revisions = []
-        for number in sorted(record.revisions):
+        for number in numbers:
             revision = dict(record.revisions[number])
             wraps = revision["wraps"]
             mine = "redaktion" if member else ("writer" if role == "writer" else who.pubkey)
             revision["wraps"] = {k: v for k, v in wraps.items() if k == mine}
             revisions.append(revision)
         pub = self.publications[record.publication]
+        timeline, more = self._page([i for i in record.timeline if i["seq"] > since
+                                     and (member or i["type"] != "internal")], "get")
         return _ok({"submission": self.view(record), "my_role": role, "revisions": revisions,
-                    "timeline": [i for i in record.timeline if i["seq"] > since
-                                 and (member or i["type"] != "internal")],
+                    "timeline": timeline, "more": more,
                     "members": [self._member(pub, p) for p in pub.members]})
 
     def _messages(self, who, body, params, query) -> FakeReply:

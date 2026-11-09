@@ -308,6 +308,8 @@ class LookupItem:
     submission: SubmissionView
     receipt: Receipt
     timeline: Tuple[TimelineItem, ...]
+    # More timeline items wait: ask again with ``since`` (15, 5c11475).
+    more: bool = False
 
 
 def parse_lookup_item(value: Any) -> LookupItem:
@@ -316,9 +318,12 @@ def parse_lookup_item(value: Any) -> LookupItem:
     receipt = parse_receipt(data.get("receipt"))
     need(receipt.submission_id == view.submission_id,
          "the receipt is for another submission")
+    more = data.get("more", False)
+    need(isinstance(more, bool), "more is true or false")
     return LookupItem(status_key_hash=read_hex64(data.get("status_key_hash"), "the status key hash"),
                       submission=view, receipt=receipt,
-                      timeline=parse_timeline(data.get("timeline", []), internal=False))
+                      timeline=parse_timeline(data.get("timeline", []), internal=False),
+                      more=more)
 
 
 @dataclass(frozen=True)

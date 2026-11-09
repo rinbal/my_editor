@@ -351,6 +351,23 @@ def test_the_read_state_has_an_opaque_d_and_keeps_the_highest_seq():
     assert "einundzwanzig" not in d and "read-state" not in d
 
 
+def test_keys_this_app_does_not_read_are_kept_through_every_write():
+    # Contract 13 (5c11475): STANDUP keeps a member's internal read
+    # position under i:<sid>; MyEditor must not drop it.
+    relay = Relay()
+    d = formats.read_state_d(PK)
+    sid = formats.sha256_hex("a")
+    relay.put(d, {"v": 1, "page": 0, "pages": 1,
+                  "seen": {sid: 3, f"i:{sid}": 7, "future": {"x": 1}}})
+    store, _relay, _clock = make(ReadState, relay=relay)
+    load(store)
+    store.mark(sid, 4)
+    assert store.flush(leaving=True)
+    settle(60)
+    assert relay.page(d)["seen"] == {sid: 4, f"i:{sid}": 7, "future": {"x": 1}}
+    assert merge_seen({f"i:{sid}": 7}, {f"i:{sid}": 9}) == {f"i:{sid}": 9}
+
+
 def test_the_read_state_is_written_at_most_every_five_minutes_and_when_leaving():
     store, relay, clock = make(ReadState)
     load(store)

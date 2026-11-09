@@ -496,13 +496,24 @@ class StandupApi(SignedJsonApi):
 
     def submission(self, submission_id: str,
                    on_success: Callable[[answers.SubmissionDetail], None],
-                   on_failure, *, since: Optional[int] = None) -> StandupCall:
-        """``GET /api/submissions/<sid>?since=seq`` with the session."""
+                   on_failure, *, since: Optional[int] = None,
+                   revision: Optional[int] = None) -> StandupCall:
+        """``GET /api/submissions/<sid>?since=seq&revision=n`` with the
+        session: the latest revision, or only revision ``revision``. An
+        answer with ``more`` has timeline items beyond ``since`` waiting:
+        ask again from its last ``seq`` (``watcher.read_submission`` does)."""
         path = f"/api/submissions/{_sid(submission_id)}"
+        query = {}
         if since is not None:
             if not formats.is_int(since):
                 raise ValueError("since is a seq")
-            path += f"?since={since}"
+            query["since"] = since
+        if revision is not None:
+            if not formats.is_int(revision, low=1):
+                raise ValueError("a revision number starts at 1")
+            query["revision"] = revision
+        if query:
+            path += "?" + urlencode(query)
         return self._call("GET", path, None, Auth.SESSION, answers.parse_submission_detail,
                           on_success, on_failure, limit=MAX_DETAIL_ANSWER_BYTES)
 
