@@ -61,6 +61,10 @@ _UPLOAD_TIMEOUT_MS = 5 * 60 * 1000     # five minutes of *idle* time
 _LIST_TIMEOUT_MS = 30 * 1000
 _DELETE_TIMEOUT_MS = 30 * 1000
 _MIRROR_TIMEOUT_MS = 60 * 1000
+_HEAD_TIMEOUT_MS = 30 * 1000
+# A blob's first bytes are asked for to tell its kind (a submission's
+# SMF1 file); more is never read.
+MAX_HEAD_BYTES = 64
 
 _USER_AGENT = b"my-editor-blossom/1"
 
@@ -868,6 +872,72 @@ class BlossomClient(QObject):
 
         reply.finished.connect(_finished)
         # Keep a strong ref via the inflight map.
+        self._inflight[key] = reply
+
+    # -- the first bytes of a blob --------------------------------------------
+
+    def read_head(
+        self,
+        url: str,
+        count: int,
+        on_success: Callable[[bytes], None],
+        on_failure: Callable[[BlossomError], None],
+    ) -> None:
+        """The first ``count`` bytes of the blob at ``url`` (BUD-01 ``GET
+        /<sha256>``), asked for with ``Range: bytes=0-<count-1>`` (RFC
+        9110 14.2). A server that ignores the range answers 200 with the
+        whole blob: the reply is stopped once ``count`` bytes are in, so
+        no more is ever kept. A blob shorter than ``count`` answers what
+        it has. Only an address the media policy takes (https, http on
+        loopback), as every blob address the library holds."""
+        if not 0 < count <= MAX_HEAD_BYTES or not url_safety.is_safe_media_url(url):
+            on_failure(BlossomError("not a blob address to read from"))
+            return
+        try:
+            request = self._prepare(url, accept=b"*/*", timeout_ms=_HEAD_TIMEOUT_MS)
+        except BlossomError as exc:
+            on_failure(exc)
+            return
+        request.setRawHeader(b"Range", f"bytes=0-{count - 1}".encode("ascii"))
+        reply = self._nam.get(request)
+        key = id(reply)
+        head = bytearray()
+        answered = {"done": False}
+
+        def ok_status() -> bool:
+            status = int(reply.attribute(QNetworkRequest.HttpStatusCodeAttribute) or 0)
+            return status in (200, 206)
+
+        def take() -> None:
+            if not answered["done"] and ok_status():
+                head.extend(bytes(reply.read(count - len(head))))
+                if len(head) >= count:
+                    answered["done"] = True
+                    reply.abort()
+                    self._finish(key, lambda: on_success(bytes(head[:count])))
+
+        def _finished() -> None:
+            try:
+                if answered["done"]:
+                    return
+                answered["done"] = True
+                err = reply.error()
+                status = int(reply.attribute(QNetworkRequest.HttpStatusCodeAttribute) or 0)
+                redirect = _redirect_error(reply, status)
+                if redirect is not None:
+                    self._finish(key, lambda: on_failure(redirect))
+                    return
+                if err != QNetworkReply.NoError or not ok_status():
+                    failure = _http_error(reply, status, "")
+                    self._finish(key, lambda: on_failure(failure))
+                    return
+                head.extend(bytes(reply.read(count - len(head))))
+                self._finish(key, lambda: on_success(bytes(head[:count])))
+            finally:
+                reply.deleteLater()
+
+        reply.readyRead.connect(take)
+        reply.finished.connect(_finished)
         self._inflight[key] = reply
 
     # -- delete ------------------------------------------------------------

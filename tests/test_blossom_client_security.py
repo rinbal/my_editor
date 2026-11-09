@@ -340,3 +340,40 @@ def test_server_origin_keeps_ipv6_brackets():
     assert server_origin("https://Blossom.Band/") == "https://blossom.band"
     with pytest.raises(ValueError):
         server_origin("not a url")
+
+
+# -- the first bytes of a blob (RG-M2r 5) ----------------------------------------
+
+@pytest.mark.parametrize("url, count", [
+    ("http://media.example/" + SHA, 8),          # http off loopback
+    ("file:///etc/passwd", 8),
+    ("https://user@media.example/" + SHA, 8),
+    (f"{SERVER}/{SHA}", 0),
+    (f"{SERVER}/{SHA}", 65),                     # more than a head
+])
+def test_a_head_is_read_only_from_a_media_address_and_only_a_few_bytes(url, count):
+    client, nam = _client()
+    got, failed = [], []
+    client.read_head(url, count, got.append, failed.append)
+    assert nam.calls == [] and got == [] and len(failed) == 1
+
+
+def test_a_head_is_asked_for_by_range_and_never_follows_a_redirect():
+    client, nam = _client([redirect_reply(), FakeReply(status=206, body=b"SMF1abcdXYZ")])
+    got, failed = [], []
+    client.read_head(f"{SERVER}/{SHA}", 8, got.append, failed.append)
+    nam.settle()
+    assert bytes(nam.calls[0][1].rawHeader("Range")) == b"bytes=0-7"
+    assert got == [] and len(failed) == 1 and len(nam.calls) == 1
+    client.read_head(f"{SERVER}/{SHA}", 8, got.append, failed.append)
+    nam.settle()
+    assert got == [b"SMF1abcd"]                   # never more than asked
+
+
+@pytest.mark.parametrize("status", [404, 416, 500])
+def test_a_head_the_server_refuses_is_a_failure(status):
+    client, nam = _client([FakeReply(status=status, body=b"SMF1abcd")])
+    got, failed = [], []
+    client.read_head(f"{SERVER}/{SHA}", 8, got.append, failed.append)
+    nam.settle()
+    assert got == [] and len(failed) == 1

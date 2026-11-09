@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import re
 import time
 from types import SimpleNamespace
 from typing import Dict, List, Optional
@@ -114,6 +115,7 @@ class FakeReply(QObject):
     """Reply stand-in. Nothing happens until a test calls ``finish``."""
 
     finished = Signal()
+    readyRead = Signal()
     uploadProgress = Signal(int, int)
     downloadProgress = Signal(int, int)
     redirected = Signal(QUrl)
@@ -144,6 +146,7 @@ class FakeReply(QObject):
         }
         self._url = url
         self._request = None
+        self._read = 0              # bytes taken by read()
         self.aborted = False
         self.deleted = False
         self.settled = False
@@ -173,7 +176,13 @@ class FakeReply(QObject):
         return _header_name(name) in self._raw_headers
 
     def readAll(self) -> QByteArray:
-        return QByteArray(self._body)
+        rest, self._read = self._body[self._read:], len(self._body)
+        return QByteArray(rest)
+
+    def read(self, count: int) -> QByteArray:
+        taken = self._body[self._read:self._read + max(0, int(count))]
+        self._read += len(taken)
+        return QByteArray(taken)
 
     def url(self) -> QUrl:
         if self._url:
@@ -201,6 +210,8 @@ class FakeReply(QObject):
 
     def finish(self) -> None:
         self.settled = True
+        if self._body and not self.aborted:
+            self.readyRead.emit()   # the body arrives, then the reply ends
         self.finished.emit()
 
     def progress(self, received: int, total: int = -1) -> None:
@@ -468,7 +479,10 @@ class FakeBlossomServer:
       ``x`` tag;
     - ``GET /list`` needs neither;
     - ``HEAD /<sha256>`` answers 200 when the blob is held and 404 when
-      it is not (BUD-01), and takes no authorization at all.
+      it is not (BUD-01), and takes no authorization at all;
+    - ``GET /<sha256>`` serves an uploaded blob's bytes (BUD-01), a
+      ``Range: bytes=0-N`` as 206 with those bytes only (RFC 9110 14.2),
+      unless ``ignore_range`` (a server that sends the whole blob, 200).
 
     Every refusal answers with a status from the BUD-02 or BUD-12 table
     and a human-readable ``X-Reason``.
@@ -489,8 +503,12 @@ class FakeBlossomServer:
         fail_with: Optional[int] = None,
         fail_reason: str = "",
         fail_headers: Optional[dict] = None,
+        ignore_range: bool = False,
     ) -> None:
         self.origin = origin.rstrip("/")
+        self.ignore_range = ignore_range
+        self.contents: Dict[str, bytes] = {}    # sha256 -> bytes, as uploaded
+        self.reads: List[tuple] = []            # (sha256, Range header) of every GET
         self.host = QUrl(self.origin).host().lower()
         self.blobs: Dict[str, dict] = {b["sha256"]: b for b in (blobs or [])}
         self.require_auth = require_auth
@@ -525,6 +543,8 @@ class FakeBlossomServer:
                 return self._list(request, url)
             if verb == "head":
                 return self._has_blob(path.lstrip("/"))
+            if verb == "get" and re.fullmatch(r"/[0-9a-f]{64}(\.\w+)?", path):
+                return self._get_blob(request, path[1:65])
             if verb == "delete":
                 return self._delete(request, path.lstrip("/"))
         except AuthRejected as exc:
@@ -545,6 +565,7 @@ class FakeBlossomServer:
             return error_reply(self.fail_with, reason=self.fail_reason,
                                headers=self.fail_headers)
         self.uploads.append(body)
+        self.contents[sha] = bytes(body)
         self.blobs.setdefault(sha, descriptor(sha, server=self.origin,
                                               size=len(body)))
         return self._descriptor_reply(sha, size=len(body))
@@ -603,6 +624,18 @@ class FakeBlossomServer:
         if sha in self.blobs:
             return FakeReply(status=200)
         return error_reply(404, reason="The blob does not exist.")
+
+    def _get_blob(self, request, sha: str) -> FakeReply:
+        """BUD-01 ``GET /<sha256>``, a range as RFC 9110 says (206)."""
+        asked = bytes(request.rawHeader("Range")).decode("ascii")
+        self.reads.append((sha, asked))
+        body = self.contents.get(sha)
+        if body is None:
+            return error_reply(404, reason="The blob does not exist.")
+        match = re.fullmatch(r"bytes=0-(\d+)", asked)
+        if match and not self.ignore_range:
+            return FakeReply(status=206, body=body[:int(match.group(1)) + 1])
+        return FakeReply(status=200, body=body)
 
     def _delete(self, request, sha: str) -> FakeReply:
         self._authorize(request, action="delete", blob_hash=sha)

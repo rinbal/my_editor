@@ -109,6 +109,19 @@ _NO_DIRECT_UPLOAD = frozenset({
 })
 
 
+# The types a submission's encrypted file is served as: it is uploaded as a
+# byte stream (contract 7, never the plaintext's type), and a server that
+# reads the bytes finds no other type in them.
+_SEALED_TYPES = frozenset({"", "application/octet-stream", "binary/octet-stream"})
+
+
+def may_be_sealed(mime_type: Optional[str]) -> bool:
+    """Whether a file served as ``mime_type`` may be a submission's SMF1
+    file: a byte stream, no type, or none that names a kind."""
+    mime = (mime_type or "").lower().split(";", 1)[0].strip()
+    return mime in _SEALED_TYPES or "/" not in mime
+
+
 # ---------------------------------------------------------------------------
 # Types and data classes
 # ---------------------------------------------------------------------------
@@ -268,6 +281,9 @@ class MediaStore(QObject):
     listings_changed = Signal()
 
     # Delete lifecycle.
+    # Whether a listed file is a submission's encrypted file was read
+    # from its first bytes, or could not be (submission_state).
+    submission_checked = Signal(str)                   # file_hash
     file_deleted = Signal(str)                         # file_hash
     delete_failed = Signal(str, str)                   # file_hash, reason
 
@@ -333,6 +349,9 @@ class MediaStore(QObject):
         # what the cache's first bytes said (is_submission_file).
         self._submission_files: Set[str] = set()
         self._sealed_known: Dict[str, bool] = {}
+        # First bytes being read from a server, and those no server gave.
+        self._heads_asked: Set[str] = set()
+        self._heads_failed: Set[str] = set()
 
         # Upload jobs by name, from upload_started until they end. The
         # asset manager names its own (an asset key); a file added to the
@@ -387,26 +406,87 @@ class MediaStore(QObject):
         return self._session_names.get(sha, "")
 
     def is_submission_file(self, sha256: str) -> bool:
-        """Whether this file is a submission's encrypted file (SMF1,
-        contract 7): uploaded for a submission in this session, or its
-        cached bytes start like one. Such a file is never offered to
-        insert, and deleting it takes it from the editorial team."""
+        """Whether this file is known to be a submission's encrypted file
+        (SMF1, contract 7): :meth:`submission_state` is True. Such a file
+        is never offered to insert, and deleting it takes it from the
+        editorial team."""
+        return self.submission_state(sha256) is True
+
+    def submission_state(self, sha256: str) -> Optional[bool]:
+        """Whether this file is a submission's encrypted file: uploaded
+        for one in this session, or its first bytes (cached here, or read
+        from its server by :meth:`check_submission_file`) start like one.
+        None while that cannot be told: a listed file of a type a sealed
+        file is served as (a byte stream, or none) whose first bytes are
+        not here, as on another computer (RG-M2r 5). It is neither
+        inserted nor deleted as a plain file until it is told."""
         sha = (sha256 or "").lower()
         if sha in self._submission_files:
             return True
         known = self._sealed_known.get(sha)
         if known is not None:
             return known
-        if self._blob_cache is None:
+        head = self._cached_head(sha)
+        if head is not None:
+            # A content address never changes its bytes: the answer is kept.
+            self._sealed_known[sha] = not scrypto.media_header_problem(head)
+            return self._sealed_known[sha]
+        media = self._files.get(sha)
+        if media is None or not may_be_sealed(media.mime_type):
             return False
+        return None
+
+    def submission_check_failed(self, sha256: str) -> bool:
+        """No server gave this file's first bytes the last time they were
+        asked for (:meth:`check_submission_file` asks again)."""
+        return (sha256 or "").lower() in self._heads_failed
+
+    def check_submission_file(self, sha256: str, *, again: bool = False) -> None:
+        """Read the first bytes of a file whose :meth:`submission_state`
+        is None from its servers, one after the other, with a ranged GET
+        of :data:`~nostr.standup.crypto.MEDIA_HEADER_BYTES` bytes; then
+        :attr:`submission_checked`. Once at a time per file; one that no
+        server gave is asked for again only ``again`` (Try Again)."""
+        sha = (sha256 or "").lower()
+        media = self._files.get(sha)
+        if media is None or sha in self._heads_asked or self.submission_state(sha) is not None:
+            return
+        if sha in self._heads_failed and not again:
+            return
+        urls = [u.get("url", "") for u in media.urls if u.get("url")] or [media.url]
+        self._heads_asked.add(sha)
+        self._heads_failed.discard(sha)
+        generation = self._fetch_generation
+
+        def ask(left: List[str]) -> None:
+            if generation != self._fetch_generation:
+                return                      # another account's library now
+            if not left:
+                self._heads_asked.discard(sha)
+                self._heads_failed.add(sha)
+                self.submission_checked.emit(sha)
+                return
+
+            def got(head: bytes) -> None:
+                if generation != self._fetch_generation:
+                    return
+                self._heads_asked.discard(sha)
+                self._sealed_known[sha] = not scrypto.media_header_problem(head)
+                self.submission_checked.emit(sha)
+
+            self._client.read_head(left[0], scrypto.MEDIA_HEADER_BYTES, got,
+                                   lambda _error: ask(left[1:]))
+
+        ask(urls)
+
+    def _cached_head(self, sha: str) -> Optional[bytes]:
+        if self._blob_cache is None:
+            return None
         try:
             with self._blob_cache.cache_path(sha).open("rb") as cached:
-                head = cached.read(scrypto.MEDIA_HEADER_BYTES)
+                return cached.read(scrypto.MEDIA_HEADER_BYTES)
         except OSError:
-            return False                    # not cached: asked again once it is
-        # A content address never changes its bytes: the answer is kept.
-        self._sealed_known[sha] = not scrypto.media_header_problem(head)
-        return self._sealed_known[sha]
+            return None                     # not cached
 
     def added_here(self, sha256: str) -> bool:
         """Whether this file was added to the library on this computer
@@ -825,6 +905,8 @@ class MediaStore(QObject):
         self._committed.clear()
         self._submission_files.clear()
         self._sealed_known.clear()
+        self._heads_asked.clear()
+        self._heads_failed.clear()
         self.library_changed.emit()
         self.listings_changed.emit()
 

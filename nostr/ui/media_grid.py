@@ -114,6 +114,10 @@ class Tile:
     no_picture: bool = False
     # A submission's encrypted file: shown apart, never inserted.
     submission: bool = False
+    # Whether it is one is not told yet (its first bytes are being read
+    # from its server, or could not be): neither inserted nor deleted as
+    # a plain file until it is (RG-M2r 5).
+    unsure: bool = False
     mime: str = ""
 
     @property

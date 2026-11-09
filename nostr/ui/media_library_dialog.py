@@ -458,6 +458,7 @@ class MediaLibraryDialog(QDialog):
         store.server_skipped.connect(self._on_copy_missing)
         store.file_deleted.connect(self._on_file_deleted)
         store.delete_failed.connect(self._on_delete_failed)
+        store.submission_checked.connect(self._on_submission_checked)
         self._loader.ready.connect(self._on_thumbnail_ready)
         self._loader.failed.connect(self._on_thumbnail_failed)
 
@@ -489,7 +490,10 @@ class MediaLibraryDialog(QDialog):
         self._refresh_pick_notice()
 
     def _check_private_again(self) -> None:
-        if self._private_library is not None:
+        files = self._selected_files()
+        if len(files) == 1 and files[0].unsure:
+            self._store.check_submission_file(files[0].key, again=True)
+        elif self._private_library is not None:
             self._private_library.refresh()
         self._refresh_pick_notice()
 
@@ -542,11 +546,16 @@ class MediaLibraryDialog(QDialog):
             and self._visibility.state_of(source) == PUBLISHED_COPY
 
     def _file_tile(self, media: MediaFile) -> Tile:
-        if self._store.is_submission_file(media.hash):
+        sealed = self._store.submission_state(media.hash)
+        if sealed:
             day = _day_of(media)
             return Tile(key=media.hash, name=_("Encrypted file of a submission"),
                         detail=" · ".join(filter(None, (day, format_size(media.size)))),
                         kind="file", media=media, submission=True)
+        if sealed is None:
+            # Listed from a server, its first bytes not here (another
+            # computer): they are read before it is offered (RG-M2r 5).
+            self._store.check_submission_file(media.hash)
         name = self._store.name_of(media.hash) or self._visibility.name_of(media.hash)
         mime = (self._visibility.declared_mime(media.hash) or media.mime_type or "").lower().split(";", 1)[0].strip()
         if mime in ("", "application/octet-stream"):
@@ -560,7 +569,11 @@ class MediaLibraryDialog(QDialog):
         state = self._visibility.state_of(media.hash)
         return Tile(key=media.hash, name=name, detail=detail, kind=kind,
                     private=state == PRIVATE, media=media,
-                    pixmap=self._thumbs.get(media.hash), mime=mime)
+                    pixmap=self._thumbs.get(media.hash), mime=mime, unsure=sealed is None)
+
+    def _on_submission_checked(self, _sha: str) -> None:
+        self._rebuild()
+        self._refresh_pick_notice()
 
     def _show_page(self) -> None:
         """The grid, or one plain sentence where it would be."""
@@ -753,7 +766,7 @@ class MediaLibraryDialog(QDialog):
 
     def _can_insert(self) -> bool:
         files = self._selected_files()
-        return len(files) == 1 and not files[0].submission \
+        return len(files) == 1 and not files[0].submission and not files[0].unsure \
             and not self._visibility.is_unknown(files[0].key)
 
     def set_inserter(self, insert: Callable[[MediaFile, str], None],
@@ -790,6 +803,17 @@ class MediaLibraryDialog(QDialog):
         if not self._pick_mode:
             return
         files = self._selected_files()
+        if len(files) == 1 and files[0].unsure:
+            # Whether it is a submission's encrypted file is still read
+            # from its server, or no server answered: Try Again asks.
+            failed = self._store.submission_check_failed(files[0].key)
+            self._pick_notice_text.setText(
+                _("This file can’t be used until its server answers.") if failed
+                else _("MyEditor is still checking this file. One moment."))
+            self._pick_notice_button.setVisible(failed)
+            self._pick_notice.setVisible(True)
+            self._insert_button.setEnabled(False)
+            return
         blocked = len(files) == 1 and self._visibility.is_unknown(files[0].key)
         library = self._private_library
         checking = library is not None and library.loading
@@ -856,8 +880,9 @@ class MediaLibraryDialog(QDialog):
     def _link_of(self, tile: Tile) -> str:
         """The address that shows someone this file, or "": a shared
         original's is its public copy's (its own serves sealed bytes), and
-        a private file or a submission's encrypted file has none."""
-        if tile.submission:
+        a private file or a submission's encrypted file has none, nor a
+        file not told yet to be no such file."""
+        if tile.submission or tile.unsure:
             return ""
         copy = self._visibility.public_copy_of(tile.key)
         if copy is not None:
@@ -957,6 +982,13 @@ class MediaLibraryDialog(QDialog):
                 "can’t undo this action.",
                 "The editorial team can no longer open these files of your submissions. You "
                 "can’t undo this action.", len(files))
+        elif any(tile.unsure for tile in files):
+            # Not told yet whether it is one: never the plain warning.
+            message = ngettext(
+                "If this is a file of one of your submissions, the editorial team can no "
+                "longer open it. You can’t undo this action.",
+                "If these are files of your submissions, the editorial team can no longer "
+                "open them. You can’t undo this action.", len(files))
         elif all(self._visibility.state_of(tile.key) == PRIVATE for tile in files):
             # Another app's private files (Lotus, say): gone from it too.
             message = ngettext(

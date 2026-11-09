@@ -104,6 +104,7 @@ class FakeStore(QObject):
     listings_changed = Signal()
     file_deleted = Signal(str)
     delete_failed = Signal(str, str)
+    submission_checked = Signal(str)
 
     def __init__(self, records=(), *, names=None, quota=None, used=0, listing_ok=True):
         super().__init__()
@@ -119,6 +120,15 @@ class FakeStore(QObject):
 
     def is_submission_file(self, sha):
         return False        # the real store's answer: test_submission_files_*
+
+    def submission_state(self, sha):
+        return False
+
+    def submission_check_failed(self, sha):
+        return False
+
+    def check_submission_file(self, sha, *, again=False):
+        self.calls.append(("check", sha))
 
     def server_listings(self):
         return {s: ServerListing(origin=s, ok=self.listing_ok,
@@ -1345,3 +1355,111 @@ def test_after_a_restart_a_submission_file_is_known_by_its_first_bytes(tmp_path)
     assert first.is_submission_file(sha_of(sealed))
     first.clear()                                    # another account: nothing it sent
     assert not first.is_submission_file(sha_of(sealed))
+
+
+# --------------------------------------------------------------------------- #
+# On another computer: told by its first bytes, read from its server (RG-M2r 5)
+# --------------------------------------------------------------------------- #
+
+def _listed_from_elsewhere(tmp_path, body, *, mime="application/octet-stream", **server):
+    """A file another computer uploaded: on the server, listed here, its
+    bytes never cached here."""
+    from tests.blossom_fakes import SERVER as BLOSSOM, descriptor
+    store, fake, nam = _real_store(tmp_path, tmp_path / "blobs")
+    for name, value in server.items():
+        setattr(fake, name, value)
+    sha = sha_of(body)
+    fake.contents[sha] = body
+    fake.blobs[sha] = descriptor(sha, server=BLOSSOM, size=len(body), mime=mime,
+                                 url=f"{BLOSSOM}/{sha}")
+    store.fetch(force=True)
+    nam.settle()
+    assert sha in store.files
+    return store, fake, nam, sha
+
+
+def test_on_another_computer_a_submission_file_is_told_before_it_is_offered(tmp_path,
+                                                                            monkeypatch):
+    store, server, nam, sha = _listed_from_elsewhere(tmp_path, _sealed_file())
+    assert store.submission_state(sha) is None
+    world = build(tmp_path, monkeypatch, store)
+    [tile] = tiles(world)
+    # Until its first bytes are read: neither inserted nor deleted plainly.
+    assert tile.unsure and not tile.submission
+    select(world, sha)
+    assert not world.dialog._can_insert() and world.dialog._link_of(tile) == ""
+    alert, shown = fake_alert(click="Cancel")
+    monkeypatch.setattr(alerts, "Alert", alert)
+    world.dialog._delete()
+    assert shown[-1].message == ("If this is a file of one of your submissions, the editorial "
+                                 "team can no longer open it. You can’t undo this action.")
+    nam.settle()
+    # Eight bytes asked for, by range, once: then it is in its own group.
+    assert server.reads == [(sha, "bytes=0-7")]
+    assert store.is_submission_file(sha) and tiles(world) == []
+    combo = world.dialog._filter_combo
+    combo.setCurrentIndex(combo.findData("submission"))
+    assert [(t.key, t.name) for t in tiles(world)] == [(sha, "Encrypted file of a submission")]
+
+
+def test_on_another_computer_a_plain_byte_stream_is_offered_once_told(tmp_path, monkeypatch):
+    store, server, nam, sha = _listed_from_elsewhere(tmp_path, b"PK\x03\x04 a zip of notes")
+    world = build(tmp_path, monkeypatch, store)
+    nam.settle()
+    [tile] = tiles(world)
+    assert store.submission_state(sha) is False and not tile.unsure
+    select(world, sha)
+    assert world.dialog._can_insert() and world.dialog._link_of(tile) == tile.media.url
+    alert, shown = fake_alert(click="Cancel")
+    monkeypatch.setattr(alerts, "Alert", alert)
+    world.dialog._delete()
+    assert shown[-1].message.startswith("Anything you published with it")
+
+
+def test_a_file_of_a_kind_is_never_read_to_be_told(tmp_path, monkeypatch):
+    store, server, nam, sha = _listed_from_elsewhere(tmp_path, PNG_BYTES, mime="image/png")
+    world = build(tmp_path, monkeypatch, store)
+    nam.settle()
+    assert store.submission_state(sha) is False and server.reads == []
+    assert not tiles(world)[0].unsure
+
+
+def test_a_server_that_sends_the_whole_file_is_stopped_after_the_first_bytes(tmp_path):
+    from nostr.standup import crypto as scrypto
+    sealed = _sealed_file() + bytes(4096)
+    store, server, nam, sha = _listed_from_elsewhere(tmp_path, sealed, ignore_range=True)
+    store.check_submission_file(sha)
+    nam.settle()
+    [reply] = [r for r in nam.issued if r.request().url().path() == f"/{sha}"]
+    assert reply.aborted and reply._read == scrypto.MEDIA_HEADER_BYTES
+    assert store.is_submission_file(sha)
+
+
+def test_when_no_server_gives_the_first_bytes_the_picker_says_so_and_asks_again(tmp_path,
+                                                                              monkeypatch):
+    store, server, nam, sha = _listed_from_elsewhere(tmp_path, _sealed_file())
+    body = server.contents.pop(sha)                  # the server answers 404
+    picker = build(tmp_path, monkeypatch, store, pick=True)
+    nam.settle()
+    assert store.submission_check_failed(sha) and store.submission_state(sha) is None
+    assert len(server.reads) == 1                    # not asked again by itself
+    select(picker, sha)
+    picker.dialog._refresh_pick_notice()
+    assert picker.dialog._pick_notice_text.text() == (
+        "This file can’t be used until its server answers.")
+    assert not picker.dialog._pick_notice_button.isHidden()
+    assert not picker.dialog._insert_button.isEnabled()
+    server.contents[sha] = body
+    picker.dialog._pick_notice_button.click()
+    nam.settle()
+    assert store.is_submission_file(sha)
+    assert [t.key for t in tiles(picker)] == []      # never offered to insert
+
+
+def test_an_answer_for_the_account_left_tells_nothing(tmp_path):
+    store, server, nam, sha = _listed_from_elsewhere(tmp_path, _sealed_file())
+    store.check_submission_file(sha)
+    store.clear()
+    nam.settle()
+    assert store.submission_state(sha) is False      # not listed for this account
+    assert sha not in store._sealed_known
