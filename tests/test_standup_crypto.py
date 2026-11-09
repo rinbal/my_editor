@@ -12,7 +12,6 @@ import io
 import json
 
 import pytest
-from PySide6.QtCore import QCoreApplication
 
 from nostr import crypto as nostr_crypto
 from nostr import refs
@@ -431,30 +430,6 @@ def test_wraps_made_here_open_for_each_recipient():
     assert sc.wraps_sha256(wraps)["writer"] == formats.wrap_sha256(wraps["writer"])
 
 
-def test_a_wrap_opens_through_the_signer_too():
-    from tests.standup_fakes import KeySigner
-    signer = KeySigner(sk("writer"))
-    got = []
-    sc._open_wrap_with_signer(signer, W["wraps"]["writer"], got.append, got.append)
-    assert got[0]["type"] == "submission-key"
-    sc._open_wrap_with_signer(signer, {"eph": "x", "ct": "y"}, got.append, got.append)
-    assert len(got) == 1                        # a refusal comes on a later turn
-    QCoreApplication.processEvents()
-    assert got[1] == "not a key wrap"
-
-
-def test_a_wrap_that_holds_something_else_is_told_apart_from_a_signer_saying_no():
-    from tests.standup_fakes import KeySigner
-    invalid, failed = [], []
-    other = sc.make_wrap({"v": 2, "type": "submission-key"}, pk("writer"))
-    sc._open_wrap_with_signer(KeySigner(sk("writer")), other, failed.append, failed.append,
-                             on_invalid=invalid.append)
-    assert isinstance(invalid[0], sc.WrapInvalid) and failed == []
-    sc._open_wrap_with_signer(KeySigner(sk("writer"), refuse="declined"), W["wraps"]["writer"],
-                             failed.append, failed.append, on_invalid=invalid.append)
-    assert failed == ["declined"] and len(invalid) == 1
-
-
 @pytest.mark.parametrize("wrap", [None, {}, {"eph": "0" * 64, "ct": "x"},
                                   {"eph": pk("writer"), "ct": "x", "extra": 1}])
 def test_a_wrap_of_the_wrong_shape_is_not_opened(wrap):
@@ -472,3 +447,15 @@ def test_a_keyring_page_is_the_payload_of_one_list_page():
     # 12.3: 43,780 characters, the NIP-44 payload of a 32,000-byte page.
     assert formats.MAX_KEYRING_PAGE_CHARS == nostr_crypto.payload_length(32_000)
     assert len(nostr_crypto.encrypt("x" * 32_000, b"k" * 32)) == formats.MAX_KEYRING_PAGE_CHARS
+
+
+def test_the_crypto_loads_without_qt():
+    # crypto.py says it is pure: it may not pull Qt in.
+    import subprocess
+    import sys
+    from pathlib import Path
+    code = ("import sys; import nostr.standup.crypto, "
+            "nostr.standup.formats; print(any(m.startswith('PySide6') for m in sys.modules))")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                         cwd=Path(__file__).resolve().parent.parent, check=True)
+    assert out.stdout.strip() == "False"

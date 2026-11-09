@@ -31,7 +31,7 @@ import json
 import os
 from dataclasses import dataclass
 from hashlib import sha256
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives import hashes
@@ -39,7 +39,6 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from .. import crypto as nostr_crypto
-from ..later import answer_later
 from . import formats
 from .formats import FormatError
 
@@ -445,29 +444,6 @@ def _open_wrap_local(wrap: Any, recipient_sk: bytes) -> dict:
     except ValueError:
         raise WrapInvalid("the wrap does not open with this key") from None
     return read_wrap_plaintext(text)
-
-
-def _open_wrap_with_signer(client, wrap: Any, on_success: Callable[[dict], None],
-                          on_failure: Callable[[str], None], *,
-                          on_invalid: Optional[Callable[[WrapInvalid], None]] = None) -> None:
-    """A wrap's plaintext, opened by the account's signer
-    (``nip44_decrypt(eph, ct)``). ``on_failure`` gets the signer's short
-    reason; ``on_invalid`` a :class:`WrapInvalid` for a wrap that is not
-    one or holds something else (without it, ``on_failure`` its words)."""
-    invalid = on_invalid or (lambda exc: on_failure(str(exc)))
-    if not formats.is_wrap(wrap):
-        answer_later(invalid, WrapInvalid("not a key wrap"))
-        return
-
-    def opened(text: str) -> None:
-        try:
-            value = read_wrap_plaintext(text)
-        except WrapInvalid as exc:
-            invalid(exc)
-            return
-        on_success(value)
-
-    client.nip44_decrypt(wrap["eph"], wrap["ct"], on_success=opened, on_failure=on_failure)
 
 
 def _check_submission_key(plaintext: dict, *, submission_id: str, p_sub: str) -> bytes:

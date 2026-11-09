@@ -16,6 +16,7 @@ from PySide6.QtCore import QCoreApplication
 from nostr import crypto, events, nip98
 from nostr.standup import crypto as sc
 from nostr.standup import formats, views
+from nostr.standup import opening as op
 from nostr.standup.opening import (
     MediaKeys,
     NotConfirmed,
@@ -27,7 +28,7 @@ from nostr.standup.opening import (
     verify_revision,
 )
 from tests.standup_fakes import KeySigner, submission_for
-from tests.standup_vectors import NOW, pk, sk
+from tests.standup_vectors import NOW, VECTORS, pk, sk
 
 SERVER = "https://standup.example"
 CONTRIBUTOR = pk("contributor")
@@ -336,6 +337,32 @@ def test_a_copy_with_other_values_opens_nothing(submitted):
         MediaKeys().add(replace(opened, revision={"media": [{"cipher_sha256": "a" * 64,
                                                              "key": "AAAA"}]}))
     MediaKeys().add(opened)                                 # what was opened here counts
+
+
+# The vectors' writer wrap.
+WRAP = VECTORS["key_wrap"]["wraps"]["writer"]
+
+
+def test_a_wrap_opens_through_the_signer_too():
+    signer = KeySigner(sk("writer"))
+    got = []
+    op._open_wrap_with_signer(signer, WRAP, got.append, got.append)
+    assert got[0]["type"] == "submission-key"
+    op._open_wrap_with_signer(signer, {"eph": "x", "ct": "y"}, got.append, got.append)
+    assert len(got) == 1                        # a refusal comes on a later turn
+    QCoreApplication.processEvents()
+    assert got[1] == "not a key wrap"
+
+
+def test_a_wrap_that_holds_something_else_is_told_apart_from_a_signer_saying_no():
+    invalid, failed = [], []
+    other = sc.make_wrap({"v": 2, "type": "submission-key"}, pk("writer"))
+    op._open_wrap_with_signer(KeySigner(sk("writer")), other, failed.append, failed.append,
+                             on_invalid=invalid.append)
+    assert isinstance(invalid[0], sc.WrapInvalid) and failed == []
+    op._open_wrap_with_signer(KeySigner(sk("writer"), refuse="declined"), WRAP,
+                             failed.append, failed.append, on_invalid=invalid.append)
+    assert failed == ["declined"] and len(invalid) == 1
 
 
 def test_the_openers_are_not_offered_to_other_modules():

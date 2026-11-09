@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import weakref
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Iterable, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple
 
 from ..later import answer_later
 from . import formats
@@ -36,8 +36,8 @@ from .crypto import (
     _check_submission_key,
     _decrypt_media,
     _open_revision,
-    _open_wrap_with_signer,
     pubkey_of,
+    read_wrap_plaintext,
 )
 from .views import (
     RevisionRecord,
@@ -186,6 +186,31 @@ def _writer_binding(body: Mapping, view: SubmissionView, signer: str) -> None:
           "the submission's binding is malformed")
     _need(formats.submission_id(signer, view.publication, coordinate, view.round)
           == view.submission_id, "the submission id does not belong to its writer")
+
+
+def _open_wrap_with_signer(client, wrap: Any, on_success: Callable[[dict], None],
+                          on_failure: Callable[[str], None], *,
+                          on_invalid: Optional[Callable[[WrapInvalid], None]] = None) -> None:
+    """A wrap's plaintext, opened by the account's signer
+    (``nip44_decrypt(eph, ct)``). ``on_failure`` gets the signer's short
+    reason; ``on_invalid`` a :class:`WrapInvalid` for a wrap that is not
+    one or holds something else (without it, ``on_failure`` its words).
+    Here and not in crypto.py, which stays pure: it asks a signer, and a
+    wrap refused at once is answered on the next turn."""
+    invalid = on_invalid or (lambda exc: on_failure(str(exc)))
+    if not formats.is_wrap(wrap):
+        answer_later(invalid, WrapInvalid("not a key wrap"))
+        return
+
+    def opened(text: str) -> None:
+        try:
+            value = read_wrap_plaintext(text)
+        except WrapInvalid as exc:
+            invalid(exc)
+            return
+        on_success(value)
+
+    client.nip44_decrypt(wrap["eph"], wrap["ct"], on_success=opened, on_failure=on_failure)
 
 
 def open_submission_key(client, verified: VerifiedRevision, recipient: str,
