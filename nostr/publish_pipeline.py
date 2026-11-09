@@ -220,6 +220,15 @@ class PublishPipeline(QObject):
     def _on_signer(self, client) -> None:
         if self._failed or self._cancelled:
             return
+        # Asked again: what the connection's relays carry is known once
+        # the signer is (the session pool reads it as it reattaches), and
+        # the client would refuse in its own, technical words.
+        too_long = size_problem(
+            self._profile, event=self._unsigned,
+            key_here=lambda: self._session_pool.key_here(self._author))
+        if too_long:
+            self._fail(too_long)
+            return
         self._say(self._waiting_words())
         client.sign_event(self._unsigned, on_success=self._on_signed,
                           on_failure=self._fail)

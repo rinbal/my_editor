@@ -59,6 +59,8 @@ NAMED_ELSEWHERE = {
     ("nostr", "bunker.py"): {"NIP46_RELAYS"},
     ("nostr", "einundzwanzig.py"): {"MEMBER_RELAY"},
     ("nostr", "imports", "constants.py"): {"NOSTRHUB_RELAYS"},
+    # The relay whose content cap STANDUP's contract names (12.5).
+    ("nostr", "signer_limits.py"): {"NAMED_CAPS"},
 }
 _RELAY_NAME = re.compile(r"wss?://([a-z0-9-]+(?:\.[a-z0-9-]+)+)", re.IGNORECASE)
 

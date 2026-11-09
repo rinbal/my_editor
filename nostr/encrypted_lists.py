@@ -50,7 +50,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Collection, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QObject
@@ -71,7 +71,7 @@ from .list_results import (
 )
 from .outbox import ask_private_relays
 from .outbox.policy import replacement_created_at
-from .signer_limits import readable_back
+from .signer_limits import page_bounds, readable_back
 from .paged_list import (
     PAGE_PAYLOAD_MAX,
     Page,
@@ -345,13 +345,21 @@ class EncryptedList(QObject):
 
         self.relays(profile, lambda relays: self.read(profile, relays, _on_read), reading=True)
 
-    def _plaintexts(self, value, now: int) -> List[str]:
-        """Page 0's plaintext first. Raises ValueError when the list
-        cannot be written (an entry too large, too many pages)."""
+    def _plaintexts(self, value, now: int, profile=None) -> List[str]:
+        """Page 0's plaintext first, in pages ``profile``'s signer can
+        carry (smaller over relays that cap what they carry). Raises
+        ValueError when the list cannot be written (an entry too large,
+        too many pages)."""
         payload = self._encode(value, now)
         if self._paging is None:
             return [serialize(payload)]
-        return split(payload, self._paging)
+        paging = self._paging
+        if profile is not None:
+            bounds = page_bounds(profile)
+            paging = replace(paging, max_bytes=min(paging.max_bytes, bounds["plaintext_max"]),
+                             answer_max=min(paging.answer_max, bounds["answer_max"]),
+                             request_max=min(paging.request_max, bounds["request_max"]))
+        return split(payload, paging)
 
     def _page_event(self, profile, index: int, ciphertext: str, created_at: int) -> dict:
         return build_event(
@@ -553,6 +561,7 @@ class _Writing:
         self._state = state
         self._on_done = on_done
         self._plaintexts: List[str] = []
+        self._now = 0
         self._signed: Dict[int, dict] = {}
         self._dated: Optional[int] = None
         self._client = None
@@ -560,11 +569,19 @@ class _Writing:
         self._took: Dict[str, str] = {}
 
     def start(self) -> None:
+        self._now = int(self._list._clock())
+        if self._split():
+            self._list._session_pool.get(self._profile, on_ready=self._ready,
+                                         on_error=self._fail)
+
+    def _split(self) -> bool:
+        """The pages, in what this account's signer can carry; False, after
+        failing the write, when they cannot be written."""
         try:
-            self._plaintexts = self._list._plaintexts(self._value, int(self._list._clock()))
+            self._plaintexts = self._list._plaintexts(self._value, self._now, self._profile)
         except ValueError as exc:
             self._fail(str(exc))
-            return
+            return False
         # Written only what this account can read again: a list the signer
         # app encrypts but cannot hand back would be unreadable, and an
         # unreadable list is never written over (contract 12.5, 13).
@@ -572,13 +589,18 @@ class _Writing:
             if not readable_back(self._profile, text):
                 self._fail(f"page {index} ({len(text.encode('utf-8'))} bytes) is too large "
                            f"for this account to read back")
-                return
-        self._list._session_pool.get(self._profile, on_ready=self._ready, on_error=self._fail)
+                return False
+        return True
 
     def _fail(self, reason: str) -> None:
         self._on_done(PublishResult(PublishStatus.FAILED, reason=reason))
 
     def _ready(self, client) -> None:
+        # Split again: what the connection's relays carry is known once
+        # the signer is (the session pool reads it as it reattaches), and
+        # may be less than when the write started (lesson 29).
+        if not self._split():
+            return
         self._client = client
         # The later pages first, page 0 last: it is the one that says how
         # many pages there are and binds them.

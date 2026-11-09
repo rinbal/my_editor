@@ -22,22 +22,29 @@ six; everything else its UTF-8 bytes.
 
 Either must be at most :data:`SIGNER_ANSWER_MAX`: 65,535 less 64 bytes
 for fields a signer may add (an empty ``error``).
+
+A request is MyEditor's own, so it is measured exactly, as bunker.py
+writes it (:func:`request_json`, contract 12.5 "Relay content caps":
+"apps measure the request they actually send").
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, List
 
 __all__ = [
-    "REQUEST_ID", "SIGNER_ANSWER_MAX", "decrypt_answer_size", "escaped", "escaped_text_size",
-    "sign_answer_size",
+    "OWN_REQUEST_ID_BYTES", "REQUEST_ID", "SIGNER_ANSWER_MAX", "decrypt_answer_size",
+    "encrypt_request_size", "escaped", "escaped_text_size", "json_text_size", "request_json",
+    "request_size", "sign_answer_size",
 ]
 
 # 65,535 (one NIP-44 message) less 64 bytes a signer may add.
 SIGNER_ANSWER_MAX = 65_471
 # The longest request id an app sends (32 characters), echoed in the answer.
 REQUEST_ID = "0" * 32
+# The random bytes of MyEditor's own request ids (16 hex digits).
+OWN_REQUEST_ID_BYTES = 8
 
 # What a sign_event answer adds to the event asked for, as placeholders of
 # their length: the id, the pubkey and the signature.
@@ -96,3 +103,31 @@ def sign_answer_size(unsigned: dict) -> int:
     event = {"kind": unsigned["kind"], "content": unsigned.get("content", ""),
              "tags": unsigned.get("tags", []), "created_at": int(unsigned["created_at"])}
     return decrypt_answer_size(escaped(dict(event, **_SIGNED)))
+
+
+# -- requests ---------------------------------------------------------------------
+
+def request_json(request_id: str, method: str, params: List[str]) -> str:
+    """The NIP-46 request bunker.py sends: compact JSON, non-ASCII as is."""
+    return json.dumps({"id": request_id, "method": method, "params": params},
+                      separators=(",", ":"), ensure_ascii=False)
+
+
+def request_size(method: str, params: List[str]) -> int:
+    """Bytes of the request for ``method`` with ``params``, exact."""
+    return len(request_json("0" * (2 * OWN_REQUEST_ID_BYTES), method, params).encode("utf-8"))
+
+
+def json_text_size(text: str) -> int:
+    """UTF-8 bytes of ``text`` as :func:`request_json` writes it inside a
+    request, without the quotes. Additive like :func:`escaped_text_size`."""
+    return len(json.dumps(text, ensure_ascii=False).encode("utf-8")) - 2
+
+
+_ENCRYPT_REQUEST = request_size("nip44_encrypt", ["0" * 64, ""])
+
+
+def encrypt_request_size(plaintext: str) -> int:
+    """Bytes of the ``nip44_encrypt`` request that carries ``plaintext``."""
+    return _ENCRYPT_REQUEST + json_text_size(plaintext)
+

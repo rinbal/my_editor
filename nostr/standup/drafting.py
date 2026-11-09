@@ -56,6 +56,12 @@ ALREADY_SUBMITTED = N_("You have submitted this text to {publication} already.")
 MESSAGE_TOO_LONG = N_("A message has at most {count} characters.")
 MESSAGE_TOO_LARGE = N_("Your message is too long to send. Shorten it to submit.")
 MESSAGE_TOO_LARGE_DETAIL = N_("It takes {size} bytes, and a message can take {limit}.")
+# The writer's signer app is asked to sign the message, sealed, over a
+# connection whose relays carry less than STANDUP takes (contract 12.5).
+MESSAGE_TOO_LONG_FOR_CONNECTION = N_("Your message is too long for the connection to your "
+                                     "signer app. Shorten it to submit.")
+MESSAGE_TOO_LONG_FOR_CONNECTION_DETAIL = N_("Sealed, it takes {size} bytes. The relays of "
+                                            "this connection carry less.")
 REQUIRED_MISSING = N_("{publication} asks for {items}. Add them in Article Details to submit.")
 ROUND_UNKNOWN = N_("Whether you have submitted this text before couldn’t be checked.")
 # A page of the list of submissions has not arrived: an entry of this
@@ -364,16 +370,23 @@ def choose_round(entries: Sequence[SubmissionEntry],
     return RoundChoice(closed + 1)
 
 
+def _signs_anything(_unsigned: dict) -> bool:
+    return True
+
+
 def blockers(draft: ArticleDraft, *, writer: str, rights: bool, rights_required: bool,
              private_names: Sequence[str] = (), message: str = "",
-             submitted_to: str = "", checklist: Any = (), publication: str = "") -> List[str]:
+             submitted_to: str = "", checklist: Any = (), publication: str = "",
+             signable: Callable[[dict], bool] = _signs_anything) -> List[str]:
     """Why the article cannot be submitted as it is, in the person's
     words (translated), most pressing first; empty when it can.
     ``private_names`` are the names of its pictures that are private in
     the Media Library; ``submitted_to`` names the publication when this
     text is submitted there already and still open; ``checklist`` is the
     one of ``publication``, whose required points Article Details can
-    set must be there (as STANDUP's writer asks)."""
+    set must be there (as STANDUP's writer asks). ``signable(unsigned)``
+    says whether the writer's signer can sign an event (the message's
+    seal; signer_limits.signable)."""
     found: List[str] = []
     title = draft.title.strip()
     if not title:
@@ -403,6 +416,12 @@ def blockers(draft: ArticleDraft, *, writer: str, rights: bool, rights_required:
         # Again could never help (RG-M2b 11).
         found.append(Blocker(_(MESSAGE_TOO_LARGE), _(MESSAGE_TOO_LARGE_DETAIL).format(
             size=size, limit=formats.MAX_RUMOR_BYTES)))
+    elif message.strip() and not signable(conversation.seal_measure(size)):
+        # Within what STANDUP takes, but its seal is more than the relays
+        # of the writer's signer connection carry: the signer would never
+        # be asked (the client refuses it), and Send Again could not help.
+        found.append(Blocker(_(MESSAGE_TOO_LONG_FOR_CONNECTION),
+                             _(MESSAGE_TOO_LONG_FOR_CONNECTION_DETAIL).format(size=size)))
     asked = [item["label"] for item in checklist_results(checklist, draft)
              if item["level"] == "required" and item["result"] == "missing"
              and item["id"] in _FIXED_IN_DETAILS]

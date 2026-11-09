@@ -27,7 +27,7 @@ from PySide6.QtWidgets import QApplication
 import i18n
 from nostr.avatar_store import AvatarStore
 from nostr.profiles import Profile, ProfileStore
-from nostr.standup import drafting
+from nostr.standup import drafting, words
 from nostr.standup.drafting import ArticleDraft
 from nostr.standup.submitting import MessageStatus, Progress, Step
 from nostr.standup.trust import Destination, RedaktionKey
@@ -103,8 +103,13 @@ class Writer:
         self.asked = 0
         self.discarded: List[object] = []
         self.loads = 0
+        self.bound_asked = 0
         self.reloaded = 0
         self.fail_destinations = False
+
+    def signer_bound(self, _profile, done) -> None:
+        self.bound_asked += 1
+        done()
 
     def instance(self, _profile, on_operator) -> None:
         if self.operator:
@@ -178,10 +183,10 @@ DRAFT = ArticleDraft(d="ein-jahr", title="Ein Jahr mit Lightning im Café",
 
 
 def _sheet(tmp_path, writer=None, *, draft=DRAFT, dark=False, private=(),
-           public=0) -> SubmitSheet:
+           public=0, relays=("wss://bunker.example",)) -> SubmitSheet:
     store = ProfileStore(path=tmp_path / "profiles.json")
     profile = Profile(user_pubkey=WRITER, bunker_pubkey="b" * 64, display_name="Jana Roth",
-                      bunker_relays=["wss://bunker.example"], local_secret_hex="0" * 64)
+                      bunker_relays=list(relays), local_secret_hex="0" * 64)
     store.upsert(profile)
     return SubmitSheet(writer=writer or Writer(), draft=draft, cover=QPixmap(),
                        byline="Jana Roth · Artikel · 1 Bild", private_names=private,
@@ -239,6 +244,44 @@ def test_einreichen_is_the_default_dimmed_by_a_blocker_whose_reason_is_said(tmp_
     assert sheet.status.text() == "Bestätige die Rechte, um einzureichen."
     sheet.rights.setChecked(True)
     assert sheet.submit_button.isEnabled() and sheet.status.isHidden()
+
+
+def test_a_message_the_signer_connection_cannot_carry_is_said_before_submitting(tmp_path):
+    # P1, contract 12.5: sealed, it is more than relay.nip46.com carries,
+    # though within what STANDUP takes.
+    message = "ж" * 14_500
+    sheet = _sheet(tmp_path, Writer(destinations=(BLOG,)), relays=["wss://relay.nip46.com"])
+    sheet.rights.setChecked(True)
+    sheet.message.setPlainText(message)
+    assert not sheet.submit_button.isEnabled()
+    assert sheet.status.text() == i18n._(drafting.MESSAGE_TOO_LONG_FOR_CONNECTION)
+    (tmp_path / "open").mkdir()
+    sheet = _sheet(tmp_path / "open", Writer(destinations=(BLOG,)))
+    sheet.rights.setChecked(True)
+    sheet.message.setPlainText(message)
+    assert sheet.submit_button.isEnabled()
+
+
+def test_a_message_waits_for_what_the_signer_connection_carries(tmp_path):
+    # Lesson 29: the seal is measured over the relays read as the signer
+    # is got; until then the sheet waits, and says for what.
+    writer = HeldWriter(destinations=(BLOG,))
+    sheet = _sheet(tmp_path, writer, relays=["wss://relay.nip46.com"])
+    writer.answer("destinations")
+    writer.answer("round")
+    sheet.rights.setChecked(True)
+    assert sheet.submit_button.isEnabled()                  # no message: nothing to measure
+    sheet.message.setPlainText("Hallo Redaktion")
+    assert not sheet.submit_button.isEnabled()
+    assert sheet.status.text() == i18n._(words.WAITING_FOR_SIGNER)
+    writer.answer("bound")
+    assert sheet.submit_button.isEnabled() and sheet.status.isHidden()
+
+
+def test_the_bound_is_asked_for_the_account_the_sheet_shows(tmp_path):
+    writer = Writer(destinations=(BLOG,))
+    _sheet(tmp_path, writer)
+    assert writer.bound_asked == 1
 
 
 @pytest.mark.parametrize("writer, said", [
@@ -468,6 +511,9 @@ class HeldWriter(Writer):
     def __init__(self, **kw) -> None:
         super().__init__(**kw)
         self.held: List[tuple] = []
+
+    def signer_bound(self, profile, done) -> None:
+        self.held.append(("bound", profile, done))
 
     def instance(self, profile, on_operator) -> None:
         self.held.append(("instance", profile, lambda: on_operator("Verein")))

@@ -42,7 +42,11 @@ from i18n import _
 
 from . import CLIENT_IMAGE, CLIENT_NAME, CLIENT_URL, crypto, events, refs
 from .relay import KeySignIn, RelayPool, Subscription
-from .signer_limits import SIGNER_ANSWER_MAX, SIGNER_NIP44_MAX_PLAINTEXT, sign_answer_size
+from .answer_size import OWN_REQUEST_ID_BYTES, request_json
+from .signer_limits import (
+    connection_answer_limit, connection_message_limit, connection_plaintext_limit,
+    sign_answer_size,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -732,13 +736,15 @@ class BunkerClient(QObject):
         }
         # The answer is the signed event, escaped as a string: our request
         # may fit while the answer, with the id, pubkey and signature the
-        # signer adds, does not, and we would wait out the timeout. What
-        # the person is told comes earlier (signer_limits.size_problem).
-        answer = sign_answer_size(payload)
-        if answer > SIGNER_ANSWER_MAX:
+        # signer adds, does not, and we would wait out the timeout. Over
+        # relays that all cap what they carry, less fits (contract 12.5).
+        # What the person is told comes earlier (signer_limits.size_problem).
+        answer, limit = sign_answer_size(payload), connection_answer_limit(self._relays)
+        if answer > limit:
             self._refuse(on_failure,
                          f"too large for a signer app: sign_event would answer with up to "
-                         f"{answer} bytes, an answer may carry at most {SIGNER_ANSWER_MAX}")
+                         f"{answer} bytes, an answer over these relays may carry at most "
+                         f"{limit}")
             return
 
         def _ok(result: str) -> None:
@@ -798,14 +804,16 @@ class BunkerClient(QObject):
             self._refuse(on_failure, f"invalid peer pubkey: {peer_pubkey_hex!r}")
             return
         size = len(plaintext.encode("utf-8"))
-        if size > SIGNER_NIP44_MAX_PLAINTEXT:
+        limit = connection_plaintext_limit(self._relays)
+        if size > limit:
             # The request itself may still fit, but the answer cannot: the
             # signer would encrypt and then have no message to send it in,
-            # and we would wait out the whole timeout for nothing.
+            # and we would wait out the whole timeout for nothing. Over
+            # relays that all cap what they carry, less fits (contract 12.5).
             self._refuse(
                 on_failure,
                 f"too large to encrypt through a signer app: {size} bytes, "
-                f"at most {SIGNER_NIP44_MAX_PLAINTEXT}",
+                f"at most {limit} over these relays",
             )
             return
 
@@ -1075,23 +1083,22 @@ class BunkerClient(QObject):
         assert self._local_sk is not None and self._conv_key is not None
         assert self._bunker_pk_hex is not None
 
-        request_id = secrets.token_hex(8)
-        inner = json.dumps(
-            {"id": request_id, "method": method, "params": params},
-            separators=(",", ":"),
-            ensure_ascii=False,
-        )
+        request_id = secrets.token_hex(OWN_REQUEST_ID_BYTES)
+        inner = request_json(request_id, method, params)
         size = len(inner.encode("utf-8"))
-        if size > crypto.NIP44_MAX_PLAINTEXT_LEN:
+        limit = connection_message_limit(self._relays)
+        if size > limit:
             # A request is one NIP-44 message, so a larger one cannot be
             # sent at all. ``crypto.encrypt`` would raise, and the caller,
             # written for an answer that comes later, would never hear of
-            # it: a draft or a list that never finishes saving.
+            # it: a draft or a list that never finishes saving. Over
+            # relays that all cap what they carry, one that is too long
+            # for them would never arrive (contract 12.5).
             self._refuse(
                 on_failure,
                 f"request too large for a signer app: {method} needs "
-                f"{size} bytes, a NIP-46 message carries at most "
-                f"{crypto.NIP44_MAX_PLAINTEXT_LEN}",
+                f"{size} bytes, a NIP-46 message over these relays carries at most "
+                f"{limit}",
             )
             return request_id
         ciphertext = crypto.encrypt(inner, self._conv_key)
@@ -1226,14 +1233,21 @@ class BunkerSessionPool(QObject):
     signing the old way.
 
     Closing the pool tears down every signer (used at app shutdown).
+
+    ``relay_caps`` (nostr/relay_caps.RelayCapsReader) reads what the
+    relays of a connection carry while it reattaches, and the client is
+    handed out once both are done, so its first request is bounded by
+    them (contract 12.5). Without one nothing is read: the bounds are
+    those of relays that state no cap, and of the ones the contract names.
     """
 
     def __init__(self, pool: RelayPool, parent: Optional[QObject] = None, *,
-                 vault=None) -> None:
+                 vault=None, relay_caps=None) -> None:
         super().__init__(parent)
         self._pool = pool
         # Keys kept on this computer, for profiles that sign locally.
         self._vault = vault
+        self._relay_caps = relay_caps
         # pubkey -> BunkerClient or LocalSigner, and how that one signs.
         self._clients: Dict[str, QObject] = {}
         self._signers: Dict[str, str] = {}
@@ -1301,7 +1315,26 @@ class BunkerSessionPool(QObject):
             new_client.deleteLater()
             return False
 
+        # Two things before the client is handed out: the reattach, and
+        # the bound of its relays (when they are read; reading always
+        # ends, at the latest when it times out). Whichever comes second
+        # hands it out; a failed reattach ends it whatever the reading.
+        waiting = {"attached": False, "bounded": self._relay_caps is None, "out": False}
+
+        def _bounded() -> None:
+            waiting["bounded"] = True
+            if waiting["attached"]:
+                _ready()
+
         def _ok() -> None:
+            waiting["attached"] = True
+            if waiting["bounded"]:
+                _ready()
+
+        def _ready() -> None:
+            if waiting["out"]:
+                return
+            waiting["out"] = True
             if not current():
                 return
             self._clients[pubkey] = new_client
@@ -1325,6 +1358,8 @@ class BunkerSessionPool(QObject):
                 except Exception:  # noqa: BLE001
                     pass
 
+        if self._relay_caps is not None:
+            self._relay_caps.read(list(profile.bunker_relays), _bounded)
         try:
             new_client.reattach(
                 bunker_pubkey=profile.bunker_pubkey,

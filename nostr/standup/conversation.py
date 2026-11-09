@@ -114,6 +114,14 @@ def message_size(text: str, *, sender: str) -> int:
                                   sender, 2_000_000_000))
 
 
+def seal_measure(rumor_bytes: int) -> dict:
+    """An unsigned seal as large as the one :func:`seal_unsigned` makes of
+    a rumor of ``rumor_bytes``: what its signer is asked to sign, for
+    measuring whether that signer can (signer_limits.signable)."""
+    return {"kind": SEAL_KIND, "tags": [], "created_at": 2_000_000_000,
+            "content": "A" * nostr_crypto.payload_length(max(1, rumor_bytes))}
+
+
 def _room_tags(room: str, submission_id: str) -> List[List[str]]:
     if not formats.is_pubkey(room):
         raise MessageRefused("the room is not a valid key")

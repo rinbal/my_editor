@@ -11,7 +11,10 @@ string, escaped. A page is therefore at most 32,000 bytes of plaintext,
 and its answer, measured with the worst-case escaper (contract 12.5,
 ``nostr/answer_size.py``: a quote two bytes, a ``<`` six), at most
 65,471: a page is split by both. A list has at most 64 pages; a longer
-one is refused when written and unreadable when read.
+one is refused when written and unreadable when read. Over a connection
+whose relays all cap what they carry, pages are split smaller still, and
+by the ``nip44_encrypt`` request that carries them too (contract 12.5
+"Relay content caps"; ``signer_limits.page_bounds``).
 
 **Shape.** Page 0 has ``d`` = the list's own, page n > 0 ``<d>:<n>``.
 Every page's plaintext is ``{"v":1,"page":i,"pages":n,<field>:...}``,
@@ -38,8 +41,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
-from .answer_size import SIGNER_ANSWER_MAX, decrypt_answer_size, escaped_text_size
-from .crypto import payload_length
+from .answer_size import (
+    SIGNER_ANSWER_MAX, decrypt_answer_size, encrypt_request_size, escaped_text_size,
+    json_text_size,
+)
+from .crypto import NIP44_MAX_PLAINTEXT_LEN, payload_length
 
 __all__ = [
     "MAX_PAGES", "PAGE_PAYLOAD_MAX", "PAGE_PLAINTEXT_MAX", "PAGED_VERSION", "Page", "PageError",
@@ -76,6 +82,11 @@ class Paging:
     field: str
     max_bytes: int = PAGE_PLAINTEXT_MAX
     combine: Optional[Callable[[Any, Any], Any]] = None
+    # What writing and reading a page back through a signer app may take:
+    # the answer to nip44_decrypt (escaped at its largest) and the
+    # nip44_encrypt request (as sent). Lower over capped relays.
+    answer_max: int = SIGNER_ANSWER_MAX
+    request_max: int = NIP44_MAX_PLAINTEXT_LEN
 
 
 @dataclass(frozen=True)
@@ -119,6 +130,12 @@ def _answer(value: Any) -> int:
     """What ``value``'s text adds to a signer app's answer handing the
     page back, escaped at its largest (nostr/answer_size.py)."""
     return escaped_text_size(serialize(value))
+
+
+def _request(value: Any) -> int:
+    """What ``value``'s text adds to the nip44_encrypt request carrying
+    the page, as MyEditor sends it."""
+    return json_text_size(serialize(value))
 
 
 def _is_count(value: Any) -> bool:
@@ -259,46 +276,59 @@ def _fill(items: list, as_map: bool, header: Mapping[str, Any], parts: int,
           paging: Paging) -> List[list]:
     """The entries in pages, in order, page 0 measured with ``parts``
     hashes. ``page`` and ``pages`` are measured at their widest (64).
-    A page holds at most ``paging.max_bytes`` of plaintext, and the
-    signer app's answer handing it back at most 65,471 bytes (contract
-    12.5, 13: a page of ``<`` is six times its size there)."""
+    A page holds at most ``paging.max_bytes`` of plaintext, the signer
+    app's answer handing it back at most ``paging.answer_max`` bytes
+    (65,471; contract 12.5, 13: a page of ``<`` is six times its size
+    there), and the request encrypting it at most ``paging.request_max``
+    (a quote is two bytes there; it binds over capped relays only)."""
+    Sizes = Tuple[int, int, int]                # plaintext, answer, request
+    bounds = (paging.max_bytes, paging.answer_max, paging.request_max)
 
-    def shell(first: bool) -> Tuple[int, int]:
+    def shell(first: bool) -> Sizes:
         page: Dict[str, Any] = {"v": PAGED_VERSION, "page": MAX_PAGES, "pages": MAX_PAGES}
         if first:
             page.update(header)
             page["parts"] = ["0" * 64] * parts
         page[paging.field] = {} if as_map else []
-        return _size(page), decrypt_answer_size(serialize(page))
+        text = serialize(page)
+        return _size(page), decrypt_answer_size(text), encrypt_request_size(text)
 
-    def cost(item: Any) -> Tuple[int, int]:
+    def cost(item: Any) -> Sizes:
         if as_map:
             key, value = serialize(str(item[0])), serialize(item[1])
-            return (len(key.encode("utf-8")) + 1 + len(value.encode("utf-8")),
-                    escaped_text_size(key) + 1 + escaped_text_size(value))   # "key":value
-        return _size(item), _answer(item)
+            return (len(key.encode("utf-8")) + 1 + len(value.encode("utf-8")),   # "key":value
+                    escaped_text_size(key) + 1 + escaped_text_size(value),
+                    json_text_size(key) + 1 + json_text_size(value))
+        return _size(item), _answer(item), _request(item)
 
-    def fits(used: Tuple[int, int], grow: Tuple[int, int]) -> bool:
-        return (used[0] + grow[0] <= paging.max_bytes
-                and used[1] + grow[1] <= SIGNER_ANSWER_MAX)
+    def plus(used: Sizes, grow: Sizes) -> Sizes:
+        return used[0] + grow[0], used[1] + grow[1], used[2] + grow[2]
+
+    def fits(sizes: Sizes) -> bool:
+        return all(size <= bound for size, bound in zip(sizes, bounds))
 
     chunks: List[list] = [[]]
     used = shell(True)
     for item in items:
-        size, answer = cost(item)
-        grow = (size + 1, answer + 1) if chunks[-1] else (size, answer)   # the comma
-        if not fits(used, grow) and (chunks[-1] or len(chunks) == 1):
+        alone = cost(item)
+        grow = plus(alone, (1, 1, 1)) if chunks[-1] else alone          # the comma
+        if not fits(plus(used, grow)) and (chunks[-1] or len(chunks) == 1):
             chunks.append([])
             used = shell(False)
-            grow = (size, answer)
-        if used[0] + grow[0] > paging.max_bytes:
-            raise ValueError(f"an entry of {size} bytes does not fit a "
+            grow = alone
+        total = plus(used, grow)
+        if total[0] > paging.max_bytes:
+            raise ValueError(f"an entry of {alone[0]} bytes does not fit a "
                              f"{paging.max_bytes}-byte page")
-        if used[1] + grow[1] > SIGNER_ANSWER_MAX:
+        if total[1] > paging.answer_max:
             # It fits the page, but not the signer app's answer handing
             # the page back (escaped, it grows).
-            raise ValueError(f"an entry of {size} bytes takes {answer} bytes in the signer "
-                             f"app's answer, more than a page's {SIGNER_ANSWER_MAX}")
+            raise ValueError(f"an entry of {alone[0]} bytes takes {alone[1]} bytes in the "
+                             f"signer app's answer, more than a page's {paging.answer_max}")
+        if total[2] > paging.request_max:
+            raise ValueError(f"an entry of {alone[0]} bytes takes {alone[2]} bytes in the "
+                             f"request to encrypt it, more than this connection carries "
+                             f"({paging.request_max})")
         chunks[-1].append(item)
-        used = (used[0] + grow[0], used[1] + grow[1])
+        used = total
     return chunks

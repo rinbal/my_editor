@@ -56,11 +56,12 @@ from i18n import _
 
 from ..avatar_store import AvatarStore
 from ..profiles import Profile, ProfileStore
+from ..signer_limits import signable
 from ..standup import drafting, formats
 from ..standup.drafting import ArticleDraft, Choice
 from ..standup.submitting import MessageStatus
 from ..standup.trust import KEY_NOT_CONFIRMED, Destination
-from ..standup.words import LIST_NOT_SAVED
+from ..standup.words import LIST_NOT_SAVED, WAITING_FOR_SIGNER
 from . import appearance
 from .publish_article_dialog import ArticleCard, form_label, form_layout
 from .publish_sheet import (
@@ -115,6 +116,9 @@ class SubmitSheet(QDialog):
         self._load_problem = ""
         # The publications could not be loaded: Try Again loads them.
         self._load_failed = False
+        # What the account's signer connection carries is known (or could
+        # not be learned): the message's seal is measured by it.
+        self._bound_known = False
         self.run: Optional[SubmissionRun] = None
         self._build(profile)
         avatars.avatar_added.connect(self._on_logo)
@@ -337,9 +341,15 @@ class SubmitSheet(QDialog):
             return
         self._show_destinations([], "", loading=True)
         profile = self.account.profile()
+        self._bound_known = False
+        self._writer.signer_bound(profile, self._answer(self._on_bound))
         self._writer.instance(profile, self._answer(self._on_instance))
         self._writer.destinations(profile, self._answer(self._on_destinations),
                                   self._answer(self._on_load_failed))
+
+    def _on_bound(self) -> None:
+        self._bound_known = True
+        self._refresh()
 
     def _on_instance(self, operator: str) -> None:
         self._operator = operator
@@ -477,13 +487,20 @@ class SubmitSheet(QDialog):
         if self._round is not None and self._round.words:
             return [self._round.words]
         rules = destination.key.rules
-        return drafting.blockers(
+        found = drafting.blockers(
             self._draft, writer=self.account.profile().user_pubkey,
             rights=self.rights.isChecked(), rights_required=bool(rules.get("rights_required")),
             private_names=self._private_names, message=self.message.toPlainText(),
             submitted_to=destination.name if self._round is not None
             and self._round.round is None else "",
-            checklist=rules.get("checklist"), publication=destination.name)
+            checklist=rules.get("checklist"), publication=destination.name,
+            signable=lambda unsigned: signable(self.account.profile(), unsigned))
+        if not found and self.message.toPlainText().strip() and not self._bound_known:
+            # The message's seal is measured over the relays of the signer
+            # connection, read as the signer is got (_load): until then
+            # the measure would not be the one that holds (lesson 29).
+            return [_(WAITING_FOR_SIGNER)]
+        return found
 
     def round(self) -> Optional[int]:
         """The round to submit in, once known and free."""

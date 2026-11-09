@@ -982,7 +982,8 @@ class DraftPublishJob(QObject):
         try:
             plaintext = serialize_inner_event(self._inner_event)
             # Pre-flight against what this account's signer can encrypt
-            # (65,535 bytes here, 40,960 through a signer app). The signer
+            # (65,535 bytes here, 40,960 through a signer app, less over
+            # relays that cap what they carry). The signer
             # would refuse larger payloads anyway; said here, the person
             # reads the real limit, and no approval prompt is spent on an
             # inevitable failure.

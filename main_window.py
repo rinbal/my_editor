@@ -247,6 +247,7 @@ from nostr.blossom.plan import get_effective_max_file
 from nostr.blossom.server_list import UserServerList
 from nostr.blossom.store import MediaFile, MediaStore
 from nostr.bunker import BunkerSessionPool
+from nostr.relay_caps import RelayCapsReader
 from nostr.contacts import ContactListFetcher
 from nostr.draft_store import DraftState, DraftStore
 from nostr.draft_deletions import DraftDeletions
@@ -660,8 +661,11 @@ class MainWindow(QMainWindow):
         # Keys kept on this computer, for accounts that chose that over a
         # signer app (Create Account, Restore Account).
         self._key_vault = KeyVault()
+        # What a signer connection's relays carry is read as it reattaches
+        # (contract 12.5), so no request is longer than they take.
         self._session_pool = BunkerSessionPool(self._relay_pool, parent=self,
-                                               vault=self._key_vault)
+                                               vault=self._key_vault,
+                                               relay_caps=RelayCapsReader(parent=self))
         # A relay of the account's own that asks for a sign-in (NIP-42)
         # gets one, signed by the account's signer; no other relay does.
         self._relay_pool.sign_in = AccountSignIn(
