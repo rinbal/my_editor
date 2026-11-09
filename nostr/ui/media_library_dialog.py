@@ -70,7 +70,6 @@ from PySide6.QtWidgets import (
 
 import i18n
 import media_files
-import theme
 import url_safety
 from alerts import confirm_destructive
 from . import appearance
