@@ -20,7 +20,7 @@ import pytest
 import shiboken6
 from PySide6.QtCore import QCoreApplication
 
-from nostr import bech32, bunker, crypto
+from nostr import bech32, bunker, crypto, signer_limits
 from tests.test_bunker_request_size import _pair
 
 _app = QCoreApplication.instance() or QCoreApplication([])
@@ -77,7 +77,7 @@ _REFUSED = {
     "empty nip44 ciphertext": lambda c, k: c.nip44_decrypt(_PEER, "", k.success, k.failure),
     "empty nip04 ciphertext": lambda c, k: c.nip04_decrypt(_PEER, "", k.success, k.failure),
     "too large to encrypt": lambda c, k: c.nip44_encrypt(
-        _PEER, "x" * (bunker.SIGNER_NIP44_MAX_PLAINTEXT + 1), k.success, k.failure),
+        _PEER, "x" * (signer_limits.SIGNER_NIP44_MAX_PLAINTEXT + 1), k.success, k.failure),
     "too large to send": lambda c, k: c.sign_event(_unsigned("x" * 70_000), k.success,
                                                    k.failure),
 }

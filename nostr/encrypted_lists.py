@@ -56,7 +56,7 @@ from typing import Any, Callable, Collection, Dict, List, Mapping, Optional, Seq
 from PySide6.QtCore import QObject
 
 from . import CLIENT_NAME
-from .bunker import is_signer_silent, readable_back
+from .bunker import is_signer_silent
 from .drafts import supersedes
 from .events import build_event
 from .list_relays import LIST_KIND, event_mark, is_list_of, relay_key
@@ -70,6 +70,7 @@ from .list_results import (
 )
 from .outbox import ask_private_relays
 from .outbox.policy import replacement_created_at
+from .signer_limits import readable_back
 from .paged_list import (
     PAGE_PAYLOAD_MAX,
     Page,

@@ -11253,7 +11253,8 @@ class MainWindow(QMainWindow):
         # than letting the publish job fail mid-pipeline. The job also
         # checks, but doing it here means no signer round-trip wasted.
         try:
-            too_large = draft_size_problem(inner, profile)
+            too_large = draft_size_problem(
+                inner, profile, key_here=lambda: self._key_vault.has(profile.user_pubkey))
         except (KeyError, TypeError, ValueError):
             inform(self, title=_("Couldn't prepare the draft"),
                    message=_("Its contents could not be prepared for encryption."), nostr=True)

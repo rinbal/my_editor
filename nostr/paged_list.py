@@ -5,8 +5,8 @@
 ``nostr/encrypted_lists.py`` reads and writes the pages.
 
 **Size.** A NIP-44 message carries at most 65,535 bytes, a signer app
-at most 40,960 (``bunker.SIGNER_NIP44_MAX_PLAINTEXT``), and the signer's
-answer to ``nip44_decrypt`` carries the plaintext as a JSON string, in
+at most 40,960 (``signer_limits.SIGNER_NIP44_MAX_PLAINTEXT``), and the
+signer's answer to ``nip44_decrypt`` carries the plaintext as a JSON string, in
 which every quote and backslash takes two bytes. A page is therefore at
 most 32,000 bytes of plaintext: twice that, with the answer around it,
 still fits one message (``nak bunker`` 0.20.7 returned a 32,000-byte

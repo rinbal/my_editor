@@ -43,16 +43,15 @@ from PySide6.QtCore import QObject, Signal
 
 import media_files
 import url_safety
-from i18n import _, display_locale, ngettext
+from i18n import _, ngettext
 
 from . import CLIENT_NAME
 from .article_details import AUTHOR_MARKER
 from .bech32 import bech32_decode, decode_npub, decode_nprofile
 from .blossom.hashes import blob_url, hash_from_url
-from .bunker import BunkerClient, BunkerSessionPool, nip44_plaintext_limit, readable_back
+from .bunker import BunkerClient, BunkerSessionPool
 from .drafts import (
     DRAFT_WRAP_KIND,
-    MAX_INNER_PAYLOAD_BYTES,
     SUPPORTED_INNER_KINDS,
     build_draft_wrap,
     build_tombstone_wrap,
@@ -67,6 +66,7 @@ from .outbox.lookup import Lookup, fetch_addressable
 from .outbox.policy import dedupe_relays, is_newer
 from .profiles import Profile
 from .publish_pipeline import Mention, PublishPipeline, PublishResult
+from .signer_limits import size_problem
 from .relay import RelayPool
 
 
@@ -813,36 +813,16 @@ class PublishJob(PublishPipeline):
 # How large a draft may be                                                    #
 # --------------------------------------------------------------------------- #
 
-def draft_size_problem(inner: dict, profile) -> Optional[str]:
+def draft_size_problem(inner: dict, profile, *,
+                       key_here: Callable[[], bool] = lambda: False) -> Optional[str]:
     """Why ``inner`` is too large to save as a draft of ``profile``, in
-    words to show, or None when it fits.
-
-    The encrypted part of a draft is one NIP-44 message: 65,535 bytes
-    with the key kept on this computer, 40,960 through a signer app,
-    whose answer is NIP-44 too (``bunker.nip44_plaintext_limit``). And a
-    draft is read back through the signer app, whose answer carries the
-    plaintext escaped (``bunker.readable_back``): a draft full of quotes
-    may be encrypted and then never read again. Said here, before
-    anything is sent, so the person learns the real limit and not a
-    signer app's technical refusal, or a draft lost later. Raises what
+    words to show, or None when it fits: ``signer_limits.size_problem``
+    for its encrypted part (encrypted through a signer app and read back
+    through it). ``key_here()`` says whether the account's key is also
+    kept on this computer, which the words then offer. Raises what
     ``serialize_inner_event`` raises for an event it cannot serialize.
     """
-    text = serialize_inner_event(inner)
-    if readable_back(profile, text):
-        return None
-    size = len(text.encode("utf-8"))
-    limit = nip44_plaintext_limit(profile)
-    numbers = display_locale()
-    values = {"size": numbers.toString(size), "limit": numbers.toString(limit)}
-    if size <= limit:
-        return _("It has {size} bytes, more than your signer app can hand back in one answer "
-                 "once its quotes and line breaks are counted. Split it into smaller drafts or "
-                 "publish it directly.").format(**values)
-    if limit < MAX_INNER_PAYLOAD_BYTES:
-        return _("It has {size} bytes, and your signer app can encrypt at most {limit}. "
-                 "Split it into smaller drafts or publish it directly.").format(**values)
-    return _("It has {size} bytes, and encryption allows {limit}. "
-             "Split it into smaller drafts or publish it directly.").format(**values)
+    return size_problem(profile, draft=serialize_inner_event(inner), key_here=key_here)
 
 
 # --------------------------------------------------------------------------- #
@@ -978,6 +958,12 @@ class DraftPublishJob(QObject):
         if not self._cancelled:
             self.failed.emit(_safe_reason(reason))
 
+    def _refuse(self, words: str) -> None:
+        """Fail with this app's own words, whole: clipped as a signer's
+        reason is, they would end mid-sentence."""
+        if not self._cancelled:
+            self.failed.emit(words)
+
     # -- pipeline ----------------------------------------------------------
 
     def _on_relays_ready(self, publish_relays: List[str]) -> None:
@@ -1000,12 +986,14 @@ class DraftPublishJob(QObject):
             # would refuse larger payloads anyway; said here, the person
             # reads the real limit, and no approval prompt is spent on an
             # inevitable failure.
-            too_large = draft_size_problem(self._inner_event, self._profile)
+            too_large = draft_size_problem(
+                self._inner_event, self._profile,
+                key_here=lambda: self._session_pool.key_here(self._profile.user_pubkey))
         except (KeyError, TypeError, ValueError) as exc:
             self._emit_failed(_("Could not serialize draft: {reason}").format(reason=exc))
             return
         if too_large:
-            self._emit_failed(_("This draft is too large. {reason}").format(reason=too_large))
+            self._refuse(_("This draft is too large. {reason}").format(reason=too_large))
             return
         self._emit_status(
             _("Encrypting the draft. Approve the request in your signer app if it asks…")

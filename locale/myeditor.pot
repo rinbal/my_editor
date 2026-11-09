@@ -30,7 +30,7 @@ msgstr ""
 #: alerts.py:376
 #: link_popover.py:100
 #: main_window.py:5092
-#: main_window.py:11613
+#: main_window.py:11614
 #: main_window.py:371
 #: main_window.py:5554
 #: main_window.py:8545
@@ -1694,11 +1694,11 @@ msgstr ""
 msgid "No drafts were deleted"
 msgstr ""
 
-#: main_window.py:11538
+#: main_window.py:11539
 msgid "Already saving this draft - wait for it to finish."
 msgstr ""
 
-#: main_window.py:11601
+#: main_window.py:11602
 msgid "(unknown account)"
 msgstr ""
 
@@ -2546,7 +2546,7 @@ msgstr ""
 
 #: main_window.py:11190
 #: main_window.py:6389
-#: main_window.py:11773
+#: main_window.py:11774
 #: sheet_window.py:151
 #: update_flow.py:138
 #: update_flow.py:169
@@ -2554,7 +2554,7 @@ msgstr ""
 msgid "Replace"
 msgstr ""
 
-#: main_window.py:11619
+#: main_window.py:11620
 msgid "Saving under the current account would create a separate draft. How would you like to handle it?"
 msgstr ""
 
@@ -3002,7 +3002,7 @@ msgstr ""
 msgid "The current document is empty. Add some content first."
 msgstr ""
 
-#: main_window.py:11262
+#: main_window.py:11263
 msgid "This draft is too large"
 msgstr ""
 
@@ -3767,29 +3767,29 @@ msgstr[1] ""
 msgid "A draft named “{name}” already exists. Do you want to replace it?"
 msgstr ""
 
-#: main_window.py:11258
-#: main_window.py:11454
+#: main_window.py:11259
+#: main_window.py:11455
 msgid "Couldn't prepare the draft"
 msgstr ""
 
-#: main_window.py:11259
+#: main_window.py:11260
 msgid "Its contents could not be prepared for encryption."
 msgstr ""
 
-#: main_window.py:11283
+#: main_window.py:11284
 msgid "Couldn't save the draft"
 msgstr ""
 
-#: main_window.py:11616
+#: main_window.py:11617
 #, python-brace-format
 msgid "This draft was last saved as {original}, but you're signed in as {active}"
 msgstr ""
 
-#: main_window.py:11772
+#: main_window.py:11773
 msgid "Replace this draft with the newer version?"
 msgstr ""
 
-#: main_window.py:11773
+#: main_window.py:11774
 msgid "Your unsaved changes will be lost."
 msgstr ""
 
@@ -3942,12 +3942,12 @@ msgstr ""
 msgid "Connect it again with Nostr > Connect Signer App… to save here."
 msgstr ""
 
-#: main_window.py:11608
+#: main_window.py:11609
 #, python-brace-format
 msgid "Switch to {name} and Save"
 msgstr ""
 
-#: main_window.py:11611
+#: main_window.py:11612
 #, python-brace-format
 msgid "Save a Copy as {name}"
 msgstr ""
@@ -6390,30 +6390,30 @@ msgstr ""
 msgid "Your key stays in your signer app. MyEditor only forgets this connection."
 msgstr ""
 
-#: nostr/bunker.py:206
+#: nostr/bunker.py:127
 msgid "Your signer app did not answer. Open it, make sure it is running, and try again."
 msgstr ""
 
-#: nostr/bunker.py:291
+#: nostr/bunker.py:212
 msgid "expected a bunker:// URI"
 msgstr ""
 
-#: nostr/bunker.py:296
+#: nostr/bunker.py:217
 msgid "bunker URI must contain a 32-byte hex pubkey"
 msgstr ""
 
-#: nostr/bunker.py:301
+#: nostr/bunker.py:222
 msgid "bunker URI must specify at least one relay"
 msgstr ""
 
-#: nostr/bunker.py:304
+#: nostr/bunker.py:225
 #, python-brace-format
 msgid "relay must be ws:// or wss://, got {relay}"
 msgstr ""
 
 #: nostr/deletion.py:242
-#: nostr/publisher.py:1197
-#: nostr/publisher.py:1242
+#: nostr/publisher.py:1179
+#: nostr/publisher.py:1224
 msgid "Waiting for your signer app. Approve the deletion there…"
 msgstr ""
 
@@ -6436,9 +6436,9 @@ msgid "Untitled note"
 msgstr ""
 
 #: nostr/draft_sync.py:212
-#: nostr/publisher.py:943
-#: nostr/publisher.py:961
-#: nostr/publisher.py:1153
+#: nostr/publisher.py:923
+#: nostr/publisher.py:941
+#: nostr/publisher.py:1135
 msgid "Looking up your relay list…"
 msgstr ""
 
@@ -6447,8 +6447,8 @@ msgid "Refreshing drafts…"
 msgstr ""
 
 #: nostr/draft_sync.py:409
-#: nostr/publish_pipeline.py:153
-#: nostr/publisher.py:986
+#: nostr/publish_pipeline.py:164
+#: nostr/publisher.py:966
 msgid "Connecting to your signer app…"
 msgstr ""
 
@@ -6706,27 +6706,27 @@ msgstr ""
 msgid "Your profile wasn’t changed. Try again in a moment."
 msgstr ""
 
-#: nostr/publish_pipeline.py:177
-#: nostr/publisher.py:1044
+#: nostr/publish_pipeline.py:188
+#: nostr/publisher.py:1026
 msgid "Waiting for your signer app. Approve the request there…"
 msgstr ""
 
-#: nostr/publish_pipeline.py:180
+#: nostr/publish_pipeline.py:191
 #, python-brace-format
 msgid "Publishing to {n} relay…"
 msgid_plural "Publishing to {n} relays…"
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/publish_pipeline.py:220
+#: nostr/publish_pipeline.py:231
 msgid "Your signer app signed something other than what was asked, so nothing was sent."
 msgstr ""
 
-#: nostr/publish_pipeline.py:226
+#: nostr/publish_pipeline.py:237
 msgid "Finding your relays…"
 msgstr ""
 
-#: nostr/publish_pipeline.py:267
+#: nostr/publish_pipeline.py:278
 msgid "Your signer app didn’t sign the request."
 msgstr ""
 
@@ -6734,16 +6734,11 @@ msgstr ""
 msgid "unknown error"
 msgstr ""
 
-#: nostr/publisher.py:844
-#, python-brace-format
-msgid "It has {size} bytes, and encryption allows {limit}. Split it into smaller drafts or publish it directly."
-msgstr ""
-
-#: nostr/publisher.py:1011
+#: nostr/publisher.py:993
 msgid "Encrypting the draft. Approve the request in your signer app if it asks…"
 msgstr ""
 
-#: nostr/publisher.py:1443
+#: nostr/publisher.py:1425
 msgid "no relay accepted the deletion"
 msgstr ""
 
@@ -6759,69 +6754,59 @@ msgid_plural "Published. {accepted}/{total} relays accepted."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/publisher.py:838
-#, python-brace-format
-msgid "It has {size} bytes, more than your signer app can hand back in one answer once its quotes and line breaks are counted. Split it into smaller drafts or publish it directly."
-msgstr ""
-
-#: nostr/publisher.py:842
-#, python-brace-format
-msgid "It has {size} bytes, and your signer app can encrypt at most {limit}. Split it into smaller drafts or publish it directly."
-msgstr ""
-
-#: nostr/publisher.py:1235
+#: nostr/publisher.py:1217
 msgid "This draft can’t be deleted: its link name holds a secret key, and the version on your relays isn’t known here. Refresh your drafts and try again."
 msgstr ""
 
-#: nostr/publisher.py:1063
+#: nostr/publisher.py:1045
 #, python-brace-format
 msgid "Publishing draft to {n} relay…"
 msgid_plural "Publishing draft to {n} relays…"
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/publisher.py:1074
+#: nostr/publisher.py:1056
 #, python-brace-format
 msgid "Draft saved to {accepted}/{total} relay."
 msgid_plural "Draft saved to {accepted}/{total} relays."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/publisher.py:1252
+#: nostr/publisher.py:1234
 #, python-brace-format
 msgid "Removing draft from {n} relay…"
 msgid_plural "Removing draft from {n} relays…"
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/publisher.py:1266
+#: nostr/publisher.py:1248
 #, python-brace-format
 msgid "Draft removed on {accepted}/{total} relay."
 msgid_plural "Draft removed on {accepted}/{total} relays."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/publisher.py:1441
+#: nostr/publisher.py:1423
 #, python-brace-format
 msgid "no relay accepted the deletion ({reasons})"
 msgstr ""
 
-#: nostr/publisher.py:1008
+#: nostr/publisher.py:990
 #, python-brace-format
 msgid "This draft is too large. {reason}"
 msgstr ""
 
-#: nostr/publisher.py:1005
+#: nostr/publisher.py:987
 #, python-brace-format
 msgid "Could not serialize draft: {reason}"
 msgstr ""
 
-#: nostr/publisher.py:1040
+#: nostr/publisher.py:1022
 #, python-brace-format
 msgid "Couldn’t prepare the draft: {reason}"
 msgstr ""
 
-#: nostr/publisher.py:1017
+#: nostr/publisher.py:999
 #, python-brace-format
 msgid "Could not encrypt draft: {reason}"
 msgstr ""
@@ -6898,6 +6883,29 @@ msgstr ""
 
 #: nostr/relay_list_addition.py:59
 msgid "Your account has a relay list after all, so nothing was published. Add the members’ relay to it instead."
+msgstr ""
+
+#: nostr/signer_limits.py:155
+msgid "This is too long to be signed through your signer app. Shorten it, or split it into parts."
+msgstr ""
+
+#: nostr/signer_limits.py:160
+msgid "Your key is also kept on this computer: signed with it here, this limit doesn't apply."
+msgstr ""
+
+#: nostr/signer_limits.py:176
+#, python-brace-format
+msgid "It has {size} bytes, and encryption allows {limit}. Split it into smaller drafts or publish it directly."
+msgstr ""
+
+#: nostr/signer_limits.py:170
+#, python-brace-format
+msgid "It has {size} bytes, more than your signer app can hand back in one answer once its quotes and line breaks are counted. Split it into smaller drafts or publish it directly."
+msgstr ""
+
+#: nostr/signer_limits.py:174
+#, python-brace-format
+msgid "It has {size} bytes, and your signer app can encrypt at most {limit}. Split it into smaller drafts or publish it directly."
 msgstr ""
 
 #: nostr/blossom/errors.py:80
@@ -7489,7 +7497,7 @@ msgstr ""
 msgid "Your list of sources was saved with an older kind of encryption. Open it once in the app that saved it; until then, changes made here stay on this computer."
 msgstr ""
 
-#: nostr/imports/subscriptions.py:672
+#: nostr/imports/subscriptions.py:673
 #, python-brace-format
 msgid "Your list of sources couldn't be saved online ({reason}). Your changes are kept on this computer."
 msgstr ""

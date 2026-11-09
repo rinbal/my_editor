@@ -30,7 +30,6 @@ timeout/error).
 from __future__ import annotations
 
 import json
-import re
 import secrets
 import time
 from dataclasses import dataclass
@@ -43,6 +42,7 @@ from i18n import _
 
 from . import CLIENT_NAME, crypto, events, refs
 from .relay import KeySignIn, RelayPool, Subscription
+from .signer_limits import SIGNER_NIP44_MAX_PLAINTEXT, sign_answer_size
 
 
 # --------------------------------------------------------------------------- #
@@ -76,85 +76,6 @@ ANSWERED_RECENTLY_MS = 30_000
 # answer arrives later under the same request id, so the pending request is
 # held open this long rather than failing.
 AUTH_CHALLENGE_TIMEOUT_MS = 180_000
-
-# The most plaintext a signer app can encrypt (``nip44_encrypt``) or
-# decrypt (``nip44_decrypt``) for us: 40,960 bytes, not NIP-44's 65,535.
-#
-# Every NIP-46 request and every answer is itself one NIP-44 message, and
-# NIP-44 carries at most 65,535 bytes (``crypto.NIP44_MAX_PLAINTEXT_LEN``;
-# nostr-tools stops at the same number in ``nip44.js``, and Bunker46, for
-# one, encrypts its answers with it). A NIP-44 ciphertext is base64 of a
-# version byte, a 32-byte nonce, a 2-byte length, the padded plaintext and
-# a 32-byte MAC. Above 32,768 bytes the padding rounds up to a multiple of
-# 8,192, so:
-#
-#   40,960 bytes pad to 40,960 -> a 54,704-character ciphertext, which fits
-#   40,961 bytes pad to 49,152 -> a 65,628-character ciphertext, which is
-#                                 larger than a whole NIP-46 message may be
-#
-# The ciphertext rides inside the signer's answer to ``nip44_encrypt`` and
-# inside our request for ``nip44_decrypt``, so either way 40,960 bytes is
-# the end (tests/test_bunker_request_size.py measures it with the real
-# encryption). ``nak bunker`` 0.20.7 answered at 40,960 and did not answer
-# at 40,961. Anything larger travels encrypted some other way, and lists
-# are split into pages well below this (nostr/encrypted_lists.py).
-SIGNER_NIP44_MAX_PLAINTEXT = 40_960
-
-# A signer app writes its answer as JSON, the result inside it a JSON
-# string: every quote and backslash takes two bytes there, a control
-# character two or six. ``nak bunker`` 0.20.7 writes the answer with
-# fiatjaf.com/nostr's nip46 (``var json = jsoniter.ConfigFastest``:
-# EscapeHTML false, so <, >, & and U+2028/U+2029 stay raw) and a signed
-# event with easyjson (``NoEscapeHTML: true``); json-iterator 1.1.12 and
-# easyjson 0.9 write \n, \r and \t short and every other control
-# character as \u00xx. JSON.stringify (nostr-tools) and Python's json.dumps
-# also write \b and \f short. Measured at the longer of the two.
-_ESCAPE = re.compile(r"\\(.)")
-_LONG = {"b": "\\u0008", "f": "\\u000c"}
-
-
-def _as_signer_writes(value) -> str:
-    """``value`` as JSON the way a signer app writes it at its longest:
-    compact, raw UTF-8, \\b and \\f as \\u00xx. In JSON text a backslash
-    only ever starts an escape, so reading the escapes from the left
-    finds every one."""
-    text = json.dumps(value, separators=(",", ":"), ensure_ascii=False)
-    return _ESCAPE.sub(lambda m: _LONG.get(m.group(1), m.group(0)), text)
-
-
-def signer_answer_size(result: str) -> int:
-    """Bytes of a signer app's NIP-46 answer carrying ``result`` (the
-    answer echoes our 16-character request id). The answer is one NIP-44
-    message: at most ``crypto.NIP44_MAX_PLAINTEXT_LEN``."""
-    return len(_as_signer_writes({"id": "0" * 16, "result": result}).encode("utf-8"))
-
-
-def readable_back(profile, plaintext: str) -> bool:
-    """Whether ``plaintext``, encrypted for ``profile`` itself, can be read
-    back by it: NIP-44's 65,535 bytes with the key kept on this computer;
-    through a signer app 40,960 bytes, and the answer to ``nip44_decrypt``,
-    which carries the plaintext escaped, must fit one message too (a
-    40,000-byte text of quotes the app can encrypt is 80,000 bytes in that
-    answer, and the read would wait out its timeout). What drafts and
-    private lists ask before they encrypt."""
-    from .local_signer import LOCAL
-    size = len(plaintext.encode("utf-8"))
-    if getattr(profile, "signer", "remote") == LOCAL:
-        return size <= crypto.NIP44_MAX_PLAINTEXT_LEN
-    return (size <= SIGNER_NIP44_MAX_PLAINTEXT
-            and signer_answer_size(plaintext) <= crypto.NIP44_MAX_PLAINTEXT_LEN)
-
-
-def nip44_plaintext_limit(profile) -> int:
-    """The most plaintext one ``nip44_encrypt`` (or ``nip44_decrypt``)
-    can carry for ``profile``: NIP-44's own 65,535 bytes when the key is
-    kept on this computer, :data:`SIGNER_NIP44_MAX_PLAINTEXT` through a
-    signer app. The one place a caller asks before it encrypts, so what
-    it tells the person matches what the signer will do."""
-    from .local_signer import LOCAL
-    if getattr(profile, "signer", "remote") == LOCAL:
-        return crypto.NIP44_MAX_PLAINTEXT_LEN
-    return SIGNER_NIP44_MAX_PLAINTEXT
 
 # The failure reasons that mean nobody answered, as opposed to the signer
 # answering "no". Defined here, next to the code that produces them, so
@@ -791,9 +712,9 @@ class BunkerClient(QObject):
         }
         # The answer is the signed event, escaped as a string: our request
         # may fit while the answer, with the id, pubkey and signature the
-        # signer adds, does not, and we would wait out the timeout.
-        answer = signer_answer_size(_as_signer_writes(
-            dict(payload, id="0" * 64, pubkey="0" * 64, sig="0" * 128)))
+        # signer adds, does not, and we would wait out the timeout. What
+        # the person is told comes earlier (signer_limits.size_problem).
+        answer = sign_answer_size(payload)
         if answer > crypto.NIP44_MAX_PLAINTEXT_LEN:
             self._refuse(on_failure,
                          f"too large for a signer app: sign_event would answer with {answer} "
@@ -1302,6 +1223,16 @@ class BunkerSessionPool(QObject):
         self._attaching: Dict[str, BunkerClient] = {}
         self._inflight: Dict[str, List[Tuple[Callable[[QObject], None], Callable[[str], None]]]] = {}
 
+    def key_here(self, user_pubkey: str) -> bool:
+        """Whether the account's private key is kept on this computer
+        (also when it signs through a signer app): what the words about a
+        signer app's limit offer (``signer_limits.size_problem``)."""
+        return self._key_vault().has(user_pubkey)
+
+    def _key_vault(self):
+        from .key_vault import KeyVault
+        return self._vault if self._vault is not None else KeyVault()
+
     def get(
         self,
         profile,  # nostr.profiles.Profile, not imported to avoid a cycle
@@ -1392,14 +1323,12 @@ class BunkerSessionPool(QObject):
     def _get_local(self, pubkey: str, on_ready, on_error) -> None:
         """A key kept on this computer: no channel to open, no phone to
         ask. The same calls are answered by a LocalSigner."""
-        from .key_vault import KeyVault
         from .local_signer import LOCAL, LocalSigner
         # A reattach started while the account still signed with an app
         # is given up; whoever waited on it gets the local signer instead.
         waiters = [(on_ready, on_error)] + self._inflight.pop(pubkey, [])
         self._attaching.pop(pubkey, None)
-        vault = self._vault if self._vault is not None else KeyVault()
-        secret = vault.load(pubkey)
+        secret = self._key_vault().load(pubkey)
         if secret is None:
             for _ready_cb, err_cb in waiters:
                 err_cb("the private key for this account is not on this computer")

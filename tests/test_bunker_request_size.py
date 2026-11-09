@@ -17,8 +17,8 @@ import secrets
 
 from PySide6.QtCore import QCoreApplication
 
-from nostr import bunker, crypto, events
-from nostr.bunker import SIGNER_NIP44_MAX_PLAINTEXT
+from nostr import bunker, crypto, events, signer_limits
+from nostr.signer_limits import SIGNER_NIP44_MAX_PLAINTEXT
 from tests.test_bunker_handshake import FakePool, FakeSigner
 
 _CONV = bytes(range(32))
@@ -192,28 +192,28 @@ def test_without_the_check_the_signer_never_answers():
 # <, >, & and U+2028 raw. JSON.stringify writes \b and \f in two.
 
 def test_an_answer_is_measured_as_a_signer_app_writes_it():
-    assert bunker._as_signer_writes('a"b\\c\n') == '"a\\"b\\\\c\\n"'
-    assert bunker._as_signer_writes("\b\f\x01") == '"\\u0008\\u000c\\u0001"'
-    assert bunker._as_signer_writes("<&>   ä") == '"<&>   ä"'
+    assert signer_limits._as_signer_writes('a"b\\c\n') == '"a\\"b\\\\c\\n"'
+    assert signer_limits._as_signer_writes("\b\f\x01") == '"\\u0008\\u000c\\u0001"'
+    assert signer_limits._as_signer_writes("<&>   ä") == '"<&>   ä"'
     # A literal backslash before a b is not an escaped backspace.
-    assert bunker._as_signer_writes("\\b") == '"\\\\b"'
+    assert signer_limits._as_signer_writes("\\b") == '"\\\\b"'
     # nak bunker returned a 32,000-byte page of nothing but quotes, and
     # not one of 32,800 (contract 13): the measure agrees with both.
-    assert bunker.signer_answer_size('"' * 32_000) <= crypto.NIP44_MAX_PLAINTEXT_LEN
-    assert bunker.signer_answer_size('"' * 32_800) > crypto.NIP44_MAX_PLAINTEXT_LEN
+    assert signer_limits.signer_answer_size('"' * 32_000) <= crypto.NIP44_MAX_PLAINTEXT_LEN
+    assert signer_limits.signer_answer_size('"' * 32_800) > crypto.NIP44_MAX_PLAINTEXT_LEN
 
 
 def test_what_can_be_read_back_depends_on_where_the_key_is():
     from types import SimpleNamespace
     remote, local = SimpleNamespace(signer="remote"), SimpleNamespace(signer="local")
-    assert bunker.readable_back(remote, "x" * SIGNER_NIP44_MAX_PLAINTEXT)
-    assert not bunker.readable_back(remote, "x" * (SIGNER_NIP44_MAX_PLAINTEXT + 1))
+    assert signer_limits.readable_back(remote, "x" * SIGNER_NIP44_MAX_PLAINTEXT)
+    assert not signer_limits.readable_back(remote, "x" * (SIGNER_NIP44_MAX_PLAINTEXT + 1))
     # Encrypted fine, but the answer to nip44_decrypt would be 80,000 bytes.
-    assert not bunker.readable_back(remote, '"' * 40_000)
-    assert bunker.readable_back(remote, '"' * 32_000)
+    assert not signer_limits.readable_back(remote, '"' * 40_000)
+    assert signer_limits.readable_back(remote, '"' * 32_000)
     # With the key here nothing is answered: NIP-44's own bound.
-    assert bunker.readable_back(local, '"' * crypto.NIP44_MAX_PLAINTEXT_LEN)
-    assert not bunker.readable_back(local, "x" * (crypto.NIP44_MAX_PLAINTEXT_LEN + 1))
+    assert signer_limits.readable_back(local, '"' * crypto.NIP44_MAX_PLAINTEXT_LEN)
+    assert not signer_limits.readable_back(local, "x" * (crypto.NIP44_MAX_PLAINTEXT_LEN + 1))
 
 
 class SigningSigner(EncryptingSigner):
@@ -232,8 +232,8 @@ class SigningSigner(EncryptingSigner):
             return
         self.seen.append(payload)
         signed = events.sign_event(json.loads(payload["params"][0]), self.user_sk)
-        answer = bunker._as_signer_writes(
-            {"id": payload["id"], "result": bunker._as_signer_writes(signed)})
+        answer = signer_limits._as_signer_writes(
+            {"id": payload["id"], "result": signer_limits._as_signer_writes(signed)})
         try:
             self.send_raw(crypto.encrypt(answer, self.conv))
         except ValueError:

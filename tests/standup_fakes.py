@@ -1145,7 +1145,7 @@ class Nip46SignerApp:
     is never sent (nostr-tools throws there), and the app waits for
     nothing. ``too_large`` counts those; ``largest_plaintext`` is the
     longest text it was asked to encrypt or decrypt, which the 40,960
-    bytes of ``bunker.SIGNER_NIP44_MAX_PLAINTEXT`` keep within one
+    bytes of ``signer_limits.SIGNER_NIP44_MAX_PLAINTEXT`` keep within one
     answer. Use :func:`paired_bunker`."""
 
     def __init__(self, pool, user_sk: bytes) -> None:

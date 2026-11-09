@@ -43,12 +43,13 @@ from __future__ import annotations
 import re
 from typing import List, Optional, Sequence, Tuple
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 
 from i18n import _, ngettext
 
 from .outbox.policy import dedupe_relays, relays_from
 from .outbox.writer import signed_matches
+from .signer_limits import size_problem
 
 PublishResult = Tuple[str, bool, str]   # (relay_url, ok, message)
 Mention = Tuple[str, str]               # (pubkey_hex, relay_hint), hint may be empty
@@ -149,7 +150,17 @@ class PublishPipeline(QObject):
         return self._plan
 
     def start(self) -> None:
-        """Ask for the routing and the signature. Once per instance."""
+        """Ask for the routing and the signature. Once per instance. An
+        event the account's signer app could not sign and answer fails
+        at once, before anything is asked, with words that say so
+        (``signer_limits.size_problem``), on the next turn as a signer's
+        refusal would."""
+        too_long = size_problem(
+            self._profile, event=self._unsigned,
+            key_here=lambda: self._session_pool.key_here(self._author))
+        if too_long:
+            QTimer.singleShot(0, self, lambda: self._fail(too_long))
+            return
         self._say(_("Connecting to your signer app…"))
         self._relay_directory.publish_plan(self._author, self._on_plan,
                                            mentioned=self._mentioned,

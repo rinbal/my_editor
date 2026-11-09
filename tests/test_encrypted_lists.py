@@ -21,7 +21,7 @@ from types import SimpleNamespace
 import pytest
 
 from nostr import crypto, events
-from nostr.bunker import SIGNER_NIP44_MAX_PLAINTEXT
+from nostr.signer_limits import SIGNER_NIP44_MAX_PLAINTEXT
 from nostr.encrypted_lists import EncryptedList
 from nostr.list_relays import LIST_KIND
 from nostr.list_results import ListWords, PublishStatus, ReadStatus

@@ -26,7 +26,7 @@ from nostr.drafts import (
     MAX_INNER_PAYLOAD_BYTES,
     build_inner_event,
 )
-from nostr.bunker import SIGNER_NIP44_MAX_PLAINTEXT, nip44_plaintext_limit
+from nostr.signer_limits import SIGNER_NIP44_MAX_PLAINTEXT, nip44_plaintext_limit
 from nostr.publisher import (
     DraftDeleteJob,
     DraftPublishJob,
@@ -171,7 +171,8 @@ def test_a_draft_too_large_for_a_signer_app_fails_before_anything_is_sent():
     # Between 40,961 and 65,535 bytes a signer app cannot encrypt the
     # draft: said at once, in words, with the real limit.
     job = DraftPublishJob(
-        relay_pool=MagicMock(), relay_directory=MagicMock(), session_pool=MagicMock(),
+        relay_pool=MagicMock(), relay_directory=MagicMock(),
+        session_pool=MagicMock(**{"key_here.return_value": False}),
         profile=_make_profile(), inner_event=_note_of_bytes(50_000), identifier="big")
     failures: List[str] = []
     job.failed.connect(failures.append)
@@ -181,6 +182,21 @@ def test_a_draft_too_large_for_a_signer_app_fails_before_anything_is_sent():
     assert failures == ["This draft is too large. It has 50,000 bytes, and your signer app "
                         "can encrypt at most 40,960. Split it into smaller drafts or publish "
                         "it directly."]
+
+
+def test_with_the_key_also_kept_here_the_words_offer_it():
+    # Contract 12.5 (d5cc9a7): MyEditor offers its local key when one is
+    # kept for the account.
+    pool = MagicMock(**{"key_here.return_value": True})
+    job = DraftPublishJob(
+        relay_pool=MagicMock(), relay_directory=MagicMock(), session_pool=pool,
+        profile=_make_profile(), inner_event=_note_of_bytes(50_000), identifier="big")
+    failures: List[str] = []
+    job.failed.connect(failures.append)
+    job._on_bunker_ready(MagicMock(), publish_relays=["wss://r/"])
+    assert failures[0].endswith("Your key is also kept on this computer: signed with it "
+                                "here, this limit doesn't apply.")
+    pool.key_here.assert_called_once_with(PK)
 
 
 def test_the_same_draft_with_the_key_here_is_encrypted():
@@ -365,7 +381,8 @@ def test_the_save_command_says_the_signer_apps_limit_before_starting(monkeypatch
     shown, made = [], []
     monkeypatch.setattr(main_window, "inform", lambda parent, **kw: shown.append(kw))
     monkeypatch.setattr(main_window, "DraftPublishJob", lambda **kw: made.append(kw))
-    host = types.SimpleNamespace(_is_stash_in_flight_for=lambda _ed: False)
+    host = types.SimpleNamespace(_is_stash_in_flight_for=lambda _ed: False,
+                                 _key_vault=types.SimpleNamespace(has=lambda _pk: False))
     choice = types.SimpleNamespace(identifier="big")
     MainWindow._fire_draft_publish_job(host, object(), _make_profile(), choice,
                                        _note_of_bytes(50_000))
