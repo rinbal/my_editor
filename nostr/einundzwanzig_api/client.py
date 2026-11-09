@@ -5,28 +5,24 @@
 :class:`MembershipApi` signs (through a plain callable, see
 :func:`session_signer`) and sends every call to the membership service
 (:func:`service_url`), naming the association (:func:`upstream_url`) in
-each signature. The package docstring has the reasoning.
+each signature. The package docstring has the reasoning. The call
+pipeline itself (sign, send, read, one callback) is shared with the app's
+other signed APIs: ``nostr/signed_api.py``.
 """
 
 from __future__ import annotations
 
-import copy
 import json
 import os
-import re
-import time
-import traceback
-from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
-from urllib.parse import urlsplit
 
-from PySide6.QtCore import QByteArray, QObject, QTimer, QUrl
+from PySide6.QtCore import QObject, QTimer, QUrl
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
 import url_safety
 
-from .. import nip98
-from ..bunker import is_signer_silent
+from ..signed_api import Call as _Call
+from ..signed_api import SignedJsonApi, SignFn, json_body, reply_header, usable_base_url
 from .messages import application_text_problem, email_problem, nip05_handle_problem
 from .models import (
     ApiError,
@@ -104,34 +100,13 @@ STATUS_TIMEOUT_MS: int = 8_000
 # Plain http is allowed to exactly these hosts, for development.
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
-_UNSAFE_URL_CHARS = re.compile(r"[\x00-\x20\x7f?#@]")
-
 
 def _usable_service(value: Any) -> str:
     """``value`` as an address this app may send signed requests to,
-    without a trailing slash, or ``""``.
-
-    https to any host. Plain http only to this computer, for development:
-    the host must be exactly ``localhost``, ``127.0.0.1`` or ``[::1]``,
-    so ``http://localhost.evil.example`` is not local. No user name or
-    password (``http://localhost@evil.example`` names evil.example), no
-    query and no fragment: none of them belongs in a base address, which
-    the request path is appended to.
-    """
-    text = value.strip().rstrip("/") if isinstance(value, str) else ""
-    try:
-        parts = urlsplit(text)
-        parts.port  # an invalid port raises here
-    except ValueError:
-        return ""
-    if parts.scheme not in ("http", "https") or not parts.hostname:
-        return ""
-    after_scheme = text[len(parts.scheme) + len("://"):]
-    if not text.lower().startswith(parts.scheme + "://") or _UNSAFE_URL_CHARS.search(after_scheme):
-        return ""
-    if parts.scheme == "http" and parts.hostname not in _LOOPBACK_HOSTS:
-        return ""
-    return text
+    without a trailing slash, or ``""``: https to any host, plain http
+    only to exactly ``localhost``, ``127.0.0.1`` or ``[::1]``, for
+    development (``signed_api.usable_base_url`` has the rules)."""
+    return usable_base_url(value, http_hosts=_LOOPBACK_HOSTS)
 
 
 def service_url() -> str:
@@ -162,31 +137,8 @@ def upstream_url() -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Signer failures                                                              #
-# --------------------------------------------------------------------------- #
-
-def _signer_error(reason: str) -> ApiError:
-    """Sort a signer failure into "said no" and "never answered".
-
-    The second is recoverable on the user's phone and gets different
-    advice, so it must not read as a refusal. ``not connected`` is what
-    ``BunkerClient`` says when its channel is down.
-    """
-    text = str(reason or "")
-    lowered = text.lower()
-    unreachable = is_signer_silent(text) or "not connected" in lowered
-    code = ErrorCode.SIGNER_UNREACHABLE if unreachable else ErrorCode.SIGNER_DECLINED
-    return ApiError(code, message=_clean_text(text))
-
-
-# --------------------------------------------------------------------------- #
 # The client                                                                   #
 # --------------------------------------------------------------------------- #
-
-# ``sign(unsigned_event, on_success, on_failure)``: hand an unsigned event
-# to whatever signer the window holds. Exactly one callback must fire.
-SignFn = Callable[[dict, Callable[[dict], None], Callable[[str], None]], None]
-
 
 class _Unset:
     """Marks an application field the caller did not pass."""
@@ -201,41 +153,8 @@ class _Unset:
 UNSET: Any = _Unset()
 
 
-@dataclass
-class _Call:
-    """One API call, from the first signature to the one callback."""
-
-    method: str
-    path: str
-    body: Optional[bytes]
-    signed: bool
-    parse: Callable[[Any], Any]
-    on_success: Callable[[Any], None]
-    on_failure: Callable[[ApiError], None]
-    generation: int
-    resigned: bool = False
-    done: bool = False
-
-
-def _json_body(payload: Dict[str, Any]) -> bytes:
-    """The one serialisation of a body: these bytes are hashed AND sent."""
-    return json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-
-
-def _reply_header(reply, name: str) -> bytes:
-    """A response header's raw value, or ``b""``.
-
-    The name goes in as ``str`` first: PySide6 6.11 accepts nothing
-    else for ``QNetworkReply.rawHeader``, and a ``bytes`` name raises
-    TypeError there. Older bindings took a QByteArray, hence the second
-    try.
-    """
-    for key in (name, name.encode("ascii")):
-        try:
-            return bytes(reply.rawHeader(key))
-        except (AttributeError, TypeError):
-            continue
-    return b""
+_json_body = json_body
+_reply_header = reply_header
 
 
 def _year_segment(year: int) -> str:
@@ -244,7 +163,7 @@ def _year_segment(year: int) -> str:
     return str(year)
 
 
-class MembershipApi(QObject):
+class MembershipApi(SignedJsonApi):
     """Callback-style client for the membership API's main surface.
 
     Every method takes ``on_success`` and ``on_failure`` and exactly one
@@ -263,6 +182,12 @@ class MembershipApi(QObject):
     name. ``service_url`` is where the requests travel.
     """
 
+    network_timeout_ms = NETWORK_TIMEOUT_MS
+    stale_signature_seconds = STALE_SIGNATURE_SECONDS
+    max_response_bytes = MAX_RESPONSE_BYTES
+    max_redirects = _MAX_REDIRECTS
+    user_agent = _USER_AGENT
+
     def __init__(
         self,
         sign: SignFn,
@@ -273,18 +198,13 @@ class MembershipApi(QObject):
         clock: Optional[Callable[[], float]] = None,
         parent: Optional[QObject] = None,
     ) -> None:
-        super().__init__(parent)
         base = str(base_url).rstrip("/") if base_url is not None else upstream_url()
         if not url_safety.origin_of(base):
             raise ValueError("base_url must be an absolute http(s) URL")
-        self._sign = sign
+        super().__init__(sign, nam=nam, clock=clock, parent=parent)
         self._service_url = (_usable_service(service_url) if service_url is not None
                              else _resolve_service_url())
         self._base_url = base
-        self._nam = nam or QNetworkAccessManager(self)
-        self._clock = clock or time.time
-        self._generation = 0
-        self._inflight: Dict[int, Any] = {}
 
     # -- public surface ----------------------------------------------------
 
@@ -460,170 +380,26 @@ class MembershipApi(QObject):
         fees stay behind as anonymised bookkeeping."""
         self._start("DELETE", "/me", None, True, parse_erasure, on_success, on_failure)
 
-    def cancel(self) -> None:
-        """Drop every call in progress. No callback fires for them.
+    # -- what the shared pipeline asks (nostr/signed_api.py) -------------
 
-        A signer prompt already on the user's phone cannot be withdrawn;
-        its answer is simply ignored.
-        """
-        self._generation += 1
-        inflight, self._inflight = self._inflight, {}
-        for reply in inflight.values():
-            try:
-                reply.abort()
-            except RuntimeError:  # already deleted on the C++ side
-                pass
+    def _error(self, code: str, **fields) -> ApiError:
+        return ApiError(code, **fields)
 
-    # -- the pipeline ------------------------------------------------------
+    def _unavailable(self, call: _Call) -> Optional[ApiError]:
+        return None if self._service_url else ApiError(ErrorCode.UNAVAILABLE)
 
-    def _new_call(self, method, path, body, signed, parse, on_success, on_failure) -> _Call:
-        return _Call(method, path, body, signed, parse, on_success, on_failure,
-                     self._generation)
-
-    def _start(self, method, path, body, signed, parse, on_success, on_failure) -> None:
-        self._run(self._new_call(method, path, body, signed, parse, on_success, on_failure))
-
-    def _run(self, call: _Call) -> None:
-        if not self._service_url:
-            self._fail(call, ApiError(ErrorCode.UNAVAILABLE))
-            return
-        if call.signed:
+    def _retry(self, call: _Call, error: ApiError, stale: bool) -> bool:
+        # A remote signer that took most of the 60 second window can
+        # hand back an event that expires on the way. That is the one
+        # 401 a fresh signature can cure, so it gets one, and only one.
+        if (error.code == ErrorCode.UNAUTHORIZED and call.signed and stale
+                and not call.resigned):
+            call.resigned = True
             self._sign_and_send(call)
-        else:
-            self._send(call, None)
+            return True
+        return False
 
-    def _live(self, call: _Call) -> bool:
-        return not call.done and call.generation == self._generation
-
-    def _sign_and_send(self, call: _Call) -> None:
-        # Built here, immediately before signing, every time: an event id
-        # is accepted once and its timestamp only for 60 seconds.
-        unsigned = nip98.build_unsigned_auth_event(
-            self.url_for(call.path), call.method, call.body, now=int(self._clock()),
-        )
-        answered = {"done": False}
-
-        def _signed(event: dict) -> None:
-            if answered["done"]:
-                return
-            answered["done"] = True
-            if not self._live(call):
-                return
-            problem = nip98.signed_event_problem(event, unsigned)
-            if problem:
-                self._fail(call, ApiError(ErrorCode.SIGNER_DECLINED, message=problem))
-                return
-            self._send(call, event)
-
-        def _refused(reason: str) -> None:
-            if answered["done"]:
-                return
-            answered["done"] = True
-            if self._live(call):
-                self._fail(call, _signer_error(reason))
-
-        try:
-            # A copy, so a signer that edits what it is handed cannot
-            # change what its answer is checked against.
-            self._sign(copy.deepcopy(unsigned), _signed, _refused)
-        except Exception as exc:  # noqa: BLE001, a broken adapter must not reach Qt
-            if not answered["done"]:
-                answered["done"] = True
-                if self._live(call):
-                    self._fail(call, ApiError(
-                        ErrorCode.SIGNER_UNREACHABLE,
-                        message=_clean_text(f"signer unavailable: {exc}"),
-                    ))
-
-    def _send(self, call: _Call, signed: Optional[dict]) -> None:
-        request = QNetworkRequest(QUrl(self.request_url_for(call.path)))
-        request.setRawHeader(b"Accept", b"application/json")
-        request.setRawHeader(b"User-Agent", _USER_AGENT)
-        request.setTransferTimeout(NETWORK_TIMEOUT_MS)
-        # A redirect re-sends the headers, the signature included, so it
-        # may only stay on the service's own origin.
-        request.setAttribute(
-            QNetworkRequest.Attribute.RedirectPolicyAttribute,
-            QNetworkRequest.RedirectPolicy.SameOriginRedirectPolicy,
-        )
-        request.setMaximumRedirectsAllowed(_MAX_REDIRECTS)
-
-        stale = False
-        if signed is not None:
-            request.setRawHeader(b"Authorization", nip98.authorization_header_value(signed))
-            stale = (self._clock() - signed["created_at"]) > STALE_SIGNATURE_SECONDS
-
-        if nip98.has_body(call.body):
-            # Exactly this value: anything else is refused with 415.
-            request.setRawHeader(b"Content-Type", nip98.JSON_CONTENT_TYPE.encode("ascii"))
-            reply = self._nam.post(request, QByteArray(call.body))
-        elif call.method == "GET":
-            reply = self._nam.get(request)
-        elif call.method == "DELETE":
-            reply = self._nam.deleteResource(request)
-        else:
-            # No body means no Content-Type and no payload tag. Qt adds no
-            # Content-Type of its own to an empty POST.
-            reply = self._nam.post(request, QByteArray())
-
-        key = id(reply)
-        self._inflight[key] = reply
-        flags = {"oversize": False}
-
-        def _guard(received: int, total: int) -> None:
-            if flags["oversize"]:
-                return
-            if received > MAX_RESPONSE_BYTES or total > MAX_RESPONSE_BYTES:
-                flags["oversize"] = True
-                reply.abort()
-
-        reply.downloadProgress.connect(_guard)
-        reply.finished.connect(lambda: self._on_finished(call, reply, key, flags, stale))
-
-    def _on_finished(self, call: _Call, reply, key: int, flags: dict, stale: bool) -> None:
-        self._inflight.pop(key, None)
-        try:
-            if not self._live(call):
-                return
-            outcome = self._read(call, reply, flags)
-        finally:
-            reply.deleteLater()
-
-        if isinstance(outcome, ApiError):
-            # A remote signer that took most of the 60 second window can
-            # hand back an event that expires on the way. That is the one
-            # 401 a fresh signature can cure, so it gets one, and only one.
-            if (
-                outcome.code == ErrorCode.UNAUTHORIZED
-                and call.signed
-                and stale
-                and not call.resigned
-            ):
-                call.resigned = True
-                self._sign_and_send(call)
-                return
-            self._fail(call, outcome)
-            return
-        self._succeed(call, outcome[0])
-
-    def _read(self, call: _Call, reply, flags: dict):
-        """``(value,)`` on success, else the :class:`ApiError`."""
-        status = int(reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute) or 0)
-        if flags["oversize"]:
-            return ApiError(ErrorCode.BAD_RESPONSE, status=status or None,
-                            message="the answer was larger than allowed")
-        if 300 <= status < 400:
-            return ApiError(ErrorCode.BAD_RESPONSE, status=status,
-                            message="the server redirected the request")
-        if status == 0:
-            return self._transport_error(reply.error())
-
-        raw = bytes(reply.readAll())
-        if len(raw) > MAX_RESPONSE_BYTES:
-            return ApiError(ErrorCode.BAD_RESPONSE, status=status,
-                            message="the answer was larger than allowed")
-        if not 200 <= status < 300:
-            return self._http_error(status, raw, reply)
+    def _parse_success(self, call: _Call, status: int, raw: bytes):
         try:
             envelope = json.loads(raw.decode("utf-8"))
             if not isinstance(envelope, dict) or "data" not in envelope:
@@ -632,21 +408,6 @@ class MembershipApi(QObject):
         except (ValueError, TypeError, KeyError, AttributeError, RecursionError) as exc:
             return ApiError(ErrorCode.BAD_RESPONSE, status=status,
                             message=_clean_text(str(exc)))
-
-    @staticmethod
-    def _transport_error(error) -> ApiError:
-        if error in (QNetworkReply.NetworkError.TimeoutError,
-                     QNetworkReply.NetworkError.OperationCanceledError):
-            # Qt reports its own transfer timeout as a cancelled operation.
-            # Our deliberate aborts never get here: an oversize answer is
-            # caught above and a cancelled call is no longer live.
-            return ApiError(ErrorCode.TIMEOUT)
-        if error in (QNetworkReply.NetworkError.InsecureRedirectError,
-                     QNetworkReply.NetworkError.TooManyRedirectsError):
-            return ApiError(ErrorCode.BAD_RESPONSE, message="the server redirected the request")
-        if error == QNetworkReply.NetworkError.NoError:
-            return ApiError(ErrorCode.BAD_RESPONSE, message="the answer carried no status")
-        return ApiError(ErrorCode.OFFLINE)
 
     def _http_error(self, status: int, raw: bytes, reply) -> ApiError:
         try:
@@ -694,26 +455,6 @@ class MembershipApi(QObject):
             # is nothing the user could fix.
             code = ErrorCode.BAD_RESPONSE
         return ApiError(code, status=status, message=message, retry_after=retry_after)
-
-    # -- delivery ----------------------------------------------------------
-
-    def _succeed(self, call: _Call, value: Any) -> None:
-        if not self._live(call):
-            return
-        call.done = True
-        try:
-            call.on_success(value)
-        except Exception:  # noqa: BLE001, a caller's bug must not unwind into Qt
-            traceback.print_exc()
-
-    def _fail(self, call: _Call, error: ApiError) -> None:
-        if not self._live(call):
-            return
-        call.done = True
-        try:
-            call.on_failure(error)
-        except Exception:  # noqa: BLE001
-            traceback.print_exc()
 
 
 # Inside MembershipApi.__init__, ``service_url`` is the argument of that

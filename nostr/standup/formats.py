@@ -21,6 +21,7 @@ from coincurve import PublicKeyXOnly
 
 from i18n import N_
 
+from .. import events as nostr_events
 from .. import refs
 
 # --------------------------------------------------------------------------- #
@@ -492,6 +493,64 @@ def is_wrap(value: Any) -> bool:
     return (isinstance(value, dict) and set(value) == {"eph", "ct"}
             and is_pubkey(value.get("eph")) and isinstance(value.get("ct"), str)
             and 0 < len(value["ct"]) <= 90_000)
+
+
+class _DuplicateKey(ValueError):
+    pass
+
+
+def _no_duplicates(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise _DuplicateKey(f"the key {key!r} appears twice")
+        result[key] = value
+    return result
+
+
+def _no_constant(name):
+    raise ValueError(f"{name} is not JSON")
+
+
+def strict_json(raw: Any, *, limit: int) -> Any:
+    """``raw`` (bytes or text) read as JSON the strict way: at most
+    ``limit`` bytes, UTF-8, no key twice in one object (two readers could
+    take different ones), no NaN or Infinity. Raises FormatError."""
+    data = raw.encode("utf-8") if isinstance(raw, str) else raw
+    need(isinstance(data, (bytes, bytearray)), "JSON must be text")
+    need(len(data) <= limit, f"larger than {limit} bytes")
+    try:
+        return json.loads(bytes(data).decode("utf-8"), object_pairs_hook=_no_duplicates,
+                          parse_constant=_no_constant)
+    except (ValueError, UnicodeDecodeError, RecursionError) as exc:
+        raise FormatError(f"not valid JSON: {exc}") from None
+
+
+def is_signed_event(event: Any, *, kind: Optional[int] = None) -> bool:
+    """A Nostr event exactly as NIP-01 shapes it (integers that are
+    integers, lowercase hex), whose id and signature verify, and of
+    ``kind`` when given. ``events.verify_event`` alone converts with
+    ``int()``, so a kind sent as text would pass it."""
+    if not isinstance(event, dict):
+        return False
+    if not (is_hex64(event.get("id")) and is_hex64(event.get("pubkey"))
+            and is_hex128(event.get("sig")) and is_int(event.get("created_at"))
+            and is_int(event.get("kind")) and isinstance(event.get("content"), str)):
+        return False
+    if kind is not None and event["kind"] != kind:
+        return False
+    tags = event.get("tags")
+    if not isinstance(tags, list) or not all(
+            isinstance(t, list) and all(isinstance(x, str) for x in t) for t in tags):
+        return False
+    return nostr_events.verify_event(event)
+
+
+def tag_values(event: dict, name: str) -> List[str]:
+    """Every value of the tags ``name`` in ``event``."""
+    return [entry[1] for entry in event.get("tags") or ()
+            if isinstance(entry, list) and len(entry) >= 2 and entry[0] == name
+            and isinstance(entry[1], str)]
 
 
 def tag_value(event: dict, name: str) -> Optional[str]:

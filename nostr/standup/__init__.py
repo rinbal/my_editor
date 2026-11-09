@@ -20,7 +20,9 @@ No user interface lives here; the windows build on it.
   reactions, edits and structured notes, and reading them with every
   check;
 - ``client``: the submission server's HTTP API (session, signed actions,
-  receipts);
+  the submission body), on the app's shared pipeline (``nostr/signed_api.py``);
+- ``views``: the server's answers read defensively, receipts compared
+  with what was sent, stored signed actions verified;
 - ``trust``: the Redaktion's key event, checked, with the highest epoch
   seen kept per publication;
 - ``lists``: the writer's encrypted submissions list and read state;

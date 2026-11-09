@@ -7777,8 +7777,12 @@ msgstr ""
 msgid "Cannot derive identifier: item has no guid, link, or title"
 msgstr ""
 
-#: nostr/standup/formats.py:84
+#: nostr/standup/formats.py:85
 msgid "It contains a secret key, and MyEditor never sends a secret key to a publication. Remove the key and try again."
+msgstr ""
+
+#: nostr/standup/trust.py:36
+msgid "The editorial team's key is not confirmed. Submitting is not possible right now."
 msgstr ""
 
 #: nostr/ui/account_windows.py:95

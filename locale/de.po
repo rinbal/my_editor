@@ -7792,9 +7792,13 @@ msgstr "Dein Konto ist bereit, aber dein Profil ist noch nicht veröffentlicht. 
 msgid "Cannot derive identifier: item has no guid, link, or title"
 msgstr "Keine Kennung möglich: Der Beitrag hat weder GUID noch Link noch Titel"
 
-#: nostr/standup/formats.py:84
+#: nostr/standup/formats.py:85
 msgid "It contains a secret key, and MyEditor never sends a secret key to a publication. Remove the key and try again."
 msgstr "Darin steht ein geheimer Schlüssel, und MyEditor schickt nie einen geheimen Schlüssel an eine Publikation. Entferne den Schlüssel und versuche es noch einmal."
+
+#: nostr/standup/trust.py:36
+msgid "The editorial team's key is not confirmed. Submitting is not possible right now."
+msgstr "Der Schlüssel der Redaktion ist nicht bestätigt. Einreichen ist gerade nicht möglich."
 
 #: nostr/ui/account_windows.py:95
 msgid "Your key couldn’t be saved on this computer. Make sure the disk has free space, then try again."
