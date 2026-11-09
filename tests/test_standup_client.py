@@ -383,6 +383,7 @@ def test_no_answer_after_sending_may_have_stored_it():
     (Fault(409, "stale_revision"), Code.STALE_REVISION, False),
     (Fault(422, "wrap_invalid"), Code.WRAP_INVALID, False),
     (Fault(413, "too_large"), Code.TOO_LARGE, False),
+    (Fault(405, "method_not_allowed"), Code.METHOD_NOT_ALLOWED, False),
     (Fault(500, "internal"), Code.SERVER, True),
     (Fault(502, "bad_gateway"), Code.SERVER, True),
 ])
@@ -634,6 +635,9 @@ def test_every_endpoint_of_the_contract_goes_through_the_checking_server():
         ADDRESS, pubkey=pk("contributor"), role="redaktion", sees="all", wraps=[],
         history=None, on_success=ok, on_failure=fail))["member"]["status"] == "invited"
     contributor = world.api("contributor")
+    invited = world.ok(contributor.my_editorial)
+    assert [i["address"] for i in invited["invitations"]] == [ADDRESS]
+    assert invited["publications"] == []
     assert world.ok(lambda ok, fail: contributor.accept_membership(
         ADDRESS, ok, fail))["member"]["status"] == "active"
     assert world.ok(lambda ok, fail: contributor.update_my_membership(
@@ -647,6 +651,7 @@ def test_every_endpoint_of_the_contract_goes_through_the_checking_server():
     assert world.ok(lambda ok, fail: editor.put_site_settings(
         ADDRESS, key_event=None, settings_event=None, on_success=ok,
         on_failure=fail))["key_event"] == KEY_EVENT
+    assert json.loads(world.server.requests[-1][2])["owner_wrap"] is None
     assert world.ok(lambda ok, fail: editor.keyring(ok, fail)) == {"version": 0, "pages": []}
     assert world.ok(lambda ok, fail: editor.put_keyring(
         expected_version=0, pages=["ct"], on_success=ok, on_failure=fail)) == {"version": 1}

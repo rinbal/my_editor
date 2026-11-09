@@ -1013,10 +1013,16 @@ class FakeStandupServer:
     def _me_editorial(self, who, body, params, query) -> FakeReply:
         mine = [self.view(r) for r in self.submissions.values()
                 if self._turn(r).get("pubkey") == who]
+        invited = [p for p in self.publications.values()
+                   if p.members.get(who, "").startswith("invited:")]
         return _ok({"turns": mine, "counts": {"mine": len(mine)},
                     "publications": [{"address": p.address, "role": p.members[who],
                                       "name": p.content.get("name")}
-                                     for p in self.publications.values() if who in p.members]})
+                                     for p in self.publications.values()
+                                     if who in p.members and p not in invited],
+                    "invitations": [{"address": p.address, "name": p.content.get("name"),
+                                     "role": p.members[who].split(":", 1)[1], "sees": "all",
+                                     "invited_by": None, "invited_at": None} for p in invited]})
 
     def _me_submissions(self, who, body, params, query) -> FakeReply:
         return _ok({"items": [self.view(r) for r in self.submissions.values()

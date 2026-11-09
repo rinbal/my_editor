@@ -130,6 +130,7 @@ class Code:
     SETTINGS_INVALID = "settings_invalid"
     WRAP_INVALID = "wrap_invalid"
     RATE_LIMITED = "rate_limited"
+    METHOD_NOT_ALLOWED = "method_not_allowed"   # 405: only a bug or a changed server
 
 
 # 12.2: the codes each status may carry; the first is the fallback for a
@@ -140,6 +141,7 @@ _CODES_BY_STATUS = {
     403: ("forbidden", "paused", "blocked", "limit_open", "not_member", "role"),
     404: ("not_found",),
     409: ("conflict", "stale_revision", "invalid_transition", "epoch"),
+    405: ("method_not_allowed",),
     413: ("too_large",),
     422: ("invalid", "key_event_invalid", "settings_invalid", "wrap_invalid"),
     429: ("rate_limited",),
@@ -381,9 +383,10 @@ class StandupApi(SignedJsonApi):
         if allowed is not None:
             code = server_code if server_code in allowed else allowed[0]
         elif 500 <= status < 600:
+            # 500 says "internal" (12.2), a proxy's 502 or 504 nothing.
             code = Code.SERVER
         else:
-            # 405, 415 and the rest: only a bug or a changed server.
+            # 415 and the rest: only a bug or a changed server.
             code = Code.BAD_RESPONSE
         return StandupError(code, status=status, message=_clean_text(error.get("message")),
                             detail=_clean_detail(error.get("detail")),
@@ -566,9 +569,14 @@ class StandupApi(SignedJsonApi):
                           on_success, on_failure)
 
     def put_site_settings(self, address: str, *, key_event: Optional[dict],
-                          settings_event: Optional[dict], on_success, on_failure) -> Call:
+                          settings_event: Optional[dict], owner_wrap: Optional[dict] = None,
+                          on_success, on_failure) -> Call:
+        """``PUT .../settings``. The first one registers the publication
+        (201) and MUST carry ``owner_wrap``, epoch 1's key wrapped to the
+        owner (12.3), so the keyring is never the only copy."""
         return self._call("PUT", self._site(address) + "/settings",
-                          {"key_event": key_event, "settings_event": settings_event},
+                          {"key_event": key_event, "settings_event": settings_event,
+                           "owner_wrap": owner_wrap},
                           SIGNED, _object, on_success, on_failure)
 
     def members(self, address: str, on_success, on_failure) -> Call:
@@ -844,7 +852,9 @@ class StandupApi(SignedJsonApi):
             return {"turns": [views.parse_view(i) for i in turns],
                     "counts": data.get("counts") if isinstance(data.get("counts"), dict) else {},
                     "publications": [p for p in data.get("publications") or []
-                                     if isinstance(p, dict)]}
+                                     if isinstance(p, dict)],
+                    "invitations": [i for i in data.get("invitations") or []
+                                    if isinstance(i, dict)]}
 
         return self._call("GET", "/api/me/editorial", None, SESSION, parse,
                           on_success, on_failure, limit=MAX_DESTINATIONS_ANSWER_BYTES)
