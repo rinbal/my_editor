@@ -154,13 +154,13 @@ def test_the_bar_shows_the_upload_and_stays_full_after_it(view):
 
 
 def _shown(view):
-    return {name for name in ("cancel", "close", "retry", "done")
+    return {name for name in ("background", "cancel", "close", "retry", "done")
             if not getattr(view, f"{name}_button").isHidden()}
 
 
 @pytest.mark.parametrize("progress, shown, enabled_cancel, default", [
-    (Progress(Step.SIGNING), {"cancel"}, True, None),
-    (Progress(Step.SENDING), {"cancel"}, False, None),
+    (Progress(Step.SIGNING), {"background", "cancel"}, True, None),
+    (Progress(Step.SENDING), {"background", "cancel"}, False, None),
     (Progress(Step.CHECKING), {"close"}, None, None),
     (Progress(Step.FAILED, failure=NOT_SENT), {"close", "retry"}, None, "retry"),
     (Progress(Step.FAILED, failure=Failure(words.ANOTHER_VERSION, None)), {"close"}, None,

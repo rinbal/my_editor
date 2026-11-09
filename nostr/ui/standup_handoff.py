@@ -26,9 +26,10 @@ same.
 
 :class:`HandoffView` is what the sheet shows: the track, the words and
 the buttons each state has (Abbrechen while it can still be taken back,
-dimmed once the request is on its way; Schließen and Erneut versuchen
-after a failure; Schließen while it is being checked; Fertig once it is
-in). It only shows the state and forwards the person's choice.
+dimmed once the request is on its way, and beside it Im Hintergrund
+fortsetzen; Schließen and Erneut versuchen after a failure; Schließen
+while it is being checked; Fertig once it is in). It only shows the
+state and forwards the person's choice.
 """
 
 from __future__ import annotations
@@ -310,6 +311,8 @@ class HandoffView(QWidget):
     retry_requested = Signal()
     retry_message_requested = Signal()
     close_requested = Signal()
+    # The sheet closes and the submission goes on (RG-M2b 10).
+    background_requested = Signal()
 
     def __init__(self, *, is_dark: bool, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -342,6 +345,9 @@ class HandoffView(QWidget):
         column.addLayout(again)
         column.addStretch(1)
         self.buttons = QDialogButtonBox()
+        self.background_button = self.buttons.addButton(
+            _("Continue in Background"), QDialogButtonBox.ButtonRole.ActionRole)
+        self.background_button.setAutoDefault(False)
         self.cancel_button = self.buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
         self.close_button = self.buttons.addButton(_("Close"),
                                                    QDialogButtonBox.ButtonRole.RejectRole)
@@ -349,6 +355,7 @@ class HandoffView(QWidget):
                                             QDialogButtonBox.ButtonRole.AcceptRole)
         self.done_button = self.buttons.addButton(_("Done"),
                                                   QDialogButtonBox.ButtonRole.AcceptRole)
+        self.background_button.clicked.connect(self.background_requested)
         self.cancel_button.clicked.connect(self.cancel_requested)
         self.close_button.clicked.connect(self.close_requested)
         self.retry_button.clicked.connect(self.retry_requested)
@@ -431,7 +438,9 @@ class HandoffView(QWidget):
         phase = progress.phase
         retry = phase is Phase.FAILED and progress.failure is not None \
             and progress.failure.retry is not None
-        self.cancel_button.setVisible(phase not in (Phase.DONE, Phase.FAILED, Phase.UNCONFIRMED))
+        going = phase not in (Phase.DONE, Phase.FAILED, Phase.UNCONFIRMED)
+        self.background_button.setVisible(going)
+        self.cancel_button.setVisible(going)
         self.cancel_button.setEnabled(progress.cancellable)
         self.close_button.setVisible(phase in (Phase.FAILED, Phase.UNCONFIRMED))
         self.retry_button.setVisible(retry)

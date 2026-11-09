@@ -13,7 +13,7 @@ msgid "OK"
 msgstr "OK"
 
 #: alerts.py:208
-#: nostr/ui/standup_submit_sheet.py:380
+#: nostr/ui/standup_submit_sheet.py:383
 msgid "Details"
 msgstr "Details"
 
@@ -12042,15 +12042,19 @@ msgstr "Wer ihn hat, kann im Namen seines Besitzers veröffentlichen, und einmal
 msgid "Replace with Public Key"
 msgstr "Durch öffentlichen Schlüssel ersetzen"
 
-#: nostr/ui/standup_handoff.py:335
+#: nostr/ui/standup_handoff.py:338
 msgid "Send Again"
 msgstr "Erneut senden"
 
-#: nostr/ui/standup_handoff.py:278
+#: nostr/ui/standup_handoff.py:349
+msgid "Continue in Background"
+msgstr "Im Hintergrund fortsetzen"
+
+#: nostr/ui/standup_handoff.py:279
 msgid "Editorial inbox"
 msgstr "Eingang der Redaktion"
 
-#: nostr/ui/standup_handoff.py:275
+#: nostr/ui/standup_handoff.py:276
 msgid "In the inbox"
 msgstr "Im Eingang"
 
@@ -12061,163 +12065,163 @@ msgid_plural "{count} other submissions stopped as well."
 msgstr[0] "{count} weitere Einreichung wurde ebenfalls angehalten."
 msgstr[1] "{count} weitere Einreichungen wurden ebenfalls angehalten."
 
-#: nostr/ui/standup_submit_sheet.py:109
+#: nostr/ui/standup_submit_sheet.py:111
 msgid "Not taking submissions right now"
 msgstr "Nimmt gerade keine Einreichungen"
 
-#: nostr/ui/standup_submit_sheet.py:103
+#: nostr/ui/standup_submit_sheet.py:105
 #, python-brace-format
 msgid "{items} and {last}"
 msgstr "{items} und {last}"
 
-#: nostr/ui/standup_submit_sheet.py:111
+#: nostr/ui/standup_submit_sheet.py:113
 msgid "Takes audio only"
 msgstr "Nimmt nur Audio"
 
-#: nostr/ui/standup_submit_sheet.py:112
+#: nostr/ui/standup_submit_sheet.py:114
 msgid "Takes no articles"
 msgstr "Nimmt keine Artikel"
 
-#: nostr/ui/standup_submit_sheet.py:164
-#: nostr/ui/standup_submit_sheet.py:207
+#: nostr/ui/standup_submit_sheet.py:166
+#: nostr/ui/standup_submit_sheet.py:209
 msgid "Submit to a Publication"
 msgstr "Bei Publikation einreichen"
 
-#: nostr/ui/standup_submit_sheet.py:255
+#: nostr/ui/standup_submit_sheet.py:258
 msgid "Submit"
 msgstr "Einreichen"
 
-#: nostr/ui/standup_submit_sheet.py:266
+#: nostr/ui/standup_submit_sheet.py:269
 msgid "Publication"
 msgstr "Publikation"
 
-#: nostr/ui/standup_submit_sheet.py:284
+#: nostr/ui/standup_submit_sheet.py:287
 msgid "me"
 msgstr "mir"
 
-#: nostr/ui/standup_submit_sheet.py:285
-#: nostr/ui/standup_submit_sheet.py:548
+#: nostr/ui/standup_submit_sheet.py:288
+#: nostr/ui/standup_submit_sheet.py:551
 msgid "the publication"
 msgstr "der Publikation"
 
-#: nostr/ui/standup_submit_sheet.py:302
+#: nostr/ui/standup_submit_sheet.py:305
 msgid "Published by:"
 msgstr "Veröffentlicht von:"
 
-#: nostr/ui/standup_submit_sheet.py:306
+#: nostr/ui/standup_submit_sheet.py:309
 msgid "I have the rights to the text and the pictures."
 msgstr "Ich habe die Rechte an Text und Bildern."
 
-#: nostr/ui/standup_submit_sheet.py:315
-#: nostr/ui/standup_submit_sheet.py:320
+#: nostr/ui/standup_submit_sheet.py:318
+#: nostr/ui/standup_submit_sheet.py:323
 msgid "Message to the Editorial Team"
 msgstr "Nachricht an die Redaktion"
 
-#: nostr/ui/standup_submit_sheet.py:319
+#: nostr/ui/standup_submit_sheet.py:322
 msgid "Optional. For example, why the text suits you."
 msgstr "Optional. Zum Beispiel, warum der Text zu euch passt."
 
-#: nostr/ui/standup_submit_sheet.py:341
+#: nostr/ui/standup_submit_sheet.py:344
 msgid "An earlier try wasn’t sent. Submit sends it again."
 msgstr "Ein früherer Versuch wurde nicht gesendet. Einreichen sendet ihn erneut."
 
-#: nostr/ui/standup_submit_sheet.py:343
+#: nostr/ui/standup_submit_sheet.py:346
 msgid "Discard"
 msgstr "Verwerfen"
 
-#: nostr/ui/standup_submit_sheet.py:374
+#: nostr/ui/standup_submit_sheet.py:377
 msgid "Content end-to-end encrypted. The server sees the title."
 msgstr "Inhalt Ende-zu-Ende verschlüsselt. Den Titel sieht der Server."
 
-#: nostr/ui/standup_submit_sheet.py:383
+#: nostr/ui/standup_submit_sheet.py:386
 msgid "Privacy details"
 msgstr "Details zum Datenschutz"
 
-#: nostr/ui/standup_submit_sheet.py:456
+#: nostr/ui/standup_submit_sheet.py:459
 msgid "The publications couldn’t be loaded."
 msgstr "Die Publikationen konnten nicht geladen werden."
 
-#: nostr/ui/standup_submit_sheet.py:551
+#: nostr/ui/standup_submit_sheet.py:554
 msgid "The server sees the title, the publication and who takes part, never the content."
 msgstr "Der Server sieht Titel, Publikation und Beteiligte, nie den Inhalt."
 
-#: nostr/ui/standup_submit_sheet.py:560
+#: nostr/ui/standup_submit_sheet.py:563
 msgid "Withdrawing deletes nothing the editorial team already has."
 msgstr "Zurückziehen löscht nichts, was die Redaktion schon hat."
 
-#: nostr/ui/standup_submit_sheet.py:250
+#: nostr/ui/standup_submit_sheet.py:253
 msgid "Submitting as"
 msgstr "Einreichen als"
 
-#: nostr/ui/standup_submit_sheet.py:250
+#: nostr/ui/standup_submit_sheet.py:253
 #, python-brace-format
 msgid "Submitting as {name}"
 msgstr "Einreichen als {name}"
 
-#: nostr/ui/standup_submit_sheet.py:282
+#: nostr/ui/standup_submit_sheet.py:285
 msgid "To:"
 msgstr "An:"
 
-#: nostr/ui/standup_submit_sheet.py:308
+#: nostr/ui/standup_submit_sheet.py:311
 msgid "Rights:"
 msgstr "Rechte:"
 
-#: nostr/ui/standup_submit_sheet.py:436
+#: nostr/ui/standup_submit_sheet.py:439
 msgid "The server’s address comes from the association."
 msgstr "Die Adresse des Servers kommt vom Verein."
 
-#: nostr/ui/standup_submit_sheet.py:452
+#: nostr/ui/standup_submit_sheet.py:455
 msgid "No publication takes submissions right now."
 msgstr "Gerade nimmt keine Publikation Einreichungen an."
 
-#: nostr/ui/standup_submit_sheet.py:480
+#: nostr/ui/standup_submit_sheet.py:483
 msgid "Recently used first"
 msgstr "Zuletzt verwendete zuerst"
 
-#: nostr/ui/standup_submit_sheet.py:528
+#: nostr/ui/standup_submit_sheet.py:531
 msgid "After acceptance you publish it with your key."
 msgstr "Nach der Annahme veröffentlichst du mit deinem Schlüssel."
 
-#: nostr/ui/standup_submit_sheet.py:529
+#: nostr/ui/standup_submit_sheet.py:532
 msgid "At acceptance the editorial team proposes how zaps are split; you confirm it."
 msgstr "Die Redaktion schlägt bei der Annahme die Aufteilung der Zaps vor, du bestätigst sie."
 
-#: nostr/ui/standup_submit_sheet.py:555
+#: nostr/ui/standup_submit_sheet.py:558
 msgid "The picture is encrypted on your media server. It sees when it is fetched, never what is in it."
 msgid_plural "The pictures are encrypted on your media server. It sees when they are fetched, never what is in them."
 msgstr[0] "Das Bild liegt verschlüsselt auf deinem Medienserver. Er sieht, wann es abgerufen wird, nie was darin ist."
 msgstr[1] "Die Bilder liegen verschlüsselt auf deinem Medienserver. Er sieht, wann sie abgerufen werden, nie was darin ist."
 
-#: nostr/ui/standup_submit_sheet.py:563
+#: nostr/ui/standup_submit_sheet.py:566
 msgid "The server keeps the submission encrypted."
 msgstr "Der Server bewahrt die Einreichung verschlüsselt auf."
 
-#: nostr/ui/standup_submit_sheet.py:117
+#: nostr/ui/standup_submit_sheet.py:119
 #, python-brace-format
 msgid "Asks for {items}"
 msgstr "Verlangt {items}"
 
-#: nostr/ui/standup_submit_sheet.py:120
+#: nostr/ui/standup_submit_sheet.py:122
 #, python-brace-format
 msgid "at most {count} open submission"
 msgid_plural "at most {count} open submissions"
 msgstr[0] "höchstens {count} offene Einreichung"
 msgstr[1] "höchstens {count} offene Einreichungen"
 
-#: nostr/ui/standup_submit_sheet.py:467
+#: nostr/ui/standup_submit_sheet.py:470
 msgid "Loading publications …"
 msgstr "Publikationen werden geladen …"
 
-#: nostr/ui/standup_submit_sheet.py:467
+#: nostr/ui/standup_submit_sheet.py:470
 msgid "No publication"
 msgstr "Keine Publikation"
 
-#: nostr/ui/standup_submit_sheet.py:549
+#: nostr/ui/standup_submit_sheet.py:552
 #, python-brace-format
 msgid "Only you and the editorial team of {publication} can read it."
 msgstr "Lesen können nur du und die Redaktion von {publication}."
 
-#: nostr/ui/standup_submit_sheet.py:561
+#: nostr/ui/standup_submit_sheet.py:564
 #, python-brace-format
 msgid "The server of {operator} keeps the submission encrypted."
 msgstr "Der Server von {operator} bewahrt die Einreichung verschlüsselt auf."

@@ -141,11 +141,16 @@ class Run:
         self._changes = Changes()
         self.changed = self._changes.changed
         self.started = 0
+        self.cancelled = 0
         self.progress = Progress(Step.SIGNING)
 
     def start(self) -> None:
         self.started += 1
         self.changed.emit(self.progress)
+
+    def cancel(self) -> None:
+        self.cancelled += 1
+        self.progress = Progress(Step.CANCELLED)
 
 
 DRAFT = ArticleDraft(d="ein-jahr", title="Ein Jahr mit Lightning im Café",
@@ -295,6 +300,45 @@ def test_another_account_chosen_in_the_sheet_lets_the_first_go_and_the_sheet_sta
     sheet.show()
     writer.stopped.emit("c" * 64)                        # not the one it submits as
     assert sheet.isVisible()
+
+
+def _handed_over(tmp_path, progress):
+    writer = Writer()
+    sheet = _sheet(tmp_path, writer)
+    sheet.show()
+    sheet.submit_button.click()
+    sheet.run.progress = progress
+    sheet.handoff.show_progress(progress)
+    return writer, sheet
+
+
+def test_escape_cancels_what_can_still_be_cancelled(tmp_path):
+    # RG-M2b 10, HIG: Escape is Cancel; it sent the sheet to the background.
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    writer, sheet = _handed_over(tmp_path, Progress(Step.UPLOADING))
+    run = sheet.run
+    QTest.keyClick(sheet, Qt.Key.Key_Escape)
+    assert run.cancelled == 1 and not sheet.isVisible()
+    writer, sheet = _handed_over(tmp_path, Progress(Step.UPLOADING))
+    run = sheet.run
+    sheet.handoff.cancel_button.click()                  # the button does the same
+    assert run.cancelled == 1 and not sheet.isVisible()
+
+
+def test_escape_once_it_is_on_its_way_lets_it_go_on_as_continue_in_background_does(tmp_path):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    writer, sheet = _handed_over(tmp_path, Progress(Step.SENDING, sent=True))
+    run = sheet.run
+    QTest.keyClick(sheet, Qt.Key.Key_Escape)
+    assert run.cancelled == 0 and writer.background == [run] and not sheet.isVisible()
+    writer, sheet = _handed_over(tmp_path, Progress(Step.UPLOADING))
+    run = sheet.run
+    assert sheet.handoff.background_button.isVisible()
+    assert sheet.handoff.background_button.text() == "Im Hintergrund fortsetzen"
+    sheet.handoff.background_button.click()
+    assert run.cancelled == 0 and writer.background == [run] and not sheet.isVisible()
 
 
 def test_without_einreichen_nothing_goes_on(tmp_path):

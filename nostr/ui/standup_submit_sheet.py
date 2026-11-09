@@ -28,9 +28,11 @@ not confirmed, the server's address not known yet: "kommt vom Verein").
 
 Einreichen turns the sheet into the handoff (standup_handoff.py), which
 shows the submission's progress and forwards the person's choices; the
-steps themselves are the table's (nostr/standup/submitting.py). Closed
-while the submission is on its way, the sheet lets it go on in the
-background (StandupWriter.in_background).
+steps themselves are the table's (nostr/standup/submitting.py). Escape
+is Abbrechen while the submission can still be taken back; Im
+Hintergrund fortsetzen, or Escape once the request is on its way,
+closes the sheet and lets it go on in the background
+(StandupWriter.in_background).
 """
 
 from __future__ import annotations
@@ -215,6 +217,7 @@ class SubmitSheet(QDialog):
         self.handoff.retry_requested.connect(lambda: self.run and self.run.retry())
         self.handoff.retry_message_requested.connect(lambda: self.run and self.run.retry_message())
         self.handoff.close_requested.connect(self.accept)
+        self.handoff.background_requested.connect(self.accept)
         handoff_page = QWidget()
         column = QVBoxLayout(handoff_page)
         column.setContentsMargins(0, 0, 0, 0)
@@ -632,8 +635,16 @@ class SubmitSheet(QDialog):
 
     def _cancel_run(self) -> None:
         if self.run is not None and self.run.progress.cancellable:
-            self.run.cancel()
             self.reject()
+
+    def reject(self) -> None:  # noqa: N802, Qt's name
+        """Cancel and Escape, which is Cancel (HIG): a run that may still
+        be cancelled is cancelled. Once a request went out nothing is
+        cancelled (the server may hold it), and the sheet closes with the
+        run going on, as Continue in Background does (RG-M2b 10)."""
+        if self.run is not None and self.run.progress.cancellable:
+            self.run.cancel()
+        super().reject()
 
     def _on_account_stopped(self, writer: str) -> None:
         """The account this sheet submits as was let go (sign-out, another
