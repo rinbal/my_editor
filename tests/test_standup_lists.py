@@ -19,6 +19,7 @@ from types import SimpleNamespace
 import pytest
 
 from nostr import crypto
+from nostr.bunker import SIGNER_NIP44_MAX_PLAINTEXT
 from nostr.encrypted_lists import NO_ANSWER, PAGE_PLAINTEXT_MAX, SENT, UNREADABLE
 from nostr.standup import conversation, formats
 from nostr.standup import crypto as scrypto
@@ -265,6 +266,7 @@ def test_a_list_of_500_submissions_goes_through_a_signer_app():
     sizes = _page_sizes(relay, formats.SUBMISSIONS_LIST_D, app)
     assert len(sizes) >= 10 and max(sizes) <= PAGE_PLAINTEXT_MAX
     assert app.too_large == 0 and app.largest_request <= crypto.NIP44_MAX_PLAINTEXT_LEN
+    assert 0 < app.largest_plaintext <= SIGNER_NIP44_MAX_PLAINTEXT
 
     # Read back on another device, through the same signer app.
     other = SubmissionsList(profile, session_pool=FakeSessionPool(client),
@@ -289,7 +291,7 @@ def test_a_read_state_of_500_submissions_goes_through_a_signer_app():
     settle(80)
     sizes = _page_sizes(relay, formats.read_state_d(app.user_pk), app)
     assert len(sizes) >= 2 and max(sizes) <= PAGE_PLAINTEXT_MAX
-    assert app.too_large == 0
+    assert app.too_large == 0 and app.largest_plaintext <= SIGNER_NIP44_MAX_PLAINTEXT
     client.close()
 
 
@@ -327,6 +329,10 @@ def test_a_message_at_the_largest_size_goes_through_a_signer_app(shape):
     settle(40)
     assert outcome and outcome[0][0] == "ok", outcome
     assert app.too_large == 0
+    # The seal is encrypted with the room key here; the signer app only
+    # signs it, and that request, the largest one, still fits one message.
+    assert app.largest_plaintext == 0
+    assert len(text.encode("utf-8")) < app.largest_request <= crypto.NIP44_MAX_PLAINTEXT_LEN
     opened = conversation.open_item(outcome[0][1], room_sk, sid)
     assert opened.rumor["content"] == text and opened.sender == app.user_pk
     # One character more is refused before the signer app is asked.

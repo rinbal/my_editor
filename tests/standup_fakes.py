@@ -1120,7 +1120,10 @@ class Nip46SignerApp:
     the way a signer app does: every request and every answer is one
     NIP-44 message, so an answer that would be larger than 65,535 bytes
     is never sent (nostr-tools throws there), and the app waits for
-    nothing. ``too_large`` counts those. Use :func:`paired_bunker`."""
+    nothing. ``too_large`` counts those; ``largest_plaintext`` is the
+    longest text it was asked to encrypt or decrypt, which the 40,960
+    bytes of ``bunker.SIGNER_NIP44_MAX_PLAINTEXT`` keep within one
+    answer. Use :func:`paired_bunker`."""
 
     def __init__(self, pool, user_sk: bytes) -> None:
         self.pool = pool
@@ -1131,6 +1134,7 @@ class Nip46SignerApp:
         self.seen: List[dict] = []
         self.too_large = 0
         self.largest_request = 0
+        self.largest_plaintext = 0
 
     def watch(self, client_pk: str) -> None:
         self.client_pk = client_pk
@@ -1161,9 +1165,13 @@ class Nip46SignerApp:
             elif method == "sign_event":
                 result = json.dumps(events.sign_event(json.loads(params[0]), self.user_sk))
             elif method == "nip44_encrypt":
+                self.largest_plaintext = max(self.largest_plaintext,
+                                             len(params[1].encode("utf-8")))
                 result = crypto.encrypt_to(params[1], self.user_sk, bytes.fromhex(params[0]))
             elif method == "nip44_decrypt":
                 result = crypto.decrypt_from(params[1], self.user_sk, bytes.fromhex(params[0]))
+                self.largest_plaintext = max(self.largest_plaintext,
+                                             len(result.encode("utf-8")))
             else:
                 self._send({"id": rid, "error": "unknown method"})
                 return
