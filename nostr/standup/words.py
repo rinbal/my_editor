@@ -143,9 +143,10 @@ PICTURES_IN_THE_APP_THAT_SENT = N_("Open the submission in the app you sent it w
                                    "uploads the pictures again.")
 TOO_LARGE = N_("This submission is larger than {publication} takes.")
 ANOTHER_VERSION = N_("{publication} already has another version of this submission.")
-# This revision is stored, with another envelope or other wraps than this
-# app sent (12.4 "No answer after sending").
-STORED_OTHER = N_("{publication} received this submission, but not as MyEditor sent it.")
+# A stored revision this app cannot take as the writer's: its signed
+# action does not verify (12.4 at bfa8844). Send Again sends the next one.
+NOT_HANDED_IN = N_("{publication} couldn’t show that this submission came from you: send it "
+                   "again.")
 NOT_TAKEN = N_("The server didn’t take the submission.")
 # The revision could not be built here: nothing went out (lesson 8).
 NOT_BUILT = N_("MyEditor couldn’t put this submission together.")
@@ -231,13 +232,14 @@ __all__ = [
     "MESSAGE_NOT_SENT_IN_THE_BACKGROUND", "MESSAGE_REFUSED", "MESSAGE_SENDING", "MESSAGE_SENT",
     "MESSAGE_UNCONFIRMED_IN_THE_BACKGROUND",
     "MESSAGE_SIGNING", "MESSAGE_SIGNING_IN_THE_BACKGROUND", "NOT_BUILT", "NOT_CHECKED",
-    "NOT_CONFIRMED", "NOT_DISCARDED", "NOT_RECEIVED", "NOT_SUBMITTED", "NOT_TAKEN",
+    "NOT_CONFIRMED", "NOT_DISCARDED", "NOT_HANDED_IN", "NOT_RECEIVED", "NOT_SUBMITTED",
+    "NOT_TAKEN",
     "PICTURE_MISSING",
     "PICTURES_IN_THE_APP_THAT_SENT", "PICTURE_NOT_IN", "PUBLICATIONS_NOT_LOADED", "READING_LIST",
     "SENDING", "SERVER_LIMIT_AT",
     "SERVER_LIMIT_LATER", "SERVER_LIMIT_OVER", "SERVER_LIMIT_TOMORROW_AT",
     "SERVER_TROUBLE", "STOPPED_MESSAGE", "STOPPED_NOTHING_SENT", "STOPPED_OTHER_VERSION",
-    "STOPPED_PICTURES", "STOPPED_UNCONFIRMED", "STORED_CHECKING", "STORED_OTHER",
+    "STOPPED_PICTURES", "STOPPED_UNCONFIRMED", "STORED_CHECKING",
     "STORED_SENDING", "SUBMITTED", "SUBMITTED_DETAIL", "SUBMITTED_ELSEWHERE", "TOO_LARGE",
     "UNCONFIRMED", "UNCONFIRMED_DETAIL", "UPLOADING_DETAIL", "UPLOADING_PICTURE",
     "UPLOADING_PICTURES", "UPLOAD_FAILED", "VERSION_NOT_SUBMITTED", "WAITING_DETAIL",

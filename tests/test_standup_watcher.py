@@ -20,11 +20,14 @@ from nostr.standup.entries import SubmissionEntry
 from nostr.standup.watcher import (
     REFRESH_INTERVAL_MS,
     Different,
+    NotHandedIn,
     NotStored,
+    StoredCopy,
     StoredOther,
     Superseded,
     SubmissionWatcher,
     classify,
+    judge_stored,
     read_submission,
     resolve_unconfirmed,
 )
@@ -223,10 +226,13 @@ def test_stopping_one_accounts_watcher_leaves_the_others_running():
 
 # -- no answer after sending (12.4) ------------------------------------------------
 
-def _resolve(world, entry):
+def _resolve(world, entry, *, api=None, writer=None):
+    # A stored copy is read with the writer's session (?revision=n), so
+    # the writer's own client asks then.
     outcome = []
-    resolve_unconfirmed(world.reader, entry, lambda r: outcome.append(("ok", r)),
-                        lambda e: outcome.append(("err", e)))
+    resolve_unconfirmed(api or world.reader, entry, lambda r: outcome.append(("ok", r)),
+                        lambda e: outcome.append(("err", e)),
+                        writer=writer or scrypto.pubkey_of(sk("writer")))
     world.nam.settle()
     assert len(outcome) == 1
     return outcome[0]
@@ -284,11 +290,13 @@ def test_a_later_or_a_different_revision_on_the_server_is_told_apart():
     {"wraps_sha256": {"redaktion": "00" * 32, "writer": "00" * 32}},
     {"envelope_sha256": None, "wraps_sha256": None},
 ])
-def test_after_a_restart_a_revision_stored_otherwise_is_never_submitted(change):
-    # Contract 12.4 (72d688b), RG-M2r 1: with no body to compare (after a
-    # restart), the entry's own envelope and wrap hashes decide. Only the
-    # number and the hash of the revision matching is "stored, not as
-    # this app sent it", never "Eingereicht".
+def test_after_a_restart_a_revision_stored_otherwise_is_decided_by_its_signed_action(change):
+    # Contract 12.4 (72d688b, bfa8844), RG-M2r 1: with no body to compare
+    # (after a restart), the entry's own envelope and wrap hashes decide
+    # what is "Eingereicht". Only the number and the hash of the revision
+    # matching is the same revision encrypted twice: the stored one
+    # decides once its signed action verifies as this writer's, and the
+    # entry takes its envelope and wraps, stored.
     world = World()
     world.server.inject("submit", DROP_AFTER)
     prepared = submission_for(sk("writer"))
@@ -297,8 +305,146 @@ def test_after_a_restart_a_revision_stored_otherwise_is_never_submitted(change):
     entry = entry_for(prepared)
     kind, result = _resolve(world, entry)
     assert kind == "ok" and isinstance(result, views.Confirmed)
-    kind, result = _resolve(world, replace(entry, **change))
-    assert kind == "ok" and isinstance(result, StoredOther)
+    other = replace(entry, **change)
+    assert isinstance(classify(other, result.receipt), StoredOther)
+    kind, copy = _resolve(world, other, api=world.writer)
+    assert kind == "ok" and isinstance(copy, StoredCopy)
+    assert copy.entry.stored and copy.entry.envelope_sha256 == entry.envelope_sha256
+    assert copy.entry.wraps_sha256 == entry.wraps_sha256
+    assert isinstance(copy.status, views.Confirmed)
+    assert isinstance(classify(copy.entry, result.receipt), views.Confirmed)
+
+
+def test_the_same_revision_encrypted_twice_takes_the_copy_the_server_kept():
+    # 12.4 at bfa8844: another app of the writer, or this one after a lost
+    # list write, encrypted the same revision again; the server kept the
+    # first copy. Its signed action is the writer's: it decides.
+    world = World()
+    first, _entry = world.submit()
+    twin = submission_for(sk("writer"), d="text-0", s_sub=first.s_sub,
+                          status_key=first.status_key)
+    assert twin.body["revision_hash"] == first.body["revision_hash"]
+    assert twin.body["envelope_sha256"] != first.body["envelope_sha256"]
+    kind, copy = _resolve(world, entry_for(twin), api=world.writer)
+    assert kind == "ok" and isinstance(copy, StoredCopy)
+    assert copy.entry.envelope_sha256 == first.body["envelope_sha256"]
+    assert copy.entry.wraps_sha256 == entry_for(first).wraps_sha256 and copy.entry.stored
+    assert (copy.entry.s_sub, copy.entry.status_key) == (entry_for(twin).s_sub,
+                                                         entry_for(twin).status_key)
+    # The stored revision itself is read (?revision=n), with the session.
+    sid = first.body["submission_id"]
+    assert ("GET", f"/api/submissions/{sid}?revision=1") in world.server.urls
+    # Asked as the writer it is not: never taken.
+    kind, other = _resolve(world, entry_for(twin), api=world.writer,
+                           writer=scrypto.pubkey_of(sk("editor")))
+    assert kind == "ok" and isinstance(other, NotHandedIn)
+
+
+def test_a_stored_copy_that_could_not_be_read_is_asked_again_later():
+    world = World()
+    first, _entry = world.submit()
+    twin = submission_for(sk("writer"), d="text-0", s_sub=first.s_sub,
+                          status_key=first.status_key)
+    kind, error = _resolve(world, entry_for(twin))          # no session: not read
+    assert kind == "err"
+
+
+def _stored(world, first):
+    detail = []
+    world.writer.submission(first.body["submission_id"], detail.append, detail.append,
+                            revision=1)
+    world.nam.settle()
+    return detail[0].revisions[0]
+
+
+def _resigned(record, body_changes, signer):
+    from tests.test_standup_opening import signed
+    body = dict(json.loads(record.signed.body), **body_changes)
+    action = signed(body, views.action_path("submitted", body["submission_id"]), signer)
+    return replace(record, signed=views.SignedRecord(event=action["event"], body=action["body"]))
+
+
+@pytest.mark.parametrize("spoil", [
+    "no record", "no signed action", "another signer", "another revision signed",
+    "another hash signed", "another envelope signed", "another submission signed",
+    "the receipt names another envelope", "the receipt names other wraps",
+    "the record is another revision's", "the receipt names another hash",
+    "the stored revision is another than the entry's",
+])
+def test_a_stored_copy_that_does_not_verify_is_not_handed_in(spoil):
+    world = World()
+    first, entry = world.submit()
+    twin = entry_for(submission_for(sk("writer"), d="text-0", s_sub=first.s_sub,
+                                    status_key=first.status_key))
+    record = _stored(world, first)
+    kind, found = _resolve(world, entry)
+    receipt = found.receipt
+    assert isinstance(judge_stored(twin, receipt, record, writer=entry_writer()), StoredCopy)
+    if spoil == "no record":
+        record = None
+    elif spoil == "no signed action":
+        record = replace(record, signed=None)
+    elif spoil == "another signer":
+        record = _resigned(record, {}, sk("editor"))
+    elif spoil == "another revision signed":
+        record = _resigned(record, {"revision": 2}, sk("writer"))
+    elif spoil == "another hash signed":
+        record = _resigned(record, {"revision_hash": "11" * 32}, sk("writer"))
+    elif spoil == "another envelope signed":
+        record = _resigned(record, {"envelope_sha256": "22" * 32}, sk("writer"))
+    elif spoil == "another submission signed":
+        record = _resigned(record, {"submission_id": "33" * 32}, sk("writer"))
+    elif spoil == "the receipt names another envelope":
+        receipt = replace(receipt, envelope_sha256="44" * 32)
+    elif spoil == "the receipt names other wraps":
+        receipt = replace(receipt, wraps_sha256={"writer": "55" * 32})
+    elif spoil == "the record is another revision's":
+        record = replace(record, revision_hash="66" * 32)
+    elif spoil == "the receipt names another hash":
+        receipt = replace(receipt, revision_hash="77" * 32)
+    elif spoil == "the stored revision is another than the entry's":
+        # Record, signed action and receipt agree with each other, not
+        # with the revision this entry recorded.
+        record = replace(_resigned(record, {"revision_hash": "88" * 32}, sk("writer")),
+                         revision_hash="88" * 32)
+        receipt = replace(receipt, revision_hash="88" * 32)
+    assert isinstance(judge_stored(twin, receipt, record, writer=entry_writer()), NotHandedIn)
+
+
+def entry_writer():
+    return scrypto.pubkey_of(sk("writer"))
+
+
+def test_only_the_revision_of_the_entry_is_judged_whatever_else_the_server_answers():
+    # A server that answers more revisions than ?revision=n asked: the
+    # entry's own is the one verified.
+    from types import SimpleNamespace
+    from nostr.standup.watcher import verify_stored
+    world = World()
+    first, entry = world.submit()
+    twin = entry_for(submission_for(sk("writer"), d="text-0", s_sub=first.s_sub,
+                                    status_key=first.status_key))
+    record = _stored(world, first)
+    receipt = _resolve(world, entry)[1].receipt
+    other = replace(record, revision=2, revision_hash="99" * 32)
+    for revisions in ((other, record), (record, other)):
+        api = SimpleNamespace(submission=lambda sid, ok, fail, revision, revisions=revisions:
+                              ok(SimpleNamespace(revisions=revisions)))
+        found = []
+        verify_stored(api, twin, receipt, found.append, found.append, writer=entry_writer())
+        assert [type(f) for f in found] == [StoredCopy]
+
+
+@pytest.mark.parametrize("change, names", [
+    ({}, True),
+    ({"envelope_sha256": "12" * 32}, False),
+    ({"wraps_sha256": {"redaktion": "34" * 32, "writer": "56" * 32}}, False),
+])
+def test_an_entry_names_the_body_it_sent_until_it_takes_a_kept_copy(change, names):
+    from nostr.standup.watcher import _names_body
+    prepared = submission_for(sk("writer"))
+    entry = entry_for(prepared)
+    assert _names_body(replace(entry, **change), prepared.body) is names
 
 
 def test_files_missing_after_no_answer_are_named():
@@ -326,7 +472,7 @@ def test_only_a_writers_entry_can_be_resolved():
     _prepared, mine = world.submit()
     with pytest.raises(ValueError):
         resolve_unconfirmed(world.reader, replace(mine, role="contributor", status_key=None),
-                            print, print)
+                            print, print, writer=entry_writer())
     assert world.lookups() == []
 
 

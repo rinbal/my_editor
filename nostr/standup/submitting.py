@@ -63,7 +63,7 @@ from .progress import (
     Progress, Step,
 )
 from .trust import KeyNotConfirmed, RedaktionKey
-from .watcher import Different, NotStored, StoredOther, Superseded
+from .watcher import Different, NotHandedIn, NotStored, StoredCopy, Superseded
 
 # How long to wait before asking again by the status key, in turn; the
 # last one repeats until the server answers.
@@ -194,6 +194,9 @@ class Submitting:
         # The entry of a round another device stored (``stale_revision``),
         # whose stored entry the list is read again for.
         self._waits_for: Optional[SubmissionEntry] = None
+        # The revision built: 1, or the next after a stored one this app
+        # could not take as the writer's (12.4 at bfa8844).
+        self._revision = 1
 
     # -- what the screen asks ------------------------------------------------
 
@@ -242,7 +245,7 @@ class Submitting:
         self._reuploads = 0
         {Step.KEY: self._ask_key, Step.UPLOADING: self._upload, Step.REUPLOADING: self._reupload,
          Step.RECORDING: self._record, Step.SIGNING: self._send,
-         Step.RELOADING: self._reload}[failure.retry]()
+         Step.RELOADING: self._reload, Step.REVISING: self._revise}[failure.retry]()
 
     def retry_message(self) -> None:
         if self._progress.step is Step.SUBMITTED and \
@@ -292,7 +295,8 @@ class Submitting:
         (Step.CHECKING, NotStored): "_not_stored",
         (Step.CHECKING, Superseded): "_elsewhere",
         (Step.CHECKING, Different): "_elsewhere",
-        (Step.CHECKING, StoredOther): "_stored_other",
+        (Step.CHECKING, StoredCopy): "_stored_copy",
+        (Step.CHECKING, NotHandedIn): "_not_handed_in",
         (Step.CHECKING, StandupError): "_lookup_failed",
         (Step.REUPLOADING, _Uploaded): "_reuploaded",
         (Step.REUPLOADING, _UploadFailed): "_reupload_failed",
@@ -420,7 +424,7 @@ class Submitting:
             self._sealed = drafting.seal(self._draft, self._choice, self._key, self._pictures,
                                          self._servers, writer=self._writer,
                                          round_=self._round, now=int(self._ports.clock()),
-                                         held=self._ports.held(sid))
+                                         held=self._ports.held(sid), revision=self._revision)
         except SecretKeyFound as refusal:
             self._fail(str(refusal), None)
             return
@@ -496,6 +500,7 @@ class Submitting:
             return
         self._rebuilt = True
         self._round = conflict.latest + 1
+        self._revision = 1                  # a new round starts at revision 1
         self._progress = replace(self._progress, held=self._refused_held())
         self._seal_and_record()
 
@@ -615,11 +620,34 @@ class Submitting:
         self._note_stored()
         self._fail(words.ANOTHER_VERSION, None, held=Held.OTHER)
 
-    def _stored_other(self, _found: StoredOther) -> None:
-        # This revision is stored, but not as it was sent (12.4): a receipt
-        # for this status key all the same.
+    def _stored_copy(self, found: StoredCopy) -> None:
+        """This revision was encrypted twice and the server kept the first
+        copy, whose signed action verified as this writer's (12.4 at
+        bfa8844): the stored revision decides. The entry takes its
+        envelope and wraps and is stored, on the list too; its receipt is
+        then read as any other (missing files are uploaded again: they are
+        the same files)."""
+        self._sealed = replace(self._sealed, entry=found.entry)
+        self._ports.adopt(found.entry)
+        if isinstance(found.status, views.BlobsMissing):
+            self._blobs_missing(found.status)
+        else:
+            self._confirmed(found.status)
+
+    def _not_handed_in(self, _found: NotHandedIn) -> None:
+        """A stored revision this app cannot take as the writer's (12.4 at
+        bfa8844): said once, with Send Again, the next revision built
+        here. A receipt for this status key all the same (13)."""
         self._note_stored()
-        self._fail(words.STORED_OTHER, None, held=Held.OTHER)
+        self._fail(words.NOT_HANDED_IN, Step.REVISING, held=Held.OTHER,
+                   title=words.NOT_SUBMITTED)
+
+    def _revise(self) -> None:
+        """Send Again after :meth:`_not_handed_in`: revision n+1 of this
+        submission, built here with its keys (section 11 allows it while
+        it is submitted, in review or has changes requested)."""
+        self._revision = self._sealed.entry.revision + 1
+        self._seal_and_record()
 
     # -- the first message ---------------------------------------------------
 

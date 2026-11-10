@@ -45,6 +45,9 @@ class Ports:
     - ``record(entry, on_done(RecordResult))``: SubmissionsList.record.
     - ``mark_stored(entry)``: SubmissionsList.mark_stored, once a receipt
       for the entry's sid with its status key is held (13, 72d5ddc).
+    - ``adopt(entry)``: SubmissionsList.record of ``entry``, stored, naming
+      the envelope and wraps of the copy the server kept, once its signed
+      action verified (12.4 at bfa8844).
     - ``forget(entry)``: SubmissionsList.forget, for an entry recorded for
       a request that was cancelled before it was sent, or that the
       server refused for its round.
@@ -52,7 +55,8 @@ class Ports:
       on_failure(StandupError))`` returns a callable that drops it.
     - ``lookup(sealed, on_done(status), on_failure(StandupError))``:
       watcher.resolve_unconfirmed for ``sealed.entry``, its receipt checked
-      against ``sealed.body``, what was sent.
+      against ``sealed.body``, what was sent, and a copy stored otherwise
+      verified (StoredCopy or NotHandedIn).
     - ``send_message(sealed, text, on_signed(), on_sent(), on_failure(error))``:
       ``on_signed`` once the signer sealed it, before it is sent; ``error``
       the StandupError it ended with (the signer's, built here as
@@ -73,6 +77,7 @@ class Ports:
     held: Callable[[str], Optional[Any]]
     record: Callable[[Any, Callable[[RecordResult], None]], None]
     mark_stored: Callable[[Any], None]
+    adopt: Callable[[Any], None]
     forget: Callable[[Any], None]
     submit: Callable[[Mapping[str, Any], Callable[[], None], Callable[[Any], None],
                       Callable[[StandupError], None]], Callable[[], None]]

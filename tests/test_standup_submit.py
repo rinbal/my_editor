@@ -16,6 +16,7 @@ cover is a JPEG of at most 128 px and 24 KB."""
 from __future__ import annotations
 
 import base64
+from dataclasses import replace
 from types import MethodType, SimpleNamespace
 from typing import List
 
@@ -550,6 +551,27 @@ def test_the_mark_holds_the_link_name_after_a_restart(tmp_path):
     assert _lock(again, in_use=False) == LinkNameLock(held=Held.STORED)
 
 
+def test_a_kept_copy_taken_is_written_to_the_list_stored_with_its_mark(tmp_path):
+    # 12.4 at bfa8844: the entry names the copy the server kept, stored;
+    # the list is told, and the link name stays after a restart.
+    from nostr.standup.link_names import LinkNameLock, SubmittedMarks
+    from nostr.list_results import PublishResult, PublishStatus
+    from nostr.standup.entries import RecordResult, RecordStatus
+    writer = _writer(FakeList([]), FakeApi(), marks=SubmittedMarks(tmp_path / "marks.json"))
+    recorded, listed = [], []
+    writer.listed.connect(listed.append)
+    writer.account(PROFILE).submissions.record = lambda entry, on_done: (
+        recorded.append(entry),
+        on_done(RecordResult(RecordStatus.STORED, entry, PublishResult(PublishStatus.SENT))))
+    kept = replace(_entry(), envelope_sha256="d1" * 32, stored=True,
+                   wraps_sha256={"redaktion": "d2" * 32, "writer": "d3" * 32})
+    writer._ports(writer.account(PROFILE), PUBLICATION).adopt(kept)
+    assert recorded == [kept] and listed == [WRITER]
+    again = _writer(FakeList([], readable=False), FakeApi(),
+                    marks=SubmittedMarks(tmp_path / "marks.json"))
+    assert _lock(again, in_use=False) == LinkNameLock(held=Held.STORED)
+
+
 def test_an_entry_not_recorded_leaves_no_mark(tmp_path):
     from nostr.standup.link_names import SubmittedMarks
     from nostr.list_results import PublishResult, PublishStatus
@@ -1046,7 +1068,8 @@ def test_the_lookup_of_a_run_checks_the_receipt_against_the_body_it_sent(monkeyp
     account = writer.account(SimpleNamespace(user_pubkey=WRITER))
     sealed = SimpleNamespace(entry=_entry(), body={"submission_id": _sid(1)})
     writer._ports(account, PUBLICATION).lookup(sealed, print, print)
-    assert asked == [(sealed.entry, {"body": sealed.body})]
+    # bfa8844: a kept copy's signed action is verified as this writer's.
+    assert asked == [(sealed.entry, {"body": sealed.body, "writer": WRITER})]
 
 
 # -- in the background --------------------------------------------------------------

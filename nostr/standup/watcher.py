@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, replace
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Union
+from typing import Any, Callable, Dict, List, Mapping, NamedTuple, Optional, Sequence, Union
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
@@ -97,14 +97,39 @@ class Different:
 @dataclass(frozen=True)
 class StoredOther:
     """This revision, its number and hash, is stored, but with another
-    envelope or other wraps than this app sent (12.4 "No answer after
-    sending"): never "Eingereicht"."""
+    envelope or other wraps than this entry names: the same revision
+    encrypted twice, the first copy kept (12.4 at bfa8844). Never
+    "Eingereicht" as it is: :func:`verify_stored` decides, by the stored
+    revision's signed action."""
+
+    receipt: views.Receipt
+
+
+@dataclass(frozen=True)
+class StoredCopy:
+    """A :class:`StoredOther` whose stored signed action verified as this
+    writer's for this revision (12.4 at bfa8844): the stored revision
+    decides. ``entry`` names its envelope and wraps and is stored;
+    ``status`` is its receipt read against it, :class:`~.views.Confirmed`
+    or :class:`~.views.BlobsMissing` (the plaintext is the same, so the
+    files are)."""
+
+    entry: SubmissionEntry
+    status: Union[views.Confirmed, views.BlobsMissing]
+
+
+@dataclass(frozen=True)
+class NotHandedIn:
+    """A stored revision this app cannot take as the writer's: its signed
+    action does not verify, or its receipt does not say what was sent
+    (12.4 at bfa8844). Said once, with Send Again: the next revision,
+    built here."""
 
     receipt: views.Receipt
 
 
 EntryStatus = Union[views.Confirmed, views.BlobsMissing, NotStored, Superseded, Different,
-                    StoredOther]
+                    StoredOther, StoredCopy, NotHandedIn]
 
 
 def classify(entry: SubmissionEntry, receipt: views.Receipt) -> EntryStatus:
@@ -133,7 +158,9 @@ class Followed:
     """What the server says about one submission: its view, the receipt
     of its latest revision, every timeline item seen so far, and what
     that receipt says about the revision the entry records
-    (:func:`classify`): only :class:`~.views.Confirmed` is "Eingereicht"."""
+    (:func:`classify`): only :class:`~.views.Confirmed` is "Eingereicht".
+    A :class:`StoredOther` is never shown as it is: :func:`verify_stored`,
+    with the writer's session, decides it (12.4 at bfa8844)."""
 
     entry: SubmissionEntry
     item: views.LookupItem
@@ -431,7 +458,7 @@ def look_up(api: StandupApi, entry: SubmissionEntry,
 
 def resolve_unconfirmed(api: StandupApi, entry: SubmissionEntry,
                         on_done: Callable[[object], None],
-                        on_failure: Callable[[StandupError], None], *,
+                        on_failure: Callable[[StandupError], None], *, writer: str,
                         body: Optional[Mapping[str, Any]] = None,
                         clock: Callable[[], float] = time.time) -> None:
     """Did the revision in ``entry`` arrive, although its request got no
@@ -441,30 +468,102 @@ def resolve_unconfirmed(api: StandupApi, entry: SubmissionEntry,
     ``on_done`` gets :class:`~.views.Confirmed` (same revision and hash,
     every file found), :class:`~.views.BlobsMissing` (stored, files
     missing: upload and send the same body again), :class:`NotStored`,
-    :class:`Superseded`, :class:`Different` or :class:`StoredOther`
-    (:func:`classify`, by the entry alone, as after a restart). With
-    ``body``, the one that was sent, the receipt found must match it in
-    every field as well, as the answer to the request itself must
-    (views.check_receipt): anything else of this revision is
-    :class:`StoredOther`, never "Eingereicht" (RG-M2b 11). ``on_failure``
-    when the server could not be asked or its answer not read: the entry
-    stays unconfirmed, ask later."""
+    :class:`Superseded` or :class:`Different` (:func:`classify`, by the
+    entry alone, as after a restart). This revision stored with another
+    envelope or other wraps than the entry names is :func:`verify_stored`'s
+    to decide: :class:`StoredCopy` or :class:`NotHandedIn` (12.4 at
+    bfa8844), never "Eingereicht" as it is (RG-M2b 11). With ``body``,
+    the one that was sent and the entry still names, a receipt the entry
+    confirms must match it in every field as well, as the answer to the
+    request itself must (views.check_receipt): anything else is
+    :class:`NotHandedIn`.
+    ``on_failure`` when the server could not be asked or its answer not
+    read: the entry stays unconfirmed, ask later."""
     def found(item: Optional[views.LookupItem]) -> None:
         if item is None:
             on_done(NotStored())
             return
-        status = classify(entry, item.receipt)
-        if body is not None and isinstance(status, (views.Confirmed, views.BlobsMissing)):
-            checked = views.check_receipt(body, item.receipt.raw, now=clock(), repeat=True)
-            status = StoredOther(item.receipt) if isinstance(checked, views.Mismatch) else checked
+        receipt = item.receipt
+        status = classify(entry, receipt)
+        if body is not None and _names_body(entry, body) \
+                and isinstance(status, (views.Confirmed, views.BlobsMissing)):
+            checked = views.check_receipt(body, receipt.raw, now=clock(), repeat=True)
+            status = NotHandedIn(receipt) if isinstance(checked, views.Mismatch) else checked
+        if isinstance(status, StoredOther):
+            verify_stored(api, entry, receipt, on_done, on_failure, writer=writer)
+            return
         on_done(status)
 
     look_up(api, entry, found, on_failure)
 
 
+class _Sent(NamedTuple):
+    """The envelope and the wraps a body sent, by hash, as a receipt names
+    them (views.expected_receipt), for :func:`~.entries.same_sent`."""
+
+    envelope_sha256: Optional[str]
+    wraps_sha256: Mapping[str, str]
+
+
+def _names_body(entry: SubmissionEntry, body: Mapping[str, Any]) -> bool:
+    """Whether ``entry`` still names what ``body`` sent: not once it took
+    a stored copy's envelope and wraps (:class:`StoredCopy`), whose
+    receipt it is then read against alone."""
+    sent = views.expected_receipt(body)
+    return same_sent(entry, _Sent(sent["envelope_sha256"], sent["wraps_sha256"]))
+
+
+def verify_stored(api: StandupApi, entry: SubmissionEntry, receipt: views.Receipt,
+                  on_done: Callable[[object], None],
+                  on_failure: Callable[[StandupError], None], *, writer: str) -> None:
+    """This revision is stored with another envelope or other wraps than
+    ``entry`` names (12.4 at bfa8844): the stored revision is read
+    (``?revision=n``) and its signed action verified. :class:`StoredCopy`
+    when the signer is ``writer`` and the body's ``submission_id``,
+    ``revision``, ``revision_hash`` and ``envelope_sha256`` are the stored
+    revision's, which the receipt names, and its wraps hash to the
+    receipt's (lesson 3); :class:`NotHandedIn` otherwise. ``on_failure``
+    when it could not be read: ask later, as for the lookup."""
+    def read(detail: answers.SubmissionDetail) -> None:
+        record = next((r for r in detail.revisions if r.revision == entry.revision), None)
+        on_done(judge_stored(entry, receipt, record, writer=writer))
+
+    api.submission(entry.sid, read, on_failure, revision=entry.revision)
+
+
+def judge_stored(entry: SubmissionEntry, receipt: views.Receipt,
+                 record: Optional[views.RevisionRecord], *, writer: str) -> object:
+    """:func:`verify_stored`'s decision, pure."""
+    if record is None or record.revision_hash != entry.revision_hash \
+            or record.revision_hash != receipt.revision_hash \
+            or record.envelope_sha256 != receipt.envelope_sha256:
+        return NotHandedIn(receipt)
+    try:
+        body = views.signed_action_body(
+            record.signed, path=views.action_path("submitted", entry.sid),
+            submission_id=entry.sid, signers={writer})
+        wraps = body.get("wraps")
+        signed_wraps = {name: formats.wrap_sha256(wrap) for name, wrap in wraps.items()} \
+            if isinstance(wraps, dict) else None
+    except (views.SignedActionInvalid, formats.FormatError):
+        return NotHandedIn(receipt)
+    if body.get("revision") != record.revision or body.get("revision_hash") != \
+            record.revision_hash or body.get("envelope_sha256") != record.envelope_sha256 \
+            or signed_wraps != dict(receipt.wraps_sha256):
+        return NotHandedIn(receipt)
+    # A work by link names no envelope and no wraps on the list (13).
+    taken = replace(entry, envelope_sha256=receipt.envelope_sha256,
+                    wraps_sha256=entry.wraps_sha256 if receipt.envelope_sha256 is None
+                    else dict(receipt.wraps_sha256), stored=True)
+    status = views.BlobsMissing(receipt=receipt, missing=receipt.blobs_missing) \
+        if receipt.blobs_missing else views.Confirmed(receipt=receipt, repeat=True)
+    return StoredCopy(entry=taken, status=status)
+
+
 __all__ = [
-    "Different", "EntryStatus", "Followed", "MAX_CONTINUATIONS", "NotStored",
-    "REFRESH_INTERVAL_MS", "StoredOther", "SubmissionWatcher", "Superseded", "classify",
+    "Different", "EntryStatus", "Followed", "MAX_CONTINUATIONS", "NotHandedIn", "NotStored",
+    "REFRESH_INTERVAL_MS", "StoredCopy", "StoredOther", "SubmissionWatcher", "Superseded",
+    "classify", "judge_stored", "verify_stored",
     "read_submission",
     "AT_THE_END", "look_up", "look_up_all", "lookup_batches", "resolve_unconfirmed",
 ]

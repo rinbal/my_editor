@@ -8088,83 +8088,83 @@ msgstr ""
 
 #: nostr/standup/words.py:148
 #, python-brace-format
-msgid "{publication} received this submission, but not as MyEditor sent it."
+msgid "{publication} couldn’t show that this submission came from you: send it again."
 msgstr ""
 
-#: nostr/standup/words.py:149
+#: nostr/standup/words.py:150
 msgid "The server didn’t take the submission."
 msgstr ""
 
-#: nostr/standup/words.py:151
+#: nostr/standup/words.py:152
 msgid "MyEditor couldn’t put this submission together."
-msgstr ""
-
-#: nostr/standup/words.py:178
-#, python-brace-format
-msgid "You’ve sent {publication} as much as it takes for now: try again at {time}."
 msgstr ""
 
 #: nostr/standup/words.py:179
 #, python-brace-format
-msgid "You’ve sent {publication} as much as it takes for now: try again tomorrow at {time}."
+msgid "You’ve sent {publication} as much as it takes for now: try again at {time}."
 msgstr ""
 
-#: nostr/standup/words.py:181
+#: nostr/standup/words.py:180
 #, python-brace-format
-msgid "The server can’t take more from you right now: try again at {time}."
+msgid "You’ve sent {publication} as much as it takes for now: try again tomorrow at {time}."
 msgstr ""
 
 #: nostr/standup/words.py:182
 #, python-brace-format
+msgid "The server can’t take more from you right now: try again at {time}."
+msgstr ""
+
+#: nostr/standup/words.py:183
+#, python-brace-format
 msgid "The server can’t take more from you right now: try again tomorrow at {time}."
 msgstr ""
 
-#: nostr/standup/words.py:184
+#: nostr/standup/words.py:185
 msgid "The server can’t take more from you right now: try again later."
 msgstr ""
 
-#: nostr/standup/words.py:186
+#: nostr/standup/words.py:187
 #, python-brace-format
 msgid "The wait for {publication} is over: you can try again now."
 msgstr ""
 
-#: nostr/standup/words.py:187
+#: nostr/standup/words.py:188
 msgid "The wait for the server is over: you can try again now."
 msgstr ""
 
-#: nostr/standup/words.py:191
+#: nostr/standup/words.py:192
 msgid "The publications couldn’t be loaded"
 msgstr ""
 
-#: nostr/standup/words.py:192
+#: nostr/standup/words.py:193
 msgid "MyEditor couldn’t check whether you submitted this text before"
 msgstr ""
 
-#: nostr/standup/words.py:193
+#: nostr/standup/words.py:194
 msgid "The earlier try wasn’t discarded"
-msgstr ""
-
-#: nostr/standup/words.py:155
-#, python-brace-format
-msgid "{publication} isn’t taking submissions right now."
 msgstr ""
 
 #: nostr/standup/words.py:156
 #, python-brace-format
-msgid "{publication} doesn’t take submissions from you."
+msgid "{publication} isn’t taking submissions right now."
 msgstr ""
 
 #: nostr/standup/words.py:157
 #, python-brace-format
+msgid "{publication} doesn’t take submissions from you."
+msgstr ""
+
+#: nostr/standup/words.py:158
+#, python-brace-format
 msgid "You already have as many open submissions at {publication} as it takes."
 msgstr ""
 
-#: nostr/standup/words.py:159
+#: nostr/standup/words.py:160
 #, python-brace-format
 msgid "You’ve sent {publication} as much as it takes for now: try again later."
 msgstr ""
 
-#: nostr/standup/words.py:165
+#: nostr/standup/words.py:166
 #, python-brace-format
 msgid "Nobody at {publication} could decide on it: the only person who can is named among those who take part."
 msgstr ""
@@ -9328,14 +9328,14 @@ msgstr ""
 #: nostr/ui/drafts_panel.py:948
 #: nostr/ui/drafts_panel.py:969
 #: nostr/ui/drafts_panel.py:970
-#: nostr/ui/imports_activity.py:266
-#: nostr/ui/imports_activity.py:305
+#: nostr/ui/imports_activity.py:271
+#: nostr/ui/imports_activity.py:315
 #: nostr/ui/media_player.py:194
 msgid "Pause"
 msgstr ""
 
 #: nostr/ui/drafts_panel.py:969
-#: nostr/ui/imports_activity.py:311
+#: nostr/ui/imports_activity.py:321
 msgid "Resume"
 msgstr ""
 
@@ -9751,7 +9751,7 @@ msgstr ""
 msgid "Import paused"
 msgstr ""
 
-#: nostr/ui/imports_activity.py:134
+#: nostr/ui/imports_activity.py:139
 msgid "Import finished."
 msgstr ""
 
@@ -9760,21 +9760,21 @@ msgstr ""
 msgid "{done} of {total}"
 msgstr ""
 
-#: nostr/ui/imports_activity.py:195
-#: nostr/ui/imports_activity.py:248
+#: nostr/ui/imports_activity.py:197
+#: nostr/ui/imports_activity.py:253
 msgid "Import Progress"
 msgstr ""
 
-#: nostr/ui/imports_activity.py:205
+#: nostr/ui/imports_activity.py:207
 msgid "Not all imported"
 msgstr ""
 
-#: nostr/ui/imports_activity.py:231
-#: nostr/ui/imports_activity.py:285
+#: nostr/ui/imports_activity.py:236
+#: nostr/ui/imports_activity.py:290
 msgid "Import"
 msgstr ""
 
-#: nostr/ui/imports_activity.py:261
+#: nostr/ui/imports_activity.py:266
 msgid "Stop…"
 msgstr ""
 
@@ -9785,21 +9785,21 @@ msgid_plural "{count} created"
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/imports_activity.py:135
+#: nostr/ui/imports_activity.py:137
+#, python-brace-format
+msgid "{what}: open the import’s progress and choose Try Again."
+msgstr ""
+
+#: nostr/ui/imports_activity.py:140
 #, python-brace-format
 msgid "{count} draft created."
 msgid_plural "{count} drafts created."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/imports_activity.py:151
+#: nostr/ui/imports_activity.py:153
 #, python-brace-format
 msgid "{status}, {progress}"
-msgstr ""
-
-#: nostr/ui/imports_activity.py:208
-#, python-brace-format
-msgid "Import progress: {status}, {progress}"
 msgstr ""
 
 #: nostr/ui/imports_activity.py:107
@@ -9809,19 +9809,19 @@ msgid_plural "{count} were already there"
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/imports_activity.py:138
+#: nostr/ui/imports_activity.py:143
 #, python-brace-format
 msgid "{count} was already there."
 msgid_plural "{count} were already there."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/imports_activity.py:141
+#: nostr/ui/imports_activity.py:212
 #, python-brace-format
-msgid "{what}: open the import’s progress and choose Try Again."
+msgid "Import progress: {status}, {progress}"
 msgstr ""
 
-#: nostr/ui/imports_activity.py:326
+#: nostr/ui/imports_activity.py:336
 #, python-brace-format
 msgid "“{title}”: {reason}"
 msgstr ""
@@ -12160,6 +12160,7 @@ msgid "Replace with Public Key"
 msgstr ""
 
 #: nostr/ui/standup_handoff.py:404
+#: nostr/ui/standup_handoff.py:562
 msgid "Send Again"
 msgstr ""
 
@@ -12171,7 +12172,7 @@ msgstr ""
 msgid "Editorial inbox"
 msgstr ""
 
-#: nostr/ui/standup_handoff.py:557
+#: nostr/ui/standup_handoff.py:560
 #: nostr/ui/standup_ways_out.py:68
 msgctxt "submissions list"
 msgid "Reload"

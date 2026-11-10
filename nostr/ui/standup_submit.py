@@ -449,7 +449,8 @@ class StandupWriter(QObject):
             return lambda: api.drop(call)
 
         def lookup(sealed: Sealed, on_done, on_failure) -> None:
-            resolve_unconfirmed(api, sealed.entry, on_done, on_failure, body=sealed.body)
+            resolve_unconfirmed(api, sealed.entry, on_done, on_failure, body=sealed.body,
+                                writer=account.writer)
 
         def send_message(sealed: Sealed, text: str, on_signed, on_sent, on_failure) -> None:
             send_first_message(account, sealed, text, on_signed, on_sent, on_failure,
@@ -478,12 +479,22 @@ class StandupWriter(QObject):
             account.submissions.mark_stored([entry])
             self.listed.emit(account.writer)
 
+        def adopt(entry) -> None:
+            # The copy the server kept, verified (12.4 at bfa8844): the
+            # entry names its envelope and wraps, stored. Best effort as
+            # mark_stored: a list not written now carries it next time,
+            # and a lookup after a restart verifies it again.
+            self._marks.remember(account.writer, entry.d, stored=True)
+            account.submissions.record(entry, live(
+                account, lambda _result: self.listed.emit(account.writer)))
+
         def reload(entry: SubmissionEntry, on_done) -> None:
             self._reread(account, entry, live(account, on_done))
 
         return Ports(confirm_key=confirm_key, upload=self._uploads,
                      held=account.submissions.entry, record=record,
-                     mark_stored=mark_stored, forget=forget, submit=submit, lookup=lookup,
+                     mark_stored=mark_stored, adopt=adopt, forget=forget, submit=submit,
+                     lookup=lookup,
                      send_message=send_message, reload=reload,
                      refuse=lambda entry: self._marks.refuse_round(account.writer, entry),
                      refused=lambda entry: self._marks.round_refused(account.writer, entry),

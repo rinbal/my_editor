@@ -31,6 +31,9 @@ class Step(Enum):
     RELOADING = "reloading"
     CHECKING = "checking"           # no answer: asked by the status key
     REUPLOADING = "reuploading"     # files the receipt missed
+    # Send Again's: the next revision, built here, after a stored one this
+    # app could not take as the writer's (12.4 at bfa8844).
+    REVISING = "revising"
     SUBMITTED = "submitted"         # a matching receipt, every file found
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -50,7 +53,8 @@ class Phase(Enum):
 
 
 PHASE_OF = {
-    Step.KEY: Phase.ENCRYPT, Step.ENCRYPTING: Phase.ENCRYPT, Step.UPLOADING: Phase.UPLOAD,
+    Step.KEY: Phase.ENCRYPT, Step.ENCRYPTING: Phase.ENCRYPT, Step.REVISING: Phase.ENCRYPT,
+    Step.UPLOADING: Phase.UPLOAD,
     Step.REUPLOADING: Phase.UPLOAD, Step.RECORDING: Phase.SIGNER, Step.SIGNING: Phase.SIGNER,
     Step.SENDING: Phase.SEND, Step.RELOADING: Phase.UNCONFIRMED,
     Step.CHECKING: Phase.UNCONFIRMED,

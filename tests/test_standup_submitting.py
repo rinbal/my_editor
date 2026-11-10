@@ -115,6 +115,7 @@ class SubmissionsList:
         self.entries = []
         self.forgotten = []
         self.marked = []
+        self.adopted = []
         self.items = SubmissionItems()
         self.outcomes: List[RecordResult] = []
         # What another device wrote: found by the next read (reload),
@@ -143,6 +144,13 @@ class SubmissionsList:
         if held is not None and same_keys(held, entry):
             self.put(replace(held, stored=True))
 
+    def adopt(self, entry) -> None:
+        # StandupWriter's adopt: SubmissionsList.record of the entry naming
+        # the stored copy, a later updated_at than the record it replaces.
+        self.adopted.append(entry)
+        self.log.append("adopt")
+        self.put(replace(entry, updated_at=entry.updated_at + 1))
+
     def reload(self, entry, on_done) -> None:
         # StandupWriter._reread: the list read again, then whether that
         # device's stored entry is here (entries.stored_elsewhere).
@@ -165,6 +173,10 @@ class SubmissionsList:
         self.entries.append(entry)
         self.log.append("record")
         known = records_of(self.items, entry.sid)
+        # As SubmissionsList.record_many: later than every record of its
+        # sid known here, so this edit is the greater record of its identity.
+        entry = replace(entry, updated_at=max([entry.updated_at]
+                                              + [r.updated_at + 1 for r in known]))
         if known and record_of(self.items, entry.sid, record_key(entry)) is None:
             result = RecordResult(RecordStatus.NOT_STORED, entry,
                                   PublishResult(PublishStatus.FAILED, reason="other secrets"))
@@ -235,7 +247,7 @@ class World:
         def lookup(sealed, on_done, on_failure):
             self.log.append("lookup")
             resolve_unconfirmed(self.api, sealed.entry, on_done, on_failure, body=sealed.body,
-                                clock=self.clock)
+                                writer=pk("writer"), clock=self.clock)
 
         def send_message(sealed, text, on_signed, on_sent, on_failure):
             self.messages.append((sealed.submission_id, text))
@@ -244,6 +256,7 @@ class World:
 
         return Ports(confirm_key=confirm_key, upload=self.uploads, held=self.list.held,
                      record=self.list.record, mark_stored=self.list.mark_stored,
+                     adopt=self.list.adopt,
                      forget=self.list.forget, submit=submit, lookup=lookup,
                      send_message=send_message, reload=self.list.reload,
                      refuse=lambda entry: self.marks.refuse_round(pk("writer"), entry),
@@ -467,14 +480,110 @@ def test_a_lookup_that_finds_another_envelope_or_other_wraps_is_never_submitted(
     world.server.tamper_receipt = _tamper(field, value)
     progress = world.go()
     assert Step.CHECKING in world.steps and Step.SUBMITTED not in world.steps
-    # 72d688b: this revision is stored, not as it was sent; the words say
-    # so, and never that nothing is submitted.
-    assert progress.step is Step.FAILED and progress.failure.sentence == words.STORED_OTHER
-    assert progress.failure.title == words.VERSION_NOT_SUBMITTED
+    # bfa8844: the stored revision's signed action does not name what the
+    # receipt says: not handed in, said once, with Send Again.
+    assert progress.step is Step.FAILED and progress.failure.sentence == words.NOT_HANDED_IN
+    assert progress.failure.title == words.NOT_SUBMITTED
+    assert progress.failure.retry is Step.REVISING and world.list.adopted == []
     # A receipt for this status key all the same: the entry is marked
     # stored (13), so no record of other keys is ever shown in its place.
     [marked] = world.list.marked
     assert marked.stored and world.list.held(marked.sid).stored
+
+
+def test_send_again_after_a_copy_that_is_not_the_writers_sends_the_next_revision():
+    # bfa8844: Send Again sends revision n+1, built here, with the keys of
+    # this submission; the server takes it as the next revision.
+    world = World()
+    world.server.tamper_receipt = _tamper("envelope_sha256", "00" * 32)
+    world.go()
+    first = world.submitting.sealed
+    world.server.tamper_receipt = None
+    world.submitting.retry()
+    world.settle()
+    progress = world.submitting.progress
+    again = world.submitting.sealed
+    assert progress.step is Step.SUBMITTED and again.body["revision"] == 2
+    assert again.body["submission_id"] == first.body["submission_id"]
+    assert (again.entry.s_sub, again.entry.status_key) == (first.entry.s_sub,
+                                                           first.entry.status_key)
+    assert again.body["revision_hash"] != first.body["revision_hash"]
+    held = world.list.held(again.submission_id)
+    assert held.revision == 2 and held.stored
+
+
+def test_a_round_built_after_send_again_starts_at_revision_one():
+    # Send Again builds revision 2; a server that then names another round
+    # (contract 2) gets that round's first revision, built once.
+    world = World()
+    world.server.tamper_receipt = _tamper("envelope_sha256", "00" * 32)
+    world.go()
+    world.server.tamper_receipt = None
+    # Meanwhile the Redaktion declined round 1: a new round is the next.
+    world.server.submissions[world.submitting.sealed.body["submission_id"]].state = "declined"
+    world.server.inject("submit", Fault(409, "conflict", detail={"round": 1, "open": False}))
+    world.submitting.retry()
+    world.settle()
+    assert world.submitting.progress.step is Step.SUBMITTED
+    again, rebuilt = world.posted()[-2:]
+    assert (again["round"], again["revision"]) == (1, 2)
+    assert (rebuilt["round"], rebuilt["revision"]) == (2, 1)
+
+
+def _twin_first(world):
+    """The server keeps another copy of the same revision first: another
+    app of the writer, or this one before a lost list write, encrypted it
+    too (12.4 at bfa8844). Sent ahead of the run's own body, with its keys
+    and its files."""
+    submit = world.submitting._ports.submit
+
+    def twin_ahead(body, on_sending, on_success, on_failure):
+        if not world.twins:
+            run = world.submitting
+            twin = drafting.seal(run._draft, run._choice, run._key, run._pictures, run._servers,
+                                 writer=pk("writer"), round_=1, now=NOW, held=run.sealed.entry)
+            assert twin.body["revision_hash"] == body["revision_hash"]
+            assert twin.body["envelope_sha256"] != body["envelope_sha256"]
+            world.twins.append(twin)
+            world.api.submit(twin.body, lambda _r: None, lambda _e: None)
+            world.nam.settle()
+        return submit(body, on_sending, on_success, on_failure)
+
+    world.twins = []
+    world.submitting._ports = replace(world.submitting._ports, submit=twin_ahead)
+
+
+def test_a_copy_the_server_kept_that_verifies_is_handed_in_and_the_list_takes_it():
+    world = World()
+    _twin_first(world)
+    progress = world.go()
+    [twin] = world.twins
+    # The receipt names the kept copy: checked by the status key, then the
+    # stored signed action verified; the kept copy decides.
+    assert world.steps[-2:] == [Step.CHECKING, Step.SUBMITTED]
+    assert progress.step is Step.SUBMITTED and progress.held is Held.STORED
+    assert progress.receipt.envelope_sha256 == twin.body["envelope_sha256"]
+    # The list write: the entry names the kept copy's envelope and wraps,
+    # stored, with this run's keys.
+    [adopted] = world.list.adopted
+    assert adopted.envelope_sha256 == twin.entry.envelope_sha256
+    assert adopted.wraps_sha256 == twin.entry.wraps_sha256 and adopted.stored
+    held = world.list.held(adopted.sid)
+    assert (held.envelope_sha256, held.stored) == (twin.entry.envelope_sha256, True)
+    assert world.submitting.sealed.entry == adopted
+
+
+def test_a_copy_the_server_kept_with_a_picture_missing_uploads_it_again(tmp_path):
+    # Under the rule for missing files (12.4): this run holds the files,
+    # the same as the kept copy's, so it uploads them and asks again.
+    world = World()
+    _twin_first(world)
+    world.uploads.lose = 1
+    progress = world.go()
+    assert Step.REUPLOADING in world.steps and progress.step is Step.SUBMITTED
+    # Taken once: the answer after the files is read against the kept copy
+    # the entry now names, not against the body this run built.
+    assert len(world.list.adopted) == 1
 
 
 def test_a_receipt_for_another_version_is_never_submitted():
@@ -578,9 +687,13 @@ def test_a_failure_says_what_the_server_holds(set_up, held):
     progress = world.go()
     assert progress.step is Step.FAILED and progress.held is held
     elsewhere = progress.failure.retry is Step.RELOADING
+    # A kept copy that is not the writer's is said as not handed in, with
+    # Send Again (12.4 at bfa8844), though the server holds that copy.
+    not_handed_in = progress.failure.retry is Step.REVISING
     assert progress.failure.title == (words.SUBMITTED_ELSEWHERE if elsewhere
+                                      else words.NOT_SUBMITTED if not_handed_in
                                       else submitting.HELD_WORDS[held].failed)
-    if held is not Held.NOTHING:
+    if held is not Held.NOTHING and not not_handed_in:
         assert progress.failure.title != words.NOT_SUBMITTED
 
 

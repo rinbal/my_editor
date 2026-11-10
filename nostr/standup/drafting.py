@@ -296,8 +296,10 @@ def _secrets(sid: str, held: Optional[SubmissionEntry]) -> Tuple[bytes, str]:
 
 def seal(draft: ArticleDraft, choice: Choice, key: RedaktionKey,
          pictures: Sequence[EncryptedPicture], servers: Mapping[str, Sequence[str]], *,
-         writer: str, round_: int, now: int, held: Optional[SubmissionEntry] = None) -> Sealed:
-    """The revision (revision 1 of ``round_``), encrypted, and the body
+         writer: str, round_: int, now: int, held: Optional[SubmissionEntry] = None,
+         revision: int = 1) -> Sealed:
+    """The revision (``revision`` of ``round_``: 1, or the next one after
+    a stored one that did not verify, 12.4 at bfa8844), encrypted, and the body
     and list entry naming it. ``servers`` names, per picture's
     ``sha256``, the media servers that hold it; ``held`` is the list's
     entry for this submission, whose secrets it keeps (see
@@ -309,8 +311,9 @@ def seal(draft: ArticleDraft, choice: Choice, key: RedaktionKey,
     formats.need(not any(picture_type_refused(p) for p in pictures), "a picture's type")
     sid = submission_id_of(draft, choice, writer, round_)
     s_sub, status_key = _secrets(sid, held)
+    number = revision
     revision = formats.build_revision(
-        submission_id=sid, revision=1, kind="article", work=_work(draft, pictures),
+        submission_id=sid, revision=number, kind="article", work=_work(draft, pictures),
         rights={"confirmed": choice.rights, "license": None},
         checklist=checklist_results(key.rules.get("checklist"), draft),
         thumb=dict(draft.thumb) if draft.thumb else None,
@@ -325,7 +328,7 @@ def seal(draft: ArticleDraft, choice: Choice, key: RedaktionKey,
     wraps = crypto.wrap_submission_key(sid, s_sub, recipients)
     body = submission_body(
         writer=writer, publication=choice.publication, key_event_id=key.event_id,
-        epoch=key.epoch, d=draft.d, round_=round_, revision=1,
+        epoch=key.epoch, d=draft.d, round_=round_, revision=number,
         revision_hash=sealed.revision_hash, kind="article", title=draft.title,
         signer=choice.signer, participants=people, p_sub=crypto.pubkey_of(s_sub),
         envelope=sealed.envelope_b64, envelope_sha256=sealed.envelope_sha256,
@@ -334,7 +337,7 @@ def seal(draft: ArticleDraft, choice: Choice, key: RedaktionKey,
     entry = SubmissionEntry(
         sid=sid, publication=choice.publication, server=key.server, role="writer",
         s_sub=s_sub.hex(), status_key=status_key, title=draft.title, kind="article",
-        d=draft.d, round=round_, revision=1, revision_hash=sealed.revision_hash,
+        d=draft.d, round=round_, revision=number, revision_hash=sealed.revision_hash,
         # What a lookup after a restart compares, with no body (12.4).
         envelope_sha256=body["envelope_sha256"], wraps_sha256=crypto.wraps_sha256(body["wraps"]),
         # Once stored, stays stored (13 at 72d5ddc).

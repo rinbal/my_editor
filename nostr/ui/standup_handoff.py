@@ -554,8 +554,12 @@ class HandoffView(QWidget):
         self.retry_button.setVisible(retry)
         # Another device stored this round: the list is read again (the
         # contract's words: "Erneut laden", so a context of its own).
-        self.retry_button.setText(pgettext("submissions list", "Reload") if retry
-                                  and progress.failure.retry is Step.RELOADING
+        # A stored revision that is not the writer's: the next one goes
+        # ("Erneut senden", 12.4 at bfa8844).
+        again = progress.failure.retry if retry else None
+        self.retry_button.setText(pgettext("submissions list", "Reload")
+                                  if again is Step.RELOADING
+                                  else _("Send Again") if again is Step.REVISING
                                   else _("Try Again"))
         retry_at = progress.failure.retry_at if retry else None
         waiting = retry_at is not None and retry_at > _now()

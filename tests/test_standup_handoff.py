@@ -110,6 +110,17 @@ def test_another_devices_round_has_the_owners_words_in_both_languages(german):
     assert i18n._(words.SUBMITTED_ELSEWHERE) == "Auf einem anderen Gerät eingereicht."
 
 
+def test_a_kept_copy_that_is_not_the_writers_is_said_once_with_send_again(german, view):
+    # 12.4 at bfa8844: not handed in, with "Erneut senden", which sends the
+    # next revision; no words about another copy.
+    failure = Failure(words.NOT_HANDED_IN, Step.REVISING, title=words.NOT_SUBMITTED)
+    view.show_progress(Progress(Step.FAILED, failure=failure, held=Held.OTHER))
+    assert view.headline.text() == i18n._(words.NOT_SUBMITTED)
+    assert "{publication}" not in view.detail.text() and "Kopie" not in view.detail.text()
+    assert _shown(view) == {"close", "retry"} and view.retry_button.text() == "Erneut senden"
+    assert view.close_button.text() == "Abbrechen"
+
+
 def test_another_devices_round_is_said_calmly_with_reload(german, view):
     # Contract 2 at 72d5ddc: "Auf einem anderen Gerät eingereicht." with
     # Erneut laden; not an error, so not in the error colour.
