@@ -9,6 +9,11 @@ not fail it, and a test of 10,000 groups that took 13 s of it before
 room to show a slip. Linear: four times the groups take at most eight
 times the time (linear is four, quadratic sixteen), each the best of a
 few runs so one slow moment does not decide it.
+
+Opening a text (holds_faithfully, then the editor's read) is measured
+against the same text read without its groups ("unfolded", what the app
+read before there were groups): at 10,000 groups it takes at most three
+times the processor time.
 """
 
 from __future__ import annotations
@@ -21,7 +26,7 @@ from PySide6.QtWidgets import QApplication, QTextEdit
 
 import export_html
 import photo_group
-from markdown_writer import read_markdown
+from markdown_writer import holds_faithfully, read_markdown
 
 SMALL, LARGE = 2500, 10000
 READ_BUDGET = 8.0          # seconds of processor time for 10,000 groups
@@ -106,3 +111,63 @@ def test_folding_in_a_shown_editor_lays_each_picture_out_about_once(monkeypatch)
     assert photo_group.fold(doc) == groups
     assert len(calls) <= 2 * 2 * groups, len(calls)
     view.close()
+
+
+# --------------------------------------------------------------------------- #
+# Opening, against the unfolded read                                           #
+# --------------------------------------------------------------------------- #
+
+def _counting_folds(monkeypatch) -> list:
+    folds = []
+    fold = photo_group.fold
+    monkeypatch.setattr(photo_group, "fold",
+                        lambda doc, *a, **k: folds.append(doc) or fold(doc, *a, **k))
+    return folds
+
+
+def test_checking_a_text_folds_no_group(monkeypatch):
+    """holds_faithfully read every text twice, each read folding every
+    group: three folds to open one file, and opening 10,000 groups took
+    nearly four times the processor time of the unfolded read."""
+    folds = _counting_folds(monkeypatch)
+    text = _markdown(3)
+    assert holds_faithfully(text)
+    assert folds == []
+
+
+def test_opening_a_text_folds_its_groups_once(monkeypatch):
+    from editor import HtmlEditor
+    from main_window import MainWindow
+    folds = _counting_folds(monkeypatch)
+    ed = HtmlEditor()
+    MainWindow._load_markdown(ed, _markdown(3))
+    assert len(folds) == 1 and folds[0] is ed.document(), f"{len(folds)} folds"
+    assert len(photo_group.groups_in(ed.document())) == 3
+
+
+def _open(text: str) -> QTextDocument:
+    """What opening a file does with its text (MainWindow._load_markdown)."""
+    assert holds_faithfully(text)
+    return _read(text)
+
+
+def _unfolded(work):
+    """``work`` with pictures that follow each other left as paragraphs."""
+    fold = photo_group.fold
+    photo_group.fold = lambda doc, *a, **k: 0
+    try:
+        return work()
+    finally:
+        photo_group.fold = fold
+
+
+def test_opening_10000_groups_takes_at_most_three_times_the_unfolded_read():
+    small_text, large_text = _markdown(SMALL), _markdown(LARGE)
+    small = _best(lambda: _open(small_text), 3)
+    large = _best(lambda: _open(large_text), 2)
+    small_base = _unfolded(lambda: _best(lambda: _open(small_text), 3))
+    large_base = _unfolded(lambda: _best(lambda: _open(large_text), 2))
+    report = (f"{SMALL}: {small:.2f} s, unfolded {small_base:.2f} s; "
+              f"{LARGE}: {large:.2f} s, unfolded {large_base:.2f} s")
+    assert large < 3 * large_base, report
+

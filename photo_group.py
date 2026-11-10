@@ -221,9 +221,14 @@ def table_sizes(found: Dict[str, object]) -> SizeLookup:
 @dataclass
 class Unit:
     """One picture of a group, with its caption: what the document held,
-    as fragments with their formats, and how it was joined."""
+    as fragments with their formats, and how it was joined. A unit read
+    from a document (find_groups, table_units) knows where they are in it
+    (``source``, ``picture_span``, ``caption_span``) and makes a fragment
+    when one is asked for: a fragment holds a document of its own, a few
+    kilobytes, so a document of 10,000 groups is never held as 20,000
+    more. An edit of ``source`` takes them first (_take)."""
 
-    picture: QTextDocumentFragment
+    picture: Optional[QTextDocumentFragment]
     name: str
     block_format: QTextBlockFormat
     caption: Optional[QTextDocumentFragment] = None
@@ -237,10 +242,28 @@ class Unit:
     number: int = 0
     # The picture's description (its alt text).
     alt: str = ""
+    # Where the picture and its caption are in the document it was found in.
+    source: Optional[QTextDocument] = None
+    picture_span: Optional[Tuple[int, int]] = None
+    caption_span: Optional[Tuple[int, int]] = None
 
     @property
     def wide(self) -> bool:
         return is_wide(self.name)
+
+    @property
+    def has_caption(self) -> bool:
+        return self.caption is not None or self.caption_span is not None
+
+    def picture_fragment(self) -> QTextDocumentFragment:
+        if self.picture is not None:
+            return self.picture
+        return _fragment(self.source, *self.picture_span)
+
+    def caption_fragment(self) -> Optional[QTextDocumentFragment]:
+        if self.caption is not None or self.caption_span is None:
+            return self.caption
+        return _fragment(self.source, *self.caption_span)
 
 
 def _alt(cf) -> str:
@@ -340,8 +363,8 @@ def _picture_units(doc, block) -> Optional[List[Unit]]:
 
     def unit(n: int, join: Optional[str]) -> Unit:
         position, _char, cf = pieces[n]
-        return Unit(_fragment(doc, position, position + 1), cf.toImageFormat().name(),
-                    QTextBlockFormat(fmt), join=join, alt=_alt(cf))
+        return Unit(None, cf.toImageFormat().name(), QTextBlockFormat(fmt), join=join,
+                    alt=_alt(cf), source=doc, picture_span=(position, position + 1))
 
     if len(pictures) == 1:
         rest = pieces[1:]
@@ -356,7 +379,7 @@ def _picture_units(doc, block) -> Optional[List[Unit]]:
         if join is None or not _is_caption_pieces(_merge_chars(words)):
             return None
         found = unit(0, None)
-        found.caption = _fragment(doc, words[0][0], block.position() + block.length() - 1)
+        found.caption_span = (words[0][0], block.position() + block.length() - 1)
         found.caption_text = "".join(char for _p, char, _f in words)
         found.caption_format = QTextBlockFormat(fmt)
         found.caption_join = join
@@ -441,12 +464,12 @@ def find_groups(doc) -> List[_Found]:
         if not run:
             bounds[0] = block.position()
         bounds[1] = block.position() + block.length() - 1
-        if len(units) == 1 and units[0].caption is None and units[0].join is None:
+        if len(units) == 1 and not units[0].has_caption and units[0].join is None:
             following = items[i + 1] if i + 1 < len(items) else None
             if following is not None and _caption_paragraph(following):
                 unit = units[0]
-                unit.caption = _fragment(doc, following.position(),
-                                         following.position() + following.length() - 1)
+                unit.caption_span = (following.position(),
+                                     following.position() + following.length() - 1)
                 unit.caption_text = following.text()
                 unit.caption_format = QTextBlockFormat(following.blockFormat())
                 bounds[1] = following.position() + following.length() - 1
@@ -535,9 +558,9 @@ def _write_unit(cursor: QTextCursor, unit: Unit, caption_gap: float) -> None:
         fmt.clearProperty(JOIN)
     fmt.clearProperty(CAPTION)
     fmt.clearProperty(CAPTION_JOIN)
-    cursor.insertFragment(unit.picture)
+    cursor.insertFragment(unit.picture_fragment())
     cursor.setBlockFormat(fmt)
-    if unit.caption is None:
+    if not unit.has_caption:
         return
     caption = _placed(unit.caption_format or unit.block_format, caption_gap)
     caption.clearProperty(UNIT)
@@ -548,7 +571,7 @@ def _write_unit(cursor: QTextCursor, unit: Unit, caption_gap: float) -> None:
     else:
         caption.clearProperty(CAPTION_JOIN)
     cursor.insertBlock(caption, QTextCharFormat())
-    cursor.insertFragment(unit.caption)
+    cursor.insertFragment(unit.caption_fragment())
     cursor.setBlockFormat(caption)
 
 
@@ -673,13 +696,26 @@ def fold(doc: QTextDocument, sizes: Optional[SizeLookup] = None, *,
             unit.number = next(_numbers)
         items = items_of(units, sizes)
         rows = narrow_rows(items) if narrow else mosaic_rows(items)
+        # Its fragments now (the groups after it changed, so where it is
+        # still holds), and gone once its tables hold them.
+        _take(units)
         cursor.setPosition(group.first)
         cursor.setPosition(group.end, QTextCursor.MoveMode.KeepAnchor)
         cursor.removeSelectedText()
         _build(cursor, units, rows, NARROW if narrow else MOSAIC, next(_numbers), gap,
                caption_gap, margin)
+        for unit in units:
+            unit.picture = unit.caption = None
     cursor.endEditBlock()
     return len(groups)
+
+
+def _take(units: Sequence[Unit]) -> None:
+    """The fragments of ``units``, taken while their document still holds
+    them where they were read."""
+    for unit in units:
+        unit.picture = unit.picture_fragment()
+        unit.caption = unit.caption_fragment()
 
 
 # --------------------------------------------------------------------------- #
@@ -743,15 +779,15 @@ def table_units(doc, table) -> List[Unit]:
             if picture is None:
                 continue
             join = fmt.property(JOIN)
-            units.append(Unit(_fragment(doc, picture[0], picture[0] + 1),
-                              picture[1].toImageFormat().name(), _own_format(fmt),
+            units.append(Unit(None, picture[1].toImageFormat().name(), _own_format(fmt),
                               join=str(join) if join is not None else None,
-                              number=int(fmt.property(UNIT)), alt=_alt(picture[1])))
+                              number=int(fmt.property(UNIT)), alt=_alt(picture[1]),
+                              source=doc, picture_span=(picture[0], picture[0] + 1)))
         elif fmt.boolProperty(CAPTION) and units:
             unit = units[-1]
             join = fmt.property(CAPTION_JOIN)
             if block.length() > 1:
-                unit.caption = _fragment(doc, block.position(), block.position() + block.length() - 1)
+                unit.caption_span = (block.position(), block.position() + block.length() - 1)
                 unit.caption_text = block.text()
                 unit.caption_format = _own_format(fmt)
                 unit.caption_join = str(join) if join is not None else None
@@ -840,17 +876,17 @@ def write_paragraphs(cursor: QTextCursor, units: Sequence[Unit]) -> None:
         elif not first:
             cursor.insertBlock(_own_format(unit.block_format), QTextCharFormat())
         first = False
-        cursor.insertFragment(unit.picture)
+        cursor.insertFragment(unit.picture_fragment())
         cursor.setBlockFormat(_own_format(unit.block_format))
-        if unit.caption is None:
+        if not unit.has_caption:
             continue
         if unit.caption_join is not None:
             _insert_join(cursor, unit.caption_join)
-            cursor.insertFragment(unit.caption)
+            cursor.insertFragment(unit.caption_fragment())
             continue
         caption_format = _own_format(unit.caption_format or unit.block_format)
         cursor.insertBlock(caption_format, QTextCharFormat())
-        cursor.insertFragment(unit.caption)
+        cursor.insertFragment(unit.caption_fragment())
         cursor.setBlockFormat(caption_format)
 
 
@@ -863,11 +899,14 @@ def unfold(doc: QTextDocument) -> int:
     cursor.beginEditBlock()
     for group in reversed(groups):
         units = group.units
+        _take(units)
         cursor.setPosition(group.start)
         cursor.setPosition(group.end, QTextCursor.MoveMode.KeepAnchor)
         cursor.removeSelectedText()
         cursor.setBlockFormat(QTextBlockFormat())
         write_paragraphs(cursor, units)
+        for unit in units:
+            unit.picture = unit.caption = None
     cursor.endEditBlock()
     return len(groups)
 

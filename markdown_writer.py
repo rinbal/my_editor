@@ -51,6 +51,7 @@ points (a Blossom URL, a sidecar file); this module never does.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -931,14 +932,15 @@ def _join_soft_breaks(doc: QTextDocument) -> int:
         position = start + 1
 
 
-def _fingerprint(doc) -> list:
+def _fingerprint(doc) -> bytes:
     """What a document shows: each block's kind and text, and each piece's
-    formatting, so two renderings can be compared."""
-    prints = []
+    formatting, so two renderings can be compared; as a digest, so a long
+    document is not held twice while it is compared."""
+    prints = hashlib.blake2b(digest_size=32)
     for block in iter_blocks(doc):
         fmt = block.blockFormat()
         text_list = block.textList()
-        prints.append((
+        prints.update(repr((
             fmt.headingLevel(),
             (text_list.format().style() in _ORDERED_STYLES) if text_list else None,
             text_list.format().indent() if text_list else 0,
@@ -949,8 +951,8 @@ def _fingerprint(doc) -> list:
                    f.anchorHref() if f.isAnchor() else "",
                    f.toImageFormat().name() if f.isImageFormat() else "")
                   for text, f in iter_block_runs(block)),
-        ))
-    return prints
+        )).encode("utf-8", "surrogatepass"))
+    return prints.digest()
 
 
 # A footnote definition as typed ("[^1]: Ibid.") at a line's start, maybe
@@ -991,11 +993,14 @@ def read_markdown(doc: QTextDocument, markdown: str, features=READ_FEATURES) -> 
     _read_counting(doc, markdown, features)
 
 
-def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES) -> Tuple[int, int]:
+def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
+                   groups: bool = True) -> Tuple[int, int]:
     """read_markdown, saying how many soft line breaks the Markdown has
     that the editor holds, and how many it holds. The editor's reading
     (READ_FEATURES) keeps them; a preview or a paste reads them as
-    Markdown readers do, as spaces."""
+    Markdown readers do, as spaces. ``groups``: pictures that follow each
+    other are folded into their group, as the editor shows them; without,
+    they stay the paragraphs they are in the Markdown."""
     markdown, alts = _whole_descriptions(markdown, features)
     marked = 0
     if features == READ_FEATURES:
@@ -1005,8 +1010,9 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES) ->
         _restore_descriptions(doc, alts)
     joined = _join_soft_breaks(doc) if marked else 0
     normalize_after_markdown_load(doc)
-    # Pictures that follow each other show as one group (photo_group).
-    photo_group.fold(doc)
+    if groups:
+        # Pictures that follow each other show as one group (photo_group).
+        photo_group.fold(doc)
     return marked, joined
 
 
@@ -1307,14 +1313,23 @@ def holds_faithfully(markdown: str) -> bool:
             or _tab_in_fence(markdown) or _table_loses(markdown)):
         return False
     # Read as the editor reads it (footnotes as their text, code in cells
-    # without the escape of its pipes).
+    # without the escape of its pipes), but with its pictures as the
+    # paragraphs they are: the editor writes a photo group back as exactly
+    # the paragraphs it was read from (photo_group, whose tests hold it to
+    # the byte), so the paragraphs are what is checked. The fold is the
+    # editor's own, done once when the text is opened; here it would cost
+    # as much again (10,000 groups: seconds of processor time and hundreds
+    # of megabytes).
     first = QTextDocument()
-    marked, joined = _read_counting(first, markdown)
+    marked, joined = _read_counting(first, markdown, groups=False)
     if joined != marked:
         return False            # a soft break Qt did not read as marked
+    shown = _fingerprint(first)
+    written = document_to_markdown(first, _image_as_read)
+    del first                   # freed before the next read
     second = QTextDocument()
-    read_markdown(second, document_to_markdown(first, _image_as_read))
-    return _fingerprint(first) == _fingerprint(second)
+    _read_counting(second, written, groups=False)
+    return shown == _fingerprint(second)
 
 
 def _image_as_read(fmt) -> str:

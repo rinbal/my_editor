@@ -226,10 +226,10 @@ def _group_rmd(group, copy_image) -> list[str]:
             lines.append(f"![{_escape_md(unit.alt)}]({target})" + ("{.wide}" if unit.wide else ""))
         else:
             lines.append(_UNAVAILABLE_MD)
-        if unit.caption is None or not unit.caption_text.strip():
+        if not unit.has_caption or not unit.caption_text.strip():
             continue
         caption = QTextDocument()
-        QTextCursor(caption).insertFragment(unit.caption)
+        QTextCursor(caption).insertFragment(unit.caption_fragment())
         for block in iter_blocks(caption):
             text = _render_runs_md(list(iter_block_runs(block)), copy_image).strip()
             if text:

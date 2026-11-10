@@ -434,7 +434,8 @@ def _group_html(group, picture_of, render_image) -> str:
     figures = []
     for unit in group.units:
         src, size, source = picture_of(unit.name)
-        caption = _caption_html(unit.caption, render_image) if unit.caption_text.strip() else ""
+        caption = (_caption_html(unit.caption_fragment(), render_image)
+                   if unit.caption_text.strip() else "")
         figures.append(GroupFigure(src, size, source, unit.alt, caption, unit.caption_text,
                                    unit.wide))
     return group_figures_html(figures)
