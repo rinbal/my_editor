@@ -204,6 +204,19 @@ def test_pictures_outside_the_documents_folder_are_not_read(app, tmp_path):
     assert srcs[3].startswith("data:image/png;base64,")
 
 
+def test_a_script_address_or_a_picture_with_script_never_runs(app):
+    import base64
+    svg = base64.b64encode(b'<svg xmlns="http://www.w3.org/2000/svg" width="30" height="20">'
+                           b'<script>alert(1)</script><rect width="30" height="20"/></svg>')
+    page = _page("![a](javascript:alert(1))\n\n"
+                 f"![b](data:image/svg+xml;base64,{svg.decode()})\n\n![c](photo.png)\n")
+    srcs = _group_srcs(page)
+    assert len(srcs) == 3 and srcs[0] == ""
+    assert "javascript:" not in page and "<script>alert" not in page
+    # An SVG is a picture in an <img> at most, where no script of it runs.
+    assert srcs[1] == "" or srcs[1].startswith("data:image/")
+
+
 def test_a_decompression_bomb_is_not_carried(app, tmp_path):
     # A PNG header that claims 60,000 x 60,000 pixels.
     import struct
