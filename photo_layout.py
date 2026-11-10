@@ -1,22 +1,27 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Photo group layout: design reference, not shipping code.
+"""Photo group layout: the one engine behind every surface that shows a group
+of pictures (docs/publishing-experience.md, "Photo groups").
 
 Line for line the same steps as photo_layout.js, so both give bit-identical
-results: only +, -, *, /, min, max and comparisons (no log, pow or exp), sums
-left to right, ties keep the earlier candidate. Python floats and JavaScript
-numbers are both IEEE 754 doubles rounded to nearest, so the same operations
-in the same order give the same bits.
+results, the markup text included: only +, -, *, /, min, max, floor and
+comparisons (no log, pow or exp), sums left to right, ties keep the earlier
+candidate. Python floats and JavaScript numbers are both IEEE 754 doubles
+rounded to nearest, so the same operations in the same order give the same
+bits. shared/photo-layout-vectors.json pins both engines
+(tools/photo-layout-vectors.mjs writes it). The comments on each step live
+in photo_layout.js.
 """
 
 import math
 
 CONSTANTS = {
-    'version': 4,
+    'version': 5,
     'panorama': 2.4,
     'tall': 0.4,
     'wideCap': {'px': 900, 'vh': 0.85},
-    'provisional': (3, 2),
+    'provisional': [3, 2],
+    'limits': {'maxSide': 65535, 'maxRatio': 32, 'maxGroup': 60},
     'regular': {'width': 680, 'gap': 12, 'cap': 560, 'minSide': 0.16, 'captionWidth': 0.28,
                 'captionPerPx': 0.12, 'lowHeight': 0.3, 'highHeight': 1.0},
     'phone': {'gap': 8, 'capPx': 520, 'capVh': 0.65, 'captionMin': 136, 'spread': 1.6,
@@ -27,28 +32,55 @@ CONSTANTS = {
 }
 
 
+def _whole(value):
+    """``value`` as an int when JavaScript's Number.isInteger holds for it, else None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
+
+
+def picture_size(w, h):
+    """``(w, h)`` when both are whole pixel sizes the engine accepts, else None."""
+    limits = CONSTANTS['limits']
+    w, h = _whole(w), _whole(h)
+    if w is None or h is None or w < 1 or h < 1 or w > limits['maxSide'] or h > limits['maxSide']:
+        return None
+    if w > h * limits['maxRatio'] or h > w * limits['maxRatio']:
+        return None
+    return w, h
+
+
 def ratio_of(item):
-    if item.get('w', 0) > 0 and item.get('h', 0) > 0:
-        return item['w'] / item['h']
+    size = picture_size(item.get('w'), item.get('h'))
+    if size:
+        return size[0] / size[1]
     w, h = CONSTANTS['provisional']
     return w / h
 
 
-def cell_info(cell, items):
-    """Ratio, internal gaps (k) and internal captions (c) of a cell; see cellInfo."""
+def _caption_length(item):
+    length = _whole(item.get('caption'))
+    return length if length is not None and length > 0 else 0
+
+
+def _cell_info(cell, items):
     if isinstance(cell, int):
         return {'r': ratio_of(items[cell]), 'k': 0, 'c': 0, 'figs': [cell]}
     inverse = 0
     c = 0
     for n, index in enumerate(cell):
         inverse = inverse + 1 / ratio_of(items[index])
-        if n < len(cell) - 1 and items[index].get('caption'):
+        if n < len(cell) - 1 and _caption_length(items[index]):
             c = c + 1
     return {'r': 1 / inverse, 'k': len(cell) - 1, 'c': c, 'figs': list(cell)}
 
 
 def row_geometry(row, items, W, g, cap):
-    cells = [cell_info(cell, items) for cell in row]
+    cells = [_cell_info(cell, items) for cell in row]
     sum_r = 0
     sum_rk = 0
     for cell in cells:
@@ -74,13 +106,7 @@ def row_geometry(row, items, W, g, cap):
     return {'height': H, 'width': width, 'tiles': tiles}
 
 
-def _caption_length(item):
-    caption = item.get('caption') or 0
-    return 1 if caption is True else (caption if caption > 0 else 0)
-
-
 def _inside_captions_fit(row, items, ref):
-    """Whether every caption inside a stack fits on one line; see insideCaptionsFit."""
     geo = row_geometry(row, items, ref['width'], ref['gap'], ref['cap'])
     t = 0
     for cell in row:
@@ -107,7 +133,7 @@ def _cost(rows, items, ref, weights):
             side = min(tile['w'], tile['h']) / W
             if side < ref['minSide']:
                 sliver = sliver + (ref['minSide'] - side)
-            if items[tile['index']].get('caption') and tile['w'] / W < ref['captionWidth']:
+            if _caption_length(items[tile['index']]) and tile['w'] / W < ref['captionWidth']:
                 caption_short = caption_short + (ref['captionWidth'] - tile['w'] / W)
             area = (tile['w'] / W) * (tile['h'] / W)
             if first:
@@ -165,13 +191,57 @@ def _justified(s, items, ref, weights):
     rows = []
     i = len(s)
     while i > 0:
-        rows.insert(0, s[i - came[i]:i])
+        rows.append(s[i - came[i]:i])
         i -= came[i]
+    rows.reverse()
     return rows
 
 
-def layout(items, stacks=True):
-    """The layout of one group; ``stacks=False`` only for comparing variant A."""
+def _stands_alone(item):
+    r = ratio_of(item)
+    return item.get('wide') is True or r >= CONSTANTS['panorama'] or r <= CONSTANTS['tall']
+
+
+def _alone_name(item):
+    if item.get('wide') is True:
+        return 'wide'
+    return 'panorama' if ratio_of(item) >= CONSTANTS['panorama'] else 'tall'
+
+
+def _capped(items):
+    return len(items) > CONSTANTS['limits']['maxGroup']
+
+
+def _compatible_runs(items):
+    spread = CONSTANTS['phone']['spread']
+    runs = []
+    run = None
+    lo = 0
+    hi = 0
+    alone = _capped(items)
+    for index, item in enumerate(items):
+        r = ratio_of(item)
+        if alone or _stands_alone(item):
+            runs.append([index])
+            run = None
+            continue
+        if run is not None and max(hi, r) <= min(lo, r) * spread:
+            run.append(index)
+            lo = min(lo, r)
+            hi = max(hi, r)
+            continue
+        run = [index]
+        runs.append(run)
+        lo = r
+        hi = r
+    return runs
+
+
+def layout(items):
+    """The wide-screen layout of one group: ``[{'cells', 'name'}]``, one per row."""
+    if _capped(items):
+        return [{'cells': [index], 'name': _alone_name(item) if _stands_alone(item) else 'capped'}
+                for index, item in enumerate(items)]
     ref = CONSTANTS['regular']
     weights = CONSTANTS['weights']
     rows, names, segment = [], [], []
@@ -182,7 +252,6 @@ def layout(items, stacks=True):
             run_size[index] = len(run)
 
     def keeps_runs(stack):
-        # A stack never splits a run: all its pictures in one run, or each a run of its own.
         return all(run_size[i] == 1 for i in stack) or all(run_of[i] == run_of[stack[0]] for i in stack)
 
     def flush():
@@ -195,8 +264,6 @@ def layout(items, stacks=True):
             chosen = None
             value = 0
             for name, candidate in _templates(list(segment)):
-                if not stacks and any(not isinstance(cell, int) for row in candidate for cell in row):
-                    continue
                 if any(not isinstance(cell, int) and not keeps_runs(cell) for row in candidate for cell in row):
                     continue
                 if not all(_inside_captions_fit(row, items, ref) for row in candidate):
@@ -215,50 +282,17 @@ def layout(items, stacks=True):
         segment.clear()
 
     for index, item in enumerate(items):
-        r = ratio_of(item)
         if _stands_alone(item):
             flush()
             rows.append([index])
-            names.append('wide' if item.get('wide') is True else 'panorama' if r >= CONSTANTS['panorama'] else 'tall')
+            names.append(_alone_name(item))
         else:
             segment.append(index)
     flush()
     return [{'cells': cells, 'name': names[n]} for n, cells in enumerate(rows)]
 
 
-def _stands_alone(item):
-    """Panorama, very tall or #wide; see standsAlone in photo_layout.js."""
-    r = ratio_of(item)
-    return item.get('wide') is True or r >= CONSTANTS['panorama'] or r <= CONSTANTS['tall']
-
-
-def _compatible_runs(items):
-    """Runs of similar shape; see compatibleRuns in photo_layout.js."""
-    spread = CONSTANTS['phone']['spread']
-    runs = []
-    run = None
-    lo = 0
-    hi = 0
-    for index, item in enumerate(items):
-        r = ratio_of(item)
-        if _stands_alone(item):
-            runs.append([index])
-            run = None
-            continue
-        if run is not None and max(hi, r) <= min(lo, r) * spread:
-            run.append(index)
-            lo = min(lo, r)
-            hi = max(hi, r)
-            continue
-        run = [index]
-        runs.append(run)
-        lo = r
-        hi = r
-    return runs
-
-
 def _reads_as_row(figures, items):
-    """Whether all side by side still read well; see readsAsRow in photo_layout.js."""
     p = CONSTANTS['phone']
     W = p['refWidth']
     cap = min(p['capPx'], p['capVh'] * p['refViewport'])
@@ -271,13 +305,13 @@ def _reads_as_row(figures, items):
         w = r * H
         if w * p['spread'] < min(W, cap * r):
             return False
-        if items[index].get('caption') and w < p['captionMin']:
+        if _caption_length(items[index]) and w < p['captionMin']:
             return False
     return True
 
 
 def phone_segments(result, items):
-    """Narrow-column segments, one for each run, never cut; see phoneSegments in photo_layout.js."""
+    """Narrow-column segments, one for each run of similar shape, never cut."""
     cell_of = {}
     for r, row in enumerate(result):
         for c, cell in enumerate(row['cells']):
@@ -306,7 +340,7 @@ def phone_segments(result, items):
 
 
 def phone_geometry(segment, items, W, V):
-    """Geometry of a phone segment; see phoneGeometry in photo_layout.js."""
+    """Geometry of a phone segment at container width W and viewport height V."""
     p = CONSTANTS['phone']
     alone = len(segment['figures']) == 1 and items[segment['figures'][0]].get('wide') is True
     wide_cap = CONSTANTS['wideCap']
@@ -326,7 +360,7 @@ def phone_geometry(segment, items, W, V):
     for index in segment['figures']:
         r = ratio_of(items[index])
         w = r * H
-        f = max(w, min(p['captionMin'], W)) if segment['mode'] != 'row' and items[index].get('caption') else w
+        f = max(w, min(p['captionMin'], W)) if segment['mode'] != 'row' and _caption_length(items[index]) else w
         pictures.append(w)
         figures.append(f)
         total = total + f
@@ -336,13 +370,14 @@ def phone_geometry(segment, items, W, V):
 
 
 def notation(result):
+    """``0 | 1/2 ; 3``: rows split by ``;``, cells by ``|``, a stack's figures by ``/``."""
     def cell_text(cell):
         return str(cell) if isinstance(cell, int) else '/'.join(str(i) for i in cell)
     return ' ; '.join(' | '.join(cell_text(c) for c in row['cells']) for row in result)
 
 
 def fixed4(x):
-    """Fixed-point text for markup; see fixed4 in photo_layout.js."""
+    """Fixed-point text for markup: floor(x * 10^4 + 0.5), trailing zeros dropped."""
     n = math.floor(x * 10000 + 0.5)
     a = -n if n < 0 else n
     whole = a // 10000
@@ -351,8 +386,8 @@ def fixed4(x):
 
 
 def cell_properties(row, row_index, items):
-    """Wide-layout place of each cell of one row; see cellProperties in photo_layout.js."""
-    cells = [cell_info(cell, items) for cell in row['cells']]
+    """The wide-layout place of each cell of one row, as custom properties."""
+    cells = [_cell_info(cell, items) for cell in row['cells']]
     rs = rk = rl = 0
     rc = 0
     for cell in cells:
@@ -376,7 +411,7 @@ def cell_properties(row, row_index, items):
 
 
 def group_markup(result, items):
-    """The group's nodes in author order; see groupMarkup in photo_layout.js."""
+    """The group's markup nodes in author order: a flat list (see groupMarkup)."""
     segment_of = {}
     for k, segment in enumerate(phone_segments(result, items)):
         for index in segment['figures']:
@@ -403,12 +438,13 @@ def group_markup(result, items):
 
 
 def style_text(properties):
-    """Custom properties as style text; see styleText in photo_layout.js."""
+    """Custom properties as style text, in the order given: ``--row:1;--rs:1.5``."""
     return ';'.join(f'{key}:{value}' for key, value in properties.items())
 
 
 def group_html(nodes, figure):
-    """The track content as HTML; see groupHTML in photo_layout.js."""
+    """The group's track content as HTML; ``figure(index, properties)`` writes
+    one picture (see groupHTML in photo_layout.js)."""
     def cell(node):
         if node['kind'] == 'figure':
             return figure(node['index'], node['properties'])

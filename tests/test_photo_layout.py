@@ -47,8 +47,8 @@ SPDX = (b"# SPDX-FileCopyrightText: 2026 rinbal\n"
 
 # The SHA-256 of STANDUP's files as vendored. Vendoring a newer engine
 # means copying both files again and writing their new hashes here.
-ENGINE_SHA256 = "24dbf09982baa1f3dd96229f61f5289f00981236ab59b58e9647df63585c2bee"
-VECTORS_SHA256 = "27c3b782638a70cb5671ce106970714f25ce499e1b019e9e18a59f0ffb971751"
+ENGINE_SHA256 = "1b36a84f33309fc52c4bef9ee58e6591500a468fb7691eb7155b33b292031853"
+VECTORS_SHA256 = "6d1f21f193ebc89bb27bb5c323c195e4a0b48face4d215af6386ca7210ac368d"
 
 
 @pytest.fixture(scope="module")
@@ -145,10 +145,13 @@ def test_no_run_of_similar_pictures_is_ever_split(vectors):
     spread = CONSTANTS["phone"]["spread"]
     for case in vectors["cases"]:
         items = case["items"]
+        # A group past the limit is not searched: every picture alone.
+        over = len(items) > CONSTANTS["limits"]["maxGroup"]
         runs = []
         for i, item in enumerate(items):
             r = ratio_of(item)
-            alone = r >= CONSTANTS["panorama"] or r <= CONSTANTS["tall"] or item.get("wide") is True
+            alone = (over or r >= CONSTANTS["panorama"] or r <= CONSTANTS["tall"]
+                     or item.get("wide") is True)
             if runs and not alone and not runs[-1]["alone"]:
                 shapes = [ratio_of(items[k]) for k in runs[-1]["figures"]] + [r]
                 if max(shapes) <= min(shapes) * spread:
