@@ -1394,6 +1394,7 @@ def test_on_another_computer_a_submission_file_is_told_before_it_is_offered(tmp_
     assert shown[-1].message == ("If this is a file of one of your submissions, the editorial "
                                  "team can no longer open it. You can’t undo this action.")
     nam.settle()
+    QApplication.processEvents()                     # laid out again on the next turn
     # Eight bytes asked for, by range, once: then it is in its own group.
     assert server.reads == [(sha, "bytes=0-7")]
     assert store.is_submission_file(sha) and tiles(world) == []
@@ -1452,6 +1453,7 @@ def test_when_no_server_gives_the_first_bytes_the_picker_says_so_and_asks_again(
     server.contents[sha] = body
     picker.dialog._pick_notice_button.click()
     nam.settle()
+    QApplication.processEvents()                     # laid out again on the next turn
     assert store.is_submission_file(sha)
     assert [t.key for t in tiles(picker)] == []      # never offered to insert
 
@@ -1463,3 +1465,94 @@ def test_an_answer_for_the_account_left_tells_nothing(tmp_path):
     nam.settle()
     assert store.submission_state(sha) is False      # not listed for this account
     assert sha not in store._sealed_known
+
+
+# -- many files listed from another computer (RG-M2r2a 4) ----------------------------
+
+def _many_from_elsewhere(tmp_path, count):
+    """``count`` plain byte streams another computer uploaded: each must
+    be read before it is offered."""
+    from tests.blossom_fakes import SERVER as BLOSSOM, descriptor
+    store, server, nam = _real_store(tmp_path, tmp_path / "blobs")
+    shas = []
+    for n in range(count):
+        body = b"PK\x03\x04 notes " + bytes([n])
+        sha = sha_of(body)
+        server.contents[sha] = body
+        server.blobs[sha] = descriptor(sha, server=BLOSSOM, size=len(body),
+                                       mime="application/octet-stream", url=f"{BLOSSOM}/{sha}")
+        shas.append(sha)
+    store.fetch(force=True)
+    nam.settle()
+    return store, server, nam, shas
+
+
+def _heads_issued(nam, shas):
+    return [r for r in nam.issued if r.request().url().path().lstrip("/") in shas]
+
+
+def test_only_a_few_files_are_read_at_once(tmp_path):
+    from nostr.blossom.store import MAX_HEADS_AT_ONCE
+    store, server, nam, shas = _many_from_elsewhere(tmp_path, 10)
+    for sha in shas:
+        store.check_submission_file(sha)
+    assert len(_heads_issued(nam, shas)) == MAX_HEADS_AT_ONCE
+    nam.settle()
+    assert len(_heads_issued(nam, shas)) == 10
+    assert all(store.submission_state(sha) is False for sha in shas)
+
+
+def test_a_new_listing_reads_again_what_was_on_its_way(tmp_path):
+    store, server, nam, shas = _many_from_elsewhere(tmp_path, 6)
+    for sha in shas:
+        store.check_submission_file(sha)
+    store.fetch(force=True)                         # the answers are for the old listing
+    nam.settle()
+    assert all(store.submission_state(sha) is None for sha in shas)
+    read = len(_heads_issued(nam, shas))
+    for sha in shas:
+        store.check_submission_file(sha)            # never stuck as being asked
+    nam.settle()
+    assert all(store.submission_state(sha) is False for sha in shas)
+    # Each read once for the new listing: what waited for the old is gone.
+    assert len(_heads_issued(nam, shas)) - read == len(shas)
+
+
+def test_a_tile_made_again_in_place_is_drawn_again(tmp_path, monkeypatch):
+    from dataclasses import replace
+    world = build(tmp_path, monkeypatch, FakeStore([media(1), media(2)]))
+    drawn = []
+    world.model.dataChanged.connect(lambda top, _bottom, _roles=(): drawn.append(top.row()))
+    second = tiles(world)[1]
+    assert world.model.replace(replace(second, detail="told")) is True
+    assert drawn == [1] and tiles(world)[1].detail == "told"
+    assert world.model.replace(replace(second, key="ff" * 32)) is False and drawn == [1]
+
+
+def test_the_grid_is_not_laid_out_again_for_each_file_told(tmp_path, monkeypatch):
+    store, server, nam, shas = _many_from_elsewhere(tmp_path, 12)
+    world = build(tmp_path, monkeypatch, store)
+    resets = []
+    world.model.modelReset.connect(lambda: resets.append(True))
+    nam.settle()
+    QApplication.processEvents()
+    assert resets == []                             # each tile made again in place
+    assert len(tiles(world)) == 12 and all(not tile.unsure for tile in tiles(world))
+
+
+def test_a_file_told_that_leaves_the_filter_lays_the_grid_out_once_per_turn(tmp_path,
+                                                                            monkeypatch):
+    store, server, nam, shas = _many_from_elsewhere(tmp_path, 3)
+    picker = build(tmp_path, monkeypatch, store, pick=True)
+    assert len(tiles(picker)) == 3
+    calls = []
+    original = picker.dialog._rebuild
+    monkeypatch.setattr(picker.dialog, "_rebuild", lambda *a: (calls.append(1), original())[1])
+    # Three told in one turn to be submissions' files: never offered to
+    # insert, so they leave the grid, laid out once.
+    store._sealed_known.update({sha: True for sha in shas})
+    for sha in shas:
+        picker.dialog._on_submission_checked(sha)
+    assert calls == []
+    QApplication.processEvents()
+    assert calls == [1] and tiles(picker) == []

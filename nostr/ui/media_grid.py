@@ -177,6 +177,16 @@ class MediaModel(QAbstractListModel):
     def row_of(self, key: str) -> int:
         return self._rows.get(key, -1)
 
+    def replace(self, tile: Tile) -> bool:
+        """``tile`` in place of the one of its key, where it stands; False
+        when no tile has that key."""
+        row = self._rows.get(tile.key)
+        if row is None:
+            return False
+        self._tiles[row] = tile
+        self.changed(tile.key)
+        return True
+
     def changed(self, key: str) -> None:
         row = self._rows.get(key)
         if row is not None:

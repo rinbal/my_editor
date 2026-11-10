@@ -116,6 +116,7 @@ class FakeReply(QObject):
 
     finished = Signal()
     readyRead = Signal()
+    metaDataChanged = Signal()
     uploadProgress = Signal(int, int)
     downloadProgress = Signal(int, int)
     redirected = Signal(QUrl)
@@ -147,6 +148,7 @@ class FakeReply(QObject):
         self._url = url
         self._request = None
         self._read = 0              # bytes taken by read()
+        self.read_buffer_size = 0   # 0: unbounded, as Qt's default
         self.aborted = False
         self.deleted = False
         self.settled = False
@@ -198,6 +200,9 @@ class FakeReply(QObject):
         self.aborted = True
         self._error = QNetworkReply.OperationCanceledError
 
+    def setReadBufferSize(self, size: int) -> None:  # noqa: N802, Qt's name
+        self.read_buffer_size = int(size)
+
     def deleteLater(self) -> None:
         # Overridden so a fake never gets scheduled for real deletion
         # while a test still holds it.
@@ -210,6 +215,7 @@ class FakeReply(QObject):
 
     def finish(self) -> None:
         self.settled = True
+        self.metaDataChanged.emit()     # the headers first, as Qt has them
         if self._body and not self.aborted:
             self.readyRead.emit()   # the body arrives, then the reply ends
         self.finished.emit()

@@ -247,6 +247,8 @@ class MediaLibraryDialog(QDialog):
         layout.addLayout(self._build_toolbar())
 
         self._model = MediaModel(self)
+        # A layout asked for once this turn of the event loop (_due_rebuild).
+        self._rebuild_due = False
         self._grid = MediaGrid(is_dark=self._is_dark)
         self._grid.setModel(self._model)
         self._grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -570,7 +572,25 @@ class MediaLibraryDialog(QDialog):
                     private=state == PRIVATE, media=media,
                     pixmap=self._thumbs.get(media.hash), mime=mime, unsure=sealed is None)
 
-    def _on_submission_checked(self, _sha: str) -> None:
+    def _on_submission_checked(self, sha: str) -> None:
+        """A file's first bytes told (or no server gave them): its tile is
+        made again in place. Only when that changes where it stands (the
+        filter no longer takes it, or names sort it elsewhere) is the grid
+        laid out again, once per turn of the event loop however many
+        answer in it: a library of a thousand files listed from another
+        computer is not rebuilt a thousand times (RG-M2r2a 4)."""
+        old, media = self._model.tile(sha), self._store.files.get(sha)
+        new = self._file_tile(media) if old is not None and media is not None else None
+        sort = self._sort_combo.currentData() or "newest"
+        if new is not None and self._matches(new) and (sort != "name" or new.name == old.name):
+            self._model.replace(new)
+        elif not self._rebuild_due:
+            self._rebuild_due = True
+            QTimer.singleShot(0, self, self._due_rebuild)
+        self._refresh_pick_notice()
+
+    def _due_rebuild(self) -> None:
+        self._rebuild_due = False
         self._rebuild()
         self._refresh_pick_notice()
 

@@ -377,3 +377,58 @@ def test_a_head_the_server_refuses_is_a_failure(status):
     client.read_head(f"{SERVER}/{SHA}", 8, got.append, failed.append)
     nam.settle()
     assert got == [] and len(failed) == 1
+
+
+# -- a head read is bounded whatever the server does (RG-M2r2a 4) -------------------
+
+def _head(reply):
+    client, nam = _client([reply])
+    got, failed = [], []
+    client.read_head(f"{SERVER}/{SHA}", 8, got.append, failed.append)
+    return reply, got, failed
+
+
+def test_a_head_read_buffers_no_more_than_it_asks_for():
+    reply, got, _failed = _head(FakeReply(status=200, body=b"SMF1abcd" + b"x" * 4096))
+    assert reply.read_buffer_size == 8
+    reply.finish()
+    assert got == [b"SMF1abcd"] and reply.aborted
+
+
+@pytest.mark.parametrize("status", [404, 500, 503])
+def test_a_refusal_is_stopped_at_its_headers_and_its_body_never_read(status):
+    reply, got, failed = _head(FakeReply(status=status, body=b"e" * 100_000))
+    reply.finish()
+    assert reply.aborted and reply._read == 0
+    assert got == [] and len(failed) == 1 and failed[0].status == status
+
+
+def test_a_server_that_keeps_sending_is_stopped_at_the_bound():
+    from nostr.blossom import client as module
+    reply, got, failed = _head(FakeReply(status=200, body=b"SMF1abcd"))
+    reply.progress(module._HEAD_RECEIVED_MAX + 1)
+    assert reply.aborted
+    reply.finish()
+    assert got == [] and len(failed) == 1 and "larger" in str(failed[0])
+
+
+def test_a_whole_blob_announced_by_a_server_that_ignores_the_range_is_still_read():
+    # Its first bytes are what is asked for: the announced length is no bound.
+    reply, got, failed = _head(FakeReply(status=200, body=b"SMF1abcd" + b"x" * 64))
+    reply.progress(16, 512 * 1024 * 1024)
+    assert not reply.aborted
+    reply.finish()
+    assert got == [b"SMF1abcd"] and failed == []
+
+
+def test_a_head_read_ends_at_its_deadline_however_slowly_bytes_come():
+    # The deadline's timer fires as Qt would fire it (lesson 34).
+    from PySide6.QtCore import QTimer
+    from nostr.blossom import client as module
+    reply, got, failed = _head(FakeReply(status=200, body=b"SMF"))
+    deadline = reply.findChild(QTimer)
+    assert deadline.isActive() and deadline.interval() == module._HEAD_DEADLINE_MS
+    deadline.timeout.emit()
+    assert reply.aborted
+    reply.finish()
+    assert got == [] and len(failed) == 1 and "too long" in str(failed[0])

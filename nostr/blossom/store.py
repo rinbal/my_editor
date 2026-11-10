@@ -66,6 +66,9 @@ from ..standup import crypto as scrypto
 # How long a fetched library stays "fresh". A second call within this
 # window is a no-op (matches STANDUP's 30 s constant).
 _FETCH_FRESHNESS_SECONDS = 30.0
+# Files whose first bytes are read at once to tell a submission's
+# encrypted file (check_submission_file); the others wait their turn.
+MAX_HEADS_AT_ONCE = 4
 
 # BUD-12 cursor pagination. 200 keeps a page comfortably inside the
 # client's 8 MiB response cap; 25 pages is 5000 blobs, which is far more
@@ -349,8 +352,11 @@ class MediaStore(QObject):
         # what the cache's first bytes said (is_submission_file).
         self._submission_files: Set[str] = set()
         self._sealed_known: Dict[str, bool] = {}
-        # First bytes being read from a server, and those no server gave.
+        # First bytes being read from a server, or waiting for their turn
+        # (MAX_HEADS_AT_ONCE are read at once), and those no server gave.
         self._heads_asked: Set[str] = set()
+        self._heads_waiting: List[str] = []
+        self._heads_running = 0
         self._heads_failed: Set[str] = set()
 
         # Upload jobs by name, from upload_started until they end. The
@@ -445,7 +451,9 @@ class MediaStore(QObject):
         """Read the first bytes of a file whose :meth:`submission_state`
         is None from its servers, one after the other, with a ranged GET
         of :data:`~nostr.standup.crypto.MEDIA_HEADER_BYTES` bytes; then
-        :attr:`submission_checked`. Once at a time per file; one that no
+        :attr:`submission_checked`. Once at a time per file, and at most
+        :data:`MAX_HEADS_AT_ONCE` files at once (a library listed from
+        another computer may hold a thousand: RG-M2r2a 4); one that no
         server gave is asked for again only ``again`` (Try Again)."""
         sha = (sha256 or "").lower()
         media = self._files.get(sha)
@@ -453,31 +461,52 @@ class MediaStore(QObject):
             return
         if sha in self._heads_failed and not again:
             return
-        urls = [u.get("url", "") for u in media.urls if u.get("url")] or [media.url]
         self._heads_asked.add(sha)
         self._heads_failed.discard(sha)
-        generation = self._fetch_generation
+        self._heads_waiting.append(sha)
+        self._next_heads()
+
+    def _next_heads(self) -> None:
+        while self._heads_running < MAX_HEADS_AT_ONCE and self._heads_waiting:
+            sha = self._heads_waiting.pop(0)
+            media = self._files.get(sha)
+            if media is None:
+                self._heads_asked.discard(sha)
+                continue
+            self._heads_running += 1
+            urls = [u.get("url", "") for u in media.urls if u.get("url")] or [media.url]
+            self._read_head_of(sha, urls, self._fetch_generation)
+
+    def _read_head_of(self, sha: str, urls: List[str], generation: int) -> None:
+        def done(sealed: Optional[bool]) -> None:
+            if generation != self._fetch_generation:
+                return                      # another listing: read anew for it
+            self._heads_running -= 1
+            self._heads_asked.discard(sha)
+            if sealed is None:
+                self._heads_failed.add(sha)
+            else:
+                self._sealed_known[sha] = sealed
+            self.submission_checked.emit(sha)
+            self._next_heads()
 
         def ask(left: List[str]) -> None:
-            if generation != self._fetch_generation:
-                return                      # another account's library now
             if not left:
-                self._heads_asked.discard(sha)
-                self._heads_failed.add(sha)
-                self.submission_checked.emit(sha)
+                done(None)
                 return
-
-            def got(head: bytes) -> None:
-                if generation != self._fetch_generation:
-                    return
-                self._heads_asked.discard(sha)
-                self._sealed_known[sha] = not scrypto.media_header_problem(head)
-                self.submission_checked.emit(sha)
-
-            self._client.read_head(left[0], scrypto.MEDIA_HEADER_BYTES, got,
-                                   lambda _error: ask(left[1:]))
+            self._client.read_head(
+                left[0], scrypto.MEDIA_HEADER_BYTES,
+                lambda head: done(not scrypto.media_header_problem(head)),
+                lambda _error: ask(left[1:]) if generation == self._fetch_generation else None)
 
         ask(urls)
+
+    def _drop_head_reads(self) -> None:
+        """A new listing, or another account: the head reads on their way
+        answer for nothing now, and what waits is asked anew when shown."""
+        self._heads_asked.clear()
+        self._heads_waiting.clear()
+        self._heads_running = 0
 
     def _cached_head(self, sha: str) -> Optional[bytes]:
         if self._blob_cache is None:
@@ -598,6 +627,7 @@ class MediaStore(QObject):
             return
 
         self._fetch_generation += 1
+        self._drop_head_reads()
         generation = self._fetch_generation
         pubkey = (profile.user_pubkey or "").lower()
         self._fetch_in_flight = True
@@ -905,7 +935,7 @@ class MediaStore(QObject):
         self._committed.clear()
         self._submission_files.clear()
         self._sealed_known.clear()
-        self._heads_asked.clear()
+        self._drop_head_reads()
         self._heads_failed.clear()
         self.library_changed.emit()
         self.listings_changed.emit()
