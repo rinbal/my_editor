@@ -1046,3 +1046,72 @@ def test_the_round_is_built_again_once_never_twice(said, rounds, headline):
     assert progress.step is Step.FAILED and progress.failure.sentence == headline
     assert progress.failure.retry is None
     assert [body["round"] for body in world.posted()] == rounds
+
+
+# -- Try Again keeps the round and its secrets (follow-up 2, 9) -----------------------
+
+def _secrets(world) -> tuple:
+    """The round's sid, round and keys, as every entry the list holds for
+    it names them: one set, however often it was recorded."""
+    (held,) = {(e.sid, e.round, e.s_sub, e.status_key) for e in world.list.entries}
+    return held
+
+
+@pytest.mark.parametrize("fail", [
+    lambda w: w.server.inject("submit", DROP_BEFORE),               # no connection
+    lambda w: w.server.inject("submit", LOST),                      # never received
+    lambda w: w.server.inject("submit", Fault(503, "unavailable")),
+    lambda w: w.server.inject("submit", Fault(429, "rate_limited", retry_after=60)),
+], ids=["no connection", "not received", "unavailable", "a limit"])
+def test_try_again_after_a_submit_that_did_not_go_sends_the_same_round_and_secrets(fail):
+    # The POST is not tried again quietly (each try is a signer prompt):
+    # Try Again sends the very body again, the same sid, round, status
+    # key and wraps, with a new signature only.
+    world = World(pictures=False)
+    fail(world)
+    progress = world.go()
+    assert progress.step is Step.FAILED and progress.failure.retry is Step.SIGNING
+    before = _secrets(world)
+    world.settle(seconds=60)
+    world.submitting.retry()
+    world.settle()
+    assert world.submitting.progress.step is Step.SUBMITTED
+    first, second = world.posted()[0], world.posted()[-1]
+    assert first == second and _secrets(world) == before
+    assert second["submission_id"] == before[0] and second["round"] == before[1]
+    assert len(world.nip98()) >= 2                      # a new signature for each try
+    assert len(world.list.entries) == 1                 # recorded once
+
+
+def test_try_again_after_the_signer_app_declined_keeps_the_round_and_secrets():
+    world = World(signer=HeldSigner(sk("writer")), pictures=False)
+    world.submitting.start()
+    world.settle()
+    world.signer.held.pop(0)[2]("declined")         # the person says no on the phone
+    world.settle()
+    assert world.submitting.progress.failure.retry is Step.SIGNING
+    before = _secrets(world)
+    world.submitting.retry()
+    world.settle()
+    world.signer.release()
+    world.settle()
+    assert world.submitting.progress.step is Step.SUBMITTED
+    assert _secrets(world) == before and len(world.posted()) == 1
+    assert world.posted()[0]["submission_id"] == before[0]
+
+
+def test_try_again_after_the_key_changed_keeps_the_round_and_secrets():
+    # epoch: the editorial team's key moved on; the wraps are made anew
+    # for the new key, never the sid, the round or the status key.
+    world = World(pictures=False)
+    world.server.inject("submit", Fault(409, "epoch"))
+    progress = world.go()
+    assert progress.failure.retry is Step.KEY
+    before = _secrets(world)
+    world.submitting.retry()
+    world.settle()
+    assert world.submitting.progress.step is Step.SUBMITTED
+    first, second = world.posted()[0], world.posted()[-1]
+    assert _secrets(world) == before
+    assert (second["submission_id"], second["round"], second["status_key_hash"]) == (
+        first["submission_id"], first["round"], first["status_key_hash"])
