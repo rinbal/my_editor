@@ -123,6 +123,30 @@ def is_signer_answer(reason: str) -> bool:
         needle in lowered for needle in SESSION_ERROR_NEEDLES)
 
 
+# What pairing tells the person when it did not work: one plain sentence
+# per kind of reason, never the reason itself (lesson 26); the reason is
+# for the help button's tooltip and the log.
+_PAIRING_DECLINED = ("reject", "denied", "declin", "not allowed", "unauthori", "forbidden",
+                     "permission", "unknown client", "refus")
+
+
+def pairing_failure_words(reason: str) -> str:
+    """The plain sentence for a pairing that did not work, whatever
+    ``reason`` says: the signer app was silent, declined, answered for
+    another connection, or something else went wrong."""
+    lowered = (reason or "").lower()
+    if is_signer_silent(lowered):
+        return _("Your signer app did not answer. Open it, make sure it is running, and try "
+                 "again.")
+    if any(needle in lowered for needle in _PAIRING_DECLINED):
+        return _("Your signer app declined the connection. Allow MyEditor there, then try "
+                 "again.")
+    if "secret" in lowered:
+        return _("The answer was meant for another connection, so MyEditor didn’t accept it. "
+                 "Try again.")
+    return _("The connection didn’t work. Try again, or connect another way.")
+
+
 def humanize_failure(reason: str) -> str:
     """Turn a transport failure into something the user can act on.
 

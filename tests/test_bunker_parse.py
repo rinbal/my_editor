@@ -84,3 +84,21 @@ def test_about_half_of_all_keys_are_no_public_key_and_a_real_one_passes():
     assert 120 < refused < 280
     assert not crypto.is_public_key(b"\x02" * 31) and not crypto.is_public_key(b"")
 
+
+@pytest.mark.parametrize("reason, words", [
+    ("timed out waiting for signer", "Your signer app did not answer."),
+    ("could not deliver request to any relay (x)", "Your signer app did not answer."),
+    ("user rejected", "Your signer app declined the connection."),
+    ("Unknown client", "Your signer app declined the connection."),
+    ("not allowed", "Your signer app declined the connection."),
+    ("unauthorized", "Your signer app declined the connection."),
+    ("secret did not match (possible spoof attempt)",
+     "The answer was meant for another connection"),
+    ("", "The connection didn’t work."),
+    ("something else", "The connection didn’t work."),
+])
+def test_a_pairing_that_did_not_work_is_one_plain_sentence(reason, words):
+    from nostr.bunker import pairing_failure_words
+    shown = pairing_failure_words(reason)
+    assert shown.startswith(words)
+    assert reason == "" or reason.lower() not in shown.lower()
