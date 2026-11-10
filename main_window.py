@@ -267,6 +267,7 @@ from nostr.imports.constants import SOURCE_TAG as IMPORT_SOURCE_TAG
 from nostr.article_details import (
     ArticleDetails, default_title, front_matter_with)
 from nostr.first_publications import FirstPublications
+from nostr.standup.link_names import LinkNameLock, SubmittedMarks
 from nostr.drafts import (
     INNER_KIND_LONG_FORM,
     INNER_KIND_SHORT_NOTE,
@@ -725,6 +726,9 @@ class MainWindow(QMainWindow):
         # When the articles published from here first went out, for when
         # the relays cannot tell (an edit keeps that date).
         self._first_publications = FirstPublications()
+        # The texts submitted from here, per account: their link names
+        # stay after a restart too (RG-M2r2a 1).
+        self._submitted_marks = SubmittedMarks()
         self._draft_sync = DraftSync(
             relay_pool=self._relay_pool,
             relay_directory=self._relay_directory,
@@ -3373,6 +3377,7 @@ class MainWindow(QMainWindow):
         self._article_details_panel.changed.connect(
             lambda details: self._set_article_details(self.current_editor(), details))
         self._article_details_panel.cover_uploaded.connect(self._cover_uploaded_for)
+        self._article_details_panel.check_link_name.connect(self._check_link_name)
         # An article's cover, title and summary on its page (decision 1 of
         # the Article Details review), for the tabs that are articles.
         self._article_headers = ArticleHeaders(
@@ -8997,6 +9002,11 @@ class MainWindow(QMainWindow):
             self._standup_writer.stop()
 
     def _on_nostr_select_profile(self, profile: Profile):
+        if getattr(self, "_signing_out", False):
+            # The account being left is let go first (its read state is
+            # written with its signer): the switch waits for that.
+            self._switch_after_sign_out = profile
+            return
         previous = self._profile_store.default()
         leaving = previous is not None and (
             previous.user_pubkey.lower() != profile.user_pubkey.lower()
@@ -9036,25 +9046,45 @@ class MainWindow(QMainWindow):
         # account is forgotten once that is written, or its 5 seconds
         # passed (RG-M2r 8).
         self._signing_out = True
+        self._switch_after_sign_out = None
         writer = getattr(self, "_standup_writer", None)
         if writer is None:
             self._finish_sign_out(active)
         else:
+            # Up to 5 seconds: said, and a second Sign Out or a switch of
+            # account waits for it (RG-M2r2a 6).
+            self.status.showMessage(_("Signing Out …"), 0, nostr=True)
             writer.stop(on_written=lambda: self._finish_sign_out(active))
 
     def _finish_sign_out(self, active: Profile) -> None:
         self._signing_out = False
+        waiting, self._switch_after_sign_out = getattr(self, "_switch_after_sign_out",
+                                                       None), None
+        if self.status.currentMessage() == _("Signing Out …"):
+            self.status.clearMessage()
+        # Only the account still in use is torn down here: one connected
+        # meanwhile let the signed-out one go as it came in.
+        current = self._profile_store.default()
+        still = current is not None and current.user_pubkey.lower() == \
+            active.user_pubkey.lower()
         # Every key kept for the account, its signer and its profile.
         if not self._accounts.forget_account(active):
             return
         self._avatars.pop(active.user_pubkey, None)
         self._update_profile_chip()
         self._refresh_profile_chip_menu()
+        if not still:
+            return
         # Tear down everything scoped to the account just removed. If
         # another profile remains, the caller (or chip menu) can re-bind
         # to it; otherwise the panel falls back to its "Connect a Nostr
         # profile" empty state.
         self._release_identity_state()
+        chosen = self._profile_store.get(waiting.user_pubkey) if waiting is not None else None
+        if chosen is not None:
+            # The switch asked for while it waited binds everything to it.
+            self._on_nostr_select_profile(chosen)
+            return
         remaining = self._profile_store.default()
         if self._drafts_panel is not None:
             self._drafts_panel.set_active_profile(remaining)
@@ -9219,12 +9249,27 @@ class MainWindow(QMainWindow):
             profile = self._profile_store.default()
             made = (self._link_name_for_file(self.current_path(), profile.user_pubkey)
                     if not details.identifier and profile is not None else "")
-            writer = getattr(self, "_standup_writer", None)
-            submitted = (writer is not None and profile is not None
-                         and writer.has_writer_entry(profile, details.identifier))
             panel.show_article(details, fixed_identifier=fixed, kept_in_file=details.kept,
-                               document=ed, made_identifier=made, submitted=submitted)
+                               document=ed, made_identifier=made,
+                               link_name_lock=self._link_name_lock(profile, details.identifier))
             panel.set_derived_title(self._derived_title_of(ed))
+
+    def _link_name_lock(self, profile, d: str) -> LinkNameLock:
+        """Whether the text ``d`` keeps its link name for its submissions:
+        held by a run, the list or this computer's mark; while an account
+        is in use and none tells, the list is read and the name stays
+        read-only until it answers (RG-M2r2a 1)."""
+        if profile is None or not d:
+            return LinkNameLock()
+        # The default account is the one in use (NostrState).
+        state = getattr(self, "nostr_state", None)
+        in_use = bool(state is not None and state.active)
+        return self._standup().link_name(profile, d, in_use=in_use)
+
+    def _check_link_name(self) -> None:
+        profile = self._profile_store.default()
+        if profile is not None:
+            self._standup().check_link_name(profile)
 
     def _derived_title_of(self, ed) -> str:
         """The title ``ed``'s article publishes with while none is set: its
@@ -10131,7 +10176,8 @@ class MainWindow(QMainWindow):
             writer = self._standup_writer = StandupWriter(
                 session_pool=self._session_pool, relay_pool=self._relay_pool,
                 relay_directory=self._relay_directory, media_store=self._media_store,
-                entitled_relays=self._entitled_relays, parent=self)
+                entitled_relays=self._entitled_relays,
+                marks=getattr(self, "_submitted_marks", None), parent=self)
             writer.status.connect(lambda text: self.statusBar().showMessage(text, 8000))
             # A text submitted before keeps its link name (RG-M2r 10).
             writer.listed.connect(lambda _writer: self._fill_article_details_panel())

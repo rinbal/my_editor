@@ -22,12 +22,14 @@ The order is fixed:
    server says what it has. Files it misses are uploaded again and the
    same body is sent again.
 
-A refusal for the round (409 ``conflict`` naming the server's round, or
-``stale_revision`` for this revision 1: the server stores its sid
-already) builds the revision once more, for the round the server names
-or, after ``stale_revision``, the one chosen again from step 1 of
-contract 2 (:mod:`.rounds`); never twice, and the refused body never
-goes out again.
+A refusal for the round (409 ``conflict`` naming the server's round)
+builds the revision once more, for the round the server names; never
+twice, and the refused body never goes out again. A ``stale_revision``
+for this revision 1 means another device of this writer stored this
+round first, with its own secrets (contract 2 at 72d5ddc): this round is
+never built again, the entry stays not stored, the list is read again,
+and the words say so, with Reload, until the stored entry has arrived.
+A receipt held marks the entry stored on the list (13).
 
 :class:`Submitting` is that order as a table (``_TABLE``) of what may
 happen in each :class:`Step` and what follows. Anything else (an answer
@@ -55,12 +57,11 @@ from .errors import Code, StandupError
 from .formats import FormatError, SecretKeyFound
 from ..list_results import PublishStatus
 from .entries import RecordResult, RecordStatus
-from .ports import Ports
+from .ports import Ports, Reread
 from .progress import (
     HELD_UNKNOWN_FIRST, HELD_WORDS, PHASE_OF, Failure, Held, HeldWords, MessageStatus, Phase,
     Progress, Step,
 )
-from .rounds import RoundAnswer
 from .trust import KeyNotConfirmed, RedaktionKey
 from .watcher import Different, NotStored, StoredOther, Superseded
 
@@ -189,11 +190,8 @@ class Submitting:
         self._stop: Optional[Callable[[], None]] = None
         self._stopped = False
         # Built again once for the round the server expects (409
-        # ``conflict``, contract 2) or for the round chosen again after
-        # ``stale_revision``: never twice, never the same body.
+        # ``conflict``, contract 2): never twice, never the same body.
         self._rebuilt = False
-        # The round a revision 1 was refused in as stale_revision.
-        self._stale_round = 0
 
     # -- what the screen asks ------------------------------------------------
 
@@ -233,7 +231,7 @@ class Submitting:
         self._reuploads = 0
         {Step.KEY: self._ask_key, Step.UPLOADING: self._upload, Step.REUPLOADING: self._reupload,
          Step.RECORDING: self._record, Step.SIGNING: self._send,
-         Step.ROUND: self._choose_round}[failure.retry]()
+         Step.RELOADING: self._reload}[failure.retry]()
 
     def retry_message(self) -> None:
         if self._progress.step is Step.SUBMITTED and \
@@ -277,7 +275,7 @@ class Submitting:
         (Step.SENDING, _OtherRound): "_other_round",
         (Step.SENDING, _RoundOpen): "_round_open",
         (Step.SENDING, _StaleRound): "_stale",
-        (Step.ROUND, RoundAnswer): "_round_chosen",
+        (Step.RELOADING, Reread): "_reread",
         (Step.CHECKING, views.Confirmed): "_confirmed",
         (Step.CHECKING, views.BlobsMissing): "_blobs_missing",
         (Step.CHECKING, NotStored): "_not_stored",
@@ -325,14 +323,17 @@ class Submitting:
         if stop is not None:
             stop()
 
-    def _fail(self, headline: str, retry: Optional[Step], *, said: str = "",
-              held: Optional[Held] = None, retry_at: Optional[float] = None) -> None:
+    def _fail(self, sentence: str, retry: Optional[Step], *, said: str = "",
+              details: str = "", held: Optional[Held] = None,
+              retry_at: Optional[float] = None, title: str = "", error: bool = True) -> None:
         """Failed, with what the server holds now (``held``, when this
-        answer told; else as it was): the second line comes from it."""
+        answer told; else as it was): the title comes from it, unless
+        ``title`` says what this end is about instead (lessons 36)."""
         self._stop = None
         held = held or self._progress.held
         self._show(Step.FAILED, held=held, failure=Failure(
-            headline, retry, detail=HELD_WORDS[held].failed, said=said, retry_at=retry_at))
+            sentence, retry, title=title or HELD_WORDS[held].failed, said=said,
+            details=details, retry_at=retry_at, error=error))
 
     def _refused_held(self, error: Optional[StandupError] = None) -> Held:
         """What the server holds after a refusal of the request just made:
@@ -358,7 +359,7 @@ class Submitting:
         self._ports.later(0, lambda: answer(_Go()))
 
     def _key_refused(self, _refusal: KeyNotConfirmed) -> None:
-        self._fail(words.refusal(Code.KEY_EVENT_INVALID), Step.KEY)
+        self._fail(words.KEY_NOT_CONFIRMED_AGAIN, Step.KEY)
 
     # -- 2. the pictures -----------------------------------------------------
 
@@ -394,10 +395,11 @@ class Submitting:
         self._seal_and_record()
 
     def _upload_failed(self, event: _UploadFailed) -> None:
-        self._fail(words.UPLOAD_FAILED, Step.UPLOADING, said=event.said)
+        # What the servers answered names them: behind Details only.
+        self._fail(words.UPLOAD_FAILED, Step.UPLOADING, details=event.said)
 
     def _reupload_failed(self, event: _UploadFailed) -> None:
-        self._fail(words.UPLOAD_FAILED, Step.REUPLOADING, said=event.said)
+        self._fail(words.UPLOAD_FAILED, Step.REUPLOADING, details=event.said)
 
     # -- 3. and 4. the revision, and the entry on the list -------------------
 
@@ -436,7 +438,7 @@ class Submitting:
             self._fail(words.LIST_CHANGED_ELSEWHERE, None)
         else:
             # A list that could not be read now says why in its own words
-            # (BLOCKED as UNREADABLE), with one retry.
+            # (BLOCKED as UNREADABLE) in the sentence's place, one retry.
             said = result.reason if result.publish.status in (
                 PublishStatus.BLOCKED, PublishStatus.UNREADABLE) else ""
             self._fail(words.LIST_NOT_SAVED, Step.RECORDING, said=said)
@@ -456,8 +458,8 @@ class Submitting:
     def _refused(self, error: StandupError) -> None:
         self._stop = None
         if error.code == Code.RATE_LIMITED:
-            # The limit's wait says which one it is and when trying again helps.
-            self._fail(words.rate_limited(error.retry_after), _RETRY_AT[error.code],
+            # Said with when trying again helps (words.LIMIT_AT).
+            self._fail(words.refusal(error.code), _RETRY_AT[error.code],
                        held=self._refused_held(error), retry_at=self._after(error.retry_after))
             return
         self._fail(words.refusal(error.code), _RETRY_AT.get(error.code),
@@ -487,54 +489,59 @@ class Submitting:
         self._seal_and_record()
 
     def _stale(self, stale: _StaleRound) -> None:
-        """409 ``stale_revision``. For this revision 1, never stored (no
-        receipt said so), the server stores its sid already under secrets
-        the list did not hold for it: another device handed the work in
-        meanwhile, or the list lost the entry. The round is chosen again
-        from step 1 of contract 2, once (bde1274); the entry stays, as it
-        may hold the secrets the server has. Anything else is a refusal."""
+        """409 ``stale_revision``. For this revision 1, never stored here
+        (no receipt said so), another device of this writer stored this
+        round first, with its own secrets (contract 2 at 72d5ddc). It is
+        not repeated and this round is never built again. The entry stays,
+        not stored, and no tombstone is written, so nothing can remove the
+        other device's entry; the list is read again, and the words say
+        so, with Reload, until the stored entry has arrived (13, Merge).
+        Anything else is a refusal."""
         self._stop = None
-        if self._rebuilt or self._sealed.body.get("revision") != 1 \
-                or self._progress.held is Held.STORED:
+        if self._sealed.body.get("revision") != 1 or self._progress.held is Held.STORED \
+                or self._sealed.entry.stored:
             self._refused(stale.error)
             return
-        self._rebuilt = True
-        self._stale_round = self._round
-        self._choose_round()
+        self._reload()
 
-    def _choose_round(self) -> None:
-        self._show(Step.ROUND, failure=None, held=Held.OTHER)
-        self._ports.choose_round(self._sealed.entry, self._answer())
+    def _reload(self) -> None:
+        self._show(Step.RELOADING, failure=None, held=Held.OTHER)
+        self._ports.reload(self._sealed.entry, self._answer())
 
-    def _round_chosen(self, answer: RoundAnswer) -> None:
-        """What step 1 of contract 2, asked again, says: a later round,
-        built once; the work still open there; or, when the round cannot
-        be told, why (Try Again asks again unless a bound was met). A
-        round not after the refused one would be the refused sid again."""
-        self._stop = None
-        if answer.words:
-            self._fail(words.ANOTHER_VERSION, None if answer.final else Step.ROUND,
-                       said=answer.words, held=Held.OTHER)
-        elif answer.round is None:
-            self._fail(drafting.ALREADY_SUBMITTED, None, held=Held.OTHER)
-        elif answer.round <= self._stale_round:
-            self._fail(words.ANOTHER_VERSION, None, held=Held.OTHER)
+    def _reread(self, found: Reread) -> None:
+        """The list as read again: the other device's stored entry has
+        arrived (said, and nothing more to do here), or not yet (Reload,
+        with the list's own words when it could not be read whole)."""
+        if found.arrived:
+            self._fail(words.ELSEWHERE_HERE_NOW, None, held=Held.OTHER,
+                       title=words.SUBMITTED_ELSEWHERE, error=False)
         else:
-            self._round = answer.round
-            self._progress = replace(self._progress, held=Held.NOTHING)
-            self._seal_and_record()
+            self._fail(words.ELSEWHERE_NOT_HERE_YET, Step.RELOADING, said=found.said,
+                       held=Held.OTHER, title=words.SUBMITTED_ELSEWHERE, error=False)
 
     # -- 6. the receipt, or the lookup ---------------------------------------
+
+    def _note_stored(self) -> None:
+        """A receipt for this sid with its status key is held (the server's
+        answer, or the lookup): the entry says so on the list (13, 72d5ddc),
+        so another device's entry of the same round, built meanwhile with
+        other secrets, never takes its place."""
+        entry = self._sealed.entry
+        if not entry.stored:
+            self._sealed = replace(self._sealed, entry=replace(entry, stored=True))
+            self._ports.mark_stored(self._sealed.entry)
 
     def _confirmed(self, confirmed: views.Confirmed) -> None:
         """The one way to "Eingereicht": a matching receipt (the server's
         answer, or the lookup by the status key), every file found."""
+        self._note_stored()
         self._show(Step.SUBMITTED, receipt=confirmed.receipt, failure=None, held=Held.STORED)
         if self._choice.message.strip():
             self._send_message()
 
     def _blobs_missing(self, missing: views.BlobsMissing) -> None:
         # A receipt: the server stores this revision, files missing.
+        self._note_stored()
         self._progress = replace(self._progress, held=Held.STORED)
         if self._reuploads >= MAX_REUPLOADS:
             self._fail(words.PICTURE_MISSING, Step.REUPLOADING)

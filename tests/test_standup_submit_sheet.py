@@ -27,6 +27,7 @@ from PySide6.QtWidgets import QApplication
 import i18n
 from nostr.avatar_store import AvatarStore
 from nostr.profiles import Profile, ProfileStore
+from nostr import failures
 from nostr.standup import drafting, words
 from nostr.standup.drafting import ArticleDraft
 from nostr.standup.submitting import MessageStatus, Progress, Step
@@ -106,6 +107,7 @@ class Writer:
         self.bound_asked = 0
         self.reloaded = 0
         self.fail_destinations = False
+        self.destinations_error = None      # what StandupApi gives: a StandupError
 
     def signer_bound(self, _profile, done) -> None:
         self.bound_asked += 1
@@ -118,7 +120,8 @@ class Writer:
     def destinations(self, _profile, on_done, on_failure) -> None:
         self.loads += 1
         if self.fail_destinations:
-            on_failure(object())
+            from nostr.standup.errors import Code, StandupError
+            on_failure(self.destinations_error or StandupError(Code.OFFLINE))
         else:
             on_done(self._destinations, self._used)
 
@@ -130,7 +133,7 @@ class Writer:
 
     def round_for(self, _profile, _publication, _d, on_done) -> None:
         self.asked += 1
-        on_done(RoundAnswer(*self.round))
+        on_done(self.round if isinstance(self.round, RoundAnswer) else RoundAnswer(*self.round))
 
     def discard(self, _profile, entry, on_done) -> None:
         self.discarded.append(entry)
@@ -561,17 +564,23 @@ def test_after_another_account_is_chosen_the_first_ones_answers_are_dropped(tmp_
 
 # -- every wait has its way out (RG-M2r 4, lesson 12) ----------------------------
 
+NOT_CHECKED = "MyEditor konnte nicht prüfen, ob du diesen Text schon eingereicht hast"
+
+
 @pytest.mark.parametrize("answer, from_list", [
     ((None, "Deine Liste der Einreichungen konnte nicht gelesen werden.", None, True), True),
     ((None, "Deine Signer-App hat nicht geantwortet.", None, True), True),     # blocked
-    ((None, i18n._(drafting.ROUND_LIST_INCOMPLETE), None, True), True),
+    ((None, i18n._(failures.CHECK_CONNECTION), None, True), True),             # in part
+    ((None, i18n._(failures.CHECK_CONNECTION)), False),                       # no connection
     ((None, i18n._(drafting.ROUND_UNKNOWN)), False),
-], ids=["list unreadable", "list blocked", "list in part", "round unknown"])
+], ids=["list unreadable", "list blocked", "list in part", "no connection", "round unknown"])
 def test_a_round_that_could_not_be_told_offers_try_again(tmp_path, answer, from_list):
+    # Said once (lessons 36): what did not happen, then the one sentence.
     writer = Writer(round_=answer)
     sheet = _sheet(tmp_path, writer)
     assert not sheet.retry_load.isHidden()
-    assert sheet.status.text() == answer[1] and not sheet.submit_button.isEnabled()
+    assert sheet.status.shown == (NOT_CHECKED, answer[1])
+    assert not sheet.submit_button.isEnabled()
     asked = writer.asked
     writer.round = (1, "")
     sheet.retry_load.click()
@@ -586,11 +595,100 @@ def test_publications_that_could_not_be_loaded_offer_try_again(tmp_path):
     writer.fail_destinations = True
     sheet = _sheet(tmp_path, writer)
     assert not sheet.retry_load.isHidden()
-    assert sheet.status.text() == "Die Publikationen konnten nicht geladen werden."
+    assert sheet.status.shown == ("Die Publikationen konnten nicht geladen werden",
+                                  "Prüfe deine Internetverbindung und versuche es erneut.")
     writer.fail_destinations = False
     sheet.retry_load.click()
     assert writer.loads == 2 and sheet.retry_load.isHidden()
     assert sheet.submit_button.isEnabled()
+
+
+def test_a_total_failure_is_one_status_with_one_action_said_once(tmp_path, monkeypatch):
+    # Lessons 36: a title, one sentence, Try Again; announced once however
+    # often the sheet refreshes.
+    from nostr.ui import publish_sheet
+    said = []
+    monkeypatch.setattr(publish_sheet.announce, "announce", lambda _w, text: said.append(text))
+    writer = Writer()
+    writer.fail_destinations = True
+    sheet = _sheet(tmp_path, writer)
+    sheet._refresh()
+    sheet._refresh()
+    assert said == ["Die Publikationen konnten nicht geladen werden. Prüfe deine "
+                    "Internetverbindung und versuche es erneut."]
+    assert sheet.status.text().startswith("<b>Die Publikationen konnten nicht geladen "
+                                          "werden</b><br>")
+    assert not sheet.retry_load.isHidden() and not sheet.submit_button.isEnabled()
+    assert sheet.status._error                     # in the error color, as it failed
+
+
+NOW = 1_800_000_000.0
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    """The sheet's clock, moved by the test (lesson 34: no wall-clock wait)."""
+    from nostr.ui import standup_submit_sheet
+    now = [NOW]
+    monkeypatch.setattr(standup_submit_sheet, "_now", lambda: now[0])
+    return now
+
+
+def _wait_over(sheet, clock, seconds) -> None:
+    """The wait passes: the sheet's timer fires, as Qt would fire it."""
+    assert sheet._wait.isActive() and sheet._wait.interval() == seconds * 1000
+    clock[0] += seconds
+    sheet._wait.timeout.emit()
+
+
+def test_a_round_lookup_met_a_limit_says_its_wait_and_try_again_waits(tmp_path, clock):
+    # RG-M2r2a 5: a 429 read as a round that cannot be told, and Try
+    # Again asked again at once, one more counted request each time.
+    from nostr.ui.standup_handoff import wait_words
+    writer = Writer(round_=RoundAnswer(None, limited=True, retry_at=NOW + 120))
+    sheet = _sheet(tmp_path, writer)
+    clock_time = wait_words(NOW + 120, NOW, "{time}", "{time}")
+    assert sheet.status.shown == (NOT_CHECKED, "Du hast Einundzwanzig Magazin vorerst so viel "
+                                  f"gesendet, wie es annimmt: Versuche es um {clock_time} erneut.")
+    assert not sheet.retry_load.isHidden() and not sheet.retry_load.isEnabled()
+    assert not sheet.submit_button.isEnabled()
+    asked = writer.asked
+    sheet._try_again()                              # Return, a shortcut: still waits
+    assert writer.asked == asked
+    writer.round = (1, "")
+    _wait_over(sheet, clock, 120)
+    assert sheet.retry_load.isEnabled() and not sheet._wait.isActive()
+    sheet.retry_load.click()
+    assert writer.asked == asked + 1 and sheet.submit_button.isEnabled()
+
+
+def test_a_limit_without_a_wait_is_said_and_try_again_may_ask_at_once(tmp_path, clock):
+    writer = Writer(round_=RoundAnswer(None, limited=True))
+    sheet = _sheet(tmp_path, writer)
+    assert sheet.status.shown == (NOT_CHECKED, i18n._(words.refusal("rate_limited")).format(
+        publication="Einundzwanzig Magazin"))
+    assert sheet.retry_load.isEnabled() and not sheet._wait.isActive()
+
+
+def test_publications_that_met_a_limit_wait_for_it_too(tmp_path, clock):
+    from nostr.standup.errors import Code, StandupError
+    writer = Writer()
+    writer.fail_destinations = True
+    writer.destinations_error = StandupError(Code.RATE_LIMITED, status=429, retry_after=600)
+    sheet = _sheet(tmp_path, writer)
+    title, sentence = sheet.status.shown
+    assert title == "Die Publikationen konnten nicht geladen werden"
+    assert sentence.startswith("Der Server nimmt gerade nichts mehr von dir an: Versuche es um ")
+    assert not sheet.retry_load.isEnabled()
+    sheet._try_again()
+    assert writer.loads == 1
+    writer.fail_destinations = False
+    _wait_over(sheet, clock, 600)
+    assert sheet.status.shown == ("Die Publikationen konnten nicht geladen werden",
+                                  "Der Server nimmt gerade nichts mehr von dir an: Versuche es "
+                                  "später erneut.")
+    sheet.retry_load.click()
+    assert writer.loads == 2 and sheet.retry_load.isHidden()
 
 
 def test_a_round_step_that_met_its_bounds_says_why_and_offers_no_try_again(tmp_path):
@@ -599,7 +697,7 @@ def test_a_round_step_that_met_its_bounds_says_why_and_offers_no_try_again(tmp_p
     words = i18n._(drafting.ROUND_LIMIT)
     sheet = _sheet(tmp_path, Writer(round_=(None, words, None, False, True)))
     assert sheet.retry_load.isHidden() and not sheet.submit_button.isEnabled()
-    assert sheet.status.text() == words
+    assert sheet.status.shown == (NOT_CHECKED, words)
 
 
 def test_a_round_that_is_told_offers_no_try_again(tmp_path):

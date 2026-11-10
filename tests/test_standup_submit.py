@@ -20,7 +20,7 @@ from types import SimpleNamespace
 from typing import List
 
 import pytest
-from PySide6.QtCore import QBuffer, QEvent, QIODevice, QObject, Signal
+from PySide6.QtCore import QBuffer, QEvent, QIODevice, QObject, QTimer, Signal
 from PySide6.QtGui import QColor, QImage
 from PySide6.QtWidgets import QApplication
 
@@ -30,13 +30,12 @@ from nostr.standup import formats, words
 from nostr.standup.errors import Code, StandupError
 from nostr.standup.watcher import AT_THE_END
 from nostr.standup.answers import LookupAnswer
-from nostr.standup.drafting import (
-    ROUND_LIST_INCOMPLETE, ROUND_UNKNOWN, LocalPicture, encrypt_pictures,
-)
+from nostr import failures
+from nostr.standup.drafting import ROUND_UNKNOWN, LocalPicture, encrypt_pictures
 from nostr.standup.entries import SubmissionEntry
 from nostr.standup.lists import SUBMISSIONS_UNREADABLE
 from nostr.standup.submitting import Held, MessageStatus, Progress, Step
-from nostr.ui import standup_submit
+from nostr.ui import standup_message, standup_run, standup_submit
 from nostr.ui.standup_submit import BlossomUploads, StandupWriter, thumbnail
 
 WRITER = "a1" * 32
@@ -53,6 +52,41 @@ def german():
     i18n.install("de")
     yield
     i18n.install("en")
+
+
+class Later:
+    """The writer's ``_later``: a turn (0 ms) as Qt's, a wait held until
+    the test runs it (lesson 34: no wall-clock waits)."""
+
+    def __init__(self) -> None:
+        self.waiting = []                  # (ms, call)
+
+    def __call__(self, ms, call) -> None:
+        if ms <= 0:
+            QTimer.singleShot(0, call)
+        else:
+            self.waiting.append((ms, call))
+
+    def run(self) -> list:
+        """Run what waits, in order; the delays it waited."""
+        ran = []
+        while self.waiting:
+            ms, call = self.waiting.pop(0)
+            ran.append(ms)
+            call()
+            QApplication.processEvents()
+        return ran
+
+
+LATER = Later()
+
+
+@pytest.fixture(autouse=True)
+def later(monkeypatch):
+    global LATER
+    LATER = Later()
+    monkeypatch.setattr(standup_submit, "_later", LATER)
+    return LATER
 
 
 # -- the pictures ------------------------------------------------------------
@@ -143,6 +177,31 @@ def test_a_file_the_server_misses_goes_up_again_through_the_real_library(tmp_pat
     assert all(body[:4] == b"SMF1" for body in server.uploads)     # never the plaintext
 
 
+def test_a_mirror_that_refuses_a_picture_says_nothing_and_the_first_server_counts(tmp_path):
+    # Lessons 36: some servers failing is normal. The picture is on the
+    # first server; the mirror's refusal is never a failure of the run.
+    from PySide6.QtCore import QUrl
+    from nostr.blossom.client import BlossomClient
+    from nostr.blossom.settings import BlossomSettings
+    from nostr.blossom.store import MediaStore
+    from tests.blossom_fakes import (MIRROR, SERVER, FakeBlossomServer, FakeNam, FakeProfile,
+                                     FakeSessionPool, FakeSigner)
+    servers = {QUrl(SERVER).host(): FakeBlossomServer(SERVER),
+               QUrl(MIRROR).host(): FakeBlossomServer(MIRROR, fail_with=500,
+                                                      fail_reason="disk full")}
+    settings = BlossomSettings(tmp_path / "servers.json")
+    settings.set_custom_servers([SERVER, MIRROR])
+    nam = FakeNam(None, responder=lambda verb, request, body: servers[request.url().host()](
+        verb, request, body))
+    store = MediaStore(session_pool=FakeSessionPool(FakeSigner()), profile_provider=FakeProfile,
+                       settings=settings, client=BlossomClient(nam=nam))
+    pictures = _pictures(1)
+    seen, _stop = _upload(store, pictures)
+    nam.settle()
+    assert seen["failed"] == [] and seen["done"] == [{pictures[0].sha256: (SERVER,)}]
+    assert any(QUrl(SERVER).host() != request.url().host() for _v, request, _b in nam.calls)
+
+
 def test_stopping_cancels_what_is_on_its_way():
     store, pictures = Store(), _pictures(1)
     seen, stop = _upload(store, pictures)
@@ -172,6 +231,10 @@ def _entry(round_: int = 1) -> SubmissionEntry:
 
 
 class FakeList:
+    """SubmissionsList's side the writer uses. ``arriving``: entries
+    another device wrote, found by the next read and merged as the real
+    list merges them (entries.merge_items)."""
+
     def __init__(self, entries=(), readable=True, complete=True) -> None:
         self.loaded = False
         self.complete = complete
@@ -180,11 +243,27 @@ class FakeList:
         self._readable = readable
         self.stopped = False
         self.forgotten = []
+        self.marked = []
+        self.arriving = []
 
     def load(self, on_done) -> None:
+        from nostr.standup.entries import SubmissionItems, merge_items
         self.reads += 1
         self.loaded = self._readable
+        if self._readable and self.arriving:
+            merged = merge_items(SubmissionItems(tuple(self.arriving)),
+                                 SubmissionItems(tuple(self._entries)))
+            self._entries, self.arriving = list(merged.entries), []
         on_done(ListRead(ReadStatus.COMPLETE if self._readable else ReadStatus.UNREADABLE))
+
+    def mark_stored(self, entries, on_done=lambda _results: None) -> None:
+        # As SubmissionsList.mark_stored: the entry held with these keys.
+        from dataclasses import replace
+        from nostr.standup.entries import same_keys
+        for entry in entries:
+            self.marked.append(entry)
+            self._entries = [replace(e, stored=True) if e.sid == entry.sid
+                             and same_keys(e, entry) else e for e in self._entries]
 
     def entries(self):
         return self._entries
@@ -226,7 +305,10 @@ class FakeApi:
         if on_bytes is not None:
             on_bytes(self.size)
         if self.fails:
-            on_failure(RuntimeError("offline"))
+            # As StandupApi answers: a StandupError, never another error.
+            from nostr.standup.errors import Code, StandupError
+            on_failure(self.fails if isinstance(self.fails, StandupError)
+                       else StandupError(Code.OFFLINE))
             return
         if self.unreadable:
             on_success(LookupAnswer(found={}, unreadable=frozenset(keys[:1])))
@@ -250,22 +332,25 @@ class FakeApi:
         self.closed = on_done
 
 
-def _writer(submissions, api, **more) -> StandupWriter:
+def _writer(submissions, api, *, marks=None, **more) -> StandupWriter:
     more.setdefault("deleteLater", lambda: None)
     more.setdefault("client_for", lambda _server: api)
     more.setdefault("clients", {})
     account = SimpleNamespace(writer=WRITER, submissions=submissions, api=api, runs=[],
-                              list_problem="", stopped=False, read_again=False, **more)
+                              list_problem="", stopped=False, read_again=False,
+                              checking=False, check_failed=False, **more)
     return StandupWriter(session_pool=None, relay_pool=None, relay_directory=None,
                          media_store=None, server="https://s.example", uploads=lambda *a: None,
-                         accounts=lambda _profile: account)
+                         accounts=lambda _profile: account, marks=marks)
 
 
 def _answer(writer):
+    """The round's answer, once the quiet tries that wait for it ran."""
     answers = []
     writer.round_for(SimpleNamespace(user_pubkey=WRITER), PUBLICATION, "ein-jahr",
                      answers.append)
     QApplication.processEvents()
+    LATER.run()
     assert len(answers) == 1
     return answers[0]
 
@@ -311,29 +396,155 @@ def test_a_lookup_never_asks_one_server_about_anothers_entry():
                     print, print)
 
 
-def test_a_text_has_a_writer_entry_once_listed_or_on_its_way():
-    # RG-M2r 10: Article Details fixes its link name then. Nothing is read
-    # to answer, and another account says no.
-    from nostr.standup.drafting import ArticleDraft, Choice
-    from nostr.ui.standup_submit import RoundAnswer
+PROFILE = SimpleNamespace(user_pubkey=WRITER)
+
+
+def _lock(writer, d="ein-jahr", *, in_use=True, profile=PROFILE):
+    return writer.link_name(profile, d, in_use=in_use)
+
+
+def test_a_text_keeps_its_link_name_once_listed_or_on_its_way_and_says_what_is_held():
+    # RG-M2r 10 and RG-M2r2a 2: the words follow what is held, never
+    # "submitted" for an entry the server has no receipt for.
     from dataclasses import replace
+    from nostr.standup.drafting import ArticleDraft, Choice
+    from nostr.standup.link_names import LinkNameLock
+    from nostr.ui.standup_submit import RoundAnswer
     # Another's text this account takes part in is not its own.
     taking_part = replace(_entry(), sid="ee" * 32, role="contributor", d="ihr-text",
                           status_key=None)
-    submissions = FakeList([_entry(), taking_part])
+    stored = replace(_entry(2), d="im-eingang", stored=True)
+    submissions = FakeList([_entry(), taking_part, stored])
+    submissions.loaded = True
     writer = _writer(submissions, FakeApi())
-    profile, other = SimpleNamespace(user_pubkey=WRITER), SimpleNamespace(user_pubkey="b3" * 32)
-    assert not writer.has_writer_entry(profile, "ein-jahr")     # no account in use yet
-    writer.account(profile)
-    assert writer.has_writer_entry(profile, "ein-jahr")
-    assert not writer.has_writer_entry(profile, "anders") and not writer.has_writer_entry(
-        other, "ein-jahr") and not writer.has_writer_entry(profile, "")
-    assert not writer.has_writer_entry(profile, "ihr-text")
+    other = SimpleNamespace(user_pubkey="b3" * 32)
+    assert _lock(writer, in_use=False) == LinkNameLock()       # no account in use yet
+    writer.account(PROFILE)
+    assert _lock(writer) == LinkNameLock(held=Held.NOTHING)
+    assert _lock(writer, "im-eingang") == LinkNameLock(held=Held.STORED)
+    assert not _lock(writer, "anders").locked and not _lock(writer, "").locked
+    assert not _lock(writer, "ihr-text").locked
     assert submissions.reads == 0
     draft = ArticleDraft(d="neu", title="T", summary="", content="x")
-    writer.submit(profile, draft, Choice(publication=PUBLICATION, name="M", signer="writer",
-                                         rights=True), RoundAnswer(1))
-    assert writer.has_writer_entry(profile, "neu")
+    run = writer.submit(PROFILE, draft, Choice(publication=PUBLICATION, name="M",
+                                               signer="writer", rights=True), RoundAnswer(1))
+    assert _lock(writer, "neu") == LinkNameLock(held=run.progress.held)
+    assert _lock(writer, "ein-jahr", profile=other, in_use=False) == LinkNameLock()
+
+
+def test_a_link_name_is_never_free_on_a_list_not_read_whole():
+    # RG-M2r2a 1: after a restart nothing was read; the list is read once,
+    # the name read-only and saying so until it answers.
+    from nostr.standup.link_names import LinkNameLock
+    submissions = FakeList([_entry()])
+    writer = _writer(submissions, FakeApi())
+    heard = []
+    writer.listed.connect(heard.append)
+    assert _lock(writer) == LinkNameLock(checking=True)
+    assert _lock(writer, "anders") == LinkNameLock(checking=True)
+    QApplication.processEvents()
+    assert submissions.reads == 1 and heard == [WRITER]
+    assert _lock(writer) == LinkNameLock(held=Held.NOTHING)
+    assert _lock(writer, "anders") == LinkNameLock()            # read whole: never submitted
+
+
+@pytest.mark.parametrize("readable, complete, reads", [(False, True, 1), (True, False, 4)],
+                         ids=["unreadable", "in part, read again quietly"])
+def test_a_list_that_could_not_tell_keeps_the_link_name_and_check_again_reads_it(
+        readable, complete, reads, later):
+    from nostr.standup.link_names import LinkNameLock
+    submissions = FakeList([], readable=readable, complete=complete)
+    writer = _writer(submissions, FakeApi())
+    _lock(writer, "anders")
+    QApplication.processEvents()
+    later.run()
+    assert _lock(writer, "anders") == LinkNameLock(unchecked=True)
+    assert submissions.reads == reads                           # then not by itself
+    submissions._readable, submissions.complete = True, True
+    writer.check_link_name(PROFILE)
+    assert _lock(writer, "anders") == LinkNameLock(checking=True)
+    QApplication.processEvents()
+    assert submissions.reads == reads + 1 and _lock(writer, "anders") == LinkNameLock()
+
+
+def test_a_link_name_check_whose_page_came_on_a_quiet_try_is_free(later):
+    # Lessons 36: a page that did not come once says nothing; read again
+    # quietly, it is read whole and the name is free.
+    from nostr.standup.link_names import LinkNameLock
+    submissions = HealingList()
+    writer = _writer(submissions, FakeApi())
+    assert _lock(writer, "anders") == LinkNameLock(checking=True)
+    QApplication.processEvents()
+    assert _lock(writer, "anders") == LinkNameLock(checking=True)   # still, not "couldn't"
+    later.run()
+    QApplication.processEvents()
+    assert submissions.reads == 2 and _lock(writer, "anders") == LinkNameLock()
+
+
+def test_the_mark_holds_the_link_name_after_a_restart(tmp_path):
+    # RG-M2r2a 1: a new writer (the app started again), nothing read.
+    from nostr.standup.link_names import LinkNameLock, SubmittedMarks
+    from nostr.list_results import PublishResult, PublishStatus
+    from nostr.standup.entries import RecordResult, RecordStatus
+    marks = SubmittedMarks(tmp_path / "marks.json")
+    writer = _writer(FakeList([]), FakeApi(), marks=marks)
+    ports = writer._ports(writer.account(PROFILE), PUBLICATION)
+    results = []
+    writer.account(PROFILE).submissions.record = lambda entry, on_done: on_done(
+        RecordResult(RecordStatus.STORED, entry, PublishResult(PublishStatus.SENT)))
+    ports.record(_entry(), results.append)
+    assert [r.status for r in results] == [RecordStatus.STORED]
+    again = _writer(FakeList([], readable=False), FakeApi(),
+                    marks=SubmittedMarks(tmp_path / "marks.json"))
+    assert _lock(again, in_use=False) == LinkNameLock(held=Held.NOTHING)
+    ports.mark_stored(_entry())
+    again = _writer(FakeList([], readable=False), FakeApi(),
+                    marks=SubmittedMarks(tmp_path / "marks.json"))
+    assert _lock(again, in_use=False) == LinkNameLock(held=Held.STORED)
+
+
+def test_an_entry_not_recorded_leaves_no_mark(tmp_path):
+    from nostr.standup.link_names import SubmittedMarks
+    from nostr.list_results import PublishResult, PublishStatus
+    from nostr.standup.entries import RecordResult, RecordStatus
+    marks = SubmittedMarks(tmp_path / "marks.json")
+    writer = _writer(FakeList([]), FakeApi(), marks=marks)
+    writer.account(PROFILE).submissions.record = lambda entry, on_done: on_done(
+        RecordResult(RecordStatus.NOT_STORED, entry, PublishResult(PublishStatus.FAILED)))
+    writer._ports(writer.account(PROFILE), PUBLICATION).record(_entry(), lambda _r: None)
+    assert marks.get(WRITER, "ein-jahr") is None
+
+
+def test_a_read_of_the_list_marks_each_writer_entry(tmp_path):
+    from dataclasses import replace
+    from nostr.standup.link_names import SubmittedMarks
+    marks = SubmittedMarks(tmp_path / "marks.json")
+    stored = replace(_entry(2), d="im-eingang", stored=True)
+    writer = _writer(FakeList([_entry(), stored]), FakeApi(), marks=marks)
+    _lock(writer, "anders")
+    QApplication.processEvents()
+    assert (marks.get(WRITER, "ein-jahr"), marks.get(WRITER, "im-eingang")) == (False, True)
+
+
+@pytest.mark.parametrize("left", [False, True], ids=["none left", "another left"])
+def test_a_discarded_entry_frees_the_link_name_once_none_is_left(tmp_path, left):
+    from dataclasses import replace
+    from nostr.standup.link_names import SubmittedMarks
+    marks = SubmittedMarks(tmp_path / "marks.json")
+    marks.remember(WRITER, "ein-jahr", stored=False)
+    other = replace(_entry(2), stored=True)
+    submissions = FakeList([_entry(1)] + ([other] if left else []))
+    submissions.loaded = True                       # the sheet read it
+
+    def forget(entry, on_done):
+        submissions._entries.remove(entry)
+        on_done(SimpleNamespace(stored=True))
+
+    submissions.forget = forget
+    writer = _writer(submissions, FakeApi(), marks=marks)
+    writer.discard(PROFILE, _entry(1), lambda _stored: None)
+    assert (marks.get(WRITER, "ein-jahr") is not None) is left
+    assert _lock(writer).locked is left
 
 
 def test_reading_the_list_says_so_for_article_details():
@@ -374,29 +585,52 @@ def test_the_clients_of_other_servers_are_made_once_and_let_go_with_their_accoun
     assert [error.code for error in refused] == [Code.STOPPED]
 
 
-def test_the_round_chosen_again_reads_the_list_anew_and_asks_the_refused_round():
-    # Contract 2 (bde1274): after stale_revision for a revision 1 the round
-    # is chosen from step 1 again: the list read anew, every entry asked
-    # about, then the refused round by GET, both timelines left out.
-    submissions, api, gets = FakeList([_entry(1)]), FakeApi(None), []
+def test_an_entry_a_lookup_finds_is_marked_stored_on_the_list():
+    # 13 at 72d5ddc: a lookup's receipt is a receipt held for that sid
+    # with that status key. One the server has no receipt for is not.
+    submissions = FakeList([_entry(1), _entry(2)])
+    assert _round(_writer(submissions, FakeApi({1: "declined", 2: None}))) == (2, "")
+    assert submissions.marked == [_entry(1)]
+    assert [e.stored for e in submissions.entries()] == [True, False]
 
-    def submission(sid, on_success, on_failure, **asked):
-        gets.append((sid, asked["since"], asked["since_internal"]))
-        on_success(SimpleNamespace(submission=SimpleNamespace(
-            submission_id=sid, round=1, state="declined", later_round=False)))
 
-    api.submission = submission
-    writer = _writer(submissions, api)
-    profile = SimpleNamespace(user_pubkey=WRITER)
-    assert _round(writer) == (1, "")                # its entry never stored, it thinks
+def _reread(submissions, entry):
+    writer = _writer(submissions, FakeApi())
     said = []
-    writer._ports(writer.account(profile), PUBLICATION).choose_round(_entry(1), said.append)
+    writer._ports(writer.account(SimpleNamespace(user_pubkey=WRITER)), PUBLICATION).reload(
+        entry, said.append)
     QApplication.processEvents()
-    assert submissions.reads == 2 and len(api.asked) == 2
-    sid = formats.submission_id(WRITER, PUBLICATION, formats.coordinate_hash(WRITER, "ein-jahr"),
-                                1)
-    assert gets == [(sid, AT_THE_END, AT_THE_END)]
-    assert [answer.round for answer in said] == [2]
+    LATER.run()
+    assert len(said) == 1
+    return said[0]
+
+
+def test_after_a_stale_revision_the_list_is_read_again_for_that_devices_entry():
+    # Contract 2 at 72d5ddc: another device stored this round first. The
+    # list is read again; only that device's stored entry (other keys)
+    # is the one waited for, never this device's own entry.
+    from dataclasses import replace
+    from nostr.standup.ports import Reread
+    mine = _entry(1)
+    theirs = replace(mine, s_sub="d4" * 32, status_key="ab" * 32, stored=True, updated_at=0)
+    submissions = FakeList([mine])
+    assert _reread(submissions, mine) == Reread(False)
+    submissions.arriving = [replace(theirs, stored=False)]      # not stored there yet
+    assert _reread(submissions, mine) == Reread(False)
+    submissions.arriving = [theirs]                              # older, but stored
+    assert _reread(submissions, mine) == Reread(True)
+    assert submissions.reads == 3 and submissions.entry(mine.sid) == theirs
+
+
+def test_a_list_that_cannot_be_read_again_says_why_and_one_read_in_part_says_nothing():
+    # Lessons 36: a page that did not come is partial, read again quietly;
+    # nothing about parts is said, and Reload stays.
+    from nostr.standup.lists import SUBMISSIONS_UNREADABLE
+    answer = _reread(FakeList([_entry(1)], readable=False), _entry(1))
+    assert not answer.arrived and answer.said == i18n._(SUBMISSIONS_UNREADABLE)
+    submissions = FakeList([_entry(1)], complete=False)
+    answer = _reread(submissions, _entry(1))
+    assert not answer.arrived and answer.said == "" and submissions.reads == 4
 
 
 def test_an_entry_the_server_has_no_receipt_for_is_sent_again_or_discarded():
@@ -425,20 +659,22 @@ def test_one_run_per_work_and_publication(german):
     assert writer.submit(profile, draft, other, RoundAnswer(1)) is not first
 
 
-@pytest.mark.parametrize("submissions, api, said", [
-    (FakeList([_entry()]), FakeApi(fails=True), ROUND_UNKNOWN),           # no answer
-    (FakeList([_entry()]), FakeApi(unreadable=True), ROUND_UNKNOWN),      # has something
-    (FakeList([_entry()]), FakeApi("declined", other_sid=True), ROUND_UNKNOWN),  # another's
-    (FakeList(readable=False), FakeApi(), SUBMISSIONS_UNREADABLE),
-    (FakeList(complete=False), FakeApi(), ROUND_LIST_INCOMPLETE),         # a page missing
+@pytest.mark.parametrize("submissions, api, said, from_list", [
+    (FakeList([_entry()]), FakeApi(fails=True), failures.CHECK_CONNECTION, False),  # no answer
+    (FakeList([_entry()]), FakeApi(unreadable=True), ROUND_UNKNOWN, False),   # has something
+    (FakeList([_entry()]), FakeApi("declined", other_sid=True), ROUND_UNKNOWN, False),
+    (FakeList(readable=False), FakeApi(), SUBMISSIONS_UNREADABLE, True),
+    (FakeList(complete=False), FakeApi(), failures.CHECK_CONNECTION, True),  # a page missing
 ], ids=["no answer", "unreadable", "another submission", "list unreadable", "list incomplete"])
-def test_a_round_that_cannot_be_told_is_not_guessed(submissions, api, said):
+def test_a_round_that_cannot_be_told_is_not_guessed(submissions, api, said, from_list):
     # RG-M2b 2: never "already submitted", never round 1 by default.
     # RG-M2r 4: what the list could not tell is said as the list's, so Try
     # Again reads it again; what the server could not, asks it again.
+    # Lessons 36: the connection or a page that did not come, only once
+    # the quiet tries are spent.
     answer = _answer(_writer(submissions, api))
     assert (answer.round, answer.words) == (None, said)
-    assert answer.from_list is (said is not ROUND_UNKNOWN)
+    assert answer.from_list is from_list
 
 
 class HealingList(FakeList):
@@ -451,35 +687,49 @@ class HealingList(FakeList):
         on_done(ListRead(ReadStatus.INCOMPLETE if self.reads == 1 else ReadStatus.COMPLETE))
 
 
-def test_a_list_read_in_part_is_read_again_when_the_sheet_opens_again():
+def test_a_list_read_in_part_is_read_again_quietly_and_says_nothing(later):
     # RG-M2r 4 (the reviewer's probe): read once in part, it was never
-    # read again in the session, and submitting stayed blocked.
+    # read again in the session. Lessons 36: a page that did not come is
+    # read again quietly, after a wait, and nothing is said meanwhile.
+    submissions = HealingList()
+    writer = _writer(submissions, FakeApi())
+    answers = []
+    writer.round_for(SimpleNamespace(user_pubkey=WRITER), PUBLICATION, "ein-jahr",
+                     answers.append)
+    QApplication.processEvents()
+    assert answers == [] and submissions.reads == 1             # waiting, nothing said
+    assert later.run() == [failures.QUIET_RETRY_MS[0]]
+    assert submissions.reads == 2 and [(a.round, a.words) for a in answers] == [(1, "")]
+    assert _round(writer) == (1, "") and submissions.reads == 2  # whole: not read again
+
+
+def test_the_publications_wait_for_a_list_read_in_part_to_be_read_again_quietly(later):
+    # Lessons 36: the sheet hears the publications once, with the list
+    # read whole on a quiet try, never the read in part.
     submissions = HealingList()
     writer = _writer(submissions, FakeApi(),
                      destinations=SimpleNamespace(find=lambda found, _failed: found([])))
-    profile = SimpleNamespace(user_pubkey=WRITER)
-    writer.destinations(profile, lambda *a: None, print)
-    QApplication.processEvents()
-    assert _round(writer) == (None, ROUND_LIST_INCOMPLETE) and submissions.reads == 1
-    writer.destinations(profile, lambda *a: None, print)        # the sheet opened again
-    QApplication.processEvents()
-    assert submissions.reads == 2 and _round(writer) == (1, "")
-    writer.destinations(profile, lambda *a: None, print)        # whole: not read again
-    QApplication.processEvents()
-    assert submissions.reads == 2
+    got, failed = _load(writer)
+    assert (got, failed, submissions.reads) == ([], [], 1)
+    assert later.run() == [failures.QUIET_RETRY_MS[0]]
+    assert got == [[]] and submissions.reads == 2
+    assert writer.account(PROFILE).list_problem == ""
 
 
-@pytest.mark.parametrize("submissions", [FakeList(readable=False), HealingList()],
-                         ids=["unreadable", "in part"])
+@pytest.mark.parametrize("submissions", [FakeList(readable=False),
+                                         FakeList(complete=False)],
+                         ids=["unreadable", "in part, the quiet tries spent"])
 def test_try_again_on_a_round_the_list_could_not_tell_reads_it_again(submissions):
+    # One read, or one and its quiet tries, per Try Again.
+    tries = 1 if submissions.complete else 1 + len(failures.QUIET_RETRY_MS)
     writer = _writer(submissions, FakeApi())
-    assert _answer(writer).from_list and submissions.reads == 1
-    assert _answer(writer).from_list and submissions.reads == 1     # said again, not read
+    assert _answer(writer).from_list and submissions.reads == tries
+    assert _answer(writer).from_list and submissions.reads == tries  # said again, not read
     writer.reload(SimpleNamespace(user_pubkey=WRITER))
     _answer(writer)
-    assert submissions.reads == 2
+    assert submissions.reads == 2 * tries
     _answer(writer)
-    assert submissions.reads == 2                   # once per Try Again
+    assert submissions.reads == 2 * tries
 
 
 def test_a_list_that_could_not_be_read_is_said_again_without_asking_again():
@@ -487,6 +737,56 @@ def test_a_list_that_could_not_be_read_is_said_again_without_asking_again():
     writer = _writer(submissions, FakeApi())
     assert _round(writer) == _round(writer) == (None, SUBMISSIONS_UNREADABLE)
     assert submissions.reads == 1
+
+
+class Publications:
+    """The publications' finder: refuses with ``error`` the first
+    ``refusals`` times (-1: always), then lists none."""
+
+    def __init__(self, error, refusals=-1) -> None:
+        self.error, self.refusals, self.asked = error, refusals, 0
+
+    def find(self, found, failed) -> None:
+        self.asked += 1
+        if self.refusals != 0:
+            self.refusals -= 1
+            failed(self.error)
+        else:
+            found([])
+
+
+def _load(writer):
+    got, failed = [], []
+    writer.destinations(PROFILE, lambda _d, used: got.append(used), failed.append)
+    QApplication.processEvents()
+    return got, failed
+
+
+@pytest.mark.parametrize("code", [Code.OFFLINE, Code.TIMEOUT, Code.SERVER])
+def test_publications_the_server_did_not_give_once_are_asked_again_quietly(later, code):
+    # Lessons 36: nothing is said for a try the connection stopped.
+    publications = Publications(StandupError(code), refusals=1)
+    writer = _writer(FakeList(), FakeApi(), destinations=publications)
+    got, failed = _load(writer)
+    assert (got, failed) == ([], [])                # waiting, nothing said
+    assert later.run() == [failures.QUIET_RETRY_MS[0]]
+    assert publications.asked == 2 and got == [[]] and failed == []
+
+
+def test_publications_that_never_come_are_said_once_when_the_tries_are_spent(later):
+    publications = Publications(StandupError(Code.OFFLINE))
+    writer = _writer(FakeList(), FakeApi(), destinations=publications)
+    got, failed = _load(writer)
+    assert later.run() == list(failures.QUIET_RETRY_MS)
+    assert got == [] and [error.code for error in failed] == [Code.OFFLINE]
+    assert publications.asked == 1 + len(failures.QUIET_RETRY_MS)
+
+
+def test_publications_refused_otherwise_are_said_at_once(later):
+    publications = Publications(StandupError(Code.RATE_LIMITED, retry_after=60))
+    writer = _writer(FakeList(), FakeApi(), destinations=publications)
+    got, failed = _load(writer)
+    assert later.waiting == [] and len(failed) == 1 and publications.asked == 1
 
 
 def test_a_list_that_failed_for_the_publications_is_not_read_again_for_the_round():
@@ -645,7 +945,7 @@ def test_a_real_run_stopped_while_its_missing_picture_goes_up_is_said_to_be_in()
     progress = world.submitting.progress
     assert progress.step is Step.SIGNING and progress.receipt is None
     run = SimpleNamespace(progress=progress, choice=SimpleNamespace(name="Magazin"))
-    assert standup_submit._stopped_words([run]) == (
+    assert standup_run.stopped_words([run]) == (
         "Your submission to Magazin is in, but a picture was still being uploaded when the "
         "account changed.")
 
@@ -762,9 +1062,10 @@ def test_in_the_background_a_failure_is_said_in_its_words(german):
     writer, run, said = _writer(FakeList(), FakeApi()), Run(), []
     writer.status.connect(said.append)
     writer.in_background(run)
-    run.changed.emit(Progress(Step.FAILED, failure=Failure(words.NOT_SENT, Step.SIGNING,
-                                                          detail=words.NOTHING_SUBMITTED)))
-    assert said[-1] == "Nicht gesendet. Keine Verbindung zum Server."
+    run.changed.emit(Progress(Step.FAILED, failure=Failure(
+        failures.CHECK_CONNECTION, Step.SIGNING, title=words.NOT_SUBMITTED)))
+    assert said[-1] == ("Dein Artikel wurde nicht eingereicht. Prüfe deine Internetverbindung "
+                        "und versuche es erneut.")
 
 
 # -- the small cover ---------------------------------------------------------------
@@ -811,9 +1112,9 @@ def test_the_first_message_is_sealed_by_the_writer_and_wrapped_to_the_submission
         writer=pk("writer"), api=SimpleNamespace(send_message=send_message), stopped=False,
         signer=SimpleNamespace(sign_event=lambda unsigned, *, on_success, on_failure:
                                signer(unsigned, on_success, on_failure)))
-    StandupWriter._send_message(account, sealed, "Passt zu eurer Reihe.",
+    standup_message.send_first_message(account, sealed, "Passt zu eurer Reihe.",
                                 lambda: said.append("signed"), lambda: said.append("sent"),
-                                lambda: said.append("not sent"))
+                                lambda: said.append("not sent"), later=LATER)
     (submission_id, wrap, kind_hint), = sent
     opened = conversation.open_item(wrap, s_sub, sid)
     assert (submission_id, kind_hint, said) == (sid, "message", ["signed", "sent"])
@@ -843,9 +1144,71 @@ def test_a_message_refused_for_a_limit_says_how_long_to_wait(error, wait):
         writer=pk("writer"), api=SimpleNamespace(send_message=send_message), stopped=False,
         signer=SimpleNamespace(sign_event=lambda unsigned, *, on_success, on_failure:
                                signer(unsigned, on_success, on_failure)))
-    StandupWriter._send_message(account, sealed, "Hallo", lambda: None, lambda: None,
-                                lambda wait=None: waits.append(wait))
+    standup_message.send_first_message(account, sealed, "Hallo", lambda: None, lambda: None,
+                                lambda wait=None: waits.append(wait), later=LATER)
+    LATER.run()                                     # a 5xx is asked again quietly first
     assert waits == [wait]
+
+
+def _message_account(answers):
+    """An account whose server answers each message POST with the next of
+    ``answers`` (a StandupError, or a seq)."""
+    from nostr import crypto as nostr_crypto
+    from tests.standup_fakes import SignAs
+    from tests.standup_vectors import pk, sk
+
+    s_sub = bytes(range(1, 33))
+    sealed = _sealed(nostr_crypto.get_public_key(s_sub).hex(), s_sub, "ab" * 32)
+    signer, posted = SignAs(sk("writer")), []
+
+    def send_message(submission_id, wrap, *, kind_hint, on_success, on_failure):
+        posted.append(wrap)
+        answer = answers.pop(0)
+        on_failure(answer) if isinstance(answer, StandupError) else on_success(answer)
+
+    account = SimpleNamespace(
+        writer=pk("writer"), api=SimpleNamespace(send_message=send_message), stopped=False,
+        signer=SimpleNamespace(sign_event=lambda unsigned, *, on_success, on_failure:
+                               signer(unsigned, on_success, on_failure)))
+    return account, sealed, signer, posted
+
+
+@pytest.mark.parametrize("code", [Code.OFFLINE, Code.TIMEOUT, Code.SERVER])
+def test_a_message_the_connection_stopped_is_sent_again_quietly_with_no_new_prompt(code):
+    # Lessons 36: the submission is in; the message goes again after a
+    # wait, the same wrap, and nothing is said meanwhile.
+    account, sealed, signer, posted = _message_account([StandupError(code), 7])
+    said = []
+    standup_message.send_first_message(
+        account, sealed, "Hallo", lambda: said.append("signed"), lambda: said.append("sent"),
+        lambda wait=None: said.append("not sent"), later=LATER)
+    assert said == ["signed"] and len(posted) == 1
+    assert LATER.run() == [failures.QUIET_RETRY_MS[0]]
+    assert said == ["signed", "sent"] and len(posted) == 2 and posted[0] == posted[1]
+    assert len(signer.requests) == 1
+
+
+def test_a_message_that_never_gets_through_is_said_not_sent_once():
+    account, sealed, _signer, posted = _message_account(
+        [StandupError(Code.OFFLINE) for _ in range(1 + len(failures.QUIET_RETRY_MS))])
+    said = []
+    standup_message.send_first_message(
+        account, sealed, "Hallo", lambda: None, lambda: said.append("sent"),
+        lambda wait=None: said.append("not sent"), later=LATER)
+    assert LATER.run() == list(failures.QUIET_RETRY_MS)
+    assert said == ["not sent"] and len(posted) == 1 + len(failures.QUIET_RETRY_MS)
+
+
+def test_a_message_that_may_have_arrived_is_never_sent_twice():
+    # No idempotency for messages in the contract: a second POST could be
+    # a second message.
+    account, sealed, _signer, posted = _message_account(
+        [StandupError(Code.TIMEOUT, maybe_stored=True)])
+    said = []
+    standup_message.send_first_message(
+        account, sealed, "Hallo", lambda: None, lambda: said.append("sent"),
+        lambda wait=None: said.append("not sent"), later=LATER)
+    assert LATER.waiting == [] and said == ["not sent"] and len(posted) == 1
 
 
 def test_a_message_with_a_secret_key_in_it_is_never_sent():
@@ -858,15 +1221,15 @@ def test_a_message_with_a_secret_key_in_it_is_never_sent():
         send_message=lambda *a, **k: sent.append(a)), signer=None, stopped=False)
     sealed = _sealed("00" * 32, s_sub, "ab" * 32)
     nsec = encode_nsec(sk("writer").hex())
-    StandupWriter._send_message(account, sealed, f"mein Schlüssel {nsec}",
+    standup_message.send_first_message(account, sealed, f"mein Schlüssel {nsec}",
                                 lambda: said.append("signed"), lambda: said.append("sent"),
-                                lambda: said.append("not sent"))
+                                lambda: said.append("not sent"), later=LATER)
     QApplication.processEvents()
     assert sent == [] and said == ["not sent"]
 
 
 def _sealed(room: str, s_sub: bytes, sid: str) -> SimpleNamespace:
-    """What _send_message reads of a Sealed."""
+    """What send_first_message reads of a Sealed."""
     return SimpleNamespace(body={"p_sub": room}, p_sub=room, s_sub=s_sub, submission_id=sid)
 
 
@@ -888,7 +1251,7 @@ def test_a_first_message_sealed_after_the_account_was_let_go_is_never_posted(mon
     # RG-M2r 3, lesson 31: the person confirms the seal on the phone after
     # switching account; nothing is posted, no session opened for the
     # account left, and nothing touches what was deleted with it.
-    from nostr.ui import standup_submit as module
+    from nostr.ui import standup_message as module
 
     pending = {}
     monkeypatch.setattr(module.conversation, "message_rumor", lambda **kw: {"rumor": kw})
@@ -900,8 +1263,8 @@ def test_a_first_message_sealed_after_the_account_was_let_go_is_never_posted(mon
     posted, said = [], []
     monkeypatch.setattr(account.api, "send_message", lambda *a, **k: posted.append(a))
     sealed = _sealed("ab" * 32, b"x", "cd" * 32)
-    StandupWriter._send_message(account, sealed, "Hallo", lambda: said.append("signed"),
-                                lambda: said.append("sent"), lambda: said.append("not sent"))
+    standup_message.send_first_message(account, sealed, "Hallo", lambda: said.append("signed"),
+                                lambda: said.append("sent"), lambda: said.append("not sent"), later=LATER)
     writer.stop()
     QApplication.processEvents()
     if deleted:

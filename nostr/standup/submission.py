@@ -14,6 +14,7 @@ Pure: no Qt, no network.
 from __future__ import annotations
 
 from typing import Any, Dict, Mapping, Optional, Sequence
+from urllib.parse import urlsplit
 
 from . import formats
 from .formats import FormatError
@@ -93,13 +94,13 @@ def submission_body_problem(body: Any) -> Optional[str]:
                          for w in wraps.values()), "a wrap that holds no submission key")
         blobs = body.get("blobs")
         formats.need(isinstance(blobs, list) and len(blobs) <= formats.MAX_BLOBS
-                     and all(_blob_ok(b) for b in blobs),
-                     f"at most {formats.MAX_BLOBS} files, each on at most "
-                     f"{formats.MAX_BLOB_SERVERS} https servers")
+                     and all(blob_ok(b) for b in blobs),
+                     f"at most {formats.MAX_BLOBS} files, each on one to "
+                     f"{formats.MAX_BLOB_SERVERS} https servers named once")
         formats.need(len({b["sha256"] for b in blobs}) == len(blobs), "a file listed twice")
         client = body.get("client")
-        formats.need(isinstance(client, str) and len(client) <= formats.MAX_CLIENT_CHARS,
-                     f"the client has at most {formats.MAX_CLIENT_CHARS} characters")
+        formats.need(formats.is_plain_text(client, 0, formats.MAX_CLIENT_CHARS),
+                     f"the client is one line of at most {formats.MAX_CLIENT_CHARS} characters")
         formats.need(formats.is_hex64(body.get("status_key_hash")), "the status key hash")
         if "source" in body:
             formats.need(isinstance(body["source"], dict), "the source")
@@ -113,15 +114,33 @@ def submission_body_problem(body: Any) -> Optional[str]:
     return None
 
 
-def _blob_ok(blob: Any) -> bool:
-    """A file of the body (12.4, 15): its hash, its size, and at most
-    ten servers, each https."""
-    if not isinstance(blob, dict) or not formats.is_hex64(blob.get("sha256")):
+def blob_server_ok(value: Any) -> bool:
+    """A server a file of a submission is named on (15): https on any
+    port, a host, no user info, query or fragment, no control characters,
+    as the server checks it (backend core/editorial_submission.py; its
+    plain http to its own machine is a development setting no client
+    relies on)."""
+    if not formats.is_plain_text(value, 1, formats.MAX_BLOB_SERVER_CHARS):
         return False
-    servers = blob.get("servers")
-    return (formats.is_int(blob.get("size")) and isinstance(servers, list)
-            and len(servers) <= formats.MAX_BLOB_SERVERS
-            and all(isinstance(s, str) and s.startswith("https://") for s in servers))
+    try:
+        parts = urlsplit(value)
+        port = parts.port
+    except ValueError:
+        return False
+    return parts.scheme == "https" and bool(parts.hostname) and port != 0 and not (
+        parts.query or parts.fragment or parts.username or parts.password)
 
 
-__all__ = ["submission_body", "submission_body_problem"]
+def blob_ok(blob: Any) -> bool:
+    """A file of a submission's body (12.4, 15): exactly its hash, its size
+    and one to ten servers, each named once."""
+    if not isinstance(blob, dict) or set(blob) != {"sha256", "size", "servers"}:
+        return False
+    servers = blob["servers"]
+    return (formats.is_hex64(blob["sha256"]) and formats.is_int(blob["size"], low=1)
+            and isinstance(servers, list) and 1 <= len(servers) <= formats.MAX_BLOB_SERVERS
+            and all(blob_server_ok(server) for server in servers)
+            and len(set(servers)) == len(servers))
+
+
+__all__ = ["blob_ok", "blob_server_ok", "submission_body", "submission_body_problem"]

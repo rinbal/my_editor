@@ -21,16 +21,20 @@ from typing import Callable, List
 
 import pytest
 
+from nostr import failures
 from nostr.list_results import PublishResult, PublishStatus
 from nostr.media.assets import asset_key
 from nostr.standup import drafting, formats, submitting, trust, views, words
 from nostr.standup import crypto as scrypto
 from nostr.standup.client import StandupApi
 from nostr.standup.drafting import ArticleDraft, Choice, LocalPicture
-from nostr.standup.entries import RecordResult, RecordStatus, takes_place_of
+from nostr.standup.entries import (
+    RecordResult, RecordStatus, SubmissionEntry, SubmissionItems, item_for, merge_items,
+    same_keys, stored_elsewhere, takes_place_of,
+)
 from nostr.standup.errors import Code, StandupError
+from nostr.standup.ports import Reread
 from nostr.standup.submitting import Held, MessageStatus, Phase, Ports, Step, Submitting
-from nostr.standup.rounds import ask_round
 from nostr.standup.watcher import resolve_unconfirmed
 from tests.membership_fakes import FakeClock
 from tests.standup_fakes import (
@@ -109,11 +113,40 @@ class SubmissionsList:
         self.log = log
         self.entries = []
         self.forgotten = []
+        self.marked = []
         self.on_list = {}
         self.outcomes: List[RecordResult] = []
+        # What another device wrote, by sid: found by the next read
+        # (reload), merged as the real list merges (merge_items).
+        self.arriving = {}
+        self.unreadable = ""                # a read again that cannot tell
 
     def held(self, sid):
         return self.on_list.get(sid)
+
+    def mark_stored(self, entry) -> None:
+        # SubmissionsList.mark_stored: the entry held with these keys.
+        self.marked.append(entry)
+        self.log.append("stored")
+        held = self.on_list.get(entry.sid)
+        if held is not None and same_keys(held, entry):
+            self.on_list[entry.sid] = replace(held, stored=True)
+
+    def reload(self, entry, on_done) -> None:
+        # StandupWriter._reread: the list read again, then whether that
+        # device's stored entry is here (entries.stored_elsewhere).
+        self.log.append("reload")
+        if self.unreadable:
+            self.later(0, lambda: on_done(Reread(False, self.unreadable)))
+            return
+        for sid, item in list(self.arriving.items()):
+            mine = self.on_list.get(sid)
+            merged = merge_items(SubmissionItems((item,)),
+                                 SubmissionItems((mine,) if mine is not None else ()))
+            self.on_list[sid] = item_for(merged, sid)
+        self.arriving = {}
+        arrived = stored_elsewhere(self.on_list.get(entry.sid), entry)
+        self.later(0, lambda: on_done(Reread(arrived)))
 
     def forget(self, entry) -> None:
         self.forgotten.append(entry)
@@ -198,18 +231,10 @@ class World:
             on_signed()
             on_sent()
 
-        def choose_round(entry, on_done):
-            # The writer's port: contract 2 from step 1, the list read anew.
-            self.log.append("round")
-            mine = [e for e in self.list.on_list.values()
-                    if e.role == "writer" and e.publication == entry.publication
-                    and e.d == entry.d and e.status_key]
-            ask_round(lambda _server: self.api, mine, on_done, writer=pk("writer"),
-                      stored=entry)
-
         return Ports(confirm_key=confirm_key, upload=self.uploads, held=self.list.held,
-                     record=self.list.record, forget=self.list.forget, submit=submit, lookup=lookup,
-                     send_message=send_message, choose_round=choose_round,
+                     record=self.list.record, mark_stored=self.list.mark_stored,
+                     forget=self.list.forget, submit=submit, lookup=lookup,
+                     send_message=send_message, reload=self.list.reload,
                      later=self.later, clock=self.clock)
 
     def settle(self, *, seconds: float = 0.0) -> None:
@@ -243,13 +268,23 @@ class World:
     def nip98(self) -> List[dict]:
         return [r for r in self.signer.requests if r["kind"] == 27235]
 
-    def on_server(self, round_: int, state: str) -> None:
+    def on_server(self, round_: int, state: str) -> SubmissionEntry:
         """A submission of this work in ``round_`` that the server holds
-        in ``state``, sent from elsewhere (the list here knows nothing)."""
+        in ``state``, sent from elsewhere (the list here knows nothing);
+        the entry that device keeps, stored (13 at 72d5ddc)."""
         prepared = submission_for(sk("writer"), round_=round_)
         self.api.submit(prepared.body, lambda _r: None, lambda _e: None)
         self.nam.settle()
-        self.server.submissions[prepared.body["submission_id"]].state = state
+        body = prepared.body
+        self.server.submissions[body["submission_id"]].state = state
+        return SubmissionEntry(
+            sid=body["submission_id"], publication=body["publication"], server=SERVER,
+            role="writer", s_sub=prepared.s_sub.hex(), status_key=prepared.status_key,
+            title=body["title"], kind="article", d="ein-jahr-mit-lightning", round=round_,
+            revision=1, revision_hash=body["revision_hash"],
+            envelope_sha256=body["envelope_sha256"],
+            wraps_sha256=scrypto.wraps_sha256(body["wraps"]), stored=True,
+            updated_at=int(NOW) - 60)
 
 
 def test_an_article_goes_out_in_the_protocols_order_and_counts_only_with_its_receipt():
@@ -258,9 +293,11 @@ def test_an_article_goes_out_in_the_protocols_order_and_counts_only_with_its_rec
     assert world.steps == [Step.KEY, Step.ENCRYPTING, Step.UPLOADING, Step.RECORDING,
                            Step.SIGNING, Step.SENDING, Step.SUBMITTED]
     assert progress.phase is Phase.DONE and progress.receipt is not None
-    # The entry was on the list before the request was made (12.4).
-    assert world.log == ["record", "submit"]
+    # The entry was on the list before the request was made (12.4), and is
+    # marked stored once the receipt is held (13 at 72d5ddc).
+    assert world.log == ["record", "submit", "stored"]
     entry = world.list.entries[0]
+    assert world.list.on_list[entry.sid] == replace(entry, stored=True)
     body = world.posted()[0]
     assert entry.sid == body["submission_id"] and entry.revision_hash == body["revision_hash"]
     assert formats.status_key_hash(entry.status_key) == body["status_key_hash"]
@@ -350,7 +387,8 @@ def test_no_answer_after_sending_is_resolved_by_the_status_key_without_a_prompt(
     progress = world.go()
     assert Step.CHECKING in world.steps
     assert progress.step is Step.SUBMITTED
-    assert world.log == ["record", "submit", "lookup"]
+    # The lookup's receipt is held too: the entry is marked stored.
+    assert world.log == ["record", "submit", "lookup", "stored"]
     assert len(world.nip98()) == 1              # the lookup needed no signature
     assert len(world.posted()) == 1
 
@@ -418,8 +456,8 @@ def test_a_lookup_that_finds_another_envelope_or_other_wraps_is_never_submitted(
     assert Step.CHECKING in world.steps and Step.SUBMITTED not in world.steps
     # 72d688b: this revision is stored, not as it was sent; the words say
     # so, and never that nothing is submitted.
-    assert progress.step is Step.FAILED and progress.failure.headline == words.STORED_OTHER
-    assert progress.failure.detail == words.TEXT_STAYS
+    assert progress.step is Step.FAILED and progress.failure.sentence == words.STORED_OTHER
+    assert progress.failure.title == words.VERSION_NOT_SUBMITTED
 
 
 def test_a_receipt_for_another_version_is_never_submitted():
@@ -428,7 +466,7 @@ def test_a_receipt_for_another_version_is_never_submitted():
     progress = world.go()
     assert Step.SUBMITTED not in world.steps
     assert progress.step is Step.FAILED
-    assert progress.failure.headline == words.ANOTHER_VERSION
+    assert progress.failure.sentence == words.ANOTHER_VERSION
     assert progress.failure.retry is None
 
 
@@ -453,7 +491,7 @@ def test_a_file_that_stays_missing_fails_with_a_retry():
     world.uploads.lose = 10
     progress = world.go()
     assert progress.step is Step.FAILED
-    assert progress.failure.headline == words.PICTURE_MISSING
+    assert progress.failure.sentence == words.PICTURE_MISSING
     assert progress.failure.retry is Step.REUPLOADING
     assert len(world.uploads.calls) == 1 + submitting.MAX_REUPLOADS
     world.uploads.lose = 0
@@ -480,7 +518,7 @@ def test_once_the_server_stored_it_nothing_is_cancelled_or_called_not_submitted(
     world.signer.held[0][2]("declined")             # the person says no on the phone
     world.settle()
     failure = world.submitting.progress.failure
-    assert failure is not None and failure.detail == words.STORED_PICTURE_MISSING
+    assert failure is not None and failure.title == words.PICTURE_NOT_IN
     assert world.list.forgotten == []               # its entry stays: the server has it
 
 
@@ -507,14 +545,38 @@ def test_every_held_fact_has_its_words_and_its_place():
         "another version", "a later version", "not as sent"])
 def test_a_failure_says_what_the_server_holds(set_up, held):
     # RG-M2r 2: a lookup that finds another version, or a stale refusal
-    # after sending, said "Nothing is submitted": the server holds one.
+    # after sending, said "Nothing is submitted": the server holds one. A
+    # stale revision 1 is another device's round (72d5ddc): what it says
+    # of this device's list comes in place of the table's line.
     world = World()
     set_up(world)
     progress = world.go()
     assert progress.step is Step.FAILED and progress.held is held
-    assert progress.failure.detail == submitting.HELD_WORDS[held].failed
+    elsewhere = progress.failure.retry is Step.RELOADING
+    assert progress.failure.title == (words.SUBMITTED_ELSEWHERE if elsewhere
+                                      else submitting.HELD_WORDS[held].failed)
     if held is not Held.NOTHING:
-        assert progress.failure.detail != words.NOTHING_SUBMITTED
+        assert progress.failure.title != words.NOT_SUBMITTED
+
+
+def test_a_receipt_with_a_picture_missing_marks_the_entry_stored_once():
+    # The receipt with blobs missing says the server stores this sid with
+    # this status key (13 at 72d5ddc): marked then, not again per resend.
+    world = World()
+    world.uploads.lose = 1
+    progress = world.go()
+    assert progress.step is Step.SUBMITTED
+    assert world.log == ["record", "submit", "stored", "submit"]
+    assert [m.stored for m in world.list.marked] == [True]
+    assert world.list.on_list[world.list.entries[0].sid].stored
+
+
+def test_a_run_never_marks_what_it_holds_no_receipt_for():
+    world = World()
+    world.server.inject("submit", Fault(429, "rate_limited", retry_after=60))
+    world.go()
+    assert world.list.marked == []
+    assert not world.list.on_list[world.list.entries[0].sid].stored
 
 
 def test_what_the_server_holds_follows_each_answer():
@@ -542,7 +604,7 @@ def test_what_the_server_holds_follows_each_answer():
     world.submitting.start()
     world.settle()
     progress = world.submitting.progress
-    assert progress.step is Step.FAILED and progress.failure.headline == words.NOT_RECEIVED
+    assert progress.step is Step.FAILED and progress.failure.sentence == words.NOT_RECEIVED
     assert {s.held for s in world.seen if s.step is Step.CHECKING} == {Held.MAYBE}
     assert progress.held is Held.NOTHING
 
@@ -551,7 +613,9 @@ def test_an_answer_to_an_earlier_request_is_ignored():
     world = World()
     world.uploads.fail = "The server is full."
     world.go()
-    assert world.submitting.progress.failure.said == "The server is full."
+    # What the servers answered: behind Details only (lessons 36).
+    failure = world.submitting.progress.failure
+    assert (failure.details, failure.said) == ("The server is full.", "")
     first = world.uploads.calls[0]
     world.uploads.fail, world.uploads.hold = "", True
     world.submitting.retry()
@@ -569,8 +633,8 @@ def test_a_revision_that_cannot_be_built_here_never_reads_as_the_servers_refusal
     # RG-M2b 11: nothing went out (lesson 8), so not "the server didn't take it".
     world = World(authors=(("ff" * 32, ""),))
     progress = world.go()
-    assert progress.step is Step.FAILED and progress.failure.headline == words.NOT_BUILT
-    assert progress.failure.detail == words.NOTHING_SUBMITTED and not progress.sent
+    assert progress.step is Step.FAILED and progress.failure.sentence == words.NOT_BUILT
+    assert progress.failure.title == words.NOT_SUBMITTED and not progress.sent
     assert "submit" not in world.server.handled
 
 
@@ -580,8 +644,8 @@ def test_a_request_the_server_never_got_is_said_not_received_and_can_be_sent_aga
     world.server.inject("submit", LOST)
     progress = world.go()
     assert Step.CHECKING in world.steps and progress.step is Step.FAILED
-    assert progress.failure.headline == words.NOT_RECEIVED
-    assert progress.failure.detail == words.NOTHING_SUBMITTED
+    assert progress.failure.sentence == words.NOT_RECEIVED
+    assert progress.failure.title == words.NOT_SUBMITTED
     assert progress.failure.retry is Step.SIGNING
     world.submitting.retry()
     world.settle()
@@ -593,8 +657,8 @@ def test_a_connection_that_failed_before_sending_is_not_sent_and_can_be_sent_aga
     world.server.inject("submit", DROP_BEFORE)
     progress = world.go()
     assert progress.step is Step.FAILED
-    assert progress.failure.headline == words.NOT_SENT
-    assert progress.failure.detail == words.NOTHING_SUBMITTED
+    assert progress.failure.sentence == failures.CHECK_CONNECTION
+    assert progress.failure.title == words.NOT_SUBMITTED
     assert progress.failure.retry is Step.SIGNING
     world.submitting.retry()
     world.settle()
@@ -620,25 +684,25 @@ def test_each_refusal_says_what_it_is_and_whether_trying_again_helps(set_up, cod
     set_up(world)
     progress = world.go()
     assert progress.step is Step.FAILED
-    assert progress.failure.headline == (words.rate_limited(600) if code == "rate_limited"
-                                         else words.refusal(code))
+    assert progress.failure.sentence == ({"key_event_invalid": words.KEY_NOT_CONFIRMED_AGAIN,
+                                          "epoch": words.KEY_NOT_CONFIRMED_AGAIN}.get(code)
+                                         or words.refusal(code))
     assert progress.failure.retry is retry
     assert Step.SUBMITTED not in world.steps
 
 
 # -- a limit's wait (RG-M2r 7, contract 15) -----------------------------------------
 
-@pytest.mark.parametrize("wait, headline", [
-    (600, words.RATE_LIMITED_NOW),          # an hour's limit, or the day's near its end
-    (7 * 3600, words.RATE_LIMITED_TODAY),   # only the day's stored bytes wait that long
-    (None, words.refusal("rate_limited")),  # no Retry-After: nothing to go by
-])
-def test_a_limit_says_which_it_is_and_trying_again_waits_for_it(wait, headline):
+@pytest.mark.parametrize("wait", [600, 7 * 3600, None],
+                         ids=["an hour's", "the day's", "no Retry-After"])
+def test_a_limit_says_which_it_is_and_trying_again_waits_for_it(wait):
+    # The sentence says when trying again helps, from retry_at (the
+    # handoff's phase_words, lessons 36).
     world = World(pictures=False)
     world.server.inject("submit", Fault(429, "rate_limited", retry_after=wait))
     progress = world.go()
     failure = progress.failure
-    assert failure.headline == headline and failure.retry is Step.SIGNING
+    assert failure.sentence == words.refusal("rate_limited") and failure.retry is Step.SIGNING
     assert failure.retry_at == (None if wait is None else NOW + wait)
     prompts, posted = len(world.nip98()), len(world.posted())
     if wait is not None:
@@ -672,7 +736,7 @@ def test_a_key_that_is_not_confirmed_stops_everything_before_it_starts():
     world.key_refusal = trust.KeyNotConfirmed("an older epoch")
     progress = world.go()
     assert progress.step is Step.FAILED
-    assert progress.failure.headline == trust.KEY_NOT_CONFIRMED
+    assert progress.failure.sentence == words.KEY_NOT_CONFIRMED_AGAIN
     assert world.uploads.calls == [] and world.list.entries == [] and world.posted() == []
 
 
@@ -682,7 +746,7 @@ def test_an_entry_the_list_does_not_hold_is_never_sent():
         RecordStatus.SUPERSEDED, None, PublishResult(PublishStatus.SENT)))
     progress = world.go()
     assert progress.step is Step.FAILED
-    assert progress.failure.headline == words.LIST_CHANGED_ELSEWHERE
+    assert progress.failure.sentence == words.LIST_CHANGED_ELSEWHERE
     assert progress.failure.retry is None
     assert world.posted() == []
 
@@ -698,7 +762,7 @@ def test_a_list_that_could_not_be_written_says_so_and_offers_to_try_again(status
         RecordStatus.NOT_STORED, None, PublishResult(status, reason=said)))
     progress = world.go()
     assert progress.step is Step.FAILED and world.posted() == []
-    assert progress.failure.headline == words.LIST_NOT_SAVED
+    assert progress.failure.sentence == words.LIST_NOT_SAVED
     assert progress.failure.said == said
     assert progress.failure.retry is Step.RECORDING
     world.submitting.retry()
@@ -713,7 +777,7 @@ def test_a_secret_key_in_the_text_is_refused_before_anything_is_recorded():
         content="nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5")
     progress = world.go()
     assert progress.step is Step.FAILED
-    assert progress.failure.headline == formats.SECRET_KEY_IN_SUBMISSION
+    assert progress.failure.sentence == formats.SECRET_KEY_IN_SUBMISSION
     assert world.list.entries == [] and world.posted() == []
 
 
@@ -868,103 +932,83 @@ def test_a_round_still_open_there_is_said_and_never_sent_again():
     world.on_server(1, "in_review")
     progress = world.go()
     assert progress.step is Step.FAILED and progress.failure.retry is None
-    assert progress.failure.headline == drafting.ALREADY_SUBMITTED
-    assert progress.failure.detail == words.TEXT_STAYS and progress.held is Held.OTHER
+    assert progress.failure.sentence == drafting.ALREADY_SUBMITTED
+    assert progress.failure.title == words.VERSION_NOT_SUBMITTED and progress.held is Held.OTHER
     assert [body["round"] for body in world.posted()[1:]] == [2]
     assert [e.round for e in world.list.forgotten] == [2]
 
 
-# -- a revision 1 at a sid the server stores (contract 2, bde1274) ----------------
+# -- a revision 1 at a sid the server stores (contract 2 at 72d5ddc) --------------
 
 def _sent_here(world, placed: int) -> List[int]:
     """The rounds of the bodies the run sent, after ``placed`` from elsewhere."""
     return [body["round"] for body in world.posted()[placed:]]
 
 
-@pytest.mark.parametrize("elsewhere, step, rounds", [
-    ({1: "declined"}, Step.SUBMITTED, [1, 2]),
-    ({1: "declined", 2: "withdrawn"}, Step.SUBMITTED, [1, 3]),   # asked round by round
-    ({1: "in_review"}, Step.FAILED, [1]),                        # handed in there, open
-], ids=["declined", "two closed", "open"])
-def test_a_revision_1_at_a_sid_stored_elsewhere_chooses_the_round_again_once(elsewhere, step,
-                                                                          rounds):
-    # Another device handed the work in; this list does not know it, so the
-    # run built round 1 with secrets of its own. The fake answers as the
-    # backend does (409 stale_revision {"revision": 1}); the run asks again
-    # from step 1, never sends that body again, and builds once.
+@pytest.mark.parametrize("state", ["submitted", "declined"])
+def test_a_revision_1_at_a_sid_stored_elsewhere_builds_nothing_and_waits_for_that_entry(state):
+    # Another device of this writer built the same round with its own
+    # secrets and the server stored that one; this list does not know it.
+    # The fake answers as the backend does (409 stale_revision {"revision":
+    # 1}). The run never repeats the body, never builds this round or
+    # another, keeps its entry not stored with no tombstone, reads the
+    # list again and says so, calmly, with Reload (RG-FMb).
     world = World(pictures=False)
-    for round_, state in elsewhere.items():
-        world.on_server(round_, state)
+    theirs = world.on_server(1, state)
     placed = len(world.posted())
     progress = world.go()
-    assert progress.step is step and _sent_here(world, placed) == rounds
-    assert world.log.count("round") == 1 and Step.ROUND in world.steps
-    refused = world.posted()[placed]["revision_hash"]
-    assert [body["revision_hash"] for body in world.posted()].count(refused) == 1
-    assert {s.held for s in world.seen if s.step is Step.ROUND} == {Held.OTHER}
-    # Contract 5ddb799: the refused round asked by GET with no timeline.
-    work = formats.coordinate_hash(pk("writer"), "ein-jahr-mit-lightning")
-    first = formats.submission_id(pk("writer"), ADDRESS, work, 1)
-    assert [url for verb, url in world.server.urls if verb == "GET"][0] == (
-        f"/api/submissions/{first}?since=9007199254740991&since_internal=9007199254740991")
-    if step is Step.FAILED:
-        assert progress.failure.headline == drafting.ALREADY_SUBMITTED
-        assert progress.failure.retry is None and progress.held is Held.OTHER
-    else:
-        # Nothing of the rebuilt body is held until it goes (lesson 32).
-        rebuilt = world.seen[[s.step for s in world.seen].index(Step.ROUND) + 1:]
-        assert {s.held for s in rebuilt if s.step is Step.RECORDING} == {Held.NOTHING}
-    # Its entry stays: it may hold the secrets the server has.
-    assert world.list.forgotten == []
-
-
-def test_a_second_stale_after_the_round_chosen_again_is_not_built_again():
-    world = World(pictures=False)
-    world.on_server(1, "declined")
-    ports = world.submitting._ports
-
-    def and_meanwhile(entry, on_done):
-        def chosen(answer):
-            world.on_server(answer.round, "submitted")      # another device, again
-            on_done(answer)
-        ports.choose_round(entry, chosen)
-
-    world.submitting._ports = replace(ports, choose_round=and_meanwhile)
-    placed = len(world.posted())
-    progress = world.go()
-    # Round 1 refused, round 2 placed from elsewhere meanwhile, round 2 refused.
-    assert progress.step is Step.FAILED and _sent_here(world, placed) == [1, 2, 2]
-    assert world.log.count("submit") == 2
-    assert progress.failure.headline == words.ANOTHER_VERSION
-    assert progress.failure.retry is None and progress.held is Held.OTHER
-    assert world.log.count("round") == 1
-
-
-def test_a_round_that_cannot_be_chosen_again_says_why_and_try_again_asks_again():
-    world = World(pictures=False)
-    world.on_server(1, "declined")
-    world.server.inject("submission_get", Fault(503, "server"))
-    placed = len(world.posted())
-    progress = world.go()
-    assert progress.step is Step.FAILED and progress.failure.retry is Step.ROUND
-    assert progress.failure.headline == words.ANOTHER_VERSION
-    assert progress.failure.said == drafting.ROUND_UNKNOWN and progress.held is Held.OTHER
+    assert _sent_here(world, placed) == [1] and world.log.count("reload") == 1
+    assert progress.step is Step.FAILED and progress.held is Held.OTHER
+    failure = progress.failure
+    assert (failure.title, failure.sentence, failure.retry, failure.error) == (
+        words.SUBMITTED_ELSEWHERE, words.ELSEWHERE_NOT_HERE_YET, Step.RELOADING, False)
+    assert Step.RELOADING in world.steps
+    assert {s.held for s in world.seen if s.step is Step.RELOADING} == {Held.OTHER}
+    mine = world.list.on_list[theirs.sid]
+    assert not mine.stored and not same_keys(mine, theirs)
+    assert world.list.forgotten == [] and world.list.marked == []
+    # Reload until that device's entry is here: nothing is sent meanwhile.
     world.submitting.retry()
     world.settle()
-    assert world.submitting.progress.step is Step.SUBMITTED
-    assert _sent_here(world, placed) == [1, 2] and world.log.count("round") == 2
+    assert world.log.count("reload") == 2 and _sent_here(world, placed) == [1]
+    assert world.submitting.progress.failure.retry is Step.RELOADING
+    world.list.arriving[theirs.sid] = theirs        # older, but stored: it wins
+    world.submitting.retry()
+    world.settle()
+    progress = world.submitting.progress
+    assert (progress.failure.title, progress.failure.sentence, progress.failure.retry,
+            progress.failure.error) == (words.SUBMITTED_ELSEWHERE, words.ELSEWHERE_HERE_NOW,
+                                        None, False)
+    assert world.list.on_list[theirs.sid] == theirs
+    assert _sent_here(world, placed) == [1] and world.log.count("submit") == 1
+    refused = world.posted()[placed]["revision_hash"]
+    assert [body["revision_hash"] for body in world.posted()].count(refused) == 1
 
 
-def test_a_bound_met_while_choosing_the_round_again_ends_it(monkeypatch):
-    from nostr.standup import rounds
-    monkeypatch.setattr(rounds, "MAX_ROUNDS_ASKED", 1)      # the refused entry is that one
+def test_a_list_that_cannot_be_read_again_says_so_and_reload_stays():
     world = World(pictures=False)
-    world.on_server(1, "declined")
-    placed = len(world.posted())
+    world.on_server(1, "submitted")
+    world.list.unreadable = "Your list of submissions couldn't be read."
     progress = world.go()
-    assert progress.step is Step.FAILED and progress.failure.retry is None
-    assert progress.failure.said == drafting.ROUND_LIMIT
-    assert _sent_here(world, placed) == [1]
+    assert progress.failure.retry is Step.RELOADING
+    assert progress.failure.said == world.list.unreadable
+    assert progress.failure.sentence == words.ELSEWHERE_NOT_HERE_YET
+
+
+def test_no_reload_while_reading_the_list_again():
+    # One read at a time: Reload is only there once the read answered.
+    world = World(pictures=False)
+    world.on_server(1, "submitted")
+    world.submitting.start()
+    for _ in range(100):
+        if world.submitting.progress.step is Step.RELOADING:
+            break
+        world.later.run_due()
+        world.nam.settle()
+    assert world.submitting.progress.step is Step.RELOADING
+    world.submitting.retry()
+    world.settle()
+    assert world.log.count("reload") == 1
 
 
 def test_a_stale_revision_after_a_receipt_chooses_no_other_round():
@@ -984,7 +1028,7 @@ def test_a_stale_revision_after_a_receipt_chooses_no_other_round():
 
     world.submitting._ports = replace(world.submitting._ports, submit=second_is_stale)
     progress = world.go()
-    assert progress.step is Step.FAILED and progress.failure.headline == words.ANOTHER_VERSION
+    assert progress.step is Step.FAILED and progress.failure.sentence == words.ANOTHER_VERSION
     assert world.log.count("round") == 0 and progress.held is Held.OTHER
 
 
@@ -999,6 +1043,6 @@ def test_the_round_is_built_again_once_never_twice(said, rounds, headline):
     world = World(pictures=False)
     world.server.inject("submit", Fault(409, "conflict", detail=said))
     progress = world.go()
-    assert progress.step is Step.FAILED and progress.failure.headline == headline
+    assert progress.step is Step.FAILED and progress.failure.sentence == headline
     assert progress.failure.retry is None
     assert [body["round"] for body in world.posted()] == rounds

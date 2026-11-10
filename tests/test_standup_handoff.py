@@ -16,8 +16,11 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 import i18n
+from nostr import failures
 from nostr.standup import words
-from nostr.standup.submitting import Failure, MessageStatus, Phase, Progress, Step
+from nostr.standup.submitting import (
+    HELD_WORDS, Failure, Held, MessageStatus, Phase, Progress, Step,
+)
 from nostr.ui import motion, standup_handoff
 from nostr.ui.standup_handoff import HandoffView, phase_words
 
@@ -56,7 +59,7 @@ def moving(monkeypatch):
     monkeypatch.setattr(motion, "reduce_motion", lambda: False)
 
 
-NOT_SENT = Failure(words.NOT_SENT, Step.SIGNING, detail=words.NOTHING_SUBMITTED)
+NOT_SENT = Failure(failures.CHECK_CONNECTION, Step.SIGNING, title=words.NOT_SUBMITTED)
 
 
 @pytest.mark.parametrize("progress, expected", [
@@ -74,20 +77,64 @@ NOT_SENT = Failure(words.NOT_SENT, Step.SIGNING, detail=words.NOTHING_SUBMITTED)
     (Progress(Step.SUBMITTED), ("Eingereicht. Im Eingang von Einundzwanzig Magazin.",
                                 "Der Server hat den Empfang bestätigt.")),
     (Progress(Step.FAILED, failure=NOT_SENT),
-     ("Nicht gesendet. Keine Verbindung zum Server.",
-      "Nichts ist eingereicht, dein Text bleibt im Editor.")),
+     ("Dein Artikel wurde nicht eingereicht",
+      "Prüfe deine Internetverbindung und versuche es erneut.")),
 ])
 def test_each_state_says_the_plans_words(german, progress, expected):
     assert phase_words(progress, PUBLICATION) == expected
 
 
+@pytest.mark.parametrize("held, sending, checking", [
+    (Held.NOTHING, "Wird an Einundzwanzig Magazin gesendet …",
+     "Noch nicht bestätigt. Wird geprüft …"),
+    (Held.MAYBE, "Wird an Einundzwanzig Magazin gesendet …",
+     "Noch nicht bestätigt. Wird geprüft …"),
+    (Held.STORED, "Der Server hat deine Einreichung. Sie wird mit dem Bild noch einmal "
+     "gesendet …", "Der Server hat deine Einreichung. Das Bild wird geprüft …"),
+    (Held.OTHER, "Wird an Einundzwanzig Magazin gesendet …",
+     "Noch nicht bestätigt. Wird geprüft …"),
+], ids=["nothing", "maybe", "stored", "other"])
+def test_on_its_way_and_while_checked_the_words_say_what_is_held(german, held, sending,
+                                                                 checking):
+    # RG-M2r2a 3: a run whose receipt came (a picture missing) said "Not
+    # confirmed yet" once the body went again and its answer was lost.
+    assert phase_words(Progress(Step.SENDING, held=held), PUBLICATION)[0] == sending
+    assert phase_words(Progress(Step.CHECKING, held=held), PUBLICATION)[0] == checking
+    assert set(HELD_WORDS) == set(Held)
+
+
+def test_another_devices_round_is_said_calmly_with_reload(german, view):
+    # Contract 2 at 72d5ddc: "Auf einem anderen Gerät eingereicht." with
+    # Erneut laden; not an error, so not in the error colour.
+    view.show_progress(Progress(Step.RELOADING, held=Held.OTHER))
+    assert (view.headline.text(), view.detail.text()) == (
+        "Auf einem anderen Gerät eingereicht.", "Deine Liste der Einreichungen wird gelesen …")
+    assert _shown(view) == {"close"}
+    waiting = Failure(words.ELSEWHERE_NOT_HERE_YET, Step.RELOADING,
+                      title=words.SUBMITTED_ELSEWHERE, error=False)
+    view.show_progress(Progress(Step.FAILED, failure=waiting, held=Held.OTHER))
+    assert view.headline.text() == "Auf einem anderen Gerät eingereicht."
+    assert view.detail.text() == "Die Angaben dazu sind noch nicht auf diesem Gerät."
+    assert _shown(view) == {"close", "retry"} and view.retry_button.text() == "Erneut laden"
+    assert "color: " + standup_handoff.appearance.roles(False).text in view.headline.styleSheet()
+    view.show_progress(Progress(Step.FAILED, failure=NOT_SENT))
+    assert view.retry_button.text() == "Erneut versuchen"
+    assert "color: " + standup_handoff.appearance.roles(False).error in view.headline.styleSheet()
+    arrived = Failure(words.ELSEWHERE_HERE_NOW, None, title=words.SUBMITTED_ELSEWHERE,
+                      error=False)
+    view.show_progress(Progress(Step.FAILED, failure=arrived, held=Held.OTHER))
+    assert view.detail.text() == "Die Angaben dazu sind jetzt auf diesem Gerät."
+    assert _shown(view) == {"close"}
+    assert "color: " + standup_handoff.appearance.roles(False).text in view.headline.styleSheet()
+
+
 def test_a_list_that_could_not_be_read_says_it_in_its_own_words(german):
-    # Its own words, then what the server holds (lesson 32): both.
+    # Its own words in the sentence's place, under the title of what the
+    # server holds (lesson 32, lessons 36): one sentence, never two.
     failure = Failure(words.LIST_NOT_SAVED, Step.RECORDING, said="Deine Liste …",
-                      detail=words.NOTHING_SUBMITTED)
+                      title=words.NOT_SUBMITTED)
     assert phase_words(Progress(Step.FAILED, failure=failure), PUBLICATION) == (
-        "Deine Liste der Einreichungen konnte nicht gespeichert werden.",
-        "Deine Liste … " + i18n._(words.NOTHING_SUBMITTED))
+        "Dein Artikel wurde nicht eingereicht", "Deine Liste …")
 
 
 @pytest.mark.parametrize("step", [s for s in Step if s is not Step.SUBMITTED])
@@ -167,7 +214,8 @@ def _shown(view):
     (Progress(Step.CHECKING), {"close"}, None, None),
     (Progress(Step.FAILED, failure=NOT_SENT), {"close", "retry"}, None, "retry"),
     (Progress(Step.FAILED, failure=Failure(words.ANOTHER_VERSION, None,
-                                           detail=words.TEXT_STAYS)), {"close"}, None, None),
+                                           title=words.VERSION_NOT_SUBMITTED)),
+     {"close"}, None, None),
     (Progress(Step.SUBMITTED), {"done"}, None, "done"),
 ])
 def test_each_state_has_its_buttons(view, progress, shown, enabled_cancel, default):
@@ -216,32 +264,36 @@ def _clock(monkeypatch, at):
     return now
 
 
+def _limited(retry_at):
+    return Failure(words.refusal("rate_limited"), Step.SIGNING, title=words.NOT_SUBMITTED,
+                   retry_at=retry_at)
+
+
 def test_try_again_waits_for_the_limit_and_the_words_say_until_when(view, monkeypatch):
     now = _clock(monkeypatch, _at(14, 20))
-    limited = Failure(words.RATE_LIMITED_NOW, Step.SIGNING, detail=words.NOTHING_SUBMITTED,
-                      retry_at=_at(14, 29, 30))
-    view.show_progress(Progress(Step.FAILED, failure=limited))
+    view.show_progress(Progress(Step.FAILED, failure=_limited(_at(14, 29, 30))))
     assert not view.retry_button.isHidden() and not view.retry_button.isEnabled()
     assert not view.retry_button.isDefault()
     clock = standup_handoff.wait_words(_at(14, 29, 30), now["at"], "{time}", "{time}")
     assert clock in ("2:30\u202fPM", "2:30 PM", "14:30")       # the minute shown, rounded up
-    assert view.detail.text() == f"{words.NOTHING_SUBMITTED} You can try again at {clock}."
+    # One sentence: the limit, and when trying again helps (lessons 36).
+    assert view.detail.text() == (f"You’ve sent {PUBLICATION} as much as it takes for now: "
+                                  f"try again at {clock}.")
     assert view._wait.isActive()
     now["at"] = _at(14, 29, 30)
     view._wait.timeout.emit()
     assert view.retry_button.isEnabled() and view.retry_button.isDefault()
-    assert view.detail.text() == words.NOTHING_SUBMITTED
+    assert view.detail.text() == (f"You’ve sent {PUBLICATION} as much as it takes for now: "
+                                  "try again later.")
     assert not view._wait.isActive()
 
 
 def test_a_wait_past_midnight_says_tomorrow(german, view, monkeypatch):
     _clock(monkeypatch, _at(23, 50))
-    limited = Failure(words.RATE_LIMITED_TODAY, Step.SIGNING, detail=words.NOTHING_SUBMITTED,
-                      retry_at=_at(0, 5, days=1))
-    view.show_progress(Progress(Step.FAILED, failure=limited))
-    assert view.headline.text() == ("Du hast Einundzwanzig Magazin so viel gesendet, wie es "
-                                    "an einem Tag annimmt.")
-    assert view.detail.text().endswith("Du kannst es morgen um 00:05 noch einmal versuchen.")
+    view.show_progress(Progress(Step.FAILED, failure=_limited(_at(0, 5, days=1))))
+    assert view.headline.text() == "Dein Artikel wurde nicht eingereicht"
+    assert view.detail.text() == ("Du hast Einundzwanzig Magazin vorerst so viel gesendet, wie "
+                                  "es annimmt: Versuche es morgen um 00:05 erneut.")
 
 
 def test_send_again_waits_for_the_limit_of_messages(view, monkeypatch):
@@ -259,3 +311,46 @@ def test_send_again_waits_for_the_limit_of_messages(view, monkeypatch):
     assert view.send_again.isEnabled() and view.message.text() == words.MESSAGE_NOT_SENT
     view.send_again.click()
     assert asked == [True]
+
+
+# -- a total failure speaks once (lessons 36) -----------------------------------------
+
+def _visible_words(view):
+    return [label.text() for label in (view.headline, view.detail, view.message, view.details)
+            if not label.isHidden() and label.text()]
+
+
+def test_a_total_failure_is_one_title_one_sentence_and_try_again_with_cancel(german, view):
+    view.show_progress(Progress(Step.FAILED, failure=NOT_SENT))
+    assert _visible_words(view) == ["Dein Artikel wurde nicht eingereicht",
+                                    "Prüfe deine Internetverbindung und versuche es erneut."]
+    assert _shown(view) == {"close", "retry"}
+    assert (view.close_button.text(), view.retry_button.text()) == ("Abbrechen",
+                                                                   "Erneut versuchen")
+    assert view.details_toggle.isHidden()           # nothing technical to show
+
+
+def test_a_failure_with_nothing_to_try_again_offers_close_alone(german, view):
+    view.show_progress(Progress(Step.FAILED, failure=Failure(
+        words.ANOTHER_VERSION, None, title=words.VERSION_NOT_SUBMITTED)))
+    assert _shown(view) == {"close"} and view.close_button.text() == "Schließen"
+
+
+def test_what_the_servers_answered_is_only_behind_details(view):
+    failure = Failure(words.UPLOAD_FAILED, Step.UPLOADING, title=words.NOT_SUBMITTED,
+                      details="https://media.example: 413 too large")
+    view.show_progress(Progress(Step.FAILED, failure=failure))
+    assert all("media.example" not in text for text in _visible_words(view))
+    assert not view.details_toggle.isHidden() and view.details.isHidden()
+    view.details_toggle.click()
+    assert not view.details.isHidden() and view.details.text() == failure.details
+    view.show_progress(Progress(Step.FAILED, failure=NOT_SENT))     # another failure
+    assert view.details_toggle.isHidden() and view.details.isHidden()
+
+
+def test_a_failure_is_announced_once_however_often_it_is_shown(view, monkeypatch):
+    said = []
+    monkeypatch.setattr(standup_handoff.announce, "announce", lambda _w, text: said.append(text))
+    for _ in range(3):
+        view.show_progress(Progress(Step.FAILED, failure=NOT_SENT))
+    assert len(said) == 1

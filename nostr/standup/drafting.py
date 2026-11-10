@@ -63,11 +63,9 @@ MESSAGE_TOO_LONG_FOR_CONNECTION = N_("Your message is too long for the connectio
 MESSAGE_TOO_LONG_FOR_CONNECTION_DETAIL = N_("Sealed, it takes {size} bytes. The relays of "
                                             "this connection carry less.")
 REQUIRED_MISSING = N_("{publication} asks for {items}. Add them in Article Details to submit.")
-ROUND_UNKNOWN = N_("Whether you have submitted this text before couldn’t be checked.")
-# A page of the list of submissions has not arrived: an entry of this
-# text may be on it (RG-M2r 4).
-ROUND_LIST_INCOMPLETE = N_("Part of your list of submissions hasn’t arrived yet, so whether "
-                           "you have submitted this text before can’t be told.")
+# A lookup answered what cannot be used, or an entry names a server this
+# app may not ask (a connection that failed says so: failures).
+ROUND_UNKNOWN = N_("The server couldn’t tell: try again later.")
 # The round step met its bounds (contract 2, bde1274: 100 rounds, 32 MiB
 # of answers together).
 ROUND_LIMIT = N_("This text was submitted here so often that its earlier submissions can’t "
@@ -81,13 +79,16 @@ CLOSED_STATES = ("declined", "withdrawn")
 class Blocker(str):
     """A blocker's words, and the technical fact behind them (``detail``,
     for a tooltip and the accessible description, never the words
-    themselves: lesson 27)."""
+    themselves: lesson 27). A total failure has a ``title`` too, what did
+    not happen; its words are then the one sentence (lessons 36)."""
 
     detail: str
+    title: str
 
-    def __new__(cls, words: str, detail: str = "") -> "Blocker":
+    def __new__(cls, words: str, detail: str = "", *, title: str = "") -> "Blocker":
         made = super().__new__(cls, words)
         made.detail = detail
+        made.title = title
         return made
 
 
@@ -331,7 +332,8 @@ def seal(draft: ArticleDraft, choice: Choice, key: RedaktionKey,
         d=draft.d, round=round_, revision=1, revision_hash=sealed.revision_hash,
         # What a lookup after a restart compares, with no body (12.4).
         envelope_sha256=body["envelope_sha256"], wraps_sha256=crypto.wraps_sha256(body["wraps"]),
-        updated_at=now)
+        # Once stored, stays stored (13 at 72d5ddc).
+        stored=held is not None and held.stored, updated_at=now)
     return Sealed(body=body, entry=entry, s_sub=s_sub)
 
 

@@ -14,10 +14,19 @@ from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
 from .drafting import EncryptedPicture, Sealed
 from .entries import RecordResult
 from .errors import StandupError
-from .rounds import RoundAnswer
 from .trust import KeyNotConfirmed, RedaktionKey
 
 UploadDone = Callable[[Mapping[str, Tuple[str, ...]]], None]
+
+
+@dataclass(frozen=True)
+class Reread:
+    """The list read again after another device stored this round
+    (``reload``): whether the stored entry for the sid has arrived, and
+    the list's own words (translated) when it could not be read whole."""
+
+    arrived: bool
+    said: str = ""
 
 
 @dataclass(frozen=True)
@@ -31,6 +40,8 @@ class Ports:
     - ``held(sid)``: SubmissionsList.entry, the list's entry for a sid,
       whose secrets a new revision 1 of it keeps (contract 2).
     - ``record(entry, on_done(RecordResult))``: SubmissionsList.record.
+    - ``mark_stored(entry)``: SubmissionsList.mark_stored, once a receipt
+      for the entry's sid with its status key is held (13, 72d5ddc).
     - ``forget(entry)``: SubmissionsList.forget, for an entry recorded for
       a request that was cancelled before it was sent, or that the
       server refused for its round.
@@ -42,9 +53,9 @@ class Ports:
     - ``send_message(sealed, text, on_signed(), on_sent(), on_failure(wait))``:
       ``on_signed`` once the signer sealed it, before it is sent; ``wait``
       the seconds a limit asks for (a 429's Retry-After), or None.
-    - ``choose_round(entry, on_done(RoundAnswer))``: contract 2 from step
-      1 for the work of ``entry``, the entry of a revision 1 the server
-      refused as ``stale_revision`` (rounds.ask_round with ``stored``).
+    - ``reload(entry, on_done(Reread))``: the list read again for the sid
+      of ``entry``, a revision 1 the server refused as ``stale_revision``
+      (another device stored that round first, contract 2 at 72d5ddc).
     - ``later(ms, callback)``; ``clock()``.
     """
 
@@ -54,15 +65,16 @@ class Ports:
                       Callable[[str], None]], Callable[[], None]]
     held: Callable[[str], Optional[Any]]
     record: Callable[[Any, Callable[[RecordResult], None]], None]
+    mark_stored: Callable[[Any], None]
     forget: Callable[[Any], None]
     submit: Callable[[Mapping[str, Any], Callable[[], None], Callable[[Any], None],
                       Callable[[StandupError], None]], Callable[[], None]]
     lookup: Callable[[Any, Callable[[Any], None], Callable[[StandupError], None]], None]
     send_message: Callable[[Sealed, str, Callable[[], None], Callable[[], None],
                             Callable[[], None]], None]
-    choose_round: Callable[[Any, Callable[[RoundAnswer], None]], None]
+    reload: Callable[[Any, Callable[[Reread], None]], None]
     later: Callable[[int, Callable[[], None]], None]
     clock: Callable[[], float]
 
 
-__all__ = ["Ports", "UploadDone"]
+__all__ = ["Ports", "Reread", "UploadDone"]

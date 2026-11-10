@@ -37,6 +37,8 @@ from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from nostr import bech32  # noqa: E402
 from nostr.article_details import ArticleDetails  # noqa: E402
+from nostr.standup.link_names import LinkNameLock  # noqa: E402
+from nostr.standup.progress import Held  # noqa: E402
 from nostr.ui.article_details_panel import ArticleDetailsPanel  # noqa: E402
 from tests.accessibility import unnamed_controls  # noqa: E402
 from tests.app_process import run_window_script  # noqa: E402
@@ -215,20 +217,56 @@ def test_a_hashtag_holding_a_comma_is_shown_and_handed_back_whole():
     assert sent[-1].hashtags == ("a", "b, c", "d")
 
 
-@pytest.mark.parametrize("submitted, fixed, read_only, why", [
-    (True, False, True, True),
-    (True, True, True, True),                       # submitted says more than saved
-    (False, False, False, False),
-], ids=["submitted", "submitted and saved", "neither"])
-def test_a_submitted_articles_link_name_is_fixed_and_says_why(submitted, fixed, read_only, why):
-    # RG-M2r 10: another link name would be another submission.
+@pytest.mark.parametrize("held, note, why", [
+    (Held.STORED, "A submitted article keeps its link name.",
+     "The publication knows this article by its link name."),
+    (Held.NOTHING, "This article keeps its link name for sending it to the publication.",
+     "Its submission is made from its link name"),
+    (Held.MAYBE, "This article keeps its link name for sending it to the publication.",
+     "Its submission is made from its link name"),
+    (Held.OTHER, "This article keeps its link name for sending it to the publication.",
+     "Its submission is made from its link name"),
+], ids=["stored", "nothing", "maybe", "other"])
+@pytest.mark.parametrize("fixed", [False, True], ids=["new", "saved"])
+def test_a_link_name_kept_for_a_submission_says_what_is_held(held, note, why, fixed):
+    # RG-M2r 10: another link name would be another submission. RG-M2r2a 2:
+    # only a receipt says "submitted"; a draft the signer declined, or one
+    # not confirmed yet, is kept for sending it (lesson 32, HELD_WORDS).
     panel = ArticleDetailsPanel()
-    panel.show_article(DETAILS, fixed_identifier=fixed, submitted=submitted)
-    assert panel.identifier_edit.isReadOnly() is read_only
-    assert bool(panel.identifier_edit.toolTip()) is why
+    panel.show_article(DETAILS, fixed_identifier=fixed, link_name_lock=LinkNameLock(held=held))
+    assert panel.identifier_edit.isReadOnly()
+    assert panel.identifier_note.text() == note and not panel.identifier_note.isHidden()
+    assert panel.identifier_edit.toolTip().startswith(why)
     assert panel.identifier_edit.accessibleDescription() == panel.identifier_edit.toolTip()
-    if submitted:
-        assert panel.identifier_note.text() == "A submitted article keeps its link name."
-        assert not panel.identifier_note.isHidden()
+    assert panel.check_again.isHidden()
     panel.show_article(DETAILS, fixed_identifier=False)
     assert not panel.identifier_edit.isReadOnly() and panel.identifier_edit.toolTip() == ""
+
+
+def test_every_held_value_has_its_link_name_words():
+    from nostr.standup.progress import HELD_WORDS
+    assert set(HELD_WORDS) == set(Held)
+    assert {HELD_WORDS[h].link_name for h in Held if h is not Held.STORED} == {
+        "This article keeps its link name for sending it to the publication."}
+
+
+def test_a_link_name_being_checked_is_read_only_and_says_so():
+    # RG-M2r2a 1: never free on a list not read whole.
+    panel = ArticleDetailsPanel()
+    panel.show_article(DETAILS, fixed_identifier=False,
+                       link_name_lock=LinkNameLock(checking=True))
+    assert panel.identifier_edit.isReadOnly() and panel.check_again.isHidden()
+    assert panel.identifier_note.text() == "Checking whether this article was submitted …"
+
+
+def test_a_link_name_that_could_not_be_checked_offers_check_again():
+    panel = ArticleDetailsPanel()
+    asked = []
+    panel.check_link_name.connect(lambda: asked.append(True))
+    panel.show_article(DETAILS, fixed_identifier=False,
+                       link_name_lock=LinkNameLock(unchecked=True))
+    assert panel.identifier_edit.isReadOnly()
+    assert panel.identifier_note.text().startswith("MyEditor couldn’t check whether")
+    assert not panel.check_again.isHidden()
+    panel.check_again.click()
+    assert asked == [True]

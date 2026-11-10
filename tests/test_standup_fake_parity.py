@@ -452,3 +452,98 @@ def test_the_round_steps_questions_leave_both_timelines_out():
     status, data, _ = _send(nam, "GET", f"/api/submissions/{'ef' * 32}",
                             authorization=f"Bearer {_session(nam)}".encode())
     assert (status, data["ok"], data["error"]["code"]) == (404, False, "not_found")
+
+
+# -- the fake's differences, RG-M2r2a (lesson 19) ------------------------------------
+
+# backend tests/test_editorial_blobs.py test_which_blob_servers_a_submission_may_name,
+# its development http setting off, and the control characters is_plain_text refuses.
+BLOB_SERVERS = [
+    ("https://media.example", True), ("https://media.example:443/files", True),
+    ("https://media.example:8443", True), ("https://media.example:0", False),
+    ("http://media.example", False), ("https://user@media.example", False),
+    ("https://media.example/?q=1", False), ("https://", False), ("ftp://media.example", False),
+    ("http://127.0.0.1:3000", False), ("https://media.example/#top", False),
+    ("https://media.example:99999", False), ("https://media.example/\x07", False),
+    ("https://" + "m" * 512, False),
+]
+
+
+@pytest.mark.parametrize("server_url, ok", BLOB_SERVERS)
+def test_a_files_servers_are_checked_as_the_server_checks_them(server_url, ok):
+    from nostr.standup.submission import blob_server_ok, submission_body_problem
+    blob = {"sha256": "ab" * 32, "size": 10, "servers": [server_url]}
+    assert blob_server_ok(server_url) is ok
+    prepared = submission_for(ME)
+    body = dict(prepared.body, blobs=[blob])
+    assert (submission_body_problem(body) is None) is ok
+    _clock, _server, nam = _setup()
+    status, data, _ = _submit(nam, body)
+    assert status == 201 if ok else (status, data["error"]["detail"]) == (
+        422, {"field": "blobs.servers"})
+
+
+ELEVEN = [f"https://m{n}.example" for n in range(11)]
+
+
+@pytest.mark.parametrize("servers, size, ok", [
+    ([], 10, False), (["https://a.example", "https://a.example"], 10, False),
+    (ELEVEN, 10, False), (ELEVEN[:10], 10, True), (["https://a.example"], 0, False),
+    (["https://a.example"], 1, True),
+], ids=["none", "twice", "eleven", "ten", "empty file", "one byte"])
+def test_a_file_names_one_to_ten_servers_each_once_and_has_a_byte(servers, size, ok):
+    # backend core/editorial_submission.py: servers 1 to 10, unique; size >= 1.
+    from nostr.standup.submission import blob_ok, submission_body_problem
+    blob = {"sha256": "ab" * 32, "size": size, "servers": servers}
+    body = dict(submission_for(ME).body, blobs=[blob])
+    assert blob_ok(blob) is ok and (submission_body_problem(body) is None) is ok
+    _clock, _server, nam = _setup()
+    assert _submit(nam, body)[0] == (201 if ok else 422)
+
+
+def test_a_submission_lists_only_the_members_who_read_its_epoch():
+    # backend api/submission_reads.py: reads_epoch(member, row.epoch).
+    _clock, server, nam, _prepared, record = _case()
+    pub = server.publication()
+    pub.members.update({OTHER: "redaktion", ALSO: "redaktion"})
+    pub.since_join[ALSO] = record.epoch + 1             # joined after it, sees since then
+    status, data, _ = _send(nam, "GET", f"/api/submissions/{record.sid}",
+                            authorization=f"Bearer {_session(nam, ME)}".encode())
+    listed = {m["pubkey"] for m in data["members"]}
+    assert status == 200 and OTHER in listed and ALSO not in listed
+
+
+def test_a_read_and_a_message_take_a_signature_as_well_as_a_session():
+    # backend api/auth.py require_session_or_auth: a NIP-98 header, no payload
+    # tag needed for a read.
+    _clock, server, nam, _prepared, record = _case()
+    path = f"/api/submissions/{record.sid}"
+    signed = _auth(ME, fakes.SERVER + path, "GET", b"")
+    assert _send(nam, "GET", path, authorization=signed)[0] == 200
+    assert _send(nam, "GET", path, authorization=signed)[1]["error"]["detail"] == {
+        "reason": "replay"}
+    from nostr.standup import conversation
+    wrap = conversation.gift_wrap({"kind": 13, "content": "x", "tags": []}, record.p_sub, now=NOW)
+    body = json.dumps({"channel": "conversation", "kind_hint": "message",
+                       "wrap": wrap}).encode()
+    messages = path + "/messages"
+    status, data, _ = _send(nam, "POST", messages, body,
+                            authorization=_auth(ME, fakes.SERVER + messages, "POST", body))
+    assert status in (200, 201), data
+
+
+@pytest.mark.parametrize("able, hint", [(True, True), (False, False)],
+                         ids=["someone could, named", "nobody could"])
+def test_no_decider_says_not_to_name_the_whole_redaktion_only_when_someone_could(able, hint):
+    # backend core/editorial_intake.py: the hint when a decider exists but
+    # is named on the writer side.
+    _clock, server, nam = _setup()
+    if able:
+        prepared = submission_for(ME, participants=(pk("editor"),))
+    else:
+        server.below_gate = {pk("editor")}
+        prepared = submission_for(ME)
+    status, data, _ = _submit(nam, prepared.body)
+    assert (status, data["error"]["code"]) == (409, "no_decider")
+    assert data["error"]["message"].endswith(
+        " Nenne nicht die ganze Redaktion als Mitwirkende.") is hint

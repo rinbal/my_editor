@@ -9,10 +9,11 @@ still offers them.
 
 from __future__ import annotations
 
-from typing import List, Optional, Sequence
+from typing import Callable, List, Optional, Sequence
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPixmap, QStandardItemModel
+from PySide6.QtWidgets import QComboBox
 
 from i18n import _, ngettext
 
@@ -94,6 +95,38 @@ def publish_by(destination: Destination) -> str:
     return value if value in ("writer", "publication", "both") else "writer"
 
 
+def fill_picker(picker: QComboBox, destinations: Sequence[Destination], *, loading: bool,
+                logo_for: Callable[[Destination], QPixmap],
+                request_logo: Callable[[str, str], None]) -> None:
+    """The publications in Submit to a Publication's picker, each with its
+    logo (asked for when it has a picture), one that cannot be chosen
+    dimmed with why, and the first that can chosen; while loading, or
+    with none, one dimmed line (the reason is said once, by the sheet)."""
+    picker.blockSignals(True)
+    picker.clear()
+    model: QStandardItemModel = picker.model()
+    if loading or not destinations:
+        picker.addItem(_("Loading publications …") if loading else _("No publication"))
+        picker.setEnabled(False)
+    else:
+        for destination in destinations:
+            pubkey = formats.parse_address(destination.address)[0]
+            if destination.picture and destination.picture.startswith("https://"):
+                request_logo(pubkey, destination.picture)
+            label = destination.name
+            if not can_choose(destination):
+                label = f"{destination.name} · {rules_words(destination.key.rules)}"
+            picker.addItem(logo_for(destination), label)
+            model.item(picker.count() - 1).setEnabled(can_choose(destination))
+        picker.insertSeparator(picker.count())
+        picker.addItem(_("Recently used first"))
+        model.item(picker.count() - 1).setEnabled(False)
+        picker.setEnabled(True)
+        picker.setCurrentIndex(next((i for i, d in enumerate(destinations) if can_choose(d)),
+                                    -1))
+    picker.blockSignals(False)
+
+
 def recent_first(destinations: Sequence[Destination], used: Sequence[str]) -> List[Destination]:
     """The publications submitted to before first (``used``, newest
     first), then the others in the server's order."""
@@ -101,5 +134,5 @@ def recent_first(destinations: Sequence[Destination], used: Sequence[str]) -> Li
     return sorted(destinations, key=lambda d: rank.get(d.address, len(rank)))
 
 
-__all__ = ["can_choose", "publication_logo", "publish_by", "recent_first", "rules_words",
+__all__ = ["can_choose", "fill_picker", "publication_logo", "publish_by", "recent_first", "rules_words",
            "takes_articles"]

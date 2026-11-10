@@ -26,7 +26,9 @@ class Step(Enum):
     RECORDING = "recording"         # the entry on the list (13)
     SIGNING = "signing"             # the NIP-98 request
     SENDING = "sending"             # on its way: no cancelling now
-    ROUND = "round"                 # chosen again after stale_revision (contract 2)
+    # The list read again: another device of this writer stored this round
+    # first (stale_revision for a revision 1, contract 2 at 72d5ddc).
+    RELOADING = "reloading"
     CHECKING = "checking"           # no answer: asked by the status key
     REUPLOADING = "reuploading"     # files the receipt missed
     SUBMITTED = "submitted"         # a matching receipt, every file found
@@ -50,7 +52,8 @@ class Phase(Enum):
 PHASE_OF = {
     Step.KEY: Phase.ENCRYPT, Step.ENCRYPTING: Phase.ENCRYPT, Step.UPLOADING: Phase.UPLOAD,
     Step.REUPLOADING: Phase.UPLOAD, Step.RECORDING: Phase.SIGNER, Step.SIGNING: Phase.SIGNER,
-    Step.SENDING: Phase.SEND, Step.ROUND: Phase.SEND, Step.CHECKING: Phase.UNCONFIRMED,
+    Step.SENDING: Phase.SEND, Step.RELOADING: Phase.UNCONFIRMED,
+    Step.CHECKING: Phase.UNCONFIRMED,
     Step.SUBMITTED: Phase.DONE,
     Step.FAILED: Phase.FAILED, Step.CANCELLED: Phase.CANCELLED,
 }
@@ -74,19 +77,32 @@ class Held(Enum):
 
 @dataclass(frozen=True)
 class HeldWords:
-    """What one :class:`Held` says (untranslated): ``failed``, the second
-    line of a failure; ``stopped``, the status bar's when the account was
-    let go while the run went on (``{publication}`` filled in)."""
+    """What one :class:`Held` says (untranslated), on every screen:
+    ``failed``, the title of a failure (what did not happen, lessons 36);
+    ``stopped``, the status
+    bar's when the account was let go while the run went on;
+    ``sending`` and ``checking``, the handoff's line while the request is
+    on its way and while the lookup asks (``{publication}`` filled in);
+    ``link_name`` and ``link_name_why``, why Article Details keeps the
+    text's link name, and its tooltip."""
 
     failed: str
     stopped: str
+    sending: str = words.SENDING
+    checking: str = words.UNCONFIRMED
+    link_name: str = words.LINK_NAME_KEPT_FOR_SENDING
+    link_name_why: str = words.LINK_NAME_KEPT_FOR_SENDING_WHY
 
 
 HELD_WORDS = {
-    Held.NOTHING: HeldWords(words.NOTHING_SUBMITTED, words.STOPPED_NOTHING_SENT),
-    Held.MAYBE: HeldWords(words.MAYBE_RECEIVED, words.STOPPED_UNCONFIRMED),
-    Held.STORED: HeldWords(words.STORED_PICTURE_MISSING, words.STOPPED_PICTURES),
-    Held.OTHER: HeldWords(words.TEXT_STAYS, words.STOPPED_OTHER_VERSION),
+    Held.NOTHING: HeldWords(words.NOT_SUBMITTED, words.STOPPED_NOTHING_SENT),
+    Held.MAYBE: HeldWords(words.NOT_CONFIRMED, words.STOPPED_UNCONFIRMED),
+    # A receipt: whatever is asked or sent again, the server has it.
+    Held.STORED: HeldWords(words.PICTURE_NOT_IN, words.STOPPED_PICTURES,
+                           sending=words.STORED_SENDING, checking=words.STORED_CHECKING,
+                           link_name=words.LINK_NAME_SUBMITTED,
+                           link_name_why=words.LINK_NAME_SUBMITTED_WHY),
+    Held.OTHER: HeldWords(words.VERSION_NOT_SUBMITTED, words.STOPPED_OTHER_VERSION),
 }
 # Furthest from known first: the run a stopped account names.
 HELD_UNKNOWN_FIRST = (Held.MAYBE, Held.STORED, Held.NOTHING, Held.OTHER)
@@ -102,20 +118,26 @@ class MessageStatus(Enum):
 
 @dataclass(frozen=True)
 class Failure:
-    """What did not happen: ``headline`` (untranslated words, with
-    ``{publication}`` filled in where they name it), ``detail`` (what the
-    server holds, :data:`HELD_WORDS`), ``said`` (the list's or the
-    upload's own words, already translated, or ""), and where trying
-    again goes on (``retry``; None when it would not help). The second
-    line shown is ``said`` followed by ``detail``. ``retry_at``: the
-    clock time before which trying again only meets the same limit (a
-    429's Retry-After, contract 15); None when it may at once."""
+    """What did not happen, said once (lessons 36): ``title`` (what did
+    not happen, from what the server holds, :data:`HELD_WORDS`) and
+    ``sentence`` (the likely cause and what to do), untranslated, with
+    ``{publication}`` filled in where they name it; ``said``, the list's
+    own words in the sentence's place (already translated), or "";
+    ``details``, what an upload answered (server names, codes), only
+    behind Details; where trying again goes on (``retry``; None when it
+    would not help). ``retry_at``: the clock time before which trying
+    again only meets the same limit (a 429's Retry-After, contract 15);
+    None when it may at once. ``error``: False for an end that is no
+    error (the work is in, sent from another device): said calmly, not
+    in the error colour."""
 
-    headline: str
+    sentence: str
     retry: Optional[Step]
-    detail: str
+    title: str
     said: str = ""
+    details: str = ""
     retry_at: Optional[float] = None
+    error: bool = True
 
 
 @dataclass(frozen=True)

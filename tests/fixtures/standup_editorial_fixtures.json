@@ -416,6 +416,7 @@
       "server": "https://standup.example",
       "sid": "63d3dd532acb823cf38234dd8722766799a2d0ed9c99e4e88de1b7e4436d60a8",
       "status_key": "4131affa26542f7f79f624332f4057e53b2c10f714ec570eeca710d6d83d3466",
+      "stored": true,
       "title": "Erster",
       "updated_at": 1762674300,
       "wraps_sha256": {
@@ -436,6 +437,7 @@
       "server": "https://standup.example",
       "sid": "6b652e9894fd075eebec6fea0a074b733a93f29414836634d6813986f6fee133",
       "status_key": "48a3bd8a302376cc360dec1b740b666c494553657028166e734ac7948d9e16e4",
+      "stored": true,
       "title": "Zweiter",
       "updated_at": 1762674400,
       "wraps_sha256": {
@@ -456,6 +458,7 @@
       "server": "https://standup.example",
       "sid": "72e48c8721549cf7d1011668cc4dc3569e47a3095f26e045f2b98a6f3b2a2e19",
       "status_key": "fac98fe700d7559bb8ecdab7e706197a8e691ee09aea05f4de65081e7f1edddf",
+      "stored": true,
       "title": "Fünfter",
       "updated_at": 1762674700,
       "wraps_sha256": {
@@ -480,6 +483,7 @@
       "server": "https://standup.example",
       "sid": "77bdd27c8f283cbbac91e602b5632a40255de38cc8607e46c603fb9aec30570b",
       "status_key": null,
+      "stored": false,
       "title": "Gemeinsam",
       "updated_at": 1762674750,
       "wraps_sha256": null
@@ -497,6 +501,7 @@
       "server": "https://standup.example",
       "sid": "79ea9317203712c4cba2613efcc19d5a8b0f7804a338cc96b8fa5014e3a70c68",
       "status_key": "1743af587456a5f5a2ef624dc282967e0cdf0f31dedb3eaeb98aed89f3e4d78b",
+      "stored": true,
       "title": "Dritter",
       "updated_at": 1762674500,
       "wraps_sha256": {
@@ -524,6 +529,7 @@
       "server": "https://standup.example",
       "sid": "e427a05f8a192bf4c61433b41f3f3aa1a68d7ecee84b39f0b9c403b8e3b14b73",
       "status_key": "fedd47d82d469c32e358152e6811d14960268a3a7c1b393b513555c144e28495",
+      "stored": true,
       "title": "Vierter, neu",
       "updated_at": 1762675100,
       "wraps_sha256": {
@@ -554,6 +560,7 @@
       "server": "https://standup.example",
       "sid": "63d3dd532acb823cf38234dd8722766799a2d0ed9c99e4e88de1b7e4436d60a8",
       "status_key": "4131affa26542f7f79f624332f4057e53b2c10f714ec570eeca710d6d83d3466",
+      "stored": true,
       "title": "Erster",
       "updated_at": 1762674300,
       "wraps_sha256": {
@@ -574,6 +581,7 @@
       "server": "https://standup.example",
       "sid": "6b652e9894fd075eebec6fea0a074b733a93f29414836634d6813986f6fee133",
       "status_key": "48a3bd8a302376cc360dec1b740b666c494553657028166e734ac7948d9e16e4",
+      "stored": true,
       "title": "Zweiter",
       "updated_at": 1762674400,
       "wraps_sha256": {
@@ -594,6 +602,7 @@
       "server": "https://standup.example",
       "sid": "79ea9317203712c4cba2613efcc19d5a8b0f7804a338cc96b8fa5014e3a70c68",
       "status_key": "1743af587456a5f5a2ef624dc282967e0cdf0f31dedb3eaeb98aed89f3e4d78b",
+      "stored": true,
       "title": "Dritter",
       "updated_at": 1762674500,
       "wraps_sha256": {
@@ -614,6 +623,7 @@
       "server": "https://standup.example",
       "sid": "e427a05f8a192bf4c61433b41f3f3aa1a68d7ecee84b39f0b9c403b8e3b14b73",
       "status_key": "fedd47d82d469c32e358152e6811d14960268a3a7c1b393b513555c144e28495",
+      "stored": true,
       "title": "Vierter, neu",
       "updated_at": 1762675100,
       "wraps_sha256": {
@@ -648,6 +658,7 @@
       "server": "https://standup.example",
       "sid": "63d3dd532acb823cf38234dd8722766799a2d0ed9c99e4e88de1b7e4436d60a8",
       "status_key": "4131affa26542f7f79f624332f4057e53b2c10f714ec570eeca710d6d83d3466",
+      "stored": true,
       "title": "Erster",
       "updated_at": 1762674300,
       "wraps_sha256": {
@@ -668,6 +679,7 @@
       "server": "https://standup.example",
       "sid": "6b652e9894fd075eebec6fea0a074b733a93f29414836634d6813986f6fee133",
       "status_key": "48a3bd8a302376cc360dec1b740b666c494553657028166e734ac7948d9e16e4",
+      "stored": true,
       "title": "Zweiter",
       "updated_at": 1762674400,
       "wraps_sha256": {
@@ -688,6 +700,7 @@
       "server": "https://standup.example",
       "sid": "72e48c8721549cf7d1011668cc4dc3569e47a3095f26e045f2b98a6f3b2a2e19",
       "status_key": "fac98fe700d7559bb8ecdab7e706197a8e691ee09aea05f4de65081e7f1edddf",
+      "stored": true,
       "title": "Fünfter",
       "updated_at": 1762674700,
       "wraps_sha256": {
@@ -712,6 +725,7 @@
       "server": "https://standup.example",
       "sid": "77bdd27c8f283cbbac91e602b5632a40255de38cc8607e46c603fb9aec30570b",
       "status_key": null,
+      "stored": false,
       "title": "Gemeinsam",
       "updated_at": 1762674750,
       "wraps_sha256": null
@@ -729,6 +743,7 @@
       "server": "https://standup.example",
       "sid": "79ea9317203712c4cba2613efcc19d5a8b0f7804a338cc96b8fa5014e3a70c68",
       "status_key": "1743af587456a5f5a2ef624dc282967e0cdf0f31dedb3eaeb98aed89f3e4d78b",
+      "stored": true,
       "title": "Dritter",
       "updated_at": 1762674500,
       "wraps_sha256": {
@@ -756,6 +771,7 @@
       "server": "https://standup.example",
       "sid": "e427a05f8a192bf4c61433b41f3f3aa1a68d7ecee84b39f0b9c403b8e3b14b73",
       "status_key": "fedd47d82d469c32e358152e6811d14960268a3a7c1b393b513555c144e28495",
+      "stored": true,
       "title": "Vierter",
       "updated_at": 1762674600,
       "wraps_sha256": {
@@ -765,12 +781,12 @@
      }
     ],
     "old_1": {
-     "content": "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",
+     "content": "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",
      "created_at": 1762674600,
-     "id": "c1db4bfc37819b9aee31dca178629e433a4290cfd951c1b43ac86342cfb7a818",
+     "id": "33a241d56dfdc907b698a4f08f538fca425cfce194b10794ef68a82c2a1a8dcf",
      "kind": 30078,
      "pubkey": "1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f",
-     "sig": "616febdc186dab0e7dfe6ce7f4920bb3620c92fba7e31cab1f81b8b861c5d07792d4959c5b36568ff467d04a489a6e9713cd73cd407624b27eae543e8b8a0904",
+     "sig": "5d42c326993c7e74aec1bbd45d37aedf83101ec2d2faca1d4cacdc4808e50390a01364b639b85f30361a6641b4e7336e646f3741746ff05cdd700be9d8f9fb0b",
      "tags": [
       [
        "d",
@@ -778,7 +794,7 @@
       ]
      ]
     },
-    "old_1_plaintext": "{\"items\":[{\"d\":\"artikel-c\",\"envelope_sha256\":\"fdcb823ca547483dc56290640d5d32036f240e4cae8ebe062668c7ff2b6d7e0e\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"0cee7c15e189ff35e5950349e9e9314d5841c5992f1f47844b43cf634647d818\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"eb1f1e094ce20ca94d5ede53905f9db5ad44f4e1cdf2b0574c42cbd8175a44d1\",\"server\":\"https://standup.example\",\"sid\":\"79ea9317203712c4cba2613efcc19d5a8b0f7804a338cc96b8fa5014e3a70c68\",\"status_key\":\"1743af587456a5f5a2ef624dc282967e0cdf0f31dedb3eaeb98aed89f3e4d78b\",\"title\":\"Dritter\",\"updated_at\":1762674500,\"wraps_sha256\":{\"redaktion\":\"69fab8c0d817897693b85bc0c0c11c72a2532f2782d9704d7d290f758ae522d6\",\"writer\":\"a70d733d56b981777598878587003b963cdfdf26effcdaa6f677038f0222f315\"}},{\"d\":\"artikel-d\",\"envelope_sha256\":\"afc516ea1f03048621cfeb7463bfe9da9a01267d570786c78d715f5b1d35fe07\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"38d5d0c1b6991925026fe9e931fcde722e4d73e7690779197a365e4f17d89f9b\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"174007b5db379652bfd18f1d79a3c20a94d8cd1bea5c59358ab7f8e82686780a\",\"server\":\"https://standup.example\",\"sid\":\"e427a05f8a192bf4c61433b41f3f3aa1a68d7ecee84b39f0b9c403b8e3b14b73\",\"status_key\":\"fedd47d82d469c32e358152e6811d14960268a3a7c1b393b513555c144e28495\",\"title\":\"Vierter\",\"updated_at\":1762674600,\"wraps_sha256\":{\"redaktion\":\"223a19138ef861be232dacb76e7207e6fcf9030ea07bee382ee71eca03df69f4\",\"writer\":\"81e11901a2519a9091329aa50915cee62fd61d5a8efcffb9397da7fcf61bbb3c\"}}],\"page\":1,\"pages\":3,\"v\":1}",
+    "old_1_plaintext": "{\"items\":[{\"d\":\"artikel-c\",\"envelope_sha256\":\"fdcb823ca547483dc56290640d5d32036f240e4cae8ebe062668c7ff2b6d7e0e\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"0cee7c15e189ff35e5950349e9e9314d5841c5992f1f47844b43cf634647d818\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"eb1f1e094ce20ca94d5ede53905f9db5ad44f4e1cdf2b0574c42cbd8175a44d1\",\"server\":\"https://standup.example\",\"sid\":\"79ea9317203712c4cba2613efcc19d5a8b0f7804a338cc96b8fa5014e3a70c68\",\"status_key\":\"1743af587456a5f5a2ef624dc282967e0cdf0f31dedb3eaeb98aed89f3e4d78b\",\"stored\":true,\"title\":\"Dritter\",\"updated_at\":1762674500,\"wraps_sha256\":{\"redaktion\":\"69fab8c0d817897693b85bc0c0c11c72a2532f2782d9704d7d290f758ae522d6\",\"writer\":\"a70d733d56b981777598878587003b963cdfdf26effcdaa6f677038f0222f315\"}},{\"d\":\"artikel-d\",\"envelope_sha256\":\"afc516ea1f03048621cfeb7463bfe9da9a01267d570786c78d715f5b1d35fe07\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"38d5d0c1b6991925026fe9e931fcde722e4d73e7690779197a365e4f17d89f9b\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"174007b5db379652bfd18f1d79a3c20a94d8cd1bea5c59358ab7f8e82686780a\",\"server\":\"https://standup.example\",\"sid\":\"e427a05f8a192bf4c61433b41f3f3aa1a68d7ecee84b39f0b9c403b8e3b14b73\",\"status_key\":\"fedd47d82d469c32e358152e6811d14960268a3a7c1b393b513555c144e28495\",\"stored\":true,\"title\":\"Vierter\",\"updated_at\":1762674600,\"wraps_sha256\":{\"redaktion\":\"223a19138ef861be232dacb76e7207e6fcf9030ea07bee382ee71eca03df69f4\",\"writer\":\"81e11901a2519a9091329aa50915cee62fd61d5a8efcffb9397da7fcf61bbb3c\"}}],\"page\":1,\"pages\":3,\"v\":1}",
     "pages": [
      0,
      "old_1",
@@ -797,12 +813,12 @@
   },
   "events": [
    {
-    "content": "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",
+    "content": "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",
     "created_at": 1762675140,
-    "id": "db5a80b58ea165395b347775221d28e33373071800ed02e2ab5e9852a3b4cf48",
+    "id": "7b3f44fe981d4de04301c051b0f92a75de25e0711d50408026f1b96fc775b209",
     "kind": 30078,
     "pubkey": "1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f",
-    "sig": "cf7d2ba12f92b7afa06107bdbbff879157dbeb5f1844c7f8e20389b15b67141936433e0554849c8c13da7ce978179c449189af0f8790982fe544532b4df480f8",
+    "sig": "7b94be31fa42752209ae422c2783fc063e407fa300cb37b063ea3388e9c4d6fa29a5427b1bb8ff28c0dce877aa87b3113f3e557b9c4a1d4cffba51794513aa8e",
     "tags": [
      [
       "d",
@@ -811,12 +827,12 @@
     ]
    },
    {
-    "content": "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",
+    "content": "AhIJ5+27iLJPaw2o9T4Ao6U+DhoBRKQjILI3E4/V1xEABKRumZqW46YOfewMYqNzhAGGIUM2F3D4OMEeguEdQKz3Q8iM8x9MkDlrKspUxWeplvTcNn4kAMnK1DW4jLxLG+NB7wHobxUnwu+gAuMf1ySQQtyQe61UsHQOfzj3TKGfaCxwfHsUl9Ogj8NEnmutuUStMzRFDcgBtym0q35TvKLcpCgSDSyJ+bE+IU5Ih99Dvm9HU6yI/9E43wnA2YEd7lT8YNG5+4BXNoqhHsNYXlskr0MMpkWxMZNk/UFraRiGl+n/haLboonteJO/981CDugoc6yfXMTO+CMTwi5q+P/4lWqeHAfUbiGcUS7hKRqMi5R48id1X/8SBMBuAc5NlXRZbq1UOPs0UoTfHucYOKrAAvstFtYES5/pI5MnpuRDlbBfmzSH2VMaGF1yKDEyQHBmGQsR0cXX2yrcdfu70J+gGXFufSVFeHl3cpdatIyU83PJM4fdV+Yw94AfYE5tTvgQjDTEw8U4cu12wLNKSPU5O/0mUAK+/LzAivVh8P5CsKZdeXhbpU02rhIVeNQmfW6UM8mGOjuXVq+nl3ACcpKFBo2a7sdBBGpI09lbtq5bDD8Y18od0ITtkq5jJjWyJQRj+BhkPW78Z4GFUFBgytxFNEBIvnqriUUaR8Wwm0TLSbunLrDR/vjQsG/DhQ9dhJA135TdQjpchIWO5zX99JmTglVil1RLGu3/UK/Qg9GubVsq0/tancF7Gt0OyJwihPzyGNcP3hM3Eg6xYcSDypTf8JF3iP6FiqoqEBtLNKzSOxkeUSgP66Vi7SeVx6RAu7WdEapcDECv53DJ7T5fb/3ENj5nzU4l1Y2/8J2G7Yb5YnZdnOPmehHzCBKwVBbzy8GKLLI14HYbtIbkv8GqHbhky7vuDpB4BD7ffkQmk+DVfnlJEtFrP2Vahf1RG4GpaZNrcCgfFK8UWvjeeTXv1+z7kaP+iV8QsENMQYgTr3FwmK2NysDPjryj53pyaZq73470egapbIlRdA8HzRozm4zGvijqMumyEA5y4OAB0dczg9t/Auvw9mTO+B6gQNgOgeRfL00pTlDckzt9BP1d8QFSvDZ+U8KtXcNi/TXZWOWM6cJiQHeudCxusP+8vZNTIMrTyeVMDW17Fdm6pBmRwacOdzIDD+vf2d1PRcBzmLUSLAo9DRsP2x5L9rTJwCAVK5yEVvw8GBQEx7zH7QZUee+bXFBkIo3DEsZawqUDdRhhhQ7iR/oba/qvpmBcy6w7bqo6qIrIz3lMFQFxLi6DETxe13dMbX84G7N6VEZJ0xyvSklaBpGJ63VoH/g+fGdh9h4U4t4FoApBa2x1DmyEHKmlvVFCkQ052SegG9Eym/T4653R/69iZpTfdQYjfK/ObxYn88Z/M8aN5YsR6oPbDRTNKBiJCOSLvFS6kErCvGZ1nu/kdSCP53IOg6APcZEY+pHjOicIJwaiagKhCEaVCZm/yI/gDBovziKjdkHJVh+2UtYOivT9SMPRTyNzHEaBlcniZB7JhkZkailNEdvEkNRbhVm3ysxqOQkX+CiSAR3FuSUvMSZ3QuL9QiexKDM5wxsPIdjW+tdghvv1LZLEYPpGfGsP9ieJHR8ZUASwi5kzxKtSHcOtEk910Go/pccTNON1XDu2rpPY9R3SIcp1f1x+TdbEHyQ/sGTlwkFemwgOcBtlLr2UvVwMj6tiwb9ydD2Nk2IH8uS+WtYSZu+KOfo8aJMpJDNiWMgV2Fj8KqkkESA+cyZJ/tSxO3AQO16O8EZrvQ7HYZ+Wzd13+91a4FkXAsmYWUesQmJhFPD5xEu5x33ubHm+wfEED+qu0FQ0apKtqWzx1Hvr8/yHMxtFqgA5uGjGnjBgfx4qeLZhUb3s4oZIsI2jkf0Wso7oRIlnKmpH7wvMAj1y0qk7qzmpOZfUGrT/r4dbaJIUvZ3aI+o9Jc352bDSkbPbpyU7z2EpOLcj0HQkoyp/dTPHlbFEpuXyInZf6CTOwtvzc0bxNA4OY/XFF1hITmrT63JCv9CdV03jVwQ1387xmA0ZRCA8VvvMDfyiVVTN3bnd+ClPiRPwpIlW/JrDyNq8J5UX9egXwkn3VnCrhwQCS4Q3n6gu7gD5qO+1GxNS7SeEYXBRPDbYqtw9MNlNwsnCTzAboQy2Kxyh4J4+oLMDdfwOhR4VA+xPOxGbhgitAtByDj5yY5atgNPyTJZZGHZ6urIYgHW1josH4HW74F1rT5ireswwqiJXIzAcUX+/HF0exvxWcjDpwAng7m+eV7nuXcHAkXpL7QUCU3BQ19LSa/LxJnwCPm2AfBi0AljVRaANO41EYaoJVZ/WbHA1oFqw4goNFZmZw/DMYpJTLo7qno4IxD4jrd8nutGILZJRligXRAIMJzn8IVV2DpeIzfagSsURufpZbFp/YbN0X7+m/xW/vKHyikYdQxnqGlhHmWdsw28XgscxLsk=",
     "created_at": 1762675139,
-    "id": "2f1143f36734a0b521d49d154ddcbcd0bdf3e4e5dbea96a7b320f6af31f2925b",
+    "id": "d37e6e0c059576f63c431121994ca0740a4f54de2892da8c67fd9ed5614e6f94",
     "kind": 30078,
     "pubkey": "1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f",
-    "sig": "b36a01a27725838168b08c2163ee374c40310fde00561a0fd02d81594707bdf7855ae41051e14979fc65e00cd958b8d180fadedc751f51f1b53935b3dc267c87",
+    "sig": "864620ed68a65c932654588d7e2f239a8e1ce1b8d9cba90331564bc7ebc73e24a24556ca56324991d607059da3ff65cb2696177f01d1544b12c2bc8b79974708",
     "tags": [
      [
       "d",
@@ -825,12 +841,12 @@
     ]
    },
    {
-    "content": "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",
+    "content": "ApB/qHwD90isyyp8qNzN433alLLeOzJuwNSamyrQvGTSlUj2M/jyIbAjJ38uljp96YAdP/A98jpyOksbH7b/8dEZs4Poj6cGabuA7VWVeckjjahR+3P8b+BL224SWi/CsGskRQ0oZ39PjAo/IFZAm8B/pos62b1eOgp5pcFTxHaRq96AXxvEY5vHT9hIECKLy9BXEEOOARWu1cFS+Iun0JJwjTwYP4PFQDUtntUXaJYa/pDG2lrPLq8RjmU8KKCi3usR+g3I/rKZ8F8oAcWRLb0u0UX+ZXZn6nKZtWIz3cDBF7/4nsvurMStop/m7Lf5HpeQKXC3ZbDGjM81vwojS10q9e8nd/P0urvkyLRF1xa/3Zhd0mxsY5XB2hhLa4yk6QcMPpTWQxvekvK/j4AlsnZja0g0RVgc1JwYur5UMpzpmOJzKDinn1m+H21npsDgwI5i++KNx/4g+qATqL5lgnbl/+RmK39v9zivQvL3ys6f4ysT0wYjrWOFjNoWEpzJzzbzaSSIoCMKy5VxFfjA8SgBFgTliCofwuqSwWDIDOTs3yo55zVkVgb0NJUBeDSVB1oWpjEw2UBJ36m3cE2M1Y5SIUktLA7ebm9sTj7xJhhLJkCldJ3fpMrFuPy2AHrY5hdpKk9lzKeqtpAEanwNfSYoPe2mJBxQK/gmDGI4QCfVdLVYRWvLiIRquZwtYJVnTLvibQBg8FV5v5JGLgYdz9weoRvpdWJYIa4i2c2gZjbauWnx9JJ0VIdEcEF1DsESig5iTIp6uARZOFWtJUJe8ODP1YpMq3VgW0PNA28isAIVVSt3n+4bADJuifZDYEgLBzIkdARiGIwo/hEJjGT4EI9yeCnCY/N3ulLc3cFpgEUQHeB9k0Wks29gOSx/vgv9hl+P18aRKLuWNqkO+sHyQ0MEhCq+WntdqR2XrEOS46iRP7SWkM8xPGvZiJfwMmH7tCySHyWnwLoLLtDldw8DfqdHIhoP/z86HgigresiNf0KtQd/sTUthqX/iYNw4xVi18ZYgKFLyhpF7Sb/R4Ty2e+yzUZxNPDyq1PFy+MxiI6LC48zEF23bSStPhwO+otCdnUIPwpFt2dBEIrXJpoORlpwjQtHFVlmoNHtvxeWcKdZCqpFUnG7bP+x7G3pJtz9O8EyPPD85W27ZfNu7rOu3MC25X0oihx2z0ELyjo8/s8YtiwRMdAq+ixWvUr4a3+Y1f3meFjeOyQoW3jHhdRVQwblbrWRUzILVVnV4+Xo+KXxP9NMkiOi8sS0+VB/e/MaprQ2tiClaL/HqSUMLDRDMG91UAWyx9c0qJ3T2se08gmcbESujRZiQUtdItLLFSxI6lmfLc5GvNOdG+9zs9RvEYU21cCdf0IZzBhsdw1bKgYcW6N2DuLg+4zi/F219fBYlKAgL55weRPLIErFnZuV2WRekxK8Qb1nKLqDK6mXjbP564JyTQwTLHszie2YNbnnKOAhJwCZHDlJftfGv9ptXhQnPPSiNpXWCP2/uXbICvzZ8C8dnOG/UAqMJOxoSbzfVGQRL5y4XNVThBxAkkpX2k+jlETtoaTCMo8k3YBApsvKvWhMRvEEgS2O3ZwniN5kRAClrMqEsjpY3wkHCCh0a8SmYsqd4XzTIZBBRwsUW00ppt/cwvFM2J2F/75kWdGMEH+RZJF6UNaRD+vqnv8JKhAaYNlZz9JR93RoAu46NeORarOZsMiwh8HX2kpG0KasiaRN5C4ivmZTTDypdAmSPUzNGWw7HhRb93X/e50t4KHMyBFP6JPmVTFL98GVNv8r/NjzTOcQ6ZyntjtsE4PZrT9NTkDZ+r9Ss5lskk33UFQF+LavKkATj2/aNCra6XoMJiCsltNAIN6pYk8B4DGZxEHJpLUq3K0F0vkyYWVvDO39xPuLPWAcf6fhw4RmizTecjdPbQ1PEJDvUidQIp9mdwaozey1PlqUMH5bmUjJcu3R1r1Kkc9MP1T3TZIluKQNkzm8XWvOPaFt+S0KWN/epbjlyKVMPiaa/upA7ZIGQ5gEYgAtuXH9FtWugEX76gcRZNownnB8Pp6PJ4tit2ZrP58gU1fK0AlKYU0QCTstQucAvNwdz8MBUb0oUUMcbCZkVponx5QkMVMB6d6Qt5MQInGKzfm5uZmm74ILUarTFAAgkzC27uwTyli8FpJ//IRBqSBAH6HNjr5703H6HKCYQLxS+7O64elmNWhpfeMa3xenq++dPNOO3649Vi0SVQwzP6zg3qicGQudBlT7tC9sAKEjZycFTpClhTmsA2++W2nlDJkD8vyw8vpszweIh0n/grb+4kk+GWbrqOCRCPidxrEFIgA6yGUxfTxZvq/ugYygja/wFHFrYim0vB/d2QM4FXsziQ/Zl/lwB9LAo5nLAN+EegDCyrgUgSXYyjpuP3TVhLvLNWmVLHwfypYo21z+CpTe5HwlZm57zYHOkvRGVJ138loYzNG9ae3nYH8LXgeskpI=",
     "created_at": 1762675138,
-    "id": "4a7ef7b237cb0366348014e9860f56f8d31b0bddd673e84ebf147fa1d7a3fe44",
+    "id": "605834efd3650e1a5affbd1a3b214fa03bd70fff5e2952019a37a11a3bbc490f",
     "kind": 30078,
     "pubkey": "1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f",
-    "sig": "f9db8b932d3f531991f4f5b2f238c52556ecccf55f9dca55d42af3557edf8ba128ba408cdb7f62e23f66af9c42143ee656e94855c74953053c741ee6fa17b203",
+    "sig": "0413d735a78c1c94467d84b240c8a53204bdd1bc96d329429f55873a332dd819f18090f41cfe030d4a63a31febbbeeff314b52ec1b02b3f7d4c648ccc0b974fc",
     "tags": [
      [
       "d",
@@ -856,6 +872,7 @@
      "server": "https://standup.example",
      "sid": "2856512bc0858888f1b6699408a2c26971868981677ae65ab0212ab59e5f98b9",
      "status_key": "5d0c56aded758298119b8e3a5c9102a4a588b42ce55686eb2e6203af0527ef72",
+     "stored": true,
      "title": "Siebter",
      "updated_at": 1762675150,
      "wraps_sha256": {
@@ -881,6 +898,7 @@
      "server": "https://standup.example",
      "sid": "e427a05f8a192bf4c61433b41f3f3aa1a68d7ecee84b39f0b9c403b8e3b14b73",
      "status_key": "fedd47d82d469c32e358152e6811d14960268a3a7c1b393b513555c144e28495",
+     "stored": true,
      "title": "Vierter, lokal",
      "updated_at": 1762674900,
      "wraps_sha256": {
@@ -908,6 +926,7 @@
      "server": "https://standup.example",
      "sid": "2856512bc0858888f1b6699408a2c26971868981677ae65ab0212ab59e5f98b9",
      "status_key": "5d0c56aded758298119b8e3a5c9102a4a588b42ce55686eb2e6203af0527ef72",
+     "stored": true,
      "title": "Siebter",
      "updated_at": 1762675150,
      "wraps_sha256": {
@@ -933,6 +952,7 @@
      "server": "https://standup.example",
      "sid": "6b652e9894fd075eebec6fea0a074b733a93f29414836634d6813986f6fee133",
      "status_key": "48a3bd8a302376cc360dec1b740b666c494553657028166e734ac7948d9e16e4",
+     "stored": true,
      "title": "Zweiter",
      "updated_at": 1762674400,
      "wraps_sha256": {
@@ -953,6 +973,7 @@
      "server": "https://standup.example",
      "sid": "72e48c8721549cf7d1011668cc4dc3569e47a3095f26e045f2b98a6f3b2a2e19",
      "status_key": "fac98fe700d7559bb8ecdab7e706197a8e691ee09aea05f4de65081e7f1edddf",
+     "stored": true,
      "title": "Fünfter",
      "updated_at": 1762674700,
      "wraps_sha256": {
@@ -977,6 +998,7 @@
      "server": "https://standup.example",
      "sid": "77bdd27c8f283cbbac91e602b5632a40255de38cc8607e46c603fb9aec30570b",
      "status_key": null,
+     "stored": false,
      "title": "Gemeinsam",
      "updated_at": 1762674750,
      "wraps_sha256": null
@@ -994,6 +1016,7 @@
      "server": "https://standup.example",
      "sid": "79ea9317203712c4cba2613efcc19d5a8b0f7804a338cc96b8fa5014e3a70c68",
      "status_key": "1743af587456a5f5a2ef624dc282967e0cdf0f31dedb3eaeb98aed89f3e4d78b",
+     "stored": true,
      "title": "Dritter",
      "updated_at": 1762674500,
      "wraps_sha256": {
@@ -1021,6 +1044,7 @@
      "server": "https://standup.example",
      "sid": "e427a05f8a192bf4c61433b41f3f3aa1a68d7ecee84b39f0b9c403b8e3b14b73",
      "status_key": "fedd47d82d469c32e358152e6811d14960268a3a7c1b393b513555c144e28495",
+     "stored": true,
      "title": "Vierter, neu",
      "updated_at": 1762675100,
      "wraps_sha256": {
@@ -1048,6 +1072,7 @@
      "server": "https://standup.example",
      "sid": "63d3dd532acb823cf38234dd8722766799a2d0ed9c99e4e88de1b7e4436d60a8",
      "status_key": "4131affa26542f7f79f624332f4057e53b2c10f714ec570eeca710d6d83d3466",
+     "stored": true,
      "title": "Erster",
      "updated_at": 1762674300,
      "wraps_sha256": {
@@ -1068,6 +1093,7 @@
      "server": "https://standup.example",
      "sid": "6b652e9894fd075eebec6fea0a074b733a93f29414836634d6813986f6fee133",
      "status_key": "48a3bd8a302376cc360dec1b740b666c494553657028166e734ac7948d9e16e4",
+     "stored": true,
      "title": "Zweiter",
      "updated_at": 1762674400,
      "wraps_sha256": {
@@ -1088,6 +1114,7 @@
      "server": "https://standup.example",
      "sid": "72e48c8721549cf7d1011668cc4dc3569e47a3095f26e045f2b98a6f3b2a2e19",
      "status_key": "fac98fe700d7559bb8ecdab7e706197a8e691ee09aea05f4de65081e7f1edddf",
+     "stored": true,
      "title": "Fünfter",
      "updated_at": 1762674700,
      "wraps_sha256": {
@@ -1112,6 +1139,7 @@
      "server": "https://standup.example",
      "sid": "77bdd27c8f283cbbac91e602b5632a40255de38cc8607e46c603fb9aec30570b",
      "status_key": null,
+     "stored": false,
      "title": "Gemeinsam",
      "updated_at": 1762674750,
      "wraps_sha256": null
@@ -1129,6 +1157,7 @@
      "server": "https://standup.example",
      "sid": "79ea9317203712c4cba2613efcc19d5a8b0f7804a338cc96b8fa5014e3a70c68",
      "status_key": "1743af587456a5f5a2ef624dc282967e0cdf0f31dedb3eaeb98aed89f3e4d78b",
+     "stored": true,
      "title": "Dritter",
      "updated_at": 1762674500,
      "wraps_sha256": {
@@ -1156,6 +1185,7 @@
      "server": "https://standup.example",
      "sid": "e427a05f8a192bf4c61433b41f3f3aa1a68d7ecee84b39f0b9c403b8e3b14b73",
      "status_key": "fedd47d82d469c32e358152e6811d14960268a3a7c1b393b513555c144e28495",
+     "stored": true,
      "title": "Vierter, neu",
      "updated_at": 1762675100,
      "wraps_sha256": {
@@ -1165,14 +1195,286 @@
     }
    ]
   },
+  "merge_variants": [
+   {
+    "a": {
+     "d": "artikel-v",
+     "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+     "kind": "article",
+     "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+     "revision": 1,
+     "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+     "role": "writer",
+     "round": 1,
+     "s_sub": "7b2abb54a883d7558955dffffce56d95426b572d1764725033ab58c4c68c92cb",
+     "server": "https://standup.example",
+     "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+     "status_key": "90711e59498cd6ee933321431ee8f6199d07be99caefc57772cee8c8f5b61b4c",
+     "stored": true,
+     "title": "Achter",
+     "updated_at": 1762674900,
+     "wraps_sha256": {
+      "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+      "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+     }
+    },
+    "b": {
+     "d": "artikel-v",
+     "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+     "kind": "article",
+     "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+     "revision": 1,
+     "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+     "role": "writer",
+     "round": 1,
+     "s_sub": "79d246ac90e53e68220b46cb24e422e4367810b94e67522d837c331ca34d5e77",
+     "server": "https://standup.example",
+     "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+     "status_key": "8d438550117e43b75a0ad9a5701e2fa9b767df2bdb09c027db6b742492c4baff",
+     "stored": false,
+     "title": "Achter",
+     "updated_at": 1762675000,
+     "wraps_sha256": {
+      "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+      "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+     }
+    },
+    "merged": {
+     "d": "artikel-v",
+     "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+     "kind": "article",
+     "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+     "revision": 1,
+     "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+     "role": "writer",
+     "round": 1,
+     "s_sub": "7b2abb54a883d7558955dffffce56d95426b572d1764725033ab58c4c68c92cb",
+     "server": "https://standup.example",
+     "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+     "status_key": "90711e59498cd6ee933321431ee8f6199d07be99caefc57772cee8c8f5b61b4c",
+     "stored": true,
+     "title": "Achter",
+     "updated_at": 1762674900,
+     "wraps_sha256": {
+      "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+      "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+     }
+    },
+    "name": "stored_beats_a_newer_unstored"
+   },
+   {
+    "a": {
+     "deleted": true,
+     "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+     "status_key_hash": "a76b4367a77a2bb6a990fcc5da2382cdadd05d76354394503e322c56adf2274f",
+     "updated_at": 1762675010
+    },
+    "b": {
+     "d": "artikel-v",
+     "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+     "kind": "article",
+     "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+     "revision": 1,
+     "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+     "role": "writer",
+     "round": 1,
+     "s_sub": "79d246ac90e53e68220b46cb24e422e4367810b94e67522d837c331ca34d5e77",
+     "server": "https://standup.example",
+     "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+     "status_key": "8d438550117e43b75a0ad9a5701e2fa9b767df2bdb09c027db6b742492c4baff",
+     "stored": false,
+     "title": "Achter",
+     "updated_at": 1762674850,
+     "wraps_sha256": {
+      "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+      "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+     }
+    },
+    "merged": {
+     "deleted": true,
+     "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+     "status_key_hash": "a76b4367a77a2bb6a990fcc5da2382cdadd05d76354394503e322c56adf2274f",
+     "updated_at": 1762675010
+    },
+    "name": "keyed_tombstone_removes_only_its_key"
+   },
+   {
+    "a": {
+     "deleted": true,
+     "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+     "status_key_hash": "a76b4367a77a2bb6a990fcc5da2382cdadd05d76354394503e322c56adf2274f",
+     "updated_at": 1762675010
+    },
+    "b": {
+     "d": "artikel-v",
+     "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+     "kind": "article",
+     "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+     "revision": 1,
+     "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+     "role": "writer",
+     "round": 1,
+     "s_sub": "7b2abb54a883d7558955dffffce56d95426b572d1764725033ab58c4c68c92cb",
+     "server": "https://standup.example",
+     "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+     "status_key": "90711e59498cd6ee933321431ee8f6199d07be99caefc57772cee8c8f5b61b4c",
+     "stored": true,
+     "title": "Achter",
+     "updated_at": 1762674900,
+     "wraps_sha256": {
+      "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+      "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+     }
+    },
+    "merged": {
+     "d": "artikel-v",
+     "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+     "kind": "article",
+     "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+     "revision": 1,
+     "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+     "role": "writer",
+     "round": 1,
+     "s_sub": "7b2abb54a883d7558955dffffce56d95426b572d1764725033ab58c4c68c92cb",
+     "server": "https://standup.example",
+     "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+     "status_key": "90711e59498cd6ee933321431ee8f6199d07be99caefc57772cee8c8f5b61b4c",
+     "stored": true,
+     "title": "Achter",
+     "updated_at": 1762674900,
+     "wraps_sha256": {
+      "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+      "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+     }
+    },
+    "name": "keyed_tombstone_never_removes_another_key"
+   },
+   {
+    "a": {
+     "d": "artikel-v",
+     "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+     "kind": "article",
+     "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+     "revision": 1,
+     "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+     "role": "writer",
+     "round": 1,
+     "s_sub": "79d246ac90e53e68220b46cb24e422e4367810b94e67522d837c331ca34d5e77",
+     "server": "https://standup.example",
+     "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+     "status_key": "8d438550117e43b75a0ad9a5701e2fa9b767df2bdb09c027db6b742492c4baff",
+     "stored": false,
+     "title": "Achter",
+     "updated_at": 1762675000,
+     "wraps_sha256": {
+      "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+      "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+     }
+    },
+    "b": {
+     "d": "artikel-v",
+     "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+     "kind": "article",
+     "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+     "revision": 1,
+     "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+     "role": "writer",
+     "round": 1,
+     "s_sub": "79d246ac90e53e68220b46cb24e422e4367810b94e67522d837c331ca34d5e77",
+     "server": "https://standup.example",
+     "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+     "status_key": "8d438550117e43b75a0ad9a5701e2fa9b767df2bdb09c027db6b742492c4baff",
+     "stored": false,
+     "title": "Achter",
+     "updated_at": 1762674850,
+     "wraps_sha256": {
+      "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+      "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+     }
+    },
+    "merged": {
+     "d": "artikel-v",
+     "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+     "kind": "article",
+     "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+     "revision": 1,
+     "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+     "role": "writer",
+     "round": 1,
+     "s_sub": "79d246ac90e53e68220b46cb24e422e4367810b94e67522d837c331ca34d5e77",
+     "server": "https://standup.example",
+     "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+     "status_key": "8d438550117e43b75a0ad9a5701e2fa9b767df2bdb09c027db6b742492c4baff",
+     "stored": false,
+     "title": "Achter",
+     "updated_at": 1762675000,
+     "wraps_sha256": {
+      "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+      "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+     }
+    },
+    "name": "two_unstored_newest_wins"
+   },
+   {
+    "a": {
+     "deleted": true,
+     "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+     "status_key_hash": "448fd49b0bd72bdd2b2e9bef1669c0801606f43ac920c5a287609dfd801ddeb4",
+     "updated_at": 1762675010
+    },
+    "b": {
+     "d": "artikel-v",
+     "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+     "kind": "article",
+     "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+     "revision": 1,
+     "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+     "role": "writer",
+     "round": 1,
+     "s_sub": "7b2abb54a883d7558955dffffce56d95426b572d1764725033ab58c4c68c92cb",
+     "server": "https://standup.example",
+     "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+     "status_key": "90711e59498cd6ee933321431ee8f6199d07be99caefc57772cee8c8f5b61b4c",
+     "stored": true,
+     "title": "Achter",
+     "updated_at": 1762674900,
+     "wraps_sha256": {
+      "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+      "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+     }
+    },
+    "merged": {
+     "d": "artikel-v",
+     "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+     "kind": "article",
+     "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+     "revision": 1,
+     "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+     "role": "writer",
+     "round": 1,
+     "s_sub": "7b2abb54a883d7558955dffffce56d95426b572d1764725033ab58c4c68c92cb",
+     "server": "https://standup.example",
+     "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+     "status_key": "90711e59498cd6ee933321431ee8f6199d07be99caefc57772cee8c8f5b61b4c",
+     "stored": true,
+     "title": "Achter",
+     "updated_at": 1762674900,
+     "wraps_sha256": {
+      "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+      "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+     }
+    },
+    "name": "stored_beats_a_tombstone_of_its_own_key"
+   }
+  ],
   "parts": [
-   "354d5ac9f109c10662c675fd7859ad563c3741cccd5d49a2faafc53340844542",
-   "fa31e77a0364aa02cade426373e71778d5786ba8a4df927108afd50af2e52868"
+   "aa00f95b95e73e002fb43d21b1bd5c3fcd366aab0a4ba0155c2a61bc0dba35c0",
+   "72f8ca12708afd36e528a402afb202414619f79fb469e7efe5d6d1985c1ffc9e"
   ],
   "plaintexts": [
-   "{\"items\":[{\"d\":\"artikel-a\",\"envelope_sha256\":\"97835d096cd17a1c146b939e48a498ed57b505b29d784cac92dd19299b3bda60\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"7fc48afd7334dcd8cd5389eb949470cb661a7db24b333afe4a86d8d3c0c58bac\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"abbd932fce3c71978e22f0d37d1faf299a15d05105348e52fcdd4eeff494d797\",\"server\":\"https://standup.example\",\"sid\":\"63d3dd532acb823cf38234dd8722766799a2d0ed9c99e4e88de1b7e4436d60a8\",\"status_key\":\"4131affa26542f7f79f624332f4057e53b2c10f714ec570eeca710d6d83d3466\",\"title\":\"Erster\",\"updated_at\":1762674300,\"wraps_sha256\":{\"redaktion\":\"32f1f3583f6d6cebbf3da960a7cc5b006638138af81597ab070111c9a72066a3\",\"writer\":\"8f7dd4337b97213d386a87ba0194491a355209f45c6d0443acdefbbb093e77b9\"}},{\"d\":\"artikel-b\",\"envelope_sha256\":\"5aa2832d4b0a4a04d033fe247955ec6f5048a5364af30a2848859d26077aa234\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"466208f21d586217242175136e93cc293711ca15683b2960e6ac63a38a248478\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"b077be5830abd36218857a9f54a2887a02260a08ea76e18aa27f3c82239b6c7f\",\"server\":\"https://standup.example\",\"sid\":\"6b652e9894fd075eebec6fea0a074b733a93f29414836634d6813986f6fee133\",\"status_key\":\"48a3bd8a302376cc360dec1b740b666c494553657028166e734ac7948d9e16e4\",\"title\":\"Zweiter\",\"updated_at\":1762674400,\"wraps_sha256\":{\"redaktion\":\"8f40ed5246363b70e8eb3589b205c8ecb90f91ecf43f7f8848dd103b543519c9\",\"writer\":\"b783773629f8f01033ea8ce7bd3a14cfaa9f06c1595afa5b5020dc417169cbf1\"}}],\"page\":0,\"pages\":3,\"parts\":[\"354d5ac9f109c10662c675fd7859ad563c3741cccd5d49a2faafc53340844542\",\"fa31e77a0364aa02cade426373e71778d5786ba8a4df927108afd50af2e52868\"],\"v\":1}",
-   "{\"items\":[{\"d\":\"artikel-c\",\"envelope_sha256\":\"fdcb823ca547483dc56290640d5d32036f240e4cae8ebe062668c7ff2b6d7e0e\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"0cee7c15e189ff35e5950349e9e9314d5841c5992f1f47844b43cf634647d818\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"eb1f1e094ce20ca94d5ede53905f9db5ad44f4e1cdf2b0574c42cbd8175a44d1\",\"server\":\"https://standup.example\",\"sid\":\"79ea9317203712c4cba2613efcc19d5a8b0f7804a338cc96b8fa5014e3a70c68\",\"status_key\":\"1743af587456a5f5a2ef624dc282967e0cdf0f31dedb3eaeb98aed89f3e4d78b\",\"title\":\"Dritter\",\"updated_at\":1762674500,\"wraps_sha256\":{\"redaktion\":\"69fab8c0d817897693b85bc0c0c11c72a2532f2782d9704d7d290f758ae522d6\",\"writer\":\"a70d733d56b981777598878587003b963cdfdf26effcdaa6f677038f0222f315\"}},{\"d\":\"artikel-d\",\"envelope_sha256\":\"afc516ea1f03048621cfeb7463bfe9da9a01267d570786c78d715f5b1d35fe07\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"38d5d0c1b6991925026fe9e931fcde722e4d73e7690779197a365e4f17d89f9b\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"174007b5db379652bfd18f1d79a3c20a94d8cd1bea5c59358ab7f8e82686780a\",\"server\":\"https://standup.example\",\"sid\":\"e427a05f8a192bf4c61433b41f3f3aa1a68d7ecee84b39f0b9c403b8e3b14b73\",\"status_key\":\"fedd47d82d469c32e358152e6811d14960268a3a7c1b393b513555c144e28495\",\"title\":\"Vierter, neu\",\"updated_at\":1762675100,\"wraps_sha256\":{\"redaktion\":\"223a19138ef861be232dacb76e7207e6fcf9030ea07bee382ee71eca03df69f4\",\"writer\":\"81e11901a2519a9091329aa50915cee62fd61d5a8efcffb9397da7fcf61bbb3c\"}}],\"page\":1,\"pages\":3,\"v\":1}",
-   "{\"items\":[{\"d\":\"artikel-e\",\"envelope_sha256\":\"5c59c638ba4a391df105af0f24aca322414a96ed141fb3844e16bd3a7fcfd0e4\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"cf2e95c005c5f7ce242c6816fa42d6941d82b3dbcd90deb23f18fbb82e47e288\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"5cec8aa0b7c4735e50586354e600b5a57e37e9b0e0c705eb4abc8d2ceac87bbe\",\"server\":\"https://standup.example\",\"sid\":\"72e48c8721549cf7d1011668cc4dc3569e47a3095f26e045f2b98a6f3b2a2e19\",\"status_key\":\"fac98fe700d7559bb8ecdab7e706197a8e691ee09aea05f4de65081e7f1edddf\",\"title\":\"Fünfter\",\"updated_at\":1762674700,\"wraps_sha256\":{\"redaktion\":\"6b7550f4617cdf0c631f31df6c291a4e9f6a06b7868fecef54c9931454c14750\",\"writer\":\"c49d97a135f897e862a721bfd0e3228a44127d36ce4577bdb9a6ce1f00894b98\"},\"x_future_field\":[1,2]},{\"deleted\":true,\"sid\":\"13fefd808aaa4404ca0106a470ec49117bf543564f188794b5cb17b8d3e211ca\",\"updated_at\":1762674800},{\"d\":\"artikel-h\",\"envelope_sha256\":null,\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":null,\"revision_hash\":null,\"role\":\"contributor\",\"round\":1,\"s_sub\":null,\"server\":\"https://standup.example\",\"sid\":\"77bdd27c8f283cbbac91e602b5632a40255de38cc8607e46c603fb9aec30570b\",\"status_key\":null,\"title\":\"Gemeinsam\",\"updated_at\":1762674750,\"wraps_sha256\":null},{\"note\":\"an entry from a newer app, kept unchanged\",\"role\":\"translator\",\"sid\":\"dd60a915b63e85e852cf5b9e8006de66a68acc3177a0714a7bc549e81040b7d7\",\"updated_at\":1762674780,\"v\":2}],\"page\":2,\"pages\":3,\"v\":1}"
+   "{\"items\":[{\"d\":\"artikel-a\",\"envelope_sha256\":\"97835d096cd17a1c146b939e48a498ed57b505b29d784cac92dd19299b3bda60\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"7fc48afd7334dcd8cd5389eb949470cb661a7db24b333afe4a86d8d3c0c58bac\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"abbd932fce3c71978e22f0d37d1faf299a15d05105348e52fcdd4eeff494d797\",\"server\":\"https://standup.example\",\"sid\":\"63d3dd532acb823cf38234dd8722766799a2d0ed9c99e4e88de1b7e4436d60a8\",\"status_key\":\"4131affa26542f7f79f624332f4057e53b2c10f714ec570eeca710d6d83d3466\",\"stored\":true,\"title\":\"Erster\",\"updated_at\":1762674300,\"wraps_sha256\":{\"redaktion\":\"32f1f3583f6d6cebbf3da960a7cc5b006638138af81597ab070111c9a72066a3\",\"writer\":\"8f7dd4337b97213d386a87ba0194491a355209f45c6d0443acdefbbb093e77b9\"}},{\"d\":\"artikel-b\",\"envelope_sha256\":\"5aa2832d4b0a4a04d033fe247955ec6f5048a5364af30a2848859d26077aa234\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"466208f21d586217242175136e93cc293711ca15683b2960e6ac63a38a248478\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"b077be5830abd36218857a9f54a2887a02260a08ea76e18aa27f3c82239b6c7f\",\"server\":\"https://standup.example\",\"sid\":\"6b652e9894fd075eebec6fea0a074b733a93f29414836634d6813986f6fee133\",\"status_key\":\"48a3bd8a302376cc360dec1b740b666c494553657028166e734ac7948d9e16e4\",\"stored\":true,\"title\":\"Zweiter\",\"updated_at\":1762674400,\"wraps_sha256\":{\"redaktion\":\"8f40ed5246363b70e8eb3589b205c8ecb90f91ecf43f7f8848dd103b543519c9\",\"writer\":\"b783773629f8f01033ea8ce7bd3a14cfaa9f06c1595afa5b5020dc417169cbf1\"}}],\"page\":0,\"pages\":3,\"parts\":[\"aa00f95b95e73e002fb43d21b1bd5c3fcd366aab0a4ba0155c2a61bc0dba35c0\",\"72f8ca12708afd36e528a402afb202414619f79fb469e7efe5d6d1985c1ffc9e\"],\"v\":1}",
+   "{\"items\":[{\"d\":\"artikel-c\",\"envelope_sha256\":\"fdcb823ca547483dc56290640d5d32036f240e4cae8ebe062668c7ff2b6d7e0e\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"0cee7c15e189ff35e5950349e9e9314d5841c5992f1f47844b43cf634647d818\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"eb1f1e094ce20ca94d5ede53905f9db5ad44f4e1cdf2b0574c42cbd8175a44d1\",\"server\":\"https://standup.example\",\"sid\":\"79ea9317203712c4cba2613efcc19d5a8b0f7804a338cc96b8fa5014e3a70c68\",\"status_key\":\"1743af587456a5f5a2ef624dc282967e0cdf0f31dedb3eaeb98aed89f3e4d78b\",\"stored\":true,\"title\":\"Dritter\",\"updated_at\":1762674500,\"wraps_sha256\":{\"redaktion\":\"69fab8c0d817897693b85bc0c0c11c72a2532f2782d9704d7d290f758ae522d6\",\"writer\":\"a70d733d56b981777598878587003b963cdfdf26effcdaa6f677038f0222f315\"}},{\"d\":\"artikel-d\",\"envelope_sha256\":\"afc516ea1f03048621cfeb7463bfe9da9a01267d570786c78d715f5b1d35fe07\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"38d5d0c1b6991925026fe9e931fcde722e4d73e7690779197a365e4f17d89f9b\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"174007b5db379652bfd18f1d79a3c20a94d8cd1bea5c59358ab7f8e82686780a\",\"server\":\"https://standup.example\",\"sid\":\"e427a05f8a192bf4c61433b41f3f3aa1a68d7ecee84b39f0b9c403b8e3b14b73\",\"status_key\":\"fedd47d82d469c32e358152e6811d14960268a3a7c1b393b513555c144e28495\",\"stored\":true,\"title\":\"Vierter, neu\",\"updated_at\":1762675100,\"wraps_sha256\":{\"redaktion\":\"223a19138ef861be232dacb76e7207e6fcf9030ea07bee382ee71eca03df69f4\",\"writer\":\"81e11901a2519a9091329aa50915cee62fd61d5a8efcffb9397da7fcf61bbb3c\"}}],\"page\":1,\"pages\":3,\"v\":1}",
+   "{\"items\":[{\"d\":\"artikel-e\",\"envelope_sha256\":\"5c59c638ba4a391df105af0f24aca322414a96ed141fb3844e16bd3a7fcfd0e4\",\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":1,\"revision_hash\":\"cf2e95c005c5f7ce242c6816fa42d6941d82b3dbcd90deb23f18fbb82e47e288\",\"role\":\"writer\",\"round\":1,\"s_sub\":\"5cec8aa0b7c4735e50586354e600b5a57e37e9b0e0c705eb4abc8d2ceac87bbe\",\"server\":\"https://standup.example\",\"sid\":\"72e48c8721549cf7d1011668cc4dc3569e47a3095f26e045f2b98a6f3b2a2e19\",\"status_key\":\"fac98fe700d7559bb8ecdab7e706197a8e691ee09aea05f4de65081e7f1edddf\",\"stored\":true,\"title\":\"Fünfter\",\"updated_at\":1762674700,\"wraps_sha256\":{\"redaktion\":\"6b7550f4617cdf0c631f31df6c291a4e9f6a06b7868fecef54c9931454c14750\",\"writer\":\"c49d97a135f897e862a721bfd0e3228a44127d36ce4577bdb9a6ce1f00894b98\"},\"x_future_field\":[1,2]},{\"deleted\":true,\"sid\":\"13fefd808aaa4404ca0106a470ec49117bf543564f188794b5cb17b8d3e211ca\",\"updated_at\":1762674800},{\"d\":\"artikel-h\",\"envelope_sha256\":null,\"kind\":\"article\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"revision\":null,\"revision_hash\":null,\"role\":\"contributor\",\"round\":1,\"s_sub\":null,\"server\":\"https://standup.example\",\"sid\":\"77bdd27c8f283cbbac91e602b5632a40255de38cc8607e46c603fb9aec30570b\",\"status_key\":null,\"stored\":false,\"title\":\"Gemeinsam\",\"updated_at\":1762674750,\"wraps_sha256\":null},{\"note\":\"an entry from a newer app, kept unchanged\",\"role\":\"translator\",\"sid\":\"dd60a915b63e85e852cf5b9e8006de66a68acc3177a0714a7bc549e81040b7d7\",\"updated_at\":1762674780,\"v\":2}],\"page\":2,\"pages\":3,\"v\":1}"
   ],
   "read_state_merge": {
    "local": {

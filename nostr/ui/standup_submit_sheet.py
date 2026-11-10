@@ -40,11 +40,12 @@ closes the sheet and lets it go on in the background
 
 from __future__ import annotations
 
+import time
 from typing import Callable, List, Optional, Sequence
 
 import shiboken6
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QPixmap, QStandardItemModel
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel,
     QPlainTextEdit, QPushButton, QRadioButton, QStackedWidget, QToolButton, QVBoxLayout,
@@ -57,10 +58,12 @@ from i18n import _
 from ..avatar_store import AvatarStore
 from ..profiles import Profile, ProfileStore
 from ..signer_limits import signable
-from ..standup import drafting, formats
+from ..standup import drafting, formats, words
 from ..standup.drafting import ArticleDraft, Choice
+from ..standup.errors import Code
 from ..standup.submitting import MessageStatus
 from ..standup.trust import KEY_NOT_CONFIRMED, Destination
+from ..failures import CHECK_CONNECTION
 from ..standup.words import LIST_NOT_SAVED, WAITING_FOR_SIGNER
 from . import appearance
 from .publish_article_dialog import ArticleCard, form_label, form_layout
@@ -69,14 +72,21 @@ from .publish_sheet import (
     sheet_stylesheet,
 )
 from .standup_handoff import HandoffView
+from .standup_waits import limit_words, server_limit_words
+from .standup_ways_out import WaysOut
 from .standup_privacy import PrivacyBox, privacy_words
 from .standup_publications import (
-    can_choose, publication_logo, publish_by, recent_first, rules_words,
+    can_choose, fill_picker, publication_logo, publish_by, recent_first, rules_words,
 )
 from .standup_submit import RoundAnswer, StandupWriter, SubmissionRun
 
 _WIDTH = 780
 _LOGO = 20
+
+
+def _now() -> float:
+    return time.time()
+
 
 class SubmitSheet(QDialog):
     """See the module docstring. ``submitted(d)`` when the work goes to a
@@ -116,6 +126,10 @@ class SubmitSheet(QDialog):
         self._load_problem = ""
         # The publications could not be loaded: Try Again loads them.
         self._load_failed = False
+        # A limit of the server met by loading them: Try Again is dimmed
+        # until then (contract 15, RG-M2r2a 5), as for the round's lookups.
+        self._load_limited = False
+        self._load_retry_at: Optional[float] = None
         # What the account's signer connection carries is known (or could
         # not be learned): the message's seal is measured by it.
         self._bound_known = False
@@ -207,20 +221,20 @@ class SubmitSheet(QDialog):
         self.picker.currentIndexChanged.connect(self._on_picked)
         self.rules = self._hint()
         # Every answer that leaves the sheet waiting has its way out
-        # (lesson 12): the publications not loaded, a list not read or
-        # read in part, a round the server could not tell.
-        self.retry_load = QPushButton(_("Try Again"))
-        self.retry_load.setAutoDefault(False)
-        self.retry_load.clicked.connect(self._try_again)
-        self.retry_load.hide()
+        # (lesson 12), and an earlier try not sent its Discard.
+        self.ways_out = WaysOut(self._hint(), now=lambda: _now())
+        self.ways_out.retry_requested.connect(self._try_again)
+        self.ways_out.discard_requested.connect(self._on_discard)
+        self.ways_out.wait_over.connect(self._refresh)
+        self.retry_load, self.unsent = self.ways_out.retry, self.ways_out.unsent
+        self.discard_button, self._wait = self.ways_out.discard, self.ways_out.timer
         to = QWidget()
         to_column = QVBoxLayout(to)
         to_column.setContentsMargins(0, 0, 0, 0)
         to_column.setSpacing(4)
         to_column.addWidget(self.picker)
         to_column.addWidget(self.rules)
-        to_column.addWidget(self.retry_load, 0, Qt.AlignmentFlag.AlignLeft)
-        to_column.addWidget(self._build_unsent())
+        to_column.addWidget(self.ways_out)
         form.addRow(form_label(_("To:"), self.picker), to)
 
         self.by_me = QRadioButton(_("me"))
@@ -273,23 +287,9 @@ class SubmitSheet(QDialog):
         self._form = form
         return form
 
-    def _build_unsent(self) -> QWidget:
-        """An earlier try the server has no receipt for (contract 13):
-        Einreichen sends it again, Verwerfen takes it off the list."""
-        self.unsent = QWidget()
-        row = QHBoxLayout(self.unsent)
-        row.setContentsMargins(0, 0, 0, 0)
-        hint = self._hint()
-        hint.setText(_("An earlier try wasn’t sent. Submit sends it again."))
-        row.addWidget(hint, 1)
-        self.discard_button = QPushButton(_("Discard"))
-        self.discard_button.setAutoDefault(False)
-        self.discard_button.clicked.connect(self._on_discard)
-        row.addWidget(self.discard_button, 0, Qt.AlignmentFlag.AlignTop)
-        self.unsent.hide()
-        return self.unsent
-
     def _on_discard(self) -> None:
+        """Verwerfen: the earlier try the server has no receipt for taken
+        off the list (a keyed tombstone, contract 13)."""
         entry = self._round.unsent if self._round is not None else None
         if entry is None:
             return
@@ -300,7 +300,8 @@ class SubmitSheet(QDialog):
             if stored:
                 self._on_picked(self.picker.currentIndex())     # ask again
             else:
-                self.status.say(_(LIST_NOT_SAVED))
+                # Said once, Discard there to try again (lessons 36).
+                self.status.say(_(LIST_NOT_SAVED), title=_(words.NOT_DISCARDED))
 
         self._writer.discard(self.account.profile(), entry, self._answer(done))
 
@@ -334,8 +335,9 @@ class SubmitSheet(QDialog):
 
     def _load(self) -> None:
         self._generation += 1                       # the account asked for now
-        self._load_failed = False
+        self._load_failed = self._load_limited = False
         self._load_problem = ""
+        self._load_retry_at = None
         if not self._writer.server:
             self._show_destinations([], _("The server’s address comes from the association."))
             return
@@ -361,13 +363,20 @@ class SubmitSheet(QDialog):
         self._show_destinations(recent_first(destinations, used),
                                 _("No publication takes submissions right now.") if none else "")
 
-    def _on_load_failed(self, _error) -> None:
-        self._load_failed = True
-        self._show_destinations([], _("The publications couldn’t be loaded."))
+    def _on_load_failed(self, error) -> None:
+        # A limit: asked again at once, it meets the same one (contract 15).
+        limited = getattr(error, "code", None) == Code.RATE_LIMITED
+        self._load_failed, self._load_limited = True, limited
+        wait = error.retry_after if limited else None
+        self._load_retry_at = _now() + wait if wait else None
+        self._show_destinations([], "")
 
     def _try_again(self) -> None:
         """The publications loaded again, or the round asked again (the
-        list of submissions read again first when it could not tell)."""
+        list of submissions read again first when it could not tell);
+        never while a limit's wait is not over."""
+        if self.ways_out.waiting():
+            return
         if self._load_failed:
             self._load()
             return
@@ -379,30 +388,8 @@ class SubmitSheet(QDialog):
                            loading: bool = False) -> None:
         self._destinations = destinations
         self._load_problem = problem
-        self.picker.blockSignals(True)
-        self.picker.clear()
-        model: QStandardItemModel = self.picker.model()
-        if loading or not destinations:
-            # The reason is said once, above the buttons.
-            self.picker.addItem(_("Loading publications …") if loading else _("No publication"))
-            self.picker.setEnabled(False)
-        else:
-            for destination in destinations:
-                pubkey = formats.parse_address(destination.address)[0]
-                if destination.picture and destination.picture.startswith("https://"):
-                    self._request_logo(pubkey, destination.picture)
-                label = destination.name
-                if not can_choose(destination):
-                    label = f"{destination.name} · {rules_words(destination.key.rules)}"
-                self.picker.addItem(self._logo_for(destination), label)
-                model.item(self.picker.count() - 1).setEnabled(can_choose(destination))
-            self.picker.insertSeparator(self.picker.count())
-            self.picker.addItem(_("Recently used first"))
-            model.item(self.picker.count() - 1).setEnabled(False)
-            self.picker.setEnabled(True)
-            first = next((i for i, d in enumerate(destinations) if can_choose(d)), -1)
-            self.picker.setCurrentIndex(first)
-        self.picker.blockSignals(False)
+        fill_picker(self.picker, destinations, loading=loading, logo_for=self._logo_for,
+                    request_logo=self._request_logo)
         self._on_picked(self.picker.currentIndex())
 
     def _logo_for(self, destination: Destination, size: int = _LOGO) -> QPixmap:
@@ -475,6 +462,11 @@ class SubmitSheet(QDialog):
     def blockers(self) -> List[str]:
         """Why Einreichen is dimmed, most pressing first; empty while
         there is nothing to say yet (the round is still being asked)."""
+        if self._load_failed:
+            # Said once, with its title; Try Again beside it (lessons 36).
+            sentence = (server_limit_words(self._load_retry_at, _now()) if self._load_limited
+                        else _(CHECK_CONNECTION))
+            return [drafting.Blocker(sentence, title=_(words.PUBLICATIONS_NOT_LOADED))]
         if self._load_problem:
             return [self._load_problem]
         destination = self.destination()
@@ -485,7 +477,10 @@ class SubmitSheet(QDialog):
         if not can_choose(destination):
             return [rules_words(destination.key.rules)]
         if self._round is not None and self._round.words:
-            return [self._round.words]
+            return [drafting.Blocker(self._round.words, title=_(words.NOT_CHECKED))]
+        if self._round is not None and self._round.limited:
+            return [drafting.Blocker(limit_words(destination.name, self._round.retry_at, _now()),
+                                     title=_(words.NOT_CHECKED))]
         rules = destination.key.rules
         found = drafting.blockers(
             self._draft, writer=self.account.profile().user_pubkey,
@@ -506,20 +501,29 @@ class SubmitSheet(QDialog):
         """The round to submit in, once known and free."""
         return self._round.round if self._round is not None else None
 
+    def _retry_at(self) -> Optional[float]:
+        """When a limit's wait for Try Again is over (clock time), or None."""
+        if self._load_failed:
+            return self._load_retry_at
+        return self._round.retry_at if self._round is not None and self._round.limited \
+            else None
+
     def _refresh(self, *_args) -> None:
-        self.unsent.setVisible(self._round is not None and self._round.unsent is not None)
+        round_ = self._round
         # A round step that met its bounds meets them again (final).
-        self.retry_load.setVisible(self._load_failed or (
-            self._round is not None and bool(self._round.words) and not self._round.final))
+        self.ways_out.show_ways(
+            retry=self._load_failed or (round_ is not None and not round_.final
+                                        and (bool(round_.words) or round_.limited)),
+            until=self._retry_at(), unsent=round_ is not None and round_.unsent is not None)
         blockers = self.blockers()
         self.submit_button.setEnabled(not blockers and self.round() is not None)
-        first = blockers[0] if blockers else ""
-        self.status.say(first)
-        # What exactly is wrong (a key, a file's type) in the tooltip, not
-        # in the words (lesson 27).
-        detail = getattr(first, "detail", "")
-        self.status.setToolTip(detail)
-        self.status.setAccessibleDescription(detail)
+        first = next(iter(blockers), "")
+        first = first if isinstance(first, drafting.Blocker) else drafting.Blocker(first)
+        # A total failure (it has a title) in the error color (lessons 36);
+        # what exactly is wrong (a key, a file's type) in the tooltip (27).
+        self.status.say(first, title=first.title, error=bool(first.title))
+        self.status.setToolTip(first.detail)
+        self.status.setAccessibleDescription(first.detail)
 
     # -- submitting ----------------------------------------------------------
 

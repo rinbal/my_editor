@@ -32,6 +32,7 @@ from PySide6.QtNetwork import QNetworkReply
 from nostr import crypto, events, nip98
 from nostr.standup import crypto as scrypto
 from nostr.standup import formats
+from nostr.standup.submission import blob_server_ok
 from tests.membership_fakes import FakeNam, FakeReply, header, json_reply, transport_failure
 from tests.standup_vectors import VECTORS
 
@@ -464,12 +465,6 @@ def _fields(data: dict, allowed: set, required: set) -> Optional[FakeReply]:
     return None
 
 
-def _plain(value: Any, low: int, high: int) -> bool:
-    """backend core/editorial.py is_plain_text: one line, no control characters."""
-    return isinstance(value, str) and low <= len(value) <= high and not any(
-        ord(ch) < 0x20 or ord(ch) == 0x7f for ch in value)
-
-
 _NIP44_PADDED = frozenset(crypto.calc_padded_len(n) for n in range(1, 65536))
 
 
@@ -760,7 +755,10 @@ class FakeStandupServer:
         if not value:
             return _error(401, "auth_required", "Bitte melde dich an.")
         text = value.decode("latin-1")
-        if auth in ("session", "session_any"):
+        # backend require_session_or_auth: a read (and a message) takes a
+        # session or a NIP-98 header, which needs no payload tag (lesson 19).
+        either = auth == "session" and not text.startswith("Bearer ")
+        if auth in ("session", "session_any") and not either:
             scheme, _, token = text.partition(" ")
             if scheme != "Bearer" or not formats.is_hex64(token):
                 return self._refuse("session")
@@ -781,7 +779,7 @@ class FakeStandupServer:
                                             now=self.clock())
         except nip98.AuthRefused as refusal:
             return self._refuse(refusal.reason)
-        if not nip98.has_body(body):
+        if not either and not nip98.has_body(body):
             # Contract 10: a signed action always carries a payload tag.
             return self._refuse("payload")
         if event["id"] in self.seen_ids:
@@ -1158,8 +1156,10 @@ class FakeStandupServer:
         able = [pk for pk in pub.members if self._could_decide(pub, pk, body["epoch"])]
         besides = {submitter, writer, *body["participants"]}
         if not any(pk not in besides for pk in able):
-            raise _Refused(409, "no_decider", message="Hier könnte niemand aus der Redaktion "
-                                                      "entscheiden.")
+            # backend editorial_intake: the hint only when someone could.
+            hint = " Nenne nicht die ganze Redaktion als Mitwirkende." if able else ""
+            raise _Refused(409, "no_decider",
+                           message="Hier könnte niemand aus der Redaktion entscheiden." + hint)
 
     def _work_round(self, address: str, writer: str, coordinate: str) -> Tuple[int, bool]:
         """The latest round of a work at a publication by the same
@@ -1216,7 +1216,7 @@ class FakeStandupServer:
         _need(formats.is_hex64(data["key_event_id"]), "key_event_id")
         _need(_whole(data["epoch"], 1) and data["epoch"] <= MAX_SAFE_INTEGER, "epoch")
         _need(data["kind"] in ("article", "audio"), "kind")
-        _need(_plain(data["title"], 1, 300), "title")
+        _need(formats.is_plain_text(data["title"], 1, 300), "title")
         _need(data["signer"] in ("writer", "publication"), "signer")
         _need(_on_curve(data["p_sub"]), "p_sub")
         names = {"redaktion", "writer", *participants}
@@ -1229,7 +1229,7 @@ class FakeStandupServer:
                   and len(wrap["ct"]) == SUBMISSION_WRAP_CT_CHARS and _nip44_shaped(wrap["ct"]),
                   f"wraps.{name}", code="wrap_invalid")
         _need(formats.is_hex64(data["status_key_hash"]), "status_key_hash")
-        _need(_plain(data.get("client", ""), 0, 64), "client")
+        _need(formats.is_plain_text(data.get("client", ""), 0, 64), "client")
         blobs = data["blobs"]
         _need(isinstance(blobs, list) and len(blobs) <= 64, "blobs")
         for blob in blobs:
@@ -1239,10 +1239,11 @@ class FakeStandupServer:
             if unknown or missing:
                 raise _Refused(422, "invalid", {"fields": unknown or missing})
             servers = blob["servers"]
+            # The server's blob_server_ok (core/editorial_submission.py),
+            # its development http setting off (lesson 19).
             _need(isinstance(servers, list) and 1 <= len(servers) <= 10
-                  and all(isinstance(u, str) and u.startswith("https://") and len(u) <= 512
-                          for u in servers) and len(set(servers)) == len(servers),
-                  "blobs.servers")
+                  and all(blob_server_ok(u) for u in servers)
+                  and len(set(servers)) == len(servers), "blobs.servers")
             _need(formats.is_hex64(blob["sha256"]), "blobs.sha256")
             _need(_whole(blob["size"], 1) and blob["size"] <= MAX_SAFE_INTEGER, "blobs.size")
         _need(len({b["sha256"] for b in blobs}) == len(blobs), "blobs")
@@ -1505,7 +1506,9 @@ class FakeStandupServer:
                            since_internal=numbers["since_internal"]), limit=limit)
         return _ok({"submission": self.view(record, member=member), "my_role": role,
                     "revisions": [revision], "timeline": timeline, "more": more,
-                    "members": [self._member(pub, p) for p in pub.members]})
+                    # backend submission_reads: only who reads its epoch.
+                    "members": [self._member(pub, p) for p in pub.members
+                                if self._reads_epoch(pub, p, record.epoch)]})
 
     def _before_messages(self, raw: bytes, who) -> Optional[FakeReply]:
         """backend post_message before the body is read: the address, then

@@ -41,6 +41,7 @@ MAX_THUMB_BYTES = 24 * 1024                 # 5: thumb, at most 24 KB
 MAX_PEAKS = 512                             # 5: audio peaks
 MAX_BLOBS = 64                              # 15: files per revision
 MAX_BLOB_SERVERS = 10                       # 15: servers named per file
+MAX_BLOB_SERVER_CHARS = 512                 # 15: one server's address, as the server has it
 SUBMISSION_WRAP_CT_CHARS = 348              # 15: a submission-key wrap's ct, exactly
 MAX_CLIENT_CHARS = 64                       # 15: client (and section)
 MAX_KEYRING_PAGE_CHARS = PAGE_PAYLOAD_MAX   # 12.3: 38,320, the payload of a 28,672-byte page
@@ -203,6 +204,13 @@ def is_int(value: Any, *, low: int = 0, high: int = _MAX_SAFE_INTEGER) -> bool:
 def need(condition: bool, what: str) -> None:
     if not condition:
         raise FormatError(what)
+
+
+def is_plain_text(value: Any, low: int, high: int) -> bool:
+    """One line of text, ``low`` to ``high`` characters, no control
+    characters (the server's rule for texts it keeps as they are)."""
+    return isinstance(value, str) and low <= len(value) <= high and not any(
+        ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value)
 
 
 # --------------------------------------------------------------------------- #

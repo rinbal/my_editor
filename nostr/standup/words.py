@@ -8,19 +8,18 @@ translated where they are shown (``_()``); the German is in
 The handoff's lines are the plan's exactly ("Wird verschlüsselt …",
 "Eingereicht. Im Eingang von …"). A refusal of the server is said by
 its code (:func:`refusal`), never by the server's own message, which
-the app does not show raw. What did not happen is said first, then
-that the text is still there (plan 10.7: "Nicht gesendet", the work is
-kept, one retry).
+the app does not show raw. A failure is said once (lessons 36,
+:mod:`nostr.failures`): a title, what did not happen, from what the
+server holds; one sentence, the likely cause and what to do; one retry
+(plan 10.7: the work is kept).
 """
 
 from __future__ import annotations
 
-from typing import Optional
-
 from i18n import N_
 
+from .. import failures
 from .errors import Code
-from .trust import KEY_NOT_CONFIRMED
 
 # -- the handoff, step by step (plan 10.3) -----------------------------------
 
@@ -32,6 +31,19 @@ WAITING_FOR_SIGNER = N_("Waiting for your signer app.")
 WAITING_DETAIL = N_("Confirm the request there.")
 SENDING = N_("Sending to {publication} …")
 UNCONFIRMED = N_("Not confirmed yet. Checking …")
+# The server has the submission (a receipt) while a picture is still
+# missing: the body sent again, then asked again (lesson 32).
+STORED_SENDING = N_("The server has your submission. Sending it again with the picture …")
+STORED_CHECKING = N_("The server has your submission. Checking the picture …")
+# Another device of this writer stored this round first (stale_revision
+# for a revision 1, contract 2 at 72d5ddc; the contract's German is
+# "Auf einem anderen Gerät eingereicht.").
+# Not an error: the work is in. Reload reads the list again until that
+# device's entry, with the secrets the server holds, is here.
+SUBMITTED_ELSEWHERE = N_("Submitted on another device.")
+ELSEWHERE_NOT_HERE_YET = N_("Its details aren’t on this device yet.")
+ELSEWHERE_HERE_NOW = N_("Its details are on this device now.")
+READING_LIST = N_("Reading your list of submissions …")
 UNCONFIRMED_DETAIL = N_("You can close the window, MyEditor keeps checking.")
 SUBMITTED = N_("Submitted. In the inbox of {publication}.")
 SUBMITTED_DETAIL = N_("The server confirmed receipt.")
@@ -56,7 +68,6 @@ STOPPED_PICTURES = N_("Your submission to {publication} is in, but a picture was
                       "uploaded when the account changed.")
 STOPPED_MESSAGE = N_("Your submission to {publication} is in, but your message may not have "
                      "reached the editorial team: the account changed.")
-NOT_CONFIRMED = N_("Not confirmed")
 
 # The first message to the editorial team, after the receipt.
 MESSAGE_SIGNING = N_("Waiting for your signer app: confirm your message there.")
@@ -64,25 +75,45 @@ MESSAGE_SENDING = N_("Sending your message …")
 MESSAGE_SENT = N_("Your message to the editorial team is sent.")
 MESSAGE_NOT_SENT = N_("Your message wasn’t sent.")
 
-# -- what did not happen ------------------------------------------------------
+# -- why Article Details keeps a text's link name (RG-M2r2a 1 and 2) ----------
 
-NOTHING_SUBMITTED = N_("Nothing is submitted, your text stays in the editor.")
+LINK_NAME_SUBMITTED = N_("A submitted article keeps its link name.")
+LINK_NAME_SUBMITTED_WHY = N_("The publication knows this article by its link name. Another "
+                             "one would be another submission, and once accepted it is "
+                             "published under this one.")
+LINK_NAME_KEPT_FOR_SENDING = N_("This article keeps its link name for sending it to the "
+                                "publication.")
+LINK_NAME_KEPT_FOR_SENDING_WHY = N_("Its submission is made from its link name: another one "
+                                    "would be another submission.")
+LINK_NAME_CHECKING = N_("Checking whether this article was submitted …")
+LINK_NAME_NOT_CHECKED = N_("MyEditor couldn’t check whether this article was submitted, so "
+                           "it keeps its link name for now.")
+LINK_NAME_CHECKING_WHY = N_("If it was submitted, another link name would be another "
+                            "submission.")
+
+# -- what did not happen (lessons 36) -----------------------------------------
+
+# The titles, by what the server holds (HELD_WORDS, lesson 32).
+NOT_SUBMITTED = N_("Your article wasn’t submitted")
+NOT_CONFIRMED = N_("Your submission isn’t confirmed")
+PICTURE_NOT_IN = N_("Your submission is missing a picture")
+VERSION_NOT_SUBMITTED = N_("This version wasn’t submitted")
+
+# The sentences: the likely cause, and what to do.
 LIST_ENTRY_UNUSABLE = N_("Your list of submissions holds an entry for this text that "
                          "MyEditor cannot use.")
-TEXT_STAYS = N_("Your text stays in the editor.")
-# A request went out and nothing has said yet whether it arrived.
-MAYBE_RECEIVED = N_("It may have arrived. Open Submit to a Publication again to see whether "
-                    "it did.")
-STORED_PICTURE_MISSING = N_("The server has your submission; a picture is still missing.")
-NOT_SENT = N_("Not sent. No connection to the server.")
+KEY_NOT_CONFIRMED_AGAIN = N_("The editorial team’s key couldn’t be confirmed: try again in "
+                             "a moment.")
 # Sent, but the server, asked by the status key, has nothing of it.
-NOT_RECEIVED = N_("The server didn’t receive your submission.")
-SIGNER_DECLINED = N_("Not sent. Your signer app declined the request.")
-SIGNER_SILENT = N_("Not sent. Your signer app didn’t answer.")
-LIST_NOT_SAVED = N_("Your list of submissions couldn’t be saved.")
+NOT_RECEIVED = N_("The server didn’t receive your submission: try again.")
+SERVER_TROUBLE = N_("The server couldn’t take it just now: try again in a moment.")
+LIST_NOT_SAVED = N_("Your list of submissions couldn’t be saved: check your internet "
+                    "connection and try again.")
 LIST_CHANGED_ELSEWHERE = N_("Another device changed this submission just now.")
-UPLOAD_FAILED = N_("A picture couldn’t be uploaded.")
-PICTURE_MISSING = N_("A picture can’t be found on your media server.")
+UPLOAD_FAILED = N_("A picture couldn’t be uploaded: check your internet connection and try "
+                   "again.")
+PICTURE_MISSING = N_("A picture isn’t on your media server any more: try again to upload it "
+                     "once more.")
 TOO_LARGE = N_("This submission is larger than {publication} takes.")
 ANOTHER_VERSION = N_("{publication} already has another version of this submission.")
 # This revision is stored, with another envelope or other wraps than this
@@ -98,41 +129,42 @@ _REFUSALS = {
     Code.BLOCKED: N_("{publication} doesn’t take submissions from you."),
     Code.LIMIT_OPEN: N_("You already have as many open submissions at {publication} "
                         "as it takes."),
-    Code.RATE_LIMITED: N_("Too many submissions in a short time. Try again later."),
+    Code.RATE_LIMITED: N_("You’ve sent {publication} as much as it takes for now: try again "
+                          "later."),
     Code.TOO_LARGE: TOO_LARGE,
     Code.STALE_REVISION: ANOTHER_VERSION,
-    Code.EPOCH: KEY_NOT_CONFIRMED,
-    Code.KEY_EVENT_INVALID: KEY_NOT_CONFIRMED,
+    Code.EPOCH: KEY_NOT_CONFIRMED_AGAIN,
+    Code.KEY_EVENT_INVALID: KEY_NOT_CONFIRMED_AGAIN,
     Code.NO_DECIDER: N_("Nobody at {publication} could decide on it: the only person who "
                         "can is named among those who take part."),
-    Code.OFFLINE: NOT_SENT,
-    Code.TIMEOUT: NOT_SENT,
-    Code.UNAVAILABLE: NOT_SENT,
-    Code.SIGNER_DECLINED: SIGNER_DECLINED,
-    Code.SIGNER_UNREACHABLE: SIGNER_SILENT,
+    Code.OFFLINE: failures.CHECK_CONNECTION,
+    Code.TIMEOUT: failures.CHECK_CONNECTION,
+    Code.UNAVAILABLE: failures.CHECK_CONNECTION,
+    Code.SERVER: SERVER_TROUBLE,
+    Code.SIGNER_DECLINED: failures.SIGNER_DECLINED,
+    Code.SIGNER_UNREACHABLE: failures.SIGNER_SILENT,
 }
 
 
-# A limit of the server (429, contract 15). Every limit of a submission
-# but the day's stored bytes counts in a window of an hour or less, so a
-# wait of more than an hour is the day's; a shorter one says "right now",
-# which holds for every limit. When trying again helps is said apart
-# (TRY_AGAIN_AT), with the time.
-RATE_LIMITED_NOW = N_("{publication} can’t take more from you right now.")
-RATE_LIMITED_TODAY = N_("You’ve sent {publication} as much as it takes in one day.")
-TRY_AGAIN_AT = N_("You can try again at {time}.")
-TRY_AGAIN_TOMORROW_AT = N_("You can try again tomorrow at {time}.")
+# A limit of the server (429, contract 15), said with when trying again
+# helps, in one sentence (the clock time of its Retry-After; without one,
+# the refusal's own words). The publication's, and the server's own (the
+# publications' list).
+LIMIT_AT = N_("You’ve sent {publication} as much as it takes for now: try again at {time}.")
+LIMIT_TOMORROW_AT = N_("You’ve sent {publication} as much as it takes for now: try again "
+                       "tomorrow at {time}.")
+SERVER_LIMIT_AT = N_("The server can’t take more from you right now: try again at {time}.")
+SERVER_LIMIT_TOMORROW_AT = N_("The server can’t take more from you right now: try again "
+                              "tomorrow at {time}.")
+SERVER_LIMIT_LATER = N_("The server can’t take more from you right now: try again later.")
 SEND_AGAIN_AT = N_("You can send it again at {time}.")
 SEND_AGAIN_TOMORROW_AT = N_("You can send it again tomorrow at {time}.")
-HOUR_S = 3600
 
-
-def rate_limited(wait: Optional[int]) -> str:
-    """The words (untranslated) for a refusal for a limit whose wait is
-    ``wait`` seconds (a 429's Retry-After; None without one)."""
-    if not wait:
-        return refusal(Code.RATE_LIMITED)
-    return RATE_LIMITED_TODAY if wait > HOUR_S else RATE_LIMITED_NOW
+# The sheet: what did not happen there (lessons 36), each said once with
+# its sentence and Try Again.
+PUBLICATIONS_NOT_LOADED = N_("The publications couldn’t be loaded")
+NOT_CHECKED = N_("MyEditor couldn’t check whether you submitted this text before")
+NOT_DISCARDED = N_("The earlier try wasn’t discarded")
 
 
 def refusal(code: str) -> str:
@@ -142,15 +174,21 @@ def refusal(code: str) -> str:
 
 
 __all__ = [
-    "ANOTHER_VERSION", "ENCRYPTING", "HOUR_S", "IN_THE_BACKGROUND", "LIST_CHANGED_ELSEWHERE",
-    "LIST_ENTRY_UNUSABLE", "LIST_NOT_SAVED", "MAYBE_RECEIVED", "MESSAGE_NOT_SENT",
-    "MESSAGE_SENDING", "MESSAGE_SENT", "NOTHING_SUBMITTED", "NOT_BUILT", "NOT_CONFIRMED",
-    "NOT_RECEIVED", "NOT_SENT", "NOT_TAKEN", "PICTURE_MISSING", "RATE_LIMITED_NOW",
-    "RATE_LIMITED_TODAY", "SENDING", "SEND_AGAIN_AT", "SEND_AGAIN_TOMORROW_AT", "SIGNER_DECLINED",
-    "SIGNER_SILENT", "STOPPED_MESSAGE", "STOPPED_NOTHING_SENT", "STOPPED_OTHER_VERSION",
-    "STOPPED_PICTURES", "STOPPED_UNCONFIRMED", "STORED_OTHER", "STORED_PICTURE_MISSING",
-    "SUBMITTED", "SUBMITTED_DETAIL", "TEXT_STAYS", "TOO_LARGE", "TRY_AGAIN_AT",
-    "TRY_AGAIN_TOMORROW_AT", "UNCONFIRMED", "UNCONFIRMED_DETAIL", "UPLOADING_DETAIL",
-    "UPLOADING_PICTURE", "UPLOADING_PICTURES", "UPLOAD_FAILED", "WAITING_DETAIL",
-    "WAITING_FOR_SIGNER", "rate_limited", "refusal",
+    "ANOTHER_VERSION", "ELSEWHERE_HERE_NOW", "ELSEWHERE_NOT_HERE_YET", "ENCRYPTING",
+    "IN_THE_BACKGROUND", "KEY_NOT_CONFIRMED_AGAIN", "LIMIT_AT", "LIMIT_TOMORROW_AT",
+    "LINK_NAME_CHECKING", "LINK_NAME_CHECKING_WHY", "LINK_NAME_KEPT_FOR_SENDING",
+    "LINK_NAME_KEPT_FOR_SENDING_WHY", "LINK_NAME_NOT_CHECKED", "LINK_NAME_SUBMITTED",
+    "LINK_NAME_SUBMITTED_WHY", "LIST_CHANGED_ELSEWHERE", "LIST_ENTRY_UNUSABLE", "LIST_NOT_SAVED",
+    "MESSAGE_NOT_SENT", "MESSAGE_NOT_SENT_IN_THE_BACKGROUND", "MESSAGE_SENDING", "MESSAGE_SENT",
+    "MESSAGE_SIGNING", "MESSAGE_SIGNING_IN_THE_BACKGROUND", "NOT_BUILT", "NOT_CHECKED",
+    "NOT_CONFIRMED", "NOT_DISCARDED", "NOT_RECEIVED", "NOT_SUBMITTED", "NOT_TAKEN",
+    "PICTURE_MISSING",
+    "PICTURE_NOT_IN", "PUBLICATIONS_NOT_LOADED", "READING_LIST", "SENDING", "SEND_AGAIN_AT",
+    "SEND_AGAIN_TOMORROW_AT", "SERVER_LIMIT_AT", "SERVER_LIMIT_LATER", "SERVER_LIMIT_TOMORROW_AT",
+    "SERVER_TROUBLE", "STOPPED_MESSAGE", "STOPPED_NOTHING_SENT", "STOPPED_OTHER_VERSION",
+    "STOPPED_PICTURES", "STOPPED_UNCONFIRMED", "STORED_CHECKING", "STORED_OTHER",
+    "STORED_SENDING", "SUBMITTED", "SUBMITTED_DETAIL", "SUBMITTED_ELSEWHERE", "TOO_LARGE",
+    "UNCONFIRMED", "UNCONFIRMED_DETAIL", "UPLOADING_DETAIL", "UPLOADING_PICTURE",
+    "UPLOADING_PICTURES", "UPLOAD_FAILED", "VERSION_NOT_SUBMITTED", "WAITING_DETAIL",
+    "WAITING_FOR_SIGNER", "refusal",
 ]

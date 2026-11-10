@@ -48,6 +48,7 @@ from i18n import _
 from popup_placement import fitting_size
 
 from ..article_details import AUTHOR_MARKER
+from ..failures import markup, spoken
 from ..avatar_store import AvatarStore
 from ..bech32 import encode_npub
 from ..known_people import KnownPeople
@@ -408,23 +409,33 @@ class AccountRow(QWidget):
 
 
 class StatusLine(QLabel):
-    """What is going on, or what went wrong, above the buttons."""
+    """What is going on, or what went wrong, above the buttons. A total
+    failure has a ``title`` too, what did not happen, shown above its
+    sentence in bold and said once (lessons 36)."""
 
     def __init__(self, is_dark: bool, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._is_dark = is_dark
         self._error = False
+        # What is shown: (its title, its words), plain.
+        self.shown = ("", "")
         self.setWordWrap(True)
         self.setTextFormat(Qt.TextFormat.PlainText)
         self.setVisible(False)
 
-    def say(self, text: str, *, error: bool = False) -> None:
-        self.setText(text)
+    def say(self, text: str, *, error: bool = False, title: str = "") -> None:
+        if title:
+            self.setTextFormat(Qt.TextFormat.RichText)
+            self.setText(markup(title, text))
+        else:
+            self.setTextFormat(Qt.TextFormat.PlainText)
+            self.setText(text)
         self.setVisible(bool(text))
         self._error = error
         self._color()
-        if text and error:
-            announce.announce(self, text)
+        if text and (error or title) and (title, text) != self.shown:
+            announce.announce(self, spoken(title, text))
+        self.shown = (title, text)
 
     def set_dark(self, is_dark: bool) -> None:
         self._is_dark = is_dark

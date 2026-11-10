@@ -25,6 +25,8 @@ import tab_details
 from main_window import MainWindow
 from nostr.article_details import ArticleDetails
 from nostr.media.media_visibility import PRIVATE, PUBLIC
+from nostr.standup.link_names import LinkNameLock
+from nostr.standup.progress import Held
 from tests.test_media_document import GIF_BYTES, PNG_BYTES, _editor_with, _Window
 
 CO_AUTHOR = ("c" * 64, "wss://relay.example")
@@ -140,8 +142,9 @@ class _Details:
     """The parts of MainWindow that fill Article Details."""
 
     _fill_article_details_panel = MainWindow._fill_article_details_panel
+    _link_name_lock = MainWindow._link_name_lock
 
-    def __init__(self, writer, details: ArticleDetails) -> None:
+    def __init__(self, writer, details: ArticleDetails, *, active: bool = True) -> None:
         self.shown = []
         self._article_details_panel = types.SimpleNamespace(
             isVisible=lambda: True, set_derived_title=lambda _title: None,
@@ -150,7 +153,11 @@ class _Details:
         self._ed = types.SimpleNamespace()
         self._profile_store = types.SimpleNamespace(default=lambda: PROFILE)
         self._standup_writer = writer
+        self.nostr_state = types.SimpleNamespace(active=active)
         self._details = details
+
+    def _standup(self):
+        return self._standup_writer
 
     def current_editor(self):
         return self._ed
@@ -171,28 +178,30 @@ class _Details:
         return ""
 
 
-@pytest.mark.parametrize("identifier, writer, submitted", [
-    ("ein-jahr", True, True),
-    ("anders", True, False),
-    ("ein-jahr", False, False),                     # nothing submitted here yet
-], ids=["submitted", "another text", "no writer"])
-def test_article_details_fixes_the_link_name_of_a_submitted_text(identifier, writer,
-                                                                 submitted):
-    # RG-M2r 10: a hand-edited link name made the next Submit another sid,
-    # a second submission of the same text.
+@pytest.mark.parametrize("identifier, active, expected", [
+    ("ein-jahr", True, LinkNameLock(held=Held.STORED)),
+    ("anders", True, LinkNameLock()),
+    ("ein-jahr", False, LinkNameLock(held=Held.STORED)),    # the mark, no account in use
+    ("", True, LinkNameLock()),                             # no link name: nothing asked
+], ids=["submitted", "another text", "no account in use", "no link name"])
+def test_article_details_shows_the_writers_link_name_lock(identifier, active, expected):
+    # RG-M2r 10, RG-M2r2a 1: a hand-edited link name made the next Submit
+    # another sid; the lock is asked of the writer for the account in use.
     asked = []
 
-    def has_writer_entry(profile, d):
-        asked.append((profile, d))
-        return d == "ein-jahr"
+    def link_name(profile, d, *, in_use):
+        asked.append((profile, d, in_use))
+        return LinkNameLock(held=Held.STORED) if d == "ein-jahr" else LinkNameLock()
 
-    win = _Details(types.SimpleNamespace(has_writer_entry=has_writer_entry) if writer else None,
-                   ArticleDetails(identifier=identifier, title="Ein Jahr"))
+    win = _Details(types.SimpleNamespace(link_name=link_name),
+                   ArticleDetails(identifier=identifier, title="Ein Jahr"), active=active)
     win._fill_article_details_panel()
-    assert win.shown[-1]["submitted"] is submitted
-    assert asked == ([(PROFILE, identifier)] if writer else [])
-    # The writer's list read, or a recorded entry, shows it again.
+    assert win.shown[-1]["link_name_lock"] == expected
+    assert asked == ([(PROFILE, identifier, active)] if identifier else [])
+    # The writer's list read, or a recorded entry, shows it again, and
+    # Check Again asks the writer.
     assert "listed.connect" in inspect.getsource(MainWindow._standup)
+    assert "marks=" in inspect.getsource(MainWindow._standup)
 
 
 def test_a_submitted_text_whose_link_name_was_kept_shows_it_fixed_at_once(tmp_path):

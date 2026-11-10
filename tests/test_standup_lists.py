@@ -34,6 +34,7 @@ from nostr.standup.entries import (
     SubmissionEntry,
     SubmissionItems,
     Tombstone,
+    decode_items,
     entry_from_json,
     holds_exactly,
     item_from_json,
@@ -105,8 +106,47 @@ def test_an_entry_has_the_contracts_fields_and_round_trips():
     data = value.to_json()
     assert set(data) == {"sid", "publication", "server", "role", "s_sub", "status_key",
                          "title", "kind", "d", "round", "revision", "revision_hash",
-                         "envelope_sha256", "wraps_sha256", "updated_at"}
-    assert entry_from_json(data) == value
+                         "envelope_sha256", "wraps_sha256", "stored", "updated_at"}
+    assert entry_from_json(data) == value and data["stored"] is False
+
+
+def test_an_entry_of_a_list_before_stored_is_read_as_not_known_to_be_stored():
+    # 72d5ddc added ``stored``; an older list's entry is still an entry.
+    data = entry().to_json()
+    del data["stored"]
+    read = entry_from_json(data)
+    assert isinstance(read, SubmissionEntry) and read.stored is False
+    assert read.to_json() == dict(data, stored=False)
+
+
+@pytest.mark.parametrize("change", [{"stored": "yes"}, {"stored": 1}, {"stored": None}])
+def test_a_stored_that_is_no_bool_is_not_understood(change):
+    data = dict(entry().to_json(), **change)
+    item = item_from_json(data)
+    assert isinstance(item, ForeignItem) and item.to_json() == data
+
+
+def test_a_keyed_tombstone_round_trips_and_one_with_a_bad_key_is_kept_as_it_came():
+    from nostr.standup.entries import status_key_hash, tombstone_for
+    value = entry()
+    gone = tombstone_for(value, 99)
+    assert gone.status_key_hash == status_key_hash(value.status_key)
+    assert gone.to_json() == {"sid": value.sid, "deleted": True,
+                              "status_key_hash": gone.status_key_hash, "updated_at": 99}
+    assert item_from_json(gone.to_json()) == gone
+    broken = dict(gone.to_json(), status_key_hash="zz")
+    assert isinstance(item_from_json(broken), ForeignItem)
+
+
+def test_a_keyed_tombstone_leaves_an_entry_of_another_key_whatever_its_age():
+    from nostr.standup.entries import tombstone_for
+    mine, other = entry(), entry(status_key="77" * 32)
+    gone = tombstone_for(mine, other.updated_at + 1_000)
+    for first, second in ((gone, other), (other, gone)):
+        merged = merge_items(SubmissionItems((first,)), SubmissionItems((second,)))
+        assert merged.items == (other,)
+    newer = replace(mine, updated_at=gone.updated_at + 5)            # its own key, newer
+    assert merge_items(SubmissionItems((gone,)), SubmissionItems((newer,))).items == (newer,)
 
 
 def test_an_entry_without_what_was_sent_is_kept_as_it_came():
@@ -662,6 +702,27 @@ def test_the_vector_merge_is_a_union():
     assert any(isinstance(item, Tombstone) for item in merged.items)
 
 
+@pytest.mark.parametrize("case", PL["merge_variants"], ids=lambda case: case["name"])
+@pytest.mark.parametrize("order", ["a then b", "b then a"])
+def test_the_vector_merge_variants_keep_the_stored_secrets_in_either_order(case, order):
+    # 72d5ddc: two devices building one round; the server stores one of
+    # them. Through the one merge of the list, as remote and as local.
+    first, second = (case["a"], case["b"]) if order == "a then b" else (case["b"], case["a"])
+    merged = merge_items(SubmissionItems((item_from_json(first),)),
+                         SubmissionItems((item_from_json(second),)))
+    assert [item.to_json() for item in merged.items] == [case["merged"]]
+    # And as one read across two generations holds them (decode_items).
+    decoded = decode_items({"items": [first, second]})
+    assert [item.to_json() for item in decoded.items] == [case["merged"]]
+
+
+def test_the_vector_merge_variants_are_the_contracts_five():
+    names = {case["name"] for case in PL["merge_variants"]}
+    assert names == {"stored_beats_a_newer_unstored", "keyed_tombstone_removes_only_its_key",
+                     "keyed_tombstone_never_removes_another_key", "two_unstored_newest_wins",
+                     "stored_beats_a_tombstone_of_its_own_key"}
+
+
 def test_the_vector_read_state_merge():
     merge = PL["read_state_merge"]
     assert merge_seen(merge["remote"], merge["local"]) == merge["merged"]
@@ -852,3 +913,38 @@ def test_an_entry_a_later_page_let_out_keeps_its_keys_and_nothing_takes_their_pl
     check, _relay, _clock = make(relay=relay)
     assert [e.s_sub for e in load(check).value.entries if e.sid == let_out.sid] == [
         let_out.s_sub]
+
+
+# -- partial failure is silent (lessons 36) -------------------------------------------
+
+class SomeAnswer(Relay):
+    """Relays of which only the first answers a read; the others are
+    down, or slow, as some always are."""
+
+    def events(self, relays, filters, on_done):
+        self.queries.append(filters)
+        found = [self.stored[d] for d in filters[0]["#d"] if d in self.stored]
+        on_done(found, set(list(relays)[:1]))
+
+
+def test_relays_that_refuse_the_list_while_one_takes_it_say_nothing():
+    store, relay, _clock = make()
+    load(store)
+    record(store, entry(1))
+    every = relay.sent_to[formats.SUBMISSIONS_LIST_D]
+    for url in every[1:]:                       # all but one refuse it
+        relay.refuse_at[url] = {formats.SUBMISSIONS_LIST_D}
+    result = record(store, entry(2))
+    assert result.stored and result.reason == ""
+    assert result.publish.status is PublishStatus.SENT
+
+
+def test_a_list_read_that_some_relays_did_not_answer_is_whole_and_says_nothing():
+    relay = SomeAnswer()
+    writer, _relay, _clock = make(relay=relay)
+    load(writer)
+    assert record(writer, entry(1)).stored
+    store, _relay, _clock = make(relay=relay)       # another device of this account
+    read = load(store)
+    assert read.status is ReadStatus.COMPLETE and read.readable and not read.words
+    assert store.complete and [e.sid for e in store.entries()] == [entry(1).sid]

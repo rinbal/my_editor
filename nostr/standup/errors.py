@@ -61,6 +61,11 @@ class Code:
     RATE_LIMITED = "rate_limited"
 
 
+# What a moment later may not meet again: the connection, the time, the
+# server's own trouble (5xx). Asked again quietly first (lessons 36).
+PASSING = frozenset({Code.OFFLINE, Code.TIMEOUT, Code.SERVER})
+
+
 # 12.2: the codes each status may carry; the first is the fallback for a
 # code this app does not know. 500 carries "internal", which says no more
 # than the status.
@@ -159,4 +164,4 @@ def _clean_detail(value: Any) -> Dict[str, Any]:
     return cleaned
 
 
-__all__ = ["Code", "StandupError", "error_from_answer", "refused"]
+__all__ = ["Code", "PASSING", "StandupError", "error_from_answer", "refused"]

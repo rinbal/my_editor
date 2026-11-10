@@ -34,6 +34,8 @@ def test_a_standup_module_is_short_or_says_why_not(path):
      ["BlossomUploads", "THUMB_SIDE", "thumbnail"]),
     ("nostr.ui.standup_submit_sheet", "nostr.ui.standup_publications",
      ["publication_logo", "recent_first", "rules_words"]),
+    ("nostr.ui.standup_submit", "nostr.ui.standup_run", ["SubmissionRun"]),
+    ("nostr.ui.standup_handoff", "nostr.ui.standup_waits", ["wait_words"]),
 ])
 def test_what_moved_out_is_still_offered_where_it_was(module, moved, names):
     import importlib

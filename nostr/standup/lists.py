@@ -63,7 +63,7 @@ from . import formats
 from .entries import (
     ListItem, RecordResult, RecordStatus, SubmissionEntry, SubmissionItems,
     Tombstone, decode_items, decode_seen, encode_items, entry_problem, higher_seen,
-    holds_exactly, item_for, merge_items, merge_seen, takes_place_of,
+    holds_exactly, item_for, merge_items, merge_seen, same_keys, takes_place_of, tombstone_for,
 )
 
 SUBMISSIONS_UNREADABLE = N_("Your list of submissions couldn't be read.")
@@ -256,13 +256,14 @@ class SubmissionsList(_AccountList):
         self._may_overwrite = {}
 
     def _known(self, sid: str) -> Optional[ListItem]:
-        """The newest item of ``sid`` known here: held, last read, waiting."""
+        """The item of ``sid`` the merge keeps of all known here: held, last
+        read, waiting (merge_items: a stored entry beats a newer one)."""
         found = [item for source in (self._local, self._base or SubmissionItems())
                  for item in source.items if item.sid == sid]
         waiting = self._pending.get(sid)
         if waiting is not None:
             found.append(waiting)
-        return max(found, key=lambda item: item.updated_at, default=None)
+        return item_for(merge_items(SubmissionItems(tuple(found)), SubmissionItems()), sid)
 
     def _overwrites_other_keys(self, item: Optional[ListItem], sid: str) -> bool:
         """Whether writing the pending item of ``sid`` would replace
@@ -334,18 +335,43 @@ class SubmissionsList(_AccountList):
             self._may_overwrite[entry.sid] = entry
         self._write(fresh, on_done)
 
+    def mark_stored(self, entries: Sequence[SubmissionEntry],
+                    on_done: Callable[[List[RecordResult]], None] = lambda _results: None
+                    ) -> None:
+        """``entries`` have a receipt held (the run's own, or a lookup's)
+        for their sid with their status key: each is marked ``stored`` (13,
+        72d5ddc) and the list written. Held here at once, so the next write
+        carries the mark even when this one does not end on the relays."""
+        marked: List[SubmissionEntry] = []
+        for entry in entries:
+            # The mark is the status key's (any revision of it): the one
+            # held here with that key, a later revision maybe, is marked.
+            held = self.entry(entry.sid)
+            base = held if held is not None and same_keys(held, entry) else entry
+            if base.role == "writer" and not base.stored:
+                marked.append(replace(base, stored=True))
+        if not marked:
+            answer_later(on_done, [])
+            return
+        self._local = merge_items(self._local, SubmissionItems(tuple(marked)))
+        self.record_many(marked, on_done)
+
     def forget(self, entry: SubmissionEntry, on_done: Callable[[RecordResult], None]) -> None:
         """Take back ``entry``, recorded for a request that was never sent
-        (12.4): a tombstone for its ``sid``, so no device takes the keys
-        of a submission that does not exist for one. Only while the list
-        holds exactly this entry: another run's keys are never removed
+        (12.4), or discarded (Verwerfen): a tombstone keyed by its status
+        key (13, 72d5ddc), so no device takes the keys of a submission
+        that does not exist for one, and no other entry of the sid is
+        removed. Only while the list holds exactly this entry, and never
+        one the server stored: another run's keys are never removed
         (NOT_STORED here, SUPERSEDED when the relays hold them)."""
-        if takes_place_of(self._known(entry.sid), entry):
-            failed = PublishResult(PublishStatus.FAILED, reason="another run's entry")
+        known = self._known(entry.sid)
+        if takes_place_of(known, entry) or entry.stored \
+                or (isinstance(known, SubmissionEntry) and known.stored):
+            failed = PublishResult(PublishStatus.FAILED, reason="another run's entry, or a "
+                                   "stored one")
             answer_later(on_done, RecordResult(RecordStatus.NOT_STORED, entry, failed))
             return
-        tombstone = Tombstone(sid=entry.sid, updated_at=max(int(self._clock()),
-                                                            self._latest(entry.sid) + 1))
+        tombstone = tombstone_for(entry, max(int(self._clock()), self._latest(entry.sid) + 1))
         self._pending[entry.sid] = tombstone
         self._may_overwrite[entry.sid] = entry
         self._write([tombstone], lambda results: on_done(replace(results[0], entry=entry)))

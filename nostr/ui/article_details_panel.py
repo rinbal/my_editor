@@ -13,7 +13,9 @@ or saves.
 
 The address of an article that already has one (a saved draft's, a
 published article's) is shown, not edited: another address would be
-another article. A tab that holds no article (a note's draft, a PDF)
+another article. So is the link name of a text submitted to a
+publication, or about to be, and while that is being checked
+(nostr/standup/link_names.py): the words say which. A tab that holds no article (a note's draft, a PDF)
 says so instead of showing empty fields.
 
 It is grouped in sections as Pages groups its inspector (Article, Cover,
@@ -32,8 +34,8 @@ from typing import Callable, Optional
 
 from PySide6.QtCore import QDateTime, Qt, Signal
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QScrollArea, QStackedWidget,
-    QToolButton, QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QScrollArea,
+    QStackedWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
 import announce
@@ -49,6 +51,7 @@ from ..media.publish_copy import PublicCopyMaker
 from .media_saver import MediaSaver
 from ..profiles import Profile
 from ..publisher import link_name, slugify
+from ..standup.link_names import LinkNameLock
 from .authors_section import AuthorsSection
 from .coauthors import Coauthors
 from .cover_field import CoverImageField
@@ -104,6 +107,8 @@ class ArticleDetailsPanel(QFrame):
     # (document, address): a picture dropped as the cover of a document no
     # longer in front is uploaded: that document's cover.
     cover_uploaded = Signal(object, str)
+    # Check Again: whether the text was submitted could not be told.
+    check_link_name = Signal()
 
     def __init__(self, *, media_store: Optional[MediaStore] = None,
                  media_visibility: Optional[MediaVisibility] = None,
@@ -261,6 +266,13 @@ class ArticleDetailsPanel(QFrame):
         self.identifier_note.setObjectName("article_details_hint")
         self.identifier_note.setWordWrap(True)
         advanced.addWidget(self.identifier_note)
+        # The way forward when the list of submissions could not be read
+        # (lesson 12): read again, the name read-only meanwhile.
+        self.check_again = QPushButton(_("Check Again"))
+        self.check_again.setAutoDefault(False)
+        self.check_again.clicked.connect(self.check_link_name)
+        self.check_again.hide()
+        advanced.addWidget(self.check_again, 0, Qt.AlignmentFlag.AlignLeft)
         self.identifier_problem = self._problem_label()
         advanced.addWidget(self.identifier_problem)
         self.first_published = QLabel()
@@ -379,13 +391,15 @@ class ArticleDetailsPanel(QFrame):
 
     def show_article(self, details: ArticleDetails, *, fixed_identifier: bool,
                      kept_in_file: frozenset = frozenset(), document: object = None,
-                     made_identifier: str = "", submitted: bool = False) -> None:
+                     made_identifier: str = "",
+                     link_name_lock: LinkNameLock = LinkNameLock()) -> None:
         """Show ``details``, the article in the tab in front, without
         handing them back. ``fixed_identifier``: the article has its
         address already (a saved draft, a published article).
-        ``submitted``: it went to a publication under its link name (the
-        writer's list names it): another one would be another submission,
-        and the publication publishes it under this one (RG-M2r 10).
+        ``link_name_lock``: whether it keeps its link name for its
+        submissions, and the words why (what is held of it, or that this
+        is being checked): another one would be another submission
+        (RG-M2r 10, RG-M2r2a 1 and 2).
         ``kept_in_file``: the details its file writes in a way that stays as
         written (article_details.kept_in_file), shown read-only.
         ``document``: whose article it is, which a cover dropped for it
@@ -409,10 +423,11 @@ class ArticleDetailsPanel(QFrame):
                 self._fill_fields(details)
             else:
                 self._show_people(details)
-            self.identifier_edit.setReadOnly(fixed_identifier or submitted
-                                             or "slug" in self._kept)
-            if submitted:
-                note = _("A submitted article keeps its link name.")
+            locked = link_name_lock.locked
+            self.identifier_edit.setReadOnly(fixed_identifier or locked or "slug" in self._kept)
+            kept, kept_why = link_name_lock.words()
+            if locked:
+                note = _(kept)
             elif fixed_identifier:
                 note = _("A saved or published article keeps its link name; saving it under "
                          "another one makes another article.")
@@ -420,14 +435,13 @@ class ArticleDetailsPanel(QFrame):
                 note = ""
             self.identifier_note.setText(note)
             self.identifier_note.setVisible(bool(note))
+            self.check_again.setVisible(link_name_lock.unchecked)
             self._show_first_published(details.published_at)
             self._check_identifier()
             self._suggest_identifier()
             # Why, in the field's tooltip (lesson 26), and read with it
             # unless a problem with it is read there.
-            why = _("The publication knows this article by its link name. Another one would "
-                    "be another submission, and once accepted it is published under this "
-                    "one.") if submitted else ""
+            why = _(kept_why) if locked else ""
             self.identifier_edit.setToolTip(why)
             if why and self.identifier_problem.isHidden():
                 self.identifier_edit.setAccessibleDescription(why)
