@@ -19,6 +19,7 @@ from typing import Callable, Optional
 
 from ..failures import retry_quietly
 from ..later import answer_later
+from ..signed_api import signer_failure_code
 from ..standup import conversation, formats
 from ..standup.drafting import Sealed
 from ..standup.errors import PASSING, Code, StandupError
@@ -28,17 +29,19 @@ def send_first_message(account, sealed: Sealed, text: str, on_signed: Callable[[
                        on_sent: Callable[[], None],
                        on_failure: Callable[..., None], *,
                        later: Callable[[int, Callable[[], None]], None]) -> None:
-    """``on_failure(wait)``: not sent, ``wait`` the seconds a limit asks
-    to wait (None for none). Nothing answers once ``account`` is let go:
-    the signer app may answer after it, and then nothing is posted (no
-    new session for an account left)."""
+    """``on_failure(error)``: not sent, with what stopped it: built here
+    (``refused``), the signer app (its refusal or its silence, as a
+    submission's is read), or the server (its error, a limit's wait in
+    ``retry_after``). Nothing answers once ``account`` is let go: the
+    signer app may answer after it, and then nothing is posted (no new
+    session for an account left)."""
     room = sealed.p_sub
     try:
         rumor = conversation.message_rumor(room=room, submission_id=sealed.submission_id,
                                            text=text, sender=account.writer,
                                            created_at=int(time.time()))
-    except formats.FormatError:
-        answer_later(on_failure)
+    except formats.FormatError as exc:
+        answer_later(on_failure, StandupError(Code.REFUSED, message=str(exc)[:200]))
         return
 
     def post(wrap: dict, answer: Callable[[Optional[StandupError]], None]) -> None:
@@ -56,7 +59,7 @@ def send_first_message(account, sealed: Sealed, text: str, on_signed: Callable[[
         if error is None:
             on_sent()
         else:
-            on_failure(error.retry_after if error.code == Code.RATE_LIMITED else None)
+            on_failure(error)
 
     def wrapped(wrap: dict) -> None:
         if account.stopped:
@@ -65,9 +68,14 @@ def send_first_message(account, sealed: Sealed, text: str, on_signed: Callable[[
         retry_quietly(lambda answer: post(wrap, answer),
                       settled=lambda error: not passing(error), on_done=posted, later=later)
 
-    conversation.seal_and_wrap(account.signer, rumor, sealed.s_sub, room, on_success=wrapped,
-                               on_failure=lambda _why: None if account.stopped
-                               else on_failure())
+    def unsealed(code: str, why: str) -> None:
+        if not account.stopped:
+            on_failure(StandupError(code, message=str(why)[:200]))
+
+    conversation.seal_and_wrap(
+        account.signer, rumor, sealed.s_sub, room, on_success=wrapped,
+        on_failure=lambda why: unsealed(signer_failure_code(why), why),
+        on_refused=lambda why: unsealed(Code.REFUSED, why))
 
 
 __all__ = ["send_first_message"]

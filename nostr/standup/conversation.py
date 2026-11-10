@@ -272,18 +272,23 @@ def seal_problem(signed: Any, unsigned: dict) -> Optional[str]:
 
 def seal_and_wrap(signer, rumor: dict, room_sk: bytes, room: str, *,
                   on_success: Callable[[dict], None], on_failure: Callable[[str], None],
+                  on_refused: Optional[Callable[[str], None]] = None,
                   clock: Callable[[], float] = time.time,
                   rand: Callable[[int], int] = secrets.randbelow) -> None:
     """Seal ``rumor`` (signed through ``signer``, the one prompt) and wrap
-    it to ``room``. ``on_success(wrap)``; ``on_failure(reason)``. Nothing
-    is asked of the signer when the rumor is too large. A refusal comes on
-    a later turn, also when the signer answers inside the call."""
+    it to ``room``. ``on_success(wrap)``; ``on_failure(reason)`` for what
+    the signer did (refused, never answered, signed something else);
+    ``on_refused(reason)``, when given, for what this app refused itself
+    (else ``on_failure``). Nothing is asked of the signer when the rumor
+    is too large. A refusal comes on a later turn, also when the signer
+    answers inside the call."""
+    refused = on_refused or on_failure
     try:
         if nostr_crypto.get_public_key(bytes(room_sk)).hex() != room:
             raise MessageRefused("the room key does not match the room")
         unsigned = seal_unsigned(rumor, room_sk, now=clock(), rand=rand)
     except (FormatError, ValueError) as exc:
-        answer_later(on_failure, str(exc))
+        answer_later(refused, str(exc))
         return
 
     def signed(event: dict) -> None:
@@ -296,7 +301,7 @@ def seal_and_wrap(signer, rumor: dict, room_sk: bytes, room: str, *,
                                                     "tags", "content", "sig")},
                              room, now=clock(), rand=rand)
         except (FormatError, ValueError) as exc:
-            answer_later(on_failure, str(exc))
+            answer_later(refused, str(exc))
             return
         on_success(wrap)
 

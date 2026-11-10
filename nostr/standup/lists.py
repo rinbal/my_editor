@@ -56,6 +56,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from i18n import N_, _
 
+from .. import failures
 from ..decrypted_pages import DecryptedPages
 from ..encrypted_lists import EncryptedList
 from ..later import answer_later
@@ -69,30 +70,33 @@ from .entries import (
     records_of, same_keys, shown_for, tombstone_for,
 )
 
-SUBMISSIONS_UNREADABLE = N_("Your list of submissions couldn't be read.")
-SUBMISSIONS_SIGNER_SILENT = N_(
-    "Your signer app didn't answer, so your list of submissions couldn't be read.")
+# What the person is told when a list cannot be read: one sentence each,
+# its cause and what to do (lessons 36), whole in a failure's place.
+SUBMISSIONS_UNREADABLE = N_("Your list of submissions couldn’t be read: try again in a moment.")
 SUBMISSIONS_OLD_ENCRYPTION = N_(
-    "Your list of submissions was saved with an older kind of encryption. Open it once "
-    "in the app that saved it; until then, nothing new can be submitted here.")
+    "Your list of submissions was saved with an older kind of encryption: open it once in the "
+    "app that saved it, then try again here.")
 SUBMISSIONS_MISSING_PAGE = N_(
-    "Part of your list of submissions hasn't arrived yet. What did is shown, and the list "
-    "is made whole again the next time it is saved.")
+    "Part of your list of submissions hasn’t arrived yet: what did is shown, and the list is "
+    "made whole the next time it is saved.")
 # A page longer than the connection to the signer app carries: written
 # before every page fitted every connection (contract 12.5). A connection
 # made with the code goes over relays that carry it.
 SUBMISSIONS_TOO_LONG_FOR_CONNECTION = N_(
-    "The connection to your signer app carries only short messages, and your list of "
-    "submissions was saved in longer pieces. Connect your signer app again to read it; until "
-    "then, nothing new can be submitted here.")
-READ_STATE_UNREADABLE = N_("What you have read couldn't be loaded.")
+    "Your list of submissions was saved in pieces too long for the connection to your signer "
+    "app: connect your signer app again to read it.")
+# What was read is written again on its own (ReadState.flush), so it is
+# read again then too: nothing to do.
+READ_STATE_UNREADABLE = N_("What you have read couldn’t be loaded: MyEditor tries again on its "
+                           "own.")
 READ_STATE_SIGNER_SILENT = N_(
-    "Your signer app didn't answer, so what you have read couldn't be loaded.")
+    "Your signer app didn’t answer, so what you have read couldn’t be loaded: MyEditor tries "
+    "again on its own.")
 READ_STATE_OLD_ENCRYPTION = N_(
     "What you have read was saved with an older kind of encryption and is left as it is.")
 READ_STATE_TOO_LONG_FOR_CONNECTION = N_(
-    "The connection to your signer app carries only short messages, and what you have read "
-    "was saved in longer pieces. Connect your signer app again to load it.")
+    "What you have read was saved in pieces too long for the connection to your signer app: "
+    "connect your signer app again to load it.")
 
 # 13: written at most this often, when leaving the app, and before signing
 # out, which waits for that write at most this long.
@@ -101,7 +105,7 @@ SIGN_OUT_WAIT_MS = 5_000
 
 def _submissions_words() -> ListWords:
     return ListWords(unreadable=_(SUBMISSIONS_UNREADABLE),
-                     signer_silent=_(SUBMISSIONS_SIGNER_SILENT),
+                     signer_silent=_(failures.SIGNER_SILENT),
                      old_encryption=_(SUBMISSIONS_OLD_ENCRYPTION),
                      missing_page=_(SUBMISSIONS_MISSING_PAGE),
                      too_long_for_connection=_(SUBMISSIONS_TOO_LONG_FOR_CONNECTION))
@@ -546,6 +550,6 @@ class ReadState(_AccountList):
 __all__ = [
     "READ_STATE_INTERVAL_SECONDS", "READ_STATE_OLD_ENCRYPTION", "READ_STATE_SIGNER_SILENT",
     "READ_STATE_UNREADABLE", "SIGN_OUT_WAIT_MS", "SUBMISSIONS_MISSING_PAGE",
-    "SUBMISSIONS_OLD_ENCRYPTION", "SUBMISSIONS_SIGNER_SILENT", "SUBMISSIONS_UNREADABLE",
+    "SUBMISSIONS_OLD_ENCRYPTION", "SUBMISSIONS_UNREADABLE",
     "ReadState", "SubmissionsList",
 ]

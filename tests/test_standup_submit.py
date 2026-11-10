@@ -34,7 +34,7 @@ from nostr import failures
 from nostr.standup.drafting import ROUND_UNKNOWN, LocalPicture, encrypt_pictures
 from nostr.standup.entries import SubmissionEntry
 from nostr.standup.lists import SUBMISSIONS_UNREADABLE
-from nostr.standup.submitting import Held, MessageStatus, Progress, Step
+from nostr.standup.submitting import Failure, Held, MessageStatus, Progress, Step
 from nostr.ui import standup_message, standup_run, standup_submit
 from nostr.ui.standup_submit import BlossomUploads, StandupWriter, thumbnail
 
@@ -876,18 +876,18 @@ def _stopping(*progresses):
 
 @pytest.mark.parametrize("progresses, said", [
     ((Progress(Step.UPLOADING),),
-     "Your submission to Einundzwanzig Magazin stopped when the account changed. "
-     "Nothing was sent."),
+     "Your submission to Einundzwanzig Magazin stopped when the account changed, before "
+     "anything was sent."),
     ((Progress(Step.SIGNING),),
-     "Your submission to Einundzwanzig Magazin stopped when the account changed. "
-     "Nothing was sent."),
+     "Your submission to Einundzwanzig Magazin stopped when the account changed, before "
+     "anything was sent."),
     ((Progress(Step.SENDING, sent=True, held=Held.MAYBE),),
      "Your submission to Einundzwanzig Magazin stopped when the account changed, before the "
-     "server confirmed it. Open Submit to a Publication with that account to see whether it "
+     "server confirmed it: open Submit to a Publication with that account to see whether it "
      "arrived."),
     ((Progress(Step.CHECKING, sent=True, held=Held.MAYBE),),
      "Your submission to Einundzwanzig Magazin stopped when the account changed, before the "
-     "server confirmed it. Open Submit to a Publication with that account to see whether it "
+     "server confirmed it: open Submit to a Publication with that account to see whether it "
      "arrived."),
     ((Progress(Step.REUPLOADING, sent=True, held=Held.STORED),),
      "Your submission to Einundzwanzig Magazin is in, but a picture was still being uploaded "
@@ -899,8 +899,8 @@ def _stopping(*progresses):
      "when the account changed."),
     # A request refused for sure, signed again: nothing was sent.
     ((Progress(Step.SIGNING, sent=True, held=Held.NOTHING),),
-     "Your submission to Einundzwanzig Magazin stopped when the account changed. "
-     "Nothing was sent."),
+     "Your submission to Einundzwanzig Magazin stopped when the account changed, before "
+     "anything was sent."),
     ((Progress(Step.SUBMITTED, sent=True, held=Held.STORED, message=MessageStatus.SENDING),),
      "Your submission to Einundzwanzig Magazin is in, but your message may not have reached "
      "the editorial team: the account changed."),
@@ -911,7 +911,7 @@ def _stopping(*progresses):
      None),                                          # said when it failed
     ((Progress(Step.UPLOADING), Progress(Step.SENDING, sent=True, held=Held.MAYBE)),
      "Your submission to Einundzwanzig Magazin stopped when the account changed, before the "
-     "server confirmed it. Open Submit to a Publication with that account to see whether it "
+     "server confirmed it: open Submit to a Publication with that account to see whether it "
      "arrived. 1 other submission stopped as well."),
     ((Progress(Step.SUBMITTED, sent=True, held=Held.STORED), Progress(Step.FAILED)), None),
 ], ids=["uploading", "signing", "sending", "checking", "pictures", "stored re-signing",
@@ -1027,9 +1027,19 @@ def test_in_the_background_the_first_message_says_why_the_signer_asks_and_when_i
     assert said[-1] == ("Your submission to Einundzwanzig Magazin is in. Confirm your message "
                         "to the editorial team in your signer app.")
     run.changed.emit(Progress(Step.SUBMITTED, message=MessageStatus.SENDING))
-    run.changed.emit(Progress(Step.SUBMITTED, message=MessageStatus.FAILED))
+    run.changed.emit(Progress(Step.SUBMITTED, message=MessageStatus.FAILED,
+                              message_failure=Failure(words.SERVER_TROUBLE, Step.SUBMITTED,
+                                                      title=words.MESSAGE_NOT_SENT)))
     assert said[-1] == ("Your message to the editorial team of Einundzwanzig Magazin wasn’t "
-                        "sent. Open Submit to a Publication for this text to send it again.")
+                        "sent: open Submit to a Publication for this text to send it again.")
+    # One the server may hold is never said not to be sent (RG-M2r3 7).
+    run.changed.emit(Progress(Step.SUBMITTED, message=MessageStatus.FAILED,
+                              message_failure=Failure(words.MESSAGE_MAYBE_ARRIVED,
+                                                      Step.SUBMITTED,
+                                                      title=words.MESSAGE_NOT_CONFIRMED)))
+    assert said[-1] == ("Your message to the editorial team of Einundzwanzig Magazin may not "
+                        "have arrived: open Submit to a Publication for this text before you "
+                        "send it again.")
     run.changed.emit(Progress(Step.SUBMITTED, message=MessageStatus.SENT))
     assert said[-1] == "Submitted. In the inbox of Einundzwanzig Magazin."
     assert all(a != b for a, b in zip(said, said[1:]))  # a change is said once
@@ -1145,9 +1155,9 @@ def test_a_message_refused_for_a_limit_says_how_long_to_wait(error, wait):
         signer=SimpleNamespace(sign_event=lambda unsigned, *, on_success, on_failure:
                                signer(unsigned, on_success, on_failure)))
     standup_message.send_first_message(account, sealed, "Hallo", lambda: None, lambda: None,
-                                lambda wait=None: waits.append(wait), later=LATER)
+                                lambda error: waits.append(error), later=LATER)
     LATER.run()                                     # a 5xx is asked again quietly first
-    assert waits == [wait]
+    assert waits == [error]                         # with its wait, read by the run
 
 
 def _message_account(answers):
@@ -1181,7 +1191,7 @@ def test_a_message_the_connection_stopped_is_sent_again_quietly_with_no_new_prom
     said = []
     standup_message.send_first_message(
         account, sealed, "Hallo", lambda: said.append("signed"), lambda: said.append("sent"),
-        lambda wait=None: said.append("not sent"), later=LATER)
+        lambda error: said.append("not sent"), later=LATER)
     assert said == ["signed"] and len(posted) == 1
     assert LATER.run() == [failures.QUIET_RETRY_MS[0]]
     assert said == ["signed", "sent"] and len(posted) == 2 and posted[0] == posted[1]
@@ -1194,7 +1204,7 @@ def test_a_message_that_never_gets_through_is_said_not_sent_once():
     said = []
     standup_message.send_first_message(
         account, sealed, "Hallo", lambda: None, lambda: said.append("sent"),
-        lambda wait=None: said.append("not sent"), later=LATER)
+        lambda error: said.append("not sent"), later=LATER)
     assert LATER.run() == list(failures.QUIET_RETRY_MS)
     assert said == ["not sent"] and len(posted) == 1 + len(failures.QUIET_RETRY_MS)
 
@@ -1207,7 +1217,7 @@ def test_a_message_that_may_have_arrived_is_never_sent_twice():
     said = []
     standup_message.send_first_message(
         account, sealed, "Hallo", lambda: None, lambda: said.append("sent"),
-        lambda wait=None: said.append("not sent"), later=LATER)
+        lambda error: said.append("not sent"), later=LATER)
     assert LATER.waiting == [] and said == ["not sent"] and len(posted) == 1
 
 
@@ -1223,9 +1233,27 @@ def test_a_message_with_a_secret_key_in_it_is_never_sent():
     nsec = encode_nsec(sk("writer").hex())
     standup_message.send_first_message(account, sealed, f"mein Schlüssel {nsec}",
                                 lambda: said.append("signed"), lambda: said.append("sent"),
-                                lambda: said.append("not sent"), later=LATER)
+                                lambda error: said.append(error.code), later=LATER)
     QApplication.processEvents()
-    assert sent == [] and said == ["not sent"]
+    assert sent == [] and said == [Code.REFUSED]        # built here: not the signer's
+
+
+def test_a_message_this_app_refuses_to_seal_is_not_said_as_the_signers_no():
+    # RG-M2r3 7: a room key that is not the room's is refused here, before
+    # the signer app is asked.
+    from tests.standup_fakes import SignAs
+    from tests.standup_vectors import pk, sk
+    signer, said = SignAs(sk("writer")), []
+    account = SimpleNamespace(
+        writer=pk("writer"), api=SimpleNamespace(send_message=lambda *a, **k: None),
+        stopped=False, signer=SimpleNamespace(sign_event=lambda unsigned, *, on_success,
+                                              on_failure: signer(unsigned, on_success,
+                                                                 on_failure)))
+    sealed = _sealed(pk("editor"), bytes(range(1, 33)), "ab" * 32)     # a valid key
+    standup_message.send_first_message(account, sealed, "Hallo", lambda: None, lambda: None,
+                                       lambda error: said.append(error.code), later=LATER)
+    QApplication.processEvents()
+    assert said == [Code.REFUSED] and signer.requests == []
 
 
 def _sealed(room: str, s_sub: bytes, sid: str) -> SimpleNamespace:
@@ -1256,15 +1284,16 @@ def test_a_first_message_sealed_after_the_account_was_let_go_is_never_posted(mon
     pending = {}
     monkeypatch.setattr(module.conversation, "message_rumor", lambda **kw: {"rumor": kw})
     monkeypatch.setattr(module.conversation, "seal_and_wrap",
-                        lambda signer, rumor, s_sub, room, on_success, on_failure:
-                        pending.update(on_success=on_success, on_failure=on_failure))
+                        lambda signer, rumor, s_sub, room, on_success, on_failure,
+                        on_refused: pending.update(on_success=on_success, on_failure=on_failure))
     writer, profile = _wired_writer()
     account = writer.account(profile)
     posted, said = [], []
     monkeypatch.setattr(account.api, "send_message", lambda *a, **k: posted.append(a))
     sealed = _sealed("ab" * 32, b"x", "cd" * 32)
     standup_message.send_first_message(account, sealed, "Hallo", lambda: said.append("signed"),
-                                lambda: said.append("sent"), lambda: said.append("not sent"), later=LATER)
+                                lambda: said.append("sent"), lambda _error: said.append("not sent"),
+                                later=LATER)
     writer.stop()
     QApplication.processEvents()
     if deleted:

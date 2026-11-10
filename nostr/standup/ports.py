@@ -50,9 +50,10 @@ class Ports:
     - ``lookup(sealed, on_done(status), on_failure(StandupError))``:
       watcher.resolve_unconfirmed for ``sealed.entry``, its receipt checked
       against ``sealed.body``, what was sent.
-    - ``send_message(sealed, text, on_signed(), on_sent(), on_failure(wait))``:
-      ``on_signed`` once the signer sealed it, before it is sent; ``wait``
-      the seconds a limit asks for (a 429's Retry-After), or None.
+    - ``send_message(sealed, text, on_signed(), on_sent(), on_failure(error))``:
+      ``on_signed`` once the signer sealed it, before it is sent; ``error``
+      the StandupError it ended with (the signer's, built here as
+      ``refused``, or the server's, with a limit's ``retry_after``).
     - ``reload(entry, on_done(Reread))``: the list read again for the sid
       of ``entry``, a revision 1 the server refused as ``stale_revision``
       (another device stored that round first, contract 2 at 72d5ddc).
@@ -74,7 +75,7 @@ class Ports:
                       Callable[[StandupError], None]], Callable[[], None]]
     lookup: Callable[[Any, Callable[[Any], None], Callable[[StandupError], None]], None]
     send_message: Callable[[Sealed, str, Callable[[], None], Callable[[], None],
-                            Callable[[], None]], None]
+                            Callable[[StandupError], None]], None]
     reload: Callable[[Any, Callable[[Reread], None]], None]
     refuse: Callable[[Any], None]
     refused: Callable[[Any], bool]

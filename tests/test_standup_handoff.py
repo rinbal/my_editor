@@ -235,15 +235,24 @@ def test_each_state_has_its_buttons(view, progress, shown, enabled_cancel, defau
     assert defaults == ({default} if default else set())
 
 
-def test_a_message_that_was_not_sent_can_be_sent_again_from_the_handoff(view):
-    asked = []
+def test_a_message_that_was_not_sent_can_be_sent_again_from_the_handoff(view, monkeypatch):
+    said, asked = [], []
+    monkeypatch.setattr(standup_handoff.announce, "announce", lambda _w, text: said.append(text))
     view.retry_message_requested.connect(lambda: asked.append(True))
     view.show_progress(Progress(Step.SUBMITTED, message=MessageStatus.SIGNING))
     assert view.send_again.isHidden() and view.message.text() == words.MESSAGE_SIGNING
     view.show_progress(Progress(Step.SUBMITTED, message=MessageStatus.SENDING))
     assert view.send_again.isHidden() and view.message.text() == words.MESSAGE_SENDING
-    view.show_progress(Progress(Step.SUBMITTED, message=MessageStatus.FAILED))
+    view.show_progress(Progress(Step.SUBMITTED, message=MessageStatus.FAILED,
+                                message_failure=Failure(failures.CHECK_CONNECTION,
+                                                        Step.SUBMITTED,
+                                                        title=words.MESSAGE_NOT_SENT)))
     assert not view.send_again.isHidden()
+    # RG-M2r3 7: its title, and one sentence with the cause and what to do,
+    # shown and said.
+    assert view.message.text() == failures.markup(words.MESSAGE_NOT_SENT,
+                                                  failures.CHECK_CONNECTION)
+    assert said[-1].endswith(failures.spoken(words.MESSAGE_NOT_SENT, failures.CHECK_CONNECTION))
     view.send_again.click()
     assert asked == [True]
 
@@ -308,14 +317,20 @@ def test_send_again_waits_for_the_limit_of_messages(view, monkeypatch):
     asked = []
     view.retry_message_requested.connect(lambda: asked.append(True))
     view.show_progress(Progress(Step.SUBMITTED, message=MessageStatus.FAILED,
-                                message_retry_at=_at(9, 1)))
+                                message_failure=Failure(words.MESSAGE_LIMIT_LATER,
+                                                        Step.SUBMITTED,
+                                                        title=words.MESSAGE_NOT_SENT,
+                                                        retry_at=_at(9, 1))))
     assert not view.send_again.isHidden() and not view.send_again.isEnabled()
-    assert view.message.text().startswith(words.MESSAGE_NOT_SENT + " You can send it again at ")
+    clock = standup_handoff.wait_words(_at(9, 1), now["at"], "{time}", "{time}")
+    assert view.message.text() == failures.markup(
+        words.MESSAGE_NOT_SENT, "The server takes no more messages from you right now: send it "
+        f"again at {clock}.")
     view.send_again.click()
     assert asked == []
     now["at"] = _at(9, 1)
     view._wait.timeout.emit()
-    assert view.send_again.isEnabled() and view.message.text() == words.MESSAGE_NOT_SENT
+    assert view.send_again.isEnabled()
     view.send_again.click()
     assert asked == [True]
 

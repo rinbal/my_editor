@@ -54,17 +54,20 @@ IN_THE_BACKGROUND = N_("Submitting …")
 MESSAGE_SIGNING_IN_THE_BACKGROUND = N_("Your submission to {publication} is in. Confirm your "
                                        "message to the editorial team in your signer app.")
 MESSAGE_NOT_SENT_IN_THE_BACKGROUND = N_("Your message to the editorial team of {publication} "
-                                        "wasn’t sent. Open Submit to a Publication for this "
+                                        "wasn’t sent: open Submit to a Publication for this "
                                         "text to send it again.")
+MESSAGE_UNCONFIRMED_IN_THE_BACKGROUND = N_("Your message to the editorial team of {publication} "
+                                           "may not have arrived: open Submit to a Publication "
+                                           "for this text before you send it again.")
 # The account was let go (sign-out, another account, a signer paired
 # anew) while a submission was on its way (RG-M2b 9).
 STOPPED_NOTHING_SENT = N_("Your submission to {publication} stopped when the account "
-                          "changed. Nothing was sent.")
+                          "changed, before anything was sent.")
 STOPPED_UNCONFIRMED = N_("Your submission to {publication} stopped when the account changed, "
-                         "before the server confirmed it. Open Submit to a Publication with "
+                         "before the server confirmed it: open Submit to a Publication with "
                          "that account to see whether it arrived.")
-STOPPED_OTHER_VERSION = N_("Your submission to {publication} stopped when the account changed. "
-                           "{publication} already has another version of it.")
+STOPPED_OTHER_VERSION = N_("Your submission to {publication} stopped when the account changed, "
+                           "and {publication} already has another version of it.")
 STOPPED_PICTURES = N_("Your submission to {publication} is in, but a picture was still being "
                       "uploaded when the account changed.")
 STOPPED_MESSAGE = N_("Your submission to {publication} is in, but your message may not have "
@@ -74,7 +77,23 @@ STOPPED_MESSAGE = N_("Your submission to {publication} is in, but your message m
 MESSAGE_SIGNING = N_("Waiting for your signer app: confirm your message there.")
 MESSAGE_SENDING = N_("Sending your message …")
 MESSAGE_SENT = N_("Your message to the editorial team is sent.")
-MESSAGE_NOT_SENT = N_("Your message wasn’t sent.")
+# A first message that did not go (lessons 36): its title, by what is
+# known of it, and one sentence with the cause and what to do; the
+# submission is in either way.
+MESSAGE_NOT_SENT = N_("Your message wasn’t sent")
+MESSAGE_NOT_CONFIRMED = N_("Your message may not have arrived")
+MESSAGE_MAYBE_ARRIVED = N_("The server didn’t answer after it was sent: send it again only if "
+                           "the editorial team doesn’t reply.")
+MESSAGE_NOT_BUILT = N_("MyEditor couldn’t put your message together: your submission is in "
+                       "all the same.")
+MESSAGE_REFUSED = N_("The server didn’t take your message: your submission is in all the "
+                     "same.")
+MESSAGE_LIMIT_AT = N_("The server takes no more messages from you right now: send it again at "
+                      "{time}.")
+MESSAGE_LIMIT_TOMORROW_AT = N_("The server takes no more messages from you right now: send it "
+                               "again tomorrow at {time}.")
+MESSAGE_LIMIT_LATER = N_("The server takes no more messages from you right now: send it again "
+                         "later.")
 
 # -- why Article Details keeps a text's link name (RG-M2r2a 1 and 2) ----------
 
@@ -156,8 +175,6 @@ SERVER_LIMIT_AT = N_("The server can’t take more from you right now: try again
 SERVER_LIMIT_TOMORROW_AT = N_("The server can’t take more from you right now: try again "
                               "tomorrow at {time}.")
 SERVER_LIMIT_LATER = N_("The server can’t take more from you right now: try again later.")
-SEND_AGAIN_AT = N_("You can send it again at {time}.")
-SEND_AGAIN_TOMORROW_AT = N_("You can send it again tomorrow at {time}.")
 
 # The sheet: what did not happen there (lessons 36), each said once with
 # its sentence and Try Again.
@@ -172,22 +189,45 @@ def refusal(code: str) -> str:
     return _REFUSALS.get(code, NOT_TAKEN)
 
 
+# What a first message met, as its sentence (the signer's and the
+# connection's are a submission's).
+_MESSAGE_SENTENCES = {
+    Code.REFUSED: MESSAGE_NOT_BUILT,
+    Code.RATE_LIMITED: MESSAGE_LIMIT_LATER,
+    Code.SIGNER_DECLINED: failures.SIGNER_DECLINED,
+    Code.SIGNER_UNREACHABLE: failures.SIGNER_SILENT,
+    **{code: cause_words(code) for code in PASSING},
+}
+
+
+def message_failure_words(code: str, *, maybe_stored: bool = False) -> tuple:
+    """The title and the sentence (untranslated) for a first message that
+    did not go with ``code``: one the server may hold is never said not
+    to be sent; any other refusal of the server is its own sentence."""
+    if maybe_stored:
+        return MESSAGE_NOT_CONFIRMED, MESSAGE_MAYBE_ARRIVED
+    return MESSAGE_NOT_SENT, _MESSAGE_SENTENCES.get(code, MESSAGE_REFUSED)
+
+
 __all__ = [
     "ANOTHER_VERSION", "ELSEWHERE_HERE_NOW", "ELSEWHERE_NOT_HERE_YET", "ENCRYPTING",
     "IN_THE_BACKGROUND", "KEY_NOT_CONFIRMED_AGAIN", "LIMIT_AT", "LIMIT_TOMORROW_AT",
     "LINK_NAME_CHECKING", "LINK_NAME_CHECKING_WHY", "LINK_NAME_KEPT_FOR_SENDING",
     "LINK_NAME_KEPT_FOR_SENDING_WHY", "LINK_NAME_NOT_CHECKED", "LINK_NAME_SUBMITTED",
     "LINK_NAME_SUBMITTED_WHY", "LIST_CHANGED_ELSEWHERE", "LIST_ENTRY_UNUSABLE", "LIST_NOT_SAVED",
-    "MESSAGE_NOT_SENT", "MESSAGE_NOT_SENT_IN_THE_BACKGROUND", "MESSAGE_SENDING", "MESSAGE_SENT",
+    "MESSAGE_LIMIT_AT", "MESSAGE_LIMIT_LATER", "MESSAGE_LIMIT_TOMORROW_AT",
+    "MESSAGE_MAYBE_ARRIVED", "MESSAGE_NOT_BUILT", "MESSAGE_NOT_CONFIRMED", "MESSAGE_NOT_SENT",
+    "MESSAGE_NOT_SENT_IN_THE_BACKGROUND", "MESSAGE_REFUSED", "MESSAGE_SENDING", "MESSAGE_SENT",
+    "MESSAGE_UNCONFIRMED_IN_THE_BACKGROUND",
     "MESSAGE_SIGNING", "MESSAGE_SIGNING_IN_THE_BACKGROUND", "NOT_BUILT", "NOT_CHECKED",
     "NOT_CONFIRMED", "NOT_DISCARDED", "NOT_RECEIVED", "NOT_SUBMITTED", "NOT_TAKEN",
     "PICTURE_MISSING",
-    "PICTURE_NOT_IN", "PUBLICATIONS_NOT_LOADED", "READING_LIST", "SENDING", "SEND_AGAIN_AT",
-    "SEND_AGAIN_TOMORROW_AT", "SERVER_LIMIT_AT", "SERVER_LIMIT_LATER", "SERVER_LIMIT_TOMORROW_AT",
+    "PICTURE_NOT_IN", "PUBLICATIONS_NOT_LOADED", "READING_LIST", "SENDING", "SERVER_LIMIT_AT",
+    "SERVER_LIMIT_LATER", "SERVER_LIMIT_TOMORROW_AT",
     "SERVER_TROUBLE", "STOPPED_MESSAGE", "STOPPED_NOTHING_SENT", "STOPPED_OTHER_VERSION",
     "STOPPED_PICTURES", "STOPPED_UNCONFIRMED", "STORED_CHECKING", "STORED_OTHER",
     "STORED_SENDING", "SUBMITTED", "SUBMITTED_DETAIL", "SUBMITTED_ELSEWHERE", "TOO_LARGE",
     "UNCONFIRMED", "UNCONFIRMED_DETAIL", "UPLOADING_DETAIL", "UPLOADING_PICTURE",
     "UPLOADING_PICTURES", "UPLOAD_FAILED", "VERSION_NOT_SUBMITTED", "WAITING_DETAIL",
-    "WAITING_FOR_SIGNER", "refusal",
+    "WAITING_FOR_SIGNER", "message_failure_words", "refusal",
 ]

@@ -279,7 +279,7 @@ def test_a_list_that_cannot_be_opened_is_never_written_over_and_blocks_sending()
     store, _relay, _clock = make(relay=relay)
     result = record(store, entry())
     assert result.publish.status is PublishStatus.BLOCKED and not result.stored
-    assert result.reason == "Your list of submissions couldn't be read."
+    assert result.reason == "Your list of submissions couldn’t be read: try again in a moment."
     assert relay.published == []
 
 
@@ -1201,3 +1201,18 @@ def test_a_mark_stored_marks_the_later_revision_held_with_the_same_keys():
     assert [r.stored for r in results] == [True]
     held = store.entry(first.sid)
     assert held.stored and held.revision == 2
+
+
+def test_every_list_sentence_is_one_sentence_with_its_cause_and_what_to_do():
+    # RG-M2r3 7: said in a failure's place, the words keep their remedy.
+    # What was read in an older encryption is only left as it is.
+    import re
+    import i18n
+    from nostr.standup import lists as lists_module
+    for words in (lists_module._submissions_words(), lists_module._read_state_words()):
+        for text in (words.unreadable, words.signer_silent, words.old_encryption,
+                     words.missing_page, words.too_long_for_connection):
+            if not text:
+                continue
+            assert text.endswith(".") and not re.search(r"[.!?] [A-Z]", text), text
+            assert ": " in text or text == i18n._(lists_module.READ_STATE_OLD_ENCRYPTION), text

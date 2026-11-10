@@ -56,7 +56,7 @@ from PySide6.QtWidgets import (
 import announce
 from i18n import _, pgettext
 
-from ..failures import spoken
+from ..failures import markup, spoken
 from ..standup import words
 from ..standup.submitting import HELD_WORDS, MessageStatus, Phase, Progress, Step
 from . import appearance, motion
@@ -328,8 +328,23 @@ def _now() -> float:
 
 _MESSAGE_WORDS = {MessageStatus.SIGNING: words.MESSAGE_SIGNING,
                   MessageStatus.SENDING: words.MESSAGE_SENDING,
-                  MessageStatus.SENT: words.MESSAGE_SENT,
-                  MessageStatus.FAILED: words.MESSAGE_NOT_SENT}
+                  MessageStatus.SENT: words.MESSAGE_SENT}
+
+
+def message_words(progress: Progress, now: float) -> tuple:
+    """The first message's line (translated), once the work is in: how it
+    goes, or, when it did not go, its title and its one sentence, with
+    when sending again helps while a limit's wait is not over (lessons
+    36). ``("", "")`` when there is nothing to say."""
+    if progress.phase is not Phase.DONE:
+        return "", ""
+    failure = progress.message_failure
+    if progress.message is MessageStatus.FAILED and failure is not None:
+        sentence = wait_words(failure.retry_at, now, words.MESSAGE_LIMIT_AT,
+                              words.MESSAGE_LIMIT_TOMORROW_AT) or _(failure.sentence)
+        return _(failure.title), sentence
+    shown = _MESSAGE_WORDS.get(progress.message)
+    return (_(shown), "") if shown else ("", "")
 
 
 class HandoffView(QWidget):
@@ -430,18 +445,20 @@ class HandoffView(QWidget):
         phase = progress.phase
         now = _now()
         first, second = phase_words(progress, self.track.publication, now)
-        message = (_(_MESSAGE_WORDS[progress.message])
-                   if phase is Phase.DONE and progress.message in _MESSAGE_WORDS else "")
+        message_title, message_sentence = message_words(progress, now)
         retry_at, message_at = self._waits(progress)
-        message = " ".join(part for part in (message, wait_words(
-            message_at, now, words.SEND_AGAIN_AT, words.SEND_AGAIN_TOMORROW_AT)) if part)
         self.send_again.setEnabled(not message_at or message_at <= now)
         self._wait.follow(retry_at, message_at, now=now)
         self.headline.setText(first)
         self.detail.setText(second)
         self.detail.setVisible(bool(second))
-        self.message.setText(message)
-        self.message.setVisible(bool(message))
+        if message_sentence:
+            self.message.setTextFormat(Qt.TextFormat.RichText)
+            self.message.setText(markup(message_title, message_sentence))
+        else:
+            self.message.setTextFormat(Qt.TextFormat.PlainText)
+            self.message.setText(message_title)
+        self.message.setVisible(bool(message_title))
         self.send_again.setVisible(phase is Phase.DONE
                                    and progress.message is MessageStatus.FAILED)
         failure = progress.failure if phase is Phase.FAILED else None
@@ -459,7 +476,7 @@ class HandoffView(QWidget):
                 self._move(phase)
         self.track.set_bar(self._bar(progress))
         self._show_buttons(progress)
-        said = spoken(first, second, message)
+        said = spoken(first, second, message_title, message_sentence)
         if said != self._said:
             self._said = said
             announce.announce(self, said)
@@ -469,8 +486,9 @@ class HandoffView(QWidget):
         """The limits' waits this state has: Try Again's, Send Again's."""
         failure = progress.failure if progress.phase is Phase.FAILED else None
         message_failed = progress.phase is Phase.DONE and progress.message is MessageStatus.FAILED
+        message = progress.message_failure if message_failed else None
         return (failure.retry_at if failure is not None else None,
-                progress.message_retry_at if message_failed else None)
+                message.retry_at if message is not None else None)
 
     def _wait_over(self) -> None:
         if self._progress is not None:
@@ -546,4 +564,4 @@ class HandoffView(QWidget):
             button.setDefault(button is default)
 
 
-__all__ = ["HandoffTrack", "HandoffView", "phase_words", "wait_words"]
+__all__ = ["HandoffTrack", "HandoffView", "message_words", "phase_words", "wait_words"]

@@ -126,7 +126,10 @@ def background_message_words(progress: Progress, publication: str) -> str:
     if progress.message is MessageStatus.SIGNING:
         return _(words.MESSAGE_SIGNING_IN_THE_BACKGROUND).format(publication=publication)
     if progress.message is MessageStatus.FAILED:
-        return _(words.MESSAGE_NOT_SENT_IN_THE_BACKGROUND).format(publication=publication)
+        # One the server may hold is never said not to be sent.
+        unconfirmed = progress.message_failure.title == words.MESSAGE_NOT_CONFIRMED
+        return _(words.MESSAGE_UNCONFIRMED_IN_THE_BACKGROUND if unconfirmed
+                 else words.MESSAGE_NOT_SENT_IN_THE_BACKGROUND).format(publication=publication)
     return ""
 
 

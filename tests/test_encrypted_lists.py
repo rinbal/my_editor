@@ -542,8 +542,10 @@ class DecliningSigner(FakeSigner):
 
 
 @pytest.mark.parametrize("reason,words", [
-    ("user declined", "unreadable words"),
+    # Said as the signer's no: allowing it helps, waiting does not.
+    ("user declined", "Your signer app declined the request: allow it there and try again."),
     ("timed out waiting for signer", "silent words"),
+    ("could not open it", "unreadable words"),
 ])
 def test_a_page_the_signer_declines_blocks_the_list_until_it_opens(reason, words):
     # Contract 13 (d5cc9a7): a page the relays return but that cannot be

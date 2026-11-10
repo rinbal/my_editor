@@ -46,7 +46,7 @@ class WaysOut(QWidget):
         self.unsent = QWidget()
         row = QHBoxLayout(self.unsent)
         row.setContentsMargins(0, 0, 0, 0)
-        hint.setText(_("An earlier try wasn’t sent. Submit sends it again."))
+        hint.setText(_("An earlier try wasn’t sent: Submit sends it again."))
         row.addWidget(hint, 1)
         self.discard = QPushButton(_("Discard"))
         self.discard.setAutoDefault(False)

@@ -132,6 +132,23 @@ def test_a_room_key_that_is_not_the_rooms_is_refused_before_signing():
     assert during == {}                        # on a later turn (RG-M2a 6)
 
 
+@pytest.mark.parametrize("signer, room_sk, said", [
+    (KeySigner(sk("writer"), refuse="user rejected"), ROOM_SK, "signer"),
+    (KeySigner(sk("writer"), tamper=lambda e: dict(e, sig="00" * 64)), ROOM_SK, "signer"),
+    (KeySigner(sk("writer")), EPOCH_SK, "refused"),             # refused here, unasked
+], ids=["declined", "signed something else", "built here"])
+def test_what_the_signer_did_and_what_this_app_refused_are_told_apart(signer, room_sk, said):
+    # RG-M2r3 7: a message refused here must not read as the signer's no.
+    got = {}
+    conv.seal_and_wrap(signer, writer_message(), room_sk, ROOM,
+                       on_success=lambda w: got.setdefault("ok", w),
+                       on_failure=lambda r: got.setdefault("signer", r),
+                       on_refused=lambda r: got.setdefault("refused", r), clock=lambda: NOW,
+                       rand=lambda n: 0)
+    QCoreApplication.processEvents()
+    assert list(got) == [said]
+
+
 def test_a_signer_that_changes_the_seal_is_not_trusted():
     for tamper in (lambda e: dict(e, content="x"), lambda e: dict(e, sig="00" * 64),
                    lambda e: dict(e, tags=[["p", ROOM]])):

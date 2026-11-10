@@ -60,8 +60,10 @@ from typing import Any, Callable, Collection, Dict, List, Mapping, Optional, Seq
 
 from PySide6.QtCore import QObject
 
-from . import CLIENT_NAME
-from .bunker import is_signer_silent
+from i18n import _
+
+from . import CLIENT_NAME, failures
+from .bunker import declined_by_signer, is_signer_silent
 from .drafts import supersedes
 from .events import build_event
 from .later import answer_later
@@ -284,9 +286,11 @@ class EncryptedList(QObject):
                 decrypt(content, on_success=deliver,
                         on_failure=lambda reason: failed(reason, self._words.old_encryption))
                 return
-            client.nip44_decrypt_self(content, on_success=deliver,
-                                      on_failure=lambda reason: failed(reason,
-                                                                       self._words.unreadable))
+            # A signer app that says no is said as such: allowing it helps,
+            # waiting does not.
+            client.nip44_decrypt_self(content, on_success=deliver, on_failure=lambda reason: failed(
+                reason, _(failures.SIGNER_DECLINED) if declined_by_signer(reason)
+                else self._words.unreadable))
 
         self._session_pool.get(profile, on_ready=_on_ready,
                                on_error=lambda reason: failed(reason, self._words.signer_silent))

@@ -35,7 +35,7 @@ from nostr.standup.entries import (
 from nostr.standup.errors import Code, StandupError
 from nostr.standup.link_names import SubmittedMarks
 from nostr.standup.ports import Reread
-from nostr.standup.submitting import Held, MessageStatus, Phase, Ports, Step, Submitting
+from nostr.standup.submitting import Failure, Held, MessageStatus, Phase, Ports, Step, Submitting
 from nostr.standup.watcher import resolve_unconfirmed
 from tests.membership_fakes import FakeClock
 from tests.standup_fakes import (
@@ -769,8 +769,9 @@ def test_an_entry_the_list_does_not_hold_is_never_sent():
 
 
 @pytest.mark.parametrize("status, said", [
-    (PublishStatus.BLOCKED, "Your list of submissions couldn't be read."),
-    (PublishStatus.UNREADABLE, "Your list of submissions couldn't be read."),
+    (PublishStatus.BLOCKED, "Your list of submissions couldn’t be read: try again in a moment."),
+    (PublishStatus.UNREADABLE, "Your list of submissions couldn’t be read: try again in a "
+                               "moment."),
     (PublishStatus.NO_ANSWER, ""),
 ])
 def test_a_list_that_could_not_be_written_says_so_and_offers_to_try_again(status, said):
@@ -816,13 +817,53 @@ def test_a_message_that_failed_can_be_sent_again_and_the_submission_stays_submit
     answers = [False, True]
 
     def send_message(sealed, text, on_signed, on_sent, on_failure):
-        (on_sent if answers.pop(0) else on_failure)()
+        on_sent() if answers.pop(0) else on_failure(StandupError(Code.OFFLINE))
 
     world.submitting._ports = replace(world.submitting._ports, send_message=send_message)
     progress = world.go()
     assert progress.step is Step.SUBMITTED and progress.message is MessageStatus.FAILED
+    assert progress.message_failure == Failure(failures.CHECK_CONNECTION, Step.SUBMITTED,
+                                               title=words.MESSAGE_NOT_SENT)
     world.submitting.retry_message()
-    assert world.submitting.progress.message is MessageStatus.SENT
+    progress = world.submitting.progress
+    assert progress.message is MessageStatus.SENT and progress.message_failure is None
+
+
+@pytest.mark.parametrize("error, title, sentence", [
+    # RG-M2r3 7: "Your message wasn’t sent." had no cause and no remedy.
+    (StandupError(Code.OFFLINE), words.MESSAGE_NOT_SENT, failures.CHECK_CONNECTION),
+    (StandupError(Code.TIMEOUT), words.MESSAGE_NOT_SENT, failures.CHECK_CONNECTION),
+    (StandupError(Code.SERVER), words.MESSAGE_NOT_SENT, failures.SERVER_TROUBLE),
+    (StandupError(Code.BAD_RESPONSE), words.MESSAGE_NOT_SENT, words.MESSAGE_REFUSED),
+    (StandupError(Code.FORBIDDEN, status=403), words.MESSAGE_NOT_SENT, words.MESSAGE_REFUSED),
+    (StandupError(Code.SIGNER_DECLINED), words.MESSAGE_NOT_SENT, failures.SIGNER_DECLINED),
+    (StandupError(Code.SIGNER_UNREACHABLE), words.MESSAGE_NOT_SENT, failures.SIGNER_SILENT),
+    (StandupError(Code.REFUSED), words.MESSAGE_NOT_SENT, words.MESSAGE_NOT_BUILT),
+    (StandupError(Code.RATE_LIMITED, status=429), words.MESSAGE_NOT_SENT,
+     words.MESSAGE_LIMIT_LATER),
+    # One the server may hold is never said not to be sent (lesson 8).
+    (StandupError(Code.TIMEOUT, maybe_stored=True), words.MESSAGE_NOT_CONFIRMED,
+     words.MESSAGE_MAYBE_ARRIVED),
+])
+def test_a_message_that_did_not_go_says_its_cause_and_what_to_do(error, title, sentence):
+    world = World(message="Hallo")
+    world.submitting._ports = replace(
+        world.submitting._ports,
+        send_message=lambda sealed, text, on_signed, on_sent, on_failure: on_failure(error))
+    progress = world.go()
+    assert progress.step is Step.SUBMITTED and progress.message is MessageStatus.FAILED
+    failure = progress.message_failure
+    assert (failure.title, failure.sentence, failure.retry) == (title, sentence, Step.SUBMITTED)
+    assert failure.retry_at is None
+
+
+def test_only_a_limit_makes_send_again_wait():
+    world = World(message="Hallo")
+    error = StandupError(Code.SERVER, status=503, retry_after=45)
+    world.submitting._ports = replace(
+        world.submitting._ports,
+        send_message=lambda sealed, text, on_signed, on_sent, on_failure: on_failure(error))
+    assert world.go().message_failure.retry_at is None
 
 
 def test_a_message_refused_for_its_limit_is_sent_again_only_after_the_wait():
@@ -833,18 +874,20 @@ def test_a_message_refused_for_its_limit_is_sent_again_only_after_the_wait():
     def send_message(sealed, text, on_signed, on_sent, on_failure):
         sent.append(text)
         wait = answers.pop(0)
-        on_failure(wait) if wait else on_sent()
+        on_failure(StandupError(Code.RATE_LIMITED, status=429, retry_after=wait)) if wait \
+            else on_sent()
 
     world.submitting._ports = replace(world.submitting._ports, send_message=send_message)
     progress = world.go()
-    assert progress.message is MessageStatus.FAILED and progress.message_retry_at == NOW + 90
+    assert progress.message is MessageStatus.FAILED
+    assert progress.message_failure.retry_at == NOW + 90
     world.submitting.retry_message()                # before the wait: nothing is sealed
     assert sent == ["Hallo"]
     world.settle(seconds=90)
     world.submitting.retry_message()
     assert sent == ["Hallo", "Hallo"]
     progress = world.submitting.progress
-    assert progress.message is MessageStatus.SENT and progress.message_retry_at is None
+    assert progress.message is MessageStatus.SENT and progress.message_failure is None
 
 
 def test_eingereicht_comes_only_from_the_receipts_handler():

@@ -684,7 +684,7 @@ def test_every_list_says_when_its_connection_cannot_carry_a_page(tmp_path):
         "The connection to your signer app carries only short messages")
     for words in (lists.SUBMISSIONS_TOO_LONG_FOR_CONNECTION,
                   lists.READ_STATE_TOO_LONG_FOR_CONNECTION, subscriptions._TOO_LONG_FOR_CONNECTION):
-        assert "Connect your signer app again" in words
+        assert "connect your signer app again" in words.lower()
         assert not any(term in words for term in ("relay", "NIP", "28", "byte", "page"))
 
 

@@ -95,8 +95,7 @@ class _Sending:
 
 @dataclass(frozen=True)
 class _MessageDone:
-    sent: bool
-    retry_after: Optional[int] = None       # a limit's wait, in seconds
+    error: Optional[StandupError] = None    # None: sent
 
 
 @dataclass(frozen=True)
@@ -248,7 +247,7 @@ class Submitting:
     def retry_message(self) -> None:
         if self._progress.step is Step.SUBMITTED and \
                 self._progress.message is MessageStatus.FAILED and \
-                not self._waits(self._progress.message_retry_at):
+                not self._waits(self._progress.message_failure.retry_at):
             self._send_message()
 
     def _waits(self, until: Optional[float]) -> bool:
@@ -626,16 +625,22 @@ class Submitting:
         answer = self._answer()
         self._ports.send_message(self._sealed, self._choice.message.strip(),
                                  lambda: answer(_MessageSigned()),
-                                 lambda: answer(_MessageDone(True)),
-                                 lambda wait=None: answer(_MessageDone(False, wait)))
+                                 lambda: answer(_MessageDone()),
+                                 lambda error: answer(_MessageDone(error)))
 
     def _message_signed(self, _event: _MessageSigned) -> None:
         self._show(Step.SUBMITTED, message=MessageStatus.SENDING)
 
     def _message_done(self, event: _MessageDone) -> None:
-        self._show(Step.SUBMITTED,
-                   message=MessageStatus.SENT if event.sent else MessageStatus.FAILED,
-                   message_retry_at=None if event.sent else self._after(event.retry_after))
+        error = event.error
+        if error is None:
+            self._show(Step.SUBMITTED, message=MessageStatus.SENT, message_failure=None)
+            return
+        title, sentence = words.message_failure_words(error.code, maybe_stored=error.maybe_stored)
+        limited = error.code == Code.RATE_LIMITED
+        self._show(Step.SUBMITTED, message=MessageStatus.FAILED, message_failure=Failure(
+            sentence, Step.SUBMITTED, title=title,
+            retry_at=self._after(error.retry_after) if limited else None))
 
 
 __all__ = [

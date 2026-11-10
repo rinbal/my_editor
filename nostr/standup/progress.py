@@ -122,7 +122,8 @@ class Failure:
     not happen, from what the server holds, :data:`HELD_WORDS`) and
     ``sentence`` (the likely cause and what to do), untranslated, with
     ``{publication}`` filled in where they name it; ``said``, the list's
-    own words in the sentence's place (already translated), or "";
+    own words in the sentence's place (already translated: one sentence
+    with their own cause and what to do, lists.py), or "";
     ``details``, what an upload answered (server names, codes), only
     behind Details; where trying again goes on (``retry``; None when it
     would not help). ``retry_at``: the clock time before which trying
@@ -152,8 +153,9 @@ class Progress:
     # cancelled, whatever the step (the server may hold it).
     sent: bool = False
     held: Held = Held.NOTHING
-    # The first message met a limit: sent again from this clock time on.
-    message_retry_at: Optional[float] = None
+    # The first message did not go (FAILED): said with its title and its
+    # sentence, and a limit's wait in ``retry_at`` (sent again from then).
+    message_failure: Optional[Failure] = None
 
     @property
     def phase(self) -> Phase:
