@@ -59,6 +59,7 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QEventLoop, QObject, QTimer, Signal
 
+import user_dirs
 from atomic_file import write_json
 from i18n import _
 
@@ -88,7 +89,6 @@ __all__ = ["FeedSubscription", "FeedSubscriptionStore", "SourceOptions"]
 
 _log = logging.getLogger(__name__)
 
-_CACHE_DIR = Path.home() / ".config" / "my_editor"
 _CACHE_VERSION = 2
 
 # What the list's status says (sync_status), in plain words: the window
@@ -161,7 +161,7 @@ class FeedSubscriptionStore(QObject):
         self._relay_pool = relay_pool
         self._relay_directory = relay_directory
         self._entitled_relays = entitled_relays
-        self._cache_dir = Path(cache_dir) if cache_dir else _CACHE_DIR
+        self._cache_dir = Path(cache_dir) if cache_dir else user_dirs.config_dir()
         self._query = query if query is not None else (
             ListQuery(relay_pool, parent=self) if relay_pool is not None else None)
         self._publisher = publisher or self._default_publisher

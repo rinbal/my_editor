@@ -296,7 +296,7 @@ def test_the_knit_runs_in_the_environment_it_was_started_from(tmp_path, monkeypa
         "print('system path kept: %s' % kept)\n"
         "sys.exit(1)\n"))
     detail = _run_knit(monkeypatch, script, str(rmd)).get("detail", "")
-    assert "library=" + rmd_toolchain._LIBRARY_DIR in detail
+    assert "library=" + rmd_toolchain._library_dir() in detail
     assert "system path kept: True" in detail
 
 

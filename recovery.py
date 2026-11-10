@@ -46,6 +46,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QTextCursor, QTextDocument, QTextFormat
 
 import front_matter
+import user_dirs
 import tab_details
 import rich_text
 from atomic_file import write_text
@@ -55,7 +56,13 @@ from markdown_writer import holds_faithfully, read_markdown
 from nostr.media.assets import ASSET_SCHEME
 
 
-BACKUP_DIR = os.path.join(os.path.expanduser("~"), ".cache", "my_editor", "backups")
+# A folder of its own (a test's); None: backups in the person's cache folder,
+# found each time (user_dirs).
+BACKUP_DIR: str | None = None
+
+
+def backup_dir() -> str:
+    return BACKUP_DIR or str(user_dirs.cache_dir() / "backups")
 
 # How a document's backup stands (EditorBackup.problem): kept, or why not.
 KEPT = ""
@@ -90,7 +97,7 @@ _ASSET_KEY_RE = re.compile(re.escape(ASSET_SCHEME) + r":[0-9a-f]{64}")
 
 
 def _ensure_backup_dir() -> None:
-    os.makedirs(BACKUP_DIR, exist_ok=True)
+    os.makedirs(backup_dir(), exist_ok=True)
 
 
 def _backup_id_for(file_path: str | None) -> str:
@@ -101,7 +108,7 @@ def _backup_id_for(file_path: str | None) -> str:
 
 
 def _backup_path_for(backup_id: str) -> str:
-    return os.path.join(BACKUP_DIR, f"{backup_id}.autosave")
+    return os.path.join(backup_dir(), f"{backup_id}.autosave")
 
 
 def _source_mtime_ns(file_path: str | None) -> int | None:
@@ -581,13 +588,14 @@ def read_backup(path: str) -> dict | None:
 
 def find_all_backups() -> list[dict]:
     """Return every valid backup record found on disk."""
-    if not os.path.isdir(BACKUP_DIR):
+    folder = backup_dir()
+    if not os.path.isdir(folder):
         return []
     results = []
-    for name in os.listdir(BACKUP_DIR):
+    for name in os.listdir(folder):
         if not name.endswith(".autosave"):
             continue
-        path = os.path.join(BACKUP_DIR, name)
+        path = os.path.join(folder, name)
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)

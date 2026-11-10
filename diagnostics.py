@@ -26,7 +26,8 @@ import sys
 import threading
 from typing import Optional, TextIO
 
-LOG_DIR = os.path.join(os.path.expanduser("~"), ".cache", "my_editor", "logs")
+import user_dirs
+
 LOG_NAME = "myeditor.log"
 CRASH_NAME = "crash.log"
 MAX_BYTES = 1024 * 1024
@@ -39,12 +40,13 @@ _crash_file: Optional[TextIO] = None
 _reports_crashes = False        # whether crash traces go to crash.log
 
 
-def install(version: str, *, folder: str = LOG_DIR, level: int = logging.WARNING) -> bool:
+def install(version: str, *, folder: Optional[str] = None, level: int = logging.WARNING) -> bool:
     """Start writing the log. Returns False when the folder cannot be
     written; the app then runs as before, without a log."""
     global _handler, _crash_file, _reports_crashes
     if _handler is not None:
         return True
+    folder = folder or log_folder()
     try:
         os.makedirs(folder, exist_ok=True)
         handler = logging.handlers.RotatingFileHandler(
@@ -81,7 +83,8 @@ def install(version: str, *, folder: str = LOG_DIR, level: int = logging.WARNING
 
 
 def log_folder() -> str:
-    return LOG_DIR
+    """The logs in the person's cache folder, found each time (user_dirs)."""
+    return str(user_dirs.cache_dir() / "logs")
 
 
 def uninstall() -> None:

@@ -48,12 +48,12 @@ from PySide6.QtNetwork import QNetworkAccessManager
 
 import atomic_file
 import image_safety
+import user_dirs
 
 from .netguard import Fetched, NetGuard
 
 _log = logging.getLogger(__name__)
 
-CACHE_DIR = Path.home() / ".cache" / "my_editor" / "favicons"
 MAX_ICON_BYTES = 64 * 1024
 MAX_PAGE_BYTES = 1024 * 1024
 ICON_PIXELS = 64                       # kept at this size, drawn at 16 to 32
@@ -189,7 +189,7 @@ class FaviconCache(QObject):
                  clock: Callable[[], float] = time.time,
                  parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
-        self._dir = Path(cache_dir) if cache_dir else CACHE_DIR
+        self._dir = Path(cache_dir) if cache_dir else user_dirs.cache_dir() / "favicons"
         self._clock = clock
         if get is None:
             guard = NetGuard()

@@ -32,6 +32,7 @@ from urllib.parse import urlsplit
 
 from PySide6.QtCore import QObject, QTimer
 
+import user_dirs
 from atomic_file import write_text
 
 
@@ -302,8 +303,10 @@ def asset_from_record(data: object) -> Optional[DocumentAsset]:
 # The persisted index
 # ---------------------------------------------------------------------------
 
-INDEX_DIR = Path.home() / ".config" / "my_editor"
-INDEX_FILE = INDEX_DIR / "media_assets.json"
+def index_file() -> Path:
+    """media_assets.json in the person's config folder, found each time
+    (user_dirs)."""
+    return user_dirs.config_dir() / "media_assets.json"
 
 CURRENT_INDEX_VERSION = 1
 
@@ -330,9 +333,9 @@ class AssetIndex(QObject):
     is set (both mean this process does not know the whole picture).
     """
 
-    def __init__(self, path: Path = INDEX_FILE, parent: Optional[QObject] = None) -> None:
+    def __init__(self, path: Optional[Path] = None, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
-        self._path = Path(path)
+        self._path = Path(path) if path is not None else index_file()
         self._assets: Dict[str, DocumentAsset] = {}
         self._degraded = False
         self._read_only = False
