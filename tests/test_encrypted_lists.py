@@ -20,14 +20,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from nostr import crypto, events
+from nostr import events
 from nostr.answer_size import SIGNER_ANSWER_MAX, decrypt_answer_size
 from nostr.signer_limits import SIGNER_NIP44_MAX_PLAINTEXT
 from nostr.encrypted_lists import EncryptedList
 from nostr.list_relays import LIST_KIND
 from nostr.list_results import ListWords, PublishStatus, ReadStatus
 from nostr.paged_list import (
-    MAX_PAGES, PAGE_PAYLOAD_MAX, PAGE_PLAINTEXT_MAX, Paging, page_d_tag, split,
+    MAX_PAGES, PAGE_ANSWER_MAX, PAGE_PAYLOAD_MAX, PAGE_PLAINTEXT_MAX, READ_PAGE_PAYLOAD_MAX,
+    Paging, page_d_tag, split,
 )
 from tests.outbox_fakes import OTHER_SK, PK, SK, FakeRelayDirectory, settle
 from tests.test_imports_subscriptions import FakeSessionPool, FakeSigner
@@ -164,24 +165,27 @@ def page_count(relay, d_tag=D) -> int:
 
 # -- the page size --------------------------------------------------------------
 
-def test_a_page_fits_one_signer_call_even_when_every_byte_is_escaped():
-    # A page fits a signer's nip44_encrypt and nip44_decrypt, and a page
-    # of quotes (each two bytes in the answer) plus the answer's frame
-    # fits the answer bound of contract 12.5.
+def test_a_page_fits_every_connection_and_one_written_before_is_still_read():
+    # Contract 12.5 "Pages fit every connection" and 13 (007ded2): a page
+    # is at most 28,672 bytes, a 38,320-character payload, and its answer
+    # at most 40,896 bytes, whatever the writer's own connection. Pages
+    # of up to 32,000 bytes, written before, are still read.
+    assert (PAGE_PLAINTEXT_MAX, PAGE_PAYLOAD_MAX, PAGE_ANSWER_MAX) == (28_672, 38_320, 40_896)
     assert PAGE_PLAINTEXT_MAX <= SIGNER_NIP44_MAX_PLAINTEXT
-    assert decrypt_answer_size('"' * PAGE_PLAINTEXT_MAX) <= SIGNER_ANSWER_MAX
+    assert PAGE_ANSWER_MAX < SIGNER_ANSWER_MAX
+    assert READ_PAGE_PAYLOAD_MAX == 43_780
 
 
 @pytest.mark.parametrize("ink", ["<", ">", "&"])
 def test_pages_are_split_by_the_answer_bound_too(ink):
     # M1d, contract 12.5 and 13: a character one byte in the page and six
-    # in the answer makes a 32,000-byte page far too large to be handed
-    # back. (Control characters and U+2028 are escaped in the page
-    # already, so the 32,000 bytes bound them.)
+    # in the answer makes a full page far too large to be handed back.
+    # (Control characters and U+2028 are escaped in the page already, so
+    # the page's bytes bound them.)
     payload = {"seen": {f"{ink * 40}{n:06d}": n for n in range(2_000)}}
     pages = split(payload, Paging(field="seen"))
     assert all(len(p.encode("utf-8")) <= PAGE_PLAINTEXT_MAX for p in pages)
-    assert all(decrypt_answer_size(p) <= SIGNER_ANSWER_MAX for p in pages)
+    assert all(decrypt_answer_size(p) <= PAGE_ANSWER_MAX for p in pages)
     by_plaintext = sum(len(p.encode("utf-8")) for p in pages) / PAGE_PLAINTEXT_MAX
     assert len(pages) > by_plaintext + 1           # the answer bound decided
 
@@ -290,7 +294,7 @@ def test_every_new_page_is_dated_after_the_one_it_replaces_even_with_a_slow_cloc
 
 
 @pytest.mark.parametrize("content", [
-    "ENC[" + "x" * PAGE_PAYLOAD_MAX + "]",                                  # too long
+    "ENC[" + "x" * READ_PAGE_PAYLOAD_MAX + "]",                             # too long
     "ENC[" + json.dumps({"v": 1, "page": 1, "pages": 9, "seen": {}}) + "]",  # not this list's
     "",                                                                     # emptied
 ], ids=["too long", "not this list's", "emptied"])  # short: Windows keeps the test's name
@@ -497,7 +501,7 @@ def test_a_list_too_long_for_64_pages_is_refused_and_the_old_one_stays_readable(
 def test_the_longest_list_that_fits_is_written_and_read():
     relay = Relay()
     store = read_state_list(relay)
-    seen = big_read_state(50_000)
+    seen = big_read_state(46_000)
     assert publish(store, seen)[0].status is PublishStatus.SENT
     assert 40 < page_count(relay) <= MAX_PAGES
     assert read(store).value == seen
@@ -840,7 +844,7 @@ def test_the_same_list_with_the_key_here_is_written():
 
 def test_a_first_page_longer_than_a_page_is_unreadable_without_asking_the_signer():
     relay, signer = Relay(), CountingSigner()
-    relay.put(D, None, content="ENC[" + "x" * PAGE_PAYLOAD_MAX + "]")
+    relay.put(D, None, content="ENC[" + "x" * READ_PAGE_PAYLOAD_MAX + "]")
     store = read_state_list(relay, signer=signer)
     assert read(store).status is ReadStatus.UNREADABLE
     assert signer.decrypted == []
@@ -852,11 +856,11 @@ def test_a_later_page_longer_than_a_page_counts_as_missing_without_asking_the_si
     store = read_state_list(relay, signer=signer)
     publish(store, big_read_state(3_000))
     relay.put(page_d_tag(D, 1), None, created_at=NOW + 5,
-              content="ENC[" + "x" * PAGE_PAYLOAD_MAX + "]")
+              content="ENC[" + "x" * READ_PAGE_PAYLOAD_MAX + "]")
     signer.decrypted.clear()
     answer = read(store)
     assert answer.status is ReadStatus.INCOMPLETE and answer.stale == (1,)
-    assert all(len(ciphertext) <= PAGE_PAYLOAD_MAX for ciphertext in signer.decrypted)
+    assert all(len(ciphertext) <= READ_PAGE_PAYLOAD_MAX for ciphertext in signer.decrypted)
     assert len(signer.decrypted) == page_count(relay) - 1
 
 

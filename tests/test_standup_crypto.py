@@ -444,9 +444,11 @@ def test_status_and_submission_keys_are_fresh():
 
 
 def test_a_keyring_page_is_the_payload_of_one_list_page():
-    # 12.3: 43,780 characters, the NIP-44 payload of a 32,000-byte page.
-    assert formats.MAX_KEYRING_PAGE_CHARS == nostr_crypto.payload_length(32_000)
-    assert len(nostr_crypto.encrypt("x" * 32_000, b"k" * 32)) == formats.MAX_KEYRING_PAGE_CHARS
+    # 12.3 (007ded2): 38,320 characters, the NIP-44 payload of a
+    # 28,672-byte page; one byte more pads to 32,768.
+    assert formats.MAX_KEYRING_PAGE_CHARS == nostr_crypto.payload_length(28_672) == 38_320
+    assert len(nostr_crypto.encrypt("x" * 28_672, b"k" * 32)) == formats.MAX_KEYRING_PAGE_CHARS
+    assert len(nostr_crypto.encrypt("x" * 28_673, b"k" * 32)) > formats.MAX_KEYRING_PAGE_CHARS
 
 
 def test_the_crypto_and_the_list_entries_load_without_qt():

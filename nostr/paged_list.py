@@ -4,17 +4,20 @@
 13, which both apps follow). Pure: no relays, no signer, no clock;
 ``nostr/encrypted_lists.py`` reads and writes the pages.
 
-**Size.** A NIP-44 message carries at most 65,535 bytes, a signer app
-at most 40,960 (``signer_limits.SIGNER_NIP44_MAX_PLAINTEXT``), and the
-signer's answer to ``nip44_decrypt`` carries the plaintext as a JSON
-string, escaped. A page is therefore at most 32,000 bytes of plaintext,
-and its answer, measured with the worst-case escaper (contract 12.5,
-``nostr/answer_size.py``: a quote two bytes, a ``<`` six), at most
-65,471: a page is split by both. A list has at most 64 pages; a longer
+**Size.** Every device reads every page back through a signer app,
+over whatever connection it has, so every page is written small enough
+for a connection whose relays cap what they carry at 65,536 characters,
+whatever the writer's own connection is (contract 12.5 "Pages fit every
+connection", 13; STANDUP 007ded2): at most 28,672 bytes of plaintext,
+whose NIP-44 payload pads to at most 28,672 and whose ``nip44_decrypt``
+request stays within the 40,960 bytes such a connection carries, and the
+signer's answer handing it back, measured with the worst-case escaper
+(``nostr/answer_size.py``: a quote two bytes, a ``<`` six), at most
+40,896: a page is split by both. A list has at most 64 pages; a longer
 one is refused when written and unreadable when read. Over a connection
-whose relays all cap what they carry, pages are split smaller still, and
-by the ``nip44_encrypt`` request that carries them too (contract 12.5
-"Relay content caps"; ``signer_limits.page_bounds``).
+whose relays cap what they carry lower still, pages are split smaller,
+and by the ``nip44_encrypt`` request that carries them too
+(``signer_limits.page_bounds``).
 
 **Shape.** Page 0 has ``d`` = the list's own, page n > 0 ``<d>:<n>``.
 Every page's plaintext is ``{"v":1,"page":i,"pages":n,<field>:...}``,
@@ -42,21 +45,32 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from .answer_size import (
-    SIGNER_ANSWER_MAX, decrypt_answer_size, encrypt_request_size, escaped_text_size,
-    json_text_size,
+    decrypt_answer_size, encrypt_request_size, escaped_text_size, json_text_size,
 )
 from .crypto import NIP44_MAX_PLAINTEXT_LEN, payload_length
 
 __all__ = [
-    "MAX_PAGES", "PAGE_PAYLOAD_MAX", "PAGE_PLAINTEXT_MAX", "PAGED_VERSION", "Page", "PageError",
-    "Paging", "digest", "join", "page_d_tag", "parse_page", "serialize", "split", "stale_pages",
+    "MAX_PAGES", "PAGE_ANSWER_MAX", "PAGE_PAYLOAD_MAX", "PAGE_PLAINTEXT_MAX", "PAGED_VERSION",
+    "Page", "PageError", "Paging", "READ_PAGE_PAYLOAD_MAX", "digest", "join", "page_d_tag",
+    "page_fits", "parse_page", "serialize", "split", "stale_pages",
 ]
 
-PAGE_PLAINTEXT_MAX = 32_000
-# The longest NIP-44 payload a page can be (43,780 characters): one that
-# is longer holds more than a page and is never sent to a signer app to
-# decrypt (its answer might not fit, and the read would wait it out).
+# What one page written holds at most, and what the signer app's answer
+# handing it back takes at most, escaped at its largest: the contract's
+# numbers (12.5, 13), which are what a connection capped at 65,536
+# characters carries (tests/test_relay_caps.py measures them so). One
+# byte more would pad to 32,768 and need 43,780 characters.
+PAGE_PLAINTEXT_MAX = 28_672
+PAGE_ANSWER_MAX = 40_896
+# A written page's NIP-44 payload at its longest: 38,320 characters (a
+# keyring page's too, 12.3).
 PAGE_PAYLOAD_MAX = payload_length(PAGE_PLAINTEXT_MAX)
+# The longest payload read as a page: pages were written up to 32,000
+# bytes before 007ded2, and such a page is still read wherever the
+# connection carries it. A longer one holds more than a page ever did and
+# is never sent to a signer app to decrypt (its answer might not fit, and
+# the read would wait it out).
+READ_PAGE_PAYLOAD_MAX = payload_length(32_000)
 MAX_PAGES = 64
 # The paged format's version, in every page.
 PAGED_VERSION = 1
@@ -84,8 +98,10 @@ class Paging:
     combine: Optional[Callable[[Any, Any], Any]] = None
     # What writing and reading a page back through a signer app may take:
     # the answer to nip44_decrypt (escaped at its largest) and the
-    # nip44_encrypt request (as sent). Lower over capped relays.
-    answer_max: int = SIGNER_ANSWER_MAX
+    # nip44_encrypt request (as sent). The request binds only over the
+    # writer's own capped relays; both are lower over relays capped
+    # below 65,536 characters.
+    answer_max: int = PAGE_ANSWER_MAX
     request_max: int = NIP44_MAX_PLAINTEXT_LEN
 
 
@@ -109,6 +125,15 @@ class Page:
 def digest(plaintext: str) -> str:
     """A page's hash as ``parts`` names it: over its exact plaintext bytes."""
     return hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+
+
+def page_fits(plaintext: str) -> bool:
+    """Whether ``plaintext`` may be written as a page: at most
+    :data:`PAGE_PLAINTEXT_MAX` bytes, and the signer app's answer handing
+    it back at most :data:`PAGE_ANSWER_MAX` (contract 12.5, 13). What a
+    write asks of every page before it encrypts one, whatever split it."""
+    return (len(plaintext.encode("utf-8")) <= PAGE_PLAINTEXT_MAX
+            and decrypt_answer_size(plaintext) <= PAGE_ANSWER_MAX)
 
 
 def page_d_tag(d_tag: str, index: int) -> str:
@@ -278,7 +303,7 @@ def _fill(items: list, as_map: bool, header: Mapping[str, Any], parts: int,
     hashes. ``page`` and ``pages`` are measured at their widest (64).
     A page holds at most ``paging.max_bytes`` of plaintext, the signer
     app's answer handing it back at most ``paging.answer_max`` bytes
-    (65,471; contract 12.5, 13: a page of ``<`` is six times its size
+    (40,896; contract 12.5, 13: a page of ``<`` is six times its size
     there), and the request encrypting it at most ``paging.request_max``
     (a quote is two bytes there; it binds over capped relays only)."""
     Sizes = Tuple[int, int, int]                # plaintext, answer, request

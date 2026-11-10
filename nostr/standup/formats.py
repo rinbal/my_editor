@@ -43,7 +43,7 @@ MAX_BLOBS = 64                              # 15: files per revision
 MAX_BLOB_SERVERS = 10                       # 15: servers named per file
 SUBMISSION_WRAP_CT_CHARS = 348              # 15: a submission-key wrap's ct, exactly
 MAX_CLIENT_CHARS = 64                       # 15: client (and section)
-MAX_KEYRING_PAGE_CHARS = PAGE_PAYLOAD_MAX   # 12.3: 43,780, the payload of a 32,000-byte page
+MAX_KEYRING_PAGE_CHARS = PAGE_PAYLOAD_MAX   # 12.3: 38,320, the payload of a 28,672-byte page
 
 # Media files (7).
 MEDIA_CHUNK_SIZE = 1_048_576                # new files

@@ -16,8 +16,9 @@ for every such list, and lives here once:
   account's own relays answered. Then nothing is written.
 - A list that cannot be read is never written over: that would delete
   what is in it. A page the relays returned that cannot be opened now
-  (the signer refused, failed or did not answer, or the older
-  encryption it needs is not offered) blocks the list
+  (the signer refused, failed or did not answer, the older encryption
+  it needs is not offered, or the connection to the signer app is too
+  short to ask for it) blocks the list
   (``ReadStatus.BLOCKED``) until a later read opens it; one that opens
   to something that is not this list (a newer app's format) makes it
   unreadable.
@@ -71,14 +72,15 @@ from .list_results import (
 )
 from .outbox import ask_private_relays
 from .outbox.policy import replacement_created_at
-from .signer_limits import page_bounds, readable_back
+from .signer_limits import can_ask_to_decrypt, page_bounds, readable_back
 from .paged_list import (
-    PAGE_PAYLOAD_MAX,
+    READ_PAGE_PAYLOAD_MAX,
     Page,
     PageError,
     Paging,
     join,
     page_d_tag,
+    page_fits,
     parse_page,
     serialize,
     split,
@@ -248,6 +250,14 @@ class EncryptedList(QObject):
             on_blocked(self._words.signer_silent if silent else words)
 
         def _on_ready(client) -> None:
+            if not can_ask_to_decrypt(profile, content):
+                # Written before every page fitted every connection
+                # (contract 12.5): the request asking for it would not
+                # arrive. Said, and the list is never read as complete.
+                _log.info("the list %s has a page of %d characters, longer than the "
+                          "connection to the signer app carries", self._name, len(content))
+                on_blocked(self._words.too_long_for_connection or self._words.unreadable)
+                return
             if algorithm == "nip04":
                 decrypt = getattr(client, "nip04_decrypt_self", None)
                 if decrypt is None:
@@ -453,9 +463,9 @@ class _Reading:
         self._list._decrypt(self._profile, self._event, self._on_first_text, self._blocked)
 
     def _too_long(self, event: dict) -> bool:
-        """A page whose ciphertext holds more than a page (13): never
-        sent to a signer app, whose answer might not fit."""
-        return self._list._paging is not None and len(event["content"]) > PAGE_PAYLOAD_MAX
+        """A page whose ciphertext holds more than a page ever did (13):
+        never sent to a signer app, whose answer might not fit."""
+        return self._list._paging is not None and len(event["content"]) > READ_PAGE_PAYLOAD_MAX
 
     def _on_first_text(self, text: str) -> None:
         paging = self._list._paging
@@ -584,8 +594,14 @@ class _Writing:
             return False
         # Written only what this account can read again: a list the signer
         # app encrypts but cannot hand back would be unreadable, and an
-        # unreadable list is never written over (contract 12.5, 13).
+        # unreadable list is never written over (contract 12.5, 13). And
+        # every page only as large as every connection carries, whatever
+        # split it (12.5, Pages fit every connection).
         for index, text in enumerate(self._plaintexts):
+            if self._list._paging is not None and not page_fits(text):
+                self._fail(f"page {index} ({len(text.encode('utf-8'))} bytes) is larger than "
+                           f"a page may be")
+                return False
             if not readable_back(self._profile, text):
                 self._fail(f"page {index} ({len(text.encode('utf-8'))} bytes) is too large "
                            f"for this account to read back")

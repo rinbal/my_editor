@@ -14,8 +14,9 @@ encrypted to itself, on the shared store (``nostr/encrypted_lists.py``):
   what it is): the last ``seq`` read per submission, merged by the
   highest. Written at most every 5 minutes, and when leaving the app.
 
-Both are split into pages of at most 32,000 bytes, so every page fits
-one call through a signer app (criterion 22 of the plan), bound into
+Both are split into pages of at most 28,672 bytes, so every page fits
+one call through a signer app over any connection (criterion 22 of the
+plan; contract 12.5 "Pages fit every connection", 007ded2), bound into
 one generation by page 0's ``parts`` (``nostr/paged_list.py``). Both
 merges are unions, so a read that missed a page (``complete`` False)
 still holds every entry it found, and the next write is complete again.
@@ -74,11 +75,21 @@ SUBMISSIONS_OLD_ENCRYPTION = N_(
 SUBMISSIONS_MISSING_PAGE = N_(
     "Part of your list of submissions hasn't arrived yet. What did is shown, and the list "
     "is made whole again the next time it is saved.")
+# A page longer than the connection to the signer app carries: written
+# before every page fitted every connection (contract 12.5). A connection
+# made with the code goes over relays that carry it.
+SUBMISSIONS_TOO_LONG_FOR_CONNECTION = N_(
+    "The connection to your signer app carries only short messages, and your list of "
+    "submissions was saved in longer pieces. Connect your signer app again to read it; until "
+    "then, nothing new can be submitted here.")
 READ_STATE_UNREADABLE = N_("What you have read couldn't be loaded.")
 READ_STATE_SIGNER_SILENT = N_(
     "Your signer app didn't answer, so what you have read couldn't be loaded.")
 READ_STATE_OLD_ENCRYPTION = N_(
     "What you have read was saved with an older kind of encryption and is left as it is.")
+READ_STATE_TOO_LONG_FOR_CONNECTION = N_(
+    "The connection to your signer app carries only short messages, and what you have read "
+    "was saved in longer pieces. Connect your signer app again to load it.")
 
 # 13: written at most this often, when leaving the app, and before signing
 # out, which waits for that write at most this long.
@@ -89,13 +100,15 @@ def _submissions_words() -> ListWords:
     return ListWords(unreadable=_(SUBMISSIONS_UNREADABLE),
                      signer_silent=_(SUBMISSIONS_SIGNER_SILENT),
                      old_encryption=_(SUBMISSIONS_OLD_ENCRYPTION),
-                     missing_page=_(SUBMISSIONS_MISSING_PAGE))
+                     missing_page=_(SUBMISSIONS_MISSING_PAGE),
+                     too_long_for_connection=_(SUBMISSIONS_TOO_LONG_FOR_CONNECTION))
 
 
 def _read_state_words() -> ListWords:
     return ListWords(unreadable=_(READ_STATE_UNREADABLE),
                      signer_silent=_(READ_STATE_SIGNER_SILENT),
-                     old_encryption=_(READ_STATE_OLD_ENCRYPTION))
+                     old_encryption=_(READ_STATE_OLD_ENCRYPTION),
+                     too_long_for_connection=_(READ_STATE_TOO_LONG_FOR_CONNECTION))
 
 
 # --------------------------------------------------------------------------- #

@@ -839,7 +839,7 @@
     ]
    }
   ],
-  "max_page_plaintext_bytes": 32000,
+  "max_page_plaintext_bytes": 28672,
   "max_pages": 64,
   "merge": {
    "local": [

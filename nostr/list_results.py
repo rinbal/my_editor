@@ -55,6 +55,10 @@ class ListWords:
     # Part of the list is missing (shown, when given, while the rest is
     # read and written as usual).
     missing_page: str = ""
+    # A page is longer than the connection to the signer app carries (one
+    # written before every page fitted every connection, contract 12.5);
+    # ``unreadable`` when not given.
+    too_long_for_connection: str = ""
 
 
 @dataclass(frozen=True)

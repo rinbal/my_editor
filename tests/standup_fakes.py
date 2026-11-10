@@ -1060,14 +1060,16 @@ class FakeStandupServer:
         return _ok(dict(ring))
 
     def _keyring_put(self, who, payload, params, query) -> FakeReply:
-        # 12.3: only a member writes a keyring, each page a 32,000-byte
-        # plaintext's NIP-44 payload at most.
+        # 12.3 (contract 007ded2): only a member writes a keyring, each
+        # page a 28,672-byte plaintext's NIP-44 payload at most (38,320
+        # characters); a longer page is 413 too_large.
         if not any(who.pubkey in pub.members for pub in self.publications.values()):
             return _error(403, "not_member")
         pages = payload.get("pages")
-        if not isinstance(pages, list) or any(
-                not isinstance(p, str) or len(p) > formats.MAX_KEYRING_PAGE_CHARS for p in pages):
+        if not isinstance(pages, list) or any(not isinstance(p, str) for p in pages):
             return _error(422, "invalid")
+        if any(len(p) > formats.MAX_KEYRING_PAGE_CHARS for p in pages):
+            return _error(413, "too_large")
         ring = self.keyrings.get(who.pubkey, {"version": 0, "pages": []})
         if payload.get("expected_version") != ring["version"]:
             return _error(409, "conflict")

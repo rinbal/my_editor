@@ -110,6 +110,13 @@ _OLD_ENCRYPTION = _(
     "Your list of sources was saved with an older kind of encryption. Open "
     "it once in the app that saved it; until then, changes made here stay "
     "on this computer.")
+# Longer than the connection to the signer app carries (contract 12.5's
+# caps; this list is one event): a connection made with the code goes over
+# relays that carry it.
+_TOO_LONG_FOR_CONNECTION = _(
+    "The connection to your signer app carries only short messages, and your list of sources "
+    "is longer. Connect your signer app again to read it; until then, changes made here stay "
+    "on this computer.")
 
 
 class FeedSubscriptionStore(QObject):
@@ -157,7 +164,8 @@ class FeedSubscriptionStore(QObject):
         lists = dict(
             decode=read_payload, encode=write_payload, merge=merge,
             words=ListWords(unreadable=UNREADABLE, signer_silent=SIGNER_SILENT,
-                            old_encryption=_OLD_ENCRYPTION),
+                            old_encryption=_OLD_ENCRYPTION,
+                            too_long_for_connection=_TOO_LONG_FOR_CONNECTION),
             session_pool=session_pool, relay_directory=relay_directory, query=self._query,
             publisher=self._publisher, clock=self._clock, entitled_relays=entitled_relays,
             kind=SUBSCRIPTIONS_KIND, on_status=self.sync_status.emit, parent=self)

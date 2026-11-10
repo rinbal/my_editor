@@ -22,7 +22,7 @@ from PySide6.QtNetwork import QNetworkReply
 from nostr import crypto, events
 from nostr.standup import answers, conversation, formats, views
 from nostr.standup import crypto as scrypto
-from nostr.standup.client import StandupApi
+from nostr.standup.client import Auth, StandupApi
 from nostr.standup.errors import Code, StandupError
 from tests.membership_fakes import FakeClock
 from tests.membership_fakes import transport_failure
@@ -862,6 +862,15 @@ def test_every_endpoint_of_the_contract_goes_through_the_checking_server():
         expected_version=1, pages=["x" * (formats.MAX_KEYRING_PAGE_CHARS + 1)], on_success=ok,
         on_failure=fail)).code == Code.REFUSED
     assert len(world.server.requests) == sent
+    # 12.3 (007ded2): the server answers such a page 413 too_large, and
+    # takes one exactly as long as a 28,672-byte page's payload.
+    assert world.err(lambda ok, fail: editor._call(
+        "PUT", "/api/me/keyring",
+        {"expected_version": 1, "pages": ["x" * (formats.MAX_KEYRING_PAGE_CHARS + 1)]},
+        Auth.SIGNED, answers.parse_keyring_version, ok, fail)).code == Code.TOO_LARGE
+    assert world.ok(lambda ok, fail: editor.put_keyring(
+        expected_version=1, pages=["x" * formats.MAX_KEYRING_PAGE_CHARS], on_success=ok,
+        on_failure=fail)) == 2
     # A keyring is written only by a member (12.3).
     assert world.err(lambda ok, fail: writer.put_keyring(
         expected_version=0, pages=["ct"], on_success=ok,

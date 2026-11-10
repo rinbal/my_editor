@@ -27,7 +27,11 @@ once per connection (nostr/relay_caps.py) and noted here
 (:func:`note_relay_cap`). A relay whose document was not read, or could
 not be, counts as stating no cap, except one whose cap the contract
 names (:data:`NAMED_CAPS`): an unknown relay would otherwise refuse
-every long text, and the known capped one stays bounded either way.
+every long text, and the known capped one stays bounded either way. A
+private list's pages fit a connection capped at 65,536 characters
+whatever this account's own is (nostr/paged_list.py, contract 007ded2),
+and a page written before that this connection cannot ask for is said
+(:func:`can_ask_to_decrypt`).
 """
 
 from __future__ import annotations
@@ -46,7 +50,8 @@ from .local_signer import LOCAL
 
 __all__ = [
     "NAMED_CAPS", "NIP44_MESSAGE_MAX", "SIGNER_ANSWER_MAX", "SIGNER_NIP44_MAX_PLAINTEXT",
-    "answer_limit", "bound_known", "capped", "connection_answer_limit", "connection_message_limit",
+    "answer_limit", "bound_known", "can_ask_to_decrypt", "capped", "connection_answer_limit",
+    "connection_message_limit",
     "connection_plaintext_limit", "content_cap_of", "decrypt_answer_size",
     "forget_relay_caps", "message_bytes_for_content_cap", "message_limit",
     "nip44_plaintext_limit", "note_relay_cap", "page_bounds", "readable_back", "relay_key",
@@ -281,9 +286,8 @@ def message_limit(profile) -> int:
 
 
 def answer_limit(profile) -> int:
-    """The most bytes ``profile``'s signer may answer with: the bound a
-    page of a private list is split by, so every device can read it back
-    through a signer app (also for an account whose key is kept here)."""
+    """The most bytes ``profile``'s signer may answer with: what one
+    message of its connection carries, less what a signer may add."""
     if not through_signer_app(profile):
         return SIGNER_ANSWER_MAX
     return connection_answer_limit(_relays(profile))
@@ -324,17 +328,30 @@ def readable_back(profile, plaintext: str) -> bool:
 
 
 def page_bounds(profile) -> Dict[str, int]:
-    """What one page of a private list written by ``profile`` may take
-    (nostr/paged_list.Paging): its plaintext, the signer app's answer
-    handing it back, the request that encrypts it. Every device reads a
-    page back through a signer app, so the answer is bounded for a key
-    kept here too; a connection whose relays cap what they carry bounds
-    all three by them (contract 12.5: "pages may be smaller")."""
+    """What ``profile``'s own connection lets one page of a private list
+    take (nostr/paged_list.Paging): its plaintext, the signer app's answer
+    handing it back, the request that encrypts it. Every page already
+    fits a connection capped at 65,536 characters, whatever the writer's
+    (paged_list.PAGE_PLAINTEXT_MAX and PAGE_ANSWER_MAX, contract 12.5
+    "Pages fit every connection"); these bound it further only over
+    relays that cap lower, and the request only over capped ones."""
     if not through_signer_app(profile):
         return {"plaintext_max": crypto.NIP44_MAX_PLAINTEXT_LEN,
                 "answer_max": SIGNER_ANSWER_MAX, "request_max": NIP44_MESSAGE_MAX}
     return {"plaintext_max": nip44_plaintext_limit(profile),
             "answer_max": answer_limit(profile), "request_max": message_limit(profile)}
+
+
+def can_ask_to_decrypt(profile, payload: str) -> bool:
+    """Whether ``profile``'s signer can be asked to decrypt ``payload``,
+    which the ``nip44_decrypt`` request carries whole: always with the key
+    kept here; through a signer app when that request fits one message
+    over the connection's relays. A page written before contract 007ded2
+    (up to 32,000 bytes) may not fit a capped connection: the reader says
+    so rather than ask (12.5, Pages fit every connection). Asked once the
+    signer is handed out, so the bound is known (lesson 29)."""
+    return (not through_signer_app(profile)
+            or request_size("nip44_decrypt", ["0" * 64, payload]) <= message_limit(profile))
 
 
 def signable(profile, unsigned: dict) -> bool:
