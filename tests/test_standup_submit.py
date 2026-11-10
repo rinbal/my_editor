@@ -16,7 +16,7 @@ cover is a JPEG of at most 128 px and 24 KB."""
 from __future__ import annotations
 
 import base64
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 from typing import List
 
 import pytest
@@ -36,6 +36,7 @@ from nostr.standup.entries import SubmissionEntry
 from nostr.standup.lists import SUBMISSIONS_UNREADABLE
 from nostr.standup.submitting import Failure, Held, MessageStatus, Progress, Step
 from nostr.ui import standup_message, standup_run, standup_submit
+from nostr.ui.standup_account import Account
 from nostr.ui.standup_submit import BlossomUploads, StandupWriter, thumbnail
 
 WRITER = "a1" * 32
@@ -338,7 +339,9 @@ def _writer(submissions, api, *, marks=None, **more) -> StandupWriter:
     more.setdefault("clients", {})
     account = SimpleNamespace(writer=WRITER, submissions=submissions, api=api, runs=[],
                               list_problem="", stopped=False, read_again=False,
-                              checking=False, check_failed=False, **more)
+                              checking=False, check_failed=False, _reading=None,
+                              _later=LATER, **more)
+    account.read_whole = MethodType(Account.read_whole, account)    # the real one read
     return StandupWriter(session_pool=None, relay_pool=None, relay_directory=None,
                          media_store=None, server="https://s.example", uploads=lambda *a: None,
                          accounts=lambda _profile: account, marks=marks)
@@ -1321,7 +1324,7 @@ def test_no_late_answer_of_an_account_let_go_reaches_the_sheet_or_reads_its_list
     writer.discard(profile, _entry(), lambda stored: said.append("discarded"))
     writer.round_for(profile, PUBLICATION, "ein-jahr", lambda answer: said.append("round"))
     QApplication.processEvents()
-    assert len(loads) == 2
+    assert len(loads) == 1                          # one read for both (RG-M2r3 13)
     writer.stop()
     QApplication.processEvents()
     later["found"]([])
@@ -1330,7 +1333,35 @@ def test_no_late_answer_of_an_account_let_go_reaches_the_sheet_or_reads_its_list
         read(ListRead(ReadStatus.COMPLETE, value=None))
     later["forgot"](SimpleNamespace(stored=True))
     QApplication.processEvents()
-    assert said == [] and len(loads) == 2
+    assert said == [] and len(loads) == 1
+
+
+def test_one_read_of_the_list_is_on_its_way_at_a_time_and_every_asker_hears_it():
+    # RG-M2r3 13: Article Details, the sheet's publications and a round
+    # each started a read of their own, so the signer was asked for every
+    # page three times. One read is on its way; each hears it once.
+    from nostr.list_results import ListRead, ReadStatus
+    from nostr.standup.link_names import LinkNameLock
+
+    writer, profile = _wired_writer()
+    account = writer.account(profile)
+    loads, said = [], []
+    account.destinations.find = lambda found, failed: found([])
+    account.submissions.load = loads.append
+    assert writer.link_name(profile, "ein-jahr", in_use=True) == LinkNameLock(checking=True)
+    writer.destinations(profile, lambda *a: said.append("publications"), said.append)
+    writer.round_for(profile, PUBLICATION, "anders", lambda answer: said.append("round"))
+    QApplication.processEvents()
+    assert len(loads) == 1 and said == []
+    loads[0](ListRead(ReadStatus.UNREADABLE, words="nicht gelesen"))
+    QApplication.processEvents()
+    assert sorted(said) == ["publications", "round"]
+    assert not account.checking and account.check_failed
+    # It ended: the next asker reads anew (Check Again), one read again.
+    writer.check_link_name(profile)
+    writer.destinations(profile, lambda *a: said.append("publications"), said.append)
+    QApplication.processEvents()
+    assert len(loads) == 2
 
 
 @pytest.mark.parametrize("when", ["deciding", "asking the server"])

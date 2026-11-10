@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The window's side of submitting to a STANDUP publication (plan 10.2,
 10.3): the real requests behind the ports of
-:mod:`nostr.standup.submitting`, and what belongs to one account.
+:mod:`nostr.standup.submitting`, for each account (what belongs to one
+is :mod:`.standup_account`'s).
 
 :class:`StandupWriter` keeps, per account, the client for the server
 (``MYEDITOR_STANDUP_SERVER`` until the association names its address;
@@ -27,116 +28,38 @@ read again quietly, with backoff, before anything is said (lessons 36,
 
 from __future__ import annotations
 
-import functools
 import time
-from typing import Callable, Dict, List, Optional
+from typing import Callable, List, Optional
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from i18n import _
 
 from .. import failures
-from ..einundzwanzig_api.client import session_signer
-from ..list_relays import ListQuery, publish_once
 from ..signer_limits import bound_known
 from ..later import answer_later
 from ..standup import trust, words
-from ..standup.client import StandupApi
 from ..standup.drafting import ArticleDraft, Choice, Sealed
 from ..standup.entries import SubmissionEntry, stored_elsewhere
 from ..standup.errors import PASSING, StandupError
 from ..standup.link_names import LinkNameLock, SubmittedMarks, held_of
-from ..standup.lists import SUBMISSIONS_UNREADABLE, ReadState, SubmissionsList
-from ..standup.opening import MediaKeys
+from ..standup.lists import SUBMISSIONS_UNREADABLE
 from ..standup.ports import Reread
 from ..standup.servers import configured_server
 from ..standup.submitting import Phase, Ports, Progress
 from ..standup.rounds import RoundAnswer, ask_round
 from ..standup.trust import Destination
 from ..standup.watcher import resolve_unconfirmed
+from .standup_account import Account, live
 from .standup_handoff import phase_words
 from .standup_message import send_first_message
 from .standup_run import SubmissionRun, background_message_words, stopped_words
 from .standup_uploads import THUMB_SIDE, BlossomUploads, thumbnail
 
 
-class _PoolSigner:
-    """The account's signer for sealing a message (conversation.py)."""
-
-    def __init__(self, session_pool, profile) -> None:
-        self._sign = session_signer(session_pool, profile)
-
-    def sign_event(self, unsigned: dict, *, on_success, on_failure) -> None:
-        self._sign(unsigned, on_success, on_failure)
-
-
-class _Account(QObject):
-    """What belongs to one account."""
-
-    def __init__(self, profile, *, session_pool, relay_pool, relay_directory, server: str,
-                 entitled_relays, nam, parent: QObject) -> None:
-        super().__init__(parent)
-        self.profile = profile
-        self.writer = profile.user_pubkey
-        self._sign = session_signer(session_pool, profile)
-        self._nam = nam
-        self.api = StandupApi(self._sign, server=server, nam=nam, parent=self)
-        # Clients of other servers an entry of the list names, made when
-        # one is asked about (RG-M2r 9), let go with the account.
-        self.clients: Dict[str, StandupApi] = {}
-        lists = dict(session_pool=session_pool, relay_directory=relay_directory,
-                     query=ListQuery(relay_pool, parent=self),
-                     publisher=functools.partial(publish_once, relay_pool), clock=time.time,
-                     entitled_relays=entitled_relays, parent=self)
-        self.submissions = SubmissionsList(profile, **lists)
-        self.read_state = ReadState(profile, **lists)
-        self.media_keys = MediaKeys()
-        self.epochs = trust.EpochStore()
-        self.relay_lookup = trust.relay_key_lookup(relay_pool, relay_directory)
-        self.destinations = trust.Destinations(self.api, self.relay_lookup, self.epochs,
-                                               parent=self)
-        self.signer = _PoolSigner(session_pool, profile)
-        self.runs: List[SubmissionRun] = []
-        # Why the list of submissions could not be read, once read for a
-        # sheet ("" when it could): said again without asking again.
-        self.list_problem = ""
-        # Let go (StandupWriter.stop): no answer that comes later reaches
-        # its client, its lists or its signer again (lesson 31, _live).
-        self.stopped = False
-        # Try Again asked for the list to be read again (reload).
-        self.read_again = False
-        # The list is being read for Article Details' link name, or that
-        # read could not tell (RG-M2r2a 1): read-only meanwhile.
-        self.checking = False
-        self.check_failed = False
-
-    def client_for(self, server: str) -> StandupApi:
-        """The client of ``server``: the account's own, or, for an entry
-        of another server, one of its own, asked about that entry only
-        (an entry asked of another server reads as never stored)."""
-        if server == self.api.server:
-            return self.api
-        client = self.clients.get(server)
-        if client is None:
-            client = self.clients[server] = StandupApi(self._sign, server=server,
-                                                       nam=self._nam, parent=self)
-        return client
-
-
-def _live(account: _Account, callback: Callable) -> Callable:
-    """``callback``, answered only while ``account`` is not let go: a late
-    answer (a signer app, a relay, the server) never opens a session,
-    posts, signs or reads for it, and never touches an object deleted
-    with it (RG-M2r 3)."""
-    def guarded(*args) -> None:
-        if not account.stopped:
-            callback(*args)
-    return guarded
-
-
 class StandupWriter(QObject):
     """See the module docstring. ``server``, ``uploads`` and
-    ``accounts(profile)`` (what belongs to one account, as _Account has
+    ``accounts(profile)`` (what belongs to one account, as Account has
     it) are seams for tests; the app's server is the one a developer
     names, or none."""
 
@@ -162,7 +85,7 @@ class StandupWriter(QObject):
         self._nam = nam
         self._uploads = uploads or BlossomUploads(media_store, parent=self)
         self._accounts = accounts or self._new_account
-        self._account: Optional[_Account] = None
+        self._account: Optional[Account] = None
         # What this computer holds of the texts submitted, across restarts
         # (RG-M2r2a 1); the window's is kept in its file, a test's is not.
         self._marks = marks if marks is not None else SubmittedMarks(kept=False)
@@ -173,17 +96,18 @@ class StandupWriter(QObject):
         association, and without one nothing is sent."""
         return self._server
 
-    def account(self, profile) -> _Account:
+    def account(self, profile) -> Account:
         account = self._account
         if account is None or account.writer != profile.user_pubkey:
             self.stop()
             account = self._account = self._accounts(profile)
         return account
 
-    def _new_account(self, profile) -> _Account:
-        return _Account(profile, session_pool=self._session_pool, relay_pool=self._relay_pool,
+    def _new_account(self, profile) -> Account:
+        return Account(profile, session_pool=self._session_pool, relay_pool=self._relay_pool,
                         relay_directory=self._relay_directory, server=self._server,
-                        entitled_relays=self._entitled_relays, nam=self._nam, parent=self)
+                        entitled_relays=self._entitled_relays, nam=self._nam, later=_later,
+                        parent=self)
 
     # -- what the sheet asks -------------------------------------------------
 
@@ -198,7 +122,7 @@ class StandupWriter(QObject):
         if bound_known(profile):
             answer_later(done)
             return
-        self._session_pool.read_bounds(profile, _live(account, done))
+        self._session_pool.read_bounds(profile, live(account, done))
 
     def instance(self, profile, on_operator: Callable[[str], None]) -> None:
         """Who runs the server (``GET /api/editorial/instance``), for the
@@ -231,7 +155,7 @@ class StandupWriter(QObject):
             if account.submissions.loaded and account.submissions.complete:
                 used()
             else:
-                self._read_whole(account, read)
+                account.read_whole(read)
 
         # The server not reached, or in trouble: asked again quietly first
         # (lessons 36); the sheet says so once the tries are spent.
@@ -242,8 +166,8 @@ class StandupWriter(QObject):
                 found(result)
 
         failures.retry_quietly(
-            lambda answer: account.destinations.find(_live(account, answer),
-                                                     _live(account, answer)),
+            lambda answer: account.destinations.find(live(account, answer),
+                                                     live(account, answer)),
             settled=lambda result: not (isinstance(result, StandupError)
                                         and result.code in PASSING),
             on_done=answered, later=_later)
@@ -270,7 +194,7 @@ class StandupWriter(QObject):
             return
         self._choose(account, publication, d, on_done)
 
-    def _choose(self, account: _Account, publication: str, d: str,
+    def _choose(self, account: Account, publication: str, d: str,
                 on_done: Callable[[RoundAnswer], None]) -> None:
         """Contract 2 from step 1: the list read whole, then every entry
         of this work at ``publication`` asked about (rounds.ask_round).
@@ -287,7 +211,7 @@ class StandupWriter(QObject):
             mine = [e for e in account.submissions.entries()
                     if e.role == "writer" and e.publication == publication and e.d == d
                     and e.status_key]
-            ask_round(account.client_for, mine, _live(account, answered), later=_later,
+            ask_round(account.client_for, mine, live(account, answered), later=_later,
                       refused=lambda entry: self._marks.round_refused(account.writer, entry))
 
         def decide() -> None:
@@ -309,19 +233,9 @@ class StandupWriter(QObject):
         # publication (each read may be a signer prompt): what it said is
         # said again, and Try Again reads it anew (reload).
         if (account.submissions.loaded or account.list_problem) and not account.read_again:
-            answer_later(_live(account, decide))
+            answer_later(live(account, decide))
         else:
-            self._read_whole(account, read)
-
-    @staticmethod
-    def _read_whole(account: _Account, on_done: Callable) -> None:
-        """The list of submissions read, again quietly after a read that
-        missed a page, until whole or the tries are spent; ``on_done``
-        hears that read only, never one per try (lessons 36)."""
-        failures.retry_quietly(
-            lambda answer: account.submissions.load(_live(account, answer)),
-            settled=lambda result: not result.readable or account.submissions.complete,
-            on_done=on_done, later=_later)
+            account.read_whole(read)
 
     def reload(self, profile) -> None:
         """Try Again on a round the list could not tell (RoundAnswer
@@ -340,9 +254,9 @@ class StandupWriter(QObject):
             self._forgotten(account, entry.d, result)
             on_done(result.stored)
 
-        account.submissions.forget(entry, _live(account, forgotten))
+        account.submissions.forget(entry, live(account, forgotten))
 
-    def _forgotten(self, account: _Account, d: str, result) -> None:
+    def _forgotten(self, account: Account, d: str, result) -> None:
         """A tombstone for an entry of ``d`` was written: once the list,
         read whole, holds no writer entry of ``d`` and no run of it is on
         its way, its link name is free again (the mark goes)."""
@@ -354,7 +268,7 @@ class StandupWriter(QObject):
         self._marks.forget(account.writer, d)
         self.listed.emit(account.writer)
 
-    def _listed(self, account: _Account, result) -> None:
+    def _listed(self, account: Account, result) -> None:
         """A read of the list answered: what it could not tell, the marks
         of every writer entry it holds (kept across restarts), and that
         Article Details may say another thing now."""
@@ -410,7 +324,7 @@ class StandupWriter(QObject):
             self._check(account)
             self.listed.emit(account.writer)
 
-    def _check(self, account: _Account) -> None:
+    def _check(self, account: Account) -> None:
         account.checking, account.check_failed = True, False
 
         def read(result) -> None:
@@ -420,7 +334,7 @@ class StandupWriter(QObject):
 
         # Never answered within the call: Article Details is being shown
         # with what this call returns (lesson 29).
-        self._read_whole(account, lambda result: answer_later(_live(account, read), result))
+        account.read_whole(lambda result: answer_later(live(account, read), result))
 
     def submit(self, profile, draft: ArticleDraft, choice: Choice,
                answer: RoundAnswer) -> SubmissionRun:
@@ -519,7 +433,7 @@ class StandupWriter(QObject):
 
     # -- the ports -----------------------------------------------------------
 
-    def _ports(self, account: _Account, publication: str) -> Ports:
+    def _ports(self, account: Account, publication: str) -> Ports:
         api = account.api
 
         def confirm_key(on_key, on_refused) -> None:
@@ -550,7 +464,7 @@ class StandupWriter(QObject):
         def forget(entry) -> None:
             # Best effort: an entry left behind is found not sent the next
             # time, and sent again with its own secrets (contract 2).
-            account.submissions.forget(entry, _live(
+            account.submissions.forget(entry, live(
                 account, lambda result: self._forgotten(account, entry.d, result)))
 
         def mark_stored(entry) -> None:
@@ -561,7 +475,7 @@ class StandupWriter(QObject):
             self.listed.emit(account.writer)
 
         def reload(entry: SubmissionEntry, on_done) -> None:
-            self._reread(account, entry, _live(account, on_done))
+            self._reread(account, entry, live(account, on_done))
 
         return Ports(confirm_key=confirm_key, upload=self._uploads,
                      held=account.submissions.entry, record=record,
@@ -571,7 +485,7 @@ class StandupWriter(QObject):
                      refused=lambda entry: self._marks.round_refused(account.writer, entry),
                      later=_later, clock=time.time)
 
-    def _reread(self, account: _Account, entry: SubmissionEntry,
+    def _reread(self, account: Account, entry: SubmissionEntry,
                 on_done: Callable[[Reread], None]) -> None:
         """The list read again after a ``stale_revision`` for ``entry``'s
         revision 1: another device stored that round first (contract 2 at
@@ -583,7 +497,7 @@ class StandupWriter(QObject):
             # A page that did not come may hold it: Reload reads again.
             on_done(Reread(arrived, "" if arrived else account.list_problem))
 
-        self._read_whole(account, read)
+        account.read_whole(read)
 
 
 def _list_problem(read) -> str:
