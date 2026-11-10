@@ -128,7 +128,8 @@ def test_the_built_app_carries_the_page_parts():
     """The app as built (packaging/my_editor.spec) holds web/, where the
     export reads the page's stylesheet and scripts."""
     import export_html
-    spec = (Path(__file__).resolve().parent.parent / "packaging" / "my_editor.spec").read_text()
+    spec = (Path(__file__).resolve().parent.parent / "packaging" / "my_editor.spec").read_text(
+        encoding="utf-8")
     assert '"web"' in spec
     assert {path.name for path in export_html._WEB.iterdir()} >= {
         "photo_groups.css", "photo_groups.js", "photo_viewer.js"}
