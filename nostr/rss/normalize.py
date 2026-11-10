@@ -257,8 +257,10 @@ def item_to_article(
     same draft slot on the relay (idempotent replacement).
 
     Content precedence: a source-supplied ``content_markdown`` (Nostr
-    long-form, NostrHub NIPs, MDX) is authoritative and taken verbatim;
-    otherwise the item's HTML body is converted.
+    long-form, NostrHub NIPs, MDX) is authoritative and taken as written;
+    otherwise the item's HTML body is converted. Either way a first
+    heading that only repeats the title is dropped: the title is shown
+    above the body.
 
     The details are made fit to publish whatever the source wrote: the
     summary as plain text (or the opening words when the source has

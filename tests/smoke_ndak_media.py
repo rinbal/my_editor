@@ -265,7 +265,7 @@ try:
     tsha = hashlib.sha256(talk.read_bytes()).hexdigest()
     seen_states = []
     store3.upload_progress.connect(lambda n, a, b: seen_states.append(
-        (window._model.tile(n).state, window._model.tile(n).progress) if window._model.tile(n) else None))
+        (window._model.tile(n).state, window._model.tile(n).meter) if window._model.tile(n) else None))
     progress = nd.Catch(store3.upload_progress)
     landed = nd.Catch(store3.upload_finished, store3.upload_failed)
     missed = nd.Catch(store3.mirror_failed)

@@ -107,6 +107,20 @@ class ItemToArticleTests(unittest.TestCase):
         template = item_to_article(_item(summary=None))
         self.assertEqual(template.summary, "Body here.")
 
+    def test_a_nostr_article_is_taken_as_written_less_a_heading_that_repeats_its_title(
+            self) -> None:
+        # The title is shown above the body (6244138); the rest stays as
+        # the author wrote it (the ndak smoke reads this of a real one).
+        template = item_to_article(_item(title="Bob's article", content_html="",
+                                         content_markdown="# Bob's article\n\nBody *1*.\n\n"
+                                                          "## Part\n\nMore."),
+                                   append_source_link=False)
+        self.assertEqual(template.body, "Body *1*.\n\n## Part\n\nMore.")
+        other = item_to_article(_item(title="Another title", content_html="",
+                                      content_markdown="# Bob's article\n\nBody."),
+                                append_source_link=False)
+        self.assertEqual(other.body, "# Bob's article\n\nBody.")
+
     def test_missing_image_becomes_empty_string(self) -> None:
         template = item_to_article(_item(image=None))
         self.assertEqual(template.image, "")
