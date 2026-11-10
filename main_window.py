@@ -5241,7 +5241,7 @@ class MainWindow(QMainWindow):
                 content = document_to_html(
                     ed.document(),
                     title=self._export_title_for(path),
-                    image_roots=self._image_roots_for(path),
+                    image_roots=self._image_roots_for(ed),
                     asset_resolver=self._asset_manager.export_view,
                     remote_pictures=self._web_pictures(ed.document()),
                 )
@@ -5764,19 +5764,26 @@ class MainWindow(QMainWindow):
         """Directory holding the content-addressed image cache."""
         return str(self._media_image_loader.cache_path("x").parent)
 
-    def _image_roots_for(self, save_path: str) -> tuple:
-        """Directories an exporter may read local image bytes from.
+    def _image_roots_for(self, editor) -> tuple:
+        """Directories an exporter may read the local pictures of
+        ``editor``'s document from, wherever the export goes: the folders
+        the editor itself shows them from (_image_roots: the document's
+        own folder, where this app keeps a file's pictures beside it, and
+        the sidebar folder it links pictures in where they lie), plus the
+        blob cache, because a document written by an older build names
+        its pictures by their absolute cache path. A document not saved
+        yet has no folder of its own: the blob cache alone.
 
-        The document's own directory, because sidecar media beside a
-        file is this app's own pattern, plus the blob cache, because a
-        document written by an older build names its images by their
-        absolute cache path.
+        Never the export's own folder: a document's relative picture
+        names mean "beside the document", and a PDF saved to another
+        folder would read none of them (or a stranger's file that happens
+        to lie there under the same name).
         """
-        doc_dir = os.path.dirname(os.path.abspath(save_path))
-        # And the folders a note links pictures in where they lie, so an
-        # export carries them too (file_links.link_root).
-        linked = file_links.link_root(save_path, self._library_roots())
-        return (doc_dir, linked, self._blob_cache_root())
+        path = getattr(editor, "_file_path", "") or ""
+        cache = self._blob_cache_root()
+        if not path:
+            return (cache,)
+        return (*MainWindow._image_roots(path, MainWindow._picture_roots(self)), cache)
 
     def _markdown_reference_for(self, target):
         """Wrap a destination function so plain text gets ![alt](dest)."""
@@ -5938,9 +5945,9 @@ class MainWindow(QMainWindow):
             return source
         title = derive_title(ed.document(), self._export_title_for(path))
         return document_to_rmd(ed.document(), title,
-                               copy_image=self._make_rmd_image_copier(path))
+                               copy_image=self._make_rmd_image_copier(ed, path))
 
-    def _make_rmd_image_copier(self, rmd_path: str):
+    def _make_rmd_image_copier(self, ed, rmd_path: str):
         """Copy images into the .Rmd's sidecar media folder.
 
         Returns a callback mapping a local cache path to a relative
@@ -5949,7 +5956,7 @@ class MainWindow(QMainWindow):
         rendered artifact stays a single shareable file.
         """
         media_dir = media_dir_for(rmd_path)
-        policy = image_safety.ImageRootPolicy(self._image_roots_for(rmd_path))
+        policy = image_safety.ImageRootPolicy(self._image_roots_for(ed))
 
         def copy(name: str):
             if not image_safety.is_portable_image_source(name):
@@ -6221,7 +6228,7 @@ class MainWindow(QMainWindow):
         try:
             export_pdf(editor.document(), path,
                        title=self._export_title_for(path),
-                       image_roots=self._image_roots_for(path),
+                       image_roots=self._image_roots_for(editor),
                        asset_resolver=self._asset_manager.export_view,
                        remote_pictures=self._web_pictures(editor.document()))
             editor._recovered_title = ""
@@ -6270,7 +6277,7 @@ class MainWindow(QMainWindow):
             return None
         path = getattr(ed, "_file_path", None)
         title = self._export_title_for(path) if path else _("Untitled")
-        roots = self._image_roots_for(path) if path else (self._blob_cache_root(),)
+        roots = self._image_roots_for(ed)
         # Web pictures are gathered once a job, at its first page: a
         # preview paints again on every change of its settings.
         gathered: list = []

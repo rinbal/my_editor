@@ -16,13 +16,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from PySide6.QtCore import QRectF, QSize, QTimer
-from PySide6.QtGui import QColor, QImage, QTextDocument
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QColor, QTextDocument
 from PySide6.QtWidgets import QApplication
 
 import export_pictures
 from markdown_writer import read_markdown
-from tests.photo_corners import CORNERS, PHOTOS
+from tests.photo_corners import PHOTOS, has_colour, pages_show_a_picture, pdf_pages
 
 PLAN = (PHOTOS / "plan.png").read_bytes()
 PHOTO = (PHOTOS / "photo.png").read_bytes()
@@ -37,33 +37,6 @@ def _doc(markdown: str) -> QTextDocument:
     doc = QTextDocument()
     read_markdown(doc, markdown)
     return doc
-
-
-def _rendered(path) -> list:
-    from PySide6.QtPdf import QPdfDocument
-    pdf = QPdfDocument()
-    assert pdf.load(str(path)) == QPdfDocument.Error.None_
-    pages = []
-    for page in range(pdf.pageCount()):
-        size = pdf.pagePointSize(page)
-        pages.append(pdf.render(page, QSize(int(size.width()), int(size.height()))))
-    pdf.close()
-    return pages
-
-
-def _has(image: QImage, colour: QColor, tolerance: int = 24) -> bool:
-    for y in range(0, image.height(), 2):
-        for x in range(0, image.width(), 2):
-            found = QColor(image.pixel(x, y))
-            if (abs(found.red() - colour.red()) <= tolerance
-                    and abs(found.green() - colour.green()) <= tolerance
-                    and abs(found.blue() - colour.blue()) <= tolerance):
-                return True
-    return False
-
-
-def _shows_the_picture(pages) -> bool:
-    return any(all(_has(page, colour) for colour in CORNERS) for page in pages)
 
 
 ALONE = "Words\n\n![Plan](https://pictures.example/plan.png)\n\nMore\n"
@@ -86,7 +59,7 @@ def test_the_pdf_carries_a_web_picture_it_was_given(app, tmp_path, markdown):
     from export_pdf import export_pdf
     path = tmp_path / "web.pdf"
     export_pdf(_doc(markdown), str(path), "Web", remote_pictures=FETCHED)
-    assert _shows_the_picture(_rendered(path))
+    assert pages_show_a_picture(pdf_pages(path))
 
 
 def test_a_printed_page_carries_a_web_picture_it_was_given(app, tmp_path):
@@ -98,7 +71,7 @@ def test_a_printed_page_carries_a_web_picture_it_was_given(app, tmp_path):
     printer.setOutputFileName(str(tmp_path / "printed.pdf"))
     printer.setPageLayout(make_page_layout(default_page_setup()))
     assert print_document(_doc(ALONE), printer, remote_pictures=FETCHED) >= 1
-    assert _shows_the_picture(_rendered(tmp_path / "printed.pdf"))
+    assert pages_show_a_picture(pdf_pages(tmp_path / "printed.pdf"))
 
 
 def test_a_picture_that_did_not_come_is_one_quiet_stand_in_with_its_description(app, tmp_path):
@@ -109,13 +82,13 @@ def test_a_picture_that_did_not_come_is_one_quiet_stand_in_with_its_description(
     assert photo_group.is_placeholder(bare) and photo_group.is_placeholder(named)
     assert named.size() == bare.size() and named != bare
     ink = QColor("#6b6760")
-    assert _has(named, ink, 40) and not _has(bare, ink, 40)
+    assert has_colour(named, ink, 40) and not has_colour(bare, ink, 40)
     # In the PDF: the plate where the picture would be, no picture.
     path = tmp_path / "missing.pdf"
     export_pdf(_doc(ALONE), str(path), "Web", remote_pictures={})
-    pages = _rendered(path)
-    assert not _shows_the_picture(pages)
-    assert _has(pages[0], QColor("#f1f0ec"), 3)
+    pages = pdf_pages(path)
+    assert not pages_show_a_picture(pages)
+    assert has_colour(pages[0], QColor("#f1f0ec"), 3)
 
 
 class _Fetcher:
@@ -151,6 +124,7 @@ def test_a_print_job_gathers_its_web_pictures_once_and_prints_them(app, monkeypa
         _blob_cache_root=lambda: "/nowhere", _held_picture_bytes=lambda url: None,
         _asset_manager=SimpleNamespace(export_view=None))
     window._web_pictures = MainWindow._web_pictures.__get__(window)
+    window._image_roots_for = MainWindow._image_roots_for.__get__(window)
     title, paint = MainWindow._print_job(window)
     assert gathered == []                          # nothing fetched to enable Print
     paint(object())

@@ -15,7 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from PySide6.QtCore import QRectF
+from PySide6.QtCore import QRectF, QSize
 from PySide6.QtGui import QColor, QImage
 
 PHOTOS = Path(__file__).resolve().parent / "fixtures" / "photos"
@@ -66,3 +66,35 @@ def _close(a: QColor, b: QColor, tolerance: int = 48) -> bool:
 def shows_whole(shot: QImage, box: QRectF) -> bool:
     """Whether the picture in ``box`` of ``shot`` shows all four corners."""
     return all(_close(found, wanted) for found, wanted in zip(corner_colours(shot, box), CORNERS))
+
+
+def pdf_pages(path) -> List[QImage]:
+    """Each page of the PDF at ``path``, drawn at 72 dots an inch."""
+    from PySide6.QtPdf import QPdfDocument
+    pdf = QPdfDocument()
+    assert pdf.load(str(path)) == QPdfDocument.Error.None_
+    pages = []
+    for page in range(pdf.pageCount()):
+        size = pdf.pagePointSize(page)
+        pages.append(pdf.render(page, QSize(int(size.width()), int(size.height()))))
+    pdf.close()
+    return pages
+
+
+def has_colour(image: QImage, colour: QColor, tolerance: int = 24) -> bool:
+    """Whether any pixel of ``image`` (every other one, each way) is
+    ``colour``."""
+    for y in range(0, image.height(), 2):
+        for x in range(0, image.width(), 2):
+            found = QColor(image.pixel(x, y))
+            if (abs(found.red() - colour.red()) <= tolerance
+                    and abs(found.green() - colour.green()) <= tolerance
+                    and abs(found.blue() - colour.blue()) <= tolerance):
+                return True
+    return False
+
+
+def pages_show_a_picture(pages) -> bool:
+    """Whether a page shows a fixture picture: all four corner colours
+    (a stand-in shows none)."""
+    return any(all(has_colour(page, colour) for colour in CORNERS) for page in pages)
