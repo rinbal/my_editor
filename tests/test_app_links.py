@@ -60,12 +60,13 @@ def programs(tmp_path, monkeypatch):
 
         def make(self, name, body):
             script = folder / name
-            script.write_text(f'#!/bin/sh\necho "$@" > "{folder}/{name}.args"\n{body}\n')
+            script.write_text(f'#!/bin/sh\necho "$@" > "{folder}/{name}.args"\n{body}\n',
+                              encoding="utf-8")
             script.chmod(script.stat().st_mode | stat.S_IEXEC)
 
         def args(self, name):
             target = folder / f"{name}.args"
-            return target.read_text().strip() if target.exists() else None
+            return target.read_text(encoding="utf-8").strip() if target.exists() else None
 
     # Only the stand-ins: a real opener of the system is never reached.
     monkeypatch.setenv("PATH", str(folder))
