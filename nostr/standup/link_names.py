@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+import user_dirs
 from atomic_file import read_json, write_json
 
 from . import formats, words
@@ -43,7 +44,7 @@ MAX_FILE_BYTES = 4 * 1024 * 1024
 
 
 def default_path() -> Path:
-    return Path.home() / ".config" / "my_editor" / FILE_NAME
+    return user_dirs.config_dir() / FILE_NAME
 
 
 class SubmittedMarks:
