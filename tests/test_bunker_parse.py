@@ -64,3 +64,23 @@ def test_pubkey_lowercased():
 def test_rejects_malformed(uri):
     with pytest.raises(ValueError):
         parse_bunker_uri(uri)
+
+
+@pytest.mark.parametrize("key", ["cd" * 32, "00" * 32, "ff" * 32,
+                                 "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"])
+def test_rejects_a_key_that_is_no_public_key(key):
+    # RG-M2r2b 2: 64 hex digits, but no point of the curve: no channel can
+    # be opened to it, so the address is refused where it is read.
+    with pytest.raises(ValueError):
+        parse_bunker_uri(f"bunker://{key}?relay=wss://relay.example")
+
+
+def test_about_half_of_all_keys_are_no_public_key_and_a_real_one_passes():
+    import os
+    from nostr import crypto
+    real = crypto.get_public_key(crypto.generate_secret_key()).hex()
+    assert parse_bunker_uri(f"bunker://{real}?relay=wss://r.example").bunker_pubkey == real
+    refused = sum(not crypto.is_public_key(os.urandom(32)) for _ in range(400))
+    assert 120 < refused < 280
+    assert not crypto.is_public_key(b"\x02" * 31) and not crypto.is_public_key(b"")
+

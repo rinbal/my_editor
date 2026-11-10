@@ -65,6 +65,9 @@ _OFFLINE = {
     "nip04_decrypt_self": lambda c, k: c.nip04_decrypt_self("AA", k.success, k.failure),
     "connect_to_bunker": lambda c, k: c.connect_to_bunker("not a bunker uri", k.success,
                                                           k.failure),
+    # RG-M2r2b 2: 64 hex digits that are no public key (about half are not).
+    "connect_to_no_public_key": lambda c, k: c.connect_to_bunker(
+        "bunker://" + "cd" * 32 + "?relay=wss://relay.example", k.success, k.failure),
 }
 
 # Requests a connected client refuses for what they carry.
@@ -127,3 +130,21 @@ def test_a_refusal_for_what_it_carries_arrives_when_the_client_is_gone(request_)
     shiboken6.delete(client)
     _turn()
     assert len(calls.failed) == 1
+
+
+def test_a_channel_that_cannot_be_opened_is_refused_never_waited_for(monkeypatch):
+    # RG-M2r2b 2: a key the address check let through that still opens no
+    # channel (ValueError in _setup_channel) is a refusal on the next turn,
+    # with nothing subscribed and nothing pending, never a wait for an
+    # answer that cannot come.
+    from tests.test_bunker_handshake import FakePool
+    monkeypatch.setattr(bunker.crypto, "is_public_key", lambda _key: True)
+    pool = FakePool()
+    client = bunker.BunkerClient(pool)
+    calls = Calls()
+    client.connect_to_bunker("bunker://" + "cd" * 32 + "?relay=wss://relay.example",
+                             calls.success, calls.failure)
+    assert calls.failed == []
+    _turn()
+    assert len(calls.failed) == 1 and calls.ok == [] and client._pending == {}
+    assert not client.is_connected

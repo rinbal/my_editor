@@ -404,7 +404,10 @@ def test_a_pasted_connection_address_connects_and_a_failure_brings_the_code_back
     pool = FakePool()
     dialog = dialog_for(tmp_path, pool)
     dialog.details_toggle.setChecked(True)
-    uri = "bunker://" + "cd" * 32 + "?relay=wss://relay.example&secret=x"
+    # A key that is a public key (the curve's generator): about half of
+    # all 64-digit keys are not, and those are refused at once.
+    uri = ("bunker://79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+           "?relay=wss://relay.example&secret=x")
     dialog._paste_edit.setText(uri)
     dialog._paste_btn.click()
     (client, sent, _ok, failed), = calls

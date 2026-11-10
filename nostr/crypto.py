@@ -93,6 +93,18 @@ def verify_schnorr(pubkey_xonly: bytes, sig: bytes, message_32: bytes) -> bool:
 # ECDH: raw x-coordinate (NOT the libsecp256k1 default SHA256-hashed point)   #
 # --------------------------------------------------------------------------- #
 
+def is_public_key(pubkey_xonly: bytes) -> bool:
+    """Whether ``pubkey_xonly`` (32 bytes) is the x of a point of the curve,
+    so a public key (BIP-340): about half of all 32-byte values are not."""
+    if len(pubkey_xonly) != 32:
+        return False
+    try:
+        PublicKey(b"\x02" + pubkey_xonly)
+    except ValueError:
+        return False
+    return True
+
+
 def ecdh_x(sk: bytes, pubkey_xonly: bytes) -> bytes:
     """Return the 32-byte x-coordinate of ``sk * pubkey``.
 

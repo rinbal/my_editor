@@ -233,6 +233,10 @@ def parse_bunker_uri(uri: str) -> BunkerURI:
     pubkey = (parts.netloc or parts.path.lstrip("/")).strip().lower()
     if len(pubkey) != 64 or not all(c in "0123456789abcdef" for c in pubkey):
         raise ValueError(_("bunker URI must contain a 32-byte hex pubkey"))
+    # About half of all 64-digit keys are not a point of the curve (one
+    # typed wrong often is not): no channel can be opened to one.
+    if not crypto.is_public_key(bytes.fromhex(pubkey)):
+        raise ValueError("the signer's key in the bunker URI is not a public key")
 
     qs = parse_qs(parts.query, keep_blank_values=False)
     relays = [r.strip() for r in qs.get("relay", []) if r.strip()]
@@ -426,14 +430,16 @@ class BunkerClient(QObject):
         """
         try:
             parsed = parse_bunker_uri(uri)
+            self._setup_channel(
+                bunker_pubkey=parsed.bunker_pubkey,
+                relays=parsed.relays,
+                local_sk=local_sk,
+            )
         except ValueError as exc:
+            # A key that is no point of the curve, or another address no
+            # channel can be opened to: refused, never a wait for nothing.
             self._refuse(on_failure, str(exc))
             return
-        self._setup_channel(
-            bunker_pubkey=parsed.bunker_pubkey,
-            relays=parsed.relays,
-            local_sk=local_sk,
-        )
         self._send_request(
             method="connect",
             params=[parsed.bunker_pubkey, parsed.secret or "", DEFAULT_PERMS],
