@@ -322,9 +322,46 @@ def test_windows_says_no_app_when_the_shell_refuses(monkeypatch, startfile):
 
 
 def test_windows_cannot_tell_when_its_registry_cannot_be_read(monkeypatch, startfile):
-    registry = FakeRegistry(AMBER, fail=RuntimeError("the registry is not there"))
-    got = answer_of(LINK, "windows", monkeypatch, registry=registry)
+    # A Python without winreg: the named case (RG-M2r3 9).
+    def no_winreg(name):
+        raise ModuleNotFoundError(f"No module named {name!r}")
+    monkeypatch.setattr(app_links.importlib, "import_module", no_winreg)
+    got = answer_of(LINK, "windows", monkeypatch)
     assert got == app_links.UNKNOWN and startfile == [LINK]
+
+
+def test_a_programming_error_is_never_swallowed(monkeypatch, startfile):
+    # RG-M2r3 9: ``except Exception`` took any bug for "cannot tell".
+    monkeypatch.setattr(app_links, "_platform", lambda: "windows")
+    with pytest.raises(TypeError):
+        app_links.open_link(LINK, lambda _answer: None,
+                            registry=FakeRegistry(AMBER, fail=TypeError("a bug")))
+    monkeypatch.setattr(app_links, "_platform", lambda: "mac")
+    monkeypatch.setattr(app_links, "_open_on_mac",
+                        lambda uri, done: (_ for _ in ()).throw(ValueError("a bug")))
+    with pytest.raises(ValueError):
+        app_links.open_link(LINK, lambda _answer: None)
+
+
+def test_a_worker_that_raises_answers_it_cannot_tell_and_its_error_goes_on(monkeypatch,
+                                                                         startfile):
+    raised = []
+    monkeypatch.setattr(threading, "excepthook", lambda args: raised.append(args.exc_type))
+    startfile.error = ValueError("a bug")
+    got = answer_of(LINK, "windows", monkeypatch, registry=FakeRegistry(AMBER))
+    assert got == app_links.UNKNOWN and wait_for(lambda: raised == [ValueError])
+
+
+def test_no_thread_to_hand_it_over_is_said_as_cannot_tell(monkeypatch, startfile):
+    class NoThread:
+        def __init__(self, **_kw):
+            pass
+
+        def start(self):
+            raise RuntimeError("can't start new thread")
+    monkeypatch.setattr(app_links.threading, "Thread", NoThread)
+    got = answer_of(LINK, "windows", monkeypatch, registry=FakeRegistry(AMBER))
+    assert got == app_links.UNKNOWN and startfile == [] and app_links._running == []
 
 
 # -- only a link, and never in a log --------------------------------------------
@@ -354,12 +391,11 @@ def test_the_link_and_its_secret_are_never_logged(programs, monkeypatch, startfi
     (programs.path / "xdg-open").unlink(missing_ok=True)
     answer_of(LINK, "linux", monkeypatch)
     startfile.error = OSError(f"no application is associated with {LINK}")
-    for registry in (FakeRegistry({}), FakeRegistry(AMBER),
-                     FakeRegistry(AMBER, fail=RuntimeError(f"broken at {LINK}"))):
+    for registry in (FakeRegistry({}), FakeRegistry(AMBER)):
         answer_of(LINK, "windows", monkeypatch, registry=registry)
-    monkeypatch.setattr(app_links, "_open_on_mac",
-                        lambda uri, done: (_ for _ in ()).throw(ValueError(uri)))
-    answer_of(LINK, "mac", monkeypatch)
+    monkeypatch.setattr(app_links.importlib, "import_module",
+                        lambda name: (_ for _ in ()).throw(ModuleNotFoundError(LINK)))
+    answer_of(LINK, "windows", monkeypatch)
     logged = [record.getMessage() + (caplog.handler.format(record) if record.exc_info else "")
               for record in caplog.records]
     assert logged, "nothing was logged, so nothing was checked"

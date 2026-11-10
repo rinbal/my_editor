@@ -169,19 +169,25 @@ class _Answer(QObject):
 
 
 def _in_worker(work: Callable[[], str], done: Callable[[str], None]) -> None:
-    """``work()`` on a thread of its own; ``done(answer)`` on the GUI thread."""
+    """``work()`` on a thread of its own; ``done(answer)`` on the GUI thread,
+    :data:`UNKNOWN` when ``work`` raised (its error goes on, to the
+    thread's excepthook: a programming error is never swallowed) or no
+    thread could be started."""
     bridge = _Answer(done)
     _running.append(bridge)
 
     def run() -> None:
+        answer = UNKNOWN
         try:
             answer = work()
-        except Exception as error:                          # noqa: BLE001, a thread's end
-            log.info("a link could not be handed over (%s)", type(error).__name__)
-            answer = UNKNOWN
-        bridge.given.emit(answer)
+        finally:
+            bridge.given.emit(answer)
 
-    threading.Thread(target=run, daemon=True).start()
+    try:
+        threading.Thread(target=run, daemon=True).start()
+    except RuntimeError:                                    # "can't start new thread"
+        log.info("no thread could be started to hand a link over")
+        bridge.given.emit(UNKNOWN)
 
 
 def _later(done: Callable[[str], None], answer: str) -> None:
@@ -222,9 +228,8 @@ def _open_on_windows(uri: str, done: Callable[[str], None], registry=None) -> No
     scheme = _scheme(uri)
     try:
         registered = windows_registered(scheme, registry)
-    except Exception as error:                              # noqa: BLE001, never raise into Qt
-        log.info("the registry could not be read for %s links (%s)", scheme,
-                 type(error).__name__)
+    except ImportError:                                     # a Python without winreg
+        log.info("the registry could not be read for %s links", scheme)
         registered = None
     if registered is False:
         log.info("no app is registered for %s links", scheme)
@@ -279,17 +284,12 @@ def open_link(uri: str, done: Callable[[str], None], *, registry=None) -> None:
         _later(done, NO_APP)
         return
     platform = _platform()
-    try:
-        if platform == _MAC:
-            _open_on_mac(uri, done)
-        elif platform == _WINDOWS:
-            _open_on_windows(uri, done, registry)
-        else:
-            _open_on_linux(uri, done)
-    except Exception as error:                              # noqa: BLE001, never raise into Qt
-        log.warning("a %s link could not be handed over (%s)", _scheme(uri),
-                    type(error).__name__)
-        _later(done, UNKNOWN)
+    if platform == _MAC:
+        _open_on_mac(uri, done)
+    elif platform == _WINDOWS:
+        _open_on_windows(uri, done, registry)
+    else:
+        _open_on_linux(uri, done)
 
 
 __all__ = ["ANSWER_WAIT_MS", "NO_APP", "OPENED", "UNKNOWN", "is_app_link", "open_link",
