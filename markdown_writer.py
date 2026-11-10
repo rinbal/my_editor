@@ -52,6 +52,7 @@ points (a Blossom URL, a sidecar file); this module never does.
 from __future__ import annotations
 
 import re
+import uuid
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Callable, List, Optional, Tuple
@@ -995,15 +996,275 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES) ->
     that the editor holds, and how many it holds. The editor's reading
     (READ_FEATURES) keeps them; a preview or a paste reads them as
     Markdown readers do, as spaces."""
+    markdown, alts = _whole_descriptions(markdown, features)
     marked = 0
     if features == READ_FEATURES:
         markdown, marked = _marked_soft_breaks(markdown)
     doc.setMarkdown(literal_footnotes(markdown), features)
+    if alts:
+        _restore_descriptions(doc, alts)
     joined = _join_soft_breaks(doc) if marked else 0
     normalize_after_markdown_load(doc)
     # Pictures that follow each other show as one group (photo_group).
     photo_group.fold(doc)
     return marked, joined
+
+
+# --------------------------------------------------------------------------- #
+# A picture's description, read whole                                          #
+# --------------------------------------------------------------------------- #
+#
+# Qt's reader inserts the picture once for every piece of text md4c hands
+# it inside ``![...]``: an escape (``\<``), an entity, emphasis, code, a
+# line break or an autolink each start a piece, so ``![a \<b\>](x)`` came
+# out as five pictures. Before Qt reads the Markdown, each description that
+# holds such a piece becomes one plain word (a mark of this reading), and
+# after it the picture gets its description back as CommonMark has it: its
+# inlines read as plain text (escapes and entities resolved, emphasis and
+# code without their marks, a line break a space).
+
+# What can start a piece of text of its own in a description.
+_PIECE = re.compile(r"[\\&*_`<~\n]|://|www\.|@")
+_ESCAPABLE = set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
+_AUTOLINK_OR_TAG = re.compile(
+    r"<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*|[^\s<>@]+@[^\s<>]+"
+    r"|/?[A-Za-z][\w-]*(?:\s[^<>]*)?/?|!--.*?--)>", re.S)
+_CODE_INDENT = re.compile(r"^(?: {4}|\t)")
+# Where an escape, a code span, an autolink or tag, or a picture may start.
+_STARTS_INLINE = re.compile(r"[\\`<]|!\[")
+
+
+def _code_lines(lines: List[str]) -> List[bool]:
+    """For each line, whether it is code: in a fence, or indented code
+    (after a blank line, outside a list)."""
+    out: List[bool] = []
+    fence = ""
+    in_list = False
+    previous_blank = True
+    for line in lines:
+        found = _FENCE_LINE.match(line)
+        if fence:
+            out.append(True)
+            if found and found.group(1)[0] == fence[0] and len(found.group(1)) >= len(fence) \
+                    and not found.group(2).strip():
+                fence = ""
+            continue
+        if found:
+            fence = found.group(1)
+            out.append(True)
+            continue
+        blank = not line.strip()
+        if _LIST_LINE.match(line):
+            in_list = True
+        elif not blank and not line[:1].isspace():
+            in_list = False
+        code = bool(_CODE_INDENT.match(line)) and previous_blank and not in_list
+        out.append(code)
+        previous_blank = blank or code
+    return out
+
+
+def _code_span_end(text: str, start: int) -> int:
+    """Where the code span opening at ``start`` (a run of backticks) ends,
+    or where the run ends when nothing closes it (then it is text)."""
+    run = 0
+    while start + run < len(text) and text[start + run] == "`":
+        run += 1
+    at = start + run
+    # A code span ends with its paragraph.
+    limit = text.find("\n\n", at)
+    limit = len(text) if limit < 0 else limit
+    while True:
+        close = text.find("`" * run, at, limit)
+        if close < 0:
+            return start + run
+        end = close + run
+        if end < len(text) and text[end] == "`":
+            at = end
+            while at < len(text) and text[at] == "`":
+                at += 1
+            continue
+        return end
+
+
+def _skip_inline(text: str, at: int) -> Optional[int]:
+    """Where an escape, a code span, an autolink or a tag at ``at`` ends;
+    None when none starts there."""
+    char = text[at]
+    if char == "\\" and at + 1 < len(text) and text[at + 1] in _ESCAPABLE:
+        return at + 2
+    if char == "`":
+        return _code_span_end(text, at)
+    if char == "<":
+        found = _AUTOLINK_OR_TAG.match(text, at)
+        return found.end() if found else None
+    return None
+
+
+def _label_end(text: str, at: int) -> Optional[int]:
+    """The ``]`` closing the bracket at ``at``, or None (a paragraph ends
+    first, or nothing closes it)."""
+    depth = 0
+    index = at
+    while index < len(text):
+        if text.startswith("\n\n", index) or text.startswith("\n \n", index):
+            return None
+        skipped = _skip_inline(text, index)
+        if skipped is not None:
+            index = skipped
+            continue
+        char = text[index]
+        if char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+            if depth == 0:
+                return index
+        index += 1
+    return None
+
+
+def _destination_end(text: str, at: int) -> Optional[int]:
+    """The ``)`` closing an inline link's destination and title, opened
+    at ``at``, or None."""
+    index = at + 1
+    length = len(text)
+
+    def spaces(i: int) -> int:
+        while i < length and text[i] in " \t\n":
+            i += 1
+        return i
+    index = spaces(index)
+    if index < length and text[index] == "<":
+        close = text.find(">", index)
+        if close < 0 or "\n" in text[index:close]:
+            return None
+        index = close + 1
+    else:
+        depth = 0
+        while index < length and not text[index].isspace():
+            char = text[index]
+            if char == "\\" and index + 1 < length:
+                index += 2
+                continue
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                if depth == 0:
+                    break
+                depth -= 1
+            index += 1
+    index = spaces(index)
+    if index < length and text[index] in "\"'(":
+        closer = ")" if text[index] == "(" else text[index]
+        index += 1
+        while index < length and text[index] != closer:
+            index += 2 if text[index] == "\\" else 1
+        index = spaces(index + 1)
+    return index if index < length and text[index] == ")" else None
+
+
+def _descriptions(markdown: str) -> List[Tuple[int, int]]:
+    """Where each picture's description is (start, end) in ``markdown``:
+    an inline picture ``![...](...)`` or one with a full reference
+    ``![...][label]``, outside code."""
+    lines = markdown.split("\n")
+    code = _code_lines(lines)
+    starts, at = [], 0
+    for line in lines:
+        starts.append(at)
+        at += len(line) + 1
+    blocked = [(starts[n], starts[n] + len(lines[n])) for n, is_code in enumerate(code) if is_code]
+    found: List[Tuple[int, int]] = []
+    index, block = 0, 0
+    length = len(markdown)
+    while index < length:
+        nearest = _STARTS_INLINE.search(markdown, index)
+        if nearest is None:
+            break
+        index = nearest.start()
+        while block < len(blocked) and blocked[block][1] < index:
+            block += 1
+        if block < len(blocked) and blocked[block][0] <= index <= blocked[block][1]:
+            index = blocked[block][1] + 1
+            continue
+        skipped = _skip_inline(markdown, index)
+        if skipped is not None:
+            index = skipped
+            continue
+        if markdown.startswith("![", index):
+            end = _label_end(markdown, index + 1)
+            if end is not None:
+                after = markdown[end + 1:end + 2]
+                close = _destination_end(markdown, end + 1) if after == "(" else None
+                if close is None and after == "[":
+                    label = _label_end(markdown, end + 1)
+                    close = label if label is not None and label > end + 2 else None
+                if close is not None:
+                    found.append((index + 2, end))
+                    index = close + 1
+                    continue
+            index += 2
+            continue
+        index += 1
+    return found
+
+
+def _plain_description(words: str, features) -> str:
+    """A description as CommonMark gives it: its inlines as plain text."""
+    doc = QTextDocument()
+    # A letter first, so the words start no block of their own.
+    doc.setMarkdown("x" + words, features)
+    text = doc.toPlainText()[1:]
+    for mark in (OBJECT_REPLACEMENT, _SOFT_MARK):
+        text = text.replace(mark, "")
+    return re.sub(r"[\n\u2028\u2029]+", " ", text)
+
+
+def _whole_descriptions(markdown: str, features) -> Tuple[str, dict]:
+    """``markdown`` with each picture description Qt would read in pieces
+    made one plain word, and the descriptions by their word."""
+    if "![" not in markdown:
+        return markdown, {}
+    spans = [(start, end) for start, end in _descriptions(markdown)
+             if _PIECE.search(markdown, start, end)]
+    if not spans:
+        return markdown, {}
+    stamp = "".join(chr(ord("a") + (ord(c) % 26)) for c in uuid.uuid4().hex)
+    alts: dict = {}
+    pieces, last = [], 0
+    for number, (start, end) in enumerate(spans):
+        word = f"pgalt{stamp}{number:x}"
+        alts[word] = _plain_description(markdown[start:end], features)
+        pieces.append(markdown[last:start])
+        pieces.append(word)
+        last = end
+    pieces.append(markdown[last:])
+    return "".join(pieces), alts
+
+
+def _restore_descriptions(doc: QTextDocument, alts: dict) -> None:
+    """Give each picture read with a plain word its description."""
+    found = []
+    for block in iter_blocks(doc):
+        it = block.begin()
+        while not it.atEnd():
+            fragment = it.fragment()
+            fmt = fragment.charFormat()
+            if fmt.isImageFormat():
+                word = str(fmt.property(QTextFormat.Property.ImageAltText) or "")
+                if word in alts:
+                    found.append((fragment.position(), fragment.length(), alts[word]))
+            it += 1
+    for position, length, alt in found:
+        cursor = QTextCursor(doc)
+        cursor.setPosition(position)
+        cursor.setPosition(position + length, QTextCursor.MoveMode.KeepAnchor)
+        fmt = QTextImageFormat(cursor.charFormat().toImageFormat()) if length == 1 else None
+        if fmt is None:
+            fmt = cursor.charFormat()
+        fmt.setProperty(QTextFormat.Property.ImageAltText, alt)
+        cursor.setCharFormat(fmt)
 
 
 def _tab_in_fence(markdown: str) -> bool:
@@ -1063,9 +1324,32 @@ def _image_as_read(fmt) -> str:
 
 
 def image_markdown(alt: str, url: str) -> str:
-    """``![alt](url)``, with a bracket in the alt text escaped and an
-    address that holds a space or a parenthesis written as ``<url>``."""
-    return f"![{(alt or 'image').replace(']', chr(92) + ']')}]({_destination(url)})"
+    """``![alt](url)``, the alt text written so it reads back as it is,
+    and an address that holds a space or a parenthesis written as
+    ``<url>``."""
+    return f"![{_description_markdown(alt or 'image')}]({_destination(url)})"
+
+
+@lru_cache(maxsize=1024)
+def _description_markdown(alt: str) -> str:
+    """A picture's description as Markdown that reads back as ``alt``.
+    Plain words stay as they are, so a description nobody changed is
+    written as it was read; else a "<" (which may open a tag) is escaped,
+    then the brackets, and when the words still read otherwise
+    (emphasis, code, an entity, an escape) every mark that can start one."""
+    for words in (alt, alt.replace("<", "\\<"), re.sub(r"([\[\]<])", r"\\\1", alt)):
+        if _reads_back(words, alt):
+            return words
+    return re.sub(r"([\\`*_\[\]<>&~!])", r"\\\1", alt)
+
+
+def _reads_back(words: str, alt: str) -> bool:
+    """Whether ``![words](x)`` is a picture described ``alt``."""
+    if _descriptions(f"![{words}](x)") != [(2, 2 + len(words))]:
+        return False
+    if not _PIECE.search(words):
+        return words == alt
+    return _plain_description(words, READ_FEATURES) == alt
 
 
 def link_markdown(words: str, url: str) -> str:
