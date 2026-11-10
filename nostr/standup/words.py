@@ -37,7 +37,8 @@ STORED_SENDING = N_("The server has your submission. Sending it again with the p
 STORED_CHECKING = N_("The server has your submission. Checking the picture …")
 # Another device of this writer stored this round first (stale_revision
 # for a revision 1, contract 2 at 72d5ddc; the contract's German is
-# "Auf einem anderen Gerät eingereicht.").
+# "Auf einem anderen Gerät eingereicht.", and the English stays as it is:
+# both decided by the owner on 2026-11-10).
 # Not an error: the work is in. Reload reads the list again until that
 # device's entry, with the secrets the server holds, is here.
 SUBMITTED_ELSEWHERE = N_("Submitted on another device.")

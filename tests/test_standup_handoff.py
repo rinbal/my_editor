@@ -103,6 +103,13 @@ def test_on_its_way_and_while_checked_the_words_say_what_is_held(german, held, s
     assert set(HELD_WORDS) == set(Held)
 
 
+def test_another_devices_round_has_the_owners_words_in_both_languages(german):
+    # Decided by the owner (2026-11-10): the English stays, the German is
+    # the contract's.
+    assert words.SUBMITTED_ELSEWHERE == "Submitted on another device."
+    assert i18n._(words.SUBMITTED_ELSEWHERE) == "Auf einem anderen Gerät eingereicht."
+
+
 def test_another_devices_round_is_said_calmly_with_reload(german, view):
     # Contract 2 at 72d5ddc: "Auf einem anderen Gerät eingereicht." with
     # Erneut laden; not an error, so not in the error colour.
