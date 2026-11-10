@@ -128,11 +128,12 @@ def test_copy_is_plain_words():
 
 
 def test_copy_is_short():
-    """One or two short sentences: what happened, what to do."""
-    for code in ALL_CODES:
+    """One short sentence: what happened, then what to do (lessons 36)."""
+    for code in ALL_CODES + ["NO_SUCH_CODE"]:
         message = friendly_message(code)
         assert len(message) <= 110, (code, message)
-        assert message.count(". ") <= 1, (code, message)
+        assert message.endswith(".") and message.count(". ") == 0, (code, message)
+        assert ": " in message, (code, message)
 
 
 # --------------------------------------------------------------------------- #

@@ -126,7 +126,10 @@ class BlossomUploads(QObject):
         job = self._jobs.get(name)
         if job is not None:
             self._stop(job)
-            job.on_failure(reason)
+            # Details name the servers that refused it, and why
+            # (contract 7); the sentence never does (lessons 36).
+            refused = self._store.refusal_detail(name) if reason else ""
+            job.on_failure("\n".join(part for part in (reason, refused) if part))
 
 
 __all__ = ["BlossomUploads", "THUMB_SIDE", "thumbnail"]

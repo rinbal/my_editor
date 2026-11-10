@@ -73,9 +73,10 @@ import media_files
 import url_safety
 from alerts import confirm_destructive
 from . import appearance
-from i18n import _, ngettext
+from i18n import N_, _, ngettext
 from media_files import format_size  # noqa: F401, imported from here too
 
+from .. import failures
 from ..blossom.errors import ERROR_CODES, friendly_message
 from ..blossom.store import MediaFile, MediaStore
 from ..media.media_visibility import PRIVATE, PUBLISHED_COPY, MediaVisibility
@@ -96,6 +97,9 @@ from .media_source import PreviewResolver
 from .media_thumbnails import MediaThumbnails
 from .media_saver import MediaSaver, save_failure, saves_failure
 from .thumbnail_loader import ThumbnailLoader
+
+# Why a file that is no media wasn't added, and what to do.
+_ONLY_MEDIA = N_("Only images, videos, audio and documents can be added: choose one of those.")
 
 # Types a file being added is shown from its own bytes while it uploads:
 # the ones the app decodes anyway.
@@ -189,9 +193,6 @@ class MediaLibraryDialog(QDialog):
         self._ticker = QTimer(self)
         self._ticker.setInterval(33)
         self._ticker.timeout.connect(self._tick)
-        # What a finished upload has to say (a copy a server did not
-        # keep), said once it is added.
-        self._job_notes: Dict[str, str] = {}
         # What the store said about a job before its tile was made (a
         # small file starts, or is refused, inside upload_file): the
         # tile's state, and for a failure its reason, by job name.
@@ -453,8 +454,6 @@ class MediaLibraryDialog(QDialog):
         store.upload_finished.connect(self._on_upload_finished)
         store.upload_failed.connect(self._on_upload_failed)
         store.upload_cancelled.connect(self._on_upload_cancelled)
-        store.mirror_failed.connect(self._on_copy_missing)
-        store.server_skipped.connect(self._on_copy_missing)
         store.file_deleted.connect(self._on_file_deleted)
         store.delete_failed.connect(self._on_delete_failed)
         store.submission_checked.connect(self._on_submission_checked)
@@ -1140,11 +1139,12 @@ class MediaLibraryDialog(QDialog):
                 self._adding = False
             self._add_job(name, mime, _local_preview(mime=mime, path=path))
         if refused:
-            self._say(ngettext(
-                "“{name}” wasn’t added. Choose a supported image, video, audio or document file.",
-                "{count} files weren’t added. Choose supported images, videos, audio or document files.",
-                len(refused)).format(name=refused[0], count=len(refused)),
-                error=True)
+            # What did not happen, never how many (lessons 36); which
+            # files is the tooltip.
+            title = (_("“{name}” wasn’t added").format(name=refused[0]) if len(refused) == 1
+                     else _("Some files weren’t added"))
+            self._say(failures.spoken(title, _(_ONLY_MEDIA)), error=True,
+                      detail="\n".join(refused) if len(refused) > 1 else "")
 
     def _paste(self) -> None:
         """Command-V on the grid adds a pasted image."""
@@ -1258,12 +1258,11 @@ class MediaLibraryDialog(QDialog):
         sha = getattr(media, "hash", "")
         if tile.pixmap is not None and sha:
             self._thumbs.setdefault(sha, tile.pixmap)
-        note = self._job_notes.pop(name, "")
+        # A server that kept no copy is not said: the file is on the
+        # others (lessons 36; the store logs it).
         self._rebuild()
         if sha and self._model.row_of(sha) >= 0:
             self._grid.setCurrentIndex(self._model.index(self._model.row_of(sha)))
-        if note:
-            self._say(note)
 
     def _on_upload_failed(self, name: str, reason: str) -> None:
         tile = self._jobs.get(name)
@@ -1272,27 +1271,18 @@ class MediaLibraryDialog(QDialog):
                 # Refused inside upload_file, before its tile was made.
                 self._early[name] = (FAILED, reason)
             return
-        self._job_notes.pop(name, None)
         tile.state, tile.detail = FAILED, reason
         self._model.changed(name)
+        # Which servers refused it, and why, is the line's tooltip.
         self._say(_("“{name}” wasn’t added. {reason}").format(name=name, reason=reason),
-                  error=True)
+                  error=True, detail=self._store.refusal_detail(name))
         self._refresh_pick_notice()
 
     def _on_upload_cancelled(self, name: str) -> None:
         if self._jobs.pop(name, None) is not None:
-            self._job_notes.pop(name, None)
             self._rebuild()
         elif self._adding:
             self._early[name] = ("cancelled", "")
-
-    def _on_copy_missing(self, name: str, _host: str, _why: str) -> None:
-        """A server did not take a copy, or was full. The file is on the
-        others, so it is said once, when it is added, and plainly."""
-        if name in self._jobs:
-            self._job_notes[name] = _(
-                "“{name}” is added, but one of your media servers didn’t keep a copy."
-            ).format(name=name)
 
     # ------------------------------------------------------------------
     # Listing, storage, and the line at the bottom
@@ -1315,12 +1305,13 @@ class MediaLibraryDialog(QDialog):
         self._show_page()
         if any(listing.ok and listing.truncated
                for listing in self._store.server_listings().values()):
-            self._say(_("Your media servers may not have listed every file. Refresh to "
-                        "look again."))
+            self._say(_("Your media servers may not have listed every file: choose Refresh "
+                        "to look again."))
 
     def _on_fetch_error(self, code: str) -> None:
         if code == ERROR_CODES.NETWORK_UNAVAILABLE:
-            text = _("Couldn’t reach your media servers. Check your internet connection.")
+            text = _("Couldn’t reach your media servers: check your internet connection and "
+                     "try again.")
         else:
             text = friendly_message(code)
         if self._store.files:
@@ -1342,8 +1333,8 @@ class MediaLibraryDialog(QDialog):
         self._storage.setText("  ·  ".join(lines))
         self._storage.setVisible(bool(lines))
 
-    def _say(self, text: str, *, error: bool = False) -> None:
-        self._show_status(text, "error" if error else "")
+    def _say(self, text: str, *, error: bool = False, detail: str = "") -> None:
+        self._show_status(text, "error" if error else "", detail)
         if error:
             self._status_timer.stop()
         else:
@@ -1352,9 +1343,9 @@ class MediaLibraryDialog(QDialog):
     def _rest_status(self) -> None:
         self._show_status(_("Anyone with the link can see the files you add here."), "rest")
 
-    def _show_status(self, text: str, tone: str) -> None:
+    def _show_status(self, text: str, tone: str, detail: str = "") -> None:
         self._status.setText(text)
-        self._status.setToolTip("")
+        self._status.setToolTip(detail)
         self._status.setProperty("tone", tone)
         self._status.style().unpolish(self._status)
         self._status.style().polish(self._status)
@@ -1450,7 +1441,8 @@ def _delete_reason(code: str) -> str:
     the file is on refusing: choosing another server, the remedy when
     adding, can't delete it there."""
     if code == ERROR_CODES.AUTH_REJECTED:
-        return _("A media server it’s on didn’t let your account delete it.")
+        return _("A media server it’s on didn’t let your account delete it: try again with "
+                 "the account that added it.")
     return friendly_message(code)
 
 

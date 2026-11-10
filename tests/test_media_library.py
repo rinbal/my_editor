@@ -170,6 +170,9 @@ class FakeStore(QObject):
     def added_uploads(self):
         return list(getattr(self, "added", []))
 
+    def refusal_detail(self, name):
+        return getattr(self, "refused", {}).get(name, "")
+
     def can_retry(self, name):
         return True
 
@@ -433,7 +436,7 @@ def test_a_library_that_could_not_be_listed_says_why_and_offers_try_again(tmp_pa
     world = build(tmp_path, monkeypatch)
     world.store.fetch_error.emit("NETWORK_UNAVAILABLE")
     assert world.dialog._empty_text.text() == (
-        "Couldn’t reach your media servers. Check your internet connection.")
+        "Couldn’t reach your media servers: check your internet connection and try again.")
     assert world.dialog._empty_button.text() == "Try Again"
     world.dialog._empty_button.click()
     assert ("fetch", True) in world.store.calls
@@ -488,7 +491,7 @@ def test_a_failed_upload_says_why_on_the_tile_and_can_be_retried(tmp_path, monke
     path.write_bytes(PNG_BYTES)
     world = build(tmp_path, monkeypatch)
     world.dialog._add_paths([str(path)])
-    reason = "Couldn’t reach your media server. Check your internet connection."
+    reason = "Couldn’t reach your media server: check your internet connection and try again."
     world.store.upload_failed.emit("Scan.png", reason)
     tile = world.model.tile("Scan.png")
     assert (tile.state, tile.detail) == (FAILED, reason)
@@ -496,6 +499,22 @@ def test_a_failed_upload_says_why_on_the_tile_and_can_be_retried(tmp_path, monke
     world.grid.retry_requested.emit("Scan.png")
     assert ("retry", "Scan.png") in world.store.calls
     assert tile.state == WAITING
+
+
+def test_the_servers_that_refused_a_file_are_the_line_s_tooltip_never_its_words(
+        tmp_path, monkeypatch):
+    # Contract 7 names them; lessons 36 keeps them behind a tooltip.
+    path = tmp_path / "Scan.png"
+    path.write_bytes(PNG_BYTES)
+    world = build(tmp_path, monkeypatch)
+    world.dialog._add_paths([str(path)])
+    world.store.refused = {"Scan.png": "good.example: too large\nmirror.example: too large"}
+    reason = "No media server took the file: add another one in Media Servers."
+    world.store.upload_failed.emit("Scan.png", reason)
+    assert world.dialog._status.text() == f"“Scan.png” wasn’t added. {reason}"
+    assert world.dialog._status.toolTip() == "good.example: too large\nmirror.example: too large"
+    world.dialog._say("Something else.")
+    assert world.dialog._status.toolTip() == ""     # the next line takes it away
 
 
 def test_a_refusal_before_the_upload_starts_reaches_the_tile(tmp_path, monkeypatch):
@@ -527,20 +546,36 @@ def test_a_file_that_is_no_media_is_not_added_and_it_says_so(tmp_path, monkeypat
     world.dialog._add_paths([str(path)])
     assert world.store.calls == [("fetch", False)]
     assert world.dialog._status.text() == (
-        "“program.exe” wasn’t added. Choose a supported image, video, audio or document file.")
+        "“program.exe” wasn’t added. Only images, videos, audio and documents can be added: "
+        "choose one of those.")
 
 
-def test_a_server_that_did_not_keep_a_copy_is_said_once_when_the_file_lands(
-        tmp_path, monkeypatch):
+def test_files_that_are_no_media_are_said_once_never_counted(tmp_path, monkeypatch):
+    # Lessons 36: what did not happen, never how many; which is the tooltip.
+    paths = []
+    for name in ("program.exe", "setup.dmg", "notes.xyz"):
+        (tmp_path / name).write_text("hello", encoding="utf-8")
+        paths.append(str(tmp_path / name))
+    world = build(tmp_path, monkeypatch)
+    world.dialog._add_paths(paths)
+    assert world.dialog._status.text() == (
+        "Some files weren’t added. Only images, videos, audio and documents can be added: "
+        "choose one of those.")
+    assert world.dialog._status.toolTip() == "program.exe\nsetup.dmg\nnotes.xyz"
+
+
+@pytest.mark.parametrize("missed", ["mirror_failed", "server_skipped"])
+def test_a_server_that_did_not_keep_a_copy_says_nothing_as_the_file_landed(
+        tmp_path, monkeypatch, missed):
+    # Lessons 36: the file is on the others, so the upload worked.
     path = tmp_path / "Garden.png"
     path.write_bytes(PNG_BYTES)
     world = build(tmp_path, monkeypatch)
     world.dialog._add_paths([str(path)])
-    world.store.mirror_failed.emit("Garden.png", "members.example", "NETWORK_UNAVAILABLE")
-    assert world.dialog._status.text() == "Anyone with the link can see the files you add here."
+    getattr(world.store, missed).emit("Garden.png", "members.example", "NETWORK_UNAVAILABLE")
     world.store.upload_finished.emit("Garden.png", media(3))
-    assert world.dialog._status.text() == (
-        "“Garden.png” is added, but one of your media servers didn’t keep a copy.")
+    assert world.dialog._status.text() == "Anyone with the link can see the files you add here."
+    assert world.dialog._status.toolTip() == ""
 
 
 # --------------------------------------------------------------------------- #
@@ -576,8 +611,8 @@ def test_a_file_a_server_still_has_is_never_called_gone(tmp_path, monkeypatch):
     world = build(tmp_path, monkeypatch, FakeStore([one], names={one.hash: "Garden.jpg"}))
     world.store.delete_failed.emit(one.hash, "NETWORK_UNAVAILABLE")
     assert world.dialog._status.text() == (
-        "“Garden.jpg” wasn’t deleted. Couldn’t reach your media server. Check your "
-        "internet connection.")
+        "“Garden.jpg” wasn’t deleted. Couldn’t reach your media server: check your "
+        "internet connection and try again.")
 
 
 def test_copy_link_copies_every_selected_address(tmp_path, monkeypatch):
@@ -626,15 +661,17 @@ def test_save_as_tries_the_next_server_and_then_gives_the_real_reason(tmp_path, 
     assert world.loader.downloads[1].url.startswith(MEMBERS)
     world.loader.downloads[1].finished.emit("too_large")
     assert world.dialog._status.text() == (
-        "“Talk.mp4” wasn’t saved: a media server sent more than the file.")
+        "“Talk.mp4” wasn’t saved, as a media server sent more than the file: try again later.")
 
 
 @pytest.mark.parametrize("why, said", [
-    ("network", "“Talk.mp4” couldn’t be downloaded. Check your internet connection and try again."),
+    ("network", "“Talk.mp4” couldn’t be downloaded: check your internet connection and try again."),
     ("missing", "“Talk.mp4” isn’t on your media servers anymore, so it couldn’t be saved."),
-    ("server", "“Talk.mp4” couldn’t be downloaded: your media server didn’t send it. Try again later."),
-    ("wrong_file", "“Talk.mp4” wasn’t saved: a media server returned the wrong file."),
-    ("write", "“Talk.mp4” couldn’t be saved there. Choose another folder."),
+    ("server", "“Talk.mp4” couldn’t be downloaded, as your media server didn’t send it: try "
+               "again later."),
+    ("wrong_file", "“Talk.mp4” wasn’t saved, as a media server returned the wrong file: try "
+                   "again later."),
+    ("write", "“Talk.mp4” couldn’t be saved there: choose another folder."),
 ])
 def test_save_as_failures_say_their_own_reason(tmp_path, monkeypatch, why, said):
     world, _video, _target = _save_video(tmp_path, monkeypatch)
@@ -928,8 +965,8 @@ def test_a_copy_a_server_still_has_is_still_shared_and_it_says_so(tmp_path, monk
     assert ledger.get(copy_sha) is not None
     assert not tiles(world)[0].private
     assert world.dialog._status.text() == (
-        "“Beach.png” is still shared. Couldn’t reach your media server. Check your "
-        "internet connection.")
+        "“Beach.png” is still shared. Couldn’t reach your media server: check your "
+        "internet connection and try again.")
 
 
 @pytest.mark.parametrize("unsharing", [True, False])
@@ -944,9 +981,9 @@ def test_a_server_that_refuses_the_account_is_not_a_reason_to_choose_another(
     world.store.delete_failed.emit(copy_sha if unsharing else original.hash, "AUTH_REJECTED")
     assert world.dialog._status.text() == (
         "“Beach.png” is still shared. A media server it’s on didn’t let your account "
-        "delete it." if unsharing else
+        "delete it: try again with the account that added it." if unsharing else
         "“Beach.png” wasn’t deleted. A media server it’s on didn’t let your account "
-        "delete it.")
+        "delete it: try again with the account that added it.")
 
 
 def test_deleting_a_shared_original_deletes_its_copy_too(tmp_path, monkeypatch):
@@ -1029,7 +1066,7 @@ def test_a_library_opened_later_shows_the_files_still_being_added(tmp_path, monk
     path = tmp_path / "Holiday.png"
     path.write_bytes(PNG_BYTES)
     store = FakeStore()
-    reason = "Couldn’t reach your media server. Check your internet connection."
+    reason = "Couldn’t reach your media server: check your internet connection and try again."
     store.added = [AddedUpload(name="Holiday.png", mime="image/png", state="failed",
                                error=reason, path=str(path)),
                    AddedUpload(name="Clip.mp4", mime="video/mp4", state="sending")]
@@ -1092,7 +1129,7 @@ def test_a_listing_that_may_be_incomplete_is_said_quietly(tmp_path, monkeypatch)
     store.truncated = True
     store.fetch_finished.emit()
     assert world.dialog._status.text() == (
-        "Your media servers may not have listed every file. Refresh to look again.")
+        "Your media servers may not have listed every file: choose Refresh to look again.")
     assert world.dialog._status.property("tone") == ""
 
 

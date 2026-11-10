@@ -283,9 +283,9 @@ try:
               str(landed.last)[:200])
     rep.check("the server that was down is reported as one without a copy",
               [c[1] for c in missed.calls] == ["localhost:7809"], str(missed.calls))
-    rep.check("the window says one plain sentence about it, naming no server",
-              window._status.text() == "“Talk.mp4” is added, but one of your media servers "
-                                       "didn’t keep a copy.", window._status.text())
+    rep.check("the window says nothing about it, as the file landed (lessons 36)",
+              "Talk.mp4" not in window._status.text() and not window._status.toolTip(),
+              window._status.text())
     tile = window._model.tile(tsha)
     rep.check("the file's tile carries the name it was added with, and no mark (it is public)",
               tile is not None and tile.name == "Talk.mp4" and not tile.private,

@@ -103,6 +103,10 @@ class Store(QObject):
         super().__init__()
         self.sent: List[tuple] = []
         self.cancelled: List[str] = []
+        self.refused: dict = {}
+
+    def refusal_detail(self, name) -> str:
+        return self.refused.get(name, "")
 
     def upload_bytes(self, body, *, name, mime_type, force, submission) -> None:
         assert force and submission
@@ -153,6 +157,27 @@ def test_a_file_the_server_names_by_another_hash_fails_and_the_others_stop():
     assert set(store.cancelled) == {first, second}
     store.finish(second, pictures[1].sha256)        # heard no more
     assert seen["done"] == []
+
+
+def test_a_refused_picture_names_the_servers_in_its_details_never_its_sentence():
+    # Contract 7: when no server takes it, the servers and the reasons are
+    # named; lessons 36: behind Details, after the store's one sentence.
+    store, pictures = Store(), _pictures(1)
+    seen, _stop = _upload(store, pictures)
+    (name, *_rest), = store.sent
+    store.refused[name] = "good.example: too large\nmirror.example: too large"
+    store.upload_failed.emit(name, "No media server took the file: add another one in "
+                                   "Media Servers.")
+    assert seen["failed"] == ["No media server took the file: add another one in Media "
+                              "Servers.\ngood.example: too large\nmirror.example: too large"]
+
+
+def test_a_picture_that_failed_otherwise_has_only_the_store_s_sentence():
+    store, pictures = Store(), _pictures(1)
+    seen, _stop = _upload(store, pictures)
+    (name, *_rest), = store.sent
+    store.upload_failed.emit(name, "Your media server is busy: try again later.")
+    assert seen["failed"] == ["Your media server is busy: try again later."]
 
 
 def test_a_file_the_server_misses_goes_up_again_through_the_real_library(tmp_path):

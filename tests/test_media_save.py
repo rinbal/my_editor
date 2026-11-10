@@ -197,7 +197,7 @@ def test_save_as_into_a_folder_that_cannot_be_written_says_so_and_the_next_save_
     world = library(tmp_path, monkeypatch, [first, second])
     save_as(monkeypatch, world, first, tmp_path / "gone" / "A.mp4")
     assert wait_for(lambda: not saving(world), 3), "the save never ended"
-    assert world.dialog._status.text() == "“A.mp4” couldn’t be saved there. Choose another folder."
+    assert world.dialog._status.text() == "“A.mp4” couldn’t be saved there: choose another folder."
     out = tmp_path / "out"
     out.mkdir()
     save_as(monkeypatch, world, second, out / "B.mp4")
@@ -250,8 +250,8 @@ def test_a_disk_that_fills_at_the_end_ends_the_save_and_leaves_nothing(
     save_as(monkeypatch, world, big, out / "Big.mp4")
     assert wait_for(lambda: not saving(world), 10), "the save never ended"
     assert world.dialog._status.text() == (
-        "“Big.mp4” couldn’t be saved: there isn’t enough space for it there. Free up some "
-        "space or choose another folder.")
+        "“Big.mp4” couldn’t be saved, as there isn’t enough space for it there: free up "
+        "some space or choose another folder.")
     assert sorted(p.name for p in out.iterdir()) == []
 
 
@@ -273,7 +273,7 @@ def test_a_file_size_limit_reached_at_the_end_ends_the_save_and_leaves_nothing(
         resource.setrlimit(resource.RLIMIT_FSIZE, (soft, hard))
     assert ended, "the save never ended"
     assert world.dialog._status.text() == (
-        "“Big.mp4” couldn’t be saved there. Choose another folder.")
+        "“Big.mp4” couldn’t be saved there: choose another folder.")
     assert sorted(p.name for p in out.iterdir()) == []
 
 
@@ -297,7 +297,7 @@ def test_a_file_too_big_to_hold_in_memory_ends_as_one_that_couldnt_be_written(
     save_as(monkeypatch, world, media, out / "Film.mp4")
     assert wait_for(lambda: not saving(world), 10), "the save never ended"
     assert world.dialog._status.text() == (
-        "“Film.mp4” couldn’t be saved there. Choose another folder.")
+        "“Film.mp4” couldn’t be saved there: choose another folder.")
     assert escaped == []
     assert sorted(p.name for p in out.iterdir()) == []
 
@@ -314,8 +314,8 @@ def test_a_file_saved_from_this_computer_onto_a_full_disk_says_so(tmp_path, monk
     monkeypatch.setattr(media_saver, "save_document", full)
     save_as(monkeypatch, world, media, tmp_path / "Clip.mp4")
     assert world.dialog._status.text() == (
-        "“Clip.mp4” couldn’t be saved: there isn’t enough space for it there. Free up some "
-        "space or choose another folder.")
+        "“Clip.mp4” couldn’t be saved, as there isn’t enough space for it there: free up "
+        "some space or choose another folder.")
 
 
 # --------------------------------------------------------------------------- #
@@ -654,7 +654,7 @@ def test_a_name_too_long_for_the_folder_says_so(tmp_path, monkeypatch, server, c
     save_as(monkeypatch, world, media, out / name)
     assert wait_for(lambda: not saving(world), 5)
     assert world.dialog._status.text() == (
-        f"“{name}” couldn’t be saved: its name is too long. Choose a shorter one.")
+        f"“{name}” couldn’t be saved, as its name is too long: choose a shorter one.")
     assert folder(out) == []
 
 
@@ -783,7 +783,9 @@ def _three_with_one_gone(server):
     return [one, gone, three], names
 
 
-SUMMARY = ("Saved 2 of 3 files. “Two.mp4” isn’t on your media servers anymore, so it "
+# Lessons 36: what did not happen, then the first file's sentence; never
+# how many of how many.
+SUMMARY = ("Some files weren’t saved. “Two.mp4” isn’t on your media servers anymore, so it "
            "couldn’t be saved.")
 
 
@@ -797,6 +799,20 @@ def test_save_to_folder_says_at_the_end_what_wasnt_saved(tmp_path, monkeypatch, 
     assert world.dialog._status.text() == SUMMARY
     assert world.dialog._status.toolTip() == (
         "“Two.mp4” isn’t on your media servers anymore, so it couldn’t be saved.")
+
+
+@pytest.mark.parametrize("total, failed, head", [
+    (1, 1, "Your file wasn’t saved. "),
+    (3, 3, "Your files weren’t saved. "),
+    (3, 2, "Some files weren’t saved. "),
+])
+def test_a_save_that_missed_files_says_what_did_not_happen_never_how_many(total, failed, head):
+    from nostr.ui.media_saver import saves_failure
+    failures = [(f"/out/{i}.mp4", "missing") for i in range(failed)]
+    said, tip = saves_failure(total, failures)
+    assert said == head + "“0.mp4” isn’t on your media servers anymore, so it couldn’t be saved."
+    assert not any(ch.isdigit() for ch in said.replace("0.mp4", ""))
+    assert tip.splitlines()[-1].startswith(f"“{failed - 1}.mp4”")
 
 
 def tooltip_at(widget, x) -> str:
@@ -895,4 +911,4 @@ def test_a_save_to_folder_that_saved_one_file_says_so_in_the_singular(tmp_path, 
     out.mkdir()
     save_to_folder(monkeypatch, world, out)
     assert wait_for(lambda: len(folder(out)) == 1 and not saving(world), 5)
-    assert world.dialog._status.text().startswith("Saved 1 of 3 files. ")
+    assert world.dialog._status.text().startswith("Some files weren’t saved. ")

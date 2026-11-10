@@ -230,7 +230,7 @@ from nostr.ui.reference_popover import ReferencePopover
 from nostr.ui.article_details_panel import ArticleDetailsPanel, DEFAULT_WIDTH as ARTICLE_DETAILS_WIDTH
 from nostr.ui.article_headers import ArticleHeaders
 from nostr import refs
-from nostr.failures import CHECK_CONNECTION
+from nostr.failures import CHECK_CONNECTION, spoken as failure_spoken
 from nostr.blossom.errors import friendly_message
 from nostr.blossom.names import MediaNames
 from nostr.blossom.hashes import hash_from_url
@@ -10000,15 +10000,16 @@ class MainWindow(QMainWindow):
         self._show_library_failures()
 
     def _show_library_failures(self) -> None:
-        failures = self._library_failures
-        text = ngettext("“{name}” wasn’t added to your Media Library.",
-                        "{count} files weren’t added to your Media Library.",
-                        len(failures)).format(name=next(iter(failures), ""),
-                                              count=len(failures)) if failures else ""
+        waiting = self._library_failures
+        # Never how many (lessons 36); each file and its sentence is the
+        # tooltip.
+        text = "" if not waiting else (
+            _("“{name}” wasn’t added to your Media Library.").format(name=next(iter(waiting)))
+            if len(waiting) == 1 else _("Some files weren’t added to your Media Library."))
         self._library_problem.setText(text)
         self._library_problem.setToolTip("\n".join(
             _("“{name}” wasn’t added to your Media Library. {reason}").format(
-                name=name, reason=reason) for name, reason in failures.items()))
+                name=name, reason=reason) for name, reason in waiting.items()))
         self._library_problem.setStyleSheet(
             f"color: {theme.error_text_color(self.is_dark_theme)}; padding-right: 4px;")
         link = theme.dialog_link_color(self.is_dark_theme)
@@ -10546,11 +10547,11 @@ class MainWindow(QMainWindow):
                 pane.schedule()
 
     def _on_asset_upload_failed(self, sha: str, code: str) -> None:
-        waiting = len(self._asset_manager.failed_assets())
-        message = friendly_message(code)
-        if waiting > 1:
-            message += " " + ngettext("{count} file is waiting.", "{count} files are waiting.",
-                                      waiting).format(count=waiting)
+        # What did not happen and its one sentence, never how many wait
+        # (lessons 36): publishing uploads what waits again.
+        message = failure_spoken(
+            _("Your file wasn’t uploaded") if len(self._asset_manager.failed_assets()) <= 1
+            else _("Some files weren’t uploaded"), friendly_message(code))
         self.status.showMessage(message, 8000, nostr=True, error=True)
 
     # -- Blossom: paste image from clipboard ------------------------------

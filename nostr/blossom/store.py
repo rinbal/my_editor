@@ -28,11 +28,12 @@ declarative.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Protocol, Sequence, Set
+from typing import Callable, Dict, List, Optional, Protocol, Sequence, Set, Tuple
 
 from PySide6.QtCore import QObject, Signal
 
@@ -86,6 +87,11 @@ _MAX_UPLOAD_ATTEMPTS = 2
 # precisely the case the size planner cannot know about: a server whose
 # real cap is below its published one.
 _RETRYABLE_STATUSES = frozenset({0, 413, 415, 429, 502, 503})
+
+_log = logging.getLogger(__name__)
+
+# How many uploads' refusing servers are kept for their Details.
+_REFUSALS_KEPT = 32
 
 # A server's refusal of the file itself (BUD-02: 413 too large, 415 a
 # type it does not take), with the short reason a list of servers says.
@@ -220,6 +226,9 @@ class _Added:
     body: Optional[bytes] = None
     failed: bool = False
     error: str = ""
+    # Which servers refused it and why: a tooltip's, never the sentence's
+    # (lessons 36; contract 7 names them).
+    detail: str = ""
 
 
 @dataclass(frozen=True)
@@ -232,6 +241,7 @@ class AddedUpload:
     state: str
     error: str = ""
     path: str = ""
+    detail: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -370,6 +380,10 @@ class MediaStore(QObject):
         # are added until they land, are cancelled, or a failure is
         # dismissed: what Retry sends again.
         self._added: Dict[str, _Added] = {}
+        # Which servers refused the last try of an upload not added to
+        # the library (a submission's picture), and why: what its Details
+        # name (contract 7), never its sentence. The newest few only.
+        self._refused: Dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Read API
@@ -549,7 +563,7 @@ class MediaStore(QObject):
             else:
                 state = "finishing" if job.status == "mirroring" else "sending"
             out.append(AddedUpload(name=name, mime=added.mime, state=state,
-                                   error=added.error,
+                                   error=added.error, detail=added.detail,
                                    path=str(added.path) if added.path else ""))
         return out
 
@@ -956,6 +970,7 @@ class MediaStore(QObject):
         nowhere (the job is gone), and each is reported cancelled."""
         jobs, self._uploads = self._uploads, {}
         added, self._added = self._added, {}
+        self._refused = {}
         for job in jobs.values():
             if job.sending is not None:
                 job.sending.abort()
@@ -1213,6 +1228,7 @@ class MediaStore(QObject):
             return True
         if self.bytes_on(origin) + size <= quota:
             return True
+        _log.info("%s skipped %s: it is full", name, _hostname(server))
         self.server_skipped.emit(name, _hostname(server), "full")
         return False
 
@@ -1396,8 +1412,9 @@ class MediaStore(QObject):
                     job.meter.retrying()
                 attempt(next_index)
                 return
-            self._fail_upload(name, _error_code(err),
-                              _refusals(missed, err) if _refused_file(err) else _format_err(err))
+            sentence, detail = (_refusals(missed, err) if _refused_file(err)
+                                else (_format_err(err), ""))
+            self._fail_upload(name, _error_code(err), sentence, detail=detail)
 
         attempt(0)
 
@@ -1543,7 +1560,7 @@ class MediaStore(QObject):
         failures: List[tuple] = list(missed)
         if not mirror_servers:
             for host, code in failures:
-                self.mirror_failed.emit(name, host, code)
+                self._copy_missing(name, host, code)
             self._commit_upload(name, media, configured_primary=configured_primary)
             return
 
@@ -1567,7 +1584,7 @@ class MediaStore(QObject):
                 state.meter.copied()
             if index >= len(mirror_servers):
                 for host, code in failures:
-                    self.mirror_failed.emit(name, host, code)
+                    self._copy_missing(name, host, code)
                 self._commit_upload(
                     name, media, configured_primary=configured_primary
                 )
@@ -1655,21 +1672,42 @@ class MediaStore(QObject):
         self.upload_finished.emit(name, media)
         self.library_changed.emit()
 
-    def _fail_upload(self, name: str, code: str, reason: str = "") -> None:
+    def _fail_upload(self, name: str, code: str, reason: str = "", *,
+                     detail: str = "") -> None:
         state = self._uploads.pop(name, None)
         if state is not None:
             state.status = "failed"
             state.error = reason or friendly_message(code)
         self.upload_status.emit(name, "failed")
-        self._refuse(name, code, reason)
+        self._refuse(name, code, reason, detail=detail)
 
-    def _refuse(self, name: str, code: str, reason: str = "") -> None:
+    def _copy_missing(self, name: str, host: str, code: str) -> None:
+        """A server kept no copy of a file the others have: the upload
+        worked, so this is logged and told, never said (lessons 36)."""
+        _log.info("%s has no copy on %s: %s", name, host, code)
+        self.mirror_failed.emit(name, host, code)
+
+    def refusal_detail(self, name: str) -> str:
+        """Which servers refused the last try of an upload and why, one
+        per line, for a tooltip or Details; "" when none did."""
+        added = self._added.get(name)
+        return added.detail if added is not None else self._refused.get(name, "")
+
+    def _refuse(self, name: str, code: str, reason: str = "", *, detail: str = "") -> None:
         """Report one upload's failure: the sentence, then its code. An
         added file stays, to be retried or dismissed."""
+        if detail:
+            _log.info("media servers refused %s: %s", name, detail.replace("\n", "; "))
         added = self._added.get(name)
+        self._refused.pop(name, None)
         if added is not None:
             added.failed = True
             added.error = reason or friendly_message(code)
+            added.detail = detail
+        elif detail:
+            self._refused[name] = detail
+            while len(self._refused) > _REFUSALS_KEPT:
+                del self._refused[next(iter(self._refused))]
         self.upload_failed.emit(name, reason or friendly_message(code))
         self.upload_failed_code.emit(name, code)
 
@@ -1934,16 +1972,16 @@ def _refused_file(err) -> bool:
     return isinstance(err, BlossomError) and err.status in (413, 415)
 
 
-def _refusals(missed: Sequence[tuple], err: BlossomError) -> str:
-    """Which servers refused the file and why (contract 7: named, never
-    the plaintext uploaded instead): the one server with the remedy, or
-    every server with its reason."""
+def _refusals(missed: Sequence[tuple], err: BlossomError) -> Tuple[str, str]:
+    """``(sentence, detail)`` for a file every server refused, never the
+    plaintext uploaded instead: the one server's remedy, or that none
+    took it; which servers and why is ``detail`` (contract 7 names them,
+    behind a tooltip: lessons 36)."""
+    detail = "\n".join(f"{host}: {_(_FILE_REFUSALS[code])}" if code in _FILE_REFUSALS
+                       else host for host, code in missed)
     if len(missed) == 1:
-        return _("{server}: {reason}").format(server=missed[0][0], reason=_format_err(err))
-    named = [f"{host} ({_(_FILE_REFUSALS[code])})" if code in _FILE_REFUSALS else host
-             for host, code in missed]
-    return _("No media server took the file: {servers}. Add another one in Media "
-             "Servers.").format(servers=", ".join(named))
+        return _format_err(err), detail
+    return _("No media server took the file: add another one in Media Servers."), detail
 
 
 def _is_retryable(err) -> bool:

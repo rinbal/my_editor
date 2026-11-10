@@ -207,7 +207,7 @@ def test_the_files_being_added_are_known_to_the_store(tmp_path):
     [added] = jobs.store.added_uploads()
     assert (added.name, added.mime, added.state, added.path) == (
         name, "image/png", "failed", str(tmp_path / "Holiday.png"))
-    assert "Check your internet connection" in added.error
+    assert "check your internet connection" in added.error
 
 
 def test_adding_a_file_that_failed_again_retries_it_under_its_name(tmp_path):
@@ -311,7 +311,8 @@ def test_a_file_a_server_says_is_missing_is_sent_again_though_the_library_has_it
 
 def test_a_server_that_refuses_the_file_hands_it_to_every_other_and_names_them(tmp_path):
     # Contract 7 (ee3e5d7): 413 or 415 tries the writer's other servers;
-    # when none takes it, the servers and the reasons are named.
+    # when none takes it, the servers and the reasons are named: in its
+    # Details, never its one sentence (lessons 36).
     too_large = FakeBlossomServer(SERVER, fail_with=413)
     wrong_type = FakeBlossomServer(MIRROR, fail_with=415)
     third = FakeBlossomServer(THIRD, fail_with=413)
@@ -322,11 +323,88 @@ def test_a_server_that_refuses_the_file_hands_it_to_every_other_and_names_them(t
     jobs.store.upload_bytes(BODY, name="a.smf1")
     jobs.nam.settle()
     assert len(jobs.signer.requests) == 3           # every server was asked
-    assert said == ["No media server took the file: good.example (too large), "
-                    "mirror.example (not a type it takes), third.example (too large). "
-                    "Add another one in Media Servers."]
+    assert said == ["No media server took the file: add another one in Media Servers."]
+    assert jobs.store.refusal_detail("a.smf1") == ("good.example: too large\n"
+                                                    "mirror.example: not a type it takes\n"
+                                                    "third.example: too large")
     taken = FakeBlossomServer(THIRD)
     _servers(jobs, too_large, wrong_type, taken)
     jobs.store.upload_bytes(BODY, name="b.smf1")
     jobs.nam.settle()
     assert len(taken.uploads) == 1 and jobs.kinds("b.smf1")[-1] == "finished"
+
+
+def test_one_server_that_refuses_says_its_remedy_and_names_it_only_in_the_details(tmp_path):
+    jobs = Jobs(tmp_path)
+    _servers(jobs, FakeBlossomServer(SERVER, fail_with=413))
+    said = []
+    jobs.store.upload_failed.connect(lambda _n, reason: said.append(reason))
+    jobs.store.upload_bytes(BODY, name="a.smf1")
+    jobs.nam.settle()
+    assert said == ["This file is too large for your media server: choose a smaller one, or "
+                    "add a server in Media Servers."]
+    assert jobs.store.refusal_detail("a.smf1") == "good.example: too large"
+    # A later try that fails another way names no servers.
+    _servers(jobs, FakeBlossomServer(SERVER, fail_with=500))
+    jobs.store.upload_bytes(BODY, name="a.smf1")
+    jobs.nam.settle()
+    assert len(said) == 2 and jobs.store.refusal_detail("a.smf1") == ""
+
+
+def test_only_the_newest_refusals_are_kept_for_their_details(tmp_path):
+    from nostr.blossom import store as store_module
+    jobs = Jobs(tmp_path)
+    _servers(jobs, FakeBlossomServer(SERVER, fail_with=415))
+    for i in range(store_module._REFUSALS_KEPT + 1):
+        jobs.store.upload_bytes(BODY + bytes([i]), name=f"{i}.smf1")
+        jobs.nam.settle()
+    assert jobs.store.refusal_detail("0.smf1") == ""
+    assert jobs.store.refusal_detail(f"{store_module._REFUSALS_KEPT}.smf1") == \
+        "good.example: not a type it takes"
+
+
+def test_the_servers_that_refused_are_logged_and_forgotten_with_the_account(tmp_path, caplog):
+    import logging
+    jobs = Jobs(tmp_path)
+    _servers(jobs, FakeBlossomServer(SERVER, fail_with=413))
+    with caplog.at_level(logging.INFO, logger="nostr.blossom.store"):
+        jobs.store.upload_bytes(BODY, name="a.smf1")
+        jobs.nam.settle()
+    assert any("a.smf1" in r.getMessage() and "good.example: too large" in r.getMessage()
+               for r in caplog.records)
+    jobs.store.clear()                               # the account is left
+    assert jobs.store.refusal_detail("a.smf1") == ""
+
+
+def test_a_server_that_kept_no_copy_is_logged_and_told_never_said(tmp_path, caplog):
+    # Lessons 36: the file is on the first server, so the upload worked.
+    import logging
+    jobs = Jobs(tmp_path, servers=(SERVER, MIRROR))
+    _servers(jobs, jobs.server, FakeBlossomServer(MIRROR, fail_with=500))
+    missed, said = [], []
+    jobs.store.mirror_failed.connect(lambda n, host, code: missed.append((n, host)))
+    jobs.store.upload_failed.connect(lambda n, reason: said.append(reason))
+    with caplog.at_level(logging.INFO, logger="nostr.blossom.store"):
+        jobs.store.upload_bytes(BODY, name="a.smf1")
+        jobs.nam.settle()
+    assert jobs.kinds("a.smf1")[-1] == "finished" and said == []
+    assert missed == [("a.smf1", "mirror.example")]
+    assert any("a.smf1 has no copy on mirror.example" in r.getMessage() for r in caplog.records)
+
+
+def test_an_added_file_every_server_refused_keeps_their_names_for_its_tooltip(tmp_path):
+    # The Media Library's line names them in its tooltip, also in a
+    # window opened later (added_uploads), and a retry forgets them.
+    jobs = Jobs(tmp_path, servers=(SERVER, MIRROR))
+    _servers(jobs, FakeBlossomServer(SERVER, fail_with=413),
+             FakeBlossomServer(MIRROR, fail_with=415))
+    name = jobs.store.upload_file(_file(tmp_path, "Holiday.png"))
+    jobs.nam.settle()
+    named = "good.example: too large\nmirror.example: not a type it takes"
+    assert jobs.store.refusal_detail(name) == named
+    [added] = jobs.store.added_uploads()
+    assert added.detail == named and "good.example" not in added.error
+    _servers(jobs, FakeBlossomServer(SERVER, fail_with=500), FakeBlossomServer(MIRROR))
+    jobs.store.retry_upload(name)
+    jobs.nam.settle()
+    assert jobs.store.refusal_detail(name) == ""
