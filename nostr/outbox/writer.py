@@ -27,6 +27,12 @@ app, with no undo. So every change here is a read-modify-write:
 A base dated far in the future (MAX_BASE_AHEAD_S) is refused: the change
 would have to be dated after it, and every later one with it.
 
+A change that was not made is said by :func:`failure_words`: one
+sentence with its likely cause and what to do, the one every screen
+that makes such a change uses (lessons 36); what was not changed is the
+screen's title, and what the relays and the signer said stays behind
+Details.
+
 AccountSetup runs this for a new account: the relay list first, then the
 profile, reporting each step for the window to show. Running it again
 sends only the steps not yet done. Finishing a setup later
@@ -43,9 +49,10 @@ from typing import Callable, Mapping, Optional, Tuple
 
 from PySide6.QtCore import QObject, Signal
 
-from i18n import _, ngettext
+from i18n import N_, _
 
-from .. import events
+from .. import events, failures
+from ..bunker import signer_failure_words
 from . import defaults, policy
 from .lookup import Lookup, fetch_replaceable
 from .policy import KIND_PROFILE, KIND_RELAY_LIST, LookupState
@@ -71,6 +78,16 @@ MIN_ACCEPTED = 2
 # It raises ValueError when the change can't be made to that base, and
 # BaseChanged when the base is not the one the person changed.
 Mutation = Callable[[Optional[dict]], Optional[Tuple[str, list]]]
+
+
+# What to do about a change not made, by its cause, one sentence each
+# (the relays' and the signer's are the shared ones of nostr/failures.py).
+CLOCK_BEHIND = N_("The version on the network is dated ahead of this computer’s clock: let "
+                  "this computer set its date and time automatically, then try again.")
+CHANGED_ELSEWHERE = N_("It was changed on another device in the meantime: try again to start "
+                       "from that version.")
+CANNOT_CHANGE = N_("MyEditor can’t make this change to the version on the network: make it "
+                   "in the app you set it up with.")
 
 
 class BaseChanged(ValueError):
@@ -101,6 +118,32 @@ def signed_matches(signed: object, unsigned: dict, author: str) -> bool:
             and signed.get("tags") == unsigned["tags"]
             and signed.get("created_at") == unsigned["created_at"]
             and str(signed.get("pubkey", "")).lower() == author.lower())
+
+
+def failure_words(outcome: "WriteOutcome") -> str:
+    """Why ``outcome``'s change was not made and what to do, in one
+    sentence (translated): the relays turned it down, or none answered
+    (reading the current one or taking the change), the signer app did
+    not sign, the clock, a change made elsewhere meanwhile, or a current
+    one MyEditor cannot change. Never a relay's name or a count."""
+    if outcome.cause == CAUSE_SIGNER:
+        return signer_failure_words(outcome.reason)
+    if outcome.cause == CAUSE_CLOCK:
+        return _(CLOCK_BEHIND)
+    if outcome.cause == CAUSE_CHANGED:
+        return _(CHANGED_ELSEWHERE)
+    if outcome.cause == CAUSE_INVALID:
+        return _(CANNOT_CHANGE)
+    turned_down = any(failures.refused_by_relay(said) for _url, said in outcome.refused)
+    return _(failures.TURNED_DOWN if turned_down else failures.CHECK_CONNECTION)
+
+
+def failure_detail(outcome: "WriteOutcome") -> str:
+    """What the relays and the signer said of ``outcome``, for Details:
+    the reason, then each relay's answer, one per line."""
+    lines = [outcome.reason] if outcome.reason else []
+    lines += [f"{url}: {said}" for url, said in outcome.refused]
+    return "\n".join(lines)
 
 
 class ReplaceableWriter(QObject):
@@ -231,11 +274,10 @@ class ReplaceableWriter(QObject):
             refused = tuple((url, str(message or "no answer"))
                             for url, ok, message in results if not ok)
             if len(accepted) < min(self._min_accepted, len(targets)):
-                said = "; ".join(f"{url}: {message}" for url, message in refused[:4])
+                # What each said is in the outcome (failure_detail).
                 self._finish(WriteOutcome(
                     FAILED, event=event, accepted=accepted, refused=refused,
-                    reason="Too few relays accepted it." + (f" ({said})" if said else ""),
-                    cause=CAUSE_RELAYS))
+                    reason="Too few relays accepted it.", cause=CAUSE_RELAYS))
                 return
             if self._kind == KIND_RELAY_LIST:
                 self._directory.remember(event)
@@ -334,15 +376,12 @@ class AccountSetup(QObject):
         if outcome.ok:
             self._done["relays"] = outcome
         if not outcome.ok:
-            self.step.emit("relays", "error", _("The relays didn’t take it yet."))
-            self.finished.emit(False, _("Your account is saved, but the network doesn’t "
-                                        "know it yet. Check your internet connection and "
-                                        "try again."))
+            # Said once, by the window under the steps (lessons 36).
+            self.step.emit("relays", "error", "")
+            self.finished.emit(False, failure_words(outcome))
             return
-        count = len(outcome.accepted)
-        saved = ngettext("Saved on {count} relay.", "Saved on {count} relays.",
-                         count).format(count=count)
-        self.step.emit("relays", "done", saved if count else "")
+        # Never how many relays took it (lessons 36).
+        self.step.emit("relays", "done", "")
         if not self._name:
             self.step.emit("profile", "done", _("No name to publish."))
             self.finished.emit(True, "")
@@ -363,9 +402,8 @@ class AccountSetup(QObject):
         if outcome.ok:
             self._done["profile"] = outcome
         if not outcome.ok:
-            self.step.emit("profile", "error", _("Your name isn’t published yet."))
-            self.finished.emit(False, _("Your account is ready, but your profile isn’t "
-                                        "published yet. Try again in a moment."))
+            self.step.emit("profile", "error", "")
+            self.finished.emit(False, failure_words(outcome))
             return
         self.step.emit("profile", "done", "")
         self.finished.emit(True, "")

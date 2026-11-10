@@ -18,7 +18,7 @@ the help tooltip. Pure: no Qt.
 from __future__ import annotations
 
 import html
-from typing import Callable, Sequence, TypeVar
+from typing import Callable, Optional, Sequence, TypeVar
 
 from i18n import N_
 
@@ -49,6 +49,27 @@ SIGNER_SILENT = N_("Your signer app didn’t answer: open it and try again.")
 SIGNER_DECLINED = N_("Your signer app declined the request: allow it there and try again.")
 # The signer app answered with an error of its own.
 SIGNER_FAILED = N_("Your signer app ran into a problem: open it and try again.")
+
+
+# NIP-01: a relay that turns an event down says why with one of these
+# words first; anything else (a timeout, a lost connection) never reached
+# one. "duplicate" is not among them: that relay has the event already.
+_REFUSALS = ("auth-required", "blocked", "error", "invalid", "mute", "pow",
+             "rate-limited", "restricted")
+
+
+def answer_prefix(message: str) -> Optional[str]:
+    """The machine-readable word before the colon of a relay's answer
+    (NIP-01), lower case, or None when it has none."""
+    prefix, colon, _rest = (message or "").partition(":")
+    return prefix.strip().lower() if colon else None
+
+
+def refused_by_relay(message: str) -> bool:
+    """Whether a relay's "not taken" answer is a refusal (said as
+    :data:`TURNED_DOWN`) rather than no answer at all (said as
+    :data:`CHECK_CONNECTION`)."""
+    return answer_prefix(message) in _REFUSALS
 
 
 def retry_quietly(attempt: Callable[[Callable[[T], None]], None], *,
@@ -86,4 +107,4 @@ def spoken(*parts: str) -> str:
 
 __all__ = ["CAUSE_WORDS", "CHECK_CONNECTION", "CONNECTION", "QUIET_RETRY_MS", "SERVER",
            "SERVER_TROUBLE", "SIGNER_DECLINED", "SIGNER_FAILED", "SIGNER_SILENT", "TURNED_DOWN",
-           "markup", "retry_quietly", "spoken"]
+           "answer_prefix", "markup", "refused_by_relay", "retry_quietly", "spoken"]

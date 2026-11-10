@@ -34,8 +34,11 @@ from typing import Callable, Dict, Optional
 import shiboken6
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from alerts import CANCEL, DEFAULT, DESTRUCTIVE, Button, ask, confirm_destructive, inform
-from i18n import _
+from alerts import (
+    CANCEL, DEFAULT, DESTRUCTIVE, Button, ask, ask_try_again, confirm_destructive, inform,
+)
+from i18n import N_, _
+from nostr import failures
 from nostr.outbox import writer as outbox_writer
 from nostr.outbox.defaults import STARTER_LIST
 from nostr.outbox.lookup import fetch_replaceable
@@ -61,6 +64,13 @@ def _profile_name(event) -> str:
         return ""
     name = content.get("display_name") or content.get("name") or ""
     return name.strip() if isinstance(name, str) else ""
+
+
+# A restore step no relay answered, after the quiet reads: the one line in
+# place, no alert (lessons 36), and never "not found" (lesson 30). The
+# profile is read again whenever the account is made the active one, and
+# the relay list before anything is published.
+_NOT_CHECKED = N_("Not checked yet: MyEditor looks again later.")
 
 
 class _Report:
@@ -93,10 +103,13 @@ class AccountController(QObject):
 
     def __init__(self, *, relay_pool, directory, vault, session_pool, store, window,
                  is_dark: Callable[[], bool] = lambda: True, fetch=fetch_replaceable,
-                 writer_deps: Optional[dict] = None, parent: Optional[QObject] = None) -> None:
+                 writer_deps: Optional[dict] = None,
+                 later: Callable[[int, Callable[[], None]], None] = QTimer.singleShot,
+                 parent: Optional[QObject] = None) -> None:
         """``window`` is the parent of every window and alert shown here.
-        ``fetch`` and ``writer_deps`` (extra ReplaceableWriter arguments,
-        such as ``query`` and ``clock``) are seams for tests."""
+        ``fetch``, ``writer_deps`` (extra ReplaceableWriter arguments,
+        such as ``query`` and ``clock``) and ``later`` (the wait between
+        quiet reads) are seams for tests."""
         super().__init__(parent)
         self._relay_pool = relay_pool
         self._directory = directory
@@ -107,6 +120,7 @@ class AccountController(QObject):
         self._is_dark = is_dark
         self._fetch = fetch
         self._writer_deps = dict(writer_deps or {})
+        self._later = later
         # One setup per account at a time: the window's, or the one that
         # finishes a setup left for later.
         self._setups: Dict[str, QObject] = {}
@@ -292,6 +306,13 @@ class AccountController(QObject):
         window = _Report(report)
         state = {"relays": None}
 
+        # A read no relay answered is read again quietly before the step
+        # says so, in place and once (lessons 36): the account is restored
+        # either way.
+        def read(attempt, then) -> None:
+            failures.retry_quietly(attempt, on_done=then, later=self._later,
+                                   settled=lambda found: found.state is not LookupState.UNKNOWN)
+
         def relays_known(relay_list) -> None:
             state["relays"] = relay_list
             # In plain words: the step says what was looked for.
@@ -300,11 +321,11 @@ class AccountController(QObject):
             elif relay_list.state is LookupState.ABSENT:
                 window.step(STEP_RELAYS, "done", _("None yet."))
             else:
-                window.step(STEP_RELAYS, "error", _("Couldn’t check right now."))
+                window.step(STEP_RELAYS, "error", _(_NOT_CHECKED))
             window.step(STEP_PROFILE, "active")
-            self._fetch(self._relay_pool, lookup_relays(known=relay_list, own=True),
-                        kind=KIND_PROFILE,
-                        author=pubkey, on_done=profile_known, parent=self)
+            read(lambda answer: self._fetch(
+                self._relay_pool, lookup_relays(known=relay_list, own=True), kind=KIND_PROFILE,
+                author=pubkey, on_done=answer, parent=self), profile_known)
 
         def profile_known(result) -> None:
             name = _profile_name(result.event)
@@ -316,7 +337,7 @@ class AccountController(QObject):
                     self.profile_changed.emit(stored)
                 window.step(STEP_PROFILE, "done", _("Welcome back, {name}.").format(name=name))
             elif result.state is LookupState.UNKNOWN:
-                window.step(STEP_PROFILE, "error", _("Couldn’t check right now."))
+                window.step(STEP_PROFILE, "error", _(_NOT_CHECKED))
             else:
                 window.step(STEP_PROFILE, "done", _("No public profile found."))
             window.finished(True, "")
@@ -324,7 +345,7 @@ class AccountController(QObject):
                 QTimer.singleShot(0, lambda: self.offer_relay_list(profile))
 
         window.step(STEP_RELAYS, "active")
-        self._directory.lookup(pubkey, relays_known, fresh=True)
+        read(lambda answer: self._directory.lookup(pubkey, answer, fresh=True), relays_known)
 
     # -- relay lists ---------------------------------------------------------------
 
@@ -352,20 +373,35 @@ class AccountController(QObject):
         if choice is not True:
             self._relay_list_declined.add(profile.user_pubkey)
             return
+        self._publish_relay_list(profile)
+
+    def _publish_relay_list(self, profile, signed: Optional[dict] = None) -> None:
+        """Publish the recommended relay list; ``signed``, one signed for it
+        before, is sent again as it is, the signer app not asked twice."""
         writer = outbox_writer.create_relay_list(parent=self, **self._outbox_deps(profile))
 
         def done(outcome) -> None:
+            writer.deleteLater()
             if outcome.status == outbox_writer.WRITTEN:
                 self.status.emit(_("Your relay list is published."), 5000)
-            elif outcome.status == outbox_writer.EXISTS:
+                return
+            if outcome.status == outbox_writer.EXISTS:
                 self.status.emit(_("This account already has a relay list."), 5000)
-            else:
-                self.status.emit(_("The relay list wasn’t published. Try again later."),
-                                 6000)
-            writer.deleteLater()
+                return
+            # Said once (lessons 36): what did not happen, why and what to
+            # do, what the relays said behind Details, and Try Again.
+            again = writer.signed if outcome.cause == outbox_writer.CAUSE_RELAYS else None
+            if ask_try_again(self._window, title=_("Your relay list wasn’t published"),
+                             message=outbox_writer.failure_words(outcome),
+                             details=outbox_writer.failure_detail(outcome),
+                             is_dark=self._is_dark(), nostr=True):
+                self._publish_relay_list(profile, again)
 
         writer.finished.connect(done)
-        writer.start()
+        if signed is not None:
+            writer.publish_signed(signed)
+        else:
+            writer.start()
 
     def _outbox_deps(self, profile) -> dict:
         return {"pool": self._relay_pool, "directory": self._directory,

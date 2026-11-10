@@ -455,11 +455,15 @@ def test_one_accepting_relay_is_not_enough_and_the_refusals_are_named():
     base = signed(10002, [["r", "wss://a.com"]])
     everyone_but_a = set(defaults.INDEXER_RELAYS) | {"wss://m.com"}
     outcome = run(writer.add_relay(url="wss://m.com", **deps(
-        FakeQuery({10002: found(base)}), pool=FakePool(refuse=everyone_but_a))))
+        FakeQuery({10002: found(base)}),
+        pool=FakePool(refuse=everyone_but_a, reason="blocked: members only"))))
     assert outcome.status == writer.FAILED and outcome.cause == writer.CAUSE_RELAYS
     assert outcome.accepted == ("wss://a.com",)
-    assert ("wss://m.com", "blocked") in outcome.refused
-    assert "wss://m.com: blocked" in outcome.reason
+    assert ("wss://m.com", "blocked: members only") in outcome.refused
+    assert "wss://m.com: blocked: members only" in writer.failure_detail(outcome)   # Details
+    # The relays answered and turned it down: said as that, never by name.
+    assert writer.failure_words(outcome) == ("The servers your posts go to turned it down: "
+                                             "try again later.")
 
 
 def test_a_write_is_done_once_enough_relays_accept_it():
@@ -591,23 +595,74 @@ def test_a_retry_skips_the_steps_already_done():
 
 def test_a_retry_resends_the_same_signed_events():
     pool = FakePool(refuse=set(policy.dedupe_relays(
-        [u for u, _m in defaults.STARTER_LIST], defaults.INDEXER_RELAYS)))
+        [u for u, _m in defaults.STARTER_LIST], defaults.INDEXER_RELAYS)),
+        reason="rate-limited: slow down")
     client = FakeClient()
     setup = writer.AccountSetup(name="", deps={
         "pool": pool, "directory": directory(FakeQuery()),
         "session_pool": FakeSessionPool(client), "profile": Profile(),
         "query": FakeQuery(), "clock": lambda: NOW})
-    results = []
-    setup.finished.connect(lambda ok, msg: results.append(ok))
+    results, steps = [], []
+    setup.finished.connect(lambda ok, msg: results.append((ok, msg)))
+    setup.step.connect(lambda k, s, d: steps.append((k, s, d)))
     setup.start()
     settle(20)
-    assert results == [False]
+    # Lessons 36: said once, by its cause (the relays turned it down), with
+    # no relay named or counted, in the step or under it.
+    assert results == [(False, "The servers your posts go to turned it down: try again "
+                               "later.")]
+    assert ("relays", "error", "") in steps
     pool.refuse = set()
+    steps.clear()
     setup.start()
     settle(20)
-    assert results == [False, True]
+    assert [ok for ok, _msg in results] == [False, True]
     assert len(client.requests) == 1             # signed once, sent twice
+    assert ("relays", "done", "") in steps       # never how many took it
     assert pool.published[0][1]["id"] == pool.published[1][1]["id"]
+
+
+def test_a_profile_the_signer_did_not_sign_is_said_by_the_signer_sentence():
+    setup = writer.AccountSetup(name="Satoshi", deps={
+        "pool": FakePool(), "directory": directory(FakeQuery()),
+        "session_pool": FakeSessionPool(ProfileShyClient()), "profile": Profile(),
+        "query": FakeQuery(), "clock": lambda: NOW})
+    results, steps = [], []
+    setup.finished.connect(lambda ok, msg: results.append((ok, msg)))
+    setup.step.connect(lambda k, s, d: steps.append((k, s, d)))
+    setup.start()
+    settle(20)
+    assert results == [(False, "Your signer app ran into a problem: open it and try again.")]
+    assert ("profile", "error", "") in steps
+
+
+@pytest.mark.parametrize("outcome, words", [
+    (writer.WriteOutcome(writer.UNKNOWN_BASE, cause=writer.CAUSE_RELAYS),
+     "Check your internet connection and try again."),
+    (writer.WriteOutcome(writer.FAILED, cause=writer.CAUSE_RELAYS,
+                         refused=(("wss://a.com", "no answer"),)),
+     "Check your internet connection and try again."),
+    (writer.WriteOutcome(writer.FAILED, cause=writer.CAUSE_RELAYS,
+                         refused=(("wss://a.com", "no answer"), ("wss://b.com", "blocked: no"))),
+     "The servers your posts go to turned it down: try again later."),
+    (writer.WriteOutcome(writer.FAILED, cause=writer.CAUSE_SIGNER, reason="user rejected"),
+     "Your signer app declined the request: allow it there and try again."),
+    (writer.WriteOutcome(writer.FAILED, cause=writer.CAUSE_SIGNER,
+                         reason="timed out waiting for signer"),
+     "Your signer app didn’t answer: open it and try again."),
+    (writer.WriteOutcome(writer.FAILED, cause=writer.CAUSE_CLOCK),
+     "The version on the network is dated ahead of this computer’s clock: let this computer "
+     "set its date and time automatically, then try again."),
+    (writer.WriteOutcome(writer.FAILED, cause=writer.CAUSE_CHANGED),
+     "It was changed on another device in the meantime: try again to start from that "
+     "version."),
+    (writer.WriteOutcome(writer.FAILED, cause=writer.CAUSE_INVALID),
+     "MyEditor can’t make this change to the version on the network: make it in the app "
+     "you set it up with."),
+])
+def test_a_change_not_made_is_one_sentence_by_its_cause(outcome, words):
+    assert writer.failure_words(outcome) == words
+    assert "wss://" not in words
 
 
 def finish_later(query, client, pool=None):

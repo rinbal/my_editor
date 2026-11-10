@@ -238,7 +238,7 @@ from nostr.media_server_list import publish_server_list, server_list_tags
 from nostr.outbox import writer as outbox_writer
 from nostr.profile_editing import ProfileEditing
 from nostr.relay import NOT_CHOSEN
-from nostr.relay_auth import DECLINED, AccountSignIn
+from nostr.relay_auth import AccountSignIn
 from nostr.state import NostrState
 from nostr.ui.cover_field import MediaServices
 from nostr.ui.profile_window import ProfileWindow
@@ -675,7 +675,9 @@ class MainWindow(QMainWindow):
             profile=lambda: self._profile_store.default(),
             session_pool=self._session_pool, directory=self._relay_directory,
             entitled=self._entitled_relays)
-        self._relay_pool.signing_in.connect(self._on_relay_signing_in)
+        # A sign-in to one relay that did not work is a partial failure,
+        # said nowhere (lessons 36): what it kept from working says so
+        # itself, once, if nothing else could do it.
         self._relay_pool.sign_in_failed.connect(self._on_relay_sign_in_failed)
         # Creating, restoring, backing up and signing out of accounts, and
         # telling the network about a new one (nostr/account_controller.py).
@@ -8652,19 +8654,13 @@ class MainWindow(QMainWindow):
 
     # -- relays that ask for a sign-in (NIP-42) -------------------------------
 
-    def _on_relay_signing_in(self, relay: str) -> None:
-        self.status.showMessage(_("Signing in to {relay}…").format(relay=relay), 5000, nostr=True)
-
     def _on_relay_sign_in_failed(self, relay: str, reason: str, answered: bool) -> None:
-        if reason == NOT_CHOSEN:
-            return
-        if answered:
-            text = _("{relay} didn’t accept your sign-in.")
-        elif reason == DECLINED:
-            text = _("{relay} asks you to sign in, and your signer app declined.")
-        else:
-            text = _("Couldn’t sign in to {relay}.")
-        self.status.showMessage(text.format(relay=relay), 8000, nostr=True, error=True)
+        """Counted for the log, never for words (lessons 36): which relay,
+        and why, is no business of the person writing."""
+        if reason != NOT_CHOSEN:
+            logging.getLogger(__name__).info(
+                "sign-in to %s did not work (%s, %s)", relay, reason[:200],
+                "refused" if answered else "not done")
 
     # -- association membership --------------------------------------------
 

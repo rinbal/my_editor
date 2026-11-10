@@ -86,6 +86,10 @@ class Alerts:
     def inform(self, parent, **kw):
         self.asked.append(kw)
 
+    def try_again(self, parent, **kw):
+        self.asked.append(kw)
+        return self.answers.pop(0) if self.answers else False
+
 
 @pytest.fixture
 def alerts(monkeypatch):
@@ -93,6 +97,7 @@ def alerts(monkeypatch):
     monkeypatch.setattr(ac, "ask", found_alerts.ask)
     monkeypatch.setattr(ac, "confirm_destructive", found_alerts.confirm)
     monkeypatch.setattr(ac, "inform", found_alerts.inform)
+    monkeypatch.setattr(ac, "ask_try_again", found_alerts.try_again)
     monkeypatch.setattr(aw, "ask", lambda parent, **kw: False)
     return found_alerts
 
@@ -125,11 +130,14 @@ class Setup:
         self.sessions = BunkerSessionPool(pool=None, vault=self.vault)
         self.window = QWidget()
         self.fetched = []
+        # The quiet reads' waits, each run at once (the read is the test's).
+        self.waits = []
         self.controller = ac.AccountController(
             relay_pool=self.relays, directory=self.directory, vault=self.vault,
             session_pool=self.sessions, store=self.store, window=self.window,
             fetch=fetch or self.fetch, writer_deps={"query": self.query,
-                                                    "clock": lambda: NOW})
+                                                    "clock": lambda: NOW},
+            later=lambda ms, then: (self.waits.append(ms), then()))
         self.activated, self.statuses = [], []
         self.controller.activate.connect(self.activated.append)
         self.controller.status.connect(lambda text, ms: self.statuses.append(text))
@@ -274,6 +282,87 @@ def test_the_relay_list_is_published_when_the_person_says_so(tmp_path, alerts):
     settle()
     assert s.kinds_published() == [10002]
     assert "Your relay list is published." in s.statuses
+
+
+def test_a_relay_list_no_relay_took_is_said_once_and_try_again_sends_the_same_one(
+        tmp_path, alerts, monkeypatch):
+    s = Setup(tmp_path)
+    s.relays.refuse = Everything()
+    s.relays.reason = "restricted: members only"
+    profile = s.local_account()
+    said = []
+
+    def try_again(parent, **kw):
+        # Lessons 36: what did not happen, its cause in one sentence, what
+        # each relay said only behind Details; no status line meanwhile.
+        said.append(dict(kw, statuses=list(s.statuses), sent=s.relays.published[-1][1]))
+        s.relays.refuse = set()                     # the relays take it now
+        return True
+    monkeypatch.setattr(ac, "ask_try_again", try_again)
+    alerts.answers.append(True)                     # Publish Relay List
+    s.controller.offer_relay_list(profile)
+    settle()
+    asked, = said
+    assert asked["title"] == "Your relay list wasn’t published"
+    assert asked["message"] == "The servers your posts go to turned it down: try again later."
+    assert "restricted: members only" in asked["details"] and "wss://" in asked["details"]
+    assert "wss://" not in asked["title"] + asked["message"]
+    assert asked["statuses"] == []
+    assert s.relays.published[-1][1] == asked["sent"]       # the same, signed once (its sig)
+    assert s.statuses == ["Your relay list is published."]
+
+
+def test_a_relay_list_not_published_and_cancelled_is_not_sent_again(tmp_path, alerts):
+    s = Setup(tmp_path)
+    s.relays.refuse = Everything()
+    profile = s.local_account()
+    alerts.answers.append(True)                     # Publish Relay List; then Cancel
+    s.controller.offer_relay_list(profile)
+    settle()
+    sent = len(s.relays.published)
+    settle()
+    assert alerts.asked[1]["message"] == "Check your internet connection and try again."
+    assert len(s.relays.published) == sent and s.statuses == []
+
+
+def test_a_restore_no_relay_answered_reads_again_quietly_then_says_so_in_place(
+        tmp_path, alerts):
+    s = Setup(tmp_path, answers={})                 # nothing answers
+    profile = s.local_account(name="")
+    report = SetupReport()
+    steps, finished = [], []
+    report.step.connect(lambda key, state, detail: steps.append((key, state, detail)))
+    report.finished.connect(lambda ok, msg: finished.append(ok))
+    s.controller._account_ready(profile, "", report, created=False)
+    settle()
+    # Lessons 36 and 30: read again quietly, then one line in place, never
+    # "not found", and no alert; the account is restored either way.
+    assert s.waits == [2_000, 6_000, 15_000] * 2
+    assert [c["kind"] for c in s.query.calls].count(10002) == 4
+    assert s.fetched.count(0) == 4
+    assert (STEP_RELAYS, "error", "Not checked yet: MyEditor looks again later.") in steps
+    assert (STEP_PROFILE, "error", "Not checked yet: MyEditor looks again later.") in steps
+    assert finished == [True] and alerts.asked == []
+
+
+def test_a_restore_read_that_answers_on_a_quiet_try_says_what_it_found(tmp_path, alerts):
+    s = Setup(tmp_path, answers={0: ABSENT})
+    tries = []
+
+    def answer_second(query):
+        def call(pool, relays, *, kind, author, on_done, timeout_ms=6000, parent=None):
+            tries.append(kind)
+            on_done(ABSENT if len(tries) > 1 else Lookup(LookupState.UNKNOWN))
+        return call
+    s.directory = RelayDirectory(FakePool(), query=answer_second(s.query), store_path=None)
+    s.controller._directory = s.directory
+    profile = s.local_account(name="")
+    report = SetupReport()
+    steps = []
+    report.step.connect(lambda key, state, detail: steps.append((key, state, detail)))
+    s.controller._account_ready(profile, "", report, created=False)
+    settle()
+    assert s.waits == [2_000] and (STEP_RELAYS, "done", "None yet.") in steps
 
 
 def test_a_restored_name_is_learned_and_a_strange_profile_is_survived(tmp_path, alerts):
