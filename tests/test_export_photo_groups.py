@@ -159,8 +159,10 @@ def test_a_lone_wide_picture_is_carried(app):
 
 
 def test_the_plain_and_r_markdown_writers_write_the_paragraphs(app, monkeypatch):
-    """What the publishing text and the .Rmd export write of a document
-    with groups is what they wrote of it before there were groups."""
+    """What the publishing text writes of a document with groups is what
+    it wrote of it before there were groups; the .Rmd export writes the
+    rest as before, and the group as a div of its pictures
+    (tests/test_rmarkdown_photo_groups.py)."""
     from doc_walk import serialize_plain_with_images
     from rmarkdown import document_to_rmd
     grouped = _doc()
@@ -178,7 +180,9 @@ def test_the_plain_and_r_markdown_writers_write_the_paragraphs(app, monkeypatch)
 
     def body(doc):
         return document_to_rmd(doc, "Bothy", copy_image=lambda name: name).split("---", 2)[2]
-    assert body(grouped) == body(paragraphs)
+    before, after = re.split(r"\n::: \{\.photo-group\}\n.*?\n:::\n", body(grouped), flags=re.S)
+    assert body(paragraphs).startswith(before.rstrip("\n"))
+    assert body(paragraphs).endswith(after.lstrip("\n"))
     assert body(grouped).count("![") == 8
 
 

@@ -26,15 +26,22 @@ quoting can corrupt it.
 from __future__ import annotations
 
 import datetime
+import html
 import json
 import os
 import re
 from dataclasses import dataclass
+from html.parser import HTMLParser
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, Signal
-from PySide6.QtGui import QTextBlockFormat, QTextCharFormat, QTextListFormat
+from PySide6.QtGui import (
+    QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument, QTextListFormat,
+)
 
+import atomic_file
+import export_html
 import photo_group
+import photo_layout
 from doc_walk import (
     bullet_depth,
     iter_block_runs,
@@ -42,6 +49,7 @@ from doc_walk import (
     parse_bullet_line,
     skip_prefix,
 )
+from image_safety import MAX_PICTURE_BYTES, data_uri_bytes, declared_size
 from markdown_writer import link_markdown
 import rich_text
 import rmd_toolchain
@@ -196,11 +204,41 @@ def _list_item_md(block, copy_image) -> str:
     return "    " * (depth - 1) + marker + " " + content
 
 
+# A photo group in R Markdown: a fenced div of this class holding one
+# paragraph, a line for each picture and each caption (_group_rmd).
+GROUP_CLASS = "photo-group"
+_UNAVAILABLE_MD = "*[image unavailable]*"
+
+
+def _group_rmd(group, copy_image) -> list[str]:
+    """A photo group as R Markdown: a fenced div (pandoc's) around one
+    paragraph, its pictures and captions on lines joined by hard breaks.
+    A knitted PDF or Word document shows them one under another, as other
+    apps do (one paragraph: no figure floats away, no description turns
+    into a caption); a page knitted here lays them out as the HTML export
+    does (lay_out_knitted_groups). A wide picture carries ``{.wide}``."""
+    lines: list[str] = []
+    for unit in group.units:
+        target = copy_image(photo_group.without_wide(unit.name)) if copy_image else None
+        if isinstance(target, str) and target:
+            lines.append(f"![{_escape_md(unit.alt)}]({target})" + ("{.wide}" if unit.wide else ""))
+        else:
+            lines.append(_UNAVAILABLE_MD)
+        if unit.caption is None or not unit.caption_text.strip():
+            continue
+        caption = QTextDocument()
+        QTextCursor(caption).insertFragment(unit.caption)
+        for block in iter_blocks(caption):
+            text = _render_runs_md(list(iter_block_runs(block)), copy_image).strip()
+            if text:
+                lines.extend(_guard_line_start(line) for line in text.split("\\\n"))
+    return [f"::: {{.{GROUP_CLASS}}}", "\\\n".join(lines), ":::"]
+
+
 def document_to_rmd(doc, title: str, copy_image=None) -> str:
-    """Convert a rich QTextDocument to an R Markdown source string. A
-    photo group is written as the paragraphs it was read from: a knitted
-    page shows its pictures one under another."""
-    doc = photo_group.unfolded(doc)
+    """Convert a rich QTextDocument to an R Markdown source string, a
+    photo group as its pictures in a div of their own (_group_rmd)."""
+    groups = photo_group.groups_in(doc)
     header = "\n".join([
         "---",
         f"title: {json.dumps(title)}",
@@ -214,7 +252,24 @@ def document_to_rmd(doc, title: str, copy_image=None) -> str:
     lines: list[str] = []
     prev_kind = None  # None | "text" | "bullet" | "blank" | "quote"
     prev_quote = 0
+    next_group, written = 0, -1
     for block in iter_blocks(doc):
+        # A block of a group's tables (or one Qt keeps around them): the
+        # group is written where its first one is, the rest skipped.
+        position = block.position()
+        while next_group < len(groups) and position > groups[next_group].end:
+            next_group += 1
+        if next_group < len(groups) and groups[next_group].start <= position \
+                and position + block.length() - 1 <= groups[next_group].end:
+            group = groups[next_group]
+            if written != next_group:
+                written = next_group
+                if prev_kind not in (None, "blank"):
+                    lines.append("")
+                lines.extend(_group_rmd(group, copy_image))
+                lines.append("")
+                prev_kind = "blank"
+            continue
         text = block.text()
         spaces, has_bullet = parse_bullet_line(text)
 
@@ -312,6 +367,127 @@ def _media_link(block, copy_image):
         return None
     target = copy_image(fmt.toImageFormat().name())
     return target if isinstance(target, MediaLink) else None
+
+
+# --------------------------------------------------------------------------- #
+# Photo groups on a knitted page                                              #
+# --------------------------------------------------------------------------- #
+#
+# pandoc writes a group's fenced div (_group_rmd) as that div around one
+# paragraph, the pictures and captions in it on lines joined by <br />,
+# each picture an <img> its own line (self_contained: its bytes a data:
+# URI). That is what is read here; a group in any other shape stays as
+# pandoc wrote it, its pictures one under another.
+
+_GROUP_PARAGRAPH = re.compile(
+    r'<div class="' + GROUP_CLASS + r'">\s*<p>(.*?)</p>\s*</div>', re.S)
+_LINE_BREAK = re.compile(r"<br\s*/?>")
+_PICTURE_LINE = re.compile(r"(<img\s[^>]*>)", re.S)
+_UNAVAILABLE_HTML = "<em>[image unavailable]</em>"
+_TAG = re.compile(r"<[^>]*>")
+# A caption is shown as the export shows it: in its words, not in italic.
+_EMPHASIS = re.compile(r"</?(?:em|i)(?:\s[^>]*)?>")
+
+
+class _ImgAttributes(HTMLParser):
+    def __init__(self, tag: str):
+        super().__init__(convert_charrefs=True)
+        self.attributes: dict = {}
+        self.feed(tag)
+        self.close()
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "img" and not self.attributes:
+            self.attributes = {name: value or "" for name, value in attrs}
+
+    handle_startendtag = handle_starttag
+
+
+def _knitted_figure(tag: str):
+    attributes = _ImgAttributes(tag).attributes
+    src = attributes.get("src") or None
+    size = None
+    data = data_uri_bytes(src) if src else None
+    if data is not None and len(data) <= MAX_PICTURE_BYTES:
+        found = declared_size(data)
+        if found is not None:
+            size = photo_layout.picture_size(found.width(), found.height())
+    # pandoc may break a long line where a description has a space.
+    alt = " ".join(attributes.get("alt", "").split())
+    return export_html.GroupFigure(src, size, None, alt,
+                                   wide="wide" in attributes.get("class", "").split())
+
+
+def _knitted_figures(paragraph: str):
+    """The figures of a group's paragraph, or None when it is not one."""
+    figures: list = []
+    captions: list[str] = []
+
+    def close_caption():
+        if figures and captions:
+            # A line pandoc wrapped is one line of words again.
+            words = " ".join(_EMPHASIS.sub("", "<br>".join(captions)).split())
+            figures[-1].caption_html = words
+            figures[-1].caption_text = html.unescape(_TAG.sub("", words)).strip()
+        captions.clear()
+
+    for line in _LINE_BREAK.split(paragraph):
+        line = line.strip()
+        if not line:
+            continue
+        picture = _PICTURE_LINE.fullmatch(line)
+        if picture is not None or line == _UNAVAILABLE_HTML:
+            close_caption()
+            figures.append(_knitted_figure(picture.group(1)) if picture is not None
+                           else export_html.GroupFigure(None, None, None, ""))
+        elif figures and "<img" not in line:
+            captions.append(line)
+        else:
+            return None          # words before the first picture, or two on a line
+    close_caption()
+    return figures if len(figures) >= 2 else None
+
+
+def lay_out_knitted_groups(page: str) -> str:
+    """``page``, knitted from R Markdown MyEditor wrote, with each photo
+    group as the HTML export writes it (export_html.group_figures_html),
+    and the groups' stylesheet and scripts in it once. In the page's own
+    light colours: a knitted page does not change with Dark Mode."""
+    laid = [False]
+
+    def group(match):
+        figures = _knitted_figures(match.group(1))
+        if figures is None:
+            return match.group(0)
+        laid[0] = True
+        return export_html.group_figures_html(figures)
+
+    out = _GROUP_PARAGRAPH.sub(group, page)
+    body = out.find("<body")
+    head_end = out.rfind("</head>", 0, body) if body >= 0 else -1
+    body_end = out.rfind("</body>")
+    if not laid[0] or head_end < 0 or body_end < body:
+        return page
+    style = f"<style>{export_html.group_head(dark=False)}</style>\n"
+    out = out[:body_end] + export_html.group_scripts() + out[body_end:]
+    return out[:head_end] + style + out[head_end:]
+
+
+def lay_out_groups_in(path: str) -> None:
+    """lay_out_knitted_groups for the page at ``path``, in place. A page
+    that cannot be read or written stays as pandoc wrote it (its pictures
+    one under another), and nothing is said."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            page = f.read()
+    except (OSError, UnicodeDecodeError):
+        return
+    laid = lay_out_knitted_groups(page)
+    if laid != page:
+        try:
+            atomic_file.write_text(path, laid)
+        except OSError:
+            pass
 
 
 def media_dir_for(rmd_path: str) -> str:
@@ -464,6 +640,8 @@ class KnitRunner(QObject):
         if exit_code == 0:
             out_path = parse_output_path(self._output, self._rmd_path, self._fmt)
             if out_path:
+                if self._fmt == "html":
+                    lay_out_groups_in(out_path)
                 self.finished.emit(out_path)
             else:
                 self.failed.emit("render-error",

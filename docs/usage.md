@@ -392,6 +392,8 @@ Files are saved when you choose Save. What you type is backed up as you go (two 
 Knitting saves the tab, then renders the file through `rmarkdown::render` and
 opens the result.
 
+Pictures that follow each other (a photo group) are saved to R Markdown as one paragraph in a `::: {.photo-group}` block, a picture or a caption on each line. Knit to HTML lays them out side by side in rows, as a document saved as `.html` shows them. In a PDF or Word document knit from the file, here or in RStudio, they stand one under another, each picture with its caption under it, as other apps show them.
+
 If R, pandoc, or the rmarkdown package are missing, the editor offers to install
 them from their official sources (CRAN and the pandoc GitHub releases) into a
 private app library. Nothing is downloaded without confirmation, and an existing

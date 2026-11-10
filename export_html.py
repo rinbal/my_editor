@@ -41,7 +41,9 @@ import base64
 import html
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional, Sequence, Tuple
 
 from PySide6.QtGui import (
     QTextBlockFormat,
@@ -307,9 +309,24 @@ def _group_words() -> dict:
     }
 
 
-def _group_head() -> str:
+_GROUP_DARK = f"""    @media (prefers-color-scheme: dark) {{
+      .article-content {{
+        --theme-bg-subtle: #2a2a2c;
+        --theme-text-muted: #a8a49c;
+        --theme-text-heading: {DARK_FG};
+        --theme-accent: #8c9eff;
+        --e21-on-accent: #111;
+        --article-link: #8ab4ff;
+      }}
+    }}
+"""
+
+
+def group_head(dark: bool = True) -> str:
     """The stylesheet of photo groups, with the colours and type of this
-    page in the variables it reads."""
+    page in the variables it reads; ``dark``: also the colours of Dark
+    Mode (a page that does not change with it, as a knitted one, keeps
+    the light ones)."""
     return (f"""
     .article-content {{
       /* As STANDUP's article (article.css): a word longer than its
@@ -325,22 +342,13 @@ def _group_head() -> str:
       --article-gutter: 1rem;
       --e21-ui-font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     }}
-    @media (prefers-color-scheme: dark) {{
-      .article-content {{
-        --theme-bg-subtle: #2a2a2c;
-        --theme-text-muted: #a8a49c;
-        --theme-text-heading: {DARK_FG};
-        --theme-accent: #8c9eff;
-        --e21-on-accent: #111;
-        --article-link: #8ab4ff;
-      }}
-    }}
-    .article-content img[data-pg-open] {{ cursor: zoom-in; }}
+{_GROUP_DARK if dark else ""}    .article-content img[data-pg-open] {{ cursor: zoom-in; }}
     .article-content img[data-pg-open]:focus-visible {{ outline: 2px solid var(--article-link); outline-offset: 3px; }}
 """ + (_WEB / "photo_groups.css").read_text(encoding="utf-8"))
 
 
-def _group_scripts() -> str:
+def group_scripts() -> str:
+    """The words and the scripts of photo groups, inline."""
     words = json.dumps(_group_words(), ensure_ascii=False).replace("</", "<\\/")
     return (f'<script type="application/json" id="e21-photo-words">{words}</script>\n'
             f'<script>\n{(_WEB / "photo_groups.js").read_text(encoding="utf-8")}</script>\n'
@@ -364,49 +372,72 @@ def _caption_html(caption, render_image) -> str:
     return _render_runs(runs, render_image)
 
 
-def _group_html(group, picture_of, render_image) -> str:
+@dataclass
+class GroupFigure:
+    """One picture of a photo group as a page shows it: its src (a data:
+    URI or an address; None when it cannot be had), its pixel size (None:
+    not known, laid out as 3:2 until it is), where it came from, its
+    description, its caption as HTML and as text, and whether it is wide."""
+
+    src: Optional[str]
+    size: Optional[Tuple[int, int]]
+    source: Optional[str]
+    alt: str
+    caption_html: str = ""
+    caption_text: str = ""
+    wide: bool = False
+
+
+def group_figures_html(figures: Sequence[GroupFigure]) -> str:
     """One photo group as STANDUP's renderer writes it (md.py,
     _image_group): the engine's cells in Markdown order, each picture a
-    figure with its shape and its place, its caption under it."""
-    units = group.units
-    pictures = [picture_of(unit.name) for unit in units]
-    items = [photo_group.item(size, unit.caption_text, unit.wide)
-             for unit, (_src, size, _source) in zip(units, pictures)]
+    figure with its shape and its place, its caption under it. The one
+    writer of a group's markup, for the export and for a knitted page."""
+    items = [photo_group.item(f.size, f.caption_text, f.wide) for f in figures]
     result = photo_layout.layout(items)
 
     def figure(index: int, properties) -> str:
-        unit = units[index]
-        src, size, source = pictures[index]
-        alt = html.escape(unit.alt, quote=True)
-        cls = ("e21-figure" + (" e21-figure--wide" if unit.wide else "")
+        f = figures[index]
+        alt = html.escape(f.alt, quote=True)
+        cls = ("e21-figure" + (" e21-figure--wide" if f.wide else "")
                + (" e21-pg-cell" if properties is not None else ""))
-        style = f"--ar:{size[0]}/{size[1]}" if size else "--ar:3/2"
+        style = f"--ar:{f.size[0]}/{f.size[1]}" if f.size else "--ar:3/2"
         if properties:
             style += ";" + photo_layout.style_text(properties)
-        provisional = "" if size else " data-provisional"
-        if src is None:
+        provisional = "" if f.size else " data-provisional"
+        if f.src is None:
             img = f"<em>{html.escape(_('[image unavailable]'))}</em>"
         else:
-            img = f'<img src="{html.escape(src, quote=True)}" alt="{alt}"'
-            if size:
-                img += f' width="{size[0]}" height="{size[1]}"'
-            if source:
-                img += f' data-source-url="{html.escape(source, quote=True)}"'
+            img = f'<img src="{html.escape(f.src, quote=True)}" alt="{alt}"'
+            if f.size:
+                img += f' width="{f.size[0]}" height="{f.size[1]}"'
+            if f.source:
+                img += f' data-source-url="{html.escape(f.source, quote=True)}"'
             # Its bytes are in the page already: nothing to wait for (and
             # a page printed or saved as PDF shows every picture).
-            img += ' decoding="async">' if src.startswith("data:") else \
+            img += ' decoding="async">' if f.src.startswith("data:") else \
                 ' loading="lazy" decoding="async">'
-        caption = _caption_html(unit.caption, render_image) if unit.caption_text.strip() else ""
-        caption = f"<figcaption>{caption}</figcaption>" if caption else ""
+        caption = f"<figcaption>{f.caption_html}</figcaption>" if f.caption_html else ""
         return f'<figure class="{cls}" style="{style}"{provisional}>{img}{caption}</figure>'
 
     track = photo_layout.group_html(photo_layout.group_markup(result, items), figure)
-    n = len(units)
+    n = len(figures)
     label = html.escape(ngettext("{n} photo", "{n} photos", n).format(n=n), quote=True)
     return (f'<div class="article-content"><div class="e21-imagegroup '
             f'e21-imagegroup--{n if n <= 4 else "many"}" role="group" aria-label="{label}" '
             f'data-layout="{photo_layout.notation(result)}">'
             f'<div class="e21-imagegroup-track">{track}</div></div></div>')
+
+
+def _group_html(group, picture_of, render_image) -> str:
+    """One photo group of the document (group_figures_html)."""
+    figures = []
+    for unit in group.units:
+        src, size, source = picture_of(unit.name)
+        caption = _caption_html(unit.caption, render_image) if unit.caption_text.strip() else ""
+        figures.append(GroupFigure(src, size, source, unit.alt, caption, unit.caption_text,
+                                   unit.wide))
+    return group_figures_html(figures)
 
 
 def _group_picture(name: str, policy, asset_resolver, remote_pictures, source_url_for):
@@ -606,8 +637,8 @@ def document_to_html(doc, title: str = "", source_url_for=None, *,
 
     page_title = html.escape(title or _("Untitled"))
     body_html = "\n".join(body)
-    head_css = _head_css() + (_group_head() if groups else "")
-    scripts = _group_scripts() if groups else ""
+    head_css = _head_css() + (group_head() if groups else "")
+    scripts = group_scripts() if groups else ""
     return f"""<!doctype html>
 <html>
 <head>
