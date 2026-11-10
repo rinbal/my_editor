@@ -630,12 +630,20 @@ def _build(cursor: QTextCursor, units: List[Unit], rows: List[_Row], arrangement
                     member_fmt.setTopPadding(gap)
                     member.setFormat(member_fmt)
                 _write_unit(member.firstCursorPosition(), units[index], caption_gap)
-            after = stack.lastCursorPosition()
-            after.movePosition(QTextCursor.MoveOperation.NextBlock)
-            _structural(after)
-        cursor = table.lastCursorPosition()
-        cursor.movePosition(QTextCursor.MoveOperation.NextBlock)
+            _structural(_after(stack))
+        cursor = _after(table)
         _structural(cursor)
+
+
+def _after(frame) -> QTextCursor:
+    """A cursor in the paragraph after ``frame``. (Placed, not moved there:
+    moving by a block asks the layout for the block's lines, and in an
+    edit block that lays the document out again for every group. And from
+    the frame's own cursor: a cursor made from ``frame.document()`` leaves
+    the caller's handle on an editor's document dead in PySide.)"""
+    cursor = frame.lastCursorPosition()
+    cursor.setPosition(frame.lastPosition() + 1)
+    return cursor
 
 
 def fold(doc: QTextDocument, sizes: Optional[SizeLookup] = None, *,
@@ -644,16 +652,20 @@ def fold(doc: QTextDocument, sizes: Optional[SizeLookup] = None, *,
     from Markdown; how many groups there are. ``sizes`` gives the pictures'
     sizes (by default the ones ``doc`` holds or the lookup it was given
     with install); ``narrow`` arranges them for a narrow column."""
+    # The pictures are read inside the edit block too: a cursor placed
+    # outside one asks the layout where it stands, and on a shown editor
+    # that lays out every paragraph the fold is about to replace.
+    cursor = QTextCursor(doc)
+    cursor.beginEditBlock()
     groups = find_groups(doc)
     if not groups:
+        cursor.endEditBlock()
         return 0
     if sizes is None:
         sizes = sizes_of(doc)
     gap = float(photo_layout.CONSTANTS["phone" if narrow else "regular"]["gap"])
     caption_gap = _caption_gap(doc)
     margin = round(GROUP_MARGIN_EM * _font_pixels(doc), 2)
-    cursor = QTextCursor(doc)
-    cursor.beginEditBlock()
     for group in reversed(groups):
         units = group.units
         for unit in units:
@@ -1215,9 +1227,16 @@ def _first_caption(doc, table):
     return None
 
 
+# Set on a document once install gave its layout a handler: a document
+# that never had one (read for an export, a check or a copy) is not given
+# a layout by asking, which would lay out every change made to it after.
+_INSTALLED = "photoGroupHandler"
+
+
 def _handler(doc) -> Optional[_Handler]:
-    layout = doc.documentLayout()
-    found = layout.handlerForObject(IMAGE_OBJECT)
+    if not doc.property(_INSTALLED):
+        return None
+    found = doc.documentLayout().handlerForObject(IMAGE_OBJECT)
     return found if isinstance(found, _Handler) else None
 
 
@@ -1235,6 +1254,7 @@ def install(doc: QTextDocument, sizes: Optional[SizeLookup] = None) -> None:
     handler = _Handler(layout, original, sizes)
     layout.registerHandler(IMAGE_OBJECT, handler)
     layout.registerHandler(SPACER_OBJECT, handler)
+    doc.setProperty(_INSTALLED, True)
 
 
 def set_screen_height(doc: QTextDocument, height: Optional[float]) -> None:
