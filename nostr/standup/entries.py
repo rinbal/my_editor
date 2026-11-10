@@ -23,10 +23,11 @@ merged and compared here, once, for every caller.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import hmac
 import json
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field, fields, replace
 from enum import Enum
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
@@ -34,6 +35,7 @@ from ..list_results import PublishResult
 from . import formats
 from .crypto import StandupCryptoError, secret_from_hex
 from .formats import FormatError
+from .js_values import MAX_SAFE, js_string, js_truthy, record_text
 
 _MAX_TEXT = 1_000
 # One wrap each for the Redaktion, the writer and every participant (15);
@@ -80,6 +82,12 @@ class SubmissionEntry:
     # before, for a contributor, and for an entry of a list written before
     # the field (read as not known to be stored).
     stored: bool = False
+    # The record as it was read, with :meth:`to_json` of the entry then:
+    # while the entry is unchanged, the list hashes and writes it back as
+    # read, no field added or dropped (:func:`record_json`). None for one
+    # built here.
+    read_as: Optional[Tuple[Any, Any]] = field(default=None, compare=False, hash=False,
+                                               repr=False)
 
     def to_json(self) -> Dict[str, Any]:
         value = dict(self.extra, **{name: getattr(self, name) for name in _ENTRY_FIELDS})
@@ -88,7 +96,8 @@ class SubmissionEntry:
         return value
 
 
-_ENTRY_FIELDS = tuple(f.name for f in fields(SubmissionEntry) if f.name != "extra")
+_ENTRY_FIELDS = tuple(f.name for f in fields(SubmissionEntry) if f.name not in ("extra",
+                                                                               "read_as"))
 # Fields a list written before them may lack: read as their default.
 _LATER_FIELDS = frozenset({"stored"})
 
@@ -167,7 +176,9 @@ def entry_from_json(value: Any) -> Optional[SubmissionEntry]:
     entry = SubmissionEntry(
         **{name: value[name] for name in _ENTRY_FIELDS if name in value},
         extra={key: item for key, item in value.items() if key not in _ENTRY_FIELDS})
-    return None if entry_problem(entry) else entry
+    if entry_problem(entry):
+        return None
+    return replace(entry, read_as=(copy.deepcopy(value), entry.to_json()))
 
 
 def status_key_hash(status_key: str) -> str:
@@ -230,7 +241,9 @@ def item_from_json(value: Any) -> ListItem:
         return entry
     sid = value.get("sid") if isinstance(value, dict) else None
     updated_at = value.get("updated_at") if isinstance(value, dict) else None
-    keyed = formats.is_hex64(sid) and formats.is_int(updated_at)
+    # Any integer the other apps read exactly (13: "an integer updated_at"),
+    # negative too.
+    keyed = formats.is_hex64(sid) and formats.is_int(updated_at, low=-MAX_SAFE)
     if keyed and value.get("deleted") is True:
         if set(value) == {"sid", "deleted", "updated_at"}:
             return Tombstone(sid=sid, updated_at=updated_at)
@@ -275,8 +288,10 @@ def record_key(item: ListItem) -> str:
     if isinstance(item, Tombstone):
         return item.status_key_hash or ""
     if is_tombstone(item):
+        # As every app names it (the reference, STANDUP): its value as
+        # JavaScript's String() writes it, "" when it is falsy.
         named = item.raw.get("status_key_hash")
-        return named if isinstance(named, str) else ""
+        return js_string(named) if js_truthy(named) else ""
     key = _status_key_of(item)
     return status_key_hash(key) if key is not None else ""
 
@@ -291,10 +306,25 @@ def _rank(item: ListItem) -> Tuple[bool, int, bool, str]:
     """The one order of the records of one identity (13 at 0456312): an
     entry the server stored beats every other record, so nothing removes
     it; then the newer ``updated_at``; at equal time a tombstone; then
-    the greater hash of the canonical JSON. A maximum under one order:
-    every merge of the same records, in any order, keeps the same one."""
+    the greater SHA-256 of the record's canonical JSON, the record as it
+    was read (:func:`record_json`, :func:`record_text`). A maximum under
+    one order: every merge of the same records, in any order, on any
+    device or app, keeps the same one."""
     return (_is_stored(item), item.updated_at, is_tombstone(item),
-            hashlib.sha256(_canonical_text(item.to_json()).encode("utf-8")).hexdigest())
+            hashlib.sha256(record_text(record_json(item)).encode("utf-8")).hexdigest())
+
+
+def record_json(item: ListItem) -> Any:
+    """A record as the list holds it: as it was read, with no field
+    added, defaulted or dropped (a missing ``stored`` stays missing, an
+    unknown field stays), unless it changed here since; one built or
+    changed here as this app writes it. What the merge hashes and what a
+    write puts back."""
+    if isinstance(item, SubmissionEntry) and item.read_as is not None:
+        raw, then = item.read_as
+        if item.to_json() == then:
+            return raw
+    return item.to_json()
 
 
 def merge_items(remote: SubmissionItems, local: SubmissionItems) -> SubmissionItems:
@@ -347,11 +377,12 @@ def records_of(items: Optional[SubmissionItems], sid: str) -> Tuple[ListItem, ..
 
 def is_tombstone(item: ListItem) -> bool:
     """Whether ``item`` is a removal: a tombstone, or one this app cannot
-    read that says it is deleted."""
+    read that says it is deleted (as the other apps read ``deleted``:
+    any value JavaScript takes for true)."""
     if isinstance(item, Tombstone):
         return True
     raw = item.raw if isinstance(item, ForeignItem) else None
-    return isinstance(raw, dict) and bool(raw.get("deleted"))
+    return isinstance(raw, dict) and js_truthy(raw.get("deleted"))
 
 
 def _is_stored(item: ListItem) -> bool:
@@ -360,7 +391,7 @@ def _is_stored(item: ListItem) -> bool:
     if isinstance(item, SubmissionEntry):
         return item.stored
     raw = item.raw if isinstance(item, ForeignItem) else None
-    return isinstance(raw, dict) and raw.get("stored") is True and not raw.get("deleted")
+    return isinstance(raw, dict) and raw.get("stored") is True and not is_tombstone(item)
 
 
 def _status_key_of(item: ListItem) -> Optional[str]:
@@ -369,15 +400,6 @@ def _status_key_of(item: ListItem) -> Optional[str]:
     raw = item.raw if isinstance(item, ForeignItem) else None
     key = raw.get("status_key") if isinstance(raw, dict) else None
     return key if formats.is_hex64(key) else None
-
-
-def _canonical_text(value: Any) -> str:
-    """Canonical JSON of ``value``; for JSON canonical JSON cannot hold (a
-    float, a non-ASCII key), the same form with sorted keys."""
-    try:
-        return formats.canonical_json(value)
-    except FormatError:
-        return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
 def _raw_key(value: Any) -> str:
@@ -403,7 +425,9 @@ def decode_items(payload: dict) -> SubmissionItems:
 
 
 def encode_items(value: SubmissionItems, now: int) -> dict:
-    return {"items": [item.to_json() for item in value.items]}
+    """The items as written: each record as it was read while unchanged
+    (:func:`record_json`), so a write never flips a record's bytes."""
+    return {"items": [record_json(item) for item in value.items]}
 
 
 class RecordStatus(Enum):

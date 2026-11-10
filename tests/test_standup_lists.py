@@ -15,8 +15,10 @@ message."""
 from __future__ import annotations
 
 import itertools
+import json
 import time
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -36,11 +38,14 @@ from nostr.standup.entries import (
     SubmissionItems,
     Tombstone,
     decode_items,
+    encode_items,
     entry_from_json,
     holds_exactly,
+    is_tombstone,
     item_from_json,
     merge_items,
     merge_seen,
+    record_json,
     record_key,
     shown_for,
 )
@@ -1152,14 +1157,118 @@ def _every_order(*records):
 
 def test_two_records_of_one_identity_at_one_time_keep_the_greater_hash_in_every_order():
     # 13 at 0456312: the last step of the one order, so devices agree.
-    import hashlib
-    from nostr.standup.entries import _canonical_text
     a = entry(1)
     b = replace(a, title="Ein anderer Titel")
-    greater = max((a, b), key=lambda x: hashlib.sha256(
-        _canonical_text(x.to_json()).encode("utf-8")).hexdigest())
+    greater = max((a, b), key=lambda x: _digest_as_read(x.to_json()))
     for merged in _every_order(a, b):
         assert merged.items == (greater,)
+
+
+# -- the 4th step: the record as it was read (RG-FMd-a) -----------------------------
+
+def _digest_as_read(record):
+    """The contract's 4th step, computed here on its own: the SHA-256 of
+    the record exactly as read, its own fields and nothing added."""
+    import hashlib
+    text = json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _tie_pairs(*, stored: bool, unknown: bool = False):
+    """Two records of one identity, one time and both unstored, that only
+    the 4th step tells apart: the contract's fixture entry with another
+    title each, 200 times (the gate's probe)."""
+    fixtures = json.loads((Path(__file__).parent / "fixtures"
+                           / "standup_editorial_fixtures.json").read_text(encoding="utf-8"))
+    base = dict(fixtures["paged_list"]["merge_variants"][0]["records"][1])
+    assert base["stored"] is False and base["role"] == "writer"
+    for n in range(200):
+        a, b = dict(base, title=f"Titel A{n}"), dict(base, title=f"Titel B{n}")
+        for record in (a, b):
+            if not stored:
+                record.pop("stored")
+            if unknown:
+                record["note_of_a_newer_app"] = f"n{n}"
+        yield a, b
+
+
+@pytest.mark.parametrize("stored, unknown", [(True, False), (False, False), (False, True),
+                                             (True, True)],
+                         ids=["with stored", "no stored", "no stored, unknown field",
+                              "unknown field"])
+def test_a_tie_keeps_the_greater_hash_of_the_record_as_it_was_read(stored, unknown):
+    # RG-FMd-a: an entry without ``stored`` was hashed with "stored": false
+    # added, so 93 of 200 ties kept another record than the reference and
+    # STANDUP, and the two apps would write the list back and forth.
+    for a, b in _tie_pairs(stored=stored, unknown=unknown):
+        greater = max((a, b), key=_digest_as_read)
+        for order in ((a, b), (b, a)):
+            read = decode_items({"items": list(order)})
+            merged = merge_items(SubmissionItems(), read)
+            (kept,), = [encode_items(merged, NOW)["items"]]
+            assert kept == greater                      # written back as read, nothing added
+            assert ("stored" in kept) is stored
+            assert decode_items({"items": [a]}).items[0] == entry_from_json(a)
+
+
+def test_the_probes_tie_keeps_what_the_reference_keeps():
+    # The gate's vector: the contract's reference (crosscheck.reference.mjs)
+    # and STANDUP keep "Titel B1"; MyEditor kept "Titel A1".
+    a, b = list(_tie_pairs(stored=False))[1]
+    assert (a["title"], b["title"]) == ("Titel A1", "Titel B1")
+    for order in ((a, b), (b, a)):
+        kept, = encode_items(decode_items({"items": list(order)}), NOW)["items"]
+        assert kept["title"] == "Titel B1" and "stored" not in kept
+
+
+def test_an_entry_changed_here_is_hashed_and_written_as_this_app_writes_it():
+    # Stored now, the record is no longer the one read: what is written
+    # (and hashed) has every field.
+    a, _b = next(_tie_pairs(stored=False))
+    read = decode_items({"items": [a]}).items[0]
+    assert record_json(read) == a
+    stored = replace(read, stored=True)
+    assert record_json(stored) == stored.to_json() and record_json(stored)["stored"] is True
+    built = entry(1)
+    assert built.read_as is None and record_json(built) == built.to_json()
+
+
+def test_a_record_s_text_is_the_reference_s_for_what_canonical_json_cannot_hold():
+    # The reference writes values as JSON.stringify does and sorts keys by
+    # UTF-16 code unit (checked against node for 3,500 doubles).
+    from nostr.standup.js_values import record_text
+    assert record_text({"b": 1.0, "a": [1e21, 1e-7, 1.5, 2 ** 53 + 1, -0.0, 1e20]}) == \
+        '{"a":[1e+21,1e-7,1.5,9007199254740992,0,100000000000000000000],"b":1}'
+    assert record_text({"\U0001F600": 1, "\uffff": 2, "z": 3}) == \
+        '{"z":3,"\U0001F600":1,"\uffff":2}'
+    assert record_text(["\ud800", "x\udfff", "\u2028\u0007"]) == \
+        '["\\ud800","x\\udfff","\u2028\\u0007"]'
+    record = {"sid": "a" * 64, "updated_at": 5, "title": "Grüße", "n": [1, None, True]}
+    assert record_text(record) == json.dumps(record, sort_keys=True, separators=(",", ":"),
+                                             ensure_ascii=False)
+
+
+def test_records_the_other_apps_merge_are_merged_here_too():
+    # RG-FMd-a probe: a negative updated_at is an integer (13), so its
+    # record is merged by identity, not kept apart; a tombstone's key and
+    # "deleted" are read as JavaScript reads them (the reference, STANDUP).
+    a, b = next(_tie_pairs(stored=True))
+    negative = dict(a, updated_at=-5)
+    merged = decode_items({"items": [negative, b]})
+    assert [item.to_json()["title"] for item in merged.items] == [b["title"]]
+    sid = "c" * 64
+    numbered = {"sid": sid, "deleted": True, "status_key_hash": 5, "updated_at": 1}
+    assert record_key(item_from_json(numbered)) == "5"
+    for deleted, removal in ((1, True), ([], True), ({}, True), ("x", True), (0, False),
+                             ("", False), (None, False), (False, False)):
+        item = item_from_json({"sid": sid, "deleted": deleted, "updated_at": 1, "x": 1})
+        assert is_tombstone(item) is removal, deleted
+    # A removal is never a stored entry, whatever else it says: the newer
+    # record of its identity is kept.
+    removed = {"sid": sid, "deleted": [], "stored": True, "updated_at": 1}
+    newer = {"sid": sid, "updated_at": 5, "x": 1}
+    for order in ((removed, newer), (newer, removed)):
+        assert encode_items(decode_items({"items": list(order)}), NOW)["items"] == [newer]
 
 
 def test_a_sid_with_two_stored_entries_shows_the_smallest_key_in_every_order():
