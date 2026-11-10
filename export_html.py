@@ -52,6 +52,7 @@ from PySide6.QtGui import (
     QTextListFormat,
 )
 
+import export_pictures
 import media_files
 import photo_group
 import photo_layout
@@ -72,9 +73,7 @@ from doc_walk import (
 # boundary needs them too, and main_window plus the tests import them
 # from here.
 from image_safety import (  # noqa: F401
-    MAX_PICTURE_BYTES,
     ImageRootPolicy,
-    data_uri_bytes,
     declared_size,
     is_portable_image_source,
     sniff_image_ext,
@@ -419,18 +418,10 @@ def _group_picture(name: str, policy, asset_resolver, remote_pictures, source_ur
     fetched from the web; never larger than MAX_PICTURE_BYTES, never a
     picture the decode policy refuses (a decompression bomb)."""
     plain = photo_group.without_wide(name)
-    source = source_url_for(plain) if source_url_for else None
-    data = None
-    resolved = asset_resolver(plain) if asset_resolver else None
-    if resolved is not None and getattr(resolved, "data", b""):
-        data = resolved.data
-        source = str(getattr(resolved, "remote_url", "") or "") or source
-    if data is None and remote_pictures and plain in remote_pictures:
-        data = remote_pictures[plain]
-        source = plain
-    if data is None:
-        data = policy.read(plain, limit=MAX_PICTURE_BYTES) or data_uri_bytes(plain)
-    if data is not None and len(data) <= MAX_PICTURE_BYTES:
+    data, came_from = export_pictures.picture_bytes(
+        plain, policy, asset_resolver=asset_resolver, remote_pictures=remote_pictures)
+    source = came_from or (source_url_for(plain) if source_url_for else None)
+    if data is not None:
         size = declared_size(data)
         uri = image_data_uri(data) if size is not None else None
         if uri is not None:

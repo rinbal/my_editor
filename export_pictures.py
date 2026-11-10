@@ -1,15 +1,19 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Pictures from the web, for an export that carries its pictures.
+"""The pictures of an export that carries them: where their bytes come from.
 
-An exported page holds the pictures of its photo groups as their bytes (a
-data: address), so it shows the same on a train without a network, as
-it does on the desk. A picture the document names by a web address comes
-from what the window already holds (the editor showed it); any other is
-fetched here, through the importer's guarded fetcher: no address on this
-computer or on its network (nostr/imports/netguard.py), at most
-MAX_BYTES a picture, and TIMEOUT_MS for all of them together. A picture
-that does not come in time stays its address, as it was.
+An exported page, a PDF and a printed page hold their pictures, so each
+shows the same on a train without a network as it does on the desk.
+``picture_bytes`` is the one place an export reads a picture: the app's
+own pictures, a web picture gathered here, a file in the document's
+trusted folders, or a data: address. A picture the document names by a
+web address comes from what the window already holds (the editor showed
+it); any other is fetched here, through the importer's guarded fetcher:
+no address on this computer or on its network, a redirect to one
+included (nostr/imports/netguard.py), at most MAX_BYTES a picture, and
+TIMEOUT_MS for all of them together. A picture that does not come in
+time is not waited for: a page keeps its address, paper a quiet
+stand-in with its description.
 """
 
 from __future__ import annotations
@@ -18,8 +22,9 @@ from typing import Callable, Dict, Iterable, List, Optional
 
 from PySide6.QtCore import QEventLoop, QTimer
 
+import doc_walk
 import photo_group
-from image_safety import sniff_image_mime
+from image_safety import MAX_PICTURE_BYTES, data_uri_bytes, sniff_image_mime
 
 # One picture: what the window's own picture cache takes
 # (nostr/imports/remote_images.py, MAX_BYTES).
@@ -36,15 +41,34 @@ def is_web_address(name: str) -> bool:
 
 
 def web_picture_names(doc) -> List[str]:
-    """The web addresses of the pictures in the photo groups of ``doc``,
-    without #wide, each once, in order."""
-    found: List[str] = []
-    for group in photo_group.groups_in(doc):
-        for unit in group.units:
-            url = photo_group.without_wide(unit.name)
-            if is_web_address(url) and url not in found:
-                found.append(url)
-    return found
+    """The web addresses of the pictures of ``doc`` (in its photo groups
+    and on their own), without #wide, each once, in order."""
+    found: Dict[str, None] = {}
+    for name in doc_walk.iter_image_names(doc):
+        url = photo_group.without_wide(name)
+        if is_web_address(url):
+            found.setdefault(url, None)
+    return list(found)
+
+
+def picture_bytes(name: str, policy, *, asset_resolver=None,
+                  remote_pictures: Optional[Dict[str, bytes]] = None):
+    """``(bytes, web address)`` of the picture ``name`` names, read
+    without its #wide, for an export; ``(None, None)`` when there is
+    nothing the export may carry. In order: the app's own pictures
+    (``asset_resolver``, with the address they were uploaded to), a web
+    picture the caller gathered, a file ``policy`` (an ImageRootPolicy)
+    may read, never larger than MAX_PICTURE_BYTES, and a data: address."""
+    plain = photo_group.without_wide(name)
+    resolved = asset_resolver(plain) if asset_resolver else None
+    if resolved is not None and getattr(resolved, "data", b""):
+        return bytes(resolved.data), str(getattr(resolved, "remote_url", "") or "") or None
+    if remote_pictures and plain in remote_pictures:
+        return remote_pictures[plain], plain
+    data = policy.read(plain, limit=MAX_PICTURE_BYTES) or data_uri_bytes(plain)
+    if data and len(data) <= MAX_PICTURE_BYTES:
+        return data, None
+    return None, None
 
 
 def gather(urls: Iterable[str], *, held: Optional[HeldBytes] = None, fetcher=None,

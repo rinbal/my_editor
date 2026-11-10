@@ -5243,7 +5243,7 @@ class MainWindow(QMainWindow):
                     title=self._export_title_for(path),
                     image_roots=self._image_roots_for(path),
                     asset_resolver=self._asset_manager.export_view,
-                    remote_pictures=self._group_web_pictures(ed.document()),
+                    remote_pictures=self._web_pictures(ed.document()),
                 )
             elif ext.endswith('.rmd'):
                 content = self._to_rmd_content(ed, path)
@@ -6136,9 +6136,9 @@ class MainWindow(QMainWindow):
                 return data
         return self._web_images.raw(url)
 
-    def _group_web_pictures(self, doc) -> dict:
-        """The web pictures of the photo groups of ``doc``, for an export
-        that carries them (export_pictures: held ones at once, the rest
+    def _web_pictures(self, doc) -> dict:
+        """The web pictures of ``doc``, for an export or a print that
+        carries them (export_pictures: held ones at once, the rest
         fetched, guarded, capped and bounded in time)."""
         urls = export_pictures.web_picture_names(doc)
         if not urls:
@@ -6217,7 +6217,7 @@ class MainWindow(QMainWindow):
                        title=self._export_title_for(path),
                        image_roots=self._image_roots_for(path),
                        asset_resolver=self._asset_manager.export_view,
-                       remote_pictures=self._group_web_pictures(editor.document()))
+                       remote_pictures=self._web_pictures(editor.document()))
             editor._recovered_title = ""
             editor.document().setModified(False)
             self._update_tab_title()
@@ -6265,9 +6265,18 @@ class MainWindow(QMainWindow):
         path = getattr(ed, "_file_path", None)
         title = self._export_title_for(path) if path else _("Untitled")
         roots = self._image_roots_for(path) if path else (self._blob_cache_root(),)
+        # Web pictures are gathered once a job, at its first page: a
+        # preview paints again on every change of its settings.
+        gathered: list = []
+
+        def pictures() -> dict:
+            if not gathered:
+                gathered.append(self._web_pictures(ed.document()))
+            return gathered[0]
         return title, lambda printer: printing.print_document(
             ed.document(), printer, image_roots=roots,
-            asset_resolver=self._asset_manager.export_view)
+            asset_resolver=self._asset_manager.export_view,
+            remote_pictures=pictures())
 
     def _on_print(self):
         job = self._print_job()

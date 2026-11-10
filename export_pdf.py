@@ -32,6 +32,9 @@ from PySide6.QtCore import QMarginsF, QRectF, QSizeF, Qt, QLocale, QUrl
 from PySide6.QtGui import (
     QAbstractTextDocumentLayout,
     QColor,
+    QFont,
+    QFontMetricsF,
+    QGuiApplication,
     QImage,
     QPageLayout,
     QPageSize,
@@ -45,12 +48,13 @@ from PySide6.QtGui import (
     QTextImageFormat,
 )
 
+import export_pictures
 import media_files
 import photo_group
 from atomic_file import read_json, write_json
 from fonts import monospace_font
 from i18n import _
-from image_safety import MAX_PICTURE_BYTES, ImageRootPolicy, data_uri_bytes, decode_image_bytes
+from image_safety import ImageRootPolicy, decode_image_bytes
 
 CREATOR = "minimal texteditor"
 
@@ -113,12 +117,54 @@ def make_page_layout(setup: dict) -> QPageLayout:
                        QMarginsF(m, m, m, m), QPageLayout.Millimeter)
 
 
-def _placeholder_image() -> QImage:
-    """Neutral stand-in for an image the export is not allowed to read."""
-    image = QImage(160, 100, QImage.Format_RGB32)
-    image.fill(QColor("#c8c8c8"))
+# A stand-in is drawn this many times finer than its size on the page, so
+# its words stay sharp on paper.
+_STAND_IN_SCALE = 3
+_STAND_IN_SIZE = (240, 160)
+
+
+def _placeholder_image(alt: str = "") -> QImage:
+    """The quiet stand-in for a picture the export cannot carry (one it may
+    not read, or a web picture that did not come): a plate in the page's
+    quiet grey with the picture's description, in place, and nothing else
+    (lesson 36: data missing for the reader is one quiet line where it
+    is, never an alert)."""
+    width, height = _STAND_IN_SIZE
+    image = QImage(width * _STAND_IN_SCALE, height * _STAND_IN_SCALE, QImage.Format_RGB32)
+    image.fill(QColor("#f1f0ec"))
+    words = " ".join(alt.split())
+    if words:
+        painter = QPainter(image)
+        font = QFont(QGuiApplication.font())
+        font.setPixelSize(13 * _STAND_IN_SCALE)
+        painter.setFont(font)
+        painter.setPen(QColor("#6b6760"))
+        margin = 14 * _STAND_IN_SCALE
+        box = QRectF(margin, margin, image.width() - 2 * margin, image.height() - 2 * margin)
+        metrics = QFontMetricsF(font)
+        lines = max(1, int(box.height() // metrics.lineSpacing()))
+        text = _elided_lines(words, metrics, box.width(), lines)
+        painter.drawText(box, int(Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap), text)
+        painter.end()
+    image.setDevicePixelRatio(_STAND_IN_SCALE)
     # Its shape is not the picture's: a photo group lays it out at 3:2.
     return photo_group.mark_placeholder(image)
+
+
+def _elided_lines(words: str, metrics: QFontMetricsF, width: float, lines: int) -> str:
+    """``words`` wrapped to at most ``lines`` lines of ``width``, the last
+    one ending in an ellipsis when they do not all fit."""
+    out: list[str] = []
+    rest = words.split(" ")
+    while rest and len(out) < lines:
+        line = rest.pop(0)
+        while rest and metrics.horizontalAdvance(line + " " + rest[0]) <= width:
+            line += " " + rest.pop(0)
+        out.append(line)
+    if rest or (out and metrics.horizontalAdvance(out[-1]) > width):
+        out[-1] = metrics.elidedText(out[-1] + " " + " ".join(rest), Qt.TextElideMode.ElideRight,
+                                     width)
+    return "\n".join(out)
 
 
 def _prime_clone_images(clone, policy: ImageRootPolicy, asset_resolver,
@@ -132,33 +178,28 @@ def _prime_clone_images(clone, policy: ImageRootPolicy, asset_resolver,
     also means Qt never touches the disk during layout or paint, which
     is what keeps the trusted-root policy in force.
 
-    A picture is read without its #wide (photo_group), a file of more
-    than MAX_PICTURE_BYTES is not read, and a web picture comes from
-    ``remote_pictures`` (export_pictures.gather) when the caller has it.
+    The bytes come from export_pictures.picture_bytes (a web picture from
+    ``remote_pictures``, export_pictures.gather), read without #wide; a
+    picture that cannot be had is a quiet stand-in with its description.
     """
     sizes: dict[str, object] = {}
-    for name in _iter_image_names(clone):
+    for name, alt in _image_names_and_alts(clone):
         if name in sizes:
             continue
-        image = None
-        plain = photo_group.without_wide(name)
-        resolved = asset_resolver(plain) if asset_resolver else None
-        if resolved is not None and getattr(resolved, "data", b""):
-            image = decode_image_bytes(resolved.data)
-        if image is None and remote_pictures and plain in remote_pictures:
-            image = decode_image_bytes(remote_pictures[plain])
+        data, _source = export_pictures.picture_bytes(
+            name, policy, asset_resolver=asset_resolver, remote_pictures=remote_pictures)
+        image = decode_image_bytes(data) if data else None
         if image is None:
-            # A document reopened from HTML names its embedded images by
-            # the whole data: URI, so the bytes are in the name; without
-            # this every such image prints as the placeholder.
-            data = policy.read(plain, limit=MAX_PICTURE_BYTES) or data_uri_bytes(plain)
-            if data:
-                image = decode_image_bytes(data)
-        if image is None:
-            image = _placeholder_image()
+            image = _placeholder_image(alt)
         clone.addResource(QTextDocument.ImageResource, QUrl(name), image)
         sizes[name] = image
     return sizes
+
+
+def _image_names_and_alts(doc):
+    """Each picture's name and description, in document order."""
+    for name, fmt in _iter_image_formats(doc):
+        yield name, str(fmt.property(QTextFormat.Property.ImageAltText) or "")
 
 
 def _media_as_links(clone, asset_resolver) -> None:
@@ -198,7 +239,7 @@ def _media_as_links(clone, asset_resolver) -> None:
         cursor.insertText(media_files.link_words(mime, name or remote.rsplit("/", 1)[-1]), link)
 
 
-def _iter_image_names(doc):
+def _iter_image_formats(doc):
     block = doc.begin()
     while block.isValid():
         it = block.begin()
@@ -206,9 +247,15 @@ def _iter_image_names(doc):
             frag = it.fragment()
             fmt = frag.charFormat()
             if frag.isValid() and fmt.isImageFormat():
-                yield fmt.toImageFormat().name()
+                image = fmt.toImageFormat()
+                yield image.name(), image
             it += 1
         block = block.next()
+
+
+def _iter_image_names(doc):
+    for name, _fmt in _iter_image_formats(doc):
+        yield name
 
 
 def _cap_image_widths(doc, available_css_px: float, images: dict) -> None:
