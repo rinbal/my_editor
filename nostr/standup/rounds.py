@@ -38,7 +38,7 @@ from i18n import _
 from .. import failures
 from . import drafting
 from .entries import SubmissionEntry
-from .errors import PASSING, Code, StandupError
+from .errors import PASSING, Code, StandupError, cause_words
 from .watcher import look_up_all, lookup_batches
 from .words import ELSEWHERE_NOT_HERE_YET, NOT_CHECKED, SUBMITTED_ELSEWHERE
 
@@ -79,13 +79,13 @@ class RoundAnswer:
     title: str = NOT_CHECKED
 
 
-def unknown(*, connection: bool = False) -> RoundAnswer:
-    """A server could not be asked (``connection``: it could not be
-    reached, asked again quietly first), or its answer not used: not
-    told, so not guessed (a guess could take the place of the entry, and
-    with it the keys, of a submission sent before, RG-M2b 1)."""
-    return RoundAnswer(None, _(failures.CHECK_CONNECTION if connection
-                               else drafting.ROUND_UNKNOWN))
+def unknown(code: str = "") -> RoundAnswer:
+    """A server could not be asked (``code``, one of PASSING: asked again
+    quietly first, then said by its cause, the connection or the
+    server's trouble), or its answer not used: not told, so not guessed
+    (a guess could take the place of the entry, and with it the keys, of
+    a submission sent before, RG-M2b 1)."""
+    return RoundAnswer(None, _(cause_words(code) if code in PASSING else drafting.ROUND_UNKNOWN))
 
 
 def bounded() -> RoundAnswer:
@@ -147,7 +147,7 @@ def ask_round(client_for: Callable[[str], Any], entries: Sequence[SubmissionEntr
         elif error.code == Code.RATE_LIMITED:
             on_done(limited(error.retry_after, clock))
         else:
-            on_done(unknown(connection=error.code in PASSING))
+            on_done(unknown(error.code))
 
     def look_up(index: int) -> None:
         if index == len(batches):

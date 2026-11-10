@@ -6603,23 +6603,23 @@ msgstr "{total} Speicher, höchstens {per_file} pro Datei."
 msgid "Check your internet connection and try again."
 msgstr "Prüfe deine Internetverbindung und versuche es erneut."
 
-#: nostr/failures.py:37
-msgid "The server couldn’t take it just now: try again in a moment."
-msgstr "Der Server konnte sie gerade nicht annehmen: Versuche es gleich noch einmal."
+#: nostr/failures.py:38
+msgid "The server had a problem just now: try again in a moment."
+msgstr "Der Server hatte gerade ein Problem: Versuche es gleich noch einmal."
 
-#: nostr/failures.py:40
+#: nostr/failures.py:47
 msgid "The servers your posts go to turned it down: try again later."
 msgstr "Die Server, über die deine Beiträge gehen, haben es abgelehnt: Versuche es später noch einmal."
 
-#: nostr/failures.py:41
+#: nostr/failures.py:48
 msgid "Your signer app didn’t answer: open it and try again."
 msgstr "Deine Signer-App hat nicht geantwortet: Öffne sie und versuche es erneut."
 
-#: nostr/failures.py:42
+#: nostr/failures.py:49
 msgid "Your signer app declined the request: allow it there and try again."
 msgstr "Deine Signer-App hat die Anfrage abgelehnt: Erlaube sie dort und versuche es erneut."
 
-#: nostr/failures.py:44
+#: nostr/failures.py:51
 msgid "Your signer app ran into a problem: open it and try again."
 msgstr "Bei deiner Signer-App ist ein Problem aufgetreten: Öffne sie und versuche es noch einmal."
 
@@ -8212,49 +8212,49 @@ msgstr "Der Server hat die Einreichung nicht angenommen."
 msgid "MyEditor couldn’t put this submission together."
 msgstr "MyEditor konnte diese Einreichung nicht zusammenstellen."
 
-#: nostr/standup/words.py:154
+#: nostr/standup/words.py:152
 #, python-brace-format
 msgid "You’ve sent {publication} as much as it takes for now: try again at {time}."
 msgstr "Du hast {publication} vorerst so viel gesendet, wie es annimmt: Versuche es um {time} erneut."
 
-#: nostr/standup/words.py:155
+#: nostr/standup/words.py:153
 #, python-brace-format
 msgid "You’ve sent {publication} as much as it takes for now: try again tomorrow at {time}."
 msgstr "Du hast {publication} vorerst so viel gesendet, wie es annimmt: Versuche es morgen um {time} erneut."
 
-#: nostr/standup/words.py:157
+#: nostr/standup/words.py:155
 #, python-brace-format
 msgid "The server can’t take more from you right now: try again at {time}."
 msgstr "Der Server nimmt gerade nichts mehr von dir an: Versuche es um {time} erneut."
 
-#: nostr/standup/words.py:158
+#: nostr/standup/words.py:156
 #, python-brace-format
 msgid "The server can’t take more from you right now: try again tomorrow at {time}."
 msgstr "Der Server nimmt gerade nichts mehr von dir an: Versuche es morgen um {time} erneut."
 
-#: nostr/standup/words.py:160
+#: nostr/standup/words.py:158
 msgid "The server can’t take more from you right now: try again later."
 msgstr "Der Server nimmt gerade nichts mehr von dir an: Versuche es später erneut."
 
-#: nostr/standup/words.py:161
+#: nostr/standup/words.py:159
 #, python-brace-format
 msgid "You can send it again at {time}."
 msgstr "Du kannst sie um {time} noch einmal senden."
 
-#: nostr/standup/words.py:162
+#: nostr/standup/words.py:160
 #, python-brace-format
 msgid "You can send it again tomorrow at {time}."
 msgstr "Du kannst sie morgen um {time} noch einmal senden."
 
-#: nostr/standup/words.py:166
+#: nostr/standup/words.py:164
 msgid "The publications couldn’t be loaded"
 msgstr "Die Publikationen konnten nicht geladen werden"
 
-#: nostr/standup/words.py:167
+#: nostr/standup/words.py:165
 msgid "MyEditor couldn’t check whether you submitted this text before"
 msgstr "MyEditor konnte nicht prüfen, ob du diesen Text schon eingereicht hast"
 
-#: nostr/standup/words.py:168
+#: nostr/standup/words.py:166
 msgid "The earlier try wasn’t discarded"
 msgstr "Der frühere Versuch wurde nicht verworfen"
 
@@ -12400,7 +12400,7 @@ msgid_plural "{count} other submissions stopped as well."
 msgstr[0] "{count} weitere Einreichung wurde ebenfalls angehalten."
 msgstr[1] "{count} weitere Einreichungen wurden ebenfalls angehalten."
 
-#: nostr/ui/standup_submit_sheet.py:103
+#: nostr/ui/standup_submit_sheet.py:102
 #: nostr/ui/standup_submit_sheet.py:157
 msgid "Submit to a Publication"
 msgstr "Bei Publikation einreichen"
@@ -12459,11 +12459,11 @@ msgstr "Die Adresse des Servers kommt vom Verein."
 msgid "No publication takes submissions right now."
 msgstr "Gerade nimmt keine Publikation Einreichungen an."
 
-#: nostr/ui/standup_submit_sheet.py:435
+#: nostr/ui/standup_submit_sheet.py:436
 msgid "After acceptance you publish it with your key."
 msgstr "Nach der Annahme veröffentlichst du mit deinem Schlüssel."
 
-#: nostr/ui/standup_submit_sheet.py:436
+#: nostr/ui/standup_submit_sheet.py:437
 msgid "At acceptance the editorial team proposes how zaps are split; you confirm it."
 msgstr "Die Redaktion schlägt bei der Annahme die Aufteilung der Zaps vor, du bestätigst sie."
 

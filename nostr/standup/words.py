@@ -19,7 +19,7 @@ from __future__ import annotations
 from i18n import N_
 
 from .. import failures
-from .errors import Code
+from .errors import PASSING, Code, cause_words
 
 # -- the handoff, step by step (plan 10.3) -----------------------------------
 
@@ -138,10 +138,8 @@ _REFUSALS = {
     Code.KEY_EVENT_INVALID: KEY_NOT_CONFIRMED_AGAIN,
     Code.NO_DECIDER: N_("Nobody at {publication} could decide on it: the only person who "
                         "can is named among those who take part."),
-    Code.OFFLINE: failures.CHECK_CONNECTION,
-    Code.TIMEOUT: failures.CHECK_CONNECTION,
     Code.UNAVAILABLE: failures.CHECK_CONNECTION,
-    Code.SERVER: SERVER_TROUBLE,
+    **{code: cause_words(code) for code in PASSING},
     Code.SIGNER_DECLINED: failures.SIGNER_DECLINED,
     Code.SIGNER_UNREACHABLE: failures.SIGNER_SILENT,
 }

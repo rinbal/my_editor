@@ -10,7 +10,8 @@ import json
 
 import pytest
 
-from nostr.standup.errors import Code, error_from_answer
+from nostr import failures
+from nostr.standup.errors import PASSING, Code, error_from_answer
 
 
 def envelope(code, message="Nicht möglich.", detail=None) -> bytes:
@@ -74,3 +75,19 @@ def test_the_message_and_detail_are_kept_flat_and_clean():
 
 def test_the_wait_is_passed_on():
     assert error_from_answer(429, envelope("rate_limited"), retry_after=30).retry_after == 30
+
+
+@pytest.mark.parametrize("code, sentence", [
+    (Code.OFFLINE, failures.CHECK_CONNECTION),
+    (Code.TIMEOUT, failures.CHECK_CONNECTION),
+    (Code.SERVER, failures.SERVER_TROUBLE),
+    (Code.BAD_RESPONSE, failures.SERVER_TROUBLE),
+])
+def test_a_failure_is_said_by_its_cause_from_the_one_table(code, sentence):
+    # RG-M2r3 6: failures.CAUSE_WORDS, the same on the sheet, in the
+    # round step and in a refusal of a submission.
+    from nostr.standup import words
+    from nostr.standup.errors import cause_words
+    assert cause_words(code) == sentence
+    if code in PASSING:
+        assert words.refusal(code) == sentence

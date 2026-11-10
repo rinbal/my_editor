@@ -612,13 +612,23 @@ def test_a_round_another_device_stored_is_said_calmly_with_reload_and_never_offe
     assert sheet.retry_load.text() == "Erneut versuchen" and sheet.status._error
 
 
-def test_publications_that_could_not_be_loaded_offer_try_again(tmp_path):
+@pytest.mark.parametrize("code, sentence", [
+    ("offline", "Prüfe deine Internetverbindung und versuche es erneut."),
+    ("timeout", "Prüfe deine Internetverbindung und versuche es erneut."),
+    # RG-M2r3 6: a server that answered is never blamed on the connection.
+    ("server", "SERVER"),
+    ("bad_response", "SERVER"),
+])
+def test_publications_that_could_not_be_loaded_offer_try_again(tmp_path, code, sentence):
+    from nostr.standup.errors import StandupError
     writer = Writer()
     writer.fail_destinations = True
+    writer.destinations_error = StandupError(code)
     sheet = _sheet(tmp_path, writer)
     assert not sheet.retry_load.isHidden()
     assert sheet.status.shown == ("Die Publikationen konnten nicht geladen werden",
-                                  "Prüfe deine Internetverbindung und versuche es erneut.")
+                                  i18n._(failures.SERVER_TROUBLE) if sentence == "SERVER"
+                                  else sentence)
     writer.fail_destinations = False
     sheet.retry_load.click()
     assert writer.loads == 2 and sheet.retry_load.isHidden()

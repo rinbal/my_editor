@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, Optional
 
+from .. import failures
 from ..http_answers import clean_text
 from ..signed_api import BAD_RESPONSE, OFFLINE, SIGNER_DECLINED, SIGNER_UNREACHABLE, TIMEOUT
 from . import formats
@@ -61,9 +62,18 @@ class Code:
     RATE_LIMITED = "rate_limited"
 
 
-# What a moment later may not meet again: the connection, the time, the
+# What a moment later may not meet again, each with its cause, whose
+# sentence is failures.CAUSE_WORDS's: the connection, the time, the
 # server's own trouble (5xx). Asked again quietly first (lessons 36).
-PASSING = frozenset({Code.OFFLINE, Code.TIMEOUT, Code.SERVER})
+PASSING = {Code.OFFLINE: failures.CONNECTION, Code.TIMEOUT: failures.CONNECTION,
+           Code.SERVER: failures.SERVER}
+
+
+def cause_words(code: str) -> str:
+    """The sentence (untranslated) for a request that failed with
+    ``code`` where no words of its own fit: the connection for what got
+    no answer, the server's trouble for any answer it gave."""
+    return failures.CAUSE_WORDS[PASSING.get(code, failures.SERVER)]
 
 
 # 12.2: the codes each status may carry; the first is the fallback for a
@@ -164,4 +174,4 @@ def _clean_detail(value: Any) -> Dict[str, Any]:
     return cleaned
 
 
-__all__ = ["Code", "PASSING", "StandupError", "error_from_answer", "refused"]
+__all__ = ["Code", "PASSING", "StandupError", "cause_words", "error_from_answer", "refused"]

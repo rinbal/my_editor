@@ -60,10 +60,9 @@ from ..profiles import Profile, ProfileStore
 from ..signer_limits import signable
 from ..standup import drafting, formats, words
 from ..standup.drafting import ArticleDraft, Choice
-from ..standup.errors import Code
+from ..standup.errors import Code, cause_words
 from ..standup.submitting import MessageStatus
 from ..standup.trust import KEY_NOT_CONFIRMED, Destination
-from ..failures import CHECK_CONNECTION
 from ..standup.words import LIST_NOT_SAVED, WAITING_FOR_SIGNER
 from . import appearance
 from .publish_article_dialog import ArticleCard, form_label, form_layout
@@ -130,6 +129,7 @@ class SubmitSheet(QDialog):
         # until then (contract 15, RG-M2r2a 5), as for the round's lookups.
         self._load_limited = False
         self._load_retry_at: Optional[float] = None
+        self._load_cause = ""                   # its sentence, by its cause
         # What the account's signer connection carries is known (or could
         # not be learned): the message's seal is measured by it.
         self._bound_known = False
@@ -367,6 +367,7 @@ class SubmitSheet(QDialog):
         # A limit: asked again at once, it meets the same one (contract 15).
         limited = getattr(error, "code", None) == Code.RATE_LIMITED
         self._load_failed, self._load_limited = True, limited
+        self._load_cause = cause_words(getattr(error, "code", ""))
         wait = error.retry_after if limited else None
         self._load_retry_at = _now() + wait if wait else None
         self._show_destinations([], "")
@@ -465,7 +466,7 @@ class SubmitSheet(QDialog):
         if self._load_failed:
             # Said once, with its title; Try Again beside it (lessons 36).
             sentence = (server_limit_words(self._load_retry_at, _now()) if self._load_limited
-                        else _(CHECK_CONNECTION))
+                        else _(self._load_cause))
             return [drafting.Blocker(sentence, title=_(words.PUBLICATIONS_NOT_LOADED))]
         if self._load_problem:
             return [self._load_problem]
@@ -506,8 +507,7 @@ class SubmitSheet(QDialog):
         """When a limit's wait for Try Again is over (clock time), or None."""
         if self._load_failed:
             return self._load_retry_at
-        return self._round.retry_at if self._round is not None and self._round.limited \
-            else None
+        return self._round.retry_at if self._round is not None and self._round.limited else None
 
     def _refresh(self, *_args) -> None:
         round_ = self._round

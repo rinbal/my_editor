@@ -33,8 +33,15 @@ QUIET_RETRY_MS = (2_000, 6_000, 15_000)
 # connection.
 CHECK_CONNECTION = N_("Check your internet connection and try again.")
 # A server that answered with trouble of its own (a 5xx, an answer that
-# could not be read).
-SERVER_TROUBLE = N_("The server couldn’t take it just now: try again in a moment.")
+# could not be read), whatever was asked of it: loading, looking up,
+# sending.
+SERVER_TROUBLE = N_("The server had a problem just now: try again in a moment.")
+# Why a failure that a moment later may not meet again happened, by its
+# cause: the one table its sentence comes from (RG-M2r3 6). A server that
+# answered is never blamed on the connection.
+CONNECTION = "connection"       # nothing reached, or no answer in time
+SERVER = "server"               # the server answered with trouble of its own
+CAUSE_WORDS = {CONNECTION: CHECK_CONNECTION, SERVER: SERVER_TROUBLE}
 # The servers an account publishes to (its relays) answered, and turned
 # it down: the connection is not the cause.
 TURNED_DOWN = N_("The servers your posts go to turned it down: try again later.")
@@ -77,5 +84,6 @@ def spoken(*parts: str) -> str:
                     for part in parts if part)
 
 
-__all__ = ["CHECK_CONNECTION", "QUIET_RETRY_MS", "SERVER_TROUBLE", "SIGNER_DECLINED",
-           "SIGNER_FAILED", "SIGNER_SILENT", "TURNED_DOWN", "markup", "retry_quietly", "spoken"]
+__all__ = ["CAUSE_WORDS", "CHECK_CONNECTION", "CONNECTION", "QUIET_RETRY_MS", "SERVER",
+           "SERVER_TROUBLE", "SIGNER_DECLINED", "SIGNER_FAILED", "SIGNER_SILENT", "TURNED_DOWN",
+           "markup", "retry_quietly", "spoken"]

@@ -238,7 +238,19 @@ def test_a_lookup_that_never_gets_through_says_so_once_when_the_tries_are_spent(
     later = Later()
     client = Client(refusal=StandupError(Code.OFFLINE))
     answer = _ask([_entry(1)], [client], later)
-    assert answer == rounds.unknown(connection=True)
+    assert answer == rounds.unknown(Code.OFFLINE)
     assert answer.words == failures.CHECK_CONNECTION and not answer.final
     assert later.waits == list(failures.QUIET_RETRY_MS)
     assert len(client.lookups) == 1 + len(failures.QUIET_RETRY_MS)
+
+
+@pytest.mark.parametrize("code, words", [
+    (Code.OFFLINE, failures.CHECK_CONNECTION),
+    (Code.TIMEOUT, failures.CHECK_CONNECTION),
+    (Code.SERVER, failures.SERVER_TROUBLE),
+])
+def test_a_lookup_that_never_gets_through_is_said_by_its_true_cause(code, words):
+    # RG-M2r3 6: a server in trouble (5xx) is never the connection.
+    client = Client(refusal=StandupError(code))
+    answer = _ask([_entry(1)], [client], Later())
+    assert (answer.round, answer.words) == (None, words)

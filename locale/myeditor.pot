@@ -6588,23 +6588,23 @@ msgstr ""
 msgid "Check your internet connection and try again."
 msgstr ""
 
-#: nostr/failures.py:37
-msgid "The server couldn’t take it just now: try again in a moment."
+#: nostr/failures.py:38
+msgid "The server had a problem just now: try again in a moment."
 msgstr ""
 
-#: nostr/failures.py:40
+#: nostr/failures.py:47
 msgid "The servers your posts go to turned it down: try again later."
 msgstr ""
 
-#: nostr/failures.py:41
+#: nostr/failures.py:48
 msgid "Your signer app didn’t answer: open it and try again."
 msgstr ""
 
-#: nostr/failures.py:42
+#: nostr/failures.py:49
 msgid "Your signer app declined the request: allow it there and try again."
 msgstr ""
 
-#: nostr/failures.py:44
+#: nostr/failures.py:51
 msgid "Your signer app ran into a problem: open it and try again."
 msgstr ""
 
@@ -8197,49 +8197,49 @@ msgstr ""
 msgid "MyEditor couldn’t put this submission together."
 msgstr ""
 
-#: nostr/standup/words.py:154
+#: nostr/standup/words.py:152
 #, python-brace-format
 msgid "You’ve sent {publication} as much as it takes for now: try again at {time}."
 msgstr ""
 
-#: nostr/standup/words.py:155
+#: nostr/standup/words.py:153
 #, python-brace-format
 msgid "You’ve sent {publication} as much as it takes for now: try again tomorrow at {time}."
 msgstr ""
 
-#: nostr/standup/words.py:157
+#: nostr/standup/words.py:155
 #, python-brace-format
 msgid "The server can’t take more from you right now: try again at {time}."
 msgstr ""
 
-#: nostr/standup/words.py:158
+#: nostr/standup/words.py:156
 #, python-brace-format
 msgid "The server can’t take more from you right now: try again tomorrow at {time}."
 msgstr ""
 
-#: nostr/standup/words.py:160
+#: nostr/standup/words.py:158
 msgid "The server can’t take more from you right now: try again later."
 msgstr ""
 
-#: nostr/standup/words.py:161
+#: nostr/standup/words.py:159
 #, python-brace-format
 msgid "You can send it again at {time}."
 msgstr ""
 
-#: nostr/standup/words.py:162
+#: nostr/standup/words.py:160
 #, python-brace-format
 msgid "You can send it again tomorrow at {time}."
 msgstr ""
 
-#: nostr/standup/words.py:166
+#: nostr/standup/words.py:164
 msgid "The publications couldn’t be loaded"
 msgstr ""
 
-#: nostr/standup/words.py:167
+#: nostr/standup/words.py:165
 msgid "MyEditor couldn’t check whether you submitted this text before"
 msgstr ""
 
-#: nostr/standup/words.py:168
+#: nostr/standup/words.py:166
 msgid "The earlier try wasn’t discarded"
 msgstr ""
 
@@ -12379,7 +12379,7 @@ msgid_plural "{count} other submissions stopped as well."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/standup_submit_sheet.py:103
+#: nostr/ui/standup_submit_sheet.py:102
 #: nostr/ui/standup_submit_sheet.py:157
 msgid "Submit to a Publication"
 msgstr ""
@@ -12438,11 +12438,11 @@ msgstr ""
 msgid "No publication takes submissions right now."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:435
+#: nostr/ui/standup_submit_sheet.py:436
 msgid "After acceptance you publish it with your key."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:436
+#: nostr/ui/standup_submit_sheet.py:437
 msgid "At acceptance the editorial team proposes how zaps are split; you confirm it."
 msgstr ""
 
