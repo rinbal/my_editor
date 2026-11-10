@@ -15,7 +15,7 @@ msgstr "OK"
 #: alerts.py:208
 #: nostr/ui/connect_dialog.py:389
 #: nostr/ui/connect_dialog.py:392
-#: nostr/ui/standup_handoff.py:382
+#: nostr/ui/standup_handoff.py:383
 #: nostr/ui/standup_privacy.py:81
 msgid "Details"
 msgstr "Details"
@@ -7066,17 +7066,17 @@ msgstr "zu groß"
 msgid "not a type it takes"
 msgstr "nimmt diese Art Datei nicht"
 
-#: nostr/blossom/store.py:1935
+#: nostr/blossom/store.py:1945
 #, python-brace-format
 msgid "No media server took the file: {servers}. Add another one in Media Servers."
 msgstr "Kein Medienserver hat die Datei angenommen: {servers}. Füge unter „Medienserver“ einen weiteren hinzu."
 
-#: nostr/blossom/store.py:1932
+#: nostr/blossom/store.py:1942
 #, python-brace-format
 msgid "{server}: {reason}"
 msgstr "{server}: {reason}"
 
-#: nostr/blossom/store.py:1135
+#: nostr/blossom/store.py:1145
 #, python-brace-format
 msgid "This file is larger than your media servers take ({size})."
 msgstr "Diese Datei ist größer, als deine Medienserver annehmen ({size})."
@@ -8148,158 +8148,171 @@ msgstr "Der Server nimmt gerade keine Nachrichten mehr von dir an: Sende sie mor
 msgid "The server takes no more messages from you right now: send it again later."
 msgstr "Der Server nimmt gerade keine Nachrichten mehr von dir an: Sende sie später erneut."
 
-#: nostr/standup/words.py:100
+#: nostr/standup/words.py:97
+msgid "The wait for the server is over: you can send your message again now."
+msgstr "Die Wartezeit beim Server ist vorbei: Du kannst deine Nachricht jetzt erneut senden."
+
+#: nostr/standup/words.py:101
 msgid "A submitted article keeps its link name."
 msgstr "Ein eingereichter Artikel behält seinen Linknamen."
 
-#: nostr/standup/words.py:101
+#: nostr/standup/words.py:102
 msgid "The publication knows this article by its link name. Another one would be another submission, and once accepted it is published under this one."
 msgstr "Die Publikation kennt diesen Artikel unter seinem Linknamen. Ein anderer wäre eine weitere Einreichung, und angenommen erscheint er unter diesem."
 
-#: nostr/standup/words.py:104
+#: nostr/standup/words.py:105
 msgid "This article keeps its link name for sending it to the publication."
 msgstr "Dieser Artikel behält seinen Linknamen, damit er an die Publikation gesendet werden kann."
 
-#: nostr/standup/words.py:106
+#: nostr/standup/words.py:107
 msgid "Its submission is made from its link name: another one would be another submission."
 msgstr "Seine Einreichung entsteht aus seinem Linknamen: Ein anderer wäre eine andere Einreichung."
 
-#: nostr/standup/words.py:108
+#: nostr/standup/words.py:109
 msgid "Checking whether this article was submitted …"
 msgstr "Es wird geprüft, ob dieser Artikel eingereicht wurde …"
 
-#: nostr/standup/words.py:109
+#: nostr/standup/words.py:110
 msgid "MyEditor couldn’t check whether this article was submitted, so it keeps its link name for now."
 msgstr "MyEditor konnte nicht prüfen, ob dieser Artikel eingereicht wurde. Er behält deshalb vorerst seinen Linknamen."
 
-#: nostr/standup/words.py:111
+#: nostr/standup/words.py:112
 msgid "If it was submitted, another link name would be another submission."
 msgstr "Wurde er eingereicht, wäre ein anderer Linkname eine andere Einreichung."
 
-#: nostr/standup/words.py:117
+#: nostr/standup/words.py:118
 msgid "Your article wasn’t submitted"
 msgstr "Dein Artikel wurde nicht eingereicht"
 
-#: nostr/standup/words.py:118
+#: nostr/standup/words.py:119
 msgid "Your submission isn’t confirmed"
 msgstr "Deine Einreichung ist nicht bestätigt"
 
-#: nostr/standup/words.py:119
+#: nostr/standup/words.py:120
 msgid "Your submission is missing a picture"
 msgstr "Deiner Einreichung fehlt ein Bild"
 
-#: nostr/standup/words.py:120
+#: nostr/standup/words.py:121
 msgid "This version wasn’t submitted"
 msgstr "Diese Fassung wurde nicht eingereicht"
 
-#: nostr/standup/words.py:123
+#: nostr/standup/words.py:124
 msgid "Your list of submissions holds an entry for this text that MyEditor cannot use."
 msgstr "Deine Liste der Einreichungen hat zu diesem Text einen Eintrag, den MyEditor nicht verwenden kann."
 
-#: nostr/standup/words.py:125
+#: nostr/standup/words.py:126
 msgid "The editorial team’s key couldn’t be confirmed: try again in a moment."
 msgstr "Der Schlüssel der Redaktion konnte nicht bestätigt werden: Versuche es gleich noch einmal."
 
-#: nostr/standup/words.py:128
+#: nostr/standup/words.py:129
 msgid "The server didn’t receive your submission: try again."
 msgstr "Der Server hat deine Einreichung nicht erhalten: Versuche es erneut."
 
-#: nostr/standup/words.py:130
+#: nostr/standup/words.py:131
 msgid "Your list of submissions couldn’t be saved: check your internet connection and try again."
 msgstr "Deine Liste der Einreichungen konnte nicht gespeichert werden: Prüfe deine Internetverbindung und versuche es erneut."
 
-#: nostr/standup/words.py:132
+#: nostr/standup/words.py:133
 msgid "Another device changed this submission just now."
 msgstr "Ein anderes Gerät hat diese Einreichung gerade geändert."
 
-#: nostr/standup/words.py:133
+#: nostr/standup/words.py:134
 msgid "A picture couldn’t be uploaded: check your internet connection and try again."
 msgstr "Ein Bild konnte nicht hochgeladen werden: Prüfe deine Internetverbindung und versuche es erneut."
 
-#: nostr/standup/words.py:135
+#: nostr/standup/words.py:136
 msgid "A picture isn’t on your media server any more: try again to upload it once more."
 msgstr "Ein Bild ist nicht mehr auf deinem Medienserver: Versuche es erneut, dann wird es noch einmal hochgeladen."
 
-#: nostr/standup/words.py:137
+#: nostr/standup/words.py:138
 #, python-brace-format
 msgid "This submission is larger than {publication} takes."
 msgstr "Diese Einreichung ist größer, als {publication} annimmt."
 
-#: nostr/standup/words.py:138
+#: nostr/standup/words.py:139
 #, python-brace-format
 msgid "{publication} already has another version of this submission."
 msgstr "{publication} hat schon eine andere Fassung dieser Einreichung."
 
-#: nostr/standup/words.py:141
+#: nostr/standup/words.py:142
 #, python-brace-format
 msgid "{publication} received this submission, but not as MyEditor sent it."
 msgstr "{publication} hat diese Einreichung erhalten, aber nicht so, wie MyEditor sie gesendet hat."
 
-#: nostr/standup/words.py:142
+#: nostr/standup/words.py:143
 msgid "The server didn’t take the submission."
 msgstr "Der Server hat die Einreichung nicht angenommen."
 
-#: nostr/standup/words.py:144
+#: nostr/standup/words.py:145
 msgid "MyEditor couldn’t put this submission together."
 msgstr "MyEditor konnte diese Einreichung nicht zusammenstellen."
 
-#: nostr/standup/words.py:171
+#: nostr/standup/words.py:172
 #, python-brace-format
 msgid "You’ve sent {publication} as much as it takes for now: try again at {time}."
 msgstr "Du hast {publication} vorerst so viel gesendet, wie dort angenommen wird: Versuche es um {time} erneut."
 
-#: nostr/standup/words.py:172
+#: nostr/standup/words.py:173
 #, python-brace-format
 msgid "You’ve sent {publication} as much as it takes for now: try again tomorrow at {time}."
 msgstr "Du hast {publication} vorerst so viel gesendet, wie dort angenommen wird: Versuche es morgen um {time} erneut."
 
-#: nostr/standup/words.py:174
+#: nostr/standup/words.py:175
 #, python-brace-format
 msgid "The server can’t take more from you right now: try again at {time}."
 msgstr "Der Server nimmt gerade nichts mehr von dir an: Versuche es um {time} erneut."
 
-#: nostr/standup/words.py:175
+#: nostr/standup/words.py:176
 #, python-brace-format
 msgid "The server can’t take more from you right now: try again tomorrow at {time}."
 msgstr "Der Server nimmt gerade nichts mehr von dir an: Versuche es morgen um {time} erneut."
 
-#: nostr/standup/words.py:177
+#: nostr/standup/words.py:178
 msgid "The server can’t take more from you right now: try again later."
 msgstr "Der Server nimmt gerade nichts mehr von dir an: Versuche es später erneut."
 
+#: nostr/standup/words.py:180
+#, python-brace-format
+msgid "The wait for {publication} is over: you can try again now."
+msgstr "Die Wartezeit bei {publication} ist vorbei: Du kannst es jetzt erneut versuchen."
+
 #: nostr/standup/words.py:181
+msgid "The wait for the server is over: you can try again now."
+msgstr "Die Wartezeit beim Server ist vorbei: Du kannst es jetzt erneut versuchen."
+
+#: nostr/standup/words.py:185
 msgid "The publications couldn’t be loaded"
 msgstr "Die Publikationen konnten nicht geladen werden"
 
-#: nostr/standup/words.py:182
+#: nostr/standup/words.py:186
 msgid "MyEditor couldn’t check whether you submitted this text before"
 msgstr "MyEditor konnte nicht prüfen, ob du diesen Text schon eingereicht hast"
 
-#: nostr/standup/words.py:183
+#: nostr/standup/words.py:187
 msgid "The earlier try wasn’t discarded"
 msgstr "Der frühere Versuch wurde nicht verworfen"
 
-#: nostr/standup/words.py:148
+#: nostr/standup/words.py:149
 #, python-brace-format
 msgid "{publication} isn’t taking submissions right now."
 msgstr "{publication} nimmt gerade keine Einreichungen an."
 
-#: nostr/standup/words.py:149
+#: nostr/standup/words.py:150
 #, python-brace-format
 msgid "{publication} doesn’t take submissions from you."
 msgstr "{publication} nimmt von dir keine Einreichungen an."
 
-#: nostr/standup/words.py:150
+#: nostr/standup/words.py:151
 #, python-brace-format
 msgid "You already have as many open submissions at {publication} as it takes."
 msgstr "Du hast bei {publication} schon so viele offene Einreichungen, wie sie annimmt."
 
-#: nostr/standup/words.py:152
+#: nostr/standup/words.py:153
 #, python-brace-format
 msgid "You’ve sent {publication} as much as it takes for now: try again later."
 msgstr "Du hast {publication} vorerst so viel gesendet, wie dort angenommen wird: Versuche es später erneut."
 
-#: nostr/standup/words.py:158
+#: nostr/standup/words.py:159
 #, python-brace-format
 msgid "Nobody at {publication} could decide on it: the only person who can is named among those who take part."
 msgstr "Niemand bei {publication} könnte darüber entscheiden: Die einzige Person, die das kann, ist unter den Beteiligten."
@@ -12296,11 +12309,11 @@ msgstr "Wer ihn hat, kann im Namen seines Besitzers veröffentlichen, und einmal
 msgid "Replace with Public Key"
 msgstr "Durch öffentlichen Schlüssel ersetzen"
 
-#: nostr/ui/standup_handoff.py:403
+#: nostr/ui/standup_handoff.py:404
 msgid "Send Again"
 msgstr "Erneut senden"
 
-#: nostr/ui/standup_handoff.py:414
+#: nostr/ui/standup_handoff.py:415
 msgid "Continue in Background"
 msgstr "Im Hintergrund fortsetzen"
 
@@ -12308,7 +12321,7 @@ msgstr "Im Hintergrund fortsetzen"
 msgid "Editorial inbox"
 msgstr "Eingang der Redaktion"
 
-#: nostr/ui/standup_handoff.py:553
+#: nostr/ui/standup_handoff.py:557
 #: nostr/ui/standup_ways_out.py:68
 msgctxt "submissions list"
 msgid "Reload"

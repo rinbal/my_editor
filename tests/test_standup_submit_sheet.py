@@ -673,7 +673,8 @@ def _wait_over(sheet, clock, seconds) -> None:
     sheet._wait.timeout.emit()
 
 
-def test_a_round_lookup_met_a_limit_says_its_wait_and_try_again_waits(tmp_path, clock):
+def test_a_round_lookup_met_a_limit_says_its_wait_and_try_again_waits(tmp_path, clock,
+                                                                      monkeypatch):
     # RG-M2r2a 5: a 429 read as a round that cannot be told, and Try
     # Again asked again at once, one more counted request each time.
     from nostr.ui.standup_handoff import wait_words
@@ -689,8 +690,15 @@ def test_a_round_lookup_met_a_limit_says_its_wait_and_try_again_waits(tmp_path, 
     sheet._try_again()                              # Return, a shortcut: still waits
     assert writer.asked == asked
     writer.round = (1, "")
+    from nostr.ui import publish_sheet
+    said = []
+    monkeypatch.setattr(publish_sheet.announce, "announce", lambda _w, text: said.append(text))
     _wait_over(sheet, clock, 120)
     assert sheet.retry_load.isEnabled() and not sheet._wait.isActive()
+    # RG-M2r3 14: Try Again works now, and the words say so, unannounced.
+    assert sheet.status.shown == (NOT_CHECKED, "Die Wartezeit bei Einundzwanzig Magazin ist "
+                                  "vorbei: Du kannst es jetzt erneut versuchen.")
+    assert said == []
     sheet.retry_load.click()
     assert writer.asked == asked + 1 and sheet.submit_button.isEnabled()
 
@@ -703,7 +711,7 @@ def test_a_limit_without_a_wait_is_said_and_try_again_may_ask_at_once(tmp_path, 
     assert sheet.retry_load.isEnabled() and not sheet._wait.isActive()
 
 
-def test_publications_that_met_a_limit_wait_for_it_too(tmp_path, clock):
+def test_publications_that_met_a_limit_wait_for_it_too(tmp_path, clock, monkeypatch):
     from nostr.standup.errors import Code, StandupError
     writer = Writer()
     writer.fail_destinations = True
@@ -716,10 +724,14 @@ def test_publications_that_met_a_limit_wait_for_it_too(tmp_path, clock):
     sheet._try_again()
     assert writer.loads == 1
     writer.fail_destinations = False
+    from nostr.ui import publish_sheet
+    said = []
+    monkeypatch.setattr(publish_sheet.announce, "announce", lambda _w, text: said.append(text))
     _wait_over(sheet, clock, 600)
     assert sheet.status.shown == ("Die Publikationen konnten nicht geladen werden",
-                                  "Der Server nimmt gerade nichts mehr von dir an: Versuche es "
-                                  "später erneut.")
+                                  "Die Wartezeit beim Server ist vorbei: Du kannst es jetzt "
+                                  "erneut versuchen.")
+    assert said == []
     sheet.retry_load.click()
     assert writer.loads == 2 and sheet.retry_load.isHidden()
 

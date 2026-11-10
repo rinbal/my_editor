@@ -225,7 +225,7 @@ class SubmitSheet(QDialog):
         self.ways_out = WaysOut(self._hint(), now=lambda: _now())
         self.ways_out.retry_requested.connect(self._try_again)
         self.ways_out.discard_requested.connect(self._on_discard)
-        self.ways_out.wait_over.connect(self._refresh)
+        self.ways_out.wait_over.connect(lambda: self._refresh(quietly=True))  # RG-M2r3 14
         self.retry_load, self.unsent = self.ways_out.retry, self.ways_out.unsent
         self.discard_button, self._wait = self.ways_out.discard, self.ways_out.timer
         to = QWidget()
@@ -509,7 +509,7 @@ class SubmitSheet(QDialog):
             return self._load_retry_at
         return self._round.retry_at if self._round is not None and self._round.limited else None
 
-    def _refresh(self, *_args) -> None:
+    def _refresh(self, *_args, quietly: bool = False) -> None:
         round_ = self._round
         # A round step that met its bounds meets them again (final).
         self.ways_out.show_ways(
@@ -520,9 +520,9 @@ class SubmitSheet(QDialog):
         self.submit_button.setEnabled(not blockers and self.round() is not None)
         first = next(iter(blockers), "")
         first = first if isinstance(first, drafting.Blocker) else drafting.Blocker(first)
-        # A total failure (it has a title) in the error color (lessons 36);
-        # what exactly is wrong (a key, a file's type) in the tooltip (27).
-        self.status.say(first, title=first.title, error=first.error, detail=first.detail)
+        # A total failure (with a title) in the error color, details in the tooltip (36, 27).
+        self.status.say(first, title=first.title, error=first.error, detail=first.detail,
+                        quietly=quietly)
         self.status.setAccessibleDescription(first.detail)
 
     # -- submitting ----------------------------------------------------------

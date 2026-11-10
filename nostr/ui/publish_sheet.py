@@ -424,9 +424,10 @@ class StatusLine(QLabel):
         self.setVisible(False)
 
     def say(self, text: str, *, error: bool = False, title: str = "",
-            detail: str = "") -> None:
+            detail: str = "", quietly: bool = False) -> None:
         """Show ``text`` (with its ``title``, for a total failure); the
-        technical ``detail`` only in the tooltip (lessons 26 and 36)."""
+        technical ``detail`` only in the tooltip (lessons 26 and 36).
+        ``quietly``: shown and not announced (a wait that is over)."""
         self.setToolTip(detail)
         if title:
             self.setTextFormat(Qt.TextFormat.RichText)
@@ -437,7 +438,7 @@ class StatusLine(QLabel):
         self.setVisible(bool(text))
         self._error = error
         self._color()
-        if text and (error or title) and (title, text) != self.shown:
+        if text and (error or title) and (title, text) != self.shown and not quietly:
             announce.announce(self, spoken(title, text))
         self.shown = (title, text)
 

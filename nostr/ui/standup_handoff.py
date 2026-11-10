@@ -302,7 +302,7 @@ def phase_words(progress: Progress, publication: str, now: Optional[float] = Non
         failure = progress.failure
         sentence = failure.said or wait_words(
             failure.retry_at, _now() if now is None else now, words.LIMIT_AT,
-            words.LIMIT_TOMORROW_AT, publication=publication) or _(
+            words.LIMIT_TOMORROW_AT, words.LIMIT_OVER, publication=publication) or _(
             failure.sentence).format(publication=publication)
         return _(failure.title).format(publication=publication), sentence
     held = HELD_WORDS[progress.held]
@@ -341,7 +341,8 @@ def message_words(progress: Progress, now: float) -> tuple:
     failure = progress.message_failure
     if progress.message is MessageStatus.FAILED and failure is not None:
         sentence = wait_words(failure.retry_at, now, words.MESSAGE_LIMIT_AT,
-                              words.MESSAGE_LIMIT_TOMORROW_AT) or _(failure.sentence)
+                              words.MESSAGE_LIMIT_TOMORROW_AT,
+                              words.MESSAGE_LIMIT_OVER) or _(failure.sentence)
         return _(failure.title), sentence
     shown = _MESSAGE_WORDS.get(progress.message)
     return (_(shown), "") if shown else ("", "")
@@ -440,7 +441,9 @@ class HandoffView(QWidget):
         color = appearance.roles(is_dark).error if self._error else appearance.roles(is_dark).text
         self.headline.setStyleSheet(f"color: {color}; font-weight: 700; font-size: 14px;")
 
-    def show_progress(self, progress: Progress) -> None:
+    def show_progress(self, progress: Progress, *, quietly: bool = False) -> None:
+        """Show ``progress``; what it says is announced when it changed,
+        unless ``quietly`` (a wait that is over: only its words change)."""
         self._progress = progress
         phase = progress.phase
         now = _now()
@@ -479,7 +482,8 @@ class HandoffView(QWidget):
         said = spoken(first, second, message_title, message_sentence)
         if said != self._said:
             self._said = said
-            announce.announce(self, said)
+            if not quietly:
+                announce.announce(self, said)
 
     @staticmethod
     def _waits(progress: Progress) -> tuple:
@@ -492,7 +496,7 @@ class HandoffView(QWidget):
 
     def _wait_over(self) -> None:
         if self._progress is not None:
-            self.show_progress(self._progress)
+            self.show_progress(self._progress, quietly=True)
 
     def _show_details(self, shown: bool) -> None:
         self.details_toggle.setArrowType(Qt.ArrowType.DownArrow if shown

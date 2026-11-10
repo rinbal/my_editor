@@ -287,7 +287,10 @@ def _limited(retry_at):
 
 def test_try_again_waits_for_the_limit_and_the_words_say_until_when(view, monkeypatch):
     now = _clock(monkeypatch, _at(14, 20))
+    said = []
+    monkeypatch.setattr(standup_handoff.announce, "announce", lambda _w, text: said.append(text))
     view.show_progress(Progress(Step.FAILED, failure=_limited(_at(14, 29, 30))))
+    assert len(said) == 1
     assert not view.retry_button.isHidden() and not view.retry_button.isEnabled()
     assert not view.retry_button.isDefault()
     clock = standup_handoff.wait_words(_at(14, 29, 30), now["at"], "{time}", "{time}")
@@ -299,9 +302,12 @@ def test_try_again_waits_for_the_limit_and_the_words_say_until_when(view, monkey
     now["at"] = _at(14, 29, 30)
     view._wait.timeout.emit()
     assert view.retry_button.isEnabled() and view.retry_button.isDefault()
-    assert view.detail.text() == (f"You’ve sent {PUBLICATION} as much as it takes for now: "
-                                  "try again later.")
-    assert not view._wait.isActive()
+    # RG-M2r3 14: the words say Try Again works now (they said "try again
+    # later" beside an enabled Try Again), shown and not announced again.
+    assert view.detail.text() == f"The wait for {PUBLICATION} is over: you can try again now."
+    assert not view._wait.isActive() and len(said) == 1
+    view.show_progress(Progress(Step.FAILED, failure=_limited(_at(14, 29, 30))))
+    assert len(said) == 1                           # the same state, said once
 
 
 def test_a_wait_past_midnight_says_tomorrow(german, view, monkeypatch):
@@ -329,9 +335,15 @@ def test_send_again_waits_for_the_limit_of_messages(view, monkeypatch):
         f"again at {clock}.")
     view.send_again.click()
     assert asked == []
+    said = []
+    monkeypatch.setattr(standup_handoff.announce, "announce", lambda _w, text: said.append(text))
     now["at"] = _at(9, 1)
     view._wait.timeout.emit()
     assert view.send_again.isEnabled()
+    assert view.message.text() == failures.markup(
+        words.MESSAGE_NOT_SENT, "The wait for the server is over: you can send your message again "
+        "now.")
+    assert said == []                               # shown, not announced (RG-M2r3 14)
     view.send_again.click()
     assert asked == [True]
 

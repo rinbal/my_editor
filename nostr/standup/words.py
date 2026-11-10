@@ -94,6 +94,7 @@ MESSAGE_LIMIT_TOMORROW_AT = N_("The server takes no more messages from you right
                                "again tomorrow at {time}.")
 MESSAGE_LIMIT_LATER = N_("The server takes no more messages from you right now: send it again "
                          "later.")
+MESSAGE_LIMIT_OVER = N_("The wait for the server is over: you can send your message again now.")
 
 # -- why Article Details keeps a text's link name (RG-M2r2a 1 and 2) ----------
 
@@ -175,6 +176,9 @@ SERVER_LIMIT_AT = N_("The server can’t take more from you right now: try again
 SERVER_LIMIT_TOMORROW_AT = N_("The server can’t take more from you right now: try again "
                               "tomorrow at {time}.")
 SERVER_LIMIT_LATER = N_("The server can’t take more from you right now: try again later.")
+# Once the wait is over (RG-M2r3 14): Try Again works, and the words say so.
+LIMIT_OVER = N_("The wait for {publication} is over: you can try again now.")
+SERVER_LIMIT_OVER = N_("The wait for the server is over: you can try again now.")
 
 # The sheet: what did not happen there (lessons 36), each said once with
 # its sentence and Try Again.
@@ -211,11 +215,12 @@ def message_failure_words(code: str, *, maybe_stored: bool = False) -> tuple:
 
 __all__ = [
     "ANOTHER_VERSION", "ELSEWHERE_HERE_NOW", "ELSEWHERE_NOT_HERE_YET", "ENCRYPTING",
-    "IN_THE_BACKGROUND", "KEY_NOT_CONFIRMED_AGAIN", "LIMIT_AT", "LIMIT_TOMORROW_AT",
+    "IN_THE_BACKGROUND", "KEY_NOT_CONFIRMED_AGAIN", "LIMIT_AT", "LIMIT_OVER",
+    "LIMIT_TOMORROW_AT",
     "LINK_NAME_CHECKING", "LINK_NAME_CHECKING_WHY", "LINK_NAME_KEPT_FOR_SENDING",
     "LINK_NAME_KEPT_FOR_SENDING_WHY", "LINK_NAME_NOT_CHECKED", "LINK_NAME_SUBMITTED",
     "LINK_NAME_SUBMITTED_WHY", "LIST_CHANGED_ELSEWHERE", "LIST_ENTRY_UNUSABLE", "LIST_NOT_SAVED",
-    "MESSAGE_LIMIT_AT", "MESSAGE_LIMIT_LATER", "MESSAGE_LIMIT_TOMORROW_AT",
+    "MESSAGE_LIMIT_AT", "MESSAGE_LIMIT_LATER", "MESSAGE_LIMIT_OVER", "MESSAGE_LIMIT_TOMORROW_AT",
     "MESSAGE_MAYBE_ARRIVED", "MESSAGE_NOT_BUILT", "MESSAGE_NOT_CONFIRMED", "MESSAGE_NOT_SENT",
     "MESSAGE_NOT_SENT_IN_THE_BACKGROUND", "MESSAGE_REFUSED", "MESSAGE_SENDING", "MESSAGE_SENT",
     "MESSAGE_UNCONFIRMED_IN_THE_BACKGROUND",
@@ -223,7 +228,7 @@ __all__ = [
     "NOT_CONFIRMED", "NOT_DISCARDED", "NOT_RECEIVED", "NOT_SUBMITTED", "NOT_TAKEN",
     "PICTURE_MISSING",
     "PICTURE_NOT_IN", "PUBLICATIONS_NOT_LOADED", "READING_LIST", "SENDING", "SERVER_LIMIT_AT",
-    "SERVER_LIMIT_LATER", "SERVER_LIMIT_TOMORROW_AT",
+    "SERVER_LIMIT_LATER", "SERVER_LIMIT_OVER", "SERVER_LIMIT_TOMORROW_AT",
     "SERVER_TROUBLE", "STOPPED_MESSAGE", "STOPPED_NOTHING_SENT", "STOPPED_OTHER_VERSION",
     "STOPPED_PICTURES", "STOPPED_UNCONFIRMED", "STORED_CHECKING", "STORED_OTHER",
     "STORED_SENDING", "SUBMITTED", "SUBMITTED_DETAIL", "SUBMITTED_ELSEWHERE", "TOO_LARGE",
