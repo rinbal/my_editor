@@ -124,12 +124,16 @@ def test_the_link_names_myeditors_own_page_and_icon_by_default():
 
 
 # The pairing relays' NIP-11 limitations as their documents stated them on
-# 2026-11-10 (none asked for payment). theforest.nostr1.com's said
-# payment_required and listed fees.
+# 2026-11-10 (none asked for payment, none stated a content cap).
+# theforest.nostr1.com's said payment_required and listed fees.
+# nrs.primal.net is "Primal Nostr Remote Signer Relay", one of Amber's
+# defaults (AmberSettings.kt at 621c445a, lines 8 to 13: auth.nostr1.com,
+# bucket.coracle.social, nrs.primal.net, relay.nip46.com).
 STATED_LIMITATIONS = {
     "wss://relay.primal.net": {"max_message_length": 1_000_000},
     "wss://relay.damus.io": {"max_message_length": 1_000_000},
     "wss://nos.lol": {"max_message_length": 131_072},
+    "wss://nrs.primal.net": {"max_message_length": 131_072},
 }
 
 
@@ -141,7 +145,7 @@ def test_the_pairing_relays_are_free_and_uncapped_and_end_with_nsec_apps():
     from nostr import signer_limits
     from nostr.bunker import NIP46_RELAYS
     assert NIP46_RELAYS == ("wss://relay.primal.net", "wss://relay.damus.io", "wss://nos.lol",
-                            "wss://relay.nsec.app")
+                            "wss://nrs.primal.net", "wss://relay.nsec.app")
     ahead = NIP46_RELAYS[:-1]
     assert len(ahead) >= 2
     for url in ahead:

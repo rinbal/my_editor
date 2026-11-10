@@ -141,22 +141,27 @@ def humanize_failure(reason: str) -> str:
 
 
 # Where MyEditor and a signer app meet to pair (NIP-46 nostrconnect).
-# Transport only, never anyone's home relay. relay.primal.net is among
-# Amber's own defaults, so a phone that pairs usually already listens on it.
+# Transport only, never anyone's home relay.
 #
 # The ones that state no small content cap come first, at least two of
 # them (contract 12.5; their NIP-11 documents, fetched 2026-11-10):
 # relay.primal.net and relay.damus.io take messages of 1,000,000 bytes,
-# nos.lol 131,072, none states a content cap and none asks for payment.
-# relay.nsec.app comes last: nsec.app answers only there, whatever relays
-# the link names, so without it nsec.app could never reach MyEditor (it
-# publishes no NIP-11 document). theforest.nostr1.com is not one of them:
-# its document says payment_required and lists fees, so a channel key
-# that has not paid cannot rely on writing a kind 24133 there.
+# nos.lol and nrs.primal.net ("Primal Nostr Remote Signer Relay") 131,072;
+# none states a content cap and none asks for payment. nrs.primal.net is
+# one of Amber's own default relays (AmberSettings.kt at 621c445a, lines 8
+# to 13: auth.nostr1.com, bucket.coracle.social, nrs.primal.net,
+# relay.nip46.com); relay.primal.net is not one of them. relay.nsec.app
+# comes last: nsec.app answers only there, whatever relays the link names,
+# so without it nsec.app could never reach MyEditor (it publishes no
+# NIP-11 document).
+# theforest.nostr1.com is not one of them: its document says
+# payment_required and lists fees, so a channel key that has not paid
+# cannot rely on writing a kind 24133 there.
 NIP46_RELAYS: tuple = (
     "wss://relay.primal.net",
     "wss://relay.damus.io",
     "wss://nos.lol",
+    "wss://nrs.primal.net",
     "wss://relay.nsec.app",
 )
 
