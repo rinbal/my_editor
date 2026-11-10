@@ -179,10 +179,10 @@ class _DevTools:
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         port_file = profile / "DevToolsActivePort"
         started = time.monotonic()
-        while not port_file.exists() or not port_file.read_text().strip():
+        while not port_file.exists() or not port_file.read_text(encoding="ascii").strip():
             assert time.monotonic() - started < self.LIMIT_MS / 1000, "Chrome did not start"
             QTest.qWait(50)
-        port = port_file.read_text().split()[0]
+        port = port_file.read_text(encoding="ascii").split()[0]
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list") as answer:
             page = next(t for t in json.load(answer) if t["type"] == "page")
         self.socket = QWebSocket()
