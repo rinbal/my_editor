@@ -750,14 +750,16 @@ def test_every_order_of_the_vector_records_merges_to_one_list(case):
             assert (shown.to_json() if shown is not None else None) == case["shown"]
 
 
-def test_the_vector_merge_variants_are_the_contracts_nine():
+def test_the_vector_merge_variants_are_the_contracts_ten():
+    # c2aa466 added the tenth: equal in stored, time and tombstone, so only
+    # the fourth step, the canonical hash of the record as read, decides.
     names = {case["name"] for case in PL["merge_variants"]}
     assert names == {
         "stored_beats_a_newer_unstored", "keyed_tombstone_removes_only_its_key",
         "keyed_tombstone_never_removes_another_key", "same_key_newest_wins",
         "two_unstored_keys_show_the_newest", "stored_beats_a_tombstone_of_its_own_key",
         "unkeyed_tombstone_touches_no_keyed_record", "no_cycle_between_keys",
-        "tombstone_wins_at_equal_time"}
+        "tombstone_wins_at_equal_time", "equal_rank_the_greater_hash_wins"}
 
 
 def test_the_vector_read_state_merge():
