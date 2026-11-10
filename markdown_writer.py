@@ -887,8 +887,13 @@ def _join_soft_breaks(doc: QTextDocument) -> int:
         block = doc.findBlock(start)
         cursor.setPosition(start)
         if start + 1 == block.position() + block.length() - 1 and block.next().isValid():
-            # The mark and the paragraph's end, in the next block's place.
+            # The mark and the paragraph's end, in the next block's place,
+            # in the format of the words before it; after a picture (a
+            # caption on the line under it), in none: the format of the
+            # picture would make the break a second copy of it.
             fmt = QTextCharFormat(cursor.charFormat())
+            if fmt.isImageFormat():
+                fmt = QTextCharFormat()
             cursor.setPosition(start + 2, QTextCursor.MoveMode.KeepAnchor)
             fmt.setProperty(SOFT_BREAK_PROPERTY, True)
             cursor.insertText(LINE_SEPARATOR, fmt)

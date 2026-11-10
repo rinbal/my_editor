@@ -579,3 +579,11 @@ def test_a_preview_reads_a_soft_break_as_readers_do():
     doc = QTextDocument()
     read_markdown(doc, "Line one\nline two\n", MARKDOWN_FEATURES)
     assert "\u2028" not in doc.toPlainText() and "\n" not in doc.toPlainText()
+
+
+def test_a_picture_with_its_caption_on_the_next_line_is_written_once():
+    """The soft break after a picture is not a second copy of it."""
+    source = "![a](a.png)\n*The caption*\n\nText\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
