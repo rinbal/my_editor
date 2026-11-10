@@ -187,6 +187,26 @@ class MediaModel(QAbstractListModel):
         self.changed(tile.key)
         return True
 
+    def remove(self, key: str) -> bool:
+        """The tile of ``key`` taken out where it stands, the others kept
+        (no reset: selection and scroll stay); False when none has it."""
+        row = self._rows.get(key)
+        if row is None:
+            return False
+        self.beginRemoveRows(QModelIndex(), row, row)
+        del self._tiles[row]
+        self._rows = {tile.key: at for at, tile in enumerate(self._tiles)}
+        self.endRemoveRows()
+        return True
+
+    def insert(self, row: int, tile: Tile) -> None:
+        """``tile`` put in at ``row`` (0 to the number of tiles), the
+        others kept."""
+        self.beginInsertRows(QModelIndex(), row, row)
+        self._tiles.insert(row, tile)
+        self._rows = {each.key: at for at, each in enumerate(self._tiles)}
+        self.endInsertRows()
+
     def changed(self, key: str) -> None:
         row = self._rows.get(key)
         if row is not None:

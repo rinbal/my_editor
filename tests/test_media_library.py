@@ -1540,19 +1540,132 @@ def test_the_grid_is_not_laid_out_again_for_each_file_told(tmp_path, monkeypatch
     assert len(tiles(world)) == 12 and all(not tile.unsure for tile in tiles(world))
 
 
-def test_a_file_told_that_leaves_the_filter_lays_the_grid_out_once_per_turn(tmp_path,
-                                                                            monkeypatch):
+def test_a_file_told_that_leaves_the_filter_is_taken_out_where_it_stands(tmp_path,
+                                                                        monkeypatch):
     store, server, nam, shas = _many_from_elsewhere(tmp_path, 3)
     picker = build(tmp_path, monkeypatch, store, pick=True)
     assert len(tiles(picker)) == 3
-    calls = []
+    calls, resets, removed = [], [], []
     original = picker.dialog._rebuild
     monkeypatch.setattr(picker.dialog, "_rebuild", lambda *a: (calls.append(1), original())[1])
-    # Three told in one turn to be submissions' files: never offered to
-    # insert, so they leave the grid, laid out once.
+    picker.model.modelReset.connect(lambda: resets.append(True))
+    picker.model.rowsRemoved.connect(lambda _parent, first, _last: removed.append(first))
+    # Three told to be submissions' files: never offered to insert, so
+    # each leaves the grid at once, the others staying where they are.
+    order = [t.key for t in tiles(picker)]
+    store._sealed_known.update({sha: True for sha in shas})
+    picker.dialog._on_submission_checked(shas[1])
+    assert [t.key for t in tiles(picker)] == [key for key in order if key != shas[1]]
+    for sha in (shas[0], shas[2]):
+        picker.dialog._on_submission_checked(sha)
+    QApplication.processEvents()
+    assert calls == [] and resets == [] and len(removed) == 3 and tiles(picker) == []
+
+
+def _many_sealed_and_plain(tmp_path, count):
+    """``count`` files another computer uploaded, every other one a
+    submission's: each read before it is offered."""
+    from tests.blossom_fakes import SERVER as BLOSSOM, descriptor
+    store, server, nam = _real_store(tmp_path, tmp_path / "blobs")
+    shas = []
+    for n in range(count):
+        body = (_sealed_file() + bytes([n]) if n % 2 else b"PK\x03\x04 notes " + bytes([n]))
+        sha = sha_of(body)
+        server.contents[sha] = body
+        server.blobs[sha] = descriptor(sha, server=BLOSSOM, size=len(body), uploaded=1000 + n,
+                                       mime="application/octet-stream", url=f"{BLOSSOM}/{sha}")
+        shas.append(sha)
+    store.fetch(force=True)
+    nam.settle()
+    return store, server, nam, shas
+
+
+@pytest.mark.parametrize("kind", ["all", "file", "submission"])
+@pytest.mark.parametrize("sort", ["newest", "name"])
+def test_files_told_one_per_turn_each_move_one_tile_and_end_as_a_layout_would(
+        tmp_path, monkeypatch, kind, sort):
+    # RG-M2r3 2: real replies come one per turn of the event loop. Each
+    # answer makes its one tile again; the grid is never laid out again,
+    # and in the end it is what a layout of it gives.
+    from nostr.ui.media_library_dialog import MediaLibraryDialog
+    store, server, nam, shas = _many_sealed_and_plain(tmp_path, 12)
+    built = []
+    real_tile = MediaLibraryDialog._file_tile
+    monkeypatch.setattr(MediaLibraryDialog, "_file_tile",
+                        lambda self, media: (built.append(media.hash), real_tile(self, media))[1])
+    world = build(tmp_path, monkeypatch, store)
+    for combo, value in ((world.dialog._filter_combo, kind), (world.dialog._sort_combo, sort)):
+        combo.setCurrentIndex(combo.findData(value))
+    QApplication.processEvents()
+    resets = []
+    world.model.modelReset.connect(lambda: resets.append(True))
+    before = len(built)
+    turns = 0
+    while nam.settle_one(missing_ok=True):          # one reply per turn, as Qt has them
+        QApplication.processEvents()
+        turns += 1
+        assert turns < 10 * len(shas)
+    QApplication.processEvents()
+    assert all(store.submission_state(sha) is not None for sha in shas)
+    assert resets == [] and len(built) - before == len(shas)    # one tile per answer
+    shown = [(t.key, t.name, t.submission, t.unsure) for t in tiles(world)]
+    world.dialog._rebuild()
+    assert shown == [(t.key, t.name, t.submission, t.unsure) for t in tiles(world)]
+    assert len(shown) == {"all": 6, "file": 6, "submission": 6}[kind]
+
+
+def _told(world, sha, monkeypatch, **changes):
+    """``sha`` answered, its tile made again with ``changes``."""
+    from dataclasses import replace
+    real = MediaLibraryDialog._file_tile
+    monkeypatch.setattr(MediaLibraryDialog, "_file_tile", lambda self, m: replace(
+        real(self, m), **changes) if m.hash == sha else real(self, m))
+    world.dialog._on_submission_checked(sha)
+
+
+def _laid_out(world):
+    shown = [(t.key, t.name) for t in tiles(world)]
+    world.dialog._rebuild()
+    return shown == [(t.key, t.name) for t in tiles(world)]
+
+
+def test_a_file_told_whose_name_sorts_it_elsewhere_moves_after_the_uploads(tmp_path,
+                                                                          monkeypatch):
+    # RG-M2r3 2: by name, a tile named again goes where a layout puts it,
+    # after the uploads on their way, whatever their names.
+    from nostr.ui.media_grid import Tile
+    world = build(tmp_path, monkeypatch, FakeStore([media(1), media(2), media(3)]))
+    combo = world.dialog._sort_combo
+    combo.setCurrentIndex(combo.findData("name"))
+    world.dialog._jobs["zz.png"] = Tile(key="zz.png", name="zz.png", detail="", kind="image",
+                                        state=SENDING)
+    world.dialog._rebuild()
+    resets = []
+    world.model.modelReset.connect(lambda: resets.append(True))
+    last = tiles(world)[-1]
+    _told(world, last.key, monkeypatch, name="AAA first")
+    assert resets == [] and [t.name for t in tiles(world)][:2] == ["zz.png", "AAA first"]
+    assert _laid_out(world)
+
+
+def test_the_last_file_told_away_leaves_the_plain_sentence(tmp_path, monkeypatch):
+    store, server, nam, shas = _many_from_elsewhere(tmp_path, 2)
+    picker = build(tmp_path, monkeypatch, store, pick=True)
     store._sealed_known.update({sha: True for sha in shas})
     for sha in shas:
         picker.dialog._on_submission_checked(sha)
-    assert calls == []
-    QApplication.processEvents()
-    assert calls == [1] and tiles(picker) == []
+    assert tiles(picker) == [] and picker.dialog._stack.currentWidget() is picker.dialog._empty
+
+
+def test_a_hidden_copy_told_stays_out_of_the_grid(tmp_path, monkeypatch):
+    envelope = sealed()
+    original = MediaFile(hash=sha_of(envelope), url=f"{SERVER}/{sha_of(envelope)}", size=10,
+                         uploaded_at_ms=2)
+    copy = media(7)
+    blob = PrivateBlob(sha256=original.hash, key_hex=KEY, mime="image/png", name="Beach.png")
+    ledger = PublicLedger(path=tmp_path / "public.json")
+    ledger.record(PublicBlob(sha256=copy.hash, url=copy.url, source_hash=original.hash))
+    visibility = MediaVisibility(library=FakeLibrary([blob]), ledger=ledger)
+    world = build(tmp_path, monkeypatch, FakeStore([original, copy]), visibility=visibility)
+    world.dialog._on_submission_checked(copy.hash)
+    assert names(world) == ["Beach.png"]

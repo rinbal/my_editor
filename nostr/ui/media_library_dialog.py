@@ -247,8 +247,6 @@ class MediaLibraryDialog(QDialog):
         layout.addLayout(self._build_toolbar())
 
         self._model = MediaModel(self)
-        # A layout asked for once this turn of the event loop (_due_rebuild).
-        self._rebuild_due = False
         self._grid = MediaGrid(is_dark=self._is_dark)
         self._grid.setModel(self._model)
         self._grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -574,25 +572,39 @@ class MediaLibraryDialog(QDialog):
 
     def _on_submission_checked(self, sha: str) -> None:
         """A file's first bytes told (or no server gave them): its tile is
-        made again in place. Only when that changes where it stands (the
-        filter no longer takes it, or names sort it elsewhere) is the grid
-        laid out again, once per turn of the event loop however many
-        answer in it: a library of a thousand files listed from another
-        computer is not rebuilt a thousand times (RG-M2r2a 4)."""
+        made again, and only it moves: in place, taken out when the
+        filter no longer takes it, put in where a layout would put it
+        when it does now or names sort it elsewhere. Never the whole grid
+        laid out again: a library of a thousand files listed from another
+        computer answers one file per turn (RG-M2r2a 4, RG-M2r3 2)."""
         old, media = self._model.tile(sha), self._store.files.get(sha)
-        new = self._file_tile(media) if old is not None and media is not None else None
+        new = self._file_tile(media) if media is not None \
+            and not self._is_hidden_copy(sha) else None
         sort = self._sort_combo.currentData() or "newest"
-        if new is not None and self._matches(new) and (sort != "name" or new.name == old.name):
+        if new is None or not self._matches(new):
+            self._model.remove(sha)                 # a selected one: Qt says so
+        elif old is not None and (sort != "name" or new.name == old.name):
             self._model.replace(new)
-        elif not self._rebuild_due:
-            self._rebuild_due = True
-            QTimer.singleShot(0, self, self._due_rebuild)
+        else:
+            self._model.remove(sha)
+            self._model.insert(self._row_for(new), new)
+        self._show_page()
         self._refresh_pick_notice()
 
-    def _due_rebuild(self) -> None:
-        self._rebuild_due = False
-        self._rebuild()
-        self._refresh_pick_notice()
+    def _row_for(self, tile: Tile) -> int:
+        """The row a layout of the grid gives ``tile``, a file's: after
+        the uploads, among the files in the order chosen (by name, ties
+        as listed newest first; else as listed)."""
+        sort = self._sort_combo.currentData() or "newest"
+        order = {media.hash: at for at, media in enumerate(self._store.file_list(
+            filter_type="all", sort_by="newest" if sort == "name" else sort))}
+
+        def rank(each: Tile) -> tuple:
+            at = order.get(each.key, len(order))
+            return (each.name.casefold(), at) if sort == "name" else (at,)
+
+        mine = rank(tile)
+        return sum(1 for each in self._model.tiles if not each.is_file or rank(each) < mine)
 
     def _show_page(self) -> None:
         """The grid, or one plain sentence where it would be."""
