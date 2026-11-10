@@ -4365,6 +4365,7 @@ class MainWindow(QMainWindow):
         ed.clear_highlights()
         ext = path.lower()
         front = None
+        as_read = content
         if ext.endswith('.md'):
             front, content = front_matter.split(content)
             if front is not None:
@@ -4386,6 +4387,13 @@ class MainWindow(QMainWindow):
             ed._front_matter = front
             tab_details.hold(ed, None)
             self._load_markdown(ed, content)
+            # The file as read: saved untouched, it is written back byte
+            # for byte (_untouched); the first edit lets go of it.
+            ed._as_read = as_read
+            if not getattr(ed, "_as_read_watched", False):
+                ed._as_read_watched = True
+                ed.document().modificationChanged.connect(
+                    lambda modified, ed=ed: modified and setattr(ed, "_as_read", None))
         elif ext.endswith('.rmd'):
             # R Markdown is edited as source, the way RStudio does it.
             ed.setPlainText(content)
@@ -5241,6 +5249,7 @@ class MainWindow(QMainWindow):
         front = None
         head = ""                   # a Markdown file's front matter, as written
         left_out = []               # audio or video a Markdown file could not hold
+        as_read = None              # a Markdown file opened and not changed, as read
         try:
             if ext.endswith(('.pdf', '.rtf')) and getattr(ed, "_lock", None) is not None:
                 inform(self, title=_("A locked document can’t be saved as PDF or RTF"),
@@ -5259,6 +5268,11 @@ class MainWindow(QMainWindow):
                         ed, path, doc, pictures, revision), then=then)
             elif ext.endswith('.rmd'):
                 content = self._to_rmd_content(ed, path)
+            elif ext.endswith('.md') and self._untouched(ed, path):
+                # Nothing changed since it was opened: the file stays as it
+                # is, whatever the writer would make of what it holds.
+                as_read = ed._as_read
+                front = getattr(ed, "_front_matter", None)
             elif ext.endswith('.md'):
                 # The same Markdown an article publishes, whether the tab
                 # came from a .md file or was typed here.
@@ -5289,8 +5303,11 @@ class MainWindow(QMainWindow):
                 # placeholder the old toPlainText call wrote out.
                 content = serialize_plain_with_images(ed.document(), lambda fmt: None)
 
-            MainWindow._write_document(self, ed, path, encode_text_document(
+            MainWindow._write_document(self, ed, path, as_read.encode("utf-8")
+                                       if as_read is not None else encode_text_document(
                 content, newline=getattr(ed, "_newline", None), head=head))
+            if as_read is None:
+                ed._as_read = None          # the file is the writer's now
             if ext.endswith('.md'):
                 ed._front_matter = front
                 ed._details_not_saved = front.refused if front is not None else frozenset()
@@ -5312,6 +5329,16 @@ class MainWindow(QMainWindow):
             # (sealing a locked document takes a while): finding the file as
             # written here, _on_file_changed knows the change is this save.
             self._saved_stamps[path] = regular_files.file_stamp(path)
+
+    @staticmethod
+    def _untouched(ed, path: str) -> bool:
+        """``ed`` holds the Markdown file ``path`` as it was read: never
+        edited since it was opened (the editor fitting its pictures to the
+        window is no edit), no detail set or read."""
+        own = getattr(ed, "_file_path", None)
+        return (getattr(ed, "_as_read", None) is not None and not ed.document().isModified()
+                and bool(own) and os.path.realpath(own) == os.path.realpath(path)
+                and tab_details.untouched(ed))
 
     def _save_html(self, ed, path: str, doc, pictures: dict, revision: int) -> bool:
         """Write ``doc`` (a copy of ``ed``'s document made at ``revision``)
