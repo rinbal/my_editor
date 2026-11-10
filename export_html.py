@@ -40,6 +40,7 @@ lists: the editor edits them as such.
 import base64
 import html
 import json
+import sys
 from pathlib import Path
 
 from PySide6.QtGui import (
@@ -288,7 +289,7 @@ def _needs_pre_wrap(text: str) -> bool:
 
 
 # The page parts of a photo group, vendored from STANDUP (web/).
-_WEB = Path(__file__).resolve().parent / "web"
+_WEB = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "web"
 
 
 def _group_words() -> dict:
