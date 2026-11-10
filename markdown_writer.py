@@ -71,6 +71,7 @@ from doc_walk import (
     parse_bullet_line,
     skip_prefix,
 )
+import photo_group
 from rich_text import normalize_after_markdown_load
 
 ImageTarget = Callable[[object], Optional[str]]
@@ -318,20 +319,45 @@ def _table_block(table: QTextTable, image_target) -> _Block:
     return _Block("table", rows=rows, spaced=True)
 
 
-def _blocks_of_frame(frame, image_target) -> List[_Block]:
+def _blocks_of_frame(doc, frame, image_target) -> List[_Block]:
     blocks: List[_Block] = []
+    # A photo group is written as the paragraphs it was read from: its
+    # pictures, each with its caption (photo_group). Its tables are one
+    # after another, with the empty paragraphs Qt keeps between them.
+    group: List[photo_group.Unit] = []
+    number = None
+
+    def flush() -> None:
+        if group:
+            paragraphs = photo_group.paragraphs_document(group)
+            blocks.extend(_blocks_of_frame(paragraphs, paragraphs.rootFrame(), image_target))
+            group.clear()
+
     it = frame.begin()
     while not it.atEnd():
         child = it.currentFrame()
         block = it.currentBlock()
-        if child is not None:
-            if isinstance(child, QTextTable):
-                blocks.append(_table_block(child, image_target))
-            else:
-                blocks.extend(_blocks_of_frame(child, image_target))
-        elif block.isValid():
-            blocks.append(_one_block(block, image_target))
+        if photo_group.is_group_table(child):
+            found = child.format().property(photo_group.GROUP)
+            if found != number:
+                flush()
+            number = found
+            group.extend(photo_group.table_units(doc, child))
+        elif child is None and block.isValid() and photo_group.is_structure(block) \
+                and block.length() == 1:
+            pass
+        else:
+            flush()
+            number = None
+            if child is not None:
+                if isinstance(child, QTextTable):
+                    blocks.append(_table_block(child, image_target))
+                else:
+                    blocks.extend(_blocks_of_frame(doc, child, image_target))
+            elif block.isValid():
+                blocks.append(_one_block(block, image_target))
         it += 1
+    flush()
     return _joined_code(blocks)
 
 
@@ -377,7 +403,7 @@ def _joined_code(blocks: List[_Block]) -> List[_Block]:
 
 def document_blocks(doc, image_target: Optional[ImageTarget] = None) -> List[_Block]:
     """The document as the blocks both writers share. Exposed for tests."""
-    return _blocks_of_frame(doc.rootFrame(), image_target)
+    return _blocks_of_frame(doc, doc.rootFrame(), image_target)
 
 
 # --------------------------------------------------------------------------- #
@@ -975,6 +1001,8 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES) ->
     doc.setMarkdown(literal_footnotes(markdown), features)
     joined = _join_soft_breaks(doc) if marked else 0
     normalize_after_markdown_load(doc)
+    # Pictures that follow each other show as one group (photo_group).
+    photo_group.fold(doc)
     return marked, joined
 
 

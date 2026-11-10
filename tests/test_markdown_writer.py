@@ -581,9 +581,86 @@ def test_a_preview_reads_a_soft_break_as_readers_do():
     assert "\u2028" not in doc.toPlainText() and "\n" not in doc.toPlainText()
 
 
+# -- photo groups --------------------------------------------------------------------------
+
+import photo_group  # noqa: E402
+
+GROUP_CORPUS = [
+    "![a](a.png)\n\n![b](b.png)\n",
+    "Intro\n\n![a](a.png)\n\n*Cap one*\n\n![b](b.png)\n\n*Cap two*\n\n![c](c.png)\n\nOutro text.\n",
+    "![a](a.png)\n*Under a*\n\n![b](b.png)\n*Under b*\n",
+    "![a](a.png) *beside a*\n\n![b](b.png)\n",
+    "![a](a.png) ![b](b.png)\n",
+    "![a](a.png)\n![b](b.png)\n![c](c.png)\n![d](d.png)\n![e](e.png)\n",
+    # #wide in a group: at the start, in the middle, at the end, two in a row.
+    "![a](plan.png#wide)\n\n![b](b.png)\n\n![c](c.png)\n",
+    "![a](a.png)\n\n![b](plan.png#wide)\n\n![c](c.png)\n",
+    "![a](a.png)\n\n![b](b.png)\n\n![c](plan.png#wide)\n\n*The plan*\n",
+    "![a](a.png)\n\n![b](one.png#wide)\n\n![c](two.png#wide)\n\n![d](d.png)\n",
+    "# Title\n\n- list\n- items\n\n![a](a.png)\n\n![b](b.png)\n\n> quote\n\n"
+    "![c](c.png)\n\n![d](d.png)\n\n![e](e.png)\n",
+    "![Sunset over the bay](https://blossom.example/" + "a" * 64 + ".png)\n\n"
+    "*Evening, Kiel*\n\n![Harbour](https://blossom.example/" + "b" * 64 + ".jpg)\n",
+    # Not groups: one picture, words between, a picture in a quote.
+    "![only](one.png)\n\nText\n",
+    "![a](a.png)\n\nWords\n\n![b](b.png)\n",
+    "> ![a](a.png)\n\n![b](b.png)\n",
+    # Past the engine's limit: every picture a row of its own.
+    "\n\n".join(f"![p{n}](p{n}.png)" for n in range(61)) + "\n",
+]
+
+
+# Short ids: a test's name must fit where Windows keeps it (test_portability).
+GROUP_IDS = [f"document {n}" for n in range(len(GROUP_CORPUS))]
+
+
+def _read_folded(source: str) -> QTextDocument:
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    return doc
+
+
 def test_a_picture_with_its_caption_on_the_next_line_is_written_once():
     """The soft break after a picture is not a second copy of it."""
     source = "![a](a.png)\n*The caption*\n\nText\n"
-    doc = QTextDocument()
-    read_markdown(doc, source)
+    doc = _read_folded(source)
     assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_pictures_that_follow_each_other_open_as_a_group():
+    assert photo_group.has_groups(_read_folded("![a](a.png)\n\n![b](b.png)\n"))
+    assert not photo_group.has_groups(_read_folded("![a](a.png)\n\nWords\n\n![b](b.png)\n"))
+
+
+@pytest.mark.parametrize("source", GROUP_CORPUS, ids=GROUP_IDS)
+def test_a_document_with_groups_comes_back_byte_for_byte(source):
+    assert holds_faithfully(source)
+    assert document_to_markdown(_read_folded(source), _image_as_read) == source
+
+
+@pytest.mark.parametrize("source", GROUP_CORPUS, ids=GROUP_IDS)
+def test_groups_are_written_as_if_they_were_not_there(source, monkeypatch):
+    """Markdown and a note's text alike: what the paragraphs give."""
+    folded = _read_folded(source)
+    monkeypatch.setattr(photo_group, "fold", lambda *a, **k: 0)
+    plain = _read_folded(source)
+    assert not photo_group.has_groups(plain)
+    assert document_to_markdown(folded, _image_as_read) == document_to_markdown(plain, _image_as_read)
+    assert document_to_note_text(folded, _image_as_read) == document_to_note_text(plain, _image_as_read)
+
+
+def test_captions_stay_with_their_pictures_through_fold_and_unfold():
+    source = GROUP_CORPUS[1]
+    doc = _read_folded(source)
+    pairs = [(unit.name, unit.caption_text) for group in photo_group.groups_in(doc)
+             for unit in group.units]
+    assert pairs == [("a.png", "Cap one"), ("b.png", "Cap two"), ("c.png", "")]
+    photo_group.unfold(doc)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_a_caption_changed_in_a_group_is_written_in_its_place():
+    doc = _read_folded("![a](a.png)\n\n*Old words*\n\n![b](b.png)\n")
+    found = doc.find("Old words")
+    found.insertText("New words")
+    assert document_to_markdown(doc, _image_as_read) == "![a](a.png)\n\n*New words*\n\n![b](b.png)\n"
