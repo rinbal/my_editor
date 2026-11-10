@@ -5269,7 +5269,7 @@ class MainWindow(QMainWindow):
                         ed, path, doc, pictures, revision), then=then)
             elif ext.endswith('.rmd'):
                 content = self._to_rmd_content(ed, path)
-            elif ext.endswith('.md') and self._untouched(ed, path):
+            elif ext.endswith('.md') and MainWindow._untouched(ed, path):
                 # Nothing changed since it was opened: the file stays as it
                 # is, whatever the writer would make of what it holds.
                 as_read = ed._as_read
