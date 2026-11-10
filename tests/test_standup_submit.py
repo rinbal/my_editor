@@ -451,6 +451,24 @@ def test_a_link_name_is_never_free_on_a_list_not_read_whole():
     assert _lock(writer, "anders") == LinkNameLock()            # read whole: never submitted
 
 
+def test_without_a_server_the_list_is_never_read_for_a_link_name(tmp_path):
+    # RG-M2r3 17: with no STANDUP server nothing is submitted from here,
+    # yet Article Details read the writer's list (a signer prompt for
+    # each page) for every text shown. Only this computer's mark tells.
+    from nostr.standup.link_names import LinkNameLock, SubmittedMarks
+    submissions = FakeList([_entry()])
+    marks = SubmittedMarks(tmp_path / "marks.json")
+    writer = _writer(submissions, FakeApi(), marks=marks)
+    writer._server = ""
+    assert _lock(writer) == LinkNameLock() and _lock(writer, "anders") == LinkNameLock()
+    writer.check_link_name(PROFILE)
+    QApplication.processEvents()
+    assert submissions.reads == 0
+    marks.remember(WRITER, "ein-jahr", stored=True)
+    assert _lock(writer) == LinkNameLock(held=Held.STORED)
+    assert submissions.reads == 0
+
+
 @pytest.mark.parametrize("readable, complete, reads", [(False, True, 1), (True, False, 4)],
                          ids=["unreadable", "in part, read again quietly"])
 def test_a_list_that_could_not_tell_keeps_the_link_name_and_check_again_reads_it(

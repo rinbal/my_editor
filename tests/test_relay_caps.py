@@ -215,6 +215,19 @@ def test_the_words_are_the_contracts_in_german():
                      "Kürze diesen Text oder teile ihn in Teile auf.")
 
 
+def test_the_signer_limits_import_what_they_use_at_the_top():
+    # RG-M2r3 17: page_bounds imported the page caps inside itself, as if
+    # a cycle were in the way; none is (paged_list imports no limits).
+    import ast
+    import inspect
+    from nostr import signer_limits
+    tree = ast.parse(inspect.getsource(signer_limits))
+    inner = [node.lineno for function in ast.walk(tree)
+             if isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef))
+             for node in ast.walk(function) if isinstance(node, (ast.Import, ast.ImportFrom))]
+    assert inner == []
+
+
 # -- the signer client refuses before it asks ------------------------------------------
 
 def _pair(relay: str):

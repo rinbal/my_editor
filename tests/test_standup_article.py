@@ -204,6 +204,29 @@ def test_article_details_shows_the_writers_link_name_lock(identifier, active, ex
     assert "marks=" in inspect.getsource(MainWindow._standup)
 
 
+def test_without_a_server_article_details_never_reads_the_writers_list():
+    # RG-M2r3 17: with no STANDUP server set, every text Article Details
+    # showed read the writer's list of submissions (a signer prompt for
+    # each page), though nothing can be submitted from here.
+    from nostr.ui.standup_submit import StandupWriter
+    loads = []
+    account = types.SimpleNamespace(
+        writer=PROFILE.user_pubkey, runs=[], checking=False, check_failed=False,
+        list_problem="", stopped=False,
+        submissions=types.SimpleNamespace(entries=lambda: [], load=loads.append, loaded=False,
+                                          complete=False))
+    writer = StandupWriter(session_pool=None, relay_pool=None, relay_directory=None,
+                           media_store=None, server="", uploads=lambda *a: None,
+                           accounts=lambda _profile: account)
+    win = _Details(writer, ArticleDetails(identifier="ein-jahr", title="Ein Jahr"))
+    win._fill_article_details_panel()
+    assert win.shown[-1]["link_name_lock"] == LinkNameLock() and loads == []
+    writer._server = "https://standup.example"     # with one, the list is read
+    account.read_whole = lambda on_done: loads.append(on_done)
+    win._fill_article_details_panel()
+    assert win.shown[-1]["link_name_lock"] == LinkNameLock(checking=True) and len(loads) == 1
+
+
 def test_a_submitted_text_whose_link_name_was_kept_shows_it_fixed_at_once(tmp_path):
     win = _Kept(tmp_path / "cache")
     ed = _editor_with(text="Just words.")

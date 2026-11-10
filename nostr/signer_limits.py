@@ -47,6 +47,7 @@ from .answer_size import (
     request_size, sign_answer_size,
 )
 from .local_signer import LOCAL
+from .paged_list import PAGE_ANSWER_MAX, PAGE_PLAINTEXT_MAX
 
 __all__ = [
     "NAMED_CAPS", "NIP44_MESSAGE_MAX", "SIGNER_ANSWER_MAX", "SIGNER_NIP44_MAX_PLAINTEXT",
@@ -362,7 +363,6 @@ def page_bounds(profile) -> Dict[str, int]:
     and PAGE_ANSWER_MAX), since a list written anywhere is read over any
     connection. Lower over the writer's own relays when they cap lower,
     and the request bound only over capped ones."""
-    from .paged_list import PAGE_ANSWER_MAX, PAGE_PLAINTEXT_MAX
     if not through_signer_app(profile):
         plaintext, answer, request = (crypto.NIP44_MAX_PLAINTEXT_LEN, SIGNER_ANSWER_MAX,
                                       NIP44_MESSAGE_MAX)

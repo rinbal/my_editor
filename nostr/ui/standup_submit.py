@@ -286,7 +286,9 @@ class StandupWriter(QObject):
         this computer's mark (kept across restarts). Without one, while
         the account is ``in_use``, the list is read (once) and the name
         stays read-only until a read of it whole answers; with no account
-        in use only the mark tells. Never free on a list not read."""
+        in use, or no server to submit to (nothing is submitted from
+        here, and the list is never read for it: RG-M2r3 17), only the
+        mark tells. Never free on a list not read."""
         writer = getattr(profile, "user_pubkey", "")
         if not d or not writer:
             return LinkNameLock()
@@ -302,7 +304,7 @@ class StandupWriter(QObject):
         mark = self._marks.get(writer, d)
         if mark is not None:
             return LinkNameLock(held=held_of(mark))
-        if not in_use:
+        if not in_use or not self._server:
             return LinkNameLock()
         account = self.account(profile)
         submissions = account.submissions
@@ -319,6 +321,8 @@ class StandupWriter(QObject):
 
     def check_link_name(self, profile) -> None:
         """Check Again, for a link name a read could not tell."""
+        if not self._server:
+            return                                  # never read without one (link_name)
         account = self.account(profile)
         if not account.checking:
             self._check(account)
