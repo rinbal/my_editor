@@ -15,8 +15,9 @@ from typing import Callable, Optional
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from i18n import _
+from i18n import _, pgettext
 
+from ..standup.rounds import RoundAnswer
 from .standup_waits import WaitTimer
 
 
@@ -55,13 +56,20 @@ class WaysOut(QWidget):
         column.addWidget(self.unsent)
         self.timer = WaitTimer(self._wait_passed, self)
 
-    def show_ways(self, *, retry: bool, until: Optional[float], unsent: bool) -> None:
+    def show_ways(self, *, retry: bool, until: Optional[float],
+                  answer: Optional[RoundAnswer] = None) -> None:
         """Try Again shown (dimmed until ``until``, a clock time), and the
-        earlier try not sent."""
+        earlier try not sent (``answer.unsent``). For a round another
+        device stored (``answer.elsewhere``) the list is read again, so
+        the button says so (the contract's "Erneut laden", as the
+        handoff says it)."""
         self._until = until
+        reload = answer is not None and answer.elsewhere is not None
+        self.retry.setText(pgettext("submissions list", "Reload") if reload
+                           else _("Try Again"))
         self.retry.setVisible(retry)
         self.retry.setEnabled(not self.timer.follow(until, now=self._now()))
-        self.unsent.setVisible(unsent)
+        self.unsent.setVisible(answer is not None and answer.unsent is not None)
 
     def waiting(self) -> bool:
         """Whether a limit's wait for Try Again is not over yet."""

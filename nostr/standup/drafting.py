@@ -84,11 +84,16 @@ class Blocker(str):
 
     detail: str
     title: str
+    error: bool
 
-    def __new__(cls, words: str, detail: str = "", *, title: str = "") -> "Blocker":
+    def __new__(cls, words: str, detail: str = "", *, title: str = "",
+                error: Optional[bool] = None) -> "Blocker":
         made = super().__new__(cls, words)
         made.detail = detail
         made.title = title
+        # Said in the error color: a total failure; an end that is no
+        # error (submitted on another device) has a title too.
+        made.error = bool(title) if error is None else error
         return made
 
 
@@ -343,20 +348,31 @@ class RoundChoice:
     round and the secrets"): ``round``, or None while a round of it is
     still open there (``open`` names that entry: the work is handed in).
     ``unsent`` is the entry the server has no receipt for that is sent
-    again, with its own secrets ("not sent": Erneut or Verwerfen)."""
+    again, with its own secrets ("not sent": Erneut or Verwerfen).
+    ``elsewhere`` is such an entry whose revision 1 the server refused as
+    ``stale_revision``: another device stored that round, so it is never
+    sent again (``round`` None) and the list is read again for that
+    device's entry (contract 2 at 0456312)."""
 
     round: Optional[int]
     open: Optional[SubmissionEntry] = None
     unsent: Optional[SubmissionEntry] = None
+    elsewhere: Optional[SubmissionEntry] = None
+
+
+def _never_refused(_entry: SubmissionEntry) -> bool:
+    return False
 
 
 def choose_round(entries: Sequence[SubmissionEntry],
-                 states: Mapping[str, Optional[str]]) -> RoundChoice:
+                 states: Mapping[str, Optional[str]],
+                 refused: Callable[[SubmissionEntry], bool] = _never_refused) -> RoundChoice:
     """The round for the writer's ``entries`` of one work at one
     publication, given ``states``: per entry's sid, the state the server
     reports (None: it has no receipt, the entry was never stored). Every
     entry must have been asked about (KeyError otherwise): a round is
-    never taken from the list alone."""
+    never taken from the list alone. ``refused(entry)``: whether the
+    entry's revision 1 was refused as ``stale_revision`` (held)."""
     asked = [(entry, states[entry.sid]) for entry in entries]
     still_open = [entry for entry, state in asked
                   if state is not None and state not in CLOSED_STATES]
@@ -368,6 +384,8 @@ def choose_round(entries: Sequence[SubmissionEntry],
     unsent = [entry for entry, state in asked if state is None and entry.round > closed]
     if unsent:
         entry = min(unsent, key=lambda e: e.round)
+        if refused(entry):
+            return RoundChoice(None, elsewhere=entry)
         return RoundChoice(entry.round, unsent=entry)
     return RoundChoice(closed + 1)
 

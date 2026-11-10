@@ -90,3 +90,38 @@ def test_marks_of_a_writer_made_for_a_test_stay_in_memory(tmp_path, monkeypatch)
 def test_each_lock_says_its_own_words(lock, note, locked):
     assert lock.locked is locked and lock.words()[0] == note
     assert bool(lock.words()[1]) is locked
+
+
+def test_a_stale_refusal_is_held_per_account_and_record_across_restarts(tmp_path):
+    # RG-M2r3 1, contract 2 at 0456312: held with its entry's record.
+    from dataclasses import replace
+    from nostr.standup.entries import SubmissionEntry
+    entry = SubmissionEntry(
+        sid="d1" * 32, publication="30004:" + "ab" * 32 + ":m", server="https://s.example",
+        role="writer", s_sub="e5" * 32, status_key="c3" * 32, title="T", kind="article",
+        d="ein-jahr", round=1, revision=1, revision_hash="f6" * 32,
+        envelope_sha256="a7" * 32, wraps_sha256={"redaktion": "b8" * 32, "writer": "c9" * 32},
+        updated_at=1)
+    path = tmp_path / "marks.json"
+    SubmittedMarks(path).remember(WRITER, "ein-jahr", stored=False)
+    SubmittedMarks(path).refuse_round(WRITER, entry)
+    again = SubmittedMarks(path)
+    assert again.round_refused(WRITER, entry) and again.round_refused(WRITER.upper(), entry)
+    assert again.get(WRITER, "ein-jahr") is False                 # the marks stay
+    assert not again.round_refused(OTHER, entry)
+    assert not again.round_refused(WRITER, replace(entry, status_key="77" * 32))
+    assert not again.round_refused(WRITER, replace(entry, sid="d2" * 32))
+    # A later revision of the same record is the same record.
+    assert again.round_refused(WRITER, replace(entry, revision=2, title="Neu"))
+    # Nothing of the entry's secrets or ids is in the file.
+    text = path.read_text(encoding="utf-8")
+    assert entry.sid not in text and entry.status_key not in text and entry.s_sub not in text
+
+
+def test_what_is_not_a_refusal_is_not_read(tmp_path):
+    path = tmp_path / "marks.json"
+    path.write_text(json.dumps({"version": 1, "texts": {}, "refused": {
+        "not-a-key": True, "ab" * 32: "yes", "cd" * 32: False}}), encoding="utf-8")
+    marks = SubmittedMarks(path)
+    marks.remember(WRITER, "x", stored=True)
+    assert json.loads(path.read_text(encoding="utf-8"))["refused"] == {}

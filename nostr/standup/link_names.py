@@ -10,6 +10,11 @@ restarts: a mark per account and text, written when the entry is
 recorded and when a receipt for it is held, in
 ``~/.config/my_editor/standup_submitted.json`` (no secret: the key is
 the work's coordinate hash, the value whether the server stored it).
+The same file holds the revisions 1 the server refused as
+``stale_revision`` (contract 2 at 0456312: another device stored that
+round first), one per account and record of the list (its ``sid`` and
+key, hashed together), so that no screen sends that round again, after
+a restart too.
 
 :class:`LinkNameLock` is the answer Article Details shows: what is held
 of the text's submission (:class:`~.progress.Held`, whose words come
@@ -28,6 +33,7 @@ from typing import Dict, Optional, Tuple
 from atomic_file import read_json, write_json
 
 from . import formats, words
+from .entries import SubmissionEntry, record_key
 from .progress import HELD_WORDS, Held
 
 FILE_NAME = "standup_submitted.json"
@@ -51,6 +57,7 @@ class SubmittedMarks:
         False holds the marks in memory only (a writer made for a test)."""
         self._path = (Path(path) if path is not None else default_path()) if kept else None
         self._marks: Optional[Dict[str, bool]] = None if kept else {}
+        self._refused: Dict[str, bool] = {}
         self._writable = kept
 
     @staticmethod
@@ -70,10 +77,9 @@ class SubmittedMarks:
                 # Never parsed, never written over: the list read decides.
                 self._marks, self._writable = {}, False
                 return self._marks
-            texts = read_json(self._path, dict).get("texts")
-            self._marks = {key: value for key, value in (texts.items() if isinstance(texts, dict)
-                                                          else ())
-                           if formats.is_hex64(key) and isinstance(value, bool)}
+            held = read_json(self._path, dict)
+            self._marks, self._refused = _hex_keys(held.get("texts")), {
+                key: True for key, value in _hex_keys(held.get("refused")).items() if value}
         return self._marks
 
     def get(self, writer: str, d: str) -> Optional[bool]:
@@ -94,11 +100,45 @@ class SubmittedMarks:
         if key is not None and self._loaded().pop(key, None) is not None:
             self._write()
 
+    @staticmethod
+    def _record(writer: str, entry: SubmissionEntry) -> Optional[str]:
+        """The file's key of ``entry``'s record (its ``sid`` and
+        ``entries.record_key``) for ``writer``."""
+        writer = writer.lower() if isinstance(writer, str) else writer
+        if not formats.is_hex64(writer) or not formats.is_hex64(entry.sid):
+            return None
+        return formats.sha256_hex(f"{writer}:{entry.sid}:{record_key(entry)}")
+
+    def refuse_round(self, writer: str, entry: SubmissionEntry) -> None:
+        """The revision 1 of ``entry`` was refused as ``stale_revision``:
+        held for good with its record, as the round is another device's
+        (contract 2 at 0456312)."""
+        record = self._record(writer, entry)
+        self._loaded()
+        if record is None or self._refused.get(record):
+            return
+        self._refused[record] = True
+        self._write()
+
+    def round_refused(self, writer: str, entry: SubmissionEntry) -> bool:
+        """Whether :meth:`refuse_round` holds ``entry``'s record."""
+        record = self._record(writer, entry)
+        self._loaded()
+        return record is not None and self._refused.get(record, False)
+
     def _write(self) -> None:
         if not self._writable:
             return
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        write_json(self._path, {"version": 1, "texts": dict(sorted(self._marks.items()))})
+        write_json(self._path, {"version": 1, "texts": dict(sorted(self._marks.items())),
+                                "refused": dict(sorted(self._refused.items()))})
+
+
+def _hex_keys(value: object) -> Dict[str, bool]:
+    """The marks of a file's map: each key 64 hex characters, each value
+    a bool; anything else is not read."""
+    return {key: flag for key, flag in (value.items() if isinstance(value, dict) else ())
+            if formats.is_hex64(key) and isinstance(flag, bool)}
 
 
 @dataclass(frozen=True)

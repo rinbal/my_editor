@@ -1370,3 +1370,38 @@ def test_an_account_is_wired_to_the_app_and_left_whole_at_sign_out():
     QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     assert gone == ["api"]                                   # deleted with its account
     assert writer.account(profile) is not account            # a new one after signing out
+
+
+def test_a_stale_refusal_is_held_and_no_round_is_offered_after_a_restart(tmp_path):
+    # RG-M2r3 1, contract 2 at 0456312: a revision 1 refused as
+    # stale_revision is another device's round. Held with its entry, so
+    # neither a reopened sheet nor a restarted app offers it again as an
+    # earlier try that was not sent: "Submitted on another device." with
+    # Reload, until that device's entry arrived.
+    from dataclasses import replace
+    from nostr.standup import words
+    from nostr.standup.link_names import SubmittedMarks
+    mine = _entry(1)
+    marks = SubmittedMarks(tmp_path / "marks.json")
+    writer = _writer(FakeList([mine]), FakeApi(None), marks=marks)
+    assert _answer(writer).unsent is mine                        # not refused yet
+    ports = writer._ports(writer.account(PROFILE), PUBLICATION)
+    assert not ports.refused(mine)
+    ports.refuse(mine)
+    # What a run asks before it builds anything (Submitting.start).
+    assert ports.refused(mine) and not ports.refused(_entry(2))
+    for again in (writer, _writer(FakeList([mine]), FakeApi(None),
+                                  marks=SubmittedMarks(tmp_path / "marks.json"))):
+        answer = _answer(again)
+        assert (answer.round, answer.unsent, answer.elsewhere) == (None, None, mine)
+        assert (answer.title, answer.words, answer.from_list) == (
+            words.SUBMITTED_ELSEWHERE, i18n._(words.ELSEWHERE_NOT_HERE_YET), True)
+    # That device's stored entry arrived: the sid shows it, and its round
+    # is what the server says of it.
+    theirs = replace(mine, s_sub="d4" * 32, status_key="c" * 62 + "01", stored=True)
+    submissions = FakeList([mine])
+    submissions.arriving = [theirs]
+    api = FakeApi("submitted")
+    answer = _answer(_writer(submissions, api, marks=SubmittedMarks(tmp_path / "marks.json")))
+    assert api.asked == [[theirs.status_key]]
+    assert (answer.round, answer.words, answer.unsent, answer.elsewhere) == (None, "", None, None)

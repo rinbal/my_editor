@@ -56,6 +56,9 @@ class Ports:
     - ``reload(entry, on_done(Reread))``: the list read again for the sid
       of ``entry``, a revision 1 the server refused as ``stale_revision``
       (another device stored that round first, contract 2 at 72d5ddc).
+    - ``refuse(entry)``: that refusal held with ``entry``'s record, after
+      a restart too; ``refused(entry)`` whether it is (contract 2 at
+      0456312: no screen sends that round again).
     - ``later(ms, callback)``; ``clock()``.
     """
 
@@ -73,6 +76,8 @@ class Ports:
     send_message: Callable[[Sealed, str, Callable[[], None], Callable[[], None],
                             Callable[[], None]], None]
     reload: Callable[[Any, Callable[[Reread], None]], None]
+    refuse: Callable[[Any], None]
+    refused: Callable[[Any], bool]
     later: Callable[[int, Callable[[], None]], None]
     clock: Callable[[], float]
 

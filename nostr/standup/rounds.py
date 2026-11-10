@@ -40,6 +40,7 @@ from . import drafting
 from .entries import SubmissionEntry
 from .errors import PASSING, Code, StandupError
 from .watcher import look_up_all, lookup_batches
+from .words import ELSEWHERE_NOT_HERE_YET, NOT_CHECKED, SUBMITTED_ELSEWHERE
 
 MAX_ROUNDS_ASKED = 100
 MAX_ROUND_ANSWER_BYTES = 32 * 1024 * 1024
@@ -59,7 +60,10 @@ class RoundAnswer:
     server (no round told, ``words`` empty: the sheet names the
     publication), and asking again helps from ``retry_at`` on (clock
     time; None without a Retry-After). ``stored``: entries the lookups
-    found the server holds, not yet marked so on the list."""
+    found the server holds, not yet marked so on the list. ``elsewhere``:
+    the entry of a round another device stored (its revision 1 refused
+    here as ``stale_revision``): no round, the ``words`` say so, and Try
+    Again (Erneut laden) reads the list again (contract 2 at 0456312)."""
 
     round: Optional[int]
     words: str = ""
@@ -69,6 +73,10 @@ class RoundAnswer:
     limited: bool = False
     retry_at: Optional[float] = None
     stored: Tuple[SubmissionEntry, ...] = ()
+    elsewhere: Optional[SubmissionEntry] = None
+    # What did not happen, untranslated: with ``words``, said as their
+    # title.
+    title: str = NOT_CHECKED
 
 
 def unknown(*, connection: bool = False) -> RoundAnswer:
@@ -116,13 +124,15 @@ def limited(retry_after: Optional[int], clock: Callable[[], float] = time.time) 
 def ask_round(client_for: Callable[[str], Any], entries: Sequence[SubmissionEntry],
               on_done: Callable[[RoundAnswer], None], *,
               later: Callable[[int, Callable[[], None]], None],
-              clock: Callable[[], float] = time.time) -> None:
+              clock: Callable[[], float] = time.time,
+              refused: Callable[[SubmissionEntry], bool] = lambda _entry: False) -> None:
     """``on_done(RoundAnswer)`` for the work of ``entries``: the writer's
     entries of one work at one publication, each with a status key, from
     a complete read of the list. ``client_for(server)`` gives the client
     of a server (lookups need no signature, they carry the status keys);
     ``later(ms, call)`` waits before a quiet try again; ``clock`` is the
-    time a limit's wait counts from."""
+    time a limit's wait counts from; ``refused(entry)`` whether a
+    ``stale_revision`` for the entry's revision 1 is held."""
     asked: List[SubmissionEntry] = sorted(entries, key=lambda e: e.round)
     budget = _Budget()
     if not budget.take(len(asked)):
@@ -169,9 +179,13 @@ def ask_round(client_for: Callable[[str], Any], entries: Sequence[SubmissionEntr
         look_up(index + 1)
 
     def choose() -> None:
-        choice = drafting.choose_round(asked, states)
+        choice = drafting.choose_round(asked, states, refused)
         # A lookup that found it is a receipt held (13, 72d5ddc).
         held = tuple(e for e in asked if states.get(e.sid) is not None and not e.stored)
+        if choice.elsewhere is not None:
+            on_done(RoundAnswer(None, _(ELSEWHERE_NOT_HERE_YET), from_list=True, stored=held,
+                                elsewhere=choice.elsewhere, title=SUBMITTED_ELSEWHERE))
+            return
         on_done(RoundAnswer(choice.round, unsent=choice.unsent, stored=held))
 
     look_up(0)

@@ -477,7 +477,8 @@ class SubmitSheet(QDialog):
         if not can_choose(destination):
             return [rules_words(destination.key.rules)]
         if self._round is not None and self._round.words:
-            return [drafting.Blocker(self._round.words, title=_(words.NOT_CHECKED))]
+            return [drafting.Blocker(self._round.words, title=_(self._round.title),
+                                     error=self._round.elsewhere is None)]
         if self._round is not None and self._round.limited:
             return [drafting.Blocker(limit_words(destination.name, self._round.retry_at, _now()),
                                      title=_(words.NOT_CHECKED))]
@@ -514,14 +515,14 @@ class SubmitSheet(QDialog):
         self.ways_out.show_ways(
             retry=self._load_failed or (round_ is not None and not round_.final
                                         and (bool(round_.words) or round_.limited)),
-            until=self._retry_at(), unsent=round_ is not None and round_.unsent is not None)
+            until=self._retry_at(), answer=round_)
         blockers = self.blockers()
         self.submit_button.setEnabled(not blockers and self.round() is not None)
         first = next(iter(blockers), "")
         first = first if isinstance(first, drafting.Blocker) else drafting.Blocker(first)
         # A total failure (it has a title) in the error color (lessons 36);
         # what exactly is wrong (a key, a file's type) in the tooltip (27).
-        self.status.say(first, title=first.title, error=bool(first.title), detail=first.detail)
+        self.status.say(first, title=first.title, error=first.error, detail=first.detail)
         self.status.setAccessibleDescription(first.detail)
 
     # -- submitting ----------------------------------------------------------

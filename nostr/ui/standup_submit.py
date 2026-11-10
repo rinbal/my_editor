@@ -287,7 +287,8 @@ class StandupWriter(QObject):
             mine = [e for e in account.submissions.entries()
                     if e.role == "writer" and e.publication == publication and e.d == d
                     and e.status_key]
-            ask_round(account.client_for, mine, _live(account, answered), later=_later)
+            ask_round(account.client_for, mine, _live(account, answered), later=_later,
+                      refused=lambda entry: self._marks.round_refused(account.writer, entry))
 
         def decide() -> None:
             if account.list_problem:
@@ -565,7 +566,10 @@ class StandupWriter(QObject):
         return Ports(confirm_key=confirm_key, upload=self._uploads,
                      held=account.submissions.entry, record=record,
                      mark_stored=mark_stored, forget=forget, submit=submit, lookup=lookup,
-                     send_message=send_message, reload=reload, later=_later, clock=time.time)
+                     send_message=send_message, reload=reload,
+                     refuse=lambda entry: self._marks.refuse_round(account.writer, entry),
+                     refused=lambda entry: self._marks.round_refused(account.writer, entry),
+                     later=_later, clock=time.time)
 
     def _reread(self, account: _Account, entry: SubmissionEntry,
                 on_done: Callable[[Reread], None]) -> None:

@@ -590,6 +590,28 @@ def test_a_round_that_could_not_be_told_offers_try_again(tmp_path, answer, from_
     assert sheet.retry_load.isHidden() and sheet.submit_button.isEnabled()
 
 
+def test_a_round_another_device_stored_is_said_calmly_with_reload_and_never_offered(tmp_path):
+    # RG-M2r3 1, contract 2 at 0456312: no Submit, no earlier try to send
+    # again or discard; "Erneut laden" reads the list again.
+    elsewhere = object()
+    writer = Writer(round_=RoundAnswer(None, i18n._(words.ELSEWHERE_NOT_HERE_YET),
+                                       from_list=True, elsewhere=elsewhere,
+                                       title=words.SUBMITTED_ELSEWHERE))
+    sheet = _sheet(tmp_path, writer)
+    assert sheet.status.shown == (i18n._(words.SUBMITTED_ELSEWHERE),
+                                  i18n._(words.ELSEWHERE_NOT_HERE_YET))
+    assert not sheet.status._error                  # no error: it is submitted
+    assert sheet.retry_load.text() == "Erneut laden" and not sheet.retry_load.isHidden()
+    assert sheet.unsent.isHidden() and not sheet.submit_button.isEnabled()
+    asked = writer.asked
+    sheet.retry_load.click()
+    assert (writer.reloaded, writer.asked) == (1, asked + 1)
+    # Any other answer: Try Again again, said in the error color.
+    writer.round = RoundAnswer(None, i18n._(drafting.ROUND_UNKNOWN))
+    sheet.retry_load.click()
+    assert sheet.retry_load.text() == "Erneut versuchen" and sheet.status._error
+
+
 def test_publications_that_could_not_be_loaded_offer_try_again(tmp_path):
     writer = Writer()
     writer.fail_destinations = True

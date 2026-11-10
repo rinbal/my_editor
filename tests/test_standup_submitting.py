@@ -33,6 +33,7 @@ from nostr.standup.entries import (
     record_of, records_of, same_keys, shown_for, stored_elsewhere, tombstone_for,
 )
 from nostr.standup.errors import Code, StandupError
+from nostr.standup.link_names import SubmittedMarks
 from nostr.standup.ports import Reread
 from nostr.standup.submitting import Held, MessageStatus, Phase, Ports, Step, Submitting
 from nostr.standup.watcher import resolve_unconfirmed
@@ -200,6 +201,8 @@ class World:
         self.log: List[str] = []
         self.uploads = Uploads(self.server)
         self.list = SubmissionsList(self.later, self.log)
+        # This computer's marks (link_names.SubmittedMarks), in memory.
+        self.marks = SubmittedMarks(kept=False)
         self.key_refusal = None
         self.messages: List[tuple] = []
         self.seen: List[submitting.Progress] = []
@@ -241,6 +244,8 @@ class World:
                      record=self.list.record, mark_stored=self.list.mark_stored,
                      forget=self.list.forget, submit=submit, lookup=lookup,
                      send_message=send_message, reload=self.list.reload,
+                     refuse=lambda entry: self.marks.refuse_round(pk("writer"), entry),
+                     refused=lambda entry: self.marks.round_refused(pk("writer"), entry),
                      later=self.later, clock=self.clock)
 
     def settle(self, *, seconds: float = 0.0) -> None:
@@ -995,6 +1000,31 @@ def test_a_revision_1_at_a_sid_stored_elsewhere_builds_nothing_and_waits_for_tha
     assert _sent_here(world, placed) == [1] and world.log.count("submit") == 1
     refused = world.posted()[placed]["revision_hash"]
     assert [body["revision_hash"] for body in world.posted()].count(refused) == 1
+
+
+def test_a_round_refused_as_stale_is_never_sent_again_by_another_run():
+    # RG-M2r3 1, contract 2 at 0456312: the refusal is held with its
+    # entry. A new run of the same round (the sheet opened again, Submit)
+    # builds nothing, uploads nothing, sends nothing: it reads the list
+    # again for the other device's entry, with Reload.
+    world = World()
+    theirs = world.on_server(1, "submitted")
+    placed = len(world.posted())
+    world.go()
+    mine = world.list.held(theirs.sid)
+    assert world.marks.round_refused(pk("writer"), mine)
+    uploaded = len(world.uploads.calls)
+    again = Submitting(world.submitting._draft, world.choice, writer=pk("writer"), round_=1,
+                       ports=world.ports(), on_change=lambda _progress: None)
+    again.start()
+    world.settle()
+    assert _sent_here(world, placed) == [1] and len(world.uploads.calls) == uploaded
+    progress = again.progress
+    assert (progress.failure.title, progress.failure.sentence, progress.failure.retry) == (
+        words.SUBMITTED_ELSEWHERE, words.ELSEWHERE_NOT_HERE_YET, Step.RELOADING)
+    assert world.log.count("reload") == 2 and world.log.count("record") == 1
+    # Another round, or another device's entry of it, is not held.
+    assert not world.marks.round_refused(pk("writer"), theirs)
 
 
 def test_a_list_that_cannot_be_read_again_says_so_and_reload_stays():

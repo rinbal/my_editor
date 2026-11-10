@@ -56,7 +56,7 @@ from .drafting import ArticleDraft, Choice, EncryptedPicture, Sealed
 from .errors import Code, StandupError
 from .formats import FormatError, SecretKeyFound
 from ..list_results import PublishStatus
-from .entries import RecordResult, RecordStatus
+from .entries import RecordResult, RecordStatus, SubmissionEntry
 from .ports import Ports, Reread
 from .progress import (
     HELD_UNKNOWN_FIRST, HELD_WORDS, PHASE_OF, Failure, Held, HeldWords, MessageStatus, Phase,
@@ -192,6 +192,9 @@ class Submitting:
         # Built again once for the round the server expects (409
         # ``conflict``, contract 2): never twice, never the same body.
         self._rebuilt = False
+        # The entry of a round another device stored (``stale_revision``),
+        # whose stored entry the list is read again for.
+        self._waits_for: Optional[SubmissionEntry] = None
 
     # -- what the screen asks ------------------------------------------------
 
@@ -208,6 +211,15 @@ class Submitting:
         return self._choice
 
     def start(self) -> None:
+        # A round the server refused as stale_revision here is another
+        # device's: never built or sent again, from any screen (contract 2
+        # at 0456312); the list is read again for its stored entry.
+        sid = drafting.submission_id_of(self._draft, self._choice, self._writer, self._round)
+        held = self._ports.held(sid)
+        if isinstance(held, SubmissionEntry) and self._ports.refused(held):
+            self._waits_for = held
+            self._reload()
+            return
         self._show(Step.KEY)
         self._ask_key()
 
@@ -502,11 +514,15 @@ class Submitting:
                 or self._sealed.entry.stored:
             self._refused(stale.error)
             return
+        # Held with its entry, so no screen sends this round again, after
+        # a restart too (contract 2 at 0456312).
+        self._waits_for = self._sealed.entry
+        self._ports.refuse(self._waits_for)
         self._reload()
 
     def _reload(self) -> None:
         self._show(Step.RELOADING, failure=None, held=Held.OTHER)
-        self._ports.reload(self._sealed.entry, self._answer())
+        self._ports.reload(self._waits_for, self._answer())
 
     def _reread(self, found: Reread) -> None:
         """The list as read again: the other device's stored entry has
