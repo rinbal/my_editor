@@ -3,7 +3,7 @@
 """Web pictures in the PDF export, in print and in the HTML export.
 
 Every picture the document names by a web address is fetched once for
-an export or a print (export_pictures.gather: held bytes first, the rest
+an export or a print (export_pictures.Gathering: held bytes first, the rest
 through the guarded fetcher, capped and bounded in time, never an
 address on this computer or its network, a redirect to one included),
 and read through one helper (export_pictures.picture_bytes). A picture
@@ -22,7 +22,7 @@ from PySide6.QtWidgets import QApplication
 
 import export_pictures
 from markdown_writer import read_markdown
-from tests.photo_corners import PHOTOS, has_colour, pages_show_a_picture, pdf_pages
+from tests.photo_corners import PHOTOS, gathered, has_colour, pages_show_a_picture, pdf_pages
 
 PLAN = (PHOTOS / "plan.png").read_bytes()
 PHOTO = (PHOTOS / "photo.png").read_bytes()
@@ -106,30 +106,26 @@ class _Fetcher:
 
 
 def test_a_print_job_gathers_its_web_pictures_once_and_prints_them(app, monkeypatch):
-    """File > Print hands the pictures to the print; a preview painting
-    again does not fetch again."""
+    """File > Print hands the pictures, gathered before, to the print; a
+    preview painting again does not fetch again."""
     import printing
     from main_window import MainWindow
-    gathered, printed = [], []
-
-    def gather(urls, *, held=None, **_):
-        gathered.append(list(urls))
-        return {url: PLAN for url in urls}
-    monkeypatch.setattr(export_pictures, "gather", gather)
+    printed = []
     monkeypatch.setattr(printing, "print_document",
                         lambda doc, printer, **kw: printed.append(kw["remote_pictures"]) or 1)
     editor = SimpleNamespace(document=lambda doc=_doc(ALONE): doc)
     window = SimpleNamespace(
         current_pdf_viewer=lambda: None, current_editor=lambda: editor,
-        _blob_cache_root=lambda: "/nowhere", _held_picture_bytes=lambda url: None,
+        _blob_cache_root=lambda: "/nowhere", _held_picture_bytes=lambda url: PLAN,
         _asset_manager=SimpleNamespace(export_view=None))
-    window._web_pictures = MainWindow._web_pictures.__get__(window)
-    window._image_roots_for = MainWindow._image_roots_for.__get__(window)
-    title, paint = MainWindow._print_job(window)
-    assert gathered == []                          # nothing fetched to enable Print
+    for name in ("_image_roots_for", "_print_job", "_with_web_pictures"):
+        setattr(window, name, getattr(MainWindow, name).__get__(window))
+    assert MainWindow._print_job(window) is not None      # Print is on, nothing fetched
+    jobs = []
+    MainWindow._print_document(window, jobs.append)
+    title, paint = jobs[0]
     paint(object())
     paint(object())
-    assert gathered == [["https://pictures.example/plan.png"]]
     assert printed == [{"https://pictures.example/plan.png": PLAN}] * 2
 
 
@@ -145,7 +141,7 @@ def test_a_redirect_to_this_computers_network_is_not_followed(app):
     guard = NetGuard(resolver=lambda host, on_done: on_done(["93.184.216.34"]))
     fetcher = BlobFetcher(max_bytes=export_pictures.MAX_BYTES, nam=nam, guard=guard)
     QTimer.singleShot(0, moved.finish)
-    got = export_pictures.gather(["https://pictures.example/plan.png"], fetcher=fetcher,
+    got = gathered(["https://pictures.example/plan.png"], fetcher=fetcher,
                                  timeout_ms=60_000)
     assert got == {}
     assert len(nam.calls) == 1                 # the redirect was never asked

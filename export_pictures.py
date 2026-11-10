@@ -11,16 +11,18 @@ web address comes from what the window already holds (the editor showed
 it); any other is fetched here, through the importer's guarded fetcher:
 no address on this computer or on its network, a redirect to one
 included (nostr/imports/netguard.py), at most MAX_BYTES a picture, and
-TIMEOUT_MS for all of them together. A picture that does not come in
-time is not waited for: a page keeps its address, paper a quiet
-stand-in with its description.
+TIMEOUT_MS for all of them together, while the app goes on (Gathering,
+never a nested event loop: a tab closed or an edit made meanwhile meets
+no export half done). A picture that does not come in time is not
+waited for: a page keeps its address, paper a quiet stand-in with its
+description.
 """
 
 from __future__ import annotations
 
 from typing import Callable, Dict, Iterable, List, Optional
 
-from PySide6.QtCore import QEventLoop, QTimer
+from PySide6.QtCore import QObject, QTimer, Signal
 
 import doc_walk
 import photo_group
@@ -71,47 +73,74 @@ def picture_bytes(name: str, policy, *, asset_resolver=None,
     return None, None
 
 
-def gather(urls: Iterable[str], *, held: Optional[HeldBytes] = None, fetcher=None,
-           timeout_ms: int = TIMEOUT_MS) -> Dict[str, bytes]:
-    """The bytes of each picture at ``urls`` that is a picture: from
-    ``held`` first, the rest from ``fetcher`` (a BlobFetcher; by default
-    one capped at MAX_BYTES), waiting at most ``timeout_ms`` for all."""
-    out: Dict[str, bytes] = {}
-    wanted: List[str] = []
-    for url in urls:
-        data = held(url) if held is not None else None
-        if data and sniff_image_mime(data):
-            out[url] = data
-        elif is_web_address(url):
-            wanted.append(url)
-    if not wanted:
-        return out
-    if fetcher is None:
-        from nostr.imports.fetch import BlobFetcher
-        fetcher = BlobFetcher(max_bytes=MAX_BYTES)
-    loop = QEventLoop()
-    pending = set(wanted)
-    # A picture that comes after the wait is over is not used.
-    over = [False]
+def new_fetcher(parent: QObject):
+    """The importer's guarded fetcher, capped at MAX_BYTES a picture; a
+    child of ``parent``, so what is still under way goes with it."""
+    from nostr.imports.fetch import BlobFetcher
+    return BlobFetcher(parent, max_bytes=MAX_BYTES)
 
-    def done(url: str, data: Optional[bytes]) -> None:
-        if over[0]:
+
+class Gathering(QObject):
+    """The web pictures at ``urls`` for one export: ``pictures`` holds
+    what came, held ones (``held``) at once, the rest from ``fetcher`` (a
+    BlobFetcher; by default one capped at MAX_BYTES). ``finished`` once
+    every one came or failed, or ``timeout_ms`` after start(), whichever
+    is first; never after cancel(). ``complete``: nothing to fetch."""
+
+    finished = Signal()
+
+    def __init__(self, urls: Iterable[str], *, held: Optional[HeldBytes] = None,
+                 fetcher=None, timeout_ms: int = TIMEOUT_MS, parent: Optional[QObject] = None):
+        super().__init__(parent)
+        self.pictures: Dict[str, bytes] = {}
+        self._wanted: List[str] = []
+        for url in urls:
+            data = held(url) if held is not None else None
+            if data and sniff_image_mime(data):
+                self.pictures[url] = data
+            elif is_web_address(url):
+                self._wanted.append(url)
+        self._fetcher = fetcher
+        self._pending: set = set()
+        self._running = False
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(max(1, int(timeout_ms)))
+        self._timer.timeout.connect(self._finish)
+
+    @property
+    def complete(self) -> bool:
+        return not self._wanted
+
+    def start(self) -> None:
+        if self._running or not self._wanted:
+            return
+        if self._fetcher is None:
+            self._fetcher = new_fetcher(self)
+        self._running = True
+        self._pending = set(self._wanted)
+        self._timer.start()
+        for url in self._wanted:
+            if not self._running:
+                break
+            self._fetcher.fetch(url, on_success=lambda data, _mime, u=url: self._came(u, data),
+                                on_failure=lambda _reason, u=url: self._came(u, None))
+
+    def cancel(self) -> None:
+        self._running = False
+        self._timer.stop()
+
+    def _came(self, url: str, data: Optional[bytes]) -> None:
+        if not self._running:
             return
         if data and len(data) <= MAX_BYTES and sniff_image_mime(data):
-            out[url] = bytes(data)
-        pending.discard(url)
-        if not pending:
-            loop.quit()
+            self.pictures[url] = bytes(data)
+        self._pending.discard(url)
+        if not self._pending:
+            self._finish()
 
-    for url in wanted:
-        fetcher.fetch(url, on_success=lambda data, _mime, u=url: done(u, data),
-                      on_failure=lambda _reason, u=url: done(u, None))
-    if pending:
-        timer = QTimer()
-        timer.setSingleShot(True)
-        timer.timeout.connect(loop.quit)
-        timer.start(max(1, int(timeout_ms)))
-        loop.exec()
-        timer.stop()
-    over[0] = True
-    return out
+    def _finish(self) -> None:
+        if not self._running:
+            return
+        self.cancel()
+        self.finished.emit()

@@ -3982,6 +3982,10 @@ class MainWindow(QMainWindow):
             if active_job is not None:
                 active_job.cancel()
                 editor._active_stash_job = None
+            # An export waiting for its pictures goes quietly.
+            waiting = getattr(editor, "_export_waiting", None)
+            if waiting is not None:
+                waiting()
         self.tabs.removeTab(index)
         if editor is not None:
             # The tab goes, its editor and document with it, once what is
@@ -5194,27 +5198,39 @@ class MainWindow(QMainWindow):
                 return self.save_as(self._suggest_path(path, '.rtf'), ".rtf (*.rtf)")
 
         old_path = self.current_path()
-        ok = self._save_to(path)
+
+        def saved() -> None:
+            # A page or a PDF written once its pictures came: the tab it
+            # was saved from, while it is still the one in front.
+            if ed is None or self.current_editor() is ed:
+                self._saved_as(path, old_path)
+        ok = self._save_to(path, then=saved)
         if ok:
-            if old_path and old_path != path:
-                self._unwatch(old_path)
-            self._watcher.addPath(path)
-            self.set_current_path(path)
-            ed = self.current_editor()
-            if ed:
-                self._attach_highlighter(ed, path)
-                self._update_status_bar()
-            if ed and hasattr(ed, '_backup'):
-                ed._backup.update_file_path(path)
-            add_recent(path)
-            self._populate_recent_menu()
-            self._update_knit_actions()
+            self._saved_as(path, old_path)
         return ok
 
-    def _save_to(self, path: str, *, asked: bool = False) -> bool:
+    def _saved_as(self, path: str, old_path: str) -> None:
+        """The current tab is the file ``path`` now (Save As)."""
+        if old_path and old_path != path:
+            self._unwatch(old_path)
+        self._watcher.addPath(path)
+        self.set_current_path(path)
+        ed = self.current_editor()
+        if ed:
+            self._attach_highlighter(ed, path)
+            self._update_status_bar()
+        if ed and hasattr(ed, '_backup'):
+            ed._backup.update_file_path(path)
+        add_recent(path)
+        self._populate_recent_menu()
+        self._update_knit_actions()
+
+    def _save_to(self, path: str, *, asked: bool = False, then=None) -> bool:
         """Write the current document to ``path``; True once it is written.
         ``asked``: the caller asked already about writing over a file that
-        another app changed (_confirm_save_over_changes)."""
+        another app changed (_confirm_save_over_changes). A page or a PDF
+        whose web pictures are still to come is written once they are
+        (_with_web_pictures): False now, and ``then()`` once it is."""
         ed = self.current_editor()
         if not ed:
             return False
@@ -5233,18 +5249,14 @@ class MainWindow(QMainWindow):
                                  "first (File > Change Password…)."))
                 return False
             if ext.endswith('.pdf'):
-                return self._save_as_pdf(ed, path)
+                return self._save_as_pdf(ed, path, then=then)
             elif ext.endswith('.rtf'):
                 return self._save_as_rtf(ed, path)
 
             if ext.endswith(('.html', '.htm')):
-                content = document_to_html(
-                    ed.document(),
-                    title=self._export_title_for(path),
-                    image_roots=self._image_roots_for(ed),
-                    asset_resolver=self._asset_manager.export_view,
-                    remote_pictures=self._web_pictures(ed.document()),
-                )
+                return self._with_web_pictures(
+                    ed, lambda doc, pictures, revision: self._save_html(
+                        ed, path, doc, pictures, revision), then=then)
             elif ext.endswith('.rmd'):
                 content = self._to_rmd_content(ed, path)
             elif ext.endswith('.md'):
@@ -5300,6 +5312,81 @@ class MainWindow(QMainWindow):
             # (sealing a locked document takes a while): finding the file as
             # written here, _on_file_changed knows the change is this save.
             self._saved_stamps[path] = regular_files.file_stamp(path)
+
+    def _save_html(self, ed, path: str, doc, pictures: dict, revision: int) -> bool:
+        """Write ``doc`` (a copy of ``ed``'s document made at ``revision``)
+        to ``path`` as a page that holds its pictures; True once written.
+        The tab counts as saved when it was not edited since."""
+        try:
+            content = document_to_html(
+                doc, title=self._export_title_for(path),
+                image_roots=self._image_roots_for(ed),
+                asset_resolver=self._asset_manager.export_view,
+                remote_pictures=pictures)
+            MainWindow._write_document(self, ed, path, encode_text_document(
+                content, newline=getattr(ed, "_newline", None), head=""))
+            ed._recovered_title = ""
+            self._resolve_disk_change(ed)
+            if ed.document().revision() == revision:
+                ed.document().setModified(False)
+            self._update_tab_title(ed)
+            self._say_saved(ed, path)
+            return True
+        except Exception as e:
+            inform(self, title=_("Couldn't save \u201c{name}\u201d").format(
+                       name=os.path.basename(path)),
+                   message=f"{e}\n\n{_SAVE_FAILED_HINT}", caution=True)
+            return False
+        finally:
+            self._saved_stamps[path] = regular_files.file_stamp(path)
+
+    def _with_web_pictures(self, ed, work, *, then=None) -> bool:
+        """Run ``work(doc, pictures, revision)`` for an export or a print of
+        ``ed``: ``doc`` a copy of its document as it is now (at
+        ``revision``), ``pictures`` its web pictures. Held ones are there
+        at once and ``work`` runs now: its answer. The rest are fetched
+        while the app goes on (export_pictures.Gathering): False now, and
+        ``work`` runs once they are in, then ``then()`` when it said True.
+        A sheet with Cancel shows only when that takes longer than a second
+        (Apple's progress pattern); closing the tab drops the work quietly.
+        One at a time: a request while another waits is refused."""
+        doc = photo_group.copy_of(ed.document())
+        revision = ed.document().revision()
+        gathering = export_pictures.Gathering(
+            export_pictures.web_picture_names(doc), held=self._held_picture_bytes)
+        if gathering.complete:
+            return work(doc, gathering.pictures, revision)
+        if getattr(self, "_gathering", None) is not None:
+            self.status.showMessage(_("Another export is still loading its pictures."), 4000)
+            return False
+        sheet = QProgressDialog(_("Loading the document\u2019s pictures\u2026"),
+                                _("Cancel"), 0, 0, self)
+        sheet.setWindowModality(Qt.WindowModal)
+        sheet.setAutoClose(False)
+        sheet.setAutoReset(False)
+        sheet.setMinimumDuration(1000)
+        sheet.setValue(0)
+
+        def stop() -> None:
+            gathering.cancel()
+            sheet.canceled.disconnect()
+            sheet.hide()
+            sheet.setParent(None)
+            sheet.deleteLater()
+            if getattr(self, "_gathering", None) is gathering:
+                self._gathering = None
+            ed._export_waiting = None
+
+        def finished() -> None:
+            stop()
+            if ed in self._all_editors() and work(doc, gathering.pictures, revision) and then:
+                then()
+        self._gathering = gathering
+        ed._export_waiting = stop
+        gathering.finished.connect(finished)
+        sheet.canceled.connect(stop)
+        gathering.start()
+        return False
 
     def _say_saved(self, ed, path: str, left_out=()) -> None:
         """Say a document was saved, and whether audio or video in it is
@@ -6143,19 +6230,6 @@ class MainWindow(QMainWindow):
                 return data
         return self._web_images.raw(url)
 
-    def _web_pictures(self, doc) -> dict:
-        """The web pictures of ``doc``, for an export or a print that
-        carries them (export_pictures: held ones at once, the rest
-        fetched, guarded, capped and bounded in time)."""
-        urls = export_pictures.web_picture_names(doc)
-        if not urls:
-            return {}
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        try:
-            return export_pictures.gather(urls, held=self._held_picture_bytes)
-        finally:
-            QApplication.restoreOverrideCursor()
-
     def _picture_look_shown(self) -> bool:
         panel = getattr(self, "_picture_look", None)
         return panel is not None and panel.isVisible()
@@ -6221,19 +6295,26 @@ class MainWindow(QMainWindow):
                 return None
         return path
 
-    def _save_as_pdf(self, editor, path: str) -> bool:
+    def _save_as_pdf(self, editor, path: str, *, then=None) -> bool:
         """Export via the native Qt PDF pipeline (export_pdf.py): document
         metadata, persisted page setup, page-number footer, images capped
-        to the printable width."""
+        to the printable width; once its web pictures are in
+        (_with_web_pictures)."""
+        return self._with_web_pictures(
+            editor, lambda doc, pictures, revision: self._write_pdf(
+                editor, path, doc, pictures, revision), then=then)
+
+    def _write_pdf(self, editor, path: str, doc, pictures: dict, revision: int) -> bool:
         try:
-            export_pdf(editor.document(), path,
+            export_pdf(doc, path,
                        title=self._export_title_for(path),
                        image_roots=self._image_roots_for(editor),
                        asset_resolver=self._asset_manager.export_view,
-                       remote_pictures=self._web_pictures(editor.document()))
+                       remote_pictures=pictures)
             editor._recovered_title = ""
-            editor.document().setModified(False)
-            self._update_tab_title()
+            if editor.document().revision() == revision:
+                editor.document().setModified(False)
+            self._update_tab_title(editor)
             self._say_saved(editor, path)
             return True
         except Exception as e:
@@ -6264,10 +6345,12 @@ class MainWindow(QMainWindow):
             self._print_device = printing.make_printer()
         return self._print_device
 
-    def _print_job(self):
+    def _print_job(self, doc=None, pictures=None):
         """What Print prints for the current tab: ``(title, paint)``, where
         ``paint(printer)`` prints and returns the page count. None when
-        the tab has nothing to print."""
+        the tab has nothing to print. A document's tab prints ``doc`` (a
+        copy of its document) with its web pictures ``pictures``, gathered
+        before (_print_document)."""
         viewer = self.current_pdf_viewer()
         if viewer is not None:
             return viewer.document_title(), lambda printer: printing.print_pdf(
@@ -6278,23 +6361,29 @@ class MainWindow(QMainWindow):
         path = getattr(ed, "_file_path", None)
         title = self._export_title_for(path) if path else _("Untitled")
         roots = self._image_roots_for(ed)
-        # Web pictures are gathered once a job, at its first page: a
-        # preview paints again on every change of its settings.
-        gathered: list = []
-
-        def pictures() -> dict:
-            if not gathered:
-                gathered.append(self._web_pictures(ed.document()))
-            return gathered[0]
+        document = doc if doc is not None else ed.document()
         return title, lambda printer: printing.print_document(
-            ed.document(), printer, image_roots=roots,
+            document, printer, image_roots=roots,
             asset_resolver=self._asset_manager.export_view,
-            remote_pictures=pictures())
+            remote_pictures=pictures or {})
+
+    def _print_document(self, show) -> None:
+        """``show(job)`` for the current tab's print job, a document's once
+        its web pictures are in (_with_web_pictures), so a preview that
+        paints again on every change of its settings fetches nothing."""
+        ed = self.current_editor() if self.current_pdf_viewer() is None else None
+        if ed is None:
+            job = self._print_job()
+            if job is not None:
+                show(job)
+            return
+        self._with_web_pictures(ed, lambda doc, pictures, _revision: show(
+            self._print_job(doc, pictures)) or True)
 
     def _on_print(self):
-        job = self._print_job()
-        if job is None:
-            return
+        self._print_document(self._print_now)
+
+    def _print_now(self, job) -> None:
         title, paint = job
         printer = self._printer()
         printing.prepare(printer, title, load_page_setup())
@@ -6328,9 +6417,9 @@ class MainWindow(QMainWindow):
     def _on_print_preview(self):
         """File > Print Preview (Windows and Linux; macOS previews in its
         print panel). The preview's own Print button prints for real."""
-        job = self._print_job()
-        if job is None:
-            return
+        self._print_document(self._preview_now)
+
+    def _preview_now(self, job) -> None:
         title, paint = job
         printer = self._printer()
         printing.prepare(printer, title, load_page_setup())

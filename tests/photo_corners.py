@@ -98,3 +98,19 @@ def pages_show_a_picture(pages) -> bool:
     """Whether a page shows a fixture picture: all four corner colours
     (a stand-in shows none)."""
     return any(all(has_colour(page, colour) for colour in CORNERS) for page in pages)
+
+
+def gathered(urls, **kw) -> dict:
+    """export_pictures.Gathering's pictures once it finished: the test
+    waits in a loop of its own (the app never does)."""
+    from PySide6.QtCore import QEventLoop, QTimer
+
+    import export_pictures
+    gathering = export_pictures.Gathering(urls, **kw)
+    loop = QEventLoop()
+    gathering.finished.connect(loop.quit)
+    gathering.start()
+    if gathering._running:
+        QTimer.singleShot(120_000, loop.quit)
+        loop.exec()
+    return gathering.pictures

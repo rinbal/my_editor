@@ -35,7 +35,7 @@ import photo_group
 import photo_layout
 from export_html import document_to_html
 from markdown_writer import read_markdown
-from tests.photo_corners import PHOTOS, SHAPES, shows_whole
+from tests.photo_corners import PHOTOS, SHAPES, gathered, shows_whole
 
 DOC = ("# Bothy weekend\n\nWe walked in from the station.\n\n![Steg](portrait.png)\n\n"
        "*The jetty at dusk*\n\n![Loch](landscape.png)\n\n![Bay](photo.png)\n\n"
@@ -298,7 +298,7 @@ class _FakeFetcher:
 def test_web_pictures_are_carried_when_they_come_in_time(app):
     png = (PHOTOS / "photo.png").read_bytes()
     fetcher = _FakeFetcher({"https://e.org/a.png": png, "https://e.org/slow.png": "never"})
-    got = export_pictures.gather(
+    got = gathered(
         ["https://e.org/a.png", "https://e.org/held.png", "https://e.org/slow.png",
          "https://e.org/bad.png"],
         held=lambda url: png if url.endswith("held.png") else None,
@@ -316,7 +316,7 @@ def test_web_pictures_are_carried_when_they_come_in_time(app):
 def test_a_web_picture_larger_than_the_cap_or_not_a_picture_is_dropped(app):
     fetcher = _FakeFetcher({"https://e.org/big.png": b"\x89PNG\r\n\x1a\n" + b"0" * (
         export_pictures.MAX_BYTES + 1), "https://e.org/page.png": b"<html>"})
-    assert export_pictures.gather(["https://e.org/big.png", "https://e.org/page.png"],
+    assert gathered(["https://e.org/big.png", "https://e.org/page.png"],
                                   fetcher=fetcher, timeout_ms=50) == {}
 
 
@@ -331,7 +331,7 @@ def test_the_export_fetcher_never_asks_this_computer_or_its_network(app):
     fetcher = BlobFetcher(max_bytes=export_pictures.MAX_BYTES, guard=Refusing())
     urls = ["http://127.0.0.1/a.png", "http://192.168.1.1/b.png", "http://localhost/c.png",
             "http://[::1]/d.png", "file:///etc/passwd", "http://nas.local/e.png"]
-    assert export_pictures.gather(urls, fetcher=fetcher, timeout_ms=200) == {}
+    assert gathered(urls, fetcher=fetcher, timeout_ms=200) == {}
 
 
 # --------------------------------------------------------------------------- #
