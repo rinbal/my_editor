@@ -14,6 +14,7 @@ message."""
 
 from __future__ import annotations
 
+import itertools
 import time
 from dataclasses import replace
 from types import SimpleNamespace
@@ -40,6 +41,8 @@ from nostr.standup.entries import (
     item_from_json,
     merge_items,
     merge_seen,
+    record_key,
+    shown_for,
 )
 from nostr.standup.lists import (
     READ_STATE_INTERVAL_SECONDS,
@@ -144,7 +147,10 @@ def test_a_keyed_tombstone_leaves_an_entry_of_another_key_whatever_its_age():
     gone = tombstone_for(mine, other.updated_at + 1_000)
     for first, second in ((gone, other), (other, gone)):
         merged = merge_items(SubmissionItems((first,)), SubmissionItems((second,)))
-        assert merged.items == (other,)
+        # Two records (0456312): each of its own identity; the sid shows
+        # the entry the tombstone does not name.
+        assert set(merged.items) == {gone, other} and merged.entries == (other,)
+        assert shown_for(merged, other.sid) == other
     newer = replace(mine, updated_at=gone.updated_at + 5)            # its own key, newer
     assert merge_items(SubmissionItems((gone,)), SubmissionItems((newer,))).items == (newer,)
 
@@ -224,13 +230,23 @@ def test_entries_merge_by_id_and_the_newest_wins_in_place():
 
 
 def test_a_removal_is_a_tombstone_that_wins_over_older_copies():
+    from nostr.standup.entries import tombstone_for
     a = entry(1)
-    gone = Tombstone(sid=a.sid, updated_at=NOW + 1)
+    gone = tombstone_for(a, NOW + 1)
     assert item_from_json(gone.to_json()) == gone
     merged = merge_items(SubmissionItems((a,)), SubmissionItems((gone,)))
     assert merged.items == (gone,) and merged.entries == ()
     # An older copy from another device brings nothing back.
     assert merge_items(merged, SubmissionItems((a,))).items == (gone,)
+
+
+def test_a_tombstone_of_an_older_list_touches_no_entry_with_a_key():
+    # 0456312: one naming no key is a record of the identity with none.
+    a = entry(1)
+    unkeyed = Tombstone(sid=a.sid, updated_at=NOW + 1)
+    assert item_from_json(unkeyed.to_json()) == unkeyed
+    merged = merge_items(SubmissionItems((a,)), SubmissionItems((unkeyed,)))
+    assert set(merged.items) == {a, unkeyed} and merged.entries == (a,)
 
 
 # -- written before sending ------------------------------------------------------
@@ -702,25 +718,41 @@ def test_the_vector_merge_is_a_union():
     assert any(isinstance(item, Tombstone) for item in merged.items)
 
 
+def _by_identity(items):
+    """Records as the vectors list them: by sid, then by record key."""
+    return sorted((item.to_json() for item in items),
+                  key=lambda value: (value["sid"], record_key(item_from_json(value))))
+
+
 @pytest.mark.parametrize("case", PL["merge_variants"], ids=lambda case: case["name"])
-@pytest.mark.parametrize("order", ["a then b", "b then a"])
-def test_the_vector_merge_variants_keep_the_stored_secrets_in_either_order(case, order):
-    # 72d5ddc: two devices building one round; the server stores one of
-    # them. Through the one merge of the list, as remote and as local.
-    first, second = (case["a"], case["b"]) if order == "a then b" else (case["b"], case["a"])
-    merged = merge_items(SubmissionItems((item_from_json(first),)),
-                         SubmissionItems((item_from_json(second),)))
-    assert [item.to_json() for item in merged.items] == [case["merged"]]
-    # And as one read across two generations holds them (decode_items).
-    decoded = decode_items({"items": [first, second]})
-    assert [item.to_json() for item in decoded.items] == [case["merged"]]
+def test_every_order_of_the_vector_records_merges_to_one_list(case):
+    # 0456312: a maximum under one order, so every order and grouping of
+    # the records gives the same list, through the one merge of the list
+    # and through one read across generations (decode_items); and the
+    # sid shows what the vectors say (shown_for).
+    sid = case["records"][0]["sid"]
+    for order in itertools.permutations(case["records"]):
+        records = [item_from_json(value) for value in order]
+        one_by_one = SubmissionItems()
+        for record in records:
+            one_by_one = merge_items(one_by_one, SubmissionItems((record,)))
+        halves = merge_items(SubmissionItems(tuple(records[:1])),
+                             SubmissionItems(tuple(records[1:])))
+        decoded = decode_items({"items": list(order)})
+        for merged in (one_by_one, halves, decoded):
+            assert _by_identity(merged.items) == case["merged"]
+            shown = shown_for(merged, sid)
+            assert (shown.to_json() if shown is not None else None) == case["shown"]
 
 
-def test_the_vector_merge_variants_are_the_contracts_five():
+def test_the_vector_merge_variants_are_the_contracts_nine():
     names = {case["name"] for case in PL["merge_variants"]}
-    assert names == {"stored_beats_a_newer_unstored", "keyed_tombstone_removes_only_its_key",
-                     "keyed_tombstone_never_removes_another_key", "two_unstored_newest_wins",
-                     "stored_beats_a_tombstone_of_its_own_key"}
+    assert names == {
+        "stored_beats_a_newer_unstored", "keyed_tombstone_removes_only_its_key",
+        "keyed_tombstone_never_removes_another_key", "same_key_newest_wins",
+        "two_unstored_keys_show_the_newest", "stored_beats_a_tombstone_of_its_own_key",
+        "unkeyed_tombstone_touches_no_keyed_record", "no_cycle_between_keys",
+        "tombstone_wins_at_equal_time"}
 
 
 def test_the_vector_read_state_merge():
@@ -1057,3 +1089,115 @@ def test_another_accounts_opened_pages_are_never_used():
     load(store)
     load(store)
     assert len(signer.opened) == 2 * len(relay.stored)
+
+
+# -- records (contract 13 at 0456312) ------------------------------------------------
+
+def test_a_stored_entry_is_never_forgotten():
+    # RG-M2r3 18 (c3): Verwerfen of an entry the server stored writes
+    # nothing, and the list keeps it; the merge says so, not a second rule.
+    store, relay, _clock = make()
+    load(store)
+    value = replace(entry(1), stored=True)
+    assert record(store, value).stored
+    before = relay.page(formats.SUBMISSIONS_LIST_D)
+    result = _done(lambda answer: store.forget(value, answer))
+    assert result.status is RecordStatus.NOT_STORED
+    assert relay.page(formats.SUBMISSIONS_LIST_D) == before         # nothing written
+    assert store.entry(value.sid).stored
+
+
+def test_once_a_sid_shows_a_stored_entry_its_records_left_behind_get_tombstones():
+    # 13 at 0456312, Removing: a device's own entry of a round another
+    # device stored is never sent; after a complete read it is removed.
+    theirs = replace(entry(1), stored=True)
+    mine = entry(1, updated_at=NOW + 50)            # same sid, other keys, newer
+    relay = Relay()
+    relay.put(formats.SUBMISSIONS_LIST_D, {"v": 1, "page": 0, "pages": 1,
+                                           "items": [theirs.to_json(), mine.to_json()]})
+    store, _relay, _clock = make(relay=relay)
+    read = load(store)
+    assert read.value.entries == (theirs,)          # the stored one shows
+    settle(60)
+    items = relay.page(formats.SUBMISSIONS_LIST_D)["items"]
+    from nostr.standup.entries import status_key_hash
+    assert {"sid": mine.sid, "deleted": True, "status_key_hash": status_key_hash(
+        mine.status_key), "updated_at": NOW + 51} in items
+    assert theirs.to_json() in items
+    again, _relay, _clock = make(relay=relay)
+    assert load(again).value.entries == (theirs,)
+    settle(60)
+    assert relay.page(formats.SUBMISSIONS_LIST_D)["items"] == items     # nothing more
+
+
+def test_two_devices_records_of_one_sid_both_stay():
+    # 0456312: records of different keys never affect each other; the
+    # sid shows the newest until one is stored, then the stored one.
+    a, b = entry(1), entry(1, updated_at=NOW + 10)
+    merged = merge_items(SubmissionItems((a,)), SubmissionItems((b,)))
+    assert set(merged.items) == {a, b} and shown_for(merged, a.sid) == b
+    stored_a = replace(a, stored=True)
+    merged = merge_items(merged, SubmissionItems((stored_a,)))
+    assert set(merged.items) == {stored_a, b} and shown_for(merged, a.sid) == stored_a
+
+
+def _every_order(*records):
+    """Each order of ``records``, merged one by one."""
+    for order in itertools.permutations(records):
+        merged = SubmissionItems()
+        for record in order:
+            merged = merge_items(merged, SubmissionItems((record,)))
+        yield merged
+
+
+def test_two_records_of_one_identity_at_one_time_keep_the_greater_hash_in_every_order():
+    # 13 at 0456312: the last step of the one order, so devices agree.
+    import hashlib
+    from nostr.standup.entries import _canonical_text
+    a = entry(1)
+    b = replace(a, title="Ein anderer Titel")
+    greater = max((a, b), key=lambda x: hashlib.sha256(
+        _canonical_text(x.to_json()).encode("utf-8")).hexdigest())
+    for merged in _every_order(a, b):
+        assert merged.items == (greater,)
+
+
+def test_a_sid_with_two_stored_entries_shows_the_smallest_key_in_every_order():
+    a, b = replace(entry(1), stored=True), replace(entry(1, updated_at=NOW + 5), stored=True)
+    smallest = min((a, b), key=record_key)
+    for merged in _every_order(a, b):
+        assert shown_for(merged, a.sid) == smallest
+
+
+def test_two_unstored_entries_of_one_time_show_the_smallest_key_in_every_order():
+    a, b = entry(1), entry(1)
+    smallest = min((a, b), key=record_key)
+    for merged in _every_order(a, b):
+        assert shown_for(merged, a.sid) == smallest
+
+
+def test_a_read_with_nothing_left_behind_writes_nothing():
+    # Only unstored records of a stored sid get tombstones, never the
+    # stored one itself (13 at 0456312, Removing).
+    theirs = replace(entry(1), stored=True)
+    relay = Relay()
+    relay.put(formats.SUBMISSIONS_LIST_D, {"v": 1, "page": 0, "pages": 1,
+                                           "items": [theirs.to_json()]})
+    store, _relay, _clock = make(relay=relay)
+    assert load(store).value.entries == (theirs,)
+    settle(60)
+    assert relay.published == [] and store.left_behind() == []
+
+
+def test_a_mark_stored_marks_the_later_revision_held_with_the_same_keys():
+    # The mark is the status key's: a later revision held keeps its place.
+    store, _relay, _clock = make()
+    load(store)
+    first = entry(1)
+    assert record(store, first).stored
+    later = replace(first, revision=2, revision_hash=formats.sha256_hex("rev-1-2"))
+    assert record(store, later).stored
+    results = _done(lambda answer: store.mark_stored([first], answer))
+    assert [r.stored for r in results] == [True]
+    held = store.entry(first.sid)
+    assert held.stored and held.revision == 2

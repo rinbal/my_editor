@@ -4,15 +4,16 @@
 13), apart from how they are read and written (``nostr/standup/lists.py``,
 the Qt lists on the account's relays).
 
-- The submissions list: one :class:`SubmissionEntry` per submission, a
-  :class:`Tombstone` for one removed, a :class:`ForeignItem` for what
-  this app cannot read; merged by ``sid``, the newest ``updated_at``
-  wins, except that an entry the server stored beats one it did not,
-  and a tombstone removes only the entry of its status key, never a
-  stored one (:func:`merge_items`, contract 13 at 72d5ddc: two devices
-  building one round keep the stored secrets). Whether a write stored
-  an entry is :func:`holds_exactly`; whether it would replace other
-  secrets, :func:`takes_place_of`.
+- The submissions list: records (contract 13 at 0456312), each a
+  :class:`SubmissionEntry`, a :class:`Tombstone` for one removed, or a
+  :class:`ForeignItem` for what this app cannot read. A record's
+  identity is its ``sid`` and the hash of its status key
+  (:func:`record_key`): two devices building one round each have
+  theirs. The merge keeps the greater record of each identity under one
+  order (:func:`_rank`: stored, newer, a tombstone at equal time, the
+  greater canonical hash), so every order gives the same list; what a
+  ``sid`` shows is :func:`shown_for`. Whether a write stored an entry is
+  :func:`holds_exactly`.
 - The read state: the last ``seq`` read per key, merged by the highest
   (:func:`merge_seen`).
 
@@ -27,7 +28,7 @@ import hmac
 import json
 from dataclasses import dataclass, field, fields
 from enum import Enum
-from typing import Any, Dict, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 from ..list_results import PublishResult
 from . import formats
@@ -177,10 +178,10 @@ def status_key_hash(status_key: str) -> str:
 
 @dataclass(frozen=True)
 class Tombstone:
-    """A removed submission (13): it stays in the list. It removes only an
-    entry whose status key hashes to ``status_key_hash``, and never one
-    the server stored (72d5ddc); one without (from an older list) by the
-    newest ``updated_at``. This app writes only keyed ones
+    """A removed record (13 at 0456312): it stays in the list, a record of
+    the identity its ``status_key_hash`` names (one without, from an
+    older list, of the identity with no key), and the merge never lets it
+    remove a stored entry. This app writes only keyed ones
     (:func:`tombstone_for`)."""
 
     sid: str
@@ -207,9 +208,9 @@ def tombstone_for(entry: "SubmissionEntry", updated_at: int) -> Tombstone:
 class ForeignItem:
     """An item this app cannot read: a newer app's, or a broken one. Kept
     as it came and written back unchanged, so this app never deletes
-    what another wrote. Merged by ``sid`` like any item when it has a
-    64-hex one and an integer ``updated_at``; else (``sid`` None) kept
-    once per canonical text (:func:`_raw_key`)."""
+    what another wrote. Merged by record like any item when it has a
+    64-hex ``sid`` and an integer ``updated_at``; else (``sid`` None)
+    kept once per canonical text (:func:`_raw_key`)."""
 
     sid: Optional[str]
     updated_at: int
@@ -243,58 +244,114 @@ def item_from_json(value: Any) -> ListItem:
 
 @dataclass(frozen=True)
 class SubmissionItems:
-    """What the list holds, one item per ``sid``: the entries this app
-    reads, the tombstones, and the items it cannot read."""
+    """What the list holds: its records (13 at 0456312), one per identity
+    (:func:`record_key`), so a ``sid`` may have several (two devices
+    built its round, each with its own keys); the entries this app reads,
+    the tombstones, and the items it cannot read."""
 
     items: Tuple[ListItem, ...] = ()
 
     @property
     def entries(self) -> Tuple[SubmissionEntry, ...]:
-        return tuple(item for item in self.items if isinstance(item, SubmissionEntry))
+        """The entry each ``sid`` shows (:func:`shown_for`), once each."""
+        shown = (shown_for(self, sid) for sid in _sids(self))
+        return tuple(item for item in shown if isinstance(item, SubmissionEntry))
 
     @property
     def unread(self) -> Tuple[ForeignItem, ...]:
         return tuple(item for item in self.items if isinstance(item, ForeignItem))
 
 
+def _sids(items: SubmissionItems) -> List[str]:
+    """Every ``sid`` the records name, once each, in list order."""
+    return list(dict.fromkeys(item.sid for item in items.items if item.sid is not None))
+
+
+def record_key(item: ListItem) -> str:
+    """A record's identity within its ``sid`` (13 at 0456312): an entry
+    with a 64-hex status key, the hash of the key's bytes; a tombstone,
+    the hash it names; anything else, "" (a contributor's entry, an
+    unkeyed tombstone, an item that names no key)."""
+    if isinstance(item, Tombstone):
+        return item.status_key_hash or ""
+    if is_tombstone(item):
+        named = item.raw.get("status_key_hash")
+        return named if isinstance(named, str) else ""
+    key = _status_key_of(item)
+    return status_key_hash(key) if key is not None else ""
+
+
+def _identity(item: ListItem) -> Tuple[str, str]:
+    if item.sid is None:
+        return ("", _raw_key(item.to_json()))
+    return (item.sid, record_key(item))
+
+
+def _rank(item: ListItem) -> Tuple[bool, int, bool, str]:
+    """The one order of the records of one identity (13 at 0456312): an
+    entry the server stored beats every other record, so nothing removes
+    it; then the newer ``updated_at``; at equal time a tombstone; then
+    the greater hash of the canonical JSON. A maximum under one order:
+    every merge of the same records, in any order, keeps the same one."""
+    return (_is_stored(item), item.updated_at, is_tombstone(item),
+            hashlib.sha256(_canonical_text(item.to_json()).encode("utf-8")).hexdigest())
+
+
 def merge_items(remote: SubmissionItems, local: SubmissionItems) -> SubmissionItems:
-    """The union of both (13): by ``sid`` one item is kept (:func:`_beats`),
-    on a tie the remote one; an item without a ``sid`` is kept once. The
-    order of ``remote`` is kept and new items go at the end, so the pages
-    before the change read as they did and are not signed again: each
-    page signed costs a request through a signer app. The one merge of
-    the list: every read, write and the vectors go through it."""
-    merged: Dict[str, ListItem] = {}
+    """The union of both by record (13 at 0456312): of each identity the
+    greater record (:func:`_rank`) is kept, on a tie the remote one. The
+    order of ``remote`` is kept and new records go at the end, so the
+    pages before the change read as they did and are not signed again:
+    each page signed costs a request through a signer app. The one merge
+    of the list: every read, write and the vectors go through it."""
+    merged: Dict[Tuple[str, str], ListItem] = {}
     for item in remote.items + local.items:
-        key = item.sid if item.sid is not None else _raw_key(item.to_json())
-        known = merged.get(key)
-        if known is None or _beats(item, known):
-            merged[key] = item
+        identity = _identity(item)
+        known = merged.get(identity)
+        if known is None or _rank(item) > _rank(known):
+            merged[identity] = item
     return SubmissionItems(items=tuple(merged.values()))
 
 
-def _beats(new: ListItem, old: ListItem) -> bool:
-    """Whether ``new`` takes the place of ``old``, of one ``sid`` (13 at
-    72d5ddc). A tombstone of an older list, naming no status key, applies
-    by the newest ``updated_at``, as before. Otherwise an item the server
-    stored beats one it did not, whatever their ``updated_at`` (two
-    devices building one round: the server stores one, and its secrets
-    must stay), and a keyed tombstone counts against an entry only when
-    it names that entry's status key; else the newest ``updated_at``."""
-    if not _unkeyed_tombstone(new) and not _unkeyed_tombstone(old):
-        if _is_stored(new) != _is_stored(old):
-            return _is_stored(new)
-        if isinstance(new, Tombstone) and not isinstance(old, Tombstone) \
-                and not _removes(new, old):
-            return False
-        if isinstance(old, Tombstone) and not isinstance(new, Tombstone) \
-                and not _removes(old, new):
-            return True
-    return new.updated_at > old.updated_at
+def kept_of(known: Optional[ListItem], new: ListItem) -> ListItem:
+    """Of two records of one identity, the one the merge keeps."""
+    if known is None:
+        return new
+    return new if _rank(new) > _rank(known) else known
 
 
-def _unkeyed_tombstone(item: ListItem) -> bool:
-    return isinstance(item, Tombstone) and item.status_key_hash is None
+def shown_for(items: Optional[SubmissionItems], sid: str) -> Optional[ListItem]:
+    """What ``sid`` shows (13 at 0456312), of its records that are not
+    tombstones: the entry the server stored (with several, the smallest
+    key); without one, the newest (at equal time the smallest key); None
+    when it has none."""
+    live = [item for item in (items.items if items is not None else ())
+            if item.sid == sid and not is_tombstone(item)]
+    stored = sorted((item for item in live if _is_stored(item)), key=record_key)
+    if stored:
+        return stored[0]
+    live.sort(key=lambda item: (-item.updated_at, record_key(item)))
+    return live[0] if live else None
+
+
+def record_of(items: Optional[SubmissionItems], sid: str, key: str) -> Optional[ListItem]:
+    """The record of identity (``sid``, ``key``) ``items`` hold, or None."""
+    return next((item for item in (items.items if items is not None else ())
+                 if item.sid == sid and record_key(item) == key), None)
+
+
+def records_of(items: Optional[SubmissionItems], sid: str) -> Tuple[ListItem, ...]:
+    """Every record of ``sid``, tombstones too."""
+    return tuple(item for item in (items.items if items is not None else ()) if item.sid == sid)
+
+
+def is_tombstone(item: ListItem) -> bool:
+    """Whether ``item`` is a removal: a tombstone, or one this app cannot
+    read that says it is deleted."""
+    if isinstance(item, Tombstone):
+        return True
+    raw = item.raw if isinstance(item, ForeignItem) else None
+    return isinstance(raw, dict) and bool(raw.get("deleted"))
 
 
 def _is_stored(item: ListItem) -> bool:
@@ -303,23 +360,24 @@ def _is_stored(item: ListItem) -> bool:
     if isinstance(item, SubmissionEntry):
         return item.stored
     raw = item.raw if isinstance(item, ForeignItem) else None
-    return isinstance(raw, dict) and raw.get("stored") is True and raw.get("deleted") is None
+    return isinstance(raw, dict) and raw.get("stored") is True and not raw.get("deleted")
 
 
 def _status_key_of(item: ListItem) -> Optional[str]:
     if isinstance(item, SubmissionEntry):
-        return item.status_key
+        return item.status_key if formats.is_hex64(item.status_key) else None
     raw = item.raw if isinstance(item, ForeignItem) else None
     key = raw.get("status_key") if isinstance(raw, dict) else None
     return key if formats.is_hex64(key) else None
 
 
-def _removes(tombstone: Tombstone, item: ListItem) -> bool:
-    """Whether the keyed ``tombstone`` counts against ``item``: it names
-    the key ``item``'s status key hashes to."""
-    key = _status_key_of(item)
-    return key is not None and hmac.compare_digest(status_key_hash(key),
-                                                   tombstone.status_key_hash)
+def _canonical_text(value: Any) -> str:
+    """Canonical JSON of ``value``; for JSON canonical JSON cannot hold (a
+    float, a non-ASCII key), the same form with sorted keys."""
+    try:
+        return formats.canonical_json(value)
+    except FormatError:
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
 def _raw_key(value: Any) -> str:
@@ -338,8 +396,8 @@ def decode_items(payload: dict) -> SubmissionItems:
     items = payload.get("items")
     if not isinstance(items, list):
         raise ValueError("the submissions list has no items")
-    # A read across two generations may hold an entry twice: the merge
-    # keeps the newest.
+    # A read across two generations may hold a record twice: the merge
+    # keeps the greater.
     return merge_items(SubmissionItems(tuple(item_from_json(item) for item in items)),
                        SubmissionItems())
 
@@ -352,7 +410,7 @@ class RecordStatus(Enum):
     """What recording an entry came to."""
 
     STORED = "stored"            # the list on the relays holds exactly this entry
-    SUPERSEDED = "superseded"    # it holds another copy of this sid, newer: do not send
+    SUPERSEDED = "superseded"    # it holds another record in its place: do not send
     NOT_STORED = "not stored"    # the write did not end on the relays (``publish`` says why)
 
 
@@ -360,8 +418,8 @@ class RecordStatus(Enum):
 class RecordResult:
     """One entry recorded: ``entry`` as recorded (its ``updated_at``
     raised), the write's ``publish`` result, and, when SUPERSEDED, what
-    the list holds for its ``sid`` instead (``on_list``: another
-    device's entry, a tombstone or an item this app cannot read)."""
+    the list holds instead (``on_list``: the record of its keys, another
+    device's revision or a tombstone, or else what its ``sid`` shows)."""
 
     status: RecordStatus
     entry: SubmissionEntry
@@ -379,11 +437,11 @@ class RecordResult:
 
 
 def holds_exactly(items: Optional[SubmissionItems], entry: SubmissionEntry) -> Optional[bool]:
-    """Whether ``items`` hold exactly ``entry`` for its ``sid`` (the
-    fields a lookup and an opening need: revision, revision hash, the
+    """Whether ``items`` hold exactly ``entry`` as its record (the fields
+    a lookup and an opening need: revision, revision hash, the
     envelope's and the wraps' hashes, ``s_sub``, ``status_key``); None
-    when they hold nothing for it."""
-    item = item_for(items, entry.sid)
+    when they hold no record of its identity."""
+    item = record_of(items, entry.sid, record_key(entry))
     if item is None:
         return None
     return (isinstance(item, SubmissionEntry) and item.role == entry.role
@@ -416,36 +474,18 @@ def same_keys(a: SubmissionEntry, b: SubmissionEntry) -> bool:
 
 
 def stored_elsewhere(item: Optional[ListItem], entry: SubmissionEntry) -> bool:
-    """Whether ``item``, what the list holds of ``entry``'s sid, is the
-    entry another device stored that round with (``stored``, other keys):
-    what a revision 1 refused as ``stale_revision`` waits for (contract 2
-    at 72d5ddc). It beats ``entry`` in the merge (13)."""
+    """Whether ``item``, what ``entry``'s sid shows, is the entry another
+    device stored that round with (``stored``, other keys): what a
+    revision 1 refused as ``stale_revision`` waits for (contract 2 at
+    72d5ddc)."""
     return isinstance(item, SubmissionEntry) and item.sid == entry.sid and item.stored \
         and not same_keys(item, entry)
-
-
-def takes_place_of(item: Optional[ListItem], entry: SubmissionEntry) -> bool:
-    """Whether writing ``entry`` would replace ``item`` of its ``sid``
-    with other secrets: an entry with other keys, or one this app cannot
-    read (it may hold the keys of a stored revision). One ``sid`` has one
-    set of secrets for ever (contract 2, 13 "Entries"), the ones the
-    server stored: an entry it stored takes the place of one with other
-    keys it did not store, as the merge does (13 at 72d5ddc)."""
-    if isinstance(item, ForeignItem):
-        return True
-    return isinstance(item, SubmissionEntry) and not same_keys(item, entry) \
-        and not (entry.stored and not item.stored)
 
 
 def _same_secret(a: Optional[str], b: Optional[str]) -> bool:
     if a is None or b is None:
         return a is b
     return hmac.compare_digest(a, b)
-
-
-def item_for(items: Optional[SubmissionItems], sid: str) -> Optional[ListItem]:
-    """What ``items`` hold for ``sid``, or None."""
-    return next((i for i in (items.items if items is not None else ()) if i.sid == sid), None)
 
 
 # --------------------------------------------------------------------------- #
@@ -483,7 +523,8 @@ def merge_seen(remote: Dict[str, Any], local: Dict[str, Any]) -> Dict[str, Any]:
 __all__ = [
     "ForeignItem", "ListItem", "RecordResult", "RecordStatus", "SubmissionEntry",
     "SubmissionItems", "Tombstone", "decode_items", "decode_seen", "encode_items",
-    "entry_from_json", "entry_problem", "higher_seen", "holds_exactly", "item_for",
-    "item_from_json", "merge_items", "merge_seen", "same_keys", "same_sent", "status_key_hash",
-    "stored_elsewhere", "takes_place_of", "tombstone_for",
+    "entry_from_json", "entry_problem", "higher_seen", "holds_exactly", "is_tombstone",
+    "item_from_json", "kept_of", "merge_items", "merge_seen", "record_key", "record_of",
+    "records_of", "same_keys", "same_sent", "shown_for", "status_key_hash", "stored_elsewhere",
+    "tombstone_for",
 ]

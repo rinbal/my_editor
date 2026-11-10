@@ -225,6 +225,17 @@ def test_a_body_built_again_keeps_the_secrets_its_sid_holds_on_the_list():
                           held=wrong)
 
 
+def test_a_body_built_again_for_a_stored_entry_stays_stored():
+    # 13: stored is true once a receipt is held, and stays true; a
+    # rebuilt revision of that entry is a stored record of its keys.
+    key = trust.verify_key_event(KEY_EVENT, ADDRESS)
+    first = drafting.seal(DRAFT, CHOICE, key, (), {}, writer=pk("writer"), round_=1, now=NOW)
+    held = replace(first.entry, stored=True)
+    again = drafting.seal(replace(DRAFT, title="Neu"), CHOICE, key, (), {}, writer=pk("writer"),
+                          round_=1, now=NOW, held=held)
+    assert again.entry.stored and not first.entry.stored
+
+
 def test_every_co_author_takes_part_with_a_wrap_of_their_own():
     key = trust.verify_key_event(KEY_EVENT, ADDRESS)
     draft = replace(DRAFT, authors=((pk("contributor"), "wss://relay.example"),

@@ -29,8 +29,8 @@ from nostr.standup import crypto as scrypto
 from nostr.standup.client import StandupApi
 from nostr.standup.drafting import ArticleDraft, Choice, LocalPicture
 from nostr.standup.entries import (
-    RecordResult, RecordStatus, SubmissionEntry, SubmissionItems, item_for, merge_items,
-    same_keys, stored_elsewhere, takes_place_of,
+    RecordResult, RecordStatus, SubmissionEntry, SubmissionItems, merge_items, record_key,
+    record_of, records_of, same_keys, shown_for, stored_elsewhere, tombstone_for,
 )
 from nostr.standup.errors import Code, StandupError
 from nostr.standup.ports import Reread
@@ -104,9 +104,9 @@ class Uploads:
 
 class SubmissionsList:
     """The writer's list: records and answers STORED on a later turn,
-    unless the test sets another outcome. Like the real one it holds an
-    entry per sid (``held``) and refuses other secrets for a sid held
-    (lists.takes_place_of)."""
+    unless the test sets another outcome. Like the real one it holds
+    records merged by identity (entries.merge_items, 13 at 0456312) and
+    refuses keys no record of a known sid names."""
 
     def __init__(self, later: Later, log: List[str]) -> None:
         self.later = later
@@ -114,23 +114,32 @@ class SubmissionsList:
         self.entries = []
         self.forgotten = []
         self.marked = []
-        self.on_list = {}
+        self.items = SubmissionItems()
         self.outcomes: List[RecordResult] = []
-        # What another device wrote, by sid: found by the next read
-        # (reload), merged as the real list merges (merge_items).
-        self.arriving = {}
+        # What another device wrote: found by the next read (reload),
+        # merged as the real list merges (merge_items).
+        self.arriving = []
         self.unreadable = ""                # a read again that cannot tell
 
+    @property
+    def on_list(self):
+        """What each sid shows (entries.shown_for)."""
+        return {item.sid: shown_for(self.items, item.sid) for item in self.items.items
+                if shown_for(self.items, item.sid) is not None}
+
     def held(self, sid):
-        return self.on_list.get(sid)
+        return shown_for(self.items, sid)
+
+    def put(self, *items) -> None:
+        self.items = merge_items(self.items, SubmissionItems(tuple(items)))
 
     def mark_stored(self, entry) -> None:
-        # SubmissionsList.mark_stored: the entry held with these keys.
+        # SubmissionsList.mark_stored: the record held with these keys.
         self.marked.append(entry)
         self.log.append("stored")
-        held = self.on_list.get(entry.sid)
+        held = record_of(self.items, entry.sid, record_key(entry))
         if held is not None and same_keys(held, entry):
-            self.on_list[entry.sid] = replace(held, stored=True)
+            self.put(replace(held, stored=True))
 
     def reload(self, entry, on_done) -> None:
         # StandupWriter._reread: the list read again, then whether that
@@ -139,31 +148,28 @@ class SubmissionsList:
         if self.unreadable:
             self.later(0, lambda: on_done(Reread(False, self.unreadable)))
             return
-        for sid, item in list(self.arriving.items()):
-            mine = self.on_list.get(sid)
-            merged = merge_items(SubmissionItems((item,)),
-                                 SubmissionItems((mine,) if mine is not None else ()))
-            self.on_list[sid] = item_for(merged, sid)
-        self.arriving = {}
-        arrived = stored_elsewhere(self.on_list.get(entry.sid), entry)
+        self.put(*self.arriving)
+        self.arriving = []
+        arrived = stored_elsewhere(self.held(entry.sid), entry)
         self.later(0, lambda: on_done(Reread(arrived)))
 
     def forget(self, entry) -> None:
         self.forgotten.append(entry)
-        self.on_list.pop(entry.sid, None)
+        self.put(tombstone_for(entry, entry.updated_at + 1))
         self.log.append("forget")
 
     def record(self, entry, on_done) -> None:
         self.entries.append(entry)
         self.log.append("record")
-        if takes_place_of(self.on_list.get(entry.sid), entry):
+        known = records_of(self.items, entry.sid)
+        if known and record_of(self.items, entry.sid, record_key(entry)) is None:
             result = RecordResult(RecordStatus.NOT_STORED, entry,
                                   PublishResult(PublishStatus.FAILED, reason="other secrets"))
         else:
             result = (self.outcomes.pop(0) if self.outcomes else
                       RecordResult(RecordStatus.STORED, entry, PublishResult(PublishStatus.SENT)))
         if result.status is RecordStatus.STORED:
-            self.on_list[entry.sid] = entry
+            self.put(entry)
         self.later(0, lambda: on_done(result))
 
 
@@ -972,7 +978,7 @@ def test_a_revision_1_at_a_sid_stored_elsewhere_builds_nothing_and_waits_for_tha
     world.settle()
     assert world.log.count("reload") == 2 and _sent_here(world, placed) == [1]
     assert world.submitting.progress.failure.retry is Step.RELOADING
-    world.list.arriving[theirs.sid] = theirs        # older, but stored: it wins
+    world.list.arriving.append(theirs)               # older, but stored: it shows
     world.submitting.retry()
     world.settle()
     progress = world.submitting.progress
