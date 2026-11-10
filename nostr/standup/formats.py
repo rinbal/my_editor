@@ -129,6 +129,16 @@ def _check_canonical(value: Any) -> None:
         raise FormatError(f"a {type(item).__name__}, which JSON does not hold")
 
 
+def is_canonical(value: Any) -> bool:
+    """Whether canonical JSON holds ``value`` (1): no float, no integer
+    beyond 2^53 - 1, no key that is not an ASCII string."""
+    try:
+        _check_canonical(value)
+    except FormatError:
+        return False
+    return True
+
+
 def canonical_json(value: Any) -> str:
     """``value`` as canonical JSON (1): keys sorted by code point, no
     whitespace, strings escaped as NIP-01 and ``JSON.stringify`` do,

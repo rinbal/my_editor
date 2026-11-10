@@ -48,6 +48,7 @@ from .answer_size import (
     decrypt_answer_size, encrypt_request_size, escaped_text_size, json_text_size,
 )
 from .crypto import NIP44_MAX_PLAINTEXT_LEN, payload_length
+from .standup.js_values import js_loads
 
 __all__ = [
     "MAX_PAGES", "PAGE_ANSWER_MAX", "PAGE_PAYLOAD_MAX", "PAGE_PLAINTEXT_MAX", "PAGED_VERSION",
@@ -181,9 +182,13 @@ def parse_page(text: str, *, index: int, paging: Paging,
     ``pages`` outside 1 to 64 or not above ``index``, ``parts`` on page 0
     that do not name every later page, or a field that is missing or of
     another kind. Page 0 failing makes the list unreadable; a later page
-    failing counts as missing (contract 13)."""
+    failing counts as missing (contract 13).
+
+    Read as ``JSON.parse`` reads it (js_values.js_loads): the apps that
+    share these lists are JavaScript, and a number must be the same value
+    in each, or one app keeps a record another drops (13 at 7284078)."""
     try:
-        payload = json.loads(text)
+        payload = js_loads(text)
     except (TypeError, ValueError, RecursionError):
         raise PageError("not JSON") from None
     if not isinstance(payload, dict):

@@ -26,7 +26,6 @@ from __future__ import annotations
 import copy
 import hashlib
 import hmac
-import json
 from dataclasses import dataclass, field, fields, replace
 from enum import Enum
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
@@ -333,9 +332,16 @@ def merge_items(remote: SubmissionItems, local: SubmissionItems) -> SubmissionIt
     order of ``remote`` is kept and new records go at the end, so the
     pages before the change read as they did and are not signed again:
     each page signed costs a request through a signer app. The one merge
-    of the list: every read, write and the vectors go through it."""
+    of the list: every read, write and the vectors go through it.
+
+    A record canonical JSON does not hold (a float, a key that is not
+    ASCII, an integer beyond 2^53 - 1) is dropped first (13 at 7284078):
+    the apps would hash it differently, so it would win in one and lose
+    in another."""
     merged: Dict[Tuple[str, str], ListItem] = {}
     for item in remote.items + local.items:
+        if not formats.is_canonical(record_json(item)):
+            continue
         identity = _identity(item)
         known = merged.get(identity)
         if known is None or _rank(item) > _rank(known):
@@ -404,14 +410,10 @@ def _status_key_of(item: ListItem) -> Optional[str]:
 
 def _raw_key(value: Any) -> str:
     """The key an item without ``sid`` or ``updated_at`` is kept once by:
-    its canonical text (13). JSON that canonical JSON cannot hold (a
-    float, a non-ASCII key) is still JSON, so it gets the same form with
-    sorted keys; the two forms never meet, the prefix tells them apart."""
-    try:
-        return "raw:" + formats.canonical_json(value)
-    except FormatError:
-        return "json:" + json.dumps(value, ensure_ascii=False, separators=(",", ":"),
-                                    sort_keys=True)
+    its canonical text (13), as the merge hashes it (:func:`record_text`,
+    a lone surrogate in a string included). Only records canonical JSON
+    holds reach it (:func:`merge_items`)."""
+    return "raw:" + record_text(value)
 
 
 def decode_items(payload: dict) -> SubmissionItems:
@@ -426,8 +428,10 @@ def decode_items(payload: dict) -> SubmissionItems:
 
 def encode_items(value: SubmissionItems, now: int) -> dict:
     """The items as written: each record as it was read while unchanged
-    (:func:`record_json`), so a write never flips a record's bytes."""
-    return {"items": [record_json(item) for item in value.items]}
+    (:func:`record_json`), so a write never flips a record's bytes. No
+    record canonical JSON does not hold is ever written (13 at 7284078)."""
+    records = (record_json(item) for item in value.items)
+    return {"items": [record for record in records if formats.is_canonical(record)]}
 
 
 class RecordStatus(Enum):

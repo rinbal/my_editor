@@ -2072,6 +2072,241 @@
       "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
      }
     }
+   },
+   {
+    "merged": [
+     {
+      "d": "artikel-v",
+      "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+      "kind": "article",
+      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+      "revision": 1,
+      "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+      "role": "writer",
+      "round": 1,
+      "s_sub": "79d246ac90e53e68220b46cb24e422e4367810b94e67522d837c331ca34d5e77",
+      "server": "https://standup.example",
+      "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+      "status_key": "8d438550117e43b75a0ad9a5701e2fa9b767df2bdb09c027db6b742492c4baff",
+      "stored": false,
+      "title": "Achter",
+      "updated_at": 1762674850,
+      "wraps_sha256": {
+       "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+       "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+      }
+     }
+    ],
+    "name": "records_outside_canonical_json_are_dropped",
+    "records": [
+     {
+      "d": "artikel-v",
+      "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+      "kind": "article",
+      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+      "revision": 1,
+      "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+      "role": "writer",
+      "round": 1,
+      "s_sub": "79d246ac90e53e68220b46cb24e422e4367810b94e67522d837c331ca34d5e77",
+      "server": "https://standup.example",
+      "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+      "status_key": "8d438550117e43b75a0ad9a5701e2fa9b767df2bdb09c027db6b742492c4baff",
+      "stored": false,
+      "title": "Achter",
+      "updated_at": 1762674850,
+      "wraps_sha256": {
+       "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+       "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+      }
+     },
+     {
+      "d": "artikel-v",
+      "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+      "kind": "article",
+      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+      "revision": 1,
+      "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+      "role": "writer",
+      "round": 1,
+      "s_sub": "79d246ac90e53e68220b46cb24e422e4367810b94e67522d837c331ca34d5e77",
+      "server": "https://standup.example",
+      "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+      "status_key": "8d438550117e43b75a0ad9a5701e2fa9b767df2bdb09c027db6b742492c4baff",
+      "stored": false,
+      "title": "Achter",
+      "updated_at": 1762675020,
+      "wraps_sha256": {
+       "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+       "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+      },
+      "x": 1.5
+     },
+     {
+      "d": "artikel-v",
+      "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+      "kind": "article",
+      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+      "revision": 1,
+      "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+      "role": "writer",
+      "round": 1,
+      "s_sub": "fadc97a15b57d50f872b4be609a80ad2d1aab6fbffdb3dbdfc397f762ab603c9",
+      "server": "https://standup.example",
+      "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+      "status_key": "3aae289782572e66eb7c266adf29ee86f91f90460dd270bf41bc07e86e88676d",
+      "stored": false,
+      "title": "Achter",
+      "updated_at": 1762675020,
+      "wraps_sha256": {
+       "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+       "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+      },
+      "é": 1
+     },
+     {
+      "big": 9007199254740993,
+      "d": "artikel-v",
+      "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+      "kind": "article",
+      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+      "revision": 1,
+      "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+      "role": "writer",
+      "round": 1,
+      "s_sub": "4a35764b10b910dc9a2ca516a735fa34f4294797f1b77cda24c921bd43231997",
+      "server": "https://standup.example",
+      "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+      "status_key": "e23cb4198b629356fd6e23e2a4047a9f9ac21e25ea60ea8b6e28cd5752c9dcfa",
+      "stored": false,
+      "title": "Achter",
+      "updated_at": 1762675020,
+      "wraps_sha256": {
+       "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+       "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+      }
+     }
+    ],
+    "shown": {
+     "d": "artikel-v",
+     "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+     "kind": "article",
+     "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+     "revision": 1,
+     "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+     "role": "writer",
+     "round": 1,
+     "s_sub": "79d246ac90e53e68220b46cb24e422e4367810b94e67522d837c331ca34d5e77",
+     "server": "https://standup.example",
+     "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+     "status_key": "8d438550117e43b75a0ad9a5701e2fa9b767df2bdb09c027db6b742492c4baff",
+     "stored": false,
+     "title": "Achter",
+     "updated_at": 1762674850,
+     "wraps_sha256": {
+      "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+      "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+     }
+    }
+   },
+   {
+    "merged": [
+     {
+      "10": "b",
+      "9": 0,
+      "d": "artikel-v",
+      "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+      "kind": "article",
+      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+      "revision": 1,
+      "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+      "role": "writer",
+      "round": 1,
+      "s_sub": "79d246ac90e53e68220b46cb24e422e4367810b94e67522d837c331ca34d5e77",
+      "server": "https://standup.example",
+      "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+      "status_key": "8d438550117e43b75a0ad9a5701e2fa9b767df2bdb09c027db6b742492c4baff",
+      "stored": false,
+      "title": "Achter",
+      "updated_at": 1762675000,
+      "wraps_sha256": {
+       "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+       "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+      }
+     }
+    ],
+    "name": "integer_like_keys_hash_in_canonical_order",
+    "records": [
+     {
+      "10": "a",
+      "9": 0,
+      "d": "artikel-v",
+      "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+      "kind": "article",
+      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+      "revision": 1,
+      "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+      "role": "writer",
+      "round": 1,
+      "s_sub": "79d246ac90e53e68220b46cb24e422e4367810b94e67522d837c331ca34d5e77",
+      "server": "https://standup.example",
+      "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+      "status_key": "8d438550117e43b75a0ad9a5701e2fa9b767df2bdb09c027db6b742492c4baff",
+      "stored": false,
+      "title": "Achter",
+      "updated_at": 1762675000,
+      "wraps_sha256": {
+       "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+       "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+      }
+     },
+     {
+      "10": "b",
+      "9": 0,
+      "d": "artikel-v",
+      "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+      "kind": "article",
+      "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+      "revision": 1,
+      "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+      "role": "writer",
+      "round": 1,
+      "s_sub": "79d246ac90e53e68220b46cb24e422e4367810b94e67522d837c331ca34d5e77",
+      "server": "https://standup.example",
+      "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+      "status_key": "8d438550117e43b75a0ad9a5701e2fa9b767df2bdb09c027db6b742492c4baff",
+      "stored": false,
+      "title": "Achter",
+      "updated_at": 1762675000,
+      "wraps_sha256": {
+       "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+       "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+      }
+     }
+    ],
+    "shown": {
+     "10": "b",
+     "9": 0,
+     "d": "artikel-v",
+     "envelope_sha256": "35afb6c8fdc82123920473a8f65e71e2ac84be21c2fca3f7487ef66ee657f7cc",
+     "kind": "article",
+     "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
+     "revision": 1,
+     "revision_hash": "a01c0c75ad5f4e2daa618ab578136d8072bba00fe94cc90ec05f904033c1f74d",
+     "role": "writer",
+     "round": 1,
+     "s_sub": "79d246ac90e53e68220b46cb24e422e4367810b94e67522d837c331ca34d5e77",
+     "server": "https://standup.example",
+     "sid": "875b6b1602db1adce8668b494bd17dd646f22e3f712eff9ebea4746950e2fd94",
+     "status_key": "8d438550117e43b75a0ad9a5701e2fa9b767df2bdb09c027db6b742492c4baff",
+     "stored": false,
+     "title": "Achter",
+     "updated_at": 1762675000,
+     "wraps_sha256": {
+      "redaktion": "d4b7e41b06fbefb2497bee5c86d1b8693b624b02d8d4955024ed4ca17d057c3c",
+      "writer": "086d96aeb70246b7013ccdadc2a9fcbf0395efe4d8b5cec571fc571f3b4f35a5"
+     }
+    }
    }
   ],
   "parts": [

@@ -750,16 +750,19 @@ def test_every_order_of_the_vector_records_merges_to_one_list(case):
             assert (shown.to_json() if shown is not None else None) == case["shown"]
 
 
-def test_the_vector_merge_variants_are_the_contracts_ten():
+def test_the_vector_merge_variants_are_the_contracts_twelve():
     # c2aa466 added the tenth: equal in stored, time and tombstone, so only
     # the fourth step, the canonical hash of the record as read, decides.
+    # 7284078 (S6): records outside canonical JSON are dropped, and keys
+    # that look like integers hash in canonical order, not JavaScript's.
     names = {case["name"] for case in PL["merge_variants"]}
     assert names == {
         "stored_beats_a_newer_unstored", "keyed_tombstone_removes_only_its_key",
         "keyed_tombstone_never_removes_another_key", "same_key_newest_wins",
         "two_unstored_keys_show_the_newest", "stored_beats_a_tombstone_of_its_own_key",
         "unkeyed_tombstone_touches_no_keyed_record", "no_cycle_between_keys",
-        "tombstone_wins_at_equal_time", "equal_rank_the_greater_hash_wins"}
+        "tombstone_wins_at_equal_time", "equal_rank_the_greater_hash_wins",
+        "records_outside_canonical_json_are_dropped", "integer_like_keys_hash_in_canonical_order"}
 
 
 def test_the_vector_read_state_merge():
@@ -814,12 +817,14 @@ def test_a_field_this_app_does_not_know_is_kept_with_the_entry():
 
 
 def test_an_item_without_sid_or_updated_at_is_kept_once_by_its_canonical_text():
+    # One outside canonical JSON is dropped (13 at 7284078), with or
+    # without a sid.
     one = {"note": "kaputt", "n": [1, 2]}
     same = {"n": [1, 2], "note": "kaputt"}
     floats = {"x": 1.5}
     merged = merge_items(SubmissionItems((item_from_json(one), item_from_json(floats))),
                          SubmissionItems((item_from_json(same), item_from_json(dict(floats)))))
-    assert [item.to_json() for item in merged.items] == [one, floats]
+    assert [item.to_json() for item in merged.items] == [one]
     keyless = dict(entry().to_json(), updated_at="gestern")
     assert item_from_json(keyless).sid is None
 
@@ -1192,6 +1197,53 @@ def _tie_pairs(*, stored: bool, unknown: bool = False):
             if unknown:
                 record["note_of_a_newer_app"] = f"n{n}"
         yield a, b
+
+
+def _page_of(*records) -> str:
+    # One page of the list, written by hand: the numbers as text.
+    return '{"v":1,"page":0,"pages":1,"items":[' + ",".join(records) + "]}"
+
+
+def _with(n: int, field_text: str) -> str:
+    text = json.dumps(dict(entry(n).to_json()), separators=(",", ":"))
+    return text[:-1] + "," + field_text + "}"
+
+
+@pytest.mark.parametrize("number, kept", [
+    ("1.5", False), ("9007199254740993", False), ("-9007199254740993", False),
+    ("-0", False), ("-0.0", False), ("1e400", False),
+    ("1.0", True), ("1e2", True), ("-5.0", True), ("0.0", True), ("9007199254740991", True),
+])
+def test_a_list_is_read_as_javascript_reads_its_numbers(number, kept):
+    # 13 at 7284078: a record canonical JSON does not hold is dropped, by
+    # the value JavaScript reads. Python's json would make "-0" the
+    # integer 0 and so keep a record the other apps drop, and keep "1.0" a
+    # float and so drop a record they keep.
+    page = parse_page(_page_of(_with(1, f'"x":{number}'), _with(2, '"x":7')), index=0,
+                      paging=Paging("items"))
+    value = page.body[0]["x"]
+    assert formats.is_canonical(value) is kept
+    if number in ("-0", "1.0"):
+        assert formats.is_canonical(json.loads(number)) is not kept   # what Python reads
+    read = decode_items({"items": page.body})
+    assert [item.sid for item in read.items] == ([entry(1).sid] if kept else []) + [entry(2).sid]
+    if kept:
+        assert encode_items(read, NOW)["items"][0]["x"] == json.loads(number)
+        assert json.dumps(encode_items(read, NOW)["items"][0]["x"]) == str(int(float(number)))
+
+
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_a_page_holding_what_json_parse_refuses_is_not_json(constant):
+    with pytest.raises(PageError):
+        parse_page(_page_of(_with(1, f'"x":{constant}')), index=0, paging=Paging("items"))
+
+
+def test_no_record_outside_canonical_json_is_ever_written():
+    # 13 at 7284078: "no app writes one", whatever reached the items.
+    outside = [ForeignItem(sid=entry(n).sid, updated_at=NOW, raw=dict(entry(n).to_json(), **extra))
+               for n, extra in enumerate(({"x": 1.5}, {"\u00e9": 1}, {"big": 2 ** 53}), 1)]
+    inside = entry(9)
+    assert encode_items(SubmissionItems((inside, *outside)), NOW)["items"] == [inside.to_json()]
 
 
 @pytest.mark.parametrize("stored, unknown", [(True, False), (False, False), (False, True),
