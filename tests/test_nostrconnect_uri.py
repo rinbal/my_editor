@@ -111,16 +111,31 @@ def test_custom_name_overrides_default():
     assert qs["name"] == ["Custom App"]
 
 
-def test_the_link_names_myeditors_own_page_and_icon_by_default():
-    # P1: Amber, Amethyst, Aegis and nsec.app show them where the person
-    # approves the connection; nsec.app refuses a link with none of name,
-    # url and image (research/signer-pairing.md, section 2).
-    from nostr import CLIENT_IMAGE, CLIENT_URL
+def test_the_link_names_myeditors_own_page_and_leaves_the_icon_out():
+    # P1: Amber, Amethyst, Aegis and nsec.app show the name and page where
+    # the person approves the connection; nsec.app refuses a link with
+    # none of name, url and image (research/signer-pairing.md, section 2).
+    # The icon is optional and left out (RG-M2r2b 7): without it the code
+    # fits three pixels a module.
+    from nostr import CLIENT_URL
     _, _, qs = _split(build_nostrconnect_uri(PK, ["wss://r"], "s"))
     assert qs["url"] == [CLIENT_URL] == ["https://rinbal.github.io/my_editor/"]
-    assert qs["image"] == [CLIENT_IMAGE] == [
-        "https://rinbal.github.io/my_editor/install/icon.png"]
+    assert "image" not in qs
     assert qs["name"] == ["MyEditor"]
+    _, _, qs = _split(build_nostrconnect_uri(PK, ["wss://r"], "s", image="https://i/x.png"))
+    assert qs["image"] == ["https://i/x.png"]                  # still there when asked for
+
+
+def test_the_pairing_code_is_small_enough_to_scan_from_a_screen():
+    # RG-M2r2b 7: the link MyEditor shows, at error correction L, is at most
+    # QR version 17 (85 modules), so 3 pixels a module and the quiet zone
+    # fit in 280.
+    import segno
+    from nostr.bunker import NIP46_RELAYS
+    link = build_nostrconnect_uri("f" * 64, list(NIP46_RELAYS), "f" * 16)
+    code = segno.make(link, error="l")
+    assert code.version <= 17
+    assert (code.symbol_size(border=4)[0]) * 3 <= 280
 
 
 # The pairing relays' NIP-11 limitations as their documents stated them on

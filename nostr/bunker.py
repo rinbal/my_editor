@@ -40,7 +40,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from i18n import _
 
-from . import CLIENT_IMAGE, CLIENT_NAME, CLIENT_URL, crypto, events, refs
+from . import CLIENT_NAME, CLIENT_URL, crypto, events, refs
 from .relay import KeySignIn, RelayPool, Subscription
 from .answer_size import OWN_REQUEST_ID_BYTES, request_json
 from .signer_limits import (
@@ -266,7 +266,7 @@ def build_nostrconnect_uri(
     name: str = CLIENT_NAME,
     perms: str = DEFAULT_PERMS,
     url: str = CLIENT_URL,
-    image: str = CLIENT_IMAGE,
+    image: str = "",
 ) -> str:
     """Build a NIP-46 ``nostrconnect://`` URI from the client's keypair.
 
@@ -274,10 +274,13 @@ def build_nostrconnect_uri(
         nostrconnect://<client-pubkey>?relay=<wss://...>&secret=<...>&perms=<...>&name=<...>
             &url=<...>&image=<...>
 
-    ``url`` and ``image`` are MyEditor's own page and icon by default:
-    Amber, Amethyst, Aegis and nsec.app show them on the screen where the
-    person approves the connection, and nsec.app refuses a link without
-    any of name, url and image (research/signer-pairing.md, section 2).
+    ``url`` is MyEditor's own page by default: Amber, Amethyst, Aegis and
+    nsec.app show the app's name and page where the person approves the
+    connection, and nsec.app refuses a link without any of name, url and
+    image (research/signer-pairing.md, section 2). ``image`` is optional
+    in NIP-46 and left out by default: no signer was seen to show it, and
+    without it the code is small enough to scan at three pixels a module
+    (nostr/qr.py).
 
     Multiple ``relay`` parameters are appended in order. URL-encoding is
     applied so signers parsing the URI with a standard query-string

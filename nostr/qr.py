@@ -13,6 +13,8 @@ since segno's matrix iterator stops at the data modules.
 
 from __future__ import annotations
 
+import math
+
 import segno
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPainter, QPixmap
@@ -22,13 +24,34 @@ from PySide6.QtGui import QColor, QPainter, QPixmap
 _QUIET_MODULES: int = 4
 
 
+def qr_matrix(text: str, error: str = "m") -> list:
+    """The modules of ``text``'s code (rows of 1 dark, 0 light), without
+    the quiet zone, as :func:`make_qr_pixmap` draws them."""
+    if not text:
+        raise ValueError("QR text must not be empty")
+    modules = segno.make(text, error=error).matrix
+    if not modules:
+        raise ValueError("segno returned an empty matrix")
+    return [list(row) for row in modules]
+
+
 def make_qr_pixmap(
     text: str,
     size: int = 280,
     dark: QColor | str = "#000000",
     light: QColor | str = "#FFFFFF",
+    *,
+    error: str = "m",
+    device_pixel_ratio: float = 1.0,
+    min_module: int = 1,
 ) -> QPixmap:
-    """Encode ``text`` as a QR code and return a ``size``×``size`` QPixmap.
+    """Encode ``text`` as a QR code: a square QPixmap of the code and its
+    quiet zone, every module a whole number of the screen's own pixels
+    (fractional modules look smeary), as large as fits in ``size`` logical
+    pixels, but never less than ``min_module`` logical pixels a module: a
+    code that needs more is larger than ``size``. Drawn at
+    ``device_pixel_ratio`` (the window's), so a Retina screen gets twice
+    the pixels, not a scaled-up code.
 
     ``dark`` / ``light`` follow QR convention (the dark modules are the
     "data" pixels; light is the background, the quiet zone included).
@@ -36,24 +59,15 @@ def make_qr_pixmap(
     whatever the window's theme: every window that shows a code draws
     it so (Connect Signer App, the membership invoice, the key backup).
 
-    Error-correction is set to **M** (medium, ~15%) which is the segno
-    default for typical payloads and gives readers room to recover from
-    a glare or a finger over the screen.
+    ``error`` is the error correction: **M** (about 15%) by default, room
+    for a glare or a finger; **L** (about 7%) keeps a long link small
+    enough to scan from a screen (Connect Signer App).
     """
-    if not text:
-        raise ValueError("QR text must not be empty")
+    modules = qr_matrix(text, error)
+    total_modules = len(modules) + 2 * _QUIET_MODULES
 
-    qr = segno.make(text, error="m")
-    modules = qr.matrix  # list[bytearray], 1 = dark, 0 = light
-
-    matrix_size = len(modules)
-    if matrix_size == 0:
-        raise ValueError("segno returned an empty matrix")
-    total_modules = matrix_size + 2 * _QUIET_MODULES
-
-    # Pick the largest integer module size that fits in ``size`` so all
-    # modules are pixel-aligned: fractional modules look smeary.
-    module_px = max(1, size // total_modules)
+    ratio = max(1.0, float(device_pixel_ratio or 1.0))
+    module_px = max(1, math.ceil(min_module * ratio), int(size * ratio) // total_modules)
     pixmap_px = module_px * total_modules
 
     dark_color = QColor(dark) if isinstance(dark, str) else dark
@@ -75,4 +89,6 @@ def make_qr_pixmap(
                 module_px,
             )
     painter.end()
+    # Drawn in the screen's pixels; laid out in logical ones.
+    pix.setDevicePixelRatio(ratio)
     return pix
