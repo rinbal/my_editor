@@ -1518,6 +1518,41 @@ def test_a_new_listing_reads_again_what_was_on_its_way(tmp_path):
     assert len(_heads_issued(nam, shas)) - read == len(shas)
 
 
+def test_a_new_listing_stops_the_reads_on_their_way(tmp_path):
+    # RG-M2r3 10: the reads of the old listing ran on, unaborted, for up
+    # to 45 s, so each Refresh opened MAX_HEADS_AT_ONCE more sockets.
+    from nostr.blossom.store import MAX_HEADS_AT_ONCE
+    store, server, nam, shas = _many_from_elsewhere(tmp_path, 10)
+    for sha in shas:
+        store.check_submission_file(sha)
+    first = _heads_issued(nam, shas)
+    assert len(first) == MAX_HEADS_AT_ONCE and not any(reply.aborted for reply in first)
+    for _refresh in range(3):
+        store.fetch(force=True)
+        assert all(reply.aborted for reply in _heads_issued(nam, shas))
+        for _turn in range(20):                      # the new listing comes
+            listing = [r for r in nam.issued if not r.settled
+                       and r.request().url().path().startswith("/list")]
+            if not listing:
+                break
+            listing[0].finish()
+        for sha in shas:
+            store.check_submission_file(sha)
+        running = [r for r in _heads_issued(nam, shas) if not r.aborted]
+        assert len(running) == MAX_HEADS_AT_ONCE        # never more open at once
+    nam.settle()
+    assert all(store.submission_state(sha) is False for sha in shas)
+    assert store._heads_reading == {}               # nothing kept for a read that ended
+
+
+def test_another_account_stops_the_reads_on_their_way(tmp_path):
+    store, server, nam, shas = _many_from_elsewhere(tmp_path, 6)
+    for sha in shas:
+        store.check_submission_file(sha)
+    store.clear()                                   # sign-out, another account
+    assert all(reply.aborted for reply in _heads_issued(nam, shas))
+
+
 def test_a_tile_made_again_in_place_is_drawn_again(tmp_path, monkeypatch):
     from dataclasses import replace
     world = build(tmp_path, monkeypatch, FakeStore([media(1), media(2)]))

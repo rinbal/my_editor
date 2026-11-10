@@ -379,6 +379,21 @@ def test_a_head_the_server_refuses_is_a_failure(status):
     assert got == [] and len(failed) == 1
 
 
+def test_a_head_read_stopped_on_its_way_is_aborted_and_answers_nothing():
+    # RG-M2r3 10: a new listing stops the reads of the old one; Qt ends an
+    # aborted reply with finished, which must answer nobody.
+    reply = FakeReply(status=206, body=b"SMF1abcd")
+    client, nam = _client([reply])
+    got, failed = [], []
+    stop = client.read_head(f"{SERVER}/{SHA}", 8, got.append, failed.append)
+    stop()
+    assert reply.aborted and client._inflight == {}
+    reply.finish()                                  # as Qt ends an aborted reply
+    assert got == [] and failed == []
+    stop()                                          # once is enough
+    assert client.read_head("file:///etc/passwd", 8, got.append, failed.append) is None
+
+
 # -- a head read is bounded whatever the server does (RG-M2r2a 4) -------------------
 
 def _head(reply):

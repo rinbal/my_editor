@@ -358,6 +358,9 @@ class MediaStore(QObject):
         self._heads_waiting: List[str] = []
         self._heads_running = 0
         self._heads_failed: Set[str] = set()
+        # What stops each read on its way, by file: a new listing or
+        # another account aborts them (RG-M2r3 10).
+        self._heads_reading: Dict[str, Callable[[], None]] = {}
 
         # Upload jobs by name, from upload_started until they end. The
         # asset manager names its own (an asset key); a file added to the
@@ -483,6 +486,7 @@ class MediaStore(QObject):
                 return                      # another listing: read anew for it
             self._heads_running -= 1
             self._heads_asked.discard(sha)
+            self._heads_reading.pop(sha, None)
             if sealed is None:
                 self._heads_failed.add(sha)
             else:
@@ -494,16 +498,22 @@ class MediaStore(QObject):
             if not left:
                 done(None)
                 return
-            self._client.read_head(
+            stop = self._client.read_head(
                 left[0], scrypto.MEDIA_HEADER_BYTES,
                 lambda head: done(not scrypto.media_header_problem(head)),
                 lambda _error: ask(left[1:]) if generation == self._fetch_generation else None)
+            if stop is not None:            # None: it answered at once (the next one is held)
+                self._heads_reading[sha] = stop
 
         ask(urls)
 
     def _drop_head_reads(self) -> None:
         """A new listing, or another account: the head reads on their way
-        answer for nothing now, and what waits is asked anew when shown."""
+        answer for nothing now: each is stopped (its reply aborted, so no
+        socket stays open for it), and what waits is asked anew when shown."""
+        reading, self._heads_reading = self._heads_reading, {}
+        for stop in reading.values():
+            stop()
         self._heads_asked.clear()
         self._heads_waiting.clear()
         self._heads_running = 0

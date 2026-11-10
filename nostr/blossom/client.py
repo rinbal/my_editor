@@ -891,7 +891,7 @@ class BlossomClient(QObject):
         count: int,
         on_success: Callable[[bytes], None],
         on_failure: Callable[[BlossomError], None],
-    ) -> None:
+    ) -> Optional[Callable[[], None]]:
         """The first ``count`` bytes of the blob at ``url`` (BUD-01 ``GET
         /<sha256>``), asked for with ``Range: bytes=0-<count-1>`` (RFC
         9110 14.2). A server that ignores the range answers 200 with the
@@ -903,15 +903,18 @@ class BlossomClient(QObject):
         Bounded whatever the server does (RG-M2r2a 4): ``count`` bytes are
         buffered (the read buffer; the size guard stops one past a chunk),
         a refusal is stopped at its headers (its body is never read), and
-        the whole read ends at its deadline however slowly bytes come."""
+        the whole read ends at its deadline however slowly bytes come.
+
+        Returns what stops the read on its way (its reply aborted, nothing
+        answered after it), or None when it answered at once."""
         if not 0 < count <= MAX_HEAD_BYTES or not url_safety.is_safe_media_url(url):
             on_failure(BlossomError("not a blob address to read from"))
-            return
+            return None
         try:
             request = self._prepare(url, accept=b"*/*", timeout_ms=_HEAD_TIMEOUT_MS)
         except BlossomError as exc:
             on_failure(exc)
-            return
+            return None
         request.setRawHeader(b"Range", f"bytes=0-{count - 1}".encode("ascii"))
         reply = self._nam.get(request)
         reply.setReadBufferSize(count)
@@ -977,10 +980,18 @@ class BlossomClient(QObject):
             finally:
                 reply.deleteLater()
 
+        def stop() -> None:
+            if not answered["done"]:
+                answered["done"] = True
+                deadline.stop()
+                self._inflight.pop(key, None)
+                reply.abort()
+
         reply.metaDataChanged.connect(headers)
         reply.readyRead.connect(take)
         reply.finished.connect(_finished)
         self._inflight[key] = reply
+        return stop
 
     # -- delete ------------------------------------------------------------
 
