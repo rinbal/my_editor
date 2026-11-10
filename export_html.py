@@ -40,6 +40,7 @@ lists: the editor edits them as such.
 import base64
 import html
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -246,11 +247,30 @@ def _render_text_run(text: str, fmt: QTextCharFormat, heading: bool = False) -> 
     return out
 
 
+# A link's scheme, as a browser reads it (WHATWG URL): letters, digits,
+# "+", "-" and "." after a letter, before the first ":".
+_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*:")
+_LINK_SCHEMES = ("http:", "https:", "mailto:")
+
+
+def safe_href(href: str) -> str:
+    """``href`` when a page may link to it: a web address, an email
+    address (mailto:) or one relative to the page; else "" (javascript:,
+    data:, file: and every other scheme), and the words stay as text. Read
+    as a browser reads it: without the spaces and control characters
+    around it, and without the tabs and line breaks inside it."""
+    plain = re.sub(r"[\t\n\r]", "", href).strip("".join(map(chr, range(0x21))))
+    scheme = _SCHEME.match(plain)
+    if scheme is None or scheme.group(0).lower() in _LINK_SCHEMES:
+        return href
+    return ""
+
+
 def _render_runs(runs, render_image, heading: bool = False) -> str:
     parts = []
     link = ""            # the address of the <a> open in parts, if any
     for text, fmt in runs:
-        href = fmt.anchorHref() if fmt.isAnchor() else ""
+        href = safe_href(fmt.anchorHref()) if fmt.isAnchor() else ""
         if href != link:
             if link:
                 parts.append("</a>")
