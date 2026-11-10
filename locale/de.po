@@ -6926,11 +6926,11 @@ msgstr "Dein Konto hat doch eine Relay-Liste, deshalb wurde nichts veröffentlic
 
 #: nostr/signer_limits.py:82
 msgid "The connection to your signer app carries only short messages: shorten this text or split it into parts."
-msgstr "Die Verbindung zu deiner Signer-App trägt nur kurze Nachrichten: Kürze diesen Text oder teile ihn in Teile auf."
+msgstr "Die Verbindung zu deiner Signer-App überträgt nur kurze Nachrichten: Kürze diesen Text oder teile ihn in Teile auf."
 
 #: nostr/signer_limits.py:84
 msgid "The connection to your signer app carries only short messages: shorten this text, or sign it with your key kept on this computer."
-msgstr "Die Verbindung zu deiner Signer-App trägt nur kurze Nachrichten: Kürze diesen Text, oder signiere ihn mit deinem Schlüssel auf diesem Computer."
+msgstr "Die Verbindung zu deiner Signer-App überträgt nur kurze Nachrichten: Kürze diesen Text, oder signiere ihn mit deinem Schlüssel auf diesem Computer."
 
 #: nostr/signer_limits.py:87
 msgid "This is too long to be signed through your signer app: shorten it or split it into parts."
@@ -6942,7 +6942,7 @@ msgstr "Das ist zu lang, um über deine Signer-App signiert zu werden: Kürze es
 
 #: nostr/signer_limits.py:91
 msgid "The connection to your signer app carries only short messages: split this draft into smaller ones or publish it directly."
-msgstr "Die Verbindung zu deiner Signer-App trägt nur kurze Nachrichten: Teile diesen Entwurf in kleinere auf oder veröffentliche ihn direkt."
+msgstr "Die Verbindung zu deiner Signer-App überträgt nur kurze Nachrichten: Teile diesen Entwurf in kleinere auf oder veröffentliche ihn direkt."
 
 #: nostr/signer_limits.py:95
 msgid "Your signer app can’t carry a draft this long: split it into smaller drafts or publish it directly."
@@ -7565,7 +7565,7 @@ msgstr "Deine Liste der Quellen wurde mit einer älteren Verschlüsselung gespei
 
 #: nostr/imports/subscriptions.py:116
 msgid "The connection to your signer app carries only short messages, and your list of sources is longer. Connect your signer app again to read it; until then, changes made here stay on this computer."
-msgstr "Die Verbindung zu deiner Signer-App trägt nur kurze Nachrichten, und deine Quellenliste ist länger. Verbinde deine Signer-App neu, um sie zu lesen; bis dahin bleiben Änderungen von hier auf diesem Computer."
+msgstr "Die Verbindung zu deiner Signer-App überträgt nur kurze Nachrichten, und deine Quellenliste ist länger. Verbinde deine Signer-App neu, um sie zu lesen; bis dahin bleiben Änderungen von hier auf diesem Computer."
 
 #: nostr/imports/subscriptions.py:681
 #, python-brace-format
@@ -8006,7 +8006,7 @@ msgstr "Verschlüsselt, auf deinen Medienserver."
 
 #: nostr/standup/words.py:30
 msgid "Waiting for your signer app."
-msgstr "Warte auf deine Signer-App."
+msgstr "Warten auf deine Signer-App."
 
 #: nostr/standup/words.py:31
 msgid "Confirm the request there."
@@ -8104,7 +8104,7 @@ msgstr "Deine Einreichung bei {publication} ist angekommen, aber deine Nachricht
 
 #: nostr/standup/words.py:77
 msgid "Waiting for your signer app: confirm your message there."
-msgstr "Warte auf deine Signer-App: Bestätige dort deine Nachricht."
+msgstr "Warten auf deine Signer-App: Bestätige dort deine Nachricht."
 
 #: nostr/standup/words.py:78
 msgid "Sending your message …"
@@ -8246,12 +8246,12 @@ msgstr "MyEditor konnte diese Einreichung nicht zusammenstellen."
 #: nostr/standup/words.py:171
 #, python-brace-format
 msgid "You’ve sent {publication} as much as it takes for now: try again at {time}."
-msgstr "Du hast {publication} vorerst so viel gesendet, wie es annimmt: Versuche es um {time} erneut."
+msgstr "Du hast {publication} vorerst so viel gesendet, wie dort angenommen wird: Versuche es um {time} erneut."
 
 #: nostr/standup/words.py:172
 #, python-brace-format
 msgid "You’ve sent {publication} as much as it takes for now: try again tomorrow at {time}."
-msgstr "Du hast {publication} vorerst so viel gesendet, wie es annimmt: Versuche es morgen um {time} erneut."
+msgstr "Du hast {publication} vorerst so viel gesendet, wie dort angenommen wird: Versuche es morgen um {time} erneut."
 
 #: nostr/standup/words.py:174
 #, python-brace-format
@@ -8297,7 +8297,7 @@ msgstr "Du hast bei {publication} schon so viele offene Einreichungen, wie sie a
 #: nostr/standup/words.py:152
 #, python-brace-format
 msgid "You’ve sent {publication} as much as it takes for now: try again later."
-msgstr "Du hast {publication} vorerst so viel gesendet, wie es annimmt: Versuche es später erneut."
+msgstr "Du hast {publication} vorerst so viel gesendet, wie dort angenommen wird: Versuche es später erneut."
 
 #: nostr/standup/words.py:158
 #, python-brace-format
@@ -8999,7 +8999,7 @@ msgstr "Dein Browser ließ sich nicht öffnen."
 
 #: nostr/ui/connect_dialog.py:705
 msgid "Connecting with the address you pasted."
-msgstr "Verbinde mit der eingefügten Adresse."
+msgstr "Die Verbindung mit der eingefügten Adresse wird hergestellt."
 
 #: nostr/ui/connect_dialog.py:706
 #: nostr/ui/connect_dialog.py:751
@@ -9060,7 +9060,7 @@ msgstr "Bunker46: {address}"
 #: nostr/ui/connect_dialog.py:582
 #, python-brace-format
 msgid "Opening {app}…"
-msgstr "Öffne {app} …"
+msgstr "Gleich öffnet sich {app} …"
 
 #: nostr/ui/connect_dialog.py:688
 msgid "That address can’t be used: copy it again from your signer app, where it starts with bunker://."
@@ -9074,12 +9074,12 @@ msgstr "Der letzte Versuch antwortete: {reason}"
 #: nostr/ui/connect_dialog.py:597
 #, python-brace-format
 msgid "Waiting for {app}. If it didn’t open, scan the code with your phone instead."
-msgstr "Warte auf {app}. Wenn sie sich nicht geöffnet hat, scanne stattdessen den Code mit dem Handy."
+msgstr "Warten auf {app}. Wenn sie sich nicht geöffnet hat, scanne stattdessen den Code mit dem Handy."
 
 #: nostr/ui/connect_dialog.py:600
 #, python-brace-format
 msgid "Waiting for {app}. Approve the connection there."
-msgstr "Warte auf {app}. Bestätige die Verbindung dort."
+msgstr "Warten auf {app}. Bestätige die Verbindung dort."
 
 #: nostr/ui/cover_crop_dialog.py:37
 msgid "Cover framing"

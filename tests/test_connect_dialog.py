@@ -534,6 +534,29 @@ def test_the_two_buttons_side_by_side_keep_their_whole_words(tmp_path):
 
 # -- one way in flight owns the wait (RG-M2r2b 1) ---------------------------
 
+def test_in_german_what_the_dialog_is_doing_reads_as_a_state_not_an_order(tmp_path, opened):
+    # RG-M2r3 15: "Öffne …", "Warte auf …" and "Verbinde mit …" read as
+    # orders to the person, who has nothing to do while they show.
+    import i18n
+    i18n.install("de")
+    try:
+        opened.answer = None
+        dialog = dialog_for(tmp_path)
+        dialog._open_here_btn.click()
+        assert dialog._status.text() == "Gleich öffnet sich deine Signer-App …"
+        opened.done(app_links.OPENED)
+        assert dialog._status.text() == "Warten auf deine Signer-App. Bestätige die Verbindung dort."
+        dialog._open_here_btn.click()
+        opened.done(app_links.UNKNOWN)
+        assert dialog._status.text().startswith("Warten auf deine Signer-App. Wenn sie sich nicht")
+        paste(dialog)
+        assert dialog._code_note.text() == ("Die Verbindung mit der eingefügten Adresse wird "
+                                            "hergestellt.")
+        dialog.reject()
+    finally:
+        i18n.install("en")
+
+
 def paste(dialog, uri=PASTED):
     dialog.details_toggle.setChecked(True)
     dialog._paste_edit.setText(uri)

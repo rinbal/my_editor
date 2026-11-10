@@ -211,7 +211,7 @@ def test_the_words_are_the_contracts_in_german():
         i18n.install("en")
     # The contract's plain consequence, in one sentence with what to do
     # (lessons 36).
-    assert words == ("Die Verbindung zu deiner Signer-App trägt nur kurze Nachrichten: "
+    assert words == ("Die Verbindung zu deiner Signer-App überträgt nur kurze Nachrichten: "
                      "Kürze diesen Text oder teile ihn in Teile auf.")
 
 

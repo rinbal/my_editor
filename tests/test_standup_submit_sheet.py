@@ -377,7 +377,7 @@ def test_einreichen_hands_over_and_a_closed_sheet_lets_it_go_on(tmp_path):
     assert (choice.publication, choice.signer, choice.message) == (
         MAGAZIN.address, "writer", "Passt zu eurer Reihe.")
     assert sheet.run.started == 1 and sheet._pages.currentIndex() == 1
-    assert sheet.handoff.headline.text() == "Warte auf deine Signer-App."
+    assert sheet.handoff.headline.text() == "Warten auf deine Signer-App."
     sheet.handoff.close_requested.emit()
     assert writer.background == [sheet.run]
 
@@ -475,7 +475,7 @@ def test_opened_again_on_a_work_on_its_way_the_sheet_shows_that_run(tmp_path):
     first.handoff.close_requested.emit()            # closed while it goes on
     again = _sheet(tmp_path, writer)
     assert again.run is writer.on_its_way and again._pages.currentIndex() == 1
-    assert again.handoff.headline.text() == "Warte auf deine Signer-App."
+    assert again.handoff.headline.text() == "Warten auf deine Signer-App."
     assert len(writer.submitted) == 1 and again.run.started == 1
     assert again.run.behind[-1] is None             # the sheet says it now, not the bar
 
@@ -681,7 +681,8 @@ def test_a_round_lookup_met_a_limit_says_its_wait_and_try_again_waits(tmp_path, 
     sheet = _sheet(tmp_path, writer)
     clock_time = wait_words(NOW + 120, NOW, "{time}", "{time}")
     assert sheet.status.shown == (NOT_CHECKED, "Du hast Einundzwanzig Magazin vorerst so viel "
-                                  f"gesendet, wie es annimmt: Versuche es um {clock_time} erneut.")
+                                  f"gesendet, wie dort angenommen wird: Versuche es um {clock_time} "
+                                  "erneut.")
     assert not sheet.retry_load.isHidden() and not sheet.retry_load.isEnabled()
     assert not sheet.submit_button.isEnabled()
     asked = writer.asked

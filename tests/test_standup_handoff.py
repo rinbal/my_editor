@@ -69,8 +69,8 @@ NOT_SENT = Failure(failures.CHECK_CONNECTION, Step.SIGNING, title=words.NOT_SUBM
      ("Bild wird hochgeladen …", "Verschlüsselt, auf deinen Medienserver.")),
     (Progress(Step.UPLOADING, pictures=2),
      ("Bilder werden hochgeladen …", "Verschlüsselt, auf deinen Medienserver.")),
-    (Progress(Step.RECORDING), ("Warte auf deine Signer-App.", "Bestätige dort die Anfrage.")),
-    (Progress(Step.SIGNING), ("Warte auf deine Signer-App.", "Bestätige dort die Anfrage.")),
+    (Progress(Step.RECORDING), ("Warten auf deine Signer-App.", "Bestätige dort die Anfrage.")),
+    (Progress(Step.SIGNING), ("Warten auf deine Signer-App.", "Bestätige dort die Anfrage.")),
     (Progress(Step.SENDING), ("Wird an Einundzwanzig Magazin gesendet …", "")),
     (Progress(Step.CHECKING), ("Noch nicht bestätigt. Wird geprüft …",
                                "Du kannst das Fenster schließen, MyEditor prüft weiter.")),
@@ -308,8 +308,9 @@ def test_a_wait_past_midnight_says_tomorrow(german, view, monkeypatch):
     _clock(monkeypatch, _at(23, 50))
     view.show_progress(Progress(Step.FAILED, failure=_limited(_at(0, 5, days=1))))
     assert view.headline.text() == "Dein Artikel wurde nicht eingereicht"
+    # RG-M2r3 15: no "es" for a publication whose gender is not known.
     assert view.detail.text() == ("Du hast Einundzwanzig Magazin vorerst so viel gesendet, wie "
-                                  "es annimmt: Versuche es morgen um 00:05 erneut.")
+                                  "dort angenommen wird: Versuche es morgen um 00:05 erneut.")
 
 
 def test_send_again_waits_for_the_limit_of_messages(view, monkeypatch):
