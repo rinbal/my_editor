@@ -492,7 +492,7 @@ def test_a_signature_that_expired_on_the_way_is_signed_once_more():
         submission_for(sk("writer")).body, ok, fail))
     assert isinstance(result, views.Confirmed)
     assert len(world.signers["writer"].requests) == 2
-    assert world.server.refusals == ["time window"]
+    assert world.server.refusals == ["expired"]          # the backend's reason
 
 
 def test_a_signer_that_says_no_sends_nothing():

@@ -30,7 +30,8 @@ from coincurve import PublicKeyXOnly
 from PySide6.QtCore import QCoreApplication
 from PySide6.QtNetwork import QNetworkReply
 
-from nostr import crypto, events, nip98
+from nostr import bech32, crypto, events
+from tests import standup_backend_checks as backend_checks
 from nostr.standup import crypto as scrypto
 from nostr.standup import formats
 from nostr.standup.submission import blob_server_ok
@@ -102,11 +103,12 @@ class KeySigner:
 #
 # FakeStandupServer answers the requests of nostr/standup/client.py the
 # way editorial contract 12 says, through the FakeNam transport of the
-# membership tests. Every signed action is checked like the real server
-# checks it (nostr.nip98.check_auth_header: kind, method, the exact URL,
-# the 60 second window, the payload hash, lowercase hex, the signature),
-# plus the two rules the contract adds: a payload tag on every signed
-# action, and each event id only once. Sessions are tokens of 32 random
+# membership tests. Every NIP-98 header is checked as the backend checks
+# it, by tests/standup_backend_checks.py (its rules written again, not
+# MyEditor's nostr/nip98.py): the event as received, its id and
+# signature, the kind, the 60 second window, the path and query it binds,
+# the method, the payload hash, one tag of each, a payload tag on every
+# signed action, and each event id once. Sessions are tokens of 32 random
 # bytes of which only SHA-256 is kept, as on the server. Submissions move
 # through the states of 11.3 (``transition``, tested on the fixture's
 # transition table), with receipts, idempotency and the limits.
@@ -115,8 +117,10 @@ class KeySigner:
 # and named where they come from: the request limits, the stored bytes on
 # the day of whoever sent them, the sessions, the editor named on
 # hand-in, ``no_decider`` and the gate (tests/test_standup_fake_parity.py
-# holds one case of each, RG-M2r 6). Not modelled: works by link and
-# proposals, notices, timers and releaser requests (MyEditor sends none).
+# holds one case of each, RG-M2r 6), works handed in by link and members'
+# proposals with their origin, and the instance's gate on the Redaktion's
+# routes. Not modelled: notices, timers and releaser requests (MyEditor
+# sends none).
 #
 # Faults are injected per route (``inject``): the connection dropped
 # before the server saw the request, dropped after it stored it (no
@@ -206,6 +210,21 @@ SUBMIT_FIELDS = {"v", "submission_id", "round", "revision", "revision_hash", "pu
                  "key_event_id", "epoch", "kind", "title", "coordinate_hash", "signer",
                  "participants", "p_sub", "wraps", "status_key_hash", "client"}
 ENVELOPE_FIELDS = {"envelope", "envelope_sha256", "blobs"}
+# core/editorial_submission.py (1183930): a work by link, a proposal.
+MAX_LINK_EVENT_BYTES = 1024 * 1024
+PROPOSAL_FIELDS = {"naddr", "event", "round", "submission_id", "key_event_id", "epoch", "p_sub",
+                   "wraps", "title"}
+PROPOSAL_BODY_BYTES = MAX_LINK_EVENT_BYTES + 64 * 1024
+# core/editorial_flow.py TRANSITIONS: the actions a work's origin limits
+# (private: an encrypted revision; public: by link, by its author;
+# proposal: brought by a member). A public work is accepted as published.
+_WITH_REVISIONS = ("private", "public")
+_ORIGINS = {"revise": _WITH_REVISIONS, "request_changes": _WITH_REVISIONS,
+            "request_changes_without_message": _WITH_REVISIONS, "accept": ("private",),
+            "accept_public": ("public", "proposal"), "published_by_writer": ("private",),
+            "published_by_release": ("private",), "correct": ("private",)}
+# core/editorial_gate.py: the badge gate the Redaktion is held behind.
+REDAKTION_GATE = "redaktion"
 MAX_SAFE_INTEGER = 2 ** 53 - 1
 # Events served once with their Revision, never again in the timeline.
 REVISION_EVENTS = ("submitted", "revision")
@@ -292,8 +311,13 @@ def _strict(raw: bytes) -> Any:
 
 
 def _signed(event: Any, kind: int) -> bool:
-    return (isinstance(event, dict) and type(event.get("kind")) is int
-            and event["kind"] == kind and events.verify_event(event))
+    """backend core/nostr_events.py verified(event, kind), as written
+    again in tests/standup_backend_checks.py."""
+    try:
+        backend_checks.verified(event, kind)
+    except backend_checks.EventInvalid:
+        return False
+    return True
 
 
 def _error(status: int, code: str, message: str = "Nicht möglich.", *,
@@ -403,6 +427,25 @@ class Record:
     internal_seq: int = 0
     last_internal_message_seq: int = 0
     activity_at: int = 0
+    # A proposal's proposer, and a work by link's address and event.
+    proposal_by: Optional[str] = None
+    source_naddr: Optional[str] = None
+    source_event_id: Optional[str] = None
+
+    @property
+    def submitter(self) -> str:
+        """backend db/models.py Submission.submitter: who handed it in and
+        holds the writer's wrap, the proposer of a proposal, else the
+        writer."""
+        return self.proposal_by or self.writer
+
+    @property
+    def origin(self) -> str:
+        """backend Submission.origin: ``proposal``, ``public`` (by link)
+        or ``private``."""
+        if self.proposal_by:
+            return "proposal"
+        return "public" if self.source_event_id else "private"
 
     @property
     def revision(self) -> int:
@@ -497,6 +540,73 @@ class _Refused(Exception):
 def _need(ok: bool, field: str, code: str = "invalid", status: int = 422) -> None:
     if not ok:
         raise _Refused(status, code, {"field": field})
+
+
+def _require_keys(data: dict, allowed: set, required: set) -> None:
+    """backend core/editorial.py require_keys: no field it does not know,
+    none it needs missing."""
+    unknown = sorted(set(data) - set(allowed))
+    if unknown:
+        raise _Refused(422, "invalid", {"fields": unknown})
+    missing = sorted(set(required) - set(data))
+    if missing:
+        raise _Refused(422, "invalid", {"fields": missing})
+
+
+def _coordinate_of(source: dict) -> str:
+    """backend coordinate_hash_of: SHA-256 of ``30023:<author>:<d>``."""
+    return hashlib.sha256(f"30023:{source['event']['pubkey']}:{source['d']}".encode()).hexdigest()
+
+
+def _submission_id_of(writer: str, publication: str, coordinate: str, round_: int) -> str:
+    """Contract 2, as backend submission_id_of computes it."""
+    return hashlib.sha256(
+        f"standup-sub:v1:{writer}:{publication}:{coordinate}:{round_}".encode()).hexdigest()
+
+
+def _link_source(value: Any) -> dict:
+    """backend core/editorial_submission.py link_source (1183930): the
+    signed kind 30023 and its naddr, nothing fetched; ``{"naddr",
+    "event", "d"}``."""
+    if not isinstance(value, dict):
+        raise _Refused(422, "invalid", {"field": "source"}, message="Der Link fehlt.")
+    _require_keys(value, {"naddr", "event"}, {"naddr", "event"})
+    try:
+        event = backend_checks.verified(value["event"], 30023)
+    except backend_checks.EventInvalid as problem:
+        raise _Refused(422, "invalid", {"field": "source.event", "reason": str(problem)},
+                       message="Das veröffentlichte Werk ist nicht gültig signiert.") from None
+    if len(_stored_json(event).encode("utf-8")) > MAX_LINK_EVENT_BYTES:
+        raise _Refused(413, "too_large", {"max_bytes": MAX_LINK_EVENT_BYTES},
+                       message="Das Werk ist zu groß.")
+    d_tag = backend_checks.first_tag(event, "d")
+    address = backend_checks.decode_naddr(value["naddr"])
+    if d_tag is None or len(d_tag) < 2 or address is None or address["kind"] != 30023 \
+            or address["pubkey"] != event["pubkey"] or address["identifier"] != d_tag[1]:
+        raise _Refused(422, "invalid", {"field": "source.naddr"},
+                       message="Der Link passt nicht zum Werk.")
+    return {"naddr": value["naddr"], "event": event, "d": d_tag[1]}
+
+
+def _check_wraps(wraps: Any, names: set) -> None:
+    """backend core/editorial_submission.py _wraps: exactly one submission
+    key wrap per name (contract 4), each of its one size."""
+    _need(isinstance(wraps, dict) and set(wraps) == names, "wraps")
+    for name in sorted(names):
+        wrap = wraps[name]
+        _need(isinstance(wrap, dict) and set(wrap) == {"eph", "ct"}
+              and _on_curve(wrap["eph"]) and isinstance(wrap["ct"], str)
+              and len(wrap["ct"]) == SUBMISSION_WRAP_CT_CHARS and _nip44_shaped(wrap["ct"]),
+              f"wraps.{name}", code="wrap_invalid")
+
+
+def _is_author(source: dict, pubkey: str) -> bool:
+    """backend LinkSource.is_author: the event's author, or a co-author
+    ``["p", pk, relay, "author"]``."""
+    event = source["event"]
+    return pubkey == event["pubkey"] or any(
+        len(tag) >= 4 and tag[1] == pubkey and tag[3] == "author"
+        for tag in backend_checks.tags_named(event, "p"))
 
 
 def _whole(value: Any, low: int) -> bool:
@@ -596,8 +706,10 @@ class FakeStandupServer:
         self.urls: List[Tuple[str, str]] = []
         self.sessions: Dict[str, Tuple[str, int]] = {}   # sha256(token) -> (pubkey, expires)
         self._session_made: Dict[str, int] = {}           # sha256(token) -> created_at
-        # Whom the instance's Redaktion gate keeps out (contract 12.2).
+        # Whom the instance's Redaktion gate keeps out (contract 12.2),
+        # and the role it asks for.
         self.below_gate: set = set()
+        self.gate_role = "member"
         self.last_session = ""
         self.keyrings: Dict[str, dict] = {}
         self.submissions: Dict[str, Record] = {}
@@ -692,7 +804,7 @@ class FakeStandupServer:
         pub = self.publications[record.publication]
         chosen = None
         if pub.auto_assign:
-            exclude = pub.assign_exclude | {record.writer, *record.participants}
+            exclude = pub.assign_exclude | {record.submitter, *record.participants}
             turns: Dict[str, int] = {}
             for other in self.submissions.values():
                 turn = self._turn(other)
@@ -753,6 +865,12 @@ class FakeStandupServer:
         ("GET", r"/\.well-known/nostr\.json", "nip05", "none"),
     ]
 
+    # The routes behind context.redaktion_only (backend api, 1183930).
+    _GATED = frozenset({
+        "settings_put", "members_get", "members_post", "members_accept", "members_remove",
+        "epochs", "keys", "keyring_get", "keyring_put", "site_submissions", "placed",
+        "corrections", "proposals", "responsible", "decision", "reupload"})
+
     def route_of(self, verb: str, path: str) -> Tuple[Optional[str], str, dict]:
         for method, pattern, name, auth in self._ROUTES:
             match = re.fullmatch(pattern, path)
@@ -783,12 +901,17 @@ class FakeStandupServer:
             return _error(fault.status, fault.code, fault.message, detail=fault.detail,
                           headers=headers_out)
 
-        if nip98.has_body(body) and headers["Content-Type"] != b"application/json":
+        if body and headers["Content-Type"] != b"application/json":
             return json_reply({"ok": False, "error": {"code": "bad_request",
                                                       "message": "Unsupported"}}, status=415)
         who = self._authorize(auth, verb, url, body, headers["Authorization"])
         if isinstance(who, FakeReply):
             return who
+        if name in self._GATED and who.pubkey in self.below_gate:
+            # api/editorial_context.py redaktion_only, below the signature.
+            return _error(403, "forbidden", "Die Redaktion braucht auf diesem Server eine Rolle, "
+                                            "die du nicht hast.",
+                          detail={"gate": REDAKTION_GATE, "required_role": self.gate_role})
         # What a route checks before the body is parsed (its size, an
         # address limit), after the signature as the backend's decorators.
         early = getattr(self, "_before_" + name, None)
@@ -797,13 +920,15 @@ class FakeStandupServer:
             if refusal is not None:
                 return refusal
         payload: Any = {}
-        if nip98.has_body(body):
+        if verb in ("POST", "PUT", "PATCH"):
+            # backend core/editorial.py parse_body: every route with a body
+            # reads one JSON object, and no body is none.
             try:
-                payload = _strict(body)
-            except (ValueError, UnicodeDecodeError):
-                return _error(400, "bad_request", "Kein gültiges JSON.")
+                payload = _strict(body or b"")
+            except (ValueError, UnicodeDecodeError, RecursionError):
+                return _error(400, "bad_request", "Die Anfrage ist kein gültiges JSON.")
             if not isinstance(payload, dict):
-                return _error(400, "bad_request")
+                return _error(400, "bad_request", "Die Anfrage muss ein JSON-Objekt sein.")
         reply = getattr(self, "_" + name)(who, payload, params, query)
         self.handled.append(name)
         if fault == DROP_AFTER:
@@ -815,47 +940,60 @@ class FakeStandupServer:
     def _refuse(self, reason: str) -> FakeReply:
         self.refusals.append(reason)
         return _error(401, "auth_invalid", "Die Anmeldung ist ungültig. Bitte melde dich neu an.",
-                      detail={"reason": {"time window": "expired"}.get(reason, reason)})
+                      detail={"reason": reason})
 
     def _authorize(self, auth: str, verb: str, url: str, body: Optional[bytes],
                    value: Optional[bytes]):
+        """backend api/auth.py (1183930). ``signed``: require_signed_action,
+        a NIP-98 header with a payload tag, never a session. ``session``:
+        require_session_or_auth, a Bearer session or a NIP-98 header whose
+        payload tag only a body needs. ``session_any``: the sign-out's
+        read_session_token(allow_expired=True). The header is read as the
+        server reads it (latin-1); an id is spent only once every check
+        passed, so a request refused for its form can be fixed and sent
+        again."""
         if auth == "none":
             return None
-        if not value:
+        text = (value or b"").decode("latin-1")
+        if not text.strip():
             return _error(401, "auth_required", "Bitte melde dich an.")
-        text = value.decode("latin-1")
-        # backend require_session_or_auth: a read (and a message) takes a
-        # session or a NIP-98 header, which needs no payload tag (lesson 19).
-        either = auth == "session" and not text.startswith("Bearer ")
-        if auth in ("session", "session_any") and not either:
-            scheme, _, token = text.partition(" ")
-            if scheme != "Bearer" or not formats.is_hex64(token):
-                return self._refuse("session")
-            found = self.sessions.get(hashlib.sha256(bytes.fromhex(token)).hexdigest())
-            if found is None:
-                return self._refuse("session")
-            pubkey, expires = found
-            self.last_session = hashlib.sha256(bytes.fromhex(token)).hexdigest()
-            if auth == "session" and expires <= self.clock():
-                return _error(401, "session_expired",
-                              "Die Sitzung ist abgelaufen. Bitte melde dich neu an.")
-            return Caller(pubkey=pubkey)
-        if text.startswith("Bearer "):
+        bearer = text.split(None, 1)[0].lower() == "bearer"
+        if auth == "session_any" or (auth == "session" and bearer):
+            return self._session_caller(text, allow_expired=auth == "session_any")
+        if bearer:
             return _error(401, "auth_invalid", "Diese Aktion braucht eine Signatur.",
                           detail={"reason": "scheme"})
         try:
-            event = nip98.check_auth_header(value, url=url, method=verb, body=body,
-                                            now=self.clock())
-        except nip98.AuthRefused as refusal:
-            return self._refuse(refusal.reason)
-        if not either and not nip98.has_body(body):
-            # Contract 10: a signed action always carries a payload tag.
-            return self._refuse("payload")
+            event = backend_checks.check_nip98(text, method=verb, url=url, body=body or b"",
+                                               now=int(self.clock()),
+                                               require_payload=auth == "signed")
+        except backend_checks.Refused as refusal:
+            if refusal.code == "bad_request":
+                return _error(400, "bad_request", "Die Anfrage ist kein gültiges UTF-8.")
+            return self._refuse(refusal.reason or "malformed")
         if event["id"] in self.seen_ids:
             return self._refuse("replay")
         self.seen_ids.add(event["id"])
         self.accepted.append(event)
         return Caller(pubkey=event["pubkey"], event=event, body=(body or b"").decode("utf-8"))
+
+    def _session_caller(self, text: str, *, allow_expired: bool):
+        """backend api/auth.py read_session_token: ``Bearer`` (any case)
+        and 64 lowercase hex; only the token's SHA-256 is looked up."""
+        parts = text.split(None, 1)
+        if len(parts) != 2 or parts[0].lower() != "bearer" \
+                or not re.fullmatch(r"[0-9a-f]{64}", parts[1].strip()):
+            return self._refuse("session")
+        token_hash = hashlib.sha256(bytes.fromhex(parts[1].strip())).hexdigest()
+        found = self.sessions.get(token_hash)
+        if found is None:
+            return self._refuse("session")
+        pubkey, expires = found
+        self.last_session = token_hash
+        if not allow_expired and expires <= self.clock():
+            return _error(401, "session_expired",
+                          "Die Sitzung ist abgelaufen. Bitte melde dich neu an.")
+        return Caller(pubkey=pubkey)
 
     # -- views ---------------------------------------------------------------
 
@@ -866,14 +1004,16 @@ class FakeStandupServer:
                 return {"type": "editor", "pubkey": record.responsible, "pending": []}
             return {"type": "redaktion", "pubkey": None, "pending": []}
         if state == "changes_requested":
-            return {"type": "writer", "pubkey": record.writer, "pending": []}
+            # core/editorial_flow.py turn_of: the writer's turn is whoever
+            # handed it in.
+            return {"type": "writer", "pubkey": record.submitter, "pending": []}
         if state == "accepted":
             if record.step == "confirm":
                 creators = [record.writer] + record.participants
                 pending = [p for p in creators if p not in record.confirmations]
                 return {"type": "contributors", "pubkey": None, "pending": pending}
             if record.step == "writer_publishes":
-                return {"type": "writer", "pubkey": record.writer, "pending": []}
+                return {"type": "writer", "pubkey": record.submitter, "pending": []}
             return {"type": "releaser", "pubkey": None, "pending": []}
         if state == "published" and not record.placed:
             return {"type": "releaser", "pubkey": None, "pending": []}
@@ -901,7 +1041,8 @@ class FakeStandupServer:
             # and events move it, never reactions, retractions or edits.
             "last_message_seq": record.last_message_seq,
             "confirmations": {k: list(v) for k, v in record.confirmations.items()},
-            "published": record.published, "placed": record.placed, "proposal_by": None,
+            "published": record.published, "placed": record.placed,
+            "proposal_by": record.proposal_by,
             "later_round": self._later_round(record),
         })
 
@@ -909,7 +1050,8 @@ class FakeStandupServer:
         """backend db/editorial_submissions.py later_rounds (12a5f91): the
         same submitter handed the same work in to the same publication
         again, in a later round (contract 12.4 ``later_round``, 795f825)."""
-        return any(other.publication == record.publication and other.writer == record.writer
+        return any(other.publication == record.publication
+                   and other.submitter == record.submitter
                    and other.coordinate_hash == record.coordinate_hash
                    and other.round > record.round for other in self.submissions.values())
 
@@ -942,7 +1084,7 @@ class FakeStandupServer:
         core/editorial_flow.py roles_on (3229d9d): the writer side first;
         a member only while active, reading the submission's epoch and
         admitted by the gate."""
-        if pubkey == record.writer:
+        if pubkey == record.submitter:
             return "writer"
         if pubkey in record.participants:
             return "contributor"
@@ -1241,24 +1383,23 @@ class FakeStandupServer:
         db/editorial_submissions.py work_round, 607c941): only the latest
         round is ever open."""
         rounds = [r for r in self.submissions.values() if r.publication == address
-                  and r.writer == writer and r.coordinate_hash == coordinate]
+                  and r.submitter == writer and r.coordinate_hash == coordinate]
         if not rounds:
             return 0, False
         latest = max(rounds, key=lambda r: r.round)
         return latest.round, latest.state not in ROUND_CLOSED
 
     def _parse_submission(self, data: dict, writer: str) -> dict:
-        """backend core/editorial_submission.py parse_submission (fde04a3),
+        """backend core/editorial_submission.py parse_submission (1183930),
         check for check in its order: the shape and the body's own
         consistency. Written apart from the client's code, keys checked on
-        the curve with coincurve. A body by link (``source``) is not
-        modelled: MyEditor never sends one."""
-        unknown = sorted(set(data) - SUBMIT_FIELDS - ENVELOPE_FIELDS)
-        if unknown:
-            raise _Refused(422, "invalid", {"fields": unknown})
-        missing = sorted((SUBMIT_FIELDS - {"client"} | ENVELOPE_FIELDS) - set(data))
-        if missing:
-            raise _Refused(422, "invalid", {"fields": missing})
+        the curve with coincurve. A body by link carries ``source`` (the
+        signed kind 30023 and its naddr) in place of the envelope and
+        files: its coordinate is the event's, its revision hash the
+        event's id."""
+        by_link = "source" in data
+        own = {"source"} if by_link else ENVELOPE_FIELDS
+        _require_keys(data, SUBMIT_FIELDS | own, (SUBMIT_FIELDS - {"client"}) | own)
         _need(type(data["v"]) is int and data["v"] == 1, "v")
         _need(_whole(data["round"], 1) and data["round"] <= MAX_SAFE_INTEGER, "round")
         parts = data["publication"].split(":", 2) if isinstance(data["publication"], str) else []
@@ -1270,22 +1411,30 @@ class FakeStandupServer:
             _need(_on_curve(key), "participants")
         _need(len(set(participants)) == len(participants) and writer not in participants,
               "participants")
-        for name in ("coordinate_hash", "revision_hash", "submission_id"):
+        source = _link_source(data["source"]) if by_link else None
+        for name in ("coordinate_hash", "revision_hash"):
             _need(formats.is_hex64(data[name]), name)
-        _need(data["submission_id"] == formats.submission_id(
+        if source is not None:
+            _need(data["coordinate_hash"] == _coordinate_of(source), "coordinate_hash")
+            _need(data["revision_hash"] == source["event"]["id"], "revision_hash")
+        _need(formats.is_hex64(data["submission_id"]), "submission_id")
+        _need(data["submission_id"] == _submission_id_of(
             writer, data["publication"], data["coordinate_hash"], data["round"]),
             "submission_id")
-        text = data["envelope"]
-        _need(isinstance(text, str), "envelope")
-        if len(text) > (MAX_ENVELOPE_BYTES + 2) // 3 * 4:
-            raise _Refused(413, "too_large", {"max_bytes": MAX_ENVELOPE_BYTES})
-        try:
-            raw = base64.b64decode(text, validate=True)
-        except (ValueError, TypeError):
-            raise _Refused(422, "invalid", {"field": "envelope"}) from None
-        _need(len(raw) > ENVELOPE_OVERHEAD, "envelope")
-        _need(formats.is_hex64(data["envelope_sha256"]), "envelope_sha256")
-        _need(hashlib.sha256(raw).hexdigest() == data["envelope_sha256"], "envelope_sha256")
+        size = 0
+        if source is None:
+            text = data["envelope"]
+            _need(isinstance(text, str), "envelope")
+            if len(text) > (MAX_ENVELOPE_BYTES + 2) // 3 * 4:
+                raise _Refused(413, "too_large", {"max_bytes": MAX_ENVELOPE_BYTES})
+            try:
+                raw = base64.b64decode(text, validate=True)
+            except (ValueError, TypeError):
+                raise _Refused(422, "invalid", {"field": "envelope"}) from None
+            _need(len(raw) > ENVELOPE_OVERHEAD, "envelope")
+            _need(formats.is_hex64(data["envelope_sha256"]), "envelope_sha256")
+            _need(hashlib.sha256(raw).hexdigest() == data["envelope_sha256"], "envelope_sha256")
+            size = len(raw)
         _need(_whole(data["revision"], 1) and data["revision"] <= MAX_SAFE_INTEGER, "revision")
         _need(formats.is_hex64(data["key_event_id"]), "key_event_id")
         _need(_whole(data["epoch"], 1) and data["epoch"] <= MAX_SAFE_INTEGER, "epoch")
@@ -1293,17 +1442,12 @@ class FakeStandupServer:
         _need(formats.is_plain_text(data["title"], 1, 300), "title")
         _need(data["signer"] in ("writer", "publication"), "signer")
         _need(_on_curve(data["p_sub"]), "p_sub")
-        names = {"redaktion", "writer", *participants}
-        wraps = data["wraps"]
-        _need(isinstance(wraps, dict) and set(wraps) == names, "wraps")
-        for name in sorted(names):
-            wrap = wraps[name]
-            _need(isinstance(wrap, dict) and set(wrap) == {"eph", "ct"}
-                  and _on_curve(wrap["eph"]) and isinstance(wrap["ct"], str)
-                  and len(wrap["ct"]) == SUBMISSION_WRAP_CT_CHARS and _nip44_shaped(wrap["ct"]),
-                  f"wraps.{name}", code="wrap_invalid")
+        _check_wraps(data["wraps"], {"redaktion", "writer", *participants})
         _need(formats.is_hex64(data["status_key_hash"]), "status_key_hash")
         _need(formats.is_plain_text(data.get("client", ""), 0, 64), "client")
+        if source is not None:
+            return dict(data, envelope=None, envelope_size=0, envelope_sha256=None, blobs=[],
+                        source=source)
         blobs = data["blobs"]
         _need(isinstance(blobs, list) and len(blobs) <= 64, "blobs")
         for blob in blobs:
@@ -1321,7 +1465,7 @@ class FakeStandupServer:
             _need(formats.is_hex64(blob["sha256"]), "blobs.sha256")
             _need(_whole(blob["size"], 1) and blob["size"] <= MAX_SAFE_INTEGER, "blobs.size")
         _need(len({b["sha256"] for b in blobs}) == len(blobs), "blobs")
-        return dict(data, envelope_size=len(raw))
+        return dict(data, envelope_size=size, source=None)
 
     def _check_destination(self, pub: "Publication", body: dict, writers: set) -> None:
         """backend core/editorial_intake.py check_destination (fde04a3)."""
@@ -1334,6 +1478,9 @@ class FakeStandupServer:
             raise _Refused(403, "forbidden", {"field": "kind"})
         if rules["publish_by"][body["kind"]] not in (body["signer"], "both"):
             raise _Refused(403, "forbidden", {"field": "signer"})
+        if body["source"] is not None and not rules.get("by_link"):
+            raise _Refused(403, "forbidden", {"field": "source"},
+                           message="Diese Publikation nimmt keine Links an.")
         if body["envelope_size"] > rules["max_envelope_bytes"]:
             raise _Refused(413, "too_large", {"max_bytes": rules["max_envelope_bytes"]})
 
@@ -1349,8 +1496,15 @@ class FakeStandupServer:
             # backend core/editorial_intake.py _check_new (607c941).
             raise _Refused(409, "conflict", {"round": latest, "open": still_open},
                            message="Dieses Werk liegt hier schon vor.")
+        if body["source"] is not None and any(
+                r.publication == pub.address and r.coordinate_hash == body["coordinate_hash"]
+                and r.state in _ACTIVE for r in self.submissions.values()):
+            # db/editorial_submissions.py work_in_progress: a proposal or
+            # a work by link someone else already handed in; no round helps.
+            raise _Refused(409, "conflict", {"taken": True},
+                           message="Dieser Beitrag liegt der Redaktion schon vor.")
         limit = pub.content["rules"].get("max_open_per_writer", 3)
-        if len([r for r in self.submissions.values() if r.writer == writer
+        if len([r for r in self.submissions.values() if r.submitter == writer
                 and r.publication == pub.address and r.state in OPEN]) >= limit:
             raise _Refused(403, "limit_open", {"limit": limit})
 
@@ -1400,7 +1554,7 @@ class FakeStandupServer:
                 and body["revision"] in record.receipts:
             # The same revision again (12.4): its stored receipt.
             return _ok({"receipt": self._repeat(record, body["revision"])})
-        writer = record.writer if record is not None else submitter
+        writer = self._writer_of(record, body, submitter)
         self._check_destination(pub, body, {submitter, writer})
         self._refuse_without_decider(pub, body, record, submitter, writer)
         if record is None:
@@ -1408,14 +1562,44 @@ class FakeStandupServer:
         else:
             self._refuse_over_cap(record)
         present, missing = self._blob_check(body["blobs"])
+        record, receipt = self._store(pub, body, who, record, present, missing)
+        return _ok({"receipt": self._receipt(record, body["revision"])}, status=201)
+
+    @staticmethod
+    def _writer_of(record: Optional[Record], body: dict, submitter: str) -> str:
+        """backend core/editorial_intake.py _writer_of: the stored writer,
+        else a link's author, else who hands it in."""
+        if record is not None:
+            return record.writer
+        return body["source"]["event"]["pubkey"] if body["source"] else submitter
+
+    def _store(self, pub: Publication, body: dict, who, record: Optional[Record],
+               present: List[str], missing: List[str]) -> Tuple[Record, dict]:
+        """backend core/editorial_intake.py hand_in (1183930), in one
+        transaction: the signed event and body charged as stored
+        (store_action), hand_in's checks, the revision counted, the
+        timeline event, an editor named, and the wraps, files and receipt
+        charged. A refusal stores and counts nothing. A work by link is
+        marked already public, and a proposal by whoever is not its author
+        is the author's work, handed in by the proposer."""
+        submitter = who.pubkey
+        source = body["source"]
         now = int(self.clock())
         with self._transaction():
             self._charge(pub.address, submitter, redaktion=False,
                          size=_stored_size(_stored_json(who.event), who.body))
-            if any(r.status_key_hash == body["status_key_hash"] and r.sid != body["submission_id"]
-                   for r in self.submissions.values()):
+            writer = self._writer_of(record, body, submitter)
+            self._check_destination(pub, body, {submitter, writer})
+            self._refuse_without_decider(pub, body, record, submitter, writer)
+            if body["status_key_hash"] is not None and any(
+                    r.status_key_hash == body["status_key_hash"] and r.sid != body["submission_id"]
+                    for r in self.submissions.values()):
                 raise _Refused(409, "conflict", {"field": "status_key_hash"})
-            new_state = "submitted" if record is None else self._revise_checks(record, body)
+            if record is None:
+                self._check_new(pub, body, submitter)
+                new_state = "submitted"
+            else:
+                new_state = self._revise_checks(record, body, submitter)
             wait = self._hit("submit", submitter, limit=REVISIONS_PER_HOUR, window=3600)
             if wait:
                 raise _Refused(429, "rate_limited", retry_after=wait,
@@ -1430,13 +1614,19 @@ class FakeStandupServer:
             self._charge(pub.address, submitter, redaktion=False, size=_stored_size(
                 _stored_json(body["wraps"]), _stored_json(body["blobs"]), _stored_json(receipt)))
         if record is None:
+            proposal = source is not None and not _is_author(source, submitter)
             record = Record(
-                sid=body["submission_id"], writer=submitter, publication=pub.address,
+                sid=body["submission_id"], writer=writer if proposal else submitter,
+                publication=pub.address,
                 title=body["title"], kind=body["kind"], round=body["round"],
                 signer=body["signer"], participants=list(body["participants"]),
                 p_sub=body["p_sub"], epoch=body["epoch"],
                 status_key_hash=body["status_key_hash"],
-                coordinate_hash=body["coordinate_hash"], created_at=now)
+                coordinate_hash=body["coordinate_hash"], created_at=now,
+                proposal_by=submitter if proposal else None,
+                source_naddr=source["naddr"] if source else None,
+                source_event_id=source["event"]["id"] if source else None,
+                marks=(["already_public"] if source else []) + (["proposal"] if proposal else []))
             self.submissions[record.sid] = record
             event_name = "submitted"
         else:
@@ -1444,6 +1634,8 @@ class FakeStandupServer:
                 record.marks.append("new_revision")
             record.state = new_state
             record.title, record.signer, record.epoch = body["title"], body["signer"], body["epoch"]
+            if source is not None:
+                record.source_naddr, record.source_event_id = source["naddr"], source["event"]["id"]
             event_name = "revision"
         record.participants = list(body["participants"])     # set_participants
         record.revisions[body["revision"]] = {
@@ -1456,9 +1648,9 @@ class FakeStandupServer:
         if record.responsible is None and record.state in ("submitted", "in_review"):
             self._name_editor(record, now=now)
         record.receipts[body["revision"]] = receipt
-        return _ok({"receipt": self._receipt(record, body["revision"])}, status=201)
+        return record, receipt
 
-    def _revise_checks(self, record: Record, body: dict) -> str:
+    def _revise_checks(self, record: Record, body: dict, submitter: str) -> str:
         """backend core/editorial_intake.py _revise (3229d9d), its checks
         in order; the state the revision moves the submission to."""
         self._refuse_over_cap(record)
@@ -1469,8 +1661,16 @@ class FakeStandupServer:
             # Contract f171b52: one submission keeps its status key.
             raise _Refused(409, "conflict", {"field": "status_key_hash"},
                            message="Eine Einreichung behält ihren Statusschlüssel.")
-        if (body["kind"], body["p_sub"]) != (record.kind, record.p_sub):
-            raise _Refused(409, "conflict")
+        by_link = record.source_event_id is not None
+        if (body["source"] is not None) != by_link \
+                or (body["kind"], body["p_sub"]) != (record.kind, record.p_sub) \
+                or (by_link and not _is_author(body["source"], submitter)):
+            # A work by link is revised by its newer signed version, by
+            # its authors only.
+            raise _Refused(409, "conflict",
+                           message="Art, Schlüssel und Herkunft einer Einreichung bleiben gleich.")
+        # A proposal's proposer is never its author, so the conflict above
+        # answers before the origin could (core/editorial_flow.py revise).
         new_state = transition(record.state, "revise", "writer")
         if new_state is None:
             raise _Refused(409, "invalid_transition", {"action": "revise", "state": record.state})
@@ -1570,9 +1770,12 @@ class FakeStandupServer:
         member = self._is_member(record, who.pubkey)
         # Contract 12.4 (5c11475): the latest revision, or only ?revision=n.
         revision = dict(record.revisions[numbers["revision"]])
-        # backend wrap_names: the writer's own wrap first, then a contributor's.
-        mine = {"writer": "writer", "contributor": who.pubkey}.get(role, "redaktion")
-        revision["wraps"] = {k: v for k, v in revision["wraps"].items() if k == mine}
+        # backend core/editorial_views.py wrap_names: the submitter's own
+        # ("proposer" on a member's proposal), a contributor's, the
+        # Redaktion's.
+        mine = {"writer": ("writer", "proposer"), "contributor": (who.pubkey,)}.get(
+            role, ("redaktion",))
+        revision["wraps"] = {k: v for k, v in revision["wraps"].items() if k in mine}
         pub = self.publications[record.publication]
         limit = self.timeline_per_answer["get"]
         timeline, more = TimelineBudget(self.timeline_bytes).page(
@@ -1692,7 +1895,13 @@ class FakeStandupServer:
         action = outcome
         if outcome == "request_changes" and not body.get("message_wrap"):
             action = "request_changes_without_message"
-        latest, _open = self._work_round(record.publication, record.writer,
+        if outcome == "accept" and record.origin != "private":
+            action = "accept_public"            # taken as published (plan 5.4)
+        if record.origin not in _ORIGINS.get(action, (record.origin,)):
+            # core/editorial_flow.py next_state: no row for this origin.
+            return _error(409, "invalid_transition", "Das geht in diesem Zustand nicht.",
+                          detail={"action": outcome, "state": record.state})
+        latest, _open = self._work_round(record.publication, record.submitter,
                                          record.coordinate_hash)
         new_state = transition(record.state, action, role,
                                "latest_round" if record.round == latest else "earlier_round")
@@ -1703,6 +1912,9 @@ class FakeStandupServer:
         record.state = new_state
         if new_state == "accepted":
             record.step = "writer_publishes" if record.signer == "writer" else "confirm"
+        if new_state == "published":
+            # core/editorial_workflow.py decide: the work's own address.
+            record.published = {"naddr": record.source_naddr, "event_id": record.source_event_id}
         if body.get("message_wrap"):
             self._append(record, {"type": "message", "wrap": body["message_wrap"],
                                   "event": None})
@@ -1836,11 +2048,65 @@ class FakeStandupServer:
             return _error(403, "role")
         return _ok({})
 
-    def _proposals(self, who, body, params, query) -> FakeReply:
-        pub, role = self._member_of(params, who.pubkey)
-        if pub is None or role not in ("owner", "redaktion", "curator"):
-            return _error(403, "role")
-        return _error(422, "invalid", "Vorschläge kann diese Testumgebung nicht.")
+    def _before_proposals(self, raw: bytes, who) -> Optional[FakeReply]:
+        if len(raw) > PROPOSAL_BODY_BYTES:
+            return _error(413, "too_large", "Die Anfrage ist zu groß.",
+                          detail={"max_bytes": PROPOSAL_BODY_BYTES})
+        return None
+
+    def _proposals(self, who, data, params, query) -> FakeReply:
+        """backend api/submissions.py propose and core/editorial_submission.py
+        proposal_source and parse_proposal (1183930): a member proposes a
+        published work, which becomes a submission marked ``proposal``.
+        Revision 1 is the signed event; the round and id are the
+        proposer's; the wraps are the Redaktion's and the proposer's; no
+        status key (members read it with a session); the article's signer
+        follows the publication's rules. The same proposal again answers
+        200 with its View."""
+        try:
+            _require_keys(data, PROPOSAL_FIELDS, PROPOSAL_FIELDS)
+            source = _link_source({"naddr": data["naddr"], "event": data["event"]})
+            pub = self._site(params)
+            if pub is None:
+                raise _Refused(404, "not_found",
+                               message="Diese Publikation nimmt hier keine Einreichungen an.")
+            if pub.members.get(who.pubkey) not in _MEMBERS:
+                raise _Refused(403, "not_member", message="Du gehörst nicht zu dieser Redaktion.")
+            rules = pub.content["rules"]
+            coordinate = _coordinate_of(source)
+            _need(_whole(data["round"], 1) and data["round"] <= MAX_SAFE_INTEGER, "round")
+            _need(formats.is_hex64(data["submission_id"]), "submission_id")
+            _need(data["submission_id"] == _submission_id_of(
+                who.pubkey, pub.address, coordinate, data["round"]), "submission_id")
+            _need(formats.is_hex64(data["key_event_id"]), "key_event_id")
+            _need(_whole(data["epoch"], 1) and data["epoch"] <= MAX_SAFE_INTEGER, "epoch")
+            _need(formats.is_plain_text(data["title"], 1, 300), "title")
+            _need(_on_curve(data["p_sub"]), "p_sub")
+            wraps = data["wraps"]
+            _check_wraps(wraps, {"redaktion", "proposer"})
+            if (data["epoch"], data["key_event_id"]) != (pub.epoch, pub.key_event["id"]):
+                raise _Refused(409, "epoch", {"epoch": pub.epoch,
+                                              "key_event_id": pub.key_event["id"]})
+            body = {
+                "submission_id": data["submission_id"], "round": data["round"], "revision": 1,
+                "revision_hash": source["event"]["id"], "publication": pub.address,
+                "key_event_id": data["key_event_id"], "epoch": data["epoch"], "kind": "article",
+                "title": data["title"], "coordinate_hash": coordinate,
+                "signer": "publication" if rules["publish_by"]["article"] == "publication"
+                else "writer",
+                "participants": [], "p_sub": data["p_sub"], "wraps": wraps,
+                "status_key_hash": None, "client": "", "envelope": None, "envelope_size": 0,
+                "envelope_sha256": None, "blobs": [], "source": source}
+            record = self._record(body["submission_id"])
+            stored = record.revisions.get(1) if record is not None else None
+            if stored is not None and stored["revision_hash"] == body["revision_hash"]:
+                status = 200
+            else:
+                record, _receipt = self._store(pub, body, who, record, [], [])
+                status = 201
+        except _Refused as refusal:
+            return refusal.reply
+        return _ok({"submission": self.view(record, member=True)}, status=status)
 
     def _site_submissions(self, who, body, params, query) -> FakeReply:
         pub, role = self._member_of(params, who.pubkey)
@@ -1850,23 +2116,30 @@ class FakeStandupServer:
                               if r.publication == pub.address], "next": None})
 
     def _me_editorial(self, who, body, params, query) -> FakeReply:
+        """Contract 12.2: below the gate, the publications, invitations
+        and member turns are empty, and the person's own writer and
+        contributor turns stay."""
         me = who.pubkey
+        gated = me in self.below_gate
         mine = [self.view(r) for r in self.submissions.values()
-                if self._turn(r).get("pubkey") == me]
+                if self._turn(r).get("pubkey") == me
+                and not (gated and self._turn(r)["type"] == "editor")]
         invited = [p for p in self.publications.values()
-                   if p.members.get(me, "").startswith("invited:")]
+                   if p.members.get(me, "").startswith("invited:") and not gated]
         return _ok({"turns": mine, "counts": {"mine": len(mine)},
                     "publications": [{"address": p.address, "role": p.members[me],
                                       "name": p.content.get("name")}
                                      for p in self.publications.values()
-                                     if me in p.members and p not in invited],
+                                     if me in p.members and p not in invited and not gated
+                                     and not p.members[me].startswith("invited:")],
                     "invitations": [{"address": p.address, "name": p.content.get("name"),
                                      "role": p.members[me].split(":", 1)[1], "sees": "all",
                                      "invited_by": None, "invited_at": None} for p in invited]})
 
     def _me_submissions(self, who, body, params, query) -> FakeReply:
+        # db/editorial_inbox.py of_person: what I handed in or contribute to.
         return _ok({"items": [self.view(r) for r in self.submissions.values()
-                              if who.pubkey == r.writer or who.pubkey in r.participants]})
+                              if who.pubkey == r.submitter or who.pubkey in r.participants]})
 
 
 # =========================================================================== #
@@ -1907,6 +2180,67 @@ class Prepared:
     s_sub: bytes
     status_key: str
     revision: dict
+
+
+def published_article(author_sk: bytes, d: str = "ein-jahr-mit-lightning", *,
+                      title: str = "Ein Jahr mit Lightning im Café", co_authors=(),
+                      created_at: int = 1_700_000_000) -> Tuple[dict, str]:
+    """A signed kind 30023 and its naddr, for a work handed in by link."""
+    tags = [["d", d], ["title", title]] + [["p", key, "", "author"] for key in co_authors]
+    event = events.sign_event({"kind": 30023, "created_at": created_at, "tags": tags,
+                               "content": "Text."}, author_sk)
+    return event, bech32.encode_naddr(d, event["pubkey"], 30023, [])
+
+
+def _sha(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def link_submission_for(submitter_sk: bytes, event: dict, naddr: str, *, revision: int = 1,
+                        round_: int = 1, participants: Tuple[str, ...] = (),
+                        s_sub: Optional[bytes] = None,
+                        status_key: Optional[str] = None) -> Prepared:
+    """A ``POST /api/submissions`` body by link (contract 12.4): the
+    signed work in ``source`` in place of an envelope and files."""
+    content_json = json.loads(KEY_EVENT["content"])
+    submitter = crypto.get_public_key(submitter_sk).hex()
+    address = content_json["publication"]
+    d = next(tag[1] for tag in event["tags"] if tag[0] == "d")
+    coordinate = _sha(f"30023:{event['pubkey']}:{d}")
+    sid = _sha(f"standup-sub:v1:{submitter}:{address}:{coordinate}:{round_}")
+    s_sub = s_sub or scrypto.new_secret_key()
+    status_key = status_key or scrypto.new_status_key()
+    recipients = {"redaktion": content_json["pubkey"], "writer": submitter}
+    recipients.update({p: p for p in participants})
+    body = {
+        "v": 1, "submission_id": sid, "round": round_, "revision": revision,
+        "revision_hash": event["id"], "publication": address, "key_event_id": KEY_EVENT["id"],
+        "epoch": content_json["epoch"], "kind": "article",
+        "title": next(tag[1] for tag in event["tags"] if tag[0] == "title"),
+        "coordinate_hash": coordinate, "signer": "writer", "participants": list(participants),
+        "p_sub": scrypto.pubkey_of(s_sub),
+        "wraps": scrypto.wrap_submission_key(sid, s_sub, recipients),
+        "status_key_hash": hashlib.sha256(bytes.fromhex(status_key)).hexdigest(),
+        "client": "MyEditor tests", "source": {"naddr": naddr, "event": event}}
+    return Prepared(body=body, s_sub=s_sub, status_key=status_key, revision={})
+
+
+def proposal_for(proposer_sk: bytes, event: dict, naddr: str, *, round_: int = 1,
+                 s_sub: Optional[bytes] = None) -> Tuple[dict, bytes]:
+    """A ``POST .../proposals`` body (contract 12.4) and its key."""
+    content_json = json.loads(KEY_EVENT["content"])
+    proposer = crypto.get_public_key(proposer_sk).hex()
+    address = content_json["publication"]
+    d = next(tag[1] for tag in event["tags"] if tag[0] == "d")
+    coordinate = _sha(f"30023:{event['pubkey']}:{d}")
+    sid = _sha(f"standup-sub:v1:{proposer}:{address}:{coordinate}:{round_}")
+    s_sub = s_sub or scrypto.new_secret_key()
+    wraps = scrypto.wrap_submission_key(
+        sid, s_sub, {"redaktion": content_json["pubkey"], "proposer": proposer})
+    return {"naddr": naddr, "event": event, "round": round_, "submission_id": sid,
+            "key_event_id": KEY_EVENT["id"], "epoch": content_json["epoch"],
+            "p_sub": scrypto.pubkey_of(s_sub), "wraps": wraps,
+            "title": next(tag[1] for tag in event["tags"] if tag[0] == "title")}, s_sub
 
 
 def submission_for(writer_sk: bytes, *, key_event: Optional[dict] = None, revision: int = 1,

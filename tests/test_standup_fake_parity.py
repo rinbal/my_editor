@@ -1,7 +1,9 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The fake STANDUP server against the backend's own rules, one case each
-(RG-M2r 6, lesson 19): feat/redaktion-backend 3229d9d, contract 5ddb799.
+(RG-M2r 6, lesson 19): feat/redaktion-backend 3229d9d, contract 5ddb799;
+the media servers' check, NIP-98, works by link, proposals and the gate
+at 1183930.
 
 Where the backend has a test for the rule, the case carries its name:
 messages per person, per address and per submission (api/
@@ -17,14 +19,19 @@ answers of contract 2's round step (a revision 1 at a stored sid is
 
 from __future__ import annotations
 
+import base64 as _base64
+import hashlib as _hashlib
 import json
 
 import pytest
 
+from nostr import bech32
+from nostr import events as _events
 from nostr.standup import formats
 from nostr.standup.watcher import AT_THE_END
 from tests import standup_fakes as fakes
-from tests.standup_fakes import _stored_json, submission_for
+from tests.standup_fakes import (
+    SERVER, _stored_json, link_submission_for, proposal_for, published_article, submission_for)
 from tests.standup_vectors import NOW, pk, sk
 from tests.test_standup_fakes import _auth, _next, _send, _session, _setup, _submit
 
@@ -635,3 +642,446 @@ def test_no_decider_says_not_to_name_the_whole_redaktion_only_when_someone_could
     assert (status, data["error"]["code"]) == (409, "no_decider")
     assert data["error"]["message"].endswith(
         " Nenne nicht die ganze Redaktion als Mitwirkende.") is hint
+
+
+# -- NIP-98 as the backend checks it (fake f) ----------------------------------------
+#
+# backend tests/test_editorial_sessions.py and tests/test_nip98.py, one case
+# each, against the fake's own port (tests/standup_backend_checks.py), never
+# MyEditor's nostr/nip98.py.
+
+
+def _signed_header(tags, *, created_at=NOW, kind=27235, secret=ME, edit=None) -> bytes:
+    event = _events.sign_event({"kind": kind, "created_at": created_at, "tags": tags,
+                                "content": ""}, secret)
+    if edit is not None:
+        edit(event)
+    return b"Nostr " + _base64.b64encode(json.dumps(event).encode("utf-8"))
+
+
+def _digest(body: bytes) -> str:
+    return _hashlib.sha256(body).hexdigest()
+
+
+SESSION_URL = SERVER + "/api/session"
+GOOD = [["u", SESSION_URL], ["method", "POST"], ["payload", _digest(b"{}")]]
+
+
+def _flip(event):
+    event["sig"] = ("0" if event["sig"][0] != "0" else "1") + event["sig"][1:]
+
+
+@pytest.mark.parametrize("header, reason", [
+    (lambda: _signed_header(GOOD[:2]), "payload"),           # contract 10: even over {}
+    (lambda: _signed_header(GOOD[:2] + [["payload", _digest(b"{}").upper()]]), "payload"),
+    (lambda: _signed_header(GOOD + [GOOD[2]]), "payload"),
+    (lambda: _signed_header(GOOD[:1] + GOOD), "malformed"),
+    (lambda: _signed_header(GOOD[:2] + GOOD[1:]), "malformed"),
+    (lambda: _signed_header(GOOD + [["u"]]), "malformed"),       # a bare u is a second u
+    (lambda: _signed_header(GOOD[:2] + [["payload", _digest(b"{ }")]]), "payload"),
+    (lambda: _signed_header([["u", SERVER + "/api/other"]] + GOOD[1:]), "url"),
+    (lambda: _signed_header([["u", SESSION_URL + "?x=1"]] + GOOD[1:]), "url"),
+    (lambda: _signed_header(GOOD[:1] + [["method", "PUT"]] + GOOD[2:]), "method"),
+    (lambda: _signed_header(GOOD, created_at=NOW - 61), "expired"),
+    (lambda: _signed_header(GOOD, created_at=NOW + 61), "expired"),
+    (lambda: _signed_header(GOOD, kind=1), "kind"),
+    (lambda: _signed_header(GOOD, edit=_flip), "signature"),
+    (lambda: _signed_header(GOOD, edit=lambda e: e.update(content="changed")), "signature"),
+    (lambda: _signed_header(GOOD, edit=lambda e: e.update(id=e["id"].upper())), "malformed"),
+    (lambda: _signed_header(GOOD, edit=lambda e: e.update(created_at=True)), "malformed"),
+    (lambda: b"Token " + _signed_header(GOOD)[6:], "scheme"),
+    (lambda: _signed_header(GOOD + [["nonce", "x" * 8200]]), "malformed"),    # 8192 at most
+    (lambda: b"Nostr not-base64!", "malformed"),
+    (lambda: b"Nostr " + _base64.b64encode(b"[1, 2"), "malformed"),
+    (lambda: b"Bearer " + b"a" * 64, "scheme"),
+], ids=["no payload", "payload in capitals", "two payloads", "two u", "two methods",
+        "a bare u", "payload of another body", "another path", "another query", "another method",
+        "too old", "too new", "another kind", "a changed signature", "a changed content",
+        "an id in capitals", "a time that is true", "another scheme", "too long",
+        "not base64", "not JSON", "a session for a signed action"])
+def test_a_signed_action_is_refused_with_the_backends_reason(header, reason):
+    _clock, server, nam = _setup()
+    status, data, _ = _send(nam, "POST", "/api/session", b"{}", header())
+    assert (status, data["error"]["code"], data["error"]["detail"]) == (
+        401, "auth_invalid", {"reason": reason})
+    assert server.sessions == {}
+
+
+@pytest.mark.parametrize("header", [
+    lambda: _signed_header(GOOD),
+    lambda: b"nostr " + _signed_header(GOOD)[6:],                     # the scheme in any case
+    lambda: _signed_header([["u", "http://behind.proxy/api/session"]] + GOOD[1:]),
+    lambda: _signed_header(GOOD[:1] + [["method", "post"]] + GOOD[2:]),
+    lambda: _signed_header(GOOD, created_at=NOW - 60),
+    lambda: _signed_header(GOOD + [["nonce", "a"], ["client", "x", "y"]]),
+], ids=["as the contract spells it", "the scheme in lower case", "another host, same path",
+        "the method in lower case", "at the edge of the window", "more tags"])
+def test_what_the_backend_lets_through(header):
+    # core/nip98.py binds the path and query (proxies change the host),
+    # compares the method and scheme without case and reads the first tag
+    # of each name that has a value.
+    _clock, server, nam = _setup()
+    status, data, _ = _send(nam, "POST", "/api/session", b"{}", header())
+    assert status == 200, data
+    assert len(server.sessions) == 1
+
+
+def test_a_refused_request_does_not_spend_its_id_and_a_used_one_is_refused():
+    # backend api/auth.py: the id is claimed once every check passed.
+    _clock, server, nam = _setup()
+    header = _signed_header(GOOD)
+    refused = _send(nam, "POST", "/api/session", b'{"a":1}', header)[1]
+    assert refused["error"]["detail"] == {"reason": "payload"}
+    assert _send(nam, "POST", "/api/session", b"{}", header)[0] == 200
+    again = _send(nam, "POST", "/api/session", b"{}", header)[1]
+    assert again["error"]["detail"] == {"reason": "replay"}
+
+
+def test_a_body_that_is_not_utf8_is_a_bad_request():
+    _clock, _server, nam = _setup()
+    body = b"\xff\xfe"
+    header = _signed_header([["u", SESSION_URL], ["method", "POST"], ["payload", _digest(body)]])
+    status, data, _ = _send(nam, "POST", "/api/session", body, header)
+    assert (status, data["error"]["code"]) == (400, "bad_request")
+
+
+def test_no_header_or_a_blank_one_asks_to_sign_in():
+    _clock, _server, nam = _setup()
+    for header in (None, b"", b"   "):
+        status, data, _ = _send(nam, "POST", "/api/session", b"{}", header)
+        assert (status, data["error"]["code"]) == (401, "auth_required"), header
+
+
+def test_a_signed_action_with_no_body_needs_its_payload_tag_and_then_a_body():
+    # require_signed_action: without a payload tag the signature is
+    # refused; with one over the empty body the route reads its body, and
+    # an empty one is no JSON object (core/editorial.py parse_body).
+    _clock, server, nam = _setup()
+    bare = _signed_header(GOOD[:2])
+    assert _send(nam, "POST", "/api/session", None, bare)[1]["error"]["detail"] == {
+        "reason": "payload"}
+    over_nothing = _signed_header(GOOD[:2] + [["payload", _digest(b"")]])
+    status, data, _ = _send(nam, "POST", "/api/session", None, over_nothing)
+    assert (status, data["error"]["code"]) == (400, "bad_request")
+
+
+def test_a_read_takes_nip98_with_no_payload_tag_and_a_body_still_needs_one():
+    # require_session_or_auth signs with require_payload=False: a request
+    # with no body needs no payload tag; one with a body needs it, as for
+    # any NIP-98 request (core/nip98.py), and a session needs none.
+    clock, server, nam = _setup()
+    url = SERVER + "/api/me/submissions"
+    read = _signed_header([["u", url], ["method", "GET"]])
+    assert _send(nam, "GET", "/api/me/submissions", None, read)[0] == 200
+    read_with = _signed_header([["u", url], ["method", "GET"], ["payload", _digest(b"")]])
+    assert _send(nam, "GET", "/api/me/submissions", None, read_with)[0] == 200
+    prepared = submission_for(ME)
+    _submit(nam, prepared.body)
+    sid = prepared.body["submission_id"]
+    path = f"/api/submissions/{sid}/messages"
+    body = json.dumps({"submission_id": sid, "wrap": {}}).encode("utf-8")
+    without = _signed_header([["u", SERVER + path], ["method", "POST"]])
+    status, data, _ = _send(nam, "POST", path, body, without)
+    assert (status, data["error"]["detail"]) == (401, {"reason": "payload"})
+    with_tag = _signed_header([["u", SERVER + path], ["method", "POST"],
+                               ["payload", _digest(body)]])
+    status, data, _ = _send(nam, "POST", path, body, with_tag)
+    assert status != 401, data                          # past the signature, to the route
+
+
+@pytest.mark.parametrize("value", [
+    lambda t: b"Bearer " + b"b" * 64, lambda t: b"Bearer " + t.upper(),
+    lambda t: b"Bearer " + t[:-1], lambda t: b"Bearer", lambda t: b"Bearer " + t + b" x",
+], ids=["unknown", "in capitals", "too short", "no token", "more after it"])
+def test_a_session_that_is_not_one_is_refused(value):
+    # backend tests/test_editorial_sessions.py test_bearer_refusals_and_expiry.
+    _clock, _server, nam = _setup()
+    token = _session(nam).encode("ascii")
+    status, data, _ = _send(nam, "GET", "/api/me/submissions", authorization=value(token))
+    assert (status, data["error"]["code"], data["error"]["detail"]) == (
+        401, "auth_invalid", {"reason": "session"})
+    assert _send(nam, "GET", "/api/me/submissions",
+                 authorization=b"bearer " + token)[0] == 200        # the scheme in any case
+
+
+def test_signing_out_ends_an_expired_session_too():
+    clock, server, nam = _setup()
+    token = _session(nam).encode("ascii")
+    clock.advance(13 * 3600)
+    assert _send(nam, "DELETE", "/api/session", authorization=b"Bearer " + token)[0] == 200
+    status, data, _ = _send(nam, "DELETE", "/api/session")
+    assert (status, data["error"]["code"]) == (401, "auth_required")
+
+
+# -- works by link and members' proposals (fake f) -----------------------------------
+#
+# backend core/editorial_submission.py parse_submission, link_source,
+# proposal_source and parse_proposal, core/editorial_intake.py hand_in and
+# api/submissions.py propose (1183930), one case each.
+
+CURATOR = sk("contributor")
+
+
+def _post(nam, path, payload, secret):
+    body = json.dumps(payload).encode("utf-8")
+    return _send(nam, "POST", path, body, _auth(secret, SERVER + path, "POST", body))
+
+
+def _proposals_path(server):
+    owner, site_d = formats.parse_address(server.publication().address)
+    return f"/api/sites/{formats.route_key(owner, site_d)}/proposals"
+
+
+def _decide(nam, record, outcome, secret=None):
+    return _post(nam, f"/api/submissions/{record.sid}/decision",
+                 {"submission_id": record.sid, "expected_revision": record.revision,
+                  "outcome": outcome}, secret or sk("editor"))
+
+
+def _rules(server, **rules):
+    pub = server.publication()
+    content = dict(pub.content, rules=dict(pub.content["rules"], **rules))
+    pub.key_event = dict(pub.key_event, content=json.dumps(content))
+
+
+def test_a_work_by_link_by_its_author_is_stored_as_already_public():
+    _clock, server, nam = _setup()
+    event, naddr = published_article(ME)
+    prepared = link_submission_for(ME, event, naddr)
+    status, data, _ = _submit(nam, prepared.body)
+    assert status == 201, data
+    receipt = data["receipt"]
+    assert (receipt["envelope_sha256"], receipt["blobs_present"], receipt["blobs_missing"]) == (
+        None, [], [])
+    record = server.submissions[prepared.body["submission_id"]]
+    assert (record.origin, record.marks, record.proposal_by) == ("public", ["already_public"], None)
+    assert record.current["envelope"] is None and server.blob_servers.asked == []
+    # The same body again is an exact repeat.
+    assert _submit(nam, prepared.body)[:2] == (200, {"ok": True, "receipt": receipt})
+
+
+@pytest.mark.parametrize("change, field, status", [
+    (lambda b: b.update(envelope="", envelope_sha256="0" * 64, blobs=[]), "fields", 422),
+    (lambda b: b.update(source=[]), "source", 422),
+    (lambda b: b["source"].update(extra=1), "fields", 422),
+    (lambda b: b["source"]["event"].update(content="changed"), "source.event", 422),
+    (lambda b: b["source"]["event"].update(kind=1), "source.event", 422),
+    (lambda b: b["source"].update(naddr="naddr1nothing"), "source.naddr", 422),
+    (lambda b: b.update(coordinate_hash="0" * 64), "coordinate_hash", 422),
+    (lambda b: b.update(revision_hash="0" * 64), "revision_hash", 422),
+], ids=["an envelope with it", "no source object", "more in the source", "a changed event",
+        "another kind", "an address that is not the work's", "another coordinate",
+        "another revision hash"])
+def test_a_body_by_link_is_checked_as_the_backend_checks_it(change, field, status):
+    _clock, server, nam = _setup()
+    event, naddr = published_article(ME)
+    body = json.loads(json.dumps(link_submission_for(ME, event, naddr).body))
+    change(body)
+    status_got, data, _ = _submit(nam, body)
+    assert status_got == status, data
+    detail = data["error"]["detail"]
+    assert (field in detail) if field == "fields" else detail.get("field") == field
+    assert server.submissions == {}
+
+
+def test_an_address_of_another_work_or_author_is_not_the_link():
+    _clock, server, nam = _setup()
+    event, _naddr = published_article(ME)
+    for naddr in (bech32.encode_naddr("another-d", event["pubkey"], 30023, []),
+                  bech32.encode_naddr("ein-jahr-mit-lightning", pk("editor"), 30023, []),
+                  bech32.encode_naddr("ein-jahr-mit-lightning", event["pubkey"], 1, [])):
+        data = _submit(nam, link_submission_for(ME, event, naddr).body)[1]
+        assert data["error"]["detail"] == {"field": "source.naddr"}, naddr
+
+
+def test_a_publication_that_takes_no_links_refuses_one():
+    _clock, server, nam = _setup()
+    _rules(server, by_link=False)
+    event, naddr = published_article(ME)
+    status, data, _ = _submit(nam, link_submission_for(ME, event, naddr).body)
+    assert (status, data["error"]["code"], data["error"]["detail"]) == (
+        403, "forbidden", {"field": "source"})
+
+
+def test_a_link_to_someone_elses_work_is_their_work_brought_by_the_submitter():
+    # core/editorial_intake.py _new_submission: who is not its author
+    # proposes it; a co-author ["p", pk, relay, "author"] is an author.
+    # (Not the owner's work: the owner is the only one who could decide.)
+    _clock, server, nam = _setup()
+    event, naddr = published_article(sk("submission"))
+    prepared = link_submission_for(ME, event, naddr)
+    assert _submit(nam, prepared.body)[0] == 201
+    record = server.submissions[prepared.body["submission_id"]]
+    assert (record.writer, record.proposal_by, record.marks) == (
+        pk("submission"), pk("writer"), ["already_public", "proposal"])
+    assert record.origin == "proposal" and record.submitter == pk("writer")
+    _clock, server, nam = _setup()
+    shared, naddr = published_article(sk("submission"), co_authors=(pk("writer"),))
+    prepared = link_submission_for(ME, shared, naddr)
+    assert _submit(nam, prepared.body)[0] == 201
+    record = server.submissions[prepared.body["submission_id"]]
+    assert (record.writer, record.proposal_by, record.origin) == (pk("writer"), None, "public")
+
+
+def test_a_work_someone_else_handed_in_is_taken():
+    _clock, server, nam = _setup()
+    event, naddr = published_article(ME)
+    server.publication().members[pk("contributor")] = "curator"
+    assert _post(nam, _proposals_path(server), proposal_for(CURATOR, event, naddr)[0],
+                 CURATOR)[0] == 201
+    status, data, _ = _submit(nam, link_submission_for(ME, event, naddr).body)
+    assert (status, data["error"]["code"], data["error"]["detail"]) == (
+        409, "conflict", {"taken": True})
+
+
+def test_a_work_by_link_is_revised_by_its_newer_version_and_keeps_its_origin():
+    _clock, server, nam = _setup()
+    event, naddr = published_article(ME)
+    first = link_submission_for(ME, event, naddr)
+    assert _submit(nam, first.body)[0] == 201
+    newer, _ = published_article(ME, title="Ein Jahr mit Lightning, neu", created_at=1_700_000_100)
+    second = link_submission_for(ME, newer, naddr, revision=2, s_sub=first.s_sub,
+                                 status_key=first.status_key)
+    status, data, _ = _submit(nam, second.body)
+    assert status == 201, data
+    record = server.submissions[first.body["submission_id"]]
+    assert (record.revision, record.source_event_id) == (2, newer["id"])
+    # An encrypted revision of a work by link keeps nothing the same.
+    private = submission_for(ME, revision=3, s_sub=first.s_sub, status_key=first.status_key)
+    private.body.update(coordinate_hash=first.body["coordinate_hash"],
+                        submission_id=first.body["submission_id"])
+    status, data, _ = _submit(nam, private.body)
+    assert (status, data["error"]["code"]) == (409, "conflict")
+
+
+def test_accepting_a_public_work_takes_it_as_published_and_a_proposal_takes_no_changes():
+    _clock, server, nam = _setup()
+    event, naddr = published_article(ME)
+    prepared = link_submission_for(ME, event, naddr)
+    _submit(nam, prepared.body)
+    record = server.submissions[prepared.body["submission_id"]]
+    status, data, _ = _decide(nam, record, "accept")
+    assert status == 200, data
+    assert data["submission"]["state"] == "published"
+    assert data["submission"]["published"] == {"naddr": naddr, "event_id": event["id"]}
+    _clock, server, nam = _setup()
+    server.publication().members[pk("contributor")] = "curator"
+    other, naddr = published_article(sk("submission"), d="ein-anderes-werk")
+    assert _post(nam, _proposals_path(server), proposal_for(CURATOR, other, naddr)[0],
+                 CURATOR)[0] == 201
+    (record,) = server.submissions.values()
+    status, data, _ = _post(nam, f"/api/submissions/{record.sid}/decision",
+                            {"submission_id": record.sid, "expected_revision": 1,
+                             "outcome": "request_changes", "message_wrap": {"x": 1}},
+                            sk("editor"))
+    assert (status, data["error"]["code"]) == (409, "invalid_transition")
+
+
+def test_a_member_proposes_a_published_work():
+    _clock, server, nam = _setup()
+    server.publication().members[pk("contributor")] = "curator"
+    event, naddr = published_article(sk("submission"))
+    payload, _s_sub = proposal_for(CURATOR, event, naddr)
+    status, data, _ = _post(nam, _proposals_path(server), payload, CURATOR)
+    assert status == 201, data
+    view = data["submission"]
+    assert (view["writer"], view["proposal_by"], view["marks"], view["signer"]) == (
+        pk("submission"), pk("contributor"), ["already_public", "proposal"], "writer")
+    assert "last_internal_seq" in view                          # a member's View
+    record = server.submissions[payload["submission_id"]]
+    assert record.status_key_hash is None and set(record.current["wraps"]) == {
+        "redaktion", "proposer"}
+    # The same proposal again: 200 and its View, nothing stored twice.
+    status, data, _ = _post(nam, _proposals_path(server), payload, CURATOR)
+    assert status == 200 and data["submission"]["submission_id"] == record.sid
+    assert len(server.submissions) == 1 and len(record.timeline) >= 1
+    # The proposer reads it as its submitter, with the proposer's wrap.
+    token = _session(nam, CURATOR).encode("ascii")
+    status, data, _ = _send(nam, "GET", f"/api/submissions/{record.sid}",
+                            authorization=b"Bearer " + token)
+    assert status == 200 and data["my_role"] == "writer"
+    assert set(data["revisions"][0]["wraps"]) == {"proposer"}
+    listed = _send(nam, "GET", "/api/me/submissions", authorization=b"Bearer " + token)[1]
+    assert [v["submission_id"] for v in listed["items"]] == [record.sid]
+
+
+def test_a_publication_that_publishes_articles_itself_signs_a_proposal_too():
+    _clock, server, nam = _setup()
+    _rules(server, publish_by={"article": "publication", "audio": "publication"})
+    server.publication().members[pk("contributor")] = "curator"
+    event, naddr = published_article(sk("submission"))
+    data = _post(nam, _proposals_path(server), proposal_for(CURATOR, event, naddr)[0],
+                 CURATOR)[1]
+    assert data["submission"]["signer"] == "publication"
+
+
+@pytest.mark.parametrize("change, status, code, detail", [
+    (lambda p, s: p.update(extra=1), 422, "invalid", {"fields": ["extra"]}),
+    (lambda p, s: p.pop("title"), 422, "invalid", {"fields": ["title"]}),
+    (lambda p, s: p["event"].update(content="changed"), 422, "invalid", None),
+    (lambda p, s: p.update(submission_id="0" * 64), 422, "invalid", {"field": "submission_id"}),
+    (lambda p, s: p.update(wraps={"redaktion": p["wraps"]["redaktion"]}), 422, "invalid",
+     {"field": "wraps"}),
+    (lambda p, s: p.update(epoch=p["epoch"] + 1), 409, "epoch", None),
+    (lambda p, s: s.publication().members.pop(pk("contributor")), 403, "not_member", None),
+    (lambda p, s: s.publication().members.update({pk("contributor"): "invited:curator"}),
+     403, "not_member", None),
+    (lambda p, s: s.below_gate.add(pk("contributor")), 403, "forbidden",
+     {"gate": "redaktion", "required_role": "member"}),
+    (lambda p, s: _rules(s, by_link=False), 403, "forbidden", {"field": "source"}),
+    (lambda p, s: s.publication().blocked.add(pk("submission")), 403, "blocked", None),
+], ids=["an unknown field", "a missing field", "a changed event", "another id",
+        "no proposer wrap", "an old key", "no member", "only invited", "below the gate",
+        "no links taken", "the author is blocked"])
+def test_a_proposal_is_refused_as_the_backend_refuses_it(change, status, code, detail):
+    _clock, server, nam = _setup()
+    server.publication().members[pk("contributor")] = "curator"
+    event, naddr = published_article(sk("submission"))
+    payload = json.loads(json.dumps(proposal_for(CURATOR, event, naddr)[0]))
+    change(payload, server)
+    status_got, data, _ = _post(nam, _proposals_path(server), payload, CURATOR)
+    assert (status_got, data["error"]["code"]) == (status, code), data
+    if detail is not None:
+        assert data["error"]["detail"] == detail
+    assert server.submissions == {}
+
+
+def test_the_gate_holds_the_redaktions_routes_and_never_a_writers():
+    # Contract 12.2 "Instance gate": 403 forbidden on a Redaktion route;
+    # GET /api/me/editorial answers with the member parts empty.
+    _clock, server, nam = _setup()
+    prepared = submission_for(sk("editor"))                  # the owner writes too
+    server.below_gate.add(pk("editor"))
+    token = _session(nam, sk("editor")).encode("ascii")
+    status, data, _ = _send(nam, "GET", "/api/me/keyring", authorization=b"Bearer " + token)
+    assert (status, data["error"]["code"], data["error"]["detail"]) == (
+        403, "forbidden", {"gate": "redaktion", "required_role": "member"})
+    mine = _send(nam, "GET", "/api/me/editorial", authorization=b"Bearer " + token)[1]
+    assert (mine["publications"], mine["invitations"]) == ([], [])
+    assert _send(nam, "GET", "/api/me/submissions",
+                 authorization=b"Bearer " + token)[0] == 200
+    assert prepared.body["publication"] == server.publication().address
+
+
+def test_a_proposer_is_the_submitter_for_rounds_limits_and_naming():
+    # db/editorial_submissions.py handed_in_by: the proposer of a
+    # proposal; core/editorial_workflow.py name_editor never names who
+    # handed it in.
+    _clock, server, nam = _setup()
+    proposer = sk("epoch2")                       # sorts before the owner: named first if allowed
+    server.publication().members[pk("epoch2")] = "redaktion"
+    path = _proposals_path(server)
+    event, naddr = published_article(sk("submission"))
+    payload, _ = proposal_for(proposer, event, naddr)
+    assert _post(nam, path, payload, proposer)[0] == 201
+    (record,) = server.submissions.values()
+    assert record.responsible == pk("editor")
+    again, _ = proposal_for(proposer, event, naddr, round_=2)
+    status, data, _ = _post(nam, path, again, proposer)
+    assert (status, data["error"]["detail"]) == (409, {"round": 1, "open": True})
+    for d in ("zwei", "drei"):
+        work, link = published_article(sk("submission"), d=d)
+        assert _post(nam, path, proposal_for(proposer, work, link)[0], proposer)[0] == 201
+    work, link = published_article(sk("submission"), d="vier")
+    status, data, _ = _post(nam, path, proposal_for(proposer, work, link)[0], proposer)
+    assert (status, data["error"]["code"]) == (403, "limit_open")
