@@ -257,6 +257,17 @@ def test_qr_answers_a_connect_request_but_not_a_connect_response():
     assert "connect" not in [p.get("method") for p in signer.seen]
 
 
+def test_a_code_answered_with_its_secret_says_it_was_contacted_once():
+    # RG-M2r3 4: the dialog makes the answered code the way in flight.
+    _, signer, client, outcome, secret = _qr_client()
+    contacted = []
+    client.contacted.connect(lambda: contacted.append(client.bunker_pubkey))
+    signer.send({"id": "nc0", "result": "not-the-secret"})
+    assert contacted == []
+    signer.send({"id": "nc1", "result": secret})
+    assert contacted == [signer.pk] and outcome.get("ok") == signer.user_pk
+
+
 @pytest.mark.parametrize("answer", [
     "f" * 64,                                   # 64 hex digits, no point of the curve
     "ab" * 31,

@@ -13,8 +13,8 @@ msgid "OK"
 msgstr ""
 
 #: alerts.py:208
-#: nostr/ui/connect_dialog.py:424
-#: nostr/ui/connect_dialog.py:427
+#: nostr/ui/connect_dialog.py:389
+#: nostr/ui/connect_dialog.py:392
 #: nostr/ui/standup_handoff.py:367
 #: nostr/ui/standup_privacy.py:81
 msgid "Details"
@@ -416,7 +416,7 @@ msgstr ""
 
 #: file_kinds.py:152
 #: media_files.py:113
-#: nostr/ui/media_library_dialog.py:1413
+#: nostr/ui/media_library_dialog.py:1425
 msgid "File"
 msgstr ""
 
@@ -595,7 +595,7 @@ msgstr ""
 #: nostr/ui/drafts_panel.py:1426
 #: nostr/ui/drafts_panel.py:1531
 #: nostr/ui/imports_window.py:380
-#: nostr/ui/media_library_dialog.py:374
+#: nostr/ui/media_library_dialog.py:372
 msgid "Search"
 msgstr ""
 
@@ -604,7 +604,7 @@ msgid "Search Files"
 msgstr ""
 
 #: file_list.py:914
-#: nostr/ui/media_library_dialog.py:355
+#: nostr/ui/media_library_dialog.py:353
 msgid "Files"
 msgstr ""
 
@@ -619,7 +619,7 @@ msgstr ""
 #: update_flow.py:152
 #: update_flow.py:171
 #: update_flow.py:178
-#: nostr/ui/connect_dialog.py:400
+#: nostr/ui/connect_dialog.py:365
 msgid "Open"
 msgstr ""
 
@@ -654,7 +654,7 @@ msgstr ""
 #: file_list.py:1497
 #: main_window.py:2737
 #: quick_look.py:87
-#: nostr/ui/media_library_dialog.py:763
+#: nostr/ui/media_library_dialog.py:775
 #: nostr/ui/media_preview.py:51
 msgid "Quick Look"
 msgstr ""
@@ -714,7 +714,7 @@ msgstr ""
 #: file_list.py:894
 #: file_list.py:1128
 #: library_sidebar.py:520
-#: nostr/ui/media_grid.py:497
+#: nostr/ui/media_grid.py:517
 msgid "Media"
 msgstr ""
 
@@ -853,8 +853,8 @@ msgstr ""
 #: format_toolbar.py:308
 #: slash_menu.py:167
 #: slash_menu.py:175
-#: nostr/ui/media_library_dialog.py:437
-#: nostr/ui/media_library_dialog.py:758
+#: nostr/ui/media_library_dialog.py:435
+#: nostr/ui/media_library_dialog.py:770
 #: nostr/ui/reference_popover.py:78
 msgid "Insert"
 msgstr ""
@@ -909,7 +909,7 @@ msgstr ""
 #: nostr/ui/article_header.py:234
 #: nostr/ui/cover_field.py:330
 #: nostr/ui/draft_relays_sheet.py:173
-#: nostr/ui/media_library_dialog.py:750
+#: nostr/ui/media_library_dialog.py:762
 #: nostr/ui/media_servers_dialog.py:235
 #: nostr/ui/media_servers_dialog.py:408
 msgid "Remove"
@@ -1354,9 +1354,9 @@ msgstr ""
 #: update_dialog.py:287
 #: dictation/setup.py:125
 #: nostr/ui/account_windows.py:764
-#: nostr/ui/connect_dialog.py:560
+#: nostr/ui/connect_dialog.py:525
+#: nostr/ui/connect_dialog.py:827
 #: nostr/ui/draft_relays_sheet.py:613
-#: nostr/ui/drafts_panel.py:969
 msgid "Try Again"
 msgstr ""
 
@@ -1566,7 +1566,7 @@ msgstr ""
 
 #: main_window.py:5196
 #: sheet_window.py:188
-#: nostr/ui/media_library_dialog.py:936
+#: nostr/ui/media_library_dialog.py:948
 msgid "Save As"
 msgstr ""
 
@@ -1701,8 +1701,8 @@ msgstr ""
 #: main_window.py:11014
 #: main_window.py:2232
 #: main_window.py:7413
-#: nostr/ui/media_library_dialog.py:776
-#: nostr/ui/media_library_dialog.py:1024
+#: nostr/ui/media_library_dialog.py:788
+#: nostr/ui/media_library_dialog.py:1036
 #: nostr/ui/published_view.py:758
 msgid "Delete"
 msgstr ""
@@ -1788,7 +1788,7 @@ msgstr ""
 #: sheet_tab.py:1199
 #: sheet_tab.py:1200
 #: sheet_window.py:140
-#: nostr/ui/media_library_dialog.py:770
+#: nostr/ui/media_library_dialog.py:782
 #: nostr/ui/media_preview.py:104
 msgid "Save As…"
 msgstr ""
@@ -2165,7 +2165,7 @@ msgstr ""
 #: main_window.py:10444
 #: main_window.py:4713
 #: media_files.py:109
-#: nostr/ui/media_library_dialog.py:1413
+#: nostr/ui/media_library_dialog.py:1425
 msgid "Image"
 msgstr ""
 
@@ -2335,8 +2335,8 @@ msgid "Dictation"
 msgstr ""
 
 #: main_window.py:7564
-#: nostr/ui/connect_dialog.py:436
-#: nostr/ui/media_library_dialog.py:766
+#: nostr/ui/connect_dialog.py:401
+#: nostr/ui/media_library_dialog.py:778
 #: nostr/ui/published_view.py:926
 #: nostr/ui/published_view.py:838
 msgid "Copy Link"
@@ -2540,7 +2540,7 @@ msgid "Deleting drafts…"
 msgstr ""
 
 #: main_window.py:11108
-#: nostr/ui/media_library_dialog.py:317
+#: nostr/ui/media_library_dialog.py:315
 #: nostr/ui/media_preview.py:165
 msgid "Stop"
 msgstr ""
@@ -2909,7 +2909,7 @@ msgid "The list wasn’t shared. Try again in a moment."
 msgstr ""
 
 #: main_window.py:8831
-#: nostr/ui/media_library_dialog.py:959
+#: nostr/ui/media_library_dialog.py:971
 #, python-brace-format
 msgid "Saving “{name}”…"
 msgstr ""
@@ -3725,11 +3725,11 @@ msgstr ""
 
 #: main_window.py:9743
 #: nostr/blossom/upload_progress.py:148
-#: nostr/ui/media_library_dialog.py:1191
-#: nostr/ui/media_library_dialog.py:1230
-#: nostr/ui/media_library_dialog.py:1158
-#: nostr/ui/media_library_dialog.py:1177
-#: nostr/ui/media_library_dialog.py:1208
+#: nostr/ui/media_library_dialog.py:1203
+#: nostr/ui/media_library_dialog.py:1242
+#: nostr/ui/media_library_dialog.py:1170
+#: nostr/ui/media_library_dialog.py:1189
+#: nostr/ui/media_library_dialog.py:1220
 msgid "Preparing…"
 msgstr ""
 
@@ -4036,13 +4036,13 @@ msgid "Open Draft"
 msgstr ""
 
 #: media_files.py:109
-#: nostr/ui/media_library_dialog.py:1413
+#: nostr/ui/media_library_dialog.py:1425
 msgid "Video"
 msgstr ""
 
 #: media_files.py:109
-#: nostr/ui/media_library_dialog.py:355
-#: nostr/ui/media_library_dialog.py:1413
+#: nostr/ui/media_library_dialog.py:353
+#: nostr/ui/media_library_dialog.py:1425
 msgid "Audio"
 msgstr ""
 
@@ -4099,7 +4099,7 @@ msgid "This audio or video format can’t be played on this computer. Open it in
 msgstr ""
 
 #: media_tabs.py:206
-#: nostr/ui/media_library_dialog.py:609
+#: nostr/ui/media_library_dialog.py:621
 #: nostr/ui/media_viewer.py:118
 #: nostr/ui/published_view.py:207
 msgid "Loading…"
@@ -6414,19 +6414,19 @@ msgstr ""
 msgid "The answer was meant for another connection: try again."
 msgstr ""
 
-#: nostr/bunker.py:259
+#: nostr/bunker.py:270
 msgid "expected a bunker:// URI"
 msgstr ""
 
-#: nostr/bunker.py:264
+#: nostr/bunker.py:275
 msgid "bunker URI must contain a 32-byte hex pubkey"
 msgstr ""
 
-#: nostr/bunker.py:273
+#: nostr/bunker.py:284
 msgid "bunker URI must specify at least one relay"
 msgstr ""
 
-#: nostr/bunker.py:276
+#: nostr/bunker.py:287
 #, python-brace-format
 msgid "relay must be ws:// or wss://, got {relay}"
 msgstr ""
@@ -7937,39 +7937,39 @@ msgstr ""
 msgid "It contains a secret key, and MyEditor never sends a secret key to a publication. Remove the key and try again."
 msgstr ""
 
-#: nostr/standup/lists.py:70
+#: nostr/standup/lists.py:72
 msgid "Your list of submissions couldn't be read."
 msgstr ""
 
-#: nostr/standup/lists.py:71
+#: nostr/standup/lists.py:73
 msgid "Your signer app didn't answer, so your list of submissions couldn't be read."
 msgstr ""
 
-#: nostr/standup/lists.py:73
+#: nostr/standup/lists.py:75
 msgid "Your list of submissions was saved with an older kind of encryption. Open it once in the app that saved it; until then, nothing new can be submitted here."
 msgstr ""
 
-#: nostr/standup/lists.py:76
+#: nostr/standup/lists.py:78
 msgid "Part of your list of submissions hasn't arrived yet. What did is shown, and the list is made whole again the next time it is saved."
 msgstr ""
 
-#: nostr/standup/lists.py:82
+#: nostr/standup/lists.py:84
 msgid "The connection to your signer app carries only short messages, and your list of submissions was saved in longer pieces. Connect your signer app again to read it; until then, nothing new can be submitted here."
 msgstr ""
 
-#: nostr/standup/lists.py:86
+#: nostr/standup/lists.py:88
 msgid "What you have read couldn't be loaded."
 msgstr ""
 
-#: nostr/standup/lists.py:87
+#: nostr/standup/lists.py:89
 msgid "Your signer app didn't answer, so what you have read couldn't be loaded."
 msgstr ""
 
-#: nostr/standup/lists.py:89
+#: nostr/standup/lists.py:91
 msgid "What you have read was saved with an older kind of encryption and is left as it is."
 msgstr ""
 
-#: nostr/standup/lists.py:91
+#: nostr/standup/lists.py:93
 msgid "The connection to your signer app carries only short messages, and what you have read was saved in longer pieces. Connect your signer app again to load it."
 msgstr ""
 
@@ -8868,176 +8868,179 @@ msgstr ""
 msgid "{name} has no lightning address in their profile, so they can’t be paid a share."
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:109
+#: nostr/ui/connect_dialog.py:118
 msgid "Your signer app wasn’t connected"
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:220
-#: nostr/ui/connect_dialog.py:279
-msgid "Connect Signer App"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:348
-msgid "Code to scan with your phone"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:350
-msgid "Scan with your phone"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:353
-msgid "Open Amber, Primal or Amethyst and scan the code."
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:361
-#: nostr/ui/connect_dialog.py:560
-msgid "New Code"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:371
-msgid "Connect with Bunker46"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:374
-msgid "Open Signer App on This Computer"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:376
-msgid "Opens a signer app set up on this computer for connection links, for example Amber Desktop."
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:390
-#: nostr/ui/connect_dialog.py:393
-msgid "Your Bunker46 address"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:405
-msgid "Cancel the Bunker46 address"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:437
-msgid "For a signer app that takes a pasted link"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:441
-msgid "Connection address:"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:445
-msgid "Connection address"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:451
-msgid "Connect"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:470
-msgid "Change"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:471
-msgid "Change the Bunker46 address"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:636
-msgid "your signer app"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:637
-msgid "No signer app for connection links is set up on this computer."
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:655
-msgid "Your browser couldn’t be opened."
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:666
-msgid "MyEditor can’t open that address: use the one your Bunker46 runs at, which starts with https://."
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:741
-msgid "Connecting with the address you pasted."
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:742
-msgid "Contacting your signer app. Approve the request there…"
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:794
+#: nostr/ui/connect_dialog.py:122
 msgid "Your signer app answered in a form MyEditor can’t read: an update of the signer app may help."
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:281
+#: nostr/ui/connect_dialog.py:124
+msgid "Your signer app asked for approval at an address that can’t be opened safely: check its settings and try again."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:183
+#: nostr/ui/connect_dialog.py:244
+msgid "Connect Signer App"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:313
+msgid "Code to scan with your phone"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:315
+msgid "Scan with your phone"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:318
+msgid "Open Amber, Primal or Amethyst and scan the code."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:326
+#: nostr/ui/connect_dialog.py:525
+msgid "New Code"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:336
+msgid "Connect with Bunker46"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:339
+msgid "Open Signer App on This Computer"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:341
+msgid "Opens a signer app set up on this computer for connection links, for example Amber Desktop."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:355
+#: nostr/ui/connect_dialog.py:358
+msgid "Your Bunker46 address"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:370
+msgid "Cancel the Bunker46 address"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:402
+msgid "For a signer app that takes a pasted link"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:406
+msgid "Connection address:"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:410
+msgid "Connection address"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:416
+#: nostr/ui/connect_dialog.py:707
+#: nostr/ui/connect_dialog.py:670
+msgid "Connect"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:435
+msgid "Change"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:436
+msgid "Change the Bunker46 address"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:604
+msgid "your signer app"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:605
+msgid "No signer app for connection links is set up on this computer."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:623
+msgid "Your browser couldn’t be opened."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:705
+msgid "Connecting with the address you pasted."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:706
+#: nostr/ui/connect_dialog.py:751
+msgid "Contacting your signer app. Approve the request there…"
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:246
 msgid "Your key stays in your signer app. MyEditor asks it only when something has to be signed."
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:329
+#: nostr/ui/connect_dialog.py:294
 #, python-brace-format
 msgid "Technical: a connection by {protocol} (Nostr Connect). The code is a nostrconnect link and renews by itself; MyEditor and your signer app meet on these relays: {relays}. Some signer apps show a connection address instead, which starts with bunker://. Connect with Bunker46 opens the link on your Bunker46's connections page."
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:412
+#: nostr/ui/connect_dialog.py:377
 msgid "MyEditor keeps it, so it asks only this once."
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:462
+#: nostr/ui/connect_dialog.py:427
 msgid "Some signer apps show a connection address instead of a code: copy it there and paste it here."
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:575
-#: nostr/ui/connect_dialog.py:839
+#: nostr/ui/connect_dialog.py:540
+#: nostr/ui/connect_dialog.py:812
 msgid "This code has expired."
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:598
+#: nostr/ui/connect_dialog.py:566
 msgid "Link copied. Paste it in your signer app."
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:776
+#: nostr/ui/connect_dialog.py:635
+msgid "MyEditor can’t open that address: use the one your Bunker46 runs at, which starts with https://."
+msgstr ""
+
+#: nostr/ui/connect_dialog.py:759
 msgid "Your signer app needs you to approve this in the browser window that just opened. Waiting…"
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:782
-msgid "Your signer app asked for approval at an address that cannot be opened safely, so the connection was not continued."
-msgstr ""
-
-#: nostr/ui/connect_dialog.py:301
+#: nostr/ui/connect_dialog.py:266
 msgid "No signer app yet?"
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:302
+#: nostr/ui/connect_dialog.py:267
 msgid "Create an Account"
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:303
+#: nostr/ui/connect_dialog.py:268
 msgid "Restore from Backup"
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:489
+#: nostr/ui/connect_dialog.py:454
 #, python-brace-format
 msgid "Bunker46: {address}"
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:614
+#: nostr/ui/connect_dialog.py:582
 #, python-brace-format
 msgid "Opening {app}…"
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:724
+#: nostr/ui/connect_dialog.py:688
 msgid "That address can’t be used: copy it again from your signer app, where it starts with bunker://."
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:336
+#: nostr/ui/connect_dialog.py:301
 #, python-brace-format
 msgid "The last try answered: {reason}"
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:629
+#: nostr/ui/connect_dialog.py:597
 #, python-brace-format
 msgid "Waiting for {app}. If it didn’t open, scan the code with your phone instead."
 msgstr ""
 
-#: nostr/ui/connect_dialog.py:632
+#: nostr/ui/connect_dialog.py:600
 #, python-brace-format
 msgid "Waiting for {app}. Approve the connection there."
 msgstr ""
@@ -9473,13 +9476,13 @@ msgid "Search Drafts"
 msgstr ""
 
 #: nostr/ui/drafts_panel.py:1216
-#: nostr/ui/media_library_dialog.py:726
+#: nostr/ui/media_library_dialog.py:738
 msgid "Refresh"
 msgstr ""
 
 #: nostr/ui/drafts_panel.py:1240
-#: nostr/ui/media_library_dialog.py:387
-#: nostr/ui/media_library_dialog.py:388
+#: nostr/ui/media_library_dialog.py:385
+#: nostr/ui/media_library_dialog.py:386
 msgid "Actions"
 msgstr ""
 
@@ -9997,7 +10000,7 @@ msgid "Show the number of new posts on the app icon? You can change this in the 
 msgstr ""
 
 #: nostr/ui/imports_badge.py:29
-#: nostr/ui/media_library_dialog.py:353
+#: nostr/ui/media_library_dialog.py:351
 msgid "Show"
 msgstr ""
 
@@ -10634,9 +10637,9 @@ msgstr ""
 msgid "uploading"
 msgstr ""
 
-#: nostr/ui/media_grid.py:275
-#: nostr/ui/media_grid.py:362
-#: nostr/ui/media_library_dialog.py:749
+#: nostr/ui/media_grid.py:295
+#: nostr/ui/media_grid.py:382
+#: nostr/ui/media_library_dialog.py:761
 msgid "Retry"
 msgstr ""
 
@@ -10649,79 +10652,79 @@ msgstr ""
 msgid "couldn’t upload: {reason}"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1054
+#: nostr/ui/media_library_dialog.py:1066
 msgid "Anyone with the link will no longer see it, and anything you published with it will no longer show it."
 msgid_plural "Anyone with the link will no longer see them, and anything you published with them will no longer show them."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/media_library_dialog.py:1441
+#: nostr/ui/media_library_dialog.py:1453
 msgid "A media server it’s on didn’t let your account delete it."
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1525
+#: nostr/ui/media_library_dialog.py:1537
 #, python-brace-format
 msgid "At least {used} of {quota} used"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:313
+#: nostr/ui/media_library_dialog.py:311
 msgid "Saving"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:318
+#: nostr/ui/media_library_dialog.py:316
 msgid "Stop Saving"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:346
-#: nostr/ui/media_library_dialog.py:613
+#: nostr/ui/media_library_dialog.py:344
+#: nostr/ui/media_library_dialog.py:625
 msgid "Add…"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:347
+#: nostr/ui/media_library_dialog.py:345
 msgid "Add images, videos, audio or files from your computer"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:364
+#: nostr/ui/media_library_dialog.py:362
 msgid "Sort By"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:375
+#: nostr/ui/media_library_dialog.py:373
 msgid "Search Media"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:999
+#: nostr/ui/media_library_dialog.py:1011
 msgid "The editorial team can no longer open this file of your submission. You can’t undo this action."
 msgid_plural "The editorial team can no longer open these files of your submissions. You can’t undo this action."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/media_library_dialog.py:1093
+#: nostr/ui/media_library_dialog.py:1105
 #, python-brace-format
 msgid "“{name}” is still on one of your media servers. {reason}"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1095
+#: nostr/ui/media_library_dialog.py:1107
 #, python-brace-format
 msgid "“{name}” wasn’t deleted. {reason}"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1102
+#: nostr/ui/media_library_dialog.py:1114
 msgid "The file"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1113
+#: nostr/ui/media_library_dialog.py:1125
 msgid "Add to Media Library"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1311
+#: nostr/ui/media_library_dialog.py:1323
 msgid "Couldn’t reach your media servers. Check your internet connection."
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1341
+#: nostr/ui/media_library_dialog.py:1353
 msgid "Anyone with the link can see the files you add here."
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1527
+#: nostr/ui/media_library_dialog.py:1539
 #, python-brace-format
 msgid "Full: {used} of {quota} used"
 msgstr ""
@@ -10734,215 +10737,215 @@ msgstr ""
 msgid "Media Library"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:354
+#: nostr/ui/media_library_dialog.py:352
 msgid "All Items"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:354
+#: nostr/ui/media_library_dialog.py:352
 msgid "Images"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:355
+#: nostr/ui/media_library_dialog.py:353
 msgid "Videos"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:359
+#: nostr/ui/media_library_dialog.py:357
 msgid "Submission Files"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:365
+#: nostr/ui/media_library_dialog.py:363
 msgid "Newest First"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:365
+#: nostr/ui/media_library_dialog.py:363
 msgid "Oldest First"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:366
+#: nostr/ui/media_library_dialog.py:364
 msgid "Largest First"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:366
+#: nostr/ui/media_library_dialog.py:364
 msgid "Smallest First"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:367
+#: nostr/ui/media_library_dialog.py:365
 msgid "Name"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:423
+#: nostr/ui/media_library_dialog.py:421
 msgid "Alt text:"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:426
+#: nostr/ui/media_library_dialog.py:424
 msgid "Alt text"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:427
+#: nostr/ui/media_library_dialog.py:425
 msgid "Describe the image for people who can’t see it"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:729
+#: nostr/ui/media_library_dialog.py:741
 msgid "Media Servers…"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:752
+#: nostr/ui/media_library_dialog.py:764
 msgid "Cancel Upload"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:770
+#: nostr/ui/media_library_dialog.py:782
 msgid "Save to Folder…"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:841
+#: nostr/ui/media_library_dialog.py:853
 msgid "MyEditor is still checking whether this image is private. One moment."
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:936
+#: nostr/ui/media_library_dialog.py:948
 msgid "All Files (*)"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:939
+#: nostr/ui/media_library_dialog.py:951
 msgid "Choose a Folder"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1006
+#: nostr/ui/media_library_dialog.py:1018
 msgid "If this is a file of one of your submissions, the editorial team can no longer open it. You can’t undo this action."
 msgid_plural "If these are files of your submissions, the editorial team can no longer open them. You can’t undo this action."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/media_library_dialog.py:1059
-#: nostr/ui/media_library_dialog.py:775
+#: nostr/ui/media_library_dialog.py:1071
+#: nostr/ui/media_library_dialog.py:787
 msgid "Stop Sharing"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1146
+#: nostr/ui/media_library_dialog.py:1158
 msgid "The pasted image couldn’t be read."
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1306
+#: nostr/ui/media_library_dialog.py:1318
 msgid "Your media servers may not have listed every file. Refresh to look again."
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1529
+#: nostr/ui/media_library_dialog.py:1541
 #, python-brace-format
 msgid "Almost full: {used} of {quota} used"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1531
+#: nostr/ui/media_library_dialog.py:1543
 #, python-brace-format
 msgid "{used} of {quota} used"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:553
+#: nostr/ui/media_library_dialog.py:551
 msgid "Encrypted file of a submission"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:611
+#: nostr/ui/media_library_dialog.py:623
 msgid "Images, videos, audio and files you add appear here. Anyone with the link can see them."
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:830
+#: nostr/ui/media_library_dialog.py:842
 msgid "This file can’t be used until its server answers."
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:831
+#: nostr/ui/media_library_dialog.py:843
 msgid "MyEditor is still checking this file. One moment."
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:844
+#: nostr/ui/media_library_dialog.py:856
 msgid "This image can’t be used until your signer app lets MyEditor check whether it is private."
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:995
+#: nostr/ui/media_library_dialog.py:1007
 #, python-brace-format
 msgid "Delete “{name}”?"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:996
+#: nostr/ui/media_library_dialog.py:1008
 #, python-brace-format
 msgid "Delete {count} item?"
 msgid_plural "Delete {count} items?"
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/media_library_dialog.py:1013
+#: nostr/ui/media_library_dialog.py:1025
 msgid "It’s also gone from the other app that keeps it privately. You can’t undo this action."
 msgid_plural "They’re also gone from the other apps that keep them privately. You can’t undo this action."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/media_library_dialog.py:1019
+#: nostr/ui/media_library_dialog.py:1031
 msgid "Anything you published with it will no longer show it. You can’t undo this action."
 msgid_plural "Anything you published with them will no longer show them. You can’t undo this action."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/media_library_dialog.py:1051
+#: nostr/ui/media_library_dialog.py:1063
 #, python-brace-format
 msgid "Stop sharing “{name}”?"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1052
+#: nostr/ui/media_library_dialog.py:1064
 #, python-brace-format
 msgid "Stop sharing {count} item?"
 msgid_plural "Stop sharing {count} items?"
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/media_library_dialog.py:1114
+#: nostr/ui/media_library_dialog.py:1126
 #, python-brace-format
 msgid "Images, Videos, Audio and Files ({patterns})"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1266
-#: nostr/ui/media_library_dialog.py:1166
+#: nostr/ui/media_library_dialog.py:1278
+#: nostr/ui/media_library_dialog.py:1178
 #, python-brace-format
 msgid "“{name}” wasn’t added. {reason}"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1281
+#: nostr/ui/media_library_dialog.py:1293
 #, python-brace-format
 msgid "“{name}” is added, but one of your media servers didn’t keep a copy."
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:607
+#: nostr/ui/media_library_dialog.py:619
 #, python-brace-format
 msgid "No items match “{text}”."
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:766
+#: nostr/ui/media_library_dialog.py:778
 msgid "Copy Links"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:769
+#: nostr/ui/media_library_dialog.py:781
 #: nostr/ui/media_preview.py:100
 msgid "Open in Browser"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1080
+#: nostr/ui/media_library_dialog.py:1092
 #, python-brace-format
 msgid "“{name}” is no longer shared."
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1085
+#: nostr/ui/media_library_dialog.py:1097
 #, python-brace-format
 msgid "“{name}” is still shared. {reason}"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:1131
+#: nostr/ui/media_library_dialog.py:1143
 #, python-brace-format
 msgid "“{name}” wasn’t added. Choose a supported image, video, audio or document file."
 msgid_plural "{count} files weren’t added. Choose supported images, videos, audio or document files."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/media_library_dialog.py:1151
+#: nostr/ui/media_library_dialog.py:1163
 msgid "Pasted Image"
 msgstr ""
 
-#: nostr/ui/media_library_dialog.py:760
+#: nostr/ui/media_library_dialog.py:772
 msgid "Insert in Document"
 msgstr ""
 
@@ -12264,6 +12267,7 @@ msgid "Editorial inbox"
 msgstr ""
 
 #: nostr/ui/standup_handoff.py:535
+#: nostr/ui/standup_ways_out.py:68
 msgctxt "submissions list"
 msgid "Reload"
 msgstr ""
@@ -12442,11 +12446,11 @@ msgstr ""
 msgid "At acceptance the editorial team proposes how zaps are split; you confirm it."
 msgstr ""
 
-#: nostr/ui/standup_ways_out.py:48
+#: nostr/ui/standup_ways_out.py:49
 msgid "An earlier try wasn’t sent. Submit sends it again."
 msgstr ""
 
-#: nostr/ui/standup_ways_out.py:50
+#: nostr/ui/standup_ways_out.py:51
 msgid "Discard"
 msgstr ""
 

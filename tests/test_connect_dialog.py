@@ -681,12 +681,15 @@ def test_a_pairing_that_did_not_work_is_said_plainly_and_the_answer_is_in_the_to
     dialog.reject()
 
 
-def test_a_listening_code_that_fails_is_said_plainly_too(tmp_path):
+def test_a_code_a_phone_answered_that_then_fails_is_said_plainly_too(tmp_path):
     dialog = dialog_for(tmp_path)
-    dialog._on_pair_failure("secret did not match (possible spoof attempt)", dialog._client)
-    assert dialog.status_shown == (NOT_CONNECTED,
-                                   "The answer was meant for another connection: try again.")
-    assert "spoof" not in dialog._status.text()
+    phone = Phone(dialog._client, secret_of(dialog._qr_uri))
+    phone.scan()
+    phone.answer_key(error="invalid: 42")
+    turn()
+    assert dialog.status_shown == (NOT_CONNECTED, "The connection didn’t work: try again, or "
+                                   "connect another way.")
+    assert "42" not in dialog._status.text() and "invalid: 42" in dialog.help_button.toolTip()
     assert not dialog._regen_btn.isHidden() and not dark_modules(dialog)
     dialog.reject()
 
@@ -734,7 +737,11 @@ def test_a_listening_code_that_failed_is_one_title_one_sentence_and_try_again(tm
     said = []
     monkeypatch.setattr(connect_dialog, "announce", lambda _w, text: said.append(text))
     dialog = dialog_for(tmp_path)
-    dialog._on_pair_failure("user rejected", dialog._client)
+    phone = Phone(dialog._client, secret_of(dialog._qr_uri))
+    phone.scan()
+    said.clear()
+    phone.answer_key(error="user rejected")
+    turn()
     assert dialog.status_shown == (NOT_CONNECTED, "Your signer app declined the request: "
                                    "allow it there and try again.")
     assert dialog._status.text().startswith(f"<b>{NOT_CONNECTED}</b><br>")
@@ -761,6 +768,257 @@ def test_a_failure_shown_again_is_not_announced_again(tmp_path, monkeypatch):
     monkeypatch.setattr(connect_dialog, "announce", lambda _w, text: said.append(text))
     dialog = dialog_for(tmp_path)
     for _ in range(2):
-        dialog._on_unreadable_reply("ab" * 32)
-    assert len(said) == 1 and said[0].startswith(f"{NOT_CONNECTED}. ")
+        dialog._set_status("Gone.", error=True, title=NOT_CONNECTED)
+    assert said == [f"{NOT_CONNECTED}. Gone."]
+    dialog.reject()
+
+
+# -- what a signer, or anyone, sends a code (RG-M2r3 3 and 4) -------------------------
+
+def secret_of(uri):
+    return parse_qs(urlsplit(uri).query)["secret"][0]
+
+
+class Phone:
+    """A signer app that scanned ``client``'s code: it answers with the
+    code's secret (``scan``), then the request for the account's key
+    that follows (``answer_key``), through the code's own channel."""
+
+    def __init__(self, client, secret):
+        from nostr import crypto
+        self.client, self.secret = client, secret
+        self.sk = crypto.generate_secret_key()
+        self.pk = crypto.get_public_key(self.sk).hex()
+        self.user = crypto.get_public_key(crypto.generate_secret_key()).hex()
+        self.subscription = client._subscription
+
+    def send(self, payload, *, pubkey=None, readable=True):
+        import json
+        from nostr import crypto
+        conv = crypto.conversation_key(self.sk, bytes.fromhex(self.client._local_pk_hex))
+        content = crypto.encrypt(json.dumps(payload), conv) if readable else "not readable"
+        self.subscription.event.emit({"pubkey": pubkey or self.pk, "content": content})
+
+    def scan(self):
+        self.send({"id": "h1", "result": self.secret})
+        assert self.client.bunker_pubkey == self.pk
+
+    def request(self):
+        return next(iter(self.client._pending))
+
+    def answer_key(self, *, error="", result=None):
+        payload = {"id": self.request()}
+        payload.update({"error": error} if error else {"result": result or self.user})
+        self.send(payload)
+
+
+def test_cancel_after_the_phone_answered_says_nothing_and_closes_every_code(tmp_path,
+                                                                           monkeypatch):
+    said = []
+    monkeypatch.setattr(connect_dialog, "announce", lambda _w, text: said.append(text))
+    pool = FakePool()
+    dialog = dialog_for(tmp_path, pool)
+    older = dialog._client
+    phone = Phone(older, secret_of(dialog._qr_uri))
+    dialog._renew()                                  # another code shown, the first listens on
+    newer = dialog._client
+    phone.scan()                                     # the first one answered: the way in flight
+    assert dialog._listeners == [older] and dialog._client is older
+    assert newer._subscription is None and not dialog._renew_timer.isActive()
+    assert not dark_modules(dialog)                  # its code pairs nobody else now
+    said.clear()
+    dialog.reject()                                  # its request for the key still pending
+    turn()
+    assert said == [] and dialog.status_shown[0] == ""
+    assert older._subscription is None and older._pending == {}
+    assert dialog._listeners == [] and dialog._client is None
+    assert all(sub.closed for sub in pool.subscriptions)
+
+
+def test_closing_mid_handshake_with_codes_in_grace_leaves_nothing_listening(tmp_path):
+    # RG-M2r3 3: closing one while the list was looped skipped the next.
+    pool = FakePool()
+    dialog = dialog_for(tmp_path, pool)
+    clients = [dialog._client]
+    for _ in range(2):
+        dialog._renew()
+        clients.append(dialog._client)
+    Phone(clients[0], "not its secret").send({"id": "x", "result": "ack"})
+    dialog.reject()
+    assert all(c._subscription is None and c._nc_timer is None for c in clients)
+    assert all(sub.closed for sub in pool.subscriptions)
+
+
+@pytest.mark.parametrize("older", [False, True], ids=["the code shown", "a code in grace"])
+@pytest.mark.parametrize("answer, words", [
+    ({"error": "user rejected"}, "Your signer app declined the request: allow it there and "
+                                 "try again."),
+    ({"timeout": True}, "Your signer app didn’t answer: open it and try again."),
+], ids=["declined", "silent"])
+def test_a_code_answered_that_then_fails_is_said_once_with_try_again(tmp_path, monkeypatch,
+                                                                    older, answer, words):
+    # RG-M2r3 4: once a signer answered a code, that code is the way in
+    # flight: an older one's decline is said, and a key request that ran
+    # out is no code that expired.
+    said = []
+    monkeypatch.setattr(connect_dialog, "announce", lambda _w, text: said.append(text))
+    dialog = dialog_for(tmp_path)
+    scanned, secret = dialog._client, secret_of(dialog._qr_uri)
+    if older:
+        dialog._renew()
+    phone = Phone(scanned, secret)
+    phone.scan()
+    said.clear()
+    if answer.get("timeout"):
+        scanned._on_timeout(phone.request())         # its timer, run out
+    else:
+        phone.answer_key(**answer)
+    turn()
+    assert dialog.status_shown == (NOT_CONNECTED, words)
+    assert said == [f"{NOT_CONNECTED}. {words}"]
+    assert dialog._regen_btn.text() == "Try Again" and not dialog._regen_btn.isHidden()
+    assert dialog._code_note.text() != "This code has expired."
+    assert dialog._listeners == [] and scanned._subscription is None
+    dialog._regen_btn.click()
+    assert dialog.status_shown == ("", "") and dark_modules(dialog)
+    dialog.reject()
+
+
+def test_a_code_that_ran_out_unanswered_is_known_by_what_happened_not_by_words(tmp_path):
+    dialog = dialog_for(tmp_path)
+    code = dialog._client
+    code._nc_on_failure("anything at all")           # its own timer ran out, unanswered
+    assert dialog.status_shown == ("", "")
+    assert dialog._code_note.text() == "This code has expired."
+    dialog.reject()
+
+
+def test_what_anyone_sends_a_listening_code_is_only_in_the_tooltip(tmp_path, monkeypatch):
+    # RG-M2r3 4: the code's key is public; a reply that cannot be read is
+    # no failure while the code still pairs.
+    said = []
+    monkeypatch.setattr(connect_dialog, "announce", lambda _w, text: said.append(text))
+    dialog = dialog_for(tmp_path)
+    code = dialog._client
+    Phone(code, "x").send({"id": "1"}, pubkey="f" * 64, readable=False)
+    Phone(code, "x").send({"id": "1"}, readable=False)
+    turn()
+    assert said == [] and dialog.status_shown == ("", "") and dialog._client is code
+    assert dark_modules(dialog) and dialog._regen_btn.isHidden()
+    assert "can’t read" in dialog.help_button.toolTip()
+    dialog.reject()
+
+
+def test_a_way_whose_reply_could_not_be_read_says_so_when_it_fails(tmp_path, monkeypatch):
+    said = []
+    monkeypatch.setattr(connect_dialog, "announce", lambda _w, text: said.append(text))
+    dialog = dialog_for(tmp_path)
+    phone = Phone(dialog._client, secret_of(dialog._qr_uri))
+    phone.scan()
+    said.clear()
+    request = phone.request()
+    phone.send({"id": request}, readable=False)      # its answer, unreadable
+    assert dialog.status_shown[0] == ""              # nothing said while it waits
+    phone.client._on_timeout(request)
+    turn()
+    assert dialog.status_shown == (NOT_CONNECTED, "Your signer app answered in a form MyEditor "
+                                   "can’t read: an update of the signer app may help.")
+    assert len(said) == 1
+    dialog.reject()
+
+
+def test_an_approval_at_an_address_not_safe_ends_the_way_and_is_said_once(tmp_path,
+                                                                          monkeypatch):
+    said = []
+    monkeypatch.setattr(connect_dialog, "announce", lambda _w, text: said.append(text))
+    opened = []
+    monkeypatch.setattr(QDesktopServices, "openUrl", staticmethod(opened.append))
+    dialog = dialog_for(tmp_path)
+    phone = Phone(dialog._client, secret_of(dialog._qr_uri))
+    phone.scan()
+    said.clear()
+    phone.send({"id": phone.request(), "result": "auth_url", "error": "javascript:alert(1)"})
+    turn()
+    words = ("Your signer app asked for approval at an address that can’t be opened safely: "
+             "check its settings and try again.")
+    assert dialog.status_shown == (NOT_CONNECTED, words) and said == [f"{NOT_CONNECTED}. {words}"]
+    assert opened == [] and phone.client._pending == {} and dialog._client is None
+    assert dialog._regen_btn.text() == "Try Again"
+    dialog.reject()
+    assert len(said) == 1                            # nothing more, at 180 s or on closing
+
+
+def test_a_pasted_address_that_failed_offers_try_again_next_to_it(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(BunkerClient, "connect_to_bunker",
+                        lambda self, uri, on_success, on_failure: calls.append((uri, on_failure)))
+    dialog = dialog_for(tmp_path)
+    paste(dialog)
+    calls[0][1]("user rejected")
+    assert dialog._paste_btn.text() == "Try Again" and dialog._paste_btn.isEnabled()
+    assert dark_modules(dialog)                      # the code is back for another way
+    dialog._paste_btn.click()                        # the same address, tried again
+    assert [uri for uri, _ in calls] == [PASTED, PASTED]
+    assert dialog._paste_btn.text() == "Connect" and dialog.status_shown[0] == ""
+    dialog.reject()
+
+
+def test_a_refused_address_is_announced_once_however_often_it_is_clicked(tmp_path,
+                                                                        monkeypatch):
+    # RG-M2r3 5: announce.field_problem, with its said-once guard.
+    import announce as announcing
+    said = []
+    monkeypatch.setattr(announcing, "announce", lambda _w, text: said.append(text))
+    dialog = dialog_for(tmp_path)
+    dialog.show()
+    dialog.details_toggle.setChecked(True)
+    dialog._paste_edit.setText("bunker://" + "00" * 32 + "?relay=wss://a.example")
+    dialog._paste_btn.click()
+    dialog._paste_btn.click()
+    assert len(said) == 1
+    dialog._on_bunker46()
+    dialog._bunker46_edit.setText("http://x.example")
+    dialog._bunker46_go.click()
+    dialog._bunker46_go.click()
+    assert len(said) == 2 and dialog._bunker46_problem.isVisibleTo(dialog)
+    dialog._bunker46_edit.setText("http://y.example")           # typed anew: said again
+    assert not dialog._bunker46_problem.isVisibleTo(dialog)
+    dialog._bunker46_go.click()
+    assert len(said) == 3
+    dialog.reject()
+
+
+@pytest.mark.parametrize("way", ["open here", "new code"])
+def test_taking_another_way_after_a_phone_answered_lets_it_go_and_says_nothing(tmp_path,
+                                                                              monkeypatch,
+                                                                              opened, way):
+    said = []
+    monkeypatch.setattr(connect_dialog, "announce", lambda _w, text: said.append(text))
+    dialog = dialog_for(tmp_path)
+    phone = Phone(dialog._client, secret_of(dialog._qr_uri))
+    phone.scan()                                     # its request for the key pending
+    said.clear()
+    if way == "open here":
+        dialog._open_here_btn.click()
+    else:
+        assert not dialog._regen_btn.isHidden()
+        dialog._regen_btn.click()
+    turn()
+    assert phone.client._subscription is None and phone.client._pending == {}
+    assert dialog._client is not phone.client and dialog._client in dialog._listeners
+    assert all(NOT_CONNECTED not in text for text in said)
+    assert dialog.status_shown[0] == "" and dark_modules(dialog)
+    dialog.reject()
+
+
+def test_an_address_typed_anew_after_a_failure_is_connected_again(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(BunkerClient, "connect_to_bunker",
+                        lambda self, uri, on_success, on_failure: calls.append(on_failure))
+    dialog = dialog_for(tmp_path)
+    paste(dialog)
+    calls[0]("user rejected")
+    assert dialog._paste_btn.text() == "Try Again"
+    dialog._paste_edit.setText(PASTED + "&secret=other")
+    assert dialog._paste_btn.text() == "Connect"
     dialog.reject()

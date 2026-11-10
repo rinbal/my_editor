@@ -405,6 +405,9 @@ class BunkerClient(QObject):
     # A signer replied on our channel but we could not read the message.
     # Surfaced so the UI can say so instead of showing a bare timeout.
     unreadable_reply = Signal(str)
+    # A signer answered a nostrconnect code with its secret: this channel
+    # is the one being paired now (bunker_pubkey is set).
+    contacted = Signal()
 
     def __init__(self, pool: RelayPool, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -585,6 +588,7 @@ class BunkerClient(QObject):
             pass
         self._subscription.event.connect(self._on_response_event)
         self._nc_timer.stop()
+        self.contacted.emit()
 
         # Only a connect *request* is owed an answer. When the signer sent a
         # response instead, acking it would be replying to a reply.

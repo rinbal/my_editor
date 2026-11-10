@@ -39,14 +39,20 @@ Opening an app waits for it (``_APP_WAIT_S``) with the code it was given,
 and says so; Cancel, or opening it again, is always there (lesson 12).
 
 One way is in flight at a time, and it alone owns the wait: a pasted
-address, a code opened in an app, the codes listening. Taking another
-way closes the one before, and an answer of a way that was let go (or
-of a window closed) touches nothing.
+address, a code opened in an app, the codes listening. Once a signer
+answers a code with its secret, that code is the way in flight: no code
+is renewed, the others stop listening, and the code is blanked (it pairs
+nobody else). Taking another way, or closing the window, lets the one
+before go first and closes it then, so nothing its closing answers is
+said, and an answer of a way that was let go touches nothing.
 
 The words are the person's, not the protocol's: no link scheme, key,
-hex, relay or NIP number in the primary text (lesson 26), and a pairing
-that did not work is said in one plain sentence; the technical facts,
-and what the last try answered, are in the help button's tooltip. The
+hex, relay or NIP number in the primary text (lesson 26). A way that was
+answered and did not work is said once, a title and one sentence, with
+Try Again (under the code, or next to the address pasted); a code no
+signer answered that runs out is no error. What anyone sends a code that
+cannot be read is no failure while it still pairs, only a fact in the
+help button's tooltip, which also says what the last try answered. The
 code is always dark on white with a quiet zone, the way scanners read
 codes best, whatever the window's theme, at least three pixels a module
 in the screen's own resolution.
@@ -64,12 +70,11 @@ session pool opens its own for the paired profile.
 from __future__ import annotations
 
 import logging
-import re
 import secrets
 from typing import Callable, List, Optional
-from urllib.parse import quote, urlsplit
+from urllib.parse import urlsplit
 
-from PySide6.QtCore import QByteArray, QEvent, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -96,17 +101,28 @@ from ..bunker import (
 from ..profiles import Profile, ProfileStore
 from ..qr import make_qr_pixmap
 from ..relay import RelayPool
+# The address of the person's Bunker46, as typed and as kept (its own
+# module: what makes it an address is not the dialog's).
+from .bunker46 import BUNKER46_SETTING, bunker46_address, bunker46_link, remembered_bunker46
 from .assistant import link_button, stylesheet, text_label
 from .tips import HelpButton, help_button_stylesheet, tip_on_focus
 from ..failures import markup, spoken
 
 from . import appearance
+import announce as announcing
 from announce import announce
 from i18n import N_, _
 from url_safety import is_safe_external_url
 
 # A pairing that did not work, said once above its sentence (lessons 36).
 _NOT_CONNECTED = N_("Your signer app wasn’t connected")
+# A reply that could not be read: the cause, once a way that was answered
+# fails (lessons 36); while a code listens only a fact for the tooltip,
+# as anyone may send a code anything.
+_UNREADABLE = N_("Your signer app answered in a form MyEditor can’t read: an update of the "
+                 "signer app may help.")
+_UNSAFE_APPROVAL = N_("Your signer app asked for approval at an address that can’t be opened "
+                      "safely: check its settings and try again.")
 
 log = logging.getLogger(__name__)
 
@@ -128,9 +144,6 @@ _APP_WAIT_S: int = 300
 _QR_SIZE = 280
 _QR_MODULE_PX = 3
 
-# Where the address of the person's Bunker46 is kept (settings.json).
-BUNKER46_SETTING = "bunker46_address"
-
 _EXTRA_CSS = """
 QLabel#qr {{ padding: 6px; }}
 QFrame#scan_card {{ background: {card}; border: 1px solid {line}; border-radius: 10px; }}
@@ -138,56 +151,6 @@ QLabel#scan_caption {{ font-size: 15px; font-weight: 600; }}
 QToolButton#disclosure {{ border: 1px solid transparent; padding: 2px 0; }}
 QToolButton#disclosure:focus {{ border-color: {ring}; }}
 """
-
-
-def bunker46_address(text: str) -> Optional[str]:
-    """The address of a Bunker46 as typed: https only, a host, no user
-    name, query or fragment, without a trailing slash; a bare host gets
-    https. None when it is not one. A Bunker46 runs where the person runs
-    it, also on their own network, so a local name is fine."""
-    text = (text or "").strip()
-    if not text:
-        return None
-    if "://" not in text:
-        text = "https://" + text
-    try:
-        parts = urlsplit(text)
-        parts.port                                  # raises for a port that is no number
-    except ValueError:
-        return None
-    if parts.scheme.lower() != "https" or not (parts.hostname or "").strip():
-        return None
-    if "@" in parts.netloc or parts.query or parts.fragment or any(c.isspace() for c in text):
-        return None
-    # The host as DNS has it (IDNA: "bünker.example" is
-    # "xn--bnker-kva.example"), and the path in ASCII, every escape a
-    # real one, so the link built from it is a URL (bunker46_link).
-    try:
-        host = parts.hostname.encode("idna").decode("ascii")
-    except UnicodeError:
-        return None
-    if ":" in host:
-        host = f"[{host}]"                            # an IPv6 address
-    if parts.port is not None:
-        host = f"{host}:{parts.port}"
-    if re.search(r"%(?![0-9A-Fa-f]{2})", parts.path):
-        return None
-    path = quote(parts.path, safe="/%:@!$&'()*+,;=-._~")
-    address = f"https://{host}{path}".rstrip("/")
-    return address if is_safe_external_url(address) else None
-
-
-def bunker46_link(address: str, uri: str) -> QUrl:
-    """The page of ``address`` (a Bunker46) that takes the connection
-    link ``uri``: ``/connections?nostrconnect=<uri, encoded>`` (Bunker46's
-    router, research/signer-pairing.md section 6)."""
-    encoded = f"{address}/connections?nostrconnect={quote(uri, safe='')}"
-    return QUrl.fromEncoded(QByteArray(encoded.encode("ascii")), QUrl.ParsingMode.StrictMode)
-
-
-def remembered_bunker46() -> Optional[str]:
-    """The Bunker46 address kept in the settings, if it is still one."""
-    return bunker46_address(str(settings.load_settings().get(BUNKER46_SETTING) or ""))
 
 
 class ConnectDialog(QDialog):
@@ -235,6 +198,8 @@ class ConnectDialog(QDialog):
         self._renewals = 0
         # The app a code was opened in, while it waits for it.
         self._waiting_for = ""
+        # The ways (by id) a reply could not be read on.
+        self._unreadable: set = set()
         # What opened the Bunker46 address, where the focus goes back to.
         self._bunker46_opener: Optional[QWidget] = None
         self._renew_timer = QTimer(self)
@@ -578,6 +543,9 @@ class ConnectDialog(QDialog):
         self._start_code()
 
     def _new_code(self) -> None:
+        # A code a signer answered is let go first (a pasted address goes
+        # as any new code is shown, _listen).
+        self._close_listeners()
         self._renewals = 0
         self._set_status("")
         self._start_code()
@@ -658,17 +626,15 @@ class ConnectDialog(QDialog):
     def _update_bunker46_button(self) -> None:
         self._bunker46_go.setEnabled(bool(self._bunker46_edit.text().strip()))
         self._bunker46_go.setDefault(self._bunker46_box.isVisibleTo(self))
-        self._bunker46_problem.hide()
+        if self.sender() is self._bunker46_edit:
+            announcing.field_problem(self._bunker46_edit, self._bunker46_problem, "")
 
     def _on_bunker46_address(self) -> None:
         address = bunker46_address(self._bunker46_edit.text())
         if address is None:
-            problem = _("MyEditor can’t open that address: use the one your Bunker46 runs "
-                        "at, which starts with https://.")
-            self._bunker46_problem.setText(problem)
-            self._bunker46_problem.show()
-            self._bunker46_edit.setAccessibleDescription(problem)
-            announce(self._bunker46_edit, problem)
+            announcing.field_problem(self._bunker46_edit, self._bunker46_problem, _(
+                "MyEditor can’t open that address: use the one your Bunker46 runs at, which "
+                "starts with https://."))
             return
         settings.save_setting(BUNKER46_SETTING, address)
         self._show_bunker46_kept()
@@ -701,14 +667,12 @@ class ConnectDialog(QDialog):
         self._paste_btn.setDefault(self.details.isVisibleTo(self) and bool(text))
         if self.sender() is self._paste_edit:
             self._show_paste_problem("")                # typed anew
+            self._paste_btn.setText(_("Connect"))
 
     def _show_paste_problem(self, problem: str) -> None:
-        """Why the address pasted cannot be used, next to it, in Details."""
-        self._paste_problem.setText(problem)
-        self._paste_problem.setVisible(bool(problem))
-        self._paste_edit.setAccessibleDescription(problem)
-        if problem:
-            announce(self._paste_edit, problem)
+        """Why the address pasted cannot be used, next to it, in Details:
+        said once, not again with every click (announce.field_problem)."""
+        announcing.field_problem(self._paste_edit, self._paste_problem, problem)
 
     def _on_paste_connect(self) -> None:
         uri = self._paste_edit.text().strip()
@@ -740,6 +704,7 @@ class ConnectDialog(QDialog):
         self._watch_client_diagnostics(client)
         self._show_no_code(_("Connecting with the address you pasted."))
         self._set_status(_("Contacting your signer app. Approve the request there…"))
+        self._paste_btn.setText(_("Connect"))
         self._update_paste_button()
         client.connect_to_bunker(
             uri,
@@ -762,15 +727,33 @@ class ConnectDialog(QDialog):
         return client is not None and (client is self._client or client in self._listeners)
 
     def _watch_client_diagnostics(self, client: BunkerClient) -> None:
-        """Surface the two things that otherwise present as a bare timeout,
-        for the way in flight only."""
+        """What a way's signer says besides its answer, for the way in
+        flight only: that it answered a code, an approval it asks for in
+        a browser, a reply that could not be read."""
+        client.contacted.connect(lambda c=client: self._owns(c) and self._on_contacted(c))
         client.auth_challenge.connect(
-            lambda url, c=client: self._owns(c) and self._on_auth_challenge(url))
+            lambda url, c=client: self._owns(c) and self._on_auth_challenge(url, c))
         client.unreadable_reply.connect(
-            lambda pubkey, c=client: self._owns(c) and self._on_unreadable_reply(pubkey))
+            lambda _pubkey, c=client: self._owns(c) and self._on_unreadable_reply(c))
 
-    def _on_auth_challenge(self, url: str) -> None:
-        """The signer wants the user to authenticate before it will answer."""
+    def _on_contacted(self, client: BunkerClient) -> None:
+        """A signer answered this code with its secret (a phone scanned
+        it, or the app it was opened in): it is the way in flight now.
+        No code is renewed, the others stop listening, and if it fails
+        that is said once, with Try Again (RG-M2r3 4)."""
+        self._renew_timer.stop()
+        others = [other for other in self._listeners if other is not client]
+        self._listeners, self._client = [client], client
+        for other in others:
+            other.close(reason="another code was answered")
+        # Its code pairs nobody else now: blanked; New Code lets it go.
+        self._show_no_code("")
+        self._set_status(_("Contacting your signer app. Approve the request there…"))
+
+    def _on_auth_challenge(self, url: str, client: BunkerClient) -> None:
+        """The signer wants the user to approve in a browser before it
+        answers. An address that cannot be opened safely ends the way: it
+        is said once, and nothing waits for it any more."""
         if is_safe_external_url(url):
             QDesktopServices.openUrl(QUrl(url))
             self._set_status(_(
@@ -778,23 +761,15 @@ class ConnectDialog(QDialog):
                 "that just opened. Waiting…"
             ))
         else:
-            self._set_status(
-                _("Your signer app asked for approval at an address that cannot be "
-                  "opened safely, so the connection was not continued."),
-                error=True, title=_(_NOT_CONNECTED),
-            )
+            self._failed(client, "approval asked at an address not opened: " + url[:200],
+                         _(_UNSAFE_APPROVAL))
 
-    def _on_unreadable_reply(self, _signer_pubkey: str) -> None:
-        """A signer answered but the payload was not readable.
-
-        Almost always an encryption mismatch. Saying so beats a timeout that
-        looks the same as the signer never having replied.
-        """
-        self._set_status(
-            _("Your signer app answered in a form MyEditor can’t read: an update "
-              "of the signer app may help."),
-            error=True, title=_(_NOT_CONNECTED),
-        )
+    def _on_unreadable_reply(self, client: BunkerClient) -> None:
+        """A reply on this way that could not be read, almost always an
+        encryption the signer app speaks and MyEditor does not. Only a
+        fact for the tooltip now; the cause once the way fails."""
+        self._unreadable.add(id(client))
+        tip_on_focus(self.help_button, self._help_facts(_(_UNREADABLE)))
 
     def _on_pair_success(self, user_pubkey_hex: str, client=None) -> None:
         client = client if client is not None else self._client
@@ -822,51 +797,68 @@ class ConnectDialog(QDialog):
         log.info("signer pairing failed: %s", reason)
         if not self._owns(client):
             return                      # a way let go: one owner, and it is not this
-        if client in self._listeners:
-            self._listeners.remove(client)
-            client.close(reason=reason)
-            if client is not self._client:
-                return                  # an earlier code ran out: the next one is shown
-            self._client = None
-            if "timed out" in reason:
-                # Running out is not an error: an app opened with the code
-                # did not answer in time (a new code; opening it again is
-                # there), or the code ran out before it was renewed.
-                self._set_status("")
-                if self._waiting_for:
-                    self._start_code()
-                else:
-                    self._retire_code(_("This code has expired."))
-                self._update_paste_button()
+        if client in self._listeners and client.bunker_pubkey is None:
+            # No signer ever answered this code: it ran out, which is no
+            # error (known from what happened, never from the reason's
+            # words). An earlier one: the next is shown already.
+            current = client is self._client
+            self._let_go(client, reason)
+            if not current:
                 return
-            self._retire_code("", failed=True)
+            self._set_status("")
+            if self._waiting_for:
+                self._start_code()      # an app opened with it did not answer in time
+            else:
+                self._retire_code(_("This code has expired."))
+            self._update_paste_button()
+            return
+        self._failed(client, reason, _(_UNREADABLE) if id(client) in self._unreadable
+                     else pairing_failure_words(reason))
+
+    def _failed(self, client: BunkerClient, reason: str, sentence: str) -> None:
+        """The way in flight did not work: let go first (so what closing
+        it answers touches nothing), then said once, its title and one
+        sentence, with Try Again: under the code for a code, next to the
+        address for one pasted; what was answered goes to the tooltip."""
+        pasted = client not in self._listeners
+        self._let_go(client, reason)
+        if pasted:
+            self._start_code()                      # the code again, for another way
+            self._paste_btn.setText(_("Try Again"))
         else:
-            self._client = None                     # the pasted address
-            client.close(reason=reason)
-            self._start_code()                      # the code again, for another try
-        # Said once: its title and one plain sentence (lessons 36); what
-        # was answered goes to the help tooltip.
-        self._set_status(pairing_failure_words(reason), error=True, title=_(_NOT_CONNECTED))
+            self._retire_code("", failed=True)
+        self._set_status(sentence, error=True, title=_(_NOT_CONNECTED))
         tip_on_focus(self.help_button, self._help_facts(reason))
         self._update_paste_button()
 
     # -- bookkeeping -------------------------------------------------------
 
-    def _close_listeners(self) -> None:
-        for client in self._listeners:
-            client.close(reason="code replaced")
-        if self._client in self._listeners:
+    def _let_go(self, client: BunkerClient, reason: str) -> None:
+        """``client`` no longer a way in flight, then closed: what its
+        close answers (a request still pending) finds it owns nothing."""
+        if client in self._listeners:
+            self._listeners = [other for other in self._listeners if other is not client]
+        if client is self._client:
             self._client = None
-        self._listeners = []
+        client.close(reason=reason)
+
+    def _close_listeners(self) -> None:
+        """Every code stops listening: let go first, then closed."""
+        listeners, self._listeners = self._listeners, []
+        if self._client in listeners:
+            self._client = None
+        for client in listeners:
+            client.close(reason="code replaced")
 
     def _teardown_client(self, *, reason: str) -> None:
+        """Every way let go, then closed (lesson 31): nothing that closing
+        one answers is said, and none is left listening."""
         self._renew_timer.stop()
-        for client in self._listeners:
-            client.close(reason=reason)
-        self._listeners = []
-        if self._client is not None:
-            client = self._client
-            self._client = None
+        ways = list(self._listeners)
+        if self._client is not None and self._client not in ways:
+            ways.append(self._client)
+        self._listeners, self._client = [], None
+        for client in ways:
             client.close(reason=reason)
 
     def _set_status(self, text: str, *, error: bool = False, title: str = "") -> None:
