@@ -56,7 +56,7 @@ msgstr "Erneut versuchen"
 #: commands.py:47
 #: format_toolbar.py:265
 #: main_window.py:2199
-#: nostr/ui/imports_window.py:1052
+#: nostr/ui/imports_window.py:1066
 msgid "Undo"
 msgstr "Widerrufen"
 
@@ -1767,9 +1767,9 @@ msgstr "Link hinzufügen …"
 
 #: main_window.py:2137
 #: nostr/imports/workspace.py:46
-#: nostr/ui/imports_window.py:495
-#: nostr/ui/imports_window.py:770
+#: nostr/ui/imports_window.py:509
 #: nostr/ui/imports_window.py:784
+#: nostr/ui/imports_window.py:798
 msgid "New"
 msgstr "Neu"
 
@@ -1846,7 +1846,7 @@ msgid "Stop Speaking"
 msgstr "Sprachausgabe stoppen"
 
 #: main_window.py:2239
-#: nostr/ui/imports_window.py:873
+#: nostr/ui/imports_window.py:887
 msgid "Select All"
 msgstr "Alles auswählen"
 
@@ -2015,7 +2015,7 @@ msgstr "Vollbildmodus aktivieren"
 
 #: main_window.py:2712
 #: main_window.py:6970
-#: nostr/ui/imports_window.py:1458
+#: nostr/ui/imports_window.py:1475
 msgid "Show Sidebar"
 msgstr "Seitenleiste einblenden"
 
@@ -2317,7 +2317,7 @@ msgid "MyEditor closes to install the update. Changes you don’t save will be l
 msgstr "MyEditor wird geschlossen, um das Update zu installieren. Änderungen, die du nicht speicherst, gehen verloren."
 
 #: main_window.py:6740
-#: nostr/ui/imports_window.py:1211
+#: nostr/ui/imports_window.py:1225
 msgid "You're up to date"
 msgstr "Du bist auf dem neuesten Stand"
 
@@ -2330,7 +2330,7 @@ msgid "Close Window"
 msgstr "Fenster schließen"
 
 #: main_window.py:6970
-#: nostr/ui/imports_window.py:1458
+#: nostr/ui/imports_window.py:1475
 msgid "Hide Sidebar"
 msgstr "Seitenleiste ausblenden"
 
@@ -3976,7 +3976,7 @@ msgstr "Um „{name}“ zu verlinken, speichere die Notiz in dem Ordner, in dem 
 #: main_window.py:6057
 #: main_window.py:6170
 #: sheet_window.py:170
-#: nostr/ui/imports_window.py:1310
+#: nostr/ui/imports_window.py:1324
 #, python-brace-format
 msgid "Couldn't save “{name}”"
 msgstr "„{name}“ konnte nicht gespeichert werden"
@@ -6587,12 +6587,12 @@ msgid "Your signer app ran into a problem: open it and try again."
 msgstr "Bei deiner Signer-App ist ein Problem aufgetreten: Öffne sie und versuche es noch einmal."
 
 #: nostr/imports_controller.py:107
-msgid "The account changed. Resume when you're signed in to that account again."
-msgstr "Das Konto wurde gewechselt. Setze den Import fort, wenn du wieder mit diesem Konto angemeldet bist."
+msgid "The account changed: resume when you're signed in to that account again."
+msgstr "Das Konto wurde gewechselt: Setze den Import fort, wenn du wieder mit diesem Konto angemeldet bist."
 
 #: nostr/imports_controller.py:109
-msgid "MyEditor was closed during the import. Resume it to go on."
-msgstr "MyEditor wurde während des Imports geschlossen. Setze ihn fort, um weiterzumachen."
+msgid "MyEditor was closed during the import: resume it to go on."
+msgstr "MyEditor wurde während des Imports geschlossen: Setze ihn fort, um weiterzumachen."
 
 #: nostr/imports_controller.py:110
 msgid "Imports are checked in another MyEditor window. This one only shows them."
@@ -6659,7 +6659,7 @@ msgstr "MyEditor bewahrt den Text dieses Beitrags hier nicht mehr auf. „Origin
 msgid "Couldn't read the images of these posts."
 msgstr "Die Bilder dieser Beiträge konnten nicht gelesen werden."
 
-#: nostr/imports_controller.py:646
+#: nostr/imports_controller.py:654
 msgid "MyEditor Sources"
 msgstr "MyEditor-Quellen"
 
@@ -7193,95 +7193,92 @@ msgid "about {amount}"
 msgstr "etwa {amount}"
 
 #: nostr/imports/catalogue.py:64
-msgid "Couldn't check your existing drafts. Try again when you're online."
-msgstr "Deine vorhandenen Entwürfe konnten nicht geprüft werden. Versuche es noch einmal, wenn du online bist."
-
-#: nostr/imports/checker.py:65
-msgid "This feed is too large."
-msgstr "Dieser Feed ist zu groß."
+msgid "Your existing drafts couldn't be checked first: check your internet connection, then choose Resume."
+msgstr "Deine vorhandenen Entwürfe konnten vorher nicht geprüft werden: Prüfe deine Internetverbindung und wähle dann „Fortsetzen“."
 
 #: nostr/imports/checker.py:66
-msgid "Couldn't check this feed. MyEditor will try again automatically."
-msgstr "Dieser Feed konnte nicht geprüft werden. MyEditor versucht es automatisch noch einmal."
+msgid "This feed is too large to check: import its posts from an export file instead."
+msgstr "Dieser Feed ist zu groß zum Prüfen: Importiere seine Beiträge stattdessen aus einer Exportdatei."
 
-#: nostr/imports/errors.py:76
-msgid "This address is on this computer or its local network. MyEditor follows public websites only."
-msgstr "Diese Adresse liegt auf diesem Computer oder in seinem lokalen Netzwerk. MyEditor folgt nur öffentlichen Websites."
+#: nostr/imports/checker.py:67
+msgid "This feed couldn't be checked: MyEditor tries again on its own."
+msgstr "Dieser Feed konnte nicht geprüft werden: MyEditor versucht es von selbst erneut."
 
-#: nostr/imports/errors.py:82
-msgid "No feed found at this site. Try pasting the feed URL directly, or look for an RSS / Atom link in the page footer."
-msgstr "Auf dieser Website wurde kein Feed gefunden. Füge die Feed-Adresse direkt ein oder suche im Seitenfuß nach einem RSS- oder Atom-Link."
+#: nostr/imports/errors.py:81
+msgid "This address is on this computer or its local network: MyEditor follows public websites only."
+msgstr "Diese Adresse liegt auf diesem Computer oder in seinem lokalen Netzwerk: MyEditor folgt nur öffentlichen Websites."
 
-#: nostr/imports/errors.py:87
-msgid "That response isn't a feed. Expected RSS, Atom, or JSON Feed."
-msgstr "Diese Antwort ist kein Feed. Erwartet wurde RSS, Atom oder JSON Feed."
+#: nostr/imports/errors.py:85
+msgid "This couldn't be imported: check the address or the file and try again."
+msgstr "Das konnte nicht importiert werden: Prüfe die Adresse oder die Datei und versuche es erneut."
 
-#: nostr/imports/errors.py:90
-msgid "This kind of source can't be imported yet."
-msgstr "Diese Art von Quelle kann noch nicht importiert werden."
+#: nostr/imports/errors.py:89
+msgid "This address couldn't be reached: check it and your internet connection, then try again."
+msgstr "Diese Adresse war nicht erreichbar: Prüfe sie und deine Internetverbindung und versuche es dann erneut."
 
 #: nostr/imports/errors.py:93
-msgid "The server returned an empty response."
-msgstr "Der Server hat eine leere Antwort geschickt."
+msgid "This is too large to import: import its posts from an export file instead."
+msgstr "Das ist zu groß zum Importieren: Importiere die Beiträge stattdessen aus einer Exportdatei."
 
 #: nostr/imports/errors.py:96
-msgid "That isn't a recognisable Nostr address."
-msgstr "Diese Nostr-Adresse wurde nicht erkannt."
+msgid "No feed found at this site: paste the feed's address, or look for an RSS or Atom link in the page footer."
+msgstr "Auf dieser Website wurde kein Feed gefunden: Füge die Adresse des Feeds ein oder suche im Seitenfuß nach einem RSS- oder Atom-Link."
 
-#: nostr/imports/errors.py:99
-msgid "That post wasn't found. It may have been deleted, or the places it is kept are not answering right now."
-msgstr "Dieser Beitrag wurde nicht gefunden. Vielleicht wurde er gelöscht, oder die Orte, an denen er liegt, antworten gerade nicht."
+#: nostr/imports/errors.py:100
+msgid "That address doesn't give a feed: paste the address of its RSS, Atom or JSON feed."
+msgstr "Unter dieser Adresse gibt es keinen Feed: Füge die Adresse ihres RSS-, Atom- oder JSON-Feeds ein."
 
 #: nostr/imports/errors.py:103
-msgid "No Nostr profile is published at that address."
-msgstr "Unter dieser Adresse ist kein Nostr-Profil veröffentlicht."
+msgid "This kind of source can't be imported yet: try the address of its feed."
+msgstr "Diese Art von Quelle lässt sich noch nicht importieren: Versuche es mit der Adresse ihres Feeds."
 
 #: nostr/imports/errors.py:106
-msgid "Importing from Nostr needs a connection, which isn't available right now."
-msgstr "Der Import aus Nostr braucht eine Verbindung, die gerade nicht verfügbar ist."
+msgid "The site sent nothing back: try again in a moment."
+msgstr "Die Website hat nichts zurückgeschickt: Versuche es gleich noch einmal."
 
-#: nostr/imports/errors.py:110
-msgid "No published posts or pages were found in that WordPress export."
-msgstr "In diesem WordPress-Export wurden keine veröffentlichten Beiträge oder Seiten gefunden."
+#: nostr/imports/errors.py:109
+msgid "That isn't a recognisable Nostr address: copy it again from where you found it."
+msgstr "Das ist keine erkennbare Nostr-Adresse: Kopiere sie noch einmal von dort, wo du sie gefunden hast."
 
-#: nostr/imports/errors.py:113
-msgid "No published posts were found in that Ghost export."
-msgstr "In diesem Ghost-Export wurden keine veröffentlichten Beiträge gefunden."
+#: nostr/imports/errors.py:112
+msgid "That post wasn't found: it may have been deleted, or try again in a moment."
+msgstr "Dieser Beitrag wurde nicht gefunden: Vielleicht wurde er gelöscht, oder versuche es gleich noch einmal."
 
-#: nostr/imports/errors.py:116
-msgid "Couldn't read that archive. Export it again from the platform and retry."
-msgstr "Dieses Archiv konnte nicht gelesen werden. Exportiere es erneut von der Plattform und versuche es noch einmal."
+#: nostr/imports/errors.py:115
+msgid "No Nostr profile is published at that address: check how it is spelled."
+msgstr "Unter dieser Adresse ist kein Nostr-Profil veröffentlicht: Prüfe die Schreibweise."
 
-#: nostr/imports/errors.py:120
-msgid "That sitemap had no importable article URLs."
-msgstr "Diese Sitemap enthält keine Artikeladressen, die sich importieren lassen."
+#: nostr/imports/errors.py:118
+msgid "Importing from Nostr needs a connection: check your internet connection and try again."
+msgstr "Für den Import aus Nostr braucht es eine Verbindung: Prüfe deine Internetverbindung und versuche es erneut."
 
-#: nostr/imports/errors.py:123
-msgid "That is not a Bluesky post link."
-msgstr "Das ist kein Link zu einem Bluesky-Beitrag."
+#: nostr/imports/errors.py:122
+msgid "No published posts or pages were found in that WordPress export: export them again with “All content” chosen."
+msgstr "In diesem WordPress-Export wurden keine veröffentlichten Beiträge oder Seiten gefunden: Exportiere sie erneut mit der Auswahl „Alle Inhalte“."
 
 #: nostr/imports/errors.py:126
-msgid "That Bluesky post could not be found."
-msgstr "Dieser Bluesky-Beitrag wurde nicht gefunden."
+msgid "No published posts were found in that Ghost export: export it again from Ghost’s settings."
+msgstr "In diesem Ghost-Export wurden keine veröffentlichten Beiträge gefunden: Exportiere ihn erneut in den Einstellungen von Ghost."
 
-#: nostr/imports/errors.py:129
-msgid "That is a single Bluesky post, not a thread. Only multi-post threads stitch into an article."
-msgstr "Das ist ein einzelner Bluesky-Beitrag, kein Thread. Nur Threads aus mehreren Beiträgen werden zu einem Artikel zusammengefügt."
+#: nostr/imports/errors.py:130
+msgid "Couldn't read that archive: export it again from the platform and try again."
+msgstr "Dieses Archiv konnte nicht gelesen werden: Exportiere es erneut auf der Plattform und versuche es noch einmal."
 
-#: nostr/imports/errors.py:149
-msgid "Something went wrong while importing."
-msgstr "Beim Importieren ist etwas schiefgegangen."
+#: nostr/imports/errors.py:133
+msgid "That sitemap had no articles to import: try the site's feed instead."
+msgstr "Diese Sitemap enthielt keine Artikel zum Importieren: Versuche es stattdessen mit dem Feed der Website."
 
-#: nostr/imports/errors.py:145
-#, python-brace-format
-msgid "Couldn't reach that URL: {reason}."
-msgstr "Diese Adresse ist nicht erreichbar: {reason}."
+#: nostr/imports/errors.py:136
+msgid "That is not a Bluesky post link: copy the link of the thread's first post."
+msgstr "Das ist kein Link zu einem Bluesky-Beitrag: Kopiere den Link des ersten Beitrags im Thread."
 
-#: nostr/imports/errors.py:144
-#: nostr/imports/fetch.py:160
-#: nostr/ui/thumbnail_loader.py:291
-msgid "network error"
-msgstr "Netzwerkfehler"
+#: nostr/imports/errors.py:139
+msgid "That Bluesky post could not be found: it may have been deleted."
+msgstr "Dieser Bluesky-Beitrag wurde nicht gefunden: Vielleicht wurde er gelöscht."
+
+#: nostr/imports/errors.py:142
+msgid "That is a single Bluesky post, not a thread: only threads of several posts become an article."
+msgstr "Das ist ein einzelner Bluesky-Beitrag, kein Thread: Nur Threads aus mehreren Beiträgen werden zu einem Artikel."
 
 #: nostr/imports/fetch.py:59
 #: nostr/imports/images.py:69
@@ -7310,6 +7307,11 @@ msgstr "Der Feed überschreitet die Größengrenze von {size} MiB"
 msgid "Feed URL must be http(s)"
 msgstr "Die Feed-Adresse muss mit http oder https beginnen"
 
+#: nostr/imports/fetch.py:160
+#: nostr/ui/thumbnail_loader.py:291
+msgid "network error"
+msgstr "Netzwerkfehler"
+
 #: nostr/imports/fetch.py:243
 msgid "Could not download the image"
 msgstr "Bild konnte nicht heruntergeladen werden"
@@ -7322,39 +7324,38 @@ msgstr "Leere Antwort beim Kopieren"
 msgid "This source has reached its inbox limit. Unsubscribe and follow it again to start a fresh inbox; your drafts are kept."
 msgstr "Diese Quelle hat die Grenze ihres Eingangs erreicht. Beende das Abonnement und folge ihr erneut, um mit einem neuen Eingang zu beginnen; deine Entwürfe bleiben erhalten."
 
-#: nostr/imports/intake.py:51
+#: nostr/imports/intake.py:54
 #, python-brace-format
 msgid "That file is too large to import (over {size} MB)."
 msgstr "Diese Datei ist zu groß für den Import (über {size} MB)."
 
-#: nostr/imports/intake.py:52
+#: nostr/imports/intake.py:55
 msgid "That ZIP doesn't look like a Medium or Substack export, or it has no published posts."
 msgstr "Dieses ZIP sieht nicht nach einem Medium- oder Substack-Export aus oder enthält keine veröffentlichten Beiträge."
 
-#: nostr/imports/intake.py:124
+#: nostr/imports/intake.py:127
 msgid "Feed"
 msgstr "Feed"
 
-#: nostr/imports/intake.py:124
+#: nostr/imports/intake.py:127
 msgid "Nostr author"
 msgstr "Nostr-Autor"
 
-#: nostr/imports/intake.py:124
+#: nostr/imports/intake.py:127
 msgid "Collection"
 msgstr "Sammlung"
 
-#: nostr/imports/intake.py:125
+#: nostr/imports/intake.py:128
 msgid "Single post"
 msgstr "Einzelner Beitrag"
 
-#: nostr/imports/intake.py:157
-#, python-brace-format
-msgid "Couldn't read that file: {error}"
-msgstr "Diese Datei konnte nicht gelesen werden: {error}"
+#: nostr/imports/intake.py:161
+msgid "That file couldn't be read: check that it is still there and try again."
+msgstr "Diese Datei konnte nicht gelesen werden: Prüfe, ob sie noch da ist, und versuche es erneut."
 
-#: nostr/imports/jobs.py:66
-msgid "The draft couldn't be saved yet. Try again to send it."
-msgstr "Der Entwurf konnte noch nicht gespeichert werden. Versuche es erneut, um ihn zu senden."
+#: nostr/imports/jobs.py:67
+msgid "Its draft wasn't saved online: check your internet connection and try again."
+msgstr "Sein Entwurf wurde nicht online gespeichert: Prüfe deine Internetverbindung und versuche es erneut."
 
 #: nostr/imports/netguard.py:75
 msgid "the address could not be found"
@@ -7368,65 +7369,51 @@ msgstr "sie leitet zu oft weiter"
 msgid "the request could not be made"
 msgstr "die Anfrage konnte nicht gestellt werden"
 
-#: nostr/imports/pipeline.py:297
+#: nostr/imports/pipeline.py:115
+msgid "MyEditor couldn't turn this post into a draft: import it from its link instead."
+msgstr "MyEditor konnte aus diesem Beitrag keinen Entwurf machen: Importiere ihn stattdessen über seinen Link."
+
+#: nostr/imports/pipeline.py:304
 msgid "(untitled)"
 msgstr "(ohne Titel)"
 
-#: nostr/imports/pipeline.py:527
+#: nostr/imports/pipeline.py:327
+msgid "MyEditor couldn't read this post: import it from its link instead."
+msgstr "MyEditor konnte diesen Beitrag nicht lesen: Importiere ihn stattdessen über seinen Link."
+
+#: nostr/imports/pipeline.py:536
 #, python-brace-format
 msgid "Fetching full text for '{title}'…"
 msgstr "Volltext für „{title}“ wird geladen …"
 
-#: nostr/imports/pipeline.py:528
+#: nostr/imports/pipeline.py:537
 #, python-brace-format
 msgid "Fetching the details of '{title}'…"
 msgstr "Details zu „{title}“ werden geladen …"
 
-#: nostr/imports/pipeline.py:547
-msgid "Couldn't read this post's page, and its full text isn't kept here."
-msgstr "Die Seite dieses Beitrags konnte nicht gelesen werden, und sein vollständiger Text ist hier nicht gespeichert."
+#: nostr/imports/pipeline.py:556
+msgid "This post's page couldn't be read, and its full text isn't kept here: try again when the page is back."
+msgstr "Die Seite dieses Beitrags konnte nicht gelesen werden, und sein voller Text liegt hier nicht vor: Versuche es erneut, wenn die Seite wieder erreichbar ist."
 
-#: nostr/imports/pipeline.py:611
-#, python-brace-format
-msgid "{failed} of {total} image(s) couldn't be mirrored; originals kept."
-msgid_plural "{failed} of {total} image(s) couldn't be mirrored; originals kept."
-msgstr[0] "{failed} von {total} Bild nicht kopiert, das Original bleibt verlinkt."
-msgstr[1] "{failed} von {total} Bildern nicht kopiert, die Originale bleiben verlinkt."
-
-#: nostr/imports/pipeline.py:299
+#: nostr/imports/pipeline.py:306
 #, python-brace-format
 msgid "Item {n}/{total}: {title}"
 msgstr "Beitrag {n}/{total}: {title}"
 
-#: nostr/imports/pipeline.py:319
-#, python-brace-format
-msgid "Could not normalise item: {error}"
-msgstr "Beitrag konnte nicht aufbereitet werden: {error}"
-
-#: nostr/imports/pipeline.py:403
+#: nostr/imports/pipeline.py:412
 #, python-brace-format
 msgid "Fetching chapters for '{title}'…"
 msgstr "Kapitel für „{title}“ werden geladen …"
 
-#: nostr/imports/pipeline.py:443
+#: nostr/imports/pipeline.py:452
 #, python-brace-format
 msgid "Resolving '{title}' from Nostr…"
 msgstr "„{title}“ wird aus Nostr geladen …"
 
-#: nostr/imports/pipeline.py:601
+#: nostr/imports/pipeline.py:610
 #, python-brace-format
 msgid "Mirroring images {n}/{total}…"
 msgstr "Bild {n} von {total} wird kopiert …"
-
-#: nostr/imports/pipeline.py:678
-#, python-brace-format
-msgid "Could not build article: {error}"
-msgstr "Artikel konnte nicht erstellt werden: {error}"
-
-#: nostr/imports/pipeline.py:696
-#, python-brace-format
-msgid "Could not start draft job: {error}"
-msgstr "Entwurf konnte nicht gespeichert werden: {error}"
 
 #: nostr/imports/preview.py:46
 msgid "New since last import"
@@ -7444,38 +7431,41 @@ msgstr "Neueste {n}"
 msgid "All (up to {n})"
 msgstr "Alle (bis {n})"
 
-#: nostr/imports/subscriptions.py:96
+#: nostr/imports/subscriptions.py:98
 msgid "Reading your list of sources…"
 msgstr "Deine Quellenliste wird gelesen …"
 
-#: nostr/imports/subscriptions.py:97
-msgid "Your list of sources couldn't be read online, so MyEditor shows the copy kept on this computer."
-msgstr "Deine Quellenliste konnte online nicht gelesen werden. MyEditor zeigt die Kopie auf diesem Computer."
-
 #: nostr/imports/subscriptions.py:99
-msgid "Your latest changes to your sources are kept on this computer for now: the list couldn't be saved online. MyEditor tries again on its own."
-msgstr "Deine letzten Änderungen an deinen Quellen bleiben vorerst auf diesem Computer: Die Liste konnte online nicht gespeichert werden. MyEditor versucht es von selbst erneut."
+msgid "Your list of sources couldn't be read online, so MyEditor shows the copy kept on this computer and tries again on its own."
+msgstr "Deine Quellenliste konnte online nicht gelesen werden, daher zeigt MyEditor die Kopie auf diesem Computer und versucht es von selbst erneut."
 
-#: nostr/imports/subscriptions.py:103
-msgid "Your list of sources couldn't be read."
-msgstr "Deine Quellenliste konnte nicht gelesen werden."
+#: nostr/imports/subscriptions.py:101
+msgid "Your latest changes to your sources are kept on this computer until the list can be saved online: MyEditor tries again on its own."
+msgstr "Deine letzten Änderungen an deinen Quellen bleiben auf diesem Computer, bis die Liste online gespeichert werden kann: MyEditor versucht es von selbst erneut."
 
-#: nostr/imports/subscriptions.py:104
-msgid "Your signer app didn't answer, so your list of sources couldn't be read."
-msgstr "Deine Signer-App hat nicht geantwortet, daher konnte deine Quellenliste nicht gelesen werden."
+#: nostr/imports/subscriptions.py:105
+msgid "Your list of sources couldn't be read: MyEditor shows the copy kept on this computer and tries again on its own."
+msgstr "Deine Quellenliste konnte nicht gelesen werden: MyEditor zeigt die Kopie auf diesem Computer und versucht es von selbst erneut."
 
-#: nostr/imports/subscriptions.py:109
-msgid "Your list of sources was saved with an older kind of encryption. Open it once in the app that saved it; until then, changes made here stay on this computer."
-msgstr "Deine Liste der Quellen wurde mit einer älteren Verschlüsselung gespeichert. Öffne sie einmal in der App, die sie gespeichert hat; bis dahin bleiben Änderungen von hier auf diesem Computer."
+#: nostr/imports/subscriptions.py:107
+msgid "Your signer app didn't answer, so your list of sources couldn't be read: open it, and MyEditor tries again on its own."
+msgstr "Deine Signer-App hat nicht geantwortet, daher konnte deine Quellenliste nicht gelesen werden: Öffne sie, und MyEditor versucht es von selbst erneut."
 
-#: nostr/imports/subscriptions.py:116
-msgid "The connection to your signer app carries only short messages, and your list of sources is longer. Connect your signer app again to read it; until then, changes made here stay on this computer."
-msgstr "Die Verbindung zu deiner Signer-App überträgt nur kurze Nachrichten, und deine Quellenliste ist länger. Verbinde deine Signer-App neu, um sie zu lesen; bis dahin bleiben Änderungen von hier auf diesem Computer."
+#: nostr/imports/subscriptions.py:111
+msgid "Your list of sources is too long to be saved online: your changes stay on this computer until you remove some sources."
+msgstr "Deine Quellenliste ist zu lang, um online gespeichert zu werden: Deine Änderungen bleiben auf diesem Computer, bis du einige Quellen entfernst."
 
-#: nostr/imports/subscriptions.py:681
-#, python-brace-format
-msgid "Your list of sources couldn't be saved online ({reason}). Your changes are kept on this computer."
-msgstr "Deine Quellenliste konnte online nicht gespeichert werden ({reason}). Deine Änderungen bleiben auf diesem Computer."
+#: nostr/imports/subscriptions.py:113
+msgid "Your signer app didn't sign your list of sources: your changes stay on this computer and go out with your next change."
+msgstr "Deine Signer-App hat deine Quellenliste nicht signiert: Deine Änderungen bleiben auf diesem Computer und gehen mit deiner nächsten Änderung hinaus."
+
+#: nostr/imports/subscriptions.py:120
+msgid "Your list of sources was saved with an older kind of encryption: open it once in the app that saved it, then choose Try Again."
+msgstr "Deine Quellenliste wurde mit einer älteren Verschlüsselung gespeichert: Öffne sie einmal in der App, die sie gespeichert hat, und wähle dann „Erneut versuchen“."
+
+#: nostr/imports/subscriptions.py:126
+msgid "Your list of sources is longer than the connection to your signer app carries: connect your signer app again, then choose Try Again."
+msgstr "Deine Quellenliste ist länger, als die Verbindung zu deiner Signer-App überträgt: Verbinde deine Signer-App erneut und wähle dann „Erneut versuchen“."
 
 #: nostr/imports/workspace.py:47
 msgid "Importing"
@@ -7483,13 +7473,13 @@ msgstr "Wird importiert"
 
 #: nostr/imports/workspace.py:48
 #: nostr/ui/imports_window.py:196
-#: nostr/ui/imports_window.py:770
+#: nostr/ui/imports_window.py:784
 msgid "Imported"
 msgstr "Importiert"
 
 #: nostr/imports/workspace.py:49
 #: nostr/ui/imports_window.py:197
-#: nostr/ui/imports_window.py:770
+#: nostr/ui/imports_window.py:784
 msgid "Skipped"
 msgstr "Übersprungen"
 
@@ -7591,42 +7581,22 @@ msgstr[1] "Bluesky-Thread von {name} ({n} Beiträge)"
 msgid "Ghost export"
 msgstr "Ghost-Export"
 
-#: nostr/imports/resolvers/ghost.py:55
-#, python-brace-format
-msgid "Could not read that Ghost export: {error}"
-msgstr "Dieser Ghost-Export konnte nicht gelesen werden: {error}"
+#: nostr/imports/resolvers/mdx.py:40
+msgid "GitHub didn't list that folder: check its address and try again."
+msgstr "GitHub hat diesen Ordner nicht aufgelistet: Prüfe seine Adresse und versuche es erneut."
 
-#: nostr/imports/resolvers/mdx.py:252
-msgid "That GitHub path is not a folder"
-msgstr "Dieser GitHub-Pfad ist kein Ordner"
+#: nostr/imports/resolvers/mdx.py:271
+msgid "That folder has no .md or .mdx files: choose a folder that has some."
+msgstr "Dieser Ordner enthält keine .md- oder .mdx-Dateien: Wähle einen Ordner, der welche enthält."
 
-#: nostr/imports/resolvers/mdx.py:265
-msgid "No .md or .mdx files in that folder"
-msgstr "In diesem Ordner gibt es keine .md- oder .mdx-Dateien"
+#: nostr/imports/resolvers/mdx.py:258
+msgid "That GitHub address isn't a folder: paste the address of a folder of .md files."
+msgstr "Diese GitHub-Adresse ist kein Ordner: Füge die Adresse eines Ordners mit .md-Dateien ein."
 
-#: nostr/imports/resolvers/mdx.py:244
-msgid "GitHub returned an unexpected folder listing"
-msgstr "GitHub hat eine unerwartete Ordnerliste geliefert"
-
-#: nostr/imports/resolvers/mdx.py:250
-#, python-brace-format
-msgid "GitHub: {message}"
-msgstr "GitHub: {message}"
-
-#: nostr/imports/resolvers/mdx.py:322
+#: nostr/imports/resolvers/mdx.py:327
 #, python-brace-format
 msgid "Showing the first {shown} of {total} files"
 msgstr "Die ersten {shown} von {total} Dateien werden angezeigt"
-
-#: nostr/imports/resolvers/mdx.py:212
-#, python-brace-format
-msgid "Could not read that document: {error}"
-msgstr "Dieses Dokument konnte nicht gelesen werden: {error}"
-
-#: nostr/imports/resolvers/mdx.py:308
-#, python-brace-format
-msgid "Could not convert that folder: {error}"
-msgstr "Dieser Ordner konnte nicht umgewandelt werden: {error}"
 
 #: nostr/imports/resolvers/nostr.py:218
 msgid "Nostr articles"
@@ -8600,7 +8570,7 @@ msgid "That file couldn’t be opened. Choose the backup file again, or paste th
 msgstr "Diese Datei konnte nicht geöffnet werden. Wähle die Sicherungsdatei erneut oder füge stattdessen den Schlüssel ein."
 
 #: nostr/ui/account_windows.py:1021
-#: nostr/ui/imports_window.py:917
+#: nostr/ui/imports_window.py:931
 msgid "Restore"
 msgstr "Wiederherstellen"
 
@@ -9382,14 +9352,14 @@ msgstr "Das Fenster „Importe“ öffnen"
 #: nostr/ui/drafts_panel.py:948
 #: nostr/ui/drafts_panel.py:969
 #: nostr/ui/drafts_panel.py:970
-#: nostr/ui/imports_activity.py:260
-#: nostr/ui/imports_activity.py:292
+#: nostr/ui/imports_activity.py:266
+#: nostr/ui/imports_activity.py:305
 #: nostr/ui/media_player.py:194
 msgid "Pause"
 msgstr "Pausieren"
 
 #: nostr/ui/drafts_panel.py:969
-#: nostr/ui/imports_activity.py:298
+#: nostr/ui/imports_activity.py:311
 msgid "Resume"
 msgstr "Fortsetzen"
 
@@ -9703,8 +9673,8 @@ msgstr[0] "Deine Signer-App fragt eventuell einmal. Lass sie geöffnet, bis alle
 msgstr[1] "Deine Signer-App fragt eventuell bis zu {count}-mal, zweimal pro Entwurf und einmal pro Bild. Lass sie geöffnet, bis alles fertig ist."
 
 #: nostr/ui/imports_actions.py:100
-#: nostr/ui/imports_window.py:1082
-#: nostr/ui/imports_window.py:917
+#: nostr/ui/imports_window.py:1096
+#: nostr/ui/imports_window.py:931
 msgid "Skip"
 msgstr "Überspringen"
 
@@ -9773,125 +9743,112 @@ msgstr "Die Bilder von „{title}“ werden kopiert …"
 msgid "Saving “{title}”…"
 msgstr "„{title}“ wird gespeichert …"
 
-#: nostr/ui/imports_activity.py:89
+#: nostr/ui/imports_activity.py:98
 msgid "Import finished"
 msgstr "Import abgeschlossen"
 
-#: nostr/ui/imports_activity.py:79
+#: nostr/ui/imports_activity.py:82
+msgid "Some posts weren't imported"
+msgstr "Einige Beiträge wurden nicht importiert"
+
+#: nostr/ui/imports_activity.py:83
+msgid "Your post wasn't imported"
+msgstr "Dein Beitrag wurde nicht importiert"
+
+#: nostr/ui/imports_activity.py:83
+msgid "Your posts weren't imported"
+msgstr "Deine Beiträge wurden nicht importiert"
+
+#: nostr/ui/imports_activity.py:89
 msgid "Creating drafts"
 msgstr "Entwürfe werden erstellt"
 
-#: nostr/ui/imports_activity.py:81
+#: nostr/ui/imports_activity.py:91
 msgid "Pausing after this post"
 msgstr "Pause nach diesem Beitrag"
 
-#: nostr/ui/imports_activity.py:83
+#: nostr/ui/imports_activity.py:93
 msgid "Stopping after this post"
 msgstr "Stopp nach diesem Beitrag"
 
-#: nostr/ui/imports_activity.py:85
+#: nostr/ui/imports_activity.py:95
 msgid "Import paused"
 msgstr "Import pausiert"
 
-#: nostr/ui/imports_activity.py:127
+#: nostr/ui/imports_activity.py:134
 msgid "Import finished."
 msgstr "Import abgeschlossen."
 
-#: nostr/ui/imports_activity.py:72
+#: nostr/ui/imports_activity.py:75
 #, python-brace-format
 msgid "{done} of {total}"
 msgstr "{done} von {total}"
 
-#: nostr/ui/imports_activity.py:188
-#: nostr/ui/imports_activity.py:242
+#: nostr/ui/imports_activity.py:195
+#: nostr/ui/imports_activity.py:248
 msgid "Import Progress"
 msgstr "Importfortschritt"
 
-#: nostr/ui/imports_activity.py:225
-#: nostr/ui/imports_activity.py:279
+#: nostr/ui/imports_activity.py:205
+msgid "Not all imported"
+msgstr "Nicht alle importiert"
+
+#: nostr/ui/imports_activity.py:231
+#: nostr/ui/imports_activity.py:285
 msgid "Import"
 msgstr "Importieren"
 
-#: nostr/ui/imports_activity.py:255
+#: nostr/ui/imports_activity.py:261
 msgid "Stop…"
 msgstr "Stoppen …"
 
-#: nostr/ui/imports_activity.py:87
-#, python-brace-format
-msgid "{count} post couldn't be imported"
-msgid_plural "{count} posts couldn't be imported"
-msgstr[0] "{count} Beitrag konnte nicht importiert werden"
-msgstr[1] "{count} Beiträge konnten nicht importiert werden"
-
-#: nostr/ui/imports_activity.py:96
+#: nostr/ui/imports_activity.py:105
 #, python-brace-format
 msgid "{count} created"
 msgid_plural "{count} created"
 msgstr[0] "{count} erstellt"
 msgstr[1] "{count} erstellt"
 
-#: nostr/ui/imports_activity.py:128
+#: nostr/ui/imports_activity.py:135
 #, python-brace-format
 msgid "{count} draft created."
 msgid_plural "{count} drafts created."
 msgstr[0] "{count} Entwurf erstellt."
 msgstr[1] "{count} Entwürfe erstellt."
 
-#: nostr/ui/imports_activity.py:144
+#: nostr/ui/imports_activity.py:151
 #, python-brace-format
 msgid "{status}, {progress}"
 msgstr "{status}, {progress}"
 
-#: nostr/ui/imports_activity.py:202
+#: nostr/ui/imports_activity.py:208
 #, python-brace-format
 msgid "Import progress: {status}, {progress}"
 msgstr "Importfortschritt: {status}, {progress}"
 
-#: nostr/ui/imports_activity.py:98
+#: nostr/ui/imports_activity.py:107
 #, python-brace-format
 msgid "{count} was already there"
 msgid_plural "{count} were already there"
 msgstr[0] "{count} war schon vorhanden"
 msgstr[1] "{count} waren schon vorhanden"
 
-#: nostr/ui/imports_activity.py:101
-#: nostr/ui/imports_activity.py:199
-#, python-brace-format
-msgid "{count} failed"
-msgid_plural "{count} failed"
-msgstr[0] "{count} fehlgeschlagen"
-msgstr[1] "{count} fehlgeschlagen"
-
-#: nostr/ui/imports_activity.py:131
+#: nostr/ui/imports_activity.py:138
 #, python-brace-format
 msgid "{count} was already there."
 msgid_plural "{count} were already there."
 msgstr[0] "{count} war schon vorhanden."
 msgstr[1] "{count} waren schon vorhanden."
 
-#: nostr/ui/imports_activity.py:134
+#: nostr/ui/imports_activity.py:141
 #, python-brace-format
-msgid "{count} couldn't be imported."
-msgid_plural "{count} couldn't be imported."
-msgstr[0] "{count} konnte nicht importiert werden."
-msgstr[1] "{count} konnten nicht importiert werden."
+msgid "{what}: open the import’s progress and choose Try Again."
+msgstr "{what}: Öffne den Importfortschritt und wähle „Erneut versuchen“."
 
-#: nostr/ui/imports_activity.py:310
+#: nostr/ui/imports_activity.py:326
 #, python-brace-format
 msgid "“{title}”: {reason}"
 msgstr "„{title}“: {reason}"
-
-#: nostr/ui/imports_activity.py:314
-#: nostr/ui/imports_sheets.py:148
-#, python-brace-format
-msgid "and {count} more"
-msgid_plural "and {count} more"
-msgstr[0] "und {count} weitere"
-msgstr[1] "und {count} weitere"
-
-#: nostr/ui/imports_activity.py:311
-msgid "Unknown problem"
-msgstr "Unbekanntes Problem"
 
 #: nostr/ui/imports_article.py:95
 #: nostr/ui/imports_article.py:98
@@ -10171,6 +10128,13 @@ msgstr "Er wird einmal als privater Entwurf importiert und nicht als Quelle beha
 msgid "This looks like a whole source. Follow it to get its new posts too."
 msgstr "Das sieht nach einer ganzen Quelle aus. Folge ihr, um auch ihre neuen Beiträge zu bekommen."
 
+#: nostr/ui/imports_sheets.py:148
+#, python-brace-format
+msgid "and {count} more"
+msgid_plural "and {count} more"
+msgstr[0] "und {count} weitere"
+msgstr[1] "und {count} weitere"
+
 #: nostr/ui/imports_sheets.py:391
 msgid "Show Source"
 msgstr "Quelle zeigen"
@@ -10233,12 +10197,12 @@ msgid "Source Settings"
 msgstr "Quelleneinstellungen"
 
 #: nostr/ui/imports_source_settings.py:129
-#: nostr/ui/imports_window.py:703
+#: nostr/ui/imports_window.py:717
 msgid "Open Website"
 msgstr "Website öffnen"
 
 #: nostr/ui/imports_source_settings.py:165
-#: nostr/ui/imports_window.py:697
+#: nostr/ui/imports_window.py:711
 msgid "Check Now"
 msgstr "Jetzt prüfen"
 
@@ -10255,8 +10219,8 @@ msgid "New drafts:"
 msgstr "Neue Entwürfe:"
 
 #: nostr/ui/imports_source_settings.py:234
-#: nostr/ui/imports_window.py:752
-#: nostr/ui/imports_window.py:848
+#: nostr/ui/imports_window.py:766
+#: nostr/ui/imports_window.py:862
 msgid "Checking for new posts…"
 msgstr "Neue Beiträge werden gesucht …"
 
@@ -10265,12 +10229,12 @@ msgid "Your other devices use these settings too."
 msgstr "Deine anderen Geräte verwenden diese Einstellungen auch."
 
 #: nostr/ui/imports_source_settings.py:198
-#: nostr/ui/imports_window.py:712
+#: nostr/ui/imports_window.py:726
 msgid "Unsubscribe…"
 msgstr "Abonnement beenden …"
 
 #: nostr/ui/imports_source_settings.py:236
-#: nostr/ui/imports_window.py:753
+#: nostr/ui/imports_window.py:767
 msgid "You can check again in a minute."
 msgstr "Du kannst in einer Minute erneut prüfen."
 
@@ -10284,7 +10248,7 @@ msgid "Inbox"
 msgstr "Eingang"
 
 #: nostr/ui/imports_window.py:195
-#: nostr/ui/imports_window.py:496
+#: nostr/ui/imports_window.py:510
 msgid "Older Posts"
 msgstr "Ältere Beiträge"
 
@@ -10293,7 +10257,7 @@ msgid "Imports Toolbar"
 msgstr "Symbolleiste der Importe"
 
 #: nostr/ui/imports_window.py:337
-#: nostr/ui/imports_window.py:1210
+#: nostr/ui/imports_window.py:1224
 msgid "Follow a Website…"
 msgstr "Einer Website folgen …"
 
@@ -10317,70 +10281,74 @@ msgstr "Einer Website folgen oder eine Datei oder einen Link importieren"
 msgid "Search Posts"
 msgstr "Beiträge durchsuchen"
 
-#: nostr/ui/imports_window.py:495
+#: nostr/ui/imports_window.py:443
+msgid "Reads your list of sources again"
+msgstr "Liest deine Quellenliste erneut"
+
+#: nostr/ui/imports_window.py:509
 msgid "New Posts"
 msgstr "Neue Beiträge"
 
-#: nostr/ui/imports_window.py:496
+#: nostr/ui/imports_window.py:510
 msgid "Older"
 msgstr "Älter"
 
-#: nostr/ui/imports_window.py:505
+#: nostr/ui/imports_window.py:519
 msgid "Source Actions"
 msgstr "Aktionen für die Quelle"
 
-#: nostr/ui/imports_window.py:506
+#: nostr/ui/imports_window.py:520
 msgid "What you can do with this source"
 msgstr "Was du mit dieser Quelle tun kannst"
 
-#: nostr/ui/imports_window.py:526
+#: nostr/ui/imports_window.py:540
 msgid "Select All Posts"
 msgstr "Alle Beiträge auswählen"
 
-#: nostr/ui/imports_window.py:706
+#: nostr/ui/imports_window.py:720
 msgid "Copy Address"
 msgstr "Adresse kopieren"
 
-#: nostr/ui/imports_window.py:709
+#: nostr/ui/imports_window.py:723
 msgid "Source Settings…"
 msgstr "Quelleneinstellungen …"
 
-#: nostr/ui/imports_window.py:830
+#: nostr/ui/imports_window.py:844
 msgid "Posts you skipped on this computer."
 msgstr "Beiträge, die du auf diesem Computer übersprungen hast."
 
-#: nostr/ui/imports_window.py:842
+#: nostr/ui/imports_window.py:856
 msgid "Imported once, not kept as a source."
 msgstr "Einmal importiert, nicht als Quelle behalten."
 
-#: nostr/ui/imports_window.py:1226
-#: nostr/ui/imports_window.py:1214
+#: nostr/ui/imports_window.py:1240
+#: nostr/ui/imports_window.py:1228
 msgid "No older posts"
 msgstr "Keine älteren Beiträge"
 
-#: nostr/ui/imports_window.py:1227
+#: nostr/ui/imports_window.py:1241
 msgid "Posts that were already on this source when you followed it appear here."
 msgstr "Hier erscheinen Beiträge, die schon in dieser Quelle waren, als du ihr gefolgt bist."
 
-#: nostr/ui/imports_window.py:1292
+#: nostr/ui/imports_window.py:1306
 msgid "Export Sources"
 msgstr "Quellen exportieren"
 
-#: nostr/ui/imports_window.py:1293
+#: nostr/ui/imports_window.py:1307
 msgid "Lists of sources (*.opml)"
 msgstr "Quellenlisten (*.opml)"
 
-#: nostr/ui/imports_window.py:1383
+#: nostr/ui/imports_window.py:1400
 msgid "That link can't be opened from here."
 msgstr "Dieser Link kann hier nicht geöffnet werden."
 
-#: nostr/ui/imports_window.py:1591
-#: nostr/ui/imports_window.py:1592
+#: nostr/ui/imports_window.py:1608
+#: nostr/ui/imports_window.py:1609
 msgid "Close Message"
 msgstr "Hinweis schließen"
 
-#: nostr/ui/imports_window.py:1629
 #: nostr/ui/imports_window.py:1646
+#: nostr/ui/imports_window.py:1663
 msgid "Drop to Import"
 msgstr "Zum Importieren ablegen"
 
@@ -10388,163 +10356,163 @@ msgstr "Zum Importieren ablegen"
 msgid "More Toolbar Items"
 msgstr "Weitere Symbolleistenobjekte"
 
-#: nostr/ui/imports_window.py:697
+#: nostr/ui/imports_window.py:711
 msgid "Read Now"
 msgstr "Jetzt lesen"
 
-#: nostr/ui/imports_window.py:1163
+#: nostr/ui/imports_window.py:1177
 msgid "Show Drafts"
 msgstr "Entwürfe zeigen"
 
-#: nostr/ui/imports_window.py:1193
+#: nostr/ui/imports_window.py:1207
 msgid "No Results"
 msgstr "Keine Treffer"
 
-#: nostr/ui/imports_window.py:1204
+#: nostr/ui/imports_window.py:1218
 msgid "No posts"
 msgstr "Keine Beiträge"
 
-#: nostr/ui/imports_window.py:1204
+#: nostr/ui/imports_window.py:1218
 msgid "This source has no posts to import."
 msgstr "Diese Quelle hat keine Beiträge zum Importieren."
 
-#: nostr/ui/imports_window.py:1212
+#: nostr/ui/imports_window.py:1226
 msgid "New posts appear here when MyEditor checks your sources."
 msgstr "Neue Beiträge erscheinen hier, wenn MyEditor deine Quellen prüft."
 
-#: nostr/ui/imports_window.py:1215
+#: nostr/ui/imports_window.py:1229
 msgid "Posts that were already on a source when you followed it appear here."
 msgstr "Hier erscheinen Beiträge, die schon in einer Quelle waren, als du ihr gefolgt bist."
 
-#: nostr/ui/imports_window.py:1218
+#: nostr/ui/imports_window.py:1232
 msgid "Nothing imported yet"
 msgstr "Noch nichts importiert"
 
-#: nostr/ui/imports_window.py:1219
+#: nostr/ui/imports_window.py:1233
 msgid "Posts you import as drafts appear here."
 msgstr "Beiträge, die du als Entwürfe importierst, erscheinen hier."
 
-#: nostr/ui/imports_window.py:1221
+#: nostr/ui/imports_window.py:1235
 msgid "Nothing skipped"
 msgstr "Nichts übersprungen"
 
-#: nostr/ui/imports_window.py:1222
+#: nostr/ui/imports_window.py:1236
 msgid "Posts you skip on this computer appear here, so you can bring them back."
 msgstr "Beiträge, die du auf diesem Computer überspringst, erscheinen hier, damit du sie zurückholen kannst."
 
-#: nostr/ui/imports_window.py:1225
+#: nostr/ui/imports_window.py:1239
 msgid "No new posts"
 msgstr "Keine neuen Beiträge"
 
-#: nostr/ui/imports_window.py:1225
+#: nostr/ui/imports_window.py:1239
 msgid "New posts from this source appear here."
 msgstr "Neue Beiträge dieser Quelle erscheinen hier."
 
-#: nostr/ui/imports_window.py:1292
-#: nostr/ui/imports_window.py:613
+#: nostr/ui/imports_window.py:1306
+#: nostr/ui/imports_window.py:627
 msgid "Sources"
 msgstr "Quellen"
 
-#: nostr/ui/imports_window.py:1393
+#: nostr/ui/imports_window.py:1410
 msgid "Stop this import?"
 msgstr "Diesen Import stoppen?"
 
-#: nostr/ui/imports_window.py:1394
+#: nostr/ui/imports_window.py:1411
 msgid "Drafts already created stay. The other posts are not imported."
 msgstr "Bereits erstellte Entwürfe bleiben. Die übrigen Beiträge werden nicht importiert."
 
-#: nostr/ui/imports_window.py:1395
+#: nostr/ui/imports_window.py:1412
 msgid "Stop Import"
 msgstr "Import stoppen"
 
-#: nostr/ui/imports_window.py:624
+#: nostr/ui/imports_window.py:638
 msgid "Files and Links"
 msgstr "Dateien und Links"
 
-#: nostr/ui/imports_window.py:690
+#: nostr/ui/imports_window.py:704
 msgid "Remove from List"
 msgstr "Aus der Liste entfernen"
 
-#: nostr/ui/imports_window.py:837
+#: nostr/ui/imports_window.py:851
 #, python-brace-format
 msgid "{n} post"
 msgid_plural "{n} posts"
 msgstr[0] "{n} Beitrag"
 msgstr[1] "{n} Beiträge"
 
-#: nostr/ui/imports_window.py:848
+#: nostr/ui/imports_window.py:862
 msgid "Reading…"
 msgstr "Wird gelesen …"
 
-#: nostr/ui/imports_window.py:960
+#: nostr/ui/imports_window.py:974
 msgid "None of these posts has an image that can be copied."
 msgstr "Keiner dieser Beiträge hat ein Bild, das kopiert werden kann."
 
-#: nostr/ui/imports_window.py:1050
+#: nostr/ui/imports_window.py:1064
 #, python-brace-format
 msgid "Skipped {count} post."
 msgid_plural "Skipped {count} posts."
 msgstr[0] "{count} Beitrag übersprungen."
 msgstr[1] "{count} Beiträge übersprungen."
 
-#: nostr/ui/imports_window.py:1203
+#: nostr/ui/imports_window.py:1217
 msgid "Couldn't read this source"
 msgstr "Diese Quelle konnte nicht gelesen werden"
 
-#: nostr/ui/imports_window.py:1208
+#: nostr/ui/imports_window.py:1222
 msgid "No sources yet"
 msgstr "Noch keine Quellen"
 
-#: nostr/ui/imports_window.py:1209
+#: nostr/ui/imports_window.py:1223
 msgid "Follow a website to see its new posts here."
 msgstr "Folge einer Website, um ihre neuen Beiträge hier zu sehen."
 
-#: nostr/ui/imports_window.py:1408
+#: nostr/ui/imports_window.py:1425
 #, python-brace-format
 msgid "Following {count} new source."
 msgid_plural "Following {count} new sources."
 msgstr[0] "Du folgst {count} neuen Quelle."
 msgstr[1] "Du folgst {count} neuen Quellen."
 
-#: nostr/ui/imports_window.py:835
+#: nostr/ui/imports_window.py:849
 #, python-brace-format
 msgid "{n} new post"
 msgid_plural "{n} new posts"
 msgstr[0] "{n} neuer Beitrag"
 msgstr[1] "{n} neue Beiträge"
 
-#: nostr/ui/imports_window.py:1194
+#: nostr/ui/imports_window.py:1208
 #, python-brace-format
 msgid "No posts match “{query}”."
 msgstr "Keine Beiträge passen zu „{query}“."
 
-#: nostr/ui/imports_window.py:1411
+#: nostr/ui/imports_window.py:1428
 #, python-brace-format
 msgid "{count} was followed already."
 msgid_plural "{count} were followed already."
 msgstr[0] "{count} Quelle war schon in deiner Liste."
 msgstr[1] "{count} Quellen waren schon in deiner Liste."
 
-#: nostr/ui/imports_window.py:1414
+#: nostr/ui/imports_window.py:1431
 #, python-brace-format
 msgid "{count} couldn't be followed."
 msgid_plural "{count} couldn't be followed."
 msgstr[0] "{count} Adresse ist keine Quelle, der du folgen kannst."
 msgstr[1] "{count} Adressen sind keine Quellen, denen du folgen kannst."
 
-#: nostr/ui/imports_window.py:1042
+#: nostr/ui/imports_window.py:1056
 #, python-brace-format
 msgid "Restored {count} post."
 msgid_plural "Restored {count} posts."
 msgstr[0] "{count} Beitrag wiederhergestellt."
 msgstr[1] "{count} Beiträge wiederhergestellt."
 
-#: nostr/ui/imports_window.py:1201
+#: nostr/ui/imports_window.py:1215
 #, python-brace-format
 msgid "Reading {source}…"
 msgstr "{source} wird gelesen …"
 
-#: nostr/ui/imports_window.py:1313
+#: nostr/ui/imports_window.py:1327
 msgid "Choose another place and export again."
 msgstr "Wähle einen anderen Ort und exportiere erneut."
 

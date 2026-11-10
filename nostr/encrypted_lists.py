@@ -75,6 +75,7 @@ from .list_results import (
     PublishResult,
     PublishStatus,
     ReadStatus,
+    TOO_LONG,
 )
 from .outbox import ask_private_relays
 from .outbox.policy import replacement_created_at
@@ -623,7 +624,7 @@ class _Writing:
         try:
             self._plaintexts = self._list._plaintexts(self._value, self._now, self._profile)
         except ValueError as exc:
-            self._fail(str(exc))
+            self._fail(str(exc), cause=TOO_LONG)
             return False
         # Written only what this account can read again: a list the signer
         # app encrypts but cannot hand back would be unreadable, and an
@@ -633,16 +634,16 @@ class _Writing:
         for index, text in enumerate(self._plaintexts):
             if self._list._paging is not None and not page_fits(text):
                 self._fail(f"page {index} ({len(text.encode('utf-8'))} bytes) is larger than "
-                           f"a page may be")
+                           f"a page may be", cause=TOO_LONG)
                 return False
             if not readable_back(self._profile, text):
                 self._fail(f"page {index} ({len(text.encode('utf-8'))} bytes) is too large "
-                           f"for this account to read back")
+                           f"for this account to read back", cause=TOO_LONG)
                 return False
         return True
 
-    def _fail(self, reason: str) -> None:
-        self._on_done(PublishResult(PublishStatus.FAILED, reason=reason))
+    def _fail(self, reason: str, *, cause: str = "") -> None:
+        self._on_done(PublishResult(PublishStatus.FAILED, reason=reason, cause=cause))
 
     def _ready(self, client) -> None:
         # Split again: what the connection's relays carry is known once

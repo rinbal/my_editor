@@ -192,6 +192,24 @@ def test_pages_are_split_by_the_answer_bound_too(ink):
 
 # -- writing and reading pages ---------------------------------------------------
 
+def test_a_list_that_cannot_be_written_as_it_is_says_so_by_its_cause():
+    # Lessons 36: the caller says "too long" by the cause, never the
+    # reason's own words; a signer app that failed has no such cause.
+    from nostr.list_results import TOO_LONG
+    store = read_state_list(Relay())
+    result, _ = publish(store, {"x" * 40_000: 1})        # one entry larger than a page
+    assert result.status is PublishStatus.FAILED and result.cause == TOO_LONG
+
+    class Refusing(FakeSigner):
+        def nip44_encrypt_self(self, plaintext, on_success, on_failure, **_kw):
+            on_failure("user rejected the request")
+
+    store = read_state_list(Relay(), signer=Refusing())
+    result, _ = publish(store, {"a": 1})
+    assert result.status is PublishStatus.FAILED and result.cause == ""
+    assert result.reason == "user rejected the request"
+
+
 def test_a_long_list_is_written_in_pages_and_read_back_whole():
     relay = Relay()
     store = read_state_list(relay)

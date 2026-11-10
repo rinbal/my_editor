@@ -60,7 +60,7 @@ from .imports import snapshots, workers
 from .imports.catalogue import ExistingCatalogue
 from .imports.checker import FeedChecker, checks_automatically
 from .imports.constants import IDENTIFIER_PREFIX
-from .imports.errors import LOCAL_NETWORK_MESSAGE, SourceError, friendly_message
+from .imports.errors import LOCAL_NETWORK_MESSAGE, SourceError, failure_words
 from .imports.feed_list import source_key
 from .imports.fulltext import extract_readable_content
 from .imports.page_meta import fill_from_page, read_page_meta
@@ -104,9 +104,9 @@ _log = logging.getLogger(__name__)
 
 CONFIG_DIR = Path.home() / ".config" / "my_editor"
 
-ACCOUNT_CHANGED = _("The account changed. Resume when you're signed in to that account "
+ACCOUNT_CHANGED = _("The account changed: resume when you're signed in to that account "
                     "again.")
-QUIT_PAUSED = _("MyEditor was closed during the import. Resume it to go on.")
+QUIT_PAUSED = _("MyEditor was closed during the import: resume it to go on.")
 ELSEWHERE = _("Imports are checked in another MyEditor window. This one only shows them.")
 ARTICLE_FAILED = _("Couldn't show this post.")
 # Why imports cannot be kept here, in plain words, each with what to do
@@ -298,6 +298,14 @@ class ImportsController(QObject):
         self.subscriptions.bind_profile(profile)
         if profile is not None:
             self._bind()
+
+    @property
+    def can_read_sources_again(self) -> bool:
+        """The list of sources could not be read: Try Again reads it now."""
+        return self.subscriptions.read_failed
+
+    def read_sources_again(self) -> None:
+        self.subscriptions.retry_read()
 
     def _on_sync_status(self, text: str) -> None:
         if text == SYNCING or text == self.sync_message:
@@ -773,8 +781,7 @@ class ImportsController(QObject):
                     collection.id) is not collection:
                 return
             collection.loading = False
-            collection.error = (friendly_message(error) if isinstance(error, SourceError)
-                                else str(error))
+            collection.error = failure_words(error)
             self.posts_changed.emit()
             self.sources_changed.emit()
 
@@ -833,8 +840,7 @@ class ImportsController(QObject):
         resolve_source(
             request, fetcher=self._fetcher,
             on_success=lambda result: answer(result, ""),
-            on_failure=lambda error: answer(None, friendly_message(error)
-                                            if isinstance(error, SourceError) else str(error)),
+            on_failure=lambda error: answer(None, failure_words(error)),
             run_blocking=self._run_blocking, nostr_query=self._nostr_query,
             relay_directory=self._relay_directory)
 
@@ -855,8 +861,7 @@ class ImportsController(QObject):
 
         def failed(error) -> None:
             if generation == self._generation:
-                on_done(None, friendly_message(error) if isinstance(error, SourceError)
-                        else str(error))
+                on_done(None, failure_words(error))
 
         self._fetcher.fetch(url, on_success=read, on_failure=failed)
 
@@ -963,7 +968,7 @@ class ImportsController(QObject):
                 lambda: (extract_readable_content(html, url=address),
                          read_page_meta(html, url=address)),
                 lambda found: made(*found),
-                lambda exc: failed(str(exc)))
+                failed)
 
         def made(content, page) -> None:
             if generation != self._generation:
@@ -982,9 +987,14 @@ class ImportsController(QObject):
                                     source_url=address), "")
 
         def failed(reason) -> None:
+            # A page that could not be fetched says why; one that could not
+            # be read has nothing to import, what went wrong in the log.
             if generation == self._generation:
-                on_done(None, friendly_message(reason) if isinstance(reason, SourceError)
-                        else str(reason) or NOTHING_FOUND)
+                if isinstance(reason, SourceError):
+                    on_done(None, failure_words(reason))
+                else:
+                    _log.info("the page at an address could not be read: %s", str(reason)[:200])
+                    on_done(None, NOTHING_FOUND)
 
         self._fetcher.fetch(address, on_success=read, on_failure=failed)
 
@@ -1032,8 +1042,11 @@ class ImportsController(QObject):
                             None, "") if result is not None else on_done(None, None, error)))
 
         def failed(exc) -> None:
+            # read_export says what to do as a ValueError's words; anything
+            # else is said by the one helper (lessons 36).
             if generation == self._generation:
-                on_done(None, None, str(exc))
+                on_done(None, None, str(exc) if type(exc) is ValueError
+                        else failure_words(exc))
 
         self._run_blocking(lambda: read_export(path), read, failed)
 

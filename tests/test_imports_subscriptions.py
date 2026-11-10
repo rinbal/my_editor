@@ -375,7 +375,9 @@ class TestPublish:
         settle()
         assert relay.published == []
 
-    def test_signer_failure_keeps_changes_queued(self, tmp_path):
+    def test_signer_failure_keeps_changes_queued(self, tmp_path, caplog):
+        import logging
+        from nostr.imports.subscriptions import SIGNER_DID_NOT_SAVE
         statuses = []
         store, relay, scheduler = make_store(
             tmp_path, session_pool=FakeSessionPool(error="signer offline"))
@@ -383,10 +385,41 @@ class TestPublish:
         store.bind_profile(PROFILE)
         settle()
         store.add_feed(FEED_URL)
-        publish(store, scheduler)
+        with caplog.at_level(logging.INFO, logger="nostr.imports.subscriptions"):
+            publish(store, scheduler)
         assert relay.published == []
         assert store._dirty is True
-        assert any("signer offline" in s for s in statuses)
+        # Lessons 36: one sentence by its cause; the signer's words in the
+        # log only.
+        assert statuses[-1] == SIGNER_DID_NOT_SAVE
+        assert not any("signer offline" in s for s in statuses)
+        assert any("signer offline" in line for line in caplog.messages)
+
+    def test_a_signer_that_did_not_answer_a_save_is_tried_again_quietly(self, tmp_path):
+        from nostr.imports.subscriptions import NOT_SHARED, RETRY_DELAYS_MS
+        statuses = []
+        store, relay, scheduler = make_store(
+            tmp_path, session_pool=FakeSessionPool(error="timed out waiting for signer"))
+        store.sync_status.connect(statuses.append)
+        store.bind_profile(PROFILE)
+        settle()
+        store.add_feed(FEED_URL)
+        publish(store, scheduler)
+        assert statuses[-1] == NOT_SHARED
+        assert [e[0] for e in scheduler.scheduled if e[2]] == [RETRY_DELAYS_MS[0]]
+
+    def test_a_list_too_long_to_save_says_so_by_its_cause(self, tmp_path):
+        from nostr.imports.subscriptions import TOO_LONG_TO_SAVE
+        from nostr.list_results import TOO_LONG, PublishResult, PublishStatus
+        statuses = []
+        store, relay, scheduler = bound(tmp_path)
+        store.sync_status.connect(statuses.append)
+        store._list.publish = lambda profile, on_done, **kw: on_done(PublishResult(
+            PublishStatus.FAILED, reason="page 0 (99999 bytes) is larger", cause=TOO_LONG))
+        store.add_feed(FEED_URL)
+        publish(store, scheduler)
+        assert statuses[-1] == TOO_LONG_TO_SAVE and store._dirty is True
+        assert not [e for e in scheduler.scheduled if e[2]]      # waits for the person
 
     def test_zero_relay_acceptance_keeps_dirty(self, tmp_path):
         store, relay, scheduler = bound(tmp_path, relay=FakeRelay(accepted=False))
@@ -599,7 +632,9 @@ class TestSaysWhatHappens:
     def test_a_change_that_cannot_be_shared_says_so_and_tries_again(self, tmp_path):
         from nostr.imports.subscriptions import NOT_SHARED, RETRY_DELAYS_MS
         relay = Offline()
+        relay.online = True                    # read when bound, quiet after
         store, _, scheduler = bound(tmp_path, relay=relay)
+        relay.online = False
         said = []
         store.sync_status.connect(said.append)
         store.add_feed(FEED_URL, "My Blog")
@@ -657,6 +692,88 @@ class TestSaysWhatHappens:
         store.bind_profile(PROFILE)
         settle()
         assert said[-1] == NOT_READ
+
+
+class TestReadAgainQuietly:
+    """Lessons 36: a list that could not be read is read again quietly,
+    after a pause that grows, while waiting may help; Try Again reads it
+    now; once read, the line goes."""
+
+    def test_no_answer_is_read_again_after_a_growing_pause_and_the_line_goes(self, tmp_path):
+        from nostr.imports.subscriptions import NOT_READ, RETRY_DELAYS_MS, SYNCING
+        relay = Offline()
+        store, _, scheduler = make_store(tmp_path, relay=relay)
+        said = []
+        store.sync_status.connect(said.append)
+        store.bind_profile(PROFILE)
+        settle()
+        assert said[-1] == NOT_READ and store.read_failed
+        assert [e[0] for e in scheduler.scheduled if e[2]] == [RETRY_DELAYS_MS[0]]
+        publish(store, scheduler)                  # the pause ends: no answer again
+        assert [e[0] for e in scheduler.scheduled if e[2]] == [RETRY_DELAYS_MS[1]]
+        # The same one line, never one per try (the window shows a line
+        # that changed; SYNCING is never shown).
+        assert {s for s in said if s != SYNCING} == {NOT_READ}
+        relay.online = True
+        publish(store, scheduler)
+        assert said[-1] == "" and not store.read_failed
+        assert not [e for e in scheduler.scheduled if e[2]]
+        relay.online = False                       # once read, the pauses start over
+        store.refresh()
+        settle()
+        assert [e[0] for e in scheduler.scheduled if e[2]] == [RETRY_DELAYS_MS[0]]
+
+    def test_try_again_reads_now_and_starts_the_pauses_over(self, tmp_path):
+        from nostr.imports.subscriptions import RETRY_DELAYS_MS
+        relay = Offline()
+        store, _, scheduler = bound(tmp_path, relay=relay)
+        publish(store, scheduler)
+        asked = len(relay.queries)
+        store.retry_read()
+        settle()
+        assert len(relay.queries) > asked
+        # The pause before (the second) is cancelled; the first again.
+        assert [e[0] for e in scheduler.scheduled if e[2]] == [RETRY_DELAYS_MS[0]]
+        publish(store, scheduler)
+        relay.online = True                        # read now: no pause is left
+        store.retry_read()
+        settle()
+        assert not [e for e in scheduler.scheduled if e[2]] and not store.read_failed
+
+    def test_a_signer_that_did_not_answer_is_asked_again_one_that_said_no_is_not(
+            self, tmp_path):
+        from nostr.imports.subscriptions import RETRY_DELAYS_MS
+        for reason, again in (("timed out waiting for signer", True),
+                              ("user rejected the request", False)):
+            relay = FakeRelay()
+            relay.put(FEED_LIST_DTAG, {"feeds": [{"url": FEED_URL}]},
+                      tag=("encrypted", "nip44"))
+            signer = FakeSigner()
+            signer.nip44_decrypt_self = (
+                lambda ct, on_success, on_failure, _r=reason, **_kw: on_failure(_r))
+            store, _, scheduler = make_store(tmp_path, relay=relay,
+                                             session_pool=FakeSessionPool(client=signer))
+            store.bind_profile(PROFILE)
+            settle()
+            assert store.read_failed
+            assert [e[0] for e in scheduler.scheduled if e[2]] == (
+                [RETRY_DELAYS_MS[0]] if again else []), reason
+
+    def test_another_account_cancels_the_pause(self, tmp_path):
+        relay = Offline()
+        store, _, scheduler = bound(tmp_path, relay=relay)
+        (pause,) = [e for e in scheduler.scheduled if e[2]]
+        store.bind_profile(None)
+        assert not [e for e in scheduler.scheduled if e[2]] and not store.read_failed
+        # A pause that ends late anyway reads nothing for the next account
+        # (lesson 31).
+        other = SimpleNamespace(user_pubkey="ef" * 32, bunker_relays=[])
+        store.bind_profile(other)
+        settle()
+        asked = len(relay.queries)
+        pause[1]()
+        settle()
+        assert len(relay.queries) == asked
 
 
 class TestOldEncryption:

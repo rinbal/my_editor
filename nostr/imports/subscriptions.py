@@ -62,11 +62,11 @@ from PySide6.QtCore import QEventLoop, QObject, QTimer, Signal
 from atomic_file import write_json
 from i18n import _
 
-from ..bunker import BunkerSessionPool
+from ..bunker import BunkerSessionPool, is_signer_silent
 from ..drafts import supersedes
 from ..encrypted_lists import EncryptedList
 from ..list_relays import ListQuery, event_mark, publish_once
-from ..list_results import ListRead, ListWords, PublishStatus, ReadStatus
+from ..list_results import TOO_LONG, ListRead, ListWords, PublishStatus, ReadStatus
 from ..outbox import RelayDirectory
 from ..profiles import Profile
 from ..relay import RelayPool
@@ -93,30 +93,39 @@ _CACHE_VERSION = 2
 
 # What the list's status says (sync_status), in plain words: the window
 # shows it (CP2 review N3: nothing heard these since the Feeds page went).
+# Each one sentence, its cause and what to do or what MyEditor does
+# (lessons 36): the window's one quiet line.
 SYNCING = _("Reading your list of sources\u2026")      # under way: not shown
-NOT_READ = _("Your list of sources couldn't be read online, so MyEditor shows the copy "
-             "kept on this computer.")
-NOT_SHARED = _("Your latest changes to your sources are kept on this computer for now: "
-               "the list couldn't be saved online. MyEditor tries again on its own.")
+NOT_READ = _("Your list of sources couldn't be read online, so MyEditor shows the copy kept "
+             "on this computer and tries again on its own.")
+NOT_SHARED = _("Your latest changes to your sources are kept on this computer until the list "
+               "can be saved online: MyEditor tries again on its own.")
 # Why a list could not be read goes to the log, never into these words:
 # it is English, and seldom something a person can act on (CP3 review L5).
-UNREADABLE = _("Your list of sources couldn't be read.")
-SIGNER_SILENT = _("Your signer app didn't answer, so your list of sources couldn't be read.")
-# Pauses before an unshared change is sent again, then every half hour.
+UNREADABLE = _("Your list of sources couldn't be read: MyEditor shows the copy kept on this "
+               "computer and tries again on its own.")
+SIGNER_SILENT = _("Your signer app didn't answer, so your list of sources couldn't be read: "
+                  "open it, and MyEditor tries again on its own.")
+# A list written here that could not go out, by its cause (PublishResult):
+# what was changed stays here and goes out with the next change.
+TOO_LONG_TO_SAVE = _("Your list of sources is too long to be saved online: your changes stay "
+                     "on this computer until you remove some sources.")
+SIGNER_DID_NOT_SAVE = _("Your signer app didn't sign your list of sources: your changes stay "
+                        "on this computer and go out with your next change.")
+# Pauses before an unshared change is sent again, or a list that could
+# not be read is read again, then every half hour.
 RETRY_DELAYS_MS = (2 * 60_000, 5 * 60_000, 15 * 60_000, 30 * 60_000)
 
 
 _OLD_ENCRYPTION = _(
-    "Your list of sources was saved with an older kind of encryption. Open "
-    "it once in the app that saved it; until then, changes made here stay "
-    "on this computer.")
+    "Your list of sources was saved with an older kind of encryption: open it once in the app "
+    "that saved it, then choose Try Again.")
 # Longer than the connection to the signer app carries (contract 12.5's
 # caps; this list is one event): a connection made with the code goes over
 # relays that carry it.
 _TOO_LONG_FOR_CONNECTION = _(
-    "The connection to your signer app carries only short messages, and your list of sources "
-    "is longer. Connect your signer app again to read it; until then, changes made here stay "
-    "on this computer.")
+    "Your list of sources is longer than the connection to your signer app carries: connect "
+    "your signer app again, then choose Try Again.")
 
 
 class FeedSubscriptionStore(QObject):
@@ -188,6 +197,12 @@ class FeedSubscriptionStore(QObject):
         # whether the timer that runs is such a pause.
         self._retries = 0
         self._retry_waiting = False
+        # The list could not be read (no answer, or not opened now): the
+        # window offers Try Again. Reads again quietly after a pause that
+        # grows, while waiting may help (lessons 36).
+        self.read_failed = False
+        self._rereads = 0
+        self._cancel_reread: Optional[Callable[[], None]] = None
         # The next publish also sends read times (a manual source opened).
         self._send_read_times = False
         self._legacy_merged = False
@@ -207,11 +222,13 @@ class FeedSubscriptionStore(QObject):
         if self._profile is not None and (self._dirty or self._cancel_timer is not None):
             self.flush()
         self._cancel_pending_timer()
+        self._cancel_pending_reread()
         self._generation += 1
         self._profile = profile
         self._local, self._base, self._base_mark = FeedList(), None, None
         self._dirty = self._send_read_times = self._legacy_merged = False
-        self._retries = 0
+        self._retries = self._rereads = 0
+        self.read_failed = False
         self._known = False
         if profile is None:
             self.feeds_changed.emit()
@@ -395,6 +412,7 @@ class FeedSubscriptionStore(QObject):
         profile = self._profile
         if profile is None or self._query is None:
             return
+        self._cancel_pending_reread()      # asked now: this read is the one
         generation = self._generation
         self.sync_status.emit(SYNCING)
 
@@ -407,10 +425,22 @@ class FeedSubscriptionStore(QObject):
             if generation != self._generation:
                 return
             if shared.status is ReadStatus.NO_ANSWER:
-                # Asked again on the next launch or refresh; until then the
-                # list is not known and nothing is taken for missing.
+                # Read again quietly; until then the list is not known and
+                # nothing is taken for missing.
+                self.read_failed = True
                 self.sync_status.emit(NOT_READ)
+                self._reread_later()
                 return
+            if not shared.readable:
+                # Its words are on the status line already. Waiting helps a
+                # signer app that did not answer or failed; one that said
+                # no, or an older list, waits for the person (Try Again).
+                self.read_failed = True
+                if shared.words in (SIGNER_SILENT, UNREADABLE):
+                    self._reread_later()
+            else:
+                # Read: the line goes with the read of the older list below.
+                self.read_failed, self._rereads = False, 0
             if isinstance(shared.value, FeedList):
                 self._adopt(shared.value, shared.event)
             if shared.readable:
@@ -499,6 +529,30 @@ class FeedSubscriptionStore(QObject):
         self._retries += 1
         self._cancel_timer = self._scheduler(delay, self._on_debounce_fired)
         self._retry_waiting = True
+
+    def retry_read(self) -> None:
+        """Try Again: read the list now, and from the shortest pause again
+        should it still not work."""
+        self._rereads = 0
+        self.refresh()
+
+    def _reread_later(self) -> None:
+        delay = RETRY_DELAYS_MS[min(self._rereads, len(RETRY_DELAYS_MS) - 1)]
+        self._rereads += 1
+        generation = self._generation
+
+        def fired() -> None:
+            self._cancel_reread = None
+            if generation == self._generation:
+                self.refresh()
+
+        self._cancel_pending_reread()
+        self._cancel_reread = self._scheduler(delay, fired)
+
+    def _cancel_pending_reread(self) -> None:
+        cancel, self._cancel_reread = self._cancel_reread, None
+        if cancel is not None:
+            cancel()
 
     def _after_mutation(self) -> None:
         if self._read_only:
@@ -678,8 +732,16 @@ class FeedSubscriptionStore(QObject):
                     self._dirty = not self._local.same_sources(result.remote)
                 _finish(sent=True)
             elif result.status is PublishStatus.FAILED:
-                _finish(_("Your list of sources couldn't be saved online ({reason}). Your "
-                          "changes are kept on this computer.").format(reason=result.reason))
+                # Said by its cause, what was said only in the log (lessons
+                # 36). A signer app that did not answer may yet: tried again
+                # quietly, as for no relay taking it.
+                _log.info("the list of sources was not saved online: %s", result.reason[:200])
+                if result.cause == TOO_LONG:
+                    _finish(TOO_LONG_TO_SAVE)
+                elif is_signer_silent(result.reason):
+                    _finish(NOT_SHARED)
+                else:
+                    _finish(SIGNER_DID_NOT_SAVE)
             else:
                 _sent(result.value, result.signed)
 

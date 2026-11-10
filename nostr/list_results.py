@@ -11,7 +11,8 @@ from typing import Any, List, Mapping, Optional, Tuple
 
 from .paged_list import Page
 
-__all__ = ["ListRead", "ListWords", "PageRead", "PublishResult", "PublishStatus", "ReadStatus"]
+__all__ = ["ListRead", "ListWords", "PageRead", "PublishResult", "PublishStatus", "ReadStatus",
+           "TOO_LONG"]
 
 
 class ReadStatus(Enum):
@@ -30,6 +31,11 @@ class ReadStatus(Enum):
     # Opened, but not this list (another format, not a page, more than
     # 64 pages, not taken in): never written over. ``words`` say so.
     UNREADABLE = "unreadable"
+
+
+# Why a write FAILED, when it was not the signer app: the list as it is
+# cannot be written, so asking again changes nothing (lessons 36).
+TOO_LONG = "too long"
 
 
 class PublishStatus(Enum):
@@ -108,6 +114,9 @@ class PublishResult:
     value: Any = None           # SENT: what was written
     signed: Optional[dict] = None   # SENT: the event of page 0
     reason: str = ""            # FAILED: why; BLOCKED, UNREADABLE: the read's words
+    # FAILED: TOO_LONG when the list cannot be written as it is (its pages
+    # too large to carry or read back); "" when the signer app failed.
+    cause: str = ""
 
     @property
     def on_relays(self) -> bool:

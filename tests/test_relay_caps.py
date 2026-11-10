@@ -694,7 +694,7 @@ def test_every_list_says_when_its_connection_cannot_carry_a_page(tmp_path):
         store._legacy_list._words.too_long_for_connection == \
         subscriptions._TOO_LONG_FOR_CONNECTION
     assert subscriptions._TOO_LONG_FOR_CONNECTION.startswith(
-        "The connection to your signer app carries only short messages")
+        "Your list of sources is longer than the connection to your signer app carries")
     for words in (lists.SUBMISSIONS_TOO_LONG_FOR_CONNECTION,
                   lists.READ_STATE_TOO_LONG_FOR_CONNECTION, subscriptions._TOO_LONG_FOR_CONNECTION):
         assert "connect your signer app again" in words.lower()
