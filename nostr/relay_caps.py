@@ -7,8 +7,10 @@ A connection to a signer app pasted as a ``bunker://`` address uses the
 signer's relays, and some cap the content of the events that carry its
 requests and answers. Each relay's NIP-11 document says so; this reads
 it once per connection, bounded in size (64 KiB) and time (4 seconds),
-over https for wss:// (http for ws://), without cookies, and without
-following a redirect, and notes what it states in
+over https, without cookies, and without following a redirect, only for
+a public wss:// relay (a relay in this computer's own network, or one
+over ws://, is not asked and counts as unreadable), and notes what it
+states in
 ``nostr/signer_limits.py``, the one place every bound is taken from. A
 document that cannot be read counts as stating no cap there (except for
 the relays the contract names), as the web app does.
@@ -29,6 +31,7 @@ from PySide6.QtCore import QObject, QTimer, QUrl
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
 from . import signer_limits
+from .outbox.policy import is_public_relay
 
 NIP11_TIMEOUT_MS = 4_000
 NIP11_MAX_BYTES = 64 * 1024
@@ -37,13 +40,13 @@ _USER_AGENT = b"MyEditor"
 
 
 def document_url(relay: str) -> Optional[str]:
-    """Where ``relay``'s NIP-11 document is: its own address over https
-    for wss:// and http for ws://; None for anything else."""
+    """Where ``relay``'s NIP-11 document is: its own address over https,
+    for a public wss:// relay (outbox.policy.is_public_relay); None for
+    anything else: a relay in this computer's own network, a ws:// one."""
     key = signer_limits.relay_key(relay)
-    if key is None:
+    if key is None or not is_public_relay(key):
         return None
-    scheme, rest = key.split("://", 1)
-    return ("https://" if scheme == "wss" else "http://") + rest
+    return "https://" + key.split("://", 1)[1]
 
 
 def cap_from_answer(raw: bytes) -> Optional[int]:
@@ -85,16 +88,16 @@ class RelayCapsReader(QObject):
             self._waiters.append(_Waiter(keys, done))
             QTimer.singleShot(0, self._settle)
 
-    def _known(self, keys: Set[str]) -> bool:
-        if any(signer_limits.relay_read(key) and signer_limits.connection_message_limit([key])
-               == signer_limits.NIP44_MESSAGE_MAX for key in keys):
-            return True                     # one relay without a cap decides it
-        return not (keys & self._reading)
-
     def _settle(self) -> None:
         waiting, self._waiters = self._waiters, []
         for waiter in waiting:
-            if self._known(waiter.keys):
+            # signer_limits answers it, for a writer's check and this alike
+            # (lesson 24): a relay still being read is neither read nor
+            # unreadable there. Once none is being read, nothing more is
+            # learnt (a relay read long ago may have left the bounded
+            # record), and the waiter goes on.
+            if (signer_limits.relays_bound_known(waiter.keys)
+                    or not (waiter.keys & self._reading)):
                 waiter.done()
             else:
                 self._waiters.append(waiter)
@@ -102,6 +105,10 @@ class RelayCapsReader(QObject):
     def _start(self, key: str) -> None:
         url = document_url(key)
         if url is None:
+            # A relay in this computer's own network, or one not over wss://
+            # (outbox.policy.is_public_relay): not asked, and counted as
+            # unreadable, so the bound is known without it.
+            signer_limits.note_relay_cap(key, None, read=False)
             return
         request = QNetworkRequest(QUrl(url))
         request.setRawHeader(b"Accept", b"application/nostr+json")

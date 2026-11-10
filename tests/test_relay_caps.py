@@ -708,11 +708,17 @@ def test_a_message_whose_seal_the_connection_cannot_carry_blocks_the_submission(
 
 
 class HeldSessions:
+    """A session pool whose bound reading is held: ``asked`` the profiles
+    and their ``done``; ``got`` any signer asked for (none may be)."""
     def __init__(self):
         self.asked = []
+        self.got = []
+
+    def read_bounds(self, profile, done):
+        self.asked.append((profile, done))
 
     def get(self, profile, on_ready, on_error):
-        self.asked.append((profile, on_ready, on_error))
+        self.got.append(profile)
 
 
 def _standup_writer(sessions, account):
@@ -722,19 +728,36 @@ def _standup_writer(sessions, account):
                          uploads=lambda *a: None, accounts=lambda _profile: account)
 
 
-@pytest.mark.parametrize("answer", ["ready", "error"])
-def test_the_writer_learns_the_bound_by_getting_the_signer(answer):
+def test_the_writer_waits_for_the_relays_documents_alone():
+    # RG-M2r2b 13: not the signer reattaching, which may fail before the
+    # reading ends (lesson 29); the bound is what the documents say.
     sessions = HeldSessions()
     account = SimpleNamespace(writer=PK, stopped=False, runs=[], deleteLater=lambda: None)
     told = []
     _standup_writer(sessions, account).signer_bound(CAPPED, lambda: told.append(1))
-    (profile, on_ready, on_error), = sessions.asked
-    assert profile is CAPPED and told == []
-    if answer == "ready":
-        on_ready(object())
-    else:
-        on_error("the signer app did not answer")     # submitting stops at its signature
+    (profile, done), = sessions.asked
+    assert profile is CAPPED and told == [] and sessions.got == []
+    done()
     assert told == [1]
+
+
+def test_the_pool_answers_the_bound_once_the_documents_are_read_not_the_reattach():
+    from nostr.bunker import BunkerSessionPool
+    nam = FakeNam([_document(40_000)])
+    pool = BunkerSessionPool(None, relay_caps=relay_caps.RelayCapsReader(nam=nam))
+    pool.get = lambda *a, **k: pytest.fail("a signer was asked for")
+    told = []
+    profile = SimpleNamespace(user_pubkey=PK, signer="remote", bunker_relays=["wss://c.example"])
+    pool.read_bounds(profile, lambda: told.append(connection_message_limit(["wss://c.example"])))
+    _turn()
+    assert told == []                                      # still reading
+    nam.settle()
+    _turn()
+    assert told == [connection_message_limit(["wss://c.example"])] and told[0] < 65_536
+    pool.read_bounds(profile, lambda: told.append("known"))   # known: at once, later
+    assert told[-1] != "known"
+    _turn()
+    assert told[-1] == "known" and len(nam.issued) == 1
 
 
 def test_a_bound_known_already_asks_no_signer():
@@ -754,7 +777,7 @@ def test_an_account_let_go_hears_no_bound():
     told = []
     _standup_writer(sessions, account).signer_bound(CAPPED, lambda: told.append(1))
     account.stopped = True
-    sessions.asked[0][1](object())
+    sessions.asked[0][1]()
     assert told == []
 
 
@@ -807,12 +830,27 @@ def test_a_document_is_read_over_https_as_nip11_asks():
     assert connection_message_limit(["wss://capped.example"]) == 40_960
 
 
-def test_a_ws_relay_is_read_over_http_and_nothing_else_is_read():
-    assert relay_caps.document_url("ws://relay.example:7777/x") == "http://relay.example:7777/x"
-    assert relay_caps.document_url("https://relay.example") is None
+def test_only_a_public_wss_relay_is_read_and_the_others_count_as_unreadable():
+    # RG-M2r2b 11: outbox.policy.is_public_relay decides, as for every
+    # relay someone else named; a relay not asked is unreadable, so the
+    # bound is known without it.
+    assert relay_caps.document_url("wss://relay.example:7777/x") == \
+        "https://relay.example:7777/x"
+    others = ["ws://relay.example:7777/x", "wss://localhost:7777", "wss://127.0.0.1",
+              "wss://10.0.0.8", "wss://nas.local", "wss://router", "wss://[::1]",
+              "wss://169.254.169.254"]
+    for relay in others + ["https://relay.example", "nonsense"]:
+        assert relay_caps.document_url(relay) is None, relay
     nam = FakeNam()
-    relay_caps.RelayCapsReader(nam=nam).read(["https://relay.example", "nonsense"])
-    assert nam.calls == []
+    told = []
+    relay_caps.RelayCapsReader(nam=nam).read(others + ["https://relay.example", "nonsense"],
+                                             lambda: told.append(1))
+    _turn()
+    assert nam.calls == [] and told == [1]
+    local = SimpleNamespace(user_pubkey=PK, signer="remote", bunker_relays=others)
+    assert signer_limits.bound_known(local)
+    assert not any(signer_limits.relay_read(relay) for relay in others)
+    assert connection_message_limit(others) == signer_limits.NIP44_MESSAGE_MAX
 
 
 @pytest.mark.parametrize("reply", [
@@ -846,18 +884,18 @@ def test_a_long_document_stops_being_read():
     assert reply.aborted
 
 
-def test_a_relay_that_says_nothing_is_given_up_on(monkeypatch):
-    monkeypatch.setattr(relay_caps, "NIP11_TIMEOUT_MS", 1)
+def test_a_relay_that_says_nothing_is_given_up_on():
+    # No wall clock (lesson 34): the reader's own deadline is run out.
+    from PySide6.QtCore import QTimer
     nam = FakeNam()
     told = []
     relay_caps.RelayCapsReader(nam=nam).read(["wss://silent.example"], lambda: told.append(1))
     reply = nam.issued[0]
-    for _ in range(50):
-        if reply.aborted:
-            break
-        QCoreApplication.processEvents()
-        import time
-        time.sleep(0.002)
+    deadline, = reply.findChildren(QTimer)
+    assert deadline.isActive() and deadline.isSingleShot()
+    assert deadline.interval() == relay_caps.NIP11_TIMEOUT_MS
+    assert not reply.aborted and told == []
+    deadline.timeout.emit()
     assert reply.aborted
     reply.finish()                                  # Qt ends an aborted reply
     _turn()
@@ -990,3 +1028,48 @@ print("RESULT " + json.dumps({"reader": isinstance(reader, RelayCapsReader),
 def test_the_main_window_reads_what_its_signer_connections_carry(tmp_path):
     from tests.app_process import run_window_script
     assert run_window_script(WINDOW, tmp_path) == {"reader": True, "parent": True}
+
+
+def test_the_page_bounds_never_pass_the_page_caps_whatever_signs():
+    # RG-M2r2b 5: one cap for every signer type, in page_bounds itself: a
+    # key kept here and a connection without caps write the same pages a
+    # capped connection reads.
+    from nostr.paged_list import PAGE_ANSWER_MAX, PAGE_PLAINTEXT_MAX
+    for profile in (LOCAL, OPEN, CAPPED):
+        bounds = signer_limits.page_bounds(profile)
+        assert bounds["plaintext_max"] <= PAGE_PLAINTEXT_MAX, profile
+        assert bounds["answer_max"] <= PAGE_ANSWER_MAX, profile
+    for profile in (LOCAL, OPEN):
+        assert signer_limits.page_bounds(profile)["plaintext_max"] == PAGE_PLAINTEXT_MAX
+        assert signer_limits.page_bounds(profile)["answer_max"] == PAGE_ANSWER_MAX
+
+
+def test_one_answer_says_when_a_connections_bound_is_known():
+    # RG-M2r2b 12: the reader and a writer's check ask signer_limits alone.
+    known = signer_limits.relays_bound_known
+    assert known([]) and known(["nonsense"])
+    assert not known([NIP46, "wss://nos.lol"])
+    note_relay_cap(NIP46, 40_000)
+    assert not known([NIP46, "wss://nos.lol"])
+    note_relay_cap("wss://nos.lol", None, read=False)
+    assert known([NIP46, "wss://nos.lol"])
+    signer_limits.forget_relay_caps()
+    note_relay_cap("wss://nos.lol", None)                   # one carries all
+    assert known([NIP46, "wss://nos.lol"])
+    assert signer_limits.bound_known(MIXED) == known(MIXED.bunker_relays)
+
+
+def test_a_waiter_goes_on_once_nothing_more_is_read():
+    # A relay read long ago may leave the bounded record while another is
+    # still read: once none is read any more, the waiter is told.
+    nam = FakeNam([_document(40_000), _document(30_000)])
+    told = []
+    reader = relay_caps.RelayCapsReader(nam=nam)
+    reader.read(["wss://one.example", "wss://two.example"], lambda: told.append(1))
+    nam.settle_one()
+    for index in range(300):                                # the record keeps 256
+        note_relay_cap(f"wss://r{index}.example", 50_000)
+    assert not signer_limits.relay_read("wss://one.example")
+    nam.settle_one()
+    _turn()
+    assert told == [1]

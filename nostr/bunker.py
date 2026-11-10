@@ -44,8 +44,8 @@ from . import CLIENT_NAME, CLIENT_URL, crypto, events, refs
 from .relay import KeySignIn, RelayPool, Subscription
 from .answer_size import OWN_REQUEST_ID_BYTES, request_json
 from .signer_limits import (
-    connection_answer_limit, connection_message_limit, connection_plaintext_limit,
-    sign_answer_size,
+    bound_known, connection_answer_limit, connection_message_limit,
+    connection_plaintext_limit, sign_answer_size,
 )
 
 
@@ -1271,6 +1271,17 @@ class BunkerSessionPool(QObject):
         # callbacks waiting on it.
         self._attaching: Dict[str, BunkerClient] = {}
         self._inflight: Dict[str, List[Tuple[Callable[[QObject], None], Callable[[str], None]]]] = {}
+
+    def read_bounds(self, profile, done: Callable[[], None]) -> None:
+        """``done()`` on a later turn once what ``profile``'s signer
+        connection carries is known (signer_limits.bound_known): its
+        relays' documents read, nothing else waited for, not the signer
+        reattaching (RG-M2r2b 13). Without a reader the bounds are those
+        named and stated, known at once."""
+        if self._relay_caps is None or bound_known(profile):
+            QTimer.singleShot(0, done)
+            return
+        self._relay_caps.read(list(profile.bunker_relays or ()), done)
 
     def key_here(self, user_pubkey: str) -> bool:
         """Whether the account's private key is kept on this computer

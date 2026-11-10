@@ -270,16 +270,15 @@ class StandupWriter(QObject):
     def signer_bound(self, profile, done: Callable[[], None]) -> None:
         """``done()`` once what ``profile``'s signer connection carries is
         known (signer_limits.bound_known), for the measure of the message's
-        seal: the signer is got, and the session pool reads its relays as
-        it reattaches. Also when it cannot be got: submitting then stops at
-        its first signature, in its own words. Nothing for an account let
-        go (lesson 31)."""
+        seal: the session pool reads its relays' documents, and that alone
+        is waited for (RG-M2r2b 13), never the signer reattaching, which
+        may end before the reading does (lesson 29). Nothing for an account
+        let go (lesson 31)."""
         account = self.account(profile)
         if bound_known(profile):
             answer_later(done)
             return
-        self._session_pool.get(profile, on_ready=_live(account, lambda _client: done()),
-                               on_error=_live(account, lambda _reason: done()))
+        self._session_pool.read_bounds(profile, _live(account, done))
 
     def instance(self, profile, on_operator: Callable[[str], None]) -> None:
         """Who runs the server (``GET /api/editorial/instance``), for the
