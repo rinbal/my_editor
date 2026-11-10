@@ -48,7 +48,7 @@ def qt_app():
     yield app
 
 
-def run(answer, *, client=None, pool=None):
+def run(answer, *, client=None, pool=None, jobs=None):
     client = client or FakeClient()
     pool = pool or FakePool()
     query = FakeQuery({10002: answer})
@@ -59,6 +59,8 @@ def run(answer, *, client=None, pool=None):
     job.finished.connect(outcomes.append)
     job.start()
     settle(10)
+    if jobs is not None:
+        jobs.append(job)
     return outcomes, client, pool
 
 
@@ -75,11 +77,15 @@ def test_a_list_that_could_not_be_read_publishes_nothing():
 
 
 def test_no_list_and_could_not_read_say_different_things():
+    jobs = []
+    run(UNKNOWN, jobs=jobs)
     none = rla.outcome_message(rla.NO_LIST)
-    unread = rla.outcome_message(rla.UNREADABLE)
+    unread = rla.outcome_message(rla.UNREADABLE, jobs[0].write)
     assert none != unread
     assert "recommended" in none
-    assert "try again later" in unread.lower()
+    # Lessons 36: what did not happen, then the one sentence of its cause.
+    assert unread == ("Your relay list wasn’t changed. Check your internet connection and "
+                      "try again.")
 
 
 def test_the_new_list_keeps_everything_and_adds_the_relay():
@@ -110,8 +116,22 @@ def test_a_signer_that_says_no_changes_nothing():
 def test_relays_that_will_not_take_it_are_a_failure():
     existing = signed(10002, [["r", "wss://a.example"]])
     everyone = {"wss://a.example", E21, *defaults.INDEXER_RELAYS}
-    outcomes, _client, _pool = run(found(existing), pool=FakePool(refuse=everyone))
+    jobs = []
+    outcomes, _client, _pool = run(found(existing), jobs=jobs,
+                                   pool=FakePool(refuse=everyone, reason="blocked: paid"))
     assert outcomes == [rla.FAILED]
+    assert rla.outcome_message(rla.FAILED, jobs[0].write) == (
+        "Your relay list wasn’t changed. The servers your posts go to turned it down: try "
+        "again later.")
+
+
+def test_a_signer_that_says_no_is_said_as_that():
+    existing = signed(10002, [["r", "wss://a.example"]])
+    jobs = []
+    run(found(existing), jobs=jobs, client=FakeClient(fail="user rejected"))
+    assert rla.outcome_message(rla.FAILED, jobs[0].write) == (
+        "Your relay list wasn’t changed. Your signer app declined the request: allow it there "
+        "and try again.")
 
 
 def test_outcome_messages_are_plain_and_have_no_em_dashes():
@@ -122,7 +142,7 @@ def test_outcome_messages_are_plain_and_have_no_em_dashes():
 
 # -- the recommended list, for an account that has none ----------------------------------
 
-def publish(answer, *, client=None, pool=None):
+def publish(answer, *, client=None, pool=None, jobs=None):
     client = client or FakeClient()
     pool = pool or FakePool()
     query = FakeQuery({10002: answer})
@@ -133,7 +153,24 @@ def publish(answer, *, client=None, pool=None):
     job.finished.connect(outcomes.append)
     job.start()
     settle(10)
+    if jobs is not None:
+        jobs.append(job)
     return outcomes, client, pool
+
+
+def test_a_recommended_list_not_published_says_so_by_its_cause():
+    jobs = []
+    outcomes, _client, _pool = publish(UNKNOWN, jobs=jobs)
+    assert outcomes == [rla.UNREADABLE]
+    job, = jobs
+    assert rla.outcome_message(outcomes[0], job.write, not_done=job.NOT_DONE) == (
+        "Your relay list wasn’t published. Check your internet connection and try again.")
+    jobs.clear()
+    outcomes, _client, _pool = publish(ABSENT, jobs=jobs, client=FakeClient(fail="user rejected"))
+    assert outcomes == [rla.FAILED]
+    assert rla.outcome_message(outcomes[0], jobs[0].write, not_done=jobs[0].NOT_DONE) == (
+        "Your relay list wasn’t published. Your signer app declined the request: allow it "
+        "there and try again.")
 
 
 def test_the_recommended_list_carries_the_members_relay():

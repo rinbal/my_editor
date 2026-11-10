@@ -144,10 +144,12 @@ class RelayLists:
 
 class Job(QObject):
     finished = Signal(str)
+    NOT_DONE = rla.NOT_CHANGED
 
     def __init__(self):
         super().__init__()
         self.started = 0
+        self.write = None           # the writer's outcome: none here
 
     def start(self):
         self.started += 1
@@ -457,6 +459,35 @@ def shows(widget) -> bool:
     return widget.isVisibleTo(widget.window())
 
 
+def test_a_relay_list_not_changed_is_said_by_the_writers_cause():
+    from nostr.outbox import writer as outbox_writer
+    h = member_harness()
+    window = open_member_window(h)
+    row = window._relay_row
+    row.button.click()
+    job = h.jobs[0]
+    job.write = outbox_writer.WriteOutcome(outbox_writer.FAILED, cause=outbox_writer.CAUSE_SIGNER,
+                                           reason="user rejected")
+    job.NOT_DONE = rla.NOT_PUBLISHED
+    job.finished.emit(rla.FAILED)
+    assert row.note_label.text() == ("Your relay list wasn’t published. Your signer app "
+                                     "declined the request: allow it there and try again.")
+    window.close()
+
+
+def test_a_profile_address_not_shown_is_said_by_the_writers_cause():
+    from nostr.outbox import writer as outbox_writer
+    h = member_harness()
+    window = open_member_window(h)
+    window._address_row.button.click()
+    job = h.jobs[0]
+    job.write = outbox_writer.WriteOutcome(outbox_writer.FAILED, cause=outbox_writer.CAUSE_CLOCK)
+    job.finished.emit(pa.FAILED)
+    assert window._address_row.note_label.text().startswith(
+        "Your profile wasn’t changed. The version on the network is dated ahead")
+    window.close()
+
+
 @pytest.mark.parametrize("outcome,done,offered", [
     (rla.ADDED, True, False),
     (rla.ALREADY, True, False),
@@ -600,7 +631,9 @@ def test_a_profile_address_for_an_account_no_longer_active_is_not_written():
     assert h.jobs == []
     # The window is not left waiting: it says nothing was changed, and the
     # button can be used again.
-    assert window._address_row.note_label.text() == pa.outcome_message(pa.FAILED)
+    assert window._address_row.note_label.text() == (
+        "Your profile wasn’t changed. This window is for an account that isn’t active any "
+        "more: close it and open it again.")
     assert window._address_row.button.isEnabled()
     window.close()
 

@@ -21,6 +21,9 @@ window shows:
 A profile that could not be found is not created from nothing here: a
 profile holding only an address would replace the person's name and
 picture in every app, should the relays asked simply have missed it.
+
+A profile not changed is said by that and the one sentence of its cause
+(outbox/writer.failure_words, lessons 36).
 """
 
 from __future__ import annotations
@@ -30,7 +33,8 @@ from typing import Callable, Optional
 
 from PySide6.QtCore import QObject, Signal
 
-from i18n import _
+from i18n import N_, _
+from nostr import failures
 from nostr.outbox import writer as outbox_writer
 from nostr.outbox.lookup import fetch_replaceable
 
@@ -43,15 +47,17 @@ FAILED = "failed"
 # Outcomes after which there is nothing left to do.
 DONE = frozenset({SHOWN, ALREADY})
 
+# One sentence each; a profile not changed says its cause.
 _MESSAGES = {
-    SHOWN: _("Your profile shows it now."),
-    ALREADY: _("Your profile already shows it."),
-    NO_PROFILE: _("MyEditor couldn’t find your profile, so nothing was changed. "
-                  "Try again later."),
-    UNREADABLE: _("MyEditor couldn’t read your profile right now, so nothing was "
-                  "changed. Try again later."),
-    FAILED: _("Your profile wasn’t changed. Try again in a moment."),
+    SHOWN: N_("Your profile shows it now."),
+    ALREADY: N_("Your profile already shows it."),
+    NO_PROFILE: N_("MyEditor couldn’t find your profile: set it up in Edit Profile first, "
+                   "then try again."),
 }
+NOT_CHANGED = N_("Your profile wasn’t changed")
+# The window spoke for an account that is no longer the active one.
+NOT_ACTIVE = N_("This window is for an account that isn’t active any more: close it and "
+                "open it again.")
 
 _FROM_WRITER = {
     outbox_writer.WRITTEN: SHOWN,
@@ -62,9 +68,19 @@ _FROM_WRITER = {
 }
 
 
-def outcome_message(outcome: str) -> str:
-    """Plain words for an outcome, for the window to show."""
-    return _MESSAGES.get(outcome, _MESSAGES[FAILED])
+def outcome_message(outcome: str, write: Optional[outbox_writer.WriteOutcome] = None) -> str:
+    """Plain words for an outcome, for the window to show: for a profile
+    not changed, that and the one sentence of ``write``'s cause."""
+    if outcome in _MESSAGES:
+        return _(_MESSAGES[outcome])
+    why = (outbox_writer.failure_words(write) if write is not None
+           else _(failures.CHECK_CONNECTION))
+    return failures.spoken(_(NOT_CHANGED), why)
+
+
+def inactive_message() -> str:
+    """For a window that spoke for an account no longer active."""
+    return failures.spoken(_(NOT_CHANGED), _(NOT_ACTIVE))
 
 
 class ProfileAddress(QObject):
@@ -76,12 +92,17 @@ class ProfileAddress(QObject):
                  query=fetch_replaceable, clock: Callable[[], float] = time.time,
                  parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
+        # The writer's own outcome, once it finished (its cause, for words).
+        self.write: Optional[outbox_writer.WriteOutcome] = None
         self._writer = outbox_writer.update_profile(
             changes={"nip05": address}, on_absent="refuse", pool=pool,
             directory=directory, session_pool=session_pool, profile=profile,
             query=query, clock=clock, parent=self)
-        self._writer.finished.connect(
-            lambda outcome: self.finished.emit(_FROM_WRITER.get(outcome.status, FAILED)))
+        self._writer.finished.connect(self._finished)
+
+    def _finished(self, outcome: outbox_writer.WriteOutcome) -> None:
+        self.write = outcome
+        self.finished.emit(_FROM_WRITER.get(outcome.status, FAILED))
 
     def start(self) -> None:
         self._writer.start()

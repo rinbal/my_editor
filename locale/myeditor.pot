@@ -1772,7 +1772,7 @@ msgstr ""
 #: main_window.py:2140
 #: main_window.py:379
 #: nostr/ui/draft_relays_sheet.py:624
-#: nostr/ui/profile_window.py:409
+#: nostr/ui/profile_window.py:411
 #: nostr/ui/save_destination_dialog.py:230
 #: nostr/ui/save_destination_dialog.py:311
 msgid "Save"
@@ -6306,6 +6306,7 @@ msgid "This account already has a relay list."
 msgstr ""
 
 #: nostr/account_controller.py:394
+#: nostr/relay_list_addition.py:66
 msgid "Your relay list wasn’t published"
 msgstr ""
 
@@ -6706,24 +6707,24 @@ msgid_plural "{n} min read"
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/profile_address.py:47
+#: nostr/profile_address.py:57
+msgid "Your profile wasn’t changed"
+msgstr ""
+
+#: nostr/profile_address.py:59
+msgid "This window is for an account that isn’t active any more: close it and open it again."
+msgstr ""
+
+#: nostr/profile_address.py:52
 msgid "Your profile shows it now."
 msgstr ""
 
-#: nostr/profile_address.py:48
+#: nostr/profile_address.py:53
 msgid "Your profile already shows it."
 msgstr ""
 
-#: nostr/profile_address.py:49
-msgid "MyEditor couldn’t find your profile, so nothing was changed. Try again later."
-msgstr ""
-
-#: nostr/profile_address.py:51
-msgid "MyEditor couldn’t read your profile right now, so nothing was changed. Try again later."
-msgstr ""
-
-#: nostr/profile_address.py:53
-msgid "Your profile wasn’t changed. Try again in a moment."
+#: nostr/profile_address.py:54
+msgid "MyEditor couldn’t find your profile: set it up in Edit Profile first, then try again."
 msgstr ""
 
 #: nostr/publish_pipeline.py:209
@@ -6859,32 +6860,28 @@ msgstr ""
 msgid "socket error: {error}"
 msgstr ""
 
-#: nostr/relay_list_addition.py:51
+#: nostr/relay_list_addition.py:65
+msgid "Your relay list wasn’t changed"
+msgstr ""
+
+#: nostr/relay_list_addition.py:56
 msgid "Added to your relay list."
 msgstr ""
 
-#: nostr/relay_list_addition.py:52
+#: nostr/relay_list_addition.py:57
 msgid "It’s already on your relay list."
 msgstr ""
 
-#: nostr/relay_list_addition.py:53
-msgid "You don’t have a relay list yet, so nothing was changed. MyEditor can publish a recommended one with the members’ relay on it."
-msgstr ""
-
-#: nostr/relay_list_addition.py:55
-msgid "MyEditor couldn’t read your relay list right now, so nothing was changed. Try again later."
-msgstr ""
-
-#: nostr/relay_list_addition.py:57
-msgid "Your relay list wasn’t changed. Try again in a moment."
-msgstr ""
-
 #: nostr/relay_list_addition.py:58
+msgid "You don’t have a relay list yet: MyEditor can publish a recommended one with the members’ relay on it."
+msgstr ""
+
+#: nostr/relay_list_addition.py:60
 msgid "Your relay list is published, with the members’ relay on it."
 msgstr ""
 
-#: nostr/relay_list_addition.py:59
-msgid "Your account has a relay list after all, so nothing was published. Add the members’ relay to it instead."
+#: nostr/relay_list_addition.py:61
+msgid "Your account has a relay list after all: add the members’ relay to it instead."
 msgstr ""
 
 #: nostr/signer_limits.py:83
@@ -9113,7 +9110,7 @@ msgstr ""
 #: nostr/ui/cover_field.py:324
 #: nostr/ui/membership_window.py:971
 #: nostr/ui/membership_window.py:1140
-#: nostr/ui/profile_window.py:314
+#: nostr/ui/profile_window.py:313
 msgid "Choose…"
 msgstr ""
 
@@ -9123,7 +9120,7 @@ msgid "Choose Cover Image"
 msgstr ""
 
 #: nostr/ui/cover_field.py:326
-#: nostr/ui/profile_window.py:316
+#: nostr/ui/profile_window.py:315
 msgid "Choose a picture from your Media Library, or upload one."
 msgstr ""
 
@@ -11139,7 +11136,7 @@ msgid "One moment."
 msgstr ""
 
 #: nostr/ui/membership_window.py:100
-#: nostr/ui/profile_window.py:454
+#: nostr/ui/profile_window.py:467
 msgid "Your signer app may ask you to approve."
 msgstr ""
 
@@ -11723,8 +11720,12 @@ msgstr ""
 msgid "A username can’t contain spaces."
 msgstr ""
 
-#: nostr/ui/profile_window.py:452
+#: nostr/ui/profile_window.py:465
 msgid "Saving your profile…"
+msgstr ""
+
+#: nostr/ui/profile_window.py:481
+msgid "Your profile wasn’t saved"
 msgstr ""
 
 #: nostr/ui/profile_window.py:186
@@ -11735,54 +11736,46 @@ msgstr ""
 msgid "Reading your profile…"
 msgstr ""
 
-#: nostr/ui/profile_window.py:468
-msgid "Your profile wasn’t saved: it couldn’t be read again just before saving, so nothing was changed. Try again in a moment."
-msgstr ""
-
-#: nostr/ui/profile_window.py:234
-msgid "MyEditor Couldn’t Read Your Profile"
-msgstr ""
-
 #: nostr/ui/profile_window.py:235
-msgid "Your profile couldn’t be read from the network just now. Editing it without reading it first could replace it, so try again in a moment."
+msgid "Your Profile Couldn’t Be Read"
 msgstr ""
 
-#: nostr/ui/profile_window.py:256
+#: nostr/ui/profile_window.py:255
 msgid "Your Profile"
 msgstr ""
 
-#: nostr/ui/profile_window.py:473
-msgid "Your profile wasn’t saved: since it was read, a secret key was added to a part of it this window doesn’t show. Close this window and open Edit Profile again; it will offer to leave that part out."
+#: nostr/ui/profile_window.py:486
+msgid "Since it was read, a secret key was added to a part this window doesn’t show: close this window and open Edit Profile again to leave that part out."
 msgstr ""
 
-#: nostr/ui/profile_window.py:477
-msgid "Your profile wasn’t saved: your signer app didn’t sign it, or too few servers took it. Nothing was changed. Try again in a moment."
+#: nostr/ui/profile_window.py:236
+msgid "Editing your profile without reading it first could replace it."
 msgstr ""
 
-#: nostr/ui/profile_window.py:244
+#: nostr/ui/profile_window.py:243
 msgid "This Profile Can’t Be Edited Here"
 msgstr ""
 
-#: nostr/ui/profile_window.py:245
-msgid "Your profile is stored in a form MyEditor doesn’t understand, so it is left as it is. Edit it in the app that created it."
+#: nostr/ui/profile_window.py:244
+msgid "Your profile is stored in a form MyEditor doesn’t understand: edit it in the app that created it."
 msgstr ""
 
-#: nostr/ui/profile_window.py:401
+#: nostr/ui/profile_window.py:400
 msgid "You don’t have a profile yet. What you enter here becomes your profile."
 msgstr ""
 
-#: nostr/ui/profile_window.py:403
+#: nostr/ui/profile_window.py:402
 msgid "This is what people see in every Nostr app. An empty field is removed from your profile."
 msgstr ""
 
-#: nostr/ui/profile_window.py:392
+#: nostr/ui/profile_window.py:391
 #, python-brace-format
 msgid "Your profile has a secret key in {names}, a part this window doesn’t show. Saving leaves that part out, which takes the key out of your profile."
 msgid_plural "Your profile has a secret key in {names}, parts this window doesn’t show. Saving leaves those parts out, which takes the key out of your profile."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/profile_window.py:391
+#: nostr/ui/profile_window.py:390
 #, python-brace-format
 msgid "“{part}”"
 msgstr ""

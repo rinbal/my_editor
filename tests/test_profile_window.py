@@ -91,6 +91,11 @@ def test_a_profile_that_could_not_be_read_is_not_edited():
     win, net = window()
     net.reads[0](Lookup(LookupState.UNKNOWN))
     assert win.page == PROBLEM
+    # Lessons 36: what did not happen, one sentence, why it is not edited
+    # unread in the tooltip, Try Again beside Close.
+    assert win._problem_title.text() == "Your Profile Couldn’t Be Read"
+    assert win._problem_text.text() == "Check your internet connection and try again."
+    assert "replace it" in win._problem_text.toolTip()
     assert "Try Again" in [b.text() for b in win.buttons.values()]
     win.buttons["retry"].click()
     assert win.page == READING and len(net.reads) == 2
@@ -179,8 +184,13 @@ def test_a_key_added_elsewhere_since_reading_is_said_with_what_to_do():
     edit(win, "name", "alicia")
     win._save_changes()
     net.saves[0][1](SimpleNamespace(status=outbox_writer.FAILED, reason=_(refs.SECRET_KEY_REFUSED)))
-    note = win._form_note.text()
-    assert "open Edit Profile again" in note and "try again" not in note.lower()
+    note = win._form_note.accessibleName()
+    assert note == ("Your profile wasn’t saved. Since it was read, a secret key was added to a "
+                    "part this window doesn’t show: close this window and open Edit Profile "
+                    "again to leave that part out.")
+    assert "try again" not in note.lower()
+    # No try here can help: no Try Again, no Save; Cancel is the way out.
+    assert set(win.buttons) == {"cancel"} and win.buttons["cancel"].isDefault()
 
 
 def test_a_field_problem_is_read_with_the_field_and_said_once(monkeypatch):
@@ -233,6 +243,43 @@ def test_a_failed_save_keeps_what_was_typed():
     assert win._edits["about"].toPlainText() == "New about"
     assert "wasn’t saved" in win._form_note.text()
     assert win.buttons["save"].isEnabled()
+
+
+@pytest.mark.parametrize("outcome, sentence", [
+    (outbox_writer.WriteOutcome(outbox_writer.UNKNOWN_BASE, cause=outbox_writer.CAUSE_RELAYS,
+                                reason="The current one couldn’t be read."),
+     "Check your internet connection and try again."),
+    (outbox_writer.WriteOutcome(outbox_writer.FAILED, cause=outbox_writer.CAUSE_RELAYS,
+                                reason="Too few relays accepted it.",
+                                refused=(("wss://a.example", "blocked: paid relay"),)),
+     "The servers your posts go to turned it down: try again later."),
+    (outbox_writer.WriteOutcome(outbox_writer.FAILED, cause=outbox_writer.CAUSE_SIGNER,
+                                reason="user rejected"),
+     "Your signer app declined the request: allow it there and try again."),
+])
+def test_a_failed_save_is_said_once_by_its_cause_and_try_again_saves_again(
+        monkeypatch, outcome, sentence):
+    # Lessons 36: what did not happen, the one sentence of its cause (no
+    # longer the signer "or" the servers), what was said in the tooltip,
+    # and Save reads Try Again.
+    import announce
+    heard = []
+    monkeypatch.setattr(announce, "announce", lambda source, text: heard.append(text))
+    win, net = window()
+    win.show()
+    net.reads[0](found(name="alice"))
+    edit(win, "about", "New about")
+    win.buttons["save"].click()
+    net.saves[0][1](outcome)
+    said = f"Your profile wasn’t saved. {sentence}"
+    assert win._form_note.text() == f"<b>Your profile wasn’t saved</b><br>{sentence}"
+    assert win._form_note.accessibleName() == said and heard == [said]
+    assert win._form_note.toolTip().startswith(outcome.reason)
+    assert "wss://" not in win._form_note.text()
+    assert win.buttons["save"].text() == "Try Again" and win.buttons["save"].isDefault()
+    win.buttons["save"].click()
+    assert len(net.saves) == 2 and net.saves[1][0] == net.saves[0][0]   # the same changes
+    win.close()
 
 
 def test_a_signer_account_is_told_to_look_at_the_signer():
