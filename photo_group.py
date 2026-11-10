@@ -67,6 +67,7 @@ from PySide6.QtGui import (
 import media_files
 import photo_layout
 from doc_walk import LINE_SEPARATOR, OBJECT_REPLACEMENT
+from i18n import _
 
 # --------------------------------------------------------------------------- #
 # Marks in the document                                                        #
@@ -1325,8 +1326,32 @@ def picture_at(doc: QTextDocument, point) -> Optional[Tuple[int, str]]:
     return None
 
 
-def group_picture_at_cursor(cursor: QTextCursor) -> Optional[str]:
-    """The name of the group picture ``cursor`` selects, alone, or None."""
+def picture_words_at(doc: QTextDocument, position: int) -> Optional[str]:
+    """What a screen reader says for the group picture at ``position`` (the
+    caret before or after it): "Photo 2 of 5. Loch", as the exported page's
+    viewer says it; None away from one. (The text holds a picture as one
+    character, which a screen reader cannot read.)"""
+    block = doc.findBlock(position)
+    if not block.blockFormat().hasProperty(UNIT):
+        return None
+    picture = next(((p, cf) for p, text, cf in _pieces(block) if _is_picture(text, cf)), None)
+    table = _row_table_at(doc, position)
+    if picture is None or table is None or not picture[0] <= position <= picture[0] + 1:
+        return None
+    number = table.format().property(GROUP)
+    tables = [frame for frame in doc.rootFrame().childFrames()
+              if is_group_table(frame) and frame.format().property(GROUP) == number]
+    units = [b.position() for t in tables for b in _blocks_in(doc, t)
+             if b.blockFormat().hasProperty(UNIT)]
+    if block.position() not in units:
+        return None
+    words = _("Photo {k} of {n}").format(k=units.index(block.position()) + 1, n=len(units))
+    alt = _alt(picture[1])
+    return f"{words}. {alt}" if alt else words
+
+
+def _selected_group_picture(cursor: QTextCursor):
+    """The format of the group picture ``cursor`` selects, alone, or None."""
     if not cursor.hasSelection() or cursor.selectionEnd() - cursor.selectionStart() != 1:
         return None
     doc = cursor.document()
@@ -1335,5 +1360,17 @@ def group_picture_at_cursor(cursor: QTextCursor) -> Optional[str]:
         return None
     for position, text, fmt in _pieces(block):
         if position <= cursor.selectionStart() < position + len(text) and _is_picture(text, fmt):
-            return fmt.toImageFormat().name()
+            return fmt
     return None
+
+
+def group_picture_at_cursor(cursor: QTextCursor) -> Optional[str]:
+    """The name of the group picture ``cursor`` selects, alone, or None."""
+    fmt = _selected_group_picture(cursor)
+    return fmt.toImageFormat().name() if fmt is not None else None
+
+
+def group_picture_description_at_cursor(cursor: QTextCursor) -> str:
+    """The description of the group picture ``cursor`` selects, or ""."""
+    fmt = _selected_group_picture(cursor)
+    return _alt(fmt) if fmt is not None else ""

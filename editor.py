@@ -1330,11 +1330,20 @@ class HtmlEditor(QTextEdit):
     def _announce_place(self) -> None:
         """Tell a screen reader what the caret has entered that its words
         do not say: a checklist item ticked or not, a table cell's row,
-        column and header. Once per item or cell."""
+        column and header, a photo group's picture (its place in the group
+        and its description, photo_group.picture_words_at). Once per item,
+        cell or picture."""
         if not self._holds_structure():
             return
         cursor = self.textCursor()
         block = cursor.block()
+        picture = photo_group.picture_words_at(self.document(), cursor.position())
+        if picture is not None:
+            place = ("picture", block.position(), picture)
+            if place != self._spoken_place:
+                self._spoken_place = place
+                announce.announce(self, picture)
+            return
         table = rich_text.table_at(cursor)
         if table is not None:
             cell = table.cellAt(cursor)

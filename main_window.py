@@ -6171,6 +6171,12 @@ class MainWindow(QMainWindow):
             # Back to the text it was opened from, as Quick Look does.
             panel.closed.connect(lambda: self.current_editor() and self.current_editor().setFocus())
         panel.show_path(path)
+        # Named as the reader knows it: its description, else its own file's
+        # name; never the name of the copy made for showing it.
+        looks = getattr(self, "_look_files", None)
+        copy = looks is not None and os.path.dirname(path) == looks.path()
+        panel.setWindowTitle(photo_group.group_picture_description_at_cursor(editor.textCursor())
+                             or (_("Picture") if copy else os.path.basename(path)))
 
     def _picture_file(self, editor, name: str) -> Optional[str]:
         """A file Quick Look can show for the picture called ``name``: the
