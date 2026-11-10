@@ -13,11 +13,13 @@ runs, strips unrolled: one picture a line.
 
 from __future__ import annotations
 
+import itertools
+
 import time
 
 import pytest
 from PySide6.QtCore import QUrl
-from PySide6.QtGui import QImage, QTextDocument, QTextTable
+from PySide6.QtGui import QColor, QImage, QTextDocument, QTextTable
 from PySide6.QtWidgets import QApplication, QTextEdit
 
 import photo_group
@@ -482,4 +484,58 @@ def test_a_caption_wider_than_its_picture_wraps_under_it(app):
     assert rect.right() <= view.viewport().width()
     shot = view.viewport().grab().toImage()
     assert all(shows_whole(shot, box) for box in boxes.values())
+    view.close()
+
+
+@pytest.mark.parametrize("caption", ["Unbreakable" * 40,
+                                     "שלום ​‏‮ reversed? ⁦x"])
+def test_a_long_or_right_to_left_caption_stays_under_its_picture(app, caption):
+    view = _shown(f"![a](photo.png)\n\n*{caption}*\n\n![b](square.png)\n\n![c](portrait.png)\n",
+                  760)
+    doc = view.document()
+    boxes = [box for _p, _n, box in photo_group.picture_boxes(doc)]
+    assert len(boxes) == 3
+    for one, other in itertools.combinations(boxes, 2):
+        assert not one.intersects(other)
+    width = view.viewport().width()
+    assert all(box.right() <= width + 0.5 for box in boxes)
+    block = doc.find(caption[:8]).block()
+    rect = doc.documentLayout().blockBoundingRect(block)
+    # In its picture's column: from its left edge, short of the next.
+    assert rect.left() == pytest.approx(boxes[0].left(), abs=0.5)
+    assert rect.right() <= min(box.left() for box in boxes[1:] if box.left() > boxes[0].left())
+    assert not any(rect.intersects(box) for box in boxes)
+    shot = view.viewport().grab().toImage()
+    assert all(shows_whole(shot, box) for box in boxes)
+    view.close()
+
+
+@pytest.mark.parametrize("shape", [(3300, 100), (100, 3300)])
+def test_a_picture_past_the_engines_limits_is_drawn_whole_not_stretched(app, shape):
+    """The engine lays a picture of a shape past its limits out at 3:2
+    (photo_layout.picture_size); it is drawn inside at its own shape."""
+    blue = QColor("#0090FF")
+    odd = QImage(*shape, QImage.Format.Format_RGB32)
+    odd.fill(blue)
+    view = QTextEdit()
+    view.resize(760, 3000)
+    doc = view.document()
+    photo_group.install(doc, photo_group.resource_sizes(doc))
+    doc.setMarkdown("![a](odd.png)\n\n![b](photo.png)\n")
+    doc.addResource(IMAGE, QUrl("odd.png"), odd)
+    doc.addResource(IMAGE, QUrl("photo.png"), image_of("photo.png"))
+    photo_group.fold(doc)
+    view.show()
+    QApplication.processEvents()
+    shot = view.viewport().grab().toImage()
+    box = next(box for _p, name, box in photo_group.picture_boxes(doc) if name == "odd.png")
+    assert box.width() / box.height() == pytest.approx(1.5, rel=0.02)
+    ratio = shot.devicePixelRatio() or 1.0
+    found = [(x, y) for y in range(int(box.top()), int(box.bottom()) + 1)
+             for x in range(int(box.left()), int(box.right()) + 1)
+             if QColor(shot.pixel(int(x * ratio), int(y * ratio))) == blue]
+    xs = [x for x, _y in found]
+    ys = [y for _x, y in found]
+    drawn = (max(xs) - min(xs) + 1) / (max(ys) - min(ys) + 1)
+    assert drawn == pytest.approx(shape[0] / shape[1], rel=0.15)
     view.close()

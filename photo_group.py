@@ -1059,6 +1059,30 @@ def _whole(place: Place) -> Place:
                  place.picture_height * scale)
 
 
+def _fitted(target: QRectF, doc, fmt) -> QRectF:
+    """``target`` narrowed to its picture's own shape, centred in it. The
+    engine lays a picture out at 3:2 when it does not take its size (a
+    shape past its limits, photo_layout.picture_size): it is drawn whole
+    inside that box, never stretched to it."""
+    image = doc.resource(QTextDocument.ResourceType.ImageResource.value,
+                         QUrl(fmt.toImageFormat().name()))
+    if isinstance(image, QPixmap):
+        image = image.toImage()
+    if (not isinstance(image, QImage) or image.isNull() or is_placeholder(image)
+            or target.width() <= 0 or target.height() <= 0):
+        return target
+    ratio = image.width() / image.height()
+    room = target.width() / target.height()
+    if abs(ratio - room) <= 0.01 * ratio:
+        return target
+    if ratio > room:
+        height = target.width() / ratio
+        return QRectF(target.x(), target.y() + (target.height() - height) / 2,
+                      target.width(), height)
+    width = target.height() * ratio
+    return QRectF(target.x() + (target.width() - width) / 2, target.y(), width, target.height())
+
+
 class _Handler(QPyTextObject):
     """Sizes and draws the pictures of a group (and its spacers); every
     other picture goes to Qt's own handler, as before."""
@@ -1092,7 +1116,7 @@ class _Handler(QPyTextObject):
         if place is not None and self._original is not None:
             target = QRectF(rect.x() + place.x, rect.y() + (rect.height() - place.picture_height),
                             place.picture_width, place.picture_height)
-            self._original.drawObject(painter, target, doc, position, fmt)
+            self._original.drawObject(painter, _fitted(target, doc, fmt), doc, position, fmt)
             return
         if self._original is not None:
             self._original.drawObject(painter, rect, doc, position, fmt)
