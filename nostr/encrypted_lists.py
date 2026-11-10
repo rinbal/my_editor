@@ -42,6 +42,10 @@ could not be opened blocks the list instead (contract 13), so the next
 write never drops what it holds. A list that is not paged keeps the format it
 always had: one event, the plaintext exactly as ``encode`` gives it.
 
+Given ``opened`` (``decrypted_pages.DecryptedPages`` of the account), a
+page opened once is not sent to the signer again, nor is one this app
+wrote: a quiet re-read asks only for the pages it has not seen.
+
 Every boundary (relay queries, publishing, signer, clock) is passed in,
 so a list is testable without relays, a signer or wall-clock time.
 """
@@ -160,6 +164,7 @@ class EncryptedList(QObject):
         untagged: Optional[str] = None,
         on_status: Optional[Callable[[str], None]] = None,
         name: str = "",
+        opened=None,
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
@@ -180,6 +185,7 @@ class EncryptedList(QObject):
         self._untagged = untagged or ""
         self._on_status = on_status or (lambda _text: None)
         self._name = name or d_tag
+        self._opened = opened
         # One write at a time per account (13): two at once would date
         # their pages alike and mix them. Accounts with a write on its
         # way, and the request that goes next for each.
@@ -240,6 +246,16 @@ class EncryptedList(QObject):
         if algorithm not in ("nip44", "nip44_v2", "nip04"):
             on_text(content)  # no encryption (a list from before it was used)
             return
+        opened = self._opened_for(profile)
+        seen = opened.get(event) if opened is not None else None
+        if seen is not None:
+            answer_later(on_text, seen)         # seen before: the signer is not asked
+            return
+
+        def deliver(text: str) -> None:
+            if opened is not None:
+                opened.put(event, text)
+            on_text(text)
 
         def failed(reason: str, words: str) -> None:
             """A signer app that did not answer is said as such, whatever
@@ -265,15 +281,28 @@ class EncryptedList(QObject):
                     return
                 # A signer app that refuses NIP-04: what to do is the same
                 # as without one.
-                decrypt(content, on_success=on_text,
+                decrypt(content, on_success=deliver,
                         on_failure=lambda reason: failed(reason, self._words.old_encryption))
                 return
-            client.nip44_decrypt_self(content, on_success=on_text,
+            client.nip44_decrypt_self(content, on_success=deliver,
                                       on_failure=lambda reason: failed(reason,
                                                                        self._words.unreadable))
 
         self._session_pool.get(profile, on_ready=_on_ready,
                                on_error=lambda reason: failed(reason, self._words.signer_silent))
+
+    def _opened_for(self, profile):
+        """The account's opened pages, never another account's."""
+        opened = self._opened
+        if opened is None or not opened.belongs_to(str(profile.user_pubkey or "")):
+            return None
+        return opened
+
+    def _remember(self, profile, event: dict, plaintext: str) -> None:
+        """A page written here: what it opens to is known."""
+        opened = self._opened_for(profile)
+        if opened is not None:
+            opened.put(event, plaintext)
 
     # -- writing -------------------------------------------------------------
 
@@ -652,6 +681,7 @@ class _Writing:
 
         def signed(event: dict) -> None:
             self._signed[index] = event
+            self._list._remember(self._profile, event, self._plaintexts[index])
             self._sign(rest)
 
         self._client.nip44_encrypt_self(self._plaintexts[index], on_success=encrypted,

@@ -55,6 +55,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from i18n import N_, _
 
+from ..decrypted_pages import DecryptedPages
 from ..encrypted_lists import EncryptedList
 from ..later import answer_later
 from ..list_results import ListRead, ListWords, PublishResult, PublishStatus, ReadStatus
@@ -130,12 +131,15 @@ class _AccountList(QObject):
         self._profile = profile
         self._clock = clock
         self._empty = empty
+        # The pages opened already, so a quiet re-read asks the signer
+        # only for the ones it has not seen; dropped with the account.
+        self._opened = DecryptedPages(profile.user_pubkey)
         self._list = EncryptedList(
             d_tag=d_tag, decode=decode, encode=encode, merge=merge, words=words,
             session_pool=session_pool, relay_directory=relay_directory, query=query,
             publisher=publisher, clock=lambda: int(clock()), entitled_relays=entitled_relays,
             paging=paging, untagged="nip44", on_status=self.status.emit, name=d_tag,
-            parent=self)
+            opened=self._opened, parent=self)
         self._base: Any = None
         self._base_mark: Optional[Tuple[int, str]] = None
         self._local: Any = empty()
@@ -159,6 +163,7 @@ class _AccountList(QObject):
         for an account that was let go (RG-M2r 3, lesson 31)."""
         self._stopped = True
         self._generation += 1
+        self._opened.clear()
         self._base = None
         self._base_mark = None
         self._local = self._empty()

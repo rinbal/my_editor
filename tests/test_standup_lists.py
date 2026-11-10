@@ -948,3 +948,112 @@ def test_a_list_read_that_some_relays_did_not_answer_is_whole_and_says_nothing()
     read = load(store)
     assert read.status is ReadStatus.COMPLETE and read.readable and not read.words
     assert store.complete and [e.sid for e in store.entries()] == [entry(1).sid]
+
+
+# -- a quiet re-read asks the signer nothing it asked before (follow-up 2, 2) ---------
+
+class CountingSigner(FakeSigner):
+    """Counts each page sent to be opened."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.opened = []
+
+    def nip44_decrypt_self(self, ciphertext, on_success, on_failure, **kw):
+        self.opened.append(ciphertext)
+        super().nip44_decrypt_self(ciphertext, on_success, on_failure, **kw)
+
+
+def _written_elsewhere(relay, entries):
+    """The list as another device wrote it: nothing of it opened here."""
+    other, _relay, _clock = make(relay=relay)
+    load(other)
+    assert record(other, *entries).stored
+
+
+def test_a_quiet_re_read_of_unchanged_pages_asks_the_signer_nothing():
+    relay = Relay()
+    _written_elsewhere(relay, [entry(n) for n in range(300)])
+    pages = len(relay.stored)
+    assert pages > 1
+    signer = CountingSigner()
+    store, _relay, _clock = make(relay=relay, signer=signer)
+    first = load(store)
+    assert len(first.value.entries) == 300 and len(signer.opened) == pages
+    signer.opened.clear()
+    again = load(store)                                 # the same pages, read quietly again
+    assert signer.opened == []
+    assert again.value.entries == first.value.entries and store.complete
+
+
+def test_a_re_read_asks_only_for_the_pages_it_has_not_seen():
+    relay = Relay()
+    _written_elsewhere(relay, [entry(n) for n in range(300)])
+    signer = CountingSigner()
+    store, _relay, _clock = make(relay=relay, signer=signer)
+    load(store)
+    before = dict(relay.stored)
+    _written_elsewhere(relay, [entry(300)])             # another device adds one
+    changed = [d for d, event in relay.stored.items() if before.get(d) != event]
+    assert changed and len(changed) < len(relay.stored)
+    signer.opened.clear()
+    read = load(store)
+    assert sorted(signer.opened) == sorted(relay.stored[d]["content"] for d in changed)
+    assert len(read.value.entries) == 301
+
+
+def test_pages_written_here_are_read_back_without_asking():
+    signer = CountingSigner()
+    store, relay, _clock = make(signer=signer)
+    load(store)
+    assert record(store, *[entry(n) for n in range(300)]).stored
+    signer.opened.clear()
+    assert len(load(store).value.entries) == 300
+    assert signer.opened == []
+
+
+def test_the_pages_opened_go_with_the_account():
+    # Lesson 31: nothing of an account that was let go stays readable.
+    relay = Relay()
+    _written_elsewhere(relay, [entry(n) for n in range(3)])
+    signer = CountingSigner()
+    store, _relay, _clock = make(relay=relay, signer=signer)
+    load(store)
+    assert len(store._opened) == len(relay.stored)
+    store.stop()
+    assert len(store._opened) == 0
+    again, _relay, _clock = make(relay=relay, signer=signer)   # signed in again
+    signer.opened.clear()
+    load(again)
+    assert len(signer.opened) == len(relay.stored)
+
+
+def test_a_page_counts_as_seen_only_by_its_id_and_its_content_and_only_for_its_account():
+    from nostr.decrypted_pages import DecryptedPages
+
+    pages = DecryptedPages(PK, limit=2)
+    event = {"id": "a" * 64, "content": "ENC[x]"}
+    pages.put(event, "x")
+    assert pages.get(event) == "x"
+    assert pages.get(dict(event, content="ENC[y]")) is None    # same id, other content
+    assert pages.get(dict(event, id="b" * 64)) is None
+    assert pages.belongs_to(PK.upper()) and not pages.belongs_to("cd" * 32)
+    pages.put({"id": "b" * 64, "content": "1"}, "1")
+    pages.put({"id": "c" * 64, "content": "2"}, "2")           # the oldest goes
+    assert pages.get(event) is None and len(pages) == 2
+    pages.put({"content": "no id"}, "never kept")               # nothing to know it by
+    assert pages.get({"content": "no id"}) is None and pages.get({"id": "c" * 64,
+                                                                   "content": "2"}) == "2"
+
+
+def test_another_accounts_opened_pages_are_never_used():
+    from nostr.decrypted_pages import DecryptedPages
+
+    relay = Relay()
+    _written_elsewhere(relay, [entry(n) for n in range(3)])
+    signer = CountingSigner()
+    store, _relay, _clock = make(relay=relay, signer=signer)
+    store._list._opened = DecryptedPages("cd" * 32)             # not this account's
+    load(store)
+    load(store)
+    assert len(signer.opened) == 2 * len(relay.stored)
