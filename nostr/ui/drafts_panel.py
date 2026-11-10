@@ -1886,12 +1886,9 @@ class DraftsPanel(QFrame):
                 ready += 1
 
         if failed:
-            text = ngettext(
-                "{n} draft could not be decrypted",
-                "{n} drafts could not be decrypted",
-                failed,
-            )
-            return text.format(n=failed), True
+            # One quiet line in place, never how many (lessons 36): each
+            # row says what keeps it from being shown, and how to retry.
+            return _("Some drafts can’t be shown: each says why in the list."), False
         if self._loading or self._sync_message:
             return self._sync_message or _("Refreshing drafts"), False
         if total and ready < total:

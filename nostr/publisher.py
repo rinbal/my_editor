@@ -43,13 +43,13 @@ from PySide6.QtCore import QObject, Signal
 
 import media_files
 import url_safety
-from i18n import _, ngettext
+from i18n import N_, _, ngettext
 
 from . import CLIENT_NAME
 from .article_details import AUTHOR_MARKER
 from .bech32 import bech32_decode, decode_npub, decode_nprofile
 from .blossom.hashes import blob_url, hash_from_url
-from .bunker import BunkerClient, BunkerSessionPool
+from .bunker import BunkerClient, BunkerSessionPool, signer_failure_words
 from .drafts import (
     DRAFT_WRAP_KIND,
     SUPPORTED_INNER_KINDS,
@@ -65,7 +65,7 @@ from .outbox import defaults as outbox_defaults
 from .outbox.lookup import Lookup, fetch_addressable
 from .outbox.policy import dedupe_relays, is_newer
 from .profiles import Profile
-from .publish_pipeline import Mention, PublishPipeline, PublishResult
+from .publish_pipeline import Mention, PublishPipeline, PublishResult, not_taken_words
 from .signer_limits import size_problem
 from .relay import RelayPool
 
@@ -822,6 +822,19 @@ def draft_size_problem(inner: dict, profile, *,
 # DraftPublishJob: stash an unsigned inner event as a NIP-37 draft            #
 # --------------------------------------------------------------------------- #
 
+# What did not happen when a draft was not saved, for every screen that
+# says so (lessons 36).
+DRAFT_NOT_SAVED = N_("Your draft wasn’t saved")
+# A deletion MyEditor could not build (it cannot happen for a draft that
+# passed the checks before the first signature).
+DELETION_NOT_PREPARED = N_("MyEditor couldn’t prepare this deletion: refresh your drafts and "
+                           "try again.")
+# A draft MyEditor could not turn into what it sends: nothing a signer or
+# a relay did.
+DRAFT_NOT_PREPARED = N_("MyEditor couldn’t prepare this draft for saving: copy its text into a "
+                        "new document and save that.")
+
+
 class DraftPublishJob(QObject):
     """End-to-end stash of one inner event as a NIP-37 draft wrap.
 
@@ -846,7 +859,12 @@ class DraftPublishJob(QObject):
                                  results are in so the panel can update
                                  optimistically.
       completed(list)            list of PublishResult tuples
-      failed(str)                terminal. No further signals after this
+      failed(str)                terminal, with what went wrong (for
+                                 Details and logs). No further signals
+                                 after this. :attr:`words` is then the
+                                 one sentence to say (lessons 36), and
+                                 :attr:`can_retry` whether trying again
+                                 can help.
 
     A wrap sent again keeps its time, so if the person edited the draft
     meanwhile, the relays keep the edit: an older replaceable event
@@ -906,6 +924,10 @@ class DraftPublishJob(QObject):
         self._extra_wrap_tags = extra_wrap_tags
         self._wrap_unsigned: Optional[dict] = None
         self._cancelled: bool = False
+        # Once failed: why and what to do, in one sentence, and whether
+        # trying again can help (a draft too long for the signer cannot).
+        self.words = ""
+        self.can_retry = True
 
     # -- public API --------------------------------------------------------
 
@@ -947,14 +969,20 @@ class DraftPublishJob(QObject):
         if not self._cancelled:
             self.status_changed.emit(text)
 
-    def _emit_failed(self, reason: str) -> None:
+    def _emit_failed(self, reason: str, words: str = "") -> None:
+        """Fail with ``reason`` (for Details), said as ``words``, or else
+        as the signer's sentence for it: everything that fails here
+        without its own words is the signer app or its session."""
         if not self._cancelled:
+            self.words = words or signer_failure_words(reason)
             self.failed.emit(_safe_reason(reason))
 
     def _refuse(self, words: str) -> None:
         """Fail with this app's own words, whole: clipped as a signer's
-        reason is, they would end mid-sentence."""
+        reason is, they would end mid-sentence. Trying again meets the
+        same refusal."""
         if not self._cancelled:
+            self.words, self.can_retry = words, False
             self.failed.emit(words)
 
     # -- pipeline ----------------------------------------------------------
@@ -984,7 +1012,8 @@ class DraftPublishJob(QObject):
                 self._inner_event, self._profile,
                 key_here=lambda: self._session_pool.key_here(self._profile.user_pubkey))
         except (KeyError, TypeError, ValueError) as exc:
-            self._emit_failed(_("Could not serialize draft: {reason}").format(reason=exc))
+            self._emit_failed(_("Could not serialize draft: {reason}").format(reason=exc),
+                              _(DRAFT_NOT_PREPARED))
             return
         if too_large:
             self._refuse(too_large)             # one sentence that says so (lessons 36)
@@ -1019,7 +1048,8 @@ class DraftPublishJob(QObject):
                 extra_tags=self._extra_wrap_tags,
             )
         except ValueError as exc:
-            self._emit_failed(_("Couldn’t prepare the draft: {reason}").format(reason=exc))
+            self._emit_failed(_("Couldn’t prepare the draft: {reason}").format(reason=exc),
+                              _(DRAFT_NOT_PREPARED))
             return
 
         self._emit_status(
@@ -1042,21 +1072,15 @@ class DraftPublishJob(QObject):
             signed_event["id"],
             int(signed_event["created_at"]),
         )
-        self._emit_status(ngettext(
-            "Publishing draft to {n} relay…", "Publishing draft to {n} relays…",
-            len(publish_relays),
-        ).format(n=len(publish_relays)))
+        # Never how many relays (lessons 36): whether any kept it is the
+        # window's to say, from what completed hands it.
+        self._emit_status(_("Saving the draft…"))
         job = self._relay_pool.publish(publish_relays, signed_event)
         job.all_done.connect(self._on_publish_done)
 
     def _on_publish_done(self, results: List[PublishResult]) -> None:
         if self._cancelled:
             return
-        accepted = sum(1 for _url, ok, _message in results if ok)
-        self._emit_status(ngettext(
-            "Draft saved to {accepted}/{total} relay.",
-            "Draft saved to {accepted}/{total} relays.", len(results),
-        ).format(accepted=accepted, total=len(results)))
         self.completed.emit(results)
 
 
@@ -1128,6 +1152,8 @@ class DraftDeleteJob(QObject):
         self._identifier = identifier
         self._inner_kind = inner_kind
         self._cancelled: bool = False
+        # Once failed: why and what to do, in one sentence (lessons 36).
+        self.words = ""
 
     # -- public API --------------------------------------------------------
 
@@ -1148,8 +1174,11 @@ class DraftDeleteJob(QObject):
         if not self._cancelled:
             self.status_changed.emit(text)
 
-    def _emit_failed(self, reason: str) -> None:
+    def _emit_failed(self, reason: str, words: str = "") -> None:
+        """Fail with ``reason`` (for Details), said as ``words``, or else
+        as the signer's sentence for it (:attr:`words`, lessons 36)."""
         if not self._cancelled:
+            self.words = words or signer_failure_words(reason)
             self.failed.emit(_safe_reason(reason))
 
     # -- pipeline ----------------------------------------------------------
@@ -1214,9 +1243,10 @@ class DraftDeleteJob(QObject):
         the key again (as its d tag), so the draft's wrap is deleted by its
         id alone, with a NIP-09 request that names no address."""
         if not self._replaced_wrap_id:
-            self._emit_failed(_("This draft can’t be deleted: its link name holds a secret key, "
-                                "and the version on your relays isn’t known here. Refresh "
-                                "your drafts and try again."))
+            self._emit_failed("the wrap to delete by its id is not known here",
+                              _("This draft’s link name holds a secret key, and its latest "
+                                "version isn’t known here yet: refresh your drafts and try "
+                                "again."))
             return
         request = build_deletion_request(pubkey_hex=self._profile.user_pubkey,
                                          identifier=self._identifier,
@@ -1324,6 +1354,9 @@ class DraftBulkDeleteJob(QObject):
         self._index: int = 0
         self._deleted: int = 0
         self._failures: List[Tuple[str, str]] = []
+        # Why the drafts that did not go did not, and what to do: one
+        # sentence for the run (lessons 36), "" while none failed.
+        self.words = ""
         self._current: Optional[DraftDeleteJob] = None
         self._cancelled: bool = False
         # Re-entrancy guard, the same shape the decrypt queues use: a
@@ -1397,7 +1430,7 @@ class DraftBulkDeleteJob(QObject):
         except ValueError as exc:
             # Cannot happen for targets that passed the constructor, but
             # a run that dies here would strand the whole queue.
-            self._settle(identifier, reason=str(exc))
+            self._settle(identifier, reason=str(exc), words=_(DELETION_NOT_PREPARED))
             return
 
         self._current = job
@@ -1406,7 +1439,8 @@ class DraftBulkDeleteJob(QObject):
             lambda results, ident=identifier: self._on_one_completed(ident, results)
         )
         job.failed.connect(
-            lambda reason, ident=identifier: self._settle(ident, reason=reason)
+            lambda reason, ident=identifier, one=job: self._settle(ident, reason=reason,
+                                                                   words=one.words)
         )
         job.start()
 
@@ -1423,13 +1457,15 @@ class DraftBulkDeleteJob(QObject):
             reason = _("no relay accepted the deletion ({reasons})").format(reasons=reasons)
         else:
             reason = _("no relay accepted the deletion")
-        self._settle(identifier, reason=reason)
+        self._settle(identifier, reason=reason, words=not_taken_words(results))
 
-    def _settle(self, identifier: str, *, reason: str = "") -> None:
+    def _settle(self, identifier: str, *, reason: str = "", words: str = "") -> None:
         if self._done:
             return
         if reason:
             self._failures.append((identifier, _safe_reason(reason)))
+            # The run's one sentence: the first draft's that did not go.
+            self.words = self.words or words
         else:
             self._deleted += 1
         self._current = None

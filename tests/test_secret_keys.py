@@ -290,6 +290,7 @@ def _delete_draft(identifier, wrap_id):
     job.failed.connect(failed.append)
     job.start()
     settle()
+    _delete_draft.words = job.words
     return [event for _urls, event in pool.published], failed
 
 
@@ -301,7 +302,12 @@ def test_a_draft_whose_slug_holds_a_key_is_deleted_by_its_wrap_id_alone():
     assert sent[0]["kind"] == 5 and sent[0]["tags"] == [["e", "cd" * 32], ["k", "31234"]]
     assert refs.secret_keys_in_event(sent[0]) == []
     sent, failed = _delete_draft(f"backup-{NSEC}", "")           # its wrap unknown here
-    assert sent == [] and failed and "secret key" in failed[0]
+    assert sent == [] and failed == ["the wrap to delete by its id is not known here"]
+    # Said in this app's own sentence, not as the signer's (lessons 36);
+    # the reason is for Details.
+    assert _delete_draft.words == (
+        "This draft’s link name holds a secret key, and its latest version isn’t known here "
+        "yet: refresh your drafts and try again.")
     sent, failed = _delete_draft("backup", "")                   # an ordinary draft: tombstone
     assert failed == [] and [event["kind"] for event in sent] == [31234]
 

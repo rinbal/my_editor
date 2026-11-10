@@ -122,7 +122,7 @@ from updater import (
     sweep_stale_downloads,
 )
 from alerts import (
-    CANCEL, DEFAULT, DESTRUCTIVE, NORMAL, Button, ask,
+    CANCEL, DEFAULT, DESTRUCTIVE, NORMAL, Button, ask, ask_try_again,
     confirm_destructive, inform,
 )
 from update_dialog import UpdateDialog, WhatsNewDialog
@@ -230,6 +230,7 @@ from nostr.ui.reference_popover import ReferencePopover
 from nostr.ui.article_details_panel import ArticleDetailsPanel, DEFAULT_WIDTH as ARTICLE_DETAILS_WIDTH
 from nostr.ui.article_headers import ArticleHeaders
 from nostr import refs
+from nostr.failures import CHECK_CONNECTION
 from nostr.blossom.errors import friendly_message
 from nostr.blossom.names import MediaNames
 from nostr.blossom.hashes import hash_from_url
@@ -287,7 +288,9 @@ from nostr.media.visibility import PublicLedger
 from nostr.metadata import AvatarLoader, ProfileMetadataFetcher, can_receive_zaps
 from nostr.outbox.directory import RelayDirectory
 from nostr.profiles import Profile, ProfileStore, short_npub
+from nostr.publish_pipeline import answers_detail, kept_by_relay, not_taken_words
 from nostr.publisher import (
+    DRAFT_NOT_SAVED,
     DraftBulkDeleteJob,
     DraftPublishJob,
     PublishedMedia,
@@ -10777,10 +10780,10 @@ class MainWindow(QMainWindow):
                 # nothing to open as the draft.
                 choice = ask(
                     self, title=_("This article has a draft that can’t be shown yet."),
-                    message=_("The draft couldn’t be decrypted. Double-click it in the Drafts "
+                    message=_("Its draft couldn’t be decrypted: double-click it in the Drafts "
                               "panel to try again, or open the version that is published now.")
                     if draft.state is DraftState.FAILED else
-                    _("The draft is still being decrypted. Choose Edit again once its title "
+                    _("Its draft is still being decrypted: choose Edit again once its title "
                       "shows in the Drafts panel, or open the version that is published now."),
                     buttons=(Button(_("Open Published Version"), "published", NORMAL),
                              Button(_("Cancel"), None, DEFAULT)), nostr=True)
@@ -11089,9 +11092,10 @@ class MainWindow(QMainWindow):
                 parent=self,
             )
         except ValueError as exc:
-            inform(self, title=_("Couldn't start the deletion"),
-                   message=_("These drafts can't be removed from here.\n\n{error}").format(
-                       error=exc), nostr=True)
+            # Trying again meets the same refusal: OK only, why in Details.
+            inform(self, title=self._drafts_not_deleted(len(deletable), 0),
+                   message=_("These drafts can’t be deleted from here: delete them in the app "
+                             "that made them."), details=str(exc), nostr=True)
             return
 
         total = job.total
@@ -11120,10 +11124,17 @@ class MainWindow(QMainWindow):
         job.tombstoned.connect(self._on_draft_tombstoned)
         job.finished.connect(
             lambda deleted, failures: self._on_draft_deletion_finished(
-                deleted, failures, total, progress,
+                deleted, failures, total, progress, job, profile, deletable,
             )
         )
         job.start()
+
+    @staticmethod
+    def _drafts_not_deleted(total: int, deleted: int) -> str:
+        """What did not happen, never how many (lessons 36)."""
+        if total == 1:
+            return _("Your draft wasn’t deleted")
+        return _("Some drafts weren’t deleted") if deleted else _("Your drafts weren’t deleted")
 
     def _on_draft_tombstoned(self, identifier: str, event_id: str) -> None:
         """A draft deleted here: remembered as deleted, as a request from
@@ -11163,7 +11174,8 @@ class MainWindow(QMainWindow):
         return found
 
     def _on_draft_deletion_finished(
-        self, deleted: int, failures: list, total: int, progress,
+        self, deleted: int, failures: list, total: int, progress, job, profile,
+        deletable: List[Tuple[str, int]],
     ) -> None:
         if progress is not None:
             progress.close()
@@ -11175,24 +11187,18 @@ class MainWindow(QMainWindow):
             return
 
         # A partial result reported as a whole one is how a user comes to
-        # believe a draft is gone when it is not, so the count that did
-        # not go is the headline and the reasons are one click away.
-        if deleted:
-            title = ngettext("{deleted} of {total} draft deleted",
-                             "{deleted} of {total} drafts deleted",
-                             total).format(deleted=deleted, total=total)
-        else:
-            title = _("No drafts were deleted")
-        inform(
-            self,
-            title=title,
-            message=ngettext("{count} could not be removed and is still on your relays. "
-                             "You can try again.",
-                             "{count} could not be removed and are still on your relays. "
-                             "You can try again.", len(failures)).format(count=len(failures)),
-            caution=True,
-            details="\n".join(
-                f"{identifier[:16]}: {reason}" for identifier, reason in failures), nostr=True)
+        # believe a draft is gone when it is not: the drafts that did not
+        # go are said, once, by what did not happen and why, with what
+        # each relay or the signer said behind Details, and Try Again asks
+        # for those again (lessons 36).
+        words = job.words or _(CHECK_CONNECTION)
+        if ask_try_again(
+                self, title=self._drafts_not_deleted(total, deleted), message=words,
+                details="\n".join(f"{identifier[:16]}: {reason}"
+                                  for identifier, reason in failures), nostr=True):
+            left = {identifier for identifier, _reason in failures}
+            self._run_draft_deletion(profile, [(identifier, kind) for identifier, kind
+                                               in deletable if identifier in left])
 
     def _on_draft_sync_status(self, text: str) -> None:
         if self._drafts_panel is not None:
@@ -11458,10 +11464,24 @@ class MainWindow(QMainWindow):
         if too_large:
             # Saving it again would meet the same limit: OK only, the
             # numbers in Details (lessons 26, 36).
-            inform(self, title=_("Your draft wasn’t saved"), message=too_large,
+            inform(self, title=_(DRAFT_NOT_SAVED), message=too_large,
                    details=size_detail(profile, draft=serialize_inner_event(inner)), nostr=True)
             return
 
+        job = self._draft_job(ed, profile, choice, inner)
+        job.start()
+
+    def _draft_job(self, ed, profile: Profile, choice: StashChoice, inner: dict,
+                   signed: Optional[dict] = None) -> DraftPublishJob:
+        """A job that saves ``inner`` as the tab's draft, watched.
+
+        The draft is saved once a relay keeps it, never before (lessons
+        9, 17): only then is the tab bound to it, the store updated and
+        the tab no longer modified. A draft no relay kept, or one never
+        sent, is said once: what did not happen, its cause in one
+        sentence, what was said behind Details, and Try Again, which
+        sends a draft signed before as it is (lessons 36). ``signed``:
+        the wrap signed for it before, for a job that sends it again."""
         job = DraftPublishJob(
             relay_pool=self._relay_pool,
             relay_directory=self._relay_directory,
@@ -11472,20 +11492,36 @@ class MainWindow(QMainWindow):
             identifier=choice.identifier,
             parent=self,
         )
-        # Pass the editor + inner through the closure so the stashed
-        # handler can bind the tab and update the store optimistically.
-        job.status_changed.connect(lambda s: self.status.showMessage(s, 5000, nostr=True))
-        job.stashed.connect(
-            lambda ident, eid, ts, _ed=ed, _inner=inner, _choice=choice:
-            self._on_draft_stashed(_ed, _choice, eid, ts, _inner)
-        )
-        job.failed.connect(
-            lambda reason: inform(self, title=_("Couldn't save the draft"), message=reason, nostr=True)
-        )
-        # Register before starting so a synchronous failure path can't
+        # Registered first, so it is released before what follows asks
+        # again; and before starting, so a synchronous failure path can't
         # leave the tab thinking nothing is in flight.
         self._attach_active_stash(ed, job)
-        job.start()
+        sent = {"signed": signed}
+        job.status_changed.connect(lambda s: self.status.showMessage(s, 5000, nostr=True))
+        job.signed.connect(lambda event: sent.update(signed=event))
+        job.stashed.connect(lambda _ident, eid, ts: sent.update(eid=eid, ts=ts))
+
+        def completed(results) -> None:
+            if any(kept_by_relay(ok, message) for _url, ok, message in results):
+                self._on_draft_stashed(ed, choice, sent["eid"], sent["ts"], inner)
+                self.status.showMessage(_("Draft saved."), 5000, nostr=True)
+                return
+            if ask_try_again(self, title=_(DRAFT_NOT_SAVED), message=not_taken_words(results),
+                             details=answers_detail(results), nostr=True):
+                again = self._draft_job(ed, profile, choice, inner, sent["signed"])
+                again.send_signed(sent["signed"])
+
+        def failed(reason: str) -> None:
+            if not job.can_retry:
+                inform(self, title=_(DRAFT_NOT_SAVED), message=job.words, details=reason,
+                       nostr=True)
+            elif ask_try_again(self, title=_(DRAFT_NOT_SAVED), message=job.words,
+                               details=reason, nostr=True):
+                self._fire_draft_publish_job(ed, profile, choice, inner)
+
+        job.completed.connect(completed)
+        job.failed.connect(failed)
+        return job
 
     def _published_article_of(self, ed) -> Optional[ArticleDetails]:
         """The published article a tab edits (from the Published view),
@@ -11662,10 +11698,9 @@ class MainWindow(QMainWindow):
         created_at: int,
         inner: dict,
     ) -> None:
-        """Job has signed the wrap. Bind the tab + update the store
-        optimistically so the panel reflects the new state immediately
-        rather than waiting for the relay echo to round-trip back
-        through ``DraftSync``."""
+        """A relay kept the signed wrap. Bind the tab + update the store
+        now, so the panel reflects the new state without waiting for the
+        relay echo to round-trip back through ``DraftSync``."""
         # The editor may have been closed mid-flight - bail gracefully.
         if ed is None or self._editor_widget_index(ed) < 0:
             return
@@ -11678,8 +11713,8 @@ class MainWindow(QMainWindow):
             title=choice.title or (choice.identifier if choice.kind is StashKind.NOTE else ""),
             profile_pubkey=active.user_pubkey.lower() if active else "",
         )
-        # Optimistic store update - by the time the relay echo arrives
-        # via DraftSync, the panel already shows the row. First, so that
+        # Store update - by the time the relay echo arrives via
+        # DraftSync, the panel already shows the row. First, so that
         # nothing read after this point finds the draft as it was.
         self._draft_store.upsert_from_inner(
             identifier=choice.identifier,

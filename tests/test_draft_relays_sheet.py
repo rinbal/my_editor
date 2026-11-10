@@ -214,17 +214,25 @@ def test_the_focus_starts_on_the_list_or_on_the_field():
     assert sheet.focusWidget() is sheet._field
 
 
+def said(sheet) -> str:
+    """What the sheet says under the field, as read aloud: a total
+    failure's title, then its one sentence (lessons 36)."""
+    return sheet._field.accessibleDescription()
+
+
 def test_a_list_the_signer_could_not_decrypt_says_so():
     sheet, _saved = open_sheet(Lists([], readable=False, failure=UNDECRYPTED))
-    assert sheet.state == READ_FAILED and sheet._error.text().startswith(
-        "Couldn’t decrypt where your drafts are kept. Make sure your signer app is running")
+    assert sheet.state == READ_FAILED and sheet._error.text() == (
+        "<b>Where your drafts are kept couldn’t be read</b><br>Your signer app didn’t decrypt "
+        "it: open it and try again.")
 
 
 def test_a_list_that_could_not_be_read_is_not_edited_and_offers_try_again():
     lists = Lists(["wss://mine.example"], readable=False)
     sheet, _saved = open_sheet(lists)
-    assert sheet.state == READ_FAILED and sheet._error.text().startswith(
-        "Couldn’t read where your drafts are kept.")
+    assert sheet.state == READ_FAILED and sheet._error.text() == (
+        "<b>Where your drafts are kept couldn’t be read</b><br>Check your internet connection "
+        "and try again.")
     assert words(sheet) == ["Cancel", "Try Again"] and sheet.buttons["retry"].isDefault()
     assert not sheet._field.isEnabled() and not sheet._list.isEnabled()
     assert not sheet._summary.isVisibleTo(sheet)          # where drafts go is not known
@@ -295,26 +303,39 @@ def test_it_says_that_drafts_move_with_the_setting():
 
 
 def test_a_save_that_failed_says_why_and_keeps_the_sheet():
+    # Lessons 36: what did not happen, the one sentence of its cause (the
+    # writer's own for a list not written), never a relay's name; which
+    # relays is the tooltip.
     signed_but_refused = {"kind": 10013}
-    for answer, start in (
-            (list_failed(UNKNOWN_BASE, CAUSE_RELAYS), "Couldn’t read the current setting"),
-            (list_failed(FAILED, CAUSE_RELAYS, signed_but_refused),
-             "Too few relays took the change."),
+    for answer, sentence, tip in (
+            (list_failed(UNKNOWN_BASE, CAUSE_RELAYS),
+             "Check your internet connection and try again.", ""),
+            (SaveOutcome(MoveOutcome(), WriteOutcome(
+                FAILED, event=signed_but_refused, cause=CAUSE_RELAYS,
+                refused=(("wss://a.example", "blocked: no"),),
+                reason="Too few relays accepted it.")),
+             "The servers your posts go to turned it down: try again later.",
+             "Too few relays accepted it.\nwss://a.example: blocked: no"),
             (list_failed(FAILED, CAUSE_CLOCK, signed_but_refused),
-             "The current setting is dated ahead of this computer’s clock"),
-            (list_failed(FAILED, CAUSE_SIGNER), "Your signer app didn’t approve"),
+             "The version on the network is dated ahead of this computer’s clock: let this "
+             "computer set its date and time automatically, then try again.", ""),
+            (list_failed(FAILED, CAUSE_SIGNER),
+             "Your signer app ran into a problem: open it and try again.", ""),
             (SaveOutcome(MoveOutcome(total=2, moved=1, not_moved=("x",))),
-             "Some drafts couldn’t be moved, so nothing was changed. Check your internet"),
+             "Some drafts couldn’t be moved: check your internet connection and try again.", ""),
             (SaveOutcome(MoveOutcome(total=2, moved=1, not_moved=("x",), refused=True)),
-             "The relays your drafts would move to turned some of them down"),
+             "The relays your drafts would move to turned some of them down: choose other "
+             "relays and try again.", ""),
             (SaveOutcome(MoveOutcome(total=1, moved=1, unreadable=("wss://mine.example",))),
-             "wss://mine.example didn’t give your drafts back when MyEditor asked, so "
-             "nothing was changed. If your signer app asked you to approve signing in")):
+             "Some relays being left didn’t give your drafts back: approve signing in to them "
+             "if your signer app asks, then try again, or choose other relays.",
+             "wss://mine.example")):
         sheet, saved = open_sheet(Lists([], answer=answer))
         add(sheet, "wss://mine.example")
         sheet.buttons["save"].click()
         assert sheet.isVisible() and saved == [] and sheet.state == EDITING
-        assert sheet._error.text().startswith(start), sheet._error.text()
+        assert said(sheet) == f"The setting wasn’t saved. {sentence}"
+        assert "wss://" not in sheet._error.text() and sheet._error.toolTip() == tip
         assert sheet.buttons["save"].isEnabled()          # try again
         assert "anyway" not in [spec[0] for spec in sheet._shown_buttons]
 
@@ -324,8 +345,11 @@ def test_a_relay_being_left_that_did_not_answer_offers_save_anyway():
     sheet, saved = open_sheet(lists)
     sheet.buttons["usual"].click()
     sheet.buttons["save"].click()
-    assert sheet._error.text().startswith(f"Couldn’t read the drafts on {MINE}")
-    assert "If that relay is gone for good, choose Save Anyway" in sheet._error.text()
+    assert said(sheet) == (
+        "The setting wasn’t saved. Some relays being left didn’t answer: check your internet "
+        "connection and try again, or choose Save Anyway to leave the drafts kept only there "
+        "behind.")
+    assert sheet._error.toolTip() == MINE and MINE not in sheet._error.text()
     assert words(sheet) == ["Save Anyway", "Cancel", "Save"]
     assert unnamed_controls(sheet) == []
     lists.answer = SAVED
@@ -339,7 +363,7 @@ def test_after_a_failed_save_the_summary_does_not_state_the_form_as_the_setting(
     assert sheet._summary.text() == "Drafts are saved only on these relays:"
     sheet.buttons["usual"].click()
     sheet.buttons["save"].click()
-    assert sheet._error.text().endswith("won’t be shown any more.")
+    assert said(sheet).endswith("leave the drafts kept only there behind.")
     assert sheet._summary.text() == "Drafts will be kept on your usual relays:"
     add(sheet, MINE)                                      # back to the setting as read
     assert sheet._summary.text() == "Drafts are saved only on these relays:"
@@ -352,10 +376,11 @@ def test_a_relay_that_sends_only_its_newest_drafts_is_named_for_that_and_can_be_
     sheet, saved = open_sheet(lists)
     sheet.buttons["usual"].click()
     sheet.buttons["save"].click()
-    assert sheet._error.text().startswith(
-        f"{MINE} sends only its newest drafts, whichever part MyEditor asks for")
-    assert "If you can do without the drafts kept only there" in sheet._error.text()
+    assert said(sheet) == (
+        "The setting wasn’t saved. Some relays being left send only their newest drafts: "
+        "choose Save Anyway to leave the older ones kept only there behind.")
     assert "internet connection" not in sheet._error.text()
+    assert sheet._error.toolTip() == MINE
     assert words(sheet) == ["Save Anyway", "Cancel", "Save"]
     lists.answer = SAVED
     sheet.buttons["anyway"].click()
@@ -372,7 +397,8 @@ def test_relays_agreed_to_leave_add_up_while_the_choice_stays():
     sheet.buttons["save"].click()
     lists.answer = SaveOutcome(MoveOutcome(unread=(second,)))
     sheet.buttons["anyway"].click()
-    assert sheet._error.text().startswith(f"Couldn’t read the drafts on {second}")
+    assert sheet._error.toolTip() == second and said(sheet).startswith(
+        "The setting wasn’t saved. Some relays being left didn’t answer")
     lists.answer = SAVED
     sheet.buttons["anyway"].click()
     assert lists.saves == [([], []), ([], [MINE]), ([], [MINE, second])] and saved == [[]]
@@ -392,22 +418,19 @@ def test_save_anyway_goes_once_the_choice_changes():
     assert not sheet._error.isVisibleTo(sheet)
 
 
-def test_drafts_left_on_a_relay_that_went_quiet_are_said_once_saved():
+def test_drafts_left_on_a_relay_that_went_quiet_are_followed_quietly(caplog):
+    # Lessons 36: saved is saved; a relay being left that went quiet is a
+    # partial failure, followed on without a word (the log names it; the
+    # sheet lists it when opened again).
+    import logging
     lists = Lists([MINE], answer=SaveOutcome(MoveOutcome(), WriteOutcome(WRITTEN),
                                              left_behind=(MINE,)))
     sheet, saved = open_sheet(lists)
     sheet.buttons["usual"].click()
-    sheet.buttons["save"].click()
-    assert saved == [[]] and sheet.isVisible()            # saved, with a word on it
-    assert sheet._left_note.text().startswith(
-        f"Drafts saved during the change may still be only on {MINE}, which didn’t answer.")
-    assert words(sheet) == ["Done"] and sheet.focusWidget() is sheet.buttons["done"]
-    assert unnamed_controls(sheet) == []
-    QApplication.processEvents()
-    # A short page after the form: nothing to scroll in a window that tall.
-    assert not sheet._scroll.verticalScrollBar().isVisible()
-    sheet.buttons["done"].click()
-    assert not sheet.isVisible()
+    with caplog.at_level(logging.INFO, logger="nostr.ui.draft_relays_sheet"):
+        sheet.buttons["save"].click()
+    assert saved == [[]] and not sheet.isVisible()
+    assert any(MINE in line for line in caplog.messages)
 
 
 def test_a_list_changed_elsewhere_is_read_again_and_not_written_over():
@@ -418,7 +441,8 @@ def test_a_list_changed_elsewhere_is_read_again_and_not_written_over():
     sheet.buttons["save"].click()
     assert saved == [] and sheet.state == EDITING
     assert sheet.chosen() == ["wss://else.example"]
-    assert sheet._error.text().startswith("The setting was changed on another device")
+    assert said(sheet) == ("The setting wasn’t saved. It was changed on another device while "
+                           "this was open: this is the setting as it is now.")
 
 
 def test_moving_the_drafts_is_counted():

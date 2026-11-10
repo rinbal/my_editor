@@ -832,7 +832,7 @@ def test_the_main_windows_providers_are_the_controllers():
 # --------------------------------------------------------------------- #
 
 @pytest.mark.parametrize("handler,job", [
-    ("_fire_draft_publish_job", "DraftPublishJob"),
+    ("_draft_job", "DraftPublishJob"),
     ("_run_draft_deletion", "DraftBulkDeleteJob"),
 ])
 def test_a_publish_job_is_given_the_resolved_relays(handler, job):
