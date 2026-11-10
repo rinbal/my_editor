@@ -321,22 +321,110 @@ def test_without_automatic_naming_the_submission_waits_for_the_redaktion():
 
 # -- a repeat, and the lookup after a correction ----------------------------------
 
+MEDIA_A, MEDIA_B = "https://media.example", "https://media-b.example"
+
+
 def test_a_repeat_returns_the_stored_receipt_with_the_blobs_found_since():
+    # backend tests/test_editorial_submit.py
+    # test_a_repeat_returns_the_stored_receipt_with_the_blobs_found_since:
+    # the media servers are asked again, for what was missing only.
     clock, server, nam = _setup()
-    files = [{"sha256": c * 64, "size": 10, "servers": ["https://media.example"]}
-             for c in "ab"]
-    server.blobs_present = {"a" * 64}
+    files = [{"sha256": c * 64, "size": 10, "servers": [MEDIA_A]} for c in "ab"]
+    media = server.blob_servers
+    media.put(MEDIA_A, "a" * 64, 10)
     prepared = submission_for(ME, blobs=tuple(files))
     first = _submit(nam, prepared.body)[1]["receipt"]
     assert (first["blobs_present"], first["blobs_missing"]) == (["a" * 64], ["b" * 64])
+    assert media.asked == [(MEDIA_A, "a" * 64), (MEDIA_A, "b" * 64)]
     record = server.submissions[prepared.body["submission_id"]]
     record.state = "in_review"
-    server.blobs_present = {"b" * 64}               # one found since, one gone since
+    media.held[MEDIA_A] = {"b" * 64: 10}            # one uploaded since, one gone since
+    media.asked.clear()
     status, data, _ = _submit(nam, prepared.body)
     assert status == 200
-    # Only what it reported missing is looked for again, nothing else changes.
+    assert media.asked == [(MEDIA_A, "b" * 64)]     # only what it reported missing
     assert data["receipt"] == dict(first, blobs_present=["a" * 64, "b" * 64], blobs_missing=[])
+    media.asked.clear()
     assert _submit(nam, prepared.body)[1]["receipt"] == data["receipt"]
+    assert media.asked == []                        # nothing missing: no server is asked
+
+
+def test_a_repeat_finds_nothing_new_while_the_file_is_still_not_there():
+    clock, server, nam = _setup()
+    prepared = submission_for(ME, blobs=({"sha256": "c" * 64, "size": 10,
+                                          "servers": [MEDIA_A, MEDIA_B]},))
+    first = _submit(nam, prepared.body)[1]["receipt"]
+    assert first["blobs_missing"] == ["c" * 64]
+    server.blob_servers.asked.clear()
+    status, data, _ = _submit(nam, prepared.body)
+    assert status == 200 and data["receipt"] == first
+    assert server.blob_servers.asked == [(MEDIA_A, "c" * 64), (MEDIA_B, "c" * 64)]
+    server.blob_servers.put(MEDIA_B, "c" * 64, 10)  # the second server has it now
+    assert _submit(nam, prepared.body)[1]["receipt"] == dict(
+        first, blobs_present=["c" * 64], blobs_missing=[])
+
+
+# backend tests/test_editorial_blobs.py, one case each, in the fake's
+# media servers: (what the servers hold, the file's servers, found).
+BLOB_CHECKS = [
+    pytest.param(lambda m: m.put(MEDIA_A, "a" * 64, 5), [MEDIA_A], True,
+                 [MEDIA_A], id="a server has it with its size"),
+    pytest.param(lambda m: m.put(MEDIA_A, "a" * 64, 6), [MEDIA_A], False,
+                 [MEDIA_A], id="another size is not the file"),
+    pytest.param(lambda m: m.put(MEDIA_A, "a" * 64, None), [MEDIA_A], True,
+                 [MEDIA_A], id="no Content-Length counts as present"),
+    pytest.param(lambda m: (m.down.add(MEDIA_A), m.put(MEDIA_B, "a" * 64, 5),
+                            m.put(MEDIA_B + "/again", "a" * 64, 5)),
+                 [MEDIA_A, MEDIA_B, MEDIA_B + "/again"], True, [MEDIA_A, MEDIA_B],
+                 id="the next server when one is down, stopping at the first hit"),
+    pytest.param(lambda m: m.put(MEDIA_B, "a" * 64, 5), [MEDIA_A, MEDIA_B], True,
+                 [MEDIA_A, MEDIA_B], id="the next server when one has not got it"),
+    *[pytest.param(lambda m, at=at: m.put(at, "a" * 64, 5), [at], False, [],
+                   id=f"never asked: {at}")
+      for at in ("https://127.0.0.1", "https://10.0.0.1", "https://169.254.169.254",
+                 "https://[::1]")],
+    pytest.param(lambda m: (m.silent.add(MEDIA_A), m.put(MEDIA_B, "a" * 64, 5)),
+                 [MEDIA_A, MEDIA_B], False, [MEDIA_A],
+                 id="a server that does not answer spends the budget"),
+]
+
+
+@pytest.mark.parametrize("hold, servers, found, asked", BLOB_CHECKS)
+def test_the_blob_check_asks_the_media_servers_as_the_backend_does(hold, servers, found, asked):
+    clock, server, nam = _setup()
+    hold(server.blob_servers)
+    blob = {"sha256": "a" * 64, "size": 5, "servers": servers}
+    receipt = _submit(nam, submission_for(ME, blobs=(blob,)).body)[1]["receipt"]
+    assert receipt["blobs_present"] == (["a" * 64] if found else [])
+    assert [at for at, _sha in server.blob_servers.asked] == asked
+
+
+def test_a_silent_server_leaves_every_file_after_it_missing():
+    # "whatever has not answered by then is reported missing"
+    clock, server, nam = _setup()
+    media = server.blob_servers
+    media.silent.add(MEDIA_A)
+    media.everywhere.update({"a" * 64, "b" * 64})
+    files = ({"sha256": "a" * 64, "size": 5, "servers": [MEDIA_A]},
+             {"sha256": "b" * 64, "size": 5, "servers": [MEDIA_B]})
+    receipt = _submit(nam, submission_for(ME, blobs=files).body)[1]["receipt"]
+    assert (receipt["blobs_present"], receipt["blobs_missing"]) == ([], ["a" * 64, "b" * 64])
+
+
+@pytest.mark.parametrize("refuse", [
+    lambda server: setattr(server.publication(), "paused", True),
+    lambda server: server.publication().blocked.add(pk("writer")),
+    lambda server: server.publications.clear(),
+], ids=["paused", "blocked", "unknown publication"])
+def test_no_media_server_is_asked_for_a_body_that_is_refused_first(refuse):
+    # backend api/submissions.py: refuse_early before blobs.present, and
+    # tests/test_editorial_submit.py: no blob server is asked for an
+    # unknown publication.
+    clock, server, nam = _setup()
+    refuse(server)
+    blob = {"sha256": "a" * 64, "size": 5, "servers": [MEDIA_A]}
+    status = _submit(nam, submission_for(ME, blobs=(blob,)).body)[0]
+    assert status in (403, 404, 409) and server.blob_servers.asked == []
 
 
 def test_after_a_correction_the_lookup_keeps_the_writers_receipt():

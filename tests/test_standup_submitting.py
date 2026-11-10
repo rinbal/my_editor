@@ -98,7 +98,7 @@ class Uploads:
             if self.lose:
                 self.lose -= 1
             else:
-                self.server.blobs_present.add(picture.sha256)
+                self.server.blob_servers.everywhere.add(picture.sha256)
         call["on_done"]({p.sha256: (MEDIA,) for p in call["pictures"]})
 
 

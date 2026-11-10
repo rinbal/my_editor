@@ -16,6 +16,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import heapq
+import ipaddress
 import json
 import re
 import secrets
@@ -120,7 +121,7 @@ class KeySigner:
 # Faults are injected per route (``inject``): the connection dropped
 # before the server saw the request, dropped after it stored it (no
 # answer), or a given refusal; ``tamper_receipt`` changes what a receipt
-# says, ``blobs_present`` decides which files a HEAD request finds.
+# says, ``blob_servers`` are the writers' media servers the blob check asks.
 
 SERVER = "https://standup.example"     # the fixture key event's "server"
 KEY_EVENT = VECTORS["key_event"]["valid"]
@@ -513,6 +514,74 @@ def _on_curve(value: Any) -> bool:
     return True
 
 
+class FakeBlobServers:
+    """The writers' media servers as the backend's blob check meets them
+    (backend core/editorial_blobs.py, 1183930; BUD-01).
+
+    ``HEAD <server>/<sha256>`` on each server a file names, in its order,
+    until one has it: a 200 with the file's Content-Length, or with none,
+    counts; another length does not. A server that is down is the answer
+    "not here", and the next one is asked. A server at a private,
+    loopback or link-local address is never contacted (the address guard
+    refuses it). All checks share one budget: a server that does not
+    answer spends it, and whatever was not answered by then is missing.
+
+    ``held`` maps a server to the files it has (sha256 to the
+    Content-Length it answers with, None for none); a file in
+    ``everywhere`` is on every server in full. ``asked`` logs each HEAD
+    as (server, sha256)."""
+
+    def __init__(self) -> None:
+        self.held: Dict[str, Dict[str, Optional[int]]] = {}
+        self.everywhere: set = set()
+        self.down: set = set()
+        self.silent: set = set()                 # take the whole budget
+        self.asked: List[Tuple[str, str]] = []
+
+    def put(self, server: str, sha256: str, length: Optional[int]) -> None:
+        self.held.setdefault(server, {})[sha256] = length
+
+    def present(self, blobs: List[dict]) -> set:
+        """The sha256 of every file a server has (backend ``present``)."""
+        found: set = set()
+        spent = False
+        for blob in blobs:
+            for server in blob["servers"]:
+                if spent:
+                    break
+                if not _public(server):
+                    continue
+                self.asked.append((server, blob["sha256"]))
+                if server in self.silent:
+                    spent = True
+                    break
+                if server in self.down:
+                    continue
+                if self._has(server, blob):
+                    found.add(blob["sha256"])
+                    break
+        return found
+
+    def _has(self, server: str, blob: dict) -> bool:
+        if blob["sha256"] in self.everywhere:
+            return True
+        here = self.held.get(server, {})
+        if blob["sha256"] not in here:
+            return False
+        length = here[blob["sha256"]]
+        return length is None or length == blob["size"]
+
+
+def _public(server: str) -> bool:
+    """Whether the address guard lets the blob check contact ``server``:
+    a name (resolved by the real one, public here) or a global address."""
+    host = urlsplit(server).hostname or ""
+    try:
+        return ipaddress.ip_address(host).is_global
+    except ValueError:
+        return True
+
+
 class FakeStandupServer:
     """See the comment above. Use as ``StandupNam(responder=server)``."""
 
@@ -532,7 +601,7 @@ class FakeStandupServer:
         self.last_session = ""
         self.keyrings: Dict[str, dict] = {}
         self.submissions: Dict[str, Record] = {}
-        self.blobs_present: set = set()
+        self.blob_servers = FakeBlobServers()
         self.faults: Dict[str, List[Any]] = {}
         self.tamper_receipt: Optional[Callable[[dict], dict]] = None
         self.handled: List[str] = []             # routes that changed or read state
@@ -1078,8 +1147,11 @@ class FakeStandupServer:
     # -- submissions -------------------------------------------------------
 
     def _blob_check(self, blobs: List[dict]) -> Tuple[List[str], List[str]]:
-        present = [b["sha256"] for b in blobs if b["sha256"] in self.blobs_present]
-        missing = [b["sha256"] for b in blobs if b["sha256"] not in self.blobs_present]
+        """backend core/editorial_submission.py receipt: the files in the
+        body's order, split by what the media servers answer now."""
+        found = self.blob_servers.present(blobs)
+        present = [b["sha256"] for b in blobs if b["sha256"] in found]
+        missing = [b["sha256"] for b in blobs if b["sha256"] not in found]
         return present, missing
 
     def _receipt(self, record: Record, revision: int) -> dict:
@@ -1092,8 +1164,10 @@ class FakeStandupServer:
 
     def _repeat(self, record: Record, revision: int) -> dict:
         """backend core/editorial_intake.py blobs_still_missing and repeat
-        (3229d9d): only the files its receipt reported missing are looked
-        for again, and those found since are moved over."""
+        (1183930): the media servers the stored revision names are asked
+        again for the files its receipt reported missing, and only those;
+        the files found since are moved over, and a file present before
+        stays present."""
         stored = record.receipts[revision]
         missing = list(stored["blobs_missing"])
         present, _ = self._blob_check([b for b in record.revisions[revision]["blobs"]

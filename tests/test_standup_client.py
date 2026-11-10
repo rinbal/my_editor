@@ -362,7 +362,7 @@ def test_missing_files_are_named_and_the_same_body_again_confirms():
     prepared = submission_for(sk("writer"), blobs=(blob,))
     result = world.ok(lambda ok, fail: world.api().submit(prepared.body, ok, fail))
     assert isinstance(result, views.BlobsMissing) and result.missing == ("ab" * 32,)
-    world.server.blobs_present.add("ab" * 32)       # uploaded again
+    world.server.blob_servers.put("https://blossom.example", "ab" * 32, 10)   # uploaded again
     again = world.ok(lambda ok, fail: world.api().submit(prepared.body, ok, fail))
     assert isinstance(again, views.Confirmed) and again.repeat
     assert len(world.server.submissions) == 1
