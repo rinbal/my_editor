@@ -40,7 +40,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from i18n import _
 
-from . import CLIENT_NAME, CLIENT_URL, crypto, events, refs
+from . import CLIENT_NAME, CLIENT_URL, crypto, events, failures, refs
 from .relay import KeySignIn, RelayPool, Subscription
 from .answer_size import OWN_REQUEST_ID_BYTES, request_json
 from .signer_limits import (
@@ -131,20 +131,19 @@ _PAIRING_DECLINED = ("reject", "denied", "declin", "not allowed", "unauthori", "
 
 
 def pairing_failure_words(reason: str) -> str:
-    """The plain sentence for a pairing that did not work, whatever
-    ``reason`` says: the signer app was silent, declined, answered for
-    another connection, or something else went wrong."""
+    """The one sentence for a pairing that did not work, its likely cause
+    and what to do (lessons 36), whatever ``reason`` says: the signer app
+    was silent, declined, answered for another connection, or something
+    else went wrong."""
     lowered = (reason or "").lower()
     if is_signer_silent(lowered):
-        return _("Your signer app did not answer. Open it, make sure it is running, and try "
-                 "again.")
+        return _(failures.SIGNER_SILENT)
     if any(needle in lowered for needle in _PAIRING_DECLINED):
-        return _("Your signer app declined the connection. Allow MyEditor there, then try "
+        return _("Your signer app declined the connection: allow MyEditor there and try "
                  "again.")
     if "secret" in lowered:
-        return _("The answer was meant for another connection, so MyEditor didn’t accept it. "
-                 "Try again.")
-    return _("The connection didn’t work. Try again, or connect another way.")
+        return _("The answer was meant for another connection: try again.")
+    return _("The connection didn’t work: try again, or connect another way.")
 
 
 def humanize_failure(reason: str) -> str:
@@ -157,10 +156,7 @@ def humanize_failure(reason: str) -> str:
     through unchanged rather than blurred into a generic apology.
     """
     if is_signer_silent(reason):
-        return _(
-            "Your signer app did not answer. Open it, make sure it is "
-            "running, and try again."
-        )
+        return _(failures.SIGNER_SILENT)
     return reason
 
 

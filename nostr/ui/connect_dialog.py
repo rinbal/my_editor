@@ -98,11 +98,15 @@ from ..qr import make_qr_pixmap
 from ..relay import RelayPool
 from .assistant import link_button, stylesheet, text_label
 from .tips import HelpButton, help_button_stylesheet, tip_on_focus
+from ..failures import markup, spoken
 
 from . import appearance
 from announce import announce
-from i18n import _
+from i18n import N_, _
 from url_safety import is_safe_external_url
+
+# A pairing that did not work, said once above its sentence (lessons 36).
+_NOT_CONNECTED = N_("Your signer app wasn’t connected")
 
 log = logging.getLogger(__name__)
 
@@ -285,6 +289,7 @@ class ConnectDialog(QDialog):
         # What is happening now: waiting, connecting, or what went wrong.
         self._status = text_label("", "muted")
         self._status.setMinimumHeight(18)
+        self.status_shown = ("", "")          # (its title, its words), plain
         layout.addWidget(self._status)
         layout.addStretch(1)
 
@@ -542,15 +547,17 @@ class ConnectDialog(QDialog):
             self._draw_code()
         return super().event(event)
 
-    def _show_no_code(self, note: str) -> None:
+    def _show_no_code(self, note: str, *, failed: bool = False) -> None:
         """No code pairs now: blanked (never one that would not pair), with
-        ``note`` and New Code under it."""
+        ``note`` and New Code under it; Try Again after a failure, said
+        above (lessons 36)."""
         self._qr_uri = ""
         self._draw_code()
         self._qr_label.setEnabled(False)
         self._copy_btn.setEnabled(False)
         self._code_note.setText(note)
         self._code_note.setVisible(bool(note))
+        self._regen_btn.setText(_("Try Again") if failed else _("New Code"))
         self._regen_btn.show()
 
     def _start_code(self) -> None:
@@ -576,14 +583,14 @@ class ConnectDialog(QDialog):
         self._start_code()
         self._qr_label.setFocus()
 
-    def _retire_code(self, why: str) -> None:
+    def _retire_code(self, why: str, *, failed: bool = False) -> None:
         """No code pairs any more: blank it, say ``why``, offer a new one."""
         self._renew_timer.stop()
         self._close_listeners()
         self._waiting_for = ""
         for button in (self._bunker46_btn, self._open_here_btn):
             button.setEnabled(False)
-        self._show_no_code(why)
+        self._show_no_code(why, failed=failed)
 
     def _copy_qr_uri(self) -> None:
         if self._qr_uri:
@@ -774,7 +781,7 @@ class ConnectDialog(QDialog):
             self._set_status(
                 _("Your signer app asked for approval at an address that cannot be "
                   "opened safely, so the connection was not continued."),
-                error=True,
+                error=True, title=_(_NOT_CONNECTED),
             )
 
     def _on_unreadable_reply(self, _signer_pubkey: str) -> None:
@@ -784,9 +791,9 @@ class ConnectDialog(QDialog):
         looks the same as the signer never having replied.
         """
         self._set_status(
-            _("Your signer app answered in a form MyEditor can’t read. An update "
+            _("Your signer app answered in a form MyEditor can’t read: an update "
               "of the signer app may help."),
-            error=True,
+            error=True, title=_(_NOT_CONNECTED),
         )
 
     def _on_pair_success(self, user_pubkey_hex: str, client=None) -> None:
@@ -832,13 +839,14 @@ class ConnectDialog(QDialog):
                     self._retire_code(_("This code has expired."))
                 self._update_paste_button()
                 return
-            self._retire_code("")
+            self._retire_code("", failed=True)
         else:
             self._client = None                     # the pasted address
             client.close(reason=reason)
             self._start_code()                      # the code again, for another try
-        # One plain sentence; what was answered goes to the help tooltip.
-        self._set_status(pairing_failure_words(reason), error=True)
+        # Said once: its title and one plain sentence (lessons 36); what
+        # was answered goes to the help tooltip.
+        self._set_status(pairing_failure_words(reason), error=True, title=_(_NOT_CONNECTED))
         tip_on_focus(self.help_button, self._help_facts(reason))
         self._update_paste_button()
 
@@ -861,12 +869,16 @@ class ConnectDialog(QDialog):
             self._client = None
             client.close(reason=reason)
 
-    def _set_status(self, text: str, *, error: bool = False) -> None:
-        self._status.setText(text)
+    def _set_status(self, text: str, *, error: bool = False, title: str = "") -> None:
+        """``text`` under the code; a total failure's ``title`` above it."""
+        self._status.setTextFormat(Qt.TextFormat.RichText if title else Qt.TextFormat.PlainText)
+        self._status.setText(markup(title, text) if title else text)
         self._status.setObjectName("error" if error else "muted")
         self._status.style().unpolish(self._status)
         self._status.style().polish(self._status)
-        announce(self._status, text)
+        if text and (title, text) != self.status_shown:      # said once (lessons 36)
+            announce(self._status, spoken(title, text))
+        self.status_shown = (title, text)
 
     # -- cancel / close ----------------------------------------------------
 

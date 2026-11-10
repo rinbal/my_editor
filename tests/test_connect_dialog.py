@@ -45,6 +45,7 @@ from nostr.ui import connect_dialog  # noqa: E402
 from nostr.ui.connect_dialog import ConnectDialog, bunker46_address  # noqa: E402
 
 PK = "ab" * 32
+NOT_CONNECTED = "Your signer app wasn’t connected"
 # A connection address whose key is a public key (the curve's generator).
 PASTED = "bunker://" + "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798" \
     + "?relay=wss://relay.example&secret=x"
@@ -496,7 +497,8 @@ def test_a_pasted_connection_address_connects_and_a_failure_brings_the_code_back
     assert not dialog._paste_btn.isEnabled()
     failed("timed out waiting for signer")
     assert dialog._status.objectName() == "error"
-    assert "did not answer" in dialog._status.text()
+    assert dialog.status_shown == (NOT_CONNECTED,
+                                   "Your signer app didn’t answer: open it and try again.")
     assert dialog._client in dialog._listeners and not pool.subscriptions[-1].closed
     assert dialog._paste_btn.isEnabled()
     dialog.reject()
@@ -635,15 +637,15 @@ def test_a_browser_that_does_not_open_brings_the_code_back(tmp_path, opened):
 # -- plain words, the answer in the tooltip (RG-M2r2b 6) --------------------
 
 @pytest.mark.parametrize("reason, words", [
-    ("timed out waiting for signer", "Your signer app did not answer."),
+    ("timed out waiting for signer", "Your signer app didn’t answer"),
     ("could not deliver request to any relay (wss://a: blocked)",
-     "Your signer app did not answer."),
-    ("user rejected", "Your signer app declined the connection."),
-    ("Unknown client", "Your signer app declined the connection."),
-    ("permission denied", "Your signer app declined the connection."),
+     "Your signer app didn’t answer"),
+    ("user rejected", "Your signer app declined the connection"),
+    ("Unknown client", "Your signer app declined the connection"),
+    ("permission denied", "Your signer app declined the connection"),
     ("secret did not match (possible spoof attempt)",
      "The answer was meant for another connection"),
-    ("invalid: 42", "The connection didn’t work."),
+    ("invalid: 42", "The connection didn’t work"),
 ])
 def test_a_pairing_that_did_not_work_is_said_plainly_and_the_answer_is_in_the_tooltip(
         tmp_path, monkeypatch, reason, words):
@@ -653,10 +655,11 @@ def test_a_pairing_that_did_not_work_is_said_plainly_and_the_answer_is_in_the_to
     dialog = dialog_for(tmp_path)
     paste(dialog)
     calls[0](reason)
-    shown = dialog._status.text()
+    title, shown = dialog.status_shown
+    assert title == NOT_CONNECTED
     assert shown.startswith(words) and dialog._status.objectName() == "error"
     for raw in ("timed out", "deliver", "rejected", "unknown client", "denied", "spoof",
-                "secret", "invalid", "42", "wss", "relay", ":"):
+                "secret", "invalid", "42", "wss", "relay"):
         assert raw not in shown.lower(), raw
     assert reason in dialog.help_button.toolTip()
     assert dialog.help_button.accessibleDescription() == dialog.help_button.toolTip()
@@ -666,7 +669,8 @@ def test_a_pairing_that_did_not_work_is_said_plainly_and_the_answer_is_in_the_to
 def test_a_listening_code_that_fails_is_said_plainly_too(tmp_path):
     dialog = dialog_for(tmp_path)
     dialog._on_pair_failure("secret did not match (possible spoof attempt)", dialog._client)
-    assert dialog._status.text().startswith("The answer was meant for another connection")
+    assert dialog.status_shown == (NOT_CONNECTED,
+                                   "The answer was meant for another connection: try again.")
     assert "spoof" not in dialog._status.text()
     assert not dialog._regen_btn.isHidden() and not dark_modules(dialog)
     dialog.reject()
@@ -706,3 +710,42 @@ def test_the_code_is_drawn_in_the_screens_pixels_three_a_module(tmp_path, monkey
         assert pixmap.width() // modules >= 3 * ratio
         assert pixmap.deviceIndependentSize().width() <= connect_dialog._QR_SIZE
         dialog.reject()
+
+
+# -- a total failure speaks once (lessons 36) -----------------------------------------
+
+def test_a_listening_code_that_failed_is_one_title_one_sentence_and_try_again(tmp_path,
+                                                                             monkeypatch):
+    said = []
+    monkeypatch.setattr(connect_dialog, "announce", lambda _w, text: said.append(text))
+    dialog = dialog_for(tmp_path)
+    dialog._on_pair_failure("user rejected", dialog._client)
+    assert dialog.status_shown == (NOT_CONNECTED, "Your signer app declined the connection: "
+                                   "allow MyEditor there and try again.")
+    assert dialog._status.text().startswith(f"<b>{NOT_CONNECTED}</b><br>")
+    assert not dialog._regen_btn.isHidden() and dialog._regen_btn.text() == "Try Again"
+    assert dialog._code_note.isHidden() and not dialog._code_note.text()
+    assert said == [f"{NOT_CONNECTED}. Your signer app declined the connection: allow "
+                    "MyEditor there and try again."]
+    dialog._regen_btn.click()                        # Try Again: a new code, the words gone
+    assert dialog.status_shown == ("", "") and dialog._regen_btn.isHidden()
+    dialog.reject()
+
+
+def test_a_code_that_ran_out_is_not_an_error_and_offers_a_new_code(tmp_path):
+    dialog = dialog_for(tmp_path)
+    for _ in range(connect_dialog._RENEWALS + 1):
+        dialog._renew()
+    assert dialog.status_shown == ("", "") and dialog._regen_btn.text() == "New Code"
+    assert dialog._code_note.text() == "This code has expired."
+    dialog.reject()
+
+
+def test_a_failure_shown_again_is_not_announced_again(tmp_path, monkeypatch):
+    said = []
+    monkeypatch.setattr(connect_dialog, "announce", lambda _w, text: said.append(text))
+    dialog = dialog_for(tmp_path)
+    for _ in range(2):
+        dialog._on_unreadable_reply("ab" * 32)
+    assert len(said) == 1 and said[0].startswith(f"{NOT_CONNECTED}. ")
+    dialog.reject()
