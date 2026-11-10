@@ -525,9 +525,14 @@ class Submitting:
 
     def _reread(self, found: Reread) -> None:
         """The list as read again: the other device's stored entry has
-        arrived (said, and nothing more to do here), or not yet (Reload,
-        with the list's own words when it could not be read whole)."""
-        if found.arrived:
+        arrived (said, and nothing more to do here; its pictures missing,
+        said so: never "submitted" then, 12.4 at 33d92c9), or not yet
+        (Reload, with the list's own words when it could not be read
+        whole)."""
+        if found.pictures_missing:
+            self._fail(words.PICTURES_IN_THE_APP_THAT_SENT, None, held=Held.OTHER,
+                       title=words.PICTURE_NOT_IN)
+        elif found.arrived:
             self._fail(words.ELSEWHERE_HERE_NOW, None, held=Held.OTHER,
                        title=words.SUBMITTED_ELSEWHERE, error=False)
         else:

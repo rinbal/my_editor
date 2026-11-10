@@ -133,8 +133,14 @@ LIST_NOT_SAVED = N_("Your list of submissions couldn’t be saved: check your in
 LIST_CHANGED_ELSEWHERE = N_("Another device changed this submission just now.")
 UPLOAD_FAILED = N_("A picture couldn’t be uploaded: check your internet connection and try "
                    "again.")
-PICTURE_MISSING = N_("A picture isn’t on your media server any more: try again to upload it "
-                     "once more.")
+# The server still misses a picture after it was uploaded again twice in
+# a row (12.4 at 33d92c9): said once, with Try Again.
+PICTURE_MISSING = N_("A picture didn’t arrive at {publication}: try again to upload it once "
+                     "more.")
+# Stored, a picture missing, and this app holds none of its files (another
+# device, or a run that ended before this start): the contract's words.
+PICTURES_IN_THE_APP_THAT_SENT = N_("Open the submission in the app you sent it with: that app "
+                                   "uploads the pictures again.")
 TOO_LARGE = N_("This submission is larger than {publication} takes.")
 ANOTHER_VERSION = N_("{publication} already has another version of this submission.")
 # This revision is stored, with another envelope or other wraps than this
@@ -227,7 +233,8 @@ __all__ = [
     "MESSAGE_SIGNING", "MESSAGE_SIGNING_IN_THE_BACKGROUND", "NOT_BUILT", "NOT_CHECKED",
     "NOT_CONFIRMED", "NOT_DISCARDED", "NOT_RECEIVED", "NOT_SUBMITTED", "NOT_TAKEN",
     "PICTURE_MISSING",
-    "PICTURE_NOT_IN", "PUBLICATIONS_NOT_LOADED", "READING_LIST", "SENDING", "SERVER_LIMIT_AT",
+    "PICTURES_IN_THE_APP_THAT_SENT", "PICTURE_NOT_IN", "PUBLICATIONS_NOT_LOADED", "READING_LIST",
+    "SENDING", "SERVER_LIMIT_AT",
     "SERVER_LIMIT_LATER", "SERVER_LIMIT_OVER", "SERVER_LIMIT_TOMORROW_AT",
     "SERVER_TROUBLE", "STOPPED_MESSAGE", "STOPPED_NOTHING_SENT", "STOPPED_OTHER_VERSION",
     "STOPPED_PICTURES", "STOPPED_UNCONFIRMED", "STORED_CHECKING", "STORED_OTHER",

@@ -23,10 +23,13 @@ UploadDone = Callable[[Mapping[str, Tuple[str, ...]]], None]
 class Reread:
     """The list read again after another device stored this round
     (``reload``): whether the stored entry for the sid has arrived, and
-    the list's own words (translated) when it could not be read whole."""
+    the list's own words (translated) when it could not be read whole.
+    ``pictures_missing``: arrived, and the server's receipt of it misses
+    a picture, which only that device can upload (12.4 at 33d92c9)."""
 
     arrived: bool
     said: str = ""
+    pictures_missing: bool = False
 
 
 @dataclass(frozen=True)

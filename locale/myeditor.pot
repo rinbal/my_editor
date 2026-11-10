@@ -6909,35 +6909,35 @@ msgstr ""
 msgid "Your account has a relay list after all, so nothing was published. Add the members’ relay to it instead."
 msgstr ""
 
-#: nostr/signer_limits.py:82
+#: nostr/signer_limits.py:83
 msgid "The connection to your signer app carries only short messages: shorten this text or split it into parts."
 msgstr ""
 
-#: nostr/signer_limits.py:84
+#: nostr/signer_limits.py:85
 msgid "The connection to your signer app carries only short messages: shorten this text, or sign it with your key kept on this computer."
 msgstr ""
 
-#: nostr/signer_limits.py:87
+#: nostr/signer_limits.py:88
 msgid "This is too long to be signed through your signer app: shorten it or split it into parts."
 msgstr ""
 
-#: nostr/signer_limits.py:89
+#: nostr/signer_limits.py:90
 msgid "This is too long to be signed through your signer app: shorten it, or sign it with your key kept on this computer."
 msgstr ""
 
-#: nostr/signer_limits.py:91
+#: nostr/signer_limits.py:92
 msgid "The connection to your signer app carries only short messages: split this draft into smaller ones or publish it directly."
 msgstr ""
 
-#: nostr/signer_limits.py:95
+#: nostr/signer_limits.py:96
 msgid "Your signer app can’t carry a draft this long: split it into smaller drafts or publish it directly."
 msgstr ""
 
-#: nostr/signer_limits.py:97
+#: nostr/signer_limits.py:98
 msgid "Your signer app can’t carry a draft this long: split it into smaller drafts, or save it with your key kept on this computer."
 msgstr ""
 
-#: nostr/signer_limits.py:99
+#: nostr/signer_limits.py:100
 msgid "This draft is too long to be encrypted: split it into smaller drafts or publish it directly."
 msgstr ""
 
@@ -8205,99 +8205,104 @@ msgstr ""
 msgid "A picture couldn’t be uploaded: check your internet connection and try again."
 msgstr ""
 
-#: nostr/standup/words.py:136
-msgid "A picture isn’t on your media server any more: try again to upload it once more."
+#: nostr/standup/words.py:138
+#, python-brace-format
+msgid "A picture didn’t arrive at {publication}: try again to upload it once more."
 msgstr ""
 
-#: nostr/standup/words.py:138
+#: nostr/standup/words.py:142
+msgid "Open the submission in the app you sent it with: that app uploads the pictures again."
+msgstr ""
+
+#: nostr/standup/words.py:144
 #, python-brace-format
 msgid "This submission is larger than {publication} takes."
 msgstr ""
 
-#: nostr/standup/words.py:139
+#: nostr/standup/words.py:145
 #, python-brace-format
 msgid "{publication} already has another version of this submission."
 msgstr ""
 
-#: nostr/standup/words.py:142
+#: nostr/standup/words.py:148
 #, python-brace-format
 msgid "{publication} received this submission, but not as MyEditor sent it."
 msgstr ""
 
-#: nostr/standup/words.py:143
+#: nostr/standup/words.py:149
 msgid "The server didn’t take the submission."
 msgstr ""
 
-#: nostr/standup/words.py:145
+#: nostr/standup/words.py:151
 msgid "MyEditor couldn’t put this submission together."
 msgstr ""
 
-#: nostr/standup/words.py:172
+#: nostr/standup/words.py:178
 #, python-brace-format
 msgid "You’ve sent {publication} as much as it takes for now: try again at {time}."
 msgstr ""
 
-#: nostr/standup/words.py:173
+#: nostr/standup/words.py:179
 #, python-brace-format
 msgid "You’ve sent {publication} as much as it takes for now: try again tomorrow at {time}."
 msgstr ""
 
-#: nostr/standup/words.py:175
+#: nostr/standup/words.py:181
 #, python-brace-format
 msgid "The server can’t take more from you right now: try again at {time}."
 msgstr ""
 
-#: nostr/standup/words.py:176
+#: nostr/standup/words.py:182
 #, python-brace-format
 msgid "The server can’t take more from you right now: try again tomorrow at {time}."
 msgstr ""
 
-#: nostr/standup/words.py:178
+#: nostr/standup/words.py:184
 msgid "The server can’t take more from you right now: try again later."
 msgstr ""
 
-#: nostr/standup/words.py:180
+#: nostr/standup/words.py:186
 #, python-brace-format
 msgid "The wait for {publication} is over: you can try again now."
 msgstr ""
 
-#: nostr/standup/words.py:181
+#: nostr/standup/words.py:187
 msgid "The wait for the server is over: you can try again now."
 msgstr ""
 
-#: nostr/standup/words.py:185
+#: nostr/standup/words.py:191
 msgid "The publications couldn’t be loaded"
 msgstr ""
 
-#: nostr/standup/words.py:186
+#: nostr/standup/words.py:192
 msgid "MyEditor couldn’t check whether you submitted this text before"
 msgstr ""
 
-#: nostr/standup/words.py:187
+#: nostr/standup/words.py:193
 msgid "The earlier try wasn’t discarded"
 msgstr ""
 
-#: nostr/standup/words.py:149
+#: nostr/standup/words.py:155
 #, python-brace-format
 msgid "{publication} isn’t taking submissions right now."
 msgstr ""
 
-#: nostr/standup/words.py:150
+#: nostr/standup/words.py:156
 #, python-brace-format
 msgid "{publication} doesn’t take submissions from you."
 msgstr ""
 
-#: nostr/standup/words.py:151
+#: nostr/standup/words.py:157
 #, python-brace-format
 msgid "You already have as many open submissions at {publication} as it takes."
 msgstr ""
 
-#: nostr/standup/words.py:153
+#: nostr/standup/words.py:159
 #, python-brace-format
 msgid "You’ve sent {publication} as much as it takes for now: try again later."
 msgstr ""
 
-#: nostr/standup/words.py:159
+#: nostr/standup/words.py:165
 #, python-brace-format
 msgid "Nobody at {publication} could decide on it: the only person who can is named among those who take part."
 msgstr ""
@@ -12406,7 +12411,7 @@ msgid_plural "at most {count} open submissions"
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/standup_run.py:116
+#: nostr/ui/standup_run.py:123
 #, python-brace-format
 msgid "{count} other submission stopped as well."
 msgid_plural "{count} other submissions stopped as well."

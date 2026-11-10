@@ -745,6 +745,23 @@ def test_a_round_step_that_met_its_bounds_says_why_and_offers_no_try_again(tmp_p
     assert sheet.status.shown == (NOT_CHECKED, words)
 
 
+def test_a_submission_whose_pictures_are_missing_elsewhere_is_said_in_the_contracts_words(
+        tmp_path, german):
+    # Contract 12.4 at 33d92c9: stored with pictures missing, and the
+    # app that sent it uploads them; nothing to try again here, and never
+    # "eingereicht".
+    from nostr.standup import rounds
+    writer = Writer(round_=RoundAnswer(None, i18n._(words.PICTURES_IN_THE_APP_THAT_SENT),
+                                       final=True, title=words.PICTURE_NOT_IN))
+    sheet = _sheet(tmp_path, writer)
+    assert sheet.status.shown == ("Deiner Einreichung fehlt ein Bild",
+                                  "Öffne die Einreichung in der App, mit der du sie gesendet "
+                                  "hast: Sie lädt sie erneut hoch.")
+    assert sheet.retry_load.isHidden() and not sheet.submit_button.isEnabled()
+    assert "eingereicht" not in " ".join(sheet.status.shown).lower()
+    assert rounds.PICTURES_IN_THE_APP_THAT_SENT is words.PICTURES_IN_THE_APP_THAT_SENT
+
+
 def test_a_round_that_is_told_offers_no_try_again(tmp_path):
     sheet = _sheet(tmp_path, Writer(round_=(1, "")))
     assert sheet.retry_load.isHidden()

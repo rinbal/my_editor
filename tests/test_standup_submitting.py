@@ -121,6 +121,7 @@ class SubmissionsList:
         # merged as the real list merges (merge_items).
         self.arriving = []
         self.unreadable = ""                # a read again that cannot tell
+        self.pictures_missing = False       # the receipt of what arrived misses a file
 
     @property
     def on_list(self):
@@ -152,7 +153,8 @@ class SubmissionsList:
         self.put(*self.arriving)
         self.arriving = []
         arrived = stored_elsewhere(self.held(entry.sid), entry)
-        self.later(0, lambda: on_done(Reread(arrived)))
+        self.later(0, lambda: on_done(Reread(arrived, pictures_missing=arrived
+                                             and self.pictures_missing)))
 
     def forget(self, entry) -> None:
         self.forgotten.append(entry)
@@ -511,6 +513,12 @@ def test_a_file_that_stays_missing_fails_with_a_retry():
     assert progress.failure.sentence == words.PICTURE_MISSING
     assert progress.failure.retry is Step.REUPLOADING
     assert len(world.uploads.calls) == 1 + submitting.MAX_REUPLOADS
+    # Try Again: at most twice in a row again, then said once more (12.4
+    # at 33d92c9).
+    world.submitting.retry()
+    world.settle()
+    assert world.submitting.progress.failure.sentence == words.PICTURE_MISSING
+    assert len(world.uploads.calls) == 1 + 2 * submitting.MAX_REUPLOADS
     world.uploads.lose = 0
     world.submitting.retry()
     world.settle()
@@ -1043,6 +1051,24 @@ def test_a_revision_1_at_a_sid_stored_elsewhere_builds_nothing_and_waits_for_tha
     assert _sent_here(world, placed) == [1] and world.log.count("submit") == 1
     refused = world.posted()[placed]["revision_hash"]
     assert [body["revision_hash"] for body in world.posted()].count(refused) == 1
+
+
+def test_that_devices_round_with_pictures_missing_is_never_said_to_be_submitted():
+    # Contract 12.4 at 33d92c9: this app holds none of that device's files;
+    # it says the submission misses a picture and where it is uploaded
+    # again, never "Submitted on another device.", and offers nothing.
+    world = World(pictures=False)
+    theirs = world.on_server(1, "submitted")
+    world.go()
+    world.list.arriving.append(theirs)
+    world.list.pictures_missing = True
+    world.submitting.retry()
+    world.settle()
+    progress = world.submitting.progress
+    failure = progress.failure
+    assert (failure.title, failure.sentence, failure.retry) == (
+        words.PICTURE_NOT_IN, words.PICTURES_IN_THE_APP_THAT_SENT, None)
+    assert progress.held is Held.OTHER and world.log.count("submit") == 1
 
 
 def test_a_round_refused_as_stale_is_never_sent_again_by_another_run():

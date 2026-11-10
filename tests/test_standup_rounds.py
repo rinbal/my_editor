@@ -57,8 +57,9 @@ class Client:
 
     def __init__(self, server: str = SERVER, *, states=None, size=100,
                  shifted: bool = False, other_view: bool = False, refusal=None,
-                 refusals: int = -1, read_first: bool = False) -> None:
+                 refusals: int = -1, read_first: bool = False, missing=()) -> None:
         self.server = server
+        self.missing = tuple(missing)   # the files every receipt misses
         self.states = states or {}
         self.size = size
         self.shifted = shifted          # the lookup's View names the next round
@@ -94,7 +95,8 @@ class Client:
                 view = _view(round_ + self.shifted, self.states[round_],
                              sid=_sid(round_ + 1 if self.other_view else round_))
                 found[key] = SimpleNamespace(submission=view,
-                                             receipt=SimpleNamespace(submission_id=_sid(round_)))
+                                             receipt=SimpleNamespace(submission_id=_sid(round_),
+                                                                     blobs_missing=self.missing))
         on_success(LookupAnswer(found=found, unreadable=frozenset()))
 
 
@@ -191,6 +193,25 @@ def test_an_entry_a_lookup_finds_is_named_stored_once():
     assert answer.round == 3 and answer.unsent == _entry(3)
     assert answer.stored == (_entry(1),)
     assert _ask([_entry(1)], [Client()]).stored == ()
+
+
+def test_a_round_still_open_whose_pictures_are_missing_is_never_said_handed_in():
+    # Contract 12.4 at 33d92c9: an app holding none of the submission's
+    # files uploads nothing and shows it stored with pictures missing,
+    # with the contract's words; never "submitted" while files are missing.
+    from i18n import _
+    from nostr.standup import words
+    missing = ("ab" * 32,)
+    answer = _ask([_entry(1)], [Client(states={1: "submitted"}, missing=missing)])
+    assert answer.round is None and answer.final and answer.unsent is None
+    assert (answer.title, answer.words) == (words.PICTURE_NOT_IN,
+                                            _(words.PICTURES_IN_THE_APP_THAT_SENT))
+    assert answer.stored == (_entry(1),)            # a receipt all the same
+    # A closed round misses nothing that matters: the next round, as before.
+    assert _ask([_entry(1)], [Client(states={1: "declined"}, missing=missing)]).round == 2
+    # All its files there: handed in, said by the sheet as before.
+    assert _ask([_entry(1)], [Client(states={1: "submitted"})]) == RoundAnswer(
+        None, stored=(_entry(1),))
 
 
 @pytest.mark.parametrize("retry_after, retry_at", [(90, NOW + 90), (None, None)],

@@ -289,8 +289,9 @@ class FakeApi:
     ``size`` bytes."""
 
     def __init__(self, states=None, *, unreadable=False, fails=False, other_sid=False,
-                 server="https://s.example", size=100) -> None:
+                 server="https://s.example", size=100, missing=()) -> None:
         self.states, self.unreadable, self.fails = states, unreadable, fails
+        self.missing = tuple(missing)               # files every receipt misses
         self.other_sid = other_sid
         self.server, self.size = server, size
         self.asked = []
@@ -322,7 +323,7 @@ class FakeApi:
                 sid = "00" * 32 if self.other_sid else _sid(round_)
                 found[key] = SimpleNamespace(
                     submission=SimpleNamespace(state=state, submission_id=sid, round=round_),
-                    receipt=SimpleNamespace(submission_id=sid))
+                    receipt=SimpleNamespace(submission_id=sid, blobs_missing=self.missing))
         on_success(LookupAnswer(found=found, unreadable=frozenset()))
 
     def stop(self) -> None:
@@ -641,6 +642,35 @@ def test_after_a_stale_revision_the_list_is_read_again_for_that_devices_entry():
     submissions.arriving = [theirs]                              # older, but stored
     assert _reread(submissions, mine) == Reread(True)
     assert submissions.reads == 3 and submissions.entry(mine.sid) == theirs
+
+
+def test_that_devices_entry_whose_pictures_are_missing_is_never_said_to_be_submitted():
+    # Contract 12.4 at 33d92c9: "Submitted on another device." only while
+    # its receipt misses no picture; this app has none of its files.
+    from dataclasses import replace
+    from nostr.standup.ports import Reread
+    mine = _entry(1)
+    # Other keys (another s_sub); its status key is the one the fake knows.
+    theirs = replace(mine, s_sub="d4" * 32, stored=True, updated_at=0)
+    submissions = FakeList([mine])
+    submissions.arriving = [theirs]
+    writer = _writer(submissions, FakeApi({1: "submitted"}, missing=("ef" * 32,)))
+    said = []
+    writer._ports(writer.account(PROFILE), PUBLICATION).reload(mine, said.append)
+    QApplication.processEvents()
+    LATER.run()
+    assert said == [Reread(True, pictures_missing=True)]
+    # Its pictures all there, or the server not reached (asked again
+    # quietly first): arrived, as the list says.
+    for api in (FakeApi({1: "submitted"}), FakeApi(fails=True)):
+        submissions.arriving = [theirs]
+        writer = _writer(submissions, api)
+        said = []
+        writer._ports(writer.account(PROFILE), PUBLICATION).reload(mine, said.append)
+        QApplication.processEvents()
+        LATER.run()
+        assert said == [Reread(True)]
+        assert len(api.asked) == (1 if not api.fails else 1 + len(failures.QUIET_RETRY_MS))
 
 
 def test_a_list_that_cannot_be_read_again_says_why_and_one_read_in_part_says_nothing():
@@ -1086,6 +1116,20 @@ def test_a_run_ends_with_its_first_message(progress, finished):
     assert ended(False) is finished
     # Let go once a sheet showed it with Send Again: ended, if it ended.
     assert ended(True) is (progress.phase.name in ("DONE", "FAILED", "CANCELLED"))
+
+
+@pytest.mark.parametrize("retry", [Step.REUPLOADING, Step.SIGNING, None])
+def test_a_run_whose_pictures_did_not_arrive_holds_their_files_and_is_shown_again(retry):
+    # Contract 12.4 at 33d92c9: only the app holding the files uploads the
+    # missing ones; once the sheet closed, Try Again must still be there,
+    # not the words for an app that holds none of them.
+    from nostr.standup.submitting import Failure
+    from nostr.ui.standup_submit import SubmissionRun
+    progress = Progress(Step.FAILED, held=Held.STORED, failure=Failure(
+        words.PICTURE_MISSING, retry, title=words.PICTURE_NOT_IN))
+    for let_go in (False, True):
+        run = SimpleNamespace(progress=progress, _let_go=let_go)
+        assert SubmissionRun.finished.fget(run) is (retry is not Step.REUPLOADING)
 
 
 def test_in_the_background_a_failure_is_said_in_its_words(german):

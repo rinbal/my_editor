@@ -20,7 +20,10 @@ sid with its status key: :class:`RoundAnswer` names those entries not
 yet marked so (``stored``), and the caller marks them on the list (13,
 72d5ddc). A lookup refused for a limit (429, contract 15) is said as
 one, with when asking again helps (``limited``, ``retry_at``), never as
-a round that cannot be told.
+a round that cannot be told. A round still open whose receipt misses a
+picture is said as stored with pictures missing, never as handed in:
+the app asking holds none of its files (a run here that does is shown
+instead), so the app that sent it uploads them (12.4 at 33d92c9).
 
 Together the step asks about at most :data:`MAX_ROUNDS_ASKED` rounds and
 reads at most :data:`MAX_ROUND_ANSWER_BYTES` of answers. At either
@@ -40,7 +43,10 @@ from . import drafting
 from .entries import SubmissionEntry
 from .errors import PASSING, Code, StandupError, cause_words
 from .watcher import look_up_all, lookup_batches
-from .words import ELSEWHERE_NOT_HERE_YET, NOT_CHECKED, SUBMITTED_ELSEWHERE
+from .words import (
+    ELSEWHERE_NOT_HERE_YET, NOT_CHECKED, PICTURE_NOT_IN, PICTURES_IN_THE_APP_THAT_SENT,
+    SUBMITTED_ELSEWHERE,
+)
 
 MAX_ROUNDS_ASKED = 100
 MAX_ROUND_ANSWER_BYTES = 32 * 1024 * 1024
@@ -140,6 +146,7 @@ def ask_round(client_for: Callable[[str], Any], entries: Sequence[SubmissionEntr
         return
     batches = lookup_batches(asked)
     states: Dict[str, Optional[str]] = {}
+    missing_pictures = set()                    # sids whose receipt misses a file
 
     def failed(error: StandupError) -> None:
         if budget.spent:
@@ -176,6 +183,8 @@ def ask_round(client_for: Callable[[str], Any], entries: Sequence[SubmissionEntr
     def found(index: int, items) -> None:
         states.update({sid: item.submission.state if item else None
                        for sid, item in items.items()})
+        missing_pictures.update(sid for sid, item in items.items()
+                                if item is not None and item.receipt.blobs_missing)
         look_up(index + 1)
 
     def choose() -> None:
@@ -185,6 +194,11 @@ def ask_round(client_for: Callable[[str], Any], entries: Sequence[SubmissionEntr
         if choice.elsewhere is not None:
             on_done(RoundAnswer(None, _(ELSEWHERE_NOT_HERE_YET), from_list=True, stored=held,
                                 elsewhere=choice.elsewhere, title=SUBMITTED_ELSEWHERE))
+            return
+        if choice.open is not None and choice.open.sid in missing_pictures:
+            # Nothing to upload from here: no Try Again (final).
+            on_done(RoundAnswer(None, _(PICTURES_IN_THE_APP_THAT_SENT), final=True, stored=held,
+                                title=PICTURE_NOT_IN))
             return
         on_done(RoundAnswer(choice.round, unsent=choice.unsent, stored=held))
 

@@ -17,7 +17,7 @@ from i18n import _, ngettext
 from ..standup import words
 from ..standup.drafting import ArticleDraft, Choice
 from ..standup.submitting import (
-    HELD_UNKNOWN_FIRST, HELD_WORDS, MessageStatus, Phase, Ports, Progress, Submitting,
+    HELD_UNKNOWN_FIRST, HELD_WORDS, MessageStatus, Phase, Ports, Progress, Step, Submitting,
 )
 
 
@@ -50,7 +50,14 @@ class SubmissionRun(QObject):
     def finished(self) -> bool:
         """Ended, its first message included: a run whose message is still
         being signed or sent, or did not go while no sheet showed it, is
-        shown again for its work (Send Again there) until :meth:`let_go`."""
+        shown again for its work (Send Again there) until :meth:`let_go`.
+        One whose pictures did not arrive holds their files, which no other
+        start of the app has: it is shown again for its work (Try Again
+        there) while its account is in use (12.4 at 33d92c9)."""
+        failure = self.progress.failure
+        if self.progress.phase is Phase.FAILED and failure is not None \
+                and failure.retry is Step.REUPLOADING:
+            return False
         return ended(self.progress) and (self._let_go or self.progress.message
                                           in (MessageStatus.NONE, MessageStatus.SENT))
 

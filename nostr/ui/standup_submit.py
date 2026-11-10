@@ -49,7 +49,7 @@ from ..standup.servers import configured_server
 from ..standup.submitting import Phase, Ports, Progress
 from ..standup.rounds import RoundAnswer, ask_round
 from ..standup.trust import Destination
-from ..standup.watcher import resolve_unconfirmed
+from ..standup.watcher import look_up, resolve_unconfirmed
 from .standup_account import Account, live
 from .standup_handoff import phase_words
 from .standup_message import send_first_message
@@ -494,12 +494,25 @@ class StandupWriter(QObject):
         """The list read again after a ``stale_revision`` for ``entry``'s
         revision 1: another device stored that round first (contract 2 at
         72d5ddc). Arrived once the list holds a stored entry for the sid
-        (its secrets beat this one's in the merge, 13)."""
+        (its secrets beat this one's in the merge, 13); then its receipt
+        is looked up, as a receipt that misses a picture is never said to
+        be submitted (12.4 at 33d92c9). A lookup that could not be made
+        (asked again quietly first) leaves it arrived, as the list says."""
         def read(result) -> None:
             self._listed(account, result)
-            arrived = stored_elsewhere(account.submissions.entry(entry.sid), entry)
-            # A page that did not come may hold it: Reload reads again.
-            on_done(Reread(arrived, "" if arrived else account.list_problem))
+            stored = account.submissions.entry(entry.sid)
+            if not stored_elsewhere(stored, entry):
+                # A page that did not come may hold it: Reload reads again.
+                on_done(Reread(False, account.list_problem))
+                return
+            api = account.client_for(stored.server)
+            failures.retry_quietly(
+                lambda answer: look_up(api, stored, live(account, answer), live(account, answer)),
+                settled=lambda item: not (isinstance(item, StandupError)
+                                          and item.code in PASSING),
+                later=_later, on_done=lambda item: on_done(Reread(
+                    True, pictures_missing=item is not None and not isinstance(
+                        item, StandupError) and bool(item.receipt.blobs_missing))))
 
         account.read_whole(read)
 
