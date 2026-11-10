@@ -7958,39 +7958,39 @@ msgstr ""
 msgid "It contains a secret key, and MyEditor never sends a secret key to a publication. Remove the key and try again."
 msgstr ""
 
-#: nostr/standup/lists.py:69
+#: nostr/standup/lists.py:70
 msgid "Your list of submissions couldn't be read."
 msgstr ""
 
-#: nostr/standup/lists.py:70
+#: nostr/standup/lists.py:71
 msgid "Your signer app didn't answer, so your list of submissions couldn't be read."
 msgstr ""
 
-#: nostr/standup/lists.py:72
+#: nostr/standup/lists.py:73
 msgid "Your list of submissions was saved with an older kind of encryption. Open it once in the app that saved it; until then, nothing new can be submitted here."
 msgstr ""
 
-#: nostr/standup/lists.py:75
+#: nostr/standup/lists.py:76
 msgid "Part of your list of submissions hasn't arrived yet. What did is shown, and the list is made whole again the next time it is saved."
 msgstr ""
 
-#: nostr/standup/lists.py:81
+#: nostr/standup/lists.py:82
 msgid "The connection to your signer app carries only short messages, and your list of submissions was saved in longer pieces. Connect your signer app again to read it; until then, nothing new can be submitted here."
 msgstr ""
 
-#: nostr/standup/lists.py:85
+#: nostr/standup/lists.py:86
 msgid "What you have read couldn't be loaded."
 msgstr ""
 
-#: nostr/standup/lists.py:86
+#: nostr/standup/lists.py:87
 msgid "Your signer app didn't answer, so what you have read couldn't be loaded."
 msgstr ""
 
-#: nostr/standup/lists.py:88
+#: nostr/standup/lists.py:89
 msgid "What you have read was saved with an older kind of encryption and is left as it is."
 msgstr ""
 
-#: nostr/standup/lists.py:90
+#: nostr/standup/lists.py:91
 msgid "The connection to your signer app carries only short messages, and what you have read was saved in longer pieces. Connect your signer app again to load it."
 msgstr ""
 
@@ -8039,256 +8039,256 @@ msgstr ""
 msgid "The server has your submission. Checking the picture …"
 msgstr ""
 
-#: nostr/standup/words.py:43
+#: nostr/standup/words.py:44
 msgid "Submitted on another device."
 msgstr ""
 
-#: nostr/standup/words.py:44
+#: nostr/standup/words.py:45
 msgid "Its details aren’t on this device yet."
 msgstr ""
 
-#: nostr/standup/words.py:45
+#: nostr/standup/words.py:46
 msgid "Its details are on this device now."
 msgstr ""
 
-#: nostr/standup/words.py:46
+#: nostr/standup/words.py:47
 msgid "Reading your list of submissions …"
 msgstr ""
 
-#: nostr/standup/words.py:47
+#: nostr/standup/words.py:48
 msgid "You can close the window, MyEditor keeps checking."
 msgstr ""
 
-#: nostr/standup/words.py:48
+#: nostr/standup/words.py:49
 #, python-brace-format
 msgid "Submitted. In the inbox of {publication}."
 msgstr ""
 
-#: nostr/standup/words.py:49
+#: nostr/standup/words.py:50
 msgid "The server confirmed receipt."
 msgstr ""
 
-#: nostr/standup/words.py:50
+#: nostr/standup/words.py:51
 msgid "Submitting …"
 msgstr ""
 
-#: nostr/standup/words.py:53
+#: nostr/standup/words.py:54
 #, python-brace-format
 msgid "Your submission to {publication} is in. Confirm your message to the editorial team in your signer app."
 msgstr ""
 
-#: nostr/standup/words.py:55
+#: nostr/standup/words.py:56
 #, python-brace-format
 msgid "Your message to the editorial team of {publication} wasn’t sent. Open Submit to a Publication for this text to send it again."
 msgstr ""
 
-#: nostr/standup/words.py:60
+#: nostr/standup/words.py:61
 #, python-brace-format
 msgid "Your submission to {publication} stopped when the account changed. Nothing was sent."
 msgstr ""
 
-#: nostr/standup/words.py:62
+#: nostr/standup/words.py:63
 #, python-brace-format
 msgid "Your submission to {publication} stopped when the account changed, before the server confirmed it. Open Submit to a Publication with that account to see whether it arrived."
 msgstr ""
 
-#: nostr/standup/words.py:65
+#: nostr/standup/words.py:66
 #, python-brace-format
 msgid "Your submission to {publication} stopped when the account changed. {publication} already has another version of it."
 msgstr ""
 
-#: nostr/standup/words.py:67
+#: nostr/standup/words.py:68
 #, python-brace-format
 msgid "Your submission to {publication} is in, but a picture was still being uploaded when the account changed."
 msgstr ""
 
-#: nostr/standup/words.py:69
+#: nostr/standup/words.py:70
 #, python-brace-format
 msgid "Your submission to {publication} is in, but your message may not have reached the editorial team: the account changed."
 msgstr ""
 
-#: nostr/standup/words.py:73
+#: nostr/standup/words.py:74
 msgid "Waiting for your signer app: confirm your message there."
 msgstr ""
 
-#: nostr/standup/words.py:74
+#: nostr/standup/words.py:75
 msgid "Sending your message …"
 msgstr ""
 
-#: nostr/standup/words.py:75
+#: nostr/standup/words.py:76
 msgid "Your message to the editorial team is sent."
 msgstr ""
 
-#: nostr/standup/words.py:76
+#: nostr/standup/words.py:77
 msgid "Your message wasn’t sent."
 msgstr ""
 
-#: nostr/standup/words.py:80
+#: nostr/standup/words.py:81
 msgid "A submitted article keeps its link name."
 msgstr ""
 
-#: nostr/standup/words.py:81
+#: nostr/standup/words.py:82
 msgid "The publication knows this article by its link name. Another one would be another submission, and once accepted it is published under this one."
 msgstr ""
 
-#: nostr/standup/words.py:84
+#: nostr/standup/words.py:85
 msgid "This article keeps its link name for sending it to the publication."
 msgstr ""
 
-#: nostr/standup/words.py:86
+#: nostr/standup/words.py:87
 msgid "Its submission is made from its link name: another one would be another submission."
 msgstr ""
 
-#: nostr/standup/words.py:88
+#: nostr/standup/words.py:89
 msgid "Checking whether this article was submitted …"
 msgstr ""
 
-#: nostr/standup/words.py:89
+#: nostr/standup/words.py:90
 msgid "MyEditor couldn’t check whether this article was submitted, so it keeps its link name for now."
 msgstr ""
 
-#: nostr/standup/words.py:91
+#: nostr/standup/words.py:92
 msgid "If it was submitted, another link name would be another submission."
 msgstr ""
 
-#: nostr/standup/words.py:97
+#: nostr/standup/words.py:98
 msgid "Your article wasn’t submitted"
 msgstr ""
 
-#: nostr/standup/words.py:98
+#: nostr/standup/words.py:99
 msgid "Your submission isn’t confirmed"
 msgstr ""
 
-#: nostr/standup/words.py:99
+#: nostr/standup/words.py:100
 msgid "Your submission is missing a picture"
 msgstr ""
 
-#: nostr/standup/words.py:100
+#: nostr/standup/words.py:101
 msgid "This version wasn’t submitted"
 msgstr ""
 
-#: nostr/standup/words.py:103
+#: nostr/standup/words.py:104
 msgid "Your list of submissions holds an entry for this text that MyEditor cannot use."
 msgstr ""
 
-#: nostr/standup/words.py:105
+#: nostr/standup/words.py:106
 msgid "The editorial team’s key couldn’t be confirmed: try again in a moment."
 msgstr ""
 
-#: nostr/standup/words.py:108
+#: nostr/standup/words.py:109
 msgid "The server didn’t receive your submission: try again."
 msgstr ""
 
-#: nostr/standup/words.py:109
+#: nostr/standup/words.py:110
 msgid "The server couldn’t take it just now: try again in a moment."
 msgstr ""
 
-#: nostr/standup/words.py:110
+#: nostr/standup/words.py:111
 msgid "Your list of submissions couldn’t be saved: check your internet connection and try again."
 msgstr ""
 
-#: nostr/standup/words.py:112
+#: nostr/standup/words.py:113
 msgid "Another device changed this submission just now."
 msgstr ""
 
-#: nostr/standup/words.py:113
+#: nostr/standup/words.py:114
 msgid "A picture couldn’t be uploaded: check your internet connection and try again."
 msgstr ""
 
-#: nostr/standup/words.py:115
+#: nostr/standup/words.py:116
 msgid "A picture isn’t on your media server any more: try again to upload it once more."
-msgstr ""
-
-#: nostr/standup/words.py:117
-#, python-brace-format
-msgid "This submission is larger than {publication} takes."
 msgstr ""
 
 #: nostr/standup/words.py:118
 #, python-brace-format
+msgid "This submission is larger than {publication} takes."
+msgstr ""
+
+#: nostr/standup/words.py:119
+#, python-brace-format
 msgid "{publication} already has another version of this submission."
 msgstr ""
 
-#: nostr/standup/words.py:121
+#: nostr/standup/words.py:122
 #, python-brace-format
 msgid "{publication} received this submission, but not as MyEditor sent it."
 msgstr ""
 
-#: nostr/standup/words.py:122
+#: nostr/standup/words.py:123
 msgid "The server didn’t take the submission."
 msgstr ""
 
-#: nostr/standup/words.py:124
+#: nostr/standup/words.py:125
 msgid "MyEditor couldn’t put this submission together."
-msgstr ""
-
-#: nostr/standup/words.py:153
-#, python-brace-format
-msgid "You’ve sent {publication} as much as it takes for now: try again at {time}."
 msgstr ""
 
 #: nostr/standup/words.py:154
 #, python-brace-format
-msgid "You’ve sent {publication} as much as it takes for now: try again tomorrow at {time}."
+msgid "You’ve sent {publication} as much as it takes for now: try again at {time}."
 msgstr ""
 
-#: nostr/standup/words.py:156
+#: nostr/standup/words.py:155
 #, python-brace-format
-msgid "The server can’t take more from you right now: try again at {time}."
+msgid "You’ve sent {publication} as much as it takes for now: try again tomorrow at {time}."
 msgstr ""
 
 #: nostr/standup/words.py:157
 #, python-brace-format
+msgid "The server can’t take more from you right now: try again at {time}."
+msgstr ""
+
+#: nostr/standup/words.py:158
+#, python-brace-format
 msgid "The server can’t take more from you right now: try again tomorrow at {time}."
 msgstr ""
 
-#: nostr/standup/words.py:159
-msgid "The server can’t take more from you right now: try again later."
-msgstr ""
-
 #: nostr/standup/words.py:160
-#, python-brace-format
-msgid "You can send it again at {time}."
+msgid "The server can’t take more from you right now: try again later."
 msgstr ""
 
 #: nostr/standup/words.py:161
 #, python-brace-format
+msgid "You can send it again at {time}."
+msgstr ""
+
+#: nostr/standup/words.py:162
+#, python-brace-format
 msgid "You can send it again tomorrow at {time}."
 msgstr ""
 
-#: nostr/standup/words.py:165
+#: nostr/standup/words.py:166
 msgid "The publications couldn’t be loaded"
 msgstr ""
 
-#: nostr/standup/words.py:166
+#: nostr/standup/words.py:167
 msgid "MyEditor couldn’t check whether you submitted this text before"
 msgstr ""
 
-#: nostr/standup/words.py:167
+#: nostr/standup/words.py:168
 msgid "The earlier try wasn’t discarded"
-msgstr ""
-
-#: nostr/standup/words.py:128
-#, python-brace-format
-msgid "{publication} isn’t taking submissions right now."
 msgstr ""
 
 #: nostr/standup/words.py:129
 #, python-brace-format
-msgid "{publication} doesn’t take submissions from you."
+msgid "{publication} isn’t taking submissions right now."
 msgstr ""
 
 #: nostr/standup/words.py:130
 #, python-brace-format
+msgid "{publication} doesn’t take submissions from you."
+msgstr ""
+
+#: nostr/standup/words.py:131
+#, python-brace-format
 msgid "You already have as many open submissions at {publication} as it takes."
 msgstr ""
 
-#: nostr/standup/words.py:132
+#: nostr/standup/words.py:133
 #, python-brace-format
 msgid "You’ve sent {publication} as much as it takes for now: try again later."
 msgstr ""
 
-#: nostr/standup/words.py:138
+#: nostr/standup/words.py:139
 #, python-brace-format
 msgid "Nobody at {publication} could decide on it: the only person who can is named among those who take part."
 msgstr ""
@@ -8977,7 +8977,7 @@ msgid "Your browser couldn’t be opened."
 msgstr ""
 
 #: nostr/ui/connect_dialog.py:666
-msgid "That isn’t an address MyEditor can open. Use the one your Bunker46 runs at; it starts with https://."
+msgid "MyEditor can’t open that address: use the one your Bunker46 runs at, which starts with https://."
 msgstr ""
 
 #: nostr/ui/connect_dialog.py:741
@@ -9006,7 +9006,7 @@ msgid "MyEditor keeps it, so it asks only this once."
 msgstr ""
 
 #: nostr/ui/connect_dialog.py:462
-msgid "Some signer apps show a connection address instead of scanning a code. Copy it there and paste it here; it starts with bunker://."
+msgid "Some signer apps show a connection address instead of a code: copy it there and paste it here."
 msgstr ""
 
 #: nostr/ui/connect_dialog.py:575
@@ -9049,7 +9049,7 @@ msgid "Opening {app}…"
 msgstr ""
 
 #: nostr/ui/connect_dialog.py:724
-msgid "That address can’t be used. Copy it again from your signer app; it starts with bunker://."
+msgid "That address can’t be used: copy it again from your signer app, where it starts with bunker://."
 msgstr ""
 
 #: nostr/ui/connect_dialog.py:336

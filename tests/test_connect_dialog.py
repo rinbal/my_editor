@@ -372,6 +372,8 @@ def test_bunker46_asks_its_address_once_and_opens_its_connections_page(tmp_path,
         dialog._bunker46_go.click()
         assert opened == [] and not dialog._bunker46_problem.isHidden(), wrong
         assert "https://" in dialog._bunker46_problem.text()
+        problem = dialog._bunker46_problem.text()            # one sentence (lessons 36)
+        assert problem.count(".") == 1 and problem.endswith(".") and ";" not in problem
     dialog._bunker46_edit.setText("bunker.example.com/b46/")
     dialog._bunker46_go.click()
     turn()
@@ -450,6 +452,18 @@ def test_details_are_collapsed_and_hold_the_link_and_the_connection_address(tmp_
     dialog.reject()
 
 
+def test_every_hint_by_an_address_field_is_one_sentence(tmp_path):
+    # Lessons 36: the help next to the Bunker46 and the pasted address,
+    # one sentence each.
+    dialog = dialog_for(tmp_path)
+    hints = [label.text() for label in dialog.findChildren(QLabel, "help")]
+    assert any("connection address" in hint for hint in hints)
+    assert any("asks only this once" in hint for hint in hints)
+    for hint in hints:
+        assert hint.count(".") == 1 and hint.endswith(".") and ";" not in hint, hint
+    dialog.reject()
+
+
 @pytest.mark.parametrize("address", [
     "bunker://not-a-key?relay=wss://a.example",
     # 64 hex digits, but no point of the curve (RG-M2r2b 2): refused at
@@ -468,7 +482,8 @@ def test_an_address_that_cannot_be_used_is_explained_in_one_sentence(tmp_path, a
     # Said next to the field, in Details; the primary line keeps its words
     # (lesson 26: no link scheme outside Details).
     message = dialog._paste_problem.text()
-    assert dialog._paste_problem.isVisibleTo(dialog) and message.count(".") == 2
+    assert dialog._paste_problem.isVisibleTo(dialog)
+    assert message.count(".") == 1 and message.endswith(".") and ";" not in message
     assert "bunker://" in message and "hex" not in message and "pubkey" not in message
     assert dialog._status.text() == "" and "bunker" not in dialog._status.text()
     assert dialog._paste_edit.accessibleDescription() == message

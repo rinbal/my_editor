@@ -459,8 +459,8 @@ class ConnectDialog(QDialog):
         self._paste_problem.hide()
         inner.addWidget(self._paste_problem)
         inner.addWidget(text_label(
-            _("Some signer apps show a connection address instead of scanning a code. "
-              "Copy it there and paste it here; it starts with bunker://."), "help"))
+            _("Some signer apps show a connection address instead of a code: copy it there "
+              "and paste it here."), "help"))
         # The Bunker46 kept, and a way to change it.
         self._bunker46_row = QWidget()
         kept = QHBoxLayout(self._bunker46_row)
@@ -663,8 +663,8 @@ class ConnectDialog(QDialog):
     def _on_bunker46_address(self) -> None:
         address = bunker46_address(self._bunker46_edit.text())
         if address is None:
-            problem = _("That isn’t an address MyEditor can open. Use the one your Bunker46 "
-                        "runs at; it starts with https://.")
+            problem = _("MyEditor can’t open that address: use the one your Bunker46 runs "
+                        "at, which starts with https://.")
             self._bunker46_problem.setText(problem)
             self._bunker46_problem.show()
             self._bunker46_edit.setAccessibleDescription(problem)
@@ -721,8 +721,8 @@ class ConnectDialog(QDialog):
             # can be opened to it (RG-M2r2b 2). Said in Details, where it
             # was pasted; the reason goes to the log, never the address.
             log.info("connection address refused: %s", exc)
-            self._show_paste_problem(_("That address can’t be used. Copy it again from your "
-                                       "signer app; it starts with bunker://."))
+            self._show_paste_problem(_("That address can’t be used: copy it again from your "
+                                       "signer app, where it starts with bunker://."))
             return
         self._show_paste_problem("")
         self._begin_bunker_connect(uri)
