@@ -141,22 +141,22 @@ def humanize_failure(reason: str) -> str:
 
 
 # Where MyEditor and a signer app meet to pair (NIP-46 nostrconnect).
-# Transport only, never anyone's home relay. theforest.nostr1.com and
-# relay.primal.net are among Amber's own defaults, so a phone that pairs
-# usually already listens on one of them.
+# Transport only, never anyone's home relay. relay.primal.net is among
+# Amber's own defaults, so a phone that pairs usually already listens on it.
 #
-# The ones that state no small content cap come first (contract 12.5, the
-# NIP-11 documents of 2026-11-09 in research/signer-pairing.md section 7):
+# The ones that state no small content cap come first, at least two of
+# them (contract 12.5; their NIP-11 documents, fetched 2026-11-10):
 # relay.primal.net and relay.damus.io take messages of 1,000,000 bytes,
-# nos.lol 131,072 with no content cap, theforest.nostr1.com 262,140
-# characters of content. relay.nsec.app comes last: nsec.app answers only
-# there, whatever relays the link names, so without it nsec.app could
-# never reach MyEditor (it publishes no NIP-11 document).
+# nos.lol 131,072, none states a content cap and none asks for payment.
+# relay.nsec.app comes last: nsec.app answers only there, whatever relays
+# the link names, so without it nsec.app could never reach MyEditor (it
+# publishes no NIP-11 document). theforest.nostr1.com is not one of them:
+# its document says payment_required and lists fees, so a channel key
+# that has not paid cannot rely on writing a kind 24133 there.
 NIP46_RELAYS: tuple = (
     "wss://relay.primal.net",
     "wss://relay.damus.io",
     "wss://nos.lol",
-    "wss://theforest.nostr1.com",
     "wss://relay.nsec.app",
 )
 

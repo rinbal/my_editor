@@ -123,11 +123,31 @@ def test_the_link_names_myeditors_own_page_and_icon_by_default():
     assert qs["name"] == ["MyEditor"]
 
 
-def test_the_pairing_relays_end_with_the_one_nsec_app_answers_on():
-    # Contract 12.5 (feat/redaktion 4076b9b): relays with no small content
-    # cap first, and relay.nsec.app, where nsec.app answers, whatever the
-    # link names.
+# The pairing relays' NIP-11 limitations as their documents stated them on
+# 2026-11-10 (none asked for payment). theforest.nostr1.com's said
+# payment_required and listed fees.
+STATED_LIMITATIONS = {
+    "wss://relay.primal.net": {"max_message_length": 1_000_000},
+    "wss://relay.damus.io": {"max_message_length": 1_000_000},
+    "wss://nos.lol": {"max_message_length": 131_072},
+}
+
+
+def test_the_pairing_relays_are_free_and_uncapped_and_end_with_nsec_apps():
+    # Contract 12.5: at least two relays with no small content cap ahead
+    # of the capped ones, and relay.nsec.app, where nsec.app answers,
+    # whatever the link names. A relay that asks for payment cannot be
+    # relied on to carry a channel key's requests.
+    from nostr import signer_limits
     from nostr.bunker import NIP46_RELAYS
-    assert NIP46_RELAYS[-1] == "wss://relay.nsec.app"
-    assert NIP46_RELAYS[:2] == ("wss://relay.primal.net", "wss://relay.damus.io")
+    assert NIP46_RELAYS == ("wss://relay.primal.net", "wss://relay.damus.io", "wss://nos.lol",
+                            "wss://relay.nsec.app")
+    ahead = NIP46_RELAYS[:-1]
+    assert len(ahead) >= 2
+    for url in ahead:
+        cap = signer_limits.content_cap_of({"limitation": STATED_LIMITATIONS[url]})
+        assert signer_limits.message_bytes_for_content_cap(cap) == \
+            signer_limits.NIP44_MESSAGE_MAX
+        assert url not in signer_limits.NAMED_CAPS
     assert "wss://relay.nip46.com" not in NIP46_RELAYS
+    assert not any("theforest.nostr1.com" in url for url in NIP46_RELAYS)

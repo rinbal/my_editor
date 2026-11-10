@@ -108,7 +108,9 @@ def test_the_curated_lists_are_clean():
         assert all(policy.normalize_relay_url(u) == u for u in group)
     assert {u for u, _m in defaults.STARTER_LIST} <= set(defaults.FALLBACK_RELAYS)
     assert 2 <= len(defaults.STARTER_LIST) <= 4          # NIP-65 asks for a small list
-    # Found unreachable or paid when last qualified.
+    # When last qualified, nostr.oxtr.dev and relay.nostr.band did not
+    # connect, and theforest.nostr1.com's NIP-11 document says
+    # payment_required and lists fees (fetched again 2026-11-10).
     for gone in ("nostr.oxtr.dev", "relay.nostr.band", "theforest.nostr1.com"):
         assert all(gone not in u for u in defaults.FALLBACK_RELAYS + defaults.INDEXER_RELAYS
                    + defaults.SEARCH_RELAYS)
@@ -128,6 +130,8 @@ def test_people_are_searched_on_relays_that_offer_search():
 
 def test_pairing_relays_are_separate_from_home_relays():
     assert "wss://nostr.oxtr.dev" not in bunker.NIP46_RELAYS
+    # A relay that asks for payment meets no signer app either.
+    assert not any("theforest.nostr1.com" in url for url in bunker.NIP46_RELAYS)
     assert "sign_event:0" in bunker.DEFAULT_PERMS and "sign_event:10002" in bunker.DEFAULT_PERMS
     # Every kind the app signs is asked for when pairing, so a signer that
     # enforces the list neither prompts nor refuses for media or feed sync,
