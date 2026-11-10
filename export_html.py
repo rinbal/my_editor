@@ -16,6 +16,11 @@ semantic, fully self-contained HTML:
   inline is the only representation that survives reopening the file),
 - images are embedded as base64 data URIs so a shared file carries its
   media with it; the original upload URL rides along in data-source-url,
+- a photo group (photo_group) is written as STANDUP writes it (SPEC 3 of
+  the photo grid work): the vendored engine's markup, its pictures as
+  data: URIs (web pictures too, when the caller fetched them), and its
+  stylesheet and scripts (web/) inside the page; on a phone its runs
+  swipe, and a picture opens large,
 - audio and video become the browser's own players (<audio>, <video>),
   their bytes embedded the same way up to MEDIA_EMBED_LIMIT and played
   from the media server beyond it; inside each, a link to the file, which
@@ -34,6 +39,8 @@ lists: the editor edits them as such.
 
 import base64
 import html
+import json
+from pathlib import Path
 
 from PySide6.QtGui import (
     QTextBlockFormat,
@@ -45,10 +52,12 @@ from PySide6.QtGui import (
 )
 
 import media_files
+import photo_group
+import photo_layout
 import rich_text
 from constants import DARK_BG, DARK_FG, LIGHT_BG, LIGHT_FG, MONO_FONT
 from fonts import names_monospace
-from i18n import _
+from i18n import _, ngettext
 from doc_walk import (
     bullet_depth,
     doc_length,
@@ -62,7 +71,10 @@ from doc_walk import (
 # boundary needs them too, and main_window plus the tests import them
 # from here.
 from image_safety import (  # noqa: F401
+    MAX_PICTURE_BYTES,
     ImageRootPolicy,
+    data_uri_bytes,
+    declared_size,
     is_portable_image_source,
     sniff_image_ext,
     sniff_image_mime,
@@ -145,15 +157,18 @@ def _render_image(img_fmt, source_url_for, policy, asset_resolver) -> str:
     address (a data: URI or a third-party URL) is its own answer.
     """
     name = img_fmt.name()
+    # A picture's #wide (photo_group) is how it is laid out, not where
+    # it is: it is read without it.
+    plain = photo_group.without_wide(name)
     alt = str(img_fmt.property(QTextImageFormat.ImageAltText) or "")
     attrs = f' alt="{html.escape(alt, quote=True)}"'
     for prop, value in (("width", img_fmt.width()), ("height", img_fmt.height())):
         if value and value > 0:
             attrs += f' {prop}="{int(value)}"'
 
-    source_url = source_url_for(name) if source_url_for else None
+    source_url = source_url_for(plain) if source_url_for else None
     data = None
-    resolved = asset_resolver(name) if asset_resolver else None
+    resolved = asset_resolver(plain) if asset_resolver else None
     if media_files.kind_of(str(getattr(resolved, "mime", "") or "")) is not None:
         return _render_media(alt, resolved)
 
@@ -165,7 +180,7 @@ def _render_image(img_fmt, source_url_for, policy, asset_resolver) -> str:
     if source_url:
         attrs += f' data-source-url="{html.escape(source_url, quote=True)}"'
     if data is None:
-        data = policy.read(name)
+        data = policy.read(plain)
 
     uri = image_data_uri(data) if data else None
     if uri is not None:
@@ -272,8 +287,160 @@ def _needs_pre_wrap(text: str) -> bool:
     return text.startswith(" ") or "  " in text
 
 
+# The page parts of a photo group, vendored from STANDUP (web/).
+_WEB = Path(__file__).resolve().parent / "web"
+
+
+def _group_words() -> dict:
+    """The words the page scripts of a group say, in the app's language
+    ({k} and {n} are numbers, {alt} a picture's description)."""
+    return {
+        "photoOf": _("Photo {k} of {n}"),
+        "of": _("{k} of {n}"),
+        "swipe": _("{n} photos to swipe through"),
+        "viewer": _("Full View"),
+        "close": _("Close"),
+        "original": _("Open Original in a New Tab"),
+        "previous": _("Previous Photo"),
+        "next": _("Next Photo"),
+        "enlarge": _("Enlarge"),
+        "enlargeNamed": _("Enlarge: {alt}"),
+    }
+
+
+def _group_head() -> str:
+    """The stylesheet of photo groups, with the colours and type of this
+    page in the variables it reads."""
+    return (f"""
+    .article-content {{
+      /* As STANDUP's article (article.css): a word longer than its
+         picture breaks, and never widens the group past the page. */
+      overflow-wrap: break-word;
+      --theme-bg-subtle: #f1f0ec;
+      --theme-text-muted: #6b6760;
+      --theme-text-heading: {LIGHT_FG};
+      --theme-accent: #3d5afe;
+      --e21-on-accent: #fff;
+      --article-link: #2f55d4;
+      --article-bleed: 0px;
+      --article-gutter: 1rem;
+      --e21-ui-font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    }}
+    @media (prefers-color-scheme: dark) {{
+      .article-content {{
+        --theme-bg-subtle: #2a2a2c;
+        --theme-text-muted: #a8a49c;
+        --theme-text-heading: {DARK_FG};
+        --theme-accent: #8c9eff;
+        --e21-on-accent: #111;
+        --article-link: #8ab4ff;
+      }}
+    }}
+    .article-content img[data-pg-open] {{ cursor: zoom-in; }}
+    .article-content img[data-pg-open]:focus-visible {{ outline: 2px solid var(--article-link); outline-offset: 3px; }}
+""" + (_WEB / "photo_groups.css").read_text(encoding="utf-8"))
+
+
+def _group_scripts() -> str:
+    words = json.dumps(_group_words(), ensure_ascii=False).replace("</", "<\\/")
+    return (f'<script type="application/json" id="e21-photo-words">{words}</script>\n'
+            f'<script>\n{(_WEB / "photo_groups.js").read_text(encoding="utf-8")}</script>\n'
+            f'<script>\n{(_WEB / "photo_viewer.js").read_text(encoding="utf-8")}</script>\n')
+
+
+def _caption_html(caption, render_image) -> str:
+    """A caption as the readers write it: the words of its emphasis, not
+    in italic (the figure shows it as a caption)."""
+    if caption is None:
+        return ""
+    from PySide6.QtGui import QTextDocument
+    doc = QTextDocument()
+    QTextCursor(doc).insertFragment(caption)
+    runs = []
+    for block in iter_blocks(doc):
+        for text, fmt in iter_block_runs(block):
+            upright = QTextCharFormat(fmt)
+            upright.setFontItalic(False)
+            runs.append((text, upright))
+    return _render_runs(runs, render_image)
+
+
+def _group_html(group, picture_of, render_image) -> str:
+    """One photo group as STANDUP's renderer writes it (md.py,
+    _image_group): the engine's cells in Markdown order, each picture a
+    figure with its shape and its place, its caption under it."""
+    units = group.units
+    pictures = [picture_of(unit.name) for unit in units]
+    items = [photo_group.item(size, unit.caption_text, unit.wide)
+             for unit, (_src, size, _source) in zip(units, pictures)]
+    result = photo_layout.layout(items)
+
+    def figure(index: int, properties) -> str:
+        unit = units[index]
+        src, size, source = pictures[index]
+        alt = html.escape(unit.alt, quote=True)
+        cls = ("e21-figure" + (" e21-figure--wide" if unit.wide else "")
+               + (" e21-pg-cell" if properties is not None else ""))
+        style = f"--ar:{size[0]}/{size[1]}" if size else "--ar:3/2"
+        if properties:
+            style += ";" + photo_layout.style_text(properties)
+        provisional = "" if size else " data-provisional"
+        if src is None:
+            img = f"<em>{html.escape(_('[image unavailable]'))}</em>"
+        else:
+            img = f'<img src="{html.escape(src, quote=True)}" alt="{alt}"'
+            if size:
+                img += f' width="{size[0]}" height="{size[1]}"'
+            if source:
+                img += f' data-source-url="{html.escape(source, quote=True)}"'
+            # Its bytes are in the page already: nothing to wait for (and
+            # a page printed or saved as PDF shows every picture).
+            img += ' decoding="async">' if src.startswith("data:") else \
+                ' loading="lazy" decoding="async">'
+        caption = _caption_html(unit.caption, render_image) if unit.caption_text.strip() else ""
+        caption = f"<figcaption>{caption}</figcaption>" if caption else ""
+        return f'<figure class="{cls}" style="{style}"{provisional}>{img}{caption}</figure>'
+
+    track = photo_layout.group_html(photo_layout.group_markup(result, items), figure)
+    n = len(units)
+    label = html.escape(ngettext("{n} photo", "{n} photos", n).format(n=n), quote=True)
+    return (f'<div class="article-content"><div class="e21-imagegroup '
+            f'e21-imagegroup--{n if n <= 4 else "many"}" role="group" aria-label="{label}" '
+            f'data-layout="{photo_layout.notation(result)}">'
+            f'<div class="e21-imagegroup-track">{track}</div></div></div>')
+
+
+def _group_picture(name: str, policy, asset_resolver, remote_pictures, source_url_for):
+    """A group picture's (src, (w, h) or None, source address): its bytes as
+    a data: URI when the export may read them, its pixel size from their
+    header. Read without its #wide; only from the trusted places
+    (``policy``), the app's own pictures, a data: name, or what the caller
+    fetched from the web; never larger than MAX_PICTURE_BYTES, never a
+    picture the decode policy refuses (a decompression bomb)."""
+    plain = photo_group.without_wide(name)
+    source = source_url_for(plain) if source_url_for else None
+    data = None
+    resolved = asset_resolver(plain) if asset_resolver else None
+    if resolved is not None and getattr(resolved, "data", b""):
+        data = resolved.data
+        source = str(getattr(resolved, "remote_url", "") or "") or source
+    if data is None and remote_pictures and plain in remote_pictures:
+        data = remote_pictures[plain]
+        source = plain
+    if data is None:
+        data = policy.read(plain, limit=MAX_PICTURE_BYTES) or data_uri_bytes(plain)
+    if data is not None and len(data) <= MAX_PICTURE_BYTES:
+        size = declared_size(data)
+        uri = image_data_uri(data) if size is not None else None
+        if uri is not None:
+            return uri, photo_layout.picture_size(size.width(), size.height()), source
+    if is_portable_image_source(plain) and not plain.lower().startswith("data:"):
+        return plain, None, source
+    return None, None, source
+
+
 def document_to_html(doc, title: str = "", source_url_for=None, *,
-                     image_roots=(), asset_resolver=None) -> str:
+                     image_roots=(), asset_resolver=None, remote_pictures=None) -> str:
     """Serialize a QTextDocument to a self-contained semantic HTML5 page.
 
     source_url_for: optional callback mapping a local image path to its
@@ -286,11 +453,23 @@ def document_to_html(doc, title: str = "", source_url_for=None, *,
     asset_resolver: optional callback mapping an image name to an object
     exposing ``data`` / ``remote_url``, used for images this app created
     and holds in its own cache.
+
+    remote_pictures: the bytes of web pictures of the photo groups, by
+    address (export_pictures.gather), carried in the page as the rest.
     """
     policy = ImageRootPolicy(image_roots)
 
     def render_image(img_fmt) -> str:
         return _render_image(img_fmt, source_url_for, policy, asset_resolver)
+
+    def picture_of(name: str):
+        return _group_picture(name, policy, asset_resolver, remote_pictures, source_url_for)
+
+    # Photo groups: written whole where their first paragraph is; every
+    # paragraph of their tables is theirs.
+    groups = photo_group.groups_in(doc)
+    pending_groups = list(groups)
+    group_end = -1
 
     body: list[str] = []
     # List markup is emitted compactly (no newlines): whitespace text nodes
@@ -368,6 +547,16 @@ def document_to_html(doc, title: str = "", source_url_for=None, *,
             quotes += 1
 
     for block in iter_blocks(doc):
+        if pending_groups and block.position() >= pending_groups[0].start:
+            group = pending_groups.pop(0)
+            quote_to(0)
+            close_to(0)
+            close_real(0)
+            body.append(_group_html(group, picture_of, render_image))
+            group_end = group.end
+            continue
+        if block.position() <= group_end:
+            continue
         text = block.text()
         text_list = block.textList()
         quote_to(rich_text.quote_depth(block))
@@ -426,6 +615,8 @@ def document_to_html(doc, title: str = "", source_url_for=None, *,
 
     page_title = html.escape(title or _("Untitled"))
     body_html = "\n".join(body)
+    head_css = _head_css() + (_group_head() if groups else "")
+    scripts = _group_scripts() if groups else ""
     return f"""<!doctype html>
 <html>
 <head>
@@ -434,11 +625,12 @@ def document_to_html(doc, title: str = "", source_url_for=None, *,
   <meta name="generator" content="{GENERATOR}">
   <title>{page_title}</title>
   <style>
-{_head_css()}
+{head_css}
   </style>
 </head>
 <body>
-{body_html}</body>
+{body_html}
+{scripts}</body>
 </html>
 """
 

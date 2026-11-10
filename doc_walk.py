@@ -155,8 +155,11 @@ def serialize_plain_with_images(doc, image_target) -> str:
     object-replacement characters in plain runs dropped.
 
     A target function returning None omits the image entirely, which is
-    what a format with no way to carry one (.txt) needs.
+    what a format with no way to carry one (.txt) needs. A photo group is
+    written as the paragraphs it was read from.
     """
+    import photo_group  # it reads this module: imported where it is used
+    doc = photo_group.unfolded(doc)
     lines = []
     for block in iter_blocks(doc):
         parts = []

@@ -5243,6 +5243,7 @@ class MainWindow(QMainWindow):
                     title=self._export_title_for(path),
                     image_roots=self._image_roots_for(path),
                     asset_resolver=self._asset_manager.export_view,
+                    remote_pictures=self._group_web_pictures(ed.document()),
                 )
             elif ext.endswith('.rmd'):
                 content = self._to_rmd_content(ed, path)
@@ -5951,6 +5952,10 @@ class MainWindow(QMainWindow):
         policy = image_safety.ImageRootPolicy(self._image_roots_for(rmd_path))
 
         def copy(name: str):
+            if not image_safety.is_portable_image_source(name):
+                # A picture's #wide (photo_group) is how it is laid out,
+                # not where it is.
+                name = photo_group.without_wide(name)
             media = _media_asset(self._asset_manager, name)
             if media is not None:
                 return self._media_file_link(media, rmd_path)
@@ -6131,6 +6136,19 @@ class MainWindow(QMainWindow):
                 return data
         return self._web_images.raw(url)
 
+    def _group_web_pictures(self, doc) -> dict:
+        """The web pictures of the photo groups of ``doc``, for an export
+        that carries them (export_pictures: held ones at once, the rest
+        fetched, guarded, capped and bounded in time)."""
+        urls = export_pictures.web_picture_names(doc)
+        if not urls:
+            return {}
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            return export_pictures.gather(urls, held=self._held_picture_bytes)
+        finally:
+            QApplication.restoreOverrideCursor()
+
     def _picture_look_shown(self) -> bool:
         panel = getattr(self, "_picture_look", None)
         return panel is not None and panel.isVisible()
@@ -6198,7 +6216,8 @@ class MainWindow(QMainWindow):
             export_pdf(editor.document(), path,
                        title=self._export_title_for(path),
                        image_roots=self._image_roots_for(path),
-                       asset_resolver=self._asset_manager.export_view)
+                       asset_resolver=self._asset_manager.export_view,
+                       remote_pictures=self._group_web_pictures(editor.document()))
             editor._recovered_title = ""
             editor.document().setModified(False)
             self._update_tab_title()

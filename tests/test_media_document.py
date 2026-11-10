@@ -349,6 +349,20 @@ def test_rmd_copier_still_copies_an_image_beside_the_document(tmp_path):
     assert (export_dir / "note_media" / os.path.basename(reference)).exists()
 
 
+def test_rmd_copier_copies_a_wide_picture_of_a_photo_group(tmp_path):
+    """#wide (photo_group) is how a picture is laid out, not where it is."""
+    export_dir = tmp_path / "shared"
+    export_dir.mkdir()
+    picture = _png(export_dir / "plan.png")
+    win = _Window(tmp_path / "cache")
+
+    copy = win._make_rmd_image_copier(str(export_dir / "note.Rmd"))
+
+    assert copy(picture + "#wide") == copy(picture)
+    assert copy(picture).startswith("note_media/plan.png")
+    assert copy("https://other.example/cat.png#wide") == "https://other.example/cat.png#wide"
+
+
 def test_rmd_copier_passes_foreign_urls_through(tmp_path):
     export_dir = tmp_path / "shared"
     export_dir.mkdir()

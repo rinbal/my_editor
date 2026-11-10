@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, Signal
 from PySide6.QtGui import QTextBlockFormat, QTextCharFormat, QTextListFormat
 
+import photo_group
 from doc_walk import (
     bullet_depth,
     iter_block_runs,
@@ -196,7 +197,10 @@ def _list_item_md(block, copy_image) -> str:
 
 
 def document_to_rmd(doc, title: str, copy_image=None) -> str:
-    """Convert a rich QTextDocument to an R Markdown source string."""
+    """Convert a rich QTextDocument to an R Markdown source string. A
+    photo group is written as the paragraphs it was read from: a knitted
+    page shows its pictures one under another."""
+    doc = photo_group.unfolded(doc)
     header = "\n".join([
         "---",
         f"title: {json.dumps(title)}",

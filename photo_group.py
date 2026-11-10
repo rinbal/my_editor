@@ -234,10 +234,16 @@ class Unit:
     # The text joining it to the unit before, when they were one paragraph.
     join: Optional[str] = None
     number: int = 0
+    # The picture's description (its alt text).
+    alt: str = ""
 
     @property
     def wide(self) -> bool:
         return is_wide(self.name)
+
+
+def _alt(cf) -> str:
+    return str(cf.toImageFormat().property(QTextFormat.Property.ImageAltText) or "")
 
 
 def _is_plain_paragraph(block) -> bool:
@@ -334,7 +340,7 @@ def _picture_units(doc, block) -> Optional[List[Unit]]:
     def unit(n: int, join: Optional[str]) -> Unit:
         position, _char, cf = pieces[n]
         return Unit(_fragment(doc, position, position + 1), cf.toImageFormat().name(),
-                    QTextBlockFormat(fmt), join=join)
+                    QTextBlockFormat(fmt), join=join, alt=_alt(cf))
 
     if len(pictures) == 1:
         rest = pieces[1:]
@@ -727,7 +733,7 @@ def table_units(doc, table) -> List[Unit]:
             units.append(Unit(_fragment(doc, picture[0], picture[0] + 1),
                               picture[1].toImageFormat().name(), _own_format(fmt),
                               join=str(join) if join is not None else None,
-                              number=int(fmt.property(UNIT))))
+                              number=int(fmt.property(UNIT)), alt=_alt(picture[1])))
         elif fmt.boolProperty(CAPTION) and units:
             unit = units[-1]
             join = fmt.property(CAPTION_JOIN)
@@ -1035,7 +1041,7 @@ def _row_cells(doc, table) -> Tuple[List[List[int]], List[Unit], Dict[int, Tuple
                         where[position] = (len(cells), len(members))
                         members.append(len(units))
                         units.append(Unit(QTextDocumentFragment(), cf.toImageFormat().name(),
-                                          fmt))
+                                          fmt, alt=_alt(cf)))
                         break
             elif fmt.boolProperty(CAPTION) and units and members:
                 units[-1].caption_text = block.text()

@@ -117,6 +117,9 @@ _QT_FORMAT_FOR_MIME = {
 # anything a document needs, and at 4 bytes per pixel it is 200 MB of
 # RAM. A header claiming more is refused before a single pixel is read.
 MAX_DECODE_PIXELS = 50_000_000
+# The largest picture file an export reads to carry it (a photo from a
+# camera is a few megabytes; a file of gigabytes is never read).
+MAX_PICTURE_BYTES = 64 * 1024 * 1024
 
 
 # Names that are already an address anyone can resolve. A document
@@ -173,6 +176,41 @@ def _scaled_to_cover(size: QSize, box: Optional[QSize]) -> Optional[QSize]:
     return QSize(max(1, round(size.width() * factor)), max(1, round(size.height() * factor)))
 
 
+def _decodable_format(data: bytes) -> Optional[bytes]:
+    """The Qt format to decode ``data`` with, or None when the policy
+    refuses its kind (decode_image_bytes)."""
+    mime = sniff_image_mime(data) if data else None
+    if mime is None or mime not in DECODABLE_MIMES:
+        return None
+    return _QT_FORMAT_FOR_MIME.get(mime)
+
+
+def declared_size(data: bytes) -> Optional[QSize]:
+    """The pixel size ``data`` says it has, read from its header without
+    decoding it, or None when decode_image_bytes would refuse it (its
+    kind, or more than MAX_DECODE_PIXELS: a decompression bomb)."""
+    fmt = _decodable_format(data)
+    if fmt is None:
+        return None
+    buffer = QBuffer()
+    buffer.setData(QByteArray(data))
+    if not buffer.open(QIODevice.ReadOnly):
+        return None
+    try:
+        reader = QImageReader(buffer)
+        reader.setAutoDetectImageFormat(False)
+        reader.setDecideFormatFromContent(False)
+        reader.setFormat(QByteArray(fmt))
+        size = reader.size()
+    finally:
+        buffer.close()
+    if not size.isValid() or size.width() <= 0 or size.height() <= 0:
+        return None
+    if size.width() * size.height() > MAX_DECODE_PIXELS:
+        return None
+    return size
+
+
 def decode_image_bytes(data: bytes, *, at_least: Optional[QSize] = None) -> Optional[QImage]:
     """Decode ``data`` to a QImage, or None when the policy refuses it.
 
@@ -187,10 +225,7 @@ def decode_image_bytes(data: bytes, *, at_least: Optional[QSize] = None) -> Opti
     """
     if not data:
         return None
-    mime = sniff_image_mime(data)
-    if mime is None or mime not in DECODABLE_MIMES:
-        return None
-    fmt = _QT_FORMAT_FOR_MIME.get(mime)
+    fmt = _decodable_format(data)
     if fmt is None:
         return None
 
@@ -277,12 +312,16 @@ class ImageRootPolicy:
                 return real_path if real_path.is_file() else None
         return None
 
-    def read(self, name: str) -> Optional[bytes]:
-        """Bytes of ``name`` when it resolves inside a root, else None."""
+    def read(self, name: str, *, limit: Optional[int] = None) -> Optional[bytes]:
+        """Bytes of ``name`` when it resolves inside a root, else None;
+        None too for a file larger than ``limit`` bytes, which is never
+        read into memory."""
         path = self.resolve(name)
         if path is None:
             return None
         try:
+            if limit is not None and path.stat().st_size > limit:
+                return None
             return path.read_bytes()
         except OSError:
             return None
