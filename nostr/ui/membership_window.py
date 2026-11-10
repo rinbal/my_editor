@@ -67,11 +67,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from alerts import CANCEL, Button, ask, confirm_destructive, inform
+from alerts import CANCEL, Button, ask, ask_try_again, confirm_destructive
 from atomic_file import save_text_document
 from alerts import DEFAULT as ALERT_DEFAULT
 import i18n
-from i18n import _
+from i18n import N_, _
 from media_files import format_storage
 from nostr import einundzwanzig_api as e21
 from nostr.einundzwanzig import (
@@ -140,6 +140,10 @@ def _service_title(service) -> str:
 
 def _service_detail(service) -> str:
     return f"{service.summary} {service.note}" if service.note else service.summary
+
+
+# What did not happen when the membership could not be asked about.
+_STATUS_NOT_CHECKED = N_("Your membership couldn’t be checked")
 
 
 class MembershipWindow(AssistantWindow):
@@ -429,10 +433,17 @@ class MembershipWindow(AssistantWindow):
 
         self.show_page(WORKING, [("cancel", _("Cancel"), NORMAL, cancel)])
 
-    def _fail(self, error, back: Callable[[], None]) -> None:
+    def _fail(self, error, back: Callable[[], None], title: str,
+              again: Callable[[], None]) -> None:
+        """A request that did not work, said once (lessons 36): ``title``
+        says what did not happen, one sentence why and what to do, what
+        the server said behind Details; Try Again asks ``again``, Cancel
+        leaves the window ``back`` where it was."""
         back()
-        title, message = e21.humanize(error)
-        inform(self, title=title, message=message, is_dark=self._is_dark, nostr=True)
+        if ask_try_again(self, title=title, message=e21.failure_sentence(error),
+                         details=e21.failure_details(error), is_dark=self._is_dark,
+                         nostr=True):
+            again()
 
     # ------------------------------------------------------------------ #
     # Status                                                              #
@@ -444,7 +455,8 @@ class MembershipWindow(AssistantWindow):
         back = back or self._show_overview
         self._working(_("MyEditor is asking EINUNDZWANZIG where your membership stands."),
                       back=back)
-        self._api.me(self._on_status, lambda error: self._fail(error, back))
+        self._api.me(self._on_status, lambda error: self._fail(
+            error, back, _(_STATUS_NOT_CHECKED), lambda: self._load_status(back)))
 
     def _on_status(self, status) -> None:
         self._status = status
@@ -567,7 +579,9 @@ class MembershipWindow(AssistantWindow):
             self._working(_("Loading the statutes…"), back=self._show_overview,
                           title=_ONE_MOMENT)
             self._api.config(lambda c: (self._on_config(c), self._show_apply()),
-                             lambda error: self._fail(error, self._show_overview))
+                             lambda error: self._fail(
+                                 error, self._show_overview, _("The statutes couldn’t be "
+                                                               "loaded"), self._show_apply))
             return
         self._apply_title.setText(_("Choose a Nostr Address") if name_only
                                   else _("Your Application"))
@@ -691,8 +705,12 @@ class MembershipWindow(AssistantWindow):
             self._update_send_button()
             if shown:
                 return
-        title, message = e21.humanize(error)
-        inform(self, title=title, message=message, is_dark=self._is_dark, nostr=True)
+        title = (_("Your Nostr address wasn’t saved") if name_only
+                 else _("Your application wasn’t sent"))
+        if ask_try_again(self, title=title, message=e21.failure_sentence(error),
+                         details=e21.failure_details(error), is_dark=self._is_dark,
+                         nostr=True):
+            self._send_application()
 
     # ------------------------------------------------------------------ #
     # Pay                                                                 #
@@ -753,7 +771,9 @@ class MembershipWindow(AssistantWindow):
         self._working(_("MyEditor is asking EINUNDZWANZIG for your invoice."),
                       back=self._show_overview)
         self._api.create_invoice(self._fee_year(), self._on_invoice,
-                                 lambda error: self._fail(error, self._show_overview))
+                                 lambda error: self._fail(
+                                     error, self._show_overview, _("The invoice wasn’t created"),
+                                     self._create_invoice))
 
     def _on_invoice(self, invoice) -> None:
         self._invoice = invoice
@@ -867,8 +887,11 @@ class MembershipWindow(AssistantWindow):
         self._stop_watching()
         self._set_pay_status("")
         self._show_pay_buttons("paid", _("I’ve Paid"))
-        title, message = e21.humanize(error)
-        inform(self, title=title, message=message, is_dark=self._is_dark, nostr=True)
+        if ask_try_again(self, title=_("Your payment couldn’t be checked"),
+                         message=e21.failure_sentence(error),
+                         details=e21.failure_details(error), is_dark=self._is_dark,
+                         nostr=True):
+            self._start_watching()
 
     def _on_paid(self, _invoice) -> None:
         self._stop_watching()
@@ -900,7 +923,8 @@ class MembershipWindow(AssistantWindow):
                 self._set_pay_status(_("Your payment arrived. EINUNDZWANZIG is still "
                                        "confirming it. Check again in a moment."))
 
-        self._api.me(confirmed, lambda error: self._fail(error, back))
+        self._api.me(confirmed, lambda error: self._fail(
+            error, back, _(_STATUS_NOT_CHECKED), lambda: self._load_status(back=back)))
 
     # ------------------------------------------------------------------ #
     # Member                                                              #
@@ -1203,7 +1227,9 @@ class MembershipWindow(AssistantWindow):
         self._working(_("MyEditor is asking EINUNDZWANZIG for the data it keeps about you."),
                       back=self._show_member)
         self._api.export_data(self._on_exported,
-                              lambda error: self._fail(error, self._show_member))
+                              lambda error: self._fail(error, self._show_member,
+                                                       _("Your data wasn’t exported"),
+                                                       self._export))
 
     def _on_exported(self, export) -> None:
         self._show_member()
@@ -1216,8 +1242,12 @@ class MembershipWindow(AssistantWindow):
             save_text_document(path, json.dumps(export.document, ensure_ascii=False,
                                                 indent=2))
         except OSError as exc:
-            inform(self, title=_("Couldn’t save your data"), message=str(exc),
-                   is_dark=self._is_dark, nostr=True)
+            # What the system said, behind Details (lessons 26 and 36).
+            if ask_try_again(self, title=_("Your data wasn’t saved"),
+                             message=_("This computer couldn’t write the file there: choose "
+                                       "another place and try again."),
+                             details=str(exc), is_dark=self._is_dark, nostr=True):
+                self._on_exported(export)
             return
         self._show_member(note=_("Your membership data is saved."))
 
@@ -1229,6 +1259,10 @@ class MembershipWindow(AssistantWindow):
                           "This can’t be undone."),
                 action=_("Delete Data"), caution=True, is_dark=self._is_dark, nostr=True):
             return
+        self._erase_now()
+
+    def _erase_now(self) -> None:
+        """The deletion the person confirmed, asked (again, on Try Again)."""
         self._working(_("MyEditor is asking EINUNDZWANZIG to delete your data."),
                       back=self._show_member)
 
@@ -1241,7 +1275,8 @@ class MembershipWindow(AssistantWindow):
                 self.data_erased.emit(self._pubkey)
             self._show_overview(note=_("Your membership data was deleted."))
 
-        self._api.erase(erased, lambda error: self._fail(error, self._show_member))
+        self._api.erase(erased, lambda error: self._fail(
+            error, self._show_member, _("Your data wasn’t deleted"), self._erase_now))
 
     # ------------------------------------------------------------------ #
     # Plumbing                                                            #

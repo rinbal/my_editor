@@ -67,10 +67,18 @@ def qt_app():
     yield app
 
 
+class Alerts(list):
+    """Every failure the window says (alerts.ask_try_again); each is
+    answered with ``again`` (False is Cancel)."""
+
+    again = False
+
+
 @pytest.fixture(autouse=True)
 def alerts(monkeypatch):
-    shown = []
-    monkeypatch.setattr(mw, "inform", lambda parent, **kw: shown.append(kw))
+    shown = Alerts()
+    monkeypatch.setattr(mw, "ask_try_again",
+                        lambda parent, **kw: shown.append(kw) or shown.again)
     monkeypatch.setattr(mw, "confirm_destructive", lambda parent, **kw: True)
     return shown
 
@@ -601,14 +609,90 @@ def test_a_taken_name_is_shown_under_the_field_not_in_an_alert(alerts):
 
 
 def test_other_failures_are_explained_in_plain_words(alerts):
+    # Lessons 36: what did not happen, one sentence with the cause and what
+    # to do, what the server said only behind Details, Try Again and Cancel.
     api = FakeApi()
     win = window(api)
     win.buttons["continue"].click()
-    api.last("me").fail(e21.ApiError(e21.ErrorCode.SIGNER_UNREACHABLE))
+    api.last("me").fail(e21.ApiError(e21.ErrorCode.SIGNER_UNREACHABLE, message="timed out"))
     assert win.page == OVERVIEW
-    assert alerts and "signer" in alerts[0]["title"].lower()
-    for word in ("NIP", "401", "bolt11", "kind"):
-        assert word not in alerts[0]["title"] + alerts[0]["message"]
+    shown, = alerts
+    assert shown["title"] == "Your membership couldn’t be checked"
+    assert shown["message"] == "Your signer app didn’t answer: open it and try again."
+    assert shown["details"] == "signer_unreachable: timed out"
+    for word in ("NIP", "401", "bolt11", "kind", "timed out"):
+        assert word not in shown["title"] + shown["message"]
+
+
+@pytest.mark.parametrize("ask, title", [
+    ("me", "Your membership couldn’t be checked"),
+    ("create_invoice", "The invoice wasn’t created"),
+    ("apply", "Your application wasn’t sent"),
+    ("export_data", "Your data wasn’t exported"),
+    ("erase", "Your data wasn’t deleted"),
+])
+def test_try_again_asks_again_what_did_not_work(alerts, ask, title):
+    api = FakeApi()
+    if ask in ("export_data", "erase"):
+        win = window(api, known_member=True)
+        choose(win, "Export My Data…" if ask == "export_data" else "Delete My Data…")
+    else:
+        win = window(api)
+        api.last("config").ok(config())
+        win.buttons["continue"].click()
+        if ask == "create_invoice":
+            api.last("me").ok(status(e21.STATUS_AWAITING_PAYMENT))
+        elif ask == "apply":
+            api.last("me").ok(status(e21.STATUS_NONE))
+            win._consent.setChecked(True)
+            win.buttons["send"].click()
+
+    def asked() -> int:
+        return len([call for call in api.calls if call.name == ask])
+
+    before = asked()
+    alerts.again = True
+    api.last(ask).fail(e21.ApiError(e21.ErrorCode.SERVER, status=503))
+    assert [a["title"] for a in alerts] == [title]
+    assert alerts[0]["message"] == ("EINUNDZWANZIG had a problem just now: try again in a few "
+                                    "minutes.")
+    assert alerts[0]["details"] == "server (503)"
+    assert asked() == before + 1                    # asked again, the same request
+    alerts.again = False
+    api.last(ask).fail(e21.ApiError(e21.ErrorCode.SERVER, status=503))
+    assert len(alerts) == 2 and asked() == before + 1   # Cancel: nothing more
+
+
+def test_a_payment_check_that_did_not_work_is_said_once_and_try_again_checks_again(alerts):
+    api = FakeApi()
+    win = window(api)
+    to_pay(win, api)
+    win.buttons["paid"].click()
+    first = win.watchers[-1]
+    alerts.again = True
+    first.failed.emit(e21.ApiError(e21.ErrorCode.TIMEOUT))
+    assert [a["title"] for a in alerts] == ["Your payment couldn’t be checked"]
+    assert alerts[0]["message"] == ("EINUNDZWANZIG took too long to answer: check your "
+                                    "internet connection and try again.")
+    assert len(win.watchers) == 2 and win.watchers[-1].started == [True]
+
+
+def test_data_that_could_not_be_saved_is_said_with_the_systems_words_behind_details(
+        alerts, monkeypatch, tmp_path):
+    api = FakeApi()
+    win = window(api, known_member=True)
+    places = [str(tmp_path / "missing" / "membership.json"), str(tmp_path / "membership.json")]
+    monkeypatch.setattr(mw.QFileDialog, "getSaveFileName",
+                        staticmethod(lambda *a, **k: (places.pop(0), "")))
+    alerts.again = True
+    choose(win, "Export My Data…")
+    api.last("export_data").ok(SimpleNamespace(document={"membership_status": "member"}))
+    shown, = alerts
+    assert shown["title"] == "Your data wasn’t saved"
+    assert shown["message"] == ("This computer couldn’t write the file there: choose another "
+                                "place and try again.")
+    assert "missing" in shown["details"] and "missing" not in shown["message"]
+    assert (tmp_path / "membership.json").exists()          # Try Again: another place
 
 
 # -- paying -----------------------------------------------------------------------------
@@ -877,6 +961,31 @@ def choose_address(win, api, name="hal"):
     win._handle_edit.setText(name)
     win.buttons["send"].click()
     api.last("apply").ok(status(e21.STATUS_MEMBER, paid=True))
+
+
+def test_statutes_that_could_not_be_loaded_are_said_so_and_asked_for_again(alerts):
+    api = FakeApi()
+    win = window(api)                               # the fee's config never answers
+    win.buttons["continue"].click()
+    api.last("me").ok(status(e21.STATUS_NONE))
+    asked = len([call for call in api.calls if call.name == "config"])
+    alerts.again = True
+    api.last("config").fail(e21.ApiError(e21.ErrorCode.OFFLINE))
+    assert [a["title"] for a in alerts] == ["The statutes couldn’t be loaded"]
+    assert len([call for call in api.calls if call.name == "config"]) == asked + 1
+
+
+def test_an_address_that_was_not_saved_is_said_so_and_try_again_sends_it_again(alerts):
+    api = FakeApi()
+    win = window(api, known_member=True)
+    win._address_row.button.click()
+    win._handle_edit.setText("hal")
+    win.buttons["send"].click()
+    alerts.again = True
+    api.last("apply").fail(e21.ApiError(e21.ErrorCode.OFFLINE))
+    assert [a["title"] for a in alerts] == ["Your Nostr address wasn’t saved"]
+    assert api.last("apply").kw["nip05_handle"] == "hal"
+    assert len([call for call in api.calls if call.name == "apply"]) == 2
 
 
 def test_a_chosen_address_is_offered_for_the_profile_once(questions):

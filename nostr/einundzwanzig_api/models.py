@@ -68,7 +68,8 @@ class ApiError:
     ``code`` is one of :data:`ERROR_CODES` and is what callers branch on.
     ``status`` is the HTTP status when the server answered. ``message``
     is the server's own summary (or a diagnostic for the non-HTTP
-    codes); it is for logs, not for the user, who gets :func:`humanize`.
+    codes); it is for logs and Details, never the words the person reads,
+    who gets :func:`~.messages.failure_sentence`.
     ``field_errors`` maps a request field to the reasons it was refused.
     ``retry_after`` is in seconds, when the server said how long to wait.
     """

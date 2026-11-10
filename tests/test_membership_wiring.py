@@ -76,7 +76,7 @@ def qt_app():
 
 @pytest.fixture(autouse=True)
 def quiet_alerts(monkeypatch):
-    monkeypatch.setattr(mw, "inform", lambda parent, **kw: None)
+    monkeypatch.setattr(mw, "ask_try_again", lambda parent, **kw: False)   # Cancel
     monkeypatch.setattr(mw, "confirm_destructive", lambda parent, **kw: True)
 
 
