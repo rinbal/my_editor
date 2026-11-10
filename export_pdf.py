@@ -25,8 +25,8 @@ Geometry notes, established empirically against QPdfDocument:
   outside the trusted-root policy.
 """
 
-import os
 from dataclasses import dataclass
+from typing import Optional
 
 from PySide6.QtCore import QMarginsF, QRectF, QSizeF, Qt, QLocale, QUrl
 from PySide6.QtGui import (
@@ -51,6 +51,7 @@ from PySide6.QtGui import (
 import export_pictures
 import media_files
 import photo_group
+import user_dirs
 from atomic_file import read_json, write_json
 from fonts import monospace_font
 from i18n import _
@@ -67,7 +68,13 @@ FOOTER_POINT_SIZE = 8
 FOOTER_BAND_PT = 30.0
 FOOTER_COLOR = "#808080"
 
-_CONFIG_PATH = os.path.expanduser("~/.config/my_editor/page_setup.json")
+# A file of its own (a test's); None: page_setup.json in the person's config
+# folder, found each time it is read or written (user_dirs).
+_CONFIG_PATH: Optional[str] = None
+
+
+def _config_path() -> str:
+    return _CONFIG_PATH or str(user_dirs.config_dir() / "page_setup.json")
 
 # Offered in the Page Setup dialog; keys are stored in page_setup.json.
 PAGE_SIZES = {
@@ -93,7 +100,7 @@ def default_page_setup() -> dict:
 
 def load_page_setup() -> dict:
     setup = default_page_setup()
-    data = read_json(_CONFIG_PATH, dict)
+    data = read_json(_config_path(), dict)
     if data:
         if data.get("page_size") in PAGE_SIZES:
             setup["page_size"] = data["page_size"]
@@ -106,7 +113,7 @@ def load_page_setup() -> dict:
 
 
 def save_page_setup(setup: dict) -> None:
-    write_json(_CONFIG_PATH, setup, indent=2)
+    write_json(_config_path(), setup, indent=2)
 
 
 def make_page_layout(setup: dict) -> QPageLayout:

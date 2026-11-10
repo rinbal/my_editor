@@ -39,6 +39,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
 import url_safety
+import user_dirs
 from atomic_file import write_bytes
 from image_safety import decode_image_bytes
 
@@ -49,7 +50,6 @@ from .profiles import Profile, ProfileStore
 from .relay import RECONNECT_FIRST_MS, RECONNECT_LONGEST_MS, RelayPool
 
 
-AVATAR_CACHE_DIR = Path.home() / ".cache" / "my_editor" / "nostr_avatars"
 # Soft cap on avatar bytes: a malicious or accidental 100 MB image must
 # not land in the cache and stall the editor.
 _MAX_AVATAR_BYTES: int = 2_000_000
@@ -211,7 +211,7 @@ class AvatarLoader(QObject):
     ) -> None:
         super().__init__(parent)
         # Seams for tests: no test writes the real cache or opens a socket.
-        self._cache_dir = Path(cache_dir) if cache_dir else AVATAR_CACHE_DIR
+        self._cache_dir = Path(cache_dir) if cache_dir else user_dirs.cache_dir() / "nostr_avatars"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         # The cache lists everyone the user follows, which is a
         # behavioural fingerprint; keep it owner-only.

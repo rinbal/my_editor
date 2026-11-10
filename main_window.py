@@ -60,6 +60,7 @@ import password_alert
 from locked_files import Lock, WrongPassword
 import diagnostics
 import dictation
+import user_dirs
 from dictation import models as dictation_models, on_device, setup as dictation_setup
 from dictation.indicator import DictationIndicator
 from dictation.preferences import Preferences
@@ -8439,7 +8440,12 @@ class MainWindow(QMainWindow):
     # ----------------------------------------------------------------------
     # CLOSE EVENT
     # ----------------------------------------------------------------------
-    _SESSION_FILE = os.path.join(os.path.expanduser("~"), ".cache", "my_editor", "session.json")
+    # A file of its own (a test's); None: session.json in the person's cache
+    # folder, found each time (user_dirs).
+    _SESSION_FILE: Optional[str] = None
+
+    def _session_file(self) -> str:
+        return self._SESSION_FILE or str(user_dirs.cache_dir() / "session.json")
 
     def _save_session(self):
         paths = []
@@ -8450,15 +8456,16 @@ class MainWindow(QMainWindow):
         if not paths:
             return
         data = {"paths": paths, "active": self.tabs.currentIndex()}
-        write_json(self._SESSION_FILE, data)
+        write_json(self._session_file(), data)
 
     def _restore_session(self) -> bool:
-        if not os.path.isfile(self._SESSION_FILE):
+        session_file = self._session_file()
+        if not os.path.isfile(session_file):
             return False
-        data = read_json(self._SESSION_FILE, dict)
+        data = read_json(session_file, dict)
         # Restored at most once, and a damaged record never restores.
         try:
-            os.remove(self._SESSION_FILE)
+            os.remove(session_file)
         except OSError:
             pass
         listed = data.get("paths")
