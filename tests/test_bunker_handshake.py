@@ -257,6 +257,24 @@ def test_qr_answers_a_connect_request_but_not_a_connect_response():
     assert "connect" not in [p.get("method") for p in signer.seen]
 
 
+@pytest.mark.parametrize("answer", [
+    "f" * 64,                                   # 64 hex digits, no point of the curve
+    "ab" * 31,
+    "zz" * 32,
+])
+def test_a_user_key_that_is_no_public_key_fails_the_pairing(answer):
+    # RG-M2r3 16: the account's key must be a key (crypto.is_public_key).
+    assert not crypto.is_public_key(bytes.fromhex("f" * 64))      # above the field
+    for make in (_qr_client, _bunker_client):
+        pool, signer, client, outcome, *rest = make()
+        signer.user_pk = answer
+        if make is _qr_client:
+            signer.send({"id": "nc1", "result": rest[0]})
+        else:
+            rest[0]()
+        assert "ok" not in outcome and "malformed user pubkey" in outcome.get("err", "")
+
+
 def test_qr_rejects_a_wrong_secret_without_pairing():
     _, signer, _, outcome, _ = _qr_client()
     signer.send({"id": "nc1", "result": "not-the-secret"})

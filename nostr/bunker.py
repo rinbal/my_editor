@@ -244,6 +244,17 @@ class BunkerURI:
     secret: Optional[str]       # optional pairing token
 
 
+def _is_hex64(value: str) -> bool:
+    return len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+
+
+def _is_user_key(value: str) -> bool:
+    """Whether ``value`` is a key as a signer names one: 64 lowercase hex
+    characters that are a point of the curve (a public key, BIP-340);
+    about half of all 64-digit values are not."""
+    return _is_hex64(value) and crypto.is_public_key(bytes.fromhex(value))
+
+
 def parse_bunker_uri(uri: str) -> BunkerURI:
     """Parse a bunker:// URI per NIP-46.
 
@@ -260,11 +271,11 @@ def parse_bunker_uri(uri: str) -> BunkerURI:
 
     parts = urlsplit(uri)
     pubkey = (parts.netloc or parts.path.lstrip("/")).strip().lower()
-    if len(pubkey) != 64 or not all(c in "0123456789abcdef" for c in pubkey):
+    if not _is_hex64(pubkey):
         raise ValueError(_("bunker URI must contain a 32-byte hex pubkey"))
-    # About half of all 64-digit keys are not a point of the curve (one
-    # typed wrong often is not): no channel can be opened to one.
-    if not crypto.is_public_key(bytes.fromhex(pubkey)):
+    # One typed wrong often is no point of the curve: no channel can be
+    # opened to it.
+    if not _is_user_key(pubkey):
         raise ValueError("the signer's key in the bunker URI is not a public key")
 
     qs = parse_qs(parts.query, keep_blank_values=False)
@@ -586,24 +597,28 @@ class BunkerClient(QObject):
         on_success_cb = self._nc_on_success
         on_failure_cb = self._nc_on_failure
 
-        def _got_user_pk(pk_hex: str) -> None:
-            pk_hex = pk_hex.strip().lower()
-            if len(pk_hex) != 64 or not all(c in "0123456789abcdef" for c in pk_hex):
-                on_failure_cb(f"signer returned malformed user pubkey: {pk_hex!r}")
-                self.close(reason="bad user pubkey")
-                return
-            self._user_pubkey = pk_hex
-            self._is_connected = True
-            self.connected.emit(pk_hex)
-            on_success_cb(pk_hex)
-
         self._send_request(
             method="get_public_key",
             params=[],
-            on_success=_got_user_pk,
+            on_success=lambda pk_hex: self._got_user_key(pk_hex, on_success_cb, on_failure_cb),
             on_failure=on_failure_cb,
             timeout_ms=DEFAULT_RPC_TIMEOUT_MS,
         )
+
+    def _got_user_key(self, pk_hex: str, on_success: Callable[[str], None],
+                      on_failure: Callable[[str], None]) -> None:
+        """The signer's answer to ``get_public_key``: the account's key,
+        64 hex characters that are a point of the curve (a public key,
+        BIP-340), or the pairing fails and the channel closes."""
+        pk_hex = pk_hex.strip().lower()
+        if not _is_user_key(pk_hex):
+            on_failure(f"signer returned malformed user pubkey: {pk_hex!r}")
+            self.close(reason="bad user pubkey")
+            return
+        self._user_pubkey = pk_hex
+        self._is_connected = True
+        self.connected.emit(pk_hex)
+        on_success(pk_hex)
 
     def _on_nostrconnect_timeout(self) -> None:
         if self._is_connected or self._bunker_pk_hex is not None:
@@ -1093,21 +1108,10 @@ class BunkerClient(QObject):
             return
 
         # Now learn the user's actual pubkey.
-        def _got_pk(pk_hex: str) -> None:
-            pk_hex = pk_hex.strip().lower()
-            if len(pk_hex) != 64 or not all(c in "0123456789abcdef" for c in pk_hex):
-                on_failure(f"signer returned malformed user pubkey: {pk_hex!r}")
-                self.close(reason="bad user pubkey")
-                return
-            self._user_pubkey = pk_hex
-            self._is_connected = True
-            self.connected.emit(pk_hex)
-            on_success(pk_hex)
-
         self._send_request(
             method="get_public_key",
             params=[],
-            on_success=_got_pk,
+            on_success=lambda pk_hex: self._got_user_key(pk_hex, on_success, on_failure),
             on_failure=on_failure,
             timeout_ms=DEFAULT_RPC_TIMEOUT_MS,
         )
