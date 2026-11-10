@@ -56,7 +56,7 @@ GROUP_RMD = """::: {.photo-group}
 ![Loch](story_media/landscape.png)\\
 ![Bay](story_media/photo.png)\\
 ![Shore](story_media/photo.png)\\
-![Pier $& jetty](story_media/landscape.png)\\
+![Pier \\$& jetty](story_media/landscape.png)\\
 ![Hut](story_media/square.png)\\
 ![Panorama](story_media/panorama.png)\\
 ![Plan](story_media/plan.png){.wide}\\

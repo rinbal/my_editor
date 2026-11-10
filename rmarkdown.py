@@ -59,8 +59,10 @@ from i18n import _
 _LINE_SEP = "\u2028"
 _OBJ = "\ufffc"
 
-# Characters that would change meaning mid-line in Pandoc markdown.
-_MD_SPECIALS = "\\`*_[]<>"
+# Characters that would change meaning mid-line in Pandoc markdown (as
+# rmarkdown reads it: "$" opens TeX math, "@" a citation, "^" and "~"
+# a superscript and a subscript).
+_MD_SPECIALS = "\\`*_[]<>$@^~"
 
 # Line leaders that would turn a plain line into markdown structure.
 _MD_LINE_LEADERS = re.compile(r"^(?:[#>+-]|\d+[.)])")
