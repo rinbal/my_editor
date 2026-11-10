@@ -33,8 +33,8 @@ CAPPED = SimpleNamespace(user_pubkey=PK, signer="remote", bunker_relays=[NIP46])
 MIXED = SimpleNamespace(user_pubkey=PK, signer="remote", bunker_relays=[NIP46, "wss://nos.lol"])
 OPEN = SimpleNamespace(user_pubkey=PK, signer="remote", bunker_relays=["wss://nos.lol"])
 LOCAL = SimpleNamespace(user_pubkey=PK, signer="local", bunker_relays=[NIP46])
-CONNECTION_SIGN = ("The connection to your signer app carries only short messages. "
-                   "Very long texts can’t be signed through it.")
+CONNECTION_SIGN = ("The connection to your signer app carries only short messages: shorten "
+                   "this text or split it into parts.")
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -190,13 +190,14 @@ def test_an_event_the_capped_connection_cannot_carry_is_said_plainly():
     assert signer_limits.size_problem(OPEN, event=event) is None
     longer = dict(event, content="x" * 70_000)
     assert signer_limits.size_problem(CAPPED, event=longer).startswith(
-        "This is too long to be signed through your signer app.")
+        "This is too long to be signed through your signer app:")
 
 
 def test_a_draft_the_connection_cannot_carry_is_said_plainly():
     words = signer_limits.size_problem(CAPPED, draft="x" * 30_000)
-    assert words.startswith("The connection to your signer app carries only short messages.")
-    assert "drafts" in words and "30" not in words          # never the numbers
+    assert words == ("The connection to your signer app carries only short messages: split "
+                     "this draft into smaller ones or publish it directly.")
+    assert "30" not in words                                # never the numbers
     assert signer_limits.size_problem(OPEN, draft="x" * 30_000) is None
 
 
@@ -208,8 +209,10 @@ def test_the_words_are_the_contracts_in_german():
             CAPPED, event={"kind": 1, "content": "x" * 45_000, "tags": [], "created_at": 1})
     finally:
         i18n.install("en")
-    assert words == ("Die Verbindung zu deiner Signer-App trägt nur kurze Nachrichten. "
-                     "Sehr lange Texte lassen sich darüber nicht signieren.")
+    # The contract's plain consequence, in one sentence with what to do
+    # (lessons 36).
+    assert words == ("Die Verbindung zu deiner Signer-App trägt nur kurze Nachrichten: "
+                     "Kürze diesen Text oder teile ihn in Teile auf.")
 
 
 # -- the signer client refuses before it asks ------------------------------------------

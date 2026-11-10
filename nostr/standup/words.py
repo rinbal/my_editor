@@ -107,7 +107,7 @@ KEY_NOT_CONFIRMED_AGAIN = N_("The editorial team’s key couldn’t be confirmed
                              "a moment.")
 # Sent, but the server, asked by the status key, has nothing of it.
 NOT_RECEIVED = N_("The server didn’t receive your submission: try again.")
-SERVER_TROUBLE = N_("The server couldn’t take it just now: try again in a moment.")
+SERVER_TROUBLE = failures.SERVER_TROUBLE
 LIST_NOT_SAVED = N_("Your list of submissions couldn’t be saved: check your internet "
                     "connection and try again.")
 LIST_CHANGED_ELSEWHERE = N_("Another device changed this submission just now.")

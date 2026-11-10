@@ -123,11 +123,30 @@ def is_signer_answer(reason: str) -> bool:
         needle in lowered for needle in SESSION_ERROR_NEEDLES)
 
 
-# What pairing tells the person when it did not work: one plain sentence
-# per kind of reason, never the reason itself (lesson 26); the reason is
-# for the help button's tooltip and the log.
-_PAIRING_DECLINED = ("reject", "denied", "declin", "not allowed", "unauthori", "forbidden",
-                     "permission", "unknown client", "refus")
+# What the person is told when a signer app did not do what was asked:
+# one plain sentence per kind of reason, never the reason itself (lesson
+# 26); the reason is for Details, the tooltip and the log.
+_DECLINED = ("reject", "denied", "declin", "not allowed", "unauthori", "forbidden",
+             "permission", "unknown client", "refus")
+
+
+def declined_by_signer(reason: str) -> bool:
+    """True if ``reason`` is the signer app saying no."""
+    lowered = (reason or "").lower()
+    return any(needle in lowered for needle in _DECLINED)
+
+
+def signer_failure_words(reason: str) -> str:
+    """The one sentence for a request the signer app did not do, its
+    likely cause and what to do (lessons 36), whatever ``reason`` says:
+    it never answered (or was not reached), it declined, or it answered
+    with an error of its own."""
+    lowered = (reason or "").lower()
+    if is_signer_silent(lowered) or any(needle in lowered for needle in SESSION_ERROR_NEEDLES):
+        return _(failures.SIGNER_SILENT)
+    if declined_by_signer(lowered):
+        return _(failures.SIGNER_DECLINED)
+    return _(failures.SIGNER_FAILED)
 
 
 def pairing_failure_words(reason: str) -> str:
@@ -138,26 +157,11 @@ def pairing_failure_words(reason: str) -> str:
     lowered = (reason or "").lower()
     if is_signer_silent(lowered):
         return _(failures.SIGNER_SILENT)
-    if any(needle in lowered for needle in _PAIRING_DECLINED):
-        return _("Your signer app declined the connection: allow MyEditor there and try "
-                 "again.")
+    if declined_by_signer(lowered):
+        return _(failures.SIGNER_DECLINED)
     if "secret" in lowered:
         return _("The answer was meant for another connection: try again.")
     return _("The connection didn’t work: try again, or connect another way.")
-
-
-def humanize_failure(reason: str) -> str:
-    """Turn a transport failure into something the user can act on.
-
-    These strings are written to be precise in a log, and "timed out
-    waiting for signer" is precise. It is also a dead end for someone
-    holding a phone, because it does not say that the phone is where the
-    problem is. Anything we do not have better words for is passed
-    through unchanged rather than blurred into a generic apology.
-    """
-    if is_signer_silent(reason):
-        return _(failures.SIGNER_SILENT)
-    return reason
 
 
 # Where MyEditor and a signer app meet to pair (NIP-46 nostrconnect).

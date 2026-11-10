@@ -89,11 +89,10 @@ def test_about_half_of_all_keys_are_no_public_key_and_a_real_one_passes():
     ("timed out waiting for signer", "Your signer app didn’t answer: open it and try again."),
     ("could not deliver request to any relay (x)",
      "Your signer app didn’t answer: open it and try again."),
-    ("user rejected", "Your signer app declined the connection: allow MyEditor there and "
-     "try again."),
-    ("Unknown client", "Your signer app declined the connection:"),
-    ("not allowed", "Your signer app declined the connection:"),
-    ("unauthorized", "Your signer app declined the connection:"),
+    ("user rejected", "Your signer app declined the request: allow it there and try again."),
+    ("Unknown client", "Your signer app declined the request:"),
+    ("not allowed", "Your signer app declined the request:"),
+    ("unauthorized", "Your signer app declined the request:"),
     ("secret did not match (possible spoof attempt)",
      "The answer was meant for another connection: try again."),
     ("", "The connection didn’t work: try again, or connect another way."),
@@ -103,5 +102,24 @@ def test_a_pairing_that_did_not_work_is_one_plain_sentence(reason, words):
     # Lessons 36: one sentence, its likely cause and what to do.
     from nostr.bunker import pairing_failure_words
     shown = pairing_failure_words(reason)
+    assert shown.startswith(words) and shown.count(".") == 1 and shown.endswith(".")
+    assert reason == "" or reason.lower() not in shown.lower()
+
+
+@pytest.mark.parametrize("reason, words", [
+    ("timed out waiting for signer", "Your signer app didn’t answer: open it and try again."),
+    ("could not deliver request to any relay (wss://a: blocked)",
+     "Your signer app didn’t answer: open it and try again."),
+    ("not connected", "Your signer app didn’t answer: open it and try again."),
+    ("dropped from session pool", "Your signer app didn’t answer: open it and try again."),
+    ("user rejected", "Your signer app declined the request: allow it there and try again."),
+    ("Permission denied by user", "Your signer app declined the request:"),
+    ("invalid event: 42", "Your signer app ran into a problem: open it and try again."),
+    ("", "Your signer app ran into a problem:"),
+])
+def test_a_request_the_signer_did_not_do_is_one_plain_sentence(reason, words):
+    # Lessons 36 and 26: the cause and what to do, never the reason itself.
+    from nostr.bunker import signer_failure_words
+    shown = signer_failure_words(reason)
     assert shown.startswith(words) and shown.count(".") == 1 and shown.endswith(".")
     assert reason == "" or reason.lower() not in shown.lower()

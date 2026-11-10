@@ -191,8 +191,8 @@ def test_the_drafts_panel_goes_when_no_account_is_in_use():
 
 def test_publishing_is_said_in_words_without_an_event_id():
     """The status bar said "Published to Nostr: 3/5 relays · note1qy2…";
-    it now says the note or article is published, and how many relays
-    took it only when not all did."""
+    it now says the note or article is published, and never how many
+    relays took it (lessons 36)."""
     from main_window import MainWindow
     said = []
     win = SimpleNamespace(status=SimpleNamespace(showMessage=lambda text, ms=0, **context: said.append(text)))
@@ -202,6 +202,5 @@ def test_publishing_is_said_in_words_without_an_event_id():
     some = [("wss://a", True, ""), ("wss://b", False, "blocked")]
     MainWindow._on_nostr_note_published(win, "ab" * 32, every)
     MainWindow._on_nostr_article_published(win, "naddr1xyz", some)
-    assert said == ["Your note is published.",
-                    "Your article is published; 1 of 2 relays took it."]
+    assert said == ["Your note is published.", "Your article is published."]
     assert not any("note1" in text or "naddr" in text for text in said)

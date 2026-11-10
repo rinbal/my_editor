@@ -521,8 +521,7 @@ class SubmitSheet(QDialog):
         first = first if isinstance(first, drafting.Blocker) else drafting.Blocker(first)
         # A total failure (it has a title) in the error color (lessons 36);
         # what exactly is wrong (a key, a file's type) in the tooltip (27).
-        self.status.say(first, title=first.title, error=bool(first.title))
-        self.status.setToolTip(first.detail)
+        self.status.say(first, title=first.title, error=bool(first.title), detail=first.detail)
         self.status.setAccessibleDescription(first.detail)
 
     # -- submitting ----------------------------------------------------------

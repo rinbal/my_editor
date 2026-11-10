@@ -273,6 +273,7 @@ from nostr.drafts import (
     INNER_KIND_SHORT_NOTE,
     SUPPORTED_INNER_KINDS,
     build_inner_event,
+    serialize_inner_event,
 )
 from nostr.known_people import KnownPeople, Person
 from nostr.media.assets import ASSET_SCHEME, AssetState, asset_key, parse_asset_key
@@ -297,6 +298,7 @@ from nostr.publisher import (
 )
 from nostr.relay import RelayPool
 from nostr.search import Nip50SearchClient
+from nostr.signer_limits import size_detail
 from nostr.ui.connect_dialog import ConnectDialog
 from nostr.ui.profile_chip import ProfileChip
 from nostr.ui.draft_conflict_banner import DraftConflictBanner
@@ -10303,22 +10305,11 @@ class MainWindow(QMainWindow):
         self._say_published(results, article=True)
 
     def _say_published(self, results, *, article: bool) -> None:
-        """That it went out, in the status bar, and how many relays took it
-        when not every one did. No event id, which the person has nothing
-        to do with: the Published list and the dialog itself say more."""
-        accepted = sum(1 for _relay, ok, _message in results if ok)
-        total = len(results)
-        if accepted >= total:
-            message = (_("Your article is published.") if article
-                       else _("Your note is published."))
-        elif article:
-            message = ngettext("Your article is published; {accepted} of {total} relay took it.",
-                               "Your article is published; {accepted} of {total} relays took "
-                               "it.", total).format(accepted=accepted, total=total)
-        else:
-            message = ngettext("Your note is published; {accepted} of {total} relay took it.",
-                               "Your note is published; {accepted} of {total} relays took it.",
-                               total).format(accepted=accepted, total=total)
+        """That it went out, in the status bar: never how many relays took
+        it (lessons 36: a relay that did not is said by nobody). No event
+        id, which the person has nothing to do with: the Published list
+        and the dialog itself say more."""
+        message = _("Your article is published.") if article else _("Your note is published.")
         self.status.showMessage(message, 8000, nostr=True)
 
     # -- media (Blossom) --------------------------------------------------
@@ -11469,7 +11460,10 @@ class MainWindow(QMainWindow):
                    message=_("Its contents could not be prepared for encryption."), nostr=True)
             return
         if too_large:
-            inform(self, title=_("This draft is too large"), message=too_large, nostr=True)
+            # Saving it again would meet the same limit: OK only, the
+            # numbers in Details (lessons 26, 36).
+            inform(self, title=_("Your draft wasn’t saved"), message=too_large,
+                   details=size_detail(profile, draft=serialize_inner_event(inner)), nostr=True)
             return
 
         job = DraftPublishJob(

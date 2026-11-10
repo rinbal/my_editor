@@ -27,7 +27,9 @@ Signals, in firing order:
   completed(list)                every answer [(url, ok, message)], also when
                                  no relay took it
   failed(str)                    the signer did not sign, or signed something
-                                 else; terminal
+                                 else; terminal. The reason is for Details
+                                 and the log; ``failure_words`` is the one
+                                 sentence to show (lessons 36)
 
 ``cancel()`` silences the pipeline: nothing is sent after it, and a
 signature that arrives later is not used. Once the event has gone out,
@@ -45,8 +47,10 @@ from typing import List, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from i18n import _, ngettext
+from i18n import _
 
+from . import failures
+from .bunker import signer_failure_words
 from .outbox.policy import dedupe_relays, relays_from
 from .outbox.writer import signed_matches
 from .signer_limits import size_problem
@@ -73,6 +77,28 @@ def refused_by_relay(message: str) -> bool:
     """Whether a relay's "not taken" answer is a refusal (NIP-01's
     machine-readable prefix) rather than no answer at all."""
     return _prefix(message) in _REFUSALS
+
+
+def not_taken_words(results: Sequence[PublishResult]) -> str:
+    """The one sentence (translated) for an event no relay took: turned
+    down by one that answered, or none reached (lessons 36: a relay that
+    answered is not blamed on the connection)."""
+    turned_down = any(not ok and refused_by_relay(message) for _url, ok, message in results)
+    return _(failures.TURNED_DOWN if turned_down else failures.CHECK_CONNECTION)
+
+
+def same_event(first: dict, second: dict) -> bool:
+    """Whether two unsigned events say the same, whenever each was made:
+    Try Again may then send the one signed before."""
+    def said(event: dict) -> dict:
+        return {key: value for key, value in event.items()
+                if key not in ("created_at", "id", "sig")}
+    return said(first) == said(second)
+
+
+def answers_detail(results: Sequence[PublishResult]) -> str:
+    """Each relay's answer, one per line, for Details and the tooltip."""
+    return "\n".join(f"{url}: {message or _('no answer')}" for url, _ok, message in results)
 
 
 def kept_by_relay(ok: bool, message: str) -> bool:
@@ -136,6 +162,7 @@ class PublishPipeline(QObject):
         self._sending = False
         self._failed = False
         self._cancelled = False
+        self._failure_words = ""
 
     # -- public API --------------------------------------------------------
 
@@ -143,6 +170,17 @@ class PublishPipeline(QObject):
     def signed_event(self) -> Optional[dict]:
         """The event as the signer signed it, once it has."""
         return self._signed_event
+
+    @property
+    def unsigned_event(self) -> dict:
+        """The event asked to be signed."""
+        return self._unsigned
+
+    @property
+    def failure_words(self) -> str:
+        """Once ``failed`` fired: the one sentence to show, its likely
+        cause and what to do, never the reason itself."""
+        return self._failure_words
 
     @property
     def plan(self):
@@ -159,7 +197,7 @@ class PublishPipeline(QObject):
             self._profile, event=self._unsigned,
             key_here=lambda: self._session_pool.key_here(self._author))
         if too_long:
-            QTimer.singleShot(0, self, lambda: self._fail(too_long))
+            QTimer.singleShot(0, self, lambda: self._fail(too_long, words=too_long))
             return
         self._say(_("Connecting to your signer app…"))
         self._relay_directory.publish_plan(self._author, self._on_plan,
@@ -188,8 +226,9 @@ class PublishPipeline(QObject):
         return _("Waiting for your signer app. Approve the request there…")
 
     def _sending_words(self, count: int) -> str:
-        return ngettext("Publishing to {n} relay…", "Publishing to {n} relays…",
-                        count).format(n=count)
+        """Said while it goes out; never how many relays, or which
+        (lessons 26 and 36)."""
+        return _("Publishing…")
 
     def _accepted_words(self, url: str) -> str:
         """Said when the first relay took it; "" says nothing."""
@@ -227,7 +266,7 @@ class PublishPipeline(QObject):
             self._profile, event=self._unsigned,
             key_here=lambda: self._session_pool.key_here(self._author))
         if too_long:
-            self._fail(too_long)
+            self._fail(too_long, words=too_long)
             return
         self._say(self._waiting_words())
         client.sign_event(self._unsigned, on_success=self._on_signed,
@@ -237,13 +276,14 @@ class PublishPipeline(QObject):
         if self._failed or self._cancelled:
             return
         if not signed_matches(event, self._unsigned, self._author):
-            self._fail(_("Your signer app signed something other than what was asked, "
-                         "so nothing was sent."))
+            self._fail("signed event does not match the request",
+                       words=_("Your signer app signed something other than what was "
+                               "asked: nothing was sent, so try again."))
             return
         self._signed_event = event
         self._signed(event)
         if self._plan is None:
-            self._say(_("Finding your relays…"))
+            self._say(_("Publishing…"))
         self._send_when_ready()
 
     def _send_when_ready(self) -> None:
@@ -280,8 +320,13 @@ class PublishPipeline(QObject):
         self._say(self._done_words(accepted, len(results)))
         self.completed.emit(list(results))
 
-    def _fail(self, reason: str) -> None:
+    def _fail(self, reason: str, *, words: str = "") -> None:
+        """Nothing went out: ``reason`` for Details and the log, ``words``
+        the sentence to show (the signer's reason in plain words when not
+        given)."""
         if self._failed or self._sent or self._cancelled:
             return
         self._failed = True
-        self.failed.emit(reason or _("Your signer app didn’t sign the request."))
+        reason = reason or "the signer app gave no reason"
+        self._failure_words = words or signer_failure_words(reason)
+        self.failed.emit(reason)

@@ -26,8 +26,10 @@ from tests.outbox_fakes import (
 # 65,063 bytes of content: the signed event's answer is exactly 65,471
 # bytes, the most a signer app's answer may hold (contract 12.5).
 LARGEST = 65_063
-TOO_LONG = "This is too long to be signed through your signer app."
-OFFER = "Your key is also kept on this computer: signed with it here, this limit doesn't apply."
+TOO_LONG = ("This is too long to be signed through your signer app: shorten it or split it "
+            "into parts.")
+OFFERED = ("This is too long to be signed through your signer app: shorten it, or sign it "
+           "with your key kept on this computer.")
 ANSWER = VECTORS["signer_answer"]
 
 
@@ -86,7 +88,7 @@ def test_an_event_too_long_for_the_signer_app_is_said_plainly():
         return False
 
     words = signer_limits.size_problem(REMOTE, event=note(LARGEST + 1), key_here=key_here)
-    assert words.startswith(TOO_LONG) and OFFER not in words
+    assert words == TOO_LONG
     assert signer_limits.size_problem(REMOTE, event=note(LARGEST), key_here=key_here) is None
     assert len(asked) == 1                    # only asked when there is a problem
 
@@ -94,7 +96,7 @@ def test_an_event_too_long_for_the_signer_app_is_said_plainly():
 def test_the_key_kept_here_is_offered():
     words = signer_limits.size_problem(REMOTE, event=note(LARGEST + 1),
                                        key_here=lambda: True)
-    assert words == TOO_LONG + " Shorten it, or split it into parts. " + OFFER
+    assert words == OFFERED
 
 
 def test_with_the_key_here_there_is_nothing_to_say():
@@ -110,9 +112,8 @@ def test_the_words_are_german_too():
                                            key_here=lambda: True)
     finally:
         i18n.install("en")
-    assert words == ("Das ist zu lang, um über deine Signer-App signiert zu werden. Kürze "
-                     "es oder teile es in Teile auf. Dein Schlüssel liegt auch auf diesem "
-                     "Computer: Mit ihm hier signiert, gilt diese Grenze nicht.")
+    assert words == ("Das ist zu lang, um über deine Signer-App signiert zu werden: Kürze "
+                     "es, oder signiere es mit deinem Schlüssel auf diesem Computer.")
 
 
 # -- publishing --------------------------------------------------------------------
@@ -146,8 +147,31 @@ def publish(event, *, profile=None, key_here=False):
 
 def test_a_note_too_long_for_the_signer_app_fails_before_the_app_is_asked():
     failed, pool, client = publish(note(LARGEST + 1), key_here=True)
-    assert failed == [TOO_LONG + " Shorten it, or split it into parts. " + OFFER]
+    assert failed == [OFFERED]
     assert pool.asked == 0 and client.requests == []
+
+
+@pytest.mark.parametrize("client, words", [
+    (FakeClient(fail="timed out waiting for signer"),
+     "Your signer app didn’t answer: open it and try again."),
+    (FakeClient(fail="user rejected"),
+     "Your signer app declined the request: allow it there and try again."),
+    (FakeClient(tamper=lambda event: dict(event, content="something else")),
+     "Your signer app signed something other than what was asked: nothing was sent, so try "
+     "again."),
+])
+def test_a_publish_the_signer_did_not_do_holds_one_plain_sentence(client, words):
+    """Lessons 36 and 26: the reason is for Details; what is shown is one
+    sentence with its cause and what to do."""
+    job = PublishJob(relay_pool=FakePool(), relay_directory=FakeRelayDirectory(),
+                     session_pool=FakeSessionPool(client), profile=Profile(),
+                     unsigned_event=note(10))
+    failed = []
+    job.failed.connect(failed.append)
+    job.start()
+    settle()
+    assert len(failed) == 1 and job.failure_words == words
+    assert failed[0] and failed[0] not in words
 
 
 def test_a_note_that_fits_is_signed():

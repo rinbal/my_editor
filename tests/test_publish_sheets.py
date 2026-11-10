@@ -61,6 +61,7 @@ from nostr.blossom.store import MediaFile  # noqa: E402
 from nostr.known_people import KnownPeople, Person  # noqa: E402
 from nostr.ui import publish_article_dialog as article_module  # noqa: E402
 from nostr.ui import publish_note_dialog as note_module  # noqa: E402
+from nostr.ui import publish_sheet  # noqa: E402
 from tests.accessibility import unnamed_controls  # noqa: E402
 from tests.outbox_fakes import (  # noqa: E402
     PK, FakeClient, FakePool, FakeRelayDirectory, FakeSessionPool, HandPool,
@@ -83,14 +84,23 @@ class Captured:
     """Stands in for PublishJob: keeps the event it was given."""
 
     made = []
+    jobs = []
 
     def __init__(self, **kwargs):
         Captured.made.append(kwargs["unsigned_event"])
+        Captured.jobs.append(self)
+        self.unsigned_event = kwargs["unsigned_event"]
+        self.failure_words = ""
+        self.sent_again = 0
         for name in ("status_changed", "signed", "completed", "failed"):
             setattr(self, name, types.SimpleNamespace(connect=lambda *_a: None))
 
     def start(self):
         pass
+
+    def send_again(self):
+        self.sent_again += 1
+        return True
 
     def cancel(self):
         pass
@@ -99,6 +109,7 @@ class Captured:
 @pytest.fixture
 def captured(monkeypatch):
     Captured.made = []
+    Captured.jobs = []
     monkeypatch.setattr(article_module, "PublishJob", Captured)
     monkeypatch.setattr(note_module, "PublishJob", Captured)
     return Captured.made
@@ -298,9 +309,101 @@ def test_a_failure_is_said_in_red_and_publish_can_be_tried_again(tmp_path, captu
     assert not sheet._hashtags.entry.isHidden() and not sheet._account.isEnabled()
     sheet._on_completed([("wss://a.example", False, "blocked")])
     assert sheet._hashtags.isEnabled() and sheet._account.isEnabled()
-    assert not sheet._status.isHidden() and "no relay took it" in sheet._status.text()
+    assert not sheet._status.isHidden()
+    assert sheet._status.shown == ("Your article wasn’t published",
+                                   "Check your internet connection and try again.")
     assert roles(False).error in sheet._status.styleSheet()
-    assert sheet._publish_btn.isEnabled()
+    assert sheet._publish_btn.isEnabled() and sheet._publish_btn.text() == "Try Again"
+
+
+def _start(sheet):
+    """Press Publish on either sheet; the article's date is known."""
+    if isinstance(sheet, article_module.PublishArticleDialog):
+        sheet._publish("t", sheet._body, 1_800_000_000)
+    else:
+        sheet._on_publish()
+
+
+@pytest.mark.parametrize("make", [article, note])
+@pytest.mark.parametrize("results, sentence", [
+    # Never reached: the connection is the likely cause.
+    ([("wss://a.example", False, "publish timeout"),
+      ("wss://b.example", False, "relay disconnected before ack")],
+     "Check your internet connection and try again."),
+    # Answered and turned it down (NIP-01): not the connection.
+    ([("wss://a.example", False, "blocked: not on the list"),
+      ("wss://b.example", False, "publish timeout")],
+     "The servers your posts go to turned it down: try again later."),
+])
+def test_no_relay_taking_it_is_one_title_one_sentence_and_try_again(tmp_path, captured,
+                                                                     monkeypatch, make,
+                                                                     results, sentence):
+    """Lessons 36 and 26: no relay's name, no count and no relay's answer
+    in what is shown; those are in the tooltip. Said once."""
+    said = []
+    monkeypatch.setattr(publish_sheet.announce, "announce", lambda _w, text: said.append(text))
+    sheet = make(tmp_path, default_title="T") if make is article else make(tmp_path)
+    _start(sheet)
+    sheet._on_completed(results)
+    what = "Your article wasn’t published" if make is article else "Your note wasn’t published"
+    assert sheet._status.shown == (what, sentence)
+    assert "relay" not in sheet._status.text() and "example" not in sheet._status.text()
+    assert all(url in sheet._status.toolTip() for url, _ok, _m in results)
+    assert sheet._publish_btn.text() == "Try Again" and sheet._publish_btn.isEnabled()
+    assert said == [f"{what}. {sentence}"]
+
+
+@pytest.mark.parametrize("make", [article, note])
+def test_try_again_sends_the_signed_event_again_when_nothing_changed(tmp_path, captured, make,
+                                                                     monkeypatch):
+    import nostr.events
+    sheet = make(tmp_path)
+    _start(sheet)
+    sheet._on_completed([("wss://a.example", False, "publish timeout")])
+    first = Captured.jobs[-1]
+    later = nostr.events.time.time() + 90            # a minute and more later
+    monkeypatch.setattr(nostr.events.time, "time", lambda: later)
+    _start(sheet)                                   # Try Again
+    assert len(Captured.jobs) == 1 and first.sent_again == 1
+    assert sheet._publish_btn.text() == "Publish" and not sheet._publish_btn.isEnabled()
+    assert sheet._status.shown == ("", "")
+
+
+def test_try_again_after_an_edit_signs_the_new_text(tmp_path, captured):
+    sheet = note(tmp_path)
+    _start(sheet)
+    sheet._on_completed([("wss://a.example", False, "publish timeout")])
+    first = Captured.jobs[-1]
+    sheet._text_edit.setPlainText("Another text.")
+    _start(sheet)
+    assert len(Captured.jobs) == 2 and first.sent_again == 0
+    assert Captured.made[-1]["content"] == "Another text."
+
+
+@pytest.mark.parametrize("make", [article, note])
+@pytest.mark.parametrize("reason, words, sentence", [
+    ("timed out waiting for signer", "", "Your signer app didn’t answer: open it and try again."),
+    ("user rejected the request", "",
+     "Your signer app declined the request: allow it there and try again."),
+    ("invalid event: bad tags", "",
+     "Your signer app ran into a problem: open it and try again."),
+    ("signed event does not match the request", "Your signer app signed something other than "
+     "what was asked: nothing was sent, so try again.",
+     "Your signer app signed something other than what was asked: nothing was sent, so try "
+     "again."),
+])
+def test_a_publish_the_signer_did_not_sign_is_said_plainly(tmp_path, captured, make, reason,
+                                                          words, sentence):
+    sheet = make(tmp_path)
+    _start(sheet)
+    Captured.jobs[-1].failure_words = words
+    sheet._on_failed(reason)
+    title, shown = sheet._status.shown
+    assert title.endswith("wasn’t published") and shown == sentence
+    assert reason not in sheet._status.text() and sheet._status.toolTip() == reason
+    assert sheet._publish_btn.text() == "Try Again"
+    _start(sheet)                                   # a new signature, never the old job
+    assert len(Captured.jobs) == 2
 
 
 def test_every_control_is_named_and_tab_goes_top_to_bottom(tmp_path):
@@ -966,4 +1069,6 @@ def test_the_alert_claims_nothing_of_the_relays_that_may_be_untrue(
     sheet._on_publish()
     asked[-1][3](FirstPublication(UNKNOWN))
     message = alerts[0]["message"]
-    assert message.startswith("The relays gave no clear answer.") and "answered" not in message
+    # One sentence, with what to do, and no relay in it (lessons 26, 36).
+    assert "answered" not in message and "relay" not in message
+    assert message.count(".") == 1 and message.endswith(".") and "try again" in message

@@ -788,16 +788,9 @@ class PublishJob(PublishPipeline):
     def _signed(self, event: dict) -> None:
         self.signed.emit(event["id"])
 
-    def _accepted_words(self, url: str) -> str:
-        # Surface the win immediately so the dialog can flip to a success
-        # state even before the slower relays finish reporting.
-        return _("Accepted by {url}. Waiting for the rest…").format(url=url)
-
     def _done_words(self, accepted: int, total: int) -> str:
-        return ngettext(
-            "Published. {accepted}/{total} relay accepted.",
-            "Published. {accepted}/{total} relays accepted.", total,
-        ).format(accepted=accepted, total=total)
+        # Never which relay took it, or how many (lessons 26 and 36).
+        return _("Published.") if accepted else ""
 
     def _answered(self, results: List[PublishResult]) -> None:
         # NIP-65: the mentioned people's relays that now hold this event
@@ -994,7 +987,7 @@ class DraftPublishJob(QObject):
             self._emit_failed(_("Could not serialize draft: {reason}").format(reason=exc))
             return
         if too_large:
-            self._refuse(_("This draft is too large. {reason}").format(reason=too_large))
+            self._refuse(too_large)             # one sentence that says so (lessons 36)
             return
         self._emit_status(
             _("Encrypting the draft. Approve the request in your signer app if it asks…")

@@ -655,9 +655,9 @@ def test_a_browser_that_does_not_open_brings_the_code_back(tmp_path, opened):
     ("timed out waiting for signer", "Your signer app didn’t answer"),
     ("could not deliver request to any relay (wss://a: blocked)",
      "Your signer app didn’t answer"),
-    ("user rejected", "Your signer app declined the connection"),
-    ("Unknown client", "Your signer app declined the connection"),
-    ("permission denied", "Your signer app declined the connection"),
+    ("user rejected", "Your signer app declined the request"),
+    ("Unknown client", "Your signer app declined the request"),
+    ("permission denied", "Your signer app declined the request"),
     ("secret did not match (possible spoof attempt)",
      "The answer was meant for another connection"),
     ("invalid: 42", "The connection didn’t work"),
@@ -735,13 +735,13 @@ def test_a_listening_code_that_failed_is_one_title_one_sentence_and_try_again(tm
     monkeypatch.setattr(connect_dialog, "announce", lambda _w, text: said.append(text))
     dialog = dialog_for(tmp_path)
     dialog._on_pair_failure("user rejected", dialog._client)
-    assert dialog.status_shown == (NOT_CONNECTED, "Your signer app declined the connection: "
-                                   "allow MyEditor there and try again.")
+    assert dialog.status_shown == (NOT_CONNECTED, "Your signer app declined the request: "
+                                   "allow it there and try again.")
     assert dialog._status.text().startswith(f"<b>{NOT_CONNECTED}</b><br>")
     assert not dialog._regen_btn.isHidden() and dialog._regen_btn.text() == "Try Again"
     assert dialog._code_note.isHidden() and not dialog._code_note.text()
-    assert said == [f"{NOT_CONNECTED}. Your signer app declined the connection: allow "
-                    "MyEditor there and try again."]
+    assert said == [f"{NOT_CONNECTED}. Your signer app declined the request: allow it "
+                    "there and try again."]
     dialog._regen_btn.click()                        # Try Again: a new code, the words gone
     assert dialog.status_shown == ("", "") and dialog._regen_btn.isHidden()
     dialog.reject()

@@ -125,7 +125,9 @@ def test_oversized_plaintext_fails_before_bunker_call():
     job._on_bunker_ready(fake_bunker, publish_relays=["wss://r/"])
 
     fake_bunker.nip44_encrypt_self.assert_not_called()
-    assert failures and "too large" in failures[0].lower()
+    # Too long for NIP-44 itself: the key kept here would not help either.
+    assert failures == ["Your signer app can’t carry a draft this long: split it into smaller "
+                        "drafts or publish it directly."]
 
 
 # -- the limit depends on who encrypts (M1b) -----------------------------------
@@ -155,7 +157,7 @@ def test_the_limit_is_nip44s_with_a_key_here_and_lower_through_a_signer_app():
     (SIGNER_NIP44_MAX_PLAINTEXT, None, None),
     (SIGNER_NIP44_MAX_PLAINTEXT + 1, "signer app", None),
     (MAX_INNER_PAYLOAD_BYTES, "signer app", None),
-    (MAX_INNER_PAYLOAD_BYTES + 1, "signer app", "encryption allows"),
+    (MAX_INNER_PAYLOAD_BYTES + 1, "signer app", "too long to be encrypted"),
 ])
 def test_a_draft_is_measured_against_what_its_signer_can_encrypt(size, remote, local):
     inner = _note_of_bytes(size)
@@ -164,7 +166,8 @@ def test_a_draft_is_measured_against_what_its_signer_can_encrypt(size, remote, l
         if words is None:
             assert problem is None
         else:
-            assert words in problem and "Split it into smaller drafts" in problem
+            assert words in problem and "split it into smaller drafts" in problem
+            assert problem.count(".") == 1 and "000" not in problem      # never the numbers
 
 
 def test_a_draft_too_large_for_a_signer_app_fails_before_anything_is_sent():
@@ -179,9 +182,8 @@ def test_a_draft_too_large_for_a_signer_app_fails_before_anything_is_sent():
     fake_bunker = MagicMock()
     job._on_bunker_ready(fake_bunker, publish_relays=["wss://r/"])
     fake_bunker.nip44_encrypt_self.assert_not_called()
-    assert failures == ["This draft is too large. It has 50,000 bytes, and your signer app "
-                        "can encrypt at most 40,960. Split it into smaller drafts or publish "
-                        "it directly."]
+    assert failures == ["Your signer app can’t carry a draft this long: split it into smaller "
+                        "drafts or publish it directly."]
 
 
 def test_with_the_key_also_kept_here_the_words_offer_it():
@@ -194,8 +196,8 @@ def test_with_the_key_also_kept_here_the_words_offer_it():
     failures: List[str] = []
     job.failed.connect(failures.append)
     job._on_bunker_ready(MagicMock(), publish_relays=["wss://r/"])
-    assert failures[0].endswith("Your key is also kept on this computer: signed with it "
-                                "here, this limit doesn't apply.")
+    assert failures == ["Your signer app can’t carry a draft this long: split it into smaller "
+                        "drafts, or save it with your key kept on this computer."]
     pool.key_here.assert_called_once_with(PK)
 
 
@@ -215,9 +217,8 @@ def test_the_signer_apps_limit_is_said_in_german_too():
         problem = draft_size_problem(_note_of_bytes(50_000), _make_profile())
     finally:
         i18n.install("en")
-    assert problem == ("Er hat 50.000 Bytes, deine Signer-App kann höchstens 40.960 "
-                       "verschlüsseln. Teile ihn in kleinere Entwürfe auf oder veröffentliche "
-                       "ihn direkt.")
+    assert problem == ("Deine Signer-App kann keinen so langen Entwurf übertragen: Teile ihn "
+                       "in kleinere Entwürfe auf oder veröffentliche ihn direkt.")
 
 
 def test_payload_within_cap_proceeds_to_encrypt():
@@ -387,8 +388,11 @@ def test_the_save_command_says_the_signer_apps_limit_before_starting(monkeypatch
     MainWindow._fire_draft_publish_job(host, object(), _make_profile(), choice,
                                        _note_of_bytes(50_000))
     assert made == []
-    assert [kw["title"] for kw in shown] == ["This draft is too large"]
-    assert "your signer app can encrypt at most 40,960" in shown[0]["message"]
+    assert [kw["title"] for kw in shown] == ["Your draft wasn’t saved"]
+    assert shown[0]["message"] == ("Your signer app can’t carry a draft this long: split it "
+                                   "into smaller drafts or publish it directly.")
+    # The numbers only behind Details (lessons 26, 36).
+    assert "40,960" in shown[0]["details"] and "40,960" not in shown[0]["message"]
 
 
 def _note_of_quotes(count: int) -> dict:
@@ -405,7 +409,8 @@ def test_a_draft_the_signer_app_could_encrypt_but_not_hand_back_is_refused():
     inner = _note_of_quotes(20_000)
     assert len(serialize_inner_event(inner).encode("utf-8")) <= SIGNER_NIP44_MAX_PLAINTEXT
     problem = draft_size_problem(inner, _make_profile())
-    assert "hand back in one answer" in problem and "Split it into smaller drafts" in problem
+    assert problem == ("Your signer app can’t carry a draft this long: split it into smaller "
+                       "drafts or publish it directly.")
     # With the key on this computer nothing is handed back.
     assert draft_size_problem(inner, _local_profile()) is None
     # And a draft of quotes that does come back is saved.
@@ -421,4 +426,5 @@ def test_such_a_draft_fails_before_anything_is_sent():
     fake_bunker = MagicMock()
     job._on_bunker_ready(fake_bunker, publish_relays=["wss://r/"])
     fake_bunker.nip44_encrypt_self.assert_not_called()
-    assert len(failures) == 1 and "hand back" in failures[0]
+    assert len(failures) == 1 and failures[0].startswith(
+        "Your signer app can’t carry a draft this long:")

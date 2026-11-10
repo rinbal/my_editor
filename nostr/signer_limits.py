@@ -72,15 +72,32 @@ EVENT_FRAME_BYTES = 512
 # The caps the contract names, for a relay whose document was not read.
 NAMED_CAPS: Mapping[str, int] = {"wss://relay.nip46.com": 65_536}
 
-# What the person is told when the connection's relays are what stops
-# it (contract 12.5: the plain consequence, never the numbers). The
-# contract's "Diese Verbindung" names the connection: MyEditor says this
-# while publishing or saving, away from it, so it says which one.
-_CONNECTION_SIGN = N_("The connection to your signer app carries only short messages. "
-                      "Very long texts can’t be signed through it.")
-_CONNECTION_DRAFT = N_("The connection to your signer app carries only short messages. "
-                       "Very long drafts can’t be kept through it. Split this one into "
-                       "smaller drafts or publish it directly.")
+# What the person is told when a text is too long for the signer (contract
+# 12.5: the plain consequence, never the numbers; lessons 36: one
+# sentence, its cause and what to do). The contract's "Diese Verbindung"
+# names the connection: MyEditor says this while publishing or saving,
+# away from it, so it says which one. With the account's key also kept on
+# this computer, the words offer it (contract 12.5): signed or encrypted
+# with it here, the signer app's limit does not apply.
+_CONNECTION_SIGN = N_("The connection to your signer app carries only short messages: "
+                      "shorten this text or split it into parts.")
+_CONNECTION_SIGN_HERE = N_("The connection to your signer app carries only short messages: "
+                           "shorten this text, or sign it with your key kept on this "
+                           "computer.")
+_TOO_LONG_SIGN = N_("This is too long to be signed through your signer app: shorten it or "
+                    "split it into parts.")
+_TOO_LONG_SIGN_HERE = N_("This is too long to be signed through your signer app: shorten it, "
+                         "or sign it with your key kept on this computer.")
+_CONNECTION_DRAFT = N_("The connection to your signer app carries only short messages: "
+                       "split this draft into smaller ones or publish it directly.")
+# Too long to encrypt there, or to be handed back once encrypted (its
+# quotes and line breaks escaped in the answer): either way, too long.
+_TOO_LONG_DRAFT_APP = N_("Your signer app can’t carry a draft this long: split it into "
+                         "smaller drafts or publish it directly.")
+_DRAFT_HERE = N_("Your signer app can’t carry a draft this long: split it into smaller "
+                 "drafts, or save it with your key kept on this computer.")
+_TOO_LONG_DRAFT = N_("This draft is too long to be encrypted: split it into smaller drafts "
+                     "or publish it directly.")
 # The most relays whose documents are kept (a connection names a few).
 _KEPT_CAPS = 256
 
@@ -392,42 +409,33 @@ def _never() -> bool:
 def size_problem(profile, *, draft: Optional[str] = None, event: Optional[dict] = None,
                  key_here: Callable[[], bool] = _never) -> Optional[str]:
     """Why what is about to be asked of ``profile``'s signer cannot be done,
-    in words to show, or None when it can. ``draft`` is the plaintext of a
-    draft, encrypted to the account and read back later; ``event`` an
-    unsigned event to be signed. When the account signs through a signer
-    app and ``key_here()`` says its private key is also kept on this
-    computer, the words offer that key, with which the signer app's limit
-    does not apply (contract 12.5). Asked before anything is sent, so the
-    person learns the real limit, not a signer app's technical refusal or a
-    draft lost later."""
-    problem = None
+    in one sentence to show, or None when it can. ``draft`` is the
+    plaintext of a draft, encrypted to the account and read back later;
+    ``event`` an unsigned event to be signed. When the account signs
+    through a signer app and ``key_here()`` says its private key is also
+    kept on this computer, the words offer that key where it helps (with
+    it nothing travels, contract 12.5). Asked before anything is sent, so
+    the person learns the real limit, not a signer app's technical refusal
+    or a draft lost later. The numbers are :func:`size_detail`'s."""
     anywhere = _Uncapped(profile)
     if draft is not None and not readable_back(profile, draft):
-        problem = (_draft_words(profile, len(draft.encode("utf-8")))
-                   if not readable_back(anywhere, draft)
-                   else _(_CONNECTION_DRAFT))
-    elif event is not None and not signable(profile, event):
-        problem = (_("This is too long to be signed through your signer app. Shorten it, "
-                     "or split it into parts.") if not signable(anywhere, event)
-                   else _(_CONNECTION_SIGN))
-    if problem is None:
-        return None
-    if through_signer_app(profile) and key_here():
-        problem += " " + _("Your key is also kept on this computer: signed with it here, "
-                           "this limit doesn't apply.")
-    return problem
+        if not through_signer_app(profile):
+            return _(_TOO_LONG_DRAFT)
+        if len(draft.encode("utf-8")) <= crypto.NIP44_MAX_PLAINTEXT_LEN and key_here():
+            return _(_DRAFT_HERE)
+        return _(_CONNECTION_DRAFT if readable_back(anywhere, draft) else _TOO_LONG_DRAFT_APP)
+    if event is not None and not signable(profile, event):
+        here = key_here()           # only a signer app's own limit is met here
+        if signable(anywhere, event):
+            return _(_CONNECTION_SIGN_HERE if here else _CONNECTION_SIGN)
+        return _(_TOO_LONG_SIGN_HERE if here else _TOO_LONG_SIGN)
+    return None
 
 
-def _draft_words(profile, size: int) -> str:
-    limit = nip44_plaintext_limit(_Uncapped(profile))
+def size_detail(profile, *, draft: str) -> str:
+    """The numbers behind :func:`size_problem` for a draft, for Details:
+    its size and the most its signer can encrypt."""
     numbers = display_locale()
-    values = {"size": numbers.toString(size), "limit": numbers.toString(limit)}
-    if size <= limit:
-        return _("It has {size} bytes, more than your signer app can hand back in one answer "
-                 "once its quotes and line breaks are counted. Split it into smaller drafts or "
-                 "publish it directly.").format(**values)
-    if through_signer_app(profile):
-        return _("It has {size} bytes, and your signer app can encrypt at most {limit}. "
-                 "Split it into smaller drafts or publish it directly.").format(**values)
-    return _("It has {size} bytes, and encryption allows {limit}. "
-             "Split it into smaller drafts or publish it directly.").format(**values)
+    values = {"size": numbers.toString(len(draft.encode("utf-8"))),
+              "limit": numbers.toString(nip44_plaintext_limit(profile))}
+    return _("{size} bytes; at most {limit} can be encrypted this way.").format(**values)

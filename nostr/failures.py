@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""How submitting and pairing say that something failed (lessons 36),
-one helper for every screen of them, so none says it its own way.
+"""How every Nostr screen says that something failed (lessons 36): one
+helper for all of them, so none says it its own way.
 
 Partial failure is silent. Some relays, servers or pages of a list
 failing is normal: what still can work is tried again quietly, with
@@ -28,10 +28,20 @@ T = TypeVar("T")
 # total failure is said within half a minute.
 QUIET_RETRY_MS = (2_000, 6_000, 15_000)
 
-# The likely cause and what to do, one sentence each.
+# The likely cause and what to do, one sentence each. Nothing that was
+# never reached is blamed on a server, nor a server's answer on the
+# connection.
 CHECK_CONNECTION = N_("Check your internet connection and try again.")
+# A server that answered with trouble of its own (a 5xx, an answer that
+# could not be read).
+SERVER_TROUBLE = N_("The server couldn’t take it just now: try again in a moment.")
+# The servers an account publishes to (its relays) answered, and turned
+# it down: the connection is not the cause.
+TURNED_DOWN = N_("The servers your posts go to turned it down: try again later.")
 SIGNER_SILENT = N_("Your signer app didn’t answer: open it and try again.")
 SIGNER_DECLINED = N_("Your signer app declined the request: allow it there and try again.")
+# The signer app answered with an error of its own.
+SIGNER_FAILED = N_("Your signer app ran into a problem: open it and try again.")
 
 
 def retry_quietly(attempt: Callable[[Callable[[T], None]], None], *,
@@ -67,5 +77,5 @@ def spoken(*parts: str) -> str:
                     for part in parts if part)
 
 
-__all__ = ["CHECK_CONNECTION", "QUIET_RETRY_MS", "SIGNER_DECLINED", "SIGNER_SILENT", "markup",
-           "retry_quietly", "spoken"]
+__all__ = ["CHECK_CONNECTION", "QUIET_RETRY_MS", "SERVER_TROUBLE", "SIGNER_DECLINED",
+           "SIGNER_FAILED", "SIGNER_SILENT", "TURNED_DOWN", "markup", "retry_quietly", "spoken"]
