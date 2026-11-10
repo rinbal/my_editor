@@ -74,6 +74,7 @@ from fonts import monospace_family
 from text_size import text_size
 from doc_walk import doc_length, doc_offset, iter_blocks
 from i18n import _, ngettext
+import photo_group
 from markdown_writer import READ_FEATURES, read_markdown
 from nostr import refs
 from nostr.refs import outside_code
@@ -687,6 +688,9 @@ class NostrPreview(QTextBrowser):
         # through loadResource below; the one it replaces goes.
         previous = self.document()
         self._scale = 1.0
+        # Photo groups sized as readers size them, from the pictures this
+        # view loads (photo_group).
+        photo_group.install(doc, photo_group.resource_sizes(doc))
         self.setDocument(doc)
         # Qt deletes a document the view made itself; one made here goes now.
         if (previous is not doc and shiboken6.isValid(previous)
@@ -704,6 +708,8 @@ class NostrPreview(QTextBrowser):
         self._center_column()
 
     def loadResource(self, kind: int, url: QUrl):
+        # A picture as wide as the page (#wide) is the picture without it.
+        url = photo_group.without_wide_url(url)
         if kind == QTextDocument.ResourceType.ImageResource.value and self._images:
             image = self._images(url.toString())
             if image is not None and not image.isNull():
@@ -711,7 +717,8 @@ class NostrPreview(QTextBrowser):
         if kind == QTextDocument.ResourceType.ImageResource.value:
             placeholder = QImage(COLUMN_WIDTH, COLUMN_WIDTH * 9 // 16, QImage.Format.Format_RGB32)
             placeholder.fill(QColor(palette(self._dark).hairline))
-            return placeholder
+            # Its shape is not the picture's: a group lays it out at 3:2.
+            return photo_group.mark_placeholder(placeholder)
         return super().loadResource(kind, url)
 
     def resizeEvent(self, event) -> None:
@@ -726,7 +733,21 @@ class NostrPreview(QTextBrowser):
         side = spare // 2 + 16
         self.setViewportMargins(side, 16, side, 16)
         column = max(120, min(widest, self.width() - 2 * side - 24))
+        self._arrange_groups(column)
         self._fit_images(column)
+
+    def _arrange_groups(self, column: int) -> None:
+        """Photo groups as readers show them in a column this wide: below
+        600 pixels as on a phone, strips one picture a line (nothing here
+        swipes); rows never taller than their share of the view."""
+        doc = self.document()
+        arrangement = photo_group.arrangement_of(doc)
+        if arrangement is None:
+            return
+        narrow = column < photo_group.NARROW_BELOW
+        if (arrangement == photo_group.NARROW) != narrow:
+            photo_group.refold(doc, narrow=narrow)
+        photo_group.set_screen_height(doc, self.viewport().height())
 
     def _fit_images(self, width: int) -> None:
         doc = self.document()
@@ -736,7 +757,9 @@ class NostrPreview(QTextBrowser):
             while not it.atEnd():
                 fragment = it.fragment()
                 fmt = fragment.charFormat()
-                if fragment.isValid() and fmt.isImageFormat():
+                # A group's pictures are sized by its layout (photo_group).
+                if fragment.isValid() and fmt.isImageFormat() \
+                        and not block.blockFormat().hasProperty(photo_group.UNIT):
                     image = fmt.toImageFormat()
                     if int(image.width()) != width:
                         image.setWidth(width)

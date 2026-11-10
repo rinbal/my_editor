@@ -1266,16 +1266,29 @@ def cell_text(cell) -> str:
 
 
 def tables_of(doc) -> List[QTextTable]:
-    """Every table in ``doc``, in order."""
+    """Every table in ``doc``, in order; not the tables of a photo group,
+    which only lay its pictures out (photo_group)."""
+    import photo_group
     found: List[QTextTable] = []
 
     def walk(frame) -> None:
         for child in frame.childFrames():
+            if photo_group.is_group_table(child):
+                continue
             if isinstance(child, QTextTable):
                 found.append(child)
             walk(child)
     walk(doc.rootFrame())
     return found
+
+
+def table_at(cursor: QTextCursor) -> Optional[QTextTable]:
+    """The table at ``cursor`` for the table commands (rows, columns, Tab
+    from cell to cell), or None; never one of a photo group's, which only
+    lays its pictures out (photo_group)."""
+    import photo_group
+    table = cursor.currentTable()
+    return None if table is None or photo_group.lays_out_group(table) else table
 
 
 def insert_table(cursor: QTextCursor, rows: int, columns: int) -> Optional[QTextTable]:
@@ -1325,7 +1338,7 @@ def add_table_row(cursor: QTextCursor, *, below: bool) -> bool:
     """A row above or below the one at the cursor, which goes to its first
     cell, ready to be filled. A row added above the header is the new
     header. One undo step."""
-    table = cursor.currentTable()
+    table = table_at(cursor)
     if table is None:
         return False
     cell = table.cellAt(cursor)
@@ -1344,7 +1357,7 @@ def add_table_row(cursor: QTextCursor, *, below: bool) -> bool:
 def add_table_column(cursor: QTextCursor, *, after: bool) -> bool:
     """A column before or after the one at the cursor, which goes into
     it. One undo step."""
-    table = cursor.currentTable()
+    table = table_at(cursor)
     if table is None:
         return False
     cell = table.cellAt(cursor)
@@ -1364,7 +1377,7 @@ def add_table_column(cursor: QTextCursor, *, after: bool) -> bool:
 
 def delete_table(cursor: QTextCursor) -> bool:
     """The table at the cursor goes; the cursor goes where it stood."""
-    table = cursor.currentTable()
+    table = table_at(cursor)
     if table is None:
         return False
     start = table.firstPosition() - 1
@@ -1379,7 +1392,7 @@ def delete_table(cursor: QTextCursor) -> bool:
 def delete_table_row(cursor: QTextCursor) -> bool:
     """The row at the cursor goes (the last one takes the table with it).
     The header's row gone, the next row is the header. One undo step."""
-    table = cursor.currentTable()
+    table = table_at(cursor)
     if table is None:
         return False
     if table.rows() == 1:
@@ -1398,7 +1411,7 @@ def delete_table_row(cursor: QTextCursor) -> bool:
 def delete_table_column(cursor: QTextCursor) -> bool:
     """The column at the cursor goes (the last one takes the table with
     it). One undo step."""
-    table = cursor.currentTable()
+    table = table_at(cursor)
     if table is None:
         return False
     if table.columns() == 1:
@@ -1415,7 +1428,7 @@ def delete_table_column(cursor: QTextCursor) -> bool:
 def next_table_cell(cursor: QTextCursor, step: int) -> bool:
     """Into the next cell (step 1, adding a row after the last cell, one
     undo step) or the previous one (-1). False outside a table."""
-    table = cursor.currentTable()
+    table = table_at(cursor)
     if table is None:
         return False
     cell = table.cellAt(cursor)
@@ -1435,7 +1448,7 @@ def next_table_cell(cursor: QTextCursor, step: int) -> bool:
 def next_table_row(cursor: QTextCursor) -> bool:
     """Into the cell below (a new row after the last one, one undo step).
     False outside a table."""
-    table = cursor.currentTable()
+    table = table_at(cursor)
     if table is None:
         return False
     cell = table.cellAt(cursor)
@@ -1482,7 +1495,7 @@ def unescape_cell_code(doc) -> None:
 def leave_table(cursor: QTextCursor) -> bool:
     """Out of the table, into a new paragraph right below it (or the empty
     one already there). False outside a table."""
-    table = cursor.currentTable()
+    table = table_at(cursor)
     if table is None:
         return False
     doc = cursor.document()
@@ -1824,7 +1837,10 @@ def _take_style(target, first) -> None:
 
 def _one_line(source):
     """``source`` as one line of text, its paragraphs joined by spaces:
-    what a table cell can hold."""
+    what a table cell can hold. A photo group in it, as its pictures and
+    captions."""
+    import photo_group
+    source = photo_group.unfolded(source)
     line = QTextDocument()
     out = QTextCursor(line)
     for block in iter_blocks(source):

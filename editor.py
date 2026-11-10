@@ -40,6 +40,7 @@ import markdown_shortcuts
 import media_badge
 import media_files
 import paste
+import photo_group
 import rich_text
 import text_look
 from slash_menu import SlashMenu
@@ -194,6 +195,9 @@ class HtmlEditor(QTextEdit):
     # whether it was a double-click): whoever plays it decides whether the
     # click was on its play button.
     media_clicked = Signal(str, QPointF, bool)
+    # A picture of a photo group to see in Quick Look (double-click, or
+    # Space with it selected), by its name; "" puts Quick Look away.
+    picture_look_requested = Signal(str)
 
     # Kinds of highlights shown over the text, bottom to top: each kind
     # keeps its own (set_highlights), the editor shows them together.
@@ -306,6 +310,14 @@ class HtmlEditor(QTextEdit):
         doc.setDocumentMargin(text_look.CODE_PAD_X + 4)
         doc.setUndoRedoEnabled(True)
         doc.setModified(False)
+        # Photo groups (photo_group): their pictures sized as readers size
+        # them, from the pictures this view loads (loadResource), at every
+        # width and height of the window, with nothing in the document
+        # changed.
+        photo_group.install(doc, photo_group.resource_sizes(doc))
+        # Whether Quick Look shows a picture of this document (the window
+        # answers): Space and Escape then put it away.
+        self._picture_look_open = lambda: False
         # The tab holds prose (set_prose): an inset at full width, and a
         # page of WRITING_MEASURE characters in Paper Mode.
         self._prose = False
@@ -538,7 +550,8 @@ class HtmlEditor(QTextEdit):
         if self._asset_placeholder is None:
             image = QImage(*_PLACEHOLDER_SIZE, QImage.Format_RGB32)
             image.fill(QColor(_PLACEHOLDER_COLOR))
-            self._asset_placeholder = image
+            # Its shape is not the picture's: a group lays it out at 3:2.
+            self._asset_placeholder = photo_group.mark_placeholder(image)
         return self._asset_placeholder
 
     def loadResource(self, type_, url):
@@ -549,11 +562,15 @@ class HtmlEditor(QTextEdit):
         placeholder rather than nothing, because Qt caches an image but
         re-asks for a null result on every repaint.
 
+        A picture asked for as wide as the page (#wide at the end of its
+        address, photo_group) is the picture without it.
+
         A document-relative image goes to the local resolver for the
         same reason it never falls through: Qt's fallback reads the
         name against the working directory, which is not the folder the
         picture was saved beside.
         """
+        url = photo_group.without_wide_url(url)
         if self._asset_scheme is not None and url.scheme() == self._asset_scheme:
             if type_ != QTextDocument.ImageResource:
                 return None
@@ -620,6 +637,13 @@ class HtmlEditor(QTextEdit):
                 return
         self.document().addResource(QTextDocument.ImageResource, QUrl(name),
                                     self.fitted_picture(image))
+        # A group lays its pictures out again by the size now known.
+        photo_group.relayout(self.document())
+
+    def set_picture_look_check(self, is_open) -> None:
+        """``is_open()`` says whether Quick Look shows a picture of this
+        document (the window keeps the panel)."""
+        self._picture_look_open = is_open
 
     def _pictures_maybe_added(self, position: int, _removed: int, added: int) -> None:
         """An edit that brought a picture in (typed text never does) has
@@ -911,6 +935,9 @@ class HtmlEditor(QTextEdit):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        # A group's rows are never taller than their share of the window,
+        # as on a reader's screen (photo_group).
+        photo_group.set_screen_height(self.document(), self.viewport().height())
         if self._paper_mode:
             self._update_paper_margins()
         if self._room_for_pictures() != self._picture_room:
@@ -1308,7 +1335,7 @@ class HtmlEditor(QTextEdit):
             return
         cursor = self.textCursor()
         block = cursor.block()
-        table = cursor.currentTable()
+        table = rich_text.table_at(cursor)
         if table is not None:
             cell = table.cellAt(cursor)
             place = ("cell", table.firstPosition(), cell.row(), cell.column())
@@ -1846,7 +1873,26 @@ class HtmlEditor(QTextEdit):
             self.media_clicked.emit(hit[0], hit[1], True)
             event.accept()
             return
+        # A picture of a photo group double-clicked is selected and shown
+        # in Quick Look, as a file is in the Finder; Space puts it away.
+        picture = (self._group_picture_hit(event.position().toPoint())
+                   if event.button() == Qt.MouseButton.LeftButton else None)
+        if picture is not None:
+            position, name = picture
+            cursor = self.textCursor()
+            cursor.setPosition(position)
+            cursor.setPosition(position + 1, QTextCursor.MoveMode.KeepAnchor)
+            self.setTextCursor(cursor)
+            self.picture_look_requested.emit(name)
+            event.accept()
+            return
         super().mouseDoubleClickEvent(event)
+
+    def _group_picture_hit(self, point):
+        """The group picture under ``point`` (the viewport's), or None."""
+        at = QPointF(point) + QPointF(self.horizontalScrollBar().value(),
+                                      self.verticalScrollBar().value())
+        return photo_group.picture_at(self.document(), at)
 
     def mousePressEvent(self, event):
         self._pressed_at = event.position().toPoint()
@@ -2080,6 +2126,17 @@ class HtmlEditor(QTextEdit):
             self._refresh_slash()
 
     def _key_press(self, e):
+        # Space with a picture of a photo group selected shows it in Quick
+        # Look, or puts Quick Look away, as in the Finder; so does Escape.
+        if e.modifiers() in (Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.KeypadModifier):
+            if e.key() == Qt.Key.Key_Space:
+                name = photo_group.group_picture_at_cursor(self.textCursor())
+                if name is not None:
+                    self.picture_look_requested.emit("" if self._picture_look_open() else name)
+                    return
+            if e.key() == Qt.Key.Key_Escape and self._picture_look_open():
+                self.picture_look_requested.emit("")
+                return
         # Keep cursor solid immediately after a keypress; blink restarts from now
         old_cursor_rect = self._block_cursor_rect()
         self._cursor_visible = True
@@ -2347,7 +2404,7 @@ class HtmlEditor(QTextEdit):
         key = e.key()
         if rich_text.is_code_block(block) and self._holds_structure():
             return self._code_key(e, cursor, block)
-        if cursor.currentTable() is not None and self._holds_structure() \
+        if rich_text.table_at(cursor) is not None and self._holds_structure() \
                 and self._table_key(e, cursor):
             return True
         if key in (Qt.Key_Tab, Qt.Key_Backtab) and e.modifiers() in (
@@ -2754,7 +2811,9 @@ class HtmlEditor(QTextEdit):
         where nothing is selected (_EmptyCopy), so Qt writes no HTML and no
         OpenDocument copy of the selection that these would replace."""
         cursor = self.textCursor()
-        fragment = cursor.selection()
+        # A photo group goes as its paragraphs: a picture and its caption
+        # each, which every app and a paste here read (photo_group).
+        fragment = photo_group.unfolded_fragment(cursor.selection())
         if self._empty_copy is None:
             self._empty_copy = _EmptyCopy(self)
         mime = self._empty_copy.qt_data()
@@ -2777,8 +2836,9 @@ class HtmlEditor(QTextEdit):
         """The selection as other apps get it: each of the app's own objects
         as its Outside. In ``html``, audio and video as a link to it and a
         picture as its address or its bytes; in text, each as its address
-        or its name, never the object's stand-in character."""
-        fragment = self.textCursor().selection()
+        or its name, never the object's stand-in character. A photo group,
+        as its paragraphs."""
+        fragment = photo_group.unfolded_fragment(self.textCursor().selection())
         if self._outside is None:
             return fragment
         doc = QTextDocument()

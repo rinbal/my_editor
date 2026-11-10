@@ -107,6 +107,8 @@ from library_window import FILE_LIST_PANEL, SIDEBAR_PANEL, LibraryWindow
 from sheet_window import SheetWindow
 import link_url
 import paste
+import export_pictures
+import photo_group
 import rich_text
 import image_safety
 import url_safety
@@ -1494,6 +1496,8 @@ class MainWindow(QMainWindow):
         ed.set_object_lookup(self._outside_of)
         ed.set_local_image_resolver(lambda name, e=ed: self._resolve_local_image(e, name))
         ed.set_web_image_resolver(self._resolve_web_image)
+        ed.picture_look_requested.connect(lambda name, e=ed: self._look_at_picture(e, name))
+        ed.set_picture_look_check(self._picture_look_shown)
         ed.set_library_check(lambda url: self._library_file_at(url) is not None)
         ed.set_media_badges(lambda name, e=ed: self._media_badge(e, name))
         ed.set_drop_check(self._accepts_drop)
@@ -6117,6 +6121,75 @@ class MainWindow(QMainWindow):
         parts.append("\n}")
         return "".join(parts)
 
+    def _held_picture_bytes(self, url: str) -> Optional[bytes]:
+        """The bytes of the picture at a web address, when this app holds
+        them: one it uploaded, or one the text showed (RemoteImages)."""
+        asset = self._asset_manager.find_by_url(url)
+        if asset is not None:
+            data = self._asset_manager.resolve_bytes(asset.key)
+            if data:
+                return data
+        return self._web_images.raw(url)
+
+    def _picture_look_shown(self) -> bool:
+        panel = getattr(self, "_picture_look", None)
+        return panel is not None and panel.isVisible()
+
+    def _look_at_picture(self, editor, name: str) -> None:
+        """Quick Look of a picture of a photo group (double-click, or Space
+        with it selected), or Quick Look away ("")."""
+        panel = getattr(self, "_picture_look", None)
+        if not name:
+            if panel is not None:
+                panel.close()
+            return
+        path = self._picture_file(editor, photo_group.without_wide(name))
+        if path is None:
+            editor.notice.emit(_("This picture can’t be shown yet: it hasn’t arrived."))
+            return
+        if panel is None:
+            from quick_look import QuickLookPanel
+            panel = self._picture_look = QuickLookPanel(self, is_dark=self.is_dark_theme)
+            # Back to the text it was opened from, as Quick Look does.
+            panel.closed.connect(lambda: self.current_editor() and self.current_editor().setFocus())
+        panel.show_path(path)
+
+    def _picture_file(self, editor, name: str) -> Optional[str]:
+        """A file Quick Look can show for the picture called ``name``: the
+        picture's own file beside the document, else its bytes (one of
+        this app's pictures, or one from the web it holds) in a file of
+        this window's that goes when the app quits."""
+        doc_path = getattr(editor, "_file_path", "") or ""
+        if doc_path and not export_pictures.is_web_address(name):
+            found = image_safety.ImageRootPolicy(
+                MainWindow._image_roots(doc_path, MainWindow._picture_roots(self))).resolve(name)
+            if found is not None:
+                return str(found)
+        if export_pictures.is_web_address(name):
+            data = self._held_picture_bytes(name)
+        else:
+            data = self._asset_manager.resolve_bytes(name)
+        # Only a picture the app itself would decode (never SVG, never a
+        # decompression bomb).
+        ext = image_safety.sniff_image_ext(data) if data else None
+        if not data or not ext or image_safety.declared_size(data) is None:
+            return None
+        if getattr(self, "_look_files", None) is None:
+            from PySide6.QtCore import QTemporaryDir
+            self._look_files = QTemporaryDir()
+        if not self._look_files.isValid():
+            return None
+        import hashlib
+        path = os.path.join(self._look_files.path(),
+                            f"picture-{hashlib.sha1(name.encode('utf-8')).hexdigest()[:16]}{ext}")
+        if not os.path.exists(path):
+            try:
+                with open(path, "wb") as out:
+                    out.write(data)
+            except OSError:
+                return None
+        return path
+
     def _save_as_pdf(self, editor, path: str) -> bool:
         """Export via the native Qt PDF pipeline (export_pdf.py): document
         metadata, persisted page setup, page-number footer, images capped
@@ -7168,7 +7241,7 @@ class MainWindow(QMainWindow):
         if not editing:
             return False, False
         return (MainWindow._caret_in_code(ed),
-                ed.textCursor().currentTable() is not None)
+                rich_text.table_at(ed.textCursor()) is not None)
 
     @staticmethod
     def _caret_in_code(ed) -> bool:
@@ -7546,7 +7619,7 @@ class MainWindow(QMainWindow):
         # The Format menu's own submenus, by their menu action: given to
         # addMenu, PySide makes this menu, built for one click, their owner,
         # and they would go with it.
-        if self._editor_kind(editor) == "rich" and editor.textCursor().currentTable() is not None:
+        if self._editor_kind(editor) == "rich" and rich_text.table_at(editor.textCursor()) is not None:
             # In a table: its rows and columns.
             menu.addAction(self.m_table.menuAction())
             menu.addSeparator()
@@ -8081,8 +8154,13 @@ class MainWindow(QMainWindow):
             if ed is None:
                 continue
             doc = ed.document()
-            if url in set(iter_image_names(doc)):
-                ed.add_picture_resource(url, image)
+            # The picture by each name it has here: its address, and its
+            # address with #wide (photo_group).
+            names = [name for name in set(iter_image_names(doc))
+                     if photo_group.without_wide(name) == url]
+            for name in names:
+                ed.add_picture_resource(name, image)
+            if names:
                 doc.markContentsDirty(0, doc.characterCount())
             pane = getattr(ed, "_preview_pane", None)
             if pane is not None and pane.isVisible():

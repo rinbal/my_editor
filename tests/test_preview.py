@@ -229,3 +229,52 @@ def test_the_widget_uses_only_the_images_it_is_given():
     QApplication.processEvents()
     assert seen == ["https://x.example/a.png"]
     view.close()
+
+
+# -- photo groups --------------------------------------------------------------------------
+# The preview shows a group as readers do: the mosaic in a wide column,
+# below 600 pixels the runs, each strip one picture a line (nothing here
+# swipes); every picture whole.
+
+import photo_group  # noqa: E402
+from tests.photo_corners import SHAPES, image_of, shows_whole  # noqa: E402
+
+STRIPPED = ("![a](landscape.png)\n\n![b](photo.png)\n\n![c](photo.png)\n\n![d](landscape.png)\n\n"
+            "![e](portrait.png)\n\n*A caption under the portrait*\n\n![f](plan.png#wide)\n")
+
+
+def _group_preview(width):
+    from PySide6.QtWidgets import QApplication as App
+    view = pv.NostrPreview(images=lambda name: image_of(name) if name in SHAPES else None)
+    view.resize(width, 3200)
+    view.show_markdown(STRIPPED)
+    view.show()
+    App.processEvents()
+    return view
+
+
+@pytest.mark.parametrize("width", [1000, 420])
+def test_a_group_in_the_preview_shows_every_picture_whole(width):
+    view = _group_preview(width)
+    shot = view.viewport().grab().toImage()
+    boxes = photo_group.picture_boxes(view.document())
+    assert len(boxes) == 6
+    for _p, name, box in boxes:
+        assert shows_whole(shot, box), name
+        assert box.right() <= view.viewport().width()
+    view.close()
+
+
+def test_a_narrow_preview_shows_the_runs_strips_one_picture_a_line():
+    wide = _group_preview(1000)
+    assert photo_group.arrangement_of(wide.document()) == photo_group.MOSAIC
+    narrow = _group_preview(420)
+    assert photo_group.arrangement_of(narrow.document()) == photo_group.NARROW
+    tops = [round(box.top()) for _p, _n, box in photo_group.picture_boxes(narrow.document())]
+    assert len(set(tops)) == len(tops)
+    narrow.resize(1000, 3200)
+    from PySide6.QtWidgets import QApplication as App
+    App.processEvents()
+    assert photo_group.arrangement_of(narrow.document()) == photo_group.MOSAIC
+    wide.close()
+    narrow.close()

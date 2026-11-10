@@ -51,6 +51,7 @@ import rich_text
 from atomic_file import write_text
 from doc_walk import iter_blocks, iter_image_names
 from export_html import normalize_after_set_html
+import photo_group
 from markdown_writer import holds_faithfully, read_markdown
 from nostr.media.assets import ASSET_SCHEME
 
@@ -205,6 +206,10 @@ def load_backup_content(editor, record: dict, *, modified: bool = True) -> None:
             apply_structure(editor.document(), structure)
         elif isinstance(markdown, str) and markdown:
             _restore_older_markdown(editor.document(), markdown)
+        if record.get("photo_groups") is True:
+            # Kept as their paragraphs (HTML has no place for a group):
+            # shown as the groups they were.
+            photo_group.fold(editor.document())
     if record.get("markdown_source"):
         # Opened as its Markdown text: it is still saved as written.
         editor._markdown_source = True
@@ -466,13 +471,14 @@ class EditorBackup:
         """The document's lock when it is locked with a password, else None."""
         return getattr(self._editor, "_lock", None)
 
-    def _snapshot(self) -> str:
-        """The HTML to persist, with big inline images externalized.
+    def _snapshot(self, doc) -> str:
+        """The HTML to persist of ``doc``, with big inline images
+        externalized.
 
         Only the snapshot string is rewritten; the live document keeps
         whatever spelling it had, so nothing the user can see changes.
         """
-        content = self._editor.document().toHtml()
+        content = doc.toHtml()
         # A locked document's pictures stay inside its sealed record.
         if self._externalize is None or self._lock() is not None:
             return content
@@ -502,8 +508,11 @@ class EditorBackup:
         if (revision, identity, locked) == self._written_revision and os.path.exists(self.path):
             return True
 
-        content = self._snapshot()
-        structure = structure_of(doc)
+        # A photo group is kept as its paragraphs, which HTML holds, and
+        # folded again on restore (photo_groups).
+        plain = photo_group.unfolded(doc)
+        content = self._snapshot(plain)
+        structure = structure_of(plain)
         # The fingerprint covers the structure and the tab's identity too:
         # a change only they show (a paragraph turned into a quote, a draft
         # saved under another identifier) is still written.
@@ -536,6 +545,8 @@ class EditorBackup:
         }
         if structure is not None:
             record["structure"] = structure
+        if plain is not doc:
+            record["photo_groups"] = True
         if getattr(self._editor, "_markdown_source", False):
             record["markdown_source"] = True
         record.update(identity)

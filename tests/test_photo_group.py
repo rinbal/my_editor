@@ -464,3 +464,22 @@ def test_the_engine_lays_a_group_of_twelve_out_in_under_2_ms_of_cpu():
     rounds = 50
     spent = _cpu(lambda: [photo_layout.layout(items) for _ in range(rounds)])
     assert spent / rounds < 0.002
+
+
+def test_a_caption_wider_than_its_picture_wraps_under_it(app):
+    """No picture is drawn over another: Qt gives a column of words its
+    whole width, taken from the pictures beside it, unless a picture's
+    line may not break (_write_unit)."""
+    markdown = ("![a](landscape.png)\n\n![b](portrait.png)\n\n"
+                "*A caption far wider than the narrow portrait above it*\n")
+    view = _shown(markdown, 700)
+    doc = view.document()
+    boxes = {name: box for _p, name, box in photo_group.picture_boxes(doc)}
+    assert not boxes["landscape.png"].intersects(boxes["portrait.png"])
+    caption = doc.find("A caption far wider").block()
+    rect = doc.documentLayout().blockBoundingRect(caption)
+    assert rect.left() >= boxes["landscape.png"].right()
+    assert rect.right() <= view.viewport().width()
+    shot = view.viewport().grab().toImage()
+    assert all(shows_whole(shot, box) for box in boxes.values())
+    view.close()

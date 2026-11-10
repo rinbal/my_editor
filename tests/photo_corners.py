@@ -45,8 +45,12 @@ def image_of(name: str) -> QImage:
 
 
 def corner_colours(shot: QImage, box: QRectF) -> List[QColor]:
-    """The colours 3 % of the box's short side inside each of its corners."""
-    inset = max(2.0, min(box.width(), box.height()) * 0.03)
+    """The colours 3 % of the box's short side inside each of its corners,
+    and one pixel more: a picture is drawn on whole pixels, so its edge
+    can be a pixel off its box, which in a picture 100 pixels wide is a
+    third of the way from 3 % to the white edge of a corner's square
+    (its colour runs from 2.3 % to 10.2 % of the short side)."""
+    inset = min(box.width(), box.height()) * 0.03 + 1.0
     left, top = box.left() + inset, box.top() + inset
     right, bottom = box.right() - inset, box.bottom() - inset
     ratio = shot.devicePixelRatio() or 1.0

@@ -122,6 +122,10 @@ REGULAR_CAP_VH = 0.72
 # A caption's paragraph sits this share of the text's font size under its
 # picture (the readers: 0.6em of a caption at 0.833em).
 CAPTION_GAP_EM = 0.5
+# Room above and below a group, in the text's font size: a group stands
+# apart from the paragraphs around it, as a figure does (the readers give
+# it 2em of their larger type).
+GROUP_MARGIN_EM = 1.0
 
 # A picture's address ending in this asks for a picture as wide as the page.
 WIDE_SUFFIX = "#wide"
@@ -513,6 +517,11 @@ def _write_unit(cursor: QTextCursor, unit: Unit, caption_gap: float) -> None:
     """A unit in a cell: its picture's paragraph, then its caption's."""
     fmt = _placed(unit.block_format, 0)
     fmt.setProperty(UNIT, unit.number)
+    # Its line never breaks: Qt then keeps the picture's column at least
+    # as wide as the picture, and a caption wider than its picture wraps
+    # under it (Qt gives a column of words their whole width otherwise,
+    # taken from the pictures beside it).
+    fmt.setNonBreakableLines(True)
     if unit.join is not None:
         fmt.setProperty(JOIN, unit.join)
     else:
@@ -576,17 +585,18 @@ def narrow_rows(items: List[dict]) -> List[_Row]:
 
 
 def _build(cursor: QTextCursor, units: List[Unit], rows: List[_Row], arrangement: str,
-           number: int, gap: float, caption_gap: float) -> None:
+           number: int, gap: float, caption_gap: float, margin: float) -> None:
     """The tables of one group at ``cursor`` (an empty paragraph, which
-    stays before them)."""
+    stays before them), ``margin`` above and below them."""
     _structural(cursor)
     for r, row in enumerate(rows):
         columns = len(row.cells) + 2
         fmt = _plain_table_format(columns)
         fmt.setProperty(GROUP, number)
         fmt.setProperty(ARRANGEMENT, arrangement)
-        if r:
-            fmt.setTopMargin(gap)
+        fmt.setTopMargin(gap if r else margin)
+        if r == len(rows) - 1:
+            fmt.setBottomMargin(margin)
         table = cursor.insertTable(1, columns, fmt)
         for c in range(columns):
             cell = table.cellAt(0, c)
@@ -635,6 +645,7 @@ def fold(doc: QTextDocument, sizes: Optional[SizeLookup] = None, *,
         sizes = sizes_of(doc)
     gap = float(photo_layout.CONSTANTS["phone" if narrow else "regular"]["gap"])
     caption_gap = _caption_gap(doc)
+    margin = round(GROUP_MARGIN_EM * _font_pixels(doc), 2)
     cursor = QTextCursor(doc)
     cursor.beginEditBlock()
     for group in reversed(groups):
@@ -647,7 +658,7 @@ def fold(doc: QTextDocument, sizes: Optional[SizeLookup] = None, *,
         cursor.setPosition(group.end, QTextCursor.MoveMode.KeepAnchor)
         cursor.removeSelectedText()
         _build(cursor, units, rows, NARROW if narrow else MOSAIC, next(_numbers), gap,
-               caption_gap)
+               caption_gap, margin)
     cursor.endEditBlock()
     return len(groups)
 
@@ -658,6 +669,12 @@ def fold(doc: QTextDocument, sizes: Optional[SizeLookup] = None, *,
 
 def is_group_table(frame) -> bool:
     return isinstance(frame, QTextTable) and frame.format().hasProperty(GROUP)
+
+
+def lays_out_group(table) -> bool:
+    """Whether ``table`` is a row of a group or a stack in one."""
+    return is_group_table(table) or (isinstance(table, QTextTable)
+                                     and table.format().boolProperty(STACK))
 
 
 def is_structure(block) -> bool:
@@ -676,6 +693,10 @@ def _own_format(fmt: QTextBlockFormat) -> QTextBlockFormat:
         out.setBottomMargin(float(out.property(OWN_BOTTOM)))
     for prop in (UNIT, JOIN, CAPTION, CAPTION_JOIN, OWN_TOP, OWN_BOTTOM, STRUCTURE):
         out.clearProperty(prop)
+    if fmt.hasProperty(UNIT):
+        # Set in a group only (_write_unit): a picture paragraph never has
+        # it otherwise (code blocks, which do, are never in a group).
+        out.clearProperty(QTextFormat.Property.BlockNonBreakableLines)
     return out
 
 
@@ -837,8 +858,11 @@ def copy_of(doc: QTextDocument) -> QTextDocument:
     keeps a clone() alive as long as the document it was cloned from.)"""
     copy = QTextDocument()
     copy.setDefaultFont(doc.defaultFont())
+    copy.setDefaultTextOption(doc.defaultTextOption())
+    copy.setIndentWidth(doc.indentWidth())
     copy.setDocumentMargin(doc.documentMargin())
     QTextCursor(copy).insertFragment(QTextDocumentFragment(doc))
+    copy.rootFrame().setFrameFormat(doc.rootFrame().frameFormat())
     return copy
 
 
@@ -850,6 +874,17 @@ def unfolded(doc: QTextDocument) -> QTextDocument:
     copy = copy_of(doc)
     unfold(copy)
     return copy
+
+
+def unfolded_fragment(fragment: QTextDocumentFragment) -> QTextDocumentFragment:
+    """``fragment`` (a selection) with the groups in it as their
+    paragraphs: what a copy gives other apps and a paste here reads."""
+    doc = QTextDocument()
+    QTextCursor(doc).insertFragment(fragment)
+    if not has_groups(doc):
+        return fragment
+    unfold(doc)
+    return QTextDocumentFragment(doc)
 
 
 def paragraphs_document(units: Sequence[Unit]) -> QTextDocument:
@@ -1229,3 +1264,26 @@ def picture_boxes(doc: QTextDocument) -> List[Tuple[int, str, QRectF]]:
                     break
             block = block.next()
     return out
+
+
+def picture_at(doc: QTextDocument, point) -> Optional[Tuple[int, str]]:
+    """The group picture drawn at ``point`` (the document's coordinates):
+    its position and name, or None."""
+    for position, name, box in picture_boxes(doc):
+        if box.contains(point):
+            return position, name
+    return None
+
+
+def group_picture_at_cursor(cursor: QTextCursor) -> Optional[str]:
+    """The name of the group picture ``cursor`` selects, alone, or None."""
+    if not cursor.hasSelection() or cursor.selectionEnd() - cursor.selectionStart() != 1:
+        return None
+    doc = cursor.document()
+    block = doc.findBlock(cursor.selectionStart())
+    if not block.blockFormat().hasProperty(UNIT):
+        return None
+    for position, text, fmt in _pieces(block):
+        if position <= cursor.selectionStart() < position + len(text) and _is_picture(text, fmt):
+            return fmt.toImageFormat().name()
+    return None
