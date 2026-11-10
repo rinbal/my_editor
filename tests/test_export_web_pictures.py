@@ -189,3 +189,26 @@ def test_a_web_picture_is_read_through_the_one_helper(app):
     assert export_pictures.picture_bytes("asset:abc", policy, asset_resolver=lambda n: own,
                                          remote_pictures=FETCHED) == (
         PHOTO, "https://blossom.example/abc.png")
+
+
+def test_the_html_export_carries_a_web_picture_on_its_own(app):
+    """Alone or in a group, a web picture the export was given is in the
+    page; one it was not given keeps its address, as before."""
+    from export_html import document_to_html
+    page = document_to_html(_doc(ALONE), "Web", remote_pictures=FETCHED)
+    assert page.count('src="data:image/png;base64,') == 1
+    assert 'data-source-url="https://pictures.example/plan.png"' in page
+    assert 'src="https://' not in page
+    without = document_to_html(_doc(ALONE), "Web")
+    assert 'src="https://pictures.example/plan.png"' in without
+
+
+def test_a_local_picture_on_its_own_larger_than_the_cap_is_not_read(app, tmp_path, monkeypatch):
+    from export_html import document_to_html
+    from image_safety import MAX_PICTURE_BYTES
+    huge = tmp_path / "huge.png"
+    with open(huge, "wb") as out:              # sparse: no disk space used
+        out.write(PHOTO)
+        out.truncate(MAX_PICTURE_BYTES + 1)
+    page = document_to_html(_doc("Words\n\n![a](huge.png)\n"), "x", image_roots=[str(tmp_path)])
+    assert "data:image" not in page

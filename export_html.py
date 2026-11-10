@@ -148,13 +148,17 @@ def _head_css() -> str:
     code {{ font-family: {_font_stack()}; }}"""
 
 
-def _render_image(img_fmt, source_url_for, policy, asset_resolver) -> str:
-    """One <img>, resolving bytes through the resolver then the policy.
+def _render_image(img_fmt, source_url_for, policy, asset_resolver,
+                  remote_pictures=None) -> str:
+    """One <img>, its bytes read as every export reads a picture
+    (export_pictures.picture_bytes): the resolver, a web picture the
+    caller gathered, then the policy.
 
     Order matters: an app-created asset is named by a key only the
     resolver understands, a legacy or foreign image is named by a path
     only the policy may read, and an image whose name is itself an
-    address (a data: URI or a third-party URL) is its own answer.
+    address (a data: URI or a third-party URL) is its own answer when
+    its bytes are not at hand.
     """
     name = img_fmt.name()
     # A picture's #wide (photo_group) is how it is laid out, not where
@@ -166,21 +170,16 @@ def _render_image(img_fmt, source_url_for, policy, asset_resolver) -> str:
         if value and value > 0:
             attrs += f' {prop}="{int(value)}"'
 
-    source_url = source_url_for(plain) if source_url_for else None
-    data = None
     resolved = asset_resolver(plain) if asset_resolver else None
     if media_files.kind_of(str(getattr(resolved, "mime", "") or "")) is not None:
         return _render_media(alt, resolved)
 
-    if resolved is not None and getattr(resolved, "data", b""):
-        data = resolved.data
-        remote_url = str(getattr(resolved, "remote_url", "") or "")
-        if remote_url:
-            source_url = remote_url
+    data, came_from = export_pictures.picture_bytes(
+        plain, policy, asset_resolver=lambda _name: resolved,
+        remote_pictures=remote_pictures)
+    source_url = came_from or (source_url_for(plain) if source_url_for else None)
     if source_url:
         attrs += f' data-source-url="{html.escape(source_url, quote=True)}"'
-    if data is None:
-        data = policy.read(plain)
 
     uri = image_data_uri(data) if data else None
     if uri is not None:
@@ -446,13 +445,13 @@ def document_to_html(doc, title: str = "", source_url_for=None, *,
     exposing ``data`` / ``remote_url``, used for images this app created
     and holds in its own cache.
 
-    remote_pictures: the bytes of web pictures of the photo groups, by
-    address (export_pictures.gather), carried in the page as the rest.
+    remote_pictures: the bytes of the document's web pictures, by address
+    (export_pictures.gather), carried in the page as the rest.
     """
     policy = ImageRootPolicy(image_roots)
 
     def render_image(img_fmt) -> str:
-        return _render_image(img_fmt, source_url_for, policy, asset_resolver)
+        return _render_image(img_fmt, source_url_for, policy, asset_resolver, remote_pictures)
 
     def picture_of(name: str):
         return _group_picture(name, policy, asset_resolver, remote_pictures, source_url_for)
