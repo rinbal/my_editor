@@ -590,10 +590,15 @@ class Submitting:
         self._fail(words.NOT_RECEIVED, Step.SIGNING, held=Held.NOTHING)
 
     def _elsewhere(self, _found: Any) -> None:
+        # A receipt for this sid with this status key, of another revision:
+        # the server stores it, so the entry says so (13).
+        self._note_stored()
         self._fail(words.ANOTHER_VERSION, None, held=Held.OTHER)
 
     def _stored_other(self, _found: StoredOther) -> None:
-        # This revision is stored, but not as it was sent (12.4).
+        # This revision is stored, but not as it was sent (12.4): a receipt
+        # for this status key all the same.
+        self._note_stored()
         self._fail(words.STORED_OTHER, None, held=Held.OTHER)
 
     # -- the first message ---------------------------------------------------

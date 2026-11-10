@@ -464,6 +464,10 @@ def test_a_lookup_that_finds_another_envelope_or_other_wraps_is_never_submitted(
     # so, and never that nothing is submitted.
     assert progress.step is Step.FAILED and progress.failure.sentence == words.STORED_OTHER
     assert progress.failure.title == words.VERSION_NOT_SUBMITTED
+    # A receipt for this status key all the same: the entry is marked
+    # stored (13), so no record of other keys is ever shown in its place.
+    [marked] = world.list.marked
+    assert marked.stored and world.list.held(marked.sid).stored
 
 
 def test_a_receipt_for_another_version_is_never_submitted():
@@ -474,6 +478,8 @@ def test_a_receipt_for_another_version_is_never_submitted():
     assert progress.step is Step.FAILED
     assert progress.failure.sentence == words.ANOTHER_VERSION
     assert progress.failure.retry is None
+    [marked] = world.list.marked                    # stored there, so marked (13)
+    assert marked.stored and world.list.held(marked.sid).stored
 
 
 def test_a_file_the_server_misses_is_uploaded_again_and_the_same_body_sent_again():
