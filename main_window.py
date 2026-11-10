@@ -21,14 +21,14 @@ from send2trash import send2trash
 import shiboken6
 from PySide6.QtCore import (
     QBuffer, QByteArray, QDateTime, QEvent, QIODevice, QObject, Qt, QLocale,
-    QMarginsF, QSize,
+    QSize,
     QTimer,
     QUrl, QFileSystemWatcher, QMimeData,
 )
 from PySide6.QtNetwork import QLocalServer
 from PySide6.QtGui import (
     QAction, QActionGroup, QKeySequence, QTextCursor, QTextDocument, QTextCharFormat, QColor,
-    QImage, QPageLayout, QPageSize, QPixmap, QGuiApplication, QDesktopServices, QFontMetrics,
+    QImage, QPixmap, QGuiApplication, QDesktopServices, QFontMetrics,
     QTextImageFormat
 )
 from PySide6.QtPrintSupport import QPrintDialog, QPrintPreviewDialog
