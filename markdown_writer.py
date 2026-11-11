@@ -509,12 +509,16 @@ def _code_span(text: str) -> str:
 
 def _wrap(text: str, marker: str) -> str:
     """``**text**`` with the spaces kept outside the markers, which is
-    where Markdown needs them for the emphasis to count."""
-    core = text.strip(" ")
+    where Markdown needs them for the emphasis to count, and a soft line
+    break at its ends too (it takes the format of the words before it):
+    "*Wort*" ending a wrapped line was written "*Wort" and the next line
+    began with the star, so the emphasis was gone."""
+    edges = " " + _SOFT
+    core = text.strip(edges)
     if not core:
         return text
-    lead = text[:len(text) - len(text.lstrip(" "))]
-    trail = text[len(text.rstrip(" ")):]
+    lead = text[:len(text) - len(text.lstrip(edges))]
+    trail = text[len(text.rstrip(edges)):]
     return f"{lead}{marker}{core}{marker}{trail}"
 
 

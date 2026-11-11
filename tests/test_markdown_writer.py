@@ -729,3 +729,12 @@ def test_a_file_that_holds_the_escape_mark_is_read_as_it_is():
     read_markdown(doc, "Vier Punkte &#x2E2C; und ein \\*Stern\\*.\n")
     assert doc.firstBlock().text() == "Vier Punkte ⸬ und ein *Stern*."
     assert document_to_markdown(doc, _image_as_read).endswith("\\*Stern\\*.\n")
+
+
+def test_emphasis_that_ends_a_wrapped_line_is_closed_on_it():
+    # The soft break took the italic of the word before it, and the star
+    # closing it went to the next line: "*Wort\n*weiter", no emphasis.
+    for source in ("Ein *Wort*\nweiter.\n", "*eine lange\nZeile*\n"):
+        doc = QTextDocument()
+        read_markdown(doc, source)
+        assert document_to_markdown(doc, _image_as_read) == source
