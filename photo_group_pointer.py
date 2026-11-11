@@ -77,6 +77,8 @@ class PhotoPointer(QObject):
         self._hot: Optional[str] = None
         # A press on a picture, not yet a drag: (where, the picture, on its handle).
         self._pressed: Optional[Tuple[QPoint, Picture, bool]] = None
+        # Whether the last press was this one's, and so is its release.
+        self._took = False
         # A picture or files being moved, and how: "drag", "keys", "files".
         self._session: Optional[drag.Session] = None
         self._how = ""
@@ -186,6 +188,10 @@ class PhotoPointer(QObject):
             self._editor.viewport().update()
 
     def mouse_press(self, e) -> bool:
+        self._took = self._press(e)
+        return self._took
+
+    def _press(self, e) -> bool:
         if (e.button() != Qt.MouseButton.LeftButton or e.modifiers() != Qt.KeyboardModifier.NoModifier
                 or not self._editable()):
             return False
@@ -230,12 +236,16 @@ class PhotoPointer(QObject):
         return True
 
     def mouse_release(self, e) -> bool:
+        took, self._took = self._took, False
         if self._session is not None and self._how == "drag":
             self._drop()
             return True
         pressed, self._pressed = self._pressed, None
         if pressed is None:
-            return False
+            # A chip or a caption done with at the press: Qt's release
+            # would move the caret, the page with it, and select the photo
+            # under the pointer then.
+            return took
         _start, picture, on_handle = pressed
         self._photos.select(picture.position, quiet=False)
         if on_handle and picture.grouped:

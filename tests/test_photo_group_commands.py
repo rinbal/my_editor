@@ -703,3 +703,30 @@ def test_a_caption_on_a_picture_that_shares_a_paragraph_is_kept():
               "After."),
         [(3, ["", "Neu", ""])], ["Neu"])
     ed.close()
+
+
+@pytest.mark.parametrize("chip", [photo_group_overlay.ALT, photo_group_overlay.BIG])
+def test_a_chip_clicked_is_done_with_at_the_press(said, chip):
+    # Gate RG-PG2E-c 3: the release went on to Qt's, which put the caret
+    # where the pointer was: the page moved, and the photo under the
+    # pointer then was selected and named. (Large moves the photo to a
+    # row of its own, and the view shows it there, at the press.)
+    words = [f"Line {number} beside the photos." for number in range(30)]
+    ed = _editor(_text(*words, ONE, TWO, THREE, *words), width=600)
+    ed.resize(600, 500)
+    QApplication.processEvents()
+    photos, bar = ed.photos, ed.verticalScrollBar()
+    second = photo_group_actions.picture_at(ed.document(), _group(ed).start + 1)
+    bar.setValue(bar.value() + int(photos.to_view(photos.box_of(second)).top()) - 40)
+    QApplication.processEvents()
+    page = bar.value()
+    point = photos.pointer._chips(second).boxes[chip].center()
+    _mouse(ed, QEvent.Type.MouseMove, point, Qt.MouseButton.NoButton)
+    _mouse(ed, QEvent.Type.MouseButtonPress, point, Qt.MouseButton.LeftButton)
+    pressed = (bar.value(), photos.current().place, list(said))
+    _mouse(ed, QEvent.Type.MouseButtonRelease, point, Qt.MouseButton.NoButton)
+    QApplication.processEvents()
+    assert (bar.value(), photos.current().place, said) == pressed
+    assert photos.current().place == 2
+    assert chip != photo_group_overlay.ALT or bar.value() == page
+    ed.close()
