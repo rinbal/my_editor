@@ -13572,3 +13572,6 @@ msgstr "{name} wurde heute schon erinnert."
 #, python-brace-format
 msgid "{name} wasn’t reminded."
 msgstr "{name} wurde nicht erinnert."
+
+msgid "Your signer app asks once more in a moment: with it, MyEditor deletes the private copies of your article."
+msgstr "Deine Signer-App fragt gleich noch einmal: damit löscht MyEditor die privaten Kopien deines Artikels."

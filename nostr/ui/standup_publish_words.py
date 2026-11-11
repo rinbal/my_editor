@@ -38,6 +38,10 @@ NOT_REPORTED = N_("Published. {publication} doesn’t know yet: try again in a m
 # publishedD; another d would not be this work's), so it is only said.
 ADDRESS_TAKEN = N_("Published. {publication} already lists another article under this "
                    "link name, so it can’t list this one.")
+# Right before the signer app is asked to delete the encrypted copies
+# (RG-M4-b 12): one quiet line in the done state.
+CLEANUP_ASKS = N_("Your signer app asks once more in a moment: with it, MyEditor deletes the "
+                  "private copies of your article.")
 NOT_PUBLISHABLE = N_("This version can’t be published as it is. Ask the editorial team "
                      "in the conversation.")
 # How many relays a link to the article names (NIP-19).
@@ -58,7 +62,8 @@ class Stage(Enum):
     FAILED = "failed"                   # nothing went out; the pictures were taken down
 
 
-__all__ = ["ADDRESS_TAKEN", "BUSY", "BUSY_DETAIL", "BUSY_SIGNING", "DONE", "LINK_RELAYS",
+__all__ = ["ADDRESS_TAKEN", "BUSY", "BUSY_DETAIL", "BUSY_SIGNING", "CLEANUP_ASKS", "DONE",
+           "LINK_RELAYS",
            "NOT_CHECKED", "NOT_PUBLISHABLE", "NOT_PUBLISHED", "NOT_REPORTED", "NOT_THE_SAME",
            "PICTURE_NOT_FOUND", "PICTURE_NOT_UP", "SOMEONE_ELSES", "Stage", "TOO_LONG_ELSEWHERE",
            "TOO_LONG_HERE"]

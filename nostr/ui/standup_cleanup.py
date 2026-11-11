@@ -49,6 +49,9 @@ class BlobCleanup(QObject):
         self._unknown: set = set()        # a revision did not verify: not again this run
         self._asked = False                # a signer app: one round per run
         self._waiting: set = set()         # published here, its report being read
+        # sid -> what says, right before the signer app is asked, that it
+        # asks once more and why (RG-M4-b 12).
+        self._telling: Dict[str, Callable[[], None]] = {}
         following.detail_changed.connect(self._read)
 
     @property
@@ -64,10 +67,15 @@ class BlobCleanup(QObject):
             self._asked = True
             self._clean([sid, *(s for s in self._following.reading.read_sids() if s != sid)])
 
-    def after_publishing(self, sid: str) -> None:
+    def after_publishing(self, sid: str,
+                         on_asking: Optional[Callable[[], None]] = None) -> None:
         """The person just published ``sid`` with their signer here: its
-        report is read with the submission, then the files go."""
+        report is read with the submission, then the files go.
+        ``on_asking()`` comes right before the signer app is asked for
+        them (never with the key on this computer: no one is asked)."""
         self._waiting.add(sid)
+        if on_asking is not None and not self._here:
+            self._telling[sid] = on_asking
         self._following.open(sid)
 
     # -- what goes ---------------------------------------------------------------------------
@@ -158,6 +166,9 @@ class BlobCleanup(QObject):
 
             asked = cleanup.left(entry, pairs)
             if asked:
+                tell = self._telling.pop(sid, None)
+                if tell is not None:
+                    tell()
                 self._store.delete_on_servers(asked, live(self._account, deleted))
             else:
                 deleted([])

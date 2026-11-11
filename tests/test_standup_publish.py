@@ -213,7 +213,7 @@ def accepted():
 
 
 def _run(case, *, store=None, took=(True,), reread_hash=None, key_here=False, profile=None,
-         relays_hold=None, changed_from=0):
+         relays_hold=None, changed_from=0, cleanup=None):
     store = store or FakeStore()
     jobs = []
     following, api = case.following, case.writer.api
@@ -240,7 +240,7 @@ def _run(case, *, store=None, took=(True,), reread_hash=None, key_here=False, pr
         fetch=lambda url, on_success, on_failure: on_success(case.cipher)
         if url.endswith(case.entry["cipher_sha256"]) else on_failure("404"),
         job=job, key_here=lambda: key_here, serve=following.serve, reread=reread,
-        held_at=held_at, clock=case.world.clock,
+        held_at=held_at, clock=case.world.clock, cleanup=cleanup,
         relays_hold=relays_hold or (lambda _unsigned, done: done({"wss://r.example": (True, [])})))
     run = AcceptedPublish(sid=case.sid, profile=profile or case.writer.profile,
                           version=following.reading.latest(case.sid),
@@ -648,6 +648,32 @@ def test_the_published_revision_comes_from_signed_words_never_the_servers():
                                          corrections={"cd" * 32: 2}, **later) == 2
 
 
+def test_right_before_the_signer_app_is_asked_again_the_done_sheet_says_why(accepted):
+    # RG-M4-b 12: through a signer app, the deletion asks once more right
+    # after "Veröffentlicht."; one quiet line says so just before.
+    from nostr.standup.cleanup import Cleanups
+    from nostr.ui.standup_cleanup import BlobCleanup
+    world, writer, following, sid, _own = _published_with_pictures()
+    store, kept, said = FakeStore(), {}, []
+    cleaner = BlobCleanup(following, writer, SimpleNamespace(user_pubkey=pk("writer"),
+                                                             is_local=False),
+                          store=store, cleanups=Cleanups(pk("writer"), load=lambda: kept,
+                                                         save=kept.__setitem__),
+                          clock=world.clock, parent=following)
+    cleaner.after_publishing(sid, lambda: said.append(len(store.batches)))
+    world.settle()
+    assert said == [0] and len(store.batches) == 1          # said, then asked
+    from nostr.ui.standup_publish_sheet import PublishSheet
+    run, _store, _jobs = _run(accepted, cleanup=lambda _sid, asking: asking())
+    sheet = PublishSheet(run=run, publication="Magazin", number=1, is_dark=False)
+    run.start()
+    accepted.world.settle()
+    assert run.stage is Stage.DONE and sheet.status.text() == (
+        "Published. Your signer app asks once more in a moment: with it, MyEditor deletes the "
+        "private copies of your article.")
+    sheet.deleteLater()
+
+
 def test_each_submission_has_its_own_delete_token_of_at_most_32_files():
     # RG-M4-a 10: a token names at most 32 files (every server of a file
     # with it); one per submission, and one that fails fails only its own.
@@ -678,12 +704,10 @@ def test_each_submission_has_its_own_delete_token_of_at_most_32_files():
     assert not records.entry("a")["over"] and records.entry("b")["over"]
 
 
-def test_after_publication_the_encrypted_files_go_but_one_another_submission_names_stays():
-    # M-4 M14 blob deletion: quietly, from the verified revisions' signed
-    # blob lists and the writer's servers; only a file's last user removes it.
+def _published_with_pictures():
+    """A published submission of the writer's with two pictures, one of
+    which another submission names too."""
     from nostr.bech32 import encode_naddr
-    from nostr.standup.cleanup import SETTINGS_KEY, Cleanups
-    from nostr.ui.standup_cleanup import BlobCleanup
     world = FollowWorld()
     writer = world.account()
     shared, own = _picture()[0], _picture()[0]
@@ -708,6 +732,15 @@ def test_after_publication_the_encrypted_files_go_but_one_another_submission_nam
     following = world.following(writer)
     following.open(other.body["submission_id"])         # its revision names the shared file
     world.settle()
+    return world, writer, following, sid, own
+
+
+def test_after_publication_the_encrypted_files_go_but_one_another_submission_names_stays():
+    # M-4 M14 blob deletion: quietly, from the verified revisions' signed
+    # blob lists and the writer's servers; only a file's last user removes it.
+    from nostr.standup.cleanup import SETTINGS_KEY, Cleanups
+    from nostr.ui.standup_cleanup import BlobCleanup
+    world, writer, following, sid, own = _published_with_pictures()
     store, kept = FakeStore(), {}
     BlobCleanup(following, writer, SimpleNamespace(user_pubkey=pk("writer"), is_local=True),
                 store=store, cleanups=Cleanups(pk("writer"), load=lambda: kept,

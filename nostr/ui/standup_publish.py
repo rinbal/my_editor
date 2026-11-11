@@ -61,7 +61,8 @@ from ..standup.publishing import Accepted
 from .standup_account import live
 from .standup_publish_job import HeldPublish, SignedHere, offers_here, publish_job, read_relays
 from .standup_publish_words import (
-    ADDRESS_TAKEN, BUSY, BUSY_DETAIL, BUSY_SIGNING, DONE, LINK_RELAYS, NOT_CHECKED,
+    ADDRESS_TAKEN, BUSY, BUSY_DETAIL, BUSY_SIGNING, CLEANUP_ASKS, DONE, LINK_RELAYS,
+    NOT_CHECKED,
     NOT_PUBLISHABLE, NOT_PUBLISHED, NOT_REPORTED, NOT_THE_SAME, PICTURE_NOT_FOUND,
     PICTURE_NOT_UP, SOMEONE_ELSES, TOO_LONG_ELSEWHERE, TOO_LONG_HERE, Stage,
 )
@@ -104,7 +105,8 @@ class PublishPorts:
     relays_hold: Callable
     clock: Callable[[], float] = time.time
     confirm: Optional[Callable] = None
-    cleanup: Optional[Callable[[str], None]] = None     # after it is published (M14)
+    # After it is published (M14): ``cleanup(sid, on_asking)``.
+    cleanup: Optional[Callable[[str, Callable[[], None]], None]] = None
 
 
 def run_for(following, account, profile, sid: str, *, store, fetch, session_pool, relay_pool,
@@ -509,7 +511,7 @@ class AcceptedPublish(QObject):
             self._ports.serve(view)
             self._say(Stage.DONE, _(DONE), "")
             if self._ports.cleanup is not None:
-                self._ports.cleanup(self.sid)
+                self._ports.cleanup(self.sid, self._cleanup_asks)
 
         def not_reported(error) -> None:
             if not self._stopped:
@@ -521,6 +523,12 @@ class AcceptedPublish(QObject):
         self._ports.api.published(self.sid, naddr=self.naddr, event=event,
                                   revision=self._version.revision,
                                   on_success=reported, on_failure=not_reported)
+
+    def _cleanup_asks(self) -> None:
+        """The signer app is about to be asked to delete the private
+        copies: one quiet line says so in the done state (RG-M4-b 12)."""
+        if not self._stopped and self.stage is Stage.DONE:
+            self._say(Stage.DONE, self.title, _(CLEANUP_ASKS))
 
     # -- the words ---------------------------------------------------------------------------
 
@@ -615,6 +623,7 @@ class CorrectionPublish(AcceptedPublish):
 
 
 __all__ = ["ADDRESS_TAKEN", "AcceptedPublish", "BUSY", "BUSY_DETAIL", "BUSY_SIGNING",
+           "CLEANUP_ASKS",
            "CorrectionPublish", "DONE", "HeldPublish", "LINK_RELAYS", "NOT_CHECKED",
            "NOT_PUBLISHABLE",
            "NOT_PUBLISHED", "NOT_REPORTED", "NOT_THE_SAME", "PICTURE_NOT_FOUND",

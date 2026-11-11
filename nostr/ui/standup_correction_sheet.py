@@ -153,7 +153,8 @@ class CorrectionSheet(QDialog):
                            Stage.NOT_CHECKED)
         ask = stage in (Stage.SOMEONE_ELSES, Stage.TOO_LONG)    # nothing to try again: ask
         if done:
-            self.status.say(run.title)
+            # The title, then what comes next, if anything (RG-M4-b 12).
+            self.status.say(" ".join(part for part in (run.title, run.words) if part))
         elif failed or ask or stage is Stage.OFFER_HERE:
             self.status.say(run.words, error=True, title=run.title)
         elif working:
