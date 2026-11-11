@@ -753,3 +753,33 @@ def test_a_soft_wrapped_line_ends_as_a_line_end_does():
     assert [text for text, fmt in iter_block_runs(doc.firstBlock())
             if fmt.fontItalic() and text.strip()] == ["(Wort)"]
     assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_the_escape_mark_stays_out_of_addresses_and_file_names():
+    # Gate RG-PG2E-c 2: a definition in a quote or a list got the mark in
+    # its address ("notes/a⸬*b.md", "plan⸬_1.png"), and with it the save,
+    # the copy, the export and the publish payload. One the scan does not
+    # know (its label on two lines) is read without marks.
+    cases = [
+        ("> Siehe [Notiz][r] und \\*Stern\\*.\n>\n> [r]: notes/a\\*b.md\n", "notes/a*b.md"),
+        ("- ![Plan][p]\n- [p]: plan\\_1.png\n", "plan_1.png"),
+        ("Siehe [Notiz][r x].\n\n[r\nx]: notes/a\\*b.md\n\nUnd \\*Stern\\*.\n", "notes/a*b.md"),
+    ]
+    for source, address in cases:
+        doc = _read_folded(source)
+        held = [fmt.anchorHref() or fmt.toImageFormat().name()
+                for text, fmt in _runs(doc) if fmt.isAnchor() or fmt.isImageFormat()]
+        assert held == [address]
+        assert "⸬" not in document_to_markdown(doc, _image_as_read) + doc.toHtml()
+    assert "\\*Stern\\*" in document_to_markdown(_read_folded(cases[0][0]), _image_as_read)
+    # Read without marks, the stars would be saved as emphasis.
+    assert not holds_faithfully(cases[2][0])
+
+
+def test_an_escape_in_a_web_address_is_saved_escaped():
+    # A web address that holds an escape is text to Qt's reader, so its
+    # escapes are the text's (the scan stepped over it, and "\*" in it
+    # was saved bare).
+    source = "Siehe www.x.com/\\*y\\* und https://x.com/a\\_b\\_c.\n"
+    assert document_to_markdown(_read_folded(source), _image_as_read) == source
+    assert holds_faithfully(source)

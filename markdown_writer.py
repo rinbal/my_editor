@@ -1123,18 +1123,32 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
     marked, soft_mark = 0, None
     if features == READ_FEATURES:
         markdown, soft_mark, marked = _marked_soft_breaks(markdown)
-    markdown, mark = _marked_escapes(markdown)
-    doc.setMarkdown(literal_footnotes(markdown), features)
-    if alts:
-        _restore_descriptions(doc, alts)
-    joined = _join_soft_breaks(doc, soft_mark) if marked else 0
-    if mark:
-        _keep_escaped(doc, mark)
+    escaped, mark = _marked_escapes(markdown)
+    joined = _read_once(doc, escaped, features, alts, (soft_mark, marked))
+    if mark and not _keep_escaped(doc, mark, escaped.count(mark)):
+        # A mark Qt's reader put outside the text (a link's address, a
+        # picture's file, a title), where nothing takes it out: read
+        # without marks, the escapes then are saved as the writer writes
+        # text, and holds_faithfully opens the file as its text when
+        # that would change it.
+        joined = _read_once(doc, markdown, features, alts, (soft_mark, marked))
     normalize_after_markdown_load(doc)
     if groups:
         # Pictures that follow each other show as one group (photo_group).
         photo_group_find.fold(doc)
     return marked, joined
+
+
+def _read_once(doc: QTextDocument, markdown: str, features, alts: dict,
+               soft: Tuple[Optional[str], int]) -> int:
+    """Qt's reading of the marked ``markdown`` into ``doc``, the pictures
+    given their descriptions (``alts``) and the ``soft`` breaks (their
+    mark, how many) joined; how many were joined."""
+    doc.setMarkdown(literal_footnotes(markdown), features)
+    if alts:
+        _restore_descriptions(doc, alts)
+    soft_mark, marked = soft
+    return _join_soft_breaks(doc, soft_mark) if marked else 0
 
 
 # --------------------------------------------------------------------------- #
@@ -1188,21 +1202,45 @@ def _marked_escapes(markdown: str) -> Tuple[str, Optional[str]]:
     return "".join(pieces), mark
 
 
-def _keep_escaped(doc: QTextDocument, mark: str) -> None:
-    """Each ``mark`` _marked_escapes set gone, and the character after it
-    marked escaped."""
-    position = 0
+def _keep_escaped(doc: QTextDocument, mark: str, placed: int) -> bool:
+    """Each ``mark`` _marked_escapes set gone from the text, and the
+    character after it marked escaped. False when fewer than the
+    ``placed`` marks were in the text, or a format holds one (a link's
+    address, a picture's file or description, a title): it is then in
+    what is saved, copied, exported and published."""
+    position, removed = 0, 0
     text = QTextCharFormat()
     text.setProperty(ESCAPED_TEXT_PROPERTY, True)
     while True:
         cursor = doc.find(mark, position)
         if cursor.isNull():
-            return
+            break
         position = cursor.selectionStart()
         cursor.removeSelectedText()
+        removed += 1
         if doc.characterAt(position) in ESCAPABLE:
             cursor.setPosition(position + 1, QTextCursor.MoveMode.KeepAnchor)
             cursor.mergeCharFormat(text)
+    return removed == placed and not _in_formats(doc, mark)
+
+
+# Where Qt's reader puts words of the Markdown that are not its text.
+_WORDS_OUTSIDE_TEXT = (QTextFormat.Property.AnchorHref, QTextFormat.Property.TextToolTip,
+                       QTextFormat.Property.ImageName, QTextFormat.Property.ImageAltText,
+                       QTextFormat.Property.ImageTitle)
+
+
+def _in_formats(doc: QTextDocument, mark: str) -> bool:
+    """Whether a format of ``doc`` holds ``mark``: a link's address or
+    anchor, a title, a picture's file or description, a code language."""
+    for block in iter_blocks(doc):
+        if mark in block.blockFormat().stringProperty(QTextFormat.Property.BlockCodeLanguage):
+            return True
+        for _text, fmt in iter_block_runs(block):
+            if (any(mark in fmt.stringProperty(words) for words in _WORDS_OUTSIDE_TEXT)
+                    or any(mark in name for name in fmt.anchorNames())):
+                return True
+    return False
 
 
 # --------------------------------------------------------------------------- #

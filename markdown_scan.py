@@ -26,12 +26,18 @@ _CODE_INDENT = re.compile(r"^(?: {4}|\t)")
 _STARTS_INLINE = re.compile(r"[\\`<]|!\[")
 # Where an escape, or something an escape inside is no escape of, may
 # start: code, an autolink or a tag, a picture's description, a link's
-# address, a web address the reader links by itself.
-_STARTS_ESCAPE = re.compile(r"[\\`<]|!\[|\]\(|https?://|www\.")
-_WORD = re.compile(r"\S*")
+# address. A web address that holds an escape is none Qt's reader links
+# ("www.x.com/\*y" is text), so its escapes are the text's.
+_STARTS_ESCAPE = re.compile(r"[\\`<]|!\[|\]\(")
+# A line's quote marks and list markers ("> ", "- ", "1. ", "> - ").
+_CONTAINERS = r"(?:[ \t]*(?:>|(?:[-*+]|\d{1,9}[.)])(?=[ \t])))*"
+_TITLE = r"""(?:"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|\((?:[^()\\\n]|\\.)*\))"""
 # What follows a link reference definition's label ("[a]: /url 'title'"),
-# its address and title; a footnote's ("[^1]: note") is text.
-_DEFINITION = re.compile(r"^ {0,3}\[(?!\^)(?:[^\]\\\n]|\\.)+\](:[^\n]*)", re.M)
+# its address and title, in a quote or a list item too, the address or
+# the title on the next line; a footnote's ("[^1]: note") is text.
+_DEFINITION = re.compile(
+    rf"^{_CONTAINERS}[ \t]*\[(?!\^)(?:[^\]\\\n]|\\.)+\]"
+    rf"(:(?:[ \t]*\n{_CONTAINERS})?[^\n]*(?:\n{_CONTAINERS}[ \t]*{_TITLE}[ \t]*$)?)", re.M)
 
 
 def code_lines(lines: List[str]) -> List[bool]:
@@ -239,8 +245,8 @@ def pictures(markdown: str) -> List[Tuple[int, int, int]]:
 def escapes(markdown: str) -> List[int]:
     """Where each backslash escape of ``markdown`` is that a reader takes
     for the character after it (``\\*`` for a star that is no emphasis):
-    outside code, an autolink or a tag, a picture's description, a link's
-    address (a reference definition's too) and a web address."""
+    outside code, an autolink or a tag, a picture's description and a
+    link's address (a reference definition's too)."""
     blocked = _Blocked(_code_ranges(markdown)
                        + [definition.span(1) for definition in _DEFINITION.finditer(markdown)])
     found: List[int] = []
@@ -259,8 +265,6 @@ def escapes(markdown: str) -> List[int]:
         elif markdown.startswith("](", index):
             close = destination_end(markdown, index + 1)
             index = index + 2 if close is None else close + 1
-        elif markdown[index] not in "\\`<":
-            index = _WORD.match(markdown, index).end()
         else:
             skipped = skip_inline(markdown, index)
             if skipped == index + 2 and markdown[index] == "\\":
