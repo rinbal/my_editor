@@ -46,9 +46,10 @@ import announce
 from alerts import ask_try_again, confirm_destructive
 from i18n import N_, _, pgettext
 
+from .. import failures
 from ..failures import markup
 from ..standup import following as rules, formats, thread as threads
-from ..standup.errors import cause_words
+from ..standup.errors import Code, cause_words
 from . import appearance
 from .drafts_common import (
     LIST_GUTTER, MIN_CONTROL_PX, display_locale, plain_tip, secondary_font,
@@ -63,6 +64,11 @@ _COVER = 64
 NOT_OPENED = N_("This version isn’t confirmed and is not opened.")
 NOT_LOADED = N_("This submission couldn’t be loaded")
 NOT_WITHDRAWN = N_("The submission wasn’t withdrawn")
+DECIDED_MEANWHILE = N_("It wasn’t withdrawn: {publication} decided on it in the meantime.")
+# Why a withdrawal did not go, by its cause (RG-M3-a 7); any other is
+# the connection's or the server's (cause_words).
+_WITHDRAW_CAUSES = {Code.SIGNER_DECLINED: failures.SIGNER_DECLINED,
+                    Code.SIGNER_UNREACHABLE: failures.SIGNER_SILENT}
 PRIVACY = (
     N_("Only you, the others taking part and the editorial team of {publication} can read "
        "it."),
@@ -593,8 +599,14 @@ class SubmissionDetail(QWidget):
         def answered(error) -> None:
             if error is None or self._following is not following:
                 return
-            # Said once, with its cause and one way on (lessons 36).
-            cause = cause_words(error.code)
+            if error.code in (Code.INVALID_TRANSITION, Code.CONFLICT):
+                # The Redaktion decided meanwhile: where it stands now is
+                # read again and shown, with nothing to try again.
+                following.open(sid)
+                self.say(_(DECIDED_MEANWHILE).format(publication=detail.publication))
+                return
+            # Said once, with its real cause and one way on (lessons 36).
+            cause = _WITHDRAW_CAUSES.get(error.code) or cause_words(error.code)
             if ask_try_again(self, title=_(NOT_WITHDRAWN), message=_(cause),
                              is_dark=self._is_dark, nostr=True):
                 following.withdraw(sid, answered)

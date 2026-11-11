@@ -8155,7 +8155,7 @@ msgid "Published by you"
 msgstr "Von dir veröffentlicht"
 
 #: nostr/standup/thread.py:86
-#: nostr/ui/submission_detail.py:485
+#: nostr/ui/submission_detail.py:491
 msgid "Editorial team"
 msgstr "Redaktion"
 
@@ -8491,7 +8491,7 @@ msgid "The server didn’t receive your submission: try again."
 msgstr "Der Server hat deine Einreichung nicht erhalten: Versuche es erneut."
 
 #: nostr/standup/words.py:131
-#: nostr/ui/submission_detail.py:540
+#: nostr/ui/submission_detail.py:546
 msgid "Your list of submissions couldn’t be saved: check your internet connection and try again."
 msgstr "Deine Liste der Einreichungen konnte nicht gespeichert werden: Prüfe deine Internetverbindung und versuche es erneut."
 
@@ -8577,7 +8577,7 @@ msgid "MyEditor couldn’t check whether you submitted this text before"
 msgstr "MyEditor konnte nicht prüfen, ob du diesen Text schon eingereicht hast"
 
 #: nostr/standup/words.py:194
-#: nostr/ui/submission_detail.py:540
+#: nostr/ui/submission_detail.py:546
 msgid "The earlier try wasn’t discarded"
 msgstr "Der frühere Versuch wurde nicht verworfen"
 
@@ -11986,8 +11986,8 @@ msgstr "Text"
 
 #: nostr/ui/preview_parts.py:486
 #: nostr/ui/preview_parts.py:487
-#: nostr/ui/submission_detail.py:127
-#: nostr/ui/submission_detail.py:128
+#: nostr/ui/submission_detail.py:133
+#: nostr/ui/submission_detail.py:134
 msgid "More"
 msgstr "Mehr"
 
@@ -12649,7 +12649,7 @@ msgstr "Eingang der Redaktion"
 
 #: nostr/ui/standup_handoff.py:567
 #: nostr/ui/standup_ways_out.py:68
-#: nostr/ui/submission_detail.py:446
+#: nostr/ui/submission_detail.py:452
 msgctxt "submissions list"
 msgid "Reload"
 msgstr "Erneut laden"
@@ -12660,7 +12660,7 @@ msgstr "Im Eingang"
 
 #: nostr/ui/standup_privacy.py:28
 #: nostr/ui/standup_submit_sheet.py:249
-#: nostr/ui/submission_detail.py:480
+#: nostr/ui/submission_detail.py:486
 msgid "the publication"
 msgstr "der Publikation"
 
@@ -12832,7 +12832,7 @@ msgid "Submit"
 msgstr "Einreichen"
 
 #: nostr/ui/standup_submit_sheet.py:227
-#: nostr/ui/submission_detail.py:483
+#: nostr/ui/submission_detail.py:489
 msgid "Publication"
 msgstr "Publikation"
 
@@ -12920,8 +12920,8 @@ msgid "An earlier try wasn’t sent: Submit sends it again."
 msgstr "Ein früherer Versuch wurde nicht gesendet: Einreichen sendet ihn erneut."
 
 #: nostr/ui/standup_ways_out.py:51
-#: nostr/ui/submission_detail.py:203
-#: nostr/ui/submission_detail.py:451
+#: nostr/ui/submission_detail.py:209
+#: nostr/ui/submission_detail.py:457
 #: nostr/ui/submissions_view.py:384
 msgid "Discard"
 msgstr "Verwerfen"
@@ -12963,140 +12963,145 @@ msgstr "Ein Markdown-Beitrag mit festem Linknamen. Wird als Artikel veröffentli
 msgid "Summary (optional)"
 msgstr "Zusammenfassung (optional)"
 
-#: nostr/ui/submission_detail.py:63
+#: nostr/ui/submission_detail.py:64
 msgid "This version isn’t confirmed and is not opened."
 msgstr "Diese Fassung ist nicht bestätigt und wird nicht geöffnet."
 
-#: nostr/ui/submission_detail.py:64
+#: nostr/ui/submission_detail.py:65
 msgid "This submission couldn’t be loaded"
 msgstr "Diese Einreichung konnte nicht geladen werden"
 
-#: nostr/ui/submission_detail.py:65
+#: nostr/ui/submission_detail.py:66
 msgid "The submission wasn’t withdrawn"
 msgstr "Die Einreichung wurde nicht zurückgezogen"
 
 #: nostr/ui/submission_detail.py:67
 #, python-brace-format
+msgid "It wasn’t withdrawn: {publication} decided on it in the meantime."
+msgstr "Nicht zurückgezogen: {publication} hat inzwischen darüber entschieden."
+
+#: nostr/ui/submission_detail.py:73
+#, python-brace-format
 msgid "Only you, the others taking part and the editorial team of {publication} can read it."
 msgstr "Lesen können nur du, die anderen Beteiligten und die Redaktion von {publication}."
 
-#: nostr/ui/submission_detail.py:69
+#: nostr/ui/submission_detail.py:75
 msgid "The server sees the title, the status and who takes part, never the content."
 msgstr "Der Server sieht Titel, Zustand und Beteiligte, nie den Inhalt."
 
-#: nostr/ui/submission_detail.py:70
+#: nostr/ui/submission_detail.py:76
 msgid "The pictures stay encrypted on your media server until the article is published."
 msgstr "Die Bilder liegen verschlüsselt auf deinem Medienserver, bis der Artikel veröffentlicht ist."
 
-#: nostr/ui/submission_detail.py:71
+#: nostr/ui/submission_detail.py:77
 msgid "What you have read is kept in step across your devices, encrypted."
 msgstr "Was du gelesen hast, gleicht sich verschlüsselt über deine Geräte ab."
 
-#: nostr/ui/submission_detail.py:116
+#: nostr/ui/submission_detail.py:122
 msgid "Back to Submissions"
 msgstr "Zurück zu Einreichungen"
 
-#: nostr/ui/submission_detail.py:122
-#: nostr/ui/submission_detail.py:123
+#: nostr/ui/submission_detail.py:128
+#: nostr/ui/submission_detail.py:129
 msgid "Info"
 msgstr "Info"
 
-#: nostr/ui/submission_detail.py:132
+#: nostr/ui/submission_detail.py:138
 #: nostr/ui/submission_thread.py:414
 #: nostr/ui/submissions_view.py:379
 msgid "Open in Editor"
 msgstr "Im Editor öffnen"
 
-#: nostr/ui/submission_detail.py:134
+#: nostr/ui/submission_detail.py:140
 msgid "Withdraw …"
 msgstr "Zurückziehen …"
 
-#: nostr/ui/submission_detail.py:230
+#: nostr/ui/submission_detail.py:236
 msgid "End-to-end encrypted"
 msgstr "Ende-zu-Ende verschlüsselt"
 
-#: nostr/ui/submission_detail.py:259
-#: nostr/ui/submission_detail.py:260
+#: nostr/ui/submission_detail.py:265
+#: nostr/ui/submission_detail.py:266
 msgid "Message to the editorial team"
 msgstr "Nachricht an die Redaktion"
 
-#: nostr/ui/submission_detail.py:269
-#: nostr/ui/submission_detail.py:270
+#: nostr/ui/submission_detail.py:275
+#: nostr/ui/submission_detail.py:276
 msgid "Send"
 msgstr "Senden"
 
-#: nostr/ui/submission_detail.py:115
+#: nostr/ui/submission_detail.py:121
 #: nostr/ui/submissions_view.py:60
 #: nostr/ui/submissions_view.py:111
 msgid "Submissions"
 msgstr "Einreichungen"
 
-#: nostr/ui/submission_detail.py:392
-#: nostr/ui/submission_detail.py:486
+#: nostr/ui/submission_detail.py:398
+#: nostr/ui/submission_detail.py:492
 #: nostr/ui/submission_thread.py:81
 msgid "Someone"
 msgstr "Jemand"
 
-#: nostr/ui/submission_detail.py:479
+#: nostr/ui/submission_detail.py:485
 msgid "you"
 msgstr "dir"
 
-#: nostr/ui/submission_detail.py:483
+#: nostr/ui/submission_detail.py:489
 msgid "Published by"
 msgstr "Veröffentlicht von"
 
-#: nostr/ui/submission_detail.py:484
+#: nostr/ui/submission_detail.py:490
 msgid "Version"
 msgstr "Fassung"
 
-#: nostr/ui/submission_detail.py:485
+#: nostr/ui/submission_detail.py:491
 msgid "Responsible"
 msgstr "Zuständig"
 
-#: nostr/ui/submission_detail.py:396
+#: nostr/ui/submission_detail.py:402
 #, python-brace-format
 msgid "{first}, {second} and {count} more"
 msgstr "{first}, {second} und {count} weitere"
 
-#: nostr/ui/submission_detail.py:479
+#: nostr/ui/submission_detail.py:485
 msgid "the writer"
 msgstr "der schreibenden Person"
 
-#: nostr/ui/submission_detail.py:489
+#: nostr/ui/submission_detail.py:495
 msgid "Taking part"
 msgstr "Beteiligt"
 
-#: nostr/ui/submission_detail.py:585
+#: nostr/ui/submission_detail.py:591
 msgid "Withdraw this submission?"
 msgstr "Einreichung zurückziehen?"
 
-#: nostr/ui/submission_detail.py:589
+#: nostr/ui/submission_detail.py:595
 msgid "Withdraw"
 msgstr "Zurückziehen"
 
-#: nostr/ui/submission_detail.py:434
+#: nostr/ui/submission_detail.py:440
 msgid "Loading …"
 msgstr "Wird geladen …"
 
-#: nostr/ui/submission_detail.py:465
+#: nostr/ui/submission_detail.py:471
 #, python-brace-format
 msgid "{name} and the editorial team of {publication}"
 msgstr "{name} und die Redaktion von {publication}"
 
-#: nostr/ui/submission_detail.py:467
+#: nostr/ui/submission_detail.py:473
 #, python-brace-format
 msgid "The editorial team of {publication}"
 msgstr "Die Redaktion von {publication}"
 
-#: nostr/ui/submission_detail.py:500
+#: nostr/ui/submission_detail.py:506
 msgid "Encryption"
 msgstr "Verschlüsselung"
 
-#: nostr/ui/submission_detail.py:501
+#: nostr/ui/submission_detail.py:507
 msgid "History"
 msgstr "Verlauf"
 
-#: nostr/ui/submission_detail.py:586
+#: nostr/ui/submission_detail.py:592
 #, python-brace-format
 msgid "{publication} no longer sees it in its inbox then. What the editorial team already has stays there."
 msgstr "{publication} sieht sie dann nicht mehr im Eingang. Was die Redaktion schon hat, bleibt dort."

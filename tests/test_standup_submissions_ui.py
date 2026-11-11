@@ -27,6 +27,7 @@ from PySide6.QtWidgets import QApplication, QLabel
 import alerts
 from document_notice import DocumentNotice
 from nostr.standup import conversation
+from nostr.standup.errors import Code, StandupError
 from nostr.standup.following import Action
 from nostr.ui import standup_submit, submission_detail
 from nostr.ui.standup_submit import StandupWriter
@@ -340,6 +341,33 @@ def test_withdrawing_asks_first_and_cancel_is_the_default(window, monkeypatch):
     window.world.settle()
     assert detail.sentence.text() == "Withdrawn."
     assert not detail.withdraw_action.isEnabled() and not detail.composer_bar.isVisibleTo(detail)
+
+
+def test_a_withdrawal_names_its_real_cause_or_shows_what_was_decided_meanwhile(
+        window, monkeypatch):
+    world = window.world
+    prepared, entries = seeded(window, text="Ein Jahr")
+    window.follow()
+    detail = opened(window, entries["text"])
+    monkeypatch.setattr(submission_detail, "confirm_destructive", lambda *a, **k: True)
+    asked = []
+    monkeypatch.setattr(submission_detail, "ask_try_again",
+                        lambda *a, **k: asked.append(k["message"]) or False)
+    # The signer app said no: that is the cause, with Try Again.
+    monkeypatch.setattr(window.following.api_for(entries["text"].sid), "withdraw",
+                        lambda sid, ok, failed: failed(StandupError(Code.SIGNER_DECLINED)))
+    detail.withdraw_action.trigger()
+    assert asked == ["Your signer app declined the request: allow it there and try again."]
+    monkeypatch.undo()
+    monkeypatch.setattr(submission_detail, "confirm_destructive", lambda *a, **k: True)
+    monkeypatch.setattr(submission_detail, "ask_try_again", lambda *a, **k: asked.append(k))
+    # Decided meanwhile: read again and shown, nothing to try again.
+    world.decide(prepared["text"], "decline")
+    detail.withdraw_action.trigger()
+    world.settle()
+    assert len(asked) == 1 and detail.sentence.text() == "Declined."
+    assert detail.note.text() == ("It wasn’t withdrawn: Einundzwanzig Magazin decided on it in "
+                                  "the meantime.")
 
 
 def test_an_unsent_entry_offers_to_send_it_again_or_discard_it(window):
