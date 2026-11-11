@@ -434,10 +434,12 @@ class CommandRegistry(QObject):
              ) -> List[Command]:
         """What the slash menu offers for ``query`` (the words typed after
         the slash), best first: commands in a slash section, enabled,
-        Nostr ones only while Nostr is in use. A command whose title or
-        keywords have a word starting with each word of the query comes
-        before one that only contains them; otherwise the menu's order
-        (group by group, then the order the commands were made) stays."""
+        Nostr ones only while Nostr is in use. A command whose name in the
+        menu has a word starting with each word of the query comes first
+        ("/photo": Photo Group… before Image…, whose keywords have it), then
+        one whose title or keywords have, then one that only contains them;
+        otherwise the menu's order (group by group, then the order the
+        commands were made) stays."""
         order = {section: i for i, section in enumerate(sections)}
         offered = [c for c in self.available(nostr=nostr)
                    if c.slash_section in order and self.action(c.id).isEnabled()]
@@ -450,7 +452,9 @@ class CommandRegistry(QObject):
             text = " ".join((command.title, command.listed_as, *command.keywords)).lower()
             tokens = re.split(r"[^\w]+", text)
             if all(any(t.startswith(w) for t in tokens) for w in words):
-                scored.append((2, command))
+                named = re.split(r"[^\w]+", (command.insert_title or command.title).lower())
+                named_first = all(any(t.startswith(w) for t in named) for w in words)
+                scored.append((3 if named_first else 2, command))
             elif all(w in text for w in words):
                 scored.append((1, command))
         scored.sort(key=lambda pair: -pair[0])

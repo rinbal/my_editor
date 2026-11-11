@@ -2460,7 +2460,9 @@ class MainWindow(QMainWindow):
             self.act_photo[name] = add(
                 Command(f"format.photo.{name}", photo_titles[name], FORMAT, photo_keys.get(name),
                         checkable=name == photo_group_menu.LARGE,
-                        keywords=(_("photo"), _("picture"), _("image"), _("group")),
+                        keywords=(_("photo"), _("picture"), _("image"), _("group"))
+                        # Both spellings, in every language: "/foto" in English too.
+                        + (("photo", "foto") if adding else ()),
                         slash_section=slash_menu.INSERT if adding else "",
                         insert_title=_("Photo Group\u2026") if adding else ""),
                 triggered=lambda n=name: self._photo_command(n))
