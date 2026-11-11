@@ -13,11 +13,12 @@ from types import SimpleNamespace
 import pytest
 from PySide6.QtCore import QObject, Signal
 
+from nostr import events
 from nostr.standup import crypto as scrypto
 from nostr.standup import formats, publishing, views
 from nostr.ui.standup_publish import AcceptedPublish, PublishPorts, Stage
 from tests.standup_following_fakes import FollowWorld
-from tests.standup_vectors import VECTORS, pk
+from tests.standup_vectors import VECTORS, pk, sk
 
 PLAIN = b"\x89PNG picture bytes"
 SERVER = "https://media.example"
@@ -186,12 +187,14 @@ def _run(case, *, store=None, took=(True,), reread_hash=None, key_here=False, pr
     jobs = []
     following, api = case.following, case.writer.api
 
-    def reread(on_view, on_failure):
+    def reread(on_detail, on_failure):
         view = following.row(case.sid).view
         if reread_hash is not None:
-            from dataclasses import replace
             view = replace(view, revision_hash=reread_hash)
-        on_view(view)
+        on_detail(SimpleNamespace(submission=view, address_taken=False))
+
+    def held_at(address, on_author, on_failure):
+        api.article_author(address, on_author, on_failure)
 
     def job(profile, unsigned, here):
         jobs.append(FakeJob(case.writer.key, unsigned, here, list(took)))
@@ -203,7 +206,7 @@ def _run(case, *, store=None, took=(True,), reread_hash=None, key_here=False, pr
         fetch=lambda url, on_success, on_failure: on_success(case.cipher)
         if url.endswith(case.entry["cipher_sha256"]) else on_failure("404"),
         job=job, key_here=lambda: key_here, serve=following.serve, reread=reread,
-        clock=case.world.clock)
+        held_at=held_at, clock=case.world.clock)
     run = AcceptedPublish(sid=case.sid, profile=profile or case.writer.profile,
                           version=following.reading.latest(case.sid),
                           accepted=following.reading.accepted(case.sid),
@@ -254,12 +257,43 @@ def test_another_work_at_the_link_name_is_said_in_one_sentence_and_the_name_kept
     assert formats.tag_value(jobs[0].signed_event, "d") == "ein-jahr"
 
 
+def test_the_writer_release_vectors():
+    # Contract 12.4, Before the writer's work goes out (vector writer_release).
+    vector = VECTORS["writer_release"]
+
+    def may(case):
+        held = case["held"]
+        credited = None if held is None else publishing.held_credit(held, vector["address"])
+        return publishing.writer_may_release(credited, address_taken=case["address_taken"],
+                                             writer=vector["writer"])
+
+    assert all(may(case) for case in vector["may"].values())
+    assert not any(may(case) for case in vector["must_fail"].values())
+
+
+def test_nothing_goes_out_over_another_persons_article_at_the_address(accepted):
+    # RG-M4-a 2: read right before signing; another writer's article stands
+    # at the writer's address, so nothing is signed or sent, the picture
+    # stays private, and the sheet offers a question instead of Erneut.
+    other = events.sign_event({"kind": 30023, "created_at": 1, "content": "Fremd",
+                               "tags": [["d", "ein-jahr"], ["p", pk("contributor"), "", "author"]]},
+                              sk("writer"))
+    accepted.world.server.articles[f"30023:{pk('writer')}:ein-jahr"] = other
+    run, store, jobs = _run(accepted)
+    run.start()
+    accepted.world.settle()
+    assert run.stage is Stage.SOMEONE_ELSES and jobs == []
+    assert "So that it stays, nothing is published." in run.words
+    assert store.deleted == [(accepted.entry["plain_sha256"], (SERVER,))]
+    assert accepted.world.record(accepted.sid).state == "accepted"
+
+
 def test_a_submission_that_changed_meanwhile_is_not_published_and_its_picture_comes_down(
         accepted):
     run, store, jobs = _run(accepted, reread_hash="ab" * 32)
     run.start()
     accepted.world.settle()
-    assert run.stage is Stage.FAILED and jobs[0].sent == [] and jobs[0].cancelled
+    assert run.stage is Stage.FAILED and jobs == []      # read before signing: nothing signed
     assert store.deleted == [(accepted.entry["plain_sha256"], (SERVER,))]
     assert run.signed_article is None
 
@@ -375,11 +409,9 @@ def test_a_published_works_address_rests_on_its_own_event_as_the_vector_says():
 def test_after_publication_the_encrypted_files_go_but_one_another_submission_names_stays():
     # M-4 M14 blob deletion: quietly, from the verified revisions' signed
     # blob lists and the writer's servers; only a file's last user removes it.
-    from nostr import events
     from nostr.bech32 import encode_naddr
     from nostr.standup.cleanup import SETTINGS_KEY, Cleanups
     from nostr.ui.standup_cleanup import BlobCleanup
-    from tests.standup_vectors import sk
     world = FollowWorld()
     writer = world.account()
     shared, own = _picture()[0], _picture()[0]

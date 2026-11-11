@@ -13525,3 +13525,9 @@ msgstr "Die Themen fallen weg."
 #, python-brace-format
 msgid "The language becomes {language}."
 msgstr "Die Sprache wird zu {language}."
+
+msgid "Another person’s article already stands under this link name. So that it stays, nothing is published."
+msgstr "Unter diesem Linknamen steht schon ein Artikel von jemand anderem. Damit er bleibt, wird nichts veröffentlicht."
+
+msgid "A short question about publishing: "
+msgstr "Eine kurze Frage zum Veröffentlichen: "

@@ -39,7 +39,7 @@ from __future__ import annotations
 import hmac
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from PySide6.QtCore import QObject
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply
@@ -469,6 +469,22 @@ class StandupApi(SignedJsonApi):
         return self._dispatch(self._build(
             "GET", "/.well-known/nostr.json?name=bote", None, Auth.NONE,
             answers.parse_notice_pubkey, on_success, on_failure, in_envelope=False))
+
+    def article_author(self, address: str, on_success: Callable[[Optional[str]], None],
+                       on_failure) -> StandupCall:
+        """``GET /api/articles/<address>``: ``on_success(author)``, whom the
+        article this server holds at ``address`` credits, or None when it
+        holds none there (404; contract 12.4, Before the writer's work
+        goes out)."""
+        def failed(error: StandupError) -> None:
+            if error.status == 404:
+                on_success(None)
+            else:
+                on_failure(error)
+
+        return self._dispatch(self._build(
+            "GET", f"/api/articles/{quote(address, safe=':')}", None, Auth.NONE,
+            answers.parse_article_author, on_success, failed, in_envelope=False))
 
     # -- submissions (12.4) --------------------------------------------------
 

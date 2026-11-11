@@ -46,6 +46,7 @@ PUBLIC_AFTER = N_("Until now it’s private. Once published, everyone can read i
 DIFFERS = N_("The text in the editor differs from the accepted version. Publish publishes "
              "the accepted version; to publish your changes, hand them in first.")
 ONLY_YOU = N_("Only you")
+ASK_PREFIX = N_("A short question about publishing: ")
 SIGN_HERE = N_("Sign with the Key on This Computer")
 
 
@@ -56,6 +57,7 @@ class PublishSheet(QDialog):
 
     hand_in_requested = Signal(str)          # sid
     view_requested = Signal(str)             # naddr
+    ask_requested = Signal(str)              # the question's first words
 
     def __init__(self, *, run: AcceptedPublish, publication: str, number: int,
                  section: str = "", account_name: str = "", people: Sequence[str] = (),
@@ -158,9 +160,10 @@ class PublishSheet(QDialog):
         working = stage is Stage.WORKING
         done = stage is Stage.DONE
         failed = stage in (Stage.FAILED, Stage.NOT_STORED, Stage.NOT_REPORTED)
+        ask = stage is Stage.SOMEONE_ELSES      # nothing to try again: ask the Redaktion
         if done:
             self.status.say(run.title)
-        elif failed or stage is Stage.OFFER_HERE:
+        elif failed or ask or stage is Stage.OFFER_HERE:
             self.status.say(run.words, error=True, title=run.title)
         elif working:
             self.status.say(" ".join(part for part in (run.title, run.words) if part),
@@ -168,19 +171,23 @@ class PublishSheet(QDialog):
         else:
             self.status.say("")
         self.publish.setText(_("Done") if done else _(SIGN_HERE) if stage is Stage.OFFER_HERE
+                             else _("Ask a Question") if ask
                              else _("Try Again") if failed else _("Publish"))
         self.publish.setEnabled(not working)
         self.view.setVisible(done or stage is Stage.NOT_REPORTED)
         self.cancel_button.setVisible(not done)
         # Once it works, Cancel only closes: the run goes on (it is the
         # account's), and the detail shows where it is.
-        self.cancel_button.setText(_("Close") if working or failed else _("Cancel"))
+        self.cancel_button.setText(_("Close") if working or failed or ask else _("Cancel"))
         self.hand_in.setEnabled(stage in (Stage.READY, Stage.FAILED))
 
     def _primary(self) -> None:
         stage = self.run.stage
         if stage is Stage.DONE:
             self.accept()
+        elif stage is Stage.SOMEONE_ELSES:
+            self.ask_requested.emit(_(ASK_PREFIX))
+            self.reject()
         elif stage is Stage.OFFER_HERE:
             self.run.start(here=True)           # explicit, this article only (Q1)
         elif stage in (Stage.NOT_STORED, Stage.NOT_REPORTED, Stage.FAILED):

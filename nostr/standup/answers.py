@@ -382,6 +382,8 @@ class SubmissionDetail:
     internal: Tuple[views.TimelineItem, ...] = ()
     # Who signed an action here and is no member now (contract 10).
     former: Tuple[Former, ...] = ()
+    # Another submission's work stands at the writer's address (12.4).
+    address_taken: bool = False
 
 
 def parse_submission_detail(data: Mapping[str, Any]) -> SubmissionDetail:
@@ -396,7 +398,18 @@ def parse_submission_detail(data: Mapping[str, Any]) -> SubmissionDetail:
         timeline=channels["conversation"], internal=channels["internal"],
         members=tuple(parse_member(m) for m in read_list(data.get("members", []),
                                                          "the members", limit=_MAX_MEMBERS)),
-        more=_read_more(data), former=parse_formers(data.get("former")))
+        more=_read_more(data), former=parse_formers(data.get("former")),
+        address_taken=data.get("address_taken") is True)
+
+
+def parse_article_author(data: Any) -> str:
+    """``GET /api/articles/<address>`` (not in the ``ok`` envelope): who
+    the article held there credits as its author, the index's
+    ``author_pubkey`` (its first author tag, else its signer: contract
+    12.4, Before the writer's work goes out)."""
+    article = read_object(read_object(data, "the answer").get("article"), "the article")
+    return read_pubkey(article.get("author_pubkey") or article.get("pubkey"),
+                       "the article's author")
 
 
 def _read_more(data: Mapping[str, Any]) -> bool:

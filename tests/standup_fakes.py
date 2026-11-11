@@ -24,7 +24,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 from typing import Any, Callable, Dict, List, Optional, Tuple
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from coincurve import PublicKeyXOnly
 from PySide6.QtCore import QCoreApplication
@@ -420,6 +420,8 @@ class Record:
     confirmations: Dict[str, List[str]] = dc_field(default_factory=dict)
     # A correction stored and not yet published (11.2 at ceac858).
     correction_pending: bool = False
+    # Another submission's work stands at the writer's address (12.4).
+    address_taken: bool = False
     published: Optional[dict] = None
     placed: bool = False
     updated_at: int = 0
@@ -729,6 +731,8 @@ class FakeStandupServer:
         self.bote = {"pubkey": VECTORS["keys"]["bote"]["pubkey"], "npub": "npub1bote",
                      "nip05": "bote@standup.example"}
         self.publications: Dict[str, Publication] = {}
+        # The public index: what it holds at an address (``GET /api/articles``).
+        self.articles: Dict[str, dict] = {}
         event = key_event or KEY_EVENT
         content = json.loads(event["content"])
         pub = Publication(address=content["publication"], key_event=event)
@@ -865,6 +869,7 @@ class FakeStandupServer:
         ("GET", r"/api/me/editorial", "me_editorial", "session"),
         ("GET", r"/api/me/submissions", "me_submissions", "session"),
         ("GET", r"/\.well-known/nostr\.json", "nip05", "none"),
+        ("GET", r"/api/articles/(?P<address>30023:[0-9a-f]{64}:.+)", "article_get", "none"),
     ]
 
     # The routes behind context.redaktion_only (backend api, 1183930).
@@ -1153,6 +1158,17 @@ class FakeStandupServer:
         return _ok({"operator": "Einundzwanzig e.V.", "server": self.base,
                     "web_app_by": "Einundzwanzig e.V.", "bote": self.bote,
                     "inbox_relays": ["wss://inbox.example"]})
+
+    def _article_get(self, who, payload, params, query) -> FakeReply:
+        """backend api/articles.py detail: the article the index holds at
+        the address, with whom it credits (``author_pubkey``); 404 none."""
+        held = self.articles.get(unquote(params["address"]))
+        if held is None:
+            return json_reply({"error": "not found"}, status=404)
+        return json_reply({"article": {
+            "pubkey": held["pubkey"], "d": formats.tag_value(held, "d"),
+            "author_pubkey": next((t[1] for t in held["tags"] if len(t) >= 4 and t[0] == "p"
+                                   and t[3] == "author"), held["pubkey"])}})
 
     def _nip05(self, who, payload, params, query) -> FakeReply:
         return json_reply({"names": {"bote": self.bote["pubkey"]}})
@@ -1791,7 +1807,8 @@ class FakeStandupServer:
                     "members": [self._member(pub, p) for p in pub.members
                                 if self._reads_epoch(pub, p, record.epoch)],
                     # Contract 10: always there; this fake keeps no one who left.
-                    "former": []})
+                    "former": [],
+                    "address_taken": record.address_taken})
 
     def _before_messages(self, raw: bytes, who) -> Optional[FakeReply]:
         """backend post_message before the body is read: the address, then

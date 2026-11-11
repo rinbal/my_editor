@@ -481,6 +481,7 @@ class SubmissionsHost(QObject):
             is_dark=ports.is_dark(), parent=ports.window())
         sheet.hand_in_requested.connect(self.hand_in)
         sheet.view_requested.connect(self._view_naddr)
+        sheet.ask_requested.connect(lambda words: self.ask(sid, words))
         if run not in self._heard:
             # With the sheet closed, a run that could not finish says so
             # once in the detail (lessons 36); it goes on otherwise.
@@ -492,7 +493,8 @@ class SubmissionsHost(QObject):
     def _publish_said(self, run) -> None:
         sheet = self._publish_sheet
         open_here = sheet is not None and shiboken6.isValid(sheet) and sheet.isVisible()
-        if not open_here and run.stage in (Stage.FAILED, Stage.NOT_STORED, Stage.NOT_REPORTED):
+        if not open_here and run.stage in (Stage.FAILED, Stage.NOT_STORED, Stage.NOT_REPORTED,
+                                           Stage.SOMEONE_ELSES):
             self._say_in_place(run.sid, run.words)
 
     def confirm(self, sid: str) -> None:

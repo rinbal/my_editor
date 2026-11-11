@@ -22,9 +22,11 @@ that accept names, which must be the verified revision opened here:
      failure before a relay took the article.
   3. The article is built with the public addresses (credits, the
      writer's own split, carried tags as the web app does), measured
-     again, signed, and kept bound to the revision. Before it goes to
-     the relays the submission is read again: when its revision changed
-     the signed article is dropped and the pictures taken down.
+     again, signed, and kept bound to the revision. Right before it is
+     signed and again before it goes out, the submission is read: when
+     its revision changed, or another person's article stands at its
+     address (12.4, Before the writer's work goes out), nothing goes out
+     and the pictures come down.
   4. Only once a relay took it is it reported (``/published``). No
      relay took it: the same signed article goes again with Erneut. Not
      reported: Erneut reports it again (it is public by then).
@@ -70,6 +72,9 @@ PICTURE_NOT_FOUND = N_("A picture of the accepted version can’t be found on th
 PICTURE_NOT_UP = N_("A picture couldn’t be put on your media server, so nothing was "
                     "published. Check your media servers in Settings, then try again.")
 NOT_THE_SAME = N_("The submission changed in the meantime, so nothing was published.")
+# 12.4, Before the writer's work goes out: the words both apps say.
+SOMEONE_ELSES = N_("Another person’s article already stands under this link name. So that "
+                   "it stays, nothing is published.")
 NOT_REPORTED = N_("Published. {publication} doesn’t know yet: try again in a moment.")
 # 12.4 One work per address: a writer's work keeps its link name (F5A's
 # publishedD; another d would not be this work's), so it is only said.
@@ -87,6 +92,7 @@ class Stage(Enum):
     OFFER_HERE = "offer_here"           # the signer app can't sign it; the key is here (Q1)
     NOT_STORED = "not_stored"           # signed, no relay took it: Erneut sends it again
     NOT_REPORTED = "not_reported"       # out, not reported: Erneut reports it again
+    SOMEONE_ELSES = "someone_elses"     # another person's article at its address: nothing out
     DONE = "done"
     FAILED = "failed"                   # nothing went out; the pictures were taken down
 
@@ -102,7 +108,10 @@ class PublishPorts:
       signed with the key kept on this computer, Q1).
     - ``key_here()``: whether the account's key is kept on this computer.
     - ``serve(view)``: the server's newer View, for the list and the detail.
-    - ``reread(on_view, on_failure)``: the submission's View, read now.
+    - ``reread(on_detail, on_failure)``: the submission read now
+      (``answers.SubmissionDetail``: its View and ``address_taken``).
+    - ``held_at(address, on_author, on_failure)``: whom the article the
+      server holds at ``address`` credits (None: none there).
     - ``clock()``: seconds.
     - ``confirm(confirms, revision_hash, on_done)``: ``/confirmation``
       (a correction's run confirms it first).
@@ -116,6 +125,7 @@ class PublishPorts:
     key_here: Callable[[], bool]
     serve: Callable
     reread: Callable
+    held_at: Callable
     clock: Callable[[], float] = time.time
     confirm: Optional[Callable] = None
     cleanup: Optional[Callable[[str], None]] = None     # after it is published (M14)
@@ -155,9 +165,11 @@ def run_for(following, account, profile, sid: str, *, store, fetch, session_pool
         run.stop()
     api = following.api_for(sid)
 
-    def reread(on_view, on_failure) -> None:
-        api.submission(sid, live(account, lambda detail: on_view(detail.submission)),
-                       live(account, on_failure))
+    def reread(on_detail, on_failure) -> None:
+        api.submission(sid, live(account, on_detail), live(account, on_failure))
+
+    def held_at(address: str, on_author, on_failure) -> None:
+        api.article_author(address, live(account, on_author), live(account, on_failure))
 
     def job(profile, unsigned: dict, here: bool):
         return publish_job(here=here, relay_pool=relay_pool, relay_directory=relay_directory,
@@ -169,7 +181,8 @@ def run_for(following, account, profile, sid: str, *, store, fetch, session_pool
                           split_rumor_id=None, on_done=on_done)
 
     ports = PublishPorts(api=api, media_keys=account.media_keys, store=store, fetch=fetch,
-                         job=job, serve=following.serve, reread=reread, confirm=confirm,
+                         job=job, serve=following.serve, reread=reread, held_at=held_at,
+                         confirm=confirm,
                          key_here=lambda: session_pool.key_here(profile.user_pubkey),
                          cleanup=cleanup)
     made = dict(sid=sid, profile=profile, version=version, accepted=accepted,
@@ -222,7 +235,8 @@ class AcceptedPublish(QObject):
     def start(self, *, here: bool = False) -> None:
         """Veröffentlichen (or, ``here``, Mit dem Schlüssel auf diesem
         Computer signieren). Once at a time."""
-        if self.stage in (Stage.WORKING, Stage.DONE, Stage.NOT_STORED, Stage.NOT_REPORTED):
+        if self.stage in (Stage.WORKING, Stage.DONE, Stage.NOT_STORED, Stage.NOT_REPORTED,
+                          Stage.SOMEONE_ELSES):
             return
         self._here = here
         self._urls, self._created = {}, []
@@ -276,9 +290,13 @@ class AcceptedPublish(QObject):
 
     @property
     def d(self) -> str:
-        """The address it is published at: the work's own, which its
+        """The link name it is published under: the work's own, which its
         submission was made with (the server checks the coordinate)."""
         return str(self.revision["work"]["d"])
+
+    @property
+    def address(self) -> str:
+        return f"{formats.ARTICLE_KIND}:{self.writer}:{self.d}"
 
     @property
     def published_at(self) -> Optional[int]:
@@ -400,6 +418,9 @@ class AcceptedPublish(QObject):
             self._take_down()
             return
         self._say(Stage.WORKING, _(BUSY), _(BUSY_SIGNING))
+        self._check(None, lambda: self._sign_now(unsigned))
+
+    def _sign_now(self, unsigned: dict) -> None:
         job = self._job = self._ports.job(self._profile, unsigned, self._here)
         job.signed.connect(lambda _id: self._signed(job))
         job.completed.connect(lambda results: self._sent(job, results))
@@ -420,28 +441,42 @@ class AcceptedPublish(QObject):
         if job is not self._job or self._stopped:
             return
         self.signed_article = job.signed_event           # kept with its revision (12.4)
+        self._check(job, job.release)
 
-        def read(view) -> None:
-            if self._stopped or job is not self._job:
+    def _check(self, job, then: Callable[[], None]) -> None:
+        """Right before signing (``job`` None) and before the signed ``job``
+        goes out: the submission is still the one accepted here, and no other
+        person's article stands at its address (12.4); else nothing goes out."""
+        def live_now() -> bool:
+            return not self._stopped and job is self._job
+
+        def read(detail) -> None:
+            if not live_now():
                 return
+            view = detail.submission
             self._ports.serve(view)
             if view.revision_hash != self.revision_hash or view.state != self.expected_state \
                     or view.revision != self._accepted.revision:
-                self._drop(job)
-                return
-            job.release()
+                self._fail(_(NOT_THE_SAME))
+            elif detail.address_taken:
+                self._fail(_(SOMEONE_ELSES), Stage.SOMEONE_ELSES)
+            else:
+                self._ports.held_at(self.address, held, unread)
 
-        def unread(_error) -> None:
-            if not self._stopped and job is self._job:
-                self._drop(job)
+        def held(credited: Optional[str]) -> None:
+            if not live_now():
+                return
+            if publishing.writer_may_release(credited, address_taken=False, writer=self.writer):
+                then()
+            else:
+                self._fail(_(SOMEONE_ELSES), Stage.SOMEONE_ELSES)
+
+        def unread(error) -> None:
+            if live_now():
+                cause = cause_words(getattr(error, "code", ""))
+                self._fail(_(cause))
 
         self._ports.reread(read, unread)
-
-    def _drop(self, job) -> None:
-        job.cancel()
-        self.signed_article = None
-        self._take_down()
-        self._fail(_(NOT_THE_SAME))
 
     def _sent(self, job, results) -> None:
         if job is not self._job or self._stopped:
@@ -479,12 +514,17 @@ class AcceptedPublish(QObject):
 
     # -- the words ---------------------------------------------------------------------------
 
-    def _fail(self, words: str) -> None:
-        if self.stage is Stage.FAILED and self.words == words:
+    def _fail(self, words: str, stage: Stage = Stage.FAILED) -> None:
+        """Nothing goes out: a signed article is dropped and the pictures
+        come down. Another person's article at the address stays, with no
+        Erneut (it would meet it again)."""
+        if self.stage is stage and self.words == words:
             return
+        if self._job is not None:
+            self._job.cancel()
+        self.signed_article, self._job = None, None
         self._take_down()
-        self._job = None
-        self._say(Stage.FAILED, _(NOT_PUBLISHED), words)
+        self._say(stage, _(NOT_PUBLISHED), words)
 
     def _say(self, stage: Stage, title: str, words: str) -> None:
         self.stage, self.title, self.words = stage, title, words

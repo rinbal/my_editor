@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from .. import events as nostr_events
 from .. import publisher, zap_shares
@@ -302,6 +302,26 @@ def credited_writer(event: Mapping) -> Optional[str]:
     return None
 
 
+def held_credit(event: Any, address: str) -> str:
+    """Whom an event held at ``address`` credits as its author (its first
+    author tag, else its signer), or ``""`` for an event that is no valid
+    kind 30023 at that address."""
+    if not nostr_events.is_verified_event(event, kind=formats.ARTICLE_KIND) \
+            or f"{formats.ARTICLE_KIND}:{event['pubkey']}:{formats.tag_value(event, 'd')}" \
+            != address:
+        return ""
+    return credited_writer(event) or event["pubkey"]
+
+
+def writer_may_release(credited: Optional[str], *, address_taken: bool, writer: str) -> bool:
+    """Before the writer's work goes out (12.4, vector ``writer_release``):
+    nothing goes out when the server says another submission's work stands
+    at the writer's address, or when what it holds there (``credited``:
+    whom that article credits; None: nothing there) is another person's.
+    The writer's own earlier version may be replaced."""
+    return not address_taken and (credited is None or credited == writer)
+
+
 def work_address(signed: views.SignedRecord, sid: str, *, writer: str, coordinate_hash: str,
                  publication: str, checks: Optional[rules.SignedChecks] = None
                  ) -> Optional[Published]:
@@ -510,6 +530,7 @@ def correction_texts(revision: Mapping, published: Mapping) -> Tuple[str, str]:
 
 __all__ = ["Accepted", "EXTENSIONS", "NEVER_CARRIED", "NotPublishable", "Published",
            "addresses_before", "corrected_template", "correction_changes",
-           "correction_texts", "credited", "credited_writer", "media_refs_in", "media_to_publish",
-           "placed_section", "published_template", "published_work", "section_of",
-           "served_at", "verified_accept", "work_address", "work_of"]
+           "correction_texts", "credited", "credited_writer", "held_credit", "media_refs_in",
+           "media_to_publish", "placed_section", "published_template", "published_work",
+           "section_of", "served_at", "verified_accept", "work_address", "work_of",
+           "writer_may_release"]
