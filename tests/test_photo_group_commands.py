@@ -278,3 +278,44 @@ def test_undo_selects_the_picture_where_it_was_and_says_what_it_took_back(said):
     assert ed.textCursor().selectionStart() == _group(ed).start + 3
     assert said[-1] == "Redone: Move Photo"
     ed.close()
+
+
+# -- what outlives one event follows the document (gate RG-PG2E-a 1, 2, 6) ----
+
+def test_move_mode_stops_when_undo_changes_the_document_under_it():
+    ed = _selected(number=2)
+    ed.photos.run(TAKE_OUT)
+    ed.photos.select(_group(ed).start)
+    ed.photos.run(MOVE_MODE)
+    QTest.keyClick(ed, Qt.Key.Key_Right)
+    ed.undo()
+    QTest.keyClick(ed, Qt.Key.Key_Return)
+    assert _markdown(ed) == FOUR_PICTURES
+    ed.close()
+
+
+def test_a_command_run_while_a_field_is_open_writes_the_field_first():
+    ed = _selected(number=0)
+    ed.photos.run(CAPTION)
+    field = next(found for found in ed.viewport().findChildren(QWidget, "pictureField")
+                 if found.isVisible())
+    field.line.setText("New caption")
+    ed.photos.run(RIGHT)
+    assert _markdown(ed) == _text("Before.", TWO, "![one](photo.png)\n\n*New caption*", THREE,
+                                  FOUR, "After.")
+    ed.close()
+
+
+def test_leaving_an_empty_split_line_selects_the_picture_the_caret_went_to():
+    ed = _selected(number=1)
+    ed.photos.run(SPLIT)
+    QTest.keyClick(ed, Qt.Key.Key_Down)
+    assert _markdown(ed) == FOUR_PICTURES
+    picture = ed.photos.current()
+    cursor = ed.textCursor()
+    assert picture.unit.name == "portrait.png"
+    assert (cursor.selectionStart(), cursor.selectionEnd()) == (picture.position,
+                                                                picture.position + 1)
+    QTest.keyClick(ed, Qt.Key.Key_Backspace)
+    assert _markdown(ed) == _text("Before.", ONE, TWO, FOUR, "After.")
+    ed.close()

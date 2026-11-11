@@ -48,11 +48,12 @@ from photo_group_menu import (
     LEFT, MOVE_MODE, REMOVE, RIGHT, SPLIT, TAKE_OUT, UP, PhotoState,
 )
 from photo_group_pointer import PhotoPointer
+from photo_group_split import SplitLine
 
 # What each step of Undo is called (Edit > Undo "Move Photo").
 MOVE_STEP = N_("Move Photo")
 _STEPS = {LARGE: (N_("Show Large"), N_("Show Normal")), "wide": (N_("Wide"), N_("Text Width")),
-          SPLIT: N_("Split Group"), JOIN_ABOVE: N_("Join Groups"), REMOVE: N_("Remove Photo"),
+          JOIN_ABOVE: N_("Join Groups"), REMOVE: N_("Remove Photo"),
           CAPTION: N_("Caption"), DESCRIPTION: N_("Photo Description"), CROP: N_("Crop Photo")}
 
 # How long a note beside a chip stays: long enough to read (EDITING.md 9).
@@ -98,14 +99,15 @@ class PhotoEditing(QObject):
         self.quiet = False
         self._steps: Dict[int, _Step] = {}
         self._context = None
-        # The empty paragraph "Split Group Here" opened, while it waits for
-        # words: (the cursor at it, Qt's count after the split).
-        self._split: Optional[tuple] = None
+        # While above 0: the document changes by a photo command (writing).
+        self._own = 0
         self.pointer = PhotoPointer(editor, self)
         self.keys = PhotoKeys(self)
         self.fields = PhotoFields(self)
+        self.split = SplitLine(self)
         editor.cursorPositionChanged.connect(self._caret_moved)
         editor.selectionChanged.connect(self._caret_moved)
+        editor.document().contentsChange.connect(self._document_changed)
 
     # ------------------------------------------------------------------ #
     # The picture a command acts on                                       #
@@ -224,6 +226,9 @@ class PhotoEditing(QObject):
     def run(self, name: str) -> None:
         """Do the command ``name`` (one of COMMANDS) to the current picture
         (Add Photos… with none: a new group at the caret)."""
+        # A field open meanwhile (a menu-bar click leaves the focus in it)
+        # writes what it holds first.
+        self.fields.commit()
         picture = self.current()
         if picture is None and name == ADD and self.free_place() is not None:
             self.add_requested.emit(self.free_place(), None)
@@ -242,7 +247,7 @@ class PhotoEditing(QObject):
         elif name == LARGE:
             self._toggle_large(picture)
         elif name == SPLIT:
-            self._split_after(picture)
+            self.split.open(picture)
         elif name in (JOIN_ABOVE, JOIN_BELOW):
             self._join(picture, name == JOIN_BELOW)
         elif name == REMOVE:
@@ -265,7 +270,7 @@ class PhotoEditing(QObject):
         ed = self._editor
         doc = ed.document()
         before = doc.availableUndoSteps()
-        with ed.undo_step(step):
+        with self.writing(), ed.undo_step(step):
             at = change(QTextCursor(doc))
             if at is not None:
                 # Inside the step: the group written anew around it when
@@ -281,10 +286,40 @@ class PhotoEditing(QObject):
             position = ed.textCursor().position()
             self.select(position)
             found = actions.picture_at(doc, position)
-        self._steps[doc.availableUndoSteps()] = _Step(
-            before, step, start, found.position if found is not None else -1)
+        self.keep_step(before, step, start, found.position if found is not None else -1)
         self.changed.emit()
         return found
+
+    @contextmanager
+    def writing(self) -> Iterator[None]:
+        """What changes in the document meanwhile, a photo command changes."""
+        self._own += 1
+        try:
+            yield
+        finally:
+            self._own -= 1
+
+    def keep_step(self, before: int, name: str, start: int, end: int) -> None:
+        """The step that just ended (Qt's count ``before`` it) is a photo
+        step: Undo and Redo select its picture and name it (came_back)."""
+        self._steps[self._editor.document().availableUndoSteps()] = _Step(before, name, start,
+                                                                           end)
+
+    def drop_step(self, after: int) -> None:
+        """The step that ended at Qt's count ``after`` is gone."""
+        self._steps.pop(after, None)
+        self._editor.forget_step(after)
+
+    def _document_changed(self, position: int, _removed: int, _added: int) -> None:
+        """A change no photo command made (typing, Undo, another command):
+        what outlives one event stops, since it would act on a document it
+        no longer matches (move mode, a drag, a field); the split's line
+        waits on only for words written in it."""
+        if self._own:
+            return
+        self.pointer.stop(cancelled=True)
+        self.fields.close()
+        self.split.outside_change(position)
 
     def _move_in_group(self, picture: Picture, name: str) -> None:
         to = {LEFT: picture.index - 1, RIGHT: picture.index + 1, FIRST: 0,
@@ -382,45 +417,6 @@ class PhotoEditing(QObject):
             self.say(_("{photo} is shown large now, across the whole width").format(photo=photo)
                      if on else _("{photo} shown normal again").format(photo=photo))
 
-    def _split_after(self, picture: Picture) -> None:
-        if not picture.grouped or picture.index == picture.count - 1:
-            self.say(_("The group already ends after the last photo"))
-            return
-        ed = self._editor
-        doc = ed.document()
-        before = doc.availableUndoSteps()
-        with ed.undo_step(_STEPS[SPLIT]):
-            at = actions.split_after(QTextCursor(doc), picture)
-        caret = ed.textCursor()
-        caret.setPosition(at)
-        ed.setTextCursor(caret)
-        # The first words written there are part of the same step.
-        ed.type_into_last_step()
-        self._split = (QTextCursor(caret), doc.availableUndoSteps(), before)
-        self._steps[doc.availableUndoSteps()] = _Step(before, _STEPS[SPLIT], picture.position, at)
-        self.changed.emit()
-        self.say(_("Group split. Write the text between the photos; if the line stays empty, "
-                   "they belong together again."))
-
-    def _split_left_empty(self) -> None:
-        """The caret left the line a split opened, with nothing written in
-        it: the split is taken back, as if it had never been."""
-        line, after, _before = self._split
-        self._split = None
-        ed = self._editor
-        doc = ed.document()
-        block = line.block()
-        if doc.availableUndoSteps() != after or block.length() > 1:
-            return
-        caret = QTextCursor(ed.textCursor())
-        doc.undo()
-        doc.clearUndoRedoStacks(QTextDocument.Stacks.RedoStack)
-        self._steps.pop(after, None)
-        ed.forget_step(after)
-        with self.quietly():
-            ed.setTextCursor(caret)
-        self.say(_("The line stayed empty, the photos belong together again"))
-
     def _join(self, picture: Picture, down: bool) -> None:
         doc = self._editor.document()
         joined = self._act(_STEPS[JOIN_ABOVE], picture.position,
@@ -433,11 +429,11 @@ class PhotoEditing(QObject):
         doc = self._editor.document()
         ed = self._editor
         before = doc.availableUndoSteps()
-        with ed.undo_step(_STEPS[REMOVE]):
+        with self.writing(), ed.undo_step(_STEPS[REMOVE]):
             at = actions.remove(QTextCursor(doc), doc, picture)
         if doc.availableUndoSteps() == before:
             return
-        self._steps[doc.availableUndoSteps()] = _Step(before, _STEPS[REMOVE], picture.position, -1)
+        self.keep_step(before, _STEPS[REMOVE], picture.position, -1)
         left = picture.count - 1 if picture.grouped else 0
         if at is not None and left >= 2:
             self.select(at)
@@ -585,8 +581,7 @@ class PhotoEditing(QObject):
         if self.quiet:
             return
         self.pointer.caret_moved()
-        if self._split is not None and self._split[0].block() != self._editor.textCursor().block():
-            self._split_left_empty()
+        self.split.caret_moved()
         cursor = self._editor.textCursor()
         context = None
         if photo_group.is_group_block(cursor.block()) or (

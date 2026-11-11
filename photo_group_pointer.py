@@ -36,6 +36,7 @@ import accessibility_display
 import file_paths
 import image_safety
 import photo_group
+import photo_group_actions as actions
 import photo_group_drag as drag
 import photo_group_overlay as overlay
 import photo_group_view
@@ -265,6 +266,8 @@ class PhotoPointer(QObject):
         """The pressed picture follows the pointer from here."""
         self._point = QPointF(point)
         self._photos.select(picture.position)
+        # Selecting it can take an empty split line back, which moves it.
+        picture = self._photos.current() or picture
         self._start(picture, "drag")
         self._ghost = self._ghost_of(picture)
         self._editor.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
@@ -371,7 +374,9 @@ class PhotoPointer(QObject):
         target = session.target if session is not None else None
         picture = session.picture if session is not None else None
         self.stop()
-        if picture is None or target is None or target.home:
+        # Refused when its group is not the one it was picked up from.
+        if (picture is None or target is None or target.home
+                or actions.standing(self._editor.document(), picture) != picture):
             self._photos.say(_("Cancelled, the photo is back in its place"))
             if picture is not None:
                 self._photos.select(picture.position)

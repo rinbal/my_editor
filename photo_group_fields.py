@@ -20,6 +20,7 @@ from PySide6.QtCore import QRectF, Qt
 import photo_group_view
 from i18n import _
 from photo_field import PictureField
+import photo_group_actions as actions
 from photo_group_actions import Picture
 from photo_group_menu import CAPTION
 
@@ -64,12 +65,12 @@ class PhotoFields:
                        "hears this sentence read out."), **colors)
         self.close()
         self._field = field
-        position = picture.position
-        field.committed.connect(lambda words, f=field: self._done(f, kind, position, words))
-        field.cancelled.connect(lambda f=field: self._done(f, kind, position, None))
+        field.committed.connect(lambda words, f=field: self._done(f, kind, picture, words))
+        field.cancelled.connect(lambda f=field: self._done(f, kind, picture, None))
         field.place(photos.to_view(spot).toAlignedRect())
 
-    def _done(self, field: PictureField, kind: str, position: int, words: Optional[str]) -> None:
+    def _done(self, field: PictureField, kind: str, picture: Picture,
+              words: Optional[str]) -> None:
         if not shiboken6.isValid(self._photos):
             return          # the editor closed with the field open: nothing to write into
         back = field.line.hasFocus()
@@ -77,8 +78,11 @@ class PhotoFields:
             self._field = None
         field.hide()
         field.deleteLater()
-        if words is not None:
-            self._photos.set_words(kind, position, words)
+        # The picture by its number: a change of the document closes the
+        # field, but a command run meanwhile writes it first.
+        found = actions.standing(self._photos.editor.document(), picture)
+        if words is not None and found is not None:
+            self._photos.set_words(kind, found.position, words)
         if back:
             # Return or Escape: back to the text, the picture selected.
             self._photos.editor.setFocus(Qt.FocusReason.OtherFocusReason)
@@ -87,3 +91,8 @@ class PhotoFields:
         """The field open (if any) goes, with nothing written."""
         if self._field is not None:
             self._field.cancel()
+
+    def commit(self) -> None:
+        """The field open (if any) goes, what it holds written."""
+        if self._field is not None:
+            self._field.commit()

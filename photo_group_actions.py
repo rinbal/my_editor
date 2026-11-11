@@ -111,6 +111,26 @@ def picture_at(doc: QTextDocument, position: int) -> Optional[Picture]:
                    group.end, group.units, group.format, True)
 
 
+def picture_numbered(doc: QTextDocument, number: int) -> Optional[Picture]:
+    """The group picture whose unit has ``number`` (photo_group.Unit.number),
+    wherever it stands now; None when no group holds it (a picture alone
+    has no number)."""
+    if number > 0:
+        for group in photo_group.groups_in(doc):
+            for index, unit in enumerate(group.units):
+                if unit.number == number:
+                    return picture_at(doc, group.start + index)
+    return None
+
+
+def standing(doc: QTextDocument, picture: Picture) -> Optional[Picture]:
+    """``picture`` as the document holds it now: a group's by its number,
+    wherever it went; one alone at its place. None when it is gone."""
+    found = (picture_numbered(doc, picture.unit.number) if picture.grouped
+             else picture_at(doc, picture.position))
+    return found if found is not None and found.unit.name == picture.unit.name else None
+
+
 def picture_of(doc: QTextDocument, cursor: QTextCursor) -> Optional[Picture]:
     """The picture ``cursor`` means: the one it selects alone, or, with
     nothing selected, the picture of a group after the caret (at the
