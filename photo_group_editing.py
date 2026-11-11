@@ -169,17 +169,23 @@ class PhotoEditing(QObject):
             self.quiet = False
 
     def select(self, position: int, *, quiet: bool = True) -> None:
-        """Select the picture at ``position``, the view scrolled to it."""
+        """Select the picture at ``position``, the view scrolled to it only
+        when it is not in view (a click on it moves nothing)."""
         cursor = self._editor.textCursor()
         cursor.setPosition(position)
         cursor.setPosition(position + 1, QTextCursor.MoveMode.KeepAnchor)
+        # Qt scrolls to the caret, after the picture (in the next row).
+        bar = self._editor.verticalScrollBar()
+        kept = bar.value()
         if quiet:
             with self.quietly():
                 self._editor.setTextCursor(cursor)
             self._caret_moved()
         else:
             self._editor.setTextCursor(cursor)
-        self._editor.ensureCursorVisible()
+        bar.setValue(kept)
+        picture = actions.picture_at(self._editor.document(), position)
+        self._editor.show_document_rect(self.box_of(picture) if picture is not None else None)
 
     @property
     def editor(self):

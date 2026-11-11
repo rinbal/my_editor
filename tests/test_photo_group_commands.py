@@ -396,3 +396,22 @@ def test_take_out_lands_where_the_file_keeps_it_alone():
     ed.photos.run(TAKE_OUT)
     assert _markdown(ed) == _text(TWO, "Before.", ONE, "Middle.", THREE, FOUR, "After.")
     ed.close()
+
+
+def test_a_click_on_a_picture_in_view_scrolls_nothing():
+    # Gate RG-PG2E-b 2: the page jumped 193 to 229 px on a click.
+    # In a narrow column, the caret after picture 1 is at picture 2, out of view.
+    words = _text(*[f"Paragraph {n} with a few words." for n in range(40)])
+    ed = _editor(_text(words, ONE, TWO, THREE, FOUR, words), width=420)
+    ed.resize(420, 500)
+    QApplication.processEvents()
+    photos = ed.photos
+    box = photos.box_of(photo_group_actions.picture_at(ed.document(), _group(ed).start))
+    bar = ed.verticalScrollBar()
+    bar.setValue(int(box.bottom()) - ed.viewport().height() + 20)
+    before = bar.value()
+    point = photos.to_view(box).center()
+    _mouse(ed, QEvent.Type.MouseButtonPress, point, Qt.MouseButton.LeftButton)
+    _mouse(ed, QEvent.Type.MouseButtonRelease, point, Qt.MouseButton.NoButton)
+    assert photos.current().place == 1 and bar.value() == before
+    ed.close()
