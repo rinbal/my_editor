@@ -289,8 +289,8 @@ class Reading:
         taken = detail.address_taken      # another work at the writer's link name (12.4)
 
         def opened(version: Optional[Version]) -> None:
-            if taken:
-                self._owner.unlisted.look(sid, version)
+            # Published on another device: public, known from the relays.
+            self._owner.unlisted.look(sid, version, taken=taken)
 
         if record is not None:
             self._open_version(sid, state, detail.submission, record, opened)

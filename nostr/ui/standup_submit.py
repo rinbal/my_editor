@@ -136,7 +136,10 @@ class StandupWriter(QObject):
                 later=_later, clock=self._clock,
                 # A public work's report that did not arrive, kept across
                 # restarts (RG-M4-b 3), as the cleanups are.
-                unlisted=Unlisted(account.writer), read_address=read_address, parent=account)
+                unlisted=Unlisted(account.writer), parent=account,
+                # With no relays to read (a window without them) none is read.
+                read_address=read_address if self._relay_directory is not None
+                and self._relay_pool is not None else None)
             # The published works' encrypted files go, quietly (M-4 M14).
             self._cleanup = BlobCleanup(self._following, account, profile,
                                         store=self._media_store, parent=self._following)

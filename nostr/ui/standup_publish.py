@@ -508,11 +508,16 @@ class AcceptedPublish(QObject):
                                        address_taken=taken, server_read=read, held=held,
                                        relays=relays)
             unlisted = self._ports.unlisted
-            if taken and unlisted is not None and unlisted.found(
-                    self.sid, self._version, address=self.address, relays=relays):
-                # Published on another device: public already, never "nothing
-                # is published"; what this run put up shows in it, and stays.
+            shown = unlisted.public_at(self._version, address=self.address, relays=relays) \
+                if unlisted is not None else None
+            # Published on another device: public already, never signed again
+            # nor "nothing is published"; what this run put up shows in it.
+            if shown is not None and taken:
+                unlisted.keep(self.sid, self._version, *shown, taken=True)
                 self._kept_public()
+            elif shown is not None:
+                self.signed_article, self.naddr = shown
+                self._report()
             elif found.someone_elses:
                 self._fail(_(SOMEONE_ELSES), Stage.SOMEONE_ELSES)
             elif not read or (unsigned is not None and not found.send_to):

@@ -34,19 +34,22 @@ change (the work is another revision's, the person no longer its
 writer) ends the record. No try and no ride is spent on a work the View
 already lists.
 
-A work the writer published on another device has no record here. When
-the server lists another work at its link name (12.4 ``address_taken``),
-the detail's read looks at its address on the relays it goes to
-(:meth:`QuietReport.look`); a run about to sign reads them anyway. Where
-they show this version, credited to the writer, it is public: kept as
-the refused report is ("„Titel“ ist öffentlich, aber …", Rückfrage
-stellen), and nothing is signed.
+A work the writer published on another device has no record here, so
+the detail's read of a work to publish looks at its address on the
+relays it goes to (:meth:`QuietReport.look`); a run about to sign reads
+them anyway. Where they show this version, credited to the writer, it is
+public, and nothing is signed again. It is kept as a report that did not
+arrive: reported on the quiet schedule, through a signer app only as the
+ride-along or by Erneut senden (no publish here asked anyone). Where the
+server lists another work at its link name (12.4 ``address_taken``), it
+is kept as the refused report is ("„Titel“ ist öffentlich, aber …",
+Rückfrage stellen).
 """
 
 from __future__ import annotations
 
 import time
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 from PySide6.QtCore import QObject
 
@@ -137,15 +140,17 @@ class QuietReport(QObject):
         return {sid: self.state(sid) for sid in self._record.sids()}
 
     def hand_over(self, sid: str, *, event: dict, naddr: str, revision: int,
-                  taken: bool = False, on_listed: Optional[Callable] = None) -> None:
+                  taken: bool = False, on_listed: Optional[Callable] = None,
+                  quick: bool = True) -> None:
         """The report of ``sid``'s public ``event`` did not arrive (``taken``:
         refused as another work's link name). ``on_listed(view)`` once a
-        later report arrived in this run."""
+        later report arrived in this run. ``quick``: it was published here
+        now, so the quick tries follow it."""
         self._record.keep(sid, unlisted.first(event=event, naddr=naddr, revision=revision,
                                               now=self._clock(), taken=taken))
         if on_listed is not None:
             self._listed[sid] = on_listed
-        self._quick[sid] = 0
+        self._quick[sid] = 0 if quick else QUICK_TRIES
         self._schedule(sid)
 
     def resume(self) -> None:
@@ -172,11 +177,12 @@ class QuietReport(QObject):
         self._following.publishing_changed(sid)
         self._try(sid, by_hand=on_done)
 
-    def look(self, sid: str, version) -> None:
-        """The server lists another work at the link name of ``sid``, the
-        writer's to publish, opened here as ``version``: unless a record
-        says how it stands, its address is read on the relays once per
-        version and run (:meth:`found`)."""
+    def look(self, sid: str, version, *, taken: bool) -> None:
+        """``sid``, the writer's to publish, opened here as ``version``
+        (``taken``: the server lists another work at its link name, 12.4):
+        unless a record says how it stands, its address is read on the
+        relays once per version and run. Published on another device, it
+        is kept as public (:meth:`keep`); a read that fails says nothing."""
         row = self._following.row(sid)
         view = row.view if row is not None else None
         if self._stopped or self._read is None or view is None \
@@ -194,31 +200,40 @@ class QuietReport(QObject):
         except (KeyError, TypeError, publishing.NotPublishable):
             return
         address = f"{formats.ARTICLE_KIND}:{writer}:{d}"
-        self._read(unsigned, lambda relays: self.found(sid, version, address=address,
-                                                       relays=relays))
 
-    def found(self, sid: str, version, *, address: str, relays) -> bool:
-        """Whether the relays' read of ``address`` (12.4) shows ``version``,
-        a first publication, public, credited to the writer, while its
-        publication lists another work there: then it is kept as that
-        (never signed or sent again), and the run, the list and the
-        detail say so."""
+        def read(relays) -> None:
+            shown = self.public_at(version, address=address, relays=relays)
+            if shown is not None and not self._kept(sid, version.revision):
+                self.keep(sid, version, *shown, taken=taken)
+                run = self._following.publishing.get(sid)
+                if run is not None:
+                    run.kept_public()
+
+        self._read(unsigned, read)
+
+    def public_at(self, version, *, address: str, relays) -> Optional[Tuple[dict, str]]:
+        """The writer's own event in the relays' read of ``address`` (12.4)
+        that shows ``version``, a first publication, with its naddr; None
+        when none does (:func:`unlisted.found_public`)."""
         if self._stopped or version.opened.verified.correction:
-            return False
+            return None
         shown = unlisted.found_public(version.opened.revision, writer=self._account.writer,
                                       address=address, relays=relays)
         if shown is None:
-            return False
-        if not self._kept(sid, version.revision):
-            event, holding = shown
-            naddr = bech32.encode_naddr(formats.tag_value(event, "d"), event["pubkey"],
-                                        formats.ARTICLE_KIND, holding[:LINK_RELAYS])
-            self.hand_over(sid, event=event, naddr=naddr, revision=version.revision, taken=True)
-        run = self._following.publishing.get(sid)
-        if run is not None:
-            run.kept_public()
+            return None
+        event, holding = shown
+        return event, bech32.encode_naddr(formats.tag_value(event, "d"), event["pubkey"],
+                                          formats.ARTICLE_KIND, holding[:LINK_RELAYS])
+
+    def keep(self, sid: str, version, event: dict, naddr: str, *, taken: bool) -> None:
+        """``event``, published on another device, kept as public: never
+        signed again. ``taken``: the publication lists another work at its
+        link name, so it is only said; else it is reported on the quiet
+        schedule. No publish here asked anyone, so a signer app is asked
+        only as the run's ride-along or by Erneut senden."""
+        self.hand_over(sid, event=event, naddr=naddr, revision=version.revision, taken=taken,
+                       quick=False)
         self._following.publishing_changed(sid)
-        return True
 
     def _kept(self, sid: str, revision: int) -> bool:
         """Whether a record says how this revision of ``sid`` stands."""

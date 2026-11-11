@@ -359,6 +359,44 @@ def test_published_on_another_device_beside_another_work_reads_public_and_signs_
     assert signed == [] and signed_later == [] and len(jobs) == 1
 
 
+def test_published_on_another_device_with_its_report_missing_reads_public_and_signs_nothing(
+        accepted):
+    # Lead 2026-11-11: no flag, no record here, the writer's own event on the
+    # relays: public, reported as it stands, never signed a second time.
+    from nostr.standup import following as rules
+    from nostr.standup.errors import Code, StandupError
+    world, sid, writer = accepted.world, accepted.sid, accepted.writer
+    elsewhere, _store, jobs = _run(accepted)
+    elsewhere._ports = replace(elsewhere._ports, api=SimpleNamespace(
+        published=lambda sid, *, on_failure, **_kw: on_failure(StandupError(code=Code.OFFLINE))))
+    elsewhere.start()
+    world.settle()
+    relays = {"wss://relay.example": (True, [jobs[0].signed_event])}
+    waiting = len(world.later.waiting)
+    here = world.following(writer, read_address=lambda _unsigned, done: done(relays))
+    here.open(sid)
+    world.settle()
+    row = here.row(sid)
+    status = rules.status_of(row, publication="Magazin", name_of=lambda _p: "")
+    assert row.publishing == rules.UNREPORTED and rules.pill_word(row, lambda _p: "") == (
+        "Published")
+    assert (status.sentence, status.more, status.action) == (
+        f"“{row.title}” is public.", "Magazin hasn’t learned of it yet.", rules.Action.REPORT)
+    assert len(world.later.waiting) == waiting      # through a signer app: nobody is asked
+    # Veröffentlichen pressed before the relays answered: the read before
+    # signing finds the event, and that is reported.
+    later = world.following(writer)
+    later.open(sid)
+    world.settle()
+    case = SimpleNamespace(**{**vars(accepted), "following": later})
+    pressed, store, signed = _run(case, relays_hold=lambda _unsigned, done: done(relays))
+    pressed.start()
+    world.settle()
+    assert pressed.stage is Stage.DONE and world.record(sid).state == "published"
+    assert world.record(sid).published["event_id"] == jobs[0].signed_event["id"]
+    assert signed == [] and store.uploaded == [] and len(jobs) == 1
+
+
 def _flaky_report(api, failures):
     """``api.published`` failing ``failures[0]`` times while it is above 0."""
     from nostr.standup.errors import Code, StandupError
