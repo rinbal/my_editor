@@ -30,6 +30,11 @@ messages and reactions on their way are :mod:`.standup_talk`'s.
 
 Everything answers through :func:`~.standup_account.live`: after
 :meth:`Following.stop` nothing writes a row, the list or the read state.
+
+This module is longer than most: :class:`Following` is the one place per
+account that the list, the pill, the notice and the detail read, and the
+writer's actions on a submission go through it; its reading, its
+messages and the rules it applies live in their own modules already.
 """
 
 from __future__ import annotations
@@ -557,16 +562,24 @@ class Following(QObject):
     def confirm(self, sid: str, *, confirms, revision_hash: str, split_rumor_id,
                 on_done: Callable[[Optional[StandupError]], None]) -> None:
         """Bestätigen (12.4 ``/confirmation``): ``on_done(None)`` once the
-        server stored it, or with why it did not."""
+        server stored it, or with why it did not; after a 409 (a newer
+        version, another state) once the submission is read again
+        (RG-M4-a 5), so what is shown is where it stands."""
         def confirmed(view: views.SubmissionView) -> None:
             self.serve(view)
             self.detail_changed.emit(sid)
             on_done(None)
 
+        def refused(error: StandupError) -> None:
+            if error.status == 409:
+                self.reading.read(sid, lambda _ok: on_done(error))
+            else:
+                on_done(error)
+
         self.api_for(sid).confirm(
             sid, revision_hash=revision_hash, confirms=list(confirms),
             split_rumor_id=split_rumor_id, on_success=live(self._account, confirmed),
-            on_failure=live(self._account, on_done))
+            on_failure=live(self._account, refused))
 
     def remind(self, sid: str, to: str, on_done: Callable[[Optional[StandupError]], None]) -> None:
         """Erinnern (12.4 ``/remind``, the writer): one notice to ``to``."""
@@ -586,7 +599,6 @@ class Following(QObject):
             self.changed.emit()
 
         self._discard(entry, live(self._account, discarded))
-
 
 
 def _receipt_key(known: Followed) -> tuple:

@@ -33,6 +33,10 @@ Through a signer app that cannot sign an article this long, with the
 key also kept on this computer, :attr:`Stage.OFFER_HERE` offers once
 to sign this one article with that key (M-4 Q1), read from the keychain
 for the signature, wiped after it and never stored.
+
+This module is longer than most: the run is one state machine whose four
+steps share its state; its words, its job and the release rule live in
+their own modules already.
 """
 
 from __future__ import annotations
@@ -568,6 +572,8 @@ class CorrectionPublish(AcceptedPublish):
                                              created_at=int(self._ports.clock()))
 
     def start(self, *, here: bool = False) -> None:
+        if self.stage is Stage.CHANGED:
+            return
         if self._taken or self.stage is Stage.WORKING:
             super().start(here=here)
             return
@@ -577,8 +583,11 @@ class CorrectionPublish(AcceptedPublish):
             if self._stopped:
                 return
             if error is not None:
+                # A 409 (a newer correction): read again already, and the
+                # old hash is never sent again (RG-M4-b 6).
                 cause = cause_words(getattr(error, "code", ""))
-                self._say(Stage.FAILED, _(NOT_TAKEN), _(cause))
+                stage = Stage.CHANGED if getattr(error, "status", None) == 409 else Stage.FAILED
+                self._say(stage, _(NOT_TAKEN), _(cause))
                 return
             self._taken = True
             self.stage = Stage.READY

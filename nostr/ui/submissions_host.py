@@ -481,21 +481,27 @@ class SubmissionsHost(QObject):
             is_dark=ports.is_dark(), parent=ports.window())
         sheet.view_requested.connect(self._view_naddr)
         sheet.ask_requested.connect(lambda words: self.ask(sid, words))
+        self._hear(run)
+        ports.keep(sheet)
+        sheet.open()
+
+    def _publish_said(self, run) -> None:
+        """With its sheet closed, what stopped a run is said once in the
+        detail; a change meanwhile closes the sheet and is said there too."""
+        open_here = any(sheet is not None and shiboken6.isValid(sheet) and sheet.isVisible()
+                        and sheet.run is run
+                        for sheet in (self._publish_sheet, self._correction_sheet))
+        if run.stage is Stage.CHANGED or not open_here and run.stage in (
+                Stage.FAILED, Stage.NOT_STORED, Stage.NOT_REPORTED, Stage.SOMEONE_ELSES,
+                Stage.NOT_CHECKED):
+            self._say_in_place(run.sid, run.words)
+
+    def _hear(self, run) -> None:
         if run not in self._heard:
             # With the sheet closed, a run that could not finish says so
             # once in the detail (lessons 36); it goes on otherwise.
             self._heard.add(run)
             run.changed.connect(lambda: self._publish_said(run))
-        ports.keep(sheet)
-        sheet.open()
-
-    def _publish_said(self, run) -> None:
-        sheet = self._publish_sheet
-        open_here = sheet is not None and shiboken6.isValid(sheet) and sheet.isVisible()
-        if not open_here and run.stage in (Stage.FAILED, Stage.NOT_STORED, Stage.NOT_REPORTED,
-                                           Stage.SOMEONE_ELSES, Stage.NOT_CHECKED,
-                                           Stage.CHANGED):
-            self._say_in_place(run.sid, run.words)
 
     def confirm(self, sid: str) -> None:
         """Bestätigen … (M14): the split the verified accept names, for the
@@ -544,6 +550,7 @@ class SubmissionsHost(QObject):
             changes=publishing.correction_changes(run.revision, published),
             is_dark=ports.is_dark(), parent=ports.window())
         sheet.ask_requested.connect(lambda words: self.ask(sid, words))
+        self._hear(run)
         ports.keep(sheet)
         sheet.open()
 

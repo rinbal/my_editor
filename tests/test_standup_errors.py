@@ -82,6 +82,11 @@ def test_the_wait_is_passed_on():
     (Code.TIMEOUT, failures.CHECK_CONNECTION),
     (Code.SERVER, failures.SERVER_TROUBLE),
     (Code.BAD_RESPONSE, failures.SERVER_TROUBLE),
+    # RG-M4-a 5: the signer's answer and a 409 are never the server's trouble.
+    (Code.SIGNER_DECLINED, failures.SIGNER_DECLINED),
+    (Code.SIGNER_UNREACHABLE, failures.SIGNER_SILENT),
+    (Code.STALE_REVISION, "There is a newer version in the meantime."),
+    (Code.INVALID_TRANSITION, "This is no longer possible as things stand now."),
 ])
 def test_a_failure_is_said_by_its_cause_from_the_one_table(code, sentence):
     # RG-M2r3 6: failures.CAUSE_WORDS, the same on the sheet, in the

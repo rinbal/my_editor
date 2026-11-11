@@ -16,6 +16,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, Optional
 
+from i18n import N_
+
 from .. import failures
 from ..http_answers import clean_text
 from ..signed_api import BAD_RESPONSE, OFFLINE, SIGNER_DECLINED, SIGNER_UNREACHABLE, TIMEOUT
@@ -69,11 +71,25 @@ PASSING = {Code.OFFLINE: failures.CONNECTION, Code.TIMEOUT: failures.CONNECTION,
            Code.SERVER: failures.SERVER}
 
 
+# Codes whose cause is known whatever was asked (RG-M4-a 5): the signer
+# app's answer, and a 409 the app answers by reading the submission again
+# (the web's words, editorial-common.js, without its "Lade neu").
+NEWER_VERSION = N_("There is a newer version in the meantime.")
+NO_LONGER = N_("This is no longer possible as things stand now.")
+CHANGED_JUST_NOW = N_("Someone changed this just now. Try again.")
+_KNOWN_CAUSES = {Code.SIGNER_DECLINED: failures.SIGNER_DECLINED,
+                 Code.SIGNER_UNREACHABLE: failures.SIGNER_SILENT,
+                 Code.STALE_REVISION: NEWER_VERSION, Code.INVALID_TRANSITION: NO_LONGER,
+                 Code.CONFLICT: CHANGED_JUST_NOW}
+
+
 def cause_words(code: str) -> str:
     """The sentence (untranslated) for a request that failed with
-    ``code`` where no words of its own fit: the connection for what got
-    no answer, the server's trouble for any answer it gave."""
-    return failures.CAUSE_WORDS[PASSING.get(code, failures.SERVER)]
+    ``code`` where no words of its own fit: the signer app's answer, a
+    409's, the connection for what got no answer, the server's trouble
+    for any other answer it gave."""
+    known = _KNOWN_CAUSES.get(code)
+    return known or failures.CAUSE_WORDS[PASSING.get(code, failures.SERVER)]
 
 
 # 12.2: the codes each status may carry; the first is the fallback for a

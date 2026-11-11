@@ -13528,3 +13528,12 @@ msgstr "Veröffentlicht wird die angenommene Fassung. Änderst du danach etwas, 
 
 msgid "Whether an article already stands under this link name couldn’t be checked just now. Try again in a moment."
 msgstr "Ob unter diesem Linknamen schon ein Artikel steht, ließ sich gerade nicht prüfen. Versuche es gleich noch einmal."
+
+msgid "There is a newer version in the meantime."
+msgstr "Inzwischen gibt es eine neuere Fassung."
+
+msgid "This is no longer possible as things stand now."
+msgstr "Das geht im jetzigen Zustand nicht mehr."
+
+msgid "Someone changed this just now. Try again."
+msgstr "Jemand hat das gerade geändert. Versuche es noch einmal."

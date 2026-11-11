@@ -457,6 +457,46 @@ def test_a_second_correction_is_compared_with_the_article_as_it_stands_in_public
     assert compared == [("Alt.", "Zweite Korrektur.")]
 
 
+def test_a_correction_overtaken_meanwhile_is_read_again_and_never_sent_again(window):
+    # RG-M4-a 5, RG-M4-b 6: a newer correction comes while the sheet is
+    # open. Taking the old one meets 409 stale_revision: the submission is
+    # read again, the sheet closes with the web's words in the detail, and
+    # the old hash is not sent a second time.
+    from nostr import events
+    from nostr.bech32 import encode_naddr
+    world = window.world
+    seed = world.account()
+    prepared, entry = world.submit(seed, d="ein-jahr", title="Ein Jahr mit Lightning im Café")
+    world.decide(prepared, "accept")
+    article = events.sign_event({"kind": 30023, "created_at": world.clock(), "content": "Alt.",
+                                 "tags": [["d", "ein-jahr"]]}, sk("writer"))
+    seed.api.published(entry.sid, naddr=encode_naddr("ein-jahr", ME, 30023), event=article,
+                       revision=1, on_success=lambda _v: None, on_failure=lambda _e: None)
+    world.settle()
+    world.correct(seed, entry.sid, "Erste Korrektur.")
+    window.follow()
+    detail = opened(window, entry)
+    detail.action.click()
+    world.settle()
+    sheet, closed = window.host._correction_sheet, []
+    sheet.rejected.connect(lambda: closed.append(True))
+    world.correct(seed, entry.sid, "Zweite Korrektur.", revision=3)
+    run = sheet.run
+    sheet.take.click()
+    world.settle()
+    assert closed == [True] and run.stage.value == "changed"
+    assert detail.note.text() == "There is a newer version in the meantime."
+    assert window.writer.following(window.profile).row(entry.sid).view.revision == 3
+
+    def confirmations():
+        return [r for r in world.server.requests if r[1].endswith("/confirmation")]
+
+    asked = len(confirmations())
+    run.start()                                          # nothing asks with the old hash
+    world.settle()
+    assert run.stage.value == "changed" and len(confirmations()) == asked == 1
+
+
 def test_view_opens_the_address_the_published_event_proves_never_the_servers(window, monkeypatch):
     # Contract 10, The address of a published work: Ansehen opens only the
     # address a counting report proves; until one is read, it says so once.

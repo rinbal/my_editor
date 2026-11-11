@@ -78,7 +78,7 @@ class ConfirmSheet(QDialog):
             pk == me for pk, weight, _role in shares if weight > 0)
         # None while not read (or not readable), "" for none, else the address.
         self._address: Optional[str] = None
-        self._reading = self._profile_edited = self._confirming = False
+        self._reading = self._profile_edited = self._confirming = self._stale = False
         self._zap_address = zap_address
         self._build(publication, number, shares or (), me, name_of)
         if self._needs_address:
@@ -164,9 +164,10 @@ class ConfirmSheet(QDialog):
 
     def _refresh(self) -> None:
         address, needs = self._address, self._needs_address
-        ready = not needs or bool(address)
-        missing = needs and not self._reading and address == ""
-        unread = needs and not self._reading and address is None
+        ready = (not needs or bool(address)) and not self._stale
+        self.cancel_button.setText(_("Close") if self._stale else _("Cancel"))
+        missing = needs and not self._reading and address == "" and not self._stale
+        unread = needs and not self._reading and address is None and not self._stale
         if needs:
             self.address.setText(_(SHARE_GOES_TO).format(address=address) if address
                                  else _(NO_ADDRESS) if missing
@@ -212,6 +213,9 @@ class ConfirmSheet(QDialog):
                 self.accept()
                 return
             cause = cause_words(getattr(error, "code", ""))
+            # A 409: the submission was read again, and this version is no
+            # longer the one to confirm; nothing to try again here.
+            self._stale = getattr(error, "status", None) == 409
             self.status.say(_(cause), error=True, title=_(NOT_CONFIRMED))
             self._refresh()
         except RuntimeError:
