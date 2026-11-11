@@ -38,6 +38,7 @@ from PySide6.QtGui import QColor, QDesktopServices, QPixmap
 from i18n import N_, _
 
 from .. import web_readers
+from ..bech32 import decode_naddr, encode_naddr
 from ..standup import following as rules
 from ..standup import formats, publishing
 from ..standup import thread as threads
@@ -76,6 +77,7 @@ OPEN_IT_FIRST = N_("Open the article in the editor first.")
 NOT_FOUND = N_("MyEditor can’t find this article. Open it in the editor, then send it again.")
 VERSION_NOT_LOADED = N_("The version you handed in couldn’t be loaded: try again in a moment.")
 ACCEPTED_NOT_LOADED = N_("The accepted version couldn’t be loaded yet: try again in a moment.")
+PUBLISHED_NOT_LOADED = N_("The published article couldn’t be found yet: try again in a moment.")
 REMINDED = N_("Reminder sent.")
 REMINDED_TODAY = N_("Already reminded today.")
 
@@ -319,6 +321,11 @@ class SubmissionsHost(QObject):
     def _row(self, sid: str):
         return self._following.row(sid) if self._following is not None else None
 
+    def _accepted_section(self, sid: str) -> str:
+        """The section the verified accept named (its signed body), or ""."""
+        accepted = self._following.reading.accepted(sid) if self._following is not None else None
+        return accepted.section if accepted is not None else ""
+
     def edited(self, row) -> bool:
         """Whether the text in the editor differs from the version handed
         in (so the next one can be handed in)."""
@@ -454,11 +461,11 @@ class SubmissionsHost(QObject):
                   for pk in publishing.credited(run.revision, run.writer)]
         sheet = self._publish_sheet = PublishSheet(
             run=run, publication=self._following.publication_name(row.publication),
-            number=row.view.revision, section=row.view.section or "",
+            number=row.view.revision, section=self._accepted_section(sid),
             account_name=self._name_of(run.writer), people=people, differs=differs,
             is_dark=ports.is_dark(), parent=ports.window())
         sheet.hand_in_requested.connect(self.hand_in)
-        sheet.view_requested.connect(lambda naddr: self._view(naddr, row))
+        sheet.view_requested.connect(self._view_naddr)
         if run not in self._heard:
             # With the sheet closed, a run that could not finish says so
             # once in the detail (lessons 36); it goes on otherwise.
@@ -567,14 +574,31 @@ class SubmissionsHost(QObject):
             following.remind(sid, pubkey, done)
 
     def view_published(self, sid: str) -> None:
-        """Ansehen: the published article, where articles are read."""
-        row = self._row(sid)
-        if row is not None and row.view is not None and row.view.published is not None:
-            self._view(row.view.published.naddr, row)
+        """Ansehen: the published article, where articles are read, at
+        the address its own event proves (contract 10), never the
+        server's word alone; until that is read, it says so once."""
+        row, following = self._row(sid), self._following
+        published = following.reading.published(sid) if following is not None else None
+        if row is None or published is None:
+            self._ports.say(_(PUBLISHED_NOT_LOADED))
+            return
+        self._view(published.address)
 
-    def _view(self, naddr: str, row) -> None:
-        post = web_readers.Post(kind=web_readers.ARTICLE, entity=naddr, author=row.writer,
-                                identifier=row.d)
+    def _view_naddr(self, naddr: str) -> None:
+        """The publish sheet's Ansehen: the article it just published."""
+        try:
+            d, author, kind, _relays = decode_naddr(naddr)
+        except ValueError:
+            return
+        self._view(f"{kind}:{author}:{d}")
+
+    def _view(self, address: str) -> None:
+        """Open the article at ``address`` (``30023:<pk>:<d>``) where
+        articles are read: its author and ``d``, never the row's."""
+        _kind, author, d = address.split(":", 2)
+        post = web_readers.Post(kind=web_readers.ARTICLE,
+                                entity=encode_naddr(d, author, formats.ARTICLE_KIND),
+                                author=author, identifier=d)
         link = web_readers.link_for(web_readers.default_reader(web_readers.ARTICLE, ""), post)
         if link:
             QDesktopServices.openUrl(QUrl(link))

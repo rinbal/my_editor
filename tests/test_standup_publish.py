@@ -13,10 +13,10 @@ import pytest
 from PySide6.QtCore import QObject, Signal
 
 from nostr.standup import crypto as scrypto
-from nostr.standup import publishing
+from nostr.standup import publishing, views
 from nostr.ui.standup_publish import AcceptedPublish, PublishPorts, Stage
 from tests.standup_following_fakes import FollowWorld
-from tests.standup_vectors import pk
+from tests.standup_vectors import VECTORS, pk
 
 PLAIN = b"\x89PNG picture bytes"
 SERVER = "https://media.example"
@@ -275,6 +275,9 @@ def test_a_correction_taken_is_confirmed_alone_then_replaces_the_article_keeping
     assert row.situation.name == "CORRECTION"
     version = following.reading.latest(accepted.sid)
     assert version is not None and version.opened.verified.correction    # walked back
+    d = next(tag[1] for tag in published["tags"] if tag[0] == "d")
+    # Contract 10: the address rests on the reported event itself.
+    assert following.reading.published(accepted.sid).address == f"30023:{pk('writer')}:{d}"
     ports = first._ports
     confirmed = []
 
@@ -303,3 +306,32 @@ def test_a_correction_taken_is_confirmed_alone_then_replaces_the_article_keeping
 
 def publishing_tag(event):
     return next(tag[1] for tag in event["tags"] if tag[0] == "published_at")
+
+
+def test_a_published_works_address_rests_on_its_own_event_as_the_vector_says():
+    # Contract 10, The address of a published work (vector published_address):
+    # whoever reported it, the work's own event proves its address.
+    vector = VECTORS["published_address"]
+    sid, publication = vector["submission_id"], vector["publication"]
+
+    def signed(report):
+        return views.SignedRecord(event=report["event"], body=report["body"])
+
+    def address(report):
+        found = publishing.work_address(signed(report), sid, writer=vector["writer"],
+                                        coordinate_hash=vector["coordinate_hash"],
+                                        publication=publication)
+        return found.address if found is not None else None
+
+    for name, case in vector["counts"].items():
+        assert address(case["report"]) == case["address"], name
+    for name, report in vector["must_fail"].items():
+        assert address(report) is None, name
+    placed = vector["placed"]
+
+    def section(report):
+        return publishing.placed_section(signed(report), sid, placed["address"], publication)
+
+    assert section(placed["report"]) == placed["section"]
+    for name, report in vector["placed_must_fail"].items():
+        assert section(report) is None, name

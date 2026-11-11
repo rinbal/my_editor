@@ -43,6 +43,7 @@ from i18n import N_, _
 
 from . import conversation, formats, views
 from .following import DECISIONS, SignedChecks, action_verified
+from .former import Formers
 
 # The steps the conversation shows as captions; the rest (who was named,
 # handed over, reminded) are only in the history.
@@ -174,14 +175,14 @@ def _local_day(at: int) -> datetime.date:
 
 def _verified(event: views.TimelineEvent, sid: str, *, writer: str,
               participants: Iterable[str], deciders: Optional[Iterable[str]],
-              checks: Optional[SignedChecks]) -> Optional[bool]:
+              checks: Optional[SignedChecks], formers: Optional[Formers]) -> Optional[bool]:
     if event.signed is None:
         return None
     if event.name in _BY_PARTICIPANT:
         return action_verified(event, sid, (writer, *participants), checks)
     if event.name == "published" and event.actor == writer:
         return action_verified(event, sid, (writer,), checks)
-    return action_verified(event, sid, deciders, checks)
+    return action_verified(event, sid, deciders, checks, formers)
 
 
 def _caption(item: views.TimelineItem, sid: str, **who) -> Caption:
@@ -193,11 +194,13 @@ def _caption(item: views.TimelineItem, sid: str, **who) -> Caption:
 
 def history(items: Sequence[views.TimelineItem], *, sid: str, writer: str,
             participants: Iterable[str] = (), deciders: Optional[Iterable[str]] = None,
-            checks: Optional[SignedChecks] = None) -> List[Caption]:
+            checks: Optional[SignedChecks] = None,
+            formers: Optional[Formers] = None) -> List[Caption]:
     """Every event of the conversation channel as a caption, oldest
-    first (Info › Verlauf). ``checks`` keeps the signed actions checked."""
+    first (Info › Verlauf). ``checks`` keeps the signed actions checked;
+    ``formers`` verify people who left."""
     who = dict(writer=writer, participants=tuple(participants), deciders=deciders,
-               checks=checks)
+               checks=checks, formers=formers)
     return [_caption(item, sid, **who) for item in sorted(items, key=lambda i: i.seq)
             if item.event is not None and item.channel == "conversation"]
 
@@ -207,6 +210,7 @@ def build_thread(items: Sequence[views.TimelineItem],
                  participants: Iterable[str] = (), deciders: Optional[Iterable[str]] = None,
                  members: Optional[Iterable[str]] = None,
                  checks: Optional[SignedChecks] = None,
+                 formers: Optional[Formers] = None,
                  day_of: Callable[[int], object] = _local_day) -> List[ThreadItem]:
     """What the conversation shows (see the module docstring).
     ``opened`` are the messages of ``items`` that passed the checks of
@@ -214,15 +218,15 @@ def build_thread(items: Sequence[views.TimelineItem],
     list is not known: no editor is named then, and structured notes of
     the Redaktion are not read); ``members`` every active member of the
     Redaktion (None likewise); ``checks`` keeps the signed actions
-    checked. ``me`` always takes part."""
+    checked; ``formers`` verify people who left. ``me`` always takes part."""
     who = dict(writer=writer, participants=tuple(participants), deciders=deciders,
-               checks=checks)
+               checks=checks, formers=formers)
     senders = dict(writer=writer, participants=(*who["participants"], me),
                    members=None if members is None else frozenset(members))
     opened = from_known_senders(opened, **senders)
     notes: Dict[int, str] = {}
     shown: List[Tuple[int, int, object]] = []          # (seq, time, what)
-    named = _named_split(items, sid, deciders, checks)
+    named = _named_split(items, sid, deciders, checks, formers)
     for bubble in conversation.fold(opened, writer=writer, redaktion=deciders or ()):
         if bubble.structured is None:
             shown.append((bubble.seq, bubble.created_at, bubble))
@@ -267,7 +271,7 @@ def build_thread(items: Sequence[views.TimelineItem],
     return out
 
 
-def _named_split(items, sid: str, deciders, checks) -> Optional[str]:
+def _named_split(items, sid: str, deciders, checks, formers) -> Optional[str]:
     """The split rumor id the newest decision names, when it is an accept
     whose signed action verifies as a decider's."""
     decisions = [item for item in items if item.event is not None
@@ -275,7 +279,8 @@ def _named_split(items, sid: str, deciders, checks) -> Optional[str]:
     if not decisions or deciders is None:
         return None
     event = max(decisions, key=lambda item: item.seq).event
-    if event.name != "accept" or not action_verified(event, sid, tuple(deciders), checks):
+    if event.name != "accept" or not action_verified(event, sid, tuple(deciders), checks,
+                                                     formers):
         return None
     body = (checks or SignedChecks()).body(event.signed, path=views.action_path("accept", sid),
                                            sid=sid) or {}

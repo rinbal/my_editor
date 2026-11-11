@@ -28,10 +28,14 @@ import re
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
+from .. import events as nostr_events
 from .. import publisher, zap_shares
 from ..article_details import AUTHOR_MARKER
+from ..bech32 import decode_naddr
 from . import following as rules
 from . import formats, views
+from .formats import FormatError
+from .former import Formers
 
 # A revision names at most this many people and carried tags (5).
 _PEOPLE_MAX = 50
@@ -229,64 +233,144 @@ def _weight(weight: float) -> str:
 class Accepted:
     """The verified accept a publish or a confirmation rests on (9.4,
     12.4): the revision it accepted (its signed ``expected_revision``),
-    the id of the split it named, who decided, and its ``seq``."""
+    the id of the split it named, who decided, its ``seq``, and the
+    section it named."""
 
     revision: int
     split_rumor_id: Optional[str]
     actor: str
     seq: int
+    section: str = ""
 
 
 def verified_accept(items: Sequence[views.TimelineItem], sid: str,
                     deciders: Optional[Iterable[str]],
-                    checks: Optional[rules.SignedChecks] = None) -> Optional[Accepted]:
+                    checks: Optional[rules.SignedChecks] = None,
+                    formers: Optional[Formers] = None) -> Optional[Accepted]:
     """The newest decision of ``items`` when it is an accept that verifies
     as one of ``deciders``, read from its signed body; else None (another
     decision came later, it does not verify, or the members are not
-    known). Nothing that rests on the Redaktion's word takes any other."""
+    known); ``formers`` verify people who left. Nothing that rests on the
+    Redaktion's word takes any other."""
     decisions = [item for item in items
                  if item.event is not None and item.event.name in rules.DECISIONS]
     if not decisions or deciders is None:
         return None
     item = max(decisions, key=lambda each: each.seq)
     event = item.event
-    if event.name != "accept" or not rules.action_verified(event, sid, tuple(deciders), checks):
+    if event.name != "accept" or not rules.action_verified(event, sid, tuple(deciders), checks,
+                                                           formers):
         return None
-    body = (checks or rules.SignedChecks()).body(event.signed,
-                                                 path=views.action_path(event.name, sid),
-                                           sid=sid) or {}
+    body = (checks or rules.SignedChecks()).body(
+        event.signed, path=views.action_path(event.name, sid), sid=sid) or {}
     revision, split = body.get("expected_revision"), body.get("split_rumor_id")
+    section = body.get("section")
     if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
         return None
     return Accepted(revision=revision, split_rumor_id=split if isinstance(split, str) else None,
-                    actor=event.actor or "", seq=item.seq)
+                    actor=event.actor or "", seq=item.seq,
+                    section=section if isinstance(section, str) else "")
 
 
 
-def verified_published(items: Sequence[views.TimelineItem], sid: str, writer: str, d: str,
-                       checks: Optional[rules.SignedChecks] = None) -> Optional[dict]:
-    """The article as it stands in public, for a correction to replace
-    (plan 8.6): the event of the newest ``published`` action the writer
-    signed, when that event is the writer's kind 30023 at ``d``; else
-    None. Never a server's word alone (12.4)."""
+@dataclass(frozen=True)
+class Published:
+    """A published work whose own event proves its address (contract 10,
+    The address of a published work): ``address`` is ``30023:<pk>:<d>``."""
+
+    address: str
+    event: dict
+    seq: int
+
+
+def work_address(signed: views.SignedRecord, sid: str, *, writer: str, coordinate_hash: str,
+                 publication: str, checks: Optional[rules.SignedChecks] = None
+                 ) -> Optional[Published]:
+    """The address a ``published`` report proves, whoever reported it, as
+    ``publishedAddress`` in the contract's crosscheck.reference.mjs has it
+    (vector ``published_address``): the report verifies as an event for
+    this submission; its ``event`` is a valid kind 30023 that its ``naddr``
+    names; and it is the writer's at the work's ``d`` (``coordinate_hash``
+    of the verified revision), or the publication's at that ``d`` or at
+    that ``d`` with ``-<sid8>``. None otherwise."""
+    body = (checks or rules.SignedChecks()).body(
+        signed, path=views.action_path("published", sid), sid=sid) or {}
+    work, naddr = body.get("event"), body.get("naddr")
+    if not nostr_events.is_verified_event(work, kind=formats.ARTICLE_KIND) \
+            or not isinstance(naddr, str):
+        return None
+    d = (formats.tag_values(work, "d") or [None])[0]
+    try:
+        identifier, author, kind, _relays = decode_naddr(naddr)
+        publication_key = formats.parse_address(publication)[0]
+    except (ValueError, FormatError):
+        return None
+    if not isinstance(d, str) or (identifier, author, kind) != (d, work["pubkey"],
+                                                                formats.ARTICLE_KIND):
+        return None
+
+    def own(value: str) -> bool:
+        return formats.coordinate_hash(writer, value) == coordinate_hash
+
+    ending = "-" + sid[:8]
+    proven = own(d) if work["pubkey"] == writer else work["pubkey"] == publication_key and (
+        own(d) or (d.endswith(ending) and own(d[:-len(ending)])))
+    return Published(f"{formats.ARTICLE_KIND}:{work['pubkey']}:{d}", dict(work), 0) \
+        if proven else None
+
+
+def placed_section(signed: views.SignedRecord, sid: str, address: str, publication: str,
+                   checks: Optional[rules.SignedChecks] = None) -> Optional[str]:
+    """The section a ``placed`` report names for the work at ``address``
+    (the reporter's word under their signature, ``""`` for none), when
+    its ``site_event`` is a valid kind 30004 by the publication key with
+    the Site's ``d`` and an ``a`` tag for that address; else None
+    (contract 10, as ``placedSection`` in crosscheck.reference.mjs)."""
+    body = (checks or rules.SignedChecks()).body(
+        signed, path=views.action_path("placed", sid), sid=sid) or {}
+    site = body.get("site_event")
+    try:
+        key, site_d = formats.parse_address(publication)
+    except FormatError:
+        return None
+    if not nostr_events.is_verified_event(site, kind=formats.SITE_KIND) \
+            or site["pubkey"] != key or (formats.tag_values(site, "d") or [None])[0] != site_d \
+            or not any(tag[:2] == ["a", address] for tag in site["tags"]):
+        return None
+    section = body.get("section")
+    return section if isinstance(section, str) else ""
+
+
+def published_work(items: Sequence[views.TimelineItem], sid: str, *, writer: str,
+                   coordinate_hash: str, publication: str,
+                   checks: Optional[rules.SignedChecks] = None) -> Optional[Published]:
+    """The newest ``published`` report whose event proves the address
+    (:func:`work_address`), or None. Never a server's word alone."""
     for item in sorted(items, key=lambda each: each.seq, reverse=True):
         event = item.event
-        if event is None or event.name != "published":
-            continue
-        if not rules.action_verified(event, sid, (writer,), checks):
-            return None
-        body = (checks or rules.SignedChecks()).body(
-            event.signed, path=views.action_path("published", sid), sid=sid) or {}
-        published = body.get("event")
-        if (isinstance(published, dict) and published.get("kind") == 30023
-                and published.get("pubkey") == writer
-                and formats.tag_value(published, "d") == d):
-            return published
-        return None
+        if event is not None and event.name == "published" and event.signed is not None:
+            found = work_address(event.signed, sid, writer=writer,
+                                 coordinate_hash=coordinate_hash, publication=publication,
+                                 checks=checks)
+            if found is not None:
+                return Published(found.address, found.event, item.seq)
     return None
 
 
-__all__ = ["Accepted", "EXTENSIONS", "NEVER_CARRIED", "NotPublishable", "addresses_before",
-           "credited",
-           "media_refs_in", "media_to_publish", "published_template",
-           "served_at", "verified_accept", "verified_published", "work_of"]
+def section_of(items: Sequence[views.TimelineItem], sid: str, address: str, publication: str,
+               checks: Optional[rules.SignedChecks] = None) -> Optional[str]:
+    """The section of the newest ``placed`` report that counts for
+    ``address`` (:func:`placed_section`), or None."""
+    for item in sorted(items, key=lambda each: each.seq, reverse=True):
+        event = item.event
+        if event is not None and event.name == "placed" and event.signed is not None:
+            section = placed_section(event.signed, sid, address, publication, checks)
+            if section is not None:
+                return section
+    return None
+
+
+__all__ = ["Accepted", "EXTENSIONS", "NEVER_CARRIED", "NotPublishable", "Published",
+           "addresses_before", "credited", "media_refs_in", "media_to_publish",
+           "placed_section", "published_template", "published_work", "section_of",
+           "served_at", "verified_accept", "work_address", "work_of"]

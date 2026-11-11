@@ -38,6 +38,7 @@ from i18n import N_, _
 
 from . import views, words
 from .entries import SubmissionEntry
+from .former import Formers
 from .progress import Phase, Progress
 from .watcher import Followed, NotHandedIn, StoredOther
 
@@ -442,10 +443,11 @@ class SignedChecks:
 
 
 def action_verified(event: views.TimelineEvent, sid: str, signers: Optional[Iterable[str]],
-                    checks: Optional[SignedChecks] = None) -> Optional[bool]:
-    """Whether a timeline event's stored signed action verifies as one
-    of ``signers`` (10); None while ``signers`` are not known. ``checks``
-    keeps what was checked before."""
+                    checks: Optional[SignedChecks] = None,
+                    formers: Optional[Formers] = None) -> Optional[bool]:
+    """Whether a timeline event's stored signed action verifies as one of
+    ``signers`` (10); None while they are not known. ``checks`` keeps what
+    was checked; ``formers`` (Redaktion actions only) verify people who left."""
     if signers is None:
         return None
     path = views.action_path(event.name, sid)
@@ -453,23 +455,27 @@ def action_verified(event: views.TimelineEvent, sid: str, signers: Optional[Iter
         return False
     body = (checks or SignedChecks()).body(event.signed, path=path, sid=sid)
     signer = event.signed.event.get("pubkey")
-    if body is None or signer not in set(signers) or signer != event.actor:
+    if body is None or signer != event.actor:
+        return False
+    if signer not in set(signers) and (formers is None or not formers.decides(
+            signer, event.name, body, decisions=DECISIONS)):
         return False
     return event.name not in DECISIONS or body.get("outcome") == event.name
 
 
 def newest_decision(items: Sequence[views.TimelineItem], sid: str,
                     deciders: Optional[Iterable[str]],
-                    checks: Optional[SignedChecks] = None) -> Optional[Decision]:
+                    checks: Optional[SignedChecks] = None,
+                    formers: Optional[Formers] = None) -> Optional[Decision]:
     """The newest decision among ``items``, verified against
-    ``deciders`` (None: the member list is not known)."""
+    ``deciders`` (None: the member list is not known) and ``formers``."""
     decisions = [item for item in items
                  if item.event is not None and item.event.name in DECISIONS]
     if not decisions:
         return None
     event = max(decisions, key=lambda item: item.seq).event
     signers = None if deciders is None else tuple(deciders)
-    return Decision(event.name, event.actor, action_verified(event, sid, signers, checks))
+    return Decision(event.name, event.actor, action_verified(event, sid, signers, checks, formers))
 
 
 # --------------------------------------------------------------------------- #
@@ -508,7 +514,7 @@ class Status:
 
 def status_of(row: Row, *, publication: str, name_of: Callable[[str], str],
               decision: Optional[Decision] = None, complete: bool = False,
-              edited: bool = False) -> Status:
+              edited: bool = False, section: str = "") -> Status:
     """The detail's sentence and action for ``row``. ``decision`` is the
     newest decision of its timeline (:func:`newest_decision`);
     ``complete``: the submission was read whole, with its member list,
@@ -516,7 +522,8 @@ def status_of(row: Row, *, publication: str, name_of: Callable[[str], str],
     (10: nothing is said while the page did not load, and a server
     cannot unsay it by leaving the item out). ``edited``: the text in
     the editor differs from the version handed in, so the next version
-    can be handed in (while the submission is open)."""
+    can be handed in (while the submission is open). ``section``: the one
+    a placed report that counts names (10), never the server's alone."""
     entry = TABLE[row.situation]
     view = row.view
     number = view.revision if view is not None else 1
@@ -532,9 +539,8 @@ def status_of(row: Row, *, publication: str, name_of: Callable[[str], str],
         fields["name"] = name_of(view.responsible) if view.responsible else ""
         if fields["name"] and number > 1:
             sentence = VERSION_IN_REVIEW
-    if row.situation is Situation.PUBLISHED and view.section:
-        more = SECTION_PLACE
-        fields["section"] = view.section
+    if row.situation is Situation.PUBLISHED and section:
+        more, fields["section"] = SECTION_PLACE, section
     if "{name}" in sentence and not fields["name"]:
         sentence = entry.unnamed_sentence
     if action in ON_A_DECISION and not rests:

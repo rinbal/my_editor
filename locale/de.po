@@ -13481,3 +13481,6 @@ msgstr "Die Redaktion schlägt eine Aufteilung vor: {shares}"
 
 msgid "Accepted with this split."
 msgstr "Mit dieser Aufteilung angenommen."
+
+msgid "The published article couldn’t be found yet: try again in a moment."
+msgstr "Der veröffentlichte Artikel wurde noch nicht gefunden: versuch es gleich noch einmal."

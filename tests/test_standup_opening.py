@@ -17,6 +17,7 @@ from nostr import crypto, events, nip98
 from nostr.standup import crypto as sc
 from nostr.standup import formats, views
 from nostr.standup import opening as op
+from nostr.standup.former import Formers, parse_formers
 from nostr.standup.opening import (
     MediaKeys,
     NotConfirmed,
@@ -28,7 +29,7 @@ from nostr.standup.opening import (
     verify_revision,
 )
 from tests.standup_fakes import ADDRESS, KEY_EVENT, KeySigner, submission_for
-from tests.standup_vectors import NOW, VECTORS, pk, sk
+from tests.standup_vectors import NOW, VECTORS, fixture_secret, pk, sk
 
 SERVER = "https://standup.example"
 CONTRIBUTOR = pk("contributor")
@@ -222,7 +223,7 @@ def test_a_signer_that_declines_has_not_opened_it_yet(submitted):
 
 # -- corrections -----------------------------------------------------------------------
 
-def correction_of(prepared, *, signer: bytes):
+def correction_of(prepared, *, signer: bytes, epoch: int = 0):
     body = prepared.body
     sid = body["submission_id"]
     corrected = submission_for(sk("writer"), participants=(CONTRIBUTOR,), revision=2,
@@ -230,6 +231,8 @@ def correction_of(prepared, *, signer: bytes):
     fix = {key: corrected.body[key] for key in ("submission_id", "revision", "revision_hash",
                                                  "envelope", "envelope_sha256", "wraps",
                                                  "blobs")}
+    if epoch:
+        fix["epoch"] = epoch
     action = signed(fix, f"/api/submissions/{sid}/corrections", signer)
     return corrected, record_of(corrected.body, action)
 
@@ -248,6 +251,30 @@ def test_a_correction_by_the_redaktion_takes_its_key_from_the_writers_revision(s
         verify_revision(view, record, redaktion={pk("editor")})
     with pytest.raises(NotConfirmed):
         verify_revision(view, record, redaktion={STRANGER}, writer_revision=writer)
+
+
+def test_a_correction_by_someone_who_left_verifies_when_they_decided_at_its_epoch(submitted):
+    # Contract 10, People who left; vector former_member: `left` decides at
+    # epoch 3, the curator invited again at epoch 3 does not.
+    fm = VECTORS["former_member"]
+    prepared, action = submitted
+    writer = verify_revision(view_of(prepared.body), record_of(prepared.body, action))
+    formers = Formers(fm["publication"])
+    formers.join(parse_formers([fm["former"]["left"], fm["former"]["curator"]]))
+    for label, person, verifies in (("former", "left", True), ("curator", "curator", False)):
+        assert crypto.get_public_key(fixture_secret(label)).hex() == fm["former"][person]["pubkey"]
+        corrected, record = correction_of(prepared, signer=fixture_secret(label), epoch=3)
+        view = view_of(corrected.body)
+        if verifies:
+            verified = verify_revision(view, record, redaktion={pk("editor")},
+                                       writer_revision=writer, formers=formers)
+            assert verified.correction and verified.epoch == 3
+        else:
+            with pytest.raises(NotConfirmed):
+                verify_revision(view, record, redaktion={pk("editor")},
+                                writer_revision=writer, formers=formers)
+        with pytest.raises(NotConfirmed):              # no word of the server's alone
+            verify_revision(view, record, redaktion={pk("editor")}, writer_revision=writer)
 
 
 # -- works already public (3b00351) ---------------------------------------------------

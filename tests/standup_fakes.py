@@ -1789,7 +1789,9 @@ class FakeStandupServer:
                     "revisions": [revision], "timeline": timeline, "more": more,
                     # backend submission_reads: only who reads its epoch.
                     "members": [self._member(pub, p) for p in pub.members
-                                if self._reads_epoch(pub, p, record.epoch)]})
+                                if self._reads_epoch(pub, p, record.epoch)],
+                    # Contract 10: always there; this fake keeps no one who left.
+                    "former": []})
 
     def _before_messages(self, raw: bytes, who) -> Optional[FakeReply]:
         """backend post_message before the body is read: the address, then

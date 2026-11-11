@@ -6,6 +6,7 @@ names the source)."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 
@@ -29,3 +30,9 @@ def sk(name: str) -> bytes:
 
 def pk(name: str) -> str:
     return KEYS[name]["pubkey"]
+
+
+def fixture_secret(label: str) -> bytes:
+    """The secret the generator (docs/editorial-fixtures/generate.py,
+    ``det``) makes for ``label``: the vectors name only its pubkey."""
+    return hashlib.sha256(f"editorial-fixture:{label}:0".encode()).digest()

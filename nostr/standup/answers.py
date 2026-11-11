@@ -18,6 +18,7 @@ from typing import Any, Dict, FrozenSet, Mapping, Optional, Tuple
 
 from ..http_answers import clean_text
 from . import formats, views
+from .former import Former, parse_formers
 from .formats import FormatError, need
 from .readers import (
     read_address,
@@ -379,6 +380,8 @@ class SubmissionDetail:
     members: Tuple[Member, ...]
     more: bool = False
     internal: Tuple[views.TimelineItem, ...] = ()
+    # Who signed an action here and is no member now (contract 10).
+    former: Tuple[Former, ...] = ()
 
 
 def parse_submission_detail(data: Mapping[str, Any]) -> SubmissionDetail:
@@ -393,7 +396,7 @@ def parse_submission_detail(data: Mapping[str, Any]) -> SubmissionDetail:
         timeline=channels["conversation"], internal=channels["internal"],
         members=tuple(parse_member(m) for m in read_list(data.get("members", []),
                                                          "the members", limit=_MAX_MEMBERS)),
-        more=_read_more(data))
+        more=_read_more(data), former=parse_formers(data.get("former")))
 
 
 def _read_more(data: Mapping[str, Any]) -> bool:

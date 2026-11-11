@@ -37,6 +37,7 @@ from ..standup.publishing import Accepted
 from ..standup import following as rules
 from ..standup import thread as threads
 from ..standup.entries import SubmissionEntry
+from ..standup.former import Formers
 from ..standup.errors import PASSING, Code, StandupError, cause_words
 from ..standup.watcher import AT_THE_END, read_submission
 from .standup_account import live
@@ -78,6 +79,7 @@ class _Open:
     loading: bool = False
     problem: str = ""               # the one sentence, when nothing could be read
     not_confirmed: bool = False     # the latest version did not verify: not opened
+    formers: Optional[Formers] = None   # people who left, and the revisions' epochs (10)
 
 
 @dataclass(frozen=True)
@@ -100,6 +102,7 @@ class Detail:
     not_confirmed: bool = False
     # The submission was read whole, with its member list (contract 10).
     complete: bool = False
+    section: str = ""               # from a placed report that counts (contract 10)
 
 
 @dataclass
@@ -277,6 +280,7 @@ class Reading:
         """A read of the submission: its view, its members, its items,
         and its latest version, verified before anything is opened."""
         state.view, state.members = detail.submission, detail.members
+        self._formers(state, detail)
         self._members[detail.submission.publication] = rules.members_of(detail.members)
         self.add(sid, detail.timeline)
         self._owner.serve(detail.submission)
@@ -314,12 +318,14 @@ class Reading:
         try:
             verified = opening.verify_revision(
                 view, record, redaktion=rules.deciders_of(state.members or ()),
-                writer_revision=writer if correction else None)
+                writer_revision=writer if correction else None, formers=state.formers)
         except opening.NotConfirmed:
             if latest:
                 state.not_confirmed = True
             done(None)
             return
+        if state.formers is not None:
+            state.formers.saw(record.revision, verified.epoch)
 
         def with_key(secret: bytes) -> None:
             if state.room is None:
@@ -357,6 +363,14 @@ class Reading:
             account.signer, verified, account.writer, live(account, with_key),
             live(account, lambda _error: done(None)),
             served=record.wraps.get(account.writer))
+
+    @staticmethod
+    def _formers(state: _Open, detail) -> None:
+        """The people who left that a read served, joined by pubkey
+        (contract 10: a later page needs only the new ones)."""
+        if state.formers is None:
+            state.formers = Formers(detail.submission.publication)
+        state.formers.join(detail.former)
 
     @staticmethod
     def _writer_revision(state: _Open, before: int):
@@ -399,6 +413,7 @@ class Reading:
         account = self._account
 
         def read(detail) -> None:
+            self._formers(state, detail)
             record = next((r for r in detail.revisions if r.revision == revision), None)
             if record is None:
                 on_done(None)
@@ -417,16 +432,41 @@ class Reading:
             return None
         items = [state.items[seq] for seq in sorted(state.items)]
         return publishing.verified_accept(items, sid, rules.deciders_of(state.members),
-                                          self.checks)
+                                          self.checks, state.formers)
 
-    def published_event(self, sid: str) -> Optional[dict]:
-        """The article as it stands in public (``publishing.verified_published``),
-        once the submission was read; None otherwise."""
+    def published(self, sid: str) -> Optional[publishing.Published]:
+        """The published work whose own event proves its address, whoever
+        reported it (``publishing.published_work``, contract 10), once a
+        version was verified here; None otherwise."""
         state, row = self._details.get(sid), self._owner.row(sid)
-        if state is None or row is None or not row.d:
+        view = row.view if row is not None else None
+        coordinate = next((v.opened.verified.coordinate_hash for v in (
+            state.versions.values() if state is not None else ())
+            if v.opened is not None and v.opened.verified.coordinate_hash), "")
+        if view is None or not coordinate:
             return None
         items = [state.items[seq] for seq in sorted(state.items)]
-        return publishing.verified_published(items, sid, row.writer, row.d, self.checks)
+        return publishing.published_work(items, sid, writer=view.writer,
+                                         coordinate_hash=coordinate,
+                                         publication=view.publication, checks=self.checks)
+
+    def published_event(self, sid: str) -> Optional[dict]:
+        """The writer's own work as it stands in public, for a correction
+        they take over to replace at its address; None otherwise (also
+        when the publication published it: then it republishes)."""
+        published, row = self.published(sid), self._owner.row(sid)
+        return published.event if published is not None and row is not None \
+            and published.event.get("pubkey") == row.writer else None
+
+    def section(self, sid: str) -> str:
+        """The section of the newest ``placed`` report that counts for the
+        proven address (``publishing.section_of``), or ``""``."""
+        published, state = self.published(sid), self._details.get(sid)
+        if published is None or state is None or state.view is None:
+            return ""
+        items = [state.items[seq] for seq in sorted(state.items)]
+        return publishing.section_of(items, sid, published.address, state.view.publication,
+                                     self.checks) or ""
 
     def accepted_split(self, sid: str) -> Optional[Tuple[Tuple[str, int, str], ...]]:
         """The split to confirm (9.4): ``(pubkey, weight, role)`` of the
@@ -440,7 +480,8 @@ class Reading:
         items = [state.items[seq] for seq in sorted(state.items)]
         held, _opening = self.open_wraps(sid, state.room, items)
         opened = [held[item.seq] for item in items if held.get(item.seq) is not None]
-        deciders = rules.deciders_of(state.members)
+        # Who decided counted then, also one who left since (10).
+        deciders = tuple({*rules.deciders_of(state.members), accepted.actor})
         decision = next(item.event.signed for item in items if item.seq == accepted.seq)
         bubbles = conversation.fold(opened, writer=row.writer, redaktion=deciders)
         split = conversation.accepted_split(bubbles, decision, submission_id=sid,
@@ -481,11 +522,11 @@ class Reading:
         view = row.view
         who = dict(sid=sid, writer=row.writer,
                    participants=view.participants if view is not None else (),
-                   deciders=deciders, checks=self.checks)
+                   deciders=deciders, checks=self.checks, formers=state.formers)
         members = rules.members_of(state.members) if state.members is not None else None
         return Detail(
             row=row, publication=owner.publication_name(row.publication),
-            decision=rules.newest_decision(items, sid, deciders, self.checks),
+            decision=rules.newest_decision(items, sid, deciders, self.checks, state.formers),
             thread=tuple(threads.build_thread(items, opened, me=self._account.writer,
                                               members=members, **who)),
             history=tuple(threads.history(items, **who)), opened=tuple(opened),
@@ -497,7 +538,8 @@ class Reading:
             # and its latest version verified: the room key is its own then.
             can_write=state.room is not None and row.confirmed and not state.not_confirmed
             and row.situation is not rules.Situation.WITHDRAWN,
-            not_confirmed=state.not_confirmed, complete=state.members is not None)
+            not_confirmed=state.not_confirmed, complete=state.members is not None,
+            section=self.section(sid) if row.situation is rules.Situation.PUBLISHED else "")
 
 
 __all__ = ["Detail", "Reading", "Version", "secret_of"]

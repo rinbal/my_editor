@@ -306,6 +306,26 @@ def test_publish_opens_the_accepted_version_and_says_when_the_editor_text_differ
     sheet.reject()
 
 
+def test_view_opens_the_address_the_published_event_proves_never_the_servers(window, monkeypatch):
+    # Contract 10, The address of a published work: Ansehen opens only the
+    # address a counting report proves; until one is read, it says so once.
+    from nostr.standup.publishing import Published
+    from nostr.ui import submissions_host
+    links = []
+    monkeypatch.setattr(submissions_host.QDesktopServices, "openUrl",
+                        lambda url: links.append(url.toString()))
+    prepared, entries = seeded(window, annahme="Steuern")
+    window.follow()
+    sid = entries["annahme"].sid
+    window.host.view_published(sid)
+    assert links == [] and window.said == [
+        "The published article couldn’t be found yet: try again in a moment."]
+    monkeypatch.setattr(window.host._following.reading, "published",
+                        lambda _sid: Published(f"30023:{ME}:steuern-d", {}, 1))
+    window.host.view_published(sid)
+    assert len(links) == 1 and links[0].endswith(f"/{ME}/steuern-d")   # never the row's d
+
+
 def test_confirming_names_the_accepted_split_and_where_the_share_goes_then_reminds(
         window, monkeypatch):
     # M-4 M14: a work the publication signs; the writer confirms the split

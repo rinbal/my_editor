@@ -39,6 +39,7 @@ from .. import events as nostr_events
 from ..bech32 import decode_naddr
 from ..later import answer_later
 from . import formats
+from .former import Formers
 from .crypto import (
     StandupCryptoError,
     WrapInvalid,
@@ -117,6 +118,8 @@ class VerifiedRevision:
     wraps: Mapping[str, Mapping[str, str]]
     signer: str
     correction: bool
+    epoch: int = 0                     # its signed body's (0: it names none)
+    coordinate_hash: str = ""          # the work's, bound to the sid (section 2)
     _token: object = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -130,16 +133,19 @@ def _need(condition: bool, reason: str) -> None:
 
 def verify_revision(view: SubmissionView, record: RevisionRecord, *,
                     redaktion: Iterable[str] = (),
-                    writer_revision: Optional[VerifiedRevision] = None) -> VerifiedRevision:
+                    writer_revision: Optional[VerifiedRevision] = None,
+                    formers: Optional[Formers] = None) -> VerifiedRevision:
     """``record`` of the submission ``view`` shows, verified against its
     stored signed action, or :class:`NotConfirmed`.
 
     A writer's submission or revision (``POST /api/submissions``) must be
     signed by the View's writer; a correction (``.../corrections``) by a
-    member of the Redaktion (``redaktion``, from the member list), and it
-    takes ``p_sub``, kind and title from ``writer_revision``, the writer's
-    verified revision it corrects. A writer's body must name the View's
-    ``publication`` and ``round``, and its ``submission_id`` must
+    member of the Redaktion (``redaktion``, from the member list) or by one
+    who left since and decided at its epoch (``formers``, contract 10,
+    People who left), and it takes ``p_sub``, kind and title from
+    ``writer_revision``, the writer's verified revision it corrects. A
+    writer's body must name the View's ``publication`` and ``round``, and
+    its ``submission_id`` must
     recompute from the signer, that ``publication``, its
     ``coordinate_hash`` and ``round`` (section 2): else a server could
     hand any sid to a writer it chose. The body's ``submission_id``,
@@ -166,7 +172,7 @@ def verify_revision(view: SubmissionView, record: RevisionRecord, *,
     correction = path == action_path("correction", sid)
     proposed = path == _proposals_path(view.publication)
     if correction:
-        signers = set(redaktion)
+        signers = None                  # a member now, or one who left (below)
     else:
         signers = {view.proposal_by if view.proposal_by is not None else view.writer}
     try:
@@ -176,6 +182,9 @@ def verify_revision(view: SubmissionView, record: RevisionRecord, *,
     except SignedActionInvalid as exc:
         raise NotConfirmed(str(exc)) from None
     signer = signed.event["pubkey"]
+    if correction:
+        _need(signer in set(redaktion) or (formers is not None and formers.decides(
+            signer, "correction", body, decisions=())), "signed by someone without that role")
     if proposed:
         return _proposal(view, record, body, signer)
     _need(formats.is_int(body.get("revision"), low=1) and body["revision"] == record.revision,
@@ -190,10 +199,12 @@ def verify_revision(view: SubmissionView, record: RevisionRecord, *,
         _need(writer_revision is not None and writer_revision.submission_id == sid
               and not writer_revision.correction, "the writer's revision is not verified")
         p_sub, kind, title = writer_revision.p_sub, writer_revision.kind, writer_revision.title
+        coordinate = writer_revision.coordinate_hash
     else:
         _writer_binding(body, view, signer)
         _source_binding(body, view, record, signer)
         p_sub, kind, title = body.get("p_sub"), body.get("kind"), body.get("title")
+        coordinate = body["coordinate_hash"]           # the sid recomputed from it
     _need(p_sub == view.p_sub, "the submission key signed is another")
     _need(kind == view.kind, "the kind signed is another")
     if record.revision == view.revision:
@@ -203,7 +214,14 @@ def verify_revision(view: SubmissionView, record: RevisionRecord, *,
         submission_id=sid, revision=record.revision, revision_hash=record.revision_hash,
         envelope_sha256=record.envelope_sha256, p_sub=p_sub, kind=kind, title=title,
         wraps={name: dict(wrap) for name, wrap in wraps.items()},
-        signer=signer, correction=correction, _token=_MINTED))
+        signer=signer, correction=correction, epoch=_epoch(body), coordinate_hash=coordinate,
+        _token=_MINTED))
+
+
+def _epoch(body: Mapping) -> int:
+    """The epoch a revision's signed body names, or 0 (contract 12.4)."""
+    epoch = body.get("epoch")
+    return epoch if formats.is_int(epoch, low=1) else 0
 
 
 def _proposals_path(publication: str) -> Optional[str]:
@@ -287,7 +305,8 @@ def _proposal(view: SubmissionView, record: RevisionRecord, body: Mapping,
         submission_id=view.submission_id, revision=1, revision_hash=record.revision_hash,
         envelope_sha256=None, p_sub=p_sub, kind="article", title=title,
         wraps={name: dict(wrap) for name, wrap in wraps.items()},
-        signer=signer, correction=False, _token=_MINTED))
+        signer=signer, correction=False, epoch=_epoch(body), coordinate_hash=coordinate,
+        _token=_MINTED))
 
 
 def _writer_binding(body: Mapping, view: SubmissionView, signer: str) -> None:
