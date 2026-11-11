@@ -233,10 +233,17 @@ class QuietReport(QObject):
                        quick=False)
         self._following.publishing_changed(sid)
 
+    def kept_at(self, sid: str, revision: int) -> Optional[Tuple[dict, str, bool]]:
+        """The public event a record keeps for this revision of ``sid``, its
+        naddr, and whether its link name is taken; None for none."""
+        entry = self._record.entry(sid)
+        if entry is None or int(entry.get("revision", 0)) != revision:
+            return None
+        return dict(entry["event"]), str(entry["naddr"]), bool(entry.get("taken"))
+
     def _kept(self, sid: str, revision: int) -> bool:
         """Whether a record says how this revision of ``sid`` stands."""
-        entry = self._record.entry(sid)
-        return entry is not None and int(entry.get("revision", 0)) == revision
+        return self.kept_at(sid, revision) is not None
 
     def forget(self, sid: str) -> None:
         """The work is listed (or no longer this writer's to report)."""

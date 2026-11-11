@@ -507,11 +507,18 @@ class AcceptedPublish(QObject):
             found = publishing.release(writer=self.writer, address=self.address,
                                        address_taken=taken, server_read=read, held=held,
                                        relays=relays)
-            unlisted = self._ports.unlisted
-            shown = unlisted.public_at(self._version, address=self.address, relays=relays) \
-                if unlisted is not None else None
+            unlisted, shown = self._ports.unlisted, None
+            if unlisted is not None:
+                shown = unlisted.public_at(self._version, address=self.address, relays=relays)
+                kept = unlisted.kept_at(self.sid, self._version.revision)
+                if shown is None and kept is not None:
+                    # Kept public meanwhile by the detail's look: a relay that
+                    # misses it now changes nothing (RG-M4-c short look 2).
+                    shown, taken = kept[:2], taken or kept[2]
             # Published on another device: public already, never signed again
             # nor "nothing is published"; what this run put up shows in it.
+            if shown is not None:
+                self._let_go()          # what it signed meanwhile never goes out
             if shown is not None and taken:
                 unlisted.keep(self.sid, self._version, *shown, taken=True)
                 self._kept_public()
@@ -573,6 +580,8 @@ class AcceptedPublish(QObject):
         def reported(view) -> None:
             if self._stopped:
                 return
+            if self._ports.unlisted is not None:
+                self._ports.unlisted.forget(self.sid)    # a record it reported is done
             listed(view)
             if self._ports.cleanup is not None:
                 self._ports.cleanup(self.sid, self._cleanup_asks)

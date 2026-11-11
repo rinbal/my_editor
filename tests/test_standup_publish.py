@@ -428,6 +428,32 @@ def test_an_earlier_article_at_the_link_name_that_credits_or_pays_less_is_not_th
     assert found(paid, public(paid)) and found(credited, public(credited))
 
 
+def test_a_work_the_detail_found_public_is_reported_though_the_guards_relay_misses_it(accepted):
+    # RG-M4-c short look 2: the detail's look keeps it public while the run
+    # reads; a relay that misses it then never makes the run sign it again.
+    from nostr.standup.errors import Code, StandupError
+    world, sid, writer = accepted.world, accepted.sid, accepted.writer
+    elsewhere, _store, jobs = _run(accepted)
+    elsewhere._ports = replace(elsewhere._ports, unlisted=None, api=SimpleNamespace(
+        published=lambda sid, *, on_failure, **_kw: on_failure(StandupError(code=Code.OFFLINE))))
+    elsewhere.start()
+    world.settle()
+    looks, guards = [], []
+    here = world.following(writer, read_address=lambda _unsigned, done: looks.append(done))
+    here.open(sid)
+    world.settle()
+    case = SimpleNamespace(**{**vars(accepted), "following": here})
+    pressed, store, signed = _run(case, relays_hold=lambda _unsigned, done: guards.append(done))
+    pressed.start()
+    world.settle()
+    looks[0]({"wss://relay.example": (True, [jobs[0].signed_event])})
+    guards[0]({"wss://relay.example": (True, [])})
+    world.settle()
+    assert pressed.stage is Stage.DONE and len(guards) == 1
+    assert world.record(sid).published["event_id"] == jobs[0].signed_event["id"]
+    assert signed == [] and store.uploaded == [] and here.unlisted.state(sid) == ""
+
+
 def _flaky_report(api, failures):
     """``api.published`` failing ``failures[0]`` times while it is above 0."""
     from nostr.standup.errors import Code, StandupError
