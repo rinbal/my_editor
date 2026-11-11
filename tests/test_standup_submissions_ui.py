@@ -31,6 +31,7 @@ import alerts
 from document_notice import DocumentNotice
 from nostr.standup import conversation
 from nostr.standup.errors import Code, StandupError
+from nostr.standup import following as rules
 from nostr.standup.following import Action
 from nostr.ui import standup_submit, submission_cover, submission_detail
 from nostr.ui.standup_submit import StandupWriter
@@ -41,7 +42,7 @@ from nostr.ui.drafts_panel import DraftsPanel
 from nostr.ui.submissions_view import PANEL_VIEW, SubmissionsView, add_to_panel
 from tests.standup_fakes import DROP_BEFORE, SERVER
 from tests.standup_following_fakes import FollowWorld
-from tests.standup_vectors import pk
+from tests.standup_vectors import pk, sk
 
 ME, EDITOR, OTHER = pk("writer"), pk("editor"), pk("contributor")
 NAMES = {EDITOR: "Anna", ME: "Jana", OTHER: "Paul"}
@@ -321,6 +322,79 @@ def test_a_name_that_comes_in_late_shows_in_the_open_publish_sheet(window, monke
     window.host.names_learned()
     assert sheet.people.text() == "Jana, Lena"
     sheet.reject()
+
+
+def test_a_contributor_confirms_the_split_and_their_rights_from_their_own_app():
+    # M-4 M14, the contributor's side: their own app, the split the verified
+    # accept names, the rights ticked before Confirm; the writer's app then
+    # holds Paul's confirmation and reminds nobody.
+    from nostr.ui.standup_confirm_sheet import ConfirmSheet
+    world = FollowWorld()
+    writer = world.account()
+    prepared, entry = world.submit(writer, d="gemeinsam", title="Gemeinsam",
+                                   participants=(OTHER,))
+    sid = entry.sid
+    world.record(sid).signer = "publication"
+    world.decide(prepared, "accept", split=[{"pubkey": ME, "weight": 70, "role": "writer"},
+                                            {"pubkey": OTHER, "weight": 30,
+                                             "role": "contributor"}])
+    paul = world.account("contributor")
+    following = world.following(paul)
+    following.view_opened()
+    world.settle()
+    following.open(sid)
+    world.settle()
+    reading = following.reading
+    accepted, version = reading.accepted(sid), reading.latest(sid)
+    sheet = ConfirmSheet(
+        role=following.row(sid).role, publication="Magazin", number=1,
+        shares=reading.accepted_split(sid), me=OTHER, name_of=lambda p: NAMES.get(p, ""),
+        zap_address=lambda pubkey, answer: answer("paul@getalby.com"),
+        confirm=lambda confirms, done: following.confirm(
+            sid, confirms=confirms, revision_hash=version.revision_hash,
+            split_rumor_id=accepted.split_rumor_id, on_done=done), is_dark=False)
+    assert sheet.split.text() == "Jana 70 %  ·  You 30 %"
+    assert sheet.rights.isVisibleTo(sheet) and not sheet.confirm_button.isEnabled()
+    sheet.rights.setChecked(True)
+    sheet.confirm_button.click()
+    world.settle()
+    assert following.row(sid).view.confirmations.get(OTHER) == ("split", "rights")
+    mine = world.following(writer)
+    mine.open(sid)
+    world.settle()
+    assert mine.row(sid).view.confirmations.get(OTHER) == ("split", "rights")
+    assert OTHER not in rules.waiting_for(mine.row(sid))
+
+
+def test_a_correction_is_compared_in_its_sheet_and_a_question_goes_to_the_composer(window):
+    # M-4 M15 at the host: the writer's published article, the editorial
+    # team's correction; Compare opens the sheet with the note and the
+    # comparison, Take the Correction is the one primary action.
+    from nostr import events
+    from nostr.bech32 import encode_naddr
+    from nostr.ui.standup_correction_sheet import CorrectionSheet
+    world = window.world
+    seed = world.account()
+    prepared, entry = world.submit(seed, d="ein-jahr", title="Ein Jahr mit Lightning im Café")
+    world.decide(prepared, "accept")
+    article = events.sign_event({"kind": 30023, "created_at": world.clock(), "content": "Alt.",
+                                 "tags": [["d", "ein-jahr"]]}, sk("writer"))
+    reported = []
+    seed.api.published(entry.sid, naddr=encode_naddr("ein-jahr", ME, 30023), event=article,
+                       on_success=reported.append, on_failure=reported.append)
+    world.settle()
+    world.correct(seed, entry.sid, "Korrigiert.")
+    window.follow()
+    detail = opened(window, entry)
+    assert detail.action.text() == "Compare …"
+    detail.action.click()
+    world.settle()
+    sheet = window.host._correction_sheet
+    assert isinstance(sheet, CorrectionSheet) and sheet.isVisible()
+    assert sheet.note.text() == "“Zwei Zahlen korrigiert.”"
+    assert sheet.take.text() == "Take the Correction" and sheet.take.isDefault()
+    sheet.ask.click()
+    assert window.view.detail.composer.toPlainText() == "A short question about the correction: "
 
 
 def test_view_opens_the_address_the_published_event_proves_never_the_servers(window, monkeypatch):

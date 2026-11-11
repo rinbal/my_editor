@@ -249,29 +249,6 @@ def test_too_long_for_the_signer_app_with_the_key_here_offers_it_once(accepted, 
     assert run.stage is Stage.FAILED and store.uploaded == []
 
 
-def _correct(case, content: str):
-    """The editor's correction (revision 2) of the published work."""
-    from tests.standup_fakes import KEY_EVENT
-    import json
-    sid, world = case.sid, case.world
-    s_sub = case.writer.submissions.entry(sid).s_sub
-    rev = formats.build_revision(
-        submission_id=sid, revision=2, kind="article",
-        work={"title": "Ein Jahr mit Lightning im Café", "content": content, "d": "ein-jahr"},
-        rights={"confirmed": True, "license": None}, media=[case.entry],
-        change_summary="Zwei Zahlen korrigiert.", client="MyEditor tests")
-    sealed = scrypto.seal_revision(rev, bytes.fromhex(s_sub))
-    wraps = scrypto.wrap_submission_key(sid, bytes.fromhex(s_sub), {
-        "redaktion": json.loads(KEY_EVENT["content"])["pubkey"], "writer": pk("writer")})
-    answer = []
-    world.editor.correction(sid, revision=2, revision_hash=sealed.revision_hash,
-                            envelope=sealed.envelope_b64, envelope_sha256=sealed.envelope_sha256,
-                            wraps=wraps, blobs=[], on_success=answer.append,
-                            on_failure=answer.append)
-    world.settle()
-    assert hasattr(answer[0], "submission"), answer
-
-
 def test_a_correction_taken_is_confirmed_alone_then_replaces_the_article_keeping_its_date(
         accepted):
     # M-4 M15: bound to the correction's verified revision, at the address
@@ -282,7 +259,8 @@ def test_a_correction_taken_is_confirmed_alone_then_replaces_the_article_keeping
     accepted.world.settle()
     published = jobs[0].signed_event
     accepted.world.clock.advance(60)
-    _correct(accepted, f"Korrigiert ![]({accepted.entry['ref']})")
+    content = f"Korrigiert ![]({accepted.entry['ref']})"
+    accepted.world.correct(accepted.writer, accepted.sid, content, media=[accepted.entry])
     following = accepted.following
     following.refresh()
     accepted.world.settle()

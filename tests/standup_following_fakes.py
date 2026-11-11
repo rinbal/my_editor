@@ -11,6 +11,7 @@ reads a wall clock (lesson 34)."""
 
 from __future__ import annotations
 
+import json
 from types import MethodType, SimpleNamespace
 from typing import List, Optional
 
@@ -18,7 +19,7 @@ from PySide6.QtCore import QObject, QTimer
 from PySide6.QtWidgets import QApplication
 
 from nostr import crypto, events
-from nostr.standup import conversation, trust
+from nostr.standup import conversation, formats, trust
 from nostr.standup import crypto as scrypto
 from nostr.standup.client import StandupApi
 from nostr.standup.entries import SubmissionEntry
@@ -30,7 +31,7 @@ from nostr.ui.standup_following import Following
 from tests.membership_fakes import FakeClock, FakeTimer
 from tests.outbox_fakes import FakeRelayDirectory
 from tests.standup_fakes import (
-    SERVER, FakeStandupServer, KeySigner, SignAs, StandupNam, submission_for,
+    KEY_EVENT, SERVER, FakeStandupServer, KeySigner, SignAs, StandupNam, submission_for,
 )
 from tests.standup_vectors import ADDRESS, NOW, pk, sk
 from tests.test_encrypted_lists import Relay
@@ -244,6 +245,26 @@ class FollowWorld:
 
     def record(self, sid: str):
         return self.server.submissions[sid]
+
+    def correct(self, account: "TestAccount", sid: str, content: str, *, media=(),
+                note: str = "Zwei Zahlen korrigiert.") -> None:
+        """The editor's correction (revision 2) of ``account``'s published work."""
+        s_sub = bytes.fromhex(account.submissions.entry(sid).s_sub)
+        rev = formats.build_revision(
+            submission_id=sid, revision=2, kind="article",
+            work={"title": "Ein Jahr mit Lightning im Café", "content": content, "d": "ein-jahr"},
+            rights={"confirmed": True, "license": None}, media=list(media),
+            change_summary=note, client="MyEditor tests")
+        sealed = scrypto.seal_revision(rev, s_sub)
+        wraps = scrypto.wrap_submission_key(sid, s_sub, {
+            "redaktion": json.loads(KEY_EVENT["content"])["pubkey"], "writer": pk("writer")})
+        answer = []
+        self.editor.correction(sid, revision=2, revision_hash=sealed.revision_hash,
+                               envelope=sealed.envelope_b64,
+                               envelope_sha256=sealed.envelope_sha256, wraps=wraps, blobs=[],
+                               on_success=answer.append, on_failure=answer.append)
+        self.settle()
+        assert hasattr(answer[0], "submission"), answer
 
 
 def entry_of(prepared, *, d: str, stored: bool = True) -> SubmissionEntry:
