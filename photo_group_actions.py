@@ -44,6 +44,7 @@ import photo_group
 import photo_group_find
 from doc_walk import OBJECT_REPLACEMENT
 from photo_group import Unit
+from rich_text import quote_depth
 
 _KEEP = QTextCursor.MoveMode.KeepAnchor
 
@@ -72,6 +73,12 @@ class Picture:
 def _top(doc: QTextDocument, block) -> bool:
     """Whether ``block`` is at the top of the document (not in a table)."""
     return doc.frameAt(block.position()).parentFrame() is None
+
+
+def _within(doc: QTextDocument, block) -> bool:
+    """Whether ``block`` is part of what a picture never stands inside,
+    and is hopped whole: a table, a list, a quote."""
+    return not _top(doc, block) or block.textList() is not None or quote_depth(block) > 0
 
 
 def _lone(doc: QTextDocument, block) -> Optional[Picture]:
@@ -297,17 +304,18 @@ def beyond(doc: QTextDocument, picture: Picture, down: bool) -> Optional[Place]:
     """The place past the words under ``picture``'s run (``down``) or
     above it: a paragraph of its own behind the first paragraph with
     words in it, or, when pictures come first (with only empty lines
-    between, which Markdown does not keep), a place among them. A table
-    counts as a paragraph. None when nothing stands there."""
+    between, which Markdown does not keep), a place among them. A table,
+    a list or a quote counts as a paragraph. None when nothing stands
+    there."""
     step = (lambda block: block.next()) if down else (lambda block: block.previous())
     block = step(doc.findBlock(picture.end if down else picture.first))
     while block.isValid() and _top(doc, block) and not block.text().strip():
         block = step(block)
     if not block.isValid():
         return None
-    if not _top(doc, block):
-        # A table: behind it, which is before (after) the paragraph there.
-        while block.isValid() and not _top(doc, block):
+    if _within(doc, block):
+        # Behind it, which is before (after) the paragraph there.
+        while block.isValid() and _within(doc, block):
             block = step(block)
         return settle(doc, Place(GAP, block.position(), before=down), down) if block.isValid() \
             else None

@@ -632,3 +632,14 @@ def test_crop_is_dimmed_for_a_stand_in_and_says_why_a_drawing_cannot_be_cut(tmp_
     assert notices == ["This picture is an SVG drawing, which can’t be cropped here. Crop it in "
                        "a drawing app instead."]
     ed.close()
+
+
+@pytest.mark.parametrize("words", ["- one\n- two", "> one\n>\n> two"])
+def test_move_up_hops_a_list_or_a_quote_whole(words):
+    # Gate RG-PG2E-a 10: the picture went between the list's last two items.
+    markdown = _text("Words.", words, ONE, "![two](square.png)", "After.")
+    ed = _selected(markdown, number=0)
+    ed.photos.run(UP)
+    assert _markdown(ed) == _text("Words.", ONE, words, "![two](square.png)", "After.")
+    assert _undone(ed, markdown)
+    ed.close()
