@@ -783,3 +783,27 @@ def test_an_escape_in_a_web_address_is_saved_escaped():
     source = "Siehe www.x.com/\\*y\\* und https://x.com/a\\_b\\_c.\n"
     assert document_to_markdown(_read_folded(source), _image_as_read) == source
     assert holds_faithfully(source)
+
+
+class _Counted(str):
+    """A text that counts how often a scan reads a character of it."""
+    reads = 0
+
+    def __getitem__(self, key):
+        _Counted.reads += 1
+        return super().__getitem__(key)
+
+
+@pytest.mark.parametrize("run", ["](a (b ", "![a "])
+def test_the_escape_scan_reads_a_text_once_however_many_openers_it_holds(run):
+    # Gate RG-PG2E-c 5: each opener nothing closed was followed to the
+    # end of the text: twice the text, four times the reading.
+    import markdown_scan
+    reads = []
+    for count in (1000, 2000):
+        _Counted.reads = 0
+        text = _Counted("\\* " + run * count)
+        markdown_scan.escapes(text)
+        markdown_scan.pictures(text)
+        reads.append(_Counted.reads)
+    assert reads[1] < 2.5 * reads[0]

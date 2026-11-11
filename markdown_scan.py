@@ -13,7 +13,7 @@ backslash. This module finds those places in the Markdown text alone.
 from __future__ import annotations
 
 import re
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 FENCE_LINE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 LIST_LINE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
@@ -107,32 +107,64 @@ def skip_inline(text: str, at: int) -> Optional[int]:
     return None
 
 
-def label_end(text: str, at: int) -> Optional[int]:
+class Found:
+    """What the scans of one text found: the ``]`` closing each ``[`` a
+    scan for a bracket passed (None: nothing does), and where the closer
+    of a title was looked for last. A scan that starts where an earlier
+    one passed steps as it did from there on, so the earlier answer is
+    its own: a text full of openers nothing closes is read once, not
+    once for each of them to the end of the paragraph or the text."""
+
+    def __init__(self) -> None:
+        self.brackets: Dict[int, Optional[int]] = {}
+        self.closers: Dict[str, Tuple[int, int]] = {}
+
+
+def label_end(text: str, at: int, found: Optional[Found] = None) -> Optional[int]:
     """The ``]`` closing the bracket at ``at``, or None (a paragraph ends
-    first, or nothing closes it)."""
-    depth = 0
+    first, or nothing closes it); ``found`` keeps what this scan passed."""
+    known = found.brackets if found is not None else {}
+    if at in known:
+        return known[at]
+    opened: List[int] = []
     index = at
     while index < len(text):
         if text.startswith("\n\n", index) or text.startswith("\n \n", index):
-            return None
+            break
         skipped = skip_inline(text, index)
         if skipped is not None:
             index = skipped
             continue
         char = text[index]
         if char == "[":
-            depth += 1
-        elif char == "]":
-            depth -= 1
-            if depth == 0:
+            opened.append(index)
+        elif char == "]" and opened:
+            known[opened.pop()] = index
+            if not opened:
                 return index
         index += 1
+    for start in opened:
+        known[start] = None
     return None
 
 
-def destination_end(text: str, at: int) -> Optional[int]:
+def _closer_at(text: str, closer: str, start: int, found: Optional[Found]) -> int:
+    """Where the first ``closer`` no backslash escapes is from ``start``
+    (the text's length or past it: none)."""
+    known = found.closers.get(closer) if found is not None else None
+    if known is not None and known[0] <= start <= known[1]:
+        return known[1]
+    index = start
+    while index < len(text) and text[index] != closer:
+        index += 2 if text[index] == "\\" else 1
+    if found is not None:
+        found.closers[closer] = (start, index)
+    return index
+
+
+def destination_end(text: str, at: int, found: Optional[Found] = None) -> Optional[int]:
     """The ``)`` closing an inline link's destination and title, opened
-    at ``at``, or None."""
+    at ``at``, or None; ``found`` as for label_end."""
     index = at + 1
     length = len(text)
 
@@ -142,8 +174,10 @@ def destination_end(text: str, at: int) -> Optional[int]:
         return i
     index = spaces(index)
     if index < length and text[index] == "<":
-        close = text.find(">", index)
-        if close < 0 or "\n" in text[index:close]:
+        # An address in <...> ends on its line.
+        line_end = text.find("\n", index)
+        close = text.find(">", index, length if line_end < 0 else line_end)
+        if close < 0:
             return None
         index = close + 1
     else:
@@ -163,10 +197,7 @@ def destination_end(text: str, at: int) -> Optional[int]:
     index = spaces(index)
     if index < length and text[index] in "\"'(":
         closer = ")" if text[index] == "(" else text[index]
-        index += 1
-        while index < length and text[index] != closer:
-            index += 2 if text[index] == "\\" else 1
-        index = spaces(index + 1)
+        index = spaces(_closer_at(text, closer, index + 1, found) + 1)
     return index if index < length and text[index] == ")" else None
 
 
@@ -209,6 +240,7 @@ def pictures(markdown: str) -> List[Tuple[int, int, int]]:
     starts and ends, and where the text after the picture starts."""
     blocked = _Blocked(_code_ranges(markdown))
     found: List[Tuple[int, int, int]] = []
+    scanned = Found()
     index = 0
     length = len(markdown)
     while index < length:
@@ -225,12 +257,12 @@ def pictures(markdown: str) -> List[Tuple[int, int, int]]:
             index = skipped
             continue
         if markdown.startswith("![", index):
-            end = label_end(markdown, index + 1)
+            end = label_end(markdown, index + 1, scanned)
             if end is not None:
                 after = markdown[end + 1:end + 2]
-                close = destination_end(markdown, end + 1) if after == "(" else None
+                close = destination_end(markdown, end + 1, scanned) if after == "(" else None
                 if close is None and after == "[":
-                    label = label_end(markdown, end + 1)
+                    label = label_end(markdown, end + 1, scanned)
                     close = label if label is not None and label > end + 2 else None
                 if close is not None:
                     found.append((index + 2, end, close + 1))
@@ -250,6 +282,7 @@ def escapes(markdown: str) -> List[int]:
     blocked = _Blocked(_code_ranges(markdown)
                        + [definition.span(1) for definition in _DEFINITION.finditer(markdown)])
     found: List[int] = []
+    scanned = Found()
     index = 0
     while True:
         nearest = _STARTS_ESCAPE.search(markdown, index)
@@ -260,10 +293,10 @@ def escapes(markdown: str) -> List[int]:
         if end is not None:
             index = end + 1
         elif markdown.startswith("![", index):
-            close = label_end(markdown, index + 1)
+            close = label_end(markdown, index + 1, scanned)
             index = index + 2 if close is None else close
         elif markdown.startswith("](", index):
-            close = destination_end(markdown, index + 1)
+            close = destination_end(markdown, index + 1, scanned)
             index = index + 2 if close is None else close + 1
         else:
             skipped = skip_inline(markdown, index)
