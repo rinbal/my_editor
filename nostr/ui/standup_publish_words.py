@@ -20,13 +20,14 @@ PICTURE_NOT_FOUND = N_("A picture of the accepted version can’t be found on th
 PICTURE_NOT_UP = N_("A picture couldn’t be put on your media server, so nothing was "
                     "published. Check your media servers in Settings, then try again.")
 NOT_THE_SAME = N_("The submission changed in the meantime, so nothing was published.")
-# 12.4, Before the writer's work goes out: the words both apps say.
-SOMEONE_ELSES = N_("Another person’s article already stands under this link name. So that "
-                   "it stays, nothing is published.")
+# 12.4, Before the writer's work goes out: the canonical words both apps
+# say (S3-DECISIONS; "Beitrag", since audio goes this way too).
+SOMEONE_ELSES = N_("Another person’s work already stands under this link name. So that it "
+                   "stays, nothing is published.")
 # No relay answered the read of its address, or this server's read
 # failed (12.4, RG-B5-d): the words both apps say, under NOT_PUBLISHED.
-NOT_CHECKED = N_("Whether an article already stands under this link name couldn’t be "
-                 "checked just now. Try again in a moment.")
+NOT_CHECKED = N_("Whether a work already stands under this link name couldn’t be checked "
+                 "just now. Try again in a moment.")
 # Q1, too long for the signer app (the web's N1, tooLongLocal and
 # tooLongElsewhere): the text is the accepted version's, never shortened.
 TOO_LONG_HERE = N_("Your signer app doesn’t sign texts this long. It works with the key on "

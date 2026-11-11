@@ -4,7 +4,7 @@
 the publication publishes (M-4 M14; editorial contract 9.4, 11.2 step
 ``confirm``, 12.4 ``/confirmation``).
 
-    Deinen Teil bestätigen
+    Anteil bestätigen
     Von Einundzwanzig Magazin angenommen, Fassung 2.
     Jana 70 %  ·  Paul 30 %                        (a narrow no-break space)
     Dein Anteil geht an jana@getalby.com.
@@ -96,7 +96,7 @@ class ConfirmSheet(QDialog):
                  confirm: Callable, is_dark: bool, part: str = "", license: str = "",
                  parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle(_("Confirm Your Part"))
+        self.setWindowTitle(_("Confirm Your Share"))
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         make_sheet(self)
         self.setMinimumSize(400, 260)
@@ -130,7 +130,7 @@ class ConfirmSheet(QDialog):
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 18, 20, 14)
         root.setSpacing(10)
-        root.addWidget(self._label(_("Confirm Your Part"), "title"))
+        root.addWidget(self._label(_("Confirm Your Share"), "title"))
         root.addWidget(self._label(_(ACCEPTED_LINE).format(publication=publication,
                                                            number=number), ""))
         self._shares, self._me, self._name_of = tuple(shares), me, name_of
@@ -165,7 +165,7 @@ class ConfirmSheet(QDialog):
         self.cancel_button = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
         self.cancel_button.clicked.connect(self.reject)
         # One primary at a time: Bestätigen, or what makes it possible.
-        self.confirm_button = buttons.addButton(_("Confirm"),
+        self.confirm_button = buttons.addButton(_("Confirm Share"),
                                                 QDialogButtonBox.ButtonRole.AcceptRole)
         self.confirm_button.clicked.connect(self._on_confirm)
         self.edit_profile = buttons.addButton(_("Edit Profile…"),

@@ -51,6 +51,8 @@ from .standup_publish import CorrectionPublish, Stage
 REPLACES = N_("If you take it, the correction replaces the article at the same address. "
               "The date of publication stays.")
 ASK_PREFIX = N_("A short question about the correction: ")
+# The correction's note, quoted as each language quotes (German »…«).
+QUOTED = N_("“{note}”")
 # What else the correction changes, named in one line as the web names
 # it (RG-M4-a 1; editorial-release.js compareFields and field).
 ALSO_CHANGED = N_("Also changed: {fields}.")
@@ -101,7 +103,7 @@ class CorrectionSheet(QDialog):
         title.setTextFormat(Qt.TextFormat.PlainText)
         title.setWordWrap(True)
         root.addWidget(title)
-        self.note = QLabel(f"“{note}”" if note else "")
+        self.note = QLabel(_(QUOTED).format(note=note) if note else "")
         self.note.setObjectName("help")
         self.note.setTextFormat(Qt.TextFormat.PlainText)
         self.note.setWordWrap(True)

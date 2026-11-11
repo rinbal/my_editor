@@ -292,7 +292,7 @@ def test_another_work_at_the_link_name_is_said_in_one_sentence_and_the_name_kept
     # RG-M4-b 3: public all the same; one sentence, a question, no retry.
     title = accepted.following.row(accepted.sid).title
     assert run.stage is Stage.NOT_LISTED and run.words == (
-        f"“{title}” is public, but Magazin already lists another article under this link name.")
+        f"“{title}” is public, but Magazin already lists another work under this link name.")
     assert formats.tag_value(jobs[0].signed_event, "d") == "ein-jahr"
     from nostr.standup import following as rules
     from nostr.ui.standup_publish_sheet import PublishSheet

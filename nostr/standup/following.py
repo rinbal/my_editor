@@ -61,7 +61,7 @@ EDITED_MORE = N_("Hand them in as version {number} when you’re ready.")
 # quietly (RG-M3-b 10).
 EDITED_SINCE = N_("You’ve changed the text since.")
 VERSION_IN_REVIEW = N_("{name} is reviewing version {number}.")
-SECTION_PLACE = N_("In the section “{section}”.")
+SECTION_PLACE = N_("Published in the section “{section}”.")
 # The writer confirmed; contributors still confirm (M-4 M14).
 STILL_CONFIRMS = N_("Thanks. {name} still confirms.")
 STILL_CONFIRM_NAMED = N_("Thanks. {names} still confirm.")
@@ -80,7 +80,7 @@ PUBLISHING_WORDS = {
     PUBLISHING: (N_("Being published …"), N_("Being published …")),
     PUBLIC: (N_("Published"), N_("“{title}” is public. {publication} learns of it shortly.")),
     NOT_LISTED: (N_("Published"), N_("“{title}” is public, but {publication} already lists "
-                                     "another article under this link name.")),
+                                     "another work under this link name.")),
 }
 # The situations a publish of the writer's runs from.
 PUBLISHED_HERE = frozenset({Situation.PUBLISH, Situation.CORRECTION,

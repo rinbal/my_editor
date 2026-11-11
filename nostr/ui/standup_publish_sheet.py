@@ -40,7 +40,7 @@ from .publish_sheet import StatusLine, fit_margins, fit_to_window, make_sheet, s
 from .standup_publish import AcceptedPublish, Stage
 
 ACCEPTED_LINE = N_("Accepted by {publication}, version {number}.")
-PLACE_LINE = N_("It then gets its place in “{section}”.")
+PLACE_LINE = N_("It then gets its place in the section “{section}”.")
 AS_HANDED_IN = N_("Text and pictures as handed in.")
 PUBLIC_AFTER = N_("Until now it’s private. Once published, everyone can read it, text and "
                   "pictures unencrypted. It can’t be taken back.")

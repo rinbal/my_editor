@@ -535,7 +535,7 @@ def test_confirming_names_the_accepted_split_and_where_the_share_goes_then_remin
                                  zap_address=lambda pubkey, answer: answer("jana@getalby.com"))
     window.follow()
     detail = opened(window, entry)
-    assert detail.action.text() == "Confirm …"
+    assert detail.action.text() == "Confirm Share …"
     # Item 7: the proposal is in the conversation, marked as the one accepted.
     assert "Anna proposes a split: You 70%, Paul 30%. Accepted with this split." in \
         detail.conversation.captions
