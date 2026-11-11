@@ -454,6 +454,36 @@ def test_a_work_the_detail_found_public_is_reported_though_the_guards_relay_miss
     assert signed == [] and store.uploaded == [] and here.unlisted.state(sid) == ""
 
 
+def test_two_pictures_that_trade_places_are_not_the_same_version():
+    # Lead 2026-11-11 (web gate): the pictures compare in order and by how
+    # often each appears, for found_public and the correction sheet alike.
+    from nostr.standup import unlisted
+    writer = pk("writer")
+    one, _cipher = _picture(b"\x89PNG one")
+    two, _cipher = _picture(b"\x89PNG two")
+
+    def version(*pictures):
+        return {"work": {"d": "ein-jahr", "title": "Ein Jahr", "lang": "de",
+                         "content": "\n\n".join(f"![]({e['ref']})" for e in pictures)},
+                "credits": [], "media": [one, two]}
+
+    def public(revision):
+        urls = {e["ref"]: publishing.served_at(SERVER, e) for e in (one, two)}
+        return events.sign_event(publishing.published_template(
+            revision, writer=writer, d="ein-jahr", media_urls=urls, published_at=1,
+            created_at=1), sk("writer"))
+
+    def found(revision, event):
+        return unlisted.found_public(revision, writer=writer, address=f"30023:{writer}:ein-jahr",
+                                     relays={"wss://r.example": (True, [event])}) is not None
+
+    swapped = public(version(two, one))
+    assert not found(version(one, two), swapped)
+    assert publishing.correction_changes(version(one, two), swapped) == [("pictures", "")]
+    assert not found(version(one, two, one), public(version(one, two, two)))
+    assert found(version(one, two), public(version(one, two)))
+
+
 def _flaky_report(api, failures):
     """``api.published`` failing ``failures[0]`` times while it is above 0."""
     from nostr.standup.errors import Code, StandupError

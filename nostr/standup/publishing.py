@@ -504,15 +504,16 @@ def _same_cover(revision: Mapping, new: str, old: str) -> bool:
     return new == old
 
 
-def _pictures(text: str, hashes: Mapping[str, str]) -> set:
-    """The pictures ``text`` shows, each by its plain file's hash when
-    known (a reference of the revision, or a public address), else by
-    its address."""
-    found = set()
+def _pictures(text: str, hashes: Mapping[str, str]) -> List[str]:
+    """The pictures ``text`` shows, in order and as often as it shows them
+    (two that trade places are another text), each by its plain file's
+    hash when known (a reference of the revision, or a public address),
+    else by its address."""
+    found = []
     for url in _IMAGE.findall(text):
         public = _PUBLIC_PICTURE.fullmatch(url)
-        found.add(hashes.get(url, url) if _MEDIA_REF.fullmatch(url)
-                  else public.group(1) if public else url)
+        found.append(hashes.get(url, url) if _MEDIA_REF.fullmatch(url)
+                     else public.group(1) if public else url)
     return found
 
 
@@ -521,8 +522,9 @@ def correction_changes(revision: Mapping, published: Mapping) -> List[Tuple[str,
     ``(field, new value)``: ``title``, ``summary`` (``""``: it goes),
     ``cover`` (``added``, ``changed`` or ``removed``), ``topics`` (the
     new ones, ``#``-named and space-separated; ``""``: they go),
-    ``pictures`` (the text's pictures are others) and ``language`` (its
-    code). [] for a correction that cannot be read."""
+    ``pictures`` (the text's pictures are others, or in another order or
+    number) and ``language`` (its code). [] for a correction that cannot
+    be read."""
     try:
         work = work_of(revision)
     except NotPublishable:
