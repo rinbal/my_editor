@@ -15,13 +15,16 @@ removes it).
 When: with the key on this computer, whenever the detail of a published
 submission of the writer's was read and the cleanup is due (no one is
 asked). Through a signer app never at launch, and calmly (the lead's fix
-to the M4 open list): right after the person published with it here,
-that submission's own, said just before (RG-M4-b 12); any other due
-submission read in this run only as the account's one ride-along
+to the M4 open list, RG-M4-c 5): right after the person published with
+it here, that submission's own, and only while the line that says so is
+on screen (RG-M4-b 12; a sheet closed meanwhile, or a report that
+arrived later, leaves it to the ride); any other due submission read in
+this run only as the account's one ride-along
 (:class:`~.standup_unlisted.RideAlong`: after a signer action the person
-took, at most one such request per run, so of its first 32 files; the
-rest wait for another). One authorization each, of at most 32 files
-(RG-M4-a 10).
+took, at most one such request per run). Each request through a signer
+app is one authorization of at most 32 files (RG-M4-a 10); the rest
+wait for the next. A signature refused ends the cleanup for the run,
+and nothing is asked once the account was let go.
 
 It is quiet either way (lessons 36): housekeeping the person never asked
 for. A server that failed is asked again after a pause, for seven days.
@@ -54,9 +57,11 @@ class BlobCleanup(QObject):
         self._running: set = set()
         self._unknown: set = set()        # a revision did not verify: not again this run
         self._waiting: set = set()         # published here, its report being read
+        self._resting = False              # the signer app refused: not again this run
         # sid -> what says, right before the signer app is asked, that it
-        # asks once more and why (RG-M4-b 12).
-        self._telling: Dict[str, Callable[[], None]] = {}
+        # asks once more and why (RG-M4-b 12): False when that line is not
+        # on screen any more, so nothing is asked.
+        self._telling: Dict[str, Callable[[], bool]] = {}
         following.detail_changed.connect(self._read)
         following.ride_along.join(self._ride)
 
@@ -68,27 +73,28 @@ class BlobCleanup(QObject):
         """A detail was read (also one this cleanup asked for)."""
         if self._here:
             self._clean([sid])
-        elif sid in self._waiting and self._due(sid):
+        elif sid in self._waiting and self._due(sid) and not self._resting:
             self._waiting.discard(sid)
-            self._clean([sid])                 # said right before it asks
+            self._clean([sid], one_request=True)     # said right before it asks
 
     def _ride(self) -> bool:
         """The ride-along through a signer app: one due submission read in
         this run is cleaned now (with the key here none is needed)."""
-        if self._here:
+        if self._here or self._resting or self._account.stopped:
             return False
         due = next((sid for sid in self._following.reading.read_sids() if self._due(sid)), None)
         if due is None:
             return False
-        self._clean([due], one_request=True)
+        self._clean([due], one_request=True, riding=True)
         return True
 
     def after_publishing(self, sid: str,
-                         on_asking: Optional[Callable[[], None]] = None) -> None:
+                         on_asking: Optional[Callable[[], bool]] = None) -> None:
         """The person just published ``sid`` with their signer here: its
         report is read with the submission, then the files go.
         ``on_asking()`` comes right before the signer app is asked for
-        them (never with the key on this computer: no one is asked)."""
+        them, and says whether its line is on screen (never with the key on
+        this computer: no one is asked); without it nothing is asked."""
         self._waiting.add(sid)
         if on_asking is not None and not self._here:
             self._telling[sid] = on_asking
@@ -105,8 +111,10 @@ class BlobCleanup(QObject):
                 and cleanup.due(self._cleanups.entry(sid), self._clock())
                 and self._following.reading.published(sid) is not None)
 
-    def _clean(self, sids: Sequence[str], *, one_request: bool = False) -> None:
-        """``one_request``: the ride-along, one authorization at most."""
+    def _clean(self, sids: Sequence[str], *, one_request: bool = False,
+               riding: bool = False) -> None:
+        """``one_request``: one authorization at most; ``riding``: the run's
+        ride-along, asked unannounced."""
         sids = [sid for sid in dict.fromkeys(sids) if self._due(sid)]
         if not sids:
             return
@@ -115,7 +123,7 @@ class BlobCleanup(QObject):
 
         def next_one(rest: List[str]) -> None:
             if not rest:
-                self._delete(plan, one_request=one_request)
+                self._delete(plan, one_request=one_request, riding=riding)
                 return
             sid = rest[0]
 
@@ -165,7 +173,7 @@ class BlobCleanup(QObject):
     # -- deleting ----------------------------------------------------------------------------
 
     def _delete(self, plan: Dict[str, Tuple[Optional[dict], List[cleanup.Pair]]], *,
-                one_request: bool = False) -> None:
+                one_request: bool = False, riding: bool = False) -> None:
         """One authorization per submission (RG-M4-a 10; the store splits
         one naming more files than a server reads): one that fails fails
         only its own submission, which is asked again after its pause."""
@@ -184,16 +192,24 @@ class BlobCleanup(QObject):
 
             asked = cleanup.left(entry, pairs)
             if asked and one_request:
-                asked = delete_batches(asked)[0]      # the rest after its pause
-            if asked:
-                tell = self._telling.pop(sid, None)
-                if tell is not None:
-                    tell()
-                self._store.delete_on_servers(asked, live(self._account, deleted))
+                asked = delete_batches(asked)[0]      # the rest wait for the next
+            tell = self._telling.pop(sid, None)
+            if asked and not self._here and not riding and not (tell is not None and tell()):
+                self._running.discard(sid)            # not said: left to the ride
+                next_one()
+            elif asked:
+                self._store.delete_on_servers(asked, live(self._account, deleted),
+                                              going=lambda: not self._account.stopped,
+                                              on_not_signed=self._rest)
             else:
                 deleted([])
 
         next_one()
+
+    def _rest(self) -> None:
+        """The signer app refused (or did not answer): no cleanup asks it
+        again in this run."""
+        self._resting = True
 
 
 __all__ = ["BlobCleanup"]

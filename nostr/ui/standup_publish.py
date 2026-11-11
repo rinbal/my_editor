@@ -213,6 +213,9 @@ class AcceptedPublish(QObject):
         self._stopped = False
         self._here = False
         self._listening = False
+        # Whether its sheet is open now (the sheet says so): only then may
+        # the cleanup say it asks, and ask (RG-M4-c 5).
+        self.on_screen = False
         self._kept_public()
 
     def _kept_public(self) -> None:
@@ -541,11 +544,17 @@ class AcceptedPublish(QObject):
         self._say(Stage.WORKING, _(BUSY), "")
         event = self.signed_article
 
+        def listed(view) -> None:
+            """A later quiet report arrived: done, and the cleanup is left
+            to the run's ride-along (RG-M4-c 5), never asked unannounced."""
+            if not self._stopped:
+                self._ports.serve(view)
+                self._say(Stage.DONE, _(DONE), "")
+
         def reported(view) -> None:
             if self._stopped:
                 return
-            self._ports.serve(view)
-            self._say(Stage.DONE, _(DONE), "")
+            listed(view)
             if self._ports.cleanup is not None:
                 self._ports.cleanup(self.sid, self._cleanup_asks)
 
@@ -561,18 +570,22 @@ class AcceptedPublish(QObject):
             if self._ports.unlisted is not None:
                 self._ports.unlisted.hand_over(self.sid, event=event, naddr=self.naddr,
                                                revision=self._version.revision, taken=taken,
-                                               on_listed=reported)
+                                               on_listed=listed)
             self._say(Stage.NOT_LISTED if taken else Stage.PUBLIC, "", self._public_words(state))
 
         self._ports.api.published(self.sid, naddr=self.naddr, event=event,
                                   revision=self._version.revision,
                                   on_success=reported, on_failure=not_reported)
 
-    def _cleanup_asks(self) -> None:
+    def _cleanup_asks(self) -> bool:
         """The signer app is about to be asked to delete the private
-        copies: one quiet line says so in the done state (RG-M4-b 12)."""
-        if not self._stopped and self.stage is Stage.DONE:
-            self._say(Stage.DONE, self.title, _(CLEANUP_ASKS))
+        copies: one quiet line says so in the done state (RG-M4-b 12),
+        only while the sheet shows it; False otherwise, and nothing is
+        asked (RG-M4-c 5)."""
+        if self._stopped or self.stage is not Stage.DONE or not self.on_screen:
+            return False
+        self._say(Stage.DONE, self.title, _(CLEANUP_ASKS))
+        return True
 
     # -- the words ---------------------------------------------------------------------------
 

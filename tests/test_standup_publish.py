@@ -158,7 +158,7 @@ class FakeStore(QObject):
     def delete_file(self, sha, *, servers=()):
         self.deleted.append((sha, tuple(servers)))
 
-    def delete_on_servers(self, pairs, on_done):
+    def delete_on_servers(self, pairs, on_done, *, going=lambda: True, on_not_signed=None):
         self.batches.append(list(pairs))
         on_done(list(pairs))
 
@@ -913,12 +913,13 @@ def test_right_before_the_signer_app_is_asked_again_the_done_sheet_says_why(acce
                           store=store, cleanups=Cleanups(pk("writer"), load=lambda: kept,
                                                          save=kept.__setitem__),
                           clock=world.clock, parent=following)
-    cleaner.after_publishing(sid, lambda: said.append(len(store.batches)))
+    cleaner.after_publishing(sid, lambda: said.append(len(store.batches)) or True)
     world.settle()
     assert said == [0] and len(store.batches) == 1          # said, then asked
     from nostr.ui.standup_publish_sheet import PublishSheet
     run, _store, _jobs = _run(accepted, cleanup=lambda _sid, asking: asking())
     sheet = PublishSheet(run=run, publication="Magazin", number=1, is_dark=False)
+    sheet.show()
     run.start()
     accepted.world.settle()
     assert run.stage is Stage.DONE and sheet.status.text() == (
@@ -940,7 +941,7 @@ def test_each_submission_has_its_own_delete_token_of_at_most_32_files():
     assert batches[1] == [(files[32], SERVER), (files[32], "https://b.example")]
 
     class Refusing(FakeStore):
-        def delete_on_servers(self, pairs, on_done):
+        def delete_on_servers(self, pairs, on_done, **_kw):
             self.batches.append(list(pairs))
             on_done([] if len(self.batches) == 1 else list(pairs))   # the first token fails
 
@@ -949,8 +950,8 @@ def test_each_submission_has_its_own_delete_token_of_at_most_32_files():
     owner = QObject()
     owner.detail_changed = SimpleNamespace(connect=lambda _slot: None)
     owner.ride_along = RideAlong()
-    cleaner = BlobCleanup(owner, SimpleNamespace(writer=pk("writer"), stopped=False), None,
-                          store=store,
+    cleaner = BlobCleanup(owner, SimpleNamespace(writer=pk("writer"), stopped=False),
+                          SimpleNamespace(is_local=True), store=store,
                           cleanups=Cleanups(pk("writer"), load=lambda: kept,
                                             save=kept.__setitem__), clock=lambda: 1000)
     cleaner._delete({"a": (None, [(files[0], SERVER)]), "b": (None, [(files[1], SERVER)])})
@@ -990,6 +991,70 @@ def _published_with_pictures():
     following.open(other.body["submission_id"])         # its revision names the shared file
     world.settle()
     return world, writer, following, sid, own
+
+
+def test_through_a_signer_app_the_cleanup_asks_only_when_said_or_as_the_one_ride(accepted):
+    # RG-M4-c 5 (probe p11): a report that arrives on a later quick try
+    # starts no cleanup; the cleanup asks only while its line is on screen,
+    # else as the run's one ride; a refusal ends it for the run; and no ride
+    # is spent on a work the View already lists.
+    from nostr.standup.cleanup import Cleanups
+    from nostr.ui.standup_cleanup import BlobCleanup
+    asked = []
+    _flaky_report(accepted.writer.api, [3])
+    run, _store, _jobs = _run(accepted, cleanup=lambda sid, _say: asked.append(sid))
+    run.start()
+    accepted.world.settle()
+    _days_pass(accepted.world, 1)
+    assert run.stage is Stage.DONE and asked == []           # listed later: no cleanup
+
+    def cleaner(store):
+        world, writer, following, sid, _own = _published_with_pictures()
+        kept = {}
+        made = BlobCleanup(following, writer, SimpleNamespace(user_pubkey=pk("writer"),
+                                                              is_local=False),
+                           store=store, cleanups=Cleanups(pk("writer"), load=lambda: kept,
+                                                          save=kept.__setitem__),
+                           clock=world.clock, parent=following)
+        made.after_publishing(sid, lambda: False)           # the sheet was closed
+        world.settle()
+        return made, following, world
+
+    store = FakeStore()
+    _cleaner, following, there = cleaner(store)
+    assert store.batches == []                              # nothing asked unsaid
+    for _ in range(2):
+        following.ride_along.person_signed()
+        there.settle()
+    assert len(store.batches) == 1                          # the run's one ride
+
+    class Refusing(FakeStore):
+        def delete_on_servers(self, pairs, on_done, *, going=lambda: True, on_not_signed=None):
+            self.batches.append(list(pairs))
+            on_not_signed()
+            on_done([])
+
+    store = Refusing()
+    refused, following, there = cleaner(store)
+    following.ride_along.person_signed()
+    there.settle()
+    assert len(store.batches) == 1 and refused._ride() is False
+
+    from nostr.standup import unlisted
+    world, sid = accepted.world, accepted.sid
+    record = accepted.following.unlisted.record          # kept, though the View lists it
+    record.keep(sid, unlisted.first(event=run.signed_article, naddr=run.naddr, revision=1,
+                                    now=world.clock()))
+    calls = _flaky_report(accepted.writer.api, [10 ** 6])
+    accepted.following.stop()                            # a restart
+    world.later.waiting.clear()
+    again = world.following(accepted.writer, unlisted=record)
+    again.view_opened()
+    again.open(sid)
+    world.settle()
+    again.ride_along.person_signed()
+    world.settle()
+    assert calls == [] and record.sids() == []
 
 
 def test_after_publication_the_encrypted_files_go_but_one_another_submission_names_stays():

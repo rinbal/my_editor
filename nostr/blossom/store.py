@@ -1823,7 +1823,9 @@ class MediaStore(QObject):
             )
 
     def delete_on_servers(self, pairs: Sequence[Tuple[str, str]],
-                          on_done: Callable[[List[Tuple[str, str]]], None]) -> None:
+                          on_done: Callable[[List[Tuple[str, str]]], None], *,
+                          going: Callable[[], bool] = lambda: True,
+                          on_not_signed: Optional[Callable[[], None]] = None) -> None:
         """Delete each ``(sha256, server origin)`` of ``pairs``, with one
         BUD-02 authorization per :data:`MOST_FILES_PER_DELETE` files that
         names them and every server (:func:`delete_batches`; one
@@ -1831,7 +1833,10 @@ class MediaStore(QObject):
         ``on_done(gone)`` with the pairs that are gone (deleted, or 404:
         not there). Nothing is said and the library is left as it is:
         for files this app put up for someone else's reading, such as a
-        submission's encrypted pictures."""
+        submission's encrypted pictures. A signature refused or not given
+        ends it (``on_not_signed()``, then ``on_done``): the signer is not
+        asked for the next batch; nor is it once ``going()`` is false
+        (signed out, RG-M4-c 5)."""
         profile = self._profile_provider()
         batches = delete_batches(pairs)
         if profile is None or not batches:
@@ -1840,7 +1845,7 @@ class MediaStore(QObject):
         gone: List[Tuple[str, str]] = []
 
         def next_batch(rest: List[List[Tuple[str, str]]]) -> None:
-            if not rest:
+            if not rest or not going():
                 on_done(gone)
                 return
             batch = rest[0]
@@ -1863,8 +1868,13 @@ class MediaStore(QObject):
                         on_success=lambda p=pair: finish(p, True),
                         on_failure=lambda err, p=pair: finish(p, err.status == 404))
 
+            def not_signed(_reason) -> None:
+                if on_not_signed is not None:
+                    on_not_signed()
+                on_done(gone)
+
             self._sign_with_bunker(profile, unsigned, on_signed=after_sign,
-                                   on_failure=lambda _reason: next_batch(rest[1:]))
+                                   on_failure=not_signed)
 
         next_batch(batches)
 

@@ -93,6 +93,7 @@ class CorrectionSheet(QDialog):
         make_sheet(self)
         self.setMinimumSize(460, 360)
         self.run, self._is_dark = run, bool(is_dark)
+        self.destroyed.connect(lambda *_: setattr(run, "on_screen", False))
         self._style()
         appearance.bind(self)
         root = QVBoxLayout(self)
@@ -209,6 +210,14 @@ class CorrectionSheet(QDialog):
     def done(self, result: int) -> None:
         super().done(result)
         self.changes.forget()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self.run.on_screen = True            # its words can be read (RG-M4-c 5)
+
+    def hideEvent(self, event) -> None:
+        super().hideEvent(event)
+        self.run.on_screen = False
 
     def _style(self) -> None:
         self.setStyleSheet(sheet_stylesheet(self._is_dark))

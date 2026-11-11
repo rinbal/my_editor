@@ -69,6 +69,7 @@ class PublishSheet(QDialog):
         make_sheet(self)
         self.setMinimumSize(420, 300)
         self.run, self._is_dark = run, bool(is_dark)
+        self.destroyed.connect(lambda *_: setattr(run, "on_screen", False))
         self._build(publication, number, section, account_name, people, differs)
         run.changed.connect(self._show)
         self._show()
@@ -219,6 +220,14 @@ class PublishSheet(QDialog):
                 border-radius: 10px; }}
             #publish_title {{ font-weight: 600; }}""")
         appearance.surface(self, self._is_dark)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self.run.on_screen = True            # its words can be read (RG-M4-c 5)
+
+    def hideEvent(self, event) -> None:
+        super().hideEvent(event)
+        self.run.on_screen = False
 
     def apply_theme(self, is_dark: bool) -> None:
         self._is_dark = bool(is_dark)
