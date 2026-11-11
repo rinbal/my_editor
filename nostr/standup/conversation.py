@@ -463,16 +463,20 @@ def _structured_of(rumor: dict) -> Optional[Tuple[str, dict]]:
     return kind, content
 
 
-def _from_its_sender(kind: str, sender: str, writer: str, redaktion: frozenset) -> bool:
+def _from_its_sender(kind: str, sender: str, writer: str, redaktion: frozenset, at: Any,
+                     decided_then: Optional[Callable[[str, Any], bool]]) -> bool:
     if _STRUCTURED_SENDER[kind] == "writer":
         return sender == writer
-    return sender in redaktion
+    return sender in redaktion or (decided_then is not None and decided_then(sender, at))
 
 
-def fold(opened: Sequence[Opened], *, writer: str, redaktion: Iterable[str]) -> List[Bubble]:
+def fold(opened: Sequence[Opened], *, writer: str, redaktion: Iterable[str],
+         decided_then: Optional[Callable[[str, Any], bool]] = None) -> List[Bubble]:
     """The bubbles of a conversation, in ``seq`` order. ``writer`` is the
     submission's (from its verified revision), ``redaktion`` the members
-    who may decide (from the member list); a structured note from anyone
+    who may decide (from the member list); ``decided_then(person, at)``
+    says whether one who left could decide when they wrote at ``at``
+    (:meth:`.former.Formers.decided_then`). A structured note from anyone
     else is dropped (9.4)."""
     members = frozenset(redaktion)
     items = sorted(opened, key=lambda o: o.seq)
@@ -494,8 +498,9 @@ def fold(opened: Sequence[Opened], *, writer: str, redaktion: Iterable[str]) -> 
                 structured = _structured_of(rumor)
             except NotShown:
                 continue
-            if structured is not None and not _from_its_sender(structured[0], item.sender,
-                                                               writer, members):
+            if structured is not None and not _from_its_sender(
+                    structured[0], item.sender, writer, members, rumor["created_at"],
+                    decided_then):
                 continue
             if rumor["id"] in bubbles:
                 continue

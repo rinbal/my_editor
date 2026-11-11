@@ -238,11 +238,13 @@ class Formers:
         the Redaktion's (RG-M4-a 7)."""
         return frozenset(p for p in self._formers if self._standing(p, 1, _LATEST).member)
 
-    def deciding(self) -> FrozenSet[str]:
-        """Those of :meth:`proven` who may decide as of their newest proof
-        (the role goes by time): their structured notes, a split
-        proposal among them, are read as a decider's."""
-        return frozenset(p for p in self._formers if self._standing(p, 1, _LATEST).decides)
+    def decided_then(self, person: str, at: Any) -> bool:
+        """Whether ``person`` could decide when they signed something at
+        ``at`` (its ``created_at``), by the role rule (RG-M4-c 6): one who
+        accepted as the Redaktion and was invited again as a curator later
+        keeps the split card they proposed then. Their structured notes, a
+        split proposal among them, are read as a decider's."""
+        return formats.is_int(at) and self._standing(person, 1, at).decides
 
     def decides(self, person: str, name: str, body: Mapping[str, Any], *,
                 decisions: Iterable[str], at: Any) -> bool:

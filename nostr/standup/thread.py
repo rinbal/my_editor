@@ -237,8 +237,11 @@ def build_thread(items: Sequence[views.TimelineItem],
     notes: Dict[int, str] = {}
     shown: List[Tuple[int, int, object]] = []          # (seq, time, what)
     named = _named_split(items, sid, deciders, checks, formers)
-    redaktion = (*(deciders or ()), *(formers.deciding() if formers is not None else ()))
-    for bubble in conversation.fold(opened, writer=writer, redaktion=redaktion):
+    # One who left counts as the Redaktion's for what they wrote while they
+    # could decide (the role at that time, RG-M4-c 6).
+    then = formers.decided_then if formers is not None else None
+    for bubble in conversation.fold(opened, writer=writer, redaktion=deciders or (),
+                                    decided_then=then):
         if bubble.structured is None:
             shown.append((bubble.seq, bubble.created_at, bubble))
         elif bubble.structured[0] == "revision-note":

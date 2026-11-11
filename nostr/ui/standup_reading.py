@@ -499,11 +499,13 @@ class Reading:
         held, _opening = self.open_wraps(sid, state.room, items)
         opened = [held[item.seq] for item in items if held.get(item.seq) is not None]
         # Who decided counted then, also one who left since (10), and so
-        # does a proposal of one whose served Former proves it (RG-M4-a 7).
-        left = state.formers.deciding() if state.formers is not None else ()
-        deciders = tuple({*rules.deciders_of(state.members), accepted.actor, *left})
+        # does a proposal of one whose served Former proves they could
+        # decide when they made it (RG-M4-a 7, RG-M4-c 6).
+        deciders = tuple({*rules.deciders_of(state.members), accepted.actor})
         decision = next(item.event.signed for item in items if item.seq == accepted.seq)
-        bubbles = conversation.fold(opened, writer=row.writer, redaktion=deciders)
+        then = state.formers.decided_then if state.formers is not None else None
+        bubbles = conversation.fold(opened, writer=row.writer, redaktion=deciders,
+                                    decided_then=then)
         split = conversation.accepted_split(bubbles, decision, submission_id=sid,
                                             redaktion=deciders)
         content = split.structured[1] if split is not None else {}

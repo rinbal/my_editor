@@ -116,3 +116,33 @@ def test_what_someone_who_left_wrote_stays_in_the_conversation():
         "Message", "SplitCard"]
     assert threads.build_thread((), opened, sid=SID, me=writer, writer=writer, deciders=(),
                                 members=()) == []
+
+
+def test_a_split_card_goes_by_the_role_its_proposer_held_when_they_proposed_it():
+    # RG-M4-c 6 (probe p9): accepted as the Redaktion, invited again as a
+    # curator later: the split card proposed then stays; one proposed after
+    # the curator invitation is not a decider's.
+    from nostr.standup import conversation as conv
+    from nostr.standup import thread as threads
+    then = next(c for c in FM["cases"]
+                if c["name"] == "invited_again_as_curator_decided_before_as_redaktion")
+    after = next(c for c in FM["cases"]
+                 if c["name"] == "invited_again_as_curator_decides_nothing_after")
+    former = FM["former"][then["former"]]
+    formers = Formers(FM["publication"])
+    formers.join(parse_formers([former]))
+    assert formers.decided_then(former["pubkey"], then["at"]) is True
+    assert formers.decided_then(former["pubkey"], after["at"]) is False
+    writer, room = FM["stranger"], FM["publication"].split(":")[1]
+
+    def proposed(at):
+        split = conv.structured_rumor(
+            room=room, submission_id=SID, kind="split-proposal", sender=former["pubkey"],
+            created_at=at, content=conv.split_proposal_content(
+                "ef" * 32, [{"pubkey": writer, "weight": 100, "role": "writer"}]))
+        opened = [conv.Opened(rumor=split, sender=former["pubkey"], wrap_id="1", seq=1)]
+        shown = threads.build_thread((), opened, sid=SID, me=writer, writer=writer,
+                                     deciders=(), members=(), formers=formers)
+        return [type(item).__name__ for item in shown if not isinstance(item, threads.Day)]
+
+    assert proposed(then["at"]) == ["SplitCard"] and proposed(after["at"]) == []
