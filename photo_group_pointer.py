@@ -127,8 +127,13 @@ class PhotoPointer(QObject):
         if self._session is not None:
             return None
         if self._hover is not None:
-            return self._hover
+            return self._hovered()
         return self._photos.current() if self._editor.hasFocus() else None
+
+    def _hovered(self) -> Optional[Picture]:
+        """The picture the pointer is over, as it stands now: a command
+        (Large, from its chip) may have changed it since the pointer came."""
+        return actions.picture_at(self._editor.document(), self._hover.position)
 
     # ------------------------------------------------------------------ #
     # Hover, press, release                                               #
@@ -153,7 +158,7 @@ class PhotoPointer(QObject):
     def _hover_at(self, point: QPointF) -> None:
         hover, hot = None, None
         if self._editable():
-            kept = self._hover or self._photos.current()
+            kept = (self._hovered() if self._hover is not None else None) or self._photos.current()
             bar = self._bar(kept) if kept is not None else None
             if bar is not None and bar.box.contains(point):
                 hover, hot = kept, bar.at(point)

@@ -507,3 +507,22 @@ def test_undo_names_a_split_with_its_words_and_a_group_made_from_the_slash_menu(
     ed.undo()
     assert said[-1] == "Undone: Photo Group"
     ed.close()
+
+
+def test_the_large_chip_shows_its_new_state_at_once(monkeypatch):
+    # Gate RG-PG2E-b 8: it showed the old state until the pointer moved.
+    shown = []
+    painted = photo_group_overlay.paint_chips
+    monkeypatch.setattr(photo_group_overlay, "paint_chips",
+                        lambda painter, chips, **how: (shown.append(how["big_on"]),
+                                                       painted(painter, chips, **how)))
+    ed = _selected(number=0)
+    chip = ed.photos.pointer._chips(ed.photos.current()).boxes[photo_group_overlay.BIG].center()
+    _mouse(ed, QEvent.Type.MouseMove, chip, Qt.MouseButton.NoButton)
+    _mouse(ed, QEvent.Type.MouseButtonPress, chip, Qt.MouseButton.LeftButton)
+    _mouse(ed, QEvent.Type.MouseButtonRelease, chip, Qt.MouseButton.NoButton)
+    assert _group(ed).units[0].wide
+    shown.clear()
+    ed.viewport().repaint()
+    assert shown == [True]
+    ed.close()
