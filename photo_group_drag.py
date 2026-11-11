@@ -168,6 +168,10 @@ class Preview:
         return dict(zip(keys, overlay.blend([self._from[k] for k in keys],
                                             [self._to[k] for k in keys], share)))
 
+    def moved_box(self, now: float) -> Optional[QRectF]:
+        """Where the picture that moves is drawn at ``now``."""
+        return self.boxes(now).get(_key_of(self.moved, self.moved))
+
     def nearest(self, point: QPointF) -> int:
         """The picture under ``point``, else the nearest one, as its
         number among the pictures shown."""

@@ -56,6 +56,10 @@ _FLASH_S = 0.6
 _GHOST = 160.0
 
 
+_MODIFIERS = (Qt.Key.Key_Shift, Qt.Key.Key_Control, Qt.Key.Key_Alt, Qt.Key.Key_Meta,
+              Qt.Key.Key_AltGr, Qt.Key.Key_CapsLock)
+
+
 def _now() -> float:
     return time.monotonic()
 
@@ -181,7 +185,9 @@ class PhotoPointer(QObject):
                 or not self._editable()):
             return False
         if self._session is not None:
-            return True
+            if self._how != "keys":
+                return True
+            self.stop(cancelled=True)       # move mode: a click elsewhere puts it back
         point = e.position()
         self._hover_at(point)
         picture, hot = self._hover, self._hot
@@ -312,8 +318,12 @@ class PhotoPointer(QObject):
             self._drop()
             return True
         steps = {Qt.Key.Key_Left: -1, Qt.Key.Key_Up: -1, Qt.Key.Key_Right: 1, Qt.Key.Key_Down: 1}
-        if key not in steps:
+        if key in _MODIFIERS:
             return True
+        if key not in steps:
+            # Any other key ends move mode, said, and goes on as it would.
+            self.stop(cancelled=True)
+            return False
         target = session.target
         to = target.index + steps[key]
         if not 0 <= to < len(target.units):
@@ -564,6 +574,10 @@ class PhotoPointer(QObject):
                         _("Release: here as photo {k} of {n} · Esc cancels").format(
                             k=target.index + 1, n=len(target.units)))
                 count = len(target.units)
+                moving = session.preview.moved_box(now)
+                if self._how == "keys" and moving is not None:
+                    overlay.paint_hint(painter, moving.translated(offset), hint, accent=accent,
+                                       room=QRectF(self._editor.viewport().rect()))
                 overlay.paint_bar(painter, overlay.bar_over(area, _("Photo")),
                                   ngettext("Photo Group · {n} Photo", "Photo Group · {n} Photos",
                                            count).format(n=count), hint, _("Photo"), ink=ink,

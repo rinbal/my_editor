@@ -14,13 +14,14 @@ import sys
 
 import pytest
 from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QPointF, QRect, Qt
-from PySide6.QtGui import QImage, QMouseEvent, QTextImageFormat
+from PySide6.QtGui import QImage, QMouseEvent, QTextCursor, QTextImageFormat
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
 
 import announce
 import photo_group
 import photo_group_actions
+import photo_group_overlay
 import picture_crop
 from photo_group_menu import (
     ADD, CAPTION, CROP, DESCRIPTION, DOWN, FIRST, JOIN_ABOVE, JOIN_BELOW, LARGE, LAST, LEFT,
@@ -414,4 +415,29 @@ def test_a_click_on_a_picture_in_view_scrolls_nothing():
     _mouse(ed, QEvent.Type.MouseButtonPress, point, Qt.MouseButton.LeftButton)
     _mouse(ed, QEvent.Type.MouseButtonRelease, point, Qt.MouseButton.NoButton)
     assert photos.current().place == 1 and bar.value() == before
+    ed.close()
+
+
+def test_move_mode_shows_its_keys_beside_the_picture_and_lets_a_click_or_a_key_out(
+        said, monkeypatch):
+    hints = []
+    painted = photo_group_overlay.paint_hint
+    monkeypatch.setattr(photo_group_overlay, "paint_hint",
+                        lambda painter, box, words, **how: (hints.append((box, words)),
+                                                            painted(painter, box, words, **how)))
+    ed = _selected(number=1)
+    ed.photos.run(MOVE_MODE)
+    QTest.keyClick(ed, Qt.Key.Key_Right)
+    ed.viewport().repaint()
+    (box, words), *_rest = hints
+    assert words == "Arrow keys move it, Return puts it down, Esc cancels"
+    assert ed.viewport().rect().intersects(box.toAlignedRect())
+    QTest.keyClick(ed, Qt.Key.Key_A)
+    assert said[-1] == "Cancelled, the photo is back in its place"
+    ed.photos.run(MOVE_MODE)
+    text = ed.cursorRect(QTextCursor(ed.document())).center()
+    _mouse(ed, QEvent.Type.MouseButtonPress, QPointF(text), Qt.MouseButton.LeftButton)
+    _mouse(ed, QEvent.Type.MouseButtonRelease, QPointF(text), Qt.MouseButton.NoButton)
+    assert said[-1] == "Cancelled, the photo is back in its place"
+    assert _markdown(ed) == FOUR_PICTURES and ed.textCursor().block().text() == "Before."
     ed.close()

@@ -327,15 +327,35 @@ def paint_line(painter: QPainter, left: float, right: float, y: float, words: st
     painter.setPen(_pen(3.0 if solid else 2.0, accent))
     painter.drawLine(QPointF(left, y), QPointF(right, y))
     if words:
-        painter.setFont(chip_font())
-        wide = QFontMetricsF(chip_font()).horizontalAdvance(words) + 2 * _PAD
-        capsule = QRectF(left, y - 10, wide, 20)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(accent)
-        painter.drawRoundedRect(capsule, 10, 10)
-        painter.setPen(_INK)
-        painter.drawText(capsule, Qt.AlignmentFlag.AlignCenter, words)
+        _capsule(painter, left, y, words, accent)
     painter.restore()
+
+
+def paint_hint(painter: QPainter, box: QRectF, words: str, *, accent: QColor,
+               room: QRectF) -> None:
+    """``words`` on a capsule beside ``box`` (under it, over it where the
+    view ends), kept inside the view ``room``: what the keys do, where
+    the eyes are."""
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    wide = QFontMetricsF(chip_font()).horizontalAdvance(words) + 2 * _PAD
+    left = max(room.left() + 4, min(box.left(), room.right() - wide - 4))
+    middle = box.bottom() + 16 if box.bottom() + 30 <= room.bottom() else box.top() - 16
+    _capsule(painter, left, max(room.top() + 12, min(middle, room.bottom() - 12)), words, accent)
+    painter.restore()
+
+
+def _capsule(painter: QPainter, left: float, middle: float, words: str, accent: QColor) -> None:
+    """``words`` in a capsule of the accent colour from ``left``, centred
+    on the height ``middle``."""
+    painter.setFont(chip_font())
+    wide = QFontMetricsF(chip_font()).horizontalAdvance(words) + 2 * _PAD
+    capsule = QRectF(left, middle - 10, wide, 20)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(accent)
+    painter.drawRoundedRect(capsule, 10, 10)
+    painter.setPen(_INK)
+    painter.drawText(capsule, Qt.AlignmentFlag.AlignCenter, words)
 
 
 def paint_placeholder(painter: QPainter, box: QRectF, words: str, *, accent: QColor) -> None:
