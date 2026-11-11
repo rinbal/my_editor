@@ -204,6 +204,25 @@ def _qt_types(e) -> bool:
                                  | Qt.KeyboardModifier.ShiftModifier)
 
 
+# Cut, Copy and Paste by their keys with Command (Control off a Mac), and
+# the editor's own command for each, which Edit's menu runs too. Their
+# keys without it (Shift-Delete, Shift-Insert) stay as they were.
+_CLIPBOARD_KEYS = (
+    (QKeySequence.StandardKey.Cut, "cut"), (QKeySequence.StandardKey.Copy, "copy"),
+    (QKeySequence.StandardKey.Paste, "paste"),
+)
+
+
+def _clipboard_command(e) -> Optional[str]:
+    """The command of _CLIPBOARD_KEYS that ``e`` is, or None. Not one with
+    a Mac's Control key (Qt's Meta): Control-K and Control-Y are its Emacs
+    keys there, which Qt's text field answers."""
+    held = e.modifiers()
+    if not held & Qt.KeyboardModifier.ControlModifier or held & Qt.KeyboardModifier.MetaModifier:
+        return None
+    return next((name for key, name in _CLIPBOARD_KEYS if e.matches(key)), None)
+
+
 # The text cursors Settings offers, as the setting stores them: Qt's own
 # insertion point at a width in pixels, or a block over the next letter.
 CARET_STYLES = ("thin", "medium", "thick", "block")
@@ -2515,6 +2534,15 @@ class HtmlEditor(QTextEdit):
         if (e.key() == Qt.Key_Z and e.modifiers() == (Qt.ControlModifier | Qt.ShiftModifier)) or \
            (e.key() == Qt.Key_Y and e.modifiers() == Qt.ControlModifier):
             self.redo()
+            return
+        # Cut, Copy and Paste: the editor's own, as Undo and Redo are. Qt's
+        # text field answered them itself: its Cut took a picture the
+        # selection held in part (photo_group_cut), and a cut and the paste
+        # after it were one run of typing, which one Undo took back.
+        command = _clipboard_command(e)
+        if command is not None and (command == "copy" or not self.isReadOnly()):
+            getattr(self, command)()
+            self.ensureCursorVisible()
             return
 
         reach = self._deletion_reach(e)
