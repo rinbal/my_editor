@@ -405,3 +405,13 @@ def test_a_legacy_post_with_no_media_at_all_is_unchanged(tmp_path):
     assert media == []
     assert not any(t[0] == "imeta" for t in event["tags"])
 
+
+
+def test_a_picture_without_a_description_is_published_without_one(tmp_path):
+    # The record took the asset's stored alt, a picture's file name, when
+    # the document gave none, and published "image" as a description.
+    win = _Window(tmp_path / "cache")
+    asset = win.uploaded_asset(alt="IMG_2041")
+    for alt in ("", "image"):
+        _content, tags = _tags_for(win, _editor_with((asset.key, alt)))
+        assert _entry(tags[0], "alt") is None

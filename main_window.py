@@ -5080,9 +5080,13 @@ class MainWindow(QMainWindow):
         def remember(asset, url: str, fmt) -> None:
             if not url or url in records:
                 return
-            # Audio and video have no alternative text: their name is a name.
-            alt = "" if asset.is_media else (
-                str(fmt.property(QTextImageFormat.ImageAltText) or "") or asset.alt)
+            # Audio and video have no alternative text: their name is a
+            # name. A picture's is the description the document gives it,
+            # by the rule the editor's "ALT missing" follows: none for
+            # none, never its file's name or "image" (an asset's stored
+            # alt is its name, for a picture added from disk).
+            alt = "" if asset.is_media else photo_group.description_of(
+                str(fmt.property(QTextImageFormat.ImageAltText) or ""), fmt.name())
             records[url] = PublishedMedia(
                 url=url,
                 sha256=asset.sha256,
