@@ -55,7 +55,7 @@ from PySide6.QtWidgets import (
 )
 
 import announce
-from i18n import _, pgettext
+from i18n import N_, _, pgettext
 
 from ..failures import markup, spoken
 from ..standup import words
@@ -291,7 +291,12 @@ class HandoffTrack(QWidget):
             painter.drawText(under, Qt.AlignmentFlag.AlignHCenter, _("Editorial inbox"))
 
 
-def phase_words(progress: Progress, publication: str, now: Optional[float] = None) -> tuple:
+# A later version, in: what the prototype says (RG-M3-b 12).
+HANDED_IN = N_("Version {number} handed in.")
+
+
+def phase_words(progress: Progress, publication: str, now: Optional[float] = None, *,
+                number: int = 1) -> tuple:
     """The two lines a state says (translated), the plan's words. While
     the request is on its way and while it is checked, the words are
     what the server holds (HELD_WORDS, lesson 32): a run whose receipt
@@ -317,9 +322,9 @@ def phase_words(progress: Progress, publication: str, now: Optional[float] = Non
             Phase.SIGNER: (words.WAITING_FOR_SIGNER, words.WAITING_DETAIL),
             Phase.SEND: (held.sending, ""),
             Phase.UNCONFIRMED: (held.checking, words.UNCONFIRMED_DETAIL),
-            Phase.DONE: (words.SUBMITTED, words.SUBMITTED_DETAIL),
+            Phase.DONE: (words.SUBMITTED if number < 2 else HANDED_IN, words.SUBMITTED_DETAIL),
         }.get(phase, ("", ""))
-    return (_(lines[0]).format(publication=publication) if lines[0] else "",
+    return (_(lines[0]).format(publication=publication, number=number) if lines[0] else "",
             _(lines[1]) if lines[1] else "")
 
 
@@ -363,6 +368,7 @@ class HandoffView(QWidget):
 
     def __init__(self, *, is_dark: bool, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        self.number = 1                         # the version handed in
         self._is_dark = is_dark
         self._phase: Optional[Phase] = None
         self._said = ""
@@ -436,7 +442,9 @@ class HandoffView(QWidget):
         self.set_dark(is_dark)
 
     def set_work(self, *, title: str, summary: str, byline: str, cover: QPixmap,
-                 publication: str, logo: QPixmap) -> None:
+                 publication: str, logo: QPixmap, number: int = 1) -> None:
+        """``number``: the version handed in (1 for a first submission)."""
+        self.number = number
         track = self.track
         track.title, track.summary, track.byline = title, summary, byline
         track.cover, track.publication, track.logo = cover, publication, logo
@@ -454,7 +462,7 @@ class HandoffView(QWidget):
         self._progress = progress
         phase = progress.phase
         now = _now()
-        first, second = phase_words(progress, self.track.publication, now)
+        first, second = phase_words(progress, self.track.publication, now, number=self.number)
         message_title, message_sentence = message_words(progress, now)
         retry_at, message_at = self._waits(progress)
         self.send_again.setEnabled(not message_at or message_at <= now)

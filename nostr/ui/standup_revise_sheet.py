@@ -283,7 +283,8 @@ class ReviseSheet(QDialog):
         self.run = run
         self.handoff.set_work(title=self._draft.title, summary=self._draft.summary,
                               byline=self._byline, cover=self._cover,
-                              publication=self._publication, logo=self._logo)
+                              publication=self._publication, logo=self._logo,
+                              number=self._number)
         run.behind_the_sheet(None)
         run.changed.connect(self.handoff.show_progress)
         self._pages.setCurrentIndex(1)

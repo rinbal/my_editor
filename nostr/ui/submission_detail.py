@@ -199,13 +199,20 @@ class SubmissionDetail(QWidget):
         self.more.setObjectName("submission_more")
         self.note = QLabel()
         self.note.setObjectName("submission_more")
+        # "Mehr dazu" sits on the sentence's line: it is about the
+        # sentence, not about the line under it (RG-M3-b 12).
+        said = QHBoxLayout()
+        said.setSpacing(6)
+        said.addWidget(self.sentence, 1)
+        self._more_about = QHBoxLayout()
+        said.addLayout(self._more_about)
+        block.addLayout(said)
         for label in (self.sentence, self.more, self.note):
             label.setWordWrap(True)
             label.setTextFormat(Qt.TextFormat.PlainText)
-            block.addWidget(label)
+            if label is not self.sentence:
+                block.addWidget(label)
         self.note.setTextFormat(Qt.TextFormat.RichText)
-        self._more_about = QHBoxLayout()
-        block.addLayout(self._more_about)
         buttons = QHBoxLayout()
         # Named from the start: no unnamed button waits hidden.
         self.action = QPushButton(_("Try Again"))
@@ -481,8 +488,8 @@ class SubmissionDetail(QWidget):
         while self._more_about.count():
             discard(self._more_about.takeAt(0).widget())
         if status.unsigned:
-            self._more_about.addWidget(more_about_button(_(rules.NOT_SIGNED), r))
-            self._more_about.addStretch(1)
+            self._more_about.addWidget(more_about_button(_(rules.NOT_SIGNED), r), 0,
+                                       Qt.AlignmentFlag.AlignTop)
         action = status.action
         if detail.problem:
             self.action.setText(_("Try Again"))

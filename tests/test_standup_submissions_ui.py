@@ -23,7 +23,7 @@ import pytest
 from PySide6.QtCore import QObject, Qt
 from PySide6.QtGui import QColor, QImage
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication, QLabel, QToolButton
 
 import alerts
 from document_notice import DocumentNotice
@@ -333,6 +333,26 @@ def test_tab_reaches_the_conversation_before_the_composer_and_each_reaction_is_n
         widget = widget.nextInFocusChain()
         chain.append(widget)
     assert all(b.react_button in chain for b in detail.thread.bubbles)
+
+
+def test_more_about_sits_on_the_sentence_and_a_narrow_unread_row_shows_the_message(window):
+    world = window.world
+    prepared, entries = seeded(window, text="Ein Jahr")
+    world.decide(prepared["text"], "request_changes", text="Bitte einen Absatz mehr.")
+    world.server.publication().members.pop(EDITOR)      # the decision does not verify
+    window.follow()
+    [row] = [i for i in window.view.items() if i.kind == "row"]
+    # The name goes first when the row is narrow: the message is what is new.
+    assert row.unread and row.rest.endswith(": Bitte einen Absatz mehr.")
+    assert row.short == "Bitte einen Absatz mehr."
+    window.view.show()
+    detail = opened(window, entries["text"])
+    QApplication.processEvents()
+    [more] = [w for w in detail.status.findChildren(QToolButton)
+              if w.text() == "More about this"]
+    sentence = detail.sentence.geometry()
+    assert sentence.top() <= more.geometry().center().y() <= sentence.bottom()
+    window.view.hide()
 
 
 def test_the_composer_is_one_line_that_grows_and_says_how_to_start_a_new_line(window):

@@ -57,6 +57,9 @@ class Item(NamedTuple):
     cover: Optional[bytes] = None
     open: bool = False          # the disclosure: whether Erledigt shows its rows
     quiet: bool = False         # not sent, not confirmed: the title leans
+    # ``rest`` without the sender's name, for a row too narrow for both
+    # (RG-M3-b 12): the message itself is what is new.
+    short: str = ""
 
     @property
     def spoken(self) -> str:
@@ -242,7 +245,10 @@ class RowDelegate(QStyledItemDelegate):
         if item.rest and x < left + room:
             painter.setFont(secondary)
             painter.setPen(muted)
-            rest = (" · " if item.word else "") + item.rest
+            lead = " · " if item.word else ""
+            rest = lead + item.rest
+            if item.short and small.horizontalAdvance(rest) > left + room - x:
+                rest = lead + item.short
             painter.drawText(QRect(x, y, left + room - x, small.height()), flags,
                              small.elidedText(rest, Qt.TextElideMode.ElideRight,
                                               left + room - x))

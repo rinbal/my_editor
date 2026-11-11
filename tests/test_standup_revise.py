@@ -82,6 +82,7 @@ def test_a_new_version_is_handed_in_with_its_note_and_counts_with_its_receipt(wi
     sheet.hand_in.click()
     world.settle()
     assert sheet.run.progress.phase is Phase.DONE
+    assert sheet.handoff.headline.text() == "Version 2 handed in."      # as the prototype says
     record = world.record(entry.sid)
     assert record.revision == 2 and record.state == "in_review"
     listed = window.accounts[ME].submissions.entry(entry.sid)

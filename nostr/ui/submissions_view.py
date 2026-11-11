@@ -240,7 +240,7 @@ class SubmissionsView(QWidget):
     def _item(self, row: rules.Row) -> Item:
         following = self._following
         publication = following.publication_name(row.publication)
-        rest = publication
+        rest, short = publication, ""
         if row.role != "writer":
             rest = " · ".join(part for part in (self._name_of(row.writer), publication)
                               if part)
@@ -248,10 +248,10 @@ class SubmissionsView(QWidget):
             sender, role, text = following.snippet(row.sid)
             if text:
                 label = threads.sender_label(role, self._name_of(sender))
-                rest = f"{label}: {text}" if label else text
+                rest, short = (f"{label}: {text}" if label else text), text
         return Item(
             "row", row.title or _("Untitled"), sid=row.sid,
-            word=rules.status_word(row, self._name_of), rest=rest,
+            word=rules.status_word(row, self._name_of), rest=rest, short=short,
             age=post_list.list_date(row.updated_at, int(self._clock())), unread=row.unread,
             turn=row.turn, work=row.kind, cover=following.cover(row.sid),
             quiet=row.situation in (rules.Situation.UNSENT, rules.Situation.UNCONFIRMED,
