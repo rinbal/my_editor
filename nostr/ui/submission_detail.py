@@ -294,7 +294,6 @@ class SubmissionDetail(QWidget):
         self.composer.setPlaceholderText(_("Message to the editorial team"))
         self.composer.setAccessibleName(_("Message to the editorial team"))
         self.composer.setTabChangesFocus(True)
-        self.composer.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.composer.installEventFilter(self)
         self.composer.textChanged.connect(self._on_typed)
         self.composer.textChanged.connect(self._fit_composer)
@@ -622,12 +621,17 @@ class SubmissionDetail(QWidget):
         composer = self.composer
         line = composer.fontMetrics().lineSpacing()
         # A plain text's layout counts its height in lines, wrapped ones too.
-        lines = max(1, min(COMPOSER_LINES, round(composer.document().size().height())))
+        counted = round(composer.document().size().height())
+        lines = max(1, min(COMPOSER_LINES, counted))
+        # A scroll bar only once it stops growing.
+        composer.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded if counted > COMPOSER_LINES
+            else Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         # What the frame and the style take around the text, as drawn.
         margins = composer.contentsMargins()
         chrome = margins.top() + margins.bottom()
         margin = 2 * int(composer.document().documentMargin())
-        composer.setFixedHeight(max(MIN_CONTROL_PX, lines * line + margin + chrome))
+        composer.setFixedHeight(max(MIN_CONTROL_PX, lines * line + margin + chrome + 2))
 
     def _on_typed(self) -> None:
         self.send.setEnabled(bool(self.composer.toPlainText().strip()))

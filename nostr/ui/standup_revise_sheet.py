@@ -188,7 +188,8 @@ class ReviseSheet(QDialog):
         column.addWidget(self.rights)
         label = QLabel(_("Note to the editorial team (optional)"))
         self.note = QPlainTextEdit()
-        self.note.setPlaceholderText(_("What changed?"))
+        # Sent again, nothing changed: the note is only a note.
+        self.note.setPlaceholderText("" if self._again else _("What changed?"))
         self.note.setAccessibleName(_("Note to the editorial team (optional)"))
         self.note.setTabChangesFocus(True)
         self.note.setFixedHeight(84)

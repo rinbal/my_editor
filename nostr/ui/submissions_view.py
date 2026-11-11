@@ -56,7 +56,7 @@ PANEL_VIEW = "submissions"
 
 
 EMPTY_BODY = N_("Follow here what you submit to publications. Open an article and choose "
-                "Nostr › Submit to a Publication….")
+                "“Submit to a Publication…” in the Nostr menu.")
 
 
 def add_to_panel(panel, view: "SubmissionsView", *, server: str) -> bool:
@@ -112,7 +112,6 @@ class SubmissionsView(QWidget):
 
     def _build(self, avatar_of) -> None:
         self._stack = QStackedLayout(self)
-        self._stack.currentChanged.connect(lambda _i: self.detail_shown.emit(self.showing_detail()))
         self._stack.setContentsMargins(0, 0, 0, 0)
         page = QWidget()
         column = QVBoxLayout(page)
@@ -186,6 +185,11 @@ class SubmissionsView(QWidget):
         self.detail.open_in_editor.connect(self.open_in_editor)
         self.detail.compare_requested.connect(self.compare_requested)
         self._stack.addWidget(self.detail)
+        # Connected once every page is there: the first ones made it change.
+        self._stack.currentChanged.connect(self._on_page)
+
+    def _on_page(self, _index: int) -> None:
+        self.detail_shown.emit(self.showing_detail())
 
     # -- the host's interface ------------------------------------------------------
 
