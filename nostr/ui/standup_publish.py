@@ -69,7 +69,6 @@ from .standup_publish_words import (
 _log = logging.getLogger(__name__)
 
 
-
 @dataclass(frozen=True)
 class PublishPorts:
     """What a run uses, each lent by the account (seams for the tests).
@@ -179,10 +178,9 @@ def run_for(following, account, profile, sid: str, *, store, fetch, session_pool
 
 class AcceptedPublish(QObject):
     """See the module docstring. ``version`` is the verified revision
-    opened here (``standup_reading.Version`` with its ``opened``),
-    ``accepted`` the verified accept. Where the encrypted files lie is
-    read only from the opened revision (bound to its signed hash) and
-    the writer's own media servers, never from the server's record."""
+    opened here (``standup_reading.Version``), ``accepted`` the verified
+    accept. Where the encrypted files lie is read only from the opened
+    revision and the writer's media servers, never the server's record."""
 
     changed = Signal()
 
@@ -197,8 +195,7 @@ class AcceptedPublish(QObject):
         self.stage = Stage.READY
         # What the submission's state must still be before the relays.
         self.expected_state = "accepted"
-        self.title, self.words = "", ""
-        self.naddr = ""
+        self.title, self.words, self.naddr = "", "", ""
         # Signed, bound to ``revision_hash`` (never named ``event``: QObject's).
         self.signed_article: Optional[dict] = None
         self._job = None
@@ -254,6 +251,12 @@ class AcceptedPublish(QObject):
             self._report()
         elif self.stage in (Stage.FAILED, Stage.NOT_CHECKED, Stage.READY):
             self.start()
+
+    def dismiss(self) -> None:
+        """Abbrechen when the address could not be read: back at the start
+        (what was signed and is not public is dropped already)."""
+        if self.stage is Stage.NOT_CHECKED:
+            self._say(Stage.READY, "", "")
 
     def stop(self) -> None:
         """The account was let go: nothing more is asked; what this run put
@@ -430,11 +433,9 @@ class AcceptedPublish(QObject):
         self._guard(job, None, lambda _relays: job.release())
 
     def _guard(self, job, unsigned: Optional[dict], then: Callable[[tuple], None]) -> None:
-        """The address read before anything goes out (12.4): the
-        submission (still the one accepted here; ``address_taken``), what
-        this server holds there and, for ``unsigned`` (before a picture
-        goes up and right before signing), every relay it goes to.
-        ``then(relays)`` with the relays it may go to; else nothing goes."""
+        """The address read before anything goes out (12.4): the submission
+        (still the one accepted here), this server and, for ``unsigned``,
+        every relay; ``then(relays)`` with those it may go to."""
         def live_now() -> bool:
             return not self._stopped and job is self._job and self.stage is Stage.WORKING
 
@@ -512,8 +513,7 @@ class AcceptedPublish(QObject):
 
     def _fail(self, words: str, stage: Stage = Stage.FAILED) -> None:
         """Nothing goes out: a signed article is dropped and the pictures
-        come down. Another person's article at the address stays, with no
-        Erneut (it would meet it again)."""
+        come down."""
         if self.stage is stage and self.words == words:
             return
         if self._job is not None:

@@ -129,7 +129,7 @@ class PublishSheet(QDialog):
         root.addWidget(self.signing_as)
         buttons = QDialogButtonBox()
         self.cancel_button = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
-        self.cancel_button.clicked.connect(self.reject)
+        self.cancel_button.clicked.connect(self._cancel)
         self.view = buttons.addButton(_("View"), QDialogButtonBox.ButtonRole.ActionRole)
         self.view.setAutoDefault(False)
         self.view.clicked.connect(lambda: self.view_requested.emit(self.run.naddr))
@@ -177,6 +177,15 @@ class PublishSheet(QDialog):
         # Not checked: Erneut versuchen or Abbrechen (12.4, the words both apps say).
         self.cancel_button.setText(_("Cancel") if stage is Stage.NOT_CHECKED else _(
             "Close") if working or failed or ask else _("Cancel"))
+
+    def _cancel(self) -> None:
+        """Abbrechen; when the address could not be read, back at
+        Veröffentlichen with the focus on it (12.4)."""
+        if self.run.stage is Stage.NOT_CHECKED:
+            self.run.dismiss()
+            self.publish.setFocus()
+        else:
+            self.reject()
 
     def _primary(self) -> None:
         stage = self.run.stage

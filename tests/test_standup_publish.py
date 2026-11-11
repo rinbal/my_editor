@@ -369,6 +369,12 @@ def test_the_address_is_read_on_every_relay_and_only_clear_ones_take_it(accepted
     run, store, jobs = publish(lambda sub: (sub.fail(A), sub.fail(B), sub.fail(C)))
     assert run.stage is Stage.NOT_CHECKED and jobs == [] and store.uploaded == []
     assert run.title == "Not published" and "couldn’t be checked just now" in run.words
+    from nostr.ui.standup_publish_sheet import PublishSheet
+    sheet = PublishSheet(run=run, publication="Magazin", number=1, is_dark=False)
+    assert (sheet.publish.text(), sheet.cancel_button.text()) == ("Try Again", "Cancel")
+    sheet.cancel_button.click()                 # Abbrechen: back at Veröffentlichen
+    assert run.stage is Stage.READY and sheet.publish.text() == "Publish"
+    sheet.deleteLater()
     run, store, jobs = publish(lambda sub: (sub.answer(A), sub.answer(B), sub.fail(C)))
     assert run.stage is Stage.DONE and jobs[-1].only == [A, B] and len(pool.subs) == 2
     assert pool.subs[0].filters == [{"kinds": [30023], "authors": [pk("writer")],

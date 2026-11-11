@@ -25,8 +25,8 @@ SOMEONE_ELSES = N_("Another person’s article already stands under this link na
                    "it stays, nothing is published.")
 # No relay answered the read of its address, or this server's read
 # failed (12.4, RG-B5-d): the words both apps say, under NOT_PUBLISHED.
-NOT_CHECKED = N_("Whether another person’s article already stands under this link name "
-                 "couldn’t be checked just now. Try again in a moment.")
+NOT_CHECKED = N_("Whether an article already stands under this link name couldn’t be "
+                 "checked just now. Try again in a moment.")
 NOT_REPORTED = N_("Published. {publication} doesn’t know yet: try again in a moment.")
 # 12.4 One work per address: a writer's work keeps its link name (F5A's
 # publishedD; another d would not be this work's), so it is only said.

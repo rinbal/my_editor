@@ -122,7 +122,7 @@ class CorrectionSheet(QDialog):
         self.ask.setAutoDefault(False)
         self.ask.clicked.connect(self._ask)
         self.later = buttons.addButton(_("Later"), QDialogButtonBox.ButtonRole.RejectRole)
-        self.later.clicked.connect(self.reject)
+        self.later.clicked.connect(self._later)
         self.take = buttons.addButton(_("Take the Correction"),
                                       QDialogButtonBox.ButtonRole.AcceptRole)
         self.take.setDefault(True)
@@ -176,6 +176,15 @@ class CorrectionSheet(QDialog):
             self.run.retry()
         else:
             self.run.start()
+
+    def _later(self) -> None:
+        """Später; Abbrechen when the address could not be read: back at
+        Korrektur übernehmen with the focus on it (12.4)."""
+        if self.run.stage is Stage.NOT_CHECKED:
+            self.run.dismiss()
+            self.take.setFocus()
+        else:
+            self.reject()
 
     def _ask(self) -> None:
         self.ask_requested.emit(_(ASK_PREFIX))
