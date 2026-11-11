@@ -8058,15 +8058,6 @@ msgstr "Korrektur vorgeschlagen"
 msgid "{publication} suggests a correction."
 msgstr "{publication} schlägt eine Korrektur vor."
 
-#: nostr/standup/following.py:174
-msgid "Compare it. If you accept it, the address stays the same."
-msgstr "Vergleiche sie. Übernimmst du sie, bleibt die Adresse gleich."
-
-#: nostr/standup/following.py:176
-#, python-brace-format
-msgid "Published in {publication}."
-msgstr "Veröffentlicht in {publication}."
-
 #: nostr/standup/following.py:178
 #: nostr/standup/thread.py:272
 msgid "Declined"
@@ -13551,3 +13542,19 @@ msgstr "Mein Beitrag ({part}) gehört mir."
 #, python-brace-format
 msgid "I agree to the license {license}."
 msgstr "Ich bin mit der Lizenz {license} einverstanden."
+
+msgid "Compare it with what is public. If you take it, it replaces your published text."
+msgstr "Vergleiche sie mit dem, was öffentlich ist. Wenn du sie übernimmst, ersetzt sie deinen veröffentlichten Text."
+
+msgid "Correction taken"
+msgstr "Korrektur übernommen"
+
+msgid "Correction taken, not published yet."
+msgstr "Korrektur übernommen, noch nicht veröffentlicht."
+
+msgid "Publish it so everyone reads the corrected text."
+msgstr "Veröffentliche sie, damit alle den korrigierten Text lesen."
+
+#, python-brace-format
+msgid "Published on {publication}."
+msgstr "Veröffentlicht auf {publication}."

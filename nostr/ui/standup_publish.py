@@ -56,6 +56,7 @@ from ..publisher import published_at_of
 from ..signer_limits import size_problem
 from ..standup import formats, opening, publishing
 from ..standup.errors import Code, cause_words
+from ..standup.following import correction_taken
 from ..standup.publishing import Accepted
 from .standup_account import live
 from .standup_publish_job import HeldPublish, SignedHere, offers_here, publish_job, read_relays
@@ -170,8 +171,9 @@ def run_for(following, account, profile, sid: str, *, store, fetch, session_pool
                 revision_hash=view.revision_hash,
                 publication=following.publication_name(view.publication), ports=ports,
                 parent=following)
-    run = following.publishing[sid] = (CorrectionPublish(published=published, **made)
-                                       if correction else AcceptedPublish(**made))
+    run = following.publishing[sid] = (
+        CorrectionPublish(published=published, taken=correction_taken(view), **made)
+        if correction else AcceptedPublish(**made))
     return run
 
 
@@ -552,10 +554,16 @@ class CorrectionPublish(AcceptedPublish):
     It changes only what the sheet shows; the published event's zaps,
     credits and carried tags stay (``publishing.corrected_template``)."""
 
-    def __init__(self, *, published: dict, **kwargs) -> None:
+    def __init__(self, *, published: dict, taken: bool = False, **kwargs) -> None:
         super().__init__(**kwargs)
-        self._published, self._taken = published, False
+        # ``taken``: the View holds the writer's confirmation of it, so it
+        # is published without being confirmed again (RG-M4-b 8).
+        self._published, self._taken = published, bool(taken)
         self.expected_state = "published"
+
+    @property
+    def taken(self) -> bool:
+        return self._taken
 
     @property
     def published_event(self) -> dict:

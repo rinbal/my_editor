@@ -49,7 +49,7 @@ from .standup_publications import publication_logo
 from ..standup.errors import Code, cause_words
 from .standup_confirm_sheet import ConfirmSheet
 from .standup_correction_sheet import CorrectionSheet
-from .standup_publish import Stage
+from .standup_publish import CorrectionPublish, Stage
 from .standup_publish_sheet import PublishSheet
 from .standup_revise_sheet import ReviseSheet, comparable
 from .standup_uploads import thumbnail
@@ -468,6 +468,11 @@ class SubmissionsHost(QObject):
         run = ports.standup().publisher(profile, sid)
         if run is None:
             self._say_in_place(sid, _(ACCEPTED_NOT_LOADED))
+            return
+        if isinstance(run, CorrectionPublish):
+            # A correction taken and not public yet (RG-M4-b 8): its own
+            # sheet, which publishes it without confirming it again.
+            self.compare_correction(sid)
             return
         work = run.revision.get("work") or {}
         ed = ports.editor_of(row.d) if row.d else None

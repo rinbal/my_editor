@@ -74,6 +74,12 @@ def my_turn(view: views.SubmissionView, me: str) -> bool:
         turn.type == "contributors" and me in turn.pending)
 
 
+def correction_taken(view: views.SubmissionView) -> bool:
+    """Whether the writer confirmed the waiting correction (12.4: the
+    server drops the word when the next correction comes)."""
+    return "correction" in (view.confirmations.get(view.writer) or ())
+
+
 def situation_of(view: views.SubmissionView, me: str) -> Situation:
     """A View's situation for ``me`` (11.1, 11.2): the state, the step
     and the turn, all the server's."""
@@ -92,9 +98,11 @@ def situation_of(view: views.SubmissionView, me: str) -> Situation:
         return Situation.ACCEPTED
     if state == "published":
         # A correction stored and not yet published is the writer's turn
-        # for a writer-signed work (11.2, ceac858).
+        # for a writer-signed work (11.2, ceac858); once they took it, the
+        # View holds their ``correction`` confirmation (RG-M4-b 8).
         if mine and view.turn.type == "writer":
-            return Situation.CORRECTION
+            return (Situation.CORRECTION_TAKEN if correction_taken(view)
+                    else Situation.CORRECTION)
         return Situation.PUBLISHED if view.placed else Situation.PUBLISHED_UNPLACED
     return Situation.DECLINED if state == "declined" else Situation.WITHDRAWN
 
@@ -452,6 +460,7 @@ def rests_on(situation: Situation, decision: Optional[Decision]) -> bool:
 
 __all__ = [
     "ACTION_LABELS", "Action", "DECIDER_ROLES", "DECISIONS", "Decision", "NOTHING_TO_DO",
+    "correction_taken",
     "NOT_SIGNED", "ON_A_DECISION", "ON_ITS_WAY", "Row",
     "Section", "SignedChecks", "Situation", "Status", "TABLE", "Words", "YOUR_TURN", "action_verified",
     "deciders_of", "members_of", "my_turn", "newest_decision", "pill_word", "rests_on",

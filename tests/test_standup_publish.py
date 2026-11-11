@@ -529,6 +529,53 @@ def test_a_correction_taken_is_confirmed_alone_then_replaces_the_article_keeping
     assert following.row(accepted.sid).situation.name != "CORRECTION"
 
 
+def test_a_correction_taken_before_is_said_so_and_published_without_asking_again(accepted):
+    # RG-M4-b 8: the View holds the writer's correction confirmation (a
+    # publish that failed, a restart): the web's words, and Publish.
+    from nostr.standup import following as rules
+    from nostr.ui.standup_publish import CorrectionPublish
+    first, _store, jobs = _run(accepted)
+    first.start()
+    accepted.world.settle()
+    accepted.world.clock.advance(60)
+    content = f"Korrigiert ![]({accepted.entry['ref']})"
+    accepted.world.correct(accepted.writer, accepted.sid, content, media=[accepted.entry])
+    following = accepted.following
+    following.refresh()
+    accepted.world.settle()
+    following.open(accepted.sid)
+    accepted.world.settle()
+    view = following.row(accepted.sid).view
+    following.confirm(accepted.sid, confirms=("correction",), revision_hash=view.revision_hash,
+                      split_rumor_id=None, on_done=lambda _error: None)
+    accepted.world.settle()
+    row = following.row(accepted.sid)
+    assert row.situation is rules.Situation.CORRECTION_TAKEN
+    status = rules.status_of(row, publication="Magazin", name_of=lambda _pk: "")
+    assert (status.sentence, status.action) == ("Correction taken, not published yet.",
+                                                rules.Action.PUBLISH)
+    asked = []
+    from nostr.standup.publishing import Accepted
+    run = CorrectionPublish(
+        published=following.reading.published_event(accepted.sid), taken=True,
+        sid=accepted.sid, profile=accepted.writer.profile,
+        version=following.reading.latest(accepted.sid),
+        accepted=Accepted(revision=2, split_rumor_id=None, actor="", seq=0),
+        revision_hash=row.view.revision_hash, publication="Magazin",
+        ports=replace(first._ports, confirm=lambda *args: asked.append(args)))
+    from nostr.ui.standup_compare import Comparer
+    from nostr.ui.standup_correction_sheet import CorrectionSheet
+    sheet = CorrectionSheet(run=run, publication="Magazin", old="Text.", new=content, note="",
+                            comparer=Comparer(run=lambda fn, done, _error: done(fn())),
+                            changes=(), is_dark=False)
+    assert sheet.take.text() == "Publish" and not sheet.replaces.isVisibleTo(sheet)
+    sheet.deleteLater()
+    run.start()
+    accepted.world.settle()
+    assert run.stage is Stage.DONE and asked == [] and "Korrigiert" in jobs[-1].signed_event[
+        "content"]
+
+
 def publishing_tag(event):
     return next(tag[1] for tag in event["tags"] if tag[0] == "published_at")
 

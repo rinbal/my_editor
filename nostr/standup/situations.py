@@ -71,6 +71,7 @@ class Situation(Enum):
     PUBLISH = "publish"                 # accepted, the writer publishes
     PUBLISHED_UNPLACED = "published, place follows"
     CORRECTION = "correction"           # a correction waits for the writer
+    CORRECTION_TAKEN = "correction taken"   # the writer took it, it is not public yet
     PUBLISHED = "published"
     DECLINED = "declined"
     WITHDRAWN = "withdrawn"
@@ -149,9 +150,16 @@ TABLE = {
                                         Action.VIEW, decision="accept"),
     Situation.CORRECTION: Words(N_("Correction suggested"), Section.TURN,
                                 N_("{publication} suggests a correction."),
-                                N_("Compare it. If you accept it, the address stays the same."),
+                                N_("Compare it with what is public. If you take it, it "
+                                   "replaces your published text."),
                                 Action.COMPARE_CORRECTION),
-    Situation.PUBLISHED: Words(N_("Published"), Section.DONE, N_("Published in {publication}."),
+    # Taken and not published yet, as the web says it (RG-M4-b 8): the
+    # writer's confirmation is in the View, so it is not asked again.
+    Situation.CORRECTION_TAKEN: Words(N_("Correction taken"), Section.TURN,
+                                      N_("Correction taken, not published yet."),
+                                      N_("Publish it so everyone reads the corrected text."),
+                                      Action.PUBLISH),
+    Situation.PUBLISHED: Words(N_("Published"), Section.DONE, N_("Published on {publication}."),
                                action=Action.VIEW, decision="accept"),
     Situation.DECLINED: Words(N_("Declined"), Section.DONE, N_("Declined."),
                               N_("You can submit the text again, or somewhere else."),

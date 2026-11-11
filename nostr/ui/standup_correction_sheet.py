@@ -20,6 +20,10 @@ else of the published article changes: its zaps, credits, co-authors and
 every tag not taken from the text stay; its pictures' tags follow the
 corrected text.
 
+Once taken and not yet public (a publish that failed, the app closed),
+the detail says "Korrektur übernommen, noch nicht veröffentlicht." and
+this sheet publishes it without confirming it again (RG-M4-b 8).
+
 The run (:class:`~.standup_publish.CorrectionPublish`) is the account's
 and bound to the correction's verified revision: it confirms the
 correction alone, then publishes it again under the writer's key. Once
@@ -157,13 +161,16 @@ class CorrectionSheet(QDialog):
                             quietly=True)
         else:
             self.status.say("")
-        # Taken, the comparison closes (RG-F5a-b 7).
+        # Taken, the comparison closes (RG-F5a-b 7); taken before (the
+        # publish failed or the app closed meanwhile), what is left is to
+        # publish it (RG-M4-b 8).
         self.changes.setVisible(not done)
-        self.replaces.setVisible(not done)
+        self.replaces.setVisible(not done and not run.taken)
         self.ask.setVisible(not done and not ask)
         self.take.setText(_("Done") if done else _("Ask a Question") if ask else _(
             "Try Again") if failed else _("Sign with the Key on This Computer")
-            if stage is Stage.OFFER_HERE else _("Take the Correction"))
+            if stage is Stage.OFFER_HERE else _("Publish") if run.taken
+            else _("Take the Correction"))
         self.take.setEnabled(not working)
         self.later.setText(_("Cancel") if stage is Stage.NOT_CHECKED else _(
             "Close") if working or failed or ask else _("Later"))

@@ -2063,6 +2063,10 @@ class FakeStandupServer:
         if "changed_since_acceptance" not in record.marks:
             record.marks.append("changed_since_acceptance")
         record.correction_pending = record.state == "published"
+        # As editorial_release.py: the writer's word on the earlier one goes.
+        mine = record.confirmations.get(record.writer)
+        if mine and "correction" in mine:
+            mine.remove("correction")
         seq = self._event(record, "correction", who, revision=body["revision"])
         return _ok({"submission": self.view(record), "seq": seq})
 
