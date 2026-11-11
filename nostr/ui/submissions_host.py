@@ -27,6 +27,7 @@ forgets its texts and a cover still being fetched is dropped (criterion
 
 from __future__ import annotations
 
+import weakref
 from dataclasses import dataclass, replace
 from typing import Callable, Dict, Optional
 
@@ -151,6 +152,7 @@ class SubmissionsHost(QObject):
         self._publish_sheet: Optional[PublishSheet] = None
         self._confirm_sheet: Optional[ConfirmSheet] = None
         self._correction_sheet: Optional[CorrectionSheet] = None
+        self._heard: "weakref.WeakSet" = weakref.WeakSet()     # publish runs listened to
         self._typing = QTimer(self)
         self._typing.setSingleShot(True)
         self._typing.setInterval(FOLLOW_MS)
@@ -457,10 +459,10 @@ class SubmissionsHost(QObject):
             is_dark=ports.is_dark(), parent=ports.window())
         sheet.hand_in_requested.connect(self.hand_in)
         sheet.view_requested.connect(lambda naddr: self._view(naddr, row))
-        if not run.property("heard"):
+        if run not in self._heard:
             # With the sheet closed, a run that could not finish says so
             # once in the detail (lessons 36); it goes on otherwise.
-            run.setProperty("heard", True)
+            self._heard.add(run)
             run.changed.connect(lambda: self._publish_said(run))
         ports.keep(sheet)
         sheet.open()

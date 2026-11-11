@@ -92,7 +92,8 @@ class ConfirmSheet(QDialog):
             for pk, weight, _role in shares]
         self.split = self._label("  ·  ".join(parts), "")
         self.split.setVisible(bool(parts))
-        self.split.setAccessibleName(_("The split"))
+        # Read as one line, with what it is (VoiceOver).
+        self.split.setAccessibleName(_("The split: {shares}").format(shares=", ".join(parts)))
         root.addWidget(self.split)
         self.address = self._label("")
         self.address.hide()

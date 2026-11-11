@@ -186,7 +186,8 @@ def test_no_relay_took_it_so_try_again_sends_the_same_signed_article(accepted):
     run, store, jobs = _run(accepted, took=(False,))
     run.start()
     accepted.world.settle()
-    assert run.stage is Stage.NOT_STORED and accepted.world.record(accepted.sid).state == "accepted"
+    assert run.stage is Stage.NOT_STORED
+    assert accepted.world.record(accepted.sid).state == "accepted"
     jobs[0].took[0] = True
     run.retry()
     accepted.world.settle()
@@ -201,7 +202,7 @@ def test_a_submission_that_changed_meanwhile_is_not_published_and_its_picture_co
     accepted.world.settle()
     assert run.stage is Stage.FAILED and jobs[0].sent == [] and jobs[0].cancelled
     assert store.deleted == [(accepted.entry["plain_sha256"], (SERVER,))]
-    assert run.event is None
+    assert run.signed_article is None
 
 
 def test_a_picture_the_servers_refuse_publishes_nothing(accepted):

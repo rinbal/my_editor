@@ -252,7 +252,8 @@ class AcceptedPublish(QObject):
         self.expected_state = "accepted"
         self.title, self.words = "", ""
         self.naddr = ""
-        self.event: Optional[dict] = None          # signed, bound to ``revision_hash``
+        # Signed, bound to ``revision_hash`` (never named ``event``: QObject's).
+        self.signed_article: Optional[dict] = None
         self._job = None
         self._urls: Dict[str, str] = {}
         self._created: List[Tuple[str, Tuple[str, ...]]] = []   # (plain sha256, servers)
@@ -309,9 +310,9 @@ class AcceptedPublish(QObject):
         if self._stopped:
             return
         self._stopped = True
-        if self._job is not None and self.event is None:
+        if self._job is not None and self.signed_article is None:
             self._job.cancel()
-        if self.stage is Stage.WORKING and self.event is None:
+        if self.stage is Stage.WORKING and self.signed_article is None:
             self._take_down()
 
     # -- 1: before anything goes up ----------------------------------------------
@@ -467,7 +468,7 @@ class AcceptedPublish(QObject):
     def _signed(self, job) -> None:
         if job is not self._job or self._stopped:
             return
-        self.event = job.signed_event           # kept with its revision (12.4)
+        self.signed_article = job.signed_event           # kept with its revision (12.4)
 
         def read(view) -> None:
             if self._stopped or job is not self._job:
@@ -487,7 +488,7 @@ class AcceptedPublish(QObject):
 
     def _drop(self, job) -> None:
         job.cancel()
-        self.event = None
+        self.signed_article = None
         self._take_down()
         self._fail(_(NOT_THE_SAME))
 
@@ -505,7 +506,7 @@ class AcceptedPublish(QObject):
 
     def _report(self) -> None:
         self._say(Stage.WORKING, _(BUSY), "")
-        event = self.event
+        event = self.signed_article
 
         def reported(view) -> None:
             if self._stopped:
@@ -593,5 +594,6 @@ class CorrectionPublish(AcceptedPublish):
         super()._say(stage, title, words)
 
 
-__all__ = ["AcceptedPublish", "CorrectionPublish", "HeldPublish", "PublishPorts", "SignedHere", "Stage",
+__all__ = ["AcceptedPublish", "CorrectionPublish", "HeldPublish", "PublishPorts", "SignedHere",
+           "Stage",
            "offers_here", "publish_job", "run_for"]

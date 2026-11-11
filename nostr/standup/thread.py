@@ -165,7 +165,7 @@ def split_text(card: SplitCard, *, me: str, name_of: Callable[[str], str]) -> st
     name = name_of(card.author)
     words = (_(SPLIT_PROPOSED).format(name=name, shares=shares) if name
              else _(SPLIT_PROPOSED_PLAIN).format(shares=shares))
-    return words + (" " + _(SPLIT_ACCEPTED) if card.accepted else "")
+    return words + (". " + _(SPLIT_ACCEPTED) if card.accepted else "")
 
 
 def _local_day(at: int) -> datetime.date:

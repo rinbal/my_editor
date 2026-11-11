@@ -252,7 +252,8 @@ def verified_accept(items: Sequence[views.TimelineItem], sid: str,
     event = item.event
     if event.name != "accept" or not rules.action_verified(event, sid, tuple(deciders), checks):
         return None
-    body = (checks or rules.SignedChecks()).body(event.signed, path=views.action_path(event.name, sid),
+    body = (checks or rules.SignedChecks()).body(event.signed,
+                                                 path=views.action_path(event.name, sid),
                                            sid=sid) or {}
     revision, split = body.get("expected_revision"), body.get("split_rumor_id")
     if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
@@ -285,6 +286,7 @@ def verified_published(items: Sequence[views.TimelineItem], sid: str, writer: st
     return None
 
 
-__all__ = ["Accepted", "EXTENSIONS", "NEVER_CARRIED", "NotPublishable", "addresses_before", "credited",
+__all__ = ["Accepted", "EXTENSIONS", "NEVER_CARRIED", "NotPublishable", "addresses_before",
+           "credited",
            "media_refs_in", "media_to_publish", "published_template",
            "served_at", "verified_accept", "verified_published", "work_of"]

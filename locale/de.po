@@ -13426,8 +13426,9 @@ msgstr "Kurze Frage zur Aufteilung: "
 msgid "Confirm Your Part"
 msgstr "Deinen Teil bestätigen"
 
-msgid "The split"
-msgstr "Die Aufteilung"
+#, python-brace-format
+msgid "The split: {shares}"
+msgstr "Die Aufteilung: {shares}"
 
 msgid "Ask a Question"
 msgstr "Rückfrage stellen"
