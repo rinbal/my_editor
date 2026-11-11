@@ -101,6 +101,11 @@ PASTE_FEATURES = QTextDocument.MarkdownFeature(
 MARKDOWN = "markdown"
 NOTE = "note"
 
+# How a picture's description was spelled in the Markdown it was read from,
+# kept on the picture when the writer would spell it otherwise ("Fish &amp;
+# Chips" for "Fish & Chips"): while the description is what that spelling
+# says, it is written as it was, so a file changes only where it was edited.
+ALT_SPELLING_PROPERTY = QTextFormat.Property.UserProperty + 0x5B2
 # How a soft line break (doc_walk.SOFT_BREAK_PROPERTY) travels through the
 # writer, between reading the document and writing the lines (a character
 # of Unicode's private area).
@@ -202,7 +207,7 @@ def _spans_of(runs, image_target: Optional[ImageTarget]) -> List[_Span]:
                 continue
             target = image_target(fmt.toImageFormat())
             if target:
-                spans.append(_Span(text=target, raw=True))
+                spans.append(_Span(text=_as_spelled(fmt, target), raw=True))
             continue
         text = text.replace(OBJECT_REPLACEMENT, "")
         if not text:
@@ -214,6 +219,20 @@ def _spans_of(runs, image_target: Optional[ImageTarget]) -> List[_Span]:
                            strike=fmt.fontStrikeOut(), code=_is_code(fmt),
                            href=href or ""))
     return _merged(spans)
+
+
+def _as_spelled(fmt, target: str) -> str:
+    """``target`` (a picture as Markdown) with its description spelled as
+    the file spelled it (ALT_SPELLING_PROPERTY), while that spelling still
+    says the picture's description."""
+    spelling = fmt.property(ALT_SPELLING_PROPERTY)
+    if not spelling:
+        return target
+    alt = str(fmt.property(QTextFormat.Property.ImageAltText) or "")
+    written = f"![{_description_markdown(alt or 'image')}]("
+    if not target.startswith(written) or not _reads_back(spelling, alt):
+        return target
+    return f"![{spelling}](" + target[len(written):]
 
 
 def _plain_weight(span: _Span) -> _Span:
@@ -967,7 +986,9 @@ def _fingerprint(doc) -> bytes:
                  or fmt.hasProperty(QTextFormat.Property.BlockCodeLanguage)),
             tuple((text, _is_bold(f), f.fontItalic(), f.fontStrikeOut(), _is_code(f),
                    f.anchorHref() if f.isAnchor() else "",
-                   f.toImageFormat().name() if f.isImageFormat() else "")
+                   (f.toImageFormat().name(),
+                    str(f.property(QTextFormat.Property.ImageAltText) or ""))
+                   if f.isImageFormat() else "")
                   for text, f in iter_block_runs(block)),
         )).encode("utf-8", "surrogatepass"))
     return prints.digest()
@@ -1259,7 +1280,7 @@ def _whole_descriptions(markdown: str, features) -> Tuple[str, dict]:
     pieces, last = [], 0
     for number, (start, end) in enumerate(spans):
         word = f"pgalt{stamp}{number:x}"
-        alts[word] = _plain_description(markdown[start:end], features)
+        alts[word] = (_plain_description(markdown[start:end], features), markdown[start:end])
         pieces.append(markdown[last:start])
         pieces.append(word)
         last = end
@@ -1268,7 +1289,8 @@ def _whole_descriptions(markdown: str, features) -> Tuple[str, dict]:
 
 
 def _restore_descriptions(doc: QTextDocument, alts: dict) -> None:
-    """Give each picture read with a plain word its description."""
+    """Give each picture read with a plain word its description, and how
+    the file spelled it where the writer would spell it otherwise."""
     found = []
     for block in iter_blocks(doc):
         it = block.begin()
@@ -1278,9 +1300,9 @@ def _restore_descriptions(doc: QTextDocument, alts: dict) -> None:
             if fmt.isImageFormat():
                 word = str(fmt.property(QTextFormat.Property.ImageAltText) or "")
                 if word in alts:
-                    found.append((fragment.position(), fragment.length(), alts[word]))
+                    found.append((fragment.position(), fragment.length(), *alts[word]))
             it += 1
-    for position, length, alt in found:
+    for position, length, alt, spelling in found:
         cursor = QTextCursor(doc)
         cursor.setPosition(position)
         cursor.setPosition(position + length, QTextCursor.MoveMode.KeepAnchor)
@@ -1288,6 +1310,8 @@ def _restore_descriptions(doc: QTextDocument, alts: dict) -> None:
         if fmt is None:
             fmt = cursor.charFormat()
         fmt.setProperty(QTextFormat.Property.ImageAltText, alt)
+        if spelling != _description_markdown(alt or "image"):
+            fmt.setProperty(ALT_SPELLING_PROPERTY, spelling)
         cursor.setCharFormat(fmt)
 
 

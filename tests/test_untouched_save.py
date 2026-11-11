@@ -52,7 +52,9 @@ def test_a_file_saved_after_an_edit_is_written_with_it(window, opened):
     cursor.insertText("Added.")
     assert window._save_to(str(path))
     written = path.read_text(encoding="utf-8")
-    assert "Added." in written and "Fish & Chips" in written
+    # The edit, and the writer's spelling of the rest; a picture's
+    # description as the file spelled it (gate 13).
+    assert "Added." in written and "- one" in written and "Fish &amp; Chips" in written
 
 
 

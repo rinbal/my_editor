@@ -17,11 +17,13 @@ from __future__ import annotations
 import string
 
 import pytest
-from PySide6.QtGui import QTextDocument, QTextFormat
+from PySide6.QtGui import QTextCursor, QTextDocument, QTextFormat
 from PySide6.QtWidgets import QApplication
 
 import photo_group
-from markdown_writer import holds_faithfully, image_markdown, read_markdown
+from markdown_writer import (
+    _image_as_read, document_to_markdown, holds_faithfully, image_markdown, read_markdown,
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -114,3 +116,39 @@ def test_the_editor_keeps_a_document_with_an_escaped_description():
     groups = photo_group.groups_in(doc)
     assert len(groups) == 1
     assert [unit.alt for unit in groups[0].units] == ["The jetty <at dusk>", "Bay"]
+
+
+def test_a_description_is_written_as_the_file_spelled_it_until_it_is_changed():
+    """Gate 13: "Fish &amp; Chips" came back as "Fish & Chips" after any
+    edit. The spelling is kept with the picture, alone and in a group, and
+    goes when the description itself is changed."""
+    alone = "![Fish &amp; Chips](a.png)\n\nText.\n"
+    grouped = "![Fish &amp; Chips](a.png)\n\n![The jetty \\<at dusk\\>](b.png)\n\nText.\n"
+    for markdown in (alone, grouped):
+        assert holds_faithfully(markdown)
+        doc = QTextDocument()
+        read_markdown(doc, markdown)
+        cursor = QTextCursor(doc)
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        cursor.insertText(" Added.")
+        assert document_to_markdown(doc, _image_as_read) == markdown.replace("Text.", "Text. Added.")
+    # The description changed: written as the writer spells the new one.
+    doc = QTextDocument()
+    read_markdown(doc, alone)
+    cursor = QTextCursor(doc)
+    cursor.setPosition(0)
+    cursor.setPosition(1, QTextCursor.MoveMode.KeepAnchor)
+    fmt = cursor.charFormat()
+    fmt.setProperty(QTextFormat.Property.ImageAltText, "Fish & Chips, new")
+    cursor.setCharFormat(fmt)
+    assert document_to_markdown(doc, _image_as_read) == "![Fish & Chips, new](a.png)\n\nText.\n"
+
+
+def test_two_descriptions_that_differ_are_not_the_same_document():
+    """The description is part of what the editor checks before it holds
+    a file: a reading that lost or changed one is not faithful."""
+    from markdown_writer import _fingerprint
+    one, other = QTextDocument(), QTextDocument()
+    read_markdown(one, "![Fish](a.png)\n")
+    read_markdown(other, "![Chips](a.png)\n")
+    assert _fingerprint(one) != _fingerprint(other)
