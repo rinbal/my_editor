@@ -60,6 +60,41 @@ def test_the_article_credits_its_people_and_names_its_pictures_in_public():
                                       media_urls={}, published_at=1, created_at=1)
 
 
+def test_a_correction_changes_only_what_its_sheet_shows():
+    # RG-M4-a 1 (probe p2): the Redaktion's correction keeps the text but
+    # adds a co-author, swaps the cover and gives the editor every zap.
+    # Republished under the writer's key, it keeps the published zaps,
+    # credits and carried tags; the cover and the title it changes are
+    # said; its text is compared with the article as it stands in public.
+    entry, _cipher = _picture()
+    ref, editor, stranger = entry["ref"], pk("editor"), pk("recipient")
+    picture = f"{SERVER}/{entry['plain_sha256']}.png"
+    published = publishing.published_template(
+        {"work": {"d": "ein-jahr", "title": "Ein Jahr", "summary": "S", "image": picture,
+                  "tags": ["bitcoin"], "lang": "de", "content": f"Text ![]({picture})",
+                  "authors": [{"pubkey": pk("contributor"), "relay": ""}],
+                  "extra_tags": [["zap", pk("writer"), "", "70"],
+                                 ["zap", pk("contributor"), "", "30"], ["r", "https://a.example"]]},
+         "media": []},
+        writer=pk("writer"), d="ein-jahr", media_urls={}, published_at=100, created_at=200)
+    correction = {"work": {"d": "anything-else", "title": "Neuer Titel", "summary": "S",
+                           "image": "https://evil.example/cover.jpg", "tags": ["bitcoin"],
+                           "lang": "de", "content": f"Text ![]({ref})",
+                           "authors": [{"pubkey": stranger, "relay": ""}],
+                           "extra_tags": [["zap", editor, "", "100"], ["r", "https://b.example"]]},
+                  "media": [entry], "credits": [{"pubkey": editor, "part": "x"}]}
+    event = publishing.corrected_template(correction, published, writer=pk("writer"),
+                                          media_urls={ref: picture}, created_at=150)
+    tags = event["tags"]
+    assert [t for t in tags if t[0] == "zap"] == [t for t in published["tags"] if t[0] == "zap"]
+    assert sorted(t[1] for t in tags if t[0] == "p") == sorted([pk("writer"), pk("contributor")])
+    assert ["r", "https://a.example"] in tags and ["r", "https://b.example"] not in tags
+    assert ["d", "ein-jahr"] in tags and ["published_at", "100"] in tags
+    assert event["created_at"] == 201 and ["title", "Neuer Titel"] in tags
+    assert publishing.correction_changes(correction, published) == [
+        ("title", "Neuer Titel"), ("cover", "changed")]
+
+
 class FakeStore(QObject):
     upload_finished = Signal(str, object)
     upload_failed = Signal(str, str)

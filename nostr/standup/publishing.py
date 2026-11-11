@@ -19,14 +19,21 @@ signs, uploads and sends nothing.
   ``imeta`` its ``x`` becomes the plain file's hash. A ref without an
   address is refused, so nothing private-looking is published.
 - A correction replaces the work at its address and keeps
-  ``published_at`` (``publisher.published_at_of``).
+  ``published_at`` (``publisher.published_at_of``). The Redaktion writes
+  it and the writer signs it, so it changes only what the writer sees
+  before Korrektur übernehmen (RG-M4-a 1): the text (with what the text
+  names), the title, the summary, the cover, the topics and the
+  language. The published event's zaps (a split never changes through a
+  correction), credits, co-authors and carried tags stay as they are.
+  Each correction is compared with the article as it stands in public,
+  never with an earlier correction (RG-M4-a 6).
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from .. import events as nostr_events
 from .. import publisher, zap_shares
@@ -371,7 +378,125 @@ def section_of(items: Sequence[views.TimelineItem], sid: str, address: str, publ
     return None
 
 
+# -- a correction ---------------------------------------------------------------
+
+# The tags a correction writes itself; the published event's of these go.
+_CORRECTED = frozenset({"d", "client", "title", "summary", "image", "published_at", "t",
+                        "q", "imeta"})
+_NEVER = frozenset({"expiration"})
+# A public picture's address names its plain file's hash (BUD-01).
+_PUBLIC_PICTURE = re.compile(r"https://[^\s)\"'<>]+?/([0-9a-f]{64})(?:\.[a-z0-9]{2,5})?")
+
+
+def _language_tag(tag: List[str]) -> bool:
+    return (tag[0] == "L" and tag[1:2] == [LANGUAGE_NAMESPACE]) or (
+        tag[0] == "l" and len(tag) >= 3 and tag[2] == LANGUAGE_NAMESPACE)
+
+
+def _tag(event: Mapping, name: str) -> str:
+    return formats.tag_value(event, name) or ""
+
+
+def corrected_template(revision: Mapping, published: Mapping, *, writer: str,
+                       media_urls: Mapping[str, str], created_at: int) -> dict:
+    """The kind 30023 template of the correction ``revision`` that
+    ``writer`` signs: at the published event's ``d`` and first date, made
+    after it, with the correction's text, title, summary, cover, topics
+    and language, and every other tag of ``published`` as it stands."""
+    if not formats.is_hex64(writer) or not isinstance(created_at, int):
+        raise NotPublishable("invalid", "not a key or not a time")
+    d = _tag(published, "d")
+    if not d:
+        raise NotPublishable("invalid", "the published article has no address")
+    work = work_of(revision)
+    media = [e for e in revision.get("media") or () if isinstance(e, Mapping)]
+    content = _with_public_media(work["content"], media_urls)
+    image = _with_public_media(work["image"], media_urls) if work["image"] else ""
+    pictures = [tag for tag in (_carried(tag, media_urls, media)
+                                for tag in work["extra_tags"] if tag[0] == "imeta")
+                if any(part.startswith("url ") and part[4:] and (part[4:] in content
+                                                                  or part[4:] == image)
+                       for part in tag[1:])]
+    kept = [list(tag) for tag in published.get("tags") or ()
+            if _is_tag(tag) and tag[0] not in _CORRECTED and tag[0] not in _NEVER
+            and not _language_tag(tag)]
+    event = publisher.build_article(
+        content, writer, d, title=work["title"], summary=work["summary"], image=image,
+        published_at=publisher.published_at_of(dict(published)) or created_at,
+        hashtags=work["tags"], extra_tags=_language_tags(work["lang"]) + pictures + kept)
+    before = published.get("created_at")
+    event["created_at"] = before + 1 if isinstance(before, int) and created_at <= before \
+        else created_at
+    return event
+
+
+def _plain_hashes(revision: Mapping) -> Mapping[str, str]:
+    """``{ref: plain sha256}`` of the revision's media entries."""
+    return {e["ref"]: e["plain_sha256"] for e in revision.get("media") or ()
+            if isinstance(e, Mapping) and isinstance(e.get("ref"), str)
+            and formats.is_hex64(e.get("plain_sha256"))}
+
+
+def _same_cover(revision: Mapping, new: str, old: str) -> bool:
+    if _MEDIA_REF.fullmatch(new):
+        found = _PUBLIC_PICTURE.fullmatch(old)
+        return found is not None and found.group(1) == _plain_hashes(revision).get(new)
+    return new == old
+
+
+def correction_changes(revision: Mapping, published: Mapping) -> List[Tuple[str, str]]:
+    """What the correction ``revision`` changes besides the text, as
+    ``(field, new value)``: ``title``, ``summary`` (``""``: it goes),
+    ``cover`` (``added``, ``changed`` or ``removed``), ``topics`` (the
+    new ones, ``#``-named and space-separated; ``""``: they go) and
+    ``language`` (its code). [] for a correction that cannot be read."""
+    try:
+        work = work_of(revision)
+    except NotPublishable:
+        return []
+    found: List[Tuple[str, str]] = []
+    if work["title"] != _tag(published, "title").strip():
+        found.append(("title", work["title"]))
+    if work["summary"].strip() != _tag(published, "summary").strip():
+        found.append(("summary", work["summary"].strip()))
+    old_cover, new_cover = _tag(published, "image"), work["image"].strip()
+    if new_cover and not old_cover:
+        found.append(("cover", "added"))
+    elif old_cover and not new_cover:
+        found.append(("cover", "removed"))
+    elif new_cover and not _same_cover(revision, new_cover, old_cover):
+        found.append(("cover", "changed"))
+    new_topics = list(dict.fromkeys(t.strip().lstrip("#").lower() for t in work["tags"]
+                                    if t.strip().lstrip("#")))
+    old_topics = list(dict.fromkeys(formats.tag_values(published, "t")))
+    if set(new_topics) != set(old_topics):
+        found.append(("topics", " ".join("#" + t for t in new_topics)))
+    old_lang = next((tag[1] for tag in published.get("tags") or ()
+                     if _is_tag(tag) and len(tag) >= 3 and tag[0] == "l"
+                     and tag[2] == LANGUAGE_NAMESPACE), "")
+    new_lang = (_language_tags(work["lang"]) or [[], ["", ""]])[1][1]
+    if new_lang and new_lang != old_lang:
+        found.append(("language", new_lang))
+    return found
+
+
+def correction_texts(revision: Mapping, published: Mapping) -> Tuple[str, str]:
+    """The article as it stands in public and the correction's text, each
+    with a picture both name written alike (its address differs: public
+    there, encrypted here), so only what the correction changes differs."""
+    try:
+        new = work_of(revision)["content"]
+    except NotPublishable:
+        new = ""
+    hashes = set(_plain_hashes(revision).values())
+    old = published.get("content") if isinstance(published.get("content"), str) else ""
+    old = _PUBLIC_PICTURE.sub(
+        lambda match: "standup-media" if match.group(1) in hashes else match.group(0), old)
+    return old.rstrip(), _MEDIA_REF.sub("standup-media", new).rstrip()
+
+
 __all__ = ["Accepted", "EXTENSIONS", "NEVER_CARRIED", "NotPublishable", "Published",
-           "addresses_before", "credited", "media_refs_in", "media_to_publish",
+           "addresses_before", "corrected_template", "correction_changes",
+           "correction_texts", "credited", "media_refs_in", "media_to_publish",
            "placed_section", "published_template", "published_work", "section_of",
            "served_at", "verified_accept", "work_address", "work_of"]

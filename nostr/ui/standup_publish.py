@@ -502,12 +502,20 @@ class CorrectionPublish(AcceptedPublish):
     published again under the writer's key at the address of the article
     as it stands in public (``published``: the event of the newest
     verified ``published`` action), keeping its first date; its
-    ``created_at`` comes after that event's, so relays keep the newer."""
+    ``created_at`` comes after that event's, so relays keep the newer.
+    It changes only what the sheet shows; the published event's zaps,
+    credits and carried tags stay (``publishing.corrected_template``)."""
 
     def __init__(self, *, published: dict, **kwargs) -> None:
         super().__init__(**kwargs)
         self._published, self._taken = published, False
         self.expected_state = "published"
+
+    @property
+    def published_event(self) -> dict:
+        """The article as it stands in public: what the correction is
+        compared with and keeps."""
+        return self._published
 
     @property
     def d(self) -> str:
@@ -518,11 +526,9 @@ class CorrectionPublish(AcceptedPublish):
         return published_at_of(self._published)
 
     def _template(self, urls: Mapping[str, str]) -> dict:
-        event = super()._template(urls)
-        before = self._published.get("created_at")
-        if isinstance(before, int) and event["created_at"] <= before:
-            event["created_at"] = before + 1
-        return event
+        return publishing.corrected_template(self.revision, self._published, writer=self.writer,
+                                             media_urls=urls,
+                                             created_at=int(self._ports.clock()))
 
     def start(self, *, here: bool = False) -> None:
         if self._taken or self.stage is Stage.WORKING:

@@ -6,10 +6,17 @@ editorial team suggests for a published article, and takes it over
 
     Korrektur von Einundzwanzig Magazin
     „Zwei Zahlen korrigiert."                    (the correction's note)
+    Der Titel wird zu »…«. Das Titelbild ist ein anderes.
     ┌ the published text beside the correction, word by word ┐
     Übernimmst du sie, ersetzt die Korrektur den Artikel unter
     derselben Adresse. Das Datum der Veröffentlichung bleibt.
     [Rückfrage stellen]          [Später] [Korrektur übernehmen]
+
+The text is compared with the article as it stands in public, never
+with an earlier correction (RG-M4-a 6); every other public field the
+correction changes (title, summary, cover, topics, language) is said in
+plain words above it (RG-M4-a 1). Nothing else of the published article
+changes: its zaps, credits and carried tags stay.
 
 The run (:class:`~.standup_publish.CorrectionPublish`) is the account's
 and bound to the correction's verified revision: it confirms the
@@ -20,9 +27,9 @@ does not edit a correction here, so closing it never discards anything.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Sequence, Tuple
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QLocale, QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
@@ -38,16 +45,47 @@ from .standup_publish import CorrectionPublish, Stage
 REPLACES = N_("If you take it, the correction replaces the article at the same address. "
               "The date of publication stays.")
 ASK_PREFIX = N_("A short question about the correction: ")
+# What else the correction changes, one plain sentence each (RG-M4-a 1).
+TITLE_BECOMES = N_("The title becomes “{title}”.")
+SUMMARY_BECOMES = N_("The summary becomes “{summary}”.")
+SUMMARY_GOES = N_("The summary is removed.")
+COVER_ADDED = N_("It gets a cover picture.")
+COVER_CHANGED = N_("The cover picture is a different one.")
+COVER_GOES = N_("The cover picture is removed.")
+TOPICS_BECOME = N_("The topics become {topics}.")
+TOPICS_GO = N_("The topics are removed.")
+LANGUAGE_BECOMES = N_("The language becomes {language}.")
+
+
+def change_words(changes: Sequence[Tuple[str, str]]) -> str:
+    """The sentences (translated) for ``publishing.correction_changes``."""
+    out = []
+    for field, value in changes:
+        if field == "title":
+            out.append(_(TITLE_BECOMES).format(title=value))
+        elif field == "summary":
+            out.append(_(SUMMARY_BECOMES).format(summary=value) if value else _(SUMMARY_GOES))
+        elif field == "cover":
+            out.append(_(COVER_ADDED) if value == "added" else _(COVER_GOES)
+                       if value == "removed" else _(COVER_CHANGED))
+        elif field == "topics":
+            out.append(_(TOPICS_BECOME).format(topics=value) if value else _(TOPICS_GO))
+        elif field == "language":
+            name = QLocale(value).nativeLanguageName() if value else ""
+            out.append(_(LANGUAGE_BECOMES).format(language=name or value))
+    return " ".join(out)
 
 
 class CorrectionSheet(QDialog):
     """See the module docstring. ``old`` and ``new`` are the texts to
-    compare (comparable already), ``note`` the correction's own line."""
+    compare (comparable already), ``note`` the correction's own line,
+    ``changes`` what else it changes (``publishing.correction_changes``)."""
 
     ask_requested = Signal(str)              # the question's first words
 
     def __init__(self, *, run: CorrectionPublish, publication: str, old: str, new: str,
                  note: str, comparer: Comparer, is_dark: bool,
+                 changes: Sequence[Tuple[str, str]] = (),
                  parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         heading = _("Correction from {publication}").format(publication=publication)
@@ -72,6 +110,11 @@ class CorrectionSheet(QDialog):
         self.note.setWordWrap(True)
         self.note.setVisible(bool(note))
         root.addWidget(self.note)
+        self.fields = QLabel(change_words(changes))
+        self.fields.setTextFormat(Qt.TextFormat.PlainText)
+        self.fields.setWordWrap(True)
+        self.fields.setVisible(bool(changes))
+        root.addWidget(self.fields)
         self.changes = CompareView(is_dark=self._is_dark)
         root.addWidget(self.changes, 1)
         self.changes.show_pair(comparer, old, new)

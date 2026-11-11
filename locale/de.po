@@ -13494,3 +13494,34 @@ msgstr "Dein Profil wird gelesen …"
 
 msgid "Your profile couldn’t be read, so it’s not known where your share goes."
 msgstr "Dein Profil ließ sich nicht lesen. Darum ist offen, wohin dein Anteil geht."
+
+#, python-brace-format
+msgid "The title becomes “{title}”."
+msgstr "Der Titel wird zu »{title}«."
+
+#, python-brace-format
+msgid "The summary becomes “{summary}”."
+msgstr "Die Zusammenfassung wird zu »{summary}«."
+
+msgid "The summary is removed."
+msgstr "Die Zusammenfassung fällt weg."
+
+msgid "It gets a cover picture."
+msgstr "Er bekommt ein Titelbild."
+
+msgid "The cover picture is a different one."
+msgstr "Das Titelbild ist ein anderes."
+
+msgid "The cover picture is removed."
+msgstr "Das Titelbild fällt weg."
+
+#, python-brace-format
+msgid "The topics become {topics}."
+msgstr "Die Themen werden zu {topics}."
+
+msgid "The topics are removed."
+msgstr "Die Themen fallen weg."
+
+#, python-brace-format
+msgid "The language becomes {language}."
+msgstr "Die Sprache wird zu {language}."

@@ -546,6 +546,7 @@ class SubmissionsHost(QObject):
                 old=comparable(str(before.work.get("content") or "")),
                 new=comparable(str(new.get("content") or "")),
                 note=str(run.revision.get("change_summary") or ""), comparer=self.comparer,
+                changes=publishing.correction_changes(run.revision, run.published_event),
                 is_dark=ports.is_dark(), parent=ports.window())
             sheet.ask_requested.connect(lambda words: self.ask(sid, words))
             ports.keep(sheet)
