@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from PySide6.QtCore import (
-    Qt, QTimer, QMargins, QRect, QPoint, QPointF, QMetaMethod, QEvent, QUrl, Signal,
+    Qt, QTimer, QMargins, QRect, QRectF, QPoint, QPointF, QMetaMethod, QEvent, QUrl, Signal,
     QByteArray,
 )
 from PySide6.QtGui import (
@@ -341,6 +341,8 @@ class HtmlEditor(QTextEdit):
         # Line numbers shown beside the text (set_gutter_shown).
         self._gutter_shown = False
         self._highlights = {layer: [] for layer in self.HIGHLIGHT_LAYERS}
+        # The same over the captions of photo groups (drawn, not text).
+        self._caption_marks = {layer: [] for layer in self.HIGHLIGHT_LAYERS}
         self.document().contentsChange.connect(self._renew_highlights)
         # Pictures fitted to the text's width (_refit_pictures): looked at
         # again once an edit brings one in, or the width changes.
@@ -350,6 +352,12 @@ class HtmlEditor(QTextEdit):
         self._refit_timer.setInterval(0)
         self._refit_timer.timeout.connect(self._refit_pictures)
         self.document().contentsChange.connect(self._pictures_maybe_added)
+        # A caption changed (its picture's format): its words are checked
+        # once the edit is over.
+        self._captions_timer = QTimer(self)
+        self._captions_timer.setSingleShot(True)
+        self._captions_timer.setInterval(0)
+        self._captions_timer.timeout.connect(self._draw_spelling)
         self.verticalScrollBar().valueChanged.connect(self.visible_area_changed)
         # Spelling (spelling.DocumentSpelling), while it is checked here.
         self._spelling = None
@@ -725,7 +733,11 @@ class HtmlEditor(QTextEdit):
 
     def _pictures_maybe_added(self, position: int, _removed: int, added: int) -> None:
         """An edit that brought a picture in (typed text never does) has
-        it fitted once the edit is over."""
+        it fitted once the edit is over; one in a group's paragraph (a
+        caption changed) has its spelling looked at again."""
+        if self._spelling is not None and photo_group.is_group_block(
+                self.document().findBlock(position)):
+            self._captions_timer.start()
         if added <= 0:
             return
         cursor = QTextCursor(self.document())
@@ -1023,18 +1035,28 @@ class HtmlEditor(QTextEdit):
         self.visible_area_changed.emit()
 
     # -------- Highlights over the text --------
-    def set_highlights(self, layer: str, selections) -> None:
+    def set_highlights(self, layer: str, selections, captions=()) -> None:
         """Show ``selections`` (QTextEdit.ExtraSelection) as the highlights
-        of one kind (HIGHLIGHT_LAYERS), in place of that kind's earlier
-        ones; the other kinds stay. Each highlight holds a cursor the
-        document moves on every edit, so callers keep them to what is on
-        screen (visible_range)."""
+        of one kind (HIGHLIGHT_LAYERS), and ``captions``
+        (photo_group_view.CaptionMark) as that kind's over the captions of
+        photo groups, in place of that kind's earlier ones; the other kinds
+        stay. Each highlight holds a cursor the document moves on every
+        edit, so callers keep them to what is on screen (visible_range)."""
         self._highlights[layer] = list(selections)
         self.setExtraSelections([s for name in self.HIGHLIGHT_LAYERS
                                  for s in self._highlights[name]])
+        if captions or self._caption_marks[layer]:
+            self._caption_marks[layer] = list(captions)
+            photo_group_view.set_marks(self.document(), [
+                mark for name in self.HIGHLIGHT_LAYERS for mark in self._caption_marks[name]])
+            self.viewport().update()
 
     def highlights(self, layer: str) -> list:
         return list(self._highlights[layer])
+
+    def caption_highlights(self, layer: str) -> list:
+        """The marks of one kind over the captions of photo groups."""
+        return list(self._caption_marks[layer])
 
     def clear_highlights(self) -> None:
         """No highlights, before the whole text is replaced (a file opened
@@ -1043,10 +1065,12 @@ class HtmlEditor(QTextEdit):
         at each one (_renew_highlights) sets selections into a document
         still being built, and Qt crashes on it. Those who made them (the
         spelling, a search) make them again from the new text."""
-        if any(self._highlights.values()):
+        if any(self._highlights.values()) or any(self._caption_marks.values()):
             for layer in self.HIGHLIGHT_LAYERS:
                 self._highlights[layer] = []
+                self._caption_marks[layer] = []
             self.setExtraSelections([])
+            photo_group_view.set_marks(self.document(), ())
 
     def _renew_highlights(self, *_change) -> None:
         """Right after every change, every highlight gets a new cursor
@@ -1154,7 +1178,7 @@ class HtmlEditor(QTextEdit):
         underline.setUnderlineColor(QColor("#E5484D"))
         first, last = self.visible_blocks()
         doc = self.document()
-        selections = []
+        selections, captions = [], []
         block = doc.findBlockByNumber(first)
         while block.isValid() and block.blockNumber() <= last:
             for word in spelling.misspellings(block):
@@ -1165,8 +1189,25 @@ class HtmlEditor(QTextEdit):
                                         QTextCursor.MoveMode.KeepAnchor)
                 mark.format = underline
                 selections.append(mark)
+            if photo_group.is_group_block(block):
+                captions.extend(self._caption_misspellings(block, underline))
             block = block.next()
-        self.set_highlights("spelling", selections)
+        self.set_highlights("spelling", selections, captions)
+
+    def _caption_misspellings(self, block, underline) -> list:
+        """The misspelled words of the captions of a group's paragraph,
+        as marks over them."""
+        marks = []
+        for start, units in photo_group.unit_stretches(block):
+            for offset, unit in enumerate(units):
+                if not unit.has_caption:
+                    continue
+                for word in self._spelling.misspellings_of(unit.caption_text):
+                    cursor = QTextCursor(self.document())
+                    cursor.setPosition(start + offset)
+                    marks.append(photo_group_view.CaptionMark(cursor, word.start, word.end,
+                                                              underline))
+        return marks
 
     @_named_step(N_("Correction"))
     def replace_misspelling(self, misspelling, block_position: int, words: str) -> None:
@@ -1180,6 +1221,21 @@ class HtmlEditor(QTextEdit):
         cursor.insertText(words, fmt)
         cursor.endEditBlock()
         self.setTextCursor(cursor)
+
+    def show_document_rect(self, rect: Optional[QRectF]) -> None:
+        """Scroll the least that brings ``rect`` (in the document's
+        coordinates; a picture, its caption) into view, not at all when it
+        is in view; the caret's place for no rect."""
+        if rect is None:
+            self.ensureCursorVisible()
+            return
+        bar = self.verticalScrollBar()
+        height = self.viewport().height()
+        top = rect.top() - bar.value()
+        if top < 0 or rect.height() > height:
+            bar.setValue(int(rect.top()))
+        elif top + rect.height() > height:
+            bar.setValue(int(rect.bottom() - height + 1))
 
     def visible_range(self):
         """``(first, last)``: the document positions from the start of the

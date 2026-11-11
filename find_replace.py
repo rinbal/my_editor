@@ -18,10 +18,15 @@ a letter followed by a combining accent (e and ´, common in text from
 macOS file names and some PDFs). Both ways are found, whichever way the
 search is typed, and "Cafe" does not find the "Cafe" inside "Café"
 written the second way: the accent belongs to the last letter.
+
+The captions of photo groups are words a reader sees that the text does
+not hold (photo_group): they are searched too, after their picture, and
+replaced in their runs, so a caption's bold words and links stay.
 """
 
 from __future__ import annotations
 
+import itertools
 import re
 import unicodedata
 from bisect import bisect_left
@@ -30,9 +35,15 @@ from typing import List, Tuple
 
 from PySide6.QtGui import QTextCharFormat, QTextCursor, QTextDocument
 
-from doc_walk import doc_length, doc_offset
+import photo_caption
+import photo_group
+import photo_group_edit
+from doc_walk import OBJECT_REPLACEMENT, doc_length, doc_offset
 
-Match = Tuple[int, int]          # (start, end) positions in the document
+# (start, end) positions in the document; in a group picture's caption
+# (picture, picture + 1, start, end), start and end in UTF-16 units of
+# the caption's words. Either sorts in document order.
+Match = Tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -67,17 +78,26 @@ def find_all(doc: QTextDocument, needle: str, options: FindOptions = FindOptions
              ) -> List[Match]:
     """Every occurrence of ``needle``, in document order, none
     overlapping the one before."""
-    matches: List[Match] = []
     if not needle:
-        return matches
+        return []
     # The document's characters (paragraph ends and table edges included):
     # one per position, but for a character beyond U+FFFF (an emoji), which
     # takes two positions and is one character here.
     text = doc.toRawText()
+    to_document = (lambda index: index) if doc_length(text) == len(text) else _Positions(text)
+    pattern = _pattern(needle, options)
+    matches: List[Match] = [(to_document(start), to_document(end))
+                            for start, end in _found(text, pattern, options)]
+    captions = _caption_matches(doc, text, pattern, options)
+    return sorted(matches + captions) if captions else matches
+
+
+def _found(text: str, pattern: re.Pattern, options: FindOptions) -> List[Tuple[int, int]]:
+    """Where ``pattern`` occurs in ``text``, by index, none overlapping."""
+    found_at: List[Tuple[int, int]] = []
     length = len(text)
     taken_until = 0
-    to_document = (lambda index: index) if doc_length(text) == length else _Positions(text)
-    for found in _pattern(needle, options).finditer(text):
+    for found in pattern.finditer(text):
         start, end = found.start(1), found.end(1)
         if start < taken_until or start == end:
             continue
@@ -86,8 +106,31 @@ def find_all(doc: QTextDocument, needle: str, options: FindOptions = FindOptions
         if options.whole_words and ((start > 0 and _in_word(text[start - 1]))
                                     or (end < length and _in_word(text[end]))):
             continue
-        matches.append((to_document(start), to_document(end)))
+        found_at.append((start, end))
         taken_until = end
+    return found_at
+
+
+def _caption_matches(doc: QTextDocument, text: str, pattern: re.Pattern,
+                     options: FindOptions) -> List[Match]:
+    """The occurrences in the captions of ``doc``'s photo groups (``text``
+    being its raw text), each after its picture."""
+    if OBJECT_REPLACEMENT not in text:
+        return []
+    to_document = (lambda index: index) if doc_length(text) == len(text) else _Positions(text)
+    matches: List[Match] = []
+    seen = set()
+    for found in re.finditer(OBJECT_REPLACEMENT, text):
+        block = doc.findBlock(to_document(found.start()))
+        if block.blockNumber() in seen or not photo_group.is_group_block(block):
+            continue
+        seen.add(block.blockNumber())
+        for start, units in photo_group.unit_stretches(block):
+            for offset, unit in enumerate(units):
+                words = unit.caption_text
+                matches.extend((start + offset, start + offset + 1, doc_length(words[:first]),
+                                doc_length(words[:last]))
+                               for first, last in _found(words, pattern, options))
     return matches
 
 
@@ -132,6 +175,12 @@ def _style_of(doc: QTextDocument, position: int) -> QTextCharFormat:
 def replace_match(doc: QTextDocument, match: Match, replacement: str) -> Match:
     """Replace one match, in the style of its first character. Returns
     where the replacement now is. One step on the undo stack."""
+    if len(match) > 2:
+        cursor = QTextCursor(doc)
+        cursor.beginEditBlock()
+        _replace_in_caption(cursor, match[0], [match], replacement)
+        cursor.endEditBlock()
+        return match[:3] + (match[2] + doc_length(replacement),)
     start, end = match
     cursor = QTextCursor(doc)
     cursor.setPosition(start)
@@ -152,11 +201,27 @@ def replace_all(doc: QTextDocument, needle: str, replacement: str,
         return 0
     cursor = QTextCursor(doc)
     cursor.beginEditBlock()
+    # A caption changes its picture's format, not the text: first, in
+    # place, picture by picture.
+    in_captions = [match for match in matches if len(match) > 2]
+    for position, ones in itertools.groupby(in_captions, key=lambda match: match[0]):
+        _replace_in_caption(cursor, position, list(ones), replacement)
     # From the end backwards: what is not replaced yet keeps its place.
-    for start, end in reversed(matches):
+    for start, end in reversed([match for match in matches if len(match) == 2]):
         style = _style_of(doc, start)
         cursor.setPosition(start)
         cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
         cursor.insertText(replacement, style)
     cursor.endEditBlock()
     return len(matches)
+
+
+def _replace_in_caption(cursor: QTextCursor, position: int, matches: List[Match],
+                        replacement: str) -> None:
+    """Replace ``matches`` in the caption of the group picture at
+    ``position``, each in the style of the run it starts in."""
+    unit = photo_group.unit_of_picture(_style_of(cursor.document(), position))
+    runs = unit.caption
+    for _picture, _after, start, end in reversed(matches):
+        runs = photo_caption.replaced(runs, start, end, replacement)
+    photo_group_edit.set_unit(cursor, position, unit.with_caption(runs))

@@ -6706,16 +6706,17 @@ class MainWindow(QMainWindow):
             return
         self._update_search_matches(needle)
         self._last_search_text = needle
-        cursor = ed.textCursor()
-        selected = (cursor.selectionStart(), cursor.selectionEnd())
+        selected = self._selected_match(ed)
+        replaced = None
         if selected in self._search_matches:
             # No highlight cursors for the document to move while it changes.
             ed.set_highlights("find", [])
             with ed.undo_step(N_("Replace")):
-                _start, end = replace_match(ed.document(), selected,
-                                            self.findbar.replacement())
-            cursor.setPosition(end)
-            ed.setTextCursor(cursor)
+                replaced = replace_match(ed.document(), selected, self.findbar.replacement())
+            if len(replaced) == 2:
+                cursor = ed.textCursor()
+                cursor.setPosition(replaced[1])
+                ed.setTextCursor(cursor)
             self._find_refresh.stop()          # found again right here
             self._update_search_matches(needle)
             self._last_search_text = needle
@@ -6724,7 +6725,7 @@ class MainWindow(QMainWindow):
                 self._update_match_display()
                 return
         # The next match after the caret (after the replacement).
-        self._find_once(True)
+        self._find_once(True, after=replaced)
 
     def _replace_all(self):
         """Replace All: every match, as one step to undo."""
@@ -7054,6 +7055,7 @@ class MainWindow(QMainWindow):
         ed = self.current_editor()
         if not ed:
             return
+        selected = self._selected_match(ed)
         self._search_matches = find_all(ed.document(), needle, self.findbar.options())
         # Whose they are: a tab's matches are never painted on another.
         self._matches_of = ed
@@ -7063,10 +7065,19 @@ class MainWindow(QMainWindow):
         self._matches_revision = ed.document().revision()
         # The match that is selected stays the current one when the matches
         # are found again (after typing, after a replacement).
-        cursor = ed.textCursor()
-        selected = (cursor.selectionStart(), cursor.selectionEnd())
         self._current_match_index = (self._search_matches.index(selected)
                                      if selected in self._search_matches else -1)
+
+    def _selected_match(self, ed) -> tuple:
+        """What is selected, as a match: the current match in a caption
+        while its picture is selected, else the selection's start and end."""
+        cursor = ed.textCursor()
+        selected = (cursor.selectionStart(), cursor.selectionEnd())
+        matches = getattr(self, "_search_matches", [])
+        index = getattr(self, "_current_match_index", -1)
+        if 0 <= index < len(matches) and matches[index][:2] == selected:
+            return matches[index]
+        return selected
 
     def _highlight_all_matches(self):
         """Paint the matches on screen (all of them are counted, but only
@@ -7087,16 +7098,20 @@ class MainWindow(QMainWindow):
         current_fmt.setBackground(QColor("#264F78" if self.is_dark_theme else "#0078D4"))
         current_fmt.setForeground(QColor("#FFFFFF"))
         first, last = ed.visible_range()
-        selections = []
-        for index, (start, end) in visible_matches(self._search_matches, first, last):
+        selections, captions = [], []
+        for index, match in visible_matches(self._search_matches, first, last):
+            look = current_fmt if index == self._current_match_index else match_fmt
             cursor = QTextCursor(ed.document())
-            cursor.setPosition(start)
-            cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+            cursor.setPosition(match[0])
+            if len(match) > 2:
+                captions.append(photo_group_view.CaptionMark(cursor, match[2], match[3], look))
+                continue
+            cursor.setPosition(match[1], QTextCursor.MoveMode.KeepAnchor)
             selection = QTextEdit.ExtraSelection()
             selection.cursor = cursor
-            selection.format = current_fmt if index == self._current_match_index else match_fmt
+            selection.format = look
             selections.append(selection)
-        ed.set_highlights("find", selections)
+        ed.set_highlights("find", selections, captions)
 
     def _on_visible_area_changed(self, ed) -> None:
         """Scrolled or resized: the matches now on screen get painted."""
@@ -7108,7 +7123,9 @@ class MainWindow(QMainWindow):
         if ed:
             ed.set_highlights("find", [])
 
-    def _find_once(self, forward=True):
+    def _find_once(self, forward=True, after=None):
+        """The next match (the one before, going back) is selected: after
+        the selection, or after the match ``after`` was replaced with."""
         ed = self.current_editor()
         if not ed:
             return
@@ -7124,12 +7141,15 @@ class MainWindow(QMainWindow):
 
         matches = self._search_matches
         total = len(matches)
-        cursor = ed.textCursor()
-        selected = (cursor.selectionStart(), cursor.selectionEnd())
+        selected = after or self._selected_match(ed)
         index = self._current_match_index
         if 0 <= index < total and matches[index] == selected:
             # On a match: the one after it (before it, going back).
             index = index + 1 if forward else index - 1
+        elif len(selected) > 2:
+            # Right after words replaced in a caption: on in that caption.
+            index = (bisect.bisect_right(matches, selected) if forward
+                     else bisect.bisect_left(matches, selected) - 1)
         elif forward:
             # Anywhere else: from the caret, the way every editor searches.
             index = bisect.bisect_left(matches, selected[1], key=lambda match: match[0])
@@ -7139,12 +7159,15 @@ class MainWindow(QMainWindow):
         self._current_match_index = index % total
 
         if 0 <= self._current_match_index < len(self._search_matches):
-            start_pos, end_pos = self._search_matches[self._current_match_index]
+            match = self._search_matches[self._current_match_index]
             cursor = QTextCursor(ed.document())
-            cursor.setPosition(start_pos)
-            cursor.setPosition(end_pos, QTextCursor.KeepAnchor)
+            cursor.setPosition(match[0])
+            cursor.setPosition(match[1], QTextCursor.KeepAnchor)
             ed.setTextCursor(cursor)
-            ed.ensureCursorVisible()
+            if len(match) > 2:
+                ed.show_document_rect(photo_group_view.caption_box(ed.document(), match[0]))
+            else:
+                ed.ensureCursorVisible()
 
         self._highlight_all_matches()
         self._update_match_display()

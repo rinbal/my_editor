@@ -24,7 +24,7 @@ the ring around it and what a screen reader says.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt, QUrl
 from PySide6.QtGui import (
@@ -33,6 +33,7 @@ from PySide6.QtGui import (
     QImage,
     QPixmap,
     QPyTextObject,
+    QTextCharFormat,
     QTextCursor,
     QTextDocument,
     QTextFormat,
@@ -47,6 +48,18 @@ from doc_walk import OBJECT_REPLACEMENT, doc_length
 from i18n import _
 
 IMAGE_OBJECT = int(QTextFormat.ObjectTypes.ImageObject)
+
+
+class CaptionMark(NamedTuple):
+    """Words of a group picture's caption painted over, as a highlight is
+    over the text (a match of Find, a misspelling): the picture by a
+    cursor at it (the document moves it with each edit), the words by
+    their UTF-16 offsets in the caption."""
+
+    cursor: QTextCursor
+    start: int
+    end: int
+    format: QTextCharFormat
 
 # A caption sits this share of the text's font size under its picture (the
 # readers: 0.6em of a caption at 0.833em).
@@ -196,6 +209,8 @@ class _Handler(QPyTextObject):
         self._showing: Optional[Tuple[int, Dict[str, List[int]]]] = None
         # A caption laid out, by its runs and its width.
         self._captions: Dict[tuple, Tuple[QTextLayout, float]] = {}
+        # The words painted over in captions (set_marks).
+        self.marks: Sequence[CaptionMark] = ()
         self._caption_font: Optional[tuple] = None
         # Room a view keeps free above every group, in the layout's pixels
         # (the editor's bar over a group floats there): at least this much.
@@ -230,7 +245,18 @@ class _Handler(QPyTextObject):
             if unit.has_caption:
                 layout, _height = self._caption(doc, unit, tile.figure_width)
                 layout.draw(painter, QPointF(rect.x() + dx - (tile.x - tile.figure_x),
-                                             target.bottom() + self._caption_gap(doc)))
+                                             target.bottom() + self._caption_gap(doc)),
+                            self._marked(laid.positions[member]))
+
+    def _marked(self, position: int) -> List[QTextLayout.FormatRange]:
+        """The marks on the caption of the picture at ``position``."""
+        out = []
+        for mark in self.marks:
+            if mark.cursor.position() == position:
+                item = QTextLayout.FormatRange()
+                item.start, item.length, item.format = mark.start, mark.end - mark.start, mark.format
+                out.append(item)
+        return out
 
     def _draw_picture(self, painter, target: QRectF, doc, unit) -> None:
         if not unit.name:
@@ -469,6 +495,14 @@ def install(doc: QTextDocument, sizes: Optional[SizeLookup] = None) -> None:
     handler = _Handler(layout, original, sizes)
     layout.registerHandler(IMAGE_OBJECT, handler)
     doc.setProperty(_INSTALLED, True)
+
+
+def set_marks(doc: QTextDocument, marks: Sequence[CaptionMark]) -> None:
+    """Paint ``marks`` over the captions of ``doc``'s groups, in place of
+    the ones before (the caller repaints)."""
+    found = _handler(doc)
+    if found is not None:
+        found.marks = tuple(marks)
 
 
 def set_screen_height(doc: QTextDocument, height: Optional[float]) -> None:
