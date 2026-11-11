@@ -54,12 +54,12 @@ VECTORS_SHA256 = "8be595763573c5659a03c619348e7f4b632428941396f916fa6ef8b508491d
 
 # The page parts (web/), each with where it is in STANDUP and its hash:
 # the scripts after their SPDX header, the stylesheet after its header of
-# ten lines (lines 476-993 of article.css).
+# ten lines (lines 181-187 and 476-993 of article.css).
 WEB = ROOT / "web"
 JS_SPDX = (b"// SPDX-FileCopyrightText: 2026 rinbal\n"
            b"// SPDX-License-Identifier: AGPL-3.0-or-later\n")
 CSS_HEADER_LINES = 10
-CSS_LINES = (476, 993)
+CSS_LINES = ((181, 187), (476, 993))
 WEB_FILES = {
     "photo_layout.js": ("backend/htmlgen/photo_layout.js",
                         "fe1c1f0668d4f92cfce4aa1afecc1b64572704179c694ea875649c3e95b51313"),
@@ -70,7 +70,7 @@ WEB_FILES = {
     "photo-group-messages.json": ("shared/photo-group-messages.json",
                                   "485a5727c3acb41985f220ecdeeee0a40b4bce82d61747907b469c05b1b2ddf7"),
     "photo_groups.css": ("backend/htmlgen/article.css",
-                         "73faa3c7b21d8e37a08407b8b205358df9b6c068c0d86641f0f5bed02b2be40f"),
+                         "803c58d8c4b722229eeb168385add5ec43b28b241e4c779da71c37c54f29d4a6"),
 }
 
 
@@ -128,8 +128,8 @@ def test_the_files_match_a_standup_checkout():
     for name, (path, _digest) in WEB_FILES.items():
         theirs = (repo / path).read_bytes()
         if name.endswith(".css"):
-            first, last = CSS_LINES
-            theirs = b"".join(theirs.splitlines(keepends=True)[first - 1:last])
+            lines = theirs.splitlines(keepends=True)
+            theirs = b"".join(b"".join(lines[first - 1:last]) for first, last in CSS_LINES)
         assert _web_bytes(name) == theirs, name
 
 

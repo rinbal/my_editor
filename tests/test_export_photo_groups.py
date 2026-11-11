@@ -494,9 +494,15 @@ window.addEventListener('load', () => setTimeout(() => {
     const r = img.getBoundingClientRect()
     return [r.left + scrollX, r.top + scrollY, r.width, r.height, img.naturalWidth, img.naturalHeight]
   })
+  // How far below its picture each caption starts, and its own margin.
+  const gaps = [...document.querySelectorAll('figure.e21-figure')].filter(f => f.querySelector('figcaption')).map(f => {
+    const caption = f.querySelector('figcaption')
+    return [caption.getBoundingClientRect().top - f.querySelector('img').getBoundingClientRect().bottom,
+      parseFloat(getComputedStyle(caption).marginTop)]
+  })
   const out = document.createElement('pre')
   out.id = 'probe'
-  out.textContent = JSON.stringify({boxes, scrollWidth: document.documentElement.scrollWidth,
+  out.textContent = JSON.stringify({boxes, gaps, scrollWidth: document.documentElement.scrollWidth,
     dots: document.querySelectorAll('.e21-pg-pager:not([hidden]) .e21-pg-dot').length})
   document.body.append(out)
 }, 300))
@@ -565,6 +571,9 @@ def test_in_a_browser_at_1440_every_picture_is_whole(app, tmp_path):
     assert probe["scrollWidth"] == 1440 and probe["dots"] == 0
     for _x, _y, _w, h, _nw, _nh in probe["boxes"][:6]:
         assert h <= 560 + 0.5
+    # A caption starts right under its picture, by its margin alone.
+    assert len(probe["gaps"]) == 2
+    assert all(gap == pytest.approx(margin, abs=0.5) for gap, margin in probe["gaps"])
 
 
 @needs_chrome

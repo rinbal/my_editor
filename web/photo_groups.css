@@ -2,12 +2,19 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * Photo groups, pictures and their full view in the HTML export, as
- * STANDUP shows them: lines 476-993 of STANDUP backend/htmlgen/article.css
- * (commit bf7c1fb), as they are. export_html.py inlines this file in every
- * page with a picture, and photo_page.py gives .article-content the
- * variables these rules read.
+ * STANDUP shows them: lines 181-187 (a picture is a block) and 476-993 of
+ * STANDUP backend/htmlgen/article.css (commit bf7c1fb), as they are.
+ * export_html.py inlines this file in every page with a picture, and
+ * photo_page.py gives .article-content the variables these rules read.
  */
 
+.article-content :where(img) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1.5em 0;
+  border-radius: 0.5em;
+}
 /* Figures: an image and its caption. The caption is set smaller and quieter
    than the text, as captions are in Photos and Pages.
 
