@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import posixpath
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
@@ -86,6 +87,20 @@ def without_wide(name: str) -> str:
     return name[:-len(WIDE_SUFFIX)] if is_wide(name) else name
 
 
+def description_of(alt: str, name: str) -> str:
+    """``alt``, the description of the picture at ``name``, when it
+    describes it; "" when it says nothing a person could not see: empty,
+    "image" (what the app and Qt's writer put for none) or the file's own
+    name, with or without its extension (what the app gave a picture it
+    added, before)."""
+    words = alt.strip()
+    file = posixpath.basename(without_wide(name).replace("\\", "/").split("?")[0])
+    if words.casefold() in ("", "image", file.casefold(),
+                            posixpath.splitext(file)[0].casefold()):
+        return ""
+    return words
+
+
 def without_wide_url(url: QUrl) -> QUrl:
     """``url`` without a #wide fragment, for the code that loads it."""
     if url.fragment().lower() == WIDE_SUFFIX[1:]:
@@ -125,6 +140,11 @@ class Unit:
     def alt(self) -> str:
         """The picture's description (its alt text)."""
         return str(self.image.toImageFormat().property(QTextFormat.Property.ImageAltText) or "")
+
+    @property
+    def description(self) -> str:
+        """The description when it describes the picture (description_of)."""
+        return description_of(self.alt, self.name)
 
     @property
     def wide(self) -> bool:

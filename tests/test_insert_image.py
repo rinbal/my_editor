@@ -34,7 +34,7 @@ SCRIPT = r"""
 import json, os, sys, types
 sys.path.insert(0, sys.argv[1])
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
-from PySide6.QtGui import QColor, QImage, QTextCursor
+from PySide6.QtGui import QColor, QImage, QTextCursor, QTextFormat
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QFileDialog
 app = QApplication(sys.argv[:1])
@@ -70,6 +70,10 @@ r["enabled_new"] = w.act_insert_image.isEnabled()
 w.act_insert_image.trigger()
 app.processEvents()
 r["inserted"] = ["￼" in ed.toPlainText(), ed.undo_name(), asked[:], dialogs[-1][0]]
+it = ed.document().findBlock(len("Look: ")).begin()
+while not it.fragment().charFormat().isImageFormat():
+    it += 1
+r["alt"] = it.fragment().charFormat().stringProperty(QTextFormat.Property.ImageAltText)
 r["filters"] = dialogs[-1][1]
 ed.undo()
 r["undone"] = ed.toPlainText()
@@ -118,6 +122,8 @@ def r(tmp_path_factory):
 def test_insert_image_is_a_drop_of_the_chosen_file(r):
     assert r["enabled_new"]
     assert r["inserted"] == [True, "Image", [], "Insert Image"]
+    # Gate RG-PG2E-b 5: no description, never the file's name.
+    assert r["alt"] == ""
     assert "*.png" in r["filters"] and "*.jpg" in r["filters"]
     assert r["undone"] == "Look: "
     assert r["cancelled"] == ["Look: ", "Typing"]

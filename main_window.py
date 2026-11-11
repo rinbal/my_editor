@@ -4343,23 +4343,25 @@ class MainWindow(QMainWindow):
             # Taken in first, then put at the place as one step.
             images = []
             for path in paths:
-                alt = os.path.splitext(os.path.basename(path))[0] or "image"
-                asset = self._asset_manager.adopt_file(path, alt=alt)
+                # The file's name names the asset; the picture has no
+                # description until the writer gives it one.
+                name = os.path.splitext(os.path.basename(path))[0] or "image"
+                asset = self._asset_manager.adopt_file(path, alt=name)
                 if asset is None:
                     refused.append(os.path.basename(path))
                     continue
-                images.append(self._asset_image(ed, asset, alt=alt))
+                images.append(self._asset_image(ed, asset, alt=""))
                 adopted.append(asset)
             ed.photos.insert(place, images, step)
         else:
             with ed.undo_step(step):
                 for path in paths:
-                    alt = os.path.splitext(os.path.basename(path))[0] or "image"
-                    asset = self._asset_manager.adopt_file(path, alt=alt)
+                    name = os.path.splitext(os.path.basename(path))[0] or "image"
+                    asset = self._asset_manager.adopt_file(path, alt=name)
                     if asset is None:
                         refused.append(os.path.basename(path))
                         continue
-                    self._insert_asset(ed, asset, alt=alt)
+                    self._insert_asset(ed, asset, alt="")
                     adopted.append(asset)
 
         if refused:
@@ -10744,7 +10746,7 @@ class MainWindow(QMainWindow):
             if asset is None:
                 self._insert_url_as_text(editor, picked.url)
                 return
-            self._insert_asset(editor, asset, alt=alt_text or "image")
+            self._insert_asset(editor, asset, alt=alt_text)
 
     def _library_name(self, media) -> str:
         """The name a library file goes by: the one it was added with, a
@@ -10796,8 +10798,8 @@ class MainWindow(QMainWindow):
 
     def _asset_image(self, editor, asset, *, alt: str) -> QTextImageFormat:
         """The picture format that shows ``asset`` in ``editor``'s
-        document, its bytes already in the document."""
-        alt = alt or "image"
+        document, its bytes already in the document, described ``alt``
+        (none: "")."""
         data = self._asset_manager.resolve_bytes(asset.key)
         if data:
             # Priming the document means the first paint needs no
@@ -10805,9 +10807,6 @@ class MainWindow(QMainWindow):
             editor.add_picture_resource(asset.key, QByteArray(data))
         fmt = QTextImageFormat()
         fmt.setName(asset.key)
-        # Never leave alt empty: Qt's markdown writer substitutes the
-        # word "image" for an empty one, which makes round trips differ
-        # from what was inserted.
         fmt.setProperty(QTextImageFormat.ImageAltText, alt)
         return fmt
 
@@ -10872,7 +10871,7 @@ class MainWindow(QMainWindow):
         if asset is None:
             self.status.showMessage(_("That image could not be added."), 5000)
             return
-        self._insert_asset(editor, asset, alt="image")
+        self._insert_asset(editor, asset, alt="")
         self._upload_added(asset)
 
     def _upload_choice(self) -> str:

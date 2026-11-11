@@ -292,3 +292,19 @@ def test_folding_grows_with_the_number_of_groups_not_faster():
 
     small, large = fold(40), fold(320)
     assert large < small * 8 * 2.5
+
+
+def test_a_picture_with_no_description_opens_as_a_picture_and_is_saved_as_it_was(app):
+    # Gate RG-PG2E-b 5: Qt's reader left ![](…) out.
+    markdown = "Before.\n\n![](photo.png)\n\n![](a.png)\n![b](b.png)\n\nAfter.\n"
+    doc = QTextDocument()
+    read_markdown(doc, markdown)
+    group = photo_group.group_at(doc, doc.findBlockByNumber(1).position())
+    assert [unit.alt for unit in group.units] == ["", "", "b"]
+    assert document_to_markdown(doc, _image_as_read) == markdown
+
+
+def test_only_words_that_describe_a_picture_are_its_description():
+    for alt in ("", " ", "image", "Image", "dunes", "dunes.JPG"):
+        assert photo_group.description_of(alt, "Trip_media/dunes.jpg#wide") == ""
+    assert photo_group.description_of(" Dunes at dawn ", "Trip_media/dunes.jpg") == "Dunes at dawn"

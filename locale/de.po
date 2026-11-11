@@ -4892,7 +4892,7 @@ msgstr "Zusammen mit diesem Foto"
 
 #: photo_group_pointer.py:106
 msgid "No ALT"
-msgstr "Kein ALT"
+msgstr "ALT fehlt"
 
 #: photo_group_pointer.py:106
 msgid "ALT"

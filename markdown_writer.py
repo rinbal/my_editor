@@ -231,7 +231,7 @@ def _as_spelled(fmt, target: str) -> str:
     if not spelling:
         return target
     alt = str(fmt.property(QTextFormat.Property.ImageAltText) or "")
-    written = f"![{_description_markdown(alt or 'image')}]("
+    written = f"![{_description_markdown(alt)}]("
     if not target.startswith(written) or not _reads_back(spelling, alt):
         return target
     return f"![{spelling}](" + target[len(written):]
@@ -1323,11 +1323,12 @@ def _plain_description(words: str, features) -> str:
 
 def _whole_descriptions(markdown: str, features) -> Tuple[str, dict]:
     """``markdown`` with each picture description Qt would read in pieces
-    made one plain word, and the descriptions by their word."""
+    made one plain word, and the descriptions by their word. An empty one
+    too: Qt's reader leaves a picture with no description out."""
     if "![" not in markdown:
         return markdown, {}
     spans = [(start, end) for start, end in _descriptions(markdown)
-             if _PIECE.search(markdown, start, end)]
+             if start == end or _PIECE.search(markdown, start, end)]
     if not spans:
         return markdown, {}
     stamp = "".join(chr(ord("a") + (ord(c) % 26)) for c in uuid.uuid4().hex)
@@ -1365,7 +1366,7 @@ def _restore_descriptions(doc: QTextDocument, alts: dict) -> None:
         if fmt is None:
             fmt = cursor.charFormat()
         fmt.setProperty(QTextFormat.Property.ImageAltText, alt)
-        if spelling != _description_markdown(alt or "image"):
+        if spelling != _description_markdown(alt):
             fmt.setProperty(ALT_SPELLING_PROPERTY, spelling)
         cursor.setCharFormat(fmt)
 
@@ -1436,10 +1437,10 @@ def _image_as_read(fmt) -> str:
 
 
 def image_markdown(alt: str, url: str) -> str:
-    """``![alt](url)``, the alt text written so it reads back as it is,
-    and an address that holds a space or a parenthesis written as
-    ``<url>``."""
-    return f"![{_description_markdown(alt or 'image')}]({_destination(url)})"
+    """``![alt](url)``, the alt text written so it reads back as it is
+    (none as none: ``![](url)``), and an address that holds a space or a
+    parenthesis written as ``<url>``."""
+    return f"![{_description_markdown(alt)}]({_destination(url)})"
 
 
 @lru_cache(maxsize=1024)

@@ -67,9 +67,11 @@ def _walk(ed, monkeypatch):
 def test_the_caret_says_each_picture_of_a_group_in_the_authors_order(monkeypatch):
     ed, _asked = _group_editor(900)
     said = _walk(ed, monkeypatch)
+    # "Panorama" and "Plan" are their files' own names: no description
+    # (photo_group.description_of).
     assert said == ["Photo 1 of 5. Steg. The jetty at dusk", "Photo 2 of 5. Loch",
-                    "Photo 3 of 5. Hut", "Photo 4 of 5. Panorama",
-                    "Photo 5 of 5. Plan. Floor plan of the bothy"]
+                    "Photo 3 of 5. Hut", "Photo 4 of 5",
+                    "Photo 5 of 5. Floor plan of the bothy"]
     ed.close()
 
 

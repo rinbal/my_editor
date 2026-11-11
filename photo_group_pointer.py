@@ -106,7 +106,7 @@ class PhotoPointer(QObject):
         box = self._photos.box_of(picture)
         if box is None:
             return None
-        missing = not picture.unit.alt.strip()
+        missing = not picture.unit.description
         return overlay.chips_on(self._photos.to_view(box), _("More"),
                                 _("No ALT") if missing else _("ALT"),
                                 _("Large") if picture.grouped else _("Wide"))
@@ -241,7 +241,7 @@ class PhotoPointer(QObject):
         if hot == overlay.MORE:
             return _("All commands for {photo}").format(photo=self._photos.place_words(picture))
         if hot == overlay.ALT:
-            alt = picture.unit.alt.strip()
+            alt = picture.unit.description
             return (_("Description: {words}").format(words=alt) if alt
                     else _("Description missing: for people who can’t see the photo"))
         if hot == overlay.BIG:
@@ -535,7 +535,7 @@ class PhotoPointer(QObject):
             doc = self._editor.document()
             big_on = shown.unit.wide or bool(shown.grouped
                                              and photo_group_view.own_row(doc, shown.unit))
-            overlay.paint_chips(painter, chips, missing=not shown.unit.alt.strip(), big_on=big_on,
+            overlay.paint_chips(painter, chips, missing=not shown.unit.description, big_on=big_on,
                                 hot=self._hot, accent=accent, solid=solid)
 
     def _paint_moving(self, painter, accent: QColor, ink: QColor, surface: QColor,

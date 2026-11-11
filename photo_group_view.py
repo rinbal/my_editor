@@ -737,4 +737,5 @@ def picture_words(found: Optional[Tuple[int, int, int, photo_group.Unit]]) -> Op
         return None
     _position, k, n, unit = found
     words = _("Photo {k} of {n}").format(k=k, n=n)
-    return ". ".join(part for part in (words, unit.alt, unit.caption_text.strip()) if part)
+    return ". ".join(part for part in (words, unit.description, unit.caption_text.strip())
+                     if part)
