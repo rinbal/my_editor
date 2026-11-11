@@ -385,10 +385,18 @@ def test_a_submission_that_changed_meanwhile_is_not_published_and_its_picture_co
         accepted):
     # Read again right before signing, after the picture went up: it
     # changed meanwhile, so nothing is signed and the picture comes down.
+    from nostr.ui.standup_publish_sheet import PublishSheet
     run, store, jobs = _run(accepted, reread_hash="ab" * 32, changed_from=1)
+    sheet, closed = PublishSheet(run=run, publication="Magazin", number=1, is_dark=False), []
+    sheet.rejected.connect(lambda: closed.append(True))
+    sheet.show()
     run.start()
     accepted.world.settle()
-    assert run.stage is Stage.FAILED and jobs == []
+    assert run.stage is Stage.CHANGED and jobs == [] and closed == [True]
+    run.retry()                                 # RG-M4-a 9: no signer asked again
+    run.start()
+    accepted.world.settle()
+    assert run.stage is Stage.CHANGED and jobs == []
     assert store.deleted == [(accepted.entry["plain_sha256"], (SERVER,))]
     assert run.signed_article is None
 

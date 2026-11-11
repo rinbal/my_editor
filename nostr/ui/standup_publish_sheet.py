@@ -152,6 +152,11 @@ class PublishSheet(QDialog):
 
     def _show(self) -> None:
         run, stage = self.run, self.run.stage
+        if stage is Stage.CHANGED:
+            # Changed meanwhile (RG-M4-a 9): the list and the detail show the
+            # newer state and say so; nothing here to try again.
+            self.reject()
+            return
         working = stage is Stage.WORKING
         done = stage is Stage.DONE
         failed = stage in (Stage.FAILED, Stage.NOT_STORED, Stage.NOT_REPORTED,

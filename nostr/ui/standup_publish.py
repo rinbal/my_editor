@@ -216,7 +216,7 @@ class AcceptedPublish(QObject):
         """Veröffentlichen (or, ``here``, Mit dem Schlüssel auf diesem
         Computer signieren). Once at a time."""
         if self.stage in (Stage.WORKING, Stage.DONE, Stage.NOT_STORED, Stage.NOT_REPORTED,
-                          Stage.SOMEONE_ELSES):
+                          Stage.SOMEONE_ELSES, Stage.CHANGED):
             return
         self._here = here
         self._urls, self._created = {}, []
@@ -466,7 +466,7 @@ class AcceptedPublish(QObject):
             self._ports.serve(view)
             if view.revision_hash != self.revision_hash or view.state != self.expected_state \
                     or view.revision != self._accepted.revision:
-                self._fail(_(NOT_THE_SAME))
+                self._fail(_(NOT_THE_SAME), Stage.CHANGED)
                 return
             self._ports.held_at(self.address,
                                 lambda held: on_relays(detail.address_taken, True, held),

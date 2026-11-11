@@ -46,6 +46,7 @@ class Stage(Enum):
     NOT_REPORTED = "not_reported"       # out, not reported: Erneut reports it again
     SOMEONE_ELSES = "someone_elses"     # another person's article at its address: nothing out
     NOT_CHECKED = "not_checked"         # its address could not be read: nothing out, Erneut
+    CHANGED = "changed"                 # the submission changed meanwhile: the sheet closes
     DONE = "done"
     FAILED = "failed"                   # nothing went out; the pictures were taken down
 

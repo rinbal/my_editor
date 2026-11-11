@@ -493,7 +493,8 @@ class SubmissionsHost(QObject):
         sheet = self._publish_sheet
         open_here = sheet is not None and shiboken6.isValid(sheet) and sheet.isVisible()
         if not open_here and run.stage in (Stage.FAILED, Stage.NOT_STORED, Stage.NOT_REPORTED,
-                                           Stage.SOMEONE_ELSES, Stage.NOT_CHECKED):
+                                           Stage.SOMEONE_ELSES, Stage.NOT_CHECKED,
+                                           Stage.CHANGED):
             self._say_in_place(run.sid, run.words)
 
     def confirm(self, sid: str) -> None:
