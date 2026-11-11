@@ -12,7 +12,7 @@ pictures of a group. Each test checks the exact Markdown.
 from __future__ import annotations
 
 import pytest
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QMimeData, QPoint, Qt
 from PySide6.QtGui import QInputMethodEvent, QTextCursor, QTextImageFormat
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
@@ -409,6 +409,28 @@ def test_cutting_pictures_out_of_a_group_and_pasting_them_keeps_their_captions()
     ed.paste_from_clipboard()
     assert _markdown(ed) == _text("Before.", ONE, FOUR, "After.", TWO, THREE)
     assert _paragraphs(ed) == ["Before.", "G2", "After.", "G2"]
+    ed.close()
+
+
+def test_a_cut_or_a_paste_from_words_into_a_caption_keeps_its_picture():
+    """As the keys do (PG1C 4f): Cut puts the selection on the clipboard
+    as it is written and takes what is selected, the picture stays; a
+    paste over it lands where the selection started. One Undo each."""
+    source = _text("Before words.", ONE, "*Cap one words*", "After.")
+    ed = _editor(source)
+    _select(ed, "words.", "one words")
+    ed.cut()
+    assert _markdown(ed) == _text("Before", ONE, "*one words*", "After.")
+    clipboard = QApplication.clipboard().mimeData()
+    assert clipboard.text().startswith("words.") and clipboard.text().endswith("Cap ")
+    assert _undone(ed, source)
+    _select(ed, "words.", "one words")
+    mime = QMimeData()
+    mime.setText("New")
+    QApplication.clipboard().setMimeData(mime)
+    ed.paste_from_clipboard()
+    assert _markdown(ed) == _text("Before New", ONE, "*one words*", "After.")
+    assert _undone(ed, source)
     ed.close()
 
 

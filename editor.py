@@ -3106,7 +3106,23 @@ class HtmlEditor(QTextEdit):
 
     @_named_step(N_("Cut"))
     def cut(self):
-        super().cut()
+        """The selection on the clipboard, as it is written; a picture alone
+        it holds only in part stays in the document (photo_group_cut)."""
+        cursor = self.textCursor()
+        if photo_group_cut.cuts(self.document(), cursor.selectionStart(),
+                                cursor.selectionEnd()) is None:
+            super().cut()
+            return
+        self.copy()
+        self._clear_beside_pictures()
+
+    def _clear_beside_pictures(self) -> None:
+        """A selection that holds a picture alone only in part goes as
+        photo_group_cut says, the caret where it started: a paste then lands
+        there, as a letter typed over it does."""
+        cursor = self.textCursor()
+        if photo_group_cut.delete(cursor) is not None:
+            self.setTextCursor(cursor)
 
     # -------- Paste --------
     def paste_from_clipboard(self):
@@ -3223,6 +3239,7 @@ class HtmlEditor(QTextEdit):
         own, wherever it landed (_set_media_apart)."""
         start = self.textCursor().selectionStart()
         with self.undo_step(self._mime_step):
+            self._clear_beside_pictures()
             self._insert_mime(source)
             self._set_media_apart(start, self.textCursor().position())
 
@@ -3373,7 +3390,9 @@ class HtmlEditor(QTextEdit):
             return
         cursor = self.textCursor()
         cursor.beginEditBlock()
-        if cursor.hasSelection():
+        if photo_group_cut.delete(cursor) is not None:
+            self.setTextCursor(cursor)
+        elif cursor.hasSelection():
             cursor.removeSelectedText()
             self.setTextCursor(cursor)
         if cursor.currentTable() is not None and self._holds_structure():
