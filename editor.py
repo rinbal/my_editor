@@ -42,6 +42,7 @@ import media_badge
 import media_files
 import paste
 import photo_group
+import photo_group_cut
 import photo_group_drawing
 import photo_group_edit
 import photo_group_editing
@@ -118,6 +119,9 @@ BACKWARD = "backward"
 FORWARD = "forward"
 TYPING_PAUSE_S = 2.0
 TYPING_STEP = N_("Typing")
+# The keys that delete a selection as it is (HtmlEditor._cut_beside_picture).
+_CUT_KEYS = frozenset((Qt.Key.Key_Backspace, Qt.Key.Key_Delete, Qt.Key.Key_Return,
+                       Qt.Key.Key_Enter))
 
 
 @dataclass(frozen=True)
@@ -959,7 +963,12 @@ class HtmlEditor(QTextEdit):
         star's, and every star typed after it was saved escaped."""
         fmt = without_read_marks(self.currentCharFormat())
         if cursor.hasSelection():
-            cursor.removeSelectedText()
+            if photo_group_cut.delete(cursor) is not None:
+                # What is typed goes where the selection started, a picture
+                # and its caption kept after it: in the format there.
+                fmt = without_read_marks(cursor.charFormat())
+            else:
+                cursor.removeSelectedText()
             cursor.setCharFormat(fmt)
             self.setTextCursor(cursor)
         return fmt
@@ -2406,12 +2415,33 @@ class HtmlEditor(QTextEdit):
             self._apply_active_format_to_cursor()
 
     def keyPressEvent(self, e):
-        if self._slash_key(e) or self.photos.keys.key_press(e):
+        if self._slash_key(e) or self.photos.keys.key_press(e) or self._cut_beside_picture(e):
             return
         self._key_press(e)
         if self._slash_at >= 0:
             # The words after the slash changed (or the caret left them).
             self._refresh_slash()
+
+    def _cut_beside_picture(self, e) -> bool:
+        """Backspace, Delete or Return over a selection that holds a picture
+        alone only in part (from words into its caption): what is selected
+        goes and the picture stays (photo_group_cut), in a step of its own;
+        Return leaves the caret at the caption. True when answered here."""
+        key = e.key()
+        cursor = self.textCursor()
+        if (key not in _CUT_KEYS or e.modifiers() & ~Qt.KeyboardModifier.KeypadModifier
+                or photo_group_cut.cuts(self.document(), cursor.selectionStart(),
+                                        cursor.selectionEnd()) is None):
+            return False
+        returns = key in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+        with self._typing(BACKWARD if key == Qt.Key.Key_Backspace else FORWARD, cursor):
+            words = photo_group_cut.delete(cursor)
+            if returns:
+                cursor.setPosition(words)
+        if returns:
+            self.end_typing_run()
+        self.ensureCursorVisible()
+        return True
 
     def _key_press(self, e):
         # Space with the caret at a picture of a photo group (or the

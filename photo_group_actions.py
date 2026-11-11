@@ -81,7 +81,7 @@ def _within(doc: QTextDocument, block) -> bool:
     return not _top(doc, block) or block.textList() is not None or quote_depth(block) > 0
 
 
-def _lone(doc: QTextDocument, block) -> Optional[Picture]:
+def alone(doc: QTextDocument, block) -> Optional[Picture]:
     """The picture that stands alone in ``block``, with the caption under
     it (on its line, or the italic paragraph that follows)."""
     if not block.isValid() or photo_group.is_group_block(block) or not _top(doc, block):
@@ -109,7 +109,7 @@ def picture_at(doc: QTextDocument, position: int) -> Optional[Picture]:
     if not block.isValid():
         return None
     if not photo_group.is_group_block(block):
-        return _lone(doc, block) if position == block.position() else None
+        return alone(doc, block) if position == block.position() else None
     group = photo_group.group_at(doc, position)
     index = position - block.position()
     if group is None or not 0 <= index < len(group.units):
@@ -155,7 +155,7 @@ def picture_of(doc: QTextDocument, cursor: QTextCursor) -> Optional[Picture]:
         return picture_at(doc, block.position() + min(start - block.position(), count - 1))
     if end - start == 1 and start != block.position():
         return None
-    return _lone(doc, block)
+    return alone(doc, block)
 
 
 # --------------------------------------------------------------------------- #
@@ -322,10 +322,10 @@ def beyond(doc: QTextDocument, picture: Picture, down: bool) -> Optional[Place]:
     if photo_group.is_group_block(block):
         return Place(SLOT, block.position(), 0 if down else len(photo_group.block_units(block)))
     if not down and photo_group_find.caption_paragraph(block) is not None:
-        above = _lone(doc, block.previous())
+        above = alone(doc, block.previous())
         if above is not None and above.end >= block.position():
             return Place(BESIDE, above.position, before=False)
-    lone = _lone(doc, block)
+    lone = alone(doc, block)
     if lone is not None:
         return Place(BESIDE, lone.position, before=down)
     return settle(doc, Place(GAP, block.position(), before=not down), down)
@@ -368,9 +368,9 @@ def _pictures_end(doc: QTextDocument, block) -> Optional[Place]:
         return None
     if photo_group.is_group_block(block):
         return Place(SLOT, block.position(), len(photo_group.block_units(block)))
-    lone = _lone(doc, block)
+    lone = alone(doc, block)
     if lone is None and photo_group_find.caption_paragraph(block) is not None:
-        above = _lone(doc, block.previous())
+        above = alone(doc, block.previous())
         lone = above if above is not None and above.end >= block.position() else None
     return Place(BESIDE, lone.position, before=False) if lone is not None else None
 
@@ -382,7 +382,7 @@ def _pictures_start(doc: QTextDocument, block) -> Optional[Place]:
         return None
     if photo_group.is_group_block(block):
         return Place(SLOT, block.position(), 0)
-    lone = _lone(doc, block)
+    lone = alone(doc, block)
     return Place(BESIDE, lone.position, before=True) if lone is not None else None
 
 
@@ -395,11 +395,11 @@ def neighbour(doc: QTextDocument, picture: Picture, down: bool) -> Optional[Pict
     while block.isValid() and _top(doc, block):
         if photo_group.is_group_block(block):
             return picture_at(doc, block.position())
-        lone = _lone(doc, block)
+        lone = alone(doc, block)
         if lone is not None:
             return lone
         if not down and photo_group_find.caption_paragraph(block) is not None:
-            above = _lone(doc, block.previous())
+            above = alone(doc, block.previous())
             if above is not None and above.end >= block.position():
                 return above
         if _has_pictures(block) or not photo_group.is_plain_paragraph(block):

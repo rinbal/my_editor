@@ -316,6 +316,38 @@ def test_typing_over_a_selection_that_ends_in_a_group_keeps_the_rest_a_group():
     ed.close()
 
 
+def _select(ed, start: str, end: str) -> None:
+    """Select from where the words ``start`` begin to where ``end`` begin."""
+    cursor = ed.textCursor()
+    cursor.setPosition(ed.document().find(start).selectionStart())
+    cursor.setPosition(ed.document().find(end).selectionStart(), QTextCursor.MoveMode.KeepAnchor)
+    ed.setTextCursor(cursor)
+
+
+def test_a_selection_from_words_into_a_caption_keeps_its_picture():
+    """STANDUP's editor keeps it (PG1C 4e): Backspace, Delete, a letter or
+    Return over words and the start of a caption take what is selected,
+    the picture stays with the rest of its caption, one Undo brings all
+    back. Return leaves the caret at the caption."""
+    source = _text("Before words.", ONE, "*Cap one words*", "After.")
+    for key, letter, saved, at in ((Qt.Key.Key_Backspace, "", "Before", "Before "),
+                                   (Qt.Key.Key_Delete, "", "Before", "Before "),
+                                   (None, "Z", "Before Z", "Before Z"),
+                                   (Qt.Key.Key_Return, "", "Before", "")):
+        ed = _editor(source)
+        _select(ed, "words.", "one words")
+        if key is None:
+            QTest.keyClicks(ed, letter)
+        else:
+            QTest.keyClick(ed, key)
+        assert _markdown(ed) == _text(saved, ONE, "*one words*", "After."), key
+        caret = ed.textCursor()
+        assert (caret.block().text(), caret.positionInBlock()) == (
+            (at, len(at)) if at else ("one words", 0))
+        assert _undone(ed, source)
+        ed.close()
+
+
 def test_words_typed_under_a_lone_picture_between_pictures_stay_words():
     """Typing never makes a group: an italic line being written under a
     picture is not taken for its caption while it is typed (it is one when
