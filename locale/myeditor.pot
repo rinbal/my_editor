@@ -8147,7 +8147,7 @@ msgid "Published by you"
 msgstr ""
 
 #: nostr/standup/thread.py:86
-#: nostr/ui/submission_detail.py:496
+#: nostr/ui/submission_detail.py:523
 msgid "Editorial team"
 msgstr ""
 
@@ -8483,7 +8483,7 @@ msgid "The server didn’t receive your submission: try again."
 msgstr ""
 
 #: nostr/standup/words.py:131
-#: nostr/ui/submission_detail.py:551
+#: nostr/ui/submission_detail.py:588
 msgid "Your list of submissions couldn’t be saved: check your internet connection and try again."
 msgstr ""
 
@@ -8569,7 +8569,7 @@ msgid "MyEditor couldn’t check whether you submitted this text before"
 msgstr ""
 
 #: nostr/standup/words.py:194
-#: nostr/ui/submission_detail.py:551
+#: nostr/ui/submission_detail.py:588
 msgid "The earlier try wasn’t discarded"
 msgstr ""
 
@@ -9563,7 +9563,7 @@ msgstr ""
 
 #: nostr/ui/draft_conflict_banner.py:48
 #: nostr/ui/drafts_panel.py:607
-#: nostr/ui/submissions_host.py:248
+#: nostr/ui/submissions_host.py:249
 msgid "View"
 msgstr ""
 
@@ -11972,8 +11972,8 @@ msgstr ""
 
 #: nostr/ui/preview_parts.py:486
 #: nostr/ui/preview_parts.py:487
-#: nostr/ui/submission_detail.py:133
-#: nostr/ui/submission_detail.py:134
+#: nostr/ui/submission_detail.py:142
+#: nostr/ui/submission_detail.py:143
 msgid "More"
 msgstr ""
 
@@ -12635,7 +12635,7 @@ msgstr ""
 
 #: nostr/ui/standup_handoff.py:567
 #: nostr/ui/standup_ways_out.py:68
-#: nostr/ui/submission_detail.py:452
+#: nostr/ui/submission_detail.py:479
 msgctxt "submissions list"
 msgid "Reload"
 msgstr ""
@@ -12646,7 +12646,7 @@ msgstr ""
 
 #: nostr/ui/standup_privacy.py:28
 #: nostr/ui/standup_submit_sheet.py:249
-#: nostr/ui/submission_detail.py:491
+#: nostr/ui/submission_detail.py:518
 msgid "the publication"
 msgstr ""
 
@@ -12818,7 +12818,7 @@ msgid "Submit"
 msgstr ""
 
 #: nostr/ui/standup_submit_sheet.py:227
-#: nostr/ui/submission_detail.py:494
+#: nostr/ui/submission_detail.py:521
 msgid "Publication"
 msgstr ""
 
@@ -12906,8 +12906,8 @@ msgid "An earlier try wasn’t sent: Submit sends it again."
 msgstr ""
 
 #: nostr/ui/standup_ways_out.py:51
-#: nostr/ui/submission_detail.py:209
-#: nostr/ui/submission_detail.py:462
+#: nostr/ui/submission_detail.py:215
+#: nostr/ui/submission_detail.py:489
 #: nostr/ui/submissions_view.py:384
 msgid "Discard"
 msgstr ""
@@ -12949,145 +12949,152 @@ msgstr ""
 msgid "Summary (optional)"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:64
+#: nostr/ui/submission_detail.py:71
+msgid "Send (↩)"
+msgstr ""
+
+#: nostr/ui/submission_detail.py:72
+msgid "⇧↩ for a new line"
+msgstr ""
+
+#: nostr/ui/submission_detail.py:73
 msgid "This version isn’t confirmed and is not opened."
 msgstr ""
 
-#: nostr/ui/submission_detail.py:65
+#: nostr/ui/submission_detail.py:74
 msgid "This submission couldn’t be loaded"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:66
+#: nostr/ui/submission_detail.py:75
 msgid "The submission wasn’t withdrawn"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:67
+#: nostr/ui/submission_detail.py:76
 #, python-brace-format
 msgid "It wasn’t withdrawn: {publication} decided on it in the meantime."
 msgstr ""
 
-#: nostr/ui/submission_detail.py:73
+#: nostr/ui/submission_detail.py:82
 #, python-brace-format
 msgid "Only you, the others taking part and the editorial team of {publication} can read it."
 msgstr ""
 
-#: nostr/ui/submission_detail.py:75
+#: nostr/ui/submission_detail.py:84
 msgid "The server sees the title, the status and who takes part, never the content."
 msgstr ""
 
-#: nostr/ui/submission_detail.py:76
+#: nostr/ui/submission_detail.py:85
 msgid "The pictures stay encrypted on your media server until the article is published."
 msgstr ""
 
-#: nostr/ui/submission_detail.py:77
+#: nostr/ui/submission_detail.py:86
 msgid "What you have read is kept in step across your devices, encrypted."
 msgstr ""
 
-#: nostr/ui/submission_detail.py:122
+#: nostr/ui/submission_detail.py:131
 msgid "Back to Submissions"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:128
-#: nostr/ui/submission_detail.py:129
+#: nostr/ui/submission_detail.py:137
+#: nostr/ui/submission_detail.py:138
 msgid "Info"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:138
+#: nostr/ui/submission_detail.py:147
 #: nostr/ui/submission_thread.py:414
 #: nostr/ui/submissions_view.py:379
 msgid "Open in Editor"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:140
+#: nostr/ui/submission_detail.py:149
 msgid "Withdraw …"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:236
+#: nostr/ui/submission_detail.py:258
 msgid "End-to-end encrypted"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:265
-#: nostr/ui/submission_detail.py:266
+#: nostr/ui/submission_detail.py:287
+#: nostr/ui/submission_detail.py:288
 msgid "Message to the editorial team"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:275
-#: nostr/ui/submission_detail.py:276
+#: nostr/ui/submission_detail.py:298
 msgid "Send"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:121
+#: nostr/ui/submission_detail.py:130
 #: nostr/ui/submissions_view.py:60
 #: nostr/ui/submissions_view.py:111
 msgid "Submissions"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:398
-#: nostr/ui/submission_detail.py:497
+#: nostr/ui/submission_detail.py:425
+#: nostr/ui/submission_detail.py:524
 #: nostr/ui/submission_thread.py:81
 msgid "Someone"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:490
+#: nostr/ui/submission_detail.py:517
 msgid "you"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:494
+#: nostr/ui/submission_detail.py:521
 msgid "Published by"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:495
+#: nostr/ui/submission_detail.py:522
 msgid "Version"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:496
+#: nostr/ui/submission_detail.py:523
 msgid "Responsible"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:402
+#: nostr/ui/submission_detail.py:429
 #, python-brace-format
 msgid "{first}, {second} and {count} more"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:490
+#: nostr/ui/submission_detail.py:517
 msgid "the writer"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:500
+#: nostr/ui/submission_detail.py:527
 msgid "Taking part"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:596
+#: nostr/ui/submission_detail.py:648
 msgid "Withdraw this submission?"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:600
+#: nostr/ui/submission_detail.py:652
 msgid "Withdraw"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:440
+#: nostr/ui/submission_detail.py:467
 msgid "Loading …"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:476
+#: nostr/ui/submission_detail.py:503
 #, python-brace-format
 msgid "{name} and the editorial team of {publication}"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:478
+#: nostr/ui/submission_detail.py:505
 #, python-brace-format
 msgid "The editorial team of {publication}"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:511
+#: nostr/ui/submission_detail.py:538
 msgid "Encryption"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:512
+#: nostr/ui/submission_detail.py:539
 msgid "History"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:597
+#: nostr/ui/submission_detail.py:649
 #, python-brace-format
 msgid "{publication} no longer sees it in its inbox then. What the editorial team already has stays there."
 msgstr ""
@@ -13201,12 +13208,12 @@ msgstr ""
 msgid "{publication} suggests a correction to “{title}”."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:330
+#: nostr/ui/submissions_host.py:331
 #, python-brace-format
 msgid "{title} (version {number})"
 msgstr ""
 
-#: nostr/ui/submissions_host.py:427
+#: nostr/ui/submissions_host.py:428
 #, python-brace-format
 msgid "Version {before} and version {after}"
 msgstr ""

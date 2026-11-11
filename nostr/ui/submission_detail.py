@@ -28,8 +28,9 @@ conversation (with Info above it) scrolls (RG-M3-b 2). It opens at the
 newest message and stays at the end while it grows, after sending too,
 unless the person scrolled up to read.
 
-The composer stays at the bottom: Return sends, Shift-Return starts a
-new line. What cannot be sent as it is (no text, a secret key) is said
+The composer stays at the bottom, one line that grows with the text
+(up to :data:`COMPOSER_LINES`): Return sends, Shift-Return starts a new
+line, which a quiet hint says while it has the focus (RG-M3-b 9). What cannot be sent as it is (no text, a secret key) is said
 above it and the text is kept. The widget shows what
 :class:`~.standup_following.Following` knows and forwards the person's
 choices; it holds no state of the submission itself.
@@ -66,6 +67,9 @@ from .submission_cover import cover_pixmap
 from .submission_thread import ThreadView, discard, face, more_about_button
 
 _COVER = 64
+COMPOSER_LINES = 5
+SEND_TIP = N_("Send (↩)")
+NEW_LINE_HINT = N_("⇧↩ for a new line")
 NOT_OPENED = N_("This version isn’t confirmed and is not opened.")
 NOT_LOADED = N_("This submission couldn’t be loaded")
 NOT_WITHDRAWN = N_("The submission wasn’t withdrawn")
@@ -283,21 +287,28 @@ class SubmissionDetail(QWidget):
         self.composer.setPlaceholderText(_("Message to the editorial team"))
         self.composer.setAccessibleName(_("Message to the editorial team"))
         self.composer.setTabChangesFocus(True)
-        self.composer.setFixedHeight(2 * self.composer.fontMetrics().lineSpacing() + 16)
+        self.composer.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.composer.installEventFilter(self)
         self.composer.textChanged.connect(self._on_typed)
+        self.composer.textChanged.connect(self._fit_composer)
         self.send = QToolButton()
         self.send.setObjectName("submission_send")
         self.send.setFixedSize(MIN_CONTROL_PX, MIN_CONTROL_PX)
         self.send.setText("↑")
         self.send.setAccessibleName(_("Send"))
-        self.send.setToolTip(_("Send"))
+        self.send.setToolTip(_(SEND_TIP))
         self.send.setEnabled(False)
         self.send.clicked.connect(self._send)
         row.addWidget(self.composer, 1)
         row.addWidget(self.send, 0, Qt.AlignmentFlag.AlignBottom)
         bar.addLayout(row)
+        self.hint = QLabel(_(NEW_LINE_HINT))
+        self.hint.setObjectName("submission_more")
+        self.hint.setFont(secondary_font())
+        self.hint.hide()                            # while the composer has the focus
+        bar.addWidget(self.hint)
         root.addWidget(self.composer_bar)
+        self._fit_composer()
 
     # -- the host's interface ------------------------------------------------------
 
@@ -588,6 +599,18 @@ class SubmissionDetail(QWidget):
                 self._sid, target, author, emoji,
                 threads.own_reaction(detail.opened, target, self._following.me))
 
+    def _fit_composer(self) -> None:
+        """One line, growing with the text up to COMPOSER_LINES."""
+        composer = self.composer
+        line = composer.fontMetrics().lineSpacing()
+        # A plain text's layout counts its height in lines, wrapped ones too.
+        lines = max(1, min(COMPOSER_LINES, round(composer.document().size().height())))
+        # What the frame and the style take around the text, as drawn.
+        margins = composer.contentsMargins()
+        chrome = margins.top() + margins.bottom()
+        margin = 2 * int(composer.document().documentMargin())
+        composer.setFixedHeight(max(MIN_CONTROL_PX, lines * line + margin + chrome))
+
     def _on_typed(self) -> None:
         self.send.setEnabled(bool(self.composer.toPlainText().strip()))
         self.problem.hide()
@@ -607,6 +630,9 @@ class SubmissionDetail(QWidget):
         self._to_the_end()
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802, Qt's name
+        if watched is self.composer and event.type() in (QEvent.Type.FocusIn,
+                                                          QEvent.Type.FocusOut):
+            self.hint.setVisible(event.type() == QEvent.Type.FocusIn)
         if watched is self.composer and event.type() == QEvent.Type.KeyPress \
                 and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) \
                 and not event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
@@ -670,6 +696,7 @@ class SubmissionDetail(QWidget):
             #submission_send:focus {{ border: 2px solid {r.focus}; }}
             QToolButton::menu-indicator {{ image: none; }}
         """)
+        self._fit_composer()                        # the style's padding counts
         if self._sid:
             self.refresh()
 

@@ -308,6 +308,28 @@ def test_a_long_conversation_opens_at_its_end_under_a_pinned_sentence_and_stays_
     window.view.hide()
 
 
+def test_the_composer_is_one_line_that_grows_and_says_how_to_start_a_new_line(window):
+    _prepared, entries = seeded(window, text="Ein Jahr")
+    window.follow()
+    window.view.show()
+    detail = opened(window, entries["text"])
+    composer = detail.composer
+    one = composer.height()
+    composer.setPlainText("Hallo")
+    assert composer.height() == one                     # one line
+    assert detail.send.toolTip() == "Send (↩)" and detail.hint.isHidden()
+    composer.setFocus()
+    QApplication.processEvents()
+    assert detail.hint.isVisible() and detail.hint.text() == "⇧↩ for a new line"
+    composer.setPlainText("Eins\nZwei\nDrei")
+    assert composer.height() > one
+    composer.setPlainText("\n".join(["Zeile"] * 5))
+    five = composer.height()
+    composer.setPlainText("\n".join(["Zeile"] * 20))
+    assert composer.height() == five                    # then it scrolls
+    window.view.hide()
+
+
 def test_the_composer_sends_with_return_and_a_failure_stays_in_place_with_the_text(window):
     _prepared, entries = seeded(window, reden="Ein Jahr")
     window.follow()
