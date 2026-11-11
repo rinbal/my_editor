@@ -7,13 +7,14 @@ sends it and reports it."""
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import QObject, Signal
 
 from nostr.standup import crypto as scrypto
-from nostr.standup import publishing, views
+from nostr.standup import formats, publishing, views
 from nostr.ui.standup_publish import AcceptedPublish, PublishPorts, Stage
 from tests.standup_following_fakes import FollowWorld
 from tests.standup_vectors import VECTORS, pk
@@ -195,6 +196,23 @@ def test_no_relay_took_it_so_try_again_sends_the_same_signed_article(accepted):
     assert run.stage is Stage.DONE
 
 
+def test_another_work_at_the_link_name_is_said_in_one_sentence_and_the_name_kept(accepted):
+    # Contract 12.4 One work per address; F5A publishedD: a writer's own work
+    # keeps its d (another d would not be this work's), so it is only said.
+    from nostr.standup.errors import Code, StandupError
+    run, _store, jobs = _run(accepted)
+
+    def taken(sid, *, naddr, event, on_success, on_failure):
+        on_failure(StandupError(code=Code.CONFLICT, status=409,
+                                detail={"reason": "address_taken"}, own=True))
+
+    run._ports = replace(run._ports, api=SimpleNamespace(published=taken))
+    run.start()
+    accepted.world.settle()
+    assert run.stage is Stage.NOT_REPORTED and "another article under this link name" in run.words
+    assert formats.tag_value(jobs[0].signed_event, "d") == "ein-jahr"
+
+
 def test_a_submission_that_changed_meanwhile_is_not_published_and_its_picture_comes_down(
         accepted):
     run, store, jobs = _run(accepted, reread_hash="ab" * 32)
@@ -215,8 +233,8 @@ def test_a_picture_the_servers_refuse_publishes_nothing(accepted):
 def test_too_long_for_the_signer_app_with_the_key_here_offers_it_once(accepted, monkeypatch):
     # Q1: explicit and for this article only; never without a key here.
     from nostr import signer_limits
-    from nostr.ui import standup_publish
-    for module in (signer_limits, standup_publish):         # the signer app's limit
+    from nostr.ui import standup_publish_job
+    for module in (signer_limits, standup_publish_job):     # the signer app's limit
         monkeypatch.setattr(module, "signable", lambda profile, event: False)
     remote = SimpleNamespace(user_pubkey=pk("writer"), signer="remote", bunker_relays=[])
     run, store, jobs = _run(accepted, key_here=True, profile=remote)
@@ -233,7 +251,6 @@ def test_too_long_for_the_signer_app_with_the_key_here_offers_it_once(accepted, 
 
 def _correct(case, content: str):
     """The editor's correction (revision 2) of the published work."""
-    from nostr.standup import formats
     from tests.standup_fakes import KEY_EVENT
     import json
     sid, world = case.sid, case.world
@@ -286,7 +303,6 @@ def test_a_correction_taken_is_confirmed_alone_then_replaces_the_article_keeping
         following.confirm(accepted.sid, confirms=confirms, revision_hash=revision_hash,
                           split_rumor_id=None, on_done=done)
 
-    from dataclasses import replace
     from nostr.standup.publishing import Accepted
     run = CorrectionPublish(
         published=following.reading.published_event(accepted.sid), sid=accepted.sid,

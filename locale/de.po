@@ -13484,3 +13484,7 @@ msgstr "Mit dieser Aufteilung angenommen."
 
 msgid "The published article couldn’t be found yet: try again in a moment."
 msgstr "Der veröffentlichte Artikel wurde noch nicht gefunden: versuch es gleich noch einmal."
+
+#, python-brace-format
+msgid "Published. {publication} already lists another article under this link name, so it can’t list this one."
+msgstr "Veröffentlicht. {publication} führt unter diesem Linknamen schon einen anderen Artikel und kann diesen nicht aufnehmen."

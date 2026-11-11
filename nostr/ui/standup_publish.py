@@ -49,14 +49,14 @@ from PySide6.QtCore import QObject, Signal
 from i18n import N_, _
 
 from .. import bech32
-from ..outbox.policy import relays_from
 from ..publish_pipeline import not_taken_words
-from ..publisher import PublishJob, published_at_of
-from ..signer_limits import signable, size_problem, through_signer_app
+from ..publisher import published_at_of
+from ..signer_limits import size_problem
 from ..standup import formats, opening, publishing
-from ..standup.errors import cause_words
+from ..standup.errors import Code, cause_words
 from ..standup.publishing import Accepted
 from .standup_account import live
+from .standup_publish_job import HeldPublish, SignedHere, offers_here, publish_job
 
 _log = logging.getLogger(__name__)
 
@@ -71,6 +71,10 @@ PICTURE_NOT_UP = N_("A picture couldn’t be put on your media server, so nothin
                     "published. Check your media servers in Settings, then try again.")
 NOT_THE_SAME = N_("The submission changed in the meantime, so nothing was published.")
 NOT_REPORTED = N_("Published. {publication} doesn’t know yet: try again in a moment.")
+# 12.4 One work per address: a writer's work keeps its link name (F5A's
+# publishedD; another d would not be this work's), so it is only said.
+ADDRESS_TAKEN = N_("Published. {publication} already lists another article under this "
+                   "link name, so it can’t list this one.")
 NOT_PUBLISHABLE = N_("This version can’t be published as it is. Ask the editorial team "
                      "in the conversation.")
 # How many relays a link to the article names (NIP-19).
@@ -114,62 +118,6 @@ class PublishPorts:
     reread: Callable
     clock: Callable[[], float] = time.time
     confirm: Optional[Callable] = None
-
-
-class HeldPublish(PublishJob):
-    """A PublishJob whose signed event waits for :meth:`release` before it
-    goes to the relays: the submission is read again in between (12.4)."""
-
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self._held = True
-
-    def release(self) -> None:
-        self._held = False
-        self._send_when_ready()
-
-    def _send_when_ready(self) -> None:
-        if not self._held:
-            super()._send_when_ready()
-
-
-class SignedHere(HeldPublish):
-    """Q1: this one article signed with the key kept on this computer.
-    The key is read from the keychain into the signer for this signature
-    and dropped with the job; the account's way of signing stays as it
-    is, and nothing is stored."""
-
-    def __init__(self, *args, secret: bytes, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        from ..local_signer import LocalSigner
-        self._here = LocalSigner(secret, parent=self)
-
-    def start(self) -> None:
-        self._say(_("Signing on this computer…"))
-        self._relay_directory.publish_plan(self._author, self._on_plan,
-                                           mentioned=self._mentioned,
-                                           entitled=relays_from(self._entitled))
-        self._here.sign_event(self._unsigned, on_success=self._on_signed,
-                              on_failure=self._fail)
-
-
-def offers_here(profile, event: Mapping, key_here: Callable[[], bool]) -> bool:
-    """Whether signing ``event`` with the key kept here is offered (Q1):
-    only through a signer app that cannot sign it, only with the key
-    here."""
-    return through_signer_app(profile) and not signable(profile, dict(event)) and key_here()
-
-
-def publish_job(*, here: bool, **kwargs):
-    """The signature and the relays (HeldPublish); ``here`` signs this one
-    article with the key kept on this computer (Q1), read from the
-    keychain for it and never stored anywhere else."""
-    if here:
-        from ..key_vault import KeyVault
-        secret = KeyVault().load(kwargs["profile"].user_pubkey)
-        if secret is not None:
-            return SignedHere(secret=secret, **kwargs)
-    return HeldPublish(**kwargs)
 
 
 def run_for(following, account, profile, sid: str, *, store, fetch, session_pool, relay_pool,
@@ -514,10 +462,12 @@ class AcceptedPublish(QObject):
             self._ports.serve(view)
             self._say(Stage.DONE, _(DONE), "")
 
-        def not_reported(_error) -> None:
+        def not_reported(error) -> None:
             if not self._stopped:
-                self._say(Stage.NOT_REPORTED, _(DONE),
-                          _(NOT_REPORTED).format(publication=self._publication))
+                taken = getattr(error, "code", None) == Code.CONFLICT \
+                    and getattr(error, "detail", {}).get("reason") == "address_taken"
+                self._say(Stage.NOT_REPORTED, _(DONE), _(ADDRESS_TAKEN if taken else NOT_REPORTED)
+                          .format(publication=self._publication))
 
         self._ports.api.published(self.sid, naddr=self.naddr, event=event,
                                   on_success=reported, on_failure=not_reported)
