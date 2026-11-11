@@ -843,3 +843,12 @@ def test_a_picture_named_by_a_web_address_is_asked_for_not_left_blank():
     image = ed.loadResource(QTextDocument.ImageResource, QUrl("https://cdn.example/a.png"))
     assert asked == ["https://cdn.example/a.png"]
     assert image is not None and not image.isNull()
+
+
+def test_a_wide_picture_of_the_app_is_saved_as_its_copy_and_stays_wide(tmp_path):
+    # Gate RG-PG2E-b 1: Large or Wide wrote "myeditor-asset:…#wide" and no copy.
+    win = _Window(tmp_path / "cache")
+    asset = win.local_asset()
+    target = win._image_target_for_file_save(QTextDocument(), str(tmp_path / "story.md"))
+    assert target(_fmt(asset.key + "#wide")) == f"story_media/{asset.sha256}.gif#wide"
+    assert (tmp_path / "story_media" / f"{asset.sha256}.gif").read_bytes() == GIF_BYTES

@@ -6011,7 +6011,16 @@ class MainWindow(QMainWindow):
             return written[name]
 
         def target(fmt) -> Optional[str]:
-            name = fmt.name()
+            # A picture's #wide (photo_group) is how it is laid out, not
+            # where it is: one of the app's pictures is written as its copy
+            # beside the document, and keeps it.
+            name = photo_group.without_wide(fmt.name())
+            if name != fmt.name() and parse_asset_key(name) is not None:
+                found = place(name, fmt)
+                return found + photo_group.WIDE_SUFFIX if found else found
+            return place(fmt.name(), fmt)
+
+        def place(name: str, fmt) -> Optional[str]:
             sha = parse_asset_key(name)
             if sha is None:
                 return self._foreign_image_target(name, sidecar)
@@ -6040,7 +6049,7 @@ class MainWindow(QMainWindow):
                 # The cache lost the bytes but the open document still
                 # holds the decoded image; re-encoding it is lossy for
                 # nothing else but keeps the picture.
-                rescued = self._encode_document_image(doc, name)
+                rescued = self._encode_document_image(doc, fmt.name())
                 if rescued is not None:
                     written_path = sidecar(sha, rescued, ".png")
                     if written_path:
