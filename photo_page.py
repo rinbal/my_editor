@@ -1,18 +1,20 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The photo groups of a page as STANDUP writes them: their markup (as
-md.py writes it), their stylesheet and their scripts (STANDUP's, in web/)
-and the words they say.
+"""The photo groups and pictures of a page as STANDUP writes them: their
+markup (as md.py writes it), their stylesheet and their scripts
+(STANDUP's, in web/) and the words they say.
 
-export_html writes a document's groups with it, rmarkdown a knitted
-page's: one writer of the markup, so every page shows a group the same
-way.
+export_html writes a document's with it, rmarkdown a knitted page's: one
+writer of the markup, so every page shows a picture the same way. A page
+MyEditor wrote is read back by the editor as the paragraphs it was written
+from (page_as_paragraphs).
 """
 
 from __future__ import annotations
 
 import html
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -91,11 +93,12 @@ def group_scripts() -> str:
 
 
 @dataclass
-class GroupFigure:
-    """One picture of a photo group as a page shows it: its src (a data:
-    URI or an address; None when it cannot be had), its pixel size (None:
-    not known, laid out as 3:2 until it is), where it came from, its
-    description, its caption as HTML and as text, and whether it is wide."""
+class Figure:
+    """One picture as a page shows it, in a photo group or alone: its src
+    (a data: URI or an address; None when it cannot be had), its pixel
+    size (None: not known, laid out as 3:2 until it is), where it came
+    from, its description, its caption as HTML and as text, and whether
+    it is wide."""
 
     src: Optional[str]
     size: Optional[Tuple[int, int]]
@@ -106,7 +109,7 @@ class GroupFigure:
     wide: bool = False
 
 
-def figure_html(f: GroupFigure, properties) -> str:
+def figure_html(f: Figure, properties) -> str:
     """One picture as ``<figure class="e21-figure">``; with ``properties``
     it is a cell of its group (photo_layout.group_markup)."""
     alt = html.escape(f.alt, quote=True)
@@ -132,7 +135,13 @@ def figure_html(f: GroupFigure, properties) -> str:
     return f'<figure class="{cls}" style="{style}"{provisional}>{img}{caption}</figure>'
 
 
-def group_figures_html(figures: Sequence[GroupFigure]) -> str:
+def figure_alone_html(f: Figure) -> str:
+    """A picture alone, as md.py writes one: a figure of its own, as wide
+    as the column (as wide as the page for #wide), its caption under it."""
+    return f'<div class="article-content">{figure_html(f, None)}</div>'
+
+
+def group_figures_html(figures: Sequence[Figure]) -> str:
     """One photo group as STANDUP's renderer writes it (md.py,
     _image_group): the engine's cells in Markdown order, each picture a
     figure with its shape and its place, its caption under it. The one
@@ -148,3 +157,24 @@ def group_figures_html(figures: Sequence[GroupFigure]) -> str:
             f'e21-imagegroup--{n if n <= 4 else "many"}" role="group" aria-label="{label}" '
             f'data-layout="{photo_layout.notation(result)}">'
             f'<div class="e21-imagegroup-track">{track}</div></div></div>')
+
+
+# A figure this module wrote, as Qt's HTML reader would take it (it knows
+# no figure, and keeps every word and size it finds): the picture
+# paragraph the figure was written from, its caption on the line under
+# the picture in italic, the picture at its own size.
+_FIGURE = re.compile(r'<figure class="e21-figure[^"]*"[^>]*>(.*?)</figure>', re.S)
+_PICTURE_SIZE = re.compile(r'(<img [^>]*?) width="\d+" height="\d+"')
+
+
+def _figure_paragraph(match) -> str:
+    inside = _PICTURE_SIZE.sub(r"\1", match.group(1))
+    inside = inside.replace("<figcaption>", "<br><em>").replace("</figcaption>", "</em>")
+    return f"<p>{inside}</p>"
+
+
+def page_as_paragraphs(page: str) -> str:
+    """``page`` (an HTML file being opened) with each figure MyEditor
+    wrote as the paragraph it was written from, so the editor reads a
+    group's pictures and a picture alone back as they were."""
+    return _FIGURE.sub(_figure_paragraph, page)

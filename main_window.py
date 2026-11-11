@@ -138,7 +138,7 @@ from update_flow import AUTOMATIC, guide_url, plan_for
 import theme
 from nostr.ui.context_widgets import ContextStatusBar, ContextTabBar
 from export_html import (
-    MEDIA_EMBED_LIMIT, document_to_html, image_data_uri, normalize_after_set_html,
+    MEDIA_EMBED_LIMIT, document_to_html, image_data_uri, open_page,
     sniff_image_ext)
 from find_replace import find_all, replace_all, replace_match, visible_matches
 from word_count import count_words, reading_minutes
@@ -4453,10 +4453,10 @@ class MainWindow(QMainWindow):
                     else front.newline
         content = with_newlines(content)
         if ext.endswith(('.html', '.htm')):
-            ed.setHtml(content)
-            # Lists stay real lists (the editor edits them as such); what
-            # the reader leaves behind is tidied.
-            normalize_after_set_html(ed.document())
+            # Lists stay real lists (the editor edits them as such), the
+            # page's figures are the paragraphs they were written from, and
+            # what the reader leaves behind is tidied.
+            open_page(ed, content)
             ed.document().clearUndoRedoStacks()
         elif ext.endswith('.md'):
             # The article's details are the file's front matter (Q-F): shown

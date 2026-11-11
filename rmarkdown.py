@@ -411,7 +411,7 @@ def _knitted_figure(tag: str):
             size = photo_layout.picture_size(found.width(), found.height())
     # pandoc may break a long line where a description has a space.
     alt = " ".join(attributes.get("alt", "").split())
-    return photo_page.GroupFigure(src, size, None, alt,
+    return photo_page.Figure(src, size, None, alt,
                                    wide="wide" in attributes.get("class", "").split())
 
 
@@ -436,7 +436,7 @@ def _knitted_figures(paragraph: str):
         if picture is not None or line == _UNAVAILABLE_HTML:
             close_caption()
             figures.append(_knitted_figure(picture.group(1)) if picture is not None
-                           else photo_page.GroupFigure(None, None, None, ""))
+                           else photo_page.Figure(None, None, None, ""))
         elif figures and "<img" not in line:
             captions.append(line)
         else:

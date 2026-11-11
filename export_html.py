@@ -40,6 +40,7 @@ lists: the editor edits them as such.
 import base64
 import html
 import re
+from typing import List, Tuple
 
 from PySide6.QtGui import (
     QTextBlockFormat,
@@ -53,6 +54,7 @@ from PySide6.QtGui import (
 import export_pictures
 import media_files
 import photo_group
+import photo_group_find
 import photo_layout
 import photo_page
 import rich_text
@@ -171,7 +173,7 @@ def _render_image(img_fmt, source_url_for, policy, asset_resolver,
             attrs += f' {prop}="{int(value)}"'
 
     resolved = asset_resolver(plain) if asset_resolver else None
-    if media_files.kind_of(str(getattr(resolved, "mime", "") or "")) is not None:
+    if _is_media_asset(resolved):
         return _render_media(alt, resolved)
 
     src, _size, source_url = _picture_source(plain, policy, resolved, remote_pictures,
@@ -181,6 +183,12 @@ def _render_image(img_fmt, source_url_for, policy, asset_resolver,
     if src is None:
         return f"<em>{html.escape(_('[image unavailable]'))}</em>"
     return f'<img src="{html.escape(src, quote=True)}"{attrs}>'
+
+
+def _is_media_asset(resolved) -> bool:
+    """Whether an asset the resolver gave is audio or video (its card is
+    a picture in the document, its page a player)."""
+    return media_files.kind_of(str(getattr(resolved, "mime", "") or "")) is not None
 
 
 def _picture_source(plain: str, policy, resolved, remote_pictures, source_url_for):
@@ -335,15 +343,33 @@ def _caption_html(unit, render_image) -> str:
     return _render_runs(runs, render_image)
 
 
-def _group_html(group, picture_of, render_image) -> str:
-    """One photo group of the document (photo_page.group_figures_html)."""
-    figures = []
-    for unit in group.units:
-        src, size, source = picture_of(unit.name)
-        caption = _caption_html(unit, render_image) if unit.caption_text.strip() else ""
-        figures.append(photo_page.GroupFigure(src, size, source, unit.alt, caption,
-                                              unit.caption_text, unit.wide))
-    return photo_page.group_figures_html(figures)
+def _figure_of(unit, picture_of, render_image) -> photo_page.Figure:
+    """A picture of the document (a unit of photo_group) as a page shows
+    it."""
+    src, size, source = picture_of(unit.name)
+    caption = _caption_html(unit, render_image) if unit.caption_text.strip() else ""
+    return photo_page.Figure(src, size, source, unit.alt, caption, unit.caption_text, unit.wide)
+
+
+def _photo_units(doc, is_media) -> List[Tuple[int, int, list, bool]]:
+    """The photo groups of ``doc`` and its pictures alone, in order, each
+    as ``(first position, last position, units, whether a group)``. A
+    picture alone is a picture paragraph at the top of the document with
+    its caption (photo_group_find, as md.py reads one), shown at no size
+    of its own (a picture an HTML file gave a size keeps it, as before)
+    and not audio or video (``is_media``, by its name)."""
+    groups = [(group.start, group.end, group.units, True)
+              for group in photo_group.groups_in(doc)]
+    alone = [(run.first, run.end, run.units, False)
+             for run in photo_group_find.find_runs(doc)
+             if len(run.units) == 1 and not run.groups and _at_own_size(run.units[0])
+             and not is_media(run.units[0].name)]
+    return sorted(groups + alone, key=lambda unit: unit[0])
+
+
+def _at_own_size(unit) -> bool:
+    image = unit.image.toImageFormat()
+    return image.width() <= 0 and image.height() <= 0
 
 
 def document_to_html(doc, title: str = "", source_url_for=None, *,
@@ -369,16 +395,22 @@ def document_to_html(doc, title: str = "", source_url_for=None, *,
     def render_image(img_fmt) -> str:
         return _render_image(img_fmt, source_url_for, policy, asset_resolver, remote_pictures)
 
+    def resolved(name: str):
+        return asset_resolver(photo_group.without_wide(name)) if asset_resolver else None
+
     def picture_of(name: str):
-        plain = photo_group.without_wide(name)
-        return _picture_source(plain, policy, asset_resolver(plain) if asset_resolver else None,
+        return _picture_source(photo_group.without_wide(name), policy, resolved(name),
                                remote_pictures, source_url_for)
 
-    # Photo groups: written whole where their first paragraph is; every
-    # paragraph of their tables is theirs.
-    groups = photo_group.groups_in(doc)
-    pending_groups = list(groups)
-    group_end = -1
+    def is_media(name: str) -> bool:
+        return _is_media_asset(resolved(name))
+
+    # Photo groups and pictures alone: written whole where their first
+    # paragraph is; every paragraph they take up is theirs (a group's
+    # tables, a picture's caption).
+    photos = _photo_units(doc, is_media)
+    pending = list(photos)
+    photos_end = -1
 
     body: list[str] = []
     # List markup is emitted compactly (no newlines): whitespace text nodes
@@ -456,15 +488,16 @@ def document_to_html(doc, title: str = "", source_url_for=None, *,
             quotes += 1
 
     for block in iter_blocks(doc):
-        if pending_groups and block.position() >= pending_groups[0].start:
-            group = pending_groups.pop(0)
+        if pending and block.position() >= pending[0][0]:
+            _first, photos_end, units, grouped = pending.pop(0)
             quote_to(0)
             close_to(0)
             close_real(0)
-            body.append(_group_html(group, picture_of, render_image))
-            group_end = group.end
+            figures = [_figure_of(unit, picture_of, render_image) for unit in units]
+            body.append(photo_page.group_figures_html(figures) if grouped
+                        else photo_page.figure_alone_html(figures[0]))
             continue
-        if block.position() <= group_end:
+        if block.position() <= photos_end:
             continue
         text = block.text()
         text_list = block.textList()
@@ -524,8 +557,8 @@ def document_to_html(doc, title: str = "", source_url_for=None, *,
 
     page_title = html.escape(title or _("Untitled"))
     body_html = "\n".join(body)
-    head_css = _head_css() + (photo_page.group_head() if groups else "")
-    scripts = photo_page.group_scripts() if groups else ""
+    head_css = _head_css() + (photo_page.group_head() if photos else "")
+    scripts = photo_page.group_scripts() if photos else ""
     return f"""<!doctype html>
 <html>
 <head>
@@ -619,6 +652,16 @@ def _drop_page_fonts(doc) -> None:
         cursor.setPosition(position)
         cursor.setPosition(position + length, QTextCursor.MoveMode.KeepAnchor)
         cursor.setCharFormat(fmt)
+
+
+def open_page(editor, page: str) -> None:
+    """Show the HTML file ``page`` in ``editor`` (a QTextEdit) as the text
+    it holds: the figures of a page this app wrote are the paragraphs they
+    were written from (photo_page), its groups are groups again, and what
+    Qt's reader leaves behind is tidied (normalize_after_set_html)."""
+    editor.setHtml(photo_page.page_as_paragraphs(page))
+    normalize_after_set_html(editor.document())
+    photo_group_find.fold(editor.document())
 
 
 def normalize_after_set_html(doc) -> None:

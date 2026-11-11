@@ -28,7 +28,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import QRectF
 from PySide6.QtGui import QImage, QTextDocument
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QTextEdit
 
 import export_pictures
 import photo_group
@@ -37,7 +37,7 @@ import photo_group_geometry
 import photo_group_view
 import photo_layout
 import photo_page
-from export_html import document_to_html
+from export_html import document_to_html, open_page
 from markdown_writer import read_markdown
 from tests.photo_corners import PHOTOS, SHAPES, gathered, shows_whole
 
@@ -138,8 +138,8 @@ def test_the_built_app_carries_the_page_parts():
         "photo_groups.css", "photo_groups.js", "photo_viewer.js"}
 
 
-def test_a_page_without_groups_has_no_group_parts(app):
-    page = _page("![a](portrait.png)\n\nWords\n")
+def test_a_page_without_pictures_has_no_photo_parts(app):
+    page = _page("Words\n\n- and a list\n")
     assert "e21-imagegroup" not in page and "e21-photo-words" not in page
 
 
@@ -158,7 +158,39 @@ def test_a_lone_wide_picture_is_carried(app):
     it, alone, is read without it, as the editor shows it."""
     page = _page("Words\n\n![Plan](plan.png#wide)\n\nMore\n")
     assert page.count('src="data:image/png;base64,') == 1
-    assert "e21-imagegroup" not in page
+    assert '<div class="e21-imagegroup' not in page
+
+
+def test_a_picture_alone_is_a_figure_as_md_py_writes_one(app):
+    """A picture paragraph with its caption, on it or under it, is a
+    figure of its own (STANDUP's md.py, _figure_parts): its shape, #wide,
+    its caption; a picture among words stays in its sentence."""
+    page = _page("Words\n\n![Loch](landscape.png)\n*The loch*\n\nMore\n\n"
+                 "![Plan](plan.png#wide)\n\n*Floor plan*\n\nA ![Hut](square.png) here.\n")
+    figures = re.findall(r'<div class="article-content">(<figure .*?</figure>)</div>', page, re.S)
+    assert [re.sub(r' src="[^"]*"', "", f) for f in figures] == [
+        '<figure class="e21-figure" style="--ar:1800/809"><img alt="Loch" width="1800" '
+        'height="809" decoding="async"><figcaption>The loch</figcaption></figure>',
+        '<figure class="e21-figure e21-figure--wide" style="--ar:1800/1273"><img alt="Plan" '
+        'width="1800" height="1273" decoding="async"><figcaption>Floor plan</figcaption></figure>']
+    assert re.search(r'<p>A <img src="data:image/png;base64,[^"]*" alt="Hut"> here\.</p>', page)
+    assert "<p>Words</p>" in page and "<p>More</p>" in page
+
+
+def test_a_saved_page_opens_as_the_paragraphs_it_was_written_from(app):
+    """Saved as HTML and opened again, a group is a group with its
+    captions, and a picture alone has its caption under it in italic."""
+    edit = QTextEdit()
+    open_page(edit, _page("Words\n\n![Loch](landscape.png)\n*The loch*\n\n"
+                          "![Steg](portrait.png)\n\n![Hut](square.png)\n*The hut*\n\n"
+                          "Between\n\n![Plan](plan.png#wide)\n\n*Floor plan*\n"))
+    doc = edit.document()
+    groups = photo_group.groups_in(doc)
+    assert [[(u.alt, u.caption_text) for u in g.units] for g in groups] == [
+        [("Loch", "The loch"), ("Steg", ""), ("Hut", "The hut")]]
+    (alone,) = [run.units for run in photo_group_find.find_runs(doc) if not run.groups]
+    assert [(u.alt, u.caption_text) for u in alone] == [("Plan", "Floor plan")]
+    assert "Vergr" not in doc.toPlainText() and "Enlarge" not in doc.toPlainText()
 
 
 def test_the_plain_and_r_markdown_writers_write_the_paragraphs(app, monkeypatch):
