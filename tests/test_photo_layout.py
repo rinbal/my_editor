@@ -7,6 +7,8 @@ tests/fixtures/photo_layout_vectors.json is its
 shared/photo-layout-vectors.json, byte for byte (the engine with an SPDX
 header in front). Both apps then show every group the same way: the
 same rows, the same stacks, the same runs on a phone, the same markup.
+The engine and the page parts keep STANDUP's licence in their headers
+(MIT, LICENSES/MIT-STANDUP.txt).
 
 What is checked, as STANDUP's own check does: every case of the vectors
 gives the same layout, templates, row geometry, markup nodes, HTML
@@ -44,8 +46,8 @@ from photo_layout import (
 ROOT = Path(__file__).resolve().parent.parent
 ENGINE = ROOT / "photo_layout.py"
 VECTORS = ROOT / "tests" / "fixtures" / "photo_layout_vectors.json"
-SPDX = (b"# SPDX-FileCopyrightText: 2026 rinbal\n"
-        b"# SPDX-License-Identifier: AGPL-3.0-or-later\n")
+SPDX = (b"# SPDX-FileCopyrightText: 2026 DoktorShift\n"
+        b"# SPDX-License-Identifier: MIT\n")
 
 # The SHA-256 of STANDUP's files as vendored. Vendoring a newer engine
 # means copying both files again and writing their new hashes here.
@@ -56,8 +58,8 @@ VECTORS_SHA256 = "8be595763573c5659a03c619348e7f4b632428941396f916fa6ef8b508491d
 # the scripts after their SPDX header, the stylesheet after its header of
 # ten lines (lines 181-187 and 476-993 of article.css).
 WEB = ROOT / "web"
-JS_SPDX = (b"// SPDX-FileCopyrightText: 2026 rinbal\n"
-           b"// SPDX-License-Identifier: AGPL-3.0-or-later\n")
+JS_SPDX = (b"// SPDX-FileCopyrightText: 2026 DoktorShift\n"
+           b"// SPDX-License-Identifier: MIT\n")
 CSS_HEADER_LINES = 10
 CSS_LINES = ((181, 187), (476, 993))
 WEB_FILES = {
@@ -101,7 +103,7 @@ def _web_bytes(name: str) -> bytes:
         return data[len(JS_SPDX):]
     if name.endswith(".css"):
         lines = data.splitlines(keepends=True)
-        assert lines[0].startswith(b"/* SPDX-FileCopyrightText: 2026 rinbal")
+        assert lines[0].startswith(b"/* SPDX-FileCopyrightText: 2026 DoktorShift")
         return b"".join(lines[CSS_HEADER_LINES:])
     return data
 

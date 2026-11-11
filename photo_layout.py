@@ -1,5 +1,5 @@
-# SPDX-FileCopyrightText: 2026 rinbal
-# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 DoktorShift
+# SPDX-License-Identifier: MIT
 """Photo group layout: the one engine behind every surface that shows a group
 of pictures (docs/publishing-experience.md, "Photo groups").
 

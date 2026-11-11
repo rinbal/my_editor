@@ -1,5 +1,5 @@
-// SPDX-FileCopyrightText: 2026 rinbal
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 DoktorShift
+// SPDX-License-Identifier: MIT
 /* Photo groups on a reading page (docs/publishing-experience.md, "Photo
  * groups"): what the markup and article.css cannot do alone. Without this
  * script the page reads the same: CSS lays out every group from the

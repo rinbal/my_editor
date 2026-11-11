@@ -1,5 +1,5 @@
-// SPDX-FileCopyrightText: 2026 rinbal
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 DoktorShift
+// SPDX-License-Identifier: MIT
 /* The full view of a picture: one viewer for every picture of an article,
  * its group's pictures a step away (docs/publishing-experience.md, "Photo
  * groups"). Like Quick Look and Photos: a black backdrop; Close, "2 von 4"
