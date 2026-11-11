@@ -562,6 +562,23 @@ def test_the_mac_shortcuts_over_a_selection_do_what_the_edit_menu_does():
     ed.close()
 
 
+def test_a_command_key_with_no_command_over_a_selection_changes_nothing():
+    """Command-J and Command-Shift-Y, which no command has, over words and
+    over words in a caption: they carry their letter, which Qt types not
+    with Command held, so the selection stays as it was (_qt_types)."""
+    source = _text("Before words.", ONE, "*The old jetty*", "After.")
+    for words in ("words", "old"):
+        for key, held in ((Qt.Key.Key_J, Qt.KeyboardModifier.ControlModifier),
+                          (Qt.Key.Key_Y, Qt.KeyboardModifier.ControlModifier
+                           | Qt.KeyboardModifier.ShiftModifier)):
+            ed = _editor(source)
+            ed.setTextCursor(ed.document().find(words))
+            QTest.keyClick(ed, key, held)
+            assert (_markdown(ed), ed.textCursor().selectedText()) == (source, words)
+            assert not ed.document().isUndoAvailable()
+            ed.close()
+
+
 def test_a_selection_moved_into_another_app_keeps_the_picture_it_holds_in_part(monkeypatch):
     """Its drag carries no such picture, and Qt deletes a selection moved
     out as it is (QWidgetTextControl, here as Qt does it then): the
