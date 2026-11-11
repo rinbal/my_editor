@@ -2951,7 +2951,7 @@ msgstr "Foto hinzufügen"
 
 #: main_window.py:8016
 msgid "This picture couldn’t be read. Check that its file is still there, and try again."
-msgstr "Dieses Bild konnte nicht gelesen werden. Prüf, ob seine Datei noch da ist, und versuch es noch einmal."
+msgstr "Dieses Bild konnte nicht gelesen werden. Prüfe, ob seine Datei noch da ist, und versuche es noch einmal."
 
 #: main_window.py:8022
 msgid "This picture is an SVG drawing, which can’t be cropped here. Crop it in a drawing app instead."
@@ -2963,7 +2963,7 @@ msgstr "Dieses Foto kann nicht zugeschnitten werden: Es ist zu groß oder keine 
 
 #: main_window.py:8064
 msgid "The cropped picture couldn’t be kept. Free some space on your disk and try again."
-msgstr "Das zugeschnittene Bild konnte nicht gesichert werden. Schaff etwas Platz auf dem Datenträger und versuch es noch einmal."
+msgstr "Das zugeschnittene Bild konnte nicht gesichert werden. Schaffe etwas Platz auf dem Datenträger und versuche es noch einmal."
 
 #: main_window.py:8112
 msgid "Open Link"

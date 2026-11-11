@@ -197,7 +197,8 @@ def test_a_picture_opens_at_its_web_address_or_at_itself(app, tmp_path):
     computer, at its own place on the page; #wide adds "Enlarge". A
     picture that cannot be had, or an SVG, opens nothing."""
     (tmp_path / "logo.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" width="30" '
-                                       'height="20"><rect width="30" height="20"/></svg>')
+                                       'height="20"><rect width="30" height="20"/></svg>',
+                                       encoding="utf-8")
     for name in ("portrait.png", "plan.png"):
         (tmp_path / name).write_bytes((PHOTOS / name).read_bytes())
     doc = _doc("![Loch](https://photos.example/landscape.png)\n\n![Steg](portrait.png)\n\n"
