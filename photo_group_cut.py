@@ -5,15 +5,17 @@
 A picture alone is one unit with its caption (on its line, or the italic
 paragraph under it). Qt deletes a selection as it is: one from words
 into a caption takes the caption's picture with it, and the caption's
-other words join the words above. STANDUP's editor keeps such a picture
-(deleteKeepingPictures, PG1C sessions 4e and 4f), and so does this one:
-a selection deletes a picture alone only when it holds its whole unit.
+other words join the words above; one that ends at the start of a
+picture's line joins the picture into the words before it. STANDUP's
+editor keeps such a picture (deleteKeepingPictures, PG1C sessions 4e and
+4f), and so does this one: a selection deletes a picture alone only when
+it holds its whole unit, and a line that still holds a picture keeps it.
 
 - **cuts** says what of a selection to delete instead: the part before
   the picture's paragraph and the caption's selected words;
 - **delete** deletes a selection that way, inside the step its caller
   has open (Backspace, Delete, Return, typing, Cut and Paste all come
-  here), and says where the kept caption's words now start;
+  here), and says where the rest of the selection's last line starts;
 - **in_caption** tells Return over a selection that starts in a caption,
   which deletes it and breaks no line there (STANDUP's rule).
 """
@@ -52,10 +54,11 @@ def _alone_around(doc: QTextDocument, position: int) -> Optional[Tuple[actions.P
 
 def _held_in_part(doc: QTextDocument, end: int) -> Optional[Tuple[int, int]]:
     """The picture alone whose unit a selection ending at ``end`` reaches
-    into without holding all of it: the picture's position and where its
-    caption's words start."""
+    into without holding all of it (also one that ends at the start of
+    the picture's line): the picture's position and where its caption's
+    words start."""
     found = _alone_around(doc, end)
-    if found is None or not found[0].position < end < found[0].end:
+    if found is None or not found[0].position <= end < found[0].end:
         return None
     return found[0].position, found[1]
 
@@ -69,9 +72,9 @@ def in_caption(doc: QTextDocument, position: int) -> bool:
 def cuts(doc: QTextDocument, start: int, end: int) -> Optional[Cuts]:
     """What to delete of the selection from ``start`` to ``end`` so that a
     picture alone it holds only in part stays, with the rest of its
-    caption: the words up to the picture's paragraph and the caption's
-    selected words. None when deleting the selection as it is keeps every
-    picture."""
+    caption: the words up to the picture's paragraph (which keeps its own
+    line) and the caption's selected words. None when deleting the
+    selection as it is keeps every picture."""
     held = _held_in_part(doc, end) if start < end else None
     if held is None or start > held[0]:
         return None
@@ -86,20 +89,16 @@ def cuts(doc: QTextDocument, start: int, end: int) -> Optional[Cuts]:
 
 def delete(cursor: QTextCursor) -> Optional[int]:
     """Delete ``cursor``'s selection as cuts says, the cursor left where
-    the selection started; the position the kept caption's words start at
-    then. None, and nothing done, when the selection deleted as it is
-    keeps every picture."""
+    the selection started; where the rest of the selection's last line
+    (the kept caption, the picture's line) starts then. None, and nothing
+    done, when the selection deleted as it is keeps every picture."""
     start, end = cursor.selectionStart(), cursor.selectionEnd()
-    doc = cursor.document()
-    found = cuts(doc, start, end)
+    found = cuts(cursor.document(), start, end)
     if found is None:
         return None
-    words = _held_in_part(doc, end)[1]
     for first, last in found:
         cursor.setPosition(first)
         cursor.setPosition(last, QTextCursor.MoveMode.KeepAnchor)
         cursor.removeSelectedText()
-        if last <= words:
-            words -= last - first
     cursor.setPosition(start)
-    return words
+    return end - sum(last - first for first, last in found)

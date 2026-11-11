@@ -435,6 +435,24 @@ def test_return_over_a_selection_that_starts_in_a_caption_only_deletes_it():
         ed.close()
 
 
+def test_a_selection_from_a_caption_to_a_pictures_line_keeps_that_line():
+    """STANDUP's rule (PG1C 4f): the picture is not joined into the
+    caption above it (Backspace, Delete, Return alike); the caption keeps
+    its own picture too."""
+    source = _text(ONE, "*Cap one words*", "Text between.", "![two](square.png)", "End.")
+    for key in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete, Qt.Key.Key_Return):
+        ed = _editor(source)
+        cursor = ed.textCursor()
+        cursor.setPosition(ed.document().find("one words").selectionStart())
+        cursor.setPosition(ed.document().find("between.").block().next().position(),
+                           QTextCursor.MoveMode.KeepAnchor)
+        ed.setTextCursor(cursor)
+        QTest.keyClick(ed, key)
+        assert _markdown(ed) == _text(ONE, "*Cap*", "![two](square.png)", "End."), key
+        assert _undone(ed, source)
+        ed.close()
+
+
 def test_a_cut_or_a_paste_from_words_into_a_caption_keeps_its_picture():
     """As the keys do (PG1C 4f): Cut puts the selection on the clipboard
     as it is written and takes what is selected, the picture stays; a
