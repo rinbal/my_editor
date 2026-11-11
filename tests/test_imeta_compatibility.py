@@ -30,8 +30,10 @@ Runs against the real ``AssetManager`` over the blob-store and uploader
 fakes. No network, no relay, no signer.
 """
 
+import hashlib
 import os
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -92,7 +94,7 @@ class _Window:
             index=AssetIndex(path=cache_dir.parent / "media_assets.json"),
         )
 
-    def uploaded_asset(self, data=PNG_BYTES, *, alt="a photo", servers=()):
+    def uploaded_asset(self, data=PNG_BYTES, *, alt="IMG_0001", servers=()):
         adopted = self._asset_manager.adopt_bytes(data, alt=alt)
         assert adopted is not None
         asset = self._asset_manager.adopt_library_file(
@@ -415,17 +417,21 @@ def test_a_picture_without_a_description_is_published_without_one(tmp_path):
     # The record took the asset's stored alt, a picture's file name, when
     # the document gave none, and published "image" as a description.
     win = _Window(tmp_path / "cache")
-    asset = win.uploaded_asset(alt="IMG_2041")
-    for alt in ("", "image"):
+    # Gate RG-PG2E-c 4 and RG-PG2E-d 1: nor the name its asset keeps, which
+    # an earlier version gave a picture added from disk ("![IMG_2041](
+    # myeditor-asset:…)"): added and sent by this app at the first try.
+    manager = win._asset_manager
+    asset = manager.adopt_bytes(PNG_BYTES, alt="IMG_2041")
+    manager.request_upload(asset.sha256)
+    QApplication.processEvents()
+    win._uploader.finish(win._uploader.calls[-1].name, types.SimpleNamespace(
+        url=f"{OURS}/{asset.sha256}.png", size=len(PNG_BYTES)))
+    QApplication.processEvents()
+    asset = manager.get(asset.sha256)
+    assert asset.is_uploaded
+    for alt in ("", "image", "IMG_2041"):
         _content, tags = _tags_for(win, _editor_with((asset.key, alt)))
         assert _entry(tags[0], "alt") is None
-    # Gate RG-PG2E-c 4: nor the name its asset keeps, which an earlier
-    # version gave a picture added from disk ("![IMG_2041](myeditor-
-    # asset:…)"), once this app sent it to the servers. A Media Library
-    # pick keeps the alt typed there (test_our_own_uploaded_image_...).
-    asset.attempts = 1
-    _content, tags = _tags_for(win, _editor_with((asset.key, "IMG_2041")))
-    assert _entry(tags[0], "alt") is None
     _content, tags = _tags_for(win, _editor_with((asset.key, "Der Steg am Abend")))
     assert _entry(tags[0], "alt") == "Der Steg am Abend"
     # A crop's own file is stored by the picture's name, never by its
@@ -436,3 +442,9 @@ def test_a_picture_without_a_description_is_published_without_one(tmp_path):
     assert cropped.stored_name == "IMG_2041-cropped"
     assert photo_group.description_of("Der Steg am Abend", cropped.key,
                                       cropped.stored_name) == "Der Steg am Abend"
+    # A Media Library pick's alt is what was typed there: a description.
+    sha = hashlib.sha256(b"a picture in the library").hexdigest()
+    picked = manager.adopt_library_file(sha256=sha, remote_url=f"{OURS}/{sha}", mime="image/gif",
+                                        alt="Dünen im Wind")
+    _content, tags = _tags_for(win, _editor_with((picked.key, "Dünen im Wind")))
+    assert _entry(tags[0], "alt") == "Dünen im Wind"

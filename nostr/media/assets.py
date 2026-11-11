@@ -147,6 +147,10 @@ class DocumentAsset:
     # from a file, a paste or the library's picker: nothing has checked
     # whether it is one of the account's private files.
     from_address: bool = False
+    # Its alt came from a Media Library pick: what the person typed in its
+    # Alt Text field, a description; any other alt is the name of the file
+    # it was added from (stored_name).
+    from_library: bool = False
     # Derived from the blob store on demand, never persisted: a machine
     # local path must not travel between installs or into a document.
     local_path: str = ""
@@ -171,11 +175,9 @@ class DocumentAsset:
     @property
     def stored_name(self) -> str:
         """``alt`` when it is the name of the file this picture was added
-        from (from disk, beside a document, a crop: on this computer, or
-        sent to the servers by this app); "" when it may be a description:
-        a Media Library pick, on the servers before this app sent it
-        (``attempts`` 0), keeps the alt text typed in the library."""
-        if self.is_media or (self.is_uploaded and self.attempts == 0):
+        from (from disk, beside a document, a crop), "" when it came from
+        a Media Library pick (from_library) and is a description."""
+        if self.is_media or self.from_library:
             return ""
         return self.alt
 
@@ -202,6 +204,7 @@ class DocumentAsset:
             "failure_code": self.failure_code,
             "failure_reason": self.failure_reason,
             "from_address": self.from_address,
+            "from_library": self.from_library,
         }
 
 
@@ -307,6 +310,7 @@ def asset_from_record(data: object) -> Optional[DocumentAsset]:
         failure_code=_clean_str(data.get("failure_code")),
         failure_reason=_clean_str(data.get("failure_reason")),
         from_address=data.get("from_address") is True,
+        from_library=data.get("from_library") is True,
     )
 
 

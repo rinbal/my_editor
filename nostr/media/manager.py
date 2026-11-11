@@ -290,6 +290,7 @@ class AssetManager(QObject):
         if existing is not None:
             if alt and not existing.alt:
                 existing.alt = alt
+                existing.from_library = False
             if caption and not existing.caption:
                 existing.caption = caption
             existing.updated_at = int(time.time())
@@ -483,6 +484,7 @@ class AssetManager(QObject):
                     self._enter_complete(existing, remote_url, existing.servers or servers)
             if alt and not existing.alt:
                 existing.alt = alt
+                existing.from_library = True
             existing.updated_at = int(time.time())
             self._index.put(existing)
             return existing
@@ -499,6 +501,7 @@ class AssetManager(QObject):
             created_at=now,
             updated_at=now,
             from_address=from_address,
+            from_library=True,
         )
         self._index.put(asset)
         self.asset_added.emit(sha)
