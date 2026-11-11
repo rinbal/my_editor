@@ -42,6 +42,7 @@ import media_badge
 import media_files
 import paste
 import photo_group
+import photo_group_drawing
 import photo_group_edit
 import photo_group_editing
 import photo_group_overlay
@@ -648,7 +649,7 @@ class HtmlEditor(QTextEdit):
             image = QImage(*_PLACEHOLDER_SIZE, QImage.Format_RGB32)
             image.fill(QColor(_PLACEHOLDER_COLOR))
             # Its shape is not the picture's: a group lays it out at 3:2.
-            self._asset_placeholder = photo_group_view.mark_placeholder(image)
+            self._asset_placeholder = photo_group_drawing.mark_placeholder(image)
         return self._asset_placeholder
 
     def loadResource(self, type_, url):
@@ -1052,7 +1053,7 @@ class HtmlEditor(QTextEdit):
     def set_highlights(self, layer: str, selections, captions=()) -> None:
         """Show ``selections`` (QTextEdit.ExtraSelection) as the highlights
         of one kind (HIGHLIGHT_LAYERS), and ``captions``
-        (photo_group_view.CaptionMark) as that kind's over the captions of
+        (photo_group_drawing.CaptionMark) as that kind's over the captions of
         photo groups, in place of that kind's earlier ones; the other kinds
         stay. Each highlight holds a cursor the document moves on every
         edit, so callers keep them to what is on screen (visible_range)."""
@@ -1219,7 +1220,7 @@ class HtmlEditor(QTextEdit):
                 for word in self._spelling.misspellings_of(unit.caption_text):
                     cursor = QTextCursor(self.document())
                     cursor.setPosition(start + offset)
-                    marks.append(photo_group_view.CaptionMark(cursor, word.start, word.end,
+                    marks.append(photo_group_drawing.CaptionMark(cursor, word.start, word.end,
                                                               underline))
         return marks
 

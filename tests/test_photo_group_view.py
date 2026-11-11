@@ -19,6 +19,7 @@ from PySide6.QtGui import QColor, QImage, QTextCursor, QTextDocument
 from PySide6.QtWidgets import QApplication, QTextEdit
 
 import photo_group
+import photo_group_drawing
 import photo_group_geometry as geometry
 import photo_group_view
 import photo_layout
@@ -76,7 +77,7 @@ def _boxes(doc):
 # --------------------------------------------------------------------------- #
 
 def test_a_stand_in_has_no_size(app):
-    stand_in = photo_group_view.mark_placeholder(QImage(160, 100, QImage.Format.Format_RGB32))
+    stand_in = photo_group_drawing.mark_placeholder(QImage(160, 100, QImage.Format.Format_RGB32))
     assert photo_group_view.picture_size(stand_in) is None
     assert photo_group_view.picture_size(QImage(160, 100, QImage.Format.Format_RGB32)) == (160, 100)
     assert photo_group_view.picture_size(None) is None
@@ -258,8 +259,8 @@ def test_a_picture_arriving_late_lays_out_its_group_once_and_changes_nothing(app
     assert provisional[late].width() / provisional[late].height() == pytest.approx(1.5, rel=0.01)
 
     laid_out = []
-    lay_out = photo_group_view._Handler._lay_out
-    monkeypatch.setattr(photo_group_view._Handler, "_lay_out",
+    lay_out = photo_group_drawing.Handler._lay_out
+    monkeypatch.setattr(photo_group_drawing.Handler, "_lay_out",
                         lambda self, doc, block, start, units: (
                             laid_out.append(block.position()),
                             lay_out(self, doc, block, start, units))[1])

@@ -51,6 +51,7 @@ from PySide6.QtGui import (
 import export_pictures
 import media_files
 import photo_group
+import photo_group_drawing
 import photo_group_view
 import user_dirs
 from atomic_file import read_json, write_json
@@ -156,7 +157,7 @@ def _placeholder_image(alt: str = "") -> QImage:
         painter.end()
     image.setDevicePixelRatio(_STAND_IN_SCALE)
     # Its shape is not the picture's: a photo group lays it out at 3:2.
-    return photo_group_view.mark_placeholder(image)
+    return photo_group_drawing.mark_placeholder(image)
 
 
 def _elided_lines(words: str, metrics: QFontMetricsF, width: float, lines: int) -> str:

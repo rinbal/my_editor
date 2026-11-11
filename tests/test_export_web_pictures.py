@@ -21,6 +21,7 @@ from PySide6.QtGui import QColor, QTextDocument
 from PySide6.QtWidgets import QApplication
 
 import export_pictures
+import photo_group_drawing
 from markdown_writer import read_markdown
 from tests.photo_corners import PHOTOS, gathered, has_colour, pages_show_a_picture, pdf_pages
 
@@ -76,10 +77,9 @@ def test_a_printed_page_carries_a_web_picture_it_was_given(app, tmp_path):
 
 def test_a_picture_that_did_not_come_is_one_quiet_stand_in_with_its_description(app, tmp_path):
     from export_pdf import _placeholder_image, export_pdf
-    import photo_group_view
     bare = _placeholder_image("")
     named = _placeholder_image("Floor plan of the bothy")
-    assert photo_group_view.is_placeholder(bare) and photo_group_view.is_placeholder(named)
+    assert photo_group_drawing.is_placeholder(bare) and photo_group_drawing.is_placeholder(named)
     assert named.size() == bare.size() and named != bare
     ink = QColor("#6b6760")
     assert has_colour(named, ink, 40) and not has_colour(bare, ink, 40)

@@ -110,6 +110,7 @@ import paste
 import export_pictures
 import photo_group
 import photo_group_actions
+import photo_group_drawing
 import photo_group_menu
 import photo_group_view
 import picture_crop
@@ -7124,7 +7125,7 @@ class MainWindow(QMainWindow):
             cursor = QTextCursor(ed.document())
             cursor.setPosition(match[0])
             if len(match) > 2:
-                captions.append(photo_group_view.CaptionMark(cursor, match[2], match[3], look))
+                captions.append(photo_group_drawing.CaptionMark(cursor, match[2], match[3], look))
                 continue
             cursor.setPosition(match[1], QTextCursor.MoveMode.KeepAnchor)
             selection = QTextEdit.ExtraSelection()

@@ -75,6 +75,7 @@ from text_size import text_size
 from doc_walk import doc_length, doc_offset, iter_blocks
 from i18n import _, ngettext
 import photo_group
+import photo_group_drawing
 import photo_group_view
 from markdown_writer import READ_FEATURES, read_markdown
 from nostr import refs
@@ -719,7 +720,7 @@ class NostrPreview(QTextBrowser):
             placeholder = QImage(COLUMN_WIDTH, COLUMN_WIDTH * 9 // 16, QImage.Format.Format_RGB32)
             placeholder.fill(QColor(palette(self._dark).hairline))
             # Its shape is not the picture's: a group lays it out at 3:2.
-            return photo_group_view.mark_placeholder(placeholder)
+            return photo_group_drawing.mark_placeholder(placeholder)
         return super().loadResource(kind, url)
 
     def resizeEvent(self, event) -> None:
