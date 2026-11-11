@@ -196,14 +196,23 @@ class CompareView(QWidget):
         if self._shown is not None:
             self.show_comparison(self._shown)
 
+    def forget(self) -> None:
+        """The view closes: the texts go, and an answer still on its way
+        is shown nowhere."""
+        self._asked += 1
+        self._shown = None
+        self.text.clear()
+
 
 class CompareDialog(QDialog):
-    """The compare view as a sheet: a heading, the view, Close."""
+    """The compare view as a sheet: a heading, the view, Close. It holds
+    two versions' texts, so it goes once it is closed."""
 
     def __init__(self, *, comparer: Comparer, old: str, new: str, heading: str, is_dark: bool,
                  parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(_("Changes"))
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         make_sheet(self)
         self.setStyleSheet(sheet_stylesheet(is_dark))
         appearance.surface(self, is_dark)
@@ -224,6 +233,10 @@ class CompareDialog(QDialog):
         column.addWidget(buttons)
         fit_to_window(self, QSize(640, 520))
         self.view.show_pair(comparer, old, new)
+
+    def done(self, result: int) -> None:  # noqa: N802, Qt's name
+        super().done(result)
+        self.view.forget()
 
     def apply_theme(self, is_dark: bool) -> None:
         self.setStyleSheet(sheet_stylesheet(is_dark))

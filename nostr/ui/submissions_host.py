@@ -120,7 +120,10 @@ class SubmissionsHost(QObject):
         self._following = None
         self._writer = None
         self._noticed: Dict[object, tuple] = {}     # an editor -> (sid, the notice's text)
+        # The sheets that hold a version's text: closed, and so deleted,
+        # with the account (each deletes itself once it is closed).
         self._dialog: Optional[CompareDialog] = None
+        self._sheet: Optional[ReviseSheet] = None
         view.set_handled(self.actions())
         view.set_edited(self.edited)
         view.action_requested.connect(self._on_action)
@@ -159,9 +162,10 @@ class SubmissionsHost(QObject):
         self.view.set_following(None, signed_in=False)
         self.pill.clear()
         self.comparer.stop()
-        dialog, self._dialog = self._dialog, None
-        if dialog is not None and shiboken6.isValid(dialog):
-            dialog.reject()
+        for sheet in (self._dialog, self._sheet):
+            if sheet is not None and shiboken6.isValid(sheet):
+                sheet.reject()
+        self._dialog = self._sheet = None
         noticed, self._noticed = self._noticed, {}
         for ed, (_sid, text) in noticed.items():
             notice = self._ports.notice_of(ed) if shiboken6.isValid(ed) else None
@@ -327,9 +331,11 @@ class SubmissionsHost(QObject):
             if made is None:
                 return
             draft, cover, byline, private = made
-            sheet = ReviseSheet(
+            # The sheet needs the submission, not its secrets: the run
+            # takes them from the list.
+            sheet = self._sheet = ReviseSheet(
                 writer=ports.standup(), profile=profile, draft=replace(draft, d=row.d),
-                cover=cover, byline=byline, row=row,
+                cover=cover, byline=byline, row=replace(row, entry=None),
                 publication=following.publication_name(row.publication),
                 logo=self._logo(row.publication, 40), previous=previous,
                 comparer=self.comparer, private_names=private, is_dark=ports.is_dark(),

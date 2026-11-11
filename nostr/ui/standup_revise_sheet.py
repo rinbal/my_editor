@@ -88,6 +88,8 @@ class ReviseSheet(QDialog):
                  parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(_("Hand In New Version"))
+        # It holds the version handed in, opened: gone with the sheet.
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         make_sheet(self)
         self.setMinimumSize(420, 300)
         self._writer, self._profile, self._draft = writer, profile, draft
@@ -304,6 +306,10 @@ class ReviseSheet(QDialog):
                 self.run.let_go()
             self._writer.in_background(self.run)
         super().done(result)
+        # What was opened of the version before goes now, not with the
+        # last reference to this sheet (criterion 19).
+        self._previous = None
+        self.changes.forget()
 
     def _style(self) -> None:
         r = appearance.roles(self._is_dark)

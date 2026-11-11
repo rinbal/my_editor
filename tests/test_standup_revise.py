@@ -8,13 +8,16 @@ the next version with the keys its submission has, and it counts only
 with its receipt; the note goes with the version and shows under its
 card; the same text again is not handed in; the changes show word by
 word on a page of the sheet; Einreichung ansehen opens the detail; and
-the sheet closes when its account is let go."""
+the sheet closes when its account is let go; and a sheet or a compare
+that held a version's text is gone once it is closed."""
 
 from __future__ import annotations
 
 import time
 
 import pytest
+import shiboken6
+from PySide6.QtCore import QEvent
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication
 
@@ -22,7 +25,7 @@ from nostr.standup import thread as threads
 from nostr.standup.compare import ADDED, SAME
 from nostr.standup.drafting import ArticleDraft
 from nostr.standup.submitting import Phase
-from nostr.ui.standup_compare import Comparer
+from nostr.ui.standup_compare import CompareDialog, Comparer
 from nostr.ui.standup_revise_sheet import ReviseSheet, change_line, comparable
 from tests.standup_following_fakes import FollowWorld
 from tests.test_standup_submissions_ui import ME, NAMES, Window
@@ -139,8 +142,20 @@ def test_the_sheet_closes_when_its_account_is_let_go(window):
     sheet.hand_in.click()                               # the run starts
     window.writer.stop()                                # sign-out while it is on its way
     world.settle()
-    assert sheet.run is None and not sheet.isVisible()
+    assert sheet.run is None and not (shiboken6.isValid(sheet) and sheet.isVisible())
     assert world.record(entry.sid).revision == 1        # nothing was handed in
     submits = [path for verb, path, _b, _h in world.server.requests[posted:]
                if verb == "POST" and path == "/api/submissions"]
     assert submits == [] and signer is not None
+
+
+def test_a_sheet_or_a_compare_that_held_a_version_is_gone_once_closed(window):
+    sheet, _entry = sheet_for(window)
+    compare = CompareDialog(comparer=Comparer(run=inline), old=FIRST, new=SECOND,
+                            heading="Version 1 and version 2", is_dark=False)
+    for dialog in (sheet, compare):
+        dialog.open()
+        dialog.reject()                                 # Close, Cancel or Escape
+    QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    assert not shiboken6.isValid(sheet) and not shiboken6.isValid(compare)
+    assert sheet._previous is None                     # the opened version goes with it
