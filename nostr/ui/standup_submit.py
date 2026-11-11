@@ -54,6 +54,7 @@ from ..standup.servers import configured_server
 from ..standup.submitting import Phase, Ports, Progress
 from ..standup.rounds import RoundAnswer, ask_round
 from ..standup.trust import Destination
+from ..standup.unlisted import Unlisted
 from ..standup.watcher import look_up, resolve_unconfirmed
 from .standup_account import Account, live
 from .standup_cleanup import BlobCleanup
@@ -124,7 +125,10 @@ class StandupWriter(QObject):
                 account, marks=self._marks,
                 on_listed=lambda read: self._listed(account, read),
                 discard=lambda entry, on_done: self.discard(profile, entry, on_done),
-                later=_later, clock=self._clock, parent=account)
+                later=_later, clock=self._clock,
+                # A public work's report that did not arrive, kept across
+                # restarts (RG-M4-b 3), as the cleanups are.
+                unlisted=Unlisted(account.writer), parent=account)
             # The published works' encrypted files go, quietly (M-4 M14).
             self._cleanup = BlobCleanup(self._following, account, profile,
                                         store=self._media_store, parent=self._following)

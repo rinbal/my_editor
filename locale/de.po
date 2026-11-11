@@ -13346,10 +13346,6 @@ msgstr "Ein Bild konnte nicht auf deinen Medienserver geladen werden, deshalb wu
 msgid "The submission changed in the meantime, so nothing was published."
 msgstr "Die Einreichung hat sich inzwischen geändert, deshalb wurde nichts veröffentlicht."
 
-#, python-brace-format
-msgid "Published. {publication} doesn’t know yet: try again in a moment."
-msgstr "Veröffentlicht. {publication} weiß es noch nicht: versuche es gleich noch einmal."
-
 msgid "This version can’t be published as it is. Ask the editorial team in the conversation."
 msgstr "Diese Fassung lässt sich so nicht veröffentlichen. Frag die Redaktion im Gespräch."
 
@@ -13457,10 +13453,6 @@ msgstr "Mit dieser Aufteilung angenommen."
 
 msgid "The published article couldn’t be found yet: try again in a moment."
 msgstr "Der veröffentlichte Artikel wurde noch nicht gefunden: versuch es gleich noch einmal."
-
-#, python-brace-format
-msgid "Published. {publication} already lists another article under this link name, so it can’t list this one."
-msgstr "Veröffentlicht. {publication} führt unter diesem Linknamen schon einen anderen Artikel und kann diesen nicht aufnehmen."
 
 msgid "For your share, your Nostr profile needs a Lightning address."
 msgstr "Für deinen Anteil braucht dein Nostr-Profil eine Lightning-Adresse."
@@ -13575,3 +13567,14 @@ msgstr "{name} wurde nicht erinnert."
 
 msgid "Your signer app asks once more in a moment: with it, MyEditor deletes the private copies of your article."
 msgstr "Deine Signer-App fragt gleich noch einmal: damit löscht MyEditor die privaten Kopien deines Artikels."
+
+msgid "Being published …"
+msgstr "Wird veröffentlicht …"
+
+#, python-brace-format
+msgid "“{title}” is public. {publication} learns of it shortly."
+msgstr "»{title}« ist öffentlich. {publication} erfährt es gleich."
+
+#, python-brace-format
+msgid "“{title}” is public, but {publication} already lists another article under this link name."
+msgstr "»{title}« ist öffentlich, aber {publication} führt unter diesem Linknamen schon einen anderen Artikel."

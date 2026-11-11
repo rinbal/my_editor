@@ -149,7 +149,8 @@ class FollowWorld:
     def account(self, who: str = "writer") -> TestAccount:
         return TestAccount(self, who)
 
-    def following(self, account: TestAccount, *, start: bool = True) -> Following:
+    def following(self, account: TestAccount, *, start: bool = True,
+                  unlisted=None) -> Following:
         marks = SubmittedMarks(kept=False)
 
         def discard(entry, on_done) -> None:
@@ -158,7 +159,7 @@ class FollowWorld:
 
         following = Following(account, marks=marks, on_listed=lambda _read: None,
                               discard=discard, later=self.later, clock=self.clock,
-                              timer=FakeTimer(), parent=account)
+                              timer=FakeTimer(), unlisted=unlisted, parent=account)
         following.marks = marks
         following.news.connect(self.news.append)
         if start:

@@ -148,12 +148,13 @@ class CorrectionSheet(QDialog):
             # newer state and say so; nothing here to try again.
             self.reject()
             return
-        working, done = stage is Stage.WORKING, stage is Stage.DONE
-        failed = stage in (Stage.FAILED, Stage.NOT_STORED, Stage.NOT_REPORTED,
-                           Stage.NOT_CHECKED)
-        ask = stage in (Stage.SOMEONE_ELSES, Stage.TOO_LONG)    # nothing to try again: ask
-        if done:
-            # The title, then what comes next, if anything (RG-M4-b 12).
+        # Public, whether or not its publication lists it yet (RG-M4-b 3).
+        working, done = stage is Stage.WORKING, stage in (Stage.DONE, Stage.PUBLIC)
+        failed = stage in (Stage.FAILED, Stage.NOT_STORED, Stage.NOT_CHECKED)
+        # Nothing to try again: ask.
+        ask = stage in (Stage.SOMEONE_ELSES, Stage.TOO_LONG, Stage.NOT_LISTED)
+        if done or stage is Stage.NOT_LISTED:
+            # Calmly: the title, then what comes next, if anything (RG-M4-b 3, 12).
             self.status.say(" ".join(part for part in (run.title, run.words) if part))
         elif failed or ask or stage is Stage.OFFER_HERE:
             self.status.say(run.words, error=True, title=run.title)
@@ -179,13 +180,13 @@ class CorrectionSheet(QDialog):
 
     def _primary(self) -> None:
         stage = self.run.stage
-        if stage is Stage.DONE:
+        if stage in (Stage.DONE, Stage.PUBLIC):
             self.accept()
-        elif stage in (Stage.SOMEONE_ELSES, Stage.TOO_LONG):
+        elif stage in (Stage.SOMEONE_ELSES, Stage.TOO_LONG, Stage.NOT_LISTED):
             self._ask()
         elif stage is Stage.OFFER_HERE:
             self.run.start(here=True)
-        elif stage in (Stage.NOT_STORED, Stage.NOT_REPORTED, Stage.FAILED, Stage.NOT_CHECKED):
+        elif stage in (Stage.NOT_STORED, Stage.FAILED, Stage.NOT_CHECKED):
             self.run.retry()
         else:
             self.run.start()

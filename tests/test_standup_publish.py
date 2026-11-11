@@ -240,12 +240,13 @@ def _run(case, *, store=None, took=(True,), reread_hash=None, key_here=False, pr
         fetch=lambda url, on_success, on_failure: on_success(case.cipher)
         if url.endswith(case.entry["cipher_sha256"]) else on_failure("404"),
         job=job, key_here=lambda: key_here, serve=following.serve, reread=reread,
-        held_at=held_at, clock=case.world.clock, cleanup=cleanup,
+        held_at=held_at, clock=case.world.clock, cleanup=cleanup, unlisted=following.unlisted,
         relays_hold=relays_hold or (lambda _unsigned, done: done({"wss://r.example": (True, [])})))
     run = AcceptedPublish(sid=case.sid, profile=profile or case.writer.profile,
                           version=following.reading.latest(case.sid),
                           accepted=following.reading.accepted(case.sid),
                           revision_hash=view.revision_hash, publication="Magazin", ports=ports)
+    following.track(case.sid, run)
     return run, store, jobs
 
 
@@ -288,8 +289,99 @@ def test_another_work_at_the_link_name_is_said_in_one_sentence_and_the_name_kept
     run._ports = replace(run._ports, api=SimpleNamespace(published=taken))
     run.start()
     accepted.world.settle()
-    assert run.stage is Stage.NOT_REPORTED and "another article under this link name" in run.words
+    # RG-M4-b 3: public all the same; one sentence, a question, no retry.
+    title = accepted.following.row(accepted.sid).title
+    assert run.stage is Stage.NOT_LISTED and run.words == (
+        f"“{title}” is public, but Magazin already lists another article under this link name.")
     assert formats.tag_value(jobs[0].signed_event, "d") == "ein-jahr"
+    from nostr.standup import following as rules
+    from nostr.ui.standup_publish_sheet import PublishSheet
+    assert accepted.following.row(accepted.sid).publishing == rules.NOT_LISTED
+    assert not any(ms == 30000 for ms, _call in accepted.world.later.waiting)   # never again
+    sheet = PublishSheet(run=run, publication="Magazin", number=1, is_dark=False)
+    assert sheet.publish.text() == "Ask a Question" and sheet.cancel_button.text() == "Close"
+    sheet.deleteLater()
+
+
+def _flaky_report(api, failures):
+    """``api.published`` failing ``failures[0]`` times while it is above 0."""
+    from nostr.standup.errors import Code, StandupError
+    real, calls = api.published, []
+
+    def published(sid, **kwargs):
+        calls.append(sid)
+        if failures[0] > 0:
+            failures[0] -= 1
+            kwargs["on_failure"](StandupError(code=Code.OFFLINE))
+        else:
+            real(sid, **kwargs)
+
+    api.published = published
+    return calls
+
+
+def _waiting(world, ms):
+    """Run the wait of ``ms`` the test world holds."""
+    found = next(i for i, (wait, _call) in enumerate(world.later.waiting) if wait == ms)
+    world.later.waiting.pop(found)[1]()
+    world.settle()
+
+
+def test_a_public_work_whose_report_did_not_arrive_says_so_and_is_reported_again_quietly(
+        accepted):
+    # RG-M4-b 3, 9: on its way, the list, the pill and the detail say "Wird
+    # veröffentlicht …"; once a relay took it, it is public whatever the
+    # server answers, said calmly, and reported again after a pause.
+    from nostr.standup import following as rules
+    from nostr.ui.standup_publish_sheet import PublishSheet
+    following, world = accepted.following, accepted.world
+    calls = _flaky_report(accepted.writer.api, [1])
+    run, _store, _jobs = _run(accepted)
+    sheet = PublishSheet(run=run, publication="Magazin", number=1, is_dark=False)
+    seen = []
+    following.changed.connect(lambda: seen.append(following.row(accepted.sid).publishing))
+    run.start()
+    world.settle()
+    assert seen[0] == rules.PUBLISHING
+    row = following.row(accepted.sid)
+    sentence = f"“{row.title}” is public. Magazin learns of it shortly."
+    assert run.stage is Stage.PUBLIC and row.publishing == rules.PUBLIC and not row.turn
+    assert rules.pill_word(row, lambda _pk: "") == "Published"
+    status = rules.status_of(row, publication="Magazin", name_of=lambda _pk: "")
+    assert (status.sentence, status.action) == (sentence, None)
+    assert sheet.status.text() == sentence and not sheet.privacy.isVisibleTo(sheet)
+    assert sheet.publish.text() == "Done"
+    world.clock.advance(30)
+    _waiting(world, 30000)
+    assert len(calls) == 2 and run.stage is Stage.DONE
+    assert following.row(accepted.sid).publishing == ""
+    assert following.unlisted.record.sids() == []
+    sheet.deleteLater()
+
+
+def test_after_a_restart_a_public_work_still_says_so_and_is_reported_once_the_view_opens(
+        accepted):
+    # RG-M4-b 3: the signed article is kept (never a key) and reported again
+    # when the Einreichungen view first opens, never at launch.
+    from nostr.standup import following as rules
+    world = accepted.world
+    _flaky_report(accepted.writer.api, [1])
+    run, _store, _jobs = _run(accepted)
+    run.start()
+    world.settle()
+    record = accepted.following.unlisted.record
+    assert record.sids() == [accepted.sid] and "event" in record.entry(accepted.sid)
+    accepted.following.stop()                                # the app closes
+    world.later.waiting.clear()                              # and its timers with it
+    again = world.following(accepted.writer, unlisted=record)
+    assert again.row(accepted.sid).publishing == rules.PUBLIC
+    assert not any(ms == 30000 for ms, _call in world.later.waiting)   # not at launch
+    again.view_opened()
+    world.settle()
+    world.clock.advance(30)
+    _waiting(world, 30000)
+    assert world.record(accepted.sid).state == "published" and record.sids() == []
+    assert again.row(accepted.sid).situation is rules.Situation.PUBLISHED_UNPLACED
 
 
 def test_the_key_kept_here_is_wiped_after_its_signature_and_goes_with_the_run(accepted):

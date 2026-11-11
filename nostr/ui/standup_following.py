@@ -53,12 +53,14 @@ from ..standup import thread as threads
 from ..standup.entries import SubmissionEntry
 from ..standup.errors import PASSING, Code, StandupError, cause_words
 from ..standup.submitting import Phase
+from ..standup.unlisted import Unlisted
 from ..standup.watcher import (
     Followed, NotHandedIn, Round, StoredCopy, StoredOther, SubmissionWatcher, verify_stored,
 )
 from .standup_account import live
 from .standup_reading import Detail, Reading, Version, secret_of
 from .standup_talk import Outgoing, Talk
+from .standup_unlisted import QuietReport
 
 # What an article's notice is about (plan 7.4): a message, or a result.
 NEWS_EVENTS = ("request_changes", "accept", "decline", "published", "correction")
@@ -99,6 +101,7 @@ class Following(QObject):
                  discard: Callable[[SubmissionEntry, Callable[[bool], None]], None],
                  later: Callable[[int, Callable[[], None]], None],
                  clock: Callable[[], float] = time.time, timer=None,
+                 unlisted: Optional[Unlisted] = None,
                  parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self._account = account
@@ -122,6 +125,11 @@ class Following(QObject):
         # sid -> its one publish run (standup_publish.AcceptedPublish),
         # kept while the account is: closing the sheet never stops it.
         self.publishing: Dict[str, object] = {}
+        # Public works whose report did not arrive, reported again quietly
+        # (RG-M4-b 3); the app keeps them across restarts, a test does not.
+        self.unlisted = QuietReport(self, account, record=unlisted or Unlisted.in_memory(
+            account.writer), later=later, clock=clock, parent=self)
+        self._going: Dict[str, str] = {}
         # (sid, pubkey) -> when the server took a reminder or said it had
         # one today (RG-M4-b 11): that person's Erinnern goes.
         self._reminded: Dict[Tuple[str, str], float] = {}
@@ -170,6 +178,7 @@ class Following(QObject):
         runs, self.publishing = self.publishing, {}
         for run in runs.values():
             run.stop()
+        self.unlisted.stop()
         self._served, self._nothing, self._decided = {}, set(), {}
         self._names, self._noticed, self._telling = {}, {}, {}
 
@@ -192,6 +201,7 @@ class Following(QObject):
         else:
             self.refresh()
         self._read_views()
+        self.unlisted.resume()
 
     def refresh(self) -> None:
         """Look now (Erneut versuchen, a run that ended)."""
@@ -423,7 +433,7 @@ class Following(QObject):
             account.submissions.entries(), me=account.writer, followed=self._followed(),
             served=self._served, unknown=self._nothing, running=running,
             refused=lambda entry: self._marks.round_refused(account.writer, entry),
-            seen=account.read_state.seen)
+            seen=account.read_state.seen, publishing=self._publishing())
         listed = {row.sid for row in rows}
         for run in account.runs:
             sid = run.submitting.submission_id
@@ -437,6 +447,31 @@ class Following(QObject):
 
     def row(self, sid: str) -> Optional[rules.Row]:
         return next((row for row in self.rows() if row.sid == sid), None)
+
+    # -- publishing (M-4) --------------------------------------------------------------
+
+    def track(self, sid: str, run) -> None:
+        """``run`` is ``sid``'s one publish run: while it works, and once
+        its work is public before it is listed, the rows say so (RG-M4-b 3,
+        9), also with its sheet closed."""
+        self.publishing[sid] = run
+        run.changed.connect(lambda: self.publishing_changed(sid))
+
+    def publishing_changed(self, sid: str) -> None:
+        going = self._publishing().get(sid, "")
+        if self._going.get(sid, "") != going:
+            self._going[sid] = going
+            self.changed.emit()
+            self.detail_changed.emit(sid)
+
+    def _publishing(self) -> Dict[str, str]:
+        """By sid, how a publish of this account's stands: on its way, or
+        public and not listed yet (the run's word first, then the record)."""
+        going = {sid: state for sid, state in self.unlisted.states().items() if state}
+        for sid, run in self.publishing.items():
+            if getattr(run, "going", ""):
+                going[sid] = run.going
+        return going
 
     def row_for_work(self, d: str) -> Optional[rules.Row]:
         """The row the pill of the article ``d`` shows: its own turn

@@ -500,8 +500,8 @@ class SubmissionsHost(QObject):
                         and sheet.run is run
                         for sheet in (self._publish_sheet, self._correction_sheet))
         if run.stage is Stage.CHANGED or not open_here and run.stage in (
-                Stage.FAILED, Stage.NOT_STORED, Stage.NOT_REPORTED, Stage.SOMEONE_ELSES,
-                Stage.NOT_CHECKED, Stage.TOO_LONG):
+                Stage.FAILED, Stage.NOT_STORED, Stage.SOMEONE_ELSES, Stage.NOT_CHECKED,
+                Stage.TOO_LONG):
             self._say_in_place(run.sid, run.words)
 
     def _hear(self, run) -> None:

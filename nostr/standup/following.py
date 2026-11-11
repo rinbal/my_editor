@@ -31,7 +31,7 @@ Redaktion's word is offered.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import AbstractSet, Callable, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from i18n import N_, _
@@ -68,6 +68,23 @@ STILL_CONFIRM_NAMED = N_("Thanks. {names} still confirm.")
 STILL_CONFIRM = N_("Thanks. The others still confirm.")
 # The server takes one reminder per person in 24 hours (12.4 ``/remind``).
 REMIND_EVERY = 86400
+
+# How a publish of the writer's own stands, as this app's run or record
+# says (RG-M4-b 3, 9), while the server's View still waits for it: on its
+# way; public, its publication learns of it shortly; public, and its
+# publication lists another work at the link name.
+PUBLISHING = "publishing"
+PUBLIC = "public"
+NOT_LISTED = "not listed"
+PUBLISHING_WORDS = {
+    PUBLISHING: (N_("Being published …"), N_("Being published …")),
+    PUBLIC: (N_("Published"), N_("“{title}” is public. {publication} learns of it shortly.")),
+    NOT_LISTED: (N_("Published"), N_("“{title}” is public, but {publication} already lists "
+                                     "another article under this link name.")),
+}
+# The situations a publish of the writer's runs from.
+PUBLISHED_HERE = frozenset({Situation.PUBLISH, Situation.CORRECTION,
+                            Situation.CORRECTION_TAKEN})
 
 
 def my_turn(view: views.SubmissionView, me: str) -> bool:
@@ -131,9 +148,13 @@ class Row:
     view: Optional[views.SubmissionView] = None
     entry: Optional[SubmissionEntry] = None
     confirmed: bool = False
+    # :data:`PUBLISHING`, :data:`PUBLIC`, :data:`NOT_LISTED` or "".
+    publishing: str = ""
 
     @property
     def section(self) -> Section:
+        if self.publishing:
+            return Section.RUNNING      # nothing to do: it is on its way, or out
         return TABLE[self.situation].section
 
     @property
@@ -196,7 +217,8 @@ def rows_of(entries: Sequence[SubmissionEntry], *, me: str,
             followed: Mapping[str, Followed], served: Mapping[str, views.SubmissionView],
             unknown: AbstractSet[str], running: Mapping[str, Progress],
             refused: Callable[[SubmissionEntry], bool],
-            seen: Callable[[str], int]) -> List[Row]:
+            seen: Callable[[str], int],
+            publishing: Optional[Mapping[str, str]] = None) -> List[Row]:
     """The rows of the list (contract 12.4 at 3b00351): the list's
     ``entries`` joined with the lookup's answers (``followed``; ``unknown``
     are the sids the server answered it holds nothing for) and the
@@ -205,8 +227,9 @@ def rows_of(entries: Sequence[SubmissionEntry], *, me: str,
     and the lookup; a served View only refines one stored before
     (:func:`_held_view`). ``running`` are the runs on their way, by sid;
     ``refused(entry)`` says its round was refused as another device's;
-    ``seen(sid)`` is the read state. Du bist dran first, the newest
-    first in each section."""
+    ``seen(sid)`` is the read state; ``publishing`` how a publish of the
+    writer's own stands, by sid (:data:`PUBLISHING`; only while the View
+    waits for it). Du bist dran first, the newest first in each section."""
     rows: List[Row] = []
     listed = set()
     for entry in entries:
@@ -239,6 +262,10 @@ def rows_of(entries: Sequence[SubmissionEntry], *, me: str,
             situation = Situation.ELSEWHERE
         rows.append(_row(sid, situation, view, None, me=me, seen=seen,
                          confirmed=situation is not Situation.ELSEWHERE))
+    publishing = publishing or {}
+    rows = [replace(row, publishing=publishing[row.sid]) if row.sid in publishing
+            and row.role == "writer" and row.situation in PUBLISHED_HERE else row
+            for row in rows]
     order = (Section.TURN, Section.RUNNING, Section.DONE)
     rows.sort(key=lambda row: (order.index(row.section), -row.updated_at, row.sid))
     return rows
@@ -356,6 +383,8 @@ def newest_decision(items: Sequence[views.TimelineItem], sid: str,
 def status_word(row: Row, name_of: Callable[[str], str]) -> str:
     """The row's one status word (translated). ``name_of(pubkey)`` is a
     person's name, or ``""`` when it is not known."""
+    if row.publishing:
+        return _(PUBLISHING_WORDS[row.publishing][0])
     entry = TABLE[row.situation]
     name = name_of(row.view.responsible) if row.view is not None and row.view.responsible \
         else ""
@@ -396,7 +425,11 @@ def status_of(row: Row, *, publication: str, name_of: Callable[[str], str],
     cannot unsay it by leaving the item out). ``edited``: the text in
     the editor differs from the version handed in, so the next version
     can be handed in (while the submission is open). ``section``: the one
-    a placed report that counts names (10), never the server's alone."""
+    a placed report that counts names (10), never the server's alone.
+    A publish of the writer's on its way or out says only that (RG-M4-b 3, 9)."""
+    if row.publishing:
+        return Status(_(PUBLISHING_WORDS[row.publishing][1]).format(
+            title=row.title, publication=publication))
     entry = TABLE[row.situation]
     view = row.view
     number = view.revision if view is not None else 1
@@ -472,7 +505,8 @@ def rests_on(situation: Situation, decision: Optional[Decision]) -> bool:
 
 __all__ = [
     "ACTION_LABELS", "Action", "DECIDER_ROLES", "DECISIONS", "Decision", "NOTHING_TO_DO",
-    "REMIND_EVERY", "correction_taken", "reminded_lately",
+    "NOT_LISTED", "PUBLIC", "PUBLISHED_HERE", "PUBLISHING", "PUBLISHING_WORDS", "REMIND_EVERY",
+    "correction_taken", "reminded_lately",
     "NOT_SIGNED", "ON_A_DECISION", "ON_ITS_WAY", "Row",
     "Section", "SignedChecks", "Situation", "Status", "TABLE", "Words", "YOUR_TURN", "action_verified",
     "deciders_of", "members_of", "my_turn", "newest_decision", "pill_word", "rests_on",

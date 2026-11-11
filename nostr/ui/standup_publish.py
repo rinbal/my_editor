@@ -27,7 +27,10 @@ that accept names, which must be the verified revision opened here:
      (12.4; ``release``): changed, or another person's article there,
      and nothing goes out; it goes only to the relays that answered.
   4. Only once a relay took it is it reported (``/published``); Erneut
-     sends the same signed article again, or reports it again.
+     sends the same signed article again. Once a relay took it, it is
+     public: a report that did not arrive is made again quietly
+     (:mod:`.standup_unlisted`, also after a restart), and the run, the
+     sheet and the detail say it is public (RG-M4-b 3).
 
 Through a signer app that cannot sign an article this long, with the
 key also kept on this computer, :attr:`Stage.OFFER_HERE` offers once
@@ -56,15 +59,15 @@ from ..publisher import published_at_of
 from ..signer_limits import size_problem
 from ..standup import formats, opening, publishing
 from ..standup.errors import Code, cause_words
+from ..standup import following as rules
 from ..standup.following import correction_taken
 from ..standup.publishing import Accepted
 from .standup_account import live
 from .standup_publish_job import HeldPublish, SignedHere, offers_here, publish_job, read_relays
 from .standup_publish_words import (
-    ADDRESS_TAKEN, BUSY, BUSY_DETAIL, BUSY_SIGNING, CLEANUP_ASKS, DONE, LINK_RELAYS,
-    NOT_CHECKED,
-    NOT_PUBLISHABLE, NOT_PUBLISHED, NOT_REPORTED, NOT_THE_SAME, PICTURE_NOT_FOUND,
-    PICTURE_NOT_UP, SOMEONE_ELSES, TOO_LONG_ELSEWHERE, TOO_LONG_HERE, Stage,
+    BUSY, BUSY_DETAIL, BUSY_SIGNING, CLEANUP_ASKS, DONE, LINK_RELAYS, NOT_CHECKED,
+    NOT_PUBLISHABLE, NOT_PUBLISHED, NOT_THE_SAME, PICTURE_NOT_FOUND, PICTURE_NOT_UP,
+    SOMEONE_ELSES, TOO_LONG_ELSEWHERE, TOO_LONG_HERE, Stage,
 )
 
 _log = logging.getLogger(__name__)
@@ -107,6 +110,8 @@ class PublishPorts:
     confirm: Optional[Callable] = None
     # After it is published (M14): ``cleanup(sid, on_asking)``.
     cleanup: Optional[Callable[[str, Callable[[], None]], None]] = None
+    # The account's QuietReport: a public work whose report did not arrive.
+    unlisted: Optional[object] = None
 
 
 def run_for(following, account, profile, sid: str, *, store, fetch, session_pool, relay_pool,
@@ -168,14 +173,14 @@ def run_for(following, account, profile, sid: str, *, store, fetch, session_pool
                          relays_hold=relays_hold,
                          confirm=confirm,
                          key_here=lambda: session_pool.key_here(profile.user_pubkey),
-                         cleanup=cleanup)
+                         cleanup=cleanup, unlisted=following.unlisted)
     made = dict(sid=sid, profile=profile, version=version, accepted=accepted,
                 revision_hash=view.revision_hash,
                 publication=following.publication_name(view.publication), ports=ports,
                 parent=following)
-    run = following.publishing[sid] = (
-        CorrectionPublish(published=published, taken=correction_taken(view), **made)
-        if correction else AcceptedPublish(**made))
+    run = (CorrectionPublish(published=published, taken=correction_taken(view), **made)
+           if correction else AcceptedPublish(**made))
+    following.track(sid, run)
     return run
 
 
@@ -215,11 +220,18 @@ class AcceptedPublish(QObject):
     def revision(self) -> Mapping:
         return self._version.opened.revision
 
+    @property
+    def going(self) -> str:
+        """How it stands for the list, the pill and the detail, with the
+        sheet closed too (RG-M4-b 3, 9): on its way, public, or ""."""
+        return {Stage.WORKING: rules.PUBLISHING, Stage.PUBLIC: rules.PUBLIC,
+                Stage.NOT_LISTED: rules.NOT_LISTED}.get(self.stage, "")
+
     def start(self, *, here: bool = False) -> None:
         """Veröffentlichen (or, ``here``, Mit dem Schlüssel auf diesem
         Computer signieren). Once at a time."""
-        if self.stage in (Stage.WORKING, Stage.DONE, Stage.NOT_STORED, Stage.NOT_REPORTED,
-                          Stage.SOMEONE_ELSES, Stage.CHANGED):
+        if self.stage in (Stage.WORKING, Stage.DONE, Stage.NOT_STORED, Stage.PUBLIC,
+                          Stage.NOT_LISTED, Stage.SOMEONE_ELSES, Stage.CHANGED):
             return
         self._here = here
         self._urls, self._created = {}, []
@@ -244,14 +256,13 @@ class AcceptedPublish(QObject):
             self._next_picture()
 
     def retry(self) -> None:
-        """Erneut: the same signed article to the relays again, or the
-        report again, or (after a failure) the whole step anew."""
+        """Erneut: the same signed article to the relays again, or (after a
+        failure) the whole step anew. A public work's report is made again
+        quietly, never by hand (RG-M4-b 3)."""
         if self.stage is Stage.NOT_STORED and self._job is not None:
             self._say(Stage.WORKING, _(BUSY), "")
             if not self._job.send_again():
                 self._say(Stage.NOT_STORED, _(NOT_PUBLISHED), self.words)
-        elif self.stage is Stage.NOT_REPORTED:
-            self._report()
         elif self.stage in (Stage.FAILED, Stage.NOT_CHECKED, Stage.READY):
             self.start()
 
@@ -514,11 +525,22 @@ class AcceptedPublish(QObject):
                 self._ports.cleanup(self.sid, self._cleanup_asks)
 
         def not_reported(error) -> None:
-            if not self._stopped:
-                taken = getattr(error, "code", None) == Code.CONFLICT \
-                    and getattr(error, "detail", {}).get("reason") == "address_taken"
-                self._say(Stage.NOT_REPORTED, _(DONE), _(ADDRESS_TAKEN if taken else NOT_REPORTED)
-                          .format(publication=self._publication))
+            # Public all the same (a relay took it): said calmly, and the
+            # report is made again quietly; another work listed at the link
+            # name is said in one sentence, with a question (RG-M4-b 3).
+            if self._stopped:
+                return
+            taken = getattr(error, "code", None) == Code.CONFLICT \
+                and (getattr(error, "detail", {}) or {}).get("reason") == "address_taken"
+            state = rules.NOT_LISTED if taken else rules.PUBLIC
+            if self._ports.unlisted is not None:
+                self._ports.unlisted.hand_over(self.sid, event=event, naddr=self.naddr,
+                                               revision=self._version.revision, taken=taken,
+                                               on_listed=reported)
+            title = str((self.revision.get("work") or {}).get("title") or "")
+            self._say(Stage.NOT_LISTED if taken else Stage.PUBLIC, "",
+                      _(rules.PUBLISHING_WORDS[state][1]).format(
+                          title=title, publication=self._publication))
 
         self._ports.api.published(self.sid, naddr=self.naddr, event=event,
                                   revision=self._version.revision,
@@ -622,11 +644,10 @@ class CorrectionPublish(AcceptedPublish):
         super()._say(stage, title, words)
 
 
-__all__ = ["ADDRESS_TAKEN", "AcceptedPublish", "BUSY", "BUSY_DETAIL", "BUSY_SIGNING",
-           "CLEANUP_ASKS",
+__all__ = ["AcceptedPublish", "BUSY", "BUSY_DETAIL", "BUSY_SIGNING", "CLEANUP_ASKS",
            "CorrectionPublish", "DONE", "HeldPublish", "LINK_RELAYS", "NOT_CHECKED",
            "NOT_PUBLISHABLE",
-           "NOT_PUBLISHED", "NOT_REPORTED", "NOT_THE_SAME", "PICTURE_NOT_FOUND",
+           "NOT_PUBLISHED", "NOT_THE_SAME", "PICTURE_NOT_FOUND",
            "PICTURE_NOT_UP", "PublishPorts", "SOMEONE_ELSES", "SignedHere", "Stage",
            "TOO_LONG_ELSEWHERE", "TOO_LONG_HERE",
            "offers_here", "publish_job", "run_for"]

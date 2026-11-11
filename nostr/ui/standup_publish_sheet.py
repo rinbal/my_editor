@@ -158,12 +158,14 @@ class PublishSheet(QDialog):
             self.reject()
             return
         working = stage is Stage.WORKING
-        done = stage is Stage.DONE
-        failed = stage in (Stage.FAILED, Stage.NOT_STORED, Stage.NOT_REPORTED,
-                           Stage.NOT_CHECKED)
-        ask = stage in (Stage.SOMEONE_ELSES, Stage.TOO_LONG)    # nothing to try again: ask
-        if done:
-            # The title, then what comes next, if anything (RG-M4-b 12).
+        # Public, whether or not its publication lists it yet (RG-M4-b 3).
+        done = stage in (Stage.DONE, Stage.PUBLIC)
+        failed = stage in (Stage.FAILED, Stage.NOT_STORED, Stage.NOT_CHECKED)
+        # Nothing to try again: ask.
+        ask = stage in (Stage.SOMEONE_ELSES, Stage.TOO_LONG, Stage.NOT_LISTED)
+        public = done or stage is Stage.NOT_LISTED
+        if public:
+            # Calmly: the title, then what comes next, if anything (RG-M4-b 3, 12).
             self.status.say(" ".join(part for part in (run.title, run.words) if part))
         elif failed or ask or stage is Stage.OFFER_HERE:
             self.status.say(run.words, error=True, title=run.title)
@@ -176,7 +178,8 @@ class PublishSheet(QDialog):
                              else _("Ask a Question") if ask
                              else _("Try Again") if failed else _("Publish"))
         self.publish.setEnabled(not working)
-        self.view.setVisible(done or stage is Stage.NOT_REPORTED)
+        self.view.setVisible(public)
+        self.privacy.setVisible(not public)          # no longer private
         self.cancel_button.setVisible(not done)
         # Once it works, Cancel only closes: the run goes on (it is the
         # account's), and the detail shows where it is.
@@ -195,14 +198,14 @@ class PublishSheet(QDialog):
 
     def _primary(self) -> None:
         stage = self.run.stage
-        if stage is Stage.DONE:
+        if stage in (Stage.DONE, Stage.PUBLIC):
             self.accept()
-        elif stage in (Stage.SOMEONE_ELSES, Stage.TOO_LONG):
+        elif stage in (Stage.SOMEONE_ELSES, Stage.TOO_LONG, Stage.NOT_LISTED):
             self.ask_requested.emit(_(ASK_PREFIX))
             self.reject()
         elif stage is Stage.OFFER_HERE:
             self.run.start(here=True)           # explicit, this article only (Q1)
-        elif stage in (Stage.NOT_STORED, Stage.NOT_REPORTED, Stage.FAILED, Stage.NOT_CHECKED):
+        elif stage in (Stage.NOT_STORED, Stage.FAILED, Stage.NOT_CHECKED):
             self.run.retry()
         else:
             self.run.start()

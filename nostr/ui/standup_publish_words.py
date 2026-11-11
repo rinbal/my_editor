@@ -33,11 +33,6 @@ TOO_LONG_HERE = N_("Your signer app doesn’t sign texts this long. It works wit
                    "this computer.")
 TOO_LONG_ELSEWHERE = N_("Your signer app doesn’t sign texts this long. Sign in with another "
                         "signer app, or write to the editorial team.")
-NOT_REPORTED = N_("Published. {publication} doesn’t know yet: try again in a moment.")
-# 12.4 One work per address: a writer's work keeps its link name (F5A's
-# publishedD; another d would not be this work's), so it is only said.
-ADDRESS_TAKEN = N_("Published. {publication} already lists another article under this "
-                   "link name, so it can’t list this one.")
 # Right before the signer app is asked to delete the encrypted copies
 # (RG-M4-b 12): one quiet line in the done state.
 CLEANUP_ASKS = N_("Your signer app asks once more in a moment: with it, MyEditor deletes the "
@@ -53,7 +48,8 @@ class Stage(Enum):
     WORKING = "working"
     OFFER_HERE = "offer_here"           # the signer app can't sign it; the key is here (Q1)
     NOT_STORED = "not_stored"           # signed, no relay took it: Erneut sends it again
-    NOT_REPORTED = "not_reported"       # out, not reported: Erneut reports it again
+    PUBLIC = "public"                   # out, its report is made again quietly (RG-M4-b 3)
+    NOT_LISTED = "not_listed"           # out, the publication lists another work there: ask
     SOMEONE_ELSES = "someone_elses"     # another person's article at its address: nothing out
     NOT_CHECKED = "not_checked"         # its address could not be read: nothing out, Erneut
     CHANGED = "changed"                 # the submission changed meanwhile: the sheet closes
@@ -62,8 +58,7 @@ class Stage(Enum):
     FAILED = "failed"                   # nothing went out; the pictures were taken down
 
 
-__all__ = ["ADDRESS_TAKEN", "BUSY", "BUSY_DETAIL", "BUSY_SIGNING", "CLEANUP_ASKS", "DONE",
-           "LINK_RELAYS",
-           "NOT_CHECKED", "NOT_PUBLISHABLE", "NOT_PUBLISHED", "NOT_REPORTED", "NOT_THE_SAME",
+__all__ = ["BUSY", "BUSY_DETAIL", "BUSY_SIGNING", "CLEANUP_ASKS", "DONE", "LINK_RELAYS",
+           "NOT_CHECKED", "NOT_PUBLISHABLE", "NOT_PUBLISHED", "NOT_THE_SAME",
            "PICTURE_NOT_FOUND", "PICTURE_NOT_UP", "SOMEONE_ELSES", "Stage", "TOO_LONG_ELSEWHERE",
            "TOO_LONG_HERE"]
