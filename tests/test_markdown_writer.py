@@ -614,6 +614,8 @@ def test_a_preview_reads_a_soft_break_as_readers_do():
 import photo_group  # noqa: E402
 import photo_group_find  # noqa: E402
 import photo_group_edit  # noqa: E402
+from PySide6.QtCore import QEvent, Qt  # noqa: E402
+from PySide6.QtGui import QKeyEvent  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from editor import HtmlEditor  # noqa: E402
 
@@ -750,6 +752,23 @@ def test_words_typed_over_escaped_text_are_saved_as_typed():
     assert document_to_markdown(ed.document(), _image_as_read) == "Ein x *neu* y hier.\n"
     ed.document().undo()
     assert document_to_markdown(ed.document(), _image_as_read) == "Ein \\*Stern\\* hier.\n"
+    ed.close()
+
+
+def test_command_c_and_command_x_over_a_selection_copy_and_cut_it():
+    # On a Mac, Command-C and Command-X reach the editor as Control with
+    # their letter; typing over the selection took it away first, so Copy
+    # put nothing on the clipboard and Cut deleted the words.
+    ed = HtmlEditor()
+    ed.show()
+    ed.setPlainText("Title")
+    clipboard = QApplication.clipboard()
+    for key, letter, left in ((Qt.Key.Key_C, "c", "Title"), (Qt.Key.Key_X, "x", "")):
+        clipboard.setText("before")
+        ed.selectAll()
+        QApplication.sendEvent(ed, QKeyEvent(QEvent.Type.KeyPress, key,
+                                             Qt.KeyboardModifier.ControlModifier, letter))
+        assert (clipboard.text(), ed.toPlainText()) == ("Title", left), letter
     ed.close()
 
 
