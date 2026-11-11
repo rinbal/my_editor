@@ -48,6 +48,7 @@ from . import appearance
 from .avatar import color_for_pubkey, initials_for, make_avatar_pixmap_from_image, \
     make_initials_pixmap
 from .drafts_common import MIN_CONTROL_PX, display_locale, plain_tip, secondary_font
+from .flow_layout import FlowLayout
 from .standup_talk import Outgoing, Sending, footer_words, shown_reactions
 
 _AVATAR = 26
@@ -433,7 +434,9 @@ class ThreadView(QWidget):
                 line.setFont(secondary_font())
                 line.setStyleSheet(f"color: {r.muted};")
                 column.addWidget(line)
-        buttons = QHBoxLayout()
+        # They wrap into rows in a narrow pane (RG-M4-c 4), never clipped.
+        row = QWidget()
+        buttons = FlowLayout(row, spacing=6)
         opener = QPushButton(_("Open in Editor"))
         opener.clicked.connect(lambda: self.open_version.emit(card.revision))
         buttons.addWidget(opener)
@@ -441,8 +444,7 @@ class ThreadView(QWidget):
             changes = QPushButton(_("Show Changes"))
             changes.clicked.connect(lambda: self.compare_version.emit(card.revision))
             buttons.addWidget(changes)
-        buttons.addStretch(1)
-        column.addLayout(buttons)
+        column.addWidget(row)
         frame.setAccessibleName(title.text())
         self._column.addWidget(frame)
         return frame

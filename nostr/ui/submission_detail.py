@@ -215,7 +215,10 @@ class SubmissionDetail(QWidget):
             if label is not self.sentence:
                 block.addWidget(label)
         self.note.setTextFormat(Qt.TextFormat.RichText)
-        buttons = QHBoxLayout()
+        # The buttons wrap into rows (RG-M4-c 4): a named Erinnern for each
+        # person, German words or a narrow pane never clip one.
+        button_row = QWidget()
+        buttons = self._buttons = FlowLayout(button_row, spacing=6)
         # Named from the start: no unnamed button waits hidden.
         self.action = QPushButton(_("Try Again"))
         self.action.setObjectName("submission_action")
@@ -225,13 +228,11 @@ class SubmissionDetail(QWidget):
         self.second.setMinimumHeight(MIN_CONTROL_PX)
         self.second.clicked.connect(self._on_second)
         buttons.addWidget(self.action)
-        # Erinnern: one named button for each person still to confirm.
-        self._reminders = QHBoxLayout()
-        self._reminders.setSpacing(6)
-        buttons.addLayout(self._reminders)
+        # Erinnern: one named button for each person still to confirm,
+        # between the action and the second button.
+        self._reminders: list = []
         buttons.addWidget(self.second)
-        buttons.addStretch(1)
-        block.addLayout(buttons)
+        block.addWidget(button_row)
         column.addWidget(self.status)
         root.addWidget(pinned)
 
@@ -525,8 +526,11 @@ class SubmissionDetail(QWidget):
     def _show_reminders(self, sid: str, people) -> None:
         """"<Name> erinnern" for each of ``people`` not reminded in the last
         24 hours (RG-M4-b 11, as the web): a reminded person's goes."""
-        while self._reminders.count():
-            discard(self._reminders.takeAt(0).widget())
+        for button in self._reminders:
+            self._buttons.removeWidget(button)
+            discard(button)
+        self._reminders = []
+        self._buttons.removeWidget(self.second)
         for pubkey in people:
             if self._following.reminded(sid, pubkey):
                 continue
@@ -536,10 +540,12 @@ class SubmissionDetail(QWidget):
             button.setObjectName("submission_offered")
             button.setMinimumHeight(MIN_CONTROL_PX)
             button.clicked.connect(lambda _checked=False, pk=pubkey: self._remind(pk))
-            self._reminders.addWidget(button)
+            self._buttons.addWidget(button)
+            self._reminders.append(button)
+        self._buttons.addWidget(self.second)
 
     def reminder_buttons(self) -> list:
-        return [self._reminders.itemAt(i).widget() for i in range(self._reminders.count())]
+        return list(self._reminders)
 
     def _remind(self, pubkey: str) -> None:
         if self._line:

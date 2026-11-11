@@ -25,7 +25,9 @@ import pytest
 from PySide6.QtCore import QObject, Qt
 from PySide6.QtGui import QColor, QImage
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QToolButton
+from PySide6.QtWidgets import (
+    QApplication, QLabel, QPushButton, QToolButton, QVBoxLayout, QWidget,
+)
 
 import alerts
 from document_notice import DocumentNotice
@@ -586,6 +588,66 @@ def test_each_person_still_to_confirm_has_their_own_reminder_until_reminded_toda
     window.following.open(entry.sid)
     world.settle()
     assert [b.text() for b in detail.reminder_buttons()] == ["Remind Paul"]
+
+
+def test_the_named_reminders_and_the_version_card_wrap_and_read_whole_in_a_narrow_pane(
+        window, monkeypatch):
+    # RG-M4-c 4: three people still to confirm, in German, at 260, 320 and
+    # 520 px: every button reads whole and stays in the pane.
+    import i18n
+    world, eva, tom = window.world, pk("recipient"), pk("member")
+    for key, name in ((OTHER, "Paul Berg"), (eva, "Eva Sommerfeld"), (tom, "Tom Winterberg")):
+        monkeypatch.setitem(NAMES, key, name)
+    seed = world.account()
+    prepared, entry = world.submit(seed, d="drei", title="Drei", participants=(OTHER, eva, tom))
+    world.record(entry.sid).signer = "publication"
+    world.decide(prepared, "accept", split=[
+        {"pubkey": ME, "weight": 40, "role": "writer"},
+        *({"pubkey": key, "weight": 20, "role": "contributor"} for key in (OTHER, eva, tom))])
+    world.record(entry.sid).confirmations[ME] = ["split"]
+    i18n.install("de")
+    try:
+        window.follow()
+        detail = opened(window, entry)
+        assert len(detail.reminder_buttons()) == 3
+        view = window.view
+        view.show()
+        for width in (260, 320, 520):
+            view.resize(width, 700)
+            for _ in range(4):
+                QApplication.processEvents()
+            shown = [b for b in detail.findChildren(QPushButton) if b.isVisibleTo(detail)
+                     and b.text()]
+            assert {"Paul Berg erinnern", "Tom Winterberg erinnern"} <= {b.text() for b in shown}
+            _read_whole(shown, view, width)
+        # The version card's two buttons, in the conversation's column.
+        from nostr.standup.thread import VersionCard
+        from nostr.ui import appearance
+        thread = detail.conversation
+        card = thread._card(VersionCard(seq=1, at=0, revision=2, actor=ME), SimpleNamespace(
+            versions={}), appearance.roles(False))
+        holder = QWidget()
+        QVBoxLayout(holder).addWidget(card)
+        holder.show()
+        for width in (260, 320, 520):
+            holder.resize(width, 300)
+            for _ in range(4):
+                QApplication.processEvents()
+            buttons = card.findChildren(QPushButton)
+            assert [b.text() for b in buttons] == ["Im Editor öffnen", "Änderungen zeigen"]
+            assert holder.width() == width                   # it asks for no more room
+            _read_whole(buttons, holder, width)
+        holder.deleteLater()
+    finally:
+        i18n.install("en")
+
+
+def _read_whole(buttons, pane, width):
+    """Each of ``buttons`` as wide as its words need, inside ``pane``."""
+    for button in buttons:
+        right = button.mapTo(pane, button.rect().topRight()).x()
+        assert button.width() >= button.sizeHint().width(), (width, button.text())
+        assert right < pane.width(), (width, button.text())
 
 
 def test_a_conversation_is_opened_once_and_a_refresh_draws_only_what_is_new(window,
