@@ -46,7 +46,9 @@ SOFT_BREAK_PROPERTY = QTextFormat.Property.UserProperty + 0x5B1
 # characters they hold (EDITING 2.1): "*", "_" or "[x](y)" typed there is
 # written escaped (markdown_writer.literal_text), so the file reads them
 # back as typed. The caption's own formatting, from the file, stays
-# Markdown. photo_caption.CaptionRun.typed carries it.
+# Markdown. photo_caption.CaptionRun.typed carries it. A character a file
+# escaped ("\*") is text so too, wherever it stands (markdown_writer's
+# _keep_escaped); editor.HtmlEditor keeps it off what is typed after one.
 TYPED_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B3
 
 

@@ -24,6 +24,14 @@ _AUTOLINK_OR_TAG = re.compile(
 _CODE_INDENT = re.compile(r"^(?: {4}|\t)")
 # Where an escape, a code span, an autolink or tag, or a picture may start.
 _STARTS_INLINE = re.compile(r"[\\`<]|!\[")
+# Where an escape, or something an escape inside is no escape of, may
+# start: code, an autolink or a tag, a picture's description, a link's
+# address, a web address the reader links by itself.
+_STARTS_ESCAPE = re.compile(r"[\\`<]|!\[|\]\(|https?://|www\.")
+_WORD = re.compile(r"\S*")
+# What follows a link reference definition's label ("[a]: /url 'title'"),
+# its address and title; a footnote's ("[^1]: note") is text.
+_DEFINITION = re.compile(r"^ {0,3}\[(?!\^)(?:[^\]\\\n]|\\.)+\](:[^\n]*)", re.M)
 
 
 def code_lines(lines: List[str]) -> List[bool]:
@@ -163,28 +171,48 @@ def descriptions(markdown: str) -> List[Tuple[int, int]]:
     return [(start, end) for start, end, _after in pictures(markdown)]
 
 
-def pictures(markdown: str) -> List[Tuple[int, int, int]]:
-    """Each picture of ``markdown`` outside code: where its description
-    starts and ends, and where the text after the picture starts."""
+def _code_ranges(markdown: str) -> List[Tuple[int, int]]:
+    """Where the code lines of ``markdown`` are (start, end), in order."""
     lines = markdown.split("\n")
     code = code_lines(lines)
     starts, at = [], 0
     for line in lines:
         starts.append(at)
         at += len(line) + 1
-    blocked = [(starts[n], starts[n] + len(lines[n])) for n, is_code in enumerate(code) if is_code]
+    return [(starts[n], starts[n] + len(lines[n])) for n, is_code in enumerate(code) if is_code]
+
+
+class _Blocked:
+    """Ranges of a text to be stepped over, asked in rising order."""
+
+    def __init__(self, ranges: List[Tuple[int, int]]):
+        self.ranges = sorted(ranges)
+        self.at = 0
+
+    def end(self, index: int) -> Optional[int]:
+        """The end of the range ``index`` is in, or None."""
+        while self.at < len(self.ranges) and self.ranges[self.at][1] < index:
+            self.at += 1
+        if self.at < len(self.ranges) and self.ranges[self.at][0] <= index:
+            return self.ranges[self.at][1]
+        return None
+
+
+def pictures(markdown: str) -> List[Tuple[int, int, int]]:
+    """Each picture of ``markdown`` outside code: where its description
+    starts and ends, and where the text after the picture starts."""
+    blocked = _Blocked(_code_ranges(markdown))
     found: List[Tuple[int, int, int]] = []
-    index, block = 0, 0
+    index = 0
     length = len(markdown)
     while index < length:
         nearest = _STARTS_INLINE.search(markdown, index)
         if nearest is None:
             break
         index = nearest.start()
-        while block < len(blocked) and blocked[block][1] < index:
-            block += 1
-        if block < len(blocked) and blocked[block][0] <= index <= blocked[block][1]:
-            index = blocked[block][1] + 1
+        end = blocked.end(index)
+        if end is not None:
+            index = end + 1
             continue
         skipped = skip_inline(markdown, index)
         if skipped is not None:
@@ -206,3 +234,35 @@ def pictures(markdown: str) -> List[Tuple[int, int, int]]:
             continue
         index += 1
     return found
+
+
+def escapes(markdown: str) -> List[int]:
+    """Where each backslash escape of ``markdown`` is that a reader takes
+    for the character after it (``\\*`` for a star that is no emphasis):
+    outside code, an autolink or a tag, a picture's description, a link's
+    address (a reference definition's too) and a web address."""
+    blocked = _Blocked(_code_ranges(markdown)
+                       + [definition.span(1) for definition in _DEFINITION.finditer(markdown)])
+    found: List[int] = []
+    index = 0
+    while True:
+        nearest = _STARTS_ESCAPE.search(markdown, index)
+        if nearest is None:
+            return found
+        index = nearest.start()
+        end = blocked.end(index)
+        if end is not None:
+            index = end + 1
+        elif markdown.startswith("![", index):
+            close = label_end(markdown, index + 1)
+            index = index + 2 if close is None else close
+        elif markdown.startswith("](", index):
+            close = destination_end(markdown, index + 1)
+            index = index + 2 if close is None else close + 1
+        elif markdown[index] not in "\\`<":
+            index = _WORD.match(markdown, index).end()
+        else:
+            skipped = skip_inline(markdown, index)
+            if skipped == index + 2 and markdown[index] == "\\":
+                found.append(index)
+            index = index + 1 if skipped is None else skipped

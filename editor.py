@@ -31,7 +31,8 @@ from constants import (
 from fonts import code_font, writing_font
 from i18n import N_, _, ngettext
 import announce
-from doc_walk import block_units, doc_length, doc_offset, iter_blocks, text_index
+from doc_walk import (SOFT_BREAK_PROPERTY, TYPED_TEXT_PROPERTY, block_units, doc_length,
+                      doc_offset, iter_blocks, text_index)
 import image_safety
 import file_paths
 import link_url
@@ -233,9 +234,10 @@ class HtmlEditor(QTextEdit):
         # it after its document.
         self.setAccessibleName(_("Document"))
         # A soft line break read from a file (markdown_writer) is written
-        # back as the line end it was; what is typed after one, a line
-        # break with Shift+Return among it, must not take that on.
-        self.currentCharFormatChanged.connect(self._drop_soft_break)
+        # back as the line end it was, a character the file escaped as an
+        # escape; what is typed after one, a line break with Shift+Return
+        # among it, or Markdown, must not take that on.
+        self.currentCharFormatChanged.connect(self._drop_read_marks)
 
         # Who fills the context menu: the window puts its own commands
         # there (the same ones as in its menus). Without one, the menu has
@@ -938,14 +940,17 @@ class HtmlEditor(QTextEdit):
         self._highlight_line = bool(on)
         self.viewport().update()
 
-    def _drop_soft_break(self, fmt: QTextCharFormat) -> None:
-        """Keep the soft line break's mark (markdown_writer's
-        SOFT_BREAK_PROPERTY) on the break read from the file, off what is
-        typed at the caret after it."""
-        from markdown_writer import SOFT_BREAK_PROPERTY
-        if fmt.hasProperty(SOFT_BREAK_PROPERTY) and not self.textCursor().hasSelection():
+    def _drop_read_marks(self, fmt: QTextCharFormat) -> None:
+        """Keep the marks of what was read from the file on it, off what
+        is typed at the caret after it: a soft line break's
+        (SOFT_BREAK_PROPERTY) and an escaped character's
+        (TYPED_TEXT_PROPERTY)."""
+        marks = [mark for mark in (SOFT_BREAK_PROPERTY, TYPED_TEXT_PROPERTY)
+                 if fmt.hasProperty(mark)]
+        if marks and not self.textCursor().hasSelection():
             plain = QTextCharFormat(fmt)
-            plain.clearProperty(SOFT_BREAK_PROPERTY)
+            for mark in marks:
+                plain.clearProperty(mark)
             self.setCurrentCharFormat(plain)
 
     def set_paper_mode(self, on: bool):

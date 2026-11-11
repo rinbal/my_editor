@@ -691,3 +691,16 @@ def test_a_break_tag_between_two_pictures_is_read_as_a_break():
         doc = QTextDocument()
         read_markdown(doc, source, PASTE_FEATURES)
         assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_what_a_file_escaped_is_saved_escaped():
+    # Qt's reader read "\*Stern\*" as the text "*Stern*", saved as emphasis.
+    source = ("Ein \\*Stern\\* hier.\n\n![a](a.png)\n\n*Ein \\*Stern\\* hier*\n\n"
+              "![b](b.png)\n")
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert doc.firstBlock().text() == "Ein *Stern* hier."
+    assert [unit.caption_line for unit in photo_group.groups_in(doc)[0].units] == [
+        "Ein *Stern* hier", ""]
+    assert document_to_markdown(doc, _image_as_read) == source
+    assert holds_faithfully(source)

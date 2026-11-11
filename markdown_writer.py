@@ -77,7 +77,7 @@ from doc_walk import (
 )
 import photo_group
 import photo_group_find
-from markdown_scan import FENCE_LINE, LIST_LINE, descriptions, pictures
+from markdown_scan import FENCE_LINE, LIST_LINE, descriptions, escapes, pictures
 from rich_text import normalize_after_markdown_load
 
 ImageTarget = Callable[[object], Optional[str]]
@@ -617,9 +617,9 @@ def _inline_markdown(spans: List[_Span], hard_break: str = "  \n") -> str:
             if _is_nostr_reference(span.href) and not span.literal:
                 # Bare, for readers, in the styles all its words have; a
                 # copy keeps the words it shows.
-                bare = _styled(_Span(text=span.href, bold=all(s.bold for s in group),
-                                     italic=all(s.italic for s in group),
-                                     strike=all(s.strike for s in group)))
+                bare = _styled([_Span(text=span.href, bold=all(s.bold for s in group),
+                                      italic=all(s.italic for s in group),
+                                      strike=all(s.strike for s in group))])
                 out.append(_apart(bare, "".join(out), following))
                 continue
             words = "".join(s.text for s in group).replace(LINE_SEPARATOR, " ").replace(
@@ -628,16 +628,16 @@ def _inline_markdown(spans: List[_Span], hard_break: str = "  \n") -> str:
             if address and not any(s.bold or s.italic or s.strike for s in group):
                 out.append(_autolink(address, span.href, "".join(out), following))
                 continue
-            inner = "".join(_styled(s) for s in group)
-            label = inner.replace(LINE_SEPARATOR, " ")
-            if not span.literal:               # escaped already when literal
-                # A bracket either way, or a "<" (read as HTML), would end
-                # or change the link when the file is read again.
-                label = re.sub(r"([\[\]<])", r"\\\1", label)
-            out.append(f"[{label}]({_destination(span.href)})")
+            label = "".join(_styled(run, label=True) for run in _style_runs(group))
+            out.append(f"[{label.replace(LINE_SEPARATOR, ' ')}]({_destination(span.href)})")
             continue
-        out.append(_styled(span))
+        run = [span]
         i += 1
+        while (i < len(spans) and not spans[i].raw and not spans[i].href
+               and _style(spans[i]) == _style(span)):
+            run.append(spans[i])
+            i += 1
+        out.append(_styled(run))
     # A line break at the very end of a block breaks nothing, and Markdown
     # drops it; trailing spaces there mean nothing either.
     text = "".join(out).rstrip(LINE_SEPARATOR + _SOFT + " ")
@@ -647,18 +647,49 @@ def _inline_markdown(spans: List[_Span], hard_break: str = "  \n") -> str:
     return text.replace(LINE_SEPARATOR, hard_break).replace(_SOFT, soft)
 
 
-def _styled(span: _Span) -> str:
-    if span.code:
-        parts = span.text.split(LINE_SEPARATOR)
+def _style(span: _Span) -> Tuple[bool, bool, bool, bool]:
+    """What a span's marks are: neighbours in one style are written inside
+    them once, though one holds text a file escaped ("**a \\* b**", not
+    "**a** **\\*** **b**")."""
+    return span.bold, span.italic, span.strike, span.code
+
+
+def _style_runs(spans: List[_Span]) -> List[List[_Span]]:
+    """``spans`` cut where the style changes (_style)."""
+    runs: List[List[_Span]] = []
+    for span in spans:
+        if runs and _style(runs[-1][0]) == _style(span):
+            runs[-1].append(span)
+        else:
+            runs.append([span])
+    return runs
+
+
+def _words(span: _Span, label: bool) -> str:
+    """A span's text as Markdown, without its style: literal text escaped,
+    else web addresses kept text and, in a link's label, a bracket or a
+    "<" (read as HTML) escaped, which would end or change the link when
+    the file is read again."""
+    if span.literal:
+        return LINE_SEPARATOR.join(literal_text(part) for part in span.text.split(LINE_SEPARATOR))
+    words = LINE_SEPARATOR.join(_protect_addresses(part)
+                                for part in span.text.split(LINE_SEPARATOR))
+    return re.sub(r"([\[\]<])", r"\\\1", words) if label else words
+
+
+def _styled(spans: List[_Span], label: bool = False) -> str:
+    """Neighbouring ``spans`` in one style as Markdown (_style_runs)."""
+    first = spans[0]
+    if first.code:
+        parts = "".join(span.text for span in spans).split(LINE_SEPARATOR)
         return LINE_SEPARATOR.join(_code_span(p) for p in parts if p)
     pieces = []
-    for part in span.text.split(LINE_SEPARATOR):
-        text = literal_text(part) if span.literal else _protect_addresses(part)
-        if span.strike:
+    for text in "".join(_words(span, label) for span in spans).split(LINE_SEPARATOR):
+        if first.strike:
             text = _wrap(text, "~~")
-        if span.italic:
+        if first.italic:
             text = _wrap(text, "*")
-        if span.bold:
+        if first.bold:
             text = _wrap(text, "**")
         pieces.append(text)
     return LINE_SEPARATOR.join(pieces)
@@ -1070,15 +1101,67 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
     marked = 0
     if features == READ_FEATURES:
         markdown, marked = _marked_soft_breaks(markdown)
+    markdown, escaped = _marked_escapes(markdown)
     doc.setMarkdown(literal_footnotes(markdown), features)
     if alts:
         _restore_descriptions(doc, alts)
     joined = _join_soft_breaks(doc) if marked else 0
+    if escaped:
+        _keep_escaped(doc)
     normalize_after_markdown_load(doc)
     if groups:
         # Pictures that follow each other show as one group (photo_group).
         photo_group_find.fold(doc)
     return marked, joined
+
+
+# --------------------------------------------------------------------------- #
+# What a file escaped, kept text                                               #
+# --------------------------------------------------------------------------- #
+#
+# Qt's reader reads "\*Stern\*" as the text "*Stern*", and the writer
+# writes text as the Markdown typed into it: saved, the words would turn
+# into emphasis. Each character a file escaped is marked text
+# (TYPED_TEXT_PROPERTY), which the writer escapes again (literal_text).
+# For the time Qt reads the file, a mark stands before each escape: a
+# punctuation mark as the backslash is, so the emphasis beside it reads
+# as before (whether a star opens or closes emphasis depends on what
+# stands beside it), and one no text holds.
+_ESCAPE_MARK = "\u2e2c"           # SQUARED FOUR DOT PUNCTUATION
+
+
+def _marked_escapes(markdown: str) -> Tuple[str, int]:
+    """The Markdown with _ESCAPE_MARK before each escape a reader takes
+    for its character (markdown_scan.escapes), and how many; as it was
+    when it holds the mark itself."""
+    if "\\" not in markdown or _ESCAPE_MARK in markdown:
+        return markdown, 0
+    found = escapes(markdown)
+    pieces, last = [], 0
+    for at in found:
+        pieces.append(markdown[last:at])
+        pieces.append(_ESCAPE_MARK)
+        last = at
+    pieces.append(markdown[last:])
+    return "".join(pieces), len(found)
+
+
+def _keep_escaped(doc: QTextDocument) -> None:
+    """Each mark _marked_escapes set gone, and the character after it
+    marked text where the writer would write it as Markdown."""
+    position = 0
+    text = QTextCharFormat()
+    text.setProperty(TYPED_TEXT_PROPERTY, True)
+    while True:
+        cursor = doc.find(_ESCAPE_MARK, position)
+        if cursor.isNull():
+            return
+        position = cursor.selectionStart()
+        cursor.removeSelectedText()
+        char = doc.characterAt(position)
+        if literal_text(char) != char:
+            cursor.setPosition(position + 1, QTextCursor.MoveMode.KeepAnchor)
+            cursor.mergeCharFormat(text)
 
 
 # --------------------------------------------------------------------------- #
