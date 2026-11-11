@@ -460,9 +460,13 @@ class Reading:
         if view is None or not coordinate:
             return None
         items = [state.items[seq] for seq in sorted(state.items)]
-        return publishing.published_work(items, sid, writer=view.writer,
-                                         coordinate_hash=coordinate,
-                                         publication=view.publication, checks=self.checks)
+        accepted = self.accepted(sid)
+        return publishing.published_work(
+            items, sid, writer=view.writer, coordinate_hash=coordinate,
+            publication=view.publication, checks=self.checks,
+            accepted=accepted.revision if accepted is not None else None,
+            corrections={v.revision_hash: n for n, v in state.versions.items()
+                         if v.opened is not None and v.opened.verified.correction})
 
     def published_event(self, sid: str) -> Optional[dict]:
         """The writer's own work as it stands in public, for a correction

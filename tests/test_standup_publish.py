@@ -246,7 +246,7 @@ def test_another_work_at_the_link_name_is_said_in_one_sentence_and_the_name_kept
     from nostr.standup.errors import Code, StandupError
     run, _store, jobs = _run(accepted)
 
-    def taken(sid, *, naddr, event, on_success, on_failure):
+    def taken(sid, *, naddr, event, revision, on_success, on_failure):
         on_failure(StandupError(code=Code.CONFLICT, status=409,
                                 detail={"reason": "address_taken"}, own=True))
 
@@ -406,6 +406,33 @@ def test_a_published_works_address_rests_on_its_own_event_as_the_vector_says():
         assert section(report) is None, name
 
 
+def test_the_published_revision_comes_from_signed_words_never_the_servers():
+    # RG-M4-a 11, contract 12.4 Which revision is published: the server's
+    # item says revision 3; only the verified accept (1) and the correction
+    # the writer confirmed before the report (2) count.
+    import json
+    from nostr import nip98
+    from nostr.standup import following as rules
+    sid = "ab" * 32
+
+    def item(seq, name, path, body, revision):
+        text = json.dumps(dict(body, submission_id=sid), separators=(",", ":"))
+        unsigned = nip98.build_unsigned_auth_event(
+            f"https://standup.example/api/submissions/{sid}/{path}", "POST", text.encode(),
+            now=1_762_675_200)
+        return views.TimelineItem(seq=seq, at=0, type="event", wrap=None, event=views.TimelineEvent(
+            name=name, actor=pk("writer"), revision=revision, to=None,
+            signed=views.SignedRecord(event=events.sign_event(unsigned, sk("writer")), body=text)))
+
+    confirmed = item(2, "confirmed", "confirmation",
+                     {"revision_hash": "cd" * 32, "confirms": ["correction"]}, 3)
+    report = item(3, "published", "published", {"revision": 3}, 3)
+    later = dict(writer=pk("writer"), accepted=1, checks=rules.SignedChecks())
+    assert publishing.published_revision([report], sid, report, corrections={}, **later) == 1
+    assert publishing.published_revision([confirmed, report], sid, report,
+                                         corrections={"cd" * 32: 2}, **later) == 2
+
+
 def test_after_publication_the_encrypted_files_go_but_one_another_submission_names_stays():
     # M-4 M14 blob deletion: quietly, from the verified revisions' signed
     # blob lists and the writer's servers; only a file's last user removes it.
@@ -429,7 +456,8 @@ def test_after_publication_the_encrypted_files_go_but_one_another_submission_nam
                                  "tags": [["d", "ein-jahr"]]}, sk("writer"))
     reported = []
     writer.api.published(sid, naddr=encode_naddr("ein-jahr", pk("writer"), 30023),
-                         event=article, on_success=reported.append, on_failure=reported.append)
+                         event=article, revision=1, on_success=reported.append,
+                         on_failure=reported.append)
     other, _ = world.submit(writer, d="zwei", content=f"![]({shared['ref']})", media=(shared,),
                             blobs=(blob(shared),))
     following = world.following(writer)

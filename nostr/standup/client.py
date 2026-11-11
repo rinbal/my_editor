@@ -625,10 +625,16 @@ class StandupApi(SignedJsonApi):
         return self._action(submission_id, "withdraw", {}, answers.parse_view,
                             on_success, on_failure)
 
-    def published(self, submission_id: str, *, naddr: str, event: dict,
+    def published(self, submission_id: str, *, naddr: str, event: dict, revision: int,
                   on_success: Callable[[views.SubmissionView], None],
                   on_failure) -> StandupCall:
-        return self._action(submission_id, "published", {"naddr": naddr, "event": event},
+        """``POST .../published``: the work is public. ``revision`` is the one
+        it publishes, from signed words (the verified accept's, or the
+        correction the writer confirmed: 12.4, Which revision is published)."""
+        if not formats.is_int(revision, low=1):
+            raise ValueError("a revision number starts at 1")
+        return self._action(submission_id, "published",
+                            {"naddr": naddr, "event": event, "revision": revision},
                             answers.parse_view, on_success, on_failure)
 
     def placed(self, submission_id: str, *, site_event: dict, section: Optional[str] = None,

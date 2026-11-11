@@ -412,7 +412,7 @@ def test_a_correction_is_compared_in_its_sheet_and_a_question_goes_to_the_compos
                                  "tags": [["d", "ein-jahr"]]}, sk("writer"))
     reported = []
     seed.api.published(entry.sid, naddr=encode_naddr("ein-jahr", ME, 30023), event=article,
-                       on_success=reported.append, on_failure=reported.append)
+                       revision=1, on_success=reported.append, on_failure=reported.append)
     world.settle()
     world.correct(seed, entry.sid, "Korrigiert.")
     window.follow()
@@ -441,7 +441,7 @@ def test_a_second_correction_is_compared_with_the_article_as_it_stands_in_public
     article = events.sign_event({"kind": 30023, "created_at": world.clock(), "content": "Alt.",
                                  "tags": [["d", "ein-jahr"]]}, sk("writer"))
     seed.api.published(entry.sid, naddr=encode_naddr("ein-jahr", ME, 30023), event=article,
-                       on_success=lambda _v: None, on_failure=lambda _e: None)
+                       revision=1, on_success=lambda _v: None, on_failure=lambda _e: None)
     world.settle()
     world.correct(seed, entry.sid, "Erste Korrektur.")
     world.correct(seed, entry.sid, "Zweite Korrektur.", revision=3)

@@ -1998,8 +1998,11 @@ class FakeStandupServer:
         if refusal is not None:
             return refusal
         event = body.get("event")
-        if not _signed(event, 30023):
+        if not _signed(event, 30023) or not isinstance(body.get("revision"), int):
             return _error(422, "invalid")
+        if body["revision"] != record.revision:
+            # backend 359fd08: only the revision this publication releases.
+            return _error(409, "stale_revision", detail={"revision": record.revision})
         pub = self.publications[record.publication]
         if record.signer == "writer":
             d = formats.tag_value(event, "d") or ""

@@ -481,6 +481,7 @@ class AcceptedPublish(QObject):
                           .format(publication=self._publication))
 
         self._ports.api.published(self.sid, naddr=self.naddr, event=event,
+                                  revision=self._version.revision,
                                   on_success=reported, on_failure=not_reported)
 
     # -- the words ---------------------------------------------------------------------------

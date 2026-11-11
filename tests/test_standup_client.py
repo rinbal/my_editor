@@ -792,7 +792,7 @@ def test_every_endpoint_of_the_contract_goes_through_the_checking_server():
         on_success=ok, on_failure=fail))
     assert view.confirmations[pk("writer")] == ("split",)
     view = world.ok(lambda ok, fail: writer.published(
-        sid, naddr="naddr1test", event=article, on_success=ok, on_failure=fail))
+        sid, naddr="naddr1test", event=article, revision=2, on_success=ok, on_failure=fail))
     assert view.state == "published" and view.published.event_id == article["id"]
     site = events.sign_event({"kind": 30004, "created_at": NOW, "content": "",
                               "tags": [["d", "einundzwanzig-magazin"]]}, sk("publication"))
@@ -966,11 +966,11 @@ def test_an_accepted_work_is_published_only_in_its_step():
                                  "tags": [["d", "ein-jahr-mit-lightning"]]}, sk("writer"))
     world.server.submissions[sid].step = "confirm"
     error = world.err(lambda ok, fail: writer.published(
-        sid, naddr="naddr1test", event=article, on_success=ok, on_failure=fail))
+        sid, naddr="naddr1test", event=article, revision=1, on_success=ok, on_failure=fail))
     assert error.code == Code.INVALID_TRANSITION
     world.server.submissions[sid].step = "writer_publishes"
     view = world.ok(lambda ok, fail: writer.published(
-        sid, naddr="naddr1test", event=article, on_success=ok, on_failure=fail))
+        sid, naddr="naddr1test", event=article, revision=1, on_success=ok, on_failure=fail))
     assert view.state == "published"
 
 # -- signed actions (10) -------------------------------------------------------------

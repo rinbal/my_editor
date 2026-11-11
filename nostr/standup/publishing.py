@@ -384,9 +384,12 @@ def placed_section(signed: views.SignedRecord, sid: str, address: str, publicati
 
 def published_work(items: Sequence[views.TimelineItem], sid: str, *, writer: str,
                    coordinate_hash: str, publication: str,
-                   checks: Optional[rules.SignedChecks] = None) -> Optional[Published]:
+                   checks: Optional[rules.SignedChecks] = None, accepted: Optional[int] = None,
+                   corrections: Optional[Mapping[str, int]] = None) -> Optional[Published]:
     """The newest ``published`` report whose event proves the address
-    (:func:`work_address`), or None. Never a server's word alone."""
+    (:func:`work_address`), or None. Never a server's word alone; its
+    revision neither (:func:`published_revision`)."""
+    checks = checks or rules.SignedChecks()
     for item in sorted(items, key=lambda each: each.seq, reverse=True):
         event = item.event
         if event is not None and event.name == "published" and event.signed is not None:
@@ -394,8 +397,43 @@ def published_work(items: Sequence[views.TimelineItem], sid: str, *, writer: str
                                  coordinate_hash=coordinate_hash, publication=publication,
                                  checks=checks)
             if found is not None:
-                return Published(found.address, found.event, item.seq, event.revision)
+                return Published(found.address, found.event, item.seq, published_revision(
+                    items, sid, item, writer=writer, accepted=accepted,
+                    corrections=corrections or {}, checks=checks))
     return None
+
+
+def published_revision(items: Sequence[views.TimelineItem], sid: str,
+                       report: views.TimelineItem, *, writer: str, accepted: Optional[int],
+                       corrections: Mapping[str, int],
+                       checks: rules.SignedChecks) -> Optional[int]:
+    """The revision a ``published`` ``report`` published, from signed words
+    only (12.4, Which revision is published; RG-M4-a 11): the verified
+    accept's (``accepted``), or a later correction (``corrections``: the
+    verified corrections opened here, by their hash) that the writer's
+    verified confirmation named before the report, or, for a work the
+    publication signs, the one its report names when that is one of them.
+    Never the server's ``Item.event.revision``, so a later revision it
+    claims cannot have the files of a correction nobody took deleted."""
+    found = accepted
+    taken = set(corrections.values())
+    body = checks.body(report.event.signed, path=views.action_path("published", sid),
+                       sid=sid) or {}
+    named = body.get("revision")
+    if report.event.signed.event.get("pubkey") != writer and formats.is_int(named) \
+            and named in taken:
+        found = max(found or 0, named)
+    path = views.action_path("confirmed", sid)
+    for item in items:
+        event = item.event
+        if (item.seq < report.seq and event is not None and event.name == "confirmed"
+                and event.signed is not None and event.signed.event.get("pubkey") == writer):
+            said = checks.body(event.signed, path=path, sid=sid) or {}
+            confirms, named_hash = said.get("confirms"), said.get("revision_hash")
+            if isinstance(confirms, list) and "correction" in confirms \
+                    and isinstance(named_hash, str) and named_hash in corrections:
+                found = max(found or 0, corrections[named_hash])
+    return found
 
 
 def section_of(items: Sequence[views.TimelineItem], sid: str, address: str, publication: str,
@@ -531,6 +569,7 @@ def correction_texts(revision: Mapping, published: Mapping) -> Tuple[str, str]:
 __all__ = ["Accepted", "EXTENSIONS", "NEVER_CARRIED", "NotPublishable", "Published",
            "addresses_before", "corrected_template", "correction_changes",
            "correction_texts", "credited", "credited_writer", "held_credit", "media_refs_in",
-           "media_to_publish", "placed_section", "published_template", "published_work",
+           "media_to_publish", "placed_section", "published_revision", "published_template",
+           "published_work",
            "section_of", "served_at", "verified_accept", "work_address", "work_of",
            "writer_may_release"]
