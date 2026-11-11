@@ -366,11 +366,13 @@ def test_a_contributor_confirms_the_split_and_their_rights_from_their_own_app():
     assert OTHER not in rules.waiting_for(mine.row(sid))
 
 
-def test_confirm_waits_for_a_read_that_names_a_lightning_address():
-    # RG-M4-a 3: a share reaches a person only at the address their
-    # profile names; Confirm stays off before the read answers and while it
-    # names none, and turns on once a read names one.
-    from nostr.ui.standup_confirm_sheet import ConfirmSheet
+def test_confirm_is_there_only_after_a_read_that_names_a_lightning_address():
+    # RG-M4-a 3, RG-M4-b 2: a share reaches a person only at the address
+    # their profile names. No Bestätigen while it is read, where it names
+    # none (Profil bearbeiten instead) or could not be read (Erneut
+    # versuchen reads it again); once a read names one, Bestätigen is the
+    # primary action.
+    from nostr.ui.standup_confirm_sheet import NO_ADDRESS, PROFILE_NOT_READ, ConfirmSheet
     answers, sent = [], []
     sheet = ConfirmSheet(
         role="writer", publication="Magazin", number=2,
@@ -378,13 +380,18 @@ def test_confirm_waits_for_a_read_that_names_a_lightning_address():
         name_of=lambda p: NAMES.get(p, ""),
         zap_address=lambda pubkey, answer: answers.append(answer),
         confirm=lambda confirms, done: sent.append(confirms), is_dark=False)
-    assert not sheet.confirm_button.isEnabled()
-    answers[0]("")
-    assert not sheet.confirm_button.isEnabled() and sheet.edit_profile.isVisibleTo(sheet)
-    sheet.confirm_button.click()
-    assert sent == []
-    answers[0]("jana@getalby.com")
-    assert sheet.confirm_button.isEnabled()
+    assert not sheet.confirm_button.isVisibleTo(sheet)
+    answers[-1](None)
+    assert sheet.address.text() == PROFILE_NOT_READ and sheet.read_again.isDefault()
+    assert not sheet.confirm_button.isVisibleTo(sheet)
+    sheet.read_again.click()
+    assert len(answers) == 2
+    answers[-1]("")
+    assert sheet.address.text() == NO_ADDRESS and sheet.edit_profile.isDefault()
+    assert not sheet.confirm_button.isVisibleTo(sheet) and sent == []
+    answers[-1]("jana@getalby.com")
+    assert sheet.confirm_button.isVisibleTo(sheet) and sheet.confirm_button.isDefault()
+    assert not sheet.edit_profile.isVisibleTo(sheet)
     sheet.confirm_button.click()
     assert sent == [("split",)]
     sheet.close()

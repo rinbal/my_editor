@@ -13411,9 +13411,6 @@ msgstr "Erinnern"
 msgid "Your share goes to {address}."
 msgstr "Dein Anteil geht an {address}."
 
-msgid "Your profile names no Lightning address yet, so your share can’t reach you."
-msgstr "Dein Profil nennt noch keine Lightning-Adresse, deshalb kann dein Anteil dich nicht erreichen."
-
 msgid "I hold the rights to my part and agree to it being published."
 msgstr "Ich habe die Rechte an meinem Teil und bin mit der Veröffentlichung einverstanden."
 
@@ -13488,3 +13485,12 @@ msgstr "Der veröffentlichte Artikel wurde noch nicht gefunden: versuch es gleic
 #, python-brace-format
 msgid "Published. {publication} already lists another article under this link name, so it can’t list this one."
 msgstr "Veröffentlicht. {publication} führt unter diesem Linknamen schon einen anderen Artikel und kann diesen nicht aufnehmen."
+
+msgid "For your share, your Nostr profile needs a Lightning address."
+msgstr "Für deinen Anteil braucht dein Nostr-Profil eine Lightning-Adresse."
+
+msgid "Reading your profile …"
+msgstr "Dein Profil wird gelesen …"
+
+msgid "Your profile couldn’t be read, so it’s not known where your share goes."
+msgstr "Dein Profil ließ sich nicht lesen. Darum ist offen, wohin dein Anteil geht."

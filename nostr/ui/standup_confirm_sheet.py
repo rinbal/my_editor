@@ -15,10 +15,14 @@ the publication publishes (M-4 M14; editorial contract 9.4, 11.2 step
 The split shown is only the ``split-proposal`` the verified accept names
 for the revision it accepted (``Reading.accepted_split``); the request
 names that revision's verified hash and that rumor's id. A writer
-confirms the split, a contributor the split and their rights. Where the
-person's profile names no lightning address, their share cannot reach
-them: Profil bearbeiten opens Edit Profile. Rückfrage stellen closes the
-sheet and puts the question into the conversation's composer.
+confirms the split, a contributor the split and their rights. A share
+reaches its person only at the lightning address their profile names, so
+Bestätigen is there only once a read named one (RG-M4-a 3, RG-M4-b 2, as
+the web's): where the profile names none, Profil bearbeiten opens Edit
+Profile in its place; where the profile could not be read, Erneut
+versuchen reads it again. The primary action comes first in the focus
+order. Rückfrage stellen closes the sheet and puts the question into the
+conversation's composer.
 """
 
 from __future__ import annotations
@@ -39,7 +43,10 @@ from .publish_sheet import StatusLine, fit_margins, fit_to_window, make_sheet, s
 from .standup_publish_sheet import ACCEPTED_LINE
 
 SHARE_GOES_TO = N_("Your share goes to {address}.")
-NO_ADDRESS = N_("Your profile names no Lightning address yet, so your share can’t reach you.")
+# The web's words (editorial-confirmation.js) for the same moments.
+NO_ADDRESS = N_("For your share, your Nostr profile needs a Lightning address.")
+PROFILE_READING = N_("Reading your profile …")
+PROFILE_NOT_READ = N_("Your profile couldn’t be read, so it’s not known where your share goes.")
 RIGHTS = N_("I hold the rights to my part and agree to it being published.")
 NOT_CONFIRMED = N_("Not confirmed")
 ASK_PREFIX = N_("A short question about the split: ")
@@ -69,10 +76,13 @@ class ConfirmSheet(QDialog):
         # profile names: Confirm waits for a read that names one (RG-M4-a 3).
         self._needs_address = bool(shares) and any(
             pk == me for pk, weight, _role in shares if weight > 0)
-        self._address, self._zap_address, self._profile_edited = "", zap_address, False
+        # None while not read (or not readable), "" for none, else the address.
+        self._address: Optional[str] = None
+        self._reading = self._profile_edited = self._confirming = False
+        self._zap_address = zap_address
         self._build(publication, number, shares or (), me, name_of)
         if self._needs_address:
-            zap_address(me, self._show_address)
+            self._read_address()
         self._refresh()
         fit_to_window(self, QSize(520, min(460, max(300, self.sizeHint().height()))))
 
@@ -98,13 +108,8 @@ class ConfirmSheet(QDialog):
         self.show_names()
         root.addWidget(self.split)
         self.address = self._label("")
-        self.address.hide()
+        self.address.setVisible(self._needs_address)
         root.addWidget(self.address)
-        self.edit_profile = QPushButton(_("Edit Profile…"))
-        self.edit_profile.setAutoDefault(False)
-        self.edit_profile.hide()
-        self.edit_profile.clicked.connect(self._edit_profile)
-        root.addWidget(self.edit_profile, 0, Qt.AlignmentFlag.AlignLeft)
         self.rights = QCheckBox(_(RIGHTS))
         self.rights.setVisible(self._contributor)
         self.rights.toggled.connect(self._refresh)
@@ -118,10 +123,15 @@ class ConfirmSheet(QDialog):
         self.ask.clicked.connect(self._ask)
         self.cancel_button = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
         self.cancel_button.clicked.connect(self.reject)
+        # One primary at a time: Bestätigen, or what makes it possible.
         self.confirm_button = buttons.addButton(_("Confirm"),
                                                 QDialogButtonBox.ButtonRole.AcceptRole)
-        self.confirm_button.setDefault(True)
         self.confirm_button.clicked.connect(self._on_confirm)
+        self.edit_profile = buttons.addButton(_("Edit Profile…"),
+                                              QDialogButtonBox.ButtonRole.AcceptRole)
+        self.edit_profile.clicked.connect(self._edit_profile)
+        self.read_again = buttons.addButton(_("Try Again"), QDialogButtonBox.ButtonRole.AcceptRole)
+        self.read_again.clicked.connect(self._read_address)
         root.addWidget(buttons)
         answer_return_as_the_system_does(self.findChildren(QPushButton))
 
@@ -138,34 +148,66 @@ class ConfirmSheet(QDialog):
         super().resizeEvent(event)
         fit_margins(self)
 
+    def _read_address(self) -> None:
+        self._reading = True
+        self._refresh()
+        self._zap_address(self._me, self._show_address)
+
     def _show_address(self, address: Optional[str]) -> None:
-        """Where the person's share goes; nothing while it couldn't be
-        told (lessons 36: a lookup that did not answer says nothing)."""
+        """Where the person's share goes, once read; None: the profile
+        could not be read (the lookup asked again before it said so)."""
         try:
-            if address is None:
-                return
-            self._address = address
-            self.address.setText(_(SHARE_GOES_TO).format(address=address) if address
-                                 else _(NO_ADDRESS))
-            self.address.show()
-            self.edit_profile.setVisible(not address)
+            self._reading, self._address = False, address
             self._refresh()
         except RuntimeError:
             pass                                # the sheet closed meanwhile
 
     def _refresh(self) -> None:
-        self.confirm_button.setEnabled(
-            (not self._contributor or self.rights.isChecked())
-            and (not self._needs_address or bool(self._address)))
+        address, needs = self._address, self._needs_address
+        ready = not needs or bool(address)
+        missing = needs and not self._reading and address == ""
+        unread = needs and not self._reading and address is None
+        if needs:
+            self.address.setText(_(SHARE_GOES_TO).format(address=address) if address
+                                 else _(NO_ADDRESS) if missing
+                                 else _(PROFILE_NOT_READ) if unread else _(PROFILE_READING))
+        self.confirm_button.setVisible(ready)
+        self.confirm_button.setEnabled(ready and not self._confirming
+                                       and (not self._contributor or self.rights.isChecked()))
+        self.edit_profile.setVisible(missing)
+        self.read_again.setVisible(unread)
+        primary = (self.confirm_button if ready else self.edit_profile if missing
+                   else self.read_again if unread else None)
+        for button in (self.confirm_button, self.edit_profile, self.read_again):
+            button.setDefault(button is primary)
+        self._order(primary)
+
+    def _order(self, primary: Optional[QPushButton]) -> None:
+        """The focus order (RG-M4-b 2): the rights first where they are
+        asked, then the primary action, then Rückfrage stellen and
+        Abbrechen."""
+        chain = [w for w in (self.rights if self._contributor else None, primary,
+                             self.ask, self.cancel_button) if w is not None]
+        for before, after in zip(chain, chain[1:]):
+            QWidget.setTabOrder(before, after)
+
+    def showEvent(self, event) -> None:  # noqa: N802, Qt's name
+        super().showEvent(event)
+        first = self.rights if self._contributor else next(
+            (b for b in (self.confirm_button, self.edit_profile, self.read_again)
+             if b.isVisibleTo(self)), self.ask)
+        first.setFocus(Qt.FocusReason.TabFocusReason)
 
     def _on_confirm(self) -> None:
         confirms = ("split", "rights") if self._contributor else ("split",)
-        self.confirm_button.setEnabled(False)
+        self._confirming = True
+        self._refresh()
         self.status.say(_("Confirming …"), quietly=True)
         self._confirm(confirms, self._confirmed)
 
     def _confirmed(self, error) -> None:
         try:
+            self._confirming = False
             if error is None:
                 self.accept()
                 return
@@ -190,7 +232,7 @@ class ConfirmSheet(QDialog):
         if (event.type() == QEvent.Type.ActivationChange and self.isActiveWindow()
                 and getattr(self, "_profile_edited", False) and not self._address):
             self._profile_edited = False
-            self._zap_address(self._me, self._show_address)
+            self._read_address()
 
     def _style(self) -> None:
         self.setStyleSheet(sheet_stylesheet(self._is_dark))
@@ -202,4 +244,5 @@ class ConfirmSheet(QDialog):
         self.status.set_dark(is_dark)
 
 
-__all__ = ["ConfirmSheet", "NO_ADDRESS", "RIGHTS", "SHARE_GOES_TO"]
+__all__ = ["ConfirmSheet", "NO_ADDRESS", "PROFILE_NOT_READ", "PROFILE_READING", "RIGHTS",
+           "SHARE_GOES_TO"]
