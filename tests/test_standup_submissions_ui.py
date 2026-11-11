@@ -306,6 +306,23 @@ def test_publish_opens_the_accepted_version_and_says_when_the_editor_text_differ
     sheet.reject()
 
 
+def test_a_name_that_comes_in_late_shows_in_the_open_publish_sheet(window, monkeypatch):
+    # A profile read after the sheet opened: the sheet says the name then.
+    from nostr.standup import publishing
+    late = pk("recipient")
+    monkeypatch.setattr(publishing, "credited", lambda revision, writer: [writer, late])
+    prepared, entries = seeded(window, annahme="Steuern")
+    window.world.decide(prepared["annahme"], "accept")
+    window.follow()
+    opened(window, entries["annahme"]).action.click()
+    sheet = window.host._publish_sheet
+    assert sheet.people.text() == "Jana, Someone"
+    monkeypatch.setitem(NAMES, late, "Lena")
+    window.host.names_learned()
+    assert sheet.people.text() == "Jana, Lena"
+    sheet.reject()
+
+
 def test_view_opens_the_address_the_published_event_proves_never_the_servers(window, monkeypatch):
     # Contract 10, The address of a published work: Ansehen opens only the
     # address a counting report proves; until one is read, it says so once.

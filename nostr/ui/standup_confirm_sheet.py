@@ -87,13 +87,10 @@ class ConfirmSheet(QDialog):
         root.addWidget(self._label(_("Confirm Your Part"), "title"))
         root.addWidget(self._label(_(ACCEPTED_LINE).format(publication=publication,
                                                            number=number), ""))
-        parts = ["{name} {weight} %".format(
-            name=_("You") if pk == me else (name_of(pk) or _("Someone")), weight=weight)
-            for pk, weight, _role in shares]
-        self.split = self._label("  ·  ".join(parts), "")
-        self.split.setVisible(bool(parts))
-        # Read as one line, with what it is (VoiceOver).
-        self.split.setAccessibleName(_("The split: {shares}").format(shares=", ".join(parts)))
+        self._shares, self._me, self._name_of = tuple(shares), me, name_of
+        self.split = self._label("", "")
+        self.split.setVisible(bool(shares))
+        self.show_names()
         root.addWidget(self.split)
         self.address = self._label("")
         self.address.hide()
@@ -122,6 +119,15 @@ class ConfirmSheet(QDialog):
         self.confirm_button.clicked.connect(self._on_confirm)
         root.addWidget(buttons)
         answer_return_as_the_system_does(self.findChildren(QPushButton))
+
+    def show_names(self) -> None:
+        """The split by the people's names (again when a profile's name
+        came in late), read as one line with what it is (VoiceOver)."""
+        parts = ["{name} {weight} %".format(
+            name=_("You") if pk == self._me else (self._name_of(pk) or _("Someone")),
+            weight=weight) for pk, weight, _role in self._shares]
+        self.split.setText("  ·  ".join(parts))
+        self.split.setAccessibleName(_("The split: {shares}").format(shares=", ".join(parts)))
 
     def resizeEvent(self, event) -> None:  # noqa: N802, Qt's name
         super().resizeEvent(event)

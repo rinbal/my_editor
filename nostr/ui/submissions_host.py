@@ -321,6 +321,22 @@ class SubmissionsHost(QObject):
     def _row(self, sid: str):
         return self._following.row(sid) if self._following is not None else None
 
+    def _people(self, run) -> list:
+        """Everyone the article credits (the writer first when others
+        wrote it too), by name."""
+        return [self._name_of(pk) or _("Someone")
+                for pk in publishing.credited(run.revision, run.writer)]
+
+    def names_learned(self) -> None:
+        """A person's name came in from their profile: the list, the
+        detail and an open sheet say it, with nothing read again."""
+        self.view.names_learned()
+        publish, confirm = self._publish_sheet, self._confirm_sheet
+        if publish is not None and shiboken6.isValid(publish):
+            publish.show_people(self._people(publish.run))
+        if confirm is not None and shiboken6.isValid(confirm):
+            confirm.show_names()
+
     def _accepted_section(self, sid: str) -> str:
         """The section the verified accept named (its signed body), or ""."""
         accepted = self._following.reading.accepted(sid) if self._following is not None else None
@@ -457,8 +473,7 @@ class SubmissionsHost(QObject):
         ed = ports.editor_of(row.d) if row.d else None
         differs = ed is not None and comparable(ports.text_of(ed)) != comparable(
             str(work.get("content") or ""))
-        people = [self._name_of(pk) or _("Someone")
-                  for pk in publishing.credited(run.revision, run.writer)]
+        people = self._people(run)
         sheet = self._publish_sheet = PublishSheet(
             run=run, publication=self._following.publication_name(row.publication),
             number=row.view.revision, section=self._accepted_section(sid),

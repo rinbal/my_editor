@@ -3372,13 +3372,13 @@ class MainWindow(QMainWindow):
         self._submissions_view = SubmissionsView(
             name_of=self._profile_names.name, avatar_of=self._avatars.get,
             is_dark=self.is_dark_theme)
-        self._profile_names.learned.connect(self._submissions_view.names_learned)
         add_submissions_view(self._drafts_panel, self._submissions_view,
                              server=configured_server())
         self._submissions = SubmissionsHost(self._submission_ports(),
                                             view=self._submissions_view,
                                             pill=self.submission_pill,
                                             name_of=self._profile_names.name, parent=self)
+        self._profile_names.learned.connect(self._submissions.names_learned)
         self._drafts_panel.view_changed.connect(self._follow_account_in_published)
         self._drafts_panel.view_changed.connect(self._update_refresh_command)
         self._published_view.open_requested.connect(self._on_published_open)

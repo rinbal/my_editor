@@ -105,7 +105,9 @@ class PublishSheet(QDialog):
         tags = " ".join("#" + str(t).lstrip("#") for t in work.get("tags") or () if t)
         if tags:
             column.addWidget(self._label(tags))
-        column.addWidget(self._label(", ".join(people) if people else _(ONLY_YOU)))
+        self.people = self._label("")
+        column.addWidget(self.people)
+        self.show_people(people)
         card.setAccessibleName(str(work.get("title") or ""))
         root.addWidget(card)
         self.differs = self._label(_(DIFFERS))
@@ -139,6 +141,11 @@ class PublishSheet(QDialog):
         self.publish.clicked.connect(self._primary)
         root.addWidget(buttons)
         answer_return_as_the_system_does(self.findChildren(QPushButton))
+
+    def show_people(self, people: Sequence[str]) -> None:
+        """The names of everyone credited besides the writer (again when
+        a profile's name came in late)."""
+        self.people.setText(", ".join(people) if people else _(ONLY_YOU))
 
     def resizeEvent(self, event) -> None:  # noqa: N802, Qt's name
         super().resizeEvent(event)
