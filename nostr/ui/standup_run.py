@@ -29,14 +29,16 @@ class SubmissionRun(QObject):
     changed = Signal(object)            # Progress
 
     def __init__(self, draft: ArticleDraft, choice: Choice, *, writer: str, round_: int,
-                 ports: Ports, parent: Optional[QObject] = None) -> None:
+                 ports: Ports, revision: int = 1, change_summary: Optional[str] = None,
+                 parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self.draft = draft
         self._started = False
         self._let_go = False
         self._behind: Optional[Callable[[Progress], None]] = None
         self.submitting = Submitting(draft, choice, writer=writer, round_=round_,
-                                     ports=ports, on_change=self.changed.emit)
+                                     ports=ports, on_change=self.changed.emit,
+                                     revision=revision, change_summary=change_summary)
 
     @property
     def progress(self) -> Progress:

@@ -172,6 +172,20 @@ class Followed:
         return self.timeline[-1].seq if self.timeline else 0
 
 
+@dataclass(frozen=True)
+class Round:
+    """One round of the watcher: the sids it ``asked`` about, those the
+    server answered it holds ``nothing`` for (their status key is
+    unknown to it: the entry was never stored, contract 13), and the
+    ``failures`` it met (a server not reached, an answer not read). A
+    sid in neither ``nothing`` nor a :class:`Followed` is not known
+    about yet: never "not stored" (12.4)."""
+
+    asked: frozenset = frozenset()
+    nothing: frozenset = frozenset()
+    failures: tuple = ()
+
+
 class SubmissionWatcher(QObject):
     """Polls one account's submissions through their status keys.
 
@@ -185,10 +199,13 @@ class SubmissionWatcher(QObject):
       failed(object)  a server could not be asked, or its answer for a
                       submission could not be read (StandupError); what
                       was known stays, and the next round tries again.
+      round_done(Round)  a round ended: what it asked about, what the
+                      server said it holds nothing for, and what failed.
     """
 
     updated = Signal(object)
     failed = Signal(object)
+    round_done = Signal(object)
 
     def __init__(self, account: str, entries: Callable[[], Sequence[SubmissionEntry]],
                  client_for: Callable[[str], StandupApi], *,
@@ -207,6 +224,8 @@ class SubmissionWatcher(QObject):
         self._busy = False
         self._again = False
         self._followed: Dict[str, Followed] = {}
+        self._nothing: set = set()
+        self._failures: List[StandupError] = []
 
     # -- triggers ------------------------------------------------------------
 
@@ -254,12 +273,17 @@ class SubmissionWatcher(QObject):
         batches = lookup_batches([e for e in self._entries()
                                   if e.role == "writer" and e.status_key])
         if not batches:
+            self.round_done.emit(Round())
             self._round_done()
             return
         self._busy = True
         generation = self._generation
         waiting = {"n": len(batches)}
         learned: Dict[str, Followed] = {}
+        # What this round says beyond what it learned (Round).
+        self._nothing: set = set()
+        self._failures: List[StandupError] = []
+        asked = frozenset(entry.sid for batch in batches for entry in batch)
 
         def one_done() -> None:
             waiting["n"] -= 1
@@ -268,10 +292,16 @@ class SubmissionWatcher(QObject):
                 if learned:
                     self._followed.update(learned)
                     self.updated.emit(dict(learned))
+                self.round_done.emit(Round(asked, frozenset(self._nothing),
+                                           tuple(self._failures)))
                 self._round_done()
 
         for batch in batches:
             self._ask(batch, generation, learned, one_done)
+
+    def _fail(self, error: StandupError) -> None:
+        self._failures.append(error)
+        self.failed.emit(error)
 
     def _ask(self, batch: List[SubmissionEntry], generation: int,
              learned: Dict[str, Followed], one_done: Callable[[], None],
@@ -287,7 +317,7 @@ class SubmissionWatcher(QObject):
             for key, item in answer.found.items():
                 entry = by_key[key]
                 if item.submission.submission_id != entry.sid:
-                    self.failed.emit(StandupError(
+                    self._fail(StandupError(
                         Code.BAD_RESPONSE, message="the answer is for another submission"))
                     continue
                 before = self._since(entry, learned)
@@ -297,14 +327,20 @@ class SubmissionWatcher(QObject):
                 elif item.more and spent:
                     waited.append(entry)
                 elif item.more:
-                    self.failed.emit(_nothing_new())
+                    self._fail(_nothing_new())
                 spent = spent or bool(item.timeline)
             if answer.unreadable:
-                self.failed.emit(StandupError(
+                self._fail(StandupError(
                     Code.BAD_RESPONSE, message=f"{len(answer.unreadable)} answers unreadable"))
+            if continuation == 0:
+                # A key the answer leaves out, and does not fail to read, is
+                # one the server does not know (12.4): nothing is stored.
+                self._nothing.update(entry.sid for entry in batch
+                                     if entry.status_key not in answer.found
+                                     and entry.status_key not in answer.unreadable)
             more = waited + grew                    # those that waited are served first
             if more and continuation >= MAX_CONTINUATIONS:
-                self.failed.emit(_too_long())
+                self._fail(_too_long())
             elif more:
                 self._ask(more, generation, learned, one_done, continuation + 1)
                 return
@@ -313,7 +349,7 @@ class SubmissionWatcher(QObject):
         def failed(error: StandupError) -> None:
             if generation != self._generation:
                 return
-            self.failed.emit(error)
+            self._fail(error)
             one_done()
 
         self._client_for(batch[0].server).lookup(
@@ -562,7 +598,7 @@ def judge_stored(entry: SubmissionEntry, receipt: views.Receipt,
 
 __all__ = [
     "Different", "EntryStatus", "Followed", "MAX_CONTINUATIONS", "NotHandedIn", "NotStored",
-    "REFRESH_INTERVAL_MS", "StoredCopy", "StoredOther", "SubmissionWatcher", "Superseded",
+    "REFRESH_INTERVAL_MS", "Round", "StoredCopy", "StoredOther", "SubmissionWatcher", "Superseded",
     "classify", "judge_stored", "verify_stored",
     "read_submission",
     "AT_THE_END", "look_up", "look_up_all", "lookup_batches", "resolve_unconfirmed",

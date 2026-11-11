@@ -32,13 +32,19 @@ from .standup_run import SubmissionRun
 
 
 class PoolSigner:
-    """The account's signer for sealing a message (conversation.py)."""
+    """The account's signer for sealing a message (conversation.py) and
+    for opening a contributor's key wrap (opening.py)."""
 
     def __init__(self, session_pool, profile) -> None:
+        self._pool, self._profile = session_pool, profile
         self._sign = session_signer(session_pool, profile)
 
     def sign_event(self, unsigned: dict, *, on_success, on_failure) -> None:
         self._sign(unsigned, on_success, on_failure)
+
+    def nip44_decrypt(self, peer: str, ciphertext: str, *, on_success, on_failure) -> None:
+        self._pool.get(self._profile, lambda client: client.nip44_decrypt(
+            peer, ciphertext, on_success, on_failure), on_failure)
 
 
 class Account(QObject):

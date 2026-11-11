@@ -166,7 +166,8 @@ class Submitting:
     comes from :meth:`start`."""
 
     def __init__(self, draft: ArticleDraft, choice: Choice, *, writer: str, round_: int,
-                 ports: Ports, on_change: Callable[[Progress], None]) -> None:
+                 ports: Ports, on_change: Callable[[Progress], None], revision: int = 1,
+                 change_summary: Optional[str] = None) -> None:
         self._draft = draft
         self._choice = choice
         self._writer = writer
@@ -194,9 +195,12 @@ class Submitting:
         # The entry of a round another device stored (``stale_revision``),
         # whose stored entry the list is read again for.
         self._waits_for: Optional[SubmissionEntry] = None
-        # The revision built: 1, or the next after a stored one this app
-        # could not take as the writer's (12.4 at bfa8844).
-        self._revision = 1
+        # The revision built: 1; the next one the writer hands in
+        # (``revision``, with its card's one line, ``change_summary``); or
+        # the next after a stored one this app could not take as the
+        # writer's (12.4 at bfa8844).
+        self._revision = revision
+        self._change_summary = change_summary
 
     # -- what the screen asks ------------------------------------------------
 
@@ -207,6 +211,14 @@ class Submitting:
     @property
     def sealed(self) -> Optional[Sealed]:
         return self._sealed
+
+    @property
+    def submission_id(self) -> str:
+        """The submission this run is for: the one it built, or, before
+        that, the one its work has in its round at the publication."""
+        if self._sealed is not None:
+            return self._sealed.submission_id
+        return drafting.submission_id_of(self._draft, self._choice, self._writer, self._round)
 
     @property
     def choice(self) -> Choice:
@@ -424,7 +436,8 @@ class Submitting:
             self._sealed = drafting.seal(self._draft, self._choice, self._key, self._pictures,
                                          self._servers, writer=self._writer,
                                          round_=self._round, now=int(self._ports.clock()),
-                                         held=self._ports.held(sid), revision=self._revision)
+                                         held=self._ports.held(sid), revision=self._revision,
+                                         change_summary=self._change_summary)
         except SecretKeyFound as refusal:
             self._fail(str(refusal), None)
             return
@@ -501,6 +514,7 @@ class Submitting:
         self._rebuilt = True
         self._round = conflict.latest + 1
         self._revision = 1                  # a new round starts at revision 1
+        self._change_summary = None
         self._progress = replace(self._progress, held=self._refused_held())
         self._seal_and_record()
 

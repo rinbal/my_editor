@@ -51,6 +51,7 @@ from ..standup.rounds import RoundAnswer, ask_round
 from ..standup.trust import Destination
 from ..standup.watcher import look_up, resolve_unconfirmed
 from .standup_account import Account, live
+from .standup_following import Following
 from .standup_handoff import phase_words
 from .standup_message import send_first_message
 from .standup_run import SubmissionRun, background_message_words, stopped_words
@@ -86,6 +87,9 @@ class StandupWriter(QObject):
         self._uploads = uploads or BlossomUploads(media_store, parent=self)
         self._accounts = accounts or self._new_account
         self._account: Optional[Account] = None
+        # What the Einreichungen list, the pill and the detail show of the
+        # account's submissions: made when first asked for, stopped with it.
+        self._following: Optional[Following] = None
         # What this computer holds of the texts submitted, across restarts
         # (RG-M2r2a 1); the window's is kept in its file, a test's is not.
         self._marks = marks if marks is not None else SubmittedMarks(kept=False)
@@ -102,6 +106,26 @@ class StandupWriter(QObject):
             self.stop()
             account = self._account = self._accounts(profile)
         return account
+
+    def following(self, profile) -> Following:
+        """What the Einreichungen list, the pill and the detail show of
+        ``profile``'s submissions: one per account, stopped with it."""
+        account = self.account(profile)
+        if self._following is None:
+            self._following = Following(
+                account, marks=self._marks,
+                on_listed=lambda read: self._listed(account, read),
+                discard=lambda entry, on_done: self.discard(profile, entry, on_done),
+                later=_later, parent=account)
+        return self._following
+
+    def followed(self, profile) -> Optional[Following]:
+        """:meth:`following`, when ``profile``'s account is the one in
+        use and has one; never makes an account or reads a list."""
+        account = self._account
+        if account is None or profile is None or account.writer != profile.user_pubkey:
+            return None
+        return self._following
 
     def _new_account(self, profile) -> Account:
         return Account(profile, session_pool=self._session_pool, relay_pool=self._relay_pool,
@@ -353,8 +377,43 @@ class StandupWriter(QObject):
         # has ended goes once nothing shows it.
         run = SubmissionRun(draft, choice, writer=account.writer, round_=answer.round,
                             ports=self._ports(account, choice.publication))
-        account.runs = [r for r in account.runs if not r.finished] + [run]
+        self._keep_run(account, run)
         return run
+
+    def revise(self, profile, draft: ArticleDraft, choice: Choice, *, round_: int,
+               revision: int, change_summary: str) -> SubmissionRun:
+        """A run that hands in ``revision`` of the work ``draft`` in its
+        round at ``choice``'s publication (plan 8.1: a new version of an
+        open submission, with the keys its list entry holds), or the one
+        already on its way there. ``choice.message`` is the version's
+        note; ``change_summary`` the one line of its card."""
+        account = self.account(profile)
+        running = self.running(profile, draft.d, choice.publication)
+        if running is not None:
+            return running
+        run = SubmissionRun(draft, choice, writer=account.writer, round_=round_,
+                            ports=self._ports(account, choice.publication), revision=revision,
+                            change_summary=change_summary)
+        self._keep_run(account, run)
+        return run
+
+    def _keep_run(self, account: Account, run: SubmissionRun) -> None:
+        """``run`` joins the account's runs, and the list of submissions
+        follows it: "Wird eingereicht …" while it goes, and a look at the
+        server once it is in."""
+        account.runs = [r for r in account.runs if not r.finished] + [run]
+        was_in = [False]
+
+        def changed(progress: Progress) -> None:
+            following = self._following
+            if account.stopped or account is not self._account or following is None:
+                return
+            following.changed.emit()
+            if progress.phase is Phase.DONE and not was_in[0]:
+                was_in[0] = True
+                following.refresh()
+
+        run.changed.connect(changed)
 
     def in_background(self, run: SubmissionRun) -> None:
         """The sheet closed: say in the status bar how ``run`` goes on,
@@ -401,6 +460,9 @@ class StandupWriter(QObject):
             return
         said = stopped_words(account.runs)
         account.stopped = True
+        following, self._following = self._following, None
+        if following is not None:
+            following.stop()
         for run in account.runs:
             run.submitting.stop()
         account.destinations.stop()

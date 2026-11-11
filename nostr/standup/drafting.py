@@ -297,10 +297,13 @@ def _secrets(sid: str, held: Optional[SubmissionEntry]) -> Tuple[bytes, str]:
 def seal(draft: ArticleDraft, choice: Choice, key: RedaktionKey,
          pictures: Sequence[EncryptedPicture], servers: Mapping[str, Sequence[str]], *,
          writer: str, round_: int, now: int, held: Optional[SubmissionEntry] = None,
-         revision: int = 1) -> Sealed:
-    """The revision (``revision`` of ``round_``: 1, or the next one after
-    a stored one that did not verify, 12.4 at bfa8844), encrypted, and the body
-    and list entry naming it. ``servers`` names, per picture's
+         revision: int = 1, change_summary: Optional[str] = None) -> Sealed:
+    """The revision (``revision`` of ``round_``: 1; the next one the
+    writer hands in, with the one line of its version card,
+    ``change_summary``; or the next one after a stored one that did not
+    verify, 12.4 at bfa8844), encrypted, and the body and list entry
+    naming it. A revision after the first keeps the submission's keys:
+    without the list's entry for it (``held``), :class:`HeldNotUsable`. ``servers`` names, per picture's
     ``sha256``, the media servers that hold it; ``held`` is the list's
     entry for this submission, whose secrets it keeps (see
     :func:`_secrets`). Raises FormatError (a
@@ -310,12 +313,15 @@ def seal(draft: ArticleDraft, choice: Choice, key: RedaktionKey,
     :class:`TooLarge` when it is larger than the publication takes."""
     formats.need(not any(picture_type_refused(p) for p in pictures), "a picture's type")
     sid = submission_id_of(draft, choice, writer, round_)
+    if revision > 1 and held is None:
+        raise HeldNotUsable("a later revision keeps the keys of its submission")
     s_sub, status_key = _secrets(sid, held)
     number = revision
     revision = formats.build_revision(
         submission_id=sid, revision=number, kind="article", work=_work(draft, pictures),
         rights={"confirmed": choice.rights, "license": None},
         checklist=checklist_results(key.rules.get("checklist"), draft),
+        change_summary=change_summary if number > 1 else None,
         thumb=dict(draft.thumb) if draft.thumb else None,
         media=[p.entry(servers.get(p.sha256, ())) for p in pictures], client=CLIENT)
     sealed = crypto.seal_revision(revision, s_sub)

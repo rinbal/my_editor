@@ -1371,7 +1371,8 @@ def test_a_message_this_app_refuses_to_seal_is_not_said_as_the_signers_no():
 
 def _sealed(room: str, s_sub: bytes, sid: str) -> SimpleNamespace:
     """What send_first_message reads of a Sealed."""
-    return SimpleNamespace(body={"p_sub": room}, p_sub=room, s_sub=s_sub, submission_id=sid)
+    return SimpleNamespace(body={"p_sub": room, "revision": 1}, p_sub=room, s_sub=s_sub,
+                           submission_id=sid)
 
 
 def _wired_writer():

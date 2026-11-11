@@ -3,7 +3,9 @@
 """The first message to the editorial team, after the receipt (plan
 10.3): sealed by the account (one signer prompt), wrapped to the
 submission's room, sent with a session; only the server's ``seq`` says
-it is there. It was part of :mod:`.standup_submit`.
+it is there. It was part of :mod:`.standup_submit`. With a later
+version it is that version's note (the ``revision-note`` of contract
+9.4), shown under its card.
 
 The submission is in by then, so a message the connection or the
 server's trouble stopped before it arrived is sent again quietly, with
@@ -36,10 +38,17 @@ def send_first_message(account, sealed: Sealed, text: str, on_signed: Callable[[
     signer app may answer after it, and then nothing is posted (no new
     session for an account left)."""
     room = sealed.p_sub
+    revision = sealed.body["revision"]
     try:
-        rumor = conversation.message_rumor(room=room, submission_id=sealed.submission_id,
-                                           text=text, sender=account.writer,
-                                           created_at=int(time.time()))
+        if revision > 1:
+            rumor = conversation.structured_rumor(
+                room=room, submission_id=sealed.submission_id, kind="revision-note",
+                content=conversation.revision_note_content(revision, text),
+                sender=account.writer, created_at=int(time.time()))
+        else:
+            rumor = conversation.message_rumor(room=room, submission_id=sealed.submission_id,
+                                               text=text, sender=account.writer,
+                                               created_at=int(time.time()))
     except formats.FormatError as exc:
         answer_later(on_failure, StandupError(Code.REFUSED, message=str(exc)[:200]))
         return
