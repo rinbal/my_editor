@@ -80,12 +80,14 @@ class SubmissionsView(QWidget):
       action_requested(str, object)   a sid and the primary Action chosen
       open_in_editor(str, int)        a sid and a version (0: the text worked on)
       compare_requested(str, int)     a sid and the version to compare with the one before
+      remind_requested(str, str)      a sid and whom to remind
       submit_requested()              the empty list's button
     """
 
     action_requested = Signal(str, object)
     open_in_editor = Signal(str, int)
     compare_requested = Signal(str, int)
+    remind_requested = Signal(str, str)
     submit_requested = Signal()
     detail_shown = Signal(bool)             # a detail, or the list, is shown now
 
@@ -184,6 +186,7 @@ class SubmissionsView(QWidget):
         self.detail.action_requested.connect(self.action_requested)
         self.detail.open_in_editor.connect(self.open_in_editor)
         self.detail.compare_requested.connect(self.compare_requested)
+        self.detail.remind_requested.connect(self.remind_requested)
         self._stack.addWidget(self.detail)
         # Connected once every page is there: the first ones made it change.
         self._stack.currentChanged.connect(self._on_page)

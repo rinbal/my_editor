@@ -2076,6 +2076,13 @@ class FakeStandupServer:
             return refusal
         if role != "writer" or body.get("to") not in record.participants:
             return _error(403, "role")
+        # backend api/submissions.py remind: one per person in 24 hours.
+        last = max((item["at"] for item in record.timeline if item["type"] == "event"
+                    and item["event"]["name"] == "reminder"
+                    and item["event"]["to"] == body["to"]), default=None)
+        if last is not None and self.clock() - last < 86400:
+            return _error(429, "rate_limited", "Heute wurde schon erinnert.")
+        self._event(record, "reminder", who, to=body["to"], revision=record.revision)
         return _ok({})
 
     def _reupload(self, who, body, params, query) -> FakeReply:

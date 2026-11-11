@@ -18,6 +18,7 @@ from PySide6.QtWidgets import QComboBox
 from i18n import _, ngettext
 
 from ..standup import formats
+from ..standup.situations import and_list
 from ..standup.trust import Destination
 from .avatar import color_for_pubkey, initials_for
 
@@ -50,12 +51,6 @@ def publication_logo(name: str, pubkey: str, picture: Optional[QPixmap], size: i
     return out
 
 
-def _and(items: Sequence[str]) -> str:
-    if len(items) < 2:
-        return "".join(items)
-    return _("{items} and {last}").format(items=", ".join(items[:-1]), last=items[-1])
-
-
 def rules_words(rules) -> str:
     """The rules of a publication, as the picker says them under it."""
     if rules and not rules.get("open", False):
@@ -67,7 +62,7 @@ def rules_words(rules) -> str:
     asked = [str(item.get("label")) for item in rules.get("checklist") or ()
              if isinstance(item, dict) and item.get("level") == "required" and item.get("label")]
     if asked:
-        parts.append(_("Asks for {items}").format(items=_and(asked)))
+        parts.append(_("Asks for {items}").format(items=and_list(asked)))
     most = rules.get("max_open_per_writer")
     if formats.is_int(most, low=1):
         parts.append(ngettext("at most {count} open submission",

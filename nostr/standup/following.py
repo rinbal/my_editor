@@ -43,7 +43,7 @@ from .progress import Phase, Progress
 # The situations' vocabulary moved out; every name is still offered here.
 from .situations import (
     ACTION_LABELS, NOTHING_TO_DO, ON_A_DECISION, ON_ITS_WAY, TABLE, Action, Section,
-    Situation, Words,
+    Situation, Words, and_list,
 )
 from .watcher import Followed, NotHandedIn, StoredOther
 
@@ -64,7 +64,10 @@ VERSION_IN_REVIEW = N_("{name} is reviewing version {number}.")
 SECTION_PLACE = N_("In the section “{section}”.")
 # The writer confirmed; contributors still confirm (M-4 M14).
 STILL_CONFIRMS = N_("Thanks. {name} still confirms.")
+STILL_CONFIRM_NAMED = N_("Thanks. {names} still confirm.")
 STILL_CONFIRM = N_("Thanks. The others still confirm.")
+# The server takes one reminder per person in 24 hours (12.4 ``/remind``).
+REMIND_EVERY = 86400
 
 
 def my_turn(view: views.SubmissionView, me: str) -> bool:
@@ -378,6 +381,8 @@ class Status:
     action: Optional[Action] = None
     unsigned: bool = False
     offered: bool = False
+    # Erinnern: whom it may remind, one named button each (RG-M4-b 11).
+    remind: Tuple[str, ...] = ()
 
 
 def status_of(row: Row, *, publication: str, name_of: Callable[[str], str],
@@ -419,13 +424,13 @@ def status_of(row: Row, *, publication: str, name_of: Callable[[str], str],
         offered = True
         if view is None or view.published is None:
             action = None
-    waiting = waiting_for(row)
+    waiting, remind = waiting_for(row), ()
     if waiting and rests:
         names = [name_of(pk) for pk in waiting]
-        sentence, more, action, offered = (
-            (STILL_CONFIRMS, "", Action.REMIND, True) if len(waiting) == 1 and names[0]
-            else (STILL_CONFIRM, "", Action.REMIND, True))
-        fields["name"] = names[0]
+        sentence = (STILL_CONFIRM if not all(names) else STILL_CONFIRMS if len(names) == 1
+                    else STILL_CONFIRM_NAMED)
+        more, action, offered, remind = "", Action.REMIND, True, waiting
+        fields["name"], fields["names"] = names[0], and_list(names)
     if row.open and row.situation is not Situation.PICTURES_MISSING:
         if edited:
             action = Action.HAND_IN
@@ -435,7 +440,14 @@ def status_of(row: Row, *, publication: str, name_of: Callable[[str], str],
             else:
                 more, offered = EDITED_SINCE, True
     return Status(_(sentence).format(**fields), _(more).format(**fields) if more else "",
-                  action, unsigned, offered)
+                  action, unsigned, offered, remind)
+
+
+def reminded_lately(history: Iterable, to: str, now: float) -> bool:
+    """Whether the conversation's history holds a reminder to ``to`` in
+    the last 24 hours (the web's ``remindedLately``)."""
+    return any(getattr(caption, "name", "") == "reminder" and caption.to == to
+               and now - caption.at < REMIND_EVERY for caption in history)
 
 
 def waiting_for(row: Row) -> Tuple[str, ...]:
@@ -460,7 +472,7 @@ def rests_on(situation: Situation, decision: Optional[Decision]) -> bool:
 
 __all__ = [
     "ACTION_LABELS", "Action", "DECIDER_ROLES", "DECISIONS", "Decision", "NOTHING_TO_DO",
-    "correction_taken",
+    "REMIND_EVERY", "correction_taken", "reminded_lately",
     "NOT_SIGNED", "ON_A_DECISION", "ON_ITS_WAY", "Row",
     "Section", "SignedChecks", "Situation", "Status", "TABLE", "Words", "YOUR_TURN", "action_verified",
     "deciders_of", "members_of", "my_turn", "newest_decision", "pill_word", "rests_on",

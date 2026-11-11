@@ -550,12 +550,42 @@ def test_confirming_names_the_accepted_split_and_where_the_share_goes_then_remin
     assert record.confirmations == {ME: ["split"]}
     detail = opened(window, entry)
     assert detail.sentence.text() == "Thanks. Paul still confirms."
-    assert detail.action.text() == "Remind Paul"
-    reminded = []
-    monkeypatch.setattr(type(window.following), "remind",
-                        lambda self, sid, to, done: (reminded.append(to), done(None)))
-    detail.action.click()
-    assert reminded == [OTHER] and detail.note.text() == "Reminder sent."
+    assert [b.text() for b in detail.reminder_buttons()] == ["Remind Paul"]
+    assert not detail.action.isVisibleTo(detail)
+    detail.reminder_buttons()[0].click()
+    world.settle()
+    assert detail.note.text() == "Paul was reminded."
+    assert detail.reminder_buttons() == []                  # RG-M4-b 11: reminded, it goes
+
+
+def test_each_person_still_to_confirm_has_their_own_reminder_until_reminded_today(
+        window, monkeypatch):
+    # RG-M4-b 11: one named Erinnern each; a person reminded in the last
+    # 24 hours (here, or as the history says) has none.
+    world, eva = window.world, pk("recipient")
+    monkeypatch.setitem(NAMES, eva, "Eva")
+    seed = world.account()
+    prepared, entry = world.submit(seed, d="drei", title="Drei", participants=(OTHER, eva))
+    world.record(entry.sid).signer = "publication"
+    world.decide(prepared, "accept", split=[
+        {"pubkey": ME, "weight": 50, "role": "writer"},
+        {"pubkey": OTHER, "weight": 25, "role": "contributor"},
+        {"pubkey": eva, "weight": 25, "role": "contributor"}])
+    world.record(entry.sid).confirmations[ME] = ["split"]
+    window.follow()
+    detail = opened(window, entry)
+    assert detail.sentence.text() == "Thanks. Paul and Eva still confirm."
+    assert [b.text() for b in detail.reminder_buttons()] == ["Remind Paul", "Remind Eva"]
+    detail.reminder_buttons()[1].click()
+    world.settle()
+    assert detail.note.text() == "Eva was reminded."
+    assert [b.text() for b in detail.reminder_buttons()] == ["Remind Paul"]
+    window.following.remind(entry.sid, eva, lambda _error: None)     # the server says: today
+    world.settle()
+    window.following._reminded.clear()                                # as after a restart
+    window.following.open(entry.sid)
+    world.settle()
+    assert [b.text() for b in detail.reminder_buttons()] == ["Remind Paul"]
 
 
 def test_a_conversation_is_opened_once_and_a_refresh_draws_only_what_is_new(window,

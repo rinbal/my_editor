@@ -13422,12 +13422,6 @@ msgstr "Wird bestätigt …"
 msgid "Remind {name}"
 msgstr "{name} erinnern"
 
-msgid "Reminder sent."
-msgstr "Erinnerung gesendet."
-
-msgid "Already reminded today."
-msgstr "Heute schon erinnert."
-
 msgid "If you take it, the correction replaces the article at the same address. The date of publication stays."
 msgstr "Übernimmst du sie, ersetzt die Korrektur den Artikel unter derselben Adresse. Das Datum der Veröffentlichung bleibt."
 
@@ -13562,3 +13556,19 @@ msgstr "Veröffentlicht auf {publication}."
 #, python-brace-format
 msgid "{name} {weight}%"
 msgstr "{name} {weight} %"
+
+#, python-brace-format
+msgid "Thanks. {names} still confirm."
+msgstr "Danke. {names} bestätigen noch."
+
+#, python-brace-format
+msgid "{name} was reminded."
+msgstr "{name} wurde erinnert."
+
+#, python-brace-format
+msgid "{name} was already reminded today."
+msgstr "{name} wurde heute schon erinnert."
+
+#, python-brace-format
+msgid "{name} wasn’t reminded."
+msgstr "{name} wurde nicht erinnert."

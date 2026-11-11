@@ -95,12 +95,14 @@ class SubmissionDetail(QWidget):
       action_requested(str, object)    the sid and the primary Action
       open_in_editor(str, int)         the sid and a version (0: the text worked on)
       compare_requested(str, int)      the sid and the version to compare with the one before
+      remind_requested(str, str)       the sid and whom to remind (one button each)
     """
 
     back_requested = Signal()
     action_requested = Signal(str, object)
     open_in_editor = Signal(str, int)
     compare_requested = Signal(str, int)
+    remind_requested = Signal(str, str)
 
     def __init__(self, *, name_of: Callable[[str], str],
                  avatar_of: Callable[[str], Optional[QPixmap]], is_dark: bool,
@@ -223,6 +225,10 @@ class SubmissionDetail(QWidget):
         self.second.setMinimumHeight(MIN_CONTROL_PX)
         self.second.clicked.connect(self._on_second)
         buttons.addWidget(self.action)
+        # Erinnern: one named button for each person still to confirm.
+        self._reminders = QHBoxLayout()
+        self._reminders.setSpacing(6)
+        buttons.addLayout(self._reminders)
         buttons.addWidget(self.second)
         buttons.addStretch(1)
         block.addLayout(buttons)
@@ -420,7 +426,8 @@ class SubmissionDetail(QWidget):
         """Tab goes as the eye does, after every rebuild (RG-M3-b 11): the
         top, the action, the conversation, then the composer."""
         about = [self._more_about.itemAt(i).widget() for i in range(self._more_about.count())]
-        chain = [self.back, self.info_button, self.more_button, self.action, self.second] \
+        chain = [self.back, self.info_button, self.more_button, self.action,
+                 *self.reminder_buttons(), self.second] \
             + [w for w in about if w is not None] + self.conversation.focusables() \
             + [self.composer, self.send]
         for first, second in zip(chain, chain[1:]):
@@ -494,14 +501,13 @@ class SubmissionDetail(QWidget):
             self.action.setText(_("Try Again"))
         elif action is rules.Action.RELOAD:
             self.action.setText(pgettext("submissions list", "Reload"))
-        elif action is rules.Action.REMIND and len(rules.waiting_for(row)) == 1 \
-                and self._name_of(rules.waiting_for(row)[0]):
-            self.action.setText(_("Remind {name}").format(
-                name=self._name_of(rules.waiting_for(row)[0])))
         elif action is not None:
             self.action.setText(_(rules.ACTION_LABELS[action]))
+        reminding = not detail.problem and action is rules.Action.REMIND
+        self._show_reminders(row.sid, status.remind if reminding
+                             and action in self._handled else ())
         self.action.setVisible(bool(detail.problem) or action is rules.Action.RELOAD
-                               or action in self._handled)
+                               or (action in self._handled and not reminding))
         quiet = "submission_offered" if status.offered else "submission_action"
         if self.action.objectName() != quiet:
             self.action.setObjectName(quiet)    # offered: a plain button, not the accent
@@ -515,6 +521,31 @@ class SubmissionDetail(QWidget):
             self._said = said
             if self.isVisible():
                 announce.announce(self.status, said)
+
+    def _show_reminders(self, sid: str, people) -> None:
+        """"<Name> erinnern" for each of ``people`` not reminded in the last
+        24 hours (RG-M4-b 11, as the web): a reminded person's goes."""
+        while self._reminders.count():
+            discard(self._reminders.takeAt(0).widget())
+        for pubkey in people:
+            if self._following.reminded(sid, pubkey):
+                continue
+            name = self._name_of(pubkey)
+            button = QPushButton(_("Remind {name}").format(name=name) if name
+                                 else _(rules.ACTION_LABELS[rules.Action.REMIND]))
+            button.setObjectName("submission_offered")
+            button.setMinimumHeight(MIN_CONTROL_PX)
+            button.clicked.connect(lambda _checked=False, pk=pubkey: self._remind(pk))
+            self._reminders.addWidget(button)
+
+    def reminder_buttons(self) -> list:
+        return [self._reminders.itemAt(i).widget() for i in range(self._reminders.count())]
+
+    def _remind(self, pubkey: str) -> None:
+        if self._line:
+            self._line = ""
+            self.note.hide()
+        self.remind_requested.emit(self._sid, pubkey)
 
     def _show_readers(self, detail) -> None:
         view = detail.row.view

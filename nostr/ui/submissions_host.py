@@ -78,8 +78,10 @@ NOT_FOUND = N_("MyEditor can’t find this article. Open it in the editor, then 
 VERSION_NOT_LOADED = N_("The version you handed in couldn’t be loaded: try again in a moment.")
 ACCEPTED_NOT_LOADED = N_("The accepted version couldn’t be loaded yet: try again in a moment.")
 PUBLISHED_NOT_LOADED = N_("The published article couldn’t be found yet: try again in a moment.")
-REMINDED = N_("Reminder sent.")
-REMINDED_TODAY = N_("Already reminded today.")
+# The web's words for the same moments (RG-M4-b 13).
+REMINDED = N_("{name} was reminded.")
+REMINDED_TODAY = N_("{name} was already reminded today.")
+NOT_REMINDED = N_("{name} wasn’t reminded.")
 
 
 @dataclass(frozen=True)
@@ -164,6 +166,7 @@ class SubmissionsHost(QObject):
         view.action_requested.connect(self._on_action)
         view.open_in_editor.connect(self.open_in_editor)
         view.compare_requested.connect(self.compare)
+        view.remind_requested.connect(self.remind)
         view.submit_requested.connect(lambda: ports.submit())
         pill.clicked.connect(lambda: self.open_detail(pill.sid))
 
@@ -570,30 +573,27 @@ class SubmissionsHost(QObject):
             detail.composer.moveCursor(detail.composer.textCursor().MoveOperation.End)
             detail.composer.setFocus()
 
-    def remind(self, sid: str) -> None:
-        """Paul erinnern (12.4 ``/remind``): each contributor still to
-        confirm hears it once; said once, in place."""
+    def remind(self, sid: str, to: str = "") -> None:
+        """Paul erinnern (12.4 ``/remind``): the one person of the button
+        (RG-M4-b 11; without one, the first still to confirm), said in
+        place in the web's words; then their button goes."""
         row, following = self._row(sid), self._following
         waiting = rules.waiting_for(row) if row is not None else ()
-        if not waiting:
+        to = to or next((pk for pk in waiting if not following.reminded(sid, pk)), "")
+        if to not in waiting:
             return
-        answers = []
+        name = self._name_of(to) or _("Someone")
 
         def done(error) -> None:
-            answers.append(error)
-            if len(answers) < len(waiting):
-                return
-            failed = [e for e in answers if e is not None]
-            if not failed:
-                self._say_in_place(sid, _(REMINDED))
-            elif all(e.code == Code.RATE_LIMITED for e in failed):
-                self._say_in_place(sid, _(REMINDED_TODAY))
+            if error is None:
+                self._say_in_place(sid, _(REMINDED).format(name=name))
+            elif error.code == Code.RATE_LIMITED:
+                self._say_in_place(sid, _(REMINDED_TODAY).format(name=name))
             else:
-                cause = cause_words(failed[0].code)
-                self._say_in_place(sid, _(cause))
+                cause = cause_words(error.code)
+                self._say_in_place(sid, f"{_(NOT_REMINDED).format(name=name)} {_(cause)}")
 
-        for pubkey in waiting:
-            following.remind(sid, pubkey, done)
+        following.remind(sid, to, done)
 
     def view_published(self, sid: str) -> None:
         """Ansehen: the published article, where articles are read, at

@@ -13,9 +13,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Optional, Sequence
 
-from i18n import N_
+from i18n import N_, _
 
 from . import words
 
@@ -168,11 +168,19 @@ TABLE = {
                                N_("What the editorial team already had stays there.")),
 }
 
+def and_list(items: Sequence[str]) -> str:
+    """Names as one list: "Paul, Eva and Jana"."""
+    items = list(items)
+    if len(items) < 2:
+        return "".join(items)
+    return _("{items} and {last}").format(items=", ".join(items[:-1]), last=items[-1])
+
+
 # What rests on the Redaktion's word is offered only once that word
 # verified (9.4, 12.4): a split is confirmed, a text published, on the
 # verified accept alone. A later phase's handlers get no other.
 ON_A_DECISION = frozenset({Action.PUBLISH, Action.CONFIRM})
 
 
-__all__ = ["ACTION_LABELS", "Action", "NOTHING_TO_DO", "ON_A_DECISION", "ON_ITS_WAY", "Section",
+__all__ = ["ACTION_LABELS", "Action", "and_list", "NOTHING_TO_DO", "ON_A_DECISION", "ON_ITS_WAY", "Section",
            "Situation", "TABLE", "Words"]

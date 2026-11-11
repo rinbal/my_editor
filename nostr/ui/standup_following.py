@@ -51,7 +51,7 @@ from ..standup import conversation, formats, views
 from ..standup import following as rules
 from ..standup import thread as threads
 from ..standup.entries import SubmissionEntry
-from ..standup.errors import PASSING, StandupError, cause_words
+from ..standup.errors import PASSING, Code, StandupError, cause_words
 from ..standup.submitting import Phase
 from ..standup.watcher import (
     Followed, NotHandedIn, Round, StoredCopy, StoredOther, SubmissionWatcher, verify_stored,
@@ -122,6 +122,9 @@ class Following(QObject):
         # sid -> its one publish run (standup_publish.AcceptedPublish),
         # kept while the account is: closing the sheet never stops it.
         self.publishing: Dict[str, object] = {}
+        # (sid, pubkey) -> when the server took a reminder or said it had
+        # one today (RG-M4-b 11): that person's Erinnern goes.
+        self._reminded: Dict[Tuple[str, str], float] = {}
         # sid -> (the receipt's revision and hash, StoredCopy | NotHandedIn):
         # a verdict holds for that revision only (RG-M3-a 6).
         self._decided: Dict[str, Tuple[tuple, object]] = {}
@@ -582,9 +585,25 @@ class Following(QObject):
             on_failure=live(self._account, refused))
 
     def remind(self, sid: str, to: str, on_done: Callable[[Optional[StandupError]], None]) -> None:
-        """Erinnern (12.4 ``/remind``, the writer): one notice to ``to``."""
-        self.api_for(sid).remind(sid, to=to, on_success=live(self._account, lambda _ok: on_done(
-            None)), on_failure=live(self._account, on_done))
+        """Erinnern (12.4 ``/remind``, the writer): one notice to ``to``.
+        Taken, or one today already: :meth:`reminded` says so from then on."""
+        def answered(error: Optional[StandupError]) -> None:
+            if error is None or error.code == Code.RATE_LIMITED:
+                self._reminded[(sid, to)] = self._clock()
+            on_done(error)
+            self.detail_changed.emit(sid)
+
+        self.api_for(sid).remind(sid, to=to, on_success=live(self._account, lambda _ok: answered(
+            None)), on_failure=live(self._account, answered))
+
+    def reminded(self, sid: str, to: str) -> bool:
+        """Whether ``to`` was reminded of ``sid`` in the last 24 hours: here,
+        or as the conversation's history says (another device too)."""
+        now = self._clock()
+        if now - self._reminded.get((sid, to), -rules.REMIND_EVERY) < rules.REMIND_EVERY:
+            return True
+        detail = self.detail(sid)
+        return detail is not None and rules.reminded_lately(detail.history, to, now)
 
     def discard(self, sid: str, on_done: Callable[[bool], None]) -> None:
         """Verwerfen (13): a keyed tombstone for the entry the server has
