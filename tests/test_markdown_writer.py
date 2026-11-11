@@ -474,6 +474,7 @@ from markdown_writer import holds_faithfully  # noqa: E402
     # like one in a list item.
     "[a][r] und mehr.\n\n[r]: /u\n",
     "- [Note]: some text here\n",
+    "Mit `*` und `_` schreibt man *Betonung*, \\*`code`\\* ist kein Stern.\n",
 ])
 def test_markdown_the_editor_can_hold(source):
     assert holds_faithfully(source)
@@ -505,6 +506,9 @@ def test_markdown_the_editor_can_hold(source):
     "1. [r]:\n   /u\n\n[r]\n",
     '[a][r] und \\*b\\*.\n\n[r]: /u "t"\n',
     "[a][r]\n\n[r]: /u\n  'Titel'\n",
+    # Emphasis around nothing but code: Qt's reader gives code no emphasis.
+    "Ein *`code`*\nweiter.\n",
+    "Ein **`code`** und ~~`alt`~~.\n",
 ])
 def test_markdown_the_editor_would_lose(source):
     assert not holds_faithfully(source)
@@ -781,7 +785,7 @@ def test_emphasis_that_ends_a_wrapped_line_is_closed_on_it():
     ("A claim[^1] and another[^2].\n[^1]: https://example.com/source\n[^2]: Ibid.\n", None),
     ("*a*\n*b*\n", None),
     ("Ein *[Link](u)*\nweiter.\n", "Ein [*Link*](u)\nweiter.\n"),
-    ("Ein *`code`*\nweiter.\n", "Ein `code`\nweiter.\n"),     # as on one line
+    ("Ein `code`\nweiter.\n", None),
 ])
 def test_what_ends_a_wrapped_line_keeps_its_format_to_itself(source, saved):
     # Gate RG-PG2E-d 2: the break took the format of the word before it, a

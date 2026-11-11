@@ -79,7 +79,7 @@ from doc_walk import (
 import photo_group
 import photo_group_find
 from markdown_scan import (ESCAPABLE, FENCE_LINE, LIST_LINE, LOSSY_DEFINITION, descriptions,
-                           escapes, pictures)
+                           emphasized_code, escapes, pictures)
 from rich_text import normalize_after_markdown_load
 
 ImageTarget = Callable[[object], Optional[str]]
@@ -938,7 +938,8 @@ def has_local_only_formatting(doc) -> bool:
 # item or with a title, a link around an image, a heading inside a quote,
 # a paragraph continued inside a list item, and lines that wrap inside a paragraph (a draft saved as
 # plain text by an earlier version). Also (below): a tab inside fenced
-# code, a column's alignment, emphasis in a table's header row.
+# code, a column's alignment, emphasis in a table's header row, emphasis
+# around nothing but code (markdown_scan.emphasized_code).
 _LOSSY = [
     re.compile(r"^ {0,3}\[\^[^\]]+\]:.*\n(?:[ \t]*\n)+(?: {4}|\t)\S",
                re.MULTILINE),                              # a note of two paragraphs
@@ -1385,7 +1386,7 @@ def holds_faithfully(markdown: str) -> bool:
     """Whether the editor can hold this Markdown and write it back without
     losing anything. When it cannot, open it as its Markdown text."""
     if (any(pattern.search(markdown) for pattern in _LOSSY) or _soft_wrapped(markdown)
-            or _tab_in_fence(markdown) or _table_loses(markdown)):
+            or _tab_in_fence(markdown) or _table_loses(markdown) or emphasized_code(markdown)):
         return False
     # Read as the editor reads it (footnotes as their text, code in cells
     # without the escape of its pipes), but with its pictures as the

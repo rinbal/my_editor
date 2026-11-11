@@ -24,6 +24,8 @@ _AUTOLINK_OR_TAG = re.compile(
 _CODE_INDENT = re.compile(r"^(?: {4}|\t)")
 # Where an escape, a code span, an autolink or tag, or a picture may start.
 _STARTS_INLINE = re.compile(r"[\\`<]|!\[")
+_BACKTICKS = re.compile(r"`+")
+_EMPHASIS_MARKS = ("*", "_", "~")
 # Where an escape, or something an escape inside is no escape of, may
 # start: code, an autolink or a tag, a picture's description, a link's
 # address. A web address that holds an escape is none Qt's reader links
@@ -323,6 +325,36 @@ def pictures(markdown: str) -> List[Tuple[int, int, int]]:
             continue
         index += 1
     return found
+
+
+def emphasized_code(markdown: str) -> bool:
+    """Whether emphasis or strike-through holds nothing but a code span
+    ("*`code`*", "**`code`**", "~~`code`~~"), outside code. Qt's reader
+    gives code a font of its own, without the emphasis, and what is
+    written then reads back the same, so the check by reading it twice
+    does not see the loss (more than code in it, it does)."""
+    blocked = _Blocked(_code_ranges(markdown))
+    scanned = Found()
+    index = 0
+    while True:
+        nearest = _STARTS_INLINE.search(markdown, index)
+        if nearest is None:
+            return False
+        index = nearest.start()
+        end = blocked.end(index)
+        if end is not None:
+            index = end + 1
+            continue
+        skipped = skip_inline(markdown, index, scanned)
+        if skipped is None:
+            index += 1
+            continue
+        if (markdown[index] == "`" and skipped > _BACKTICKS.match(markdown, index).end()
+                and markdown[index - 1:index] in _EMPHASIS_MARKS
+                and markdown[index - 2:index - 1] != "\\"
+                and markdown[skipped:skipped + 1] in _EMPHASIS_MARKS):
+            return True
+        index = skipped
 
 
 def escapes(markdown: str) -> List[int]:
