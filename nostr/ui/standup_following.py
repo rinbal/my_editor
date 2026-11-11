@@ -474,8 +474,10 @@ class Following(QObject):
         public and not listed yet (the run's word first, then the record)."""
         going = {sid: state for sid, state in self.unlisted.states().items() if state}
         for sid, run in self.publishing.items():
-            if getattr(run, "going", ""):
-                going[sid] = run.going
+            served = self._served.get(sid)
+            if getattr(run, "going", "") and (served is None
+                                             or served.revision_hash == run.revision_hash):
+                going[sid] = run.going       # a run of an older version says nothing
         return going
 
     def row_for_work(self, d: str) -> Optional[rules.Row]:

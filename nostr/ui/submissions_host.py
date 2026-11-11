@@ -503,9 +503,9 @@ class SubmissionsHost(QObject):
         open_here = any(sheet is not None and shiboken6.isValid(sheet) and sheet.isVisible()
                         and sheet.run is run
                         for sheet in (self._publish_sheet, self._correction_sheet))
+        # A refusal stays in the detail's own words (RG-M4-c 7): not said twice.
         if run.stage is Stage.CHANGED or not open_here and run.stage in (
-                Stage.FAILED, Stage.NOT_STORED, Stage.SOMEONE_ELSES, Stage.NOT_CHECKED,
-                Stage.TOO_LONG):
+                Stage.FAILED, Stage.NOT_STORED, Stage.NOT_CHECKED):
             self._say_in_place(run.sid, run.words)
 
     def _hear(self, run) -> None:

@@ -250,7 +250,8 @@ class AcceptedPublish(QObject):
         if self.stage in (Stage.PUBLIC, Stage.NOT_LISTED) and self._ports.unlisted is not None:
             return self._ports.unlisted.state(self.sid)
         return {Stage.WORKING: rules.PUBLISHING, Stage.PUBLIC: rules.PUBLIC,
-                Stage.NOT_LISTED: rules.NOT_LISTED}.get(self.stage, "")
+                Stage.NOT_LISTED: rules.NOT_LISTED, Stage.SOMEONE_ELSES: rules.SOMEONE_ELSES,
+                Stage.TOO_LONG: rules.TOO_LONG}.get(self.stage, "")
 
     def start(self, *, here: bool = False) -> None:
         """Veröffentlichen (or, ``here``, Mit dem Schlüssel auf diesem

@@ -78,6 +78,20 @@ PUBLISHING = "publishing"
 PUBLIC = "public"
 UNREPORTED = "unreported"
 NOT_LISTED = "not listed"
+# Refused before anything went out, as the run said it (RG-M4-c 7): it
+# stays with the sheet closed, so the detail never offers Veröffentlichen
+# again only to say it once more.
+SOMEONE_ELSES = "someone elses"
+TOO_LONG = "too long"
+REFUSED = frozenset({SOMEONE_ELSES, TOO_LONG})
+# 12.4, Before the writer's work goes out: the canonical words both apps
+# say (S3-DECISIONS; "Beitrag", since audio goes this way too).
+SOMEONE_ELSES_WORDS = N_("Another person’s work already stands under this link name. So "
+                         "that it stays, nothing is published.")
+# Q1 without the key here (the web's N1, tooLongElsewhere): the text is
+# the accepted version's, never shortened.
+TOO_LONG_WORDS = N_("Your signer app doesn’t sign texts this long. Sign in with another "
+                    "signer app, or write to the editorial team.")
 # By state: the row's word, the detail's sentence and quieter line, and
 # its one action.
 PUBLISHING_WORDS = {
@@ -88,6 +102,8 @@ PUBLISHING_WORDS = {
                  N_("{publication} hasn’t learned of it yet."), Action.REPORT),
     NOT_LISTED: (N_("Published"), N_("“{title}” is public, but {publication} already lists "
                                      "another work under this link name."), "", Action.ASK),
+    SOMEONE_ELSES: (N_("Not published"), SOMEONE_ELSES_WORDS, "", Action.ASK),
+    TOO_LONG: (N_("Not published"), TOO_LONG_WORDS, "", Action.ASK),
 }
 # The situations a publish of the writer's runs from.
 PUBLISHED_HERE = frozenset({Situation.PUBLISH, Situation.CORRECTION,
@@ -160,6 +176,8 @@ class Row:
 
     @property
     def section(self) -> Section:
+        if self.publishing in REFUSED:
+            return Section.TURN         # nothing went out: the person asks
         if self.publishing:
             return Section.RUNNING      # nothing to do: it is on its way, or out
         return TABLE[self.situation].section
@@ -514,7 +532,7 @@ def rests_on(situation: Situation, decision: Optional[Decision]) -> bool:
 __all__ = [
     "ACTION_LABELS", "Action", "DECIDER_ROLES", "DECISIONS", "Decision", "NOTHING_TO_DO",
     "NOT_LISTED", "PUBLIC", "PUBLISHED_HERE", "PUBLISHING", "PUBLISHING_WORDS", "REMIND_EVERY",
-    "UNREPORTED",
+    "REFUSED", "SOMEONE_ELSES", "SOMEONE_ELSES_WORDS", "TOO_LONG", "TOO_LONG_WORDS", "UNREPORTED",
     "correction_taken", "reminded_lately",
     "NOT_SIGNED", "ON_A_DECISION", "ON_ITS_WAY", "Row",
     "Section", "SignedChecks", "Situation", "Status", "TABLE", "Words", "YOUR_TURN", "action_verified",

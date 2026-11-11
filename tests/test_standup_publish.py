@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 from PySide6.QtCore import QObject, Signal
 
+from i18n import _
 from nostr import events
 from nostr.standup import crypto as scrypto
 from nostr.standup import formats, publishing, views
@@ -605,6 +606,15 @@ def test_nothing_goes_out_over_another_persons_article_at_the_address(accepted):
     assert "So that it stays, nothing is published." in run.words
     assert store.uploaded == [] and store.deleted == []
     assert accepted.world.record(accepted.sid).state == "accepted"
+    # RG-M4-c 7: with no sheet open the detail says the refusal and offers
+    # Rückfrage stellen, never a Veröffentlichen that only says it again.
+    from nostr.standup import following as rules
+    row = accepted.following.row(accepted.sid)
+    status = rules.status_of(row, publication="Magazin", name_of=lambda _pk: "")
+    assert (row.publishing, status.sentence, status.action) == (
+        rules.SOMEONE_ELSES, run.words, rules.Action.ASK)
+    assert rules.pill_word(row, lambda _pk: "") == "Your turn"
+    assert _(rules.ACTION_LABELS[rules.Action.ASK]) == "Ask a Question"
 
 
 def test_the_address_is_read_on_every_relay_and_only_clear_ones_take_it(accepted):
@@ -695,6 +705,18 @@ def test_too_long_for_the_signer_app_with_the_key_here_offers_it_once(accepted, 
     for module in (signer_limits, standup_publish_job):     # the signer app's limit
         monkeypatch.setattr(module, "signable", lambda profile, event: False)
     remote = SimpleNamespace(user_pubkey=pk("writer"), signer="remote", bunker_relays=[])
+    run, store, jobs = _run(accepted, key_here=False, profile=remote)
+    run.start()
+    assert run.stage is Stage.TOO_LONG and store.uploaded == []
+    assert "Sign in with another signer app, or write to the editorial team." in run.words
+    from nostr.standup import following as rules
+    row = accepted.following.row(accepted.sid)                     # RG-M4-c 7: it stays
+    assert row.publishing == rules.TOO_LONG and rules.status_of(
+        row, publication="Magazin", name_of=lambda _pk: "").action is rules.Action.ASK
+    from nostr.ui.standup_publish_sheet import PublishSheet
+    sheet = PublishSheet(run=run, publication="Magazin", number=1, is_dark=False)
+    assert sheet.publish.text() == "Ask a Question"
+    sheet.deleteLater()
     run, store, jobs = _run(accepted, key_here=True, profile=remote)
     run.start()
     accepted.world.settle()
@@ -704,14 +726,6 @@ def test_too_long_for_the_signer_app_with_the_key_here_offers_it_once(accepted, 
     run.start(here=True)
     accepted.world.settle()
     assert jobs[0].here and run.stage is Stage.DONE
-    run, store, jobs = _run(accepted, key_here=False, profile=remote)
-    run.start()
-    assert run.stage is Stage.TOO_LONG and store.uploaded == []
-    assert "Sign in with another signer app, or write to the editorial team." in run.words
-    from nostr.ui.standup_publish_sheet import PublishSheet
-    sheet = PublishSheet(run=run, publication="Magazin", number=1, is_dark=False)
-    assert sheet.publish.text() == "Ask a Question"
-    sheet.deleteLater()
 
 
 def test_q1_learned_only_from_the_signer_apps_refusal_still_publishes_with_the_key_here(

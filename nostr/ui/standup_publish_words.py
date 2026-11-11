@@ -10,6 +10,10 @@ from enum import Enum
 
 from i18n import N_
 
+# The words the detail says too, with the sheet closed (RG-M4-c 7).
+from ..standup.following import SOMEONE_ELSES_WORDS as SOMEONE_ELSES
+from ..standup.following import TOO_LONG_WORDS as TOO_LONG_ELSEWHERE
+
 BUSY = N_("Publishing …")
 BUSY_DETAIL = N_("The pictures go up to your media server, then it’s signed.")
 BUSY_SIGNING = N_("Waiting for your signer app.")
@@ -20,10 +24,6 @@ PICTURE_NOT_FOUND = N_("A picture of the accepted version can’t be found on th
 PICTURE_NOT_UP = N_("A picture couldn’t be put on your media server, so nothing was "
                     "published. Check your media servers in Settings, then try again.")
 NOT_THE_SAME = N_("The submission changed in the meantime, so nothing was published.")
-# 12.4, Before the writer's work goes out: the canonical words both apps
-# say (S3-DECISIONS; "Beitrag", since audio goes this way too).
-SOMEONE_ELSES = N_("Another person’s work already stands under this link name. So that it "
-                   "stays, nothing is published.")
 # No relay answered the read of its address, or this server's read
 # failed (12.4, RG-B5-d): the words both apps say, under NOT_PUBLISHED.
 NOT_CHECKED = N_("Whether a work already stands under this link name couldn’t be checked "
@@ -32,8 +32,6 @@ NOT_CHECKED = N_("Whether a work already stands under this link name couldn’t 
 # tooLongElsewhere): the text is the accepted version's, never shortened.
 TOO_LONG_HERE = N_("Your signer app doesn’t sign texts this long. It works with the key on "
                    "this computer.")
-TOO_LONG_ELSEWHERE = N_("Your signer app doesn’t sign texts this long. Sign in with another "
-                        "signer app, or write to the editorial team.")
 # Right before the signer app is asked to delete the encrypted copies
 # (RG-M4-b 12): one quiet line in the done state.
 CLEANUP_ASKS = N_("Your signer app asks once more in a moment: with it, MyEditor deletes the "
