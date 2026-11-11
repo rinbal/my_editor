@@ -33,6 +33,14 @@ that declined is not asked again in this run; an answer that will not
 change (the work is another revision's, the person no longer its
 writer) ends the record. No try and no ride is spent on a work the View
 already lists.
+
+A work the writer published on another device has no record here. When
+the server lists another work at its link name (12.4 ``address_taken``),
+the detail's read looks at its address on the relays it goes to
+(:meth:`QuietReport.look`); a run about to sign reads them anyway. Where
+they show this version, credited to the writer, it is public: kept as
+the refused report is ("„Titel“ ist öffentlich, aber …", Rückfrage
+stellen), and nothing is signed.
 """
 
 from __future__ import annotations
@@ -42,10 +50,12 @@ from typing import Callable, Dict, List, Optional
 
 from PySide6.QtCore import QObject
 
+from .. import bech32
 from ..standup import following as rules
-from ..standup import unlisted
+from ..standup import formats, publishing, unlisted
 from ..standup.errors import PASSING, Code
 from .standup_account import live
+from .standup_publish_words import LINK_RELAYS
 
 # What a later try may not meet again: kept, and asked again after the pause.
 _AGAIN = frozenset({*PASSING, Code.RATE_LIMITED, Code.SIGNER_UNREACHABLE, Code.UNAVAILABLE,
@@ -83,16 +93,20 @@ class QuietReport(QObject):
     """One per account's Following. ``record`` is the account's
     :class:`unlisted.Unlisted`; ``here()`` says the key is on this
     computer; ``ride_along`` the account's :class:`RideAlong`;
+    ``read(unsigned, on_done)`` reads the address of ``unsigned`` on the
+    relays it goes to (``standup_publish_job.read_relays``; None: never);
     ``later(ms, call)`` and ``clock`` are seams."""
 
     def __init__(self, following, account, *, record: unlisted.Unlisted,
                  later: Callable[[int, Callable[[], None]], None],
                  here: Callable[[], bool], ride_along: RideAlong,
+                 read: Optional[Callable[[dict, Callable[[dict], None]], None]] = None,
                  clock: Callable[[], float] = time.time,
                  parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self._following, self._account, self._record = following, account, record
-        self._later, self._clock, self._here = later, clock, here
+        self._later, self._clock, self._here, self._read = later, clock, here, read
+        self._looked: set = set()                  # (sid, revision hash) read on the relays
         self._listed: Dict[str, Callable] = {}     # sid -> the run's answer, in this run
         self._quick: Dict[str, int] = {}           # sid -> quiet tries after its publish
         self._waiting: set = set()                 # a try is due or on its way
@@ -157,6 +171,59 @@ class QuietReport(QObject):
         self._waiting.add(sid)
         self._following.publishing_changed(sid)
         self._try(sid, by_hand=on_done)
+
+    def look(self, sid: str, version) -> None:
+        """The server lists another work at the link name of ``sid``, the
+        writer's to publish, opened here as ``version``: unless a record
+        says how it stands, its address is read on the relays once per
+        version and run (:meth:`found`)."""
+        row = self._following.row(sid)
+        view = row.view if row is not None else None
+        if self._stopped or self._read is None or view is None \
+                or row.situation is not rules.Situation.PUBLISH or version is None \
+                or version.opened is None or version.revision_hash != view.revision_hash \
+                or self._kept(sid, version.revision) or (sid, view.revision_hash) in self._looked:
+            return
+        self._looked.add((sid, view.revision_hash))
+        revision, writer = version.opened.revision, self._account.writer
+        try:
+            d = str(revision["work"]["d"])
+            unsigned = publishing.published_template(
+                revision, writer=writer, d=d, published_at=0, created_at=0,
+                media_urls=publishing.addresses_before(publishing.media_to_publish(revision), ()))
+        except (KeyError, TypeError, publishing.NotPublishable):
+            return
+        address = f"{formats.ARTICLE_KIND}:{writer}:{d}"
+        self._read(unsigned, lambda relays: self.found(sid, version, address=address,
+                                                       relays=relays))
+
+    def found(self, sid: str, version, *, address: str, relays) -> bool:
+        """Whether the relays' read of ``address`` (12.4) shows ``version``,
+        a first publication, public, credited to the writer, while its
+        publication lists another work there: then it is kept as that
+        (never signed or sent again), and the run, the list and the
+        detail say so."""
+        if self._stopped or version.opened.verified.correction:
+            return False
+        shown = unlisted.found_public(version.opened.revision, writer=self._account.writer,
+                                      address=address, relays=relays)
+        if shown is None:
+            return False
+        if not self._kept(sid, version.revision):
+            event, holding = shown
+            naddr = bech32.encode_naddr(formats.tag_value(event, "d"), event["pubkey"],
+                                        formats.ARTICLE_KIND, holding[:LINK_RELAYS])
+            self.hand_over(sid, event=event, naddr=naddr, revision=version.revision, taken=True)
+        run = self._following.publishing.get(sid)
+        if run is not None:
+            run.kept_public()
+        self._following.publishing_changed(sid)
+        return True
+
+    def _kept(self, sid: str, revision: int) -> bool:
+        """Whether a record says how this revision of ``sid`` stands."""
+        entry = self._record.entry(sid)
+        return entry is not None and int(entry.get("revision", 0)) == revision
 
     def forget(self, sid: str) -> None:
         """The work is listed (or no longer this writer's to report)."""

@@ -121,6 +121,14 @@ class StandupWriter(QObject):
     def following(self, profile) -> Following:
         account = self.account(profile)
         if self._following is None:
+            from .standup_publish_job import read_relays
+
+            def read_address(unsigned: dict, on_done) -> None:
+                read_relays(relay_pool=self._relay_pool, relay_directory=self._relay_directory,
+                            profile=profile, unsigned_event=unsigned,
+                            entitled_relays=self._entitled_relays or (),
+                            on_done=live(account, on_done), parent=account)
+
             self._following = Following(
                 account, marks=self._marks,
                 on_listed=lambda read: self._listed(account, read),
@@ -128,7 +136,7 @@ class StandupWriter(QObject):
                 later=_later, clock=self._clock,
                 # A public work's report that did not arrive, kept across
                 # restarts (RG-M4-b 3), as the cleanups are.
-                unlisted=Unlisted(account.writer), parent=account)
+                unlisted=Unlisted(account.writer), read_address=read_address, parent=account)
             # The published works' encrypted files go, quietly (M-4 M14).
             self._cleanup = BlobCleanup(self._following, account, profile,
                                         store=self._media_store, parent=self._following)

@@ -220,15 +220,22 @@ class AcceptedPublish(QObject):
 
     def _kept_public(self) -> None:
         """A run made for a work kept as public (after a restart, RG-M4-c
-        3) starts there: never "Bisher privat …" for a public text."""
+        3; published on another device) starts there: never "Bisher
+        privat …" for a public text."""
         unlisted = self._ports.unlisted
         state = unlisted.state(self.sid) if unlisted is not None else ""
         entry = unlisted.record.entry(self.sid) if state else None
         if entry is None or int(entry.get("revision", 0)) != self._version.revision:
             return
         self.signed_article, self.naddr = dict(entry["event"]), str(entry["naddr"])
-        self.stage = Stage.NOT_LISTED if state == rules.NOT_LISTED else Stage.PUBLIC
-        self.words = self._public_words(state)
+        self._say(Stage.NOT_LISTED if state == rules.NOT_LISTED else Stage.PUBLIC, "",
+                  self._public_words(state))
+
+    def kept_public(self) -> None:
+        """The relays showed the work public (published on another device)
+        before this run began, or after it stopped short: it moves there."""
+        if self.stage in (Stage.READY, Stage.NOT_CHECKED, Stage.FAILED):
+            self._kept_public()
 
     def _public_words(self, state: str) -> str:
         title = str((self.revision.get("work") or {}).get("title") or "")
@@ -500,7 +507,13 @@ class AcceptedPublish(QObject):
             found = publishing.release(writer=self.writer, address=self.address,
                                        address_taken=taken, server_read=read, held=held,
                                        relays=relays)
-            if found.someone_elses:
+            unlisted = self._ports.unlisted
+            if taken and unlisted is not None and unlisted.found(
+                    self.sid, self._version, address=self.address, relays=relays):
+                # Published on another device: public already, never "nothing
+                # is published"; what this run put up shows in it, and stays.
+                self._kept_public()
+            elif found.someone_elses:
                 self._fail(_(SOMEONE_ELSES), Stage.SOMEONE_ELSES)
             elif not read or (unsigned is not None and not found.send_to):
                 self._fail(_(NOT_CHECKED), Stage.NOT_CHECKED)

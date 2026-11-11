@@ -215,7 +215,7 @@ def accepted():
 
 
 def _run(case, *, store=None, took=(True,), reread_hash=None, key_here=False, profile=None,
-         relays_hold=None, changed_from=0, cleanup=None):
+         relays_hold=None, changed_from=0, cleanup=None, taken=False):
     store = store or FakeStore()
     jobs = []
     following, api = case.following, case.writer.api
@@ -227,7 +227,7 @@ def _run(case, *, store=None, took=(True,), reread_hash=None, key_here=False, pr
         reads.append(view)
         if reread_hash is not None and len(reads) > changed_from:
             view = replace(view, revision_hash=reread_hash)
-        on_detail(SimpleNamespace(submission=view, address_taken=False))
+        on_detail(SimpleNamespace(submission=view, address_taken=taken))
 
     def held_at(address, on_author, on_failure):
         api.article_author(address, on_author, on_failure)
@@ -303,6 +303,60 @@ def test_another_work_at_the_link_name_is_said_in_one_sentence_and_the_name_kept
     sheet = PublishSheet(run=run, publication="Magazin", number=1, is_dark=False)
     assert sheet.publish.text() == "Ask a Question" and sheet.cancel_button.text() == "Close"
     sheet.deleteLater()
+
+
+def test_published_on_another_device_beside_another_work_reads_public_and_signs_nothing(
+        accepted):
+    # Lead 2026-11-11: no record here, the server lists another work at the
+    # link name, the writer's own event is on the relays (12.4): public.
+    from nostr.standup import following as rules
+    from nostr.standup.errors import Code, StandupError
+    from nostr.ui.standup_publish_sheet import PublishSheet
+    world, sid, writer = accepted.world, accepted.sid, accepted.writer
+    elsewhere, _store, jobs = _run(accepted)
+
+    def refused(sid, *, on_failure, **_kw):
+        on_failure(StandupError(code=Code.CONFLICT, status=409,
+                                detail={"reason": "address_taken"}, own=True))
+
+    elsewhere._ports = replace(elsewhere._ports, api=SimpleNamespace(published=refused))
+    elsewhere.start()
+    world.settle()
+    world.record(sid).address_taken = True
+    relays = {"wss://relay.example": (True, [jobs[0].signed_event])}
+    asked = []
+    here = world.following(writer, read_address=lambda unsigned, done: (
+        asked.append(formats.tag_value(unsigned, "d")), done(relays)))
+    here.open(sid)
+    world.settle()
+    row = here.row(sid)
+    title = row.title
+    status = rules.status_of(row, publication="Magazin", name_of=lambda _p: "")
+    assert asked == ["ein-jahr"] and row.publishing == rules.NOT_LISTED
+    assert rules.pill_word(row, lambda _p: "") == "Published"
+    assert status.sentence == (f"“{title}” is public, but Magazin already lists another "
+                               "work under this link name.") and status.action is rules.Action.ASK
+    case = SimpleNamespace(**{**vars(accepted), "following": here})
+    run, _store, signed = _run(case)
+    sheet = PublishSheet(run=run, publication="Magazin", number=1, is_dark=False)
+    assert run.stage is Stage.NOT_LISTED and not sheet.privacy.isVisibleTo(sheet)
+    assert sheet.publish.text() == "Ask a Question"
+    run.start()
+    world.settle()
+    sheet.deleteLater()
+    # Veröffentlichen pressed before the relays answered: the read before
+    # signing finds it public, and "nothing is published" is never said.
+    later = world.following(writer)
+    later.open(sid)
+    world.settle()
+    case = SimpleNamespace(**{**vars(accepted), "following": later})
+    pressed, _store, signed_later = _run(case, taken=True,
+                                         relays_hold=lambda _unsigned, done: done(relays))
+    pressed.start()
+    world.settle()
+    assert pressed.stage is Stage.NOT_LISTED and pressed.words == status.sentence
+    assert later.row(sid).publishing == rules.NOT_LISTED
+    assert signed == [] and signed_later == [] and len(jobs) == 1
 
 
 def _flaky_report(api, failures):

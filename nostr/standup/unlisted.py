@@ -18,14 +18,19 @@ So the work stays known as public across a restart, and it is kept
 until the View lists the work (or no longer waits for this report):
 the seven days end only the quiet tries (RG-M4-c 3), and after them the
 person sends it again by hand.
+
+A work the writer published on another device has no record here. When
+the server lists another work at its link name, the relays' read of its
+address (12.4) tells whether it is public all the same
+(:func:`found_public`), and it is kept as that.
 """
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .. import events as nostr_events
-from . import formats
+from . import formats, publishing
 
 # The pauses between tries, in seconds; the last one repeats.
 PAUSES = (30, 2 * 60, 10 * 60, 3600, 6 * 3600, 24 * 3600)
@@ -53,6 +58,24 @@ def first(*, event: Mapping, naddr: str, revision: int, now: float,
     refused because the publication lists another work at the link name)."""
     return {"event": dict(event), "naddr": naddr, "revision": int(revision), "started": now,
             "tries": 1, "next": now + PAUSES[0], "taken": bool(taken)}
+
+
+def found_public(revision: Mapping, *, writer: str, address: str,
+                 relays: Mapping[str, Tuple[bool, Sequence[Any]]]
+                 ) -> Optional[Tuple[dict, List[str]]]:
+    """The newest event at ``address`` in the relays' read (12.4) that
+    credits ``writer`` and shows ``revision``, with the relays that hold
+    it; None when none does. It shows the revision when nothing tells the
+    two apart: :func:`publishing.correction_changes` finds no change and
+    :func:`publishing.correction_texts` reads both texts alike."""
+    shown = [(url, event) for url, (_complete, events) in relays.items() for event in events
+             if publishing.held_credit(event, address) == writer
+             and not publishing.correction_changes(revision, event)
+             and len(set(publishing.correction_texts(revision, event))) == 1]
+    if not shown:
+        return None
+    newest = max((event for _url, event in shown), key=lambda event: event["created_at"])
+    return dict(newest), [url for url, event in shown if event["id"] == newest["id"]]
 
 
 def after_try(entry: Mapping[str, Any], now: float, *, taken: bool = False) -> Dict[str, Any]:
@@ -135,4 +158,4 @@ class Unlisted:
 
 
 __all__ = ["GIVES_UP", "MOST_KEPT", "PAUSES", "SETTINGS_KEY", "Unlisted", "after_try", "due",
-           "first", "over"]
+           "first", "found_public", "over"]

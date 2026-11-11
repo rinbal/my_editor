@@ -102,6 +102,7 @@ class Following(QObject):
                  later: Callable[[int, Callable[[], None]], None],
                  clock: Callable[[], float] = time.time, timer=None,
                  unlisted: Optional[Unlisted] = None,
+                 read_address: Optional[Callable[[dict, Callable[[dict], None]], None]] = None,
                  parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self._account = account
@@ -129,11 +130,13 @@ class Following(QObject):
         # (RG-M4-b 3); the app keeps them across restarts, a test does not.
         # Through a signer app at most one unannounced request per run,
         # right after one of the person's own (the report and the cleanup).
+        # ``read_address`` reads a work's address on the relays: one
+        # published on another device is known public (12.4).
         self.ride_along = RideAlong()
         self.unlisted = QuietReport(
             self, account, record=unlisted or Unlisted.in_memory(account.writer), later=later,
             here=lambda: bool(getattr(account.profile, "is_local", False)),
-            ride_along=self.ride_along, clock=clock, parent=self)
+            ride_along=self.ride_along, read=read_address, clock=clock, parent=self)
         self._going: Dict[str, str] = {}
         # (sid, pubkey) -> when the server took a reminder or said it had
         # one today (RG-M4-b 11): that person's Erinnern goes.

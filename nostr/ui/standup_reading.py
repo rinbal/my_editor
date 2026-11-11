@@ -286,8 +286,14 @@ class Reading:
         self._owner.serve(detail.submission)
         record = next((r for r in detail.revisions
                        if r.revision == detail.submission.revision), None)
+        taken = detail.address_taken      # another work at the writer's link name (12.4)
+
+        def opened(version: Optional[Version]) -> None:
+            if taken:
+                self._owner.unlisted.look(sid, version)
+
         if record is not None:
-            self._open_version(sid, state, detail.submission, record)
+            self._open_version(sid, state, detail.submission, record, opened)
         self._owner.mark_read(sid)
 
     def _open_version(self, sid: str, state: _Open, view: views.SubmissionView,
