@@ -24,6 +24,11 @@ The pictures (:class:`BlossomUploads`, :func:`thumbnail`) are
 A read of the list that missed a page (a relay that did not give it) is
 read again quietly, with backoff, before anything is said (lessons 36,
 :func:`~nostr.failures.retry_quietly`).
+
+The module is longer than most: :class:`StandupWriter` is the one
+object the window holds per server, and the link name and the publish
+run (:mod:`.standup_publish`, M-4) need its account and its means; each
+is a few lines here, the rest lives in its own module.
 """
 
 from __future__ import annotations
@@ -86,6 +91,8 @@ class StandupWriter(QObject):
         self._server = configured_server() if server is None else server
         self._nam = nam
         self._uploads = uploads or BlossomUploads(media_store, parent=self)
+        self._media_store = media_store
+        self._fetcher = None                 # made on the first publish
         self._accounts = accounts or self._new_account
         self._clock = clock
         self._account: Optional[Account] = None
@@ -124,6 +131,24 @@ class StandupWriter(QObject):
         if account is None or profile is None or account.writer != profile.user_pubkey:
             return None
         return self._following
+
+    # -- publishing an accepted submission (M-4 M13) -------------------------------
+
+    def publisher(self, profile, sid: str):
+        """The one publish run of ``sid`` (standup_publish.run_for), or
+        None while the verified accept and revision do not allow one."""
+        from .standup_publish import run_for
+        following = self.followed(profile)
+        if following is None:
+            return None
+        if self._fetcher is None:
+            from .thumbnail_loader import ThumbnailLoader
+            self._fetcher = ThumbnailLoader(parent=self)
+        return run_for(following, self.account(profile), profile, sid,
+                       store=self._media_store, fetch=self._fetcher.fetch,
+                       session_pool=self._session_pool, relay_pool=self._relay_pool,
+                       relay_directory=self._relay_directory,
+                       entitled_relays=self._entitled_relays, parent=self)
 
     def _new_account(self, profile) -> Account:
         return Account(profile, session_pool=self._session_pool, relay_pool=self._relay_pool,

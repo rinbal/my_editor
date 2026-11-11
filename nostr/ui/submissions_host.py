@@ -31,18 +31,21 @@ from dataclasses import dataclass, replace
 from typing import Callable, Dict, Optional
 
 import shiboken6
-from PySide6.QtCore import QObject, QTimer
-from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtCore import QObject, QTimer, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QPixmap
 
 from i18n import N_, _
 
+from .. import web_readers
 from ..standup import following as rules
-from ..standup import formats
+from ..standup import formats, publishing
 from ..standup import thread as threads
 from . import appearance
 from .publish_article_dialog import ArticleCard
 from .standup_compare import CompareDialog, Comparer
 from .standup_publications import publication_logo
+from .standup_publish import Stage
+from .standup_publish_sheet import PublishSheet
 from .standup_revise_sheet import ReviseSheet, comparable
 from .standup_uploads import thumbnail
 from .submission_cover import CoverFetch, monogram, png_bytes
@@ -68,6 +71,7 @@ FOLLOW_MS = 400
 OPEN_IT_FIRST = N_("Open the article in the editor first.")
 NOT_FOUND = N_("MyEditor can’t find this article. Open it in the editor, then send it again.")
 VERSION_NOT_LOADED = N_("The version you handed in couldn’t be loaded: try again in a moment.")
+ACCEPTED_NOT_LOADED = N_("The accepted version couldn’t be loaded yet: try again in a moment.")
 
 
 @dataclass(frozen=True)
@@ -134,6 +138,7 @@ class SubmissionsHost(QObject):
         # with the account (each deletes itself once it is closed).
         self._dialog: Optional[CompareDialog] = None
         self._sheet: Optional[ReviseSheet] = None
+        self._publish_sheet: Optional[PublishSheet] = None
         self._typing = QTimer(self)
         self._typing.setSingleShot(True)
         self._typing.setInterval(FOLLOW_MS)
@@ -181,10 +186,10 @@ class SubmissionsHost(QObject):
         self.view.set_following(None, signed_in=False)
         self.pill.clear()
         self.comparer.stop()
-        for sheet in (self._dialog, self._sheet):
+        for sheet in (self._dialog, self._sheet, self._publish_sheet):
             if sheet is not None and shiboken6.isValid(sheet):
                 sheet.reject()
-        self._dialog = self._sheet = None
+        self._dialog = self._sheet = self._publish_sheet = None
         noticed, self._noticed = self._noticed, {}
         for ed, (_sid, text) in noticed.items():
             notice = self._ports.notice_of(ed) if shiboken6.isValid(ed) else None
@@ -283,7 +288,9 @@ class SubmissionsHost(QObject):
         correction to."""
         return {rules.Action.REVISE: lambda sid: self.open_in_editor(sid, 0),
                 rules.Action.HAND_IN: self.hand_in,
-                rules.Action.RESEND: self.send_again}
+                rules.Action.RESEND: self.send_again,
+                rules.Action.PUBLISH: self.publish,
+                rules.Action.VIEW: self.view_published}
 
     def _on_action(self, sid: str, action) -> None:
         handler = self.actions().get(action)
@@ -407,6 +414,58 @@ class SubmissionsHost(QObject):
             with_version(None)
         else:
             following.version(sid, number, with_version)
+
+    def publish(self, sid: str) -> None:
+        """Veröffentlichen … (M13): the sheet of the account's one publish
+        run of ``sid``, on the verified accept of the verified revision
+        opened here; it says when the editor's text differs from it."""
+        row, ports = self._row(sid), self._ports
+        if row is None or row.view is None:
+            return
+        profile = ports.profile()
+        run = ports.standup().publisher(profile, sid)
+        if run is None:
+            self._say_in_place(sid, _(ACCEPTED_NOT_LOADED))
+            return
+        work = run.revision.get("work") or {}
+        ed = ports.editor_of(row.d) if row.d else None
+        differs = ed is not None and comparable(ports.text_of(ed)) != comparable(
+            str(work.get("content") or ""))
+        people = [self._name_of(pk) or _("Someone")
+                  for pk in publishing.credited(run.revision, run.writer)]
+        sheet = self._publish_sheet = PublishSheet(
+            run=run, publication=self._following.publication_name(row.publication),
+            number=row.view.revision, section=row.view.section or "",
+            account_name=self._name_of(run.writer), people=people, differs=differs,
+            is_dark=ports.is_dark(), parent=ports.window())
+        sheet.hand_in_requested.connect(self.hand_in)
+        sheet.view_requested.connect(lambda naddr: self._view(naddr, row))
+        if not run.property("heard"):
+            # With the sheet closed, a run that could not finish says so
+            # once in the detail (lessons 36); it goes on otherwise.
+            run.setProperty("heard", True)
+            run.changed.connect(lambda: self._publish_said(run))
+        ports.keep(sheet)
+        sheet.open()
+
+    def _publish_said(self, run) -> None:
+        sheet = self._publish_sheet
+        open_here = sheet is not None and shiboken6.isValid(sheet) and sheet.isVisible()
+        if not open_here and run.stage in (Stage.FAILED, Stage.NOT_STORED, Stage.NOT_REPORTED):
+            self._say_in_place(run.sid, run.words)
+
+    def view_published(self, sid: str) -> None:
+        """Ansehen: the published article, where articles are read."""
+        row = self._row(sid)
+        if row is not None and row.view is not None and row.view.published is not None:
+            self._view(row.view.published.naddr, row)
+
+    def _view(self, naddr: str, row) -> None:
+        post = web_readers.Post(kind=web_readers.ARTICLE, entity=naddr, author=row.writer,
+                                identifier=row.d)
+        link = web_readers.link_for(web_readers.default_reader(web_readers.ARTICLE, ""), post)
+        if link:
+            QDesktopServices.openUrl(QUrl(link))
 
     def compare(self, sid: str, revision: int) -> None:
         """Änderungen zeigen on a version's card: that version beside the

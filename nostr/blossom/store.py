@@ -541,6 +541,16 @@ class MediaStore(QObject):
         except OSError:
             return None                     # not cached
 
+    def cached_bytes(self, sha256: str) -> Optional[bytes]:
+        """The whole file this computer keeps of ``sha256``, or None (the
+        caller checks its hash: a cache is not a source of truth)."""
+        if self._blob_cache is None:
+            return None
+        try:
+            return self._blob_cache.cache_path(sha256).read_bytes()
+        except (OSError, ValueError):
+            return None                     # not cached
+
     def added_here(self, sha256: str) -> bool:
         """Whether this file was added to the library on this computer
         (it then has the name it was added with)."""

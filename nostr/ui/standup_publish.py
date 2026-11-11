@@ -1,0 +1,518 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""Veröffentlichen: the writer publishes an accepted submission under
+their own key (plan 8.2, 8.5; editorial contract 7, 11.2 step
+``writer_publishes``, 12.4 ``/published``; M-4 M13).
+
+One :class:`AcceptedPublish` per submission, held by the account's
+Following (so closing the sheet never stops it, and it goes with the
+account). It acts only on the verified newest accept, for the revision
+that accept names, which must be the verified revision opened here:
+
+  1. The work's encrypted pictures are listed (``publishing``), and the
+     article with their addresses as long as they will be is measured
+     against the signer first: nothing private goes up in plain for an
+     article the signer could not sign.
+  2. Each picture is read (this computer's copy first, else from the
+     servers its opened revision names, then the writer's), decrypted with the key its own
+     submission's signed revision names, checked against its plain hash
+     and put on the writer's media servers. A file the person's library
+     held before is named as it is and never taken down; every file
+     this run put up is written down and taken down again on any
+     failure before a relay took the article.
+  3. The article is built with the public addresses (credits, the
+     writer's own split, carried tags as the web app does), measured
+     again, signed, and kept bound to the revision. Before it goes to
+     the relays the submission is read again: when its revision changed
+     the signed article is dropped and the pictures taken down.
+  4. Only once a relay took it is it reported (``/published``). No
+     relay took it: the same signed article goes again with Erneut. Not
+     reported: Erneut reports it again (it is public by then).
+
+Through a signer app that cannot sign an article this long, with the
+key also kept on this computer, :attr:`Stage.OFFER_HERE` offers once
+to sign this one article with that key (M-4 Q1): explicit, for this
+article only, the key read from the keychain for the signature and
+never stored anywhere.
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from dataclasses import dataclass
+from enum import Enum
+from typing import Callable, Dict, List, Mapping, Optional, Tuple
+
+from PySide6.QtCore import QObject, Signal
+
+from i18n import N_, _
+
+from .. import bech32
+from ..outbox.policy import relays_from
+from ..publish_pipeline import not_taken_words
+from ..publisher import PublishJob
+from ..signer_limits import signable, size_problem, through_signer_app
+from ..standup import formats, opening, publishing
+from ..standup.publishing import Accepted
+from .standup_account import live
+
+_log = logging.getLogger(__name__)
+
+BUSY = N_("Publishing …")
+BUSY_DETAIL = N_("The pictures go up to your media server, then it’s signed.")
+BUSY_SIGNING = N_("Waiting for your signer app.")
+DONE = N_("Published.")
+NOT_PUBLISHED = N_("Not published")
+PICTURE_NOT_FOUND = N_("A picture of the accepted version can’t be found on the media "
+                       "servers, so nothing was published.")
+PICTURE_NOT_UP = N_("A picture couldn’t be put on your media server, so nothing was "
+                    "published. Check your media servers in Settings, then try again.")
+NOT_THE_SAME = N_("The submission changed in the meantime, so nothing was published.")
+NOT_REPORTED = N_("Published. {publication} doesn’t know yet: try again in a moment.")
+NOT_PUBLISHABLE = N_("This version can’t be published as it is. Ask the editorial team "
+                     "in the conversation.")
+# How many relays a link to the article names (NIP-19).
+LINK_RELAYS = 3
+
+
+class Stage(Enum):
+    READY = "ready"
+    WORKING = "working"
+    OFFER_HERE = "offer_here"           # the signer app can't sign it; the key is here (Q1)
+    NOT_STORED = "not_stored"           # signed, no relay took it: Erneut sends it again
+    NOT_REPORTED = "not_reported"       # out, not reported: Erneut reports it again
+    DONE = "done"
+    FAILED = "failed"                   # nothing went out; the pictures were taken down
+
+
+@dataclass(frozen=True)
+class PublishPorts:
+    """What a run uses, each lent by the account (seams for the tests).
+
+    - ``api``: the submission's StandupClient; ``media_keys``: the
+      account's MediaKeys; ``store``: the Media Library's MediaStore.
+    - ``fetch(url, on_success, on_failure)``: one address's bytes.
+    - ``job(profile, unsigned, here)``: a :class:`HeldPublish` (``here``:
+      signed with the key kept on this computer, Q1).
+    - ``key_here()``: whether the account's key is kept on this computer.
+    - ``serve(view)``: the server's newer View, for the list and the detail.
+    - ``reread(on_view, on_failure)``: the submission's View, read now.
+    - ``clock()``: seconds.
+    """
+
+    api: object
+    media_keys: object
+    store: object
+    fetch: Callable
+    job: Callable
+    key_here: Callable[[], bool]
+    serve: Callable
+    reread: Callable
+    clock: Callable[[], float] = time.time
+
+
+class HeldPublish(PublishJob):
+    """A PublishJob whose signed event waits for :meth:`release` before it
+    goes to the relays: the submission is read again in between (12.4)."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._held = True
+
+    def release(self) -> None:
+        self._held = False
+        self._send_when_ready()
+
+    def _send_when_ready(self) -> None:
+        if not self._held:
+            super()._send_when_ready()
+
+
+class SignedHere(HeldPublish):
+    """Q1: this one article signed with the key kept on this computer.
+    The key is read from the keychain into the signer for this signature
+    and dropped with the job; the account's way of signing stays as it
+    is, and nothing is stored."""
+
+    def __init__(self, *args, secret: bytes, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        from ..local_signer import LocalSigner
+        self._here = LocalSigner(secret, parent=self)
+
+    def start(self) -> None:
+        self._say(_("Signing on this computer…"))
+        self._relay_directory.publish_plan(self._author, self._on_plan,
+                                           mentioned=self._mentioned,
+                                           entitled=relays_from(self._entitled))
+        self._here.sign_event(self._unsigned, on_success=self._on_signed,
+                              on_failure=self._fail)
+
+
+def offers_here(profile, event: Mapping, key_here: Callable[[], bool]) -> bool:
+    """Whether signing ``event`` with the key kept here is offered (Q1):
+    only through a signer app that cannot sign it, only with the key
+    here."""
+    return through_signer_app(profile) and not signable(profile, dict(event)) and key_here()
+
+
+def publish_job(*, here: bool, **kwargs):
+    """The signature and the relays (HeldPublish); ``here`` signs this one
+    article with the key kept on this computer (Q1), read from the
+    keychain for it and never stored anywhere else."""
+    if here:
+        from ..key_vault import KeyVault
+        secret = KeyVault().load(kwargs["profile"].user_pubkey)
+        if secret is not None:
+            return SignedHere(secret=secret, **kwargs)
+    return HeldPublish(**kwargs)
+
+
+def run_for(following, account, profile, sid: str, *, store, fetch, session_pool, relay_pool,
+            relay_directory, entitled_relays=None, parent=None) -> Optional["AcceptedPublish"]:
+    """The one publish run of ``sid``, made when the verified newest
+    accept names the verified revision opened here and the writer signs;
+    None while it does not (the detail offers Publish only then). A run
+    of the same revision goes on (its signed article is kept); one of
+    another revision is let go."""
+    row = following.row(sid)
+    view = row.view if row is not None else None
+    version = following.reading.latest(sid)
+    accepted = following.reading.accepted(sid)
+    run = following.publishing.get(sid)
+    if run is not None and view is not None and run.revision_hash == view.revision_hash:
+        return run
+    if (view is None or version is None or version.opened is None or accepted is None
+            or view.signer != "writer" or view.writer != profile.user_pubkey
+            or not accepted.revision == view.revision == version.revision
+            or version.revision_hash != view.revision_hash):
+        return None
+    if run is not None:
+        run.stop()
+    api = following.api_for(sid)
+
+    def reread(on_view, on_failure) -> None:
+        api.submission(sid, live(account, lambda detail: on_view(detail.submission)),
+                       live(account, on_failure))
+
+    def job(profile, unsigned: dict, here: bool):
+        return publish_job(here=here, relay_pool=relay_pool, relay_directory=relay_directory,
+                           session_pool=session_pool, profile=profile, unsigned_event=unsigned,
+                           entitled_relays=entitled_relays or (), parent=parent)
+
+    ports = PublishPorts(api=api, media_keys=account.media_keys, store=store, fetch=fetch,
+                         job=job, serve=following.serve, reread=reread,
+                         key_here=lambda: session_pool.key_here(profile.user_pubkey))
+    run = following.publishing[sid] = AcceptedPublish(
+        sid=sid, profile=profile, version=version, accepted=accepted,
+        revision_hash=view.revision_hash,
+        publication=following.publication_name(view.publication), ports=ports,
+        parent=following)
+    return run
+
+
+class AcceptedPublish(QObject):
+    """See the module docstring. ``version`` is the verified revision
+    opened here (``standup_reading.Version`` with its ``opened``),
+    ``accepted`` the verified accept. Where the encrypted files lie is
+    read only from the opened revision (bound to its signed hash) and
+    the writer's own media servers, never from the server's record."""
+
+    changed = Signal()
+
+    def __init__(self, *, sid: str, profile, version, accepted: Accepted, revision_hash: str,
+                 publication: str, ports: PublishPorts,
+                 parent: Optional[QObject] = None) -> None:
+        super().__init__(parent)
+        self.sid, self._profile, self._version = sid, profile, version
+        self._accepted, self.revision_hash = accepted, revision_hash
+        self._publication, self._ports = publication, ports
+        self.writer = str(profile.user_pubkey)
+        self.stage = Stage.READY
+        self.title, self.words = "", ""
+        self.naddr = ""
+        self.event: Optional[dict] = None          # signed, bound to ``revision_hash``
+        self._job = None
+        self._urls: Dict[str, str] = {}
+        self._created: List[Tuple[str, Tuple[str, ...]]] = []   # (plain sha256, servers)
+        self._waiting: Dict[str, Tuple[Callable, Callable]] = {}
+        self._stopped = False
+        self._here = False
+        self._listening = False
+
+    # -- what the sheet calls ---------------------------------------------------
+
+    @property
+    def revision(self) -> Mapping:
+        return self._version.opened.revision
+
+    def start(self, *, here: bool = False) -> None:
+        """Veröffentlichen (or, ``here``, Mit dem Schlüssel auf diesem
+        Computer signieren). Once at a time."""
+        if self.stage in (Stage.WORKING, Stage.DONE, Stage.NOT_STORED, Stage.NOT_REPORTED):
+            return
+        self._here = here
+        self._urls, self._created = {}, []
+        if not self._listening:
+            self._listening = True
+            self._ports.store.upload_finished.connect(self._uploaded)
+            self._ports.store.upload_failed.connect(self._not_uploaded)
+        self._say(Stage.WORKING, _(BUSY), _(BUSY_DETAIL))
+        try:
+            self._entries = publishing.media_to_publish(self.revision)
+            before = self._template(publishing.addresses_before(
+                self._entries, self._ports.store.target_servers()))
+        except publishing.NotPublishable as error:
+            _log.info("not publishable: %s", error)
+            self._fail(_(NOT_PUBLISHABLE))
+            return
+        if not here and self._too_long(before):
+            return
+        self._next_picture()
+
+    def retry(self) -> None:
+        """Erneut: the same signed article to the relays again, or the
+        report again, or (after a failure) the whole step anew."""
+        if self.stage is Stage.NOT_STORED and self._job is not None:
+            self._say(Stage.WORKING, _(BUSY), "")
+            if not self._job.send_again():
+                self._say(Stage.NOT_STORED, _(NOT_PUBLISHED), self.words)
+        elif self.stage is Stage.NOT_REPORTED:
+            self._report()
+        elif self.stage in (Stage.FAILED, Stage.READY):
+            self.start()
+
+    def stop(self) -> None:
+        """The account was let go: nothing more is asked; what this run put
+        up and nothing took yet is taken down."""
+        if self._stopped:
+            return
+        self._stopped = True
+        if self._job is not None and self.event is None:
+            self._job.cancel()
+        if self.stage is Stage.WORKING and self.event is None:
+            self._take_down()
+
+    # -- 1: before anything goes up ----------------------------------------------
+
+    def _template(self, urls: Mapping[str, str]) -> dict:
+        now = int(self._ports.clock())
+        return publishing.published_template(
+            self.revision, writer=self.writer, d=self.d, media_urls=urls,
+            published_at=self.published_at or now, created_at=now)
+
+    @property
+    def d(self) -> str:
+        """The address it is published at: the work's own, which its
+        submission was made with (the server checks the coordinate)."""
+        return str(self.revision["work"]["d"])
+
+    @property
+    def published_at(self) -> Optional[int]:
+        """A first publication's date is its own."""
+        return None
+
+    def _too_long(self, event: dict) -> bool:
+        """Said, and true, when the signer could not sign ``event``."""
+        problem = size_problem(self._profile, event=event, key_here=self._ports.key_here)
+        if not problem:
+            return False
+        if offers_here(self._profile, event, self._ports.key_here):
+            self._say(Stage.OFFER_HERE, _(NOT_PUBLISHED), problem)
+        else:
+            self._fail(problem)
+        return True
+
+    # -- 2: the pictures ------------------------------------------------------------
+
+    def _next_picture(self) -> None:
+        if self._stopped:
+            return
+        left = [e for e in self._entries if e["ref"] not in self._urls]
+        if not left:
+            self._sign()
+            return
+        entry = left[0]
+        self._cipher(entry, lambda data: self._decrypted(entry, data))
+
+    def _servers_of(self, entry: Mapping) -> List[str]:
+        servers = list(entry.get("servers") or ()) + list(self._ports.store.target_servers())
+        return list(dict.fromkeys(s.rstrip("/") for s in servers
+                                  if isinstance(s, str) and s.startswith("https://")))
+
+    def _cipher(self, entry: Mapping, on_data: Callable[[bytes], None]) -> None:
+        cached = self._ports.store.cached_bytes(entry["cipher_sha256"])
+        if cached is not None and formats.sha256_hex(cached) == entry["cipher_sha256"]:
+            on_data(cached)
+            return
+        servers = self._servers_of(entry)
+
+        def ask(index: int) -> None:
+            if self._stopped:
+                return
+            if index >= len(servers):
+                self._fail(_(PICTURE_NOT_FOUND))
+                return
+            url = f"{servers[index]}/{entry['cipher_sha256']}"
+
+            def got(data: bytes) -> None:
+                if formats.sha256_hex(data) == entry["cipher_sha256"]:
+                    on_data(data)
+                else:
+                    ask(index + 1)
+
+            self._ports.fetch(url, on_success=got, on_failure=lambda _why: ask(index + 1))
+
+        ask(0)
+
+    def _decrypted(self, entry: Mapping, data: bytes) -> None:
+        if self._stopped:
+            return
+        try:
+            plain = self._ports.media_keys.decrypt(self.sid, data, entry["cipher_sha256"])
+        except opening.NotConfirmed:
+            self._fail(_(PICTURE_NOT_FOUND))
+            return
+        if formats.sha256_hex(plain) != entry["plain_sha256"]:
+            self._fail(_(PICTURE_NOT_FOUND))
+            return
+        store, sha = self._ports.store, entry["plain_sha256"]
+        held = store.files().get(sha)
+        if held is not None and getattr(held, "url", ""):
+            # Held before this run (another work's picture, perhaps public):
+            # named as it is, never this run's to take down.
+            self._urls[entry["ref"]] = held.url
+            self._next_picture()
+            return
+        name = f"{sha}.{publishing.EXTENSIONS[entry['mime']]}"
+        self._waiting[name] = (lambda media: self._up(entry, media), lambda: self._fail(
+            _(PICTURE_NOT_UP)))
+        store.upload_bytes(plain, name=name, mime_type=entry["mime"])
+
+    def _uploaded(self, name: str, media) -> None:
+        waiting = self._waiting.pop(name, None)
+        if waiting is not None and not self._stopped:
+            waiting[0](media)
+
+    def _not_uploaded(self, name: str, _reason: str) -> None:
+        waiting = self._waiting.pop(name, None)
+        if waiting is not None and not self._stopped:
+            waiting[1]()
+
+    def _up(self, entry: Mapping, media) -> None:
+        servers = tuple(u.get("server", "") for u in getattr(media, "urls", ()) if u.get("server"))
+        if media.hash == entry["plain_sha256"]:
+            self._created.append((media.hash, servers))
+        if media.hash != entry["plain_sha256"] or not str(media.url).startswith("https://"):
+            self._fail(_(PICTURE_NOT_UP))
+            return
+        self._urls[entry["ref"]] = media.url
+        self._next_picture()
+
+    def _take_down(self) -> None:
+        created, self._created = self._created, []
+        for sha, servers in created:
+            self._ports.store.delete_file(sha, servers=servers)
+
+    # -- 3: signed, read again, out ----------------------------------------------------
+
+    def _sign(self) -> None:
+        try:
+            unsigned = self._template(self._urls)
+        except publishing.NotPublishable as error:
+            _log.info("not publishable: %s", error)
+            self._fail(_(NOT_PUBLISHABLE))
+            return
+        if not self._here and self._too_long(unsigned):
+            self._take_down()
+            return
+        self._say(Stage.WORKING, _(BUSY), _(BUSY_SIGNING))
+        job = self._job = self._ports.job(self._profile, unsigned, self._here)
+        job.signed.connect(lambda _id: self._signed(job))
+        job.completed.connect(lambda results: self._sent(job, results))
+        job.failed.connect(lambda _reason: self._not_signed(job))
+        job.start()
+
+    def _not_signed(self, job) -> None:
+        if job is not self._job or self._stopped:
+            return
+        self._take_down()
+        words = job.failure_words
+        if offers_here(self._profile, job.unsigned_event, self._ports.key_here) and not self._here:
+            self._say(Stage.OFFER_HERE, _(NOT_PUBLISHED), words)
+        else:
+            self._fail(words)
+
+    def _signed(self, job) -> None:
+        if job is not self._job or self._stopped:
+            return
+        self.event = job.signed_event           # kept with its revision (12.4)
+
+        def read(view) -> None:
+            if self._stopped or job is not self._job:
+                return
+            self._ports.serve(view)
+            if view.revision_hash != self.revision_hash or view.state != "accepted" \
+                    or view.revision != self._accepted.revision:
+                self._drop(job)
+                return
+            job.release()
+
+        def unread(_error) -> None:
+            if not self._stopped and job is self._job:
+                self._drop(job)
+
+        self._ports.reread(read, unread)
+
+    def _drop(self, job) -> None:
+        job.cancel()
+        self.event = None
+        self._take_down()
+        self._fail(_(NOT_THE_SAME))
+
+    def _sent(self, job, results) -> None:
+        if job is not self._job or self._stopped:
+            return
+        took = [url for url, ok, _message in results if ok]
+        if not took:
+            self._say(Stage.NOT_STORED, _(NOT_PUBLISHED), not_taken_words(results))
+            return
+        self.naddr = bech32.encode_naddr(self.d, self.writer, 30023, took[:LINK_RELAYS])
+        self._report()
+
+    # -- 4: reported -----------------------------------------------------------------------
+
+    def _report(self) -> None:
+        self._say(Stage.WORKING, _(BUSY), "")
+        event = self.event
+
+        def reported(view) -> None:
+            if self._stopped:
+                return
+            self._ports.serve(view)
+            self._say(Stage.DONE, _(DONE), "")
+
+        def not_reported(_error) -> None:
+            if not self._stopped:
+                self._say(Stage.NOT_REPORTED, _(DONE),
+                          _(NOT_REPORTED).format(publication=self._publication))
+
+        self._ports.api.published(self.sid, naddr=self.naddr, event=event,
+                                  on_success=reported, on_failure=not_reported)
+
+    # -- the words ---------------------------------------------------------------------------
+
+    def _fail(self, words: str) -> None:
+        if self.stage is Stage.FAILED and self.words == words:
+            return
+        self._take_down()
+        self._job = None
+        self._say(Stage.FAILED, _(NOT_PUBLISHED), words)
+
+    def _say(self, stage: Stage, title: str, words: str) -> None:
+        self.stage, self.title, self.words = stage, title, words
+        self.changed.emit()
+
+
+__all__ = ["AcceptedPublish", "HeldPublish", "PublishPorts", "SignedHere", "Stage",
+           "offers_here", "publish_job", "run_for"]

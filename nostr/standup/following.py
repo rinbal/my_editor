@@ -64,6 +64,7 @@ class Action(Enum):
     COMPARE_CORRECTION = "correction"   # Vergleichen …
     RESEND = "resend"                   # Erneut senden (the entry is reused)
     RELOAD = "reload"                   # Erneut laden
+    VIEW = "view"                       # Ansehen: the published article
 
 
 ACTION_LABELS = {
@@ -73,6 +74,7 @@ ACTION_LABELS = {
     Action.CONFIRM: N_("Confirm …"),
     Action.COMPARE_CORRECTION: N_("Compare …"),
     Action.RESEND: N_("Send Again"),
+    Action.VIEW: N_("View"),
 }
 
 
@@ -168,13 +170,13 @@ TABLE = {
     Situation.PUBLISHED_UNPLACED: Words(N_("Published, place to follow"), Section.RUNNING,
                                         N_("Published."),
                                         N_("{publication} gives it its place next."),
-                                        decision="accept"),
+                                        Action.VIEW, decision="accept"),
     Situation.CORRECTION: Words(N_("Correction suggested"), Section.TURN,
                                 N_("{publication} suggests a correction."),
                                 N_("Compare it. If you accept it, the address stays the same."),
                                 Action.COMPARE_CORRECTION),
     Situation.PUBLISHED: Words(N_("Published"), Section.DONE, N_("Published in {publication}."),
-                               decision="accept"),
+                               action=Action.VIEW, decision="accept"),
     Situation.DECLINED: Words(N_("Declined"), Section.DONE, N_("Declined."),
                               N_("You can submit the text again, or somewhere else."),
                               decision="decline"),
@@ -533,6 +535,11 @@ def status_of(row: Row, *, publication: str, name_of: Callable[[str], str],
     if action in ON_A_DECISION and not rests:
         action = None
     offered = False
+    if action is Action.VIEW:
+        # Ansehen is there to take, never asked for; only with an address.
+        offered = True
+        if view is None or view.published is None:
+            action = None
     if row.open and row.situation is not Situation.PICTURES_MISSING:
         if edited:
             action = Action.HAND_IN

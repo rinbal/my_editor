@@ -114,6 +114,9 @@ class Following(QObject):
         self._stopped = False
         self._served: Dict[str, views.SubmissionView] = {}
         self._nothing: set = set()
+        # sid -> its one publish run (standup_publish.AcceptedPublish),
+        # kept while the account is: closing the sheet never stops it.
+        self.publishing: Dict[str, object] = {}
         # sid -> (the receipt's revision and hash, StoredCopy | NotHandedIn):
         # a verdict holds for that revision only (RG-M3-a 6).
         self._decided: Dict[str, Tuple[tuple, object]] = {}
@@ -156,6 +159,9 @@ class Following(QObject):
         self._watcher.stop()
         self.talk.stop()
         self.reading.stop()
+        runs, self.publishing = self.publishing, {}
+        for run in runs.values():
+            run.stop()
         self._served, self._nothing, self._decided = {}, set(), {}
         self._names, self._noticed, self._telling = {}, {}, {}
 

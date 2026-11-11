@@ -277,12 +277,31 @@ def test_the_detail_has_one_sentence_and_a_button_only_for_what_the_window_handl
     assert detail.action.isVisibleTo(detail) and detail.action.text() == "Revise in the Editor"
     assert detail.thread.captions == ["Submitted · Version 1", "Anna took it on",
                                       "Anna asked for changes"]
-    # Accepted, the writer publishes: the sentence is there, the action is
-    # a later phase's, so no button stands in for it.
+    # Accepted, the writer publishes (M-4 M13): one button for it.
     detail = opened(window, entries["annahme"])
     assert detail.sentence.text() == "Accepted."
-    assert detail._status.action is Action.PUBLISH and not detail.action.isVisibleTo(detail)
-    assert Action.PUBLISH not in window.host.actions()
+    assert detail._status.action is Action.PUBLISH and detail.action.isVisibleTo(detail)
+    assert detail.action.text() == "Publish …"
+
+
+def test_publish_opens_the_accepted_version_and_says_when_the_editor_text_differs(window):
+    # M-4 M13: the accepted version is published; edited since, the sheet
+    # says so and offers handing the changes in instead.
+    from nostr.ui.standup_publish_sheet import PublishSheet
+    world = window.world
+    prepared, entries = seeded(window, annahme="Steuern")
+    world.decide(prepared["annahme"], "accept")
+    window.follow()
+    window.tab(entries["annahme"].d, "Ganz anderer Text.")
+    detail = opened(window, entries["annahme"])
+    detail.action.click()
+    sheet = window.host._publish_sheet
+    assert isinstance(sheet, PublishSheet) and sheet.publish.text() == "Publish"
+    assert sheet.accepted.text() == "Accepted by Einundzwanzig Magazin, version 1."
+    assert sheet.differs.isVisibleTo(sheet) and sheet.hand_in.isVisibleTo(sheet)
+    assert window.host.publish is not None and sheet.run is window.writer.publisher(
+        window.profile, entries["annahme"].sid)              # one run per submission
+    sheet.reject()
 
 
 def test_a_conversation_is_opened_once_and_a_refresh_draws_only_what_is_new(window,

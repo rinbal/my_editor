@@ -2248,7 +2248,8 @@ def submission_for(writer_sk: bytes, *, key_event: Optional[dict] = None, revisi
                    title: str = "Ein Jahr mit Lightning im Café",
                    content: str = "# Ein Jahr\n\nText.", blobs: Tuple[dict, ...] = (),
                    participants: Tuple[str, ...] = (), s_sub: Optional[bytes] = None,
-                   status_key: Optional[str] = None) -> Prepared:
+                   status_key: Optional[str] = None, media: Tuple[dict, ...] = (),
+                   work: Optional[dict] = None) -> Prepared:
     """A complete, valid ``POST /api/submissions`` body for the fixture's
     publication, built with the real code (M5): revision, envelope,
     wraps to the epoch key and to the writer."""
@@ -2263,8 +2264,9 @@ def submission_for(writer_sk: bytes, *, key_event: Optional[dict] = None, revisi
     status_key = status_key or scrypto.new_status_key()
     rev = formats.build_revision(
         submission_id=sid, revision=revision, kind="article",
-        work={"title": title, "content": content, "d": d},
-        rights={"confirmed": True, "license": None}, client="MyEditor tests")
+        work={"title": title, "content": content, "d": d, **(work or {})},
+        rights={"confirmed": True, "license": None}, media=[dict(m) for m in media],
+        client="MyEditor tests")
     sealed = scrypto.seal_revision(rev, s_sub)
     recipients = {"redaktion": content_json["pubkey"], "writer": writer}
     recipients.update({p: p for p in participants})

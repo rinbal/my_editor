@@ -32,7 +32,8 @@ from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 from .. import failures
 from ..imports import workers
 from ..later import answer_later
-from ..standup import conversation, crypto, formats, opening, views
+from ..standup import conversation, crypto, formats, opening, publishing, views
+from ..standup.publishing import Accepted
 from ..standup import following as rules
 from ..standup import thread as threads
 from ..standup.entries import SubmissionEntry
@@ -59,6 +60,10 @@ class Version:
     rights: bool = False
     # Its small cover, ``{"mime", "data"}`` as the revision holds it, or None.
     thumb: Optional[Mapping] = None
+    # What publishing, confirming and a correction rest on: the opened
+    # revision (``opening.OpenedRevision``) and its verified hash.
+    opened: Optional[object] = field(default=None, repr=False, compare=False)
+    revision_hash: str = ""
 
 
 @dataclass
@@ -316,7 +321,8 @@ class Reading:
                         revision=record.revision, work=revision["work"],
                         change_summary=revision.get("change_summary") or "",
                         rights=bool((revision.get("rights") or {}).get("confirmed")),
-                        thumb=revision.get("thumb"))
+                        thumb=revision.get("thumb"), opened=opened,
+                        revision_hash=verified.revision_hash)
             if latest:
                 state.not_confirmed = not confirmed
             done(version)
@@ -375,6 +381,16 @@ class Reading:
         self._owner.api_for(sid).submission(
             sid, live(account, read), live(account, lambda _error: on_done(None)),
             since=AT_THE_END, revision=revision)
+
+    def accepted(self, sid: str) -> Optional["Accepted"]:
+        """The verified newest accept of ``sid`` (``publishing.verified_accept``),
+        once its member list is known; None otherwise."""
+        state = self._details.get(sid)
+        if state is None or state.members is None:
+            return None
+        items = [state.items[seq] for seq in sorted(state.items)]
+        return publishing.verified_accept(items, sid, rules.deciders_of(state.members),
+                                          self.checks)
 
     def latest(self, sid: str) -> Optional[Version]:
         """The newest version of ``sid`` opened here, or None."""

@@ -13336,3 +13336,63 @@ msgstr "Noch nicht geprüft, ob dieser Artikel eingereicht wurde."
 
 msgid "Check"
 msgstr "Prüfen"
+
+msgid "Publishing …"
+msgstr "Wird veröffentlicht …"
+
+msgid "The pictures go up to your media server, then it’s signed."
+msgstr "Die Bilder werden auf deinen Medienserver hochgeladen, dann wird signiert."
+
+msgid "Not published"
+msgstr "Nicht veröffentlicht"
+
+msgid "A picture of the accepted version can’t be found on the media servers, so nothing was published."
+msgstr "Ein Bild der angenommenen Fassung ist auf den Medienservern nicht zu finden, deshalb wurde nichts veröffentlicht."
+
+msgid "A picture couldn’t be put on your media server, so nothing was published. Check your media servers in Settings, then try again."
+msgstr "Ein Bild konnte nicht auf deinen Medienserver geladen werden, deshalb wurde nichts veröffentlicht. Prüfe deine Medienserver in den Einstellungen und versuche es dann noch einmal."
+
+msgid "The submission changed in the meantime, so nothing was published."
+msgstr "Die Einreichung hat sich inzwischen geändert, deshalb wurde nichts veröffentlicht."
+
+#, python-brace-format
+msgid "Published. {publication} doesn’t know yet: try again in a moment."
+msgstr "Veröffentlicht. {publication} weiß es noch nicht: versuche es gleich noch einmal."
+
+msgid "This version can’t be published as it is. Ask the editorial team in the conversation."
+msgstr "Diese Fassung lässt sich so nicht veröffentlichen. Frag die Redaktion im Gespräch."
+
+msgid "Signing on this computer…"
+msgstr "Wird auf diesem Computer signiert …"
+
+#, python-brace-format
+msgid "Accepted by {publication}, version {number}."
+msgstr "Von {publication} angenommen, Fassung {number}."
+
+#, python-brace-format
+msgid "It then gets its place in “{section}”."
+msgstr "Danach bekommt der Artikel seinen Platz in »{section}«."
+
+msgid "Text and pictures as handed in."
+msgstr "Text und Bilder wie abgegeben."
+
+msgid "Until now it’s private. Once published, everyone can read it, text and pictures unencrypted. It can’t be taken back."
+msgstr "Bisher privat. Danach für alle lesbar, Text und Bilder unverschlüsselt. Zurückholen geht dann nicht mehr."
+
+msgid "The text in the editor differs from the accepted version. Publish publishes the accepted version; to publish your changes, hand them in first."
+msgstr "Der Text im Editor weicht von der angenommenen Fassung ab. Veröffentlichen veröffentlicht die angenommene Fassung; deine Änderungen gibst du zuerst ab."
+
+msgid "Only you"
+msgstr "Nur du"
+
+msgid "Sign with the Key on This Computer"
+msgstr "Mit dem Schlüssel auf diesem Computer signieren"
+
+msgid "Publish as an Article"
+msgstr "Als Artikel veröffentlichen"
+
+msgid "Hand In the Changes …"
+msgstr "Änderungen abgeben …"
+
+msgid "The accepted version couldn’t be loaded yet: try again in a moment."
+msgstr "Die angenommene Fassung konnte noch nicht geladen werden: versuche es gleich noch einmal."
