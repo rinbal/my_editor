@@ -287,7 +287,7 @@ from nostr.media.private_library import PrivateLibrary
 from nostr.media.upload_wait import UploadWait
 from nostr.media.publish_copy import PublicCopyMaker
 from nostr.media.visibility import PublicLedger
-from nostr.metadata import AvatarLoader, ProfileMetadataFetcher, can_receive_zaps
+from nostr.metadata import AvatarLoader, ProfileMetadataFetcher, can_receive_zaps, zap_address
 from nostr.outbox.directory import RelayDirectory
 from nostr.profiles import Profile, ProfileStore, short_npub
 from nostr.publish_pipeline import answers_detail, kept_by_relay, not_taken_words
@@ -10336,7 +10336,10 @@ class MainWindow(QMainWindow):
             keep=lambda sheet: setattr(self, "_publish_sheet", sheet),
             avatar_of=self._avatars.get, request_logo=self._avatar_batcher.request,
             is_dark=lambda: self.is_dark_theme, window=lambda: self,
-            open_article=self._open_article_named)
+            open_article=self._open_article_named,
+            zap_address=lambda pubkey, answer: zap_address(
+                self._relay_pool, self._relay_directory, pubkey, "", answer, parent=self),
+            edit_profile=self._on_edit_profile)
 
     def _open_article_named(self, d: str):
         """The tab that holds the article ``d`` (its link name), opened when

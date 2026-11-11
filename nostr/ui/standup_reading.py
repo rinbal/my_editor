@@ -392,6 +392,29 @@ class Reading:
         return publishing.verified_accept(items, sid, rules.deciders_of(state.members),
                                           self.checks)
 
+    def accepted_split(self, sid: str) -> Optional[Tuple[Tuple[str, int, str], ...]]:
+        """The split to confirm (9.4): ``(pubkey, weight, role)`` of the
+        ``split-proposal`` the verified accept names, for the revision it
+        accepted; None when it names none, or it is not here (yet)."""
+        state, row = self._details.get(sid), self._owner.row(sid)
+        accepted = self.accepted(sid)
+        if state is None or row is None or row.view is None or accepted is None \
+                or not accepted.split_rumor_id:
+            return None
+        items = [state.items[seq] for seq in sorted(state.items)]
+        held, _opening = self.open_wraps(sid, state.room, items)
+        opened = [held[item.seq] for item in items if held.get(item.seq) is not None]
+        deciders = rules.deciders_of(state.members)
+        decision = next(item.event.signed for item in items if item.seq == accepted.seq)
+        bubbles = conversation.fold(opened, writer=row.writer, redaktion=deciders)
+        split = conversation.accepted_split(bubbles, decision, submission_id=sid,
+                                            redaktion=deciders)
+        content = split.structured[1] if split is not None else {}
+        if content.get("revision_hash") != row.view.revision_hash:
+            return None
+        return tuple((s["pubkey"], int(s["weight"]), str(s.get("role") or ""))
+                     for s in content.get("shares") or ())
+
     def latest(self, sid: str) -> Optional[Version]:
         """The newest version of ``sid`` opened here, or None."""
         state = self._details.get(sid)

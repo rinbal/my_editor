@@ -554,6 +554,25 @@ class Following(QObject):
 
         self.api_for(sid).withdraw(sid, live(account, withdrawn), live(account, on_done))
 
+    def confirm(self, sid: str, *, confirms, revision_hash: str, split_rumor_id,
+                on_done: Callable[[Optional[StandupError]], None]) -> None:
+        """Bestätigen (12.4 ``/confirmation``): ``on_done(None)`` once the
+        server stored it, or with why it did not."""
+        def confirmed(view: views.SubmissionView) -> None:
+            self.serve(view)
+            self.detail_changed.emit(sid)
+            on_done(None)
+
+        self.api_for(sid).confirm(
+            sid, revision_hash=revision_hash, confirms=list(confirms),
+            split_rumor_id=split_rumor_id, on_success=live(self._account, confirmed),
+            on_failure=live(self._account, on_done))
+
+    def remind(self, sid: str, to: str, on_done: Callable[[Optional[StandupError]], None]) -> None:
+        """Erinnern (12.4 ``/remind``, the writer): one notice to ``to``."""
+        self.api_for(sid).remind(sid, to=to, on_success=live(self._account, lambda _ok: on_done(
+            None)), on_failure=live(self._account, on_done))
+
     def discard(self, sid: str, on_done: Callable[[bool], None]) -> None:
         """Verwerfen (13): a keyed tombstone for the entry the server has
         no receipt for."""

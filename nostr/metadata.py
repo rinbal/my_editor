@@ -67,12 +67,22 @@ _MAX_AVATAR_REDIRECTS: int = 4
 # --------------------------------------------------------------------------- #
 
 def can_receive_zaps(pool: RelayPool, directory: RelayDirectory, pubkey: str, hint: str,
-                     answer, *, parent: Optional[QObject] = None,
-                     query=fetch_replaceable, timeout_ms: int = 8_000,
-                     first_wait_ms: int = RECONNECT_FIRST_MS,
-                     longest_wait_ms: int = RECONNECT_LONGEST_MS) -> None:
+                     answer, **more) -> None:
     """``answer(True)`` when ``pubkey``'s profile names a lightning address
     (lud16, or lud06: where a zap to them is paid, NIP-57), ``answer(False)``
+    when it names none or the relays have no profile of theirs,
+    ``answer(None)`` when that couldn't be found out (:func:`zap_address`)."""
+    zap_address(pool, directory, pubkey, hint,
+                lambda address: answer(None if address is None else bool(address)), **more)
+
+
+def zap_address(pool: RelayPool, directory: RelayDirectory, pubkey: str, hint: str,
+                answer, *, parent: Optional[QObject] = None,
+                query=fetch_replaceable, timeout_ms: int = 8_000,
+                first_wait_ms: int = RECONNECT_FIRST_MS,
+                longest_wait_ms: int = RECONNECT_LONGEST_MS) -> None:
+    """``answer(address)`` with the lightning address ``pubkey``'s profile
+    names (lud16, else lud06: where a zap to them is paid, NIP-57), ``""``
     when it names none or the relays have no profile of theirs. Read where
     their profile is (the relay hint, their write relays, the indexers).
 
@@ -102,8 +112,8 @@ def can_receive_zaps(pool: RelayPool, directory: RelayDirectory, pubkey: str, hi
             fields = {}
         if not isinstance(fields, dict):
             fields = {}
-        answer(any(isinstance(fields.get(key), str) and fields[key].strip()
-                   for key in ("lud16", "lud06")))
+        answer(next((fields[key].strip() for key in ("lud16", "lud06")
+                     if isinstance(fields.get(key), str) and fields[key].strip()), ""))
 
     ask(first_wait_ms)
 

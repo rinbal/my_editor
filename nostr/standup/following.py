@@ -65,6 +65,7 @@ class Action(Enum):
     RESEND = "resend"                   # Erneut senden (the entry is reused)
     RELOAD = "reload"                   # Erneut laden
     VIEW = "view"                       # Ansehen: the published article
+    REMIND = "remind"                   # Paul erinnern (the writer, 12.4 /remind)
 
 
 ACTION_LABELS = {
@@ -75,6 +76,7 @@ ACTION_LABELS = {
     Action.COMPARE_CORRECTION: N_("Compare …"),
     Action.RESEND: N_("Send Again"),
     Action.VIEW: N_("View"),
+    Action.REMIND: N_("Send a Reminder"),
 }
 
 
@@ -200,6 +202,9 @@ EDITED_MORE = N_("Hand them in as version {number} when you’re ready.")
 EDITED_SINCE = N_("You’ve changed the text since.")
 VERSION_IN_REVIEW = N_("{name} is reviewing version {number}.")
 SECTION_PLACE = N_("In the section “{section}”.")
+# The writer confirmed; contributors still confirm (M-4 M14).
+STILL_CONFIRMS = N_("Thanks. {name} still confirms.")
+STILL_CONFIRM = N_("Thanks. The others still confirm.")
 
 
 def my_turn(view: views.SubmissionView, me: str) -> bool:
@@ -540,6 +545,13 @@ def status_of(row: Row, *, publication: str, name_of: Callable[[str], str],
         offered = True
         if view is None or view.published is None:
             action = None
+    waiting = waiting_for(row)
+    if waiting and rests:
+        names = [name_of(pk) for pk in waiting]
+        sentence, more, action, offered = (
+            (STILL_CONFIRMS, "", Action.REMIND, True) if len(waiting) == 1 and names[0]
+            else (STILL_CONFIRM, "", Action.REMIND, True))
+        fields["name"] = names[0]
     if row.open and row.situation is not Situation.PICTURES_MISSING:
         if edited:
             action = Action.HAND_IN
@@ -550,6 +562,16 @@ def status_of(row: Row, *, publication: str, name_of: Callable[[str], str],
                 more, offered = EDITED_SINCE, True
     return Status(_(sentence).format(**fields), _(more).format(**fields) if more else "",
                   action, unsigned, offered)
+
+
+def waiting_for(row: Row) -> Tuple[str, ...]:
+    """Whom the writer waits for once they confirmed (11.2 ``confirm``,
+    turn ``contributors``): the contributors still to confirm."""
+    view = row.view
+    if (row.situation is not Situation.ACCEPTED or row.role != "writer" or view is None
+            or view.step != "confirm" or view.turn.type != "contributors"):
+        return ()
+    return tuple(pk for pk in view.turn.pending if pk != row.writer)
 
 
 def rests_on(situation: Situation, decision: Optional[Decision]) -> bool:
@@ -567,5 +589,5 @@ __all__ = [
     "ON_A_DECISION", "ON_ITS_WAY", "Row",
     "Section", "SignedChecks", "Situation", "Status", "TABLE", "Words", "YOUR_TURN", "action_verified",
     "deciders_of", "members_of", "my_turn", "newest_decision", "pill_word", "rests_on",
-    "rows_of", "situation_of", "status_of", "status_word",
+    "rows_of", "situation_of", "status_of", "status_word", "waiting_for",
 ]

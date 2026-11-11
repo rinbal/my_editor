@@ -208,8 +208,19 @@ class FollowWorld:
         assert isinstance(outcome[0], int), outcome
         return outcome[0]
 
-    def decide(self, prepared, outcome: str, *, text: str = "", revision: int = 1):
-        wrap = None
+    def decide(self, prepared, outcome: str, *, text: str = "", revision: int = 1,
+               split=None):
+        """The editor's decision; ``split`` the shares of an accept's
+        split-proposal (9.4), sent as its split_wrap and named by id."""
+        wrap = split_wrap = split_id = None
+        if split:
+            rumor = conversation.structured_rumor(
+                room=scrypto.pubkey_of(prepared.s_sub),
+                submission_id=prepared.body["submission_id"], kind="split-proposal",
+                content=conversation.split_proposal_content(prepared.body["revision_hash"],
+                                                            split),
+                sender=pk("editor"), created_at=int(self.clock()))
+            split_wrap, split_id = room_wrap(prepared, rumor, "editor"), rumor["id"]
         if text:
             wrap = room_wrap(prepared, conversation.message_rumor(
                 room=scrypto.pubkey_of(prepared.s_sub),
@@ -218,6 +229,7 @@ class FollowWorld:
         answer = []
         self.editor.decision(prepared.body["submission_id"], outcome=outcome,
                              expected_revision=revision, message_wrap=wrap,
+                             split_wrap=split_wrap, split_rumor_id=split_id,
                              on_success=answer.append, on_failure=answer.append)
         self.settle()
         assert hasattr(answer[0], "submission"), answer

@@ -44,6 +44,8 @@ from . import appearance
 from .publish_article_dialog import ArticleCard
 from .standup_compare import CompareDialog, Comparer
 from .standup_publications import publication_logo
+from ..standup.errors import Code, cause_words
+from .standup_confirm_sheet import ConfirmSheet
 from .standup_publish import Stage
 from .standup_publish_sheet import PublishSheet
 from .standup_revise_sheet import ReviseSheet, comparable
@@ -72,6 +74,8 @@ OPEN_IT_FIRST = N_("Open the article in the editor first.")
 NOT_FOUND = N_("MyEditor can’t find this article. Open it in the editor, then send it again.")
 VERSION_NOT_LOADED = N_("The version you handed in couldn’t be loaded: try again in a moment.")
 ACCEPTED_NOT_LOADED = N_("The accepted version couldn’t be loaded yet: try again in a moment.")
+REMINDED = N_("Reminder sent.")
+REMINDED_TODAY = N_("Already reminded today.")
 
 
 @dataclass(frozen=True)
@@ -97,6 +101,9 @@ class Ports:
       ``window()``.
     - ``open_article(d)``: the tab that holds the article ``d``, opened
       from where this computer keeps it when no tab does, or None.
+    - ``zap_address(pubkey, answer)``: the lightning address a profile
+      names (``""`` for none, None when it couldn't be told);
+      ``edit_profile()``: Edit Profile for the account in use.
     """
 
     standup: Callable
@@ -118,6 +125,8 @@ class Ports:
     is_dark: Callable
     window: Callable
     open_article: Callable = lambda d: None
+    zap_address: Callable = lambda pubkey, answer: answer(None)
+    edit_profile: Callable = lambda: None
 
 
 class SubmissionsHost(QObject):
@@ -139,6 +148,7 @@ class SubmissionsHost(QObject):
         self._dialog: Optional[CompareDialog] = None
         self._sheet: Optional[ReviseSheet] = None
         self._publish_sheet: Optional[PublishSheet] = None
+        self._confirm_sheet: Optional[ConfirmSheet] = None
         self._typing = QTimer(self)
         self._typing.setSingleShot(True)
         self._typing.setInterval(FOLLOW_MS)
@@ -186,10 +196,10 @@ class SubmissionsHost(QObject):
         self.view.set_following(None, signed_in=False)
         self.pill.clear()
         self.comparer.stop()
-        for sheet in (self._dialog, self._sheet, self._publish_sheet):
+        for sheet in (self._dialog, self._sheet, self._publish_sheet, self._confirm_sheet):
             if sheet is not None and shiboken6.isValid(sheet):
                 sheet.reject()
-        self._dialog = self._sheet = self._publish_sheet = None
+        self._dialog = self._sheet = self._publish_sheet = self._confirm_sheet = None
         noticed, self._noticed = self._noticed, {}
         for ed, (_sid, text) in noticed.items():
             notice = self._ports.notice_of(ed) if shiboken6.isValid(ed) else None
@@ -290,7 +300,9 @@ class SubmissionsHost(QObject):
                 rules.Action.HAND_IN: self.hand_in,
                 rules.Action.RESEND: self.send_again,
                 rules.Action.PUBLISH: self.publish,
-                rules.Action.VIEW: self.view_published}
+                rules.Action.VIEW: self.view_published,
+                rules.Action.CONFIRM: self.confirm,
+                rules.Action.REMIND: self.remind}
 
     def _on_action(self, sid: str, action) -> None:
         handler = self.actions().get(action)
@@ -453,6 +465,68 @@ class SubmissionsHost(QObject):
         open_here = sheet is not None and shiboken6.isValid(sheet) and sheet.isVisible()
         if not open_here and run.stage in (Stage.FAILED, Stage.NOT_STORED, Stage.NOT_REPORTED):
             self._say_in_place(run.sid, run.words)
+
+    def confirm(self, sid: str) -> None:
+        """Bestätigen … (M14): the split the verified accept names, for the
+        verified revision it accepted."""
+        row, following, ports = self._row(sid), self._following, self._ports
+        if row is None or row.view is None:
+            return
+        reading = following.reading
+        accepted, version = reading.accepted(sid), reading.latest(sid)
+        shares = reading.accepted_split(sid)
+        if (accepted is None or version is None or accepted.revision != row.view.revision
+                or version.revision_hash != row.view.revision_hash
+                or (accepted.split_rumor_id and shares is None)):
+            self._say_in_place(sid, _(ACCEPTED_NOT_LOADED))
+            return
+        sheet = self._confirm_sheet = ConfirmSheet(
+            role=row.role, publication=following.publication_name(row.publication),
+            number=row.view.revision, shares=shares, me=following.me, name_of=self._name_of,
+            zap_address=ports.zap_address,
+            confirm=lambda confirms, done: following.confirm(
+                sid, confirms=confirms, revision_hash=version.revision_hash,
+                split_rumor_id=accepted.split_rumor_id, on_done=done),
+            is_dark=ports.is_dark(), parent=ports.window())
+        sheet.ask_requested.connect(lambda words: self.ask(sid, words))
+        sheet.edit_profile_requested.connect(ports.edit_profile)
+        ports.keep(sheet)
+        sheet.open()
+
+    def ask(self, sid: str, words: str) -> None:
+        """Rückfrage stellen: the detail of ``sid``, its composer holding
+        the question's first words and the focus."""
+        self.open_detail(sid)
+        detail = self.view.detail
+        if detail.sid == sid:
+            detail.composer.setPlainText(words)
+            detail.composer.moveCursor(detail.composer.textCursor().MoveOperation.End)
+            detail.composer.setFocus()
+
+    def remind(self, sid: str) -> None:
+        """Paul erinnern (12.4 ``/remind``): each contributor still to
+        confirm hears it once; said once, in place."""
+        row, following = self._row(sid), self._following
+        waiting = rules.waiting_for(row) if row is not None else ()
+        if not waiting:
+            return
+        answers = []
+
+        def done(error) -> None:
+            answers.append(error)
+            if len(answers) < len(waiting):
+                return
+            failed = [e for e in answers if e is not None]
+            if not failed:
+                self._say_in_place(sid, _(REMINDED))
+            elif all(e.code == Code.RATE_LIMITED for e in failed):
+                self._say_in_place(sid, _(REMINDED_TODAY))
+            else:
+                cause = cause_words(failed[0].code)
+                self._say_in_place(sid, _(cause))
+
+        for pubkey in waiting:
+            following.remind(sid, pubkey, done)
 
     def view_published(self, sid: str) -> None:
         """Ansehen: the published article, where articles are read."""

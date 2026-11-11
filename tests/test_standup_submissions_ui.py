@@ -17,6 +17,8 @@ an answer is pending raises nothing."""
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from types import SimpleNamespace
 
 import pytest
@@ -302,6 +304,43 @@ def test_publish_opens_the_accepted_version_and_says_when_the_editor_text_differ
     assert window.host.publish is not None and sheet.run is window.writer.publisher(
         window.profile, entries["annahme"].sid)              # one run per submission
     sheet.reject()
+
+
+def test_confirming_names_the_accepted_split_and_where_the_share_goes_then_reminds(
+        window, monkeypatch):
+    # M-4 M14: a work the publication signs; the writer confirms the split
+    # the verified accept names, sees where their share goes, then waits
+    # for Paul and can remind him.
+    from nostr.ui.standup_confirm_sheet import ConfirmSheet
+    world = window.world
+    seed = world.account()
+    prepared, entry = world.submit(seed, d="steuern", title="Steuern", participants=(OTHER,))
+    world.record(entry.sid).signer = "publication"          # as the publication's rules allow
+    world.decide(prepared, "accept", split=[{"pubkey": ME, "weight": 70, "role": "writer"},
+                                            {"pubkey": OTHER, "weight": 30,
+                                             "role": "contributor"}])
+    window.host._ports = replace(window.host._ports,
+                                 zap_address=lambda pubkey, answer: answer("jana@getalby.com"))
+    window.follow()
+    detail = opened(window, entry)
+    assert detail.action.text() == "Confirm …"
+    detail.action.click()
+    sheet = window.host._confirm_sheet
+    assert isinstance(sheet, ConfirmSheet) and sheet.split.text() == "You 70 %  ·  Paul 30 %"
+    assert sheet.address.text() == "Your share goes to jana@getalby.com."
+    assert not sheet.rights.isVisibleTo(sheet)               # the writer confirms the split
+    sheet.confirm_button.click()
+    world.settle()
+    record = world.record(entry.sid)
+    assert record.confirmations == {ME: ["split"]}
+    detail = opened(window, entry)
+    assert detail.sentence.text() == "Thanks. Paul still confirms."
+    assert detail.action.text() == "Remind Paul"
+    reminded = []
+    monkeypatch.setattr(type(window.following), "remind",
+                        lambda self, sid, to, done: (reminded.append(to), done(None)))
+    detail.action.click()
+    assert reminded == [OTHER] and detail.note.text() == "Reminder sent."
 
 
 def test_a_conversation_is_opened_once_and_a_refresh_draws_only_what_is_new(window,

@@ -494,6 +494,10 @@ class SubmissionDetail(QWidget):
             self.action.setText(_("Try Again"))
         elif action is rules.Action.RELOAD:
             self.action.setText(pgettext("submissions list", "Reload"))
+        elif action is rules.Action.REMIND and len(rules.waiting_for(row)) == 1 \
+                and self._name_of(rules.waiting_for(row)[0]):
+            self.action.setText(_("Remind {name}").format(
+                name=self._name_of(rules.waiting_for(row)[0])))
         elif action is not None:
             self.action.setText(_(rules.ACTION_LABELS[action]))
         self.action.setVisible(bool(detail.problem) or action is rules.Action.RELOAD

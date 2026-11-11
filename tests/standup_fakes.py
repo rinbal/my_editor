@@ -1915,9 +1915,9 @@ class FakeStandupServer:
         if new_state == "published":
             # core/editorial_workflow.py decide: the work's own address.
             record.published = {"naddr": record.source_naddr, "event_id": record.source_event_id}
-        if body.get("message_wrap"):
-            self._append(record, {"type": "message", "wrap": body["message_wrap"],
-                                  "event": None})
+        for wrap in (body.get("message_wrap"), body.get("split_wrap")):
+            if wrap:
+                self._append(record, {"type": "message", "wrap": wrap, "event": None})
         seq = self._event(record, outcome, who)
         return _ok({"submission": self.view(record), "seq": seq})
 
@@ -2249,7 +2249,7 @@ def submission_for(writer_sk: bytes, *, key_event: Optional[dict] = None, revisi
                    content: str = "# Ein Jahr\n\nText.", blobs: Tuple[dict, ...] = (),
                    participants: Tuple[str, ...] = (), s_sub: Optional[bytes] = None,
                    status_key: Optional[str] = None, media: Tuple[dict, ...] = (),
-                   work: Optional[dict] = None) -> Prepared:
+                   work: Optional[dict] = None, signer: str = "writer") -> Prepared:
     """A complete, valid ``POST /api/submissions`` body for the fixture's
     publication, built with the real code (M5): revision, envelope,
     wraps to the epoch key and to the writer."""
@@ -2277,7 +2277,7 @@ def submission_for(writer_sk: bytes, *, key_event: Optional[dict] = None, revisi
         "v": 1, "submission_id": sid, "round": round_, "revision": revision,
         "revision_hash": sealed.revision_hash, "publication": address,
         "key_event_id": event["id"], "epoch": content_json["epoch"], "kind": "article",
-        "title": title, "coordinate_hash": coordinate, "signer": "writer",
+        "title": title, "coordinate_hash": coordinate, "signer": signer,
         "participants": list(participants), "p_sub": scrypto.pubkey_of(s_sub),
         "envelope": sealed.envelope_b64, "envelope_sha256": sealed.envelope_sha256,
         "wraps": wraps, "blobs": [dict(b) for b in blobs],

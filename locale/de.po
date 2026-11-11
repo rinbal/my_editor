@@ -13396,3 +13396,54 @@ msgstr "Änderungen abgeben …"
 
 msgid "The accepted version couldn’t be loaded yet: try again in a moment."
 msgstr "Die angenommene Fassung konnte noch nicht geladen werden: versuche es gleich noch einmal."
+
+#, python-brace-format
+msgid "Thanks. {name} still confirms."
+msgstr "Danke. {name} bestätigt noch."
+
+msgid "Thanks. The others still confirm."
+msgstr "Danke. Die anderen bestätigen noch."
+
+msgid "Send a Reminder"
+msgstr "Erinnern"
+
+#, python-brace-format
+msgid "Your share goes to {address}."
+msgstr "Dein Anteil geht an {address}."
+
+msgid "Your profile names no Lightning address yet, so your share can’t reach you."
+msgstr "Dein Profil nennt noch keine Lightning-Adresse, deshalb kann dein Anteil dich nicht erreichen."
+
+msgid "I hold the rights to my part and agree to it being published."
+msgstr "Ich habe die Rechte an meinem Teil und bin mit der Veröffentlichung einverstanden."
+
+msgid "Not confirmed"
+msgstr "Nicht bestätigt"
+
+msgid "A short question about the split: "
+msgstr "Kurze Frage zur Aufteilung: "
+
+msgid "Confirm Your Part"
+msgstr "Deinen Teil bestätigen"
+
+msgid "The split"
+msgstr "Die Aufteilung"
+
+msgid "Ask a Question"
+msgstr "Rückfrage stellen"
+
+msgid "Confirm"
+msgstr "Bestätigen"
+
+msgid "Confirming …"
+msgstr "Wird bestätigt …"
+
+#, python-brace-format
+msgid "Remind {name}"
+msgstr "{name} erinnern"
+
+msgid "Reminder sent."
+msgstr "Erinnerung gesendet."
+
+msgid "Already reminded today."
+msgstr "Heute schon erinnert."
