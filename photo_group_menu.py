@@ -8,7 +8,8 @@ photo_group_editing.PhotoEditing.run. Format > Photo lists all of them
 context menu only those that can (EDITING.md 2.2 of the photo grid
 design); state_of says for the picture selected whether each can run and
 what it is called then: Move Up of a picture that stands alone is "Into
-the Group Above" when a group is above it.
+the Group Above" when a group is above it. chip_words says what a chip on
+a picture, or the bar's button, does.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional
 
 import photo_group_actions as actions
+import photo_group_overlay as overlay
 import photo_group_view
 from i18n import _
 from photo_group_actions import BESIDE, GAP, SLOT, Picture, Place
@@ -133,3 +135,25 @@ def state_of(photos) -> PhotoState:
         titles[LARGE] = _("Wide")
         state.hints[LARGE] = _("Show wider than the text")
     return state
+
+
+def chip_words(photos, picture: Picture, chip: str) -> str:
+    """What the ``chip`` (photo_group_overlay's HANDLE, MORE, ALT, BIG or
+    ADD, the bar's button) on ``picture`` does, for its tooltip."""
+    if chip == overlay.HANDLE:
+        return _("Drag to move it, or click to move it with the arrow keys")
+    if chip == overlay.MORE:
+        return _("All commands for {photo}").format(photo=photos.place_words(picture))
+    if chip == overlay.ALT:
+        alt = picture.unit.description
+        return (_("Description: {words}").format(words=alt) if alt
+                else _("Description missing: for people who can’t see the photo"))
+    if chip == overlay.BIG:
+        if not picture.grouped:
+            return (_("Show as wide as the text") if picture.unit.wide
+                    else _("Show wider than the text"))
+        if photo_group_view.own_row(photos.document(), picture.unit):
+            return _("Already the whole width")
+        return (_("Show normal again") if picture.unit.wide
+                else _("Show large: a row of its own across the whole width"))
+    return _("Add photos to this group. Or drag them onto it.")

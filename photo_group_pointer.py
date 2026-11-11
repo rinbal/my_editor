@@ -43,7 +43,7 @@ import photo_group_view
 import theme
 from i18n import _, ngettext
 from photo_group_actions import Picture
-from photo_group_menu import CAPTION, DESCRIPTION, LARGE
+from photo_group_menu import CAPTION, DESCRIPTION, LARGE, chip_words
 
 # The frame time of what moves on screen, and how far from the top or the
 # bottom of the view a dragged picture scrolls the page (up to MAX_SCROLL
@@ -246,26 +246,9 @@ class PhotoPointer(QObject):
     def tooltip(self, point: QPoint) -> Optional[str]:
         """What a chip or the bar's button under ``point`` does."""
         self._hover_at(QPointF(point))
-        picture, hot = self._hover, self._hot
-        if picture is None or hot is None:
+        if self._hover is None or self._hot is None:
             return None
-        if hot == overlay.HANDLE:
-            return _("Drag to move it, or click to move it with the arrow keys")
-        if hot == overlay.MORE:
-            return _("All commands for {photo}").format(photo=self._photos.place_words(picture))
-        if hot == overlay.ALT:
-            alt = picture.unit.description
-            return (_("Description: {words}").format(words=alt) if alt
-                    else _("Description missing: for people who can’t see the photo"))
-        if hot == overlay.BIG:
-            if not picture.grouped:
-                return (_("Show as wide as the text") if picture.unit.wide
-                        else _("Show wider than the text"))
-            if photo_group_view.own_row(self._editor.document(), picture.unit):
-                return _("Already the whole width")
-            return (_("Show normal again") if picture.unit.wide
-                    else _("Show large: a row of its own across the whole width"))
-        return _("Add photos to this group. Or drag them onto it.")
+        return chip_words(self._photos, self._hover, self._hot)
 
     # ------------------------------------------------------------------ #
     # Moving a picture                                                     #

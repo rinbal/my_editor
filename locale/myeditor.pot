@@ -8,7 +8,7 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
 #: alerts.py:100
-#: main_window.py:6864
+#: main_window.py:6869
 msgid "OK"
 msgstr ""
 
@@ -29,12 +29,12 @@ msgstr ""
 
 #: alerts.py:376
 #: link_popover.py:100
-#: main_window.py:5462
-#: main_window.py:5181
-#: main_window.py:12119
+#: main_window.py:5467
+#: main_window.py:5186
+#: main_window.py:12124
 #: main_window.py:378
-#: main_window.py:5746
-#: main_window.py:9048
+#: main_window.py:5751
+#: main_window.py:9053
 msgid "Cancel"
 msgstr ""
 
@@ -174,7 +174,7 @@ msgid "Strikethrough"
 msgstr ""
 
 #: editor.py:151
-#: main_window.py:7553
+#: main_window.py:7558
 msgid "Code"
 msgstr ""
 
@@ -193,7 +193,7 @@ msgstr ""
 #: editor.py:2327
 #: editor.py:3059
 #: main_window.py:2213
-#: main_window.py:10722
+#: main_window.py:10727
 #: sheet_tab.py:2746
 #: sheet_tab.py:2472
 msgid "Paste"
@@ -223,14 +223,14 @@ msgid "Note or Article"
 msgstr ""
 
 #: editor.py:2019
-#: main_window.py:4797
-#: main_window.py:10742
+#: main_window.py:4802
+#: main_window.py:10747
 msgid "Link"
 msgstr ""
 
 #: editor.py:2033
 #: link_popover.py:94
-#: main_window.py:8026
+#: main_window.py:8031
 msgid "Remove Link"
 msgstr ""
 
@@ -350,7 +350,7 @@ msgstr ""
 #: editor.py:3060
 #: main_window.py:4314
 #: main_window.py:4299
-#: main_window.py:4408
+#: main_window.py:4413
 msgid "Drag"
 msgstr ""
 
@@ -392,9 +392,9 @@ msgstr ""
 
 #: export_html.py:341
 #: photo_group_editing.py:191
-#: photo_group_pointer.py:349
-#: photo_group_pointer.py:583
-#: photo_group_pointer.py:344
+#: photo_group_pointer.py:332
+#: photo_group_pointer.py:566
+#: photo_group_pointer.py:327
 #: photo_group_view.py:749
 #, python-brace-format
 msgid "Photo {k} of {n}"
@@ -440,9 +440,9 @@ msgstr ""
 #: folder_library.py:501
 #: main_window.py:1689
 #: main_window.py:3602
-#: main_window.py:5817
-#: main_window.py:5849
-#: main_window.py:5947
+#: main_window.py:5822
+#: main_window.py:5854
+#: main_window.py:5952
 msgid "Untitled"
 msgstr ""
 
@@ -662,7 +662,7 @@ msgid "Folder"
 msgstr ""
 
 #: file_list.py:1495
-#: main_window.py:4421
+#: main_window.py:4426
 #: password_alert.py:135
 #: update_flow.py:140
 #: update_flow.py:152
@@ -921,7 +921,7 @@ msgid "{command} ({keys})"
 msgstr ""
 
 #: format_toolbar.py:281
-#: main_window.py:7547
+#: main_window.py:7552
 #: main_window.py:2109
 #: selection_bar.py:112
 msgctxt "paragraph style"
@@ -954,7 +954,7 @@ msgid "Rename"
 msgstr ""
 
 #: library_actions.py:155
-#: photo_group_menu.py:57
+#: photo_group_menu.py:59
 #: settings_window.py:474
 #: nostr/ui/article_header.py:234
 #: nostr/ui/cover_field.py:330
@@ -1375,15 +1375,15 @@ msgid "Your document is still open. Use Save As to choose another place."
 msgstr ""
 
 #: main_window.py:375
-#: main_window.py:10032
+#: main_window.py:10037
 msgid "Your changes will be lost if you don’t save them."
 msgstr ""
 
-#: main_window.py:6415
+#: main_window.py:6420
 msgid "This picture couldn’t be shown: there is no room for a temporary copy of it. Free some space on your disk and try again."
 msgstr ""
 
-#: main_window.py:10006
+#: main_window.py:10011
 msgid "If you close the document now, the upload goes on to your media library, but the document doesn’t keep it."
 msgstr ""
 
@@ -1403,7 +1403,7 @@ msgid "File List"
 msgstr ""
 
 #: main_window.py:595
-#: main_window.py:5025
+#: main_window.py:5030
 #: update_dialog.py:287
 #: dictation/setup.py:125
 #: nostr/ui/account_windows.py:764
@@ -1504,11 +1504,11 @@ msgid "F&ormat"
 msgstr ""
 
 #: main_window.py:3138
-#: photo_group_menu.py:99
+#: photo_group_menu.py:101
 #: photo_group_pointer.py:122
-#: photo_group_pointer.py:544
-#: photo_group_pointer.py:597
-#: photo_group_pointer.py:595
+#: photo_group_pointer.py:527
+#: photo_group_pointer.py:580
+#: photo_group_pointer.py:578
 msgid "Photo"
 msgstr ""
 
@@ -1582,197 +1582,197 @@ msgstr ""
 #: main_window.py:3944
 #: main_window.py:3945
 #: main_window.py:2195
-#: main_window.py:7283
+#: main_window.py:7288
 msgid "Close Tab"
 msgstr ""
 
-#: main_window.py:4393
+#: main_window.py:4395
 msgid "Insert Image"
 msgstr ""
 
-#: main_window.py:4964
+#: main_window.py:4969
 #, python-brace-format
 msgid "Upload {count} file to save the draft?"
 msgid_plural "Upload {count} files to save the draft?"
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:4966
+#: main_window.py:4971
 #, python-brace-format
 msgid "“{name}” is on this computer only. Your draft is encrypted, the file on your media servers is not: anyone with its link can view it."
 msgid_plural "{count} files are on this computer only. Your draft is encrypted, the files on your media servers are not: anyone with a link can view them."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:4972
+#: main_window.py:4977
 msgid "Upload and Save"
 msgstr ""
 
-#: main_window.py:4974
+#: main_window.py:4979
 #, python-brace-format
 msgid "Upload {count} file to publish?"
 msgid_plural "Upload {count} files to publish?"
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:4976
+#: main_window.py:4981
 #, python-brace-format
 msgid "“{name}” is on this computer only. Readers see it once it is on your media servers, where anyone with its link can view it."
 msgid_plural "{count} files are on this computer only. Readers see them once they are on your media servers, where anyone with a link can view them."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:4981
+#: main_window.py:4986
 msgid "Upload and Publish"
 msgstr ""
 
-#: main_window.py:5254
+#: main_window.py:5259
 #: sheet_window.py:188
 #: nostr/ui/media_library_dialog.py:878
 msgid "Save As"
 msgstr ""
 
-#: main_window.py:5461
+#: main_window.py:5466
 msgid "Loading the document’s pictures…"
 msgstr ""
 
-#: main_window.py:5553
+#: main_window.py:5558
 msgid "Save Without It"
 msgstr ""
 
-#: main_window.py:5555
+#: main_window.py:5560
 msgid "Some article details can’t be saved in the file"
 msgstr ""
 
-#: main_window.py:5556
+#: main_window.py:5561
 msgid "Save Without Them"
 msgstr ""
 
-#: main_window.py:6559
+#: main_window.py:6564
 msgid "Print Preview"
 msgstr ""
 
-#: main_window.py:6628
+#: main_window.py:6633
 msgid "Knitting…"
 msgstr ""
 
-#: main_window.py:6653
+#: main_window.py:6658
 msgid "Knit failed."
 msgstr ""
 
-#: main_window.py:7018
+#: main_window.py:7023
 msgid "Save your changes before updating?"
 msgstr ""
 
-#: main_window.py:7444
+#: main_window.py:7449
 msgid "Stop Dictation"
 msgstr ""
 
-#: main_window.py:7477
+#: main_window.py:7482
 #: main_window.py:2240
 msgid "Start Dictation…"
 msgstr ""
 
-#: main_window.py:7960
+#: main_window.py:7965
 msgid "cropped"
 msgstr ""
 
-#: main_window.py:8596
+#: main_window.py:8601
 msgid "This document is too large to keep a backup of."
 msgstr ""
 
-#: main_window.py:8932
+#: main_window.py:8937
 #: main_window.py:2886
 msgid "EINUNDZWANZIG Membership…"
 msgstr ""
 
-#: main_window.py:8944
+#: main_window.py:8949
 msgid "Add Account…"
 msgstr ""
 
-#: main_window.py:8947
+#: main_window.py:8952
 #: main_window.py:2914
 #: nostr/account_controller.py:436
 #: nostr/account_controller.py:442
 msgid "Sign Out"
 msgstr ""
 
-#: main_window.py:9131
+#: main_window.py:9136
 #, python-brace-format
 msgid "{relay} didn’t accept your sign-in."
 msgstr ""
 
-#: main_window.py:9223
+#: main_window.py:9228
 msgid "Your media server list is shared."
 msgstr ""
 
-#: main_window.py:9224
+#: main_window.py:9229
 msgid "Other apps already have this list."
 msgstr ""
 
-#: main_window.py:9225
+#: main_window.py:9230
 msgid "Your current list couldn’t be read, so nothing was changed. Try again later."
 msgstr ""
 
-#: main_window.py:9823
+#: main_window.py:9828
 msgid "Insert Audio or Video"
 msgstr ""
 
-#: main_window.py:9989
+#: main_window.py:9994
 msgid "Quitting now stops copying it to your other media servers. It’s already in your Media Library."
 msgid_plural "Quitting now stops copying them to your other media servers. They’re already in your Media Library."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:9997
+#: main_window.py:10002
 msgid "Quitting now stops the upload, and the file isn’t added to your Media Library."
 msgid_plural "Quitting now stops the uploads, and the files aren’t added to your Media Library."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:10002
+#: main_window.py:10007
 msgid "Quitting now stops every upload: the documents won’t hold their files, and your Media Library won’t get its new ones."
 msgstr ""
 
-#: main_window.py:10005
+#: main_window.py:10010
 msgid "Quitting now stops the upload, and the document won’t hold the file."
 msgstr ""
 
-#: main_window.py:10112
+#: main_window.py:10117
 #: settings_window.py:385
 msgid "On This Computer"
 msgstr ""
 
-#: main_window.py:10113
+#: main_window.py:10118
 msgid "On this computer only. Publishing uploads it to your media servers."
 msgstr ""
 
-#: main_window.py:11169
+#: main_window.py:11174
 msgid "Drafts are saved on your usual relays again."
 msgstr ""
 
-#: main_window.py:11257
+#: main_window.py:11262
 msgid "Trying again. Approve the request in your signer app…"
 msgstr ""
 
-#: main_window.py:11317
+#: main_window.py:11322
 #: main_window.py:2243
-#: main_window.py:7741
+#: main_window.py:7746
 #: nostr/ui/media_library_dialog.py:733
 #: nostr/ui/media_library_dialog.py:953
 #: nostr/ui/published_view.py:762
 msgid "Delete"
 msgstr ""
 
-#: main_window.py:11492
+#: main_window.py:11497
 msgid "No drafts were deleted"
 msgstr ""
 
-#: main_window.py:12044
+#: main_window.py:12049
 msgid "Already saving this draft - wait for it to finish."
 msgstr ""
 
-#: main_window.py:12107
+#: main_window.py:12112
 msgid "(unknown account)"
 msgstr ""
 
@@ -1841,7 +1841,7 @@ msgid "Save"
 msgstr ""
 
 #: main_window.py:2155
-#: main_window.py:5670
+#: main_window.py:5675
 #: sheet_tab.py:1199
 #: sheet_tab.py:1200
 #: sheet_window.py:140
@@ -1855,7 +1855,7 @@ msgid "Revert to Saved…"
 msgstr ""
 
 #: main_window.py:2163
-#: main_window.py:5889
+#: main_window.py:5894
 msgid "Set Password…"
 msgstr ""
 
@@ -1984,12 +1984,12 @@ msgid "Dark"
 msgstr ""
 
 #: main_window.py:2569
-#: main_window.py:8125
+#: main_window.py:8130
 msgid "Switch to Dark Appearance"
 msgstr ""
 
 #: main_window.py:2574
-#: main_window.py:8125
+#: main_window.py:8130
 msgid "Switch to Light Appearance"
 msgstr ""
 
@@ -2063,12 +2063,12 @@ msgid "Highlight Current Line"
 msgstr ""
 
 #: main_window.py:2736
-#: main_window.py:8202
+#: main_window.py:8207
 msgid "Enter Full Screen"
 msgstr ""
 
 #: main_window.py:2743
-#: main_window.py:7292
+#: main_window.py:7297
 #: nostr/ui/imports_window.py:1458
 msgid "Show Sidebar"
 msgstr ""
@@ -2127,35 +2127,35 @@ msgid "Imports…"
 msgstr ""
 
 #: main_window.py:2890
-#: main_window.py:8913
-#: main_window.py:9046
+#: main_window.py:8918
+#: main_window.py:9051
 msgid "Create Account…"
 msgstr ""
 
 #: main_window.py:2894
-#: main_window.py:8915
-#: main_window.py:9047
+#: main_window.py:8920
+#: main_window.py:9052
 #: nostr/ui/membership_window.py:335
 msgid "Connect Signer App…"
 msgstr ""
 
 #: main_window.py:2898
-#: main_window.py:8917
+#: main_window.py:8922
 msgid "Restore Account…"
 msgstr ""
 
 #: main_window.py:2902
-#: main_window.py:8939
+#: main_window.py:8944
 msgid "Back Up Account…"
 msgstr ""
 
 #: main_window.py:2906
-#: main_window.py:8941
+#: main_window.py:8946
 msgid "Move Key to Signer App…"
 msgstr ""
 
 #: main_window.py:2910
-#: main_window.py:8936
+#: main_window.py:8941
 msgid "Edit Profile…"
 msgstr ""
 
@@ -2213,38 +2213,38 @@ msgstr ""
 msgid "No file on disk to delete"
 msgstr ""
 
-#: main_window.py:4395
-#: main_window.py:4797
-#: main_window.py:10747
-#: main_window.py:4778
+#: main_window.py:4398
+#: main_window.py:4802
+#: main_window.py:10752
+#: main_window.py:4783
 #: media_files.py:109
 #: nostr/ui/media_library_dialog.py:1342
 msgid "Image"
 msgstr ""
 
-#: main_window.py:5169
+#: main_window.py:5174
 msgid "Formatting, colors and images will be permanently removed from the saved file."
 msgstr ""
 
-#: main_window.py:5172
+#: main_window.py:5177
 msgid ""
 "Saves all colors, bold, italic and formatting.\n"
 "Best choice for editing in this editor."
 msgstr ""
 
-#: main_window.py:5190
+#: main_window.py:5195
 msgid "PDFs open read-only; there is nothing to save."
 msgstr ""
 
-#: main_window.py:5194
+#: main_window.py:5199
 msgid "This file is shown read-only; there is nothing to save."
 msgstr ""
 
-#: main_window.py:5459
+#: main_window.py:5464
 msgid "Another export is still loading its pictures."
 msgstr ""
 
-#: main_window.py:5574
+#: main_window.py:5579
 #: nostr/ui/article_details_panel.py:208
 #: nostr/ui/article_header.py:258
 #: nostr/ui/article_header.py:306
@@ -2253,162 +2253,163 @@ msgstr ""
 msgid "Title"
 msgstr ""
 
-#: main_window.py:5574
+#: main_window.py:5579
 #: nostr/ui/article_details_panel.py:213
 #: nostr/ui/article_header.py:266
 #: nostr/ui/publish_article_dialog.py:452
 msgid "Summary"
 msgstr ""
 
-#: main_window.py:5574
+#: main_window.py:5579
 #: nostr/ui/cover_field.py:309
 #: nostr/ui/cover_field.py:317
 #: nostr/ui/cover_field.py:466
 msgid "Cover image"
 msgstr ""
 
-#: main_window.py:5575
+#: main_window.py:5580
 #: nostr/ui/article_details_panel.py:228
 #: nostr/ui/article_details_panel.py:230
 #: nostr/ui/publish_article_dialog.py:458
 msgid "Hashtags"
 msgstr ""
 
-#: main_window.py:5575
+#: main_window.py:5580
 #: nostr/ui/article_details_panel.py:258
 #: nostr/ui/publish_article_dialog.py:503
 #: nostr/ui/stash_kind_dialog.py:327
 msgid "Link name"
 msgstr ""
 
-#: main_window.py:5576
+#: main_window.py:5581
 msgid "Date"
 msgstr ""
 
-#: main_window.py:5576
+#: main_window.py:5581
 msgid "Co-Authors"
 msgstr ""
 
-#: main_window.py:5577
+#: main_window.py:5582
 msgid "Share zaps equally with co-authors"
 msgstr ""
 
-#: main_window.py:5707
+#: main_window.py:5712
 msgid "Revert to the version on disk?"
 msgstr ""
 
-#: main_window.py:5709
+#: main_window.py:5714
 #: sheet_window.py:149
 msgid "Revert"
 msgstr ""
 
-#: main_window.py:5744
+#: main_window.py:5749
 msgid "Saving replaces the changes made there."
 msgstr ""
 
-#: main_window.py:5770
+#: main_window.py:5775
 msgid "It opens Markdown, HTML, plain text, R Markdown and PDF documents, and puts pictures into them."
 msgstr ""
 
-#: main_window.py:5826
+#: main_window.py:5831
 msgid "Enter its password to recover the changes that were not saved."
 msgstr ""
 
-#: main_window.py:5881
+#: main_window.py:5886
 msgid "Locked with a password."
 msgstr ""
 
-#: main_window.py:5882
+#: main_window.py:5887
 msgid "Password removed."
 msgstr ""
 
-#: main_window.py:5889
+#: main_window.py:5894
 msgid "Change Password…"
 msgstr ""
 
-#: main_window.py:5943
-#: main_window.py:7376
+#: main_window.py:5948
+#: main_window.py:7381
 #: nostr/ui/published_view.py:710
 msgid "That link cannot be opened."
 msgstr ""
 
-#: main_window.py:6400
+#: main_window.py:6405
 msgid "This picture can’t be shown yet: it hasn’t arrived."
 msgstr ""
 
-#: main_window.py:6404
+#: main_window.py:6409
 msgid "This picture is an SVG drawing, which can’t be shown large here. Open it in your browser instead."
 msgstr ""
 
-#: main_window.py:6409
+#: main_window.py:6414
 msgid "This picture can’t be shown large: it is too large, or not a kind of picture MyEditor shows."
 msgstr ""
 
-#: main_window.py:6538
+#: main_window.py:6543
 msgid "Nothing printed: those pages aren't in the document."
 msgstr ""
 
-#: main_window.py:6649
+#: main_window.py:6654
 msgid "Couldn't knit the document"
 msgstr ""
 
-#: main_window.py:6650
+#: main_window.py:6655
 msgid "R Markdown stopped with an error. The details show what it reported."
 msgstr ""
 
-#: main_window.py:6751
+#: main_window.py:6756
 #: widgets.py:240
 msgid "Replace All"
 msgstr ""
 
-#: main_window.py:6763
-#: main_window.py:7150
-#: main_window.py:7192
+#: main_window.py:6768
+#: main_window.py:7155
+#: main_window.py:7197
 #: pdf_viewer.py:1057
 msgid "No matches"
 msgstr ""
 
-#: main_window.py:6776
+#: main_window.py:6781
 msgid "Restart MyEditor to Change the Language"
 msgstr ""
 
-#: main_window.py:6998
+#: main_window.py:7003
 msgid "MyEditor couldn’t keep a copy of this document for the restart. Your changes will be lost if you don’t save them."
 msgstr ""
 
-#: main_window.py:7019
+#: main_window.py:7024
 msgid "MyEditor closes to install the update. Changes you don’t save will be lost."
 msgstr ""
 
-#: main_window.py:7041
+#: main_window.py:7046
 #: nostr/ui/imports_window.py:1211
 msgid "You're up to date"
 msgstr ""
 
-#: main_window.py:7048
+#: main_window.py:7053
 msgid "Can't check for updates"
 msgstr ""
 
-#: main_window.py:7283
+#: main_window.py:7288
 msgid "Close Window"
 msgstr ""
 
-#: main_window.py:7292
+#: main_window.py:7297
 #: nostr/ui/imports_window.py:1458
 msgid "Hide Sidebar"
 msgstr ""
 
-#: main_window.py:7458
+#: main_window.py:7463
 #: dictation/indicator.py:70
 msgid "Dictation"
 msgstr ""
 
-#: main_window.py:7909
-#: main_window.py:7913
+#: main_window.py:7914
+#: main_window.py:4400
+#: main_window.py:7918
 msgid "Add Photos"
 msgstr ""
 
-#: main_window.py:8025
+#: main_window.py:8030
 #: nostr/ui/connect_dialog.py:225
 #: nostr/ui/media_library_dialog.py:723
 #: nostr/ui/published_view.py:930
@@ -2416,232 +2417,232 @@ msgstr ""
 msgid "Copy Link"
 msgstr ""
 
-#: main_window.py:8065
+#: main_window.py:8070
 msgid "Copy Media Link"
 msgstr ""
 
-#: main_window.py:8076
+#: main_window.py:8081
 msgid "That file is not on this computer any more."
 msgstr ""
 
-#: main_window.py:8402
+#: main_window.py:8407
 msgid "Make the window wider to show both"
 msgstr ""
 
-#: main_window.py:8491
+#: main_window.py:8496
 msgid "Some apps (Amethyst, Coracle, Damus) show footnotes as typed: the marks in brackets and the notes at the end."
 msgstr ""
 
-#: main_window.py:8494
+#: main_window.py:8499
 msgid "A note no mark refers to: most apps leave it out."
 msgstr ""
 
-#: main_window.py:8501
+#: main_window.py:8506
 msgid "The first heading repeats the title, so readers see it twice."
 msgstr ""
 
-#: main_window.py:8598
+#: main_window.py:8603
 msgid "Couldn't keep a backup of this document."
 msgstr ""
 
-#: main_window.py:8639
+#: main_window.py:8644
 msgid "Line numbers enabled"
 msgstr ""
 
-#: main_window.py:8640
+#: main_window.py:8645
 msgid "Line numbers disabled"
 msgstr ""
 
-#: main_window.py:8657
+#: main_window.py:8662
 msgid "Syntax highlighting enabled"
 msgstr ""
 
-#: main_window.py:8658
+#: main_window.py:8663
 msgid "Syntax highlighting disabled"
 msgstr ""
 
-#: main_window.py:8686
+#: main_window.py:8691
 msgid "Paper mode on"
 msgstr ""
 
-#: main_window.py:8686
+#: main_window.py:8691
 msgid "Paper mode off"
 msgstr ""
 
-#: main_window.py:8696
+#: main_window.py:8701
 msgid "Highlight current line on"
 msgstr ""
 
-#: main_window.py:8697
+#: main_window.py:8702
 msgid "Highlight current line off"
 msgstr ""
 
-#: main_window.py:8792
+#: main_window.py:8797
 msgid "The update wasn’t installed"
 msgstr ""
 
-#: main_window.py:9032
+#: main_window.py:9037
 msgid "Publishing needs a Nostr account"
 msgstr ""
 
-#: main_window.py:9033
+#: main_window.py:9038
 msgid "Notes and articles are published from your Nostr account."
 msgstr ""
 
-#: main_window.py:9037
+#: main_window.py:9042
 msgid "The media library needs a Nostr account"
 msgstr ""
 
-#: main_window.py:9038
+#: main_window.py:9043
 msgid "Images you upload are kept for your Nostr account."
 msgstr ""
 
-#: main_window.py:9090
+#: main_window.py:9095
 msgid "Profile saved."
 msgstr ""
 
-#: main_window.py:9133
+#: main_window.py:9138
 #, python-brace-format
 msgid "{relay} asks you to sign in, and your signer app declined."
 msgstr ""
 
-#: main_window.py:9135
+#: main_window.py:9140
 #, python-brace-format
 msgid "Couldn’t sign in to {relay}."
 msgstr ""
 
-#: main_window.py:9206
+#: main_window.py:9211
 msgid "Tell Other Apps Where Your Media Is?"
 msgstr ""
 
-#: main_window.py:9665
+#: main_window.py:9670
 msgid "Article details belong to a document written here."
 msgstr ""
 
-#: main_window.py:9931
+#: main_window.py:9936
 msgid "Audio or Video"
 msgstr ""
 
-#: main_window.py:9964
+#: main_window.py:9969
 #, python-brace-format
 msgid "{count} file is still uploading or being saved."
 msgid_plural "{count} files are still uploading or being saved."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:9978
+#: main_window.py:9983
 msgid "Quitting now stops the download, and the file isn’t saved."
 msgid_plural "Quitting now stops the downloads, and the files aren’t saved."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:10099
+#: main_window.py:10104
 msgid "Uploaded"
 msgstr ""
 
-#: main_window.py:10100
+#: main_window.py:10105
 msgid "On your media servers: anyone with its link can view it."
 msgstr ""
 
-#: main_window.py:10104
+#: main_window.py:10109
 #: nostr/ui/cover_field.py:593
 #: nostr/ui/cover_field.py:405
 msgid "Uploading…"
 msgstr ""
 
-#: main_window.py:10105
+#: main_window.py:10110
 msgid "On its way to your media servers."
 msgstr ""
 
-#: main_window.py:10109
+#: main_window.py:10114
 msgid "Couldn’t Upload"
 msgstr ""
 
-#: main_window.py:10145
+#: main_window.py:10150
 msgid "Couldn’t upload. Publishing or saving as a draft tries again."
 msgstr ""
 
-#: main_window.py:10482
+#: main_window.py:10487
 msgid "Don't Paste"
 msgstr ""
 
-#: main_window.py:10485
+#: main_window.py:10490
 msgid "This is a secret key"
 msgstr ""
 
-#: main_window.py:10486
+#: main_window.py:10491
 msgid "Anyone who has it can publish as its owner and read their private messages, and once published it can never be taken back. MyEditor did not paste it. Keep it in a password manager or a signer app."
 msgstr ""
 
-#: main_window.py:10606
+#: main_window.py:10611
 msgid "Your article is published."
 msgstr ""
 
-#: main_window.py:10607
+#: main_window.py:10612
 msgid "Your note is published."
 msgstr ""
 
-#: main_window.py:10776
-#: main_window.py:10790
+#: main_window.py:10781
+#: main_window.py:10795
 msgid "That link cannot be inserted."
 msgstr ""
 
-#: main_window.py:10881
+#: main_window.py:10886
 msgid "That image could not be added."
 msgstr ""
 
-#: main_window.py:11187
+#: main_window.py:11192
 msgid "Draft isn't ready to open yet - still decrypting."
 msgstr ""
 
-#: main_window.py:11300
+#: main_window.py:11305
 msgid ""
 "They use a draft format this editor doesn't recognise, so removing them from here might leave them visible in the other client.\n"
 "\n"
 "To remove them cleanly, open them in the app that created them and delete them there."
 msgstr ""
 
-#: main_window.py:11316
+#: main_window.py:11321
 msgid "Delete “this draft” from your Nostr drafts?"
 msgstr ""
 
-#: main_window.py:11331
+#: main_window.py:11336
 msgid "A blank-content replacement will be published to your relays. Other clients (and your other devices) will treat the draft as removed. This action can't be undone."
 msgid_plural "A blank-content replacement will be published to your relays. Other clients (and your other devices) will treat them as removed. This action can't be undone."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:11339
+#: main_window.py:11344
 msgid "A draft whose link name holds a secret key is deleted by a request instead, which doesn't send the key again. Your other devices, and apps that follow such requests, will treat it as removed. This action can't be undone."
 msgid_plural "Drafts whose link names hold a secret key are deleted by a request each instead, which doesn't send the keys again. Your other devices, and apps that follow such requests, will treat them as removed. This action can't be undone."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:11411
+#: main_window.py:11416
 msgid "Deleting drafts…"
 msgstr ""
 
-#: main_window.py:11411
+#: main_window.py:11416
 #: nostr/ui/media_library_dialog.py:316
 #: nostr/ui/media_preview.py:165
 msgid "Stop"
 msgstr ""
 
-#: main_window.py:11412
+#: main_window.py:11417
 msgid "Deleting drafts"
 msgstr ""
 
-#: main_window.py:11668
+#: main_window.py:11673
 msgid "The draft was not saved: another account is in use."
 msgstr ""
 
-#: main_window.py:11692
+#: main_window.py:11697
 msgid "Replacing it overwrites its text on all your devices."
 msgstr ""
 
-#: main_window.py:11693
-#: main_window.py:6725
-#: main_window.py:12279
+#: main_window.py:11698
+#: main_window.py:6730
+#: main_window.py:12284
 #: sheet_window.py:151
 #: update_flow.py:138
 #: update_flow.py:169
@@ -2649,7 +2650,7 @@ msgstr ""
 msgid "Replace"
 msgstr ""
 
-#: main_window.py:12125
+#: main_window.py:12130
 msgid "Saving under the current account would create a separate draft. How would you like to handle it?"
 msgstr ""
 
@@ -2841,13 +2842,13 @@ msgstr ""
 msgid "Do you want to save the changes you made to “{name}”?"
 msgstr ""
 
-#: main_window.py:4393
-#: main_window.py:7909
+#: main_window.py:4395
+#: main_window.py:7914
 #, python-brace-format
 msgid "Images ({patterns})"
 msgstr ""
 
-#: main_window.py:4557
+#: main_window.py:4562
 #: pdf_viewer.py:765
 #: sheet_io.py:1383
 #: viewer_tabs.py:551
@@ -2855,279 +2856,279 @@ msgstr ""
 msgid "The file could not be found."
 msgstr ""
 
-#: main_window.py:4831
+#: main_window.py:4836
 #, python-brace-format
 msgid "Importing “{name}”…"
 msgstr ""
 
-#: main_window.py:5038
+#: main_window.py:5043
 #, python-brace-format
 msgid "Uploading {count} file to your media servers…"
 msgid_plural "Uploading {count} files to your media servers…"
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:5179
+#: main_window.py:5184
 msgid ""
 "Saves all colors, bold, italic and formatting.\n"
 "Compatible with Word, LibreOffice and other apps."
 msgstr ""
 
-#: main_window.py:5551
+#: main_window.py:5556
 #, python-brace-format
 msgid "“{detail}” can’t be saved in the file"
 msgstr ""
 
-#: main_window.py:5674
+#: main_window.py:5679
 #, python-brace-format
 msgid "“{name}” was updated from disk."
 msgstr ""
 
-#: main_window.py:5676
+#: main_window.py:5681
 msgid "It is no longer locked with a password."
 msgstr ""
 
-#: main_window.py:5683
-#: main_window.py:5714
+#: main_window.py:5688
+#: main_window.py:5719
 #, python-brace-format
 msgid "“{name}” was changed in another app."
 msgstr ""
 
-#: main_window.py:6372
+#: main_window.py:6377
 #: media_tabs.py:153
 msgid "Picture"
 msgstr ""
 
-#: main_window.py:6394
+#: main_window.py:6399
 msgid "Save this document first: its pictures are looked for beside it."
 msgstr ""
 
-#: main_window.py:6542
+#: main_window.py:6547
 #, python-brace-format
 msgid "Sent {count} page to {where}."
 msgid_plural "Sent {count} pages to {where}."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:6545
+#: main_window.py:6550
 #, python-brace-format
 msgid "Sent {count} page to the printer."
 msgid_plural "Sent {count} pages to the printer."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:6595
+#: main_window.py:6600
 msgid "A locked document can’t be knit"
 msgstr ""
 
-#: main_window.py:6596
+#: main_window.py:6601
 msgid "R reads the file itself and can’t open it while it is locked. Remove its password first (File > Change Password…)."
 msgstr ""
 
-#: main_window.py:6632
+#: main_window.py:6637
 #, python-brace-format
 msgid "Knit complete: {path}"
 msgstr ""
 
-#: main_window.py:6996
+#: main_window.py:7001
 #, python-brace-format
 msgid "Do you want to save the changes you made to “{name}” before updating?"
 msgstr ""
 
-#: main_window.py:7200
+#: main_window.py:7205
 #, python-brace-format
 msgid "{current} of {total}"
 msgstr ""
 
-#: main_window.py:7419
+#: main_window.py:7424
 msgid "Dictation couldn’t be started. It can be turned on in the system’s keyboard settings."
 msgstr ""
 
-#: main_window.py:7550
-#: main_window.py:7552
+#: main_window.py:7555
+#: main_window.py:7557
 #, python-brace-format
 msgid "Code: {language}"
 msgstr ""
 
-#: main_window.py:7651
+#: main_window.py:7656
 #, python-brace-format
 msgid "Text Size: {size} pt"
 msgstr ""
 
-#: main_window.py:7912
+#: main_window.py:7917
 msgid "Add Photo"
 msgstr ""
 
-#: main_window.py:7931
+#: main_window.py:7936
 msgid "This picture couldn’t be read. Check that its file is still there, and try again."
 msgstr ""
 
-#: main_window.py:7937
+#: main_window.py:7942
 msgid "This picture is an SVG drawing, which can’t be cropped here. Crop it in a drawing app instead."
 msgstr ""
 
-#: main_window.py:7940
+#: main_window.py:7945
 msgid "This picture can’t be cropped: it is too large, or not a kind of picture MyEditor shows."
 msgstr ""
 
-#: main_window.py:7975
+#: main_window.py:7980
 msgid "The cropped picture couldn’t be kept. Free some space on your disk and try again."
 msgstr ""
 
-#: main_window.py:8023
+#: main_window.py:8028
 msgid "Open Link"
 msgstr ""
 
-#: main_window.py:8067
+#: main_window.py:8072
 msgid "Upload to Media Servers"
 msgstr ""
 
-#: main_window.py:8202
+#: main_window.py:8207
 msgid "Exit Full Screen"
 msgstr ""
 
-#: main_window.py:8672
+#: main_window.py:8677
 #, python-brace-format
 msgid "Background: {pattern}"
 msgstr ""
 
-#: main_window.py:8847
+#: main_window.py:8852
 msgid "Saving your list of sources…"
 msgstr ""
 
-#: main_window.py:9069
+#: main_window.py:9074
 msgid "Your profile needs a Nostr account"
 msgstr ""
 
-#: main_window.py:9070
+#: main_window.py:9075
 msgid "The name and picture people see belong to your Nostr account."
 msgstr ""
 
-#: main_window.py:9125
+#: main_window.py:9130
 #, python-brace-format
 msgid "Signing in to {relay}…"
 msgstr ""
 
-#: main_window.py:9220
+#: main_window.py:9225
 msgid "There is no media server to share."
 msgstr ""
 
-#: main_window.py:9230
+#: main_window.py:9235
 msgid "The list wasn’t shared. Try again in a moment."
 msgstr ""
 
-#: main_window.py:9300
+#: main_window.py:9305
 #: nostr/ui/media_library_dialog.py:901
 #, python-brace-format
 msgid "Saving “{name}”…"
 msgstr ""
 
-#: main_window.py:9426
+#: main_window.py:9431
 #, python-brace-format
 msgid "Connected as {name}"
 msgstr ""
 
-#: main_window.py:9578
-#: main_window.py:10508
+#: main_window.py:9583
+#: main_window.py:10513
 msgid "Nothing to publish"
 msgstr ""
 
-#: main_window.py:9579
-#: main_window.py:10509
+#: main_window.py:9584
+#: main_window.py:10514
 msgid "The current document is empty."
 msgstr ""
 
-#: main_window.py:9667
+#: main_window.py:9672
 msgid "This is a note. Notes have no title, summary or cover; save it as an article to give it some."
 msgstr ""
 
-#: main_window.py:9824
+#: main_window.py:9829
 #, python-brace-format
 msgid "Audio and video ({patterns})"
 msgstr ""
 
-#: main_window.py:9958
+#: main_window.py:9963
 #, python-brace-format
 msgid "“{name}” is still uploading."
 msgid_plural "{count} files are still uploading."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:9961
+#: main_window.py:9966
 msgid "A file is still being saved."
 msgid_plural "{count} files are still being saved."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:10020
+#: main_window.py:10025
 msgid "Quit Anyway"
 msgstr ""
 
-#: main_window.py:10020
+#: main_window.py:10025
 msgid "Close Anyway"
 msgstr ""
 
-#: main_window.py:10111
+#: main_window.py:10116
 msgid "Publishing tries again."
 msgstr ""
 
-#: main_window.py:10151
+#: main_window.py:10156
 msgid "Not uploaded yet. Publishing or saving as a draft uploads it."
 msgstr ""
 
-#: main_window.py:10410
+#: main_window.py:10415
 #, python-brace-format
 msgid "“{name}” wasn’t added to your Media Library."
 msgid_plural "{count} files weren’t added to your Media Library."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:10484
+#: main_window.py:10489
 msgid "Paste Public Key"
 msgstr ""
 
-#: main_window.py:11165
+#: main_window.py:11170
 msgid "Drafts are now saved only on the relay you chose."
 msgid_plural "Drafts are now saved only on the {count} relays you chose."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:11319
+#: main_window.py:11324
 #, python-brace-format
 msgid "Delete {count} draft from your Nostr drafts?"
 msgid_plural "Delete {count} drafts from your Nostr drafts?"
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:11322
+#: main_window.py:11327
 #, python-brace-format
 msgid "Delete {count} Draft"
 msgid_plural "Delete {count} Drafts"
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:11366
+#: main_window.py:11371
 msgid "An imported draft takes a second request, which tells other apps it is gone."
 msgid_plural "Imported drafts take a second request each, which tells other apps they are gone."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:11488
+#: main_window.py:11493
 #, python-brace-format
 msgid "{deleted} of {total} draft deleted"
 msgid_plural "{deleted} of {total} drafts deleted"
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:11752
+#: main_window.py:11757
 msgid "Nothing to save as a draft"
 msgstr ""
 
-#: main_window.py:11753
+#: main_window.py:11758
 msgid "The current document is empty. Add some content first."
 msgstr ""
 
-#: main_window.py:11765
+#: main_window.py:11770
 msgid "This draft is too large"
 msgstr ""
 
@@ -3559,162 +3560,162 @@ msgstr[1] ""
 msgid "Could not add: {names}"
 msgstr ""
 
-#: main_window.py:4416
+#: main_window.py:4421
 #, python-brace-format
 msgid "Supported files ({patterns})"
 msgstr ""
 
-#: main_window.py:4417
+#: main_window.py:4422
 #, python-brace-format
 msgid "Note files ({patterns})"
 msgstr ""
 
-#: main_window.py:4418
+#: main_window.py:4423
 #, python-brace-format
 msgid "PDF documents ({patterns})"
 msgstr ""
 
-#: main_window.py:4419
+#: main_window.py:4424
 #, python-brace-format
 msgid "All files ({patterns})"
 msgstr ""
 
-#: main_window.py:4519
+#: main_window.py:4524
 msgid "This item is not a file MyEditor can read."
 msgstr ""
 
-#: main_window.py:4555
+#: main_window.py:4560
 #, python-brace-format
 msgid "Couldn't open “{name}”"
 msgstr ""
 
-#: main_window.py:4714
+#: main_window.py:4719
 #, python-brace-format
 msgid "“{name}” could not be opened."
 msgstr ""
 
-#: main_window.py:4737
+#: main_window.py:4742
 #, python-brace-format
 msgid "“{name}” could not be shown."
 msgstr ""
 
-#: main_window.py:4835
+#: main_window.py:4840
 #, python-brace-format
 msgid "Made the note “{name}”."
 msgstr ""
 
-#: main_window.py:5168
+#: main_window.py:5173
 #, python-brace-format
 msgid "Save as {ext} Anyway"
 msgstr ""
 
-#: main_window.py:5171
-#: main_window.py:5178
+#: main_window.py:5176
+#: main_window.py:5183
 #, python-brace-format
 msgid "Save as {ext}"
 msgstr ""
 
-#: main_window.py:5183
+#: main_window.py:5188
 #, python-brace-format
 msgid "Save as {ext} without formatting?"
 msgstr ""
 
-#: main_window.py:5184
+#: main_window.py:5189
 #, python-brace-format
 msgid "This document has colors, text formatting or images that {ext} can't store."
 msgstr ""
 
-#: main_window.py:5327
+#: main_window.py:5332
 msgid "A locked document can’t be saved as PDF or RTF"
 msgstr ""
 
-#: main_window.py:5328
+#: main_window.py:5333
 msgid "Those files can’t be locked. Save it as Markdown, HTML or plain text to keep it locked, or remove its password first (File > Change Password…)."
 msgstr ""
 
-#: main_window.py:5509
+#: main_window.py:5514
 #, python-brace-format
 msgid "Saved without what you typed for {details}: MyEditor can’t write it into the file."
 msgstr ""
 
-#: main_window.py:5512
+#: main_window.py:5517
 #, python-brace-format
 msgid "“{name}” goes into the file once it is uploaded."
 msgid_plural "{count} files go into the file once they are uploaded."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:5519
-#: main_window.py:6230
-#: main_window.py:9316
+#: main_window.py:5524
+#: main_window.py:6235
+#: main_window.py:9321
 #, python-brace-format
 msgid "Saved: {path}"
 msgstr ""
 
-#: main_window.py:5558
+#: main_window.py:5563
 #, python-brace-format
 msgid "MyEditor can’t write what you typed for {details} into “{name}” so that other apps read it the same way. The file keeps what it had, and the article still publishes what you typed."
 msgstr ""
 
-#: main_window.py:5564
+#: main_window.py:5569
 msgid "Keep Editing"
 msgstr ""
 
-#: main_window.py:5583
+#: main_window.py:5588
 #, python-brace-format
 msgid "“{detail}”"
 msgstr ""
 
-#: main_window.py:5669
+#: main_window.py:5674
 #, python-brace-format
 msgid "“{name}” was moved or deleted."
 msgstr ""
 
-#: main_window.py:5684
-#: main_window.py:5745
-#: main_window.py:5715
+#: main_window.py:5689
+#: main_window.py:5750
+#: main_window.py:5720
 msgid "Revert…"
 msgstr ""
 
-#: main_window.py:5708
+#: main_window.py:5713
 #, python-brace-format
 msgid "Your unsaved changes to “{name}” will be lost."
 msgstr ""
 
-#: main_window.py:5742
+#: main_window.py:5747
 #, python-brace-format
 msgid "“{name}” was changed in another app since you opened it."
 msgstr ""
 
-#: main_window.py:5747
+#: main_window.py:5752
 #: nostr/ui/draft_relays_sheet.py:618
 msgid "Save Anyway"
 msgstr ""
 
-#: main_window.py:5767
+#: main_window.py:5772
 #, python-brace-format
 msgid "MyEditor can’t open “{name}”"
 msgid_plural "MyEditor can’t open {count} of these files"
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:6531
+#: main_window.py:6536
 msgid "Couldn't print"
 msgstr ""
 
-#: main_window.py:6760
+#: main_window.py:6765
 #, python-brace-format
 msgid "{count} replaced"
 msgid_plural "{count} replaced"
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:6777
+#: main_window.py:6782
 #, python-brace-format
 msgid "MyEditor will be in {name} the next time you open it."
 msgstr ""
 
-#: main_window.py:6861
+#: main_window.py:6866
 #, python-brace-format
 msgid ""
 "Version {version}\n"
@@ -3722,31 +3723,31 @@ msgid ""
 "Built by rinbal."
 msgstr ""
 
-#: main_window.py:6863
+#: main_window.py:6868
 msgid "Source Code"
 msgstr ""
 
-#: main_window.py:6941
+#: main_window.py:6946
 #, python-brace-format
 msgid "The log files are in {folder}"
 msgstr ""
 
-#: main_window.py:7042
+#: main_window.py:7047
 #, python-brace-format
 msgid "{app} {version} is the newest version."
 msgstr ""
 
-#: main_window.py:7049
+#: main_window.py:7054
 #, python-brace-format
 msgid "{app} couldn't reach GitHub. Check your internet connection, then try again."
 msgstr ""
 
-#: main_window.py:7187
+#: main_window.py:7192
 #, python-brace-format
 msgid "Wrapped · {matches}"
 msgstr ""
 
-#: main_window.py:7197
+#: main_window.py:7202
 #: pdf_viewer.py:1060
 #, python-brace-format
 msgid "{count} match"
@@ -3754,61 +3755,61 @@ msgid_plural "{count} matches"
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:7438
+#: main_window.py:7443
 #: dictation/indicator.py:109
 msgid "Dictation stopped"
 msgstr ""
 
-#: main_window.py:8481
+#: main_window.py:8486
 msgid "A file is not on your media servers yet: it shows here once publishing has uploaded it."
 msgid_plural "{count} files are not on your media servers yet: they show here once publishing has uploaded them."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:8744
+#: main_window.py:8749
 #, python-brace-format
 msgid "{count} file(s) from last session could not be found."
 msgid_plural "{count} file(s) from last session could not be found."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:8793
+#: main_window.py:8798
 #, python-brace-format
 msgid "{app} {version} couldn’t replace this version, so you’re still using {current}. Your documents are open as you left them. To try again, choose Help > Check for Updates."
 msgstr ""
 
-#: main_window.py:9207
+#: main_window.py:9212
 #, python-brace-format
 msgid "Other Nostr apps then look on {hosts} for your pictures, in this order. This replaces the list they use now, if you shared one before."
 msgstr ""
 
-#: main_window.py:9211
+#: main_window.py:9216
 msgid "Share List"
 msgstr ""
 
-#: main_window.py:9348
+#: main_window.py:9353
 msgid "Imports aren't available"
 msgstr ""
 
-#: main_window.py:9352
+#: main_window.py:9357
 msgid "Imports need a Nostr account"
 msgstr ""
 
-#: main_window.py:9353
+#: main_window.py:9358
 msgid "Imported posts become drafts in your Nostr account."
 msgstr ""
 
-#: main_window.py:9889
+#: main_window.py:9894
 #, python-brace-format
 msgid "Couldn’t add “{name}”"
 msgstr ""
 
-#: main_window.py:9890
+#: main_window.py:9895
 #, python-brace-format
 msgid "MyEditor can read audio and video files of these kinds: {kinds}."
 msgstr ""
 
-#: main_window.py:10148
+#: main_window.py:10153
 #: nostr/blossom/upload_progress.py:148
 #: nostr/ui/media_library_dialog.py:1120
 #: nostr/ui/media_library_dialog.py:1159
@@ -3818,106 +3819,106 @@ msgstr ""
 msgid "Preparing…"
 msgstr ""
 
-#: main_window.py:10609
+#: main_window.py:10614
 #, python-brace-format
 msgid "Your article is published; {accepted} of {total} relay took it."
 msgid_plural "Your article is published; {accepted} of {total} relays took it."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:10613
+#: main_window.py:10618
 #, python-brace-format
 msgid "Your note is published; {accepted} of {total} relay took it."
 msgid_plural "Your note is published; {accepted} of {total} relays took it."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:10856
+#: main_window.py:10861
 #, python-brace-format
 msgid "{count} file is waiting."
 msgid_plural "{count} files are waiting."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:11086
+#: main_window.py:11091
 msgid "This article has a draft that can’t be shown yet."
 msgstr ""
 
-#: main_window.py:11174
+#: main_window.py:11179
 #, python-brace-format
 msgid "Copied event id {id}…"
 msgstr ""
 
-#: main_window.py:11297
+#: main_window.py:11302
 msgid "This draft was created by another Nostr client"
 msgid_plural "These {count} drafts were created by other Nostr clients"
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:11313
+#: main_window.py:11318
 #, python-brace-format
 msgid "Delete “{name}” from your Nostr drafts?"
 msgstr ""
 
-#: main_window.py:11359
+#: main_window.py:11364
 #, python-brace-format
 msgid "Your signer app will ask you to approve each one, so expect {count} request. You can stop partway through."
 msgid_plural "Your signer app will ask you to approve each one, so expect {count} requests. You can stop partway through."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:11373
+#: main_window.py:11378
 #, python-brace-format
 msgid "{count} draft from another Nostr client is not included, and will be left alone."
 msgid_plural "{count} drafts from another Nostr client are not included, and will be left alone."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:11399
+#: main_window.py:11404
 msgid "Couldn't start the deletion"
 msgstr ""
 
-#: main_window.py:11479
+#: main_window.py:11484
 msgid "Draft deleted."
 msgid_plural "{count} drafts deleted."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:11496
+#: main_window.py:11501
 #, python-brace-format
 msgid "{count} could not be removed and is still on your relays. You can try again."
 msgid_plural "{count} could not be removed and are still on your relays. You can try again."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:11690
+#: main_window.py:11695
 #, python-brace-format
 msgid "A draft named “{name}” already exists. Do you want to replace it?"
 msgstr ""
 
-#: main_window.py:11761
-#: main_window.py:11960
+#: main_window.py:11766
+#: main_window.py:11965
 msgid "Couldn't prepare the draft"
 msgstr ""
 
-#: main_window.py:11762
+#: main_window.py:11767
 msgid "Its contents could not be prepared for encryption."
 msgstr ""
 
-#: main_window.py:11789
+#: main_window.py:11794
 msgid "Couldn't save the draft"
 msgstr ""
 
-#: main_window.py:12122
+#: main_window.py:12127
 #, python-brace-format
 msgid "This draft was last saved as {original}, but you're signed in as {active}"
 msgstr ""
 
-#: main_window.py:12278
+#: main_window.py:12283
 msgid "Replace this draft with the newer version?"
 msgstr ""
 
-#: main_window.py:12279
+#: main_window.py:12284
 msgid "Your unsaved changes will be lost."
 msgstr ""
 
@@ -3971,125 +3972,125 @@ msgstr ""
 msgid "“{name}” already exists"
 msgstr ""
 
-#: main_window.py:4727
+#: main_window.py:4732
 #, python-brace-format
 msgid "{app} (as Text)"
 msgstr ""
 
-#: main_window.py:4842
+#: main_window.py:4847
 #, python-brace-format
 msgid "Couldn't import “{name}”"
 msgstr ""
 
-#: main_window.py:4953
+#: main_window.py:4958
 msgid "A picture can’t be found"
 msgid_plural "{count} pictures can’t be found"
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:4956
+#: main_window.py:4961
 #, python-brace-format
 msgid "“{name}” is not on this computer any more. Insert it again, or delete it, to go on."
 msgstr ""
 
-#: main_window.py:5021
+#: main_window.py:5026
 #, python-brace-format
 msgid "Couldn’t upload “{name}”"
 msgstr ""
 
-#: main_window.py:5023
+#: main_window.py:5028
 msgid "The draft was not saved."
 msgstr ""
 
-#: main_window.py:5023
+#: main_window.py:5028
 msgid "Nothing was published."
 msgstr ""
 
-#: main_window.py:5516
+#: main_window.py:5521
 #, python-brace-format
 msgid "Saved. “{name}” goes into the file once it is uploaded."
 msgid_plural "Saved. {count} files go into the file once they are uploaded."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:5534
+#: main_window.py:5539
 #, python-brace-format
 msgid "“{name}” is uploaded. Save the document to put it in."
 msgstr ""
 
-#: main_window.py:6397
+#: main_window.py:6402
 #, python-brace-format
 msgid "The picture “{name}” is no longer beside this document. Put it back there, or insert it again."
 msgstr ""
 
-#: main_window.py:9851
+#: main_window.py:9856
 #, python-brace-format
 msgid "“{name}” is too large"
 msgstr ""
 
-#: main_window.py:9852
+#: main_window.py:9857
 #, python-brace-format
 msgid "Your media servers take files up to {size}."
 msgstr ""
 
-#: main_window.py:9983
+#: main_window.py:9988
 #, python-brace-format
 msgid "Quitting also stops saving “{name}”."
 msgid_plural "Quitting also stops saving {count} files."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:10416
+#: main_window.py:10421
 #, python-brace-format
 msgid "“{name}” wasn’t added to your Media Library. {reason}"
 msgstr ""
 
-#: main_window.py:11087
+#: main_window.py:11092
 msgid "The draft couldn’t be decrypted. Double-click it in the Drafts panel to try again, or open the version that is published now."
 msgstr ""
 
-#: main_window.py:11090
+#: main_window.py:11095
 msgid "The draft is still being decrypted. Choose Edit again once its title shows in the Drafts panel, or open the version that is published now."
 msgstr ""
 
-#: main_window.py:11098
+#: main_window.py:11103
 msgid "This article has a draft with changes you haven’t published."
 msgstr ""
 
-#: main_window.py:11100
+#: main_window.py:11105
 msgid "Open the draft to go on with it, or open the version that is published."
 msgstr ""
 
-#: main_window.py:11382
+#: main_window.py:11387
 msgid "Not included:"
 msgstr ""
 
-#: main_window.py:11422
+#: main_window.py:11427
 #, python-brace-format
 msgid "Deleting draft {current} of {total}…"
 msgstr ""
 
-#: main_window.py:11578
-#: main_window.py:5225
+#: main_window.py:11583
+#: main_window.py:5230
 msgid "That account isn’t signed in anymore"
 msgstr ""
 
-#: main_window.py:11579
-#: main_window.py:5226
+#: main_window.py:11584
+#: main_window.py:5231
 msgid "Connect it again with Nostr > Connect Signer App… to save here."
 msgstr ""
 
-#: main_window.py:11766
+#: main_window.py:11771
 #, python-brace-format
 msgid "It has {size} bytes, and encryption allows {limit}. Split it into smaller drafts or publish it directly."
 msgstr ""
 
-#: main_window.py:12114
+#: main_window.py:12119
 #, python-brace-format
 msgid "Switch to {name} and Save"
 msgstr ""
 
-#: main_window.py:12117
+#: main_window.py:12122
 #, python-brace-format
 msgid "Save a Copy as {name}"
 msgstr ""
@@ -4115,32 +4116,32 @@ msgstr ""
 msgid "color"
 msgstr ""
 
-#: main_window.py:4783
+#: main_window.py:4788
 #, python-brace-format
 msgid "To link “{name}”, save the note in the folder that holds it."
 msgstr ""
 
-#: main_window.py:5395
-#: main_window.py:5435
-#: main_window.py:6233
-#: main_window.py:6453
+#: main_window.py:5400
+#: main_window.py:5440
+#: main_window.py:6238
+#: main_window.py:6458
 #: sheet_window.py:170
 #: nostr/ui/imports_window.py:1310
 #, python-brace-format
 msgid "Couldn't save “{name}”"
 msgstr ""
 
-#: main_window.py:6532
+#: main_window.py:6537
 #, python-brace-format
 msgid "{error} Check that it's turned on and connected, then try again."
 msgstr ""
 
-#: main_window.py:11092
-#: main_window.py:11103
+#: main_window.py:11097
+#: main_window.py:11108
 msgid "Open Published Version"
 msgstr ""
 
-#: main_window.py:11400
+#: main_window.py:11405
 #, python-brace-format
 msgid ""
 "These drafts can't be removed from here.\n"
@@ -4148,12 +4149,12 @@ msgid ""
 "{error}"
 msgstr ""
 
-#: main_window.py:5905
+#: main_window.py:5910
 #, python-brace-format
 msgid "Couldn't reload “{name}”"
 msgstr ""
 
-#: main_window.py:11104
+#: main_window.py:11109
 msgid "Open Draft"
 msgstr ""
 
@@ -4534,7 +4535,7 @@ msgid "Crop Photo"
 msgstr ""
 
 #: photo_group_editing.py:58
-#: photo_group_menu.py:53
+#: photo_group_menu.py:55
 msgid "Show Large"
 msgstr ""
 
@@ -4543,7 +4544,7 @@ msgid "Show Normal"
 msgstr ""
 
 #: photo_group_editing.py:58
-#: photo_group_menu.py:133
+#: photo_group_menu.py:135
 #: photo_group_pointer.py:112
 msgid "Wide"
 msgstr ""
@@ -4575,13 +4576,13 @@ msgid "{photo}, moved to the end"
 msgstr ""
 
 #: photo_group_editing.py:318
-#: photo_group_pointer.py:343
+#: photo_group_pointer.py:326
 #, python-brace-format
 msgid "{photo}, already first"
 msgstr ""
 
 #: photo_group_editing.py:319
-#: photo_group_pointer.py:343
+#: photo_group_pointer.py:326
 #, python-brace-format
 msgid "{photo}, already last"
 msgstr ""
@@ -4725,128 +4726,158 @@ msgstr ""
 msgid "Caption of {photo}"
 msgstr ""
 
-#: photo_group_menu.py:126
+#: photo_group_menu.py:128
 msgid "Write text between the photos"
 msgstr ""
 
-#: photo_group_menu.py:51
-msgid "Move Left"
-msgstr ""
-
-#: photo_group_menu.py:51
-msgid "Move Right"
-msgstr ""
-
-#: photo_group_menu.py:51
-#: photo_group_menu.py:78
-msgid "Move Up"
-msgstr ""
-
-#: photo_group_menu.py:52
-#: photo_group_menu.py:78
-msgid "Move Down"
-msgstr ""
-
-#: photo_group_menu.py:52
-msgid "Move to Start"
-msgstr ""
-
-#: photo_group_menu.py:52
-msgid "Move to End"
+#: photo_group_menu.py:159
+msgid "Add photos to this group. Or drag them onto it."
 msgstr ""
 
 #: photo_group_menu.py:53
+msgid "Move Left"
+msgstr ""
+
+#: photo_group_menu.py:53
+msgid "Move Right"
+msgstr ""
+
+#: photo_group_menu.py:53
+#: photo_group_menu.py:80
+msgid "Move Up"
+msgstr ""
+
+#: photo_group_menu.py:54
+#: photo_group_menu.py:80
+msgid "Move Down"
+msgstr ""
+
+#: photo_group_menu.py:54
+msgid "Move to Start"
+msgstr ""
+
+#: photo_group_menu.py:54
+msgid "Move to End"
+msgstr ""
+
+#: photo_group_menu.py:55
 msgid "Take Out of Group"
 msgstr ""
 
-#: photo_group_menu.py:54
+#: photo_group_menu.py:56
 msgid "Split Group Here"
 msgstr ""
 
-#: photo_group_menu.py:54
+#: photo_group_menu.py:56
 msgid "Join the Group Above"
 msgstr ""
 
-#: photo_group_menu.py:55
+#: photo_group_menu.py:57
 msgid "Join the Group Below"
 msgstr ""
 
-#: photo_group_menu.py:55
+#: photo_group_menu.py:57
 msgid "Caption…"
 msgstr ""
 
-#: photo_group_menu.py:56
+#: photo_group_menu.py:58
 msgid "Description…"
 msgstr ""
 
-#: photo_group_menu.py:56
+#: photo_group_menu.py:58
 msgid "Crop…"
 msgstr ""
 
-#: photo_group_menu.py:57
+#: photo_group_menu.py:59
 msgid "Add Photos…"
 msgstr ""
 
-#: photo_group_menu.py:58
+#: photo_group_menu.py:60
 msgid "Move With Arrow Keys"
 msgstr ""
 
-#: photo_group_menu.py:83
+#: photo_group_menu.py:85
 msgid "Move Below the Next Paragraph"
 msgstr ""
 
-#: photo_group_menu.py:83
+#: photo_group_menu.py:85
 msgid "Move Above the Paragraph Before"
 msgstr ""
 
-#: photo_group_menu.py:123
+#: photo_group_menu.py:125
 msgid "Then it stands alone under the next paragraph"
 msgstr ""
 
-#: photo_group_menu.py:125
+#: photo_group_menu.py:127
 msgid "Then it stands alone above the paragraph before"
 msgstr ""
 
-#: photo_group_menu.py:134
-#: photo_group_pointer.py:263
+#: photo_group_menu.py:136
+#: photo_group_menu.py:154
 msgid "Show wider than the text"
 msgstr ""
 
-#: photo_group_menu.py:80
+#: photo_group_menu.py:144
+msgid "Drag to move it, or click to move it with the arrow keys"
+msgstr ""
+
+#: photo_group_menu.py:82
 msgid "Move Into the Group Below"
 msgstr ""
 
-#: photo_group_menu.py:80
+#: photo_group_menu.py:82
 msgid "Move Into the Group Above"
 msgstr ""
 
-#: photo_group_menu.py:82
+#: photo_group_menu.py:84
 msgid "Move Next to the Photo Below"
 msgstr ""
 
-#: photo_group_menu.py:82
+#: photo_group_menu.py:84
 msgid "Move Next to the Photo Above"
 msgstr ""
 
-#: photo_group_menu.py:130
-#: photo_group_pointer.py:265
+#: photo_group_menu.py:132
+#: photo_group_menu.py:156
 msgid "Already the whole width"
 msgstr ""
 
-#: photo_group_menu.py:131
+#: photo_group_menu.py:133
 msgid "A row of its own across the whole width"
 msgstr ""
 
-#: photo_group_menu.py:120
+#: photo_group_menu.py:150
+msgid "Description missing: for people who can’t see the photo"
+msgstr ""
+
+#: photo_group_menu.py:157
+msgid "Show normal again"
+msgstr ""
+
+#: photo_group_menu.py:158
+msgid "Show large: a row of its own across the whole width"
+msgstr ""
+
+#: photo_group_menu.py:122
 msgid "Join the Photo Above"
 msgstr ""
 
-#: photo_group_menu.py:121
+#: photo_group_menu.py:123
 msgid "Join the Photo Below"
 msgstr ""
 
-#: photo_group_pointer.py:268
-msgid "Add photos to this group. Or drag them onto it."
+#: photo_group_menu.py:146
+#, python-brace-format
+msgid "All commands for {photo}"
+msgstr ""
+
+#: photo_group_menu.py:153
+msgid "Show as wide as the text"
+msgstr ""
+
+#: photo_group_menu.py:149
+#, python-brace-format
+msgid "Description: {words}"
 msgstr ""
 
 #: photo_group_pointer.py:110
@@ -4855,15 +4886,11 @@ msgstr ""
 msgid "More"
 msgstr ""
 
-#: photo_group_pointer.py:253
-msgid "Drag to move it, or click to move it with the arrow keys"
-msgstr ""
-
-#: photo_group_pointer.py:275
+#: photo_group_pointer.py:258
 msgid "Show alone here"
 msgstr ""
 
-#: photo_group_pointer.py:276
+#: photo_group_pointer.py:259
 msgid "Together with this photo"
 msgstr ""
 
@@ -4879,68 +4906,42 @@ msgstr ""
 msgid "Large"
 msgstr ""
 
-#: photo_group_pointer.py:259
-msgid "Description missing: for people who can’t see the photo"
-msgstr ""
-
-#: photo_group_pointer.py:266
-msgid "Show normal again"
-msgstr ""
-
-#: photo_group_pointer.py:267
-msgid "Show large: a row of its own across the whole width"
-msgstr ""
-
+#: photo_group_pointer.py:386
 #: photo_group_pointer.py:403
-#: photo_group_pointer.py:420
 msgid "Cancelled, the photo is back in its place"
 msgstr ""
 
-#: photo_group_pointer.py:544
+#: photo_group_pointer.py:527
 msgid "Drag to arrange"
 msgstr ""
 
-#: photo_group_pointer.py:255
-#, python-brace-format
-msgid "All commands for {photo}"
-msgstr ""
-
-#: photo_group_pointer.py:262
-msgid "Show as wide as the text"
-msgstr ""
-
-#: photo_group_pointer.py:293
+#: photo_group_pointer.py:276
 #, python-brace-format
 msgid "{photo} picked up"
 msgstr ""
 
-#: photo_group_pointer.py:314
+#: photo_group_pointer.py:297
 #, python-brace-format
 msgid "{photo} picked up. Move it with the arrow keys, Return puts it down, Escape cancels."
 msgstr ""
 
-#: photo_group_pointer.py:576
+#: photo_group_pointer.py:559
 msgid "New Photo"
 msgstr ""
 
-#: photo_group_pointer.py:586
+#: photo_group_pointer.py:569
 msgid "Arrow keys move it, Return puts it down, Esc cancels"
 msgstr ""
 
-#: photo_group_pointer.py:258
-#, python-brace-format
-msgid "Description: {words}"
-msgstr ""
-
-#: photo_group_pointer.py:541
-#: photo_group_pointer.py:596
+#: photo_group_pointer.py:524
+#: photo_group_pointer.py:579
 #, python-brace-format
 msgid "Photo Group · {n} Photo"
 msgid_plural "Photo Group · {n} Photos"
 msgstr[0] ""
 msgstr[1] ""
 
-#: photo_group_pointer.py:588
+#: photo_group_pointer.py:571
 #, python-brace-format
 msgid "Release: here as photo {k} of {n} · Esc cancels"
 msgstr ""
