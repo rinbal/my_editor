@@ -481,6 +481,25 @@ def test_a_copy_or_a_drag_holds_only_the_selected_words_of_a_caption():
     ed.close()
 
 
+def test_a_cut_into_a_caption_pasted_straight_back_gives_the_document_before_it():
+    """STANDUP's rule (PG1C 4g): its clipboard alone would put the caption's
+    words on a line of their own; pasted anywhere else it is just that,
+    and no picture comes with it."""
+    source = _text("Before words.", "Between.", ONE, "*Cap one words*", "After.")
+    ed = _editor(source)
+    _select(ed, "words.", "one words")
+    ed.cut()
+    cut = _markdown(ed)
+    ed.paste_from_clipboard()
+    assert _markdown(ed) == source
+    ed.undo()
+    assert _markdown(ed) == cut
+    _caret(ed, ed.document().characterCount() - 1)
+    ed.paste_from_clipboard()
+    assert _markdown(ed) == _text("Before", ONE, "*one words*", "After.words.", "Between.", "Cap")
+    ed.close()
+
+
 def test_a_selection_moved_into_another_app_keeps_the_picture_it_holds_in_part(monkeypatch):
     """Its drag carries no such picture, and Qt deletes a selection moved
     out as it is (QWidgetTextControl, here as Qt does it then): the

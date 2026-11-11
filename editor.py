@@ -11,6 +11,7 @@ import sys
 import functools
 import time
 from contextlib import contextmanager
+import dataclasses
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -300,6 +301,7 @@ class HtmlEditor(QTextEdit):
         # Where Copy's data is made, with nothing selected (createMime...).
         self._empty_copy = None
         self._dropped_here = False        # a drag of the selection let go of here
+        self._last_cut: Optional[photo_group_cut.Cut] = None   # one that kept a picture
         # What a paste or a drop is called in Edit > Undo (insertFromMimeData).
         self._mime_step = N_("Paste")
         self.document().undoCommandAdded.connect(self._forget_redone_names)
@@ -3158,17 +3160,39 @@ class HtmlEditor(QTextEdit):
         finally:
             whole.endEditBlock()
 
-    @_named_step(N_("Cut"))
     def cut(self):
         """The selection on the clipboard, as it is written; a picture alone
-        it holds only in part stays in the document (photo_group_cut)."""
+        it holds only in part stays in the document (photo_group_cut), and
+        that clipboard pasted straight back at the cut point gives the
+        document before the cut (_cut_coming_back)."""
         cursor = self.textCursor()
-        if photo_group_cut.cuts(self.document(), cursor.selectionStart(),
-                                cursor.selectionEnd()) is None:
-            super().cut()
+        doc = self.document()
+        if photo_group_cut.cuts(doc, cursor.selectionStart(), cursor.selectionEnd()) is None:
+            with self.undo_step(N_("Cut")):
+                super().cut()
             return
         self.copy()
-        self._clear_beside_pictures()
+        with self.undo_step(N_("Cut")):
+            taken = photo_group_cut.cut(cursor)
+            self.setTextCursor(cursor)
+        self._last_cut = dataclasses.replace(
+            taken, words=QApplication.clipboard().text(),
+            state=(doc.revision(), doc.availableUndoSteps()))
+
+    def _cut_coming_back(self, source) -> Optional[photo_group_cut.Cut]:
+        """The last cut, when ``source`` is its own clipboard pasted straight
+        back at its cut point with nothing changed since: then what it cut
+        goes back where it stood, the document the one before the cut
+        (STANDUP's rule, PG1C 4g; its clipboard alone would put the
+        caption's words on a line of their own). None for any other paste."""
+        taken = self._last_cut
+        cursor = self.textCursor()
+        doc = self.document()
+        if (taken is None or source is None or cursor.hasSelection()
+                or cursor.position() != taken.start or source.text() != taken.words
+                or (doc.revision(), doc.availableUndoSteps()) != taken.state):
+            return None
+        return taken
 
     def _clear_beside_pictures(self) -> None:
         """A selection that holds a picture alone only in part goes as
@@ -3294,7 +3318,13 @@ class HtmlEditor(QTextEdit):
         audio or video in what came in then stands in a paragraph of its
         own, wherever it landed (_set_media_apart)."""
         start = self.textCursor().selectionStart()
+        back = self._cut_coming_back(source)
         with self.undo_step(self._mime_step):
+            if back is not None:
+                cursor = self.textCursor()
+                photo_group_cut.put_back(cursor, back)
+                self.setTextCursor(cursor)
+                return
             self._clear_beside_pictures()
             self._insert_mime(source)
             self._set_media_apart(start, self.textCursor().position())

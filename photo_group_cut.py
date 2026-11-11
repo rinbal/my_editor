@@ -20,11 +20,15 @@ it holds its whole unit, and a line that still holds a picture keeps it.
   which deletes it and breaks no line there (STANDUP's rule);
 - **clipped** is such a selection as copied, cut or dragged (PG1C 4g):
   the selected text and the pictures wholly in it; of a picture whose
-  caption it starts or ends in, only the selected caption words.
+  caption it starts or ends in, only the selected caption words;
+- **cut** deletes it as delete does and keeps what it took (a Cut), so
+  that **put_back** gives the document before it when that clipboard is
+  pasted straight back at the cut point (PG1C 4g).
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from PySide6.QtGui import QTextCharFormat, QTextCursor, QTextDocument, QTextDocumentFragment
@@ -149,3 +153,44 @@ def clipped(cursor: QTextCursor) -> Optional[QTextDocumentFragment]:
                            QTextCursor.MoveMode.KeepAnchor)
         pieces.mergeCharFormat(plain)
     return QTextDocumentFragment(copy)
+
+
+@dataclass(frozen=True)
+class Cut:
+    """A cut that kept a picture: where it started and ended, what each
+    cut piece held where it stood (the first one first), and what the
+    editor knows of it after (the clipboard's text, the document's
+    revision and count of changes), to tell a paste straight back."""
+
+    start: int
+    end: int
+    pieces: Tuple[Tuple[int, QTextDocumentFragment], ...]
+    words: str = ""
+    state: Tuple[int, int] = (0, 0)
+
+
+def cut(cursor: QTextCursor) -> Optional[Cut]:
+    """Delete ``cursor``'s selection as delete does, keeping what it
+    took; None, and nothing done, where delete does nothing."""
+    start, end = cursor.selectionStart(), cursor.selectionEnd()
+    doc = cursor.document()
+    found = cuts(doc, start, end)
+    if found is None:
+        return None
+    pieces = []
+    for first, last in reversed(found):
+        piece = QTextCursor(doc)
+        piece.setPosition(first)
+        piece.setPosition(last, QTextCursor.MoveMode.KeepAnchor)
+        pieces.append((first, piece.selection()))
+    delete(cursor)
+    return Cut(start, end, tuple(pieces))
+
+
+def put_back(cursor: QTextCursor, taken: Cut) -> None:
+    """Put what ``taken`` cut back where it stood, the cursor at its end:
+    the document as it was before the cut."""
+    for position, piece in taken.pieces:
+        cursor.setPosition(position)
+        cursor.insertFragment(piece)
+    cursor.setPosition(taken.end)
