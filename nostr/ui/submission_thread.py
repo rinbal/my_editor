@@ -355,6 +355,9 @@ class ThreadView(QWidget):
                 shown.caption = self._caption(item, r)
             elif isinstance(item, threads.VersionCard):
                 shown.card = self._card(item, detail, r)
+            elif isinstance(item, threads.SplitCard):
+                shown.caption = self._quiet(
+                    threads.split_text(item, me=self.me, name_of=self.name_of), r).text()
             else:
                 shown.bubble = _Bubble(self, item, waiting.get(item.bubble.id))
                 self._column.addWidget(shown.bubble)
@@ -377,6 +380,8 @@ class ThreadView(QWidget):
         if isinstance(item, threads.Caption):
             return ("caption", item, threads.caption_text(item, me=self.me,
                                                           name_of=self.name_of))
+        if isinstance(item, threads.SplitCard):
+            return ("split", item, threads.split_text(item, me=self.me, name_of=self.name_of))
         if isinstance(item, threads.VersionCard):
             version = detail.versions.get(item.revision)
             return ("card", item, threads.card_title(item, me=self.me, name_of=self.name_of),

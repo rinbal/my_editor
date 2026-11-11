@@ -288,6 +288,7 @@ from nostr.media.upload_wait import UploadWait
 from nostr.media.publish_copy import PublicCopyMaker
 from nostr.media.visibility import PublicLedger
 from nostr.metadata import AvatarLoader, ProfileMetadataFetcher, can_receive_zaps, zap_address
+from nostr.ui.standup_names import ProfileNames
 from nostr.outbox.directory import RelayDirectory
 from nostr.profiles import Profile, ProfileStore, short_npub
 from nostr.publish_pipeline import answers_detail, kept_by_relay, not_taken_words
@@ -3364,15 +3365,20 @@ class MainWindow(QMainWindow):
         add_published_view(self._drafts_panel, self._published_view)
         # Einreichungen, the third view: what the account in use submitted
         # to publications, and each one's detail (plan 10.4).
+        # The editors and the people taking part by their profiles' names
+        # (M-4), read once each, after the ones this window knows.
+        self._profile_names = ProfileNames.on_relays(
+            self._relay_pool, self._relay_directory, known=self._known_name, parent=self)
         self._submissions_view = SubmissionsView(
-            name_of=self._known_name, avatar_of=self._avatars.get,
+            name_of=self._profile_names.name, avatar_of=self._avatars.get,
             is_dark=self.is_dark_theme)
+        self._profile_names.learned.connect(self._submissions_view.names_learned)
         add_submissions_view(self._drafts_panel, self._submissions_view,
                              server=configured_server())
         self._submissions = SubmissionsHost(self._submission_ports(),
                                             view=self._submissions_view,
                                             pill=self.submission_pill,
-                                            name_of=self._known_name, parent=self)
+                                            name_of=self._profile_names.name, parent=self)
         self._drafts_panel.view_changed.connect(self._follow_account_in_published)
         self._drafts_panel.view_changed.connect(self._update_refresh_command)
         self._published_view.open_requested.connect(self._on_published_open)

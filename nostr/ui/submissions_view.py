@@ -223,6 +223,13 @@ class SubmissionsView(QWidget):
         if self._following is not None:
             self._following.refresh()
 
+    def names_learned(self) -> None:
+        """A person's name came in: the rows and the detail say it, with
+        nothing read again."""
+        self._reload()
+        if self.showing_detail() and self.detail.sid:
+            self.detail._on_changed(self.detail.sid)
+
     def opened(self) -> None:
         """The view came into sight: look now (plan 10.4)."""
         if self._following is not None:

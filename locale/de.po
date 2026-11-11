@@ -13469,3 +13469,14 @@ msgstr "Korrektur übernommen."
 
 msgid "Correction not taken"
 msgstr "Korrektur nicht übernommen"
+
+#, python-brace-format
+msgid "{name} proposes a split: {shares}"
+msgstr "{name} schlägt eine Aufteilung vor: {shares}"
+
+#, python-brace-format
+msgid "The editorial team proposes a split: {shares}"
+msgstr "Die Redaktion schlägt eine Aufteilung vor: {shares}"
+
+msgid "Accepted with this split."
+msgstr "Mit dieser Aufteilung angenommen."

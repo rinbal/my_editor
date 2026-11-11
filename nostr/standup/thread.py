@@ -136,7 +136,36 @@ class Message:
     role: Role = Role.UNKNOWN   # who the sender is (role_of)
 
 
-ThreadItem = Union[Day, Caption, VersionCard, Message]
+@dataclass(frozen=True)
+class SplitCard:
+    """A split proposal of the editorial team (9.4), shown where it came:
+    ``shares`` as ``(pubkey, weight)``; ``accepted`` when it is the one
+    the verified accept names (the only one that counts)."""
+
+    seq: int
+    at: int
+    author: str
+    shares: Tuple[Tuple[str, int], ...]
+    accepted: bool = False
+
+
+ThreadItem = Union[Day, Caption, VersionCard, Message, SplitCard]
+
+SPLIT_PROPOSED = N_("{name} proposes a split: {shares}")
+SPLIT_PROPOSED_PLAIN = N_("The editorial team proposes a split: {shares}")
+SPLIT_ACCEPTED = N_("Accepted with this split.")
+
+
+def split_text(card: SplitCard, *, me: str, name_of: Callable[[str], str]) -> str:
+    """A split card's line (translated): who proposed it, then each
+    share; the person reading it is "you"."""
+    shares = ", ".join("{name} {weight} %".format(
+        name=_("You") if pk == me else (name_of(pk) or _("Someone")), weight=weight)
+        for pk, weight in card.shares)
+    name = name_of(card.author)
+    words = (_(SPLIT_PROPOSED).format(name=name, shares=shares) if name
+             else _(SPLIT_PROPOSED_PLAIN).format(shares=shares))
+    return words + (" " + _(SPLIT_ACCEPTED) if card.accepted else "")
 
 
 def _local_day(at: int) -> datetime.date:
@@ -193,11 +222,18 @@ def build_thread(items: Sequence[views.TimelineItem],
     opened = from_known_senders(opened, **senders)
     notes: Dict[int, str] = {}
     shown: List[Tuple[int, int, object]] = []          # (seq, time, what)
+    named = _named_split(items, sid, deciders, checks)
     for bubble in conversation.fold(opened, writer=writer, redaktion=deciders or ()):
         if bubble.structured is None:
             shown.append((bubble.seq, bubble.created_at, bubble))
         elif bubble.structured[0] == "revision-note":
             notes[bubble.structured[1]["revision"]] = bubble.structured[1]["note"]
+        elif bubble.structured[0] == "split-proposal" and deciders is not None:
+            shown.append((bubble.seq, bubble.created_at, SplitCard(
+                seq=bubble.seq, at=bubble.created_at, author=bubble.author,
+                shares=tuple((s["pubkey"], s["weight"])
+                             for s in bubble.structured[1]["shares"]),
+                accepted=bubble.id == named)))
     for item in items:
         event = item.event
         if event is None or item.channel != "conversation":
@@ -218,7 +254,7 @@ def build_thread(items: Sequence[views.TimelineItem],
             out.append(Day(at))
         if isinstance(what, VersionCard):
             out.append(replace(what, note=notes.get(what.revision, "")))
-        elif isinstance(what, Caption):
+        elif isinstance(what, (Caption, SplitCard)):
             out.append(what)
         else:
             before = out[-1] if out else None
@@ -229,6 +265,22 @@ def build_thread(items: Sequence[views.TimelineItem],
             out.append(Message(bubble=what, mine=what.author == me, first=first, last=last,
                                role=role_of(what.author, **senders)))
     return out
+
+
+def _named_split(items, sid: str, deciders, checks) -> Optional[str]:
+    """The split rumor id the newest decision names, when it is an accept
+    whose signed action verifies as a decider's."""
+    decisions = [item for item in items if item.event is not None
+                 and item.event.name in DECISIONS and item.channel == "conversation"]
+    if not decisions or deciders is None:
+        return None
+    event = max(decisions, key=lambda item: item.seq).event
+    if event.name != "accept" or not action_verified(event, sid, tuple(deciders), checks):
+        return None
+    body = (checks or SignedChecks()).body(event.signed, path=views.action_path("accept", sid),
+                                           sid=sid) or {}
+    named = body.get("split_rumor_id")
+    return named if formats.is_hex64(named) else None
 
 
 def own_reaction(opened: Sequence[conversation.Opened], target: str,
@@ -320,7 +372,7 @@ def unsigned(caption: Caption) -> bool:
 
 
 __all__ = [
-    "CAPTIONS", "CARDS", "Caption", "Day", "Message", "Role", "ThreadItem", "VersionCard",
-    "build_thread", "caption_text", "card_title", "from_known_senders", "history",
-    "own_reaction", "role_of", "sender_label", "unsigned",
+    "CAPTIONS", "CARDS", "Caption", "Day", "Message", "Role", "SplitCard", "ThreadItem",
+    "VersionCard", "build_thread", "caption_text", "card_title", "from_known_senders", "history",
+    "own_reaction", "role_of", "sender_label", "split_text", "unsigned",
 ]
