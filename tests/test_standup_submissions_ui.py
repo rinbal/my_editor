@@ -35,7 +35,8 @@ from nostr.ui.standup_submit import StandupWriter
 from nostr.ui.submission_cover import cover_pixmap, png_bytes
 from nostr.ui.submission_pill import SubmissionPill
 from nostr.ui.submissions_host import Ports, SubmissionsHost
-from nostr.ui.submissions_view import PANEL_VIEW, SubmissionsView
+from nostr.ui.drafts_panel import DraftsPanel
+from nostr.ui.submissions_view import PANEL_VIEW, SubmissionsView, add_to_panel
 from tests.standup_fakes import DROP_BEFORE, SERVER
 from tests.standup_following_fakes import FollowWorld
 from tests.standup_vectors import pk
@@ -170,21 +171,27 @@ def test_a_cover_is_decoded_once_and_one_too_large_shows_the_symbol(monkeypatch)
 
 
 def test_an_empty_list_says_how_to_submit_and_offers_it(window):
-    window.follow()
+    window.host.follow()
+    # Not read yet: not said to be empty.
+    assert window.view.empty_title.text() == "Loading …"
+    assert not window.view.empty_action.isVisibleTo(window.view)
+    window.world.settle()
     assert window.view.empty_title.text() == "No Submissions Yet"
-    assert "Submit to a Publication" in window.view.empty_body.text()
+    assert window.view.empty_body.text() == (
+        "Follow here what you submit to publications. Open an article and choose "
+        "Nostr › Submit to a Publication….")
     window.current = "the article in front"
     window.view.empty_action.click()
     assert window.submits == ["the article in front"]
 
 
-def test_without_a_server_nothing_is_read_and_the_list_says_where_the_address_comes_from(
-        monkeypatch):
+def test_without_a_server_nothing_is_read_and_the_panel_has_no_submissions_view(monkeypatch):
     window = Window(FollowWorld(), monkeypatch, server="")
     window.follow()
     assert window.accounts == {} and window.following is None
-    assert window.view.empty_body.text() == "The server’s address comes from the association."
-    assert not window.view.empty_action.isVisible()
+    panel = DraftsPanel(is_dark=False)
+    assert not add_to_panel(panel, window.view, server="") and PANEL_VIEW not in panel.views()
+    assert add_to_panel(panel, window.view, server=SERVER) and PANEL_VIEW in panel.views()
 
 
 def test_starting_myeditor_asks_no_signer_app_until_einreichungen_opens(monkeypatch):

@@ -43,7 +43,7 @@ from PySide6.QtWidgets import (
 )
 
 import announce
-from i18n import _
+from i18n import N_, _
 
 from ..standup import following as rules
 from ..standup import thread as threads
@@ -55,11 +55,20 @@ from .submission_rows import ITEM_ROLE, Item, RowDelegate, Rows
 PANEL_VIEW = "submissions"
 
 
-def add_to_panel(panel, view: "SubmissionsView") -> None:
-    """Make ``view`` the Drafts panel's third view, Einreichungen."""
+EMPTY_BODY = N_("Follow here what you submit to publications. Open an article and choose "
+                "Nostr › Submit to a Publication….")
+
+
+def add_to_panel(panel, view: "SubmissionsView", *, server: str) -> bool:
+    """Make ``view`` the Drafts panel's third view, Einreichungen, when a
+    server is set (RG-M3-b 4): without one nothing can be submitted, and
+    a view that could only say so is left out. Whether it was added."""
+    if not server:
+        return False
     panel.add_view(PANEL_VIEW, _("Submissions"), _("What you submitted to publications"), view,
                    refresh=view.refresh, refresh_name=_("Refresh Submissions"),
                    search=view.set_search_text, search_name=_("Search Submissions"))
+    return True
 
 
 class SubmissionsView(QWidget):
@@ -304,9 +313,8 @@ class SubmissionsView(QWidget):
                                  _("Choose an account in the Nostr menu to see what you "
                                    "submitted."))
         elif not self._server or following is None:
-            self._placeholder_of(_("No Submissions Yet"),
-                                 _("The server’s address comes from the association."),
-                                 symbol="article")
+            # Not in the panel without a server; a moment between accounts.
+            self._placeholder_of(_("No Submissions Yet"), "", symbol="article")
         elif following.list_problem:
             self._placeholder_of(_("Your submissions couldn’t be loaded"),
                                  following.list_problem, symbol="alert",
@@ -317,11 +325,11 @@ class SubmissionsView(QWidget):
         elif not any_rows and problem:
             self._placeholder_of(_("Your submissions couldn’t be loaded"), problem,
                                  symbol="alert", action=(_("Try Again"), self.refresh))
+        elif not any_rows and not following.listed:
+            self._placeholder_of(_("Loading …"), "", symbol="article")     # not empty yet
         elif not any_rows:
             self._placeholder_of(
-                _("No Submissions Yet"),
-                _("Submit an article with Nostr › Submit to a Publication…. It appears "
-                  "here then."), symbol="article",
+                _("No Submissions Yet"), _(EMPTY_BODY), symbol="article",
                 action=(_("Submit to a Publication…"), self.submit_requested.emit))
         else:
             self._stack.setCurrentWidget(self._list_page)

@@ -130,6 +130,8 @@ class Following(QObject):
         self.problem = ""
         # Why the list of submissions could not be read (translated), or "".
         self.list_problem = ""
+        # The list was read once: only then is an empty one empty.
+        self.listed = False
 
     # -- the account's scope -----------------------------------------------------
 
@@ -203,6 +205,7 @@ class Following(QObject):
 
     def _listed(self, read) -> None:
         self._on_listed(read)
+        self.listed = True
         self.list_problem = "" if read.readable else (read.words or "")
         if read.readable:
             if self._watcher.running:

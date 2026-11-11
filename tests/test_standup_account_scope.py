@@ -184,6 +184,8 @@ def test_signing_out_and_switching_stops_everything_that_was_running(monkeypatch
     window.profile = SimpleNamespace(user_pubkey=OTHER, bunker_relays=[])
     window.follow()
     assert window.following is not following and window.view.items() == []
+    window.view.opened()                                # its list is read once it shows
+    world.settle()
     assert window.view.empty_title.text() == "No Submissions Yet"
     following.refresh()                                 # a late caller of the first
     following.open(entry.sid)

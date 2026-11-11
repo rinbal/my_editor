@@ -270,6 +270,7 @@ from nostr.article_details import (
     ArticleDetails, default_title, front_matter_with)
 from nostr.first_publications import FirstPublications
 from nostr.standup.link_names import LinkNameLock, SubmittedMarks
+from nostr.standup.servers import configured_server
 from nostr.drafts import (
     INNER_KIND_LONG_FORM,
     INNER_KIND_SHORT_NOTE,
@@ -3366,7 +3367,8 @@ class MainWindow(QMainWindow):
         self._submissions_view = SubmissionsView(
             name_of=self._known_name, avatar_of=self._avatars.get,
             is_dark=self.is_dark_theme)
-        add_submissions_view(self._drafts_panel, self._submissions_view)
+        add_submissions_view(self._drafts_panel, self._submissions_view,
+                             server=configured_server())
         self._submissions = SubmissionsHost(self._submission_ports(),
                                             view=self._submissions_view,
                                             pill=self.submission_pill,
