@@ -129,8 +129,10 @@ class _Bubble(QFrame):
         column.setContentsMargins(0, 2 if not message.first else 8, 0, 0)
         column.setSpacing(2)
         name = view.name_of(bubble.author)
-        if message.first and not message.mine:
-            sender = QLabel(name or _("Editorial team"))
+        # Who the sender is decides what they are called (thread.role_of).
+        label = threads.sender_label(message.role, name)
+        if message.first and not message.mine and label:
+            sender = QLabel(label)
             sender.setFont(secondary_font())
             sender.setStyleSheet(f"color: {r.muted}; margin-left: {_AVATAR + 8}px;")
             sender.setTextFormat(Qt.TextFormat.PlainText)
@@ -161,7 +163,12 @@ class _Bubble(QFrame):
         picture = QLabel()
         picture.setFixedSize(_AVATAR, _AVATAR)
         if message.last and not message.mine:
-            picture.setPixmap(face(bubble.author, name, view.avatar_of(bubble.author)))
+            if message.role is threads.Role.MEMBER and not name:
+                # An editor without a known name is the Redaktion: the
+                # publication's face, never a question mark.
+                picture.setPixmap(view.publication_face(_AVATAR))
+            elif label:
+                picture.setPixmap(face(bubble.author, label, view.avatar_of(bubble.author)))
         shown, dimmed = shown_reactions(bubble.reactions, view.me, waiting)
         self.shown_reactions, self.dimmed = shown, dimmed
         self.chip = self._chip(shown, dimmed, r) if shown else None
@@ -230,7 +237,9 @@ class _Bubble(QFrame):
 
 class ThreadView(QWidget):
     """See the module docstring. ``name_of(pubkey)`` is a person's name
-    (``""`` when not known), ``avatar_of(pubkey)`` their picture or None.
+    (``""`` when not known), ``avatar_of(pubkey)`` their picture or None;
+    ``publication_face(size)`` is the logo of the publication whose
+    conversation is shown (the detail sets it).
 
     Signals:
       reacted(str, str, str)   the message's id, its author, the emoji
@@ -251,6 +260,7 @@ class ThreadView(QWidget):
         self.name_of, self.avatar_of, self.is_dark = name_of, avatar_of, is_dark
         self.me = ""
         self.can_react = False
+        self.publication_face: Callable[[int], QPixmap] = lambda size: QPixmap()
         self.menu: Optional[QMenu] = None
         self.bubbles: List[_Bubble] = []
         self.captions: List[str] = []

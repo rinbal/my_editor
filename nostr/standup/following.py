@@ -401,6 +401,12 @@ def deciders_of(members: Iterable) -> Tuple[str, ...]:
                  if m.status == "active" and m.role in DECIDER_ROLES)
 
 
+def members_of(members: Iterable) -> Tuple[str, ...]:
+    """Every active member of the Redaktion (``answers.Member``), curators
+    with them: all of them may write in the conversation (11.3)."""
+    return tuple(m.pubkey for m in members if m.status == "active")
+
+
 def action_verified(event: views.TimelineEvent, sid: str,
                     signers: Optional[Iterable[str]]) -> Optional[bool]:
     """Whether a timeline event's stored signed action verifies as one
@@ -522,6 +528,6 @@ __all__ = [
     "ACTION_LABELS", "Action", "DECIDER_ROLES", "DECISIONS", "Decision", "NOT_SIGNED",
     "ON_A_DECISION", "ON_ITS_WAY", "Row",
     "Section", "Situation", "Status", "TABLE", "Words", "YOUR_TURN", "action_verified",
-    "deciders_of", "my_turn", "newest_decision", "pill_word", "rests_on", "rows_of", "situation_of",
-    "status_of", "status_word",
+    "deciders_of", "members_of", "my_turn", "newest_decision", "pill_word", "rests_on",
+    "rows_of", "situation_of", "status_of", "status_word",
 ]

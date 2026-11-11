@@ -33,6 +33,7 @@ from i18n import N_, _
 
 from ..standup import following as rules
 from ..standup import formats
+from ..standup import thread as threads
 from . import appearance
 from .publish_article_dialog import ArticleCard
 from .standup_compare import CompareDialog, Comparer
@@ -45,8 +46,13 @@ from .submission_pill import SubmissionPill
 from .submissions_view import PANEL_VIEW, SubmissionsView
 
 NOTICE_KEY = "submission"
+# A new message, by who sent it (thread.role_of): only a member of the
+# Redaktion speaks for the publication.
+MESSAGE_FROM_PUBLICATION = N_("New message from {publication} about “{title}”.")
+MESSAGE_FROM_PERSON = N_("New message from {name} about “{title}”.")
+MESSAGE_FROM_CONTRIBUTOR = N_("New message from a contributor about “{title}”.")
+MESSAGE_FROM_SOMEONE = N_("New message about “{title}”.")
 NEWS_WORDS = {
-    "message": N_("New message from {publication} about “{title}”."),
     "request_changes": N_("{publication} asks for changes to “{title}”."),
     "accept": N_("{publication} accepted “{title}”."),
     "decline": N_("{publication} declined “{title}”."),
@@ -197,9 +203,24 @@ class SubmissionsHost(QObject):
         notice = self._ports.notice_of(ed) if ed is not None else None
         if notice is None or not notice.isHidden():
             return
-        text = _(NEWS_WORDS[news.kind]).format(publication=news.publication, title=news.title)
+        text = self._news_words(news)
         self._noticed[ed] = (news.sid, text)
         notice.present(text, actions=[(NOTICE_KEY, _("View"))])
+
+    def _news_words(self, news) -> str:
+        if news.kind != "message":
+            return _(NEWS_WORDS[news.kind]).format(publication=news.publication,
+                                                   title=news.title)
+        name = self._name_of(news.sender)
+        if news.role is threads.Role.MEMBER:
+            words = MESSAGE_FROM_PUBLICATION
+        elif name:
+            words = MESSAGE_FROM_PERSON
+        elif news.role is threads.Role.PARTICIPANT:
+            words = MESSAGE_FROM_CONTRIBUTOR
+        else:
+            words = MESSAGE_FROM_SOMEONE
+        return _(words).format(publication=news.publication, name=name, title=news.title)
 
     def notice_acted(self, ed, key: str) -> bool:
         """Ansehen on a notice of this host: the detail opens."""

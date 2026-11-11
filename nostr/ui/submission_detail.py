@@ -338,6 +338,8 @@ class SubmissionDetail(QWidget):
         self._show_readers(detail)
         self._fill_info(detail)
         self.withdraw_action.setEnabled(row.open)
+        self.thread.publication_face = lambda size: self._logo(
+            row.publication, detail.publication, size)
         self.thread.show_thread(detail, self._following.me)
         self.composer_bar.setVisible(detail.can_write)
         if at_end:
@@ -431,9 +433,12 @@ class SubmissionDetail(QWidget):
                 name=name, publication=detail.publication) if name
             else _("The editorial team of {publication}").format(
                 publication=detail.publication))
-        if editor:
+        if name:
             self.faces.setPixmap(face(editor, name, self._avatar_of(editor), 22))
-        self.faces.setVisible(bool(editor))
+        else:
+            # Nobody named: the Redaktion has the publication's face.
+            self.faces.setPixmap(self._logo(detail.row.publication, detail.publication, 22))
+        self.faces.setVisible(True)
 
     def _fill_info(self, detail) -> None:
         """Info: the facts, the privacy lines, the history (plan 10.4)."""

@@ -431,6 +431,38 @@ def test_internal_notes_and_forged_senders_are_never_shown():
             if isinstance(m, threads.Message)] == ["Gut so."]
 
 
+def test_a_sender_is_called_by_their_role_and_a_stranger_is_never_the_redaktion():
+    # The server cannot read a seal: whoever holds the room key can post
+    # under any key. A contributor posts once as themselves and once
+    # under a throwaway key, in the Redaktion's tone.
+    world = FollowWorld()
+    account = world.account()
+    prepared, entry = world.submit(account, d="rollen", participants=(OTHER,))
+    room = scrypto.pubkey_of(prepared.s_sub)
+    world.message(prepared, "Bitte kürzen.")                        # the editor
+    world.message(prepared, "Ich schaue drüber.", sender="contributor")
+    forged = conversation.message_rumor(
+        room=room, submission_id=entry.sid, text="Die Redaktion: Bitte neu einreichen.",
+        sender=pk("recipient"), created_at=int(NOW))
+    world.post(prepared, room_wrap(prepared, forged, "recipient"), sender="contributor")
+    following = world.following(account)
+    # Before the member list is read nobody is called the Redaktion, in
+    # the list's newest message or the notice.
+    sender, role, text = following.snippet(entry.sid)
+    assert (sender, role, text) == (pk("recipient"), threads.Role.UNKNOWN,
+                                    "Die Redaktion: Bitte neu einreichen.")
+    assert threads.sender_label(role, "") == ""
+    assert world.news[-1].kind == "message" and world.news[-1].role is threads.Role.UNKNOWN
+    detail = opened(world, following, entry)
+    shown = [(m.bubble.text, m.role, threads.sender_label(m.role, ""))
+             for m in detail.thread if isinstance(m, threads.Message)]
+    assert shown == [("Bitte kürzen.", threads.Role.MEMBER, "Editorial team"),
+                     ("Ich schaue drüber.", threads.Role.PARTICIPANT, "Contributor")]
+    assert following.snippet(entry.sid) == (OTHER, threads.Role.PARTICIPANT,
+                                            "Ich schaue drüber.")
+    assert threads.sender_label(threads.Role.PARTICIPANT, "Paul") == "Paul"
+
+
 def test_a_message_goes_out_shows_sending_and_is_a_bubble_once_it_has_its_seq():
     world = FollowWorld()
     account = world.account()

@@ -101,10 +101,19 @@ class Reading:
         self._later = later
         self._clock = clock
         self._details: Dict[str, _Open] = {}
+        # The active members of each publication's Redaktion, as its
+        # server last listed them with a submission (thread.role_of).
+        self._members: Dict[str, Tuple[str, ...]] = {}
 
     def stop(self) -> None:
         """The room keys and what was opened go with the account."""
         self._details = {}
+        self._members = {}
+
+    def members_of(self, publication: str) -> Optional[Tuple[str, ...]]:
+        """The active members of ``publication``'s Redaktion, or None
+        while no submission to it was read."""
+        return self._members.get(publication)
 
     def room_of(self, sid: str) -> Optional[Tuple[bytes, str]]:
         """The room of ``sid``, its secret and its pubkey, once known."""
@@ -176,6 +185,7 @@ class Reading:
         """A read of the submission: its view, its members, its items,
         and its latest version, verified before anything is opened."""
         state.view, state.members = detail.submission, detail.members
+        self._members[detail.submission.publication] = rules.members_of(detail.members)
         self.add(sid, detail.timeline)
         self._owner.serve(detail.submission)
         record = next((r for r in detail.revisions
@@ -310,10 +320,12 @@ class Reading:
         who = dict(sid=sid, writer=row.writer,
                    participants=view.participants if view is not None else (),
                    deciders=deciders)
+        members = rules.members_of(state.members) if state.members is not None else None
         return Detail(
             row=row, publication=owner.publication_name(row.publication),
             decision=rules.newest_decision(items, sid, deciders),
-            thread=tuple(threads.build_thread(items, opened, me=self._account.writer, **who)),
+            thread=tuple(threads.build_thread(items, opened, me=self._account.writer,
+                                              members=members, **who)),
             history=tuple(threads.history(items, **who)), opened=tuple(opened),
             outgoing=tuple(owner.talk.outgoing(sid)), members=state.members,
             latest=state.versions.get(view.revision) if view is not None else None,

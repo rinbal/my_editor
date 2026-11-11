@@ -22,12 +22,21 @@ Internal notes never reach here: the writer's side holds no epoch key,
 reads only the conversation channel, and :func:`build_thread` drops an
 item of any other channel (criterion 8). :func:`history` is every event
 as a caption, for Info › Verlauf.
+
+The server cannot read a seal, so whoever holds the room key can post
+under any key. :func:`role_of` is therefore the one place that says who
+a sender is, for the thread, the list's newest message and the notice
+at the article: a member of the Redaktion by the member list, the
+writer or someone taking part by the submission, and anyone else nobody
+at all, whose messages and reactions are not shown. Nobody outside the
+Redaktion is ever called the Redaktion (:func:`sender_label`).
 """
 
 from __future__ import annotations
 
 import datetime
 from dataclasses import dataclass, replace
+from enum import Enum
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 from i18n import N_, _
@@ -43,6 +52,50 @@ CARDS = ("revision", "correction")
 # The steps the writer, or someone taking part, signs; every other is the
 # Redaktion's (the member list says who that is).
 _BY_PARTICIPANT = ("submitted", "revision", "withdrawn", "confirmed", "reminder")
+
+
+class Role(Enum):
+    """Who the sender of a message is (:func:`role_of`)."""
+
+    MEMBER = "member"               # of the Redaktion, by the member list
+    PARTICIPANT = "participant"     # the writer, or someone taking part
+    UNKNOWN = "unknown"             # not taking part; the member list is not read yet
+    STRANGER = "stranger"           # neither: never shown
+
+
+def role_of(sender: str, *, writer: str, participants: Iterable[str],
+            members: Optional[Iterable[str]]) -> Role:
+    """The role of ``sender`` in a submission of ``writer`` with
+    ``participants``. ``members`` are the Redaktion's active members
+    (``following.members_of``), or None while the member list is not
+    known: nobody is a member then, and nobody a stranger."""
+    if members is not None and sender in members:
+        return Role.MEMBER
+    if sender == writer or sender in participants:
+        return Role.PARTICIPANT
+    return Role.UNKNOWN if members is None else Role.STRANGER
+
+
+def sender_label(role: Role, name: str) -> str:
+    """What a sender is called (translated): their ``name`` when it is
+    known; else "Redaktion" for a member and for nobody else,
+    "Mitwirkende" for someone taking part, and nothing while the role is
+    not known."""
+    if name or role is Role.UNKNOWN:
+        return name
+    return _("Editorial team") if role is Role.MEMBER else _("Contributor")
+
+
+def from_known_senders(opened: Sequence[conversation.Opened], *, writer: str,
+                       participants: Iterable[str],
+                       members: Optional[Iterable[str]]) -> List[conversation.Opened]:
+    """``opened`` without what a stranger sent: their messages, edits and
+    reactions are not shown at all."""
+    taking_part = tuple(participants)
+    known = None if members is None else frozenset(members)
+    return [item for item in opened
+            if role_of(item.sender, writer=writer, participants=taking_part,
+                       members=known) is not Role.STRANGER]
 
 
 @dataclass(frozen=True)
@@ -80,6 +133,7 @@ class Message:
     mine: bool
     first: bool = True          # of its group: the sender's name goes above
     last: bool = True           # of its group: the sender's picture goes beside
+    role: Role = Role.UNKNOWN   # who the sender is (role_of)
 
 
 ThreadItem = Union[Day, Caption, VersionCard, Message]
@@ -120,13 +174,18 @@ def history(items: Sequence[views.TimelineItem], *, sid: str, writer: str,
 def build_thread(items: Sequence[views.TimelineItem],
                  opened: Sequence[conversation.Opened], *, sid: str, me: str, writer: str,
                  participants: Iterable[str] = (), deciders: Optional[Iterable[str]] = None,
+                 members: Optional[Iterable[str]] = None,
                  day_of: Callable[[int], object] = _local_day) -> List[ThreadItem]:
     """What the conversation shows (see the module docstring).
     ``opened`` are the messages of ``items`` that passed the checks of
     9.2; ``deciders`` the members who may decide (None while the member
     list is not known: no editor is named then, and structured notes of
-    the Redaktion are not read)."""
+    the Redaktion are not read); ``members`` every active member of the
+    Redaktion (None likewise). ``me`` always takes part."""
     who = dict(writer=writer, participants=tuple(participants), deciders=deciders)
+    senders = dict(writer=writer, participants=(*who["participants"], me),
+                   members=None if members is None else frozenset(members))
+    opened = from_known_senders(opened, **senders)
     notes: Dict[int, str] = {}
     shown: List[Tuple[int, int, object]] = []          # (seq, time, what)
     for bubble in conversation.fold(opened, writer=writer, redaktion=deciders or ()):
@@ -162,7 +221,8 @@ def build_thread(items: Sequence[views.TimelineItem],
             first = not (isinstance(before, Message) and before.bubble.author == what.author)
             last = not (after is not None and isinstance(after[2], conversation.Bubble)
                         and after[2].author == what.author and day_of(after[1]) == day)
-            out.append(Message(bubble=what, mine=what.author == me, first=first, last=last))
+            out.append(Message(bubble=what, mine=what.author == me, first=first, last=last,
+                               role=role_of(what.author, **senders)))
     return out
 
 
@@ -255,6 +315,7 @@ def unsigned(caption: Caption) -> bool:
 
 
 __all__ = [
-    "CAPTIONS", "CARDS", "Caption", "Day", "Message", "ThreadItem", "VersionCard",
-    "build_thread", "caption_text", "card_title", "history", "own_reaction", "unsigned",
+    "CAPTIONS", "CARDS", "Caption", "Day", "Message", "Role", "ThreadItem", "VersionCard",
+    "build_thread", "caption_text", "card_title", "from_known_senders", "history",
+    "own_reaction", "role_of", "sender_label", "unsigned",
 ]

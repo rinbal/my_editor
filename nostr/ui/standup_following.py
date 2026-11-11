@@ -44,6 +44,7 @@ from .. import failures
 from ..later import answer_later
 from ..standup import conversation, formats, views
 from ..standup import following as rules
+from ..standup import thread as threads
 from ..standup.entries import SubmissionEntry
 from ..standup.errors import PASSING, StandupError, cause_words
 from ..standup.submitting import Phase
@@ -61,13 +62,16 @@ NEWS_EVENTS = ("request_changes", "accept", "decline", "published", "correction"
 @dataclass(frozen=True)
 class News:
     """Something new for the writer of the work ``d``: ``kind`` is
-    ``"message"`` or one of :data:`NEWS_EVENTS`."""
+    ``"message"`` or one of :data:`NEWS_EVENTS`. A message has its
+    ``sender`` and who that is (``thread.role_of``): never a stranger."""
 
     sid: str
     d: str
     kind: str
     title: str
     publication: str            # its name
+    sender: str = ""
+    role: threads.Role = threads.Role.UNKNOWN
 
 
 class Following(QObject):
@@ -274,30 +278,51 @@ class Following(QObject):
         for item in sorted(known.timeline, key=lambda i: -i.seq):
             if not seen < item.seq <= upto:
                 continue
-            kind = self._news_kind(item, entry.sid, room)
-            if kind:
-                self.news.emit(News(entry.sid, entry.d, kind, view.title,
-                                    self.publication_name(view.publication)))
+            news = self._news_of(item, entry, view, room)
+            if news is not None:
+                self.news.emit(news)
                 return
         if not known.item.more and room is not None:
             read_state.mark(entry.sid, upto)        # written with the next write (13)
 
-    def _news_kind(self, item: views.TimelineItem, sid: str, room: Optional[bytes]) -> str:
-        me = self._account.writer
+    def _news_of(self, item: views.TimelineItem, entry: SubmissionEntry,
+                 view: views.SubmissionView, room: Optional[bytes]) -> Optional[News]:
+        """What ``item`` is news of for the writer, or None: a result, or
+        a message of someone else who is not a stranger."""
+        said = dict(sid=entry.sid, d=entry.d, title=view.title,
+                    publication=self.publication_name(view.publication))
         if item.event is not None:
-            return item.event.name if item.event.name in NEWS_EVENTS \
-                and item.event.actor != me else ""
-        if room is None:
-            return ""
+            if item.event.name in NEWS_EVENTS and item.event.actor != self._account.writer:
+                return News(kind=item.event.name, **said)
+            return None
+        message = self._message_of(item, view, room)
+        if message is None:
+            return None
+        return News(kind="message", sender=message[0].sender, role=message[1], **said)
+
+    def _message_of(self, item: views.TimelineItem, view: views.SubmissionView,
+                    room: Optional[bytes]
+                    ) -> Optional[Tuple[conversation.Opened, threads.Role]]:
+        """The plain message of someone else in ``item`` with its
+        sender's role, or None: not a message, one's own, one that fails
+        a check, or a stranger's."""
+        if item.wrap is None or room is None:
+            return None
+        me = self._account.writer
         try:
-            opened = conversation.open_item(item.wrap, room, sid, seq=item.seq)
+            opened = conversation.open_item(item.wrap, room, view.submission_id, seq=item.seq)
         except conversation.NotShown:
-            return ""
+            return None
         rumor = opened.rumor
         plain = rumor["kind"] == conversation.MESSAGE_KIND \
             and formats.tag_value(rumor, "edit") is None \
             and formats.tag_value(rumor, "standup") is None
-        return "message" if plain and opened.sender != me else ""
+        if not plain or opened.sender == me:
+            return None
+        role = threads.role_of(opened.sender, writer=view.writer,
+                               participants=view.participants,
+                               members=self.reading.members_of(view.publication))
+        return None if role is threads.Role.STRANGER else (opened, role)
 
     # -- the works the person is named in --------------------------------------------
 
@@ -391,20 +416,20 @@ class Following(QObject):
     def publication_picture(self, address: str) -> Optional[str]:
         return self._names.get(address, ("", None))[1]
 
-    def snippet(self, sid: str) -> Tuple[str, str]:
-        """The newest message of someone else in ``sid``'s conversation,
-        ``(sender, text)``, as far as the lookup brought it and the list
-        holds its key; ``("", "")`` otherwise."""
+    def snippet(self, sid: str) -> Tuple[str, threads.Role, str]:
+        """The newest message of someone else in ``sid``'s conversation:
+        its sender, who that is (never a stranger) and its text, as far
+        as the lookup brought it and the list holds its key;
+        ``("", Role.UNKNOWN, "")`` otherwise."""
         known = self._watcher.followed().get(sid)
         room = secret_of(self._account.submissions.entry(sid))
-        if known is None or room is None:
-            return "", ""
-        for item in sorted(known.timeline, key=lambda i: -i.seq):
-            if item.wrap is None or self._news_kind(item, sid, room) != "message":
-                continue
-            opened = conversation.open_item(item.wrap, room, sid, seq=item.seq)
-            return opened.sender, " ".join(opened.rumor["content"].split())[:200]
-        return "", ""
+        if known is not None and room is not None:
+            for item in sorted(known.timeline, key=lambda i: -i.seq):
+                message = self._message_of(item, known.item.submission, room)
+                if message is not None:
+                    opened, role = message
+                    return opened.sender, role, " ".join(opened.rumor["content"].split())[:200]
+        return "", threads.Role.UNKNOWN, ""
 
     # -- a detail (standup_reading.Reading) ----------------------------------------
 

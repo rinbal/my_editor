@@ -46,6 +46,7 @@ import announce
 from i18n import _
 
 from ..standup import following as rules
+from ..standup import thread as threads
 from . import appearance, post_list
 from .drafts_common import LIST_GUTTER, MIN_CONTROL_PX, THEME_TOKENS, secondary_font
 from .submission_detail import SubmissionDetail
@@ -244,9 +245,10 @@ class SubmissionsView(QWidget):
             rest = " · ".join(part for part in (self._name_of(row.writer), publication)
                               if part)
         if row.unread:
-            sender, text = following.snippet(row.sid)
+            sender, role, text = following.snippet(row.sid)
             if text:
-                rest = f"{self._name_of(sender) or _('Editorial team')}: {text}"
+                label = threads.sender_label(role, self._name_of(sender))
+                rest = f"{label}: {text}" if label else text
         return Item(
             "row", row.title or _("Untitled"), sid=row.sid,
             word=rules.status_word(row, self._name_of), rest=rest,

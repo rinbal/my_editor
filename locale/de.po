@@ -13155,6 +13155,25 @@ msgstr "Die abgegebene Fassung konnte nicht geladen werden: Versuch es gleich no
 msgid "New message from {publication} about “{title}”."
 msgstr "Neue Nachricht von {publication} zu »{title}«."
 
+#: nostr/ui/submissions_host.py
+#, python-brace-format
+msgid "New message from {name} about “{title}”."
+msgstr "Neue Nachricht von {name} zu »{title}«."
+
+#: nostr/ui/submissions_host.py
+#, python-brace-format
+msgid "New message from a contributor about “{title}”."
+msgstr "Neue Nachricht von Mitwirkenden zu »{title}«."
+
+#: nostr/ui/submissions_host.py
+#, python-brace-format
+msgid "New message about “{title}”."
+msgstr "Neue Nachricht zu »{title}«."
+
+#: nostr/standup/thread.py
+msgid "Contributor"
+msgstr "Mitwirkende"
+
 #: nostr/ui/submissions_host.py:50
 #, python-brace-format
 msgid "{publication} asks for changes to “{title}”."
