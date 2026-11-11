@@ -228,7 +228,7 @@ def test_image_outside_the_roots_is_never_read(tmp_path):
     QTextCursor(doc).insertImage(secret)
     out = document_to_html(doc, "T", image_roots=(str(root),))
     assert "[image unavailable]" in out
-    assert "base64," not in out
+    assert 'src="data:' not in out
     payload = base64.b64encode(open(secret, "rb").read()).decode("ascii")
     assert payload not in out
 
@@ -246,7 +246,7 @@ def test_symlink_out_of_the_root_is_refused(tmp_path):
     QTextCursor(doc).insertImage(str(link))
     out = document_to_html(doc, "T", image_roots=(str(root),))
     assert "[image unavailable]" in out
-    assert "base64," not in out
+    assert 'src="data:' not in out
 
 
 def test_asset_resolver_supplies_bytes_alt_and_provenance(tmp_path):

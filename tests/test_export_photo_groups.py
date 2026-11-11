@@ -65,6 +65,11 @@ def _page(markdown: str = DOC, **kwargs) -> str:
     return document_to_html(_doc(markdown), "Bothy", image_roots=[str(PHOTOS)], **kwargs)
 
 
+def _figures(page: str) -> list:
+    """The figures of a page's text (not the words of its scripts)."""
+    return re.findall(r"<figure [^>]*>.*?</figure>", page.split("<script", 1)[0], re.S)
+
+
 # --------------------------------------------------------------------------- #
 # The markup                                                                   #
 # --------------------------------------------------------------------------- #
@@ -97,7 +102,7 @@ def test_a_group_is_written_as_the_engine_writes_it(app):
 
 def test_captions_stay_in_their_figures_in_reading_order(app):
     page = _page()
-    figures = re.findall(r"<figure .*?</figure>", page, re.S)
+    figures = _figures(page)
     assert len(figures) == 8
     assert "<figcaption>The jetty at dusk</figcaption>" in figures[0]
     assert "<figcaption>Floor plan of the bothy</figcaption>" in figures[-1]
@@ -109,8 +114,12 @@ def test_the_page_carries_everything_it_shows(app):
     page = _page()
     assert page.count('src="data:image/png;base64,') == 8
     assert "<link" not in page and 'src="http' not in page and "@import" not in page
-    assert ".e21-imagegroup" in page and 'id="e21-photo-words"' in page
-    assert "function strips" in page and "Viewer" in page
+    assert ".e21-imagegroup" in page and ".e21-pv-caption" in page
+    # STANDUP's three scripts, in its order, set to work with the words.
+    found = [page.find((photo_page._WEB / name).read_text(encoding="utf-8"))
+             for name in ("photo_layout.js", "photo_viewer.js", "photo_groups.js")]
+    assert -1 not in found and found == sorted(found)
+    assert "E21PhotoGroups.attach(document, {messages: {" in page
     assert "loading=\"lazy\"" not in page
 
 
@@ -121,11 +130,11 @@ def test_a_page_speaks_the_apps_language(app):
         page = _page()
     finally:
         i18n.install(i18n.ENGLISH)
+    # The column says its language: the scripts take their words by it.
+    assert '<div class="article-content" lang="de"><div class="e21-imagegroup' in page
     assert 'aria-label="8 Fotos"' in page
-    words = json.loads(re.search(r'<script type="application/json" id="e21-photo-words">(.*?)'
-                                 r'</script>', page, re.S).group(1))
-    assert words["photoOf"] == "Foto {k} von {n}" and words["viewer"] == "Vollansicht"
-    assert words["enlargeNamed"] == "Vergrößern: {alt}"
+    assert ('aria-label="Vergrößern: Plan"><svg class="e21-pg-zoom-icon"' in page
+            and "</svg>Vergrößern</button>" in page)
 
 
 def test_the_built_app_carries_the_page_parts():
@@ -135,18 +144,19 @@ def test_the_built_app_carries_the_page_parts():
         encoding="utf-8")
     assert '"web"' in spec
     assert {path.name for path in photo_page._WEB.iterdir()} >= {
-        "photo_groups.css", "photo_groups.js", "photo_viewer.js"}
+        "photo_groups.css", "photo_layout.js", "photo_viewer.js", "photo_groups.js",
+        "photo-group-messages.json"}
 
 
 def test_a_page_without_pictures_has_no_photo_parts(app):
     page = _page("Words\n\n- and a list\n")
-    assert "e21-imagegroup" not in page and "e21-photo-words" not in page
+    assert "e21-imagegroup" not in page and "E21PhotoGroups" not in page
 
 
 def test_the_words_of_a_caption_and_a_description_are_escaped(app):
     page = _page('![a & "c" \'d\'](photo.png)\n\n*1 \\< 2 & "q" \\<script\\>*\n\n'
                  "![b](square.png)\n")
-    figures = re.findall(r"<figure .*?</figure>", page, re.S)
+    figures = _figures(page)
     assert len(figures) == 2
     assert 'alt="a &amp; &quot;c&quot; &#x27;d&#x27;"' in figures[0]
     assert "<figcaption>1 &lt; 2 &amp; &quot;q&quot; &lt;script&gt;</figcaption>" in figures[0]
@@ -167,14 +177,42 @@ def test_a_picture_alone_is_a_figure_as_md_py_writes_one(app):
     its caption; a picture among words stays in its sentence."""
     page = _page("Words\n\n![Loch](landscape.png)\n*The loch*\n\nMore\n\n"
                  "![Plan](plan.png#wide)\n\n*Floor plan*\n\nA ![Hut](square.png) here.\n")
-    figures = re.findall(r'<div class="article-content">(<figure .*?</figure>)</div>', page, re.S)
-    assert [re.sub(r' src="[^"]*"', "", f) for f in figures] == [
-        '<figure class="e21-figure" style="--ar:1800/809"><img alt="Loch" width="1800" '
-        'height="809" decoding="async"><figcaption>The loch</figcaption></figure>',
-        '<figure class="e21-figure e21-figure--wide" style="--ar:1800/1273"><img alt="Plan" '
-        'width="1800" height="1273" decoding="async"><figcaption>Floor plan</figcaption></figure>']
+    figures = re.findall(r'<div class="article-content" lang="en">(<figure .*?</figure>)</div>',
+                         page, re.S)
+    assert [re.sub(r' src="[^"]*"|<svg .*?</svg>', "", f) for f in figures] == [
+        '<figure class="e21-figure" style="--ar:1800/809" id="e21-photo-1"><a class="e21-pg-open" '
+        'href="#e21-photo-1"><img alt="Loch" width="1800" height="809" decoding="async"></a>'
+        '<figcaption>The loch</figcaption></figure>',
+        '<figure class="e21-figure e21-figure--wide" style="--ar:1800/1273" id="e21-photo-2">'
+        '<a class="e21-pg-open" href="#e21-photo-2"><img alt="Plan" width="1800" height="1273" '
+        'decoding="async"></a><button type="button" class="e21-pg-zoom" aria-label="Enlarge: '
+        'Plan">Enlarge</button><figcaption>Floor plan</figcaption></figure>']
     assert re.search(r'<p>A <img src="data:image/png;base64,[^"]*" alt="Hut"> here\.</p>', page)
     assert "<p>Words</p>" in page and "<p>More</p>" in page
+
+
+def test_a_picture_opens_at_its_web_address_or_at_itself(app, tmp_path):
+    """A picture opens full size from its link (md.py, e21-pg-open): at
+    the web address it came from, or, written into the page from this
+    computer, at its own place on the page; #wide adds "Enlarge". A
+    picture that cannot be had, or an SVG, opens nothing."""
+    (tmp_path / "logo.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" width="30" '
+                                       'height="20"><rect width="30" height="20"/></svg>')
+    for name in ("portrait.png", "plan.png"):
+        (tmp_path / name).write_bytes((PHOTOS / name).read_bytes())
+    doc = _doc("![Loch](https://photos.example/landscape.png)\n\n![Steg](portrait.png)\n\n"
+               "![Plan](plan.png#wide)\n\n![Gone](missing.png)\n\nWords\n\n"
+               "![Logo](logo.svg#wide)\n")
+    page = document_to_html(doc, "x", image_roots=[str(tmp_path)], remote_pictures={
+        "https://photos.example/landscape.png": (PHOTOS / "landscape.png").read_bytes()})
+    figures = _figures(page)
+    assert len(figures) == 5 and 'src="data:image/svg+xml;base64,' in figures[4]
+    assert [re.findall(r'<a class="e21-pg-open" href="([^"]*)">', f) for f in figures] == [
+        ["https://photos.example/landscape.png"], ["#e21-photo-2"], ["#e21-photo-3"], [], []]
+    assert [re.findall(r'<figure [^>]*? id="([^"]*)"', f) for f in figures] == [
+        [], ["e21-photo-2"], ["e21-photo-3"], [], []]
+    assert ["e21-pg-zoom" in f for f in figures] == [False, False, True, False, False]
+    assert 'aria-label="Enlarge: Plan"' in figures[2]
 
 
 def test_a_linked_picture_is_written_as_md_py_writes_one(app):
@@ -187,10 +225,10 @@ def test_a_linked_picture_is_written_as_md_py_writes_one(app):
                 '<p><a href="javascript:alert(1)"><img src="square.png"></a></p>')
     photo_group_find.fold(doc)
     page = document_to_html(doc, "x", image_roots=[str(PHOTOS)])
-    links = re.findall(r'<a class="e21-imglink"[^>]*>|</a></figure>', page)
+    links = re.findall(r'<a class="e21-(?:imglink|pg-open)"[^>]*>', page)
     assert links == ['<a class="e21-imglink" href="https://www.example.org/a" target="_blank" '
-                     'rel="noopener noreferrer">', "</a></figure>",
-                     '<a class="e21-imglink" href="#notes">', "</a></figure>"]
+                     'rel="noopener noreferrer">', '<a class="e21-imglink" href="#notes">',
+                     '<a class="e21-pg-open" href="#e21-photo-3">']
     assert ('<span class="e21-imgflag"><span class="e21-imgflag-host">example.org</span><svg '
             'class="e21-imgflag-icon"') in page
     assert "javascript:" not in page
@@ -221,6 +259,8 @@ def test_a_saved_page_opens_as_the_paragraphs_it_was_written_from(app):
     (alone,) = [run.units for run in photo_group_find.find_runs(doc) if not run.groups]
     assert [(u.alt, u.caption_text) for u in alone] == [("Plan", "Floor plan")]
     assert "Vergr" not in doc.toPlainText() and "Enlarge" not in doc.toPlainText()
+    # The links that open a picture full size are the page's, not the text's.
+    assert not [u for g in groups for u in g.units if u.image.isAnchor()]
 
 
 def test_the_plain_and_r_markdown_writers_write_the_paragraphs(app, monkeypatch):
@@ -256,7 +296,8 @@ def test_the_plain_and_r_markdown_writers_write_the_paragraphs(app, monkeypatch)
 # --------------------------------------------------------------------------- #
 
 def _group_srcs(page: str):
-    return re.findall(r'<figure [^>]*>(?:<img src="([^"]*)"|<em>)', page)
+    return re.findall(r'<figure [^>]*>(?:<a class="e21-pg-open" href="[^"]*">)?'
+                      r'(?:<img src="([^"]*)"|<em>)', page)
 
 
 def test_pictures_outside_the_documents_folder_are_not_read(app, tmp_path):
@@ -339,7 +380,7 @@ def test_a_huge_file_is_never_read(app, tmp_path, monkeypatch):
     assert ImageRootPolicy([tmp_path]).read("huge.png", limit=MAX_PICTURE_BYTES) is None
     page = document_to_html(_doc("![a](huge.png)\n\n![b](huge.png#wide)\n"), "x",
                             image_roots=[str(tmp_path)])
-    assert "huge.png" not in read and "data:image" not in page
+    assert "huge.png" not in read and 'src="data:image' not in page
 
 
 class _FakeFetcher:
@@ -448,6 +489,18 @@ window.addEventListener('load', () => setTimeout(() => {
   document.body.append(out)
 }, 300))
 </script>"""
+# Put in the head of a copy of the page for the test only: a headless
+# browser on its own clock draws no frames, so it never tells a size
+# (ResizeObserver, how a strip learns it scrolls); here it tells one on a
+# timer, as the first frame would.
+HEADLESS = """<script>
+window.ResizeObserver = class {
+  constructor(tell) { this.tell = tell; this.watched = new Set() }
+  observe(target) { this.watched.add(target); setTimeout(() => this.watched.has(target) && this.tell([{ target }]), 16) }
+  unobserve(target) { this.watched.delete(target) }
+  disconnect() { this.watched.clear() }
+}
+</script>"""
 EXTRA_CSS = "<style>.article-content .e21-figure img { object-fit: cover !important; aspect-ratio: 1 !important; }</style>"
 
 
@@ -465,7 +518,8 @@ def _probed(page: str, width: int, tmp_path, probe: str, k: int = 0, flags=()):
     """The page at ``width`` with ``probe`` added, its path and address,
     and what the probe wrote."""
     path = tmp_path / f"page_{width}.html"
-    path.write_text(page.replace("</body>", probe + "</body>"), encoding="utf-8")
+    path.write_text(page.replace("<head>", "<head>" + HEADLESS, 1).replace("</body>", probe + "</body>"),
+                    encoding="utf-8")
     url = path.as_uri() + f"#k={k}"
     dom = _run(["--window-size=%d,3400" % width, *flags, "--dump-dom", url], tmp_path).stdout
     found = re.search(r'<pre id="probe">(.*?)</pre>', dom, re.S)
@@ -531,7 +585,10 @@ const dots = seg => [...seg.nextElementSibling.querySelectorAll('.e21-pg-dot')]
 window.addEventListener('load', () => setTimeout(async () => {
   const out = {}
   const pictures = [...document.querySelectorAll('.e21-imagegroup figure img')]
-  out.pictures = pictures.map(p => [p.getAttribute('role'), p.tabIndex, p.getAttribute('aria-label')])
+  const openers = pictures.map(p => p.closest('a.e21-pg-open'))
+  out.openers = openers.map(a => a && [a.getAttribute('aria-haspopup'), a.tabIndex, a.querySelector('img').alt])
+  out.zoom = [...document.querySelectorAll('.e21-pg-zoom')]
+    .map(z => [z.getAttribute('aria-label'), z.textContent, getComputedStyle(z).display !== 'none'])
   out.groups = [...document.querySelectorAll('.e21-imagegroup')]
     .map(g => [g.getAttribute('role'), g.getAttribute('aria-label')])
   const seg = document.querySelector('.e21-pg-run[data-phone="strip"]')
@@ -546,17 +603,20 @@ window.addEventListener('load', () => setTimeout(async () => {
   key(seg, 'Home'); await wait(300)
   out.home = dots(seg)
 
-  const before = history.length
-  const picture = pictures[2]
-  picture.focus(); key(picture, 'Enter'); await wait(300)
-  const viewer = document.querySelector('.pv')
+  // A link opens with Enter as with a click: the browser sends the click.
+  const opener = openers[2]
+  opener.focus(); opener.click(); await wait(300)
+  const viewer = document.querySelector('.e21-pv')
   out.open = !viewer.hidden
-  out.viewer = [viewer.getAttribute('role'), viewer.getAttribute('aria-modal'), viewer.getAttribute('aria-label')]
-  out.count = viewer.querySelector('.pv-count').textContent
-  out.shown = viewer.querySelector('.pv-img').src === picture.src
+  out.viewer = [viewer.getAttribute('role'), viewer.getAttribute('aria-modal'), viewer.getAttribute('aria-label'), viewer.getAttribute('lang')]
+  out.count = viewer.querySelector('.e21-pv-count').textContent
+  out.shown = viewer.querySelector('.e21-pv-img').src === pictures[2].src
+  out.caption = viewer.querySelector('.e21-pv-caption').textContent
+  out.original = !viewer.querySelector('.e21-pv-original').hidden
   out.focusInside = viewer.contains(document.activeElement)
   out.restInert = [...document.body.children].filter(c => c !== viewer).every(c => c.inert)
   out.locked = document.documentElement.style.overflow
+  out.backCloses = !!(history.state && history.state.e21PhotoViewer)
   const stops = new Set()
   out.trapped = true
   for (let i = 0; i < 9; i++) {
@@ -566,13 +626,13 @@ window.addEventListener('load', () => setTimeout(async () => {
   }
   out.stops = [...stops].sort()
   key(document.activeElement, 'ArrowRight'); await wait(50)
-  out.countNext = viewer.querySelector('.pv-count').textContent
+  out.countNext = viewer.querySelector('.e21-pv-count').textContent
   key(document.activeElement, 'Escape'); await wait(400)
   out.closed = viewer.hidden
-  out.focusBack = document.activeElement === pictures[3]
+  out.focusBack = document.activeElement === openers[3]
   out.unlocked = document.documentElement.style.overflow
   out.restBack = [...document.body.children].every(c => !c.inert)
-  out.history = history.length - before
+  out.pageAgain = !(history.state && history.state.e21PhotoViewer)
   const pre = document.createElement('pre')
   pre.id = 'probe'
   pre.textContent = JSON.stringify(out)
@@ -584,12 +644,12 @@ window.addEventListener('load', () => setTimeout(async () => {
 @needs_chrome
 def test_in_a_browser_a_reader_with_the_keyboard_swipes_and_opens_a_picture(app, tmp_path):
     _url, out = _probed(_page(), 390, tmp_path, READER, flags=["--force-prefers-reduced-motion"])
-    # Every picture is a button with its name; the group says how many.
+    # Every picture is a link that opens a dialog, named by its
+    # description; the group says how many; #wide adds "Enlarge".
     assert out["groups"] == [["group", "8 photos"]]
-    assert [role for role, _t, _l in out["pictures"]] == ["button"] * 8
-    assert all(tab == 0 for _r, tab, _l in out["pictures"])
-    assert out["pictures"][0][2] == "Enlarge: Steg"
-    assert out["pictures"][4][2] == "Enlarge: Pier $& jetty"
+    assert [o[:2] for o in out["openers"]] == [["dialog", 0]] * 8
+    assert out["openers"][4][2] == "Pier $& jetty"
+    assert out["zoom"] == [["Enlarge: Plan", "Enlarge", True]]
     # The strip: a named stop, a dot per picture, arrows and Home and End.
     assert out["strip"] == ["group", "4 photos to swipe through", 0]
     assert out["dotNames"] == [f"Photo {k} of 4" for k in range(1, 5)]
@@ -598,18 +658,19 @@ def test_in_a_browser_a_reader_with_the_keyboard_swipes_and_opens_a_picture(app,
     assert out["end"] == [False, False, False, True]
     assert out["home"] == [True, False, False, False]
     # The viewer: a modal dialog with its name, focus kept inside, the
-    # page behind out of reach and still; Escape gives it all back, with
-    # focus on the picture now shown, and no entry in the history.
+    # page behind out of reach and still, Back closes it; Escape gives it
+    # all back, with focus on the picture now shown. A picture from this
+    # computer has no original to open.
     assert out["open"] and out["shown"]
-    assert out["viewer"] == ["dialog", "true", "Full View"]
-    assert out["count"] == "3 of 8"
+    assert out["viewer"] == ["dialog", "true", "Full view", "en"]
+    assert out["count"] == "3 of 8" and out["caption"] == ""
+    assert not out["original"]
     assert out["focusInside"] and out["trapped"]
-    assert out["stops"] == sorted(["Close", "Open Original in a New Tab", "Previous Photo",
-                                   "Next Photo"])
-    assert out["restInert"] and out["locked"] == "hidden"
+    assert out["stops"] == sorted(["Close", "Previous photo", "Next photo"])
+    assert out["restInert"] and out["locked"] == "hidden" and out["backCloses"]
     assert out["countNext"] == "4 of 8"
     assert out["closed"] and out["focusBack"]
-    assert out["unlocked"] == "" and out["restBack"] and out["history"] == 0
+    assert out["unlocked"] == "" and out["restBack"] and out["pageAgain"]
 
 
 @needs_chrome

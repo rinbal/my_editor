@@ -16,11 +16,12 @@ semantic, fully self-contained HTML:
   inline is the only representation that survives reopening the file),
 - images are embedded as base64 data URIs so a shared file carries its
   media with it; the original upload URL rides along in data-source-url,
-- a photo group (photo_group) is written as STANDUP writes it (SPEC 3 of
-  the photo grid work, photo_page): the vendored engine's markup, its
+- a photo group (photo_group) and a picture alone are written as
+  STANDUP writes them (photo_page): the vendored engine's markup, the
   pictures as data: URIs (web pictures too, when the caller fetched
-  them), and its stylesheet and scripts (web/) inside the page; on a
-  phone its runs swipe, and a picture opens large,
+  them), and STANDUP's stylesheet and scripts (web/) inside the page; on
+  a phone a group's runs swipe, and a picture opens in STANDUP's full
+  view,
 - audio and video become the browser's own players (<audio>, <video>),
   their bytes embedded the same way up to MEDIA_EMBED_LIMIT and played
   from the media server beyond it; inside each, a link to the file, which
@@ -39,6 +40,7 @@ lists: the editor edits them as such.
 
 import base64
 import html
+import itertools
 import re
 from typing import List, Tuple
 
@@ -343,14 +345,14 @@ def _caption_html(unit, render_image) -> str:
     return _render_runs(runs, render_image)
 
 
-def _figure_of(unit, picture_of, render_image) -> photo_page.Figure:
+def _figure_of(unit, picture_of, render_image, place: int) -> photo_page.Figure:
     """A picture of the document (a unit of photo_group) as a page shows
-    it."""
+    it, the ``place``-th of the page's."""
     src, size, source = picture_of(unit.name)
     caption = _caption_html(unit, render_image) if unit.caption_text.strip() else ""
     href = safe_href(unit.image.anchorHref()) if unit.image.isAnchor() else ""
     return photo_page.Figure(src, size, source, unit.alt, caption, unit.caption_text, unit.wide,
-                             href)
+                             href, place)
 
 
 def _photo_units(doc, is_media) -> List[Tuple[int, int, list, bool]]:
@@ -413,6 +415,7 @@ def document_to_html(doc, title: str = "", source_url_for=None, *,
     photos = _photo_units(doc, is_media)
     pending = list(photos)
     photos_end = -1
+    places = itertools.count(1)
 
     body: list[str] = []
     # List markup is emitted compactly (no newlines): whitespace text nodes
@@ -495,7 +498,7 @@ def document_to_html(doc, title: str = "", source_url_for=None, *,
             quote_to(0)
             close_to(0)
             close_real(0)
-            figures = [_figure_of(unit, picture_of, render_image) for unit in units]
+            figures = [_figure_of(unit, picture_of, render_image, next(places)) for unit in units]
             body.append(photo_page.group_figures_html(figures) if grouped
                         else photo_page.figure_alone_html(figures[0]))
             continue

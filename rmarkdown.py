@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import datetime
 import html
+import itertools
 import json
 import os
 import re
@@ -451,12 +452,15 @@ def lay_out_knitted_groups(page: str) -> str:
     and the groups' stylesheet and scripts in it once. In the page's own
     light colours: a knitted page does not change with Dark Mode."""
     laid = [False]
+    places = itertools.count(1)
 
     def group(match):
         figures = _knitted_figures(match.group(1))
         if figures is None:
             return match.group(0)
         laid[0] = True
+        for figure in figures:
+            figure.place = next(places)
         return photo_page.group_figures_html(figures)
 
     out = _GROUP_PARAGRAPH.sub(group, page)

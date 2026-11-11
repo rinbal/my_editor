@@ -1,12 +1,11 @@
 /* SPDX-FileCopyrightText: 2026 rinbal
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Photo groups in the HTML export, as STANDUP shows them. Vendored as it
- * is: lines 476-866 of STANDUP backend/htmlgen/article.css (commit
- * bf7c1fb), then the full view of the photo grid reference
- * (reference/build/inner.css, "Full view") until STANDUP ships its
- * photo_viewer.css. export_html.py inlines this file in every page and
- * gives .article-content the variables these rules read.
+ * Photo groups, pictures and their full view in the HTML export, as
+ * STANDUP shows them: lines 476-993 of STANDUP backend/htmlgen/article.css
+ * (commit bf7c1fb), as they are. export_html.py inlines this file in every
+ * page with a picture, and photo_page.py gives .article-content the
+ * variables these rules read.
  */
 
 /* Figures: an image and its caption. The caption is set smaller and quieter
@@ -400,58 +399,130 @@
   }
 }
 
-/* ── Full view (one shared viewer) ──────────────────────────────────── */
-.pv {
-  position: fixed; inset: 0; z-index: 50;
-  display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+/* The full view of a picture (photo_viewer.js): a black backdrop, Close,
+   "2 von 4" and the original along the top, the whole caption below, the
+   picture whole in between. It covers the page, so it sits outside
+   .article-content. */
+.e21-pv {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   background: #000;
   color: #fff;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
   opacity: 0;
   transition: opacity 0.2s ease;
 }
-.pv[hidden] { display: none; }
-.pv.is-open { opacity: 1; }
-.pv-bar {
-  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+.e21-pv[hidden] { display: none; }
+/* Focus rests on the viewer itself after a click on its picture: no ring. */
+.e21-pv:focus { outline: none; }
+.e21-pv.is-open { opacity: 1; }
+.e21-pv-bar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
   padding: max(8px, env(safe-area-inset-top)) 8px 4px;
 }
-.pv-bar > :last-child { justify-self: end; }
-.pv-count { font-size: 0.9375rem; font-weight: 600; font-variant-numeric: tabular-nums; opacity: 0.9; }
-.pv-btn {
-  display: inline-grid; place-items: center;
-  inline-size: 44px; block-size: 44px; padding: 0; border: 0; border-radius: 50%;
-  background: rgb(255 255 255 / 0.12); color: #fff; cursor: pointer;
+.e21-pv-bar > :last-child { justify-self: end; }
+.e21-pv-count { font-size: 0.9375rem; font-weight: 600; font-variant-numeric: tabular-nums; opacity: 0.9; }
+.e21-pv-btn {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 44px;
+  block-size: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.12);
+  color: #fff;
+  cursor: pointer;
 }
-.pv-btn:hover { background: rgb(255 255 255 / 0.2); }
-.pv-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-.pv-btn[hidden] { display: none; }
-.pv-stage { position: relative; overflow: hidden; touch-action: none; cursor: zoom-in; }
-.pv-stage.is-zoomed { cursor: grab; }
-.pv-stage.is-panning { cursor: grabbing; }
-.pv-img {
-  position: absolute; left: 0; top: 0;
+.e21-pv-btn:hover { background: rgb(255 255 255 / 0.2); }
+.e21-pv-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.e21-pv-btn[hidden] { display: none; }
+.e21-pv-stage { position: relative; overflow: hidden; touch-action: none; cursor: zoom-in; }
+.e21-pv-stage.is-zoomed { cursor: grab; }
+.e21-pv-stage.is-panning { cursor: grabbing; }
+.e21-pv-img {
+  position: absolute;
+  top: 0;
+  left: 0;
   max-inline-size: none;
+  margin: 0;
+  border-radius: 0;
   transform-origin: 0 0;
-  user-select: none; -webkit-user-drag: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
   will-change: transform;
 }
-.pv-img.is-animated { transition: transform 0.26s cubic-bezier(0.2, 0.7, 0.2, 1); }
-.pv-side { position: absolute; top: 50%; transform: translateY(-50%); }
-.pv-prev { left: 8px; }
-.pv-next { right: 8px; }
-@media (hover: none) { .pv-side { display: none; } }
-.pv-foot {
-  padding: 10px 20px max(16px, env(safe-area-inset-bottom));
+.e21-pv-img[hidden] { display: none; }
+.e21-pv-img.is-animated { transition: transform 0.26s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.e21-pv-failed {
+  position: absolute;
+  inset: 50% 20px auto;
+  margin: 0;
+  transform: translateY(-50%);
+  color: rgb(255 255 255 / 0.86);
+  font-size: 0.9375rem;
   text-align: center;
 }
-.pv-caption {
-  max-inline-size: 62ch; margin: 0 auto;
-  font-size: 0.9375rem; line-height: 1.45; color: rgb(255 255 255 / 0.86); text-wrap: pretty;
+.e21-pv-failed[hidden] { display: none; }
+.e21-pv-side { position: absolute; top: 50%; transform: translateY(-50%); }
+.e21-pv-prev { left: 8px; }
+.e21-pv-next { right: 8px; }
+@media (hover: none) {
+  .e21-pv-side { display: none; }
 }
-.pv-caption:empty { display: none; }
-.pv-sr { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.e21-pv-foot { padding: 10px 20px max(16px, env(safe-area-inset-bottom)); text-align: center; }
+.e21-pv-caption {
+  max-inline-size: 62ch;
+  margin: 0 auto;
+  color: rgb(255 255 255 / 0.86);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  text-wrap: pretty;
+  /* The picture keeps the screen: a long caption scrolls in a third of it. */
+  max-block-size: 30vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  white-space: pre-line;
+}
+.e21-pv-caption:focus-visible { outline: 2px solid #fff; outline-offset: 4px; border-radius: 4px; }
+.e21-pv-caption:empty { display: none; }
+/* The post a picture of a media wall belongs to, one step away. */
+.e21-pv-post {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 44px;
+  padding-inline: 12px;
+  color: #fff;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.e21-pv-post:focus-visible { outline: 2px solid #fff; outline-offset: 2px; border-radius: 8px; }
+.e21-pv-post[hidden] { display: none; }
+.e21-pv-sr {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (forced-colors: active) {
+  .e21-pv { background: Canvas; color: CanvasText; }
+  .e21-pv-btn { border: 1px solid ButtonText; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .pv { transition: none; }
-  .pv-img.is-animated { transition: none; }
+  .e21-pv, .e21-pv-img.is-animated { transition: none; }
 }
+@media print {
+  .e21-pv { display: none; }
+}
+

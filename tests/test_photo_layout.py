@@ -13,7 +13,9 @@ gives the same layout, templates, row geometry, markup nodes, HTML
 skeleton and phone runs; the constants are the vectors' constants; no
 run of similar pictures is ever split; and the two files are the ones
 STANDUP ships (their hashes), so a change made here alone, or a newer
-engine vendored without its vectors, fails.
+engine vendored without its vectors, fails. So are the page parts in
+web/: STANDUP's three page scripts, its words of the photo parts and the
+part of its article.css that shows pictures.
 """
 
 from __future__ import annotations
@@ -50,6 +52,27 @@ SPDX = (b"# SPDX-FileCopyrightText: 2026 rinbal\n"
 ENGINE_SHA256 = "1b36a84f33309fc52c4bef9ee58e6591500a468fb7691eb7155b33b292031853"
 VECTORS_SHA256 = "8be595763573c5659a03c619348e7f4b632428941396f916fa6ef8b508491d95"
 
+# The page parts (web/), each with where it is in STANDUP and its hash:
+# the scripts after their SPDX header, the stylesheet after its header of
+# ten lines (lines 476-993 of article.css).
+WEB = ROOT / "web"
+JS_SPDX = (b"// SPDX-FileCopyrightText: 2026 rinbal\n"
+           b"// SPDX-License-Identifier: AGPL-3.0-or-later\n")
+CSS_HEADER_LINES = 10
+CSS_LINES = (476, 993)
+WEB_FILES = {
+    "photo_layout.js": ("backend/htmlgen/photo_layout.js",
+                        "fe1c1f0668d4f92cfce4aa1afecc1b64572704179c694ea875649c3e95b51313"),
+    "photo_viewer.js": ("backend/htmlgen/photo_viewer.js",
+                        "2e358ae10c2a93668e66506aaf29bc0855d5ebedd4625c8ee5e111fd6e4ec0e7"),
+    "photo_groups.js": ("backend/htmlgen/photo_groups.js",
+                        "33039bf11a7d0ce75c575b32505aa12d5d33abc80c00fb15f602b79eac0edaac"),
+    "photo-group-messages.json": ("shared/photo-group-messages.json",
+                                  "485a5727c3acb41985f220ecdeeee0a40b4bce82d61747907b469c05b1b2ddf7"),
+    "photo_groups.css": ("backend/htmlgen/article.css",
+                         "73faa3c7b21d8e37a08407b8b205358df9b6c068c0d86641f0f5bed02b2be40f"),
+}
+
 
 @pytest.fixture(scope="module")
 def vectors():
@@ -70,6 +93,24 @@ def test_the_vectors_are_the_ones_standup_ships():
     assert hashlib.sha256(VECTORS.read_bytes()).hexdigest() == VECTORS_SHA256
 
 
+def _web_bytes(name: str) -> bytes:
+    """A page part as STANDUP has it: without the header written here."""
+    data = (WEB / name).read_bytes()
+    if name.endswith(".js"):
+        assert data.startswith(JS_SPDX), name
+        return data[len(JS_SPDX):]
+    if name.endswith(".css"):
+        lines = data.splitlines(keepends=True)
+        assert lines[0].startswith(b"/* SPDX-FileCopyrightText: 2026 rinbal")
+        return b"".join(lines[CSS_HEADER_LINES:])
+    return data
+
+
+def test_the_page_parts_are_the_ones_standup_ships():
+    assert {name: hashlib.sha256(_web_bytes(name)).hexdigest() for name in WEB_FILES} == {
+        name: digest for name, (_path, digest) in WEB_FILES.items()}
+
+
 def test_the_engine_and_its_vectors_are_one_version(vectors):
     # Tuples and lists compare as JSON does (the vectors are JSON).
     assert json.loads(json.dumps(CONSTANTS)) == vectors["constants"]
@@ -84,6 +125,12 @@ def test_the_files_match_a_standup_checkout():
     repo = Path(os.environ["STANDUP_REPO"])
     assert _engine_bytes() == (repo / "backend" / "htmlgen" / "photo_layout.py").read_bytes()
     assert VECTORS.read_bytes() == (repo / "shared" / "photo-layout-vectors.json").read_bytes()
+    for name, (path, _digest) in WEB_FILES.items():
+        theirs = (repo / path).read_bytes()
+        if name.endswith(".css"):
+            first, last = CSS_LINES
+            theirs = b"".join(theirs.splitlines(keepends=True)[first - 1:last])
+        assert _web_bytes(name) == theirs, name
 
 
 def _skeleton(nodes, items) -> str:

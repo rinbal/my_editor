@@ -123,8 +123,8 @@ def _knitted(wrapped: bool = False, group: str = None) -> str:
 
 
 def _groups(page: str) -> list:
-    return re.findall(r'<div class="article-content"><div class="e21-imagegroup.*?</div></div></div>',
-                      page, re.S)
+    return re.findall(r'<div class="article-content" lang="en"><div class="e21-imagegroup.*?'
+                      r'</div></div></div>', page, re.S)
 
 
 @pytest.mark.parametrize("wrapped", [False, True], ids=["one-line", "wrapped"])

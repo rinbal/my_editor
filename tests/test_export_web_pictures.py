@@ -181,4 +181,4 @@ def test_a_local_picture_on_its_own_larger_than_the_cap_is_not_read(app, tmp_pat
         out.write(PHOTO)
         out.truncate(MAX_PICTURE_BYTES + 1)
     page = document_to_html(_doc("Words\n\n![a](huge.png)\n"), "x", image_roots=[str(tmp_path)])
-    assert "data:image" not in page
+    assert 'src="data:image' not in page
