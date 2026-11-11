@@ -17,16 +17,20 @@ it holds its whole unit, and a line that still holds a picture keeps it.
   has open (Backspace, Delete, Return, typing, Cut and Paste all come
   here), and says where the rest of the selection's last line starts;
 - **in_caption** tells Return over a selection that starts in a caption,
-  which deletes it and breaks no line there (STANDUP's rule).
+  which deletes it and breaks no line there (STANDUP's rule);
+- **clipped** is such a selection as copied, cut or dragged (PG1C 4g):
+  the selected text and the pictures wholly in it; of a picture whose
+  caption it starts or ends in, only the selected caption words.
 """
 
 from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
-from PySide6.QtGui import QTextCursor, QTextDocument
+from PySide6.QtGui import QTextCharFormat, QTextCursor, QTextDocument, QTextDocumentFragment
 
 import photo_group_actions as actions
+from doc_walk import OBJECT_REPLACEMENT
 
 # Ranges to delete, the last one first.
 Cuts = List[Tuple[int, int]]
@@ -102,3 +106,46 @@ def delete(cursor: QTextCursor) -> Optional[int]:
         cursor.removeSelectedText()
     cursor.setPosition(start)
     return end - sum(last - first for first, last in found)
+
+
+def _caption_end(doc: QTextDocument, position: int) -> int:
+    """Where the caption ``position`` is in ends (in_caption)."""
+    return _alone_around(doc, position)[0].end
+
+
+def clipped(cursor: QTextCursor) -> Optional[QTextDocumentFragment]:
+    """``cursor``'s selection as the clipboard holds it when it starts or
+    ends in the caption of a picture alone: what is selected, a picture
+    alone only with its whole unit; of the picture whose caption it ends
+    in, only the selected words, on a line of their own. Caption words
+    lose the caption's italic, which is the caption's, not theirs (as
+    STANDUP's caption node gives them). None when nothing is clipped."""
+    doc = cursor.document()
+    start, end = cursor.selectionStart(), cursor.selectionEnd()
+    held = _held_in_part(doc, end) if start < end else None
+    ends_in = held is not None and start <= held[0] < end
+    starts_in = start < end and in_caption(doc, start)
+    if not ends_in and not starts_in:
+        return None
+    copy = QTextDocument()
+    QTextCursor(copy).insertFragment(cursor.selection())
+    plain = QTextCharFormat()
+    plain.setFontItalic(False)
+    pieces = QTextCursor(copy)
+    if ends_in:
+        picture, words = held
+        if copy.characterAt(picture - start) != OBJECT_REPLACEMENT:
+            return None                     # a selection the copy does not keep in place
+        if end > words:
+            pieces.setPosition(words - start)
+            pieces.setPosition(end - start, QTextCursor.MoveMode.KeepAnchor)
+            pieces.mergeCharFormat(plain)
+        pieces.setPosition(picture - start)
+        pieces.setPosition(min(words, end) - start, QTextCursor.MoveMode.KeepAnchor)
+        pieces.removeSelectedText()
+    if starts_in:
+        pieces.setPosition(0)
+        pieces.setPosition(min(end, _caption_end(doc, start)) - start,
+                           QTextCursor.MoveMode.KeepAnchor)
+        pieces.mergeCharFormat(plain)
+    return QTextDocumentFragment(copy)

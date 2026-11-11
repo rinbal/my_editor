@@ -3100,10 +3100,31 @@ class HtmlEditor(QTextEdit):
                 # What the drag took away is part of the step too (a
                 # picture dragged out of a photo group).
                 with self._groups_kept():
-                    super().dropEvent(event)
+                    self._drop_moving(event)
             finally:
                 self._mime_step = N_("Paste")
             self._name_step(before, N_("Drag"))
+
+    def _drop_moving(self, event) -> None:
+        """Qt's drop, in one step. A selection moved within the document
+        that holds a picture alone only in part was dragged without that
+        picture (photo_group_cut.clipped), so it goes as Cut takes it, the
+        picture staying, not by Qt's own delete."""
+        cursor = self.textCursor()
+        if (event.source() is not self or event.dropAction() != Qt.DropAction.MoveAction
+                or photo_group_cut.cuts(self.document(), cursor.selectionStart(),
+                                        cursor.selectionEnd()) is None):
+            super().dropEvent(event)
+            return
+        moved = QTextCursor(cursor)
+        whole = QTextCursor(self.document())
+        whole.beginEditBlock()
+        try:
+            event.setDropAction(Qt.DropAction.CopyAction)
+            super().dropEvent(event)
+            photo_group_cut.delete(moved)
+        finally:
+            whole.endEditBlock()
 
     @_named_step(N_("Cut"))
     def cut(self):
@@ -3175,34 +3196,36 @@ class HtmlEditor(QTextEdit):
         where nothing is selected (_EmptyCopy), so Qt writes no HTML and no
         OpenDocument copy of the selection that these would replace."""
         cursor = self.textCursor()
+        # Only what is selected: of a picture alone whose caption the
+        # selection starts or ends in, its selected words (photo_group_cut).
+        selected = photo_group_cut.clipped(cursor) or cursor.selection()
         # A photo group goes as its paragraphs: a picture and its caption
         # each, which every app and a paste here read (photo_group).
-        fragment = photo_group.unfolded_fragment(cursor.selection())
+        fragment = photo_group.unfolded_fragment(selected)
         if self._empty_copy is None:
             self._empty_copy = _EmptyCopy(self)
         mime = self._empty_copy.qt_data()
         # What other apps read: the app's own objects as their address (or
         # name), never their internal name.
-        mime.setText(rich_text.plain_text_of(self._outside_copy(html=False)))
-        mime.setHtml(self._outside_copy(html=True).toHtml())
+        mime.setText(rich_text.plain_text_of(self._outside_copy(fragment, html=False)))
+        mime.setHtml(self._outside_copy(fragment, html=True).toHtml())
         # What a paste here reads (private): the objects themselves.
         mime.setData(paste.LITERAL_HTML_MIME, fragment.toHtml().encode("utf-8"))
         if not self._holds_structure():
             return mime
         mime.setData(paste.MARKDOWN_MIME, paste.selection_markdown(
-            cursor, outside=self._outside_of).encode("utf-8"))
+            cursor, selected, outside=self._outside_of).encode("utf-8"))
         # The words as they are, the structure as Markdown.
         mime.setData(paste.LITERAL_MIME,
-                     paste.selection_markdown(cursor, literal=True).encode("utf-8"))
+                     paste.selection_markdown(cursor, selected, literal=True).encode("utf-8"))
         return mime
 
-    def _outside_copy(self, *, html: bool):
-        """The selection as other apps get it: each of the app's own objects
-        as its Outside. In ``html``, audio and video as a link to it and a
-        picture as its address or its bytes; in text, each as its address
-        or its name, never the object's stand-in character. A photo group,
-        as its paragraphs."""
-        fragment = photo_group.unfolded_fragment(self.textCursor().selection())
+    def _outside_copy(self, fragment: QTextDocumentFragment, *, html: bool):
+        """The selection (``fragment``, its photo groups as their paragraphs)
+        as other apps get it: each of the app's own objects as its Outside.
+        In ``html``, audio and video as a link to it and a picture as its
+        address or its bytes; in text, each as its address or its name,
+        never the object's stand-in character."""
         if self._outside is None:
             return fragment
         doc = QTextDocument()

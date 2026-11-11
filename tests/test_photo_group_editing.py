@@ -12,11 +12,12 @@ pictures of a group. Each test checks the exact Markdown.
 from __future__ import annotations
 
 import pytest
-from PySide6.QtCore import QMimeData, QPoint, Qt
-from PySide6.QtGui import QInputMethodEvent, QTextCursor, QTextImageFormat
+from PySide6.QtCore import QMimeData, QPoint, QPointF, Qt
+from PySide6.QtGui import QDropEvent, QInputMethodEvent, QTextCursor, QTextImageFormat
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
+import paste
 import photo_group
 import photo_group_edit
 import photo_group_view
@@ -451,6 +452,33 @@ def test_a_selection_from_a_caption_to_a_pictures_line_keeps_that_line():
         assert _markdown(ed) == _text(ONE, "*Cap*", "![two](square.png)", "End."), key
         assert _undone(ed, source)
         ed.close()
+
+
+def test_a_copy_or_a_drag_holds_only_the_selected_words_of_a_caption():
+    """STANDUP's rule (PG1C 4g): a picture whose caption the selection
+    ends in stays off the clipboard, and its selected words come as a line
+    of their own, without the caption's italic; so pasting them into a
+    paragraph adds no picture. A selection moved by a drag keeps it."""
+    source = _text("Before words.", ONE, "*Cap one words*", "After.")
+    ed = _editor(source)
+    _select(ed, "words.", "one words")
+    mime = ed.createMimeDataFromSelection()
+    assert mime.text() == "words.\nCap "
+    assert bytes(mime.data(paste.MARKDOWN_MIME)).decode() == "words.\n\nCap\n"
+    cursor = ed.textCursor()                       # "one", inside the caption
+    cursor.setPosition(ed.document().find("one words").selectionStart())
+    cursor.setPosition(cursor.position() + 3, QTextCursor.MoveMode.KeepAnchor)
+    ed.setTextCursor(cursor)
+    assert bytes(ed.createMimeDataFromSelection().data(paste.MARKDOWN_MIME)).decode() == "one\n"
+    _select(ed, "words.", "one words")
+    after = ed.cursorRect(QTextCursor(ed.document().find("After.").block())).center()
+    drop = QDropEvent(QPointF(after), Qt.DropAction.MoveAction, mime, Qt.MouseButton.LeftButton,
+                      Qt.KeyboardModifier.NoModifier)
+    drop.source = lambda: ed
+    ed.dropEvent(drop)
+    assert _markdown(ed) == _text("Before", ONE, "*one words*", "words.", "CapAfter.")
+    assert _undone(ed, source)
+    ed.close()
 
 
 def test_a_cut_or_a_paste_from_words_into_a_caption_keeps_its_picture():
