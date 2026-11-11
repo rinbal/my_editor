@@ -150,7 +150,7 @@ class DocumentAsset:
     # Its alt came from a Media Library pick: what the person typed in its
     # Alt Text field, a description (True); the name of the file it was
     # added from (False); None for a record saved before this was kept,
-    # whose alt may be either (stored_name).
+    # whose alt may be either while it is on the servers (stored_name).
     from_library: Optional[bool] = None
     # Derived from the blob store on demand, never persisted: a machine
     # local path must not travel between installs or into a document.
@@ -177,11 +177,14 @@ class DocumentAsset:
     def stored_name(self) -> str:
         """``alt`` when it is the name of the file this picture was added
         from (from disk, beside a document, a crop); "" when it came from
-        a Media Library pick and is a description, and for a record that
-        does not say (from_library None): a description typed in the
-        library is never dropped, and an alt that is the name of the
-        picture's own file is none anyway (photo_group.description_of)."""
-        if self.is_media or self.from_library is not False:
+        a Media Library pick and is a description, and for a record on the
+        servers that does not say (from_library None): a description typed
+        in the library is never dropped, and an alt that is the name of the
+        picture's own file is none anyway (photo_group.description_of). A
+        record that does not say and is not on the servers is no pick (a
+        pick always is): its alt is a file's name."""
+        if self.is_media or self.from_library or (self.from_library is None
+                                                  and self.is_uploaded):
             return ""
         return self.alt
 

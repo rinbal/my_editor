@@ -648,6 +648,10 @@ class AssetManager(QObject):
             self._fail(asset, AssetErrorCodes.UPLOAD_FAILED, "cached bytes missing")
             return
         self._jobs[asset.key] = (sha, asset.attempts)
+        # What this app sends is a file of its own, never a library pick:
+        # a record saved before it said so (None) says so from now on.
+        if asset.from_library is None:
+            asset.from_library = False
         self._set_state(asset, AssetState.SIGNING)
         # The uploader may fail synchronously and re-enter the slots
         # below, so nothing may be touched after this call returns.

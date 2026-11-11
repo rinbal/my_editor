@@ -155,13 +155,16 @@ def _names(ed):
 # Our own URLs                                                                #
 # --------------------------------------------------------------------------- #
 
-def test_a_description_typed_in_the_library_by_an_earlier_version_is_published(tmp_path):
-    # Lead on a48d0b6, 2: a record saved before it said where its alt came
-    # from. A description typed in the Media Library is never dropped.
+def test_records_saved_by_an_earlier_version_keep_descriptions_and_file_names_apart(tmp_path):
+    # Lead on a48d0b6, 2 and on 9b111af, 1: records saved before they said
+    # where an alt came from. A description typed in the Media Library is
+    # never dropped; a file added from disk and not yet sent keeps its
+    # name as a name, also once this app sends it.
     manager = _Window(tmp_path / "cache")._asset_manager
     sha = hashlib.sha256(b"a picture in the library").hexdigest()
     manager.adopt_library_file(sha256=sha, remote_url=f"{OURS}/{sha}", mime="image/png",
                                alt="Dünen im Wind")
+    local = manager.adopt_bytes(GIF_BYTES, alt="sketch")
     manager.index.flush()
     index = tmp_path / "media_assets.json"
     saved = json.loads(index.read_text(encoding="utf-8"))
@@ -169,9 +172,18 @@ def test_a_description_typed_in_the_library_by_an_earlier_version_is_published(t
         del record["from_library"]
     index.write_text(json.dumps(saved), encoding="utf-8")
     older = _Window(tmp_path / "cache")
-    asset = older._asset_manager.get(sha)
-    _content, tags = _tags_for(older, _editor_with((asset.key, "Dünen im Wind")))
+    picked = older._asset_manager.get(sha)
+    _content, tags = _tags_for(older, _editor_with((picked.key, "Dünen im Wind")))
     assert _entry(tags[0], "alt") == "Dünen im Wind"
+    sketch = older._asset_manager.get(local.sha256)
+    assert photo_group.description_of("sketch", sketch.key, sketch.stored_name) == ""
+    older._asset_manager.request_upload(sketch.sha256)
+    QApplication.processEvents()
+    older._uploader.finish(older._uploader.calls[-1].name, types.SimpleNamespace(
+        url=f"{OURS}/{sketch.sha256}.gif", size=len(GIF_BYTES)))
+    QApplication.processEvents()
+    _content, tags = _tags_for(older, _editor_with((sketch.key, "sketch")))
+    assert _entry(tags[0], "alt") is None
 
 
 def test_our_own_uploaded_image_is_fully_described(tmp_path):
