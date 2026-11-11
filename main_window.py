@@ -107,6 +107,7 @@ from library_window import FILE_LIST_PANEL, SIDEBAR_PANEL, LibraryWindow
 from sheet_window import SheetWindow
 import link_url
 import paste
+import bare_pictures
 import export_pictures
 import photo_group
 import photo_group_actions
@@ -5454,7 +5455,8 @@ class MainWindow(QMainWindow):
     def _with_web_pictures(self, ed, work, *, then=None) -> bool:
         """Run ``work(doc, pictures, revision)`` for an export or a print of
         ``ed``: ``doc`` a copy of its document as it is now (at
-        ``revision``), ``pictures`` its web pictures. Held ones are there
+        ``revision``), a picture's address standing bare shown as the
+        picture (bare_pictures), ``pictures`` its web pictures. Held ones are there
         at once and ``work`` runs now: its answer. The rest are fetched
         while the app goes on (export_pictures.Gathering): False now, and
         ``work`` runs once they are in, then ``then()`` when it said True.
@@ -5462,6 +5464,9 @@ class MainWindow(QMainWindow):
         (Apple's progress pattern); closing the tab drops the work quietly.
         One at a time: a request while another waits is refused."""
         doc = photo_group.copy_of(ed.document())
+        # A picture's address standing bare is the picture, as on the page
+        # (the editor keeps it as typed).
+        bare_pictures.show(doc)
         revision = ed.document().revision()
         gathering = export_pictures.Gathering(
             export_pictures.web_picture_names(doc), held=self._held_picture_bytes)

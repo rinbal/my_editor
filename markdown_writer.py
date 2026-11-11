@@ -463,16 +463,22 @@ def document_blocks(doc, image_target: Optional[ImageTarget] = None) -> List[_Bl
 # Markdown                                                                     #
 # --------------------------------------------------------------------------- #
 
+def _protected(text: str) -> list:
+    """The web addresses in ``text`` holding a character a Markdown reader
+    would take for emphasis or code (matches of _WEB_ADDRESS)."""
+    return [match for match in _WEB_ADDRESS.finditer(text)
+            if any(ch in _MARKUP_IN_ADDRESS for ch in match.group(0))]
+
+
 def _protect_addresses(text: str) -> str:
     """Typed text as typed, except a web address holding a character a
     Markdown reader would take for emphasis or code: that one is written
     as ``<address>``, which keeps it intact everywhere."""
-    def protect(match):
-        address = match.group(0)
-        if any(ch in _MARKUP_IN_ADDRESS for ch in address):
-            return f"<{address}>"
-        return address
-    return _WEB_ADDRESS.sub(protect, text)
+    out, start = [], 0
+    for match in _protected(text):
+        out += [text[start:match.start()], f"<{match.group(0)}>"]
+        start = match.end()
+    return "".join(out) + text[start:]
 
 
 # What a reader takes for Markdown in text: anywhere, the characters of
@@ -608,11 +614,18 @@ def _caption_start(spans: List[_Span]) -> Optional[int]:
     return start
 
 
-def _inline_markdown(spans: List[_Span], hard_break: str = "  \n") -> str:
+# Each link _inline_markdown wrote that shows its own address: the spans
+# it took up (from, to) and whether it was written bare (bare_words).
+_Seen = List[Tuple[int, int, bool]]
+
+
+def _inline_markdown(spans: List[_Span], hard_break: str = "  \n",
+                     seen: Optional[_Seen] = None) -> str:
     caption = _caption_start(spans)
+    in_caption: Optional[_Seen] = [] if seen is not None else None
     if caption is not None:
         words = _inline_markdown([replace(span, italic=False) for span in spans[caption:]],
-                                 hard_break)
+                                 hard_break, in_caption)
         spans = spans[:caption] + [_Span(text=_wrap(words, "*"), raw=True)]
     out = []
     i = 0
@@ -624,6 +637,7 @@ def _inline_markdown(spans: List[_Span], hard_break: str = "  \n") -> str:
             continue
         if span.href:
             # One link around every neighbour that points at the same place.
+            first = i
             group = []
             while i < len(spans) and spans[i].href == span.href and not spans[i].raw:
                 group.append(spans[i])
@@ -641,7 +655,10 @@ def _inline_markdown(spans: List[_Span], hard_break: str = "  \n") -> str:
                 _SOFT, " ")
             address = _own_address(words.strip(), span.href)
             if address and not any(s.bold or s.italic or s.strike for s in group):
-                out.append(_autolink(address, span.href, "".join(out), following))
+                written = _autolink(address, span.href, "".join(out), following)
+                if seen is not None:
+                    seen.append((first, i, written == address))
+                out.append(written)
                 continue
             label = "".join(_styled(run, label=True) for run in _style_runs(group))
             out.append(f"[{label.replace(LINE_SEPARATOR, ' ')}]({_destination(span.href)})")
@@ -653,6 +670,8 @@ def _inline_markdown(spans: List[_Span], hard_break: str = "  \n") -> str:
             run.append(spans[i])
             i += 1
         out.append(_styled(run))
+    if seen is not None and caption is not None:
+        seen.extend((caption + start, caption + end, bare) for start, end, bare in in_caption)
     # A line break at the very end of a block breaks nothing, and Markdown
     # drops it; trailing spaces there mean nothing either.
     text = "".join(out).rstrip(LINE_SEPARATOR + _SOFT + " ")
@@ -660,6 +679,42 @@ def _inline_markdown(spans: List[_Span], hard_break: str = "  \n") -> str:
     # heading), so is a soft one.
     soft = "\n" if hard_break.endswith("\n") else hard_break
     return text.replace(LINE_SEPARATOR, hard_break).replace(_SOFT, soft)
+
+
+def bare_words(block) -> List[Tuple[int, int]]:
+    """Where in ``block``'s text the writer writes words as they stand, so
+    that a reader looking for a bare web address in the file looks there:
+    plain words (not code, not text typed or escaped to stay text, not an
+    address written ``<…>``) and links that show their own address,
+    written bare. As (from, to) in the block's text; none in a photo
+    group's paragraph or a table, which are not written block by block."""
+    if (photo_group.block_segments(block) is not None
+            or QTextCursor(block).currentTable() is not None):
+        return []
+    spans = _one_block(block, _image_as_read).spans
+    text = block.text()
+    shown = "".join(OBJECT_REPLACEMENT if span.raw else span.text.replace(_SOFT, LINE_SEPARATOR)
+                    for span in spans)
+    if not text.endswith(shown):
+        return []                       # words the walk changed: none claimed
+    seen: _Seen = []
+    _inline_markdown(spans, seen=seen)
+    bare = {index for first, last, written_bare in seen if written_bare
+            for index in range(first, last)}
+    out: List[Tuple[int, int]] = []
+    at = len(text) - len(shown)
+    for index, span in enumerate(spans):
+        length = 1 if span.raw else len(span.text)
+        if index in bare:
+            out.append((at, at + length))
+        elif not (span.raw or span.code or span.href or span.literal or span.escaped):
+            start = 0
+            for match in _protected(span.text):
+                out.append((at + start, at + match.start()))
+                start = match.end()
+            out.append((at + start, at + length))
+        at += length
+    return [(start, end) for start, end in out if start < end]
 
 
 def _style(span: _Span) -> Tuple[bool, bool, bool, bool]:

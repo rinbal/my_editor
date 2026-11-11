@@ -236,7 +236,8 @@ def test_the_widget_uses_only_the_images_it_is_given():
 # below 600 pixels the runs, each strip one picture a line (nothing here
 # swipes); every picture whole.
 
-from doc_walk import iter_blocks  # noqa: E402
+from doc_walk import iter_block_runs, iter_blocks  # noqa: E402
+import photo_group  # noqa: E402
 import photo_group_drawing  # noqa: E402
 import photo_group_view  # noqa: E402
 from tests.photo_corners import SHAPES, image_of, shows_whole  # noqa: E402
@@ -302,6 +303,22 @@ def test_a_wide_picture_of_a_group_holds_the_pages_enlarge_place():
     photo_group_view.set_zoom_place(doc, 0.0)
     assert photo_group_view.arrange(doc, group.units).boxes[1].top() < boxes[1].top()
     view.close()
+
+
+def test_a_picture_address_standing_bare_shows_as_the_picture():
+    """As on STANDUP's page (md.py bare_urls, bare_pictures): two on lines
+    of their own are a group, one in a sentence a picture there; an
+    address of no picture stays a link."""
+    doc = pv.body_document("Text.\n\nhttps://img.example/a.jpg\n\nhttps://img.example/b.png\n\n"
+                           "Im Satz https://img.example/c.jpg hier.\n\nhttps://img.example/kein-bild\n")
+    (group,) = photo_group.groups_in(doc)
+    assert [unit.name for unit in group.units] == ["https://img.example/a.jpg",
+                                                   "https://img.example/b.png"]
+    sentence = doc.find("Im Satz").block()
+    assert sentence.text() == "Im Satz \ufffc hier."
+    assert [fmt.toImageFormat().name() for _text, fmt in iter_block_runs(sentence)
+            if fmt.isImageFormat()] == ["https://img.example/c.jpg"]
+    assert doc.find("https://img.example/kein-bild").charFormat().isAnchor()
 
 
 def test_a_caption_on_its_pictures_line_stands_right_under_it():

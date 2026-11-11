@@ -10,7 +10,9 @@ carries them) and each group and picture alone must be md.py's, once
 what the export does on purpose is read back: a picture is in the page
 (a data: address beside the address it came from, not loaded lazily),
 an address is written as it was typed (md.py percent-encodes it), and
-each photo unit sits in a column of its own.
+each photo unit sits in a column of its own. A picture's address standing
+bare is exported as the picture, as the window's exports do
+(bare_pictures.show on their copy).
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from PySide6.QtCore import QBuffer, QByteArray, QIODevice
 from PySide6.QtGui import QColor, QImage, QTextDocument
 from PySide6.QtWidgets import QApplication
 
+import bare_pictures
 import i18n
 from export_html import document_to_html
 from markdown_writer import holds_faithfully, read_markdown
@@ -40,10 +43,6 @@ OWN_WAY = {
         "a picture the export cannot read is '[image unavailable]'; an SVG it reads is carried",
     "a picture written into the page shows by one rule of prefixes":
         "a data: picture of the document is written as it is, and opens when it is a raster",
-    "picture addresses on lines of their own are a group":
-        "the editor holds an address alone on a line as a link, not as a picture",
-    "a picture address on a line of its own stands as a picture":
-        "the editor holds an address alone on a line as a link, not as a picture",
 }
 
 
@@ -100,6 +99,7 @@ def test_a_picture_is_written_as_md_py_writes_it(app, case):
         pytest.skip("the editor opens this Markdown as text")
     doc = QTextDocument()
     read_markdown(doc, case["markdown"])
+    bare_pictures.show(doc)
     i18n.install("de" if (case.get("lang") or "").startswith("de") else i18n.ENGLISH)
     try:
         page = document_to_html(doc, "x", remote_pictures=_pictures(case))

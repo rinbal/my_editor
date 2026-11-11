@@ -66,6 +66,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QTextBrowser
 
+import bare_pictures
 import i18n
 import media_files
 import rich_text
@@ -364,6 +365,8 @@ def body_document(markdown: str, *, names: Optional[NameLookup] = None,
     body.setPointSizeF(13.5)
     doc.setDefaultFont(body)
     read_markdown(doc, markdown_for_preview(markdown, names, media_names), MARKDOWN_FEATURES)
+    # A picture's address standing bare is the picture, as on the page.
+    bare_pictures.show(doc)
     notes = _render_footnotes(doc)
     _style_body(doc.begin(), palette(dark))
     if notes:
