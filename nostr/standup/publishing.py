@@ -291,6 +291,17 @@ class Published:
     revision: Optional[int] = None      # the revision its report names
 
 
+def credited_writer(event: Mapping) -> Optional[str]:
+    """Who wrote a work, as its first ``["p", pk, relay, "author"]`` tag
+    names them (section 5's credit; contract 10 at 53ff043: a work the
+    publication signs is its writer's only so), or None for none."""
+    for tag in event.get("tags") or ():
+        if isinstance(tag, list) and len(tag) >= 4 and tag[0] == "p" \
+                and tag[3] == AUTHOR_MARKER:
+            return tag[1] if formats.is_hex64(tag[1]) else None
+    return None
+
+
 def work_address(signed: views.SignedRecord, sid: str, *, writer: str, coordinate_hash: str,
                  publication: str, checks: Optional[rules.SignedChecks] = None
                  ) -> Optional[Published]:
@@ -299,8 +310,9 @@ def work_address(signed: views.SignedRecord, sid: str, *, writer: str, coordinat
     (vector ``published_address``): the report verifies as an event for
     this submission; its ``event`` is a valid kind 30023 that its ``naddr``
     names; and it is the writer's at the work's ``d`` (``coordinate_hash``
-    of the verified revision), or the publication's at that ``d`` or at
-    that ``d`` with ``-<sid8>``. None otherwise."""
+    of the verified revision), or the publication's crediting the writer
+    first (:func:`credited_writer`) at that ``d`` or at that ``d`` with
+    ``-<sid8>``. None otherwise."""
     body = (checks or rules.SignedChecks()).body(
         signed, path=views.action_path("published", sid), sid=sid) or {}
     work, naddr = body.get("event"), body.get("naddr")
@@ -321,8 +333,9 @@ def work_address(signed: views.SignedRecord, sid: str, *, writer: str, coordinat
         return formats.coordinate_hash(writer, value) == coordinate_hash
 
     ending = "-" + sid[:8]
-    proven = own(d) if work["pubkey"] == writer else work["pubkey"] == publication_key and (
-        own(d) or (d.endswith(ending) and own(d[:-len(ending)])))
+    proven = own(d) if work["pubkey"] == writer else (
+        work["pubkey"] == publication_key and credited_writer(work) == writer
+        and (own(d) or (d.endswith(ending) and own(d[:-len(ending)]))))
     return Published(f"{formats.ARTICLE_KIND}:{work['pubkey']}:{d}", dict(work), 0) \
         if proven else None
 
@@ -497,6 +510,6 @@ def correction_texts(revision: Mapping, published: Mapping) -> Tuple[str, str]:
 
 __all__ = ["Accepted", "EXTENSIONS", "NEVER_CARRIED", "NotPublishable", "Published",
            "addresses_before", "corrected_template", "correction_changes",
-           "correction_texts", "credited", "media_refs_in", "media_to_publish",
+           "correction_texts", "credited", "credited_writer", "media_refs_in", "media_to_publish",
            "placed_section", "published_template", "published_work", "section_of",
            "served_at", "verified_accept", "work_address", "work_of"]

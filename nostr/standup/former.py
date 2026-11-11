@@ -11,19 +11,23 @@ named them owner.
 
 :func:`standing` is the one check, as ``formerStanding`` in the
 contract's ``docs/editorial-fixtures/crosscheck.reference.mjs`` has it
-(vector ``former_member``): a counting grant or owner key event at the
-action's epoch e or later makes the person a member then (the lowest
-such epoch is g); they may decide when the owner key event reaches e, or
-when their newest counting invitation at or below g has the role
-``redaktion``. :class:`Formers` keeps the Formers of one submission,
-joined by pubkey across reads, checks each grant once, and picks the
-epoch an action names.
+(contract 53ff043, vector ``former_member``). Membership goes by epoch:
+a counting grant or owner key event at the action's epoch e or later
+makes the person a member then. The role goes by time: they may decide
+when the owner key event reaches e, or when the counting invitations
+signed last at or before the action's ``created_at`` have the role
+``redaktion`` (all of them, when several share that second). So a higher
+epoch never grants more. :class:`Formers` keeps the Formers of one
+submission, joined by pubkey across reads, checks each grant once, and
+picks the epoch an action names: a decision is checked at the epoch of
+the current revision first, and only when it fails there at its own
+revision's, which is then read with ``?revision=n``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 from .. import events as nostr_events
 from . import formats
@@ -36,8 +40,6 @@ MAX_FORMERS = 8
 MAX_GRANTS = 64
 _MAX_GRANT_BODY = 1_048_576
 ROLES = ("redaktion", "curator")
-# The widest span of epochs one action's unread revision may lie in.
-_MOST_EPOCHS = 64
 # Actions a member may take, which name no epoch (contract 10); the
 # decisions and a correction need one who may decide; no other action
 # (``published``, ``placed``) takes this path.
@@ -151,12 +153,13 @@ def _owner_epoch(former: Former, address: str) -> int:
     return key.epoch if key is not None and key.owner == former.pubkey else 0
 
 
-def standing(former: Optional[Former], person: str, epoch: Optional[int], *,
+def standing(former: Optional[Former], person: str, epoch: Optional[int], at: int, *,
              address: str, proofs: Optional[List[Tuple[int, Optional[str], int]]] = None,
              owner_epoch: Optional[int] = None) -> Standing:
     """Whether ``person`` counts as a member of the Redaktion for an
-    action naming ``epoch`` (None: epoch 1), and as one who may decide.
-    ``proofs`` and ``owner_epoch`` are what :class:`Formers` checked before."""
+    action naming ``epoch`` (None: epoch 1) signed at ``at`` (its
+    ``created_at``), and as one who may decide. ``proofs`` and
+    ``owner_epoch`` are what :class:`Formers` checked before."""
     if former is None or former.pubkey != person:
         return Standing()
     e = 1 if epoch is None else epoch
@@ -164,24 +167,27 @@ def standing(former: Optional[Former], person: str, epoch: Optional[int], *,
         proofs = [p for p in (_proof(g, person, address) for g in former.grants) if p]
     owner = _owner_epoch(former, address) if owner_epoch is None else owner_epoch
     owner_reaches = owner >= e > 0
-    reaching = [at for at, _role, _t in proofs if at >= e] + ([owner] if owner_reaches else [])
-    if not reaching:
+    if not owner_reaches and not any(of >= e for of, _role, _t in proofs):
         return Standing()
-    g = min(reaching)
-    roles = sorted(((at, t, role) for at, role, t in proofs if role is not None and at <= g),
-                   reverse=True)
-    return Standing(member=True,
-                    decides=owner_reaches or bool(roles and roles[0][2] == "redaktion"))
+    before = [(t, role) for _of, role, t in proofs if role is not None and t <= at]
+    latest = max((t for t, _role in before), default=None)
+    redaktion = bool(before) and all(role == "redaktion" for t, role in before if t == latest)
+    return Standing(member=True, decides=owner_reaches or redaktion)
 
 
 class Formers:
     """The Formers of one submission at ``address``, joined by pubkey;
     each grant is checked once. ``epochs`` holds the epoch of each
-    revision verified here (its signed body's), by revision."""
+    revision verified here (its signed body's), by revision;
+    ``want(revision)`` is asked once for a revision a decision must be
+    checked at that is not read yet (``?revision=n``)."""
 
-    def __init__(self, address: str) -> None:
+    def __init__(self, address: str,
+                 want: Optional[Callable[[int], None]] = None) -> None:
         self.address = address
         self.epochs: Dict[int, int] = {}
+        self._want = want
+        self._wanted: Set[int] = set()
         self._formers: Dict[str, Former] = {}
         self._checked: Dict[str, Tuple[list, int]] = {}
 
@@ -202,7 +208,7 @@ class Formers:
                 self._formers[former.pubkey] = former
                 self._checked.pop(former.pubkey, None)
 
-    def _standing(self, person: str, epoch: int) -> Standing:
+    def _standing(self, person: str, epoch: int, at: int) -> Standing:
         former = self._formers.get(person)
         if former is None:
             return Standing()
@@ -211,46 +217,43 @@ class Formers:
                 [p for p in (_proof(g, person, self.address) for g in former.grants) if p],
                 _owner_epoch(former, self.address))
         proofs, owner = self._checked[person]
-        return standing(former, person, epoch, address=self.address, proofs=proofs,
+        return standing(former, person, epoch, at, address=self.address, proofs=proofs,
                         owner_epoch=owner)
 
     def decides(self, person: str, name: str, body: Mapping[str, Any], *,
-                decisions: Iterable[str]) -> bool:
-        """Whether ``person``'s verified action ``name`` with ``body``
-        verifies through the path of people who left: a decision names
-        the epoch of the revision ``expected_revision`` names, a correction
-        its own, and both need one who may decide; :data:`MEMBER_ACTIONS`
-        name epoch 1 and need a member (contract 10). A revision not
-        opened here lies between the epochs of those around it (they never
-        fall): the action verifies only if it would at every epoch there,
-        so nothing has to be read for it."""
+                decisions: Iterable[str], at: Any) -> bool:
+        """Whether ``person``'s verified action ``name`` with ``body``,
+        signed at ``at``, verifies through the path of people who left
+        (contract 10): a decision names the epoch of the revision
+        ``expected_revision`` names, a correction its own, and both need
+        one who may decide; :data:`MEMBER_ACTIONS` name epoch 1 and need a
+        member. Epochs never fall and a higher one never grants more, so
+        a decision that verifies at the current revision's epoch verifies
+        at its own; only when it does not is its revision read (``want``)
+        and the decision checked again once that revision's epoch is known."""
+        if not formats.is_int(at):
+            return False
         if name == "correction":
             epoch = body.get("epoch")
-            return formats.is_int(epoch, low=1) and self._standing(person, epoch).decides
+            return formats.is_int(epoch, low=1) and self._standing(person, epoch, at).decides
         if name in MEMBER_ACTIONS:
-            return self._standing(person, 1).member
+            return self._standing(person, 1, at).member
         if name not in decisions:
             return False
         revision = body.get("expected_revision")
         if not formats.is_int(revision, low=1):
             return False
-        low, high = epoch_span(revision, self.epochs)
-        if high is None or high - low > _MOST_EPOCHS:
-            return False
-        return all(self._standing(person, e).decides for e in range(low, high + 1))
-
-
-def epoch_span(revision: int, epochs: Mapping[int, int]) -> Tuple[int, Optional[int]]:
-    """The epochs ``revision`` may have: its own when it was opened, else
-    from the nearest opened revision's below (or 1) to the nearest's
-    above (None when none above was opened)."""
-    if revision in epochs:
-        return epochs[revision], epochs[revision]
-    below = [e for r, e in epochs.items() if r < revision]
-    above = [e for r, e in epochs.items() if r > revision]
-    return (max(below) if below else 1), (min(above) if above else None)
+        if revision in self.epochs:
+            return self._standing(person, self.epochs[revision], at).decides
+        current = max(self.epochs, default=0)
+        if current > revision and self._standing(person, self.epochs[current], at).decides:
+            return True
+        if revision not in self._wanted:
+            self._wanted.add(revision)
+            if self._want is not None:
+                self._want(revision)
+        return False
 
 
 __all__ = ["Former", "Formers", "Grant", "MAX_FORMERS", "MEMBER_ACTIONS", "Standing",
-           "epoch_span",
            "parse_formers", "standing"]

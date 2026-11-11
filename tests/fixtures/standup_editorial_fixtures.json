@@ -143,8 +143,10 @@
   "revision_hash": "ebe4b408fc1c188b865407180b883d2e680ab281b092c76335873edf44328eda"
  },
  "former_member": {
+  "acted_at": 1762675200,
   "cases": [
    {
+    "at": 1762673400,
     "decides": true,
     "epoch": 3,
     "former": "left",
@@ -152,6 +154,7 @@
     "name": "left_decided_at_the_epoch_they_left"
    },
    {
+    "at": 1762673400,
     "decides": true,
     "epoch": null,
     "former": "left",
@@ -159,6 +162,7 @@
     "name": "left_took_a_turn"
    },
    {
+    "at": 1762671200,
     "decides": true,
     "epoch": 2,
     "former": "removed",
@@ -166,6 +170,7 @@
     "name": "removed_decided_before_the_removal"
    },
    {
+    "at": 1762672200,
     "decides": false,
     "epoch": 3,
     "former": "removed",
@@ -173,6 +178,7 @@
     "name": "removed_is_no_member_of_the_epoch_their_removal_made"
    },
    {
+    "at": 1762670200,
     "decides": true,
     "epoch": 2,
     "former": "left",
@@ -180,6 +186,7 @@
     "name": "invited_by_an_earlier_owner_in_the_epoch_they_handed_on"
    },
    {
+    "at": 1762671200,
     "decides": true,
     "epoch": 2,
     "former": "curator",
@@ -187,6 +194,7 @@
     "name": "invited_again_as_curator_decided_before_as_redaktion"
    },
    {
+    "at": 1762673200,
     "decides": false,
     "epoch": 3,
     "former": "curator",
@@ -194,6 +202,39 @@
     "name": "invited_again_as_curator_decides_nothing_after"
    },
    {
+    "at": 1762673200,
+    "decides": false,
+    "epoch": 2,
+    "former": "curator",
+    "member": true,
+    "name": "invited_again_as_curator_decides_nothing_after_on_older_work"
+   },
+   {
+    "at": 1762671200,
+    "decides": false,
+    "epoch": 2,
+    "former": "promoted",
+    "member": true,
+    "name": "invited_as_curator_decided_nothing_before_the_promotion"
+   },
+   {
+    "at": 1762671200,
+    "decides": false,
+    "epoch": 3,
+    "former": "promoted",
+    "member": true,
+    "name": "invited_as_curator_decided_nothing_named_at_a_later_epoch"
+   },
+   {
+    "at": 1762673200,
+    "decides": true,
+    "epoch": 2,
+    "former": "promoted",
+    "member": true,
+    "name": "promoted_decides_on_older_work"
+   },
+   {
+    "at": 1762673200,
     "decides": true,
     "epoch": 2,
     "former": "old_owner",
@@ -201,6 +242,7 @@
     "name": "an_earlier_owner_decided_in_the_epoch_they_handed_on"
    },
    {
+    "at": 1762673200,
     "decides": true,
     "epoch": 1,
     "former": "old_owner",
@@ -208,6 +250,7 @@
     "name": "an_earlier_owner_decided_in_an_earlier_epoch"
    },
    {
+    "at": 1762673200,
     "decides": false,
     "epoch": 3,
     "former": "old_owner",
@@ -222,11 +265,11 @@
       "body": "{\"history\":{\"ct\":\"AsIJjmkq3JgiHvG1gLm35hG4rsK2z+aUodaiNMZ3w92nHQk0VJUnAXqpgpSWPuT21NaXhiIvMc8jYycHLb6fMFSqhQk8j/QnAtigXaBgaUx4ZL3j4sYGCM7wCITeRPw5FeOGAYcZXF/r5i2Q2kIrppDenv+cLPVnuwoAmdcU0E0U9v45BzkGsL5i50tbrI7othEUK0EbV0ka8Hm3EyW2BctWbaT0Gz4YC6nOZH7WULcXO11jHoynjEPqxTviRA5lmAvZP3hpgS4Hhdh1ZxDj26r4MhIX5UyxoH6nPGkeIiWkS+MPHsXo50UqVasdQx7Qte6gWRWiD/uA1b3ntROeCDJk6xM3aS6J7ZHBEErwXibVDlZKX9cHk400k/16xqOPYG+W2adCgRP+UyOmYT8XUF+rRM3kX+3fmRUJroTtvq9ewO8=\",\"eph\":\"e1d1f71a499125cb94c44b89ef2a1f032488e185ca336c66bb87def60d4f75d5\"},\"pubkey\":\"16294c061927f6adf4b6a5d12fd17bf55cac9920e4714ed893dcd57ba1b6f330\",\"role\":\"redaktion\",\"sees\":\"all\",\"wraps\":[{\"epoch\":2,\"wrap\":{\"ct\":\"Aj2JNf1hwhVKGkeDonmn3vmOjxd2hqCzr6DRE+z1ni70g2CGi8J9oAty6XpOWQeFOU99k3JrPDqlcjaVBrsdmCjwSrEW2N3LcpCXLYTvcnVTidHpalLrtckT0ixtDzUPY0/Tle4d7O47cKJxYwGG2710CzMSb0bN28fUNe50BpZXcTbiMoV8jyyLATAP/Ix5oro+aBe6GAsnuqfECQ2v0iFb2UBb4wgQA1bo7zXkn3ZTfc6E56obfyadFwh8ZtY1MqRitAbNZYdjg9RjwH93lJ4C0AObSAGtGY1Fcki7w/o9EnZ1CqZoYDoGmuqtGxK6W8+5F2cpVa2JYL8zuC6zmDpr8AOHkuMIerl0ABZSRiKhJX1RniDL0Mgn1Ro9iF/93BMi\",\"eph\":\"1aef5296a26e13db8a02a7ad667c60f7ffaffa5e98be42b3c75859569a5594b3\"}}]}",
       "event": {
        "content": "",
-       "created_at": 1762671600,
-       "id": "efa4745593456b7ab5dbb02823d6e7be56a49de9003b9a21a74f6b1b7394e554",
+       "created_at": 1762670600,
+       "id": "5f4fa418a446d477f63a0d2444f23cf84e263cc212770237983600cd494438e0",
        "kind": 27235,
        "pubkey": "27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e",
-       "sig": "47a78e6d31c4a198eaef85a921661beab39c3b67c90cd98ddd476cf6056125838925b9cf965add3749d5e7d4e2fe2f186ac45e54d203f06a6820a335fe41c2de",
+       "sig": "563a73716b90a2069cdb2ec51c46540fedc0f05b59fdc24f7615881d5414f1c72556ddbb4eed63952e675020be61d7c10319a221a4c1d2be5b3acd912f0069db",
        "tags": [
         [
          "u",
@@ -269,11 +312,11 @@
       "body": "{\"history\":{\"ct\":\"Am8C/Psff/XF1tye3oDTEtZ/682wXdSsUCzHSp1PH41MmmPRkPuNHorcADOaV0LeYa99TkmuX9m1Cg4qKEdjDmytR81qgc196gaoiHYhqzb1VAhCvYzUn7hU6GpRIyJQqysqXWhFZrAUKAhVTBbB75jWnOoBOSZyDlIaVw/9VRX7cuWIhagqQ+RTp/pcPqsPFMNh8Wo2Y1mLWdJTrIYQL8FOXEAuPukaItFNBcr16lowHXpbwniyLVT8PFIjq7juhmHqPLIH2OPqDVp6Or96gPwbjWhTDGy1lQUGGXUj8Cln+4702+eEFf2rT6/srP5KxkIC051ufSFdTDtZ920igBTzXbwNoC95xDKHLzrMinFiSyrdXQgXU+pTNEwYk+RI51Bh3FVJGkCRrt43+eKnhzfqg+C55iL5pufW0Ew3IvqKEUDu8979qth89C5phWZSI9ubiw87Nsn0LHrjp+vdsY3Ub2mk+pud8j9P5rinpnAA/BfxFrPNNUDNLU5lLy4QYkSHdzE0P0fKTwLcwBfzk/Dj7u59ZZjrCwghhHFOiXwmF6YdzEEjOInNa0t2Mi+c9kmXOn842juZT2v4CZkmE2hw/w==\",\"eph\":\"de6a1f3203914c6ddaa148cf6585f0e49a292f4827babd5343ba80d474156f58\"},\"pubkey\":\"16294c061927f6adf4b6a5d12fd17bf55cac9920e4714ed893dcd57ba1b6f330\",\"role\":\"curator\",\"sees\":\"all\",\"wraps\":[{\"epoch\":3,\"wrap\":{\"ct\":\"Agin8f7h8LP28ixzqGjRDffHnpQBCYQhlmZM9GNdwkKzJKXPHd+3v4XRs892IkEeSp+0BVI/gmQx6iNpWzdkivhyzsvj3kaqUr1GL+ooUJKUTQf/9Tvfm4O/mILjOr9J3Y7wDRsSRzCYMLzRo7dUmNuM94+JCTTrHdUN2rqZSw5hbtcH0LNGavxx76HXG4SeEDD50rzrgxKuo11SsRWDIgSZ4zOW54x1F9eUy07EQezTDlIhgAmHa/jiEsMzTFLsOE/V0LHOHCokUkg5ANYWHsHW84Ck6XQCFDRNa7K9DTYNcKQrC7JqMHVpwy8voVjnq8F+cjTqcFEGkI/LRWe4TPHms9PlxqU7I3UYfDUp0wldTvqLRFL+n9JxFChxhfFvNJD0\",\"eph\":\"095b3e0d535680a8be812d4ec167db5f0eda676e51c0f97dd1077361592c99e7\"}}]}",
       "event": {
        "content": "",
-       "created_at": 1762671600,
-       "id": "b66f2e7cf65f4b8a33a90d9f630951823e535eedd3486c35fd44abfb9898a8d2",
+       "created_at": 1762672200,
+       "id": "b71be9bc27f7bfb29ac9a5079ca73752bda641cabb3ed32f29d613a5a14bb188",
        "kind": 27235,
        "pubkey": "27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e",
-       "sig": "ec43c52332e975fbdc08afc4962e72c3bcacfa0397e28e8fce937eaa8ccb2f1f333fe7480d78307e7400c3abda523f50bf79c7483a73fe91422b7ad65d50b290",
+       "sig": "cf01c336a3408abb722db327cf0ca64b573853557f9a051a97fc515ca3e938d08f9e9a580e34b35d6b0ca645874ba51822390a54f88971550d9a73574b59469c",
        "tags": [
         [
          "u",
@@ -322,11 +365,11 @@
       "body": "{\"history\":{\"ct\":\"Aum2RIwQBaGW/R5uTg/1FfeUFsIAmE2PzQWCLFReJ4bKWVPjtEysaKK6LSY0OK8IrP1aOu7r+/PCq8cWOAeKMWMUr+XYJfeD7CP9kZBsTRb7qpEjiX0vvvEyvZNy3tsvrRvsuXalxf4uoAFhMrzbDfEz1RmNrTBNlJv00aNtsB79uCbyWYvX4odJ8q8qy9SqDg9z1IWHr0YrgYSHsiVJUCzoY38xAtplJtolA6ypOyt0bIsvNAc0Op5vm5jOmClk8vYiUE5orFOzhVERjESwRsmbR+GCJ5SFN8gPO7euKI+G24JExjwbTWyibZx0Hk9Or2Sya1PYYvpgqBpKSkEszHhPf4PA8vG+N0jdSMms7Q+d7ShhCj9C7XT8YirZkaluur1SSrAOQpJUqckTNgW6feD9vgDTvvwaCaJ7jHuPX7oPu1Q=\",\"eph\":\"92052c3f8acbc32fd49fe23fb01e414e07a969051db18617ad8ce0d45988e292\"},\"pubkey\":\"ff89f794b8597e0e013a9ef4f00322d355fd170961af03e87539b27fc417952a\",\"role\":\"redaktion\",\"sees\":\"all\",\"wraps\":[{\"epoch\":2,\"wrap\":{\"ct\":\"Av1VEB5WSwQvwbKMw6SRpSeg/yrlIqtFoA2hDUrqwAqCag/W9ZyEkf0Bxko6TBNKKWaq2c9CcgH1OEfNc2T1LpveXmux3QZAV/9fEivrq9p46cdOe30N1Q5I4CVdWp5lfiupY60IAZcnFQxvIZl4z6WFFFKG+xu9A4ZWbQPUvpPXmiLHe7DB6hvEvYq4jOPGuQ23Wpd+y6t6Sb35LF+PyQt796Ou0iyxRmzv5xbUaIfQfZYMj86jK3gtONn8aPjqVIwUb8kenySoTCDBSWnJn9ij+gSbXUAvjwjMVYPPCTOkDCdnPjsFbrdbMyzIa4EOI71lhLX/UT/vVbjk3zH341GB4hH1HqyfBx2b2W8glvXsN/OB2Om5gUnSPAnjIhaXRPxL\",\"eph\":\"3141d1de11884b4f35f37ead49575291c77496329c0c12c251fa382bfc961b8d\"}}]}",
       "event": {
        "content": "",
-       "created_at": 1762671600,
-       "id": "88e97673e7517677eb99f9ed539d8c0f3dbc3f8f713f14b6a44a8e4d5362a4a3",
+       "created_at": 1762669300,
+       "id": "d5f5d2de31e15ca9a818f5d57104865146ad3f2dab4c7ae9f6700b36ac85d950",
        "kind": 27235,
        "pubkey": "bd404b770c1347804e52ba2c5c35dbf2653f34fe570044f527044bf70b3341db",
-       "sig": "d32a2612cda05377cf545e59db4f6bf7e4328c2b7788fe09dfd957090c6b663edb5d1177467c949e44b65b52ae0ca0f1129678d46609f2acacac6d0bf54bcb1d",
+       "sig": "a260351f59ed49132edc1e08b6947a8529eb0ae3ff2f9b59d7a539490c591899754c03b7c42081d33ce58a5f3d77271d3757d3664e17f581d5727c2d5b15fbe5",
        "tags": [
         [
          "u",
@@ -421,17 +464,117 @@
     },
     "pubkey": "bd404b770c1347804e52ba2c5c35dbf2653f34fe570044f527044bf70b3341db"
    },
+   "promoted": {
+    "grants": [
+     {
+      "body": "{\"history\":{\"ct\":\"AvLdIHS6H7+mSCduDs6P4gJMHPKxK3S6J6iEAnIOrxUxv9Rb/nyyqMErSHhC3N2CRf1ech6b/qugO8/dFiRW/LL68+qngxg4sr0K0KynVYeFs/jagKYs46CEFlZbADeCKLeAWS7r5iSxkYFLXVZSUoLRMKm4UZMiyA7w/3tSboi+t9DWdmL0qd7cmUJ4lkFZjhSr5dxWJNTOlttQpCzCLaeWjke7SnQpOoLsKftew7s4aE3huGGMUkjSIYXqfkWvoTMmz13BD9OrmbRHk6R3u/5rwvcVMgsqPPC0RUdo7luKEKqY5ln+kBB+DjD8ZAQFp9L9OxlZtHzvmrAlDdwWq9Z+341bBf8syTAMJ7pNJY0oD3Wxn/NkrXGhaeSBPfR5PuEkXj1KnKZu0TFxcYTMyG9kilqsUVK8xlDWdVOH/FE/WiM=\",\"eph\":\"00e4e7560c5abef55ace7a62e8581ad2a161e497b97176f9bf9d8d37d03954ed\"},\"pubkey\":\"c0fbcf37232389fb027c44dc71590932884e3770a0d1923f76ebcc9537b74508\",\"role\":\"curator\",\"sees\":\"all\",\"wraps\":[{\"epoch\":2,\"wrap\":{\"ct\":\"AorbOa7rTuz18ZhJXPWd7ZZl1AR+toF7kYgIVyBp7NNcz022K704jeozzSbBRxF+kPsosUtZ6S50EEyWjCpndvnnlIWZGId3H9+nQKpVhh+R1FIUtKss3lAgr7uQoGVg6zL4tM2eGx8EFMbKD2zmrHrnc5D/di2E1ebzX+DJcS6AyUaJKAhL1DqMB4/MSVSz6+QWSqpZmuPDeSfcWEKgVV3MVEXKvxEUGYJ9/flTBc4EZ1COdKNqvW8nr3ICLyefNFeQtWgYZlIrs5+PKz9OSERZZ3MTpPkaOqrFs1oezSW0xFIbaXvoS6D01oOVuweJZEZQ02xO9K6ezTqepGeB7ny4+8ZJsG0/tcSXT+m48ulUQXLB9NYQ9e+trejeE/RYZ23M\",\"eph\":\"955434f55b76e2d2bb1243248adb4d19b083fd006d6f0d63c5fc082552f9dd6a\"}}]}",
+      "event": {
+       "content": "",
+       "created_at": 1762670800,
+       "id": "7b1d8c6735f890546d28e015c9848fd0e3a6a633a4380ab75359376b9f744329",
+       "kind": 27235,
+       "pubkey": "27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e",
+       "sig": "f85fb777d36f4695de2c21e31f5e874462511ece62f23035a75fdaa636aa9af108b6d7a608801889570f34ac2e25b8d199a7bb3f217970cd694b460281e2b1b4",
+       "tags": [
+        [
+         "u",
+         "https://standup.example/api/sites/by/3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285/ZWludW5kendhbnppZy1tYWdhemlu/members"
+        ],
+        [
+         "method",
+         "POST"
+        ],
+        [
+         "payload",
+         "9813a6eaa5240d8c0c8445de39b2f82cfd22f6887924f34d24e21ccd449415c7"
+        ]
+       ]
+      },
+      "key_event": {
+       "content": "{\"epoch\":2,\"name\":\"Einundzwanzig Magazin\",\"owner\":\"27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e\",\"pubkey\":\"1d981d429c4040228d1c5a22f27f21161906f1037e62481fff5d7c7fd1be025d\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"rules\":{\"by_link\":true,\"checklist\":[{\"id\":\"summary\",\"label\":\"Zusammenfassung\",\"level\":\"recommended\"}],\"kinds\":[\"article\",\"audio\"],\"license_required\":{\"article\":false,\"audio\":true},\"max_envelope_bytes\":4194304,\"max_open_per_writer\":3,\"open\":true,\"publish_by\":{\"article\":\"writer\",\"audio\":\"publication\"},\"rights_required\":true},\"server\":\"https://standup.example\",\"v\":1}",
+       "created_at": 1762670200,
+       "id": "6b4fe3f66b30de3eb3eb12e5f6164357758c88ae6d45d08cfe5fea345fe953b5",
+       "kind": 30078,
+       "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+       "sig": "5e8b49969fec1999bb3f1beef37836dddfadf7ab71a7e44b2630f5999331e6acd683838bdbe57cb9425c5346198d8a723ff10ada4f72438e00ad49f491cc1631",
+       "tags": [
+        [
+         "d",
+         "standup:redaktion-key:einundzwanzig-magazin"
+        ],
+        [
+         "a",
+         "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin"
+        ],
+        [
+         "alt",
+         "Redaktionsschlüssel von Einundzwanzig Magazin: Einreichungen an diese Publikation werden für diesen Schlüssel verschlüsselt."
+        ]
+       ]
+      }
+     },
+     {
+      "body": "{\"history\":{\"ct\":\"AlB+oLvdcyao9EC070QczsWJbizSOKX49RCpyn9/vYkVmIyqZjCjmSEhvTosSI4n21T+niub6/ghZ2+x3efGHuAkiMgI5Kq9X88YGb48MR/Ln7Y2m6dxNdBj3RmirO9XLD/p6P8IuWOvCTw0hbg2Fb1Pd/vW8mcRZBkAq7LwH58EH0zPIOafJbVT8QfdWFUJr7Pv65PLD4vkkck1HVp0iGTj85MjbMp89CQx1fBAktCgDF7FaITXShxs+4aQQ7Uld5OCr1IWMhe+CtGNHa0uXfbRBMfQhkU02bBPpNSE6pJS/vqUZNBScGU6c4x4/7xFBYGR85+nY2Y9yX4s7wLlEMYJ8gUuvw4vvJ/Ru4pkk9jOm18hd6wHc7T4wtiSVE/RpZVnqP2B7fkgeMTlP2HXez+p3uH0fe8rXhWAMkKeaYExRSqn7lrCMMNQxlr0BGdjR8Lm9/oLo/nHZrx7rmC3+vgHqc6ypwTJ0u4Ns/q9gLPCS71RGyQBuc/hSrv21GBvf96P/SEK6ckSKuPqrbTIgp8iSGaY1vmx9O3TtFfcdsDlaL8Qb8IsODVca93XjfRgebaxc4xB4pY1agSbD0hsuj6oMg==\",\"eph\":\"f35c604924d042d44cc0fca480bdf54dd1a851bf18b972f1d8c3f567c57648bd\"},\"pubkey\":\"c0fbcf37232389fb027c44dc71590932884e3770a0d1923f76ebcc9537b74508\",\"role\":\"redaktion\",\"sees\":\"all\",\"wraps\":[{\"epoch\":3,\"wrap\":{\"ct\":\"AkBvx/D+4TWoNtfNEa93+Bal/LGkdrfeA9ziqCrWq23DN2ERGT3RQ0OvZNc3f3lGbAe37cJf2EoILF3BqS0J82e9X1DhC6sGHnSsI+Rc26U0Co7DGEc5z4VqlrkngAmWKGSpmaB3oUxJtKylwlxRBseJSLAv0bj3fGz9huhy7mk+1QHXT7YcX4IXU6SfHMoJfKZKJk95YyApFWHbyXLAtEVOA+EkPAcLyAjApg+qTSsDDYAEEe35B6AXmfbaLFo5NF/QmlXsv4RdlSSIGQb8tt7aFTNdvTl9kRz6gE9VSlSmPbQt4bF3vYm6UpwKdmXeskTMZBRXErHLCmYysWy15+AClCiL5VeMgQUMlETAQk8uTh9SEowN656PAVy6BIO/3Q/E\",\"eph\":\"b41bae6ad171eeae3d5edcaf9220e0ec056accb903fc534bafd7dba30c9296ca\"}}]}",
+      "event": {
+       "content": "",
+       "created_at": 1762672400,
+       "id": "9e1cce90b2ff40960e0e0b2733b55efe11d738e19af473e8df8a852720bbce10",
+       "kind": 27235,
+       "pubkey": "27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e",
+       "sig": "c60db4deb52968ee61a52d1e38237b383086bc77fbd09cb024b8a5bbfea2807eceb6b57290c16343d77231d3362aecdd6e0be66c52535725d2e069168eaae30a",
+       "tags": [
+        [
+         "u",
+         "https://standup.example/api/sites/by/3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285/ZWludW5kendhbnppZy1tYWdhemlu/members"
+        ],
+        [
+         "method",
+         "POST"
+        ],
+        [
+         "payload",
+         "f6725f6a92ca10d75ec94ed0698f96bf89cb7353809860186ba912ed1b2e8938"
+        ]
+       ]
+      },
+      "key_event": {
+       "content": "{\"epoch\":3,\"name\":\"Einundzwanzig Magazin\",\"owner\":\"27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e\",\"pubkey\":\"b0347eb493f204e3f88c007370039b0eb33215f4a635d00fc902057b41fc8aa7\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"rules\":{\"by_link\":true,\"checklist\":[{\"id\":\"summary\",\"label\":\"Zusammenfassung\",\"level\":\"recommended\"}],\"kinds\":[\"article\",\"audio\"],\"license_required\":{\"article\":false,\"audio\":true},\"max_envelope_bytes\":4194304,\"max_open_per_writer\":3,\"open\":true,\"publish_by\":{\"article\":\"writer\",\"audio\":\"publication\"},\"rights_required\":true},\"server\":\"https://standup.example\",\"v\":1}",
+       "created_at": 1762675100,
+       "id": "efdf5f21f819d64872a642f0a3851d973d9728ab6ab621463068f7c2911280de",
+       "kind": 30078,
+       "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+       "sig": "827a2e0997a9fba852ce71c12f4662de289ef315d185a40e22a1e401380e0e0fa6a66ed59e438333ce197e628a10910b5a809403ed0a4fcf994d6aea23aa18e6",
+       "tags": [
+        [
+         "d",
+         "standup:redaktion-key:einundzwanzig-magazin"
+        ],
+        [
+         "a",
+         "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin"
+        ],
+        [
+         "alt",
+         "Redaktionsschlüssel von Einundzwanzig Magazin: Einreichungen an diese Publikation werden für diesen Schlüssel verschlüsselt."
+        ]
+       ]
+      }
+     }
+    ],
+    "owner_key_event": null,
+    "pubkey": "c0fbcf37232389fb027c44dc71590932884e3770a0d1923f76ebcc9537b74508"
+   },
    "removed": {
     "grants": [
      {
       "body": "{\"history\":{\"ct\":\"Am7cXfFZ2fxIE33Py+OMjGFkdotjMSt05sIa8wjqsYKxATbDFIZIv/vAwH50W5x8AkymSxJOZepUejoP8oOtOj4AEyj9/eaW3/zRttU7xHI+3sbT92RadJyXy/ej6IS9VdS0uQ9IfSE1h+T9ThELdSZMviH/V6lNSI4+HM4Wz6D2bNBPrOUlPiXiUQeY/FbXX+seMgMGszD7G+H6b45cuLhoVx6wn4mcFlT9MFlqxZwQDKug2CE3232O59IAUEd5tTTvViFDJKJ0/OhyCGAdZgEoVnBVonWGevhxNcM7sFv+2qAiBkjtxP4xhyuTf4SK8uHDmJ9DpPjPVjQxPHWDMroENT9NgtPgOWV7OK4oyt8uu2pkCC27SzYpKJ4QWC7vTqES2VPRyHSIc7tDXsUXyI6gZt1lq5CYTW6s03QF/SXhrWQ=\",\"eph\":\"2995042062b09bd23b7b1db363dfa1d8ccb7b3b7442b4720b8062be340841d4a\"},\"pubkey\":\"41983a398173bc0bfd19c3ee2650b1cca9513558b2376ebdf978fb26665b6988\",\"role\":\"redaktion\",\"sees\":\"all\",\"wraps\":[{\"epoch\":2,\"wrap\":{\"ct\":\"AhlgpHkHw1o105ZEQK11kPBEZc5iJuXk4sVqBtniSgEe5AhrLJCUaNDKifQe5YpYV7itLJhUbBAMblBeJH1NIgkua7wqGDD+ZCgF39pdi3/ronbp2FpeUcXUnHxS6NR+tnhOnNhUxufy2Sn4dsX/AtSxIAmomCG6vCLqxXuqQ8urRdKk5c2wck8Gs0sSWmFJMRvoG2gCEstVeQ7bEqFuFCzbXDLZkHODi8Eaakqnhce9gBCuMjVnBCzWfTtBRg+tJWzjHqso7XMhBStMX4eH2bQblq+/fQLZV0UmiXT5ferrhtWqo9h3dIaZamcZkRDcMn6qchSY/OYL3SMDssut8cwG7JU3rYITO/RiRYQA91OmghZa2RBPgj+ETPZFNaisqc+H\",\"eph\":\"5e503e3935d6ce358c2a8aa9172e07066cfa4dfb1e0b16d6b199a84e15d4d638\"}}]}",
       "event": {
        "content": "",
-       "created_at": 1762671600,
-       "id": "b7a3d81eb3f292f1d99afb4f9ef3150e5bfc2a6b3d3d38e06719119ecec30703",
+       "created_at": 1762670400,
+       "id": "79ae481d1c2abeb7bf6790eaa01be92af0733f19f4b2b093784be736f101da46",
        "kind": 27235,
        "pubkey": "27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e",
-       "sig": "ee9591faed1e8ed756d18e42b0bdcf863f9a4e22caf6047fd8fc6fbe83a9fd736a02277d0fa38e70ee4b74043585ea9afa4674d1e3d8a161f055b723b1bd29d3",
+       "sig": "ba98655a8c12295a580250bf2ab112720b37c417a7e6b57c975b413cb2d410dc6cbd0e885d32187cf9e0730dd25aa9abc6f35ddb23c9f61e971033a17994142a",
        "tags": [
         [
          "u",
@@ -1173,6 +1316,222 @@
   "owner": "27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e",
   "publication": "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin",
   "route_key": "by/3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285/ZWludW5kendhbnppZy1tYWdhemlu",
+  "served_cases": [
+   {
+    "at": 1762671200,
+    "decides": false,
+    "epoch": 2,
+    "former": {
+     "grants": [
+      {
+       "body": "{\"history\":{\"ct\":\"AlB+oLvdcyao9EC070QczsWJbizSOKX49RCpyn9/vYkVmIyqZjCjmSEhvTosSI4n21T+niub6/ghZ2+x3efGHuAkiMgI5Kq9X88YGb48MR/Ln7Y2m6dxNdBj3RmirO9XLD/p6P8IuWOvCTw0hbg2Fb1Pd/vW8mcRZBkAq7LwH58EH0zPIOafJbVT8QfdWFUJr7Pv65PLD4vkkck1HVp0iGTj85MjbMp89CQx1fBAktCgDF7FaITXShxs+4aQQ7Uld5OCr1IWMhe+CtGNHa0uXfbRBMfQhkU02bBPpNSE6pJS/vqUZNBScGU6c4x4/7xFBYGR85+nY2Y9yX4s7wLlEMYJ8gUuvw4vvJ/Ru4pkk9jOm18hd6wHc7T4wtiSVE/RpZVnqP2B7fkgeMTlP2HXez+p3uH0fe8rXhWAMkKeaYExRSqn7lrCMMNQxlr0BGdjR8Lm9/oLo/nHZrx7rmC3+vgHqc6ypwTJ0u4Ns/q9gLPCS71RGyQBuc/hSrv21GBvf96P/SEK6ckSKuPqrbTIgp8iSGaY1vmx9O3TtFfcdsDlaL8Qb8IsODVca93XjfRgebaxc4xB4pY1agSbD0hsuj6oMg==\",\"eph\":\"f35c604924d042d44cc0fca480bdf54dd1a851bf18b972f1d8c3f567c57648bd\"},\"pubkey\":\"c0fbcf37232389fb027c44dc71590932884e3770a0d1923f76ebcc9537b74508\",\"role\":\"redaktion\",\"sees\":\"all\",\"wraps\":[{\"epoch\":3,\"wrap\":{\"ct\":\"AkBvx/D+4TWoNtfNEa93+Bal/LGkdrfeA9ziqCrWq23DN2ERGT3RQ0OvZNc3f3lGbAe37cJf2EoILF3BqS0J82e9X1DhC6sGHnSsI+Rc26U0Co7DGEc5z4VqlrkngAmWKGSpmaB3oUxJtKylwlxRBseJSLAv0bj3fGz9huhy7mk+1QHXT7YcX4IXU6SfHMoJfKZKJk95YyApFWHbyXLAtEVOA+EkPAcLyAjApg+qTSsDDYAEEe35B6AXmfbaLFo5NF/QmlXsv4RdlSSIGQb8tt7aFTNdvTl9kRz6gE9VSlSmPbQt4bF3vYm6UpwKdmXeskTMZBRXErHLCmYysWy15+AClCiL5VeMgQUMlETAQk8uTh9SEowN656PAVy6BIO/3Q/E\",\"eph\":\"b41bae6ad171eeae3d5edcaf9220e0ec056accb903fc534bafd7dba30c9296ca\"}}]}",
+       "event": {
+        "content": "",
+        "created_at": 1762672400,
+        "id": "9e1cce90b2ff40960e0e0b2733b55efe11d738e19af473e8df8a852720bbce10",
+        "kind": 27235,
+        "pubkey": "27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e",
+        "sig": "c60db4deb52968ee61a52d1e38237b383086bc77fbd09cb024b8a5bbfea2807eceb6b57290c16343d77231d3362aecdd6e0be66c52535725d2e069168eaae30a",
+        "tags": [
+         [
+          "u",
+          "https://standup.example/api/sites/by/3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285/ZWludW5kendhbnppZy1tYWdhemlu/members"
+         ],
+         [
+          "method",
+          "POST"
+         ],
+         [
+          "payload",
+          "f6725f6a92ca10d75ec94ed0698f96bf89cb7353809860186ba912ed1b2e8938"
+         ]
+        ]
+       },
+       "key_event": {
+        "content": "{\"epoch\":3,\"name\":\"Einundzwanzig Magazin\",\"owner\":\"27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e\",\"pubkey\":\"b0347eb493f204e3f88c007370039b0eb33215f4a635d00fc902057b41fc8aa7\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"rules\":{\"by_link\":true,\"checklist\":[{\"id\":\"summary\",\"label\":\"Zusammenfassung\",\"level\":\"recommended\"}],\"kinds\":[\"article\",\"audio\"],\"license_required\":{\"article\":false,\"audio\":true},\"max_envelope_bytes\":4194304,\"max_open_per_writer\":3,\"open\":true,\"publish_by\":{\"article\":\"writer\",\"audio\":\"publication\"},\"rights_required\":true},\"server\":\"https://standup.example\",\"v\":1}",
+        "created_at": 1762675100,
+        "id": "efdf5f21f819d64872a642f0a3851d973d9728ab6ab621463068f7c2911280de",
+        "kind": 30078,
+        "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+        "sig": "827a2e0997a9fba852ce71c12f4662de289ef315d185a40e22a1e401380e0e0fa6a66ed59e438333ce197e628a10910b5a809403ed0a4fcf994d6aea23aa18e6",
+        "tags": [
+         [
+          "d",
+          "standup:redaktion-key:einundzwanzig-magazin"
+         ],
+         [
+          "a",
+          "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin"
+         ],
+         [
+          "alt",
+          "Redaktionsschlüssel von Einundzwanzig Magazin: Einreichungen an diese Publikation werden für diesen Schlüssel verschlüsselt."
+         ]
+        ]
+       }
+      }
+     ],
+     "owner_key_event": null,
+     "pubkey": "c0fbcf37232389fb027c44dc71590932884e3770a0d1923f76ebcc9537b74508"
+    },
+    "member": true,
+    "name": "a_server_that_hides_the_invitation_as_curator_that_came_first"
+   },
+   {
+    "at": 1762673200,
+    "decides": false,
+    "epoch": 3,
+    "former": {
+     "grants": [
+      {
+       "body": "{\"history\":{\"ct\":\"AvLdIHS6H7+mSCduDs6P4gJMHPKxK3S6J6iEAnIOrxUxv9Rb/nyyqMErSHhC3N2CRf1ech6b/qugO8/dFiRW/LL68+qngxg4sr0K0KynVYeFs/jagKYs46CEFlZbADeCKLeAWS7r5iSxkYFLXVZSUoLRMKm4UZMiyA7w/3tSboi+t9DWdmL0qd7cmUJ4lkFZjhSr5dxWJNTOlttQpCzCLaeWjke7SnQpOoLsKftew7s4aE3huGGMUkjSIYXqfkWvoTMmz13BD9OrmbRHk6R3u/5rwvcVMgsqPPC0RUdo7luKEKqY5ln+kBB+DjD8ZAQFp9L9OxlZtHzvmrAlDdwWq9Z+341bBf8syTAMJ7pNJY0oD3Wxn/NkrXGhaeSBPfR5PuEkXj1KnKZu0TFxcYTMyG9kilqsUVK8xlDWdVOH/FE/WiM=\",\"eph\":\"00e4e7560c5abef55ace7a62e8581ad2a161e497b97176f9bf9d8d37d03954ed\"},\"pubkey\":\"c0fbcf37232389fb027c44dc71590932884e3770a0d1923f76ebcc9537b74508\",\"role\":\"curator\",\"sees\":\"all\",\"wraps\":[{\"epoch\":2,\"wrap\":{\"ct\":\"AorbOa7rTuz18ZhJXPWd7ZZl1AR+toF7kYgIVyBp7NNcz022K704jeozzSbBRxF+kPsosUtZ6S50EEyWjCpndvnnlIWZGId3H9+nQKpVhh+R1FIUtKss3lAgr7uQoGVg6zL4tM2eGx8EFMbKD2zmrHrnc5D/di2E1ebzX+DJcS6AyUaJKAhL1DqMB4/MSVSz6+QWSqpZmuPDeSfcWEKgVV3MVEXKvxEUGYJ9/flTBc4EZ1COdKNqvW8nr3ICLyefNFeQtWgYZlIrs5+PKz9OSERZZ3MTpPkaOqrFs1oezSW0xFIbaXvoS6D01oOVuweJZEZQ02xO9K6ezTqepGeB7ny4+8ZJsG0/tcSXT+m48ulUQXLB9NYQ9e+trejeE/RYZ23M\",\"eph\":\"955434f55b76e2d2bb1243248adb4d19b083fd006d6f0d63c5fc082552f9dd6a\"}}]}",
+       "event": {
+        "content": "",
+        "created_at": 1762670800,
+        "id": "7b1d8c6735f890546d28e015c9848fd0e3a6a633a4380ab75359376b9f744329",
+        "kind": 27235,
+        "pubkey": "27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e",
+        "sig": "f85fb777d36f4695de2c21e31f5e874462511ece62f23035a75fdaa636aa9af108b6d7a608801889570f34ac2e25b8d199a7bb3f217970cd694b460281e2b1b4",
+        "tags": [
+         [
+          "u",
+          "https://standup.example/api/sites/by/3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285/ZWludW5kendhbnppZy1tYWdhemlu/members"
+         ],
+         [
+          "method",
+          "POST"
+         ],
+         [
+          "payload",
+          "9813a6eaa5240d8c0c8445de39b2f82cfd22f6887924f34d24e21ccd449415c7"
+         ]
+        ]
+       },
+       "key_event": {
+        "content": "{\"epoch\":2,\"name\":\"Einundzwanzig Magazin\",\"owner\":\"27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e\",\"pubkey\":\"1d981d429c4040228d1c5a22f27f21161906f1037e62481fff5d7c7fd1be025d\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"rules\":{\"by_link\":true,\"checklist\":[{\"id\":\"summary\",\"label\":\"Zusammenfassung\",\"level\":\"recommended\"}],\"kinds\":[\"article\",\"audio\"],\"license_required\":{\"article\":false,\"audio\":true},\"max_envelope_bytes\":4194304,\"max_open_per_writer\":3,\"open\":true,\"publish_by\":{\"article\":\"writer\",\"audio\":\"publication\"},\"rights_required\":true},\"server\":\"https://standup.example\",\"v\":1}",
+        "created_at": 1762670200,
+        "id": "6b4fe3f66b30de3eb3eb12e5f6164357758c88ae6d45d08cfe5fea345fe953b5",
+        "kind": 30078,
+        "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+        "sig": "5e8b49969fec1999bb3f1beef37836dddfadf7ab71a7e44b2630f5999331e6acd683838bdbe57cb9425c5346198d8a723ff10ada4f72438e00ad49f491cc1631",
+        "tags": [
+         [
+          "d",
+          "standup:redaktion-key:einundzwanzig-magazin"
+         ],
+         [
+          "a",
+          "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin"
+         ],
+         [
+          "alt",
+          "Redaktionsschlüssel von Einundzwanzig Magazin: Einreichungen an diese Publikation werden für diesen Schlüssel verschlüsselt."
+         ]
+        ]
+       }
+      },
+      {
+       "body": "{\"history\":{\"ct\":\"AlB+oLvdcyao9EC070QczsWJbizSOKX49RCpyn9/vYkVmIyqZjCjmSEhvTosSI4n21T+niub6/ghZ2+x3efGHuAkiMgI5Kq9X88YGb48MR/Ln7Y2m6dxNdBj3RmirO9XLD/p6P8IuWOvCTw0hbg2Fb1Pd/vW8mcRZBkAq7LwH58EH0zPIOafJbVT8QfdWFUJr7Pv65PLD4vkkck1HVp0iGTj85MjbMp89CQx1fBAktCgDF7FaITXShxs+4aQQ7Uld5OCr1IWMhe+CtGNHa0uXfbRBMfQhkU02bBPpNSE6pJS/vqUZNBScGU6c4x4/7xFBYGR85+nY2Y9yX4s7wLlEMYJ8gUuvw4vvJ/Ru4pkk9jOm18hd6wHc7T4wtiSVE/RpZVnqP2B7fkgeMTlP2HXez+p3uH0fe8rXhWAMkKeaYExRSqn7lrCMMNQxlr0BGdjR8Lm9/oLo/nHZrx7rmC3+vgHqc6ypwTJ0u4Ns/q9gLPCS71RGyQBuc/hSrv21GBvf96P/SEK6ckSKuPqrbTIgp8iSGaY1vmx9O3TtFfcdsDlaL8Qb8IsODVca93XjfRgebaxc4xB4pY1agSbD0hsuj6oMg==\",\"eph\":\"f35c604924d042d44cc0fca480bdf54dd1a851bf18b972f1d8c3f567c57648bd\"},\"pubkey\":\"c0fbcf37232389fb027c44dc71590932884e3770a0d1923f76ebcc9537b74508\",\"role\":\"redaktion\",\"sees\":\"all\",\"wraps\":[{\"epoch\":3,\"wrap\":{\"ct\":\"AkBvx/D+4TWoNtfNEa93+Bal/LGkdrfeA9ziqCrWq23DN2ERGT3RQ0OvZNc3f3lGbAe37cJf2EoILF3BqS0J82e9X1DhC6sGHnSsI+Rc26U0Co7DGEc5z4VqlrkngAmWKGSpmaB3oUxJtKylwlxRBseJSLAv0bj3fGz9huhy7mk+1QHXT7YcX4IXU6SfHMoJfKZKJk95YyApFWHbyXLAtEVOA+EkPAcLyAjApg+qTSsDDYAEEe35B6AXmfbaLFo5NF/QmlXsv4RdlSSIGQb8tt7aFTNdvTl9kRz6gE9VSlSmPbQt4bF3vYm6UpwKdmXeskTMZBRXErHLCmYysWy15+AClCiL5VeMgQUMlETAQk8uTh9SEowN656PAVy6BIO/3Q/E\",\"eph\":\"b41bae6ad171eeae3d5edcaf9220e0ec056accb903fc534bafd7dba30c9296ca\"}}]}",
+       "event": {
+        "content": "",
+        "created_at": 1762672400,
+        "id": "9e1cce90b2ff40960e0e0b2733b55efe11d738e19af473e8df8a852720bbce10",
+        "kind": 27235,
+        "pubkey": "27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e",
+        "sig": "c60db4deb52968ee61a52d1e38237b383086bc77fbd09cb024b8a5bbfea2807eceb6b57290c16343d77231d3362aecdd6e0be66c52535725d2e069168eaae30a",
+        "tags": [
+         [
+          "u",
+          "https://standup.example/api/sites/by/3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285/ZWludW5kendhbnppZy1tYWdhemlu/members"
+         ],
+         [
+          "method",
+          "POST"
+         ],
+         [
+          "payload",
+          "f6725f6a92ca10d75ec94ed0698f96bf89cb7353809860186ba912ed1b2e8938"
+         ]
+        ]
+       },
+       "key_event": {
+        "content": "{\"epoch\":3,\"name\":\"Einundzwanzig Magazin\",\"owner\":\"27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e\",\"pubkey\":\"b0347eb493f204e3f88c007370039b0eb33215f4a635d00fc902057b41fc8aa7\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"rules\":{\"by_link\":true,\"checklist\":[{\"id\":\"summary\",\"label\":\"Zusammenfassung\",\"level\":\"recommended\"}],\"kinds\":[\"article\",\"audio\"],\"license_required\":{\"article\":false,\"audio\":true},\"max_envelope_bytes\":4194304,\"max_open_per_writer\":3,\"open\":true,\"publish_by\":{\"article\":\"writer\",\"audio\":\"publication\"},\"rights_required\":true},\"server\":\"https://standup.example\",\"v\":1}",
+        "created_at": 1762675100,
+        "id": "efdf5f21f819d64872a642f0a3851d973d9728ab6ab621463068f7c2911280de",
+        "kind": 30078,
+        "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+        "sig": "827a2e0997a9fba852ce71c12f4662de289ef315d185a40e22a1e401380e0e0fa6a66ed59e438333ce197e628a10910b5a809403ed0a4fcf994d6aea23aa18e6",
+        "tags": [
+         [
+          "d",
+          "standup:redaktion-key:einundzwanzig-magazin"
+         ],
+         [
+          "a",
+          "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin"
+         ],
+         [
+          "alt",
+          "Redaktionsschlüssel von Einundzwanzig Magazin: Einreichungen an diese Publikation werden für diesen Schlüssel verschlüsselt."
+         ]
+        ]
+       }
+      },
+      {
+       "body": "{\"history\":{\"ct\":\"AmFRgGt24XPDbEyxj602rw9b3yqKDvZjeg1RfKb+TcvHv0HqRRU1+rQWW4MHwzYbwvCfPB6CBlNlTMjqlb6cenym09VeBLzNLCTINEZ6zTMJDIkGX+4odbagWXv3vnnCpJ27OAZxQJUtooHQkl3aZSTs8KWn2icyDBLOl8xYZYRPYP4tjS6Qh3k5so+h34w3fii4A9PJio5eiibJj7W2hNpprin2H5fNz62fMNDY3Q/LbyD442R9VfT52zNenRjrQxyK9nZ5PO6negQ5U8LpSwpdgYbr37+hNQw0GkoPdA8BGN3bo9qsr9qEqFkS09R5Wb3ZpvuiK2vUiRl8/Bjuu3l10I5yV+z57ybsrrQAE01Z36uRfjBypo49uKs5kPa3TmfhsbTUoMDpSUdoHbnHk+jj3DAjmG/3B6Kos1bjbsqKd3fhaXgvcjUG/zJgPLadyQ3+FuN9X1eDwPVeFFDVF0+BC8OV8VP0fEsH7h92dWPb86Ceo+ON0QDyU+WESAO5hiAfsn86w7lxHVYkjoE+gaWr1hv4nT37PqwshH+Bb5kCljXeFAtbeCQ0S5i2I2YMs5re9GXgKf15/lIrt10XoLGvHQ==\",\"eph\":\"9a3c2ea412cfd9d3d28312f1b8e836088da1e10e9eaf41491961beb883c91822\"},\"pubkey\":\"c0fbcf37232389fb027c44dc71590932884e3770a0d1923f76ebcc9537b74508\",\"role\":\"curator\",\"sees\":\"all\",\"wraps\":[{\"epoch\":3,\"wrap\":{\"ct\":\"AkapmKJ0gFf2dH131gNtrlOdopQrR6I2zepHff3Lup7e6idgrDlYKZBFpG1Cx8UxpLPvFg0p/r4a5z7lDckffJKW/LIJ+hi2mtyB1RLJ0rK3U00wT/tMLW7rDpKWAsVsg6JtP5RaWJ7JLnMqL0bHCwE7d3eCPNhwhNmbpNf6wp5wDk539wViAqAPMJpRtmhAvaQQfw19XEr7MmVmCDoY3U1oSVFSCpYiH8+qLbV9M/lliUgiAFa3SPWFeew3YTVsRjN33DRs/CdSSIl0WpwwW6mwdVM55gWj/ZlRhowLkiXul2wb4mGhcrXgiQ1GpiT+vuFE1B2g0155fCz3KqSYI0z7FRNDrLviHiXk6jlJU0DA63BDe2lZZ0dDiDA8z+mMltVE\",\"eph\":\"205d8815c859519a55aee2dd7a1eb6c4c89e85841e60f3b9d18b4d7a0b692512\"}}]}",
+       "event": {
+        "content": "",
+        "created_at": 1762672400,
+        "id": "f4d83a71a0e02794229ead97f96e7c2c66f13369fbd9f72f50d84f132a31a19f",
+        "kind": 27235,
+        "pubkey": "27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e",
+        "sig": "8c4335854349ed5cbaebf40560c838cc4e444e06a96a18b06db6e0e01b25efcc5c290a1134134feff0856bed7e7f8057fd73143037ee404d473589f9a49032b1",
+        "tags": [
+         [
+          "u",
+          "https://standup.example/api/sites/by/3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285/ZWludW5kendhbnppZy1tYWdhemlu/members"
+         ],
+         [
+          "method",
+          "POST"
+         ],
+         [
+          "payload",
+          "8bc52b971ff4e419eb18d726221cf423e7c314c1df0cdab19ee03842a172fa30"
+         ]
+        ]
+       },
+       "key_event": {
+        "content": "{\"epoch\":3,\"name\":\"Einundzwanzig Magazin\",\"owner\":\"27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e\",\"pubkey\":\"b0347eb493f204e3f88c007370039b0eb33215f4a635d00fc902057b41fc8aa7\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"rules\":{\"by_link\":true,\"checklist\":[{\"id\":\"summary\",\"label\":\"Zusammenfassung\",\"level\":\"recommended\"}],\"kinds\":[\"article\",\"audio\"],\"license_required\":{\"article\":false,\"audio\":true},\"max_envelope_bytes\":4194304,\"max_open_per_writer\":3,\"open\":true,\"publish_by\":{\"article\":\"writer\",\"audio\":\"publication\"},\"rights_required\":true},\"server\":\"https://standup.example\",\"v\":1}",
+        "created_at": 1762675100,
+        "id": "efdf5f21f819d64872a642f0a3851d973d9728ab6ab621463068f7c2911280de",
+        "kind": 30078,
+        "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+        "sig": "827a2e0997a9fba852ce71c12f4662de289ef315d185a40e22a1e401380e0e0fa6a66ed59e438333ce197e628a10910b5a809403ed0a4fcf994d6aea23aa18e6",
+        "tags": [
+         [
+          "d",
+          "standup:redaktion-key:einundzwanzig-magazin"
+         ],
+         [
+          "a",
+          "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin"
+         ],
+         [
+          "alt",
+          "Redaktionsschlüssel von Einundzwanzig Magazin: Einreichungen an diese Publikation werden für diesen Schlüssel verschlüsselt."
+         ]
+        ]
+       }
+      }
+     ],
+     "owner_key_event": null,
+     "pubkey": "c0fbcf37232389fb027c44dc71590932884e3770a0d1923f76ebcc9537b74508"
+    },
+    "member": true,
+    "name": "two_invitations_in_the_same_second_with_different_roles"
+   }
+  ],
   "server": "https://standup.example",
   "stranger": "2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc",
   "taken": {
@@ -3877,14 +4236,14 @@
    "the_publications_work": {
     "address": "30023:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:vom-block-zum-buch",
     "report": {
-     "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"073a9682ec78b2dd2c19a8ec0518f16147361f0e4b5f0b035f4e6bef43584ec2\",\"kind\":30023,\"pubkey\":\"3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285\",\"sig\":\"3cbb9d970dfb6d4b5fdc6e5e1ed1d0a452288a55860b4e41a6dc36773bca312d980087f97bfdc5caf1365485e7e5af5945a6c248491a85868bcc68774cc29dd8\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgsrxau8tgnsm7m9l4fn8va5ldvaxrxz5xjlygyprsfqkewek3yv9pgrqsqqqa282svd0z\",\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
+     "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"cbef423b33dc56a02c42c737b20852ff339d0c28679213a10e1f110365ab602c\",\"kind\":30023,\"pubkey\":\"3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285\",\"sig\":\"a049b10976e19a5b7f08dbd71e337f49de235954e6caea49d06f5297936a8a584a1ed7246ff49f442b1174e50e7e8bf34131e724d16397f33e4a86ae141fe882\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"],[\"p\",\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"\",\"author\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgsrxau8tgnsm7m9l4fn8va5ldvaxrxz5xjlygyprsfqkewek3yv9pgrqsqqqa282svd0z\",\"revision\":1,\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
      "event": {
       "content": "",
       "created_at": 1762675200,
-      "id": "1cb1ce02a05683a7051b798222bf5e5fee683ef1e28b5f6871e15629c7319fd4",
+      "id": "cb82b680dac002866df6f343a75dcf4cb1e924e997d9a9536b81a56f3f20e65f",
       "kind": 27235,
       "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
-      "sig": "711218d155f074ef673674f1c61e991239ad199cbeb16b556a8a943495dab74fcd3c8dfc17b99aec9aed7d431eb8abc8e30a7099966d1c703514886f47a77b07",
+      "sig": "4f62f099300179fa4bb380353fae2c41fb10c1011a03b78ca7c5a53ed4fb8853025ea73da21e0b29c92a6c221b24c4015a87061dbe3e656c0232a1709e8ed41f",
       "tags": [
        [
         "u",
@@ -3896,7 +4255,7 @@
        ],
        [
         "payload",
-        "d6f7c5cb4ae2046009dd6f64f96c6ce26d82f8d25ad541b0a1d24a3b047cb055"
+        "80ee6dfa80dd9bd21034e7fee91da7f1d400fb5a216b66d86e8d4241701e15e8"
        ]
       ]
      }
@@ -3905,14 +4264,14 @@
    "the_publications_work_beside_another": {
     "address": "30023:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:vom-block-zum-buch-101a5f49",
     "report": {
-     "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"1bd081f6d8916d335f360cb49971174e5659734c40ac4cb438e4933cf12d1fbd\",\"kind\":30023,\"pubkey\":\"3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285\",\"sig\":\"928402ca91a653b44e26089f7c306290fb59639302ef6e5636b0d259b652d18c3a36a2682298341bbc77aeb844cad3f2776c9accbaeb3857026459dc684338a3\",\"tags\":[[\"d\",\"vom-block-zum-buch-101a5f49\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqdhvmmd943xcmmrdvkh5atd94382cmg95cnqvtpx4nrgwgzyqeh0p66yuxlke0a2vem8d8mt8fses4p5hezpqguzg9ktkd5frpg2qcyqqq823chn2kc3\",\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
+     "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"d97e1fbe7ea2ccad66b3e5b2a528f16add66eadc9f31e9557197966815a7d49f\",\"kind\":30023,\"pubkey\":\"3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285\",\"sig\":\"4b6d0e5923b0847b89f019800b8a2dc02e7b69a84475d9a5989dd3d128f7ca12675f4acc35e4b4c5470a325992e65adf0cb528dfb39302839fb1896e9075d688\",\"tags\":[[\"d\",\"vom-block-zum-buch-101a5f49\"],[\"title\",\"Vom Block zum Buch\"],[\"p\",\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"\",\"author\"]]},\"naddr\":\"naddr1qqdhvmmd943xcmmrdvkh5atd94382cmg95cnqvtpx4nrgwgzyqeh0p66yuxlke0a2vem8d8mt8fses4p5hezpqguzg9ktkd5frpg2qcyqqq823chn2kc3\",\"revision\":1,\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
      "event": {
       "content": "",
       "created_at": 1762675200,
-      "id": "bfdf337dd3230ced3d3b09bccdd510942bbea168a4c9763867a65881b6bb955c",
+      "id": "57fab72b5132b03fa10540cc192f53d2be8e3a996449841fe780fee846d7c284",
       "kind": 27235,
       "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
-      "sig": "0e5aee0c7791722079c41af2051d42c52ddb7e1207a31012f97e9180dacebf56fc8f51ae450703e1fafc03064ed0ad7ef4cf0cfe1bef1750480b3b8e519ac2bd",
+      "sig": "919309eeed9639623645146c571b7e6a6cad834e338d9672fb3ef527d3fb86a6f63126d9b1ce9c076111269bdc6e1087ccf43c661a3970f600a29cf37f649892",
       "tags": [
        [
         "u",
@@ -3924,7 +4283,7 @@
        ],
        [
         "payload",
-        "028da6c7a14072f88be44b49c87e272d3a198abd93a1d54ffa95872286244b4d"
+        "2a0bab9885364b1dea9630e611216a1ccd6b9d90084ed2d83e49fc491ff5fcf1"
        ]
       ]
      }
@@ -3933,14 +4292,14 @@
    "the_writers_work": {
     "address": "30023:1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f:vom-block-zum-buch",
     "report": {
-     "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"524248fd94d8c5090db7a55c115fe2c983e6323eebdb583d4df9e5f569f4fdf7\",\"kind\":30023,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"d4bb30c4a09dbacfa546a84ef622605bacc30a8073275221dfde78811779161dacba00e34a959c8847d7d4bb61f9a15cfd26966f596914041d472e4b301daa0b\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgspjvwrzmaqrakvhdj3j72kmxkqllden0tmmvq2rfxatnw747hys8crqsqqqa286xey47\",\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
+     "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"524248fd94d8c5090db7a55c115fe2c983e6323eebdb583d4df9e5f569f4fdf7\",\"kind\":30023,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"d4bb30c4a09dbacfa546a84ef622605bacc30a8073275221dfde78811779161dacba00e34a959c8847d7d4bb61f9a15cfd26966f596914041d472e4b301daa0b\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgspjvwrzmaqrakvhdj3j72kmxkqllden0tmmvq2rfxatnw747hys8crqsqqqa286xey47\",\"revision\":1,\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
      "event": {
       "content": "",
       "created_at": 1762675200,
-      "id": "6d7e4fea54bcd150bd092d90409649426714366f11445141c6ed5e610f8e619f",
+      "id": "afcfca2ef26dffeac166201656c28e03d0132830f86e5080007b813b77bc75db",
       "kind": 27235,
       "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
-      "sig": "fff6bfc9d7ac0e573f39dbb8238a589be47297d175890bd7206172cf50484fce03ecd60acb14cf468fad4261c5296a8be641f69037e6057031b482d48d4adc8e",
+      "sig": "5634155e45e9fd7a7632c1f7b1149b37252420b83755e99b9bdf7848edad12d3b038299e0a59c545baefec969d87cd15202c5ff3c6d7aaca51ca2c36e3650948",
       "tags": [
        [
         "u",
@@ -3952,7 +4311,7 @@
        ],
        [
         "payload",
-        "8e8a99530b196a9392406da90b219ab36d613b7972e29dc394f3b3a4881ea1d8"
+        "95ce37df41cc597f2676ecdb3d3ead36befcfb3beddeb2ef66dab1d8ae4d7f12"
        ]
       ]
      }
@@ -3961,14 +4320,14 @@
   },
   "must_fail": {
    "a_bad_signature_of_the_report": {
-    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"524248fd94d8c5090db7a55c115fe2c983e6323eebdb583d4df9e5f569f4fdf7\",\"kind\":30023,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"d4bb30c4a09dbacfa546a84ef622605bacc30a8073275221dfde78811779161dacba00e34a959c8847d7d4bb61f9a15cfd26966f596914041d472e4b301daa0b\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgspjvwrzmaqrakvhdj3j72kmxkqllden0tmmvq2rfxatnw747hys8crqsqqqa286xey47\",\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
+    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"524248fd94d8c5090db7a55c115fe2c983e6323eebdb583d4df9e5f569f4fdf7\",\"kind\":30023,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"d4bb30c4a09dbacfa546a84ef622605bacc30a8073275221dfde78811779161dacba00e34a959c8847d7d4bb61f9a15cfd26966f596914041d472e4b301daa0b\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgspjvwrzmaqrakvhdj3j72kmxkqllden0tmmvq2rfxatnw747hys8crqsqqqa286xey47\",\"revision\":1,\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
     "event": {
      "content": "",
      "created_at": 1762675200,
-     "id": "6d7e4fea54bcd150bd092d90409649426714366f11445141c6ed5e610f8e619f",
+     "id": "afcfca2ef26dffeac166201656c28e03d0132830f86e5080007b813b77bc75db",
      "kind": 27235,
      "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
-     "sig": "fff6bfc9d7ac0e573f39dbb8238a589be47297d175890bd7206172cf50484fce03ecd60acb14cf468fad4261c5296a8be641f69037e6057031b482d48d4adc00",
+     "sig": "5634155e45e9fd7a7632c1f7b1149b37252420b83755e99b9bdf7848edad12d3b038299e0a59c545baefec969d87cd15202c5ff3c6d7aaca51ca2c36e3650900",
      "tags": [
       [
        "u",
@@ -3980,20 +4339,20 @@
       ],
       [
        "payload",
-       "8e8a99530b196a9392406da90b219ab36d613b7972e29dc394f3b3a4881ea1d8"
+       "95ce37df41cc597f2676ecdb3d3ead36befcfb3beddeb2ef66dab1d8ae4d7f12"
       ]
      ]
     }
    },
    "a_bad_signature_of_the_work": {
-    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"524248fd94d8c5090db7a55c115fe2c983e6323eebdb583d4df9e5f569f4fdf7\",\"kind\":30023,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"d4bb30c4a09dbacfa546a84ef622605bacc30a8073275221dfde78811779161dacba00e34a959c8847d7d4bb61f9a15cfd26966f596914041d472e4b301daa00\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgspjvwrzmaqrakvhdj3j72kmxkqllden0tmmvq2rfxatnw747hys8crqsqqqa286xey47\",\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
+    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"524248fd94d8c5090db7a55c115fe2c983e6323eebdb583d4df9e5f569f4fdf7\",\"kind\":30023,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"d4bb30c4a09dbacfa546a84ef622605bacc30a8073275221dfde78811779161dacba00e34a959c8847d7d4bb61f9a15cfd26966f596914041d472e4b301daa00\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgspjvwrzmaqrakvhdj3j72kmxkqllden0tmmvq2rfxatnw747hys8crqsqqqa286xey47\",\"revision\":1,\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
     "event": {
      "content": "",
      "created_at": 1762675200,
-     "id": "4ff36752c7cac2c8c5964fda8e257903366b62946c36b3f5e9e52f753fb4b407",
+     "id": "565b3ba734af6215e2335baba056eb562df4ba287fd204d47876b0c8b7f3fb25",
      "kind": 27235,
      "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
-     "sig": "bfa1d0c9d26ace2fcd0e88dbbf3dea3ee44cca6f0f641ad1baf43717b27b8b3750912a39c2bef5b47b9996eba8125a69592fecef2b4f664db7346ae4c911bef4",
+     "sig": "1b592c9c370ce11b65254e5fab896fe14d41fb202eef6248da5f87108158b4fcd6f32a052b5440fdc09e5b2ade9512830c42f03230f418afa681125c6cdaa28a",
      "tags": [
       [
        "u",
@@ -4005,20 +4364,20 @@
       ],
       [
        "payload",
-       "6411726664ab2851b0a414b1008599b6ed9ffed1c25c08168a58f02a35534f15"
+       "4c04771170db9208fe067109bff3db5cfccaa84999a68980307b5ea044a33d47"
       ]
      ]
     }
    },
    "a_changed_body": {
-    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\", \"created_at\":1762675200,\"id\":\"524248fd94d8c5090db7a55c115fe2c983e6323eebdb583d4df9e5f569f4fdf7\",\"kind\":30023,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"d4bb30c4a09dbacfa546a84ef622605bacc30a8073275221dfde78811779161dacba00e34a959c8847d7d4bb61f9a15cfd26966f596914041d472e4b301daa0b\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgspjvwrzmaqrakvhdj3j72kmxkqllden0tmmvq2rfxatnw747hys8crqsqqqa286xey47\",\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
+    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\", \"created_at\":1762675200,\"id\":\"524248fd94d8c5090db7a55c115fe2c983e6323eebdb583d4df9e5f569f4fdf7\",\"kind\":30023,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"d4bb30c4a09dbacfa546a84ef622605bacc30a8073275221dfde78811779161dacba00e34a959c8847d7d4bb61f9a15cfd26966f596914041d472e4b301daa0b\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgspjvwrzmaqrakvhdj3j72kmxkqllden0tmmvq2rfxatnw747hys8crqsqqqa286xey47\",\"revision\":1,\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
     "event": {
      "content": "",
      "created_at": 1762675200,
-     "id": "6d7e4fea54bcd150bd092d90409649426714366f11445141c6ed5e610f8e619f",
+     "id": "afcfca2ef26dffeac166201656c28e03d0132830f86e5080007b813b77bc75db",
      "kind": 27235,
      "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
-     "sig": "274fdc1b30dc3c08df3a8bfd3f330d2b607f62e9eb5b658ee2fd9eeffa40b2476bfdcaff1e11062a8a50f61a320d8610fa901c202f28c63d498c7ea98bab0196",
+     "sig": "34260d2b63f9c387258f5d3157d1cbe6c62ba67c792db12c79df75d8c45e40fd429e461339e9af8a57fec5119aafa738f44f40553404eac230d692d67b6255ac",
      "tags": [
       [
        "u",
@@ -4030,20 +4389,20 @@
       ],
       [
        "payload",
-       "8e8a99530b196a9392406da90b219ab36d613b7972e29dc394f3b3a4881ea1d8"
+       "95ce37df41cc597f2676ecdb3d3ead36befcfb3beddeb2ef66dab1d8ae4d7f12"
       ]
      ]
     }
    },
    "an_naddr_of_another_address": {
-    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"524248fd94d8c5090db7a55c115fe2c983e6323eebdb583d4df9e5f569f4fdf7\",\"kind\":30023,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"d4bb30c4a09dbacfa546a84ef622605bacc30a8073275221dfde78811779161dacba00e34a959c8847d7d4bb61f9a15cfd26966f596914041d472e4b301daa0b\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqxxzmnyv4ex2uedwajhy6czyqvnrscklgqldn9mv5vhj4ke4s8lmwvm677mqzs6fh2umh404eyp7qcyqqq823cfwxden\",\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
+    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"524248fd94d8c5090db7a55c115fe2c983e6323eebdb583d4df9e5f569f4fdf7\",\"kind\":30023,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"d4bb30c4a09dbacfa546a84ef622605bacc30a8073275221dfde78811779161dacba00e34a959c8847d7d4bb61f9a15cfd26966f596914041d472e4b301daa0b\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqxxzmnyv4ex2uedwajhy6czyqvnrscklgqldn9mv5vhj4ke4s8lmwvm677mqzs6fh2umh404eyp7qcyqqq823cfwxden\",\"revision\":1,\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
     "event": {
      "content": "",
      "created_at": 1762675200,
-     "id": "25135a511c88865395beab2e4cb4d0a8620cbc1618628f4202952d3aea6a4036",
+     "id": "42be74b340acb266cf5a2583e8afad7bfc1907086bd12df2f1ca6bab9147e976",
      "kind": 27235,
      "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
-     "sig": "15080500dc21e33b42921e4a73fa24ab33cdbd845208b96b1342b9345dee584b2912816cc5fe98ef4436d3cc69802a29b95820fb9800e69cf9d8e95b866ee57f",
+     "sig": "c059c10073a37754f21fa2044eb1f3c57124323798403dc56d96d4b27bfdcdd79e6f8b649ff094011dec119fd4691cf91b6a164d9701268db136d69cae3b71e3",
      "tags": [
       [
        "u",
@@ -4055,20 +4414,20 @@
       ],
       [
        "payload",
-       "87e7381b70b04745ab9cf10d20fa48ee1afefedddca5b7a36ad07ad032c841da"
+       "1524baf01d49fc4a42e6388dad86c57995381bd25a0b8a8ee6cba5c8792e1041"
       ]
      ]
     }
    },
    "another_action": {
-    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"524248fd94d8c5090db7a55c115fe2c983e6323eebdb583d4df9e5f569f4fdf7\",\"kind\":30023,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"d4bb30c4a09dbacfa546a84ef622605bacc30a8073275221dfde78811779161dacba00e34a959c8847d7d4bb61f9a15cfd26966f596914041d472e4b301daa0b\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgspjvwrzmaqrakvhdj3j72kmxkqllden0tmmvq2rfxatnw747hys8crqsqqqa286xey47\",\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
+    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"524248fd94d8c5090db7a55c115fe2c983e6323eebdb583d4df9e5f569f4fdf7\",\"kind\":30023,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"d4bb30c4a09dbacfa546a84ef622605bacc30a8073275221dfde78811779161dacba00e34a959c8847d7d4bb61f9a15cfd26966f596914041d472e4b301daa0b\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgspjvwrzmaqrakvhdj3j72kmxkqllden0tmmvq2rfxatnw747hys8crqsqqqa286xey47\",\"revision\":1,\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
     "event": {
      "content": "",
      "created_at": 1762675200,
-     "id": "38b1f8e511d29a26a9483ab6dda376381fb02f9522493455cf19a3d8d3b26015",
+     "id": "95500cec708afa83ab471f71b7bef16882a816579dd49e057f02e37a04dd0b7b",
      "kind": 27235,
      "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
-     "sig": "1ca08b38cec27fb978a9542477dfae892f59db82b782c5df5c409c470fc12eaa7fb5ba2839cedb5c84b9687fd29abbaf2b7022b22e7daedea3e9652fed5963a1",
+     "sig": "7a03b4c756ece8d599e5480060466588717c7057178c4d52fe2a37af029d6de36ae045d4a72f1ad869229b3c9c81ea50fb76b0f4a6dc12de3147e710a6fafbe3",
      "tags": [
       [
        "u",
@@ -4080,20 +4439,20 @@
       ],
       [
        "payload",
-       "8e8a99530b196a9392406da90b219ab36d613b7972e29dc394f3b3a4881ea1d8"
+       "95ce37df41cc597f2676ecdb3d3ead36befcfb3beddeb2ef66dab1d8ae4d7f12"
       ]
      ]
     }
    },
    "another_ending": {
-    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"04d8acf6d88346d3101f4179bdf2061d425728f03ed5675ed7c7c1536ca2274d\",\"kind\":30023,\"pubkey\":\"3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285\",\"sig\":\"8b522175612fcc6583143c6de7a389f53cd42b190a8e435ed502c72c5b7e5486c3cd374b7e1c19ef83db7e8751d5c8bec85411e2b2d1556393693d85df97a962\",\"tags\":[[\"d\",\"vom-block-zum-buch-032c4b59\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqdhvmmd943xcmmrdvkh5atd94382cmg95crxvnrx33r2wgzyqeh0p66yuxlke0a2vem8d8mt8fses4p5hezpqguzg9ktkd5frpg2qcyqqq823c450ad2\",\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
+    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"6dffd4b51ce2c017430bab36dfb30bdc7ad10efa5f02cc01ab6d80c5a9b2b2f0\",\"kind\":30023,\"pubkey\":\"3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285\",\"sig\":\"34855780aa6ea7a13c05014dcf6b45a766148a01d605eb076d27bf8f73b813d1e07b83617afc23048a8a274dc5aa67e225bd60e3f96077df8637c08cf16370b8\",\"tags\":[[\"d\",\"vom-block-zum-buch-032c4b59\"],[\"title\",\"Vom Block zum Buch\"],[\"p\",\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"\",\"author\"]]},\"naddr\":\"naddr1qqdhvmmd943xcmmrdvkh5atd94382cmg95crxvnrx33r2wgzyqeh0p66yuxlke0a2vem8d8mt8fses4p5hezpqguzg9ktkd5frpg2qcyqqq823c450ad2\",\"revision\":1,\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
     "event": {
      "content": "",
      "created_at": 1762675200,
-     "id": "7d2922b00ef15d75f85def02ff08b6b6f19bb419ff1f2802b1434cec92d93612",
+     "id": "819ac13e7daf327f82a44d896094a5b0ec4e93b9689b9f0c93c1712e1d550818",
      "kind": 27235,
      "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
-     "sig": "008434fa2d6a6c8abb9e7ba99091bd9d7bacf531ae297342023b540b155321e24627aff023625851c565e8b0717059551138cff7f58e5556989ba7773f095cb7",
+     "sig": "bb28fa7703ba83ba52daf4873654dbb14c0a52ce44051920592c7c1f7cbedc5795a542aa94cd4060b9b78aace078aa75644da598fedbe90bdc66bc542f9e7806",
      "tags": [
       [
        "u",
@@ -4105,20 +4464,20 @@
       ],
       [
        "payload",
-       "3ce14e5ada73f82a2e68dc4e13de3d011fd1617ea8dc68a6f23ec7130adc988e"
+       "de0f5ad264ee135fd68b0c7e2cbecfba6960483b8e3406d7d75f6fc9535f4650"
       ]
      ]
     }
    },
    "another_key": {
-    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"654ada0e8a6ba473bddd28eac4a077c6d2aac7bc8b5b44bc8a2ae53b147d4282\",\"kind\":30023,\"pubkey\":\"2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc\",\"sig\":\"63f916f7b2cfea78f2820ec5585b4e17cf13ee6c72d807ce1eef5430967f212ea04a08f02b65688176914fa0b44ff0a87fd44f308cf514e936cb4ad45ff2353d\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgsz4eucnqt96wzuxgagj4f0rszkhmum4qpspz79da39a246svnahhqrqsqqqa28tcza8z\",\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
+    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"654ada0e8a6ba473bddd28eac4a077c6d2aac7bc8b5b44bc8a2ae53b147d4282\",\"kind\":30023,\"pubkey\":\"2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc\",\"sig\":\"63f916f7b2cfea78f2820ec5585b4e17cf13ee6c72d807ce1eef5430967f212ea04a08f02b65688176914fa0b44ff0a87fd44f308cf514e936cb4ad45ff2353d\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgsz4eucnqt96wzuxgagj4f0rszkhmum4qpspz79da39a246svnahhqrqsqqqa28tcza8z\",\"revision\":1,\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
     "event": {
      "content": "",
      "created_at": 1762675200,
-     "id": "a0c6de81eef2bdd7925bf97be5a2c040f0c0734a3e446e051164cb89f97e51cb",
+     "id": "47a3138c172cf94f1355b0053b43f84018add70d50a1bde3720090342ce8c597",
      "kind": 27235,
      "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
-     "sig": "256223866236c0af67e387d6cdd1982cac2920740b565f348d0198a9f46176779a219825dc0fab92a88399883887fbf13f1268a150123be0ab06a267dcda0224",
+     "sig": "833e7585216d21df205f4c34bcb348d98abe7a23470b6590ffb42210684dc159063fc25aa847cca94bccd5562d6bb21502843bc25f763aedea1929ff3b547fad",
      "tags": [
       [
        "u",
@@ -4130,20 +4489,20 @@
       ],
       [
        "payload",
-       "71d0ed564496a1b27d834013b6ca123796074fb630248a08aa7f7ff6888f7868"
+       "e3a79438c15bc6bc74b7efa10899f1596e0b4318eb391ade8a15b69e730fae6f"
       ]
      ]
     }
    },
    "another_kind": {
-    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"9e18b9d4c87b451fc46e47aa6e462ccb79e678605c9b2f4da049cec364481a34\",\"kind\":30024,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"ff76d69987b024c2406eca3ba485448f26f24cc94fa53a62781d06f99e404e8771fc314cb3e169223285e6e71e1c23ddeb553f86ff97d2f9d635d7a5b08a4558\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgspjvwrzmaqrakvhdj3j72kmxkqllden0tmmvq2rfxatnw747hys8crqsqqqa286xey47\",\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
+    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"9e18b9d4c87b451fc46e47aa6e462ccb79e678605c9b2f4da049cec364481a34\",\"kind\":30024,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"ff76d69987b024c2406eca3ba485448f26f24cc94fa53a62781d06f99e404e8771fc314cb3e169223285e6e71e1c23ddeb553f86ff97d2f9d635d7a5b08a4558\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgspjvwrzmaqrakvhdj3j72kmxkqllden0tmmvq2rfxatnw747hys8crqsqqqa286xey47\",\"revision\":1,\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
     "event": {
      "content": "",
      "created_at": 1762675200,
-     "id": "c279eed62c980f50a005c1242e80a8803310ab5ac683e1062cee6da779696c0c",
+     "id": "3fefbc3b4f17a6750ff4832aced26e4fa4e801194ce87466e572048667fccd75",
      "kind": 27235,
      "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
-     "sig": "2a0da5acb5b5df119f664a73af485c9ad4b32285d7a5cea8e71c51d2a75f2b2216c63ee1794a4108b422e0328cc5bfaa63aef8110bb3a7eb3aa80600f5c82ccc",
+     "sig": "0949bad451ae3d8e2a6aebfd2bf4c31b78a83e4602f4976c84eb24dff3147dae419b875027df9f517282e367c9d5c257367ecedccdf0cdaea1beb00cbe27adc8",
      "tags": [
       [
        "u",
@@ -4155,20 +4514,20 @@
       ],
       [
        "payload",
-       "3984ed9328f3bc7484d8ffc63bd1c1ffd2d2eb0d2ee7145efc1069453aee2faf"
+       "7e3f83f743db24526c84c146760779bad3a20796a84ebc8cff0dd3ae26d44eb5"
       ]
      ]
     }
    },
    "another_submission": {
-    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"524248fd94d8c5090db7a55c115fe2c983e6323eebdb583d4df9e5f569f4fdf7\",\"kind\":30023,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"d4bb30c4a09dbacfa546a84ef622605bacc30a8073275221dfde78811779161dacba00e34a959c8847d7d4bb61f9a15cfd26966f596914041d472e4b301daa0b\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgspjvwrzmaqrakvhdj3j72kmxkqllden0tmmvq2rfxatnw747hys8crqsqqqa286xey47\",\"submission_id\":\"358bc0673e4807cd10a6ca237833cb4d1baa9757d82184afc9446c3ff2571e5e\"}",
+    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"524248fd94d8c5090db7a55c115fe2c983e6323eebdb583d4df9e5f569f4fdf7\",\"kind\":30023,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"d4bb30c4a09dbacfa546a84ef622605bacc30a8073275221dfde78811779161dacba00e34a959c8847d7d4bb61f9a15cfd26966f596914041d472e4b301daa0b\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgspjvwrzmaqrakvhdj3j72kmxkqllden0tmmvq2rfxatnw747hys8crqsqqqa286xey47\",\"revision\":1,\"submission_id\":\"358bc0673e4807cd10a6ca237833cb4d1baa9757d82184afc9446c3ff2571e5e\"}",
     "event": {
      "content": "",
      "created_at": 1762675200,
-     "id": "a7d48c6404cf63839e5c78fa3ecfc3f32d76fc2a8f1e47f7e890443f5da70513",
+     "id": "15cc90785de237462aae07eabd59f72168366f5145621149738e48b2ffdc2989",
      "kind": 27235,
      "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
-     "sig": "90def5133c892b172b8ee85c2c37c816bd5257da6d6c7e5e922b938f157dc5c5c79a5c2fa80870eab77772df8c0d591e6e0e021e4d07872073894f6ee0d0021d",
+     "sig": "f4e0037a2e2915e8f44464cc65be7e30d1acbc5d0d3ee70a94fd274ecaaed3c7396f1dfa4c907616dd9a14f991fb21ab2d031ae4989617fe5783ac442f64a96c",
      "tags": [
       [
        "u",
@@ -4180,20 +4539,45 @@
       ],
       [
        "payload",
-       "7082824c08ceca12e0c0bb9615083bd8ff57bf4e40eb09460ea818f132fc5c98"
+       "063c301397ca00e5aca898cc291f00b939c918cb48bd80dc1cd74c1ecf2f8689"
+      ]
+     ]
+    }
+   },
+   "another_writers_work_at_the_works_d": {
+    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"128a8968f5e3a85595acb359d6b9ce9df048e896549bc314a75daa58602cbea4\",\"kind\":30023,\"pubkey\":\"3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285\",\"sig\":\"69eb468ba41376e5516f0994090a7e3b6746fbb91d0c0d72549c8e79184043e3d7a01bedec18c25dfd7acfd4cf748a2b9ed5b8c0951aa762eceefc719001a449\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"],[\"p\",\"9195d0475fa8deef9f6be73a2626f03b05f83cb9bf1362eac01972ff654fd2f4\",\"\",\"author\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgsrxau8tgnsm7m9l4fn8va5ldvaxrxz5xjlygyprsfqkewek3yv9pgrqsqqqa282svd0z\",\"revision\":1,\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
+    "event": {
+     "content": "",
+     "created_at": 1762675200,
+     "id": "78377c70106c966859dc44bfde174c04daabb3273ff8208a86372765ef4e0c57",
+     "kind": 27235,
+     "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
+     "sig": "6ee3aeadffb1243eaa9ff7d71cb9c7698ae458ad0ab4f98714e9d247853861300b647727f842c15864272f922acf992eb55934ab8ce056703aa25ca31a6becfc",
+     "tags": [
+      [
+       "u",
+       "https://standup.example/api/submissions/101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f/published"
+      ],
+      [
+       "method",
+       "POST"
+      ],
+      [
+       "payload",
+       "32fad4a85defb2135b08f49c102d9b8cea1b3b3b5bc460c8843062d50cb39f47"
       ]
      ]
     }
    },
    "the_ending_in_upper_case": {
-    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"51aeb219d8a885baa3055a3d5b626b15bca24252f4c75b05f9af440aa48774dd\",\"kind\":30023,\"pubkey\":\"3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285\",\"sig\":\"3bf5351cde8dc8ee5246318272e0a92fb48053b77838cf3fe82856b0a8ed99750ebf9e8054a7673d4f7448c1a072f1073cef322e9ae467578d2f647d029910e6\",\"tags\":[[\"d\",\"vom-block-zum-buch-101A5F49\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqdhvmmd943xcmmrdvkh5atd94382cmg95cnqv2px4rrgwgzyqeh0p66yuxlke0a2vem8d8mt8fses4p5hezpqguzg9ktkd5frpg2qcyqqq823cajn6ec\",\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
+    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"7c11fca46c282e3db98bdb94bc9ace322093bc2f936b1b39a22a76455b83a3e3\",\"kind\":30023,\"pubkey\":\"3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285\",\"sig\":\"08fcdc5ad13a44c0e5ba6653d8c653008a6f2e19944cc02c4eb05f7df5941a2c3f9a4c2a6ba44a118ce484058a11e210165758537449e6537bf8e4561c15c3fe\",\"tags\":[[\"d\",\"vom-block-zum-buch-101A5F49\"],[\"title\",\"Vom Block zum Buch\"],[\"p\",\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"\",\"author\"]]},\"naddr\":\"naddr1qqdhvmmd943xcmmrdvkh5atd94382cmg95cnqv2px4rrgwgzyqeh0p66yuxlke0a2vem8d8mt8fses4p5hezpqguzg9ktkd5frpg2qcyqqq823cajn6ec\",\"revision\":1,\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
     "event": {
      "content": "",
      "created_at": 1762675200,
-     "id": "25534e8e4d5285af77845c02a2d137425b31951c227a3a5572e7f22069975fdd",
+     "id": "cc68e8da0463a4b39048fb140b49807eef5ec490655dd34347d623f16472b575",
      "kind": 27235,
      "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
-     "sig": "057e3ee593c5ceff2cb75ff1ab8189634dec87fe74b944602ff8ebd8775bdbc2b85604298d6ac36db7e6394621cb2513c1c6b1c39947e534796244e167487f8a",
+     "sig": "d7ccb17b52efaa7da6a20d1b467e9ea9410932969f2d78ee433b58416f248e3033c218096c48033d194a3793b791e27d9b1debfdb9f8acec18f8a133bce9af26",
      "tags": [
       [
        "u",
@@ -4205,20 +4589,20 @@
       ],
       [
        "payload",
-       "38d4a3a072dbbbb0a7f5c1ee18e8de22120c80a8a70b0f4fc8c43756feab0439"
+       "6651c43de62de4aadd60d013700c0f6a76429926e0db73cde2d4045bbc51fa83"
       ]
      ]
     }
    },
    "the_ending_on_the_writers_side": {
-    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"c2568f6364b0f8f919c1ea5a1ec79b1bcc7de86293d2bc078c1e8d492c03c740\",\"kind\":30023,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"0dceeeb0f2eecca0f64aaa76e51b4735fe2257b06996c0db80479598af6fc1497f1ff780c3c1c08ef13d643c14057e4ae361dbd3cfdbbf3f0b18655601f6ccee\",\"tags\":[[\"d\",\"vom-block-zum-buch-101a5f49\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqdhvmmd943xcmmrdvkh5atd94382cmg95cnqvtpx4nrgwgzyqvnrscklgqldn9mv5vhj4ke4s8lmwvm677mqzs6fh2umh404eyp7qcyqqq823csw4ppl\",\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
+    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"c2568f6364b0f8f919c1ea5a1ec79b1bcc7de86293d2bc078c1e8d492c03c740\",\"kind\":30023,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"0dceeeb0f2eecca0f64aaa76e51b4735fe2257b06996c0db80479598af6fc1497f1ff780c3c1c08ef13d643c14057e4ae361dbd3cfdbbf3f0b18655601f6ccee\",\"tags\":[[\"d\",\"vom-block-zum-buch-101a5f49\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqdhvmmd943xcmmrdvkh5atd94382cmg95cnqvtpx4nrgwgzyqvnrscklgqldn9mv5vhj4ke4s8lmwvm677mqzs6fh2umh404eyp7qcyqqq823csw4ppl\",\"revision\":1,\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
     "event": {
      "content": "",
      "created_at": 1762675200,
-     "id": "75f9189658897cbde59ec3072f388e218040fae174aef122df4d3abe9b373de3",
+     "id": "27be91e70dd38c5c729da46e96f72bbc1942aa81fecbda51f7b9971f3638f37c",
      "kind": 27235,
      "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
-     "sig": "ece8cbff082703ac7d6b628746ed37fd584b1fd23d62cd765f3b5d28d14bb2e4588e3a4e8858e4ebc28dcc6b0641b6b2db41f5f4c8f9003475b882261556d945",
+     "sig": "b61fc2bd103b682d7f31f59877d327fb1067764b48994677c265a7f2c7179b4a9d274a653265a844dc73998d22885431ddb282469917629367e326b9faf37121",
      "tags": [
       [
        "u",
@@ -4230,20 +4614,20 @@
       ],
       [
        "payload",
-       "f7bb558ee0f7cab542728d6ed9a16fb27e8a08214e515b378bb2955b9443d231"
+       "2c5cfbb53765f11f6ad0df0d92c82d8f770e4b331f4e68060a9c876b4efc3661"
       ]
      ]
     }
    },
    "the_publication_at_another_d": {
-    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"03734c16bcfab5bc971d08dc759c339faf20fd926f7418b2dd03ac686823e28a\",\"kind\":30023,\"pubkey\":\"3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285\",\"sig\":\"f6a1eb78f36277dfe4345648962b6e11987505a7c3ab643c10aae05c2a85dfe3664276d7059d5ce814da94eb86e5b412268689e667d03310647a1cf64a99e74a\",\"tags\":[[\"d\",\"anderes-werk\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqxxzmnyv4ex2uedwajhy6czyqeh0p66yuxlke0a2vem8d8mt8fses4p5hezpqguzg9ktkd5frpg2qcyqqq823cwne6qa\",\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
+    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"f46f5500f19504183c141dbf0098feff21c4666e8e0107ae2c062a2602eed542\",\"kind\":30023,\"pubkey\":\"3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285\",\"sig\":\"1e1f13be5907d44aa40b7d834f92bc4f7c6cf5552954bec8acbf73dc0d1a395c541481193354bf72994aff7769de6963088cd81093d3e638df9485db8ab494d3\",\"tags\":[[\"d\",\"anderes-werk\"],[\"title\",\"Vom Block zum Buch\"],[\"p\",\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"\",\"author\"]]},\"naddr\":\"naddr1qqxxzmnyv4ex2uedwajhy6czyqeh0p66yuxlke0a2vem8d8mt8fses4p5hezpqguzg9ktkd5frpg2qcyqqq823cwne6qa\",\"revision\":1,\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
     "event": {
      "content": "",
      "created_at": 1762675200,
-     "id": "a676b8d9d1507ec678f2099a4f79fd15db3e5e867086faf7319484bfb36f4e62",
+     "id": "b597261e78f2b22a21d85587316b1460e03699544007d7a21e3c13e636e1045d",
      "kind": 27235,
      "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
-     "sig": "aeafe4cb0729ac28ff567b47e6ad7def35363150ae4a3aaef3c37a50c6c8adf0969f886566a63785bc3be64cb6ed27c030b3b226127b60a1179572ac6ed772ff",
+     "sig": "765cb5caa1356b137638e071e49e523936ac4e5fc41c3306faa648241a36fd672a78eb432a2233cc464e684625c327da89e4ce1ac8c72337cbcd79b5bfab39d4",
      "tags": [
       [
        "u",
@@ -4255,20 +4639,45 @@
       ],
       [
        "payload",
-       "0882c67b7ab686b8d3e4e1ea3a935dc6f683dd8a20ee63d9641429ab3abc2786"
+       "f0fb6b030479d6e3d894a35a2b363601905f1306710c664cc6bc8341be23c42f"
+      ]
+     ]
+    }
+   },
+   "the_publications_work_crediting_nobody": {
+    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"073a9682ec78b2dd2c19a8ec0518f16147361f0e4b5f0b035f4e6bef43584ec2\",\"kind\":30023,\"pubkey\":\"3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285\",\"sig\":\"4c0720d57c636ecf57b83a816c2a5c571c3f9d2b461ae5ced62607139f9752b4c477e90b078d209091a900517ba871d87766dbe4905830f09807628db1318a4e\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgsrxau8tgnsm7m9l4fn8va5ldvaxrxz5xjlygyprsfqkewek3yv9pgrqsqqqa282svd0z\",\"revision\":1,\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
+    "event": {
+     "content": "",
+     "created_at": 1762675200,
+     "id": "3d53880a615b90156d92d5cda2ca0f1d1e48bb7596b53c05a610c5ce7bc9b93f",
+     "kind": 27235,
+     "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
+     "sig": "f72519a2b4e64f28f41896394db2429b29a45057c0c880c8d94b0098db8c8cd169c0634077d96e6cf6bdbc453879753020df01446ffc1806f4607fb1fbea2cef",
+     "tags": [
+      [
+       "u",
+       "https://standup.example/api/submissions/101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f/published"
+      ],
+      [
+       "method",
+       "POST"
+      ],
+      [
+       "payload",
+       "aab9daab992a821121d6100656ee86e5adc999380745607fa2c0732cfaff0094"
       ]
      ]
     }
    },
    "the_writer_at_another_d": {
-    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"d1141caf865a04183861b6bb9d466017074a2b72ef29326db82282140b31fb40\",\"kind\":30023,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"7e7709eab7eda9819676356d6e81b6023464ae0016c9b4731123c5dc59c09309d4238bf2cf7b8e52ea4c0242a1088c7d1940d1567437b0b7b564eb72091a6edc\",\"tags\":[[\"d\",\"anderes-werk\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqxxzmnyv4ex2uedwajhy6czyqvnrscklgqldn9mv5vhj4ke4s8lmwvm677mqzs6fh2umh404eyp7qcyqqq823cfwxden\",\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
+    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"d1141caf865a04183861b6bb9d466017074a2b72ef29326db82282140b31fb40\",\"kind\":30023,\"pubkey\":\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"sig\":\"7e7709eab7eda9819676356d6e81b6023464ae0016c9b4731123c5dc59c09309d4238bf2cf7b8e52ea4c0242a1088c7d1940d1567437b0b7b564eb72091a6edc\",\"tags\":[[\"d\",\"anderes-werk\"],[\"title\",\"Vom Block zum Buch\"]]},\"naddr\":\"naddr1qqxxzmnyv4ex2uedwajhy6czyqvnrscklgqldn9mv5vhj4ke4s8lmwvm677mqzs6fh2umh404eyp7qcyqqq823cfwxden\",\"revision\":1,\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
     "event": {
      "content": "",
      "created_at": 1762675200,
-     "id": "56af5ca4fef66a1a0bb1175c0cdad98b9769c9313c3fab9ff90dd9344eaa29f7",
+     "id": "bfe2d92a5da61b540a1079a4eb08dcf0808848c507d38470e6decec57c382431",
      "kind": 27235,
      "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
-     "sig": "c6a00af37e435137d63c95c55e4c3008cedf3a55334b7a13b2692de035eb0d9f94a73cc7342041192e448a1c9fd02b79f05f04330e83f1fbce0fb1f7329f7d30",
+     "sig": "9b1329030526a684883781eaa08f89b5401eb7645c0da4f4ccb2fd3bc7872c48b1d302b92909535efe73781cfee6cbc0bae5dfee52ceafee51cb5bfcaf242b24",
      "tags": [
       [
        "u",
@@ -4280,7 +4689,32 @@
       ],
       [
        "payload",
-       "0b012a637a3d38eeae70901b47ec704aa55a20c3f9561faf1d5cd5dd5be963fa"
+       "c6d5c1724d9eb3b5e72a50fdaa7d128149977f943c67066aae570b43e6466e3b"
+      ]
+     ]
+    }
+   },
+   "the_writer_credited_only_after_another": {
+    "body": "{\"event\":{\"content\":\"# Vom Block zum Buch\",\"created_at\":1762675200,\"id\":\"3f951c869b90db02cfcfa2a660c131856da510c7c367e1ce3bb30768eb5fd5ef\",\"kind\":30023,\"pubkey\":\"3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285\",\"sig\":\"ab0cbcb24dc96689436898652a246bfbbab93b7045d1d5d1fa142435c159a5447a6216ace3805f67386a31322ec6fccda72aa3b171045b6fc5472f20f9af460b\",\"tags\":[[\"d\",\"vom-block-zum-buch\"],[\"title\",\"Vom Block zum Buch\"],[\"p\",\"9195d0475fa8deef9f6be73a2626f03b05f83cb9bf1362eac01972ff654fd2f4\",\"\",\"author\"],[\"p\",\"1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f\",\"\",\"author\"]]},\"naddr\":\"naddr1qqf8vmmd943xcmmrdvkh5atd94382cmgqgsrxau8tgnsm7m9l4fn8va5ldvaxrxz5xjlygyprsfqkewek3yv9pgrqsqqqa282svd0z\",\"revision\":1,\"submission_id\":\"101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f\"}",
+    "event": {
+     "content": "",
+     "created_at": 1762675200,
+     "id": "e392d8e74cd5c0d3162471facd9ccd064ffec947ea55d69c5cd898336ca270d1",
+     "kind": 27235,
+     "pubkey": "c0965e90b2d345a66cc708c60dbb0074b4e1f13ad50aaffba2406e64af0d52e8",
+     "sig": "f8aa11f3051551067dbe747a72d4e22ebc9b8b6c7e589b7f804554cb1306607bbcc3c089f2ec9a72e2798fce55b20b70bb7664b85854de3bc4d79df4051d80b3",
+     "tags": [
+      [
+       "u",
+       "https://standup.example/api/submissions/101a5f49ee6718b6dddcc7581bbae18ac49a5ff190d6955f74551d3ccd3b5a8f/published"
+      ],
+      [
+       "method",
+       "POST"
+      ],
+      [
+       "payload",
+       "00668ed70b3f5f4b78f3ffc1487e7e3c2163df705922c339783cdc5ef97e10d9"
       ]
      ]
     }
@@ -6084,5 +6518,156 @@
    "to": null
   }
  ],
- "v": 1
+ "v": 1,
+ "writer_release": {
+  "address": "30023:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:vom-block-zum-buch",
+  "may": {
+   "nothing_there": {
+    "address_taken": false,
+    "held": null
+   },
+   "the_writers_own_version_crediting_nobody": {
+    "address_taken": false,
+    "held": {
+     "content": "# Vom Block zum Buch",
+     "created_at": 1762674600,
+     "id": "c9ab47eb05e52c14580e9a10710ed62083b520d3b476352cb9de794644088673",
+     "kind": 30023,
+     "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+     "sig": "906339ae9fd2ffe27c0fa463b4ce7f208edb7760bb4ebf769dc4f22b9b1594bfc268f6336b9d6a6b0fc0181660c853061de0efc2680a409a239b9ef5cf07285f",
+     "tags": [
+      [
+       "d",
+       "vom-block-zum-buch"
+      ],
+      [
+       "title",
+       "Vom Block zum Buch"
+      ]
+     ]
+    }
+   },
+   "the_writers_own_version_crediting_the_writer_first": {
+    "address_taken": false,
+    "held": {
+     "content": "# Vom Block zum Buch",
+     "created_at": 1762674600,
+     "id": "c26030011dd7210ebc9aee9d0b6f8acd01b554b11aa51acdaff68005014ae252",
+     "kind": 30023,
+     "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+     "sig": "96e2153108c3db6d33c79fd144b05ded7a880bbeb541728cdd87ab93ff104e37cb84c8349a5bb7eb484a03118aca752005cb8197a95d39df7df6f40d03a5f7d0",
+     "tags": [
+      [
+       "d",
+       "vom-block-zum-buch"
+      ],
+      [
+       "title",
+       "Vom Block zum Buch"
+      ],
+      [
+       "p",
+       "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+       "",
+       "author"
+      ],
+      [
+       "p",
+       "9195d0475fa8deef9f6be73a2626f03b05f83cb9bf1362eac01972ff654fd2f4",
+       "",
+       "author"
+      ]
+     ]
+    }
+   }
+  },
+  "must_fail": {
+   "a_work_crediting_another_writer": {
+    "address_taken": false,
+    "held": {
+     "content": "# Vom Block zum Buch",
+     "created_at": 1762674600,
+     "id": "a83b1f7eba96ca3f31cc35ceaee5a12ccf12e6d5d504f8f0c818c9bf2ea37e77",
+     "kind": 30023,
+     "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+     "sig": "6bcf349000cd8b51b46680ab885f09b44d78a64d3ffda91dded695c8fffcadcd19fba923dc4aea0969789bf917d0c1837b70fc1b4231309763d772d0791f7f72",
+     "tags": [
+      [
+       "d",
+       "vom-block-zum-buch"
+      ],
+      [
+       "title",
+       "Vom Block zum Buch"
+      ],
+      [
+       "p",
+       "9195d0475fa8deef9f6be73a2626f03b05f83cb9bf1362eac01972ff654fd2f4",
+       "",
+       "author"
+      ]
+     ]
+    }
+   },
+   "another_submissions_work": {
+    "address_taken": true,
+    "held": {
+     "content": "# Vom Block zum Buch",
+     "created_at": 1762674600,
+     "id": "c9ab47eb05e52c14580e9a10710ed62083b520d3b476352cb9de794644088673",
+     "kind": 30023,
+     "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+     "sig": "5a1b1e1393250dbeeed684638843507f3c2068e4bd8c8a821ae254afff6522523d8171587ce81797f1cbe18d2ac853f7dc01b73631d9b0a87e540bf2f9d0c890",
+     "tags": [
+      [
+       "d",
+       "vom-block-zum-buch"
+      ],
+      [
+       "title",
+       "Vom Block zum Buch"
+      ]
+     ]
+    }
+   },
+   "another_submissions_work_the_index_no_longer_holds": {
+    "address_taken": true,
+    "held": null
+   },
+   "the_writer_credited_only_after_another": {
+    "address_taken": false,
+    "held": {
+     "content": "# Vom Block zum Buch",
+     "created_at": 1762674600,
+     "id": "60abcf0544bd3e76a96af91438b76ac2dd244424e09b5672a43faed70a860ea3",
+     "kind": 30023,
+     "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+     "sig": "18456687f75eb07a386eacabead98bc0e79a527b19b55078fa5545b5bf1b002da2d31bad41821220328b53b35ee799f5adaf87aa4ac24838c7dffc26029e4793",
+     "tags": [
+      [
+       "d",
+       "vom-block-zum-buch"
+      ],
+      [
+       "title",
+       "Vom Block zum Buch"
+      ],
+      [
+       "p",
+       "9195d0475fa8deef9f6be73a2626f03b05f83cb9bf1362eac01972ff654fd2f4",
+       "",
+       "author"
+      ],
+      [
+       "p",
+       "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+       "",
+       "author"
+      ]
+     ]
+    }
+   }
+  },
+  "writer": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285"
+ }
 }

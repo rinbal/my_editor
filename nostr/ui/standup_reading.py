@@ -364,12 +364,22 @@ class Reading:
             live(account, lambda _error: done(None)),
             served=record.wraps.get(account.writer))
 
-    @staticmethod
-    def _formers(state: _Open, detail) -> None:
+    def _formers(self, state: _Open, detail) -> None:
         """The people who left that a read served, joined by pubkey
-        (contract 10: a later page needs only the new ones)."""
+        (contract 10: a later page needs only the new ones). A decision
+        that does not verify at the current revision's epoch has its own
+        revision read (``?revision=n``), once, and is checked again."""
         if state.formers is None:
-            state.formers = Formers(detail.submission.publication)
+            sid, generation = detail.submission.submission_id, self._generation
+
+            def want(revision: int) -> None:
+                def read() -> None:
+                    if generation == self._generation and self._details.get(sid) is state:
+                        self.version(sid, revision,
+                                     lambda _v: self._owner.detail_changed.emit(sid))
+                self._later(0, read)
+
+            state.formers = Formers(detail.submission.publication, want)
         state.formers.join(detail.former)
 
     @staticmethod

@@ -457,8 +457,9 @@ def action_verified(event: views.TimelineEvent, sid: str, signers: Optional[Iter
     signer = event.signed.event.get("pubkey")
     if body is None or signer != event.actor:
         return False
+    at = event.signed.event.get("created_at")
     if signer not in set(signers) and (formers is None or not formers.decides(
-            signer, event.name, body, decisions=DECISIONS)):
+            signer, event.name, body, decisions=DECISIONS, at=at)):
         return False
     return event.name not in DECISIONS or body.get("outcome") == event.name
 

@@ -186,7 +186,8 @@ def verify_revision(view: SubmissionView, record: RevisionRecord, *,
     signer = signed.event["pubkey"]
     if correction:
         _need(signer in set(redaktion) or (formers is not None and formers.decides(
-            signer, "correction", body, decisions=())), "signed by someone without that role")
+            signer, "correction", body, decisions=(), at=signed.event.get("created_at"))),
+            "signed by someone without that role")
     if proposed:
         return _proposal(view, record, body, signer)
     _need(formats.is_int(body.get("revision"), low=1) and body["revision"] == record.revision,

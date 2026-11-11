@@ -1,4 +1,4 @@
 # Test fixtures
 
-- `standup_editorial_fixtures.json`: the shared test vectors of STANDUP's editorial contract v1, copied unchanged from `docs/editorial-fixtures.json` in EINUNDZWANZIG STANDUP (branch `feat/redaktion`, file at commit 2e866e9; contract `docs/editorial-contract.md` v1 at commit 2e866e9). Regenerate there with `docs/editorial-fixtures/generate.py`, never edit here.
+- `standup_editorial_fixtures.json`: the shared test vectors of STANDUP's editorial contract v1, copied unchanged from `docs/editorial-fixtures.json` in EINUNDZWANZIG STANDUP (branch `feat/redaktion`, file at commit 53ff043; contract `docs/editorial-contract.md` v1 at commit 53ff043). Regenerate there with `docs/editorial-fixtures/generate.py`, never edit here.
 - `media-preview.mp4`: a short clip for the media preview tests.
