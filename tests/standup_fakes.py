@@ -418,6 +418,8 @@ class Record:
     receipts: Dict[int, dict] = dc_field(default_factory=dict)
     timeline: List[dict] = dc_field(default_factory=list)
     confirmations: Dict[str, List[str]] = dc_field(default_factory=dict)
+    # A correction stored and not yet published (11.2 at ceac858).
+    correction_pending: bool = False
     published: Optional[dict] = None
     placed: bool = False
     updated_at: int = 0
@@ -1015,6 +1017,8 @@ class FakeStandupServer:
             if record.step == "writer_publishes":
                 return {"type": "writer", "pubkey": record.submitter, "pending": []}
             return {"type": "releaser", "pubkey": None, "pending": []}
+        if state == "published" and record.correction_pending and record.signer == "writer":
+            return {"type": "writer", "pubkey": record.writer, "pending": []}
         if state == "published" and not record.placed:
             return {"type": "releaser", "pubkey": None, "pending": []}
         return {"type": "none", "pubkey": None, "pending": []}
@@ -1984,6 +1988,12 @@ class FakeStandupServer:
                     formats.coordinate_hash(event["pubkey"], d) != record.coordinate_hash:
                 return _error(422, "invalid")
             action = "published_by_writer"
+            if record.state == "published" and record.correction_pending:
+                # The writer publishes the correction they confirmed (12.4).
+                record.correction_pending = False
+                record.published = {"naddr": body.get("naddr"), "event_id": event["id"]}
+                self._event(record, "published", who)
+                return _ok({"submission": self.view(record)})
         else:
             role = "releaser" if who.pubkey in pub.releasers else role
             action = "published_by_release"
@@ -2029,6 +2039,7 @@ class FakeStandupServer:
             created_at=int(self.clock()), signed=who.signed)
         if "changed_since_acceptance" not in record.marks:
             record.marks.append("changed_since_acceptance")
+        record.correction_pending = record.state == "published"
         seq = self._event(record, "correction", who, revision=body["revision"])
         return _ok({"submission": self.view(record), "seq": seq})
 

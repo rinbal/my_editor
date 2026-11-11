@@ -295,9 +295,26 @@ class Reading:
         done = on_done or (lambda _version: None)
         account = self._account
         latest = record.revision == view.revision
+        correction = record.signed is not None and views.signed_path(
+            record.signed) == views.action_path("correction", sid)
+        writer = self._writer_revision(state, record.revision)
+        if correction and writer is None and record.revision > 1:
+            # A correction takes its p_sub, kind and title from the writer's
+            # verified revision before it: that one is opened first (M-4).
+            def walked(before: Optional[Version]) -> None:
+                if before is None or self._writer_revision(state, record.revision) is None:
+                    if latest:
+                        state.not_confirmed = True
+                    done(None)
+                    return
+                self._open_version(sid, state, view, record, on_done)
+
+            self.version(sid, record.revision - 1, walked)
+            return
         try:
             verified = opening.verify_revision(
-                view, record, redaktion=rules.deciders_of(state.members or ()))
+                view, record, redaktion=rules.deciders_of(state.members or ()),
+                writer_revision=writer if correction else None)
         except opening.NotConfirmed:
             if latest:
                 state.not_confirmed = True
@@ -340,6 +357,16 @@ class Reading:
             account.signer, verified, account.writer, live(account, with_key),
             live(account, lambda _error: done(None)),
             served=record.wraps.get(account.writer))
+
+    @staticmethod
+    def _writer_revision(state: _Open, before: int):
+        """The writer's newest verified revision before ``before`` opened
+        here (not a correction), or None."""
+        for number in sorted((n for n in state.versions if n < before), reverse=True):
+            opened = state.versions[number].opened
+            if opened is not None and not opened.verified.correction:
+                return opened.verified
+        return None
 
     def _keep_key(self, view, record, verified, secret: bytes) -> None:
         """A contributor's opened key goes into their own list (13)."""
@@ -391,6 +418,15 @@ class Reading:
         items = [state.items[seq] for seq in sorted(state.items)]
         return publishing.verified_accept(items, sid, rules.deciders_of(state.members),
                                           self.checks)
+
+    def published_event(self, sid: str) -> Optional[dict]:
+        """The article as it stands in public (``publishing.verified_published``),
+        once the submission was read; None otherwise."""
+        state, row = self._details.get(sid), self._owner.row(sid)
+        if state is None or row is None or not row.d:
+            return None
+        items = [state.items[seq] for seq in sorted(state.items)]
+        return publishing.verified_published(items, sid, row.writer, row.d, self.checks)
 
     def accepted_split(self, sid: str) -> Optional[Tuple[Tuple[str, int, str], ...]]:
         """The split to confirm (9.4): ``(pubkey, weight, role)`` of the

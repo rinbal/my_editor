@@ -51,9 +51,10 @@ from i18n import N_, _
 from .. import bech32
 from ..outbox.policy import relays_from
 from ..publish_pipeline import not_taken_words
-from ..publisher import PublishJob
+from ..publisher import PublishJob, published_at_of
 from ..signer_limits import signable, size_problem, through_signer_app
 from ..standup import formats, opening, publishing
+from ..standup.errors import cause_words
 from ..standup.publishing import Accepted
 from .standup_account import live
 
@@ -99,6 +100,8 @@ class PublishPorts:
     - ``serve(view)``: the server's newer View, for the list and the detail.
     - ``reread(on_view, on_failure)``: the submission's View, read now.
     - ``clock()``: seconds.
+    - ``confirm(confirms, revision_hash, on_done)``: ``/confirmation``
+      (a correction's run confirms it first).
     """
 
     api: object
@@ -110,6 +113,7 @@ class PublishPorts:
     serve: Callable
     reread: Callable
     clock: Callable[[], float] = time.time
+    confirm: Optional[Callable] = None
 
 
 class HeldPublish(PublishJob):
@@ -171,22 +175,32 @@ def publish_job(*, here: bool, **kwargs):
 def run_for(following, account, profile, sid: str, *, store, fetch, session_pool, relay_pool,
             relay_directory, entitled_relays=None, parent=None) -> Optional["AcceptedPublish"]:
     """The one publish run of ``sid``, made when the verified newest
-    accept names the verified revision opened here and the writer signs;
-    None while it does not (the detail offers Publish only then). A run
-    of the same revision goes on (its signed article is kept); one of
-    another revision is let go."""
+    accept names the verified revision opened here and the writer signs
+    (or, for a published work, when that revision is a verified
+    correction and the article as it stands in public is known: a
+    :class:`CorrectionPublish`); None while it does not (the detail
+    offers the action only then). A run of the same revision goes on
+    (its signed article is kept); one of another revision is let go."""
     row = following.row(sid)
     view = row.view if row is not None else None
     version = following.reading.latest(sid)
-    accepted = following.reading.accepted(sid)
     run = following.publishing.get(sid)
     if run is not None and view is not None and run.revision_hash == view.revision_hash:
         return run
-    if (view is None or version is None or version.opened is None or accepted is None
+    if (view is None or version is None or version.opened is None
             or view.signer != "writer" or view.writer != profile.user_pubkey
-            or not accepted.revision == view.revision == version.revision
-            or version.revision_hash != view.revision_hash):
+            or version.revision != view.revision or version.revision_hash != view.revision_hash):
         return None
+    correction = version.opened.verified.correction
+    if correction:
+        published = following.reading.published_event(sid)
+        accepted = Accepted(revision=view.revision, split_rumor_id=None, actor="", seq=0)
+        if view.state != "published" or published is None:
+            return None
+    else:
+        published, accepted = None, following.reading.accepted(sid)
+        if accepted is None or accepted.revision != view.revision:
+            return None
     if run is not None:
         run.stop()
     api = following.api_for(sid)
@@ -200,14 +214,19 @@ def run_for(following, account, profile, sid: str, *, store, fetch, session_pool
                            session_pool=session_pool, profile=profile, unsigned_event=unsigned,
                            entitled_relays=entitled_relays or (), parent=parent)
 
+    def confirm(confirms, revision_hash: str, on_done) -> None:
+        following.confirm(sid, confirms=confirms, revision_hash=revision_hash,
+                          split_rumor_id=None, on_done=on_done)
+
     ports = PublishPorts(api=api, media_keys=account.media_keys, store=store, fetch=fetch,
-                         job=job, serve=following.serve, reread=reread,
+                         job=job, serve=following.serve, reread=reread, confirm=confirm,
                          key_here=lambda: session_pool.key_here(profile.user_pubkey))
-    run = following.publishing[sid] = AcceptedPublish(
-        sid=sid, profile=profile, version=version, accepted=accepted,
-        revision_hash=view.revision_hash,
-        publication=following.publication_name(view.publication), ports=ports,
-        parent=following)
+    made = dict(sid=sid, profile=profile, version=version, accepted=accepted,
+                revision_hash=view.revision_hash,
+                publication=following.publication_name(view.publication), ports=ports,
+                parent=following)
+    run = following.publishing[sid] = (CorrectionPublish(published=published, **made)
+                                       if correction else AcceptedPublish(**made))
     return run
 
 
@@ -229,6 +248,8 @@ class AcceptedPublish(QObject):
         self._publication, self._ports = publication, ports
         self.writer = str(profile.user_pubkey)
         self.stage = Stage.READY
+        # What the submission's state must still be before the relays.
+        self.expected_state = "accepted"
         self.title, self.words = "", ""
         self.naddr = ""
         self.event: Optional[dict] = None          # signed, bound to ``revision_hash``
@@ -452,7 +473,7 @@ class AcceptedPublish(QObject):
             if self._stopped or job is not self._job:
                 return
             self._ports.serve(view)
-            if view.revision_hash != self.revision_hash or view.state != "accepted" \
+            if view.revision_hash != self.revision_hash or view.state != self.expected_state \
                     or view.revision != self._accepted.revision:
                 self._drop(job)
                 return
@@ -514,5 +535,63 @@ class AcceptedPublish(QObject):
         self.changed.emit()
 
 
-__all__ = ["AcceptedPublish", "HeldPublish", "PublishPorts", "SignedHere", "Stage",
+TAKING = N_("Taking the correction …")
+TAKEN = N_("Correction taken.")
+NOT_TAKEN = N_("Correction not taken")
+
+
+class CorrectionPublish(AcceptedPublish):
+    """Korrektur übernehmen (M-4 M15; plan 8.6; 12.4): the correction is
+    confirmed alone (``["correction"]``, its verified hash), then
+    published again under the writer's key at the address of the article
+    as it stands in public (``published``: the event of the newest
+    verified ``published`` action), keeping its first date; its
+    ``created_at`` comes after that event's, so relays keep the newer."""
+
+    def __init__(self, *, published: dict, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._published, self._taken = published, False
+        self.expected_state = "published"
+
+    @property
+    def d(self) -> str:
+        return formats.tag_value(self._published, "d") or super().d
+
+    @property
+    def published_at(self) -> Optional[int]:
+        return published_at_of(self._published)
+
+    def _template(self, urls: Mapping[str, str]) -> dict:
+        event = super()._template(urls)
+        before = self._published.get("created_at")
+        if isinstance(before, int) and event["created_at"] <= before:
+            event["created_at"] = before + 1
+        return event
+
+    def start(self, *, here: bool = False) -> None:
+        if self._taken or self.stage is Stage.WORKING:
+            super().start(here=here)
+            return
+        self._say(Stage.WORKING, _(TAKING), _(BUSY_SIGNING))
+
+        def confirmed(error) -> None:
+            if self._stopped:
+                return
+            if error is not None:
+                cause = cause_words(getattr(error, "code", ""))
+                self._say(Stage.FAILED, _(NOT_TAKEN), _(cause))
+                return
+            self._taken = True
+            self.stage = Stage.READY
+            super(CorrectionPublish, self).start(here=here)
+
+        self._ports.confirm(("correction",), self.revision_hash, confirmed)
+
+    def _say(self, stage: Stage, title: str, words: str) -> None:
+        if stage is Stage.DONE:
+            title = _(TAKEN)
+        super()._say(stage, title, words)
+
+
+__all__ = ["AcceptedPublish", "CorrectionPublish", "HeldPublish", "PublishPorts", "SignedHere", "Stage",
            "offers_here", "publish_job", "run_for"]

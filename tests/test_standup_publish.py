@@ -228,3 +228,77 @@ def test_too_long_for_the_signer_app_with_the_key_here_offers_it_once(accepted, 
     run, store, jobs = _run(accepted, key_here=False, profile=remote)
     run.start()
     assert run.stage is Stage.FAILED and store.uploaded == []
+
+
+def _correct(case, content: str):
+    """The editor's correction (revision 2) of the published work."""
+    from nostr.standup import formats
+    from tests.standup_fakes import KEY_EVENT
+    import json
+    sid, world = case.sid, case.world
+    s_sub = case.writer.submissions.entry(sid).s_sub
+    rev = formats.build_revision(
+        submission_id=sid, revision=2, kind="article",
+        work={"title": "Ein Jahr mit Lightning im Café", "content": content, "d": "ein-jahr"},
+        rights={"confirmed": True, "license": None}, media=[case.entry],
+        change_summary="Zwei Zahlen korrigiert.", client="MyEditor tests")
+    sealed = scrypto.seal_revision(rev, bytes.fromhex(s_sub))
+    wraps = scrypto.wrap_submission_key(sid, bytes.fromhex(s_sub), {
+        "redaktion": json.loads(KEY_EVENT["content"])["pubkey"], "writer": pk("writer")})
+    answer = []
+    world.editor.correction(sid, revision=2, revision_hash=sealed.revision_hash,
+                            envelope=sealed.envelope_b64, envelope_sha256=sealed.envelope_sha256,
+                            wraps=wraps, blobs=[], on_success=answer.append,
+                            on_failure=answer.append)
+    world.settle()
+    assert hasattr(answer[0], "submission"), answer
+
+
+def test_a_correction_taken_is_confirmed_alone_then_replaces_the_article_keeping_its_date(
+        accepted):
+    # M-4 M15: bound to the correction's verified revision, at the address
+    # and with the first date of the article as it stands in public.
+    from nostr.ui.standup_publish import CorrectionPublish
+    first, _store, jobs = _run(accepted)
+    first.start()
+    accepted.world.settle()
+    published = jobs[0].signed_event
+    accepted.world.clock.advance(60)
+    _correct(accepted, f"Korrigiert ![]({accepted.entry['ref']})")
+    following = accepted.following
+    following.refresh()
+    accepted.world.settle()
+    following.open(accepted.sid)
+    accepted.world.settle()
+    row = following.row(accepted.sid)
+    assert row.situation.name == "CORRECTION"
+    version = following.reading.latest(accepted.sid)
+    assert version is not None and version.opened.verified.correction    # walked back
+    ports = first._ports
+    confirmed = []
+
+    def confirm(confirms, revision_hash, done):
+        confirmed.append((tuple(confirms), revision_hash))
+        following.confirm(accepted.sid, confirms=confirms, revision_hash=revision_hash,
+                          split_rumor_id=None, on_done=done)
+
+    from dataclasses import replace
+    from nostr.standup.publishing import Accepted
+    run = CorrectionPublish(
+        published=following.reading.published_event(accepted.sid), sid=accepted.sid,
+        profile=accepted.writer.profile, version=version,
+        accepted=Accepted(revision=2, split_rumor_id=None, actor="", seq=0),
+        revision_hash=row.view.revision_hash, publication="Magazin",
+        ports=replace(ports, confirm=confirm))
+    run.start()
+    accepted.world.settle()
+    assert run.stage is Stage.DONE, (run.title, run.words)
+    assert confirmed == [(("correction",), row.view.revision_hash)]
+    event = jobs[-1].signed_event
+    assert ["published_at", publishing_tag(published)] in event["tags"]
+    assert event["created_at"] > published["created_at"] and "Korrigiert" in event["content"]
+    assert following.row(accepted.sid).situation.name != "CORRECTION"
+
+
+def publishing_tag(event):
+    return next(tag[1] for tag in event["tags"] if tag[0] == "published_at")

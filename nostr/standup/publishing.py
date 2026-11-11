@@ -261,6 +261,30 @@ def verified_accept(items: Sequence[views.TimelineItem], sid: str,
                     actor=event.actor or "", seq=item.seq)
 
 
+
+def verified_published(items: Sequence[views.TimelineItem], sid: str, writer: str, d: str,
+                       checks: Optional[rules.SignedChecks] = None) -> Optional[dict]:
+    """The article as it stands in public, for a correction to replace
+    (plan 8.6): the event of the newest ``published`` action the writer
+    signed, when that event is the writer's kind 30023 at ``d``; else
+    None. Never a server's word alone (12.4)."""
+    for item in sorted(items, key=lambda each: each.seq, reverse=True):
+        event = item.event
+        if event is None or event.name != "published":
+            continue
+        if not rules.action_verified(event, sid, (writer,), checks):
+            return None
+        body = (checks or rules.SignedChecks()).body(
+            event.signed, path=views.action_path("published", sid), sid=sid) or {}
+        published = body.get("event")
+        if (isinstance(published, dict) and published.get("kind") == 30023
+                and published.get("pubkey") == writer
+                and formats.tag_value(published, "d") == d):
+            return published
+        return None
+    return None
+
+
 __all__ = ["Accepted", "EXTENSIONS", "NEVER_CARRIED", "NotPublishable", "addresses_before", "credited",
            "media_refs_in", "media_to_publish", "published_template",
-           "served_at", "verified_accept", "work_of"]
+           "served_at", "verified_accept", "verified_published", "work_of"]

@@ -46,6 +46,7 @@ from .standup_compare import CompareDialog, Comparer
 from .standup_publications import publication_logo
 from ..standup.errors import Code, cause_words
 from .standup_confirm_sheet import ConfirmSheet
+from .standup_correction_sheet import CorrectionSheet
 from .standup_publish import Stage
 from .standup_publish_sheet import PublishSheet
 from .standup_revise_sheet import ReviseSheet, comparable
@@ -149,6 +150,7 @@ class SubmissionsHost(QObject):
         self._sheet: Optional[ReviseSheet] = None
         self._publish_sheet: Optional[PublishSheet] = None
         self._confirm_sheet: Optional[ConfirmSheet] = None
+        self._correction_sheet: Optional[CorrectionSheet] = None
         self._typing = QTimer(self)
         self._typing.setSingleShot(True)
         self._typing.setInterval(FOLLOW_MS)
@@ -196,10 +198,12 @@ class SubmissionsHost(QObject):
         self.view.set_following(None, signed_in=False)
         self.pill.clear()
         self.comparer.stop()
-        for sheet in (self._dialog, self._sheet, self._publish_sheet, self._confirm_sheet):
+        for sheet in (self._dialog, self._sheet, self._publish_sheet, self._confirm_sheet,
+                      self._correction_sheet):
             if sheet is not None and shiboken6.isValid(sheet):
                 sheet.reject()
         self._dialog = self._sheet = self._publish_sheet = self._confirm_sheet = None
+        self._correction_sheet = None
         noticed, self._noticed = self._noticed, {}
         for ed, (_sid, text) in noticed.items():
             notice = self._ports.notice_of(ed) if shiboken6.isValid(ed) else None
@@ -302,7 +306,8 @@ class SubmissionsHost(QObject):
                 rules.Action.PUBLISH: self.publish,
                 rules.Action.VIEW: self.view_published,
                 rules.Action.CONFIRM: self.confirm,
-                rules.Action.REMIND: self.remind}
+                rules.Action.REMIND: self.remind,
+                rules.Action.COMPARE_CORRECTION: self.compare_correction}
 
     def _on_action(self, sid: str, action) -> None:
         handler = self.actions().get(action)
@@ -492,6 +497,37 @@ class SubmissionsHost(QObject):
         sheet.edit_profile_requested.connect(ports.edit_profile)
         ports.keep(sheet)
         sheet.open()
+
+    def compare_correction(self, sid: str) -> None:
+        """Vergleichen … (M15): the correction beside the writer's version
+        before it, and Korrektur übernehmen, bound to the correction's
+        verified revision."""
+        row, following, ports = self._row(sid), self._following, self._ports
+        if row is None or row.view is None:
+            return
+        run = ports.standup().publisher(ports.profile(), sid)
+        if run is None or row.view.revision < 2:
+            self._say_in_place(sid, _(NOT_OPENED))
+            return
+
+        def with_before(before) -> None:
+            if self._following is not following:
+                return
+            if before is None:
+                ports.say(_(NOT_OPENED))
+                return
+            new = run.revision.get("work") or {}
+            sheet = self._correction_sheet = CorrectionSheet(
+                run=run, publication=following.publication_name(row.publication),
+                old=comparable(str(before.work.get("content") or "")),
+                new=comparable(str(new.get("content") or "")),
+                note=str(run.revision.get("change_summary") or ""), comparer=self.comparer,
+                is_dark=ports.is_dark(), parent=ports.window())
+            sheet.ask_requested.connect(lambda words: self.ask(sid, words))
+            ports.keep(sheet)
+            sheet.open()
+
+        following.version(sid, row.view.revision - 1, with_before)
 
     def ask(self, sid: str, words: str) -> None:
         """Rückfrage stellen: the detail of ``sid``, its composer holding

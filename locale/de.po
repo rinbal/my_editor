@@ -13447,3 +13447,25 @@ msgstr "Erinnerung gesendet."
 
 msgid "Already reminded today."
 msgstr "Heute schon erinnert."
+
+msgid "If you take it, the correction replaces the article at the same address. The date of publication stays."
+msgstr "Übernimmst du sie, ersetzt die Korrektur den Artikel unter derselben Adresse. Das Datum der Veröffentlichung bleibt."
+
+msgid "A short question about the correction: "
+msgstr "Kurze Frage zur Korrektur: "
+
+msgid "Take the Correction"
+msgstr "Korrektur übernehmen"
+
+#, python-brace-format
+msgid "Correction from {publication}"
+msgstr "Korrektur von {publication}"
+
+msgid "Taking the correction …"
+msgstr "Wird übernommen …"
+
+msgid "Correction taken."
+msgstr "Korrektur übernommen."
+
+msgid "Correction not taken"
+msgstr "Korrektur nicht übernommen"
