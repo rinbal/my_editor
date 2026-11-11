@@ -17,6 +17,7 @@ from nostr import events
 from nostr.standup import crypto as scrypto
 from nostr.standup import formats, publishing, views
 from nostr.ui.standup_publish import AcceptedPublish, PublishPorts, Stage
+from nostr.ui.standup_unlisted import QUICK_TRIES
 from tests.standup_following_fakes import FollowWorld
 from tests.standup_vectors import VECTORS, pk, sk
 
@@ -361,10 +362,12 @@ def test_a_public_work_whose_report_did_not_arrive_says_so_and_is_reported_again
 
 def test_after_a_restart_a_public_work_still_says_so_and_is_reported_once_the_view_opens(
         accepted):
-    # RG-M4-b 3: the signed article is kept (never a key) and reported again
-    # when the Einreichungen view first opens, never at launch.
+    # RG-M4-b 3: the signed article is kept (never a key) and, with the key
+    # on this computer, reported again when the Einreichungen view first
+    # opens, never at launch.
     from nostr.standup import following as rules
     world = accepted.world
+    accepted.writer.profile.is_local = True
     _flaky_report(accepted.writer.api, [1])
     run, _store, _jobs = _run(accepted)
     run.start()
@@ -382,6 +385,64 @@ def test_after_a_restart_a_public_work_still_says_so_and_is_reported_once_the_vi
     _waiting(world, 30000)
     assert world.record(accepted.sid).state == "published" and record.sids() == []
     assert again.row(accepted.sid).situation is rules.Situation.PUBLISHED_UNPLACED
+
+
+def _days_pass(world, days):
+    """The waits the world holds run when due, the clock moving with them,
+    for ``days``."""
+    end, seen = world.clock() + days * 86400, []
+    while True:
+        for entry in world.later.waiting:
+            if not any(entry is known for known, _due in seen):
+                seen.append((entry, world.clock() + entry[0] / 1000))
+        waiting = [(due, entry) for entry, due in seen if any(
+            entry is held for held in world.later.waiting)]
+        if not waiting or min(due for due, _entry in waiting) > end:
+            break
+        due, entry = min(waiting, key=lambda pair: pair[0])
+        world.later.waiting.remove(entry)
+        world.clock.advance(max(0.0, due - world.clock()))
+        entry[1]()
+        world.settle()
+    world.clock.advance(max(0.0, end - world.clock()))
+
+
+def test_through_a_signer_app_a_week_brings_three_quick_tries_and_one_ride_along_a_run(
+        accepted):
+    # The lead's fix to the M4 open list (the calm rule): through a signer
+    # app the quiet report tries at most 3 times right after the publish;
+    # then a try only rides along with a signer action of the person's, and
+    # never more than one such request per run, restart or not; after 7 days
+    # it is let go. Each report is one signed request (NIP-98), so its calls
+    # count the signer app's asks over the week.
+    world, sid, following = accepted.world, accepted.sid, accepted.following
+    calls = _flaky_report(accepted.writer.api, [10 ** 6])
+    run, _store, _jobs = _run(accepted)
+    run.start()
+    world.settle()
+    assert calls == [sid]                                   # the run's own report
+    _days_pass(world, 1)
+    assert len(calls) == 1 + QUICK_TRIES                    # then nothing on its own
+    for text in ("Ist es angekommen?", "Und jetzt?"):       # the person signs here twice
+        assert following.talk.send(sid, text) == ""
+        world.settle()
+    assert len(calls) == 2 + QUICK_TRIES                    # one ride-along, not two
+    following.stop()                                        # a restart
+    world.later.waiting.clear()
+    again = world.following(accepted.writer, unlisted=following.unlisted.record)
+    again.view_opened()
+    again.open(sid)
+    world.settle()
+    _days_pass(world, 5)
+    assert len(calls) == 2 + QUICK_TRIES                    # none at all on its own
+    for text in ("Hallo?", "Noch da?"):
+        assert again.talk.send(sid, text) == ""
+        world.settle()
+    assert len(calls) == 3 + QUICK_TRIES                    # this run's one
+    _days_pass(world, 2)
+    again.talk.send(sid, "Eine Woche später")
+    world.settle()
+    assert len(calls) == 3 + QUICK_TRIES and again.row(sid).publishing == ""     # let go
 
 
 def test_the_key_kept_here_is_wiped_after_its_signature_and_goes_with_the_run(accepted):
@@ -784,8 +845,10 @@ def test_each_submission_has_its_own_delete_token_of_at_most_32_files():
             on_done([] if len(self.batches) == 1 else list(pairs))   # the first token fails
 
     store, kept = Refusing(), {}
+    from nostr.ui.standup_unlisted import RideAlong
     owner = QObject()
     owner.detail_changed = SimpleNamespace(connect=lambda _slot: None)
+    owner.ride_along = RideAlong()
     cleaner = BlobCleanup(owner, SimpleNamespace(writer=pk("writer"), stopped=False), None,
                           store=store,
                           cleanups=Cleanups(pk("writer"), load=lambda: kept,
@@ -794,6 +857,8 @@ def test_each_submission_has_its_own_delete_token_of_at_most_32_files():
     records = Cleanups(pk("writer"), load=lambda: kept, save=kept.__setitem__)
     assert store.batches == [[(files[0], SERVER)], [(files[1], SERVER)]]
     assert not records.entry("a")["over"] and records.entry("b")["over"]
+    cleaner._delete({"c": (None, pairs)}, one_request=True)     # a ride-along: one token
+    assert store.batches[2:] == [batches[0]] and not records.entry("c")["over"]
 
 
 def _published_with_pictures():

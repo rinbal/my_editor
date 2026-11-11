@@ -7,15 +7,23 @@ it (RG-M4-b 3; editorial contract 12.4 ``/published``;
 A publish run whose report did not arrive hands the signed article over
 (:meth:`QuietReport.hand_over`): the work is public, so the run, the
 list, the pill and the detail say so ("»Titel« ist öffentlich.
-<Publikation> erfährt es gleich."), and this reports it again after a
-growing pause. One the server refused because its publication lists
-another work at the link name (409 ``address_taken``) is only kept as
-that: trying again would meet the same answer.
+<Publikation> erfährt es gleich."), and this reports it again. One the
+server refused because its publication lists another work at the link
+name (409 ``address_taken``) is only kept as that: trying again would
+meet the same answer.
+
+Each report is a signed request. With the key on this computer no one is
+asked, so the whole schedule runs: after a growing pause, for seven
+days, after a restart from when the Einreichungen view first opens
+(never at launch). Through a signer app the calm rule holds (the lead's
+fix to the M4 open list): right after the publish, in that run, at most
+:data:`QUICK_TRIES` tries with the same pauses; after that a try only
+rides along with the next signer action the person takes here anyway
+(:class:`RideAlong`), and never more than one such unannounced request
+per run, shared with the cleanup of the private copies.
 
 Nothing is said either way (lessons 36): a report that arrives makes the
-work listed, which the rows show. After a restart the record is read
-again when the Einreichungen view first opens (never at launch, so
-starting the app asks no signer). A signer app that declined is not
+work listed, which the rows show. A signer app that declined is not
 asked again in this run; an answer that will not change (the work is
 another revision's, the person no longer its writer) ends the record.
 """
@@ -23,7 +31,7 @@ another revision's, the person no longer its writer) ends the record.
 from __future__ import annotations
 
 import time
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, List, Optional
 
 from PySide6.QtCore import QObject
 
@@ -36,23 +44,54 @@ from .standup_account import live
 _AGAIN = frozenset({*PASSING, Code.RATE_LIMITED, Code.SIGNER_UNREACHABLE, Code.UNAVAILABLE,
                     Code.BAD_RESPONSE, Code.AUTH_REQUIRED, Code.AUTH_INVALID,
                     Code.SESSION_EXPIRED})
+# Through a signer app: the quiet tries right after the publish, in its run.
+QUICK_TRIES = 3
+
+
+class RideAlong:
+    """At most one unannounced signer request per run (per account), and
+    only right after a signer action the person took: the riders are
+    asked in turn, the first that asks something uses it up."""
+
+    def __init__(self) -> None:
+        self._riders: List[Callable[[], bool]] = []
+        self.used = False
+
+    def join(self, rider: Callable[[], bool]) -> None:
+        """``rider()`` asks the signer app once and says True, or says
+        False when it has nothing to ask."""
+        self._riders.append(rider)
+
+    def person_signed(self) -> None:
+        """The person's own signer action went through."""
+        if self.used:
+            return
+        for rider in self._riders:
+            if rider():
+                self.used = True
+                return
 
 
 class QuietReport(QObject):
     """One per account's Following. ``record`` is the account's
-    :class:`unlisted.Unlisted`; ``later(ms, call)`` and ``clock`` are seams."""
+    :class:`unlisted.Unlisted`; ``here()`` says the key is on this
+    computer; ``ride_along`` the account's :class:`RideAlong`;
+    ``later(ms, call)`` and ``clock`` are seams."""
 
     def __init__(self, following, account, *, record: unlisted.Unlisted,
                  later: Callable[[int, Callable[[], None]], None],
+                 here: Callable[[], bool], ride_along: RideAlong,
                  clock: Callable[[], float] = time.time,
                  parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self._following, self._account, self._record = following, account, record
-        self._later, self._clock = later, clock
+        self._later, self._clock, self._here = later, clock, here
         self._listed: Dict[str, Callable] = {}     # sid -> the run's answer, in this run
+        self._quick: Dict[str, int] = {}           # sid -> quiet tries after its publish
         self._waiting: set = set()                 # a try is due or on its way
         self._resting: set = set()                 # the signer app declined: not this run
         self._resumed = self._stopped = False
+        ride_along.join(self._ride)
 
     @property
     def record(self) -> unlisted.Unlisted:
@@ -60,9 +99,10 @@ class QuietReport(QObject):
 
     def state(self, sid: str) -> str:
         """:data:`rules.PUBLIC` or :data:`rules.NOT_LISTED` for a work kept
-        here, else ``""``."""
+        here, else ``""`` (also once it was tried long enough: it is let go
+        at the next resume or ride)."""
         entry = self._record.entry(sid)
-        if entry is None:
+        if entry is None or unlisted.over(entry, self._clock()):
             return ""
         return rules.NOT_LISTED if entry.get("taken") else rules.PUBLIC
 
@@ -78,11 +118,13 @@ class QuietReport(QObject):
                                               now=self._clock(), taken=taken))
         if on_listed is not None:
             self._listed[sid] = on_listed
+        self._quick[sid] = 0
         self._schedule(sid)
 
     def resume(self) -> None:
-        """Once per run, when the view first opens: every work kept from
-        before is reported again when due; one tried long enough goes."""
+        """Once per run, when the view first opens: one tried long enough
+        goes; with the key here, every other is reported again when due
+        (through a signer app only as a ride-along)."""
         if self._resumed or self._stopped:
             return
         self._resumed = True
@@ -105,24 +147,49 @@ class QuietReport(QObject):
 
     # -- trying --------------------------------------------------------------------------
 
+    def _may_wait(self, sid: str) -> bool:
+        """Whether a try may come on its own, after its pause."""
+        return self._here() or self._quick.get(sid, QUICK_TRIES) < QUICK_TRIES
+
     def _schedule(self, sid: str) -> None:
         entry = self._record.entry(sid)
         if self._stopped or entry is None or entry.get("taken") or sid in self._waiting \
-                or sid in self._resting:
+                or sid in self._resting or not self._may_wait(sid):
             return
         self._waiting.add(sid)
         wait = max(0.0, float(entry.get("next", 0)) - self._clock())
         self._later(int(wait * 1000), lambda: self._try(sid))
 
-    def _try(self, sid: str) -> None:
+    def _ride(self) -> bool:
+        """The ride-along: one kept work reported now, through a signer
+        app (with the key here the schedule needs none); one tried long
+        enough goes without a request."""
+        if self._stopped or self._here():
+            return False
+        now = self._clock()
+        for sid in self._record.sids():
+            entry = self._record.entry(sid)
+            if entry is not None and unlisted.over(entry, now):
+                self.forget(sid)
+            elif entry is not None and not entry.get("taken") \
+                    and sid not in self._waiting and sid not in self._resting:
+                self._waiting.add(sid)
+                self._try(sid, riding=True)
+                return True
+        return False
+
+    def _try(self, sid: str, *, riding: bool = False) -> None:
         if self._stopped:
             return
-        entry = self._record.entry(sid)
-        if entry is None or not unlisted.due(entry, self._clock()):
+        entry, now = self._record.entry(sid), self._clock()
+        if entry is None or entry.get("taken") or unlisted.over(entry, now) or not (
+                riding or unlisted.due(entry, now)):
             self._waiting.discard(sid)
-            if entry is not None and unlisted.over(entry, self._clock()):
+            if entry is not None and unlisted.over(entry, now):
                 self.forget(sid)
             return
+        if not riding and not self._here():
+            self._quick[sid] = self._quick.get(sid, 0) + 1
 
         def reported(view) -> None:
             self._waiting.discard(sid)
@@ -151,4 +218,4 @@ class QuietReport(QObject):
             on_success=live(self._account, reported), on_failure=live(self._account, not_reported))
 
 
-__all__ = ["QuietReport"]
+__all__ = ["QUICK_TRIES", "QuietReport", "RideAlong"]

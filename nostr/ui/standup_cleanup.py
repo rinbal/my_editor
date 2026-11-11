@@ -14,9 +14,14 @@ removes it).
 
 When: with the key on this computer, whenever the detail of a published
 submission of the writer's was read and the cleanup is due (no one is
-asked). Through a signer app never at launch: right after the person
-published with it here, once per run, for every due submission read in
-this run: one authorization each, of at most 32 files (RG-M4-a 10).
+asked). Through a signer app never at launch, and calmly (the lead's fix
+to the M4 open list): right after the person published with it here,
+that submission's own, said just before (RG-M4-b 12); any other due
+submission read in this run only as the account's one ride-along
+(:class:`~.standup_unlisted.RideAlong`: after a signer action the person
+took, at most one such request per run, so of its first 32 files; the
+rest wait for another). One authorization each, of at most 32 files
+(RG-M4-a 10).
 
 It is quiet either way (lessons 36): housekeeping the person never asked
 for. A server that failed is asked again after a pause, for seven days.
@@ -29,6 +34,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QObject
 
+from ..blossom.store import delete_batches
 from ..standup import cleanup
 from .standup_account import live
 
@@ -47,12 +53,12 @@ class BlobCleanup(QObject):
         self._cleanups = cleanups or cleanup.Cleanups(account.writer)
         self._running: set = set()
         self._unknown: set = set()        # a revision did not verify: not again this run
-        self._asked = False                # a signer app: one round per run
         self._waiting: set = set()         # published here, its report being read
         # sid -> what says, right before the signer app is asked, that it
         # asks once more and why (RG-M4-b 12).
         self._telling: Dict[str, Callable[[], None]] = {}
         following.detail_changed.connect(self._read)
+        following.ride_along.join(self._ride)
 
     @property
     def _here(self) -> bool:
@@ -62,10 +68,20 @@ class BlobCleanup(QObject):
         """A detail was read (also one this cleanup asked for)."""
         if self._here:
             self._clean([sid])
-        elif sid in self._waiting and not self._asked and self._due(sid):
+        elif sid in self._waiting and self._due(sid):
             self._waiting.discard(sid)
-            self._asked = True
-            self._clean([sid, *(s for s in self._following.reading.read_sids() if s != sid)])
+            self._clean([sid])                 # said right before it asks
+
+    def _ride(self) -> bool:
+        """The ride-along through a signer app: one due submission read in
+        this run is cleaned now (with the key here none is needed)."""
+        if self._here:
+            return False
+        due = next((sid for sid in self._following.reading.read_sids() if self._due(sid)), None)
+        if due is None:
+            return False
+        self._clean([due], one_request=True)
+        return True
 
     def after_publishing(self, sid: str,
                          on_asking: Optional[Callable[[], None]] = None) -> None:
@@ -89,7 +105,8 @@ class BlobCleanup(QObject):
                 and cleanup.due(self._cleanups.entry(sid), self._clock())
                 and self._following.reading.published(sid) is not None)
 
-    def _clean(self, sids: Sequence[str]) -> None:
+    def _clean(self, sids: Sequence[str], *, one_request: bool = False) -> None:
+        """``one_request``: the ride-along, one authorization at most."""
         sids = [sid for sid in dict.fromkeys(sids) if self._due(sid)]
         if not sids:
             return
@@ -98,7 +115,7 @@ class BlobCleanup(QObject):
 
         def next_one(rest: List[str]) -> None:
             if not rest:
-                self._delete(plan)
+                self._delete(plan, one_request=one_request)
                 return
             sid = rest[0]
 
@@ -147,7 +164,8 @@ class BlobCleanup(QObject):
 
     # -- deleting ----------------------------------------------------------------------------
 
-    def _delete(self, plan: Dict[str, Tuple[Optional[dict], List[cleanup.Pair]]]) -> None:
+    def _delete(self, plan: Dict[str, Tuple[Optional[dict], List[cleanup.Pair]]], *,
+                one_request: bool = False) -> None:
         """One authorization per submission (RG-M4-a 10; the store splits
         one naming more files than a server reads): one that fails fails
         only its own submission, which is asked again after its pause."""
@@ -165,6 +183,8 @@ class BlobCleanup(QObject):
                 next_one()
 
             asked = cleanup.left(entry, pairs)
+            if asked and one_request:
+                asked = delete_batches(asked)[0]      # the rest after its pause
             if asked:
                 tell = self._telling.pop(sid, None)
                 if tell is not None:

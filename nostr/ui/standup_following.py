@@ -60,7 +60,7 @@ from ..standup.watcher import (
 from .standup_account import live
 from .standup_reading import Detail, Reading, Version, secret_of
 from .standup_talk import Outgoing, Talk
-from .standup_unlisted import QuietReport
+from .standup_unlisted import QuietReport, RideAlong
 
 # What an article's notice is about (plan 7.4): a message, or a result.
 NEWS_EVENTS = ("request_changes", "accept", "decline", "published", "correction")
@@ -127,8 +127,13 @@ class Following(QObject):
         self.publishing: Dict[str, object] = {}
         # Public works whose report did not arrive, reported again quietly
         # (RG-M4-b 3); the app keeps them across restarts, a test does not.
-        self.unlisted = QuietReport(self, account, record=unlisted or Unlisted.in_memory(
-            account.writer), later=later, clock=clock, parent=self)
+        # Through a signer app at most one unannounced request per run,
+        # right after one of the person's own (the report and the cleanup).
+        self.ride_along = RideAlong()
+        self.unlisted = QuietReport(
+            self, account, record=unlisted or Unlisted.in_memory(account.writer), later=later,
+            here=lambda: bool(getattr(account.profile, "is_local", False)),
+            ride_along=self.ride_along, clock=clock, parent=self)
         self._going: Dict[str, str] = {}
         # (sid, pubkey) -> when the server took a reminder or said it had
         # one today (RG-M4-b 11): that person's Erinnern goes.
@@ -576,6 +581,7 @@ class Following(QObject):
             self._account.read_state.mark(out.sid, seq)
             self._noticed[out.sid] = max(self._noticed.get(out.sid, 0), seq)
         self.detail_changed.emit(out.sid)
+        self.ride_along.person_signed()
 
     def _reread(self, sid: str, on_done: Callable[[Optional[Dict[str, int]]], None]) -> None:
         """The conversation read again, whole: the gift wrap ids it
@@ -594,6 +600,7 @@ class Following(QObject):
             self.detail_changed.emit(sid)
             self._watcher.refresh()
             on_done(None)
+            self.ride_along.person_signed()
 
         self.api_for(sid).withdraw(sid, live(account, withdrawn), live(account, on_done))
 
@@ -607,6 +614,7 @@ class Following(QObject):
             self.serve(view)
             self.detail_changed.emit(sid)
             on_done(None)
+            self.ride_along.person_signed()
 
         def refused(error: StandupError) -> None:
             if error.status == 409:
@@ -627,6 +635,8 @@ class Following(QObject):
                 self._reminded[(sid, to)] = self._clock()
             on_done(error)
             self.detail_changed.emit(sid)
+            if error is None:
+                self.ride_along.person_signed()
 
         self.api_for(sid).remind(sid, to=to, on_success=live(self._account, lambda _ok: answered(
             None)), on_failure=live(self._account, answered))
