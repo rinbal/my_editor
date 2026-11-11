@@ -837,19 +837,26 @@ def test_an_escape_in_a_web_address_is_saved_escaped():
 
 
 class _Counted(str):
-    """A text that counts how often a scan reads a character of it."""
+    """A text that counts how often a scan reads a character of it, one
+    by one or by looking for something in it."""
     reads = 0
 
     def __getitem__(self, key):
         _Counted.reads += 1
         return super().__getitem__(key)
 
+    def find(self, sub, start=0, end=None):
+        found = super().find(sub, start, len(self) if end is None else end)
+        _Counted.reads += (len(self) if found < 0 else found) - start
+        return found
 
-@pytest.mark.parametrize("run", ["](a (b ", "![a ", "](x", "![a](x"])
+
+@pytest.mark.parametrize("run", ["](a (b ", "![a ", "](x", "![a](x", "a `b` c "])
 def test_the_escape_scan_reads_a_text_once_however_many_openers_it_holds(run):
     # Gate RG-PG2E-c 5 and RG-PG2E-d 3: each opener nothing closed was
-    # followed to the end of the text, or of its address: twice the text,
-    # four times the reading.
+    # followed to the end of the text, or of its address, and each code
+    # span looked for the end of its paragraph: twice the text, four times
+    # the reading.
     import markdown_scan
     reads = []
     for count in (1000, 2000):

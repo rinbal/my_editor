@@ -82,19 +82,20 @@ def code_lines(lines: List[str]) -> List[bool]:
     return out
 
 
-def code_span_end(text: str, start: int) -> int:
+def code_span_end(text: str, start: int, found: Optional[Found] = None) -> int:
     """Where the code span opening at ``start`` (a run of backticks) ends,
-    or where the run ends when nothing closes it (then it is text)."""
+    or where the run ends when nothing closes it (then it is text);
+    ``found`` keeps where a paragraph's end and backticks were found."""
     run = 0
     while start + run < len(text) and text[start + run] == "`":
         run += 1
     at = start + run
     # A code span ends with its paragraph.
-    limit = text.find("\n\n", at)
-    limit = len(text) if limit < 0 else limit
+    limit = _next_of(text, "\n\n", at, found)
+    ticks = "`" * run
     while True:
-        close = text.find("`" * run, at, limit)
-        if close < 0:
+        close = _next_of(text, ticks, at, found)
+        if close >= limit:
             return start + run
         end = close + run
         if end < len(text) and text[end] == "`":
@@ -105,14 +106,14 @@ def code_span_end(text: str, start: int) -> int:
         return end
 
 
-def skip_inline(text: str, at: int) -> Optional[int]:
+def skip_inline(text: str, at: int, found: Optional[Found] = None) -> Optional[int]:
     """Where an escape, a code span, an autolink or a tag at ``at`` ends;
-    None when none starts there."""
+    None when none starts there. ``found`` as for code_span_end."""
     char = text[at]
     if char == "\\" and at + 1 < len(text) and text[at + 1] in ESCAPABLE:
         return at + 2
     if char == "`":
-        return code_span_end(text, at)
+        return code_span_end(text, at, found)
     if char == "<":
         found = _AUTOLINK_OR_TAG.match(text, at)
         return found.end() if found else None
@@ -123,10 +124,11 @@ class Found:
     """What the scans of one text found: the ``]`` closing each ``[`` a
     scan for a bracket passed (None: nothing does), where each address
     a scan passed ends (_bare_address_end), and where the closer of a
-    title, a ``>`` and a line's end were looked for last. A scan that
-    starts where an earlier one passed steps as it did from there on, so the earlier answer is its
-    own: a text full of openers nothing closes is read once, not once
-    for each of them to the end of the paragraph or the text."""
+    title, a ``>``, a line's or a paragraph's end and backticks were
+    looked for last. A scan that starts where an earlier one passed steps
+    as it did from there on, so the earlier answer is its own: a text full
+    of openers nothing closes is read once, not once for each of them to
+    the end of the paragraph or the text."""
 
     def __init__(self) -> None:
         self.brackets: Dict[int, Optional[int]] = {}
@@ -146,7 +148,7 @@ def label_end(text: str, at: int, found: Optional[Found] = None) -> Optional[int
     while index < len(text):
         if text.startswith("\n\n", index) or text.startswith("\n \n", index):
             break
-        skipped = skip_inline(text, index)
+        skipped = skip_inline(text, index, found)
         if skipped is not None:
             index = skipped
             continue
@@ -301,7 +303,7 @@ def pictures(markdown: str) -> List[Tuple[int, int, int]]:
         if end is not None:
             index = end + 1
             continue
-        skipped = skip_inline(markdown, index)
+        skipped = skip_inline(markdown, index, scanned)
         if skipped is not None:
             index = skipped
             continue
@@ -348,7 +350,7 @@ def escapes(markdown: str) -> List[int]:
             close = destination_end(markdown, index + 1, scanned)
             index = index + 2 if close is None else close + 1
         else:
-            skipped = skip_inline(markdown, index)
+            skipped = skip_inline(markdown, index, scanned)
             if skipped == index + 2 and markdown[index] == "\\":
                 found.append(index)
             index = index + 1 if skipped is None else skipped
