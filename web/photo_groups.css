@@ -2,8 +2,8 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * Photo groups in the HTML export, as STANDUP shows them. Vendored as it
- * is: lines 476-578 and 621-833 of STANDUP backend/htmlgen/article.css
- * (commit 60a0aee), then the full view of the photo grid reference
+ * is: lines 476-578 and 621-865 of STANDUP backend/htmlgen/article.css
+ * (commit bf7c1fb), then the full view of the photo grid reference
  * (reference/build/inner.css, "Full view") until STANDUP ships its
  * photo_viewer.css. export_html.py inlines this file in every page and
  * gives .article-content the variables these rules read.
@@ -222,7 +222,9 @@
    the screen edges through the page gutter, so the next picture peeks in.
    Its shapes differ by at most 1.6 times, so no picture shows smaller than
    5/8 of its size alone. Without script it still swipes; photo_groups.js
-   adds the dots, the spoken position and the arrow keys. */
+   adds the dots, the spoken position and the arrow keys. The dots' room (a
+   44 px row, 4 px under the strip) is the strip's from the start, and the
+   pager stands in it, so dots that come or go move nothing on the page. */
 .article-content .e21-pg-pager { display: none; }
 @media screen {
   @container pg (max-width: 599.98px) {
@@ -231,6 +233,7 @@
       flex-direction: row;
       align-items: flex-start;
       align-self: stretch;
+      margin-block-end: 48px;
       margin-inline: calc(-1 * var(--article-gutter, 0px));
       padding-inline: var(--article-gutter, 0px);
       scroll-padding-inline: var(--article-gutter, 0px);
@@ -247,13 +250,16 @@
       flex-wrap: wrap;
       justify-content: center;
       align-items: center;
-      margin-top: -4px;
+      block-size: 44px;
+      margin-block-start: calc(-44px - var(--pg-gap));
     }
     .article-content .e21-pg-pager[hidden] { display: none; }
+    /* Each dot is a 44 x 44 px target (Apple's minimum) around the 7 px dot
+       it draws; photo_groups.js shows dots only while all fit in a row. */
     .article-content .e21-pg-dot {
       display: grid;
       place-items: center;
-      inline-size: 24px;
+      inline-size: 44px;
       block-size: 44px;
       padding: 0;
       border: 0;
@@ -279,6 +285,8 @@
       font: 0.8125rem/1 var(--e21-ui-font);
       font-variant-numeric: tabular-nums;
     }
+    .article-content .e21-pg-dot[hidden],
+    .article-content .e21-pg-count[hidden] { display: none; }
   }
 }
 .article-content .e21-pg-sr {
@@ -293,6 +301,31 @@
 @media (forced-colors: active) {
   .article-content .e21-pg-dot::before { background: CanvasText; }
   .article-content .e21-pg-dot[aria-current="true"]::before { background: Highlight; }
+}
+/* Increase Contrast: every dot drawn whole, the current one ringed. */
+@media (prefers-contrast: more) {
+  .article-content .e21-pg-dot::before { opacity: 1; }
+  .article-content .e21-pg-dot[aria-current="true"]::before { outline: 2px solid var(--theme-text-heading); outline-offset: 2px; }
+}
+
+/* An article of very many groups (200 and more: the page marks it, and
+   photo_groups.js does where a page did not). Thousands of strips that swipe
+   cost WebKit seconds for every frame (measured on a phone: 10,000 groups,
+   17 s to load and 4 s for each scrolled screen, growing with the square of
+   their number). There a group is laid out and painted only near the view,
+   and far away it holds a guessed height until its own is known. Such a
+   group clips what it paints, so it takes the page gutter (6 px at least,
+   for the focus rings) into its box as padding and gives it back as margin:
+   its column keeps its width, and a strip still reaches the screen edges.
+   Every other article is untouched. */
+@media screen {
+  .article-content[data-pg-many]:not([data-surface="editor"]) .e21-imagegroup {
+    --pg-pad: max(var(--article-gutter, 0px), 6px);
+    content-visibility: auto;
+    contain-intrinsic-block-size: auto 300px;
+    margin: calc(2em - 6px) calc(-1 * var(--article-bleed, 0px) - var(--pg-pad));
+    padding: 6px var(--pg-pad);
+  }
 }
 
 /* Safari 15 has no container queries: the wide rules apply at every width,
