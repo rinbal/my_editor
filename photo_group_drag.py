@@ -182,14 +182,17 @@ class Preview:
         return best
 
     def paint(self, painter: QPainter, now: float, *, accent: QColor, surface: QColor,
-              words: str) -> None:
-        """The group in the order shown, over where the document draws it."""
+              words: str, lifted: bool = True) -> None:
+        """The group in the order shown, over where the document draws it:
+        the picture that moves faint where it would land while it is
+        ``lifted`` (it follows the pointer), else drawn there with a ring
+        (moved with the keys)."""
         painter.fillRect(self.area().adjusted(-2, -2, 2, 2), surface)
         boxes = self.boxes(now)
         settled = self.scale == 1.0 and not self.moving(now)
         for number, (unit, figure) in enumerate(zip(self.units, self._figures)):
             box = boxes[_key_of(unit, self.moved)]
-            if unit is self.moved:
+            if unit is self.moved and lifted:
                 painter.setOpacity(0.35)
                 photo_group_view.draw_unit(painter, self.doc, unit, box)
                 painter.setOpacity(1.0)
@@ -197,6 +200,8 @@ class Preview:
             else:
                 at = ((self.origin.x() + figure[0], figure[1]) if settled else (0.0, 0.0))
                 photo_group_view.draw_unit(painter, self.doc, unit, box, at)
+                if unit is self.moved:
+                    overlay.paint_ring(painter, box, accent)
             overlay.paint_number(painter, box, number + 1, accent=accent)
         overlay.paint_frame(painter, self.area().adjusted(-8, -8, 8, 8), accent)
 

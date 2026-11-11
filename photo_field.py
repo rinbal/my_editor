@@ -50,7 +50,6 @@ class PictureField(QFrame):
         self.line.setAccessibleName(name)
         self.line.setAccessibleDescription(hint)
         self.line.installEventFilter(self)
-        self.line.returnPressed.connect(self.commit)
         column.addWidget(self.line)
         if hint:
             note = QLabel(hint)
@@ -103,8 +102,14 @@ class PictureField(QFrame):
 
     def eventFilter(self, watched, event) -> bool:
         if watched is self.line:
-            if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
-                self.cancel()
+            if event.type() == QEvent.Type.KeyPress and event.key() in (
+                    Qt.Key.Key_Escape, Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                # Taken here: a line edit passes Return on to the text
+                # under it, which would open the field again.
+                if event.key() == Qt.Key.Key_Escape:
+                    self.cancel()
+                else:
+                    self.commit()
                 return True
             if event.type() == QEvent.Type.FocusOut and not self._done \
                     and event.reason() != Qt.FocusReason.PopupFocusReason:

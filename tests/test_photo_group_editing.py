@@ -89,16 +89,21 @@ def _undone(ed, markdown: str = FOUR_PICTURES) -> bool:
 # The caret                                                                    #
 # --------------------------------------------------------------------------- #
 
-def test_the_caret_has_one_stop_at_each_picture_and_one_after_the_last():
+def test_the_arrows_select_each_picture_in_turn_and_go_on_into_the_words():
+    """From the words before a group, Right selects its pictures one after
+    another, then the caret goes into the words after it (EDITING.md 2.3)."""
     ed = _editor()
     group = _group(ed)
     _caret(ed, group.start - 1)                    # the end of "Before."
     stops = []
-    for _ in range(6):
+    for _ in range(5):
         QTest.keyClick(ed, Qt.Key.Key_Right)
-        stops.append(ed.textCursor().position())
-    assert stops == [group.start, group.start + 1, group.start + 2, group.start + 3,
-                     group.end, group.end + 1]
+        cursor = ed.textCursor()
+        stops.append((cursor.selectionStart(), cursor.selectionEnd()))
+    assert stops == [(group.start + k, group.start + k + 1) for k in range(4)] + [
+        (group.end + 1, group.end + 1)]
+    QTest.keyClick(ed, Qt.Key.Key_Left)            # back: the last picture
+    assert ed.textCursor().selectionStart() == group.start + 3
     ed.close()
 
 
@@ -108,23 +113,28 @@ def test_a_ring_shows_which_picture_the_caret_is_at_also_in_a_stack():
     ed = _editor(_text("Text.", "![a](portrait.png)", "![b](landscape.png)", "![c](landscape.png)"))
     group = _group(ed)
     boxes = {position: box for position, _n, box in photo_group_view.picture_boxes(ed.document())}
+
+    def ring():
+        picture = ed.photos.current()
+        return ed.photos.box_of(picture) if picture is not None else None
+
     rings = []
     for position in range(group.start, group.end + 1):
         _caret(ed, position)
-        rings.append(ed._group_picture_ring())
-    assert [ring.center().toPoint() for ring in rings[:3]] == [
+        rings.append(ring())
+    assert [box.center().toPoint() for box in rings[:3]] == [
         boxes[position].center().toPoint() for position in range(group.start, group.end)]
     assert rings[3] == rings[2]                    # after the last picture: the last one
     _caret(ed, 0)
-    assert ed._group_picture_ring() is None
-    # Painted in the accent colour, on the picture's edge.
+    assert ring() is None
+    # Painted in the accent colour (the focus ring's), on the picture's edge.
     _caret(ed, group.start + 2)
     QApplication.processEvents()
     shot = ed.viewport().grab().toImage()
-    ring = rings[2]
-    edge = QPoint(int(ring.left()) + 40, int(ring.top()))
+    box = ed.photos.to_view(rings[2])
+    edge = QPoint(int(box.left()) + 40, int(box.top()) + 1)
     ratio = shot.devicePixelRatio() or 1.0
-    accent = ed.palette().color(ed.palette().ColorRole.Highlight)
+    accent = ed.photos.pointer.colors()[0]
     drawn = shot.pixelColor(int(edge.x() * ratio), int(edge.y() * ratio))
     assert abs(drawn.red() - accent.red()) + abs(drawn.green() - accent.green()) \
         + abs(drawn.blue() - accent.blue()) < 60

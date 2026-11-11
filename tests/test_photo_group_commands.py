@@ -1,0 +1,238 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""Format > Photo's commands, as the Markdown saved after each.
+
+Each command runs as the menus, the chips and the keys run it
+(HtmlEditor.photos.run) on a selected picture: the test checks the exact
+Markdown, and that one Undo brings the file back as it was. Then one test
+each for a drag, the keys and Undo selecting what it took back.
+"""
+
+from __future__ import annotations
+
+import sys
+
+import pytest
+from PySide6.QtCore import QEvent, QPointF, Qt
+from PySide6.QtGui import QMouseEvent, QTextImageFormat
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QWidget
+
+import announce
+import photo_group_actions
+from photo_group_menu import (
+    ADD, CAPTION, DESCRIPTION, DOWN, FIRST, JOIN_ABOVE, JOIN_BELOW, LARGE, LAST, LEFT,
+    MOVE_MODE, REMOVE, RIGHT, SPLIT, TAKE_OUT, UP,
+)
+from tests.test_photo_group_editing import (
+    FOUR, FOUR_PICTURES, ONE, THREE, TWO, _editor, _group, _markdown, _text, _undone,
+    app,  # noqa: F401
+)
+
+TWO_GROUPS = _text("Before.", ONE, TWO, "Middle.", THREE, FOUR, "After.")
+
+
+@pytest.fixture(autouse=True)
+def said(monkeypatch):
+    words = []
+    monkeypatch.setattr(announce, "announce", lambda source, text: words.append(text))
+    return words
+
+
+def _selected(markdown: str = FOUR_PICTURES, number: int = 1, *, group: int = 0,
+              width: int = 900):
+    ed = _editor(markdown, width)
+    ed.photos.select(_group(ed, group).start + number)
+    return ed
+
+
+def _after(name: str, number: int = 1, markdown: str = FOUR_PICTURES, **where) -> str:
+    """The Markdown after the command ``name`` on picture ``number`` (from
+    0) of a group; one Undo must bring ``markdown`` back."""
+    ed = _selected(markdown, number, **where)
+    ed.photos.run(name)
+    written = _markdown(ed)
+    assert _undone(ed, markdown)
+    ed.close()
+    return written
+
+
+def test_move_left_swaps_a_picture_with_the_one_before():
+    assert _after(LEFT) == _text("Before.", TWO, ONE, THREE, FOUR, "After.")
+
+
+def test_move_right_swaps_a_picture_with_the_one_after():
+    assert _after(RIGHT) == _text("Before.", ONE, THREE, TWO, FOUR, "After.")
+
+
+def test_move_to_start_puts_a_picture_first():
+    assert _after(FIRST, 2) == _text("Before.", THREE, ONE, TWO, FOUR, "After.")
+
+
+def test_move_to_end_puts_a_picture_last():
+    assert _after(LAST) == _text("Before.", ONE, THREE, FOUR, TWO, "After.")
+
+
+def test_move_up_on_a_wide_page_puts_a_picture_above_the_paragraph_before():
+    assert _after(UP) == _text(TWO, "Before.", ONE, THREE, FOUR, "After.")
+
+
+def test_move_down_in_a_narrow_column_moves_a_picture_down_its_group():
+    assert _after(DOWN, width=380) == _text("Before.", ONE, THREE, TWO, FOUR, "After.")
+
+
+def test_show_large_marks_a_picture_wide():
+    assert _after(LARGE, 0) == _text("Before.", "![one](photo.png#wide)", TWO, THREE, FOUR,
+                                     "After.")
+
+
+def test_take_out_of_group_puts_a_picture_alone_under_the_next_paragraph():
+    assert _after(TAKE_OUT) == _text("Before.", ONE, THREE, FOUR, "After.", TWO)
+
+
+def test_join_the_group_above_and_below_make_one_group():
+    joined = _text("Before.", ONE, TWO, THREE, FOUR, "Middle.", "After.")
+    assert _after(JOIN_ABOVE, 0, TWO_GROUPS, group=1) == joined
+    assert _after(JOIN_BELOW, 1, TWO_GROUPS) == joined
+
+
+def test_remove_takes_a_picture_away_and_says_how_to_undo(said):
+    ed = _selected()
+    ed.photos.run(REMOVE)
+    assert _markdown(ed) == _text("Before.", ONE, THREE, FOUR, "After.")
+    assert said[-1].startswith("Photo removed, 3 photos remain. Undo with ")
+    assert _undone(ed) and said[-1] == "Undone: Remove Photo"
+    ed.close()
+
+
+def test_split_group_here_opens_a_line_whose_first_words_are_the_same_step():
+    ed = _selected()
+    ed.photos.run(SPLIT)
+    QTest.keyClicks(ed, "Middle.")
+    assert _markdown(ed) == _text("Before.", ONE, TWO, "Middle.", THREE, FOUR, "After.")
+    assert ed.undo_name() == "Split Group"
+    assert _undone(ed)
+    ed.close()
+
+
+def test_a_split_whose_line_stays_empty_is_taken_back(said):
+    ed = _selected()
+    ed.photos.run(SPLIT)
+    QTest.keyClick(ed, Qt.Key.Key_Up)
+    assert _markdown(ed) == FOUR_PICTURES and not ed.document().isUndoAvailable()
+    assert said[-1] == "The line stayed empty, the photos belong together again"
+    ed.close()
+
+
+def _write_in_field(ed, words: str) -> None:
+    field = ed.viewport().findChild(QWidget, "pictureField")
+    assert field is not None and field.isVisible()
+    field.line.setText(words)
+    QTest.keyClick(field.line, Qt.Key.Key_Return)
+    QApplication.processEvents()
+
+
+def test_caption_is_written_in_place_and_saved_under_the_picture():
+    ed = _selected(number=0)
+    ed.photos.run(CAPTION)
+    _write_in_field(ed, "The jetty")
+    assert _markdown(ed) == _text("Before.", "![one](photo.png)\n\n*The jetty*", TWO, THREE,
+                                  FOUR, "After.")
+    assert ed.undo_name() == "Caption" and ed.hasFocus()
+    assert _undone(ed)
+    ed.close()
+
+
+def test_description_is_written_on_the_picture_and_saved_as_its_alt_text():
+    ed = _selected(number=0)
+    ed.photos.run(DESCRIPTION)
+    _write_in_field(ed, "A wooden jetty")
+    assert _markdown(ed) == _text("Before.", "![A wooden jetty](photo.png)", TWO, THREE, FOUR,
+                                  "After.")
+    assert _undone(ed)
+    ed.close()
+
+
+def test_add_photos_puts_the_photos_chosen_at_the_end_of_the_group(said):
+    ed = _selected(number=0)
+    asked = []
+    ed.photos.add_requested.connect(lambda place, paths: asked.append((place, paths)))
+    ed.photos.run(ADD)
+    (place, paths), = asked
+    assert paths is None                        # the window asks for the files
+    added = QTextImageFormat()
+    added.setName("landscape.png")
+    added.setProperty(QTextImageFormat.ImageAltText, "five")
+    ed.photos.insert(place, [added], "Add Photo")
+    assert _markdown(ed) == _text("Before.", ONE, TWO, THREE, FOUR, "![five](landscape.png)",
+                                  "After.")
+    assert said[-1] == "1 photo added. The group has 5 photos now"
+    assert _undone(ed)
+    ed.close()
+
+
+def test_move_mode_moves_a_picture_with_the_arrows_and_return_puts_it_down():
+    ed = _selected(number=0)
+    ed.photos.run(MOVE_MODE)
+    QTest.keyClick(ed, Qt.Key.Key_Right)
+    QTest.keyClick(ed, Qt.Key.Key_Right)
+    assert _markdown(ed) == FOUR_PICTURES         # nothing moved before Return
+    QTest.keyClick(ed, Qt.Key.Key_Return)
+    assert _markdown(ed) == _text("Before.", TWO, THREE, ONE, FOUR, "After.")
+    assert _undone(ed)
+    ed.close()
+
+
+# --------------------------------------------------------------------------- #
+# The pointer, the keys, Undo                                                  #
+# --------------------------------------------------------------------------- #
+
+def _mouse(ed, kind, point: QPointF, buttons) -> None:
+    button = Qt.MouseButton.LeftButton if kind != QEvent.Type.MouseMove else Qt.MouseButton.NoButton
+    event = QMouseEvent(kind, point, ed.viewport().mapToGlobal(point), button, buttons,
+                        Qt.KeyboardModifier.NoModifier)
+    QApplication.sendEvent(ed.viewport(), event)
+
+
+def test_a_picture_dragged_onto_another_place_of_its_group_goes_there():
+    ed = _selected(number=0)
+    photos = ed.photos
+    start = photos.to_view(photos.box_of(photos.current())).center()
+    last = photos.to_view(photos.box_of(photo_group_actions.picture_at(
+        ed.document(), _group(ed).start + 3))).center()
+    held = Qt.MouseButton.LeftButton
+    _mouse(ed, QEvent.Type.MouseButtonPress, start, held)
+    _mouse(ed, QEvent.Type.MouseMove, start + QPointF(30, 0), held)
+    _mouse(ed, QEvent.Type.MouseMove, last, held)
+    QTest.qWait(200)                               # the target waits its moment
+    _mouse(ed, QEvent.Type.MouseMove, last + QPointF(1, 0), held)
+    assert _markdown(ed) == FOUR_PICTURES          # nothing moved while dragging
+    _mouse(ed, QEvent.Type.MouseButtonRelease, last, Qt.MouseButton.NoButton)
+    assert _markdown(ed) == _text("Before.", TWO, THREE, FOUR, ONE, "After.")
+    assert _undone(ed)
+    ed.close()
+
+
+def test_the_move_keys_move_the_selected_picture_one_place():
+    ed = _selected()
+    held = (Qt.KeyboardModifier.MetaModifier | Qt.KeyboardModifier.ControlModifier
+            if sys.platform == "darwin"
+            else Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
+    QTest.keyClick(ed, Qt.Key.Key_Right, held)
+    assert _markdown(ed) == _text("Before.", ONE, THREE, TWO, FOUR, "After.")
+    assert ed.textCursor().selectionStart() == _group(ed).start + 2      # still selected
+    ed.close()
+
+
+def test_undo_selects_the_picture_where_it_was_and_says_what_it_took_back(said):
+    ed = _selected()
+    ed.photos.run(LAST)
+    ed.undo()
+    cursor = ed.textCursor()
+    assert (cursor.selectionStart(), cursor.selectionEnd()) == (_group(ed).start + 1,
+                                                                _group(ed).start + 2)
+    assert said[-1] == "Undone: Move Photo"
+    ed.redo()
+    assert ed.textCursor().selectionStart() == _group(ed).start + 3
+    assert said[-1] == "Redone: Move Photo"
+    ed.close()

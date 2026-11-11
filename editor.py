@@ -42,6 +42,8 @@ import media_files
 import paste
 import photo_group
 import photo_group_edit
+import photo_group_editing
+import photo_group_overlay
 import photo_group_view
 import rich_text
 import text_look
@@ -106,6 +108,7 @@ TYPED = "typed"
 BACKWARD = "backward"
 FORWARD = "forward"
 TYPING_PAUSE_S = 2.0
+TYPING_STEP = N_("Typing")
 
 
 @dataclass(frozen=True)
@@ -118,6 +121,7 @@ class _Run:
     steps: int
     at: float
     before: int = 0             # Qt's count of changes before the run
+    name: str = TYPING_STEP     # what Edit > Undo calls it
 
 
 def _named_step(name: str):
@@ -165,9 +169,6 @@ def _open_paragraph_above(cursor: QTextCursor) -> None:
     cursor.setBlockFormat(QTextBlockFormat())
     cursor.setBlockCharFormat(QTextCharFormat())
 
-
-# The width of the ring around the picture of a photo group the caret is at.
-_PICTURE_RING = 3.0
 
 # The keys Qt's text field deletes with by itself (on a Mac the Emacs keys
 # among them: Control-D, Control-H, Control-K).
@@ -327,8 +328,10 @@ class HtmlEditor(QTextEdit):
         # Photo groups (photo_group_view): their pictures sized as readers
         # size them, from the pictures this view loads (loadResource), at
         # every width and height of the window, with nothing in the
-        # document changed.
+        # document changed; room kept above each for the bar shown over it
+        # (photo_group_overlay), so showing the bar moves nothing.
         photo_group_view.install(doc, photo_group_view.resource_sizes(doc))
+        photo_group_view.set_room_above(doc, photo_group_overlay.BAR_ROOM)
         # Whether Quick Look shows a picture of this document (the window
         # answers): Space and Escape then put it away.
         self._picture_look_open = lambda: False
@@ -367,9 +370,9 @@ class HtmlEditor(QTextEdit):
         # a table cell's place (announce.py).
         self._spoken_place = None
         self.cursorPositionChanged.connect(self._announce_place)
-        # The ring around the picture of a photo group the caret is at.
-        self._picture_ring = None
-        self.cursorPositionChanged.connect(self._renew_picture_ring)
+        # The pictures edited where they stand: their commands, chips,
+        # dragging and the ring around the one at the caret.
+        self.photos = photo_group_editing.PhotoEditing(self)
 
         # The text cursor chosen in Settings (set_caret_style): Qt's own
         # insertion point at a width, or a block drawn here.
@@ -392,11 +395,17 @@ class HtmlEditor(QTextEdit):
 
     def undo(self):
         self.end_typing_run()
-        self.document().undo()
+        count = self.document().availableUndoSteps()
+        with self.photos.quietly():
+            self.document().undo()
+        self.photos.came_back(count, redo=False)
 
     def redo(self):
         self.end_typing_run()
-        self.document().redo()
+        count = self.document().availableUndoSteps()
+        with self.photos.quietly():
+            self.document().redo()
+        self.photos.came_back(count, redo=True)
 
     # -------- Steps of Undo --------
     # A run of typing is one step of Undo, as in TextEdit and Pages: the
@@ -447,15 +456,35 @@ class HtmlEditor(QTextEdit):
             # neighbours join, never words being typed.
             photo_group_edit.settle(doc, changes, cursor, join=kind != TYPED)
             if changes:
+                name = run.name if goes_on else TYPING_STEP
                 self._run = _Run(kind, cursor.position(), doc.availableUndoSteps(),
-                                 time.monotonic(), before)
-                self._record_step(before, N_("Typing"))
+                                 time.monotonic(), before, name)
+                self._record_step(before, name)
                 self.setTextCursor(cursor)
                 self.undo_named.emit()
 
     def end_typing_run(self) -> None:
         """What is typed next is a step of Undo of its own."""
         self._run = None
+
+    def type_into_last_step(self) -> None:
+        """What is typed next at the caret is part of the step just made,
+        under its name (the first words written into the line Split Group
+        Here opened). It waits for them as long as the caret stays."""
+        now = self.document().availableUndoSteps()
+        before, name = self._undo_names.get(now, (now, TYPING_STEP))
+        self._run = _Run(TYPED, self.textCursor().position(), now, float("inf"), before, name)
+
+    def step_named(self, before: int, after: int, name: str) -> bool:
+        """Whether the step of Undo from Qt's count ``before`` to ``after``
+        is the one called ``name`` (not replaced since)."""
+        return self._undo_names.get(after) == (before, name)
+
+    def forget_step(self, after: int) -> None:
+        """The step that ended at Qt's count ``after`` is gone (taken back
+        and dropped): its name with it."""
+        if self._undo_names.pop(after, None) is not None:
+            self.undo_named.emit()
 
     def _caret_moved(self) -> None:
         run = self._run
@@ -1182,8 +1211,7 @@ class HtmlEditor(QTextEdit):
         # it ourselves. This is what lets the guides sit behind the text.
         painter.fillRect(vp.rect(), self._surface_color())
 
-        ring = self._group_picture_ring()
-        if (self._highlight_line and self.hasFocus() and ring is None
+        if (self._highlight_line and self.hasFocus() and self.photos.current() is None
                 and not self.textCursor().hasSelection()):
             line_rect = self.cursorRect()
             band = QRect(0, line_rect.top(), vp.width(), line_rect.height())
@@ -1197,52 +1225,22 @@ class HtmlEditor(QTextEdit):
         text_look.paint_quote_bars(self, painter, text_look.quote_bar_color(dark))
         painter.end()
 
-        super().paintEvent(event)
+        # (A picture of a group selected: drawn without Qt's highlight.)
+        if not self.photos.pointer.paint_text(event):
+            super().paintEvent(event)
 
         p2 = QPainter(vp)
         try:
-            if ring is not None:
-                # Which picture of a photo group the caret is at (or which
-                # one is selected): a ring in the accent colour, as around
-                # a selected picture in Pages.
-                p2.setRenderHint(QPainter.RenderHint.Antialiasing)
-                p2.setPen(QPen(self.palette().color(self.palette().ColorRole.Highlight),
-                               _PICTURE_RING))
-                p2.setBrush(Qt.BrushStyle.NoBrush)
-                p2.drawRoundedRect(ring, 3, 3)
             media_badge.paint(self, p2, self._media_badge)
+            # The ring around the picture at the caret, the chips on the
+            # one under the pointer, a picture being moved (photo_group_pointer).
+            self.photos.paint(p2)
             # Block cursor on top of the text, in code and plain text.
             if self.block_caret_shown():
                 color = QColor(212, 212, 212, 210) if self._is_dark() else QColor(51, 51, 51, 210)
                 p2.fillRect(self._block_cursor_rect(), color)
         finally:
             p2.end()
-
-    def _group_picture_ring(self):
-        """Where the ring around a photo group's picture goes (the
-        viewport's coordinates): around the picture the caret is at, or
-        the one selected, while the editor has the focus; else None."""
-        if not self.hasFocus():
-            return None
-        picture = photo_group_view.picture_at_cursor(self.textCursor())
-        box = (photo_group_view.picture_box(self.document(), picture[0])
-               if picture is not None else None)
-        if box is None:
-            return None
-        half = _PICTURE_RING / 2
-        return box.translated(-self.horizontalScrollBar().value(),
-                              -self.verticalScrollBar().value()).adjusted(half, half, -half, -half)
-
-    def _renew_picture_ring(self) -> None:
-        """Have the ring painted where it is now, and wiped where it was."""
-        ring = self._group_picture_ring()
-        if ring == self._picture_ring:
-            return
-        for rect in (self._picture_ring, ring):
-            if rect is not None:
-                self.viewport().update(rect.adjusted(-_PICTURE_RING, -_PICTURE_RING,
-                                                     _PICTURE_RING, _PICTURE_RING).toAlignedRect())
-        self._picture_ring = ring
 
     def _paint_guides(self, painter):
         vp = self.viewport()
@@ -1336,7 +1334,7 @@ class HtmlEditor(QTextEdit):
         self._cursor_visible = True
         self._blink_timer.start()
         self.viewport().update(self._block_cursor_rect())
-        self._renew_picture_ring()
+        self.photos.pointer.caret_moved()
 
     def focusOutEvent(self, event):
         super().focusOutEvent(event)
@@ -1347,7 +1345,9 @@ class HtmlEditor(QTextEdit):
         self._cursor_visible = False
         self._blink_timer.stop()
         self.viewport().update(self._block_cursor_rect())
-        self._renew_picture_ring()
+        # A picture being moved is put back; the ring goes.
+        self.photos.focus_lost()
+        self.photos.pointer.caret_moved()
 
     def set_markdown_shortcuts_check(self, check) -> None:
         """Install ``check()``: whether Markdown Shortcuts are on."""
@@ -1436,7 +1436,9 @@ class HtmlEditor(QTextEdit):
             place = ("picture", at[0], picture)
             if place != self._spoken_place:
                 self._spoken_place = place
-                announce.announce(self, picture)
+                if not self.photos.quiet:
+                    # (A command that put the caret there says what it did.)
+                    announce.announce(self, picture)
             return
         table = cursor.currentTable()
         if table is not None:
@@ -2079,9 +2081,23 @@ class HtmlEditor(QTextEdit):
                     self.cursorForPosition(event.position().toPoint())):
                 event.accept()
                 return
+        # A picture pressed: selected, a chip clicked, or a drag begun.
+        if self.photos.pointer.mouse_press(event):
+            event.accept()
+            return
         super().mousePressEvent(event)
 
+    def mouseMoveEvent(self, event):
+        # Chips on the picture under the pointer; a picture dragged.
+        if self.photos.pointer.mouse_move(event):
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
     def mouseReleaseEvent(self, event):
+        if self.photos.pointer.mouse_release(event):
+            event.accept()
+            return
         # A checklist item's box clicked: Qt ticks it (or unticks it), as
         # Mark as Checked would, and the step is named as that command's.
         before = self.document().availableUndoSteps()
@@ -2145,7 +2161,13 @@ class HtmlEditor(QTextEdit):
         return ""
 
     def viewportEvent(self, event):
+        if event.type() == QEvent.Type.Leave:
+            self.photos.pointer.leave()
         if event.type() == QEvent.Type.ToolTip:
+            chip = self.photos.pointer.tooltip(event.pos())
+            if chip:
+                QToolTip.showText(event.globalPos(), chip, self)
+                return True
             href = self.anchorAt(event.pos())
             note = "" if href else self._footnote_tip(event.pos())
             badge = None if href or note else self._badge_at(event.pos())
@@ -2200,6 +2222,9 @@ class HtmlEditor(QTextEdit):
         self._context_menu_filler = filler
 
     def contextMenuEvent(self, event):
+        if event.reason() == event.Reason.Mouse:
+            # A picture right-clicked is selected: the menu is about it.
+            self.photos.context_at(event.pos())
         menu = QMenu(self)
         if self._is_dark():
             menu.setStyleSheet("""
@@ -2297,7 +2322,7 @@ class HtmlEditor(QTextEdit):
             self._apply_active_format_to_cursor()
 
     def keyPressEvent(self, e):
-        if self._slash_key(e):
+        if self._slash_key(e) or self.photos.keys.key_press(e):
             return
         self._key_press(e)
         if self._slash_at >= 0:
@@ -2928,7 +2953,19 @@ class HtmlEditor(QTextEdit):
         else:
             super().dragEnterEvent(event)
 
+    def dragMoveEvent(self, event):
+        # Picture files over a photo group: the slot they would take.
+        if not self.photos.pointer.drag_files(event):
+            super().dragMoveEvent(event)
+
+    def dragLeaveEvent(self, event):
+        self.photos.pointer.stop()
+        super().dragLeaveEvent(event)
+
     def dropEvent(self, event):
+        # Picture files let go of over the slot shown: they go there.
+        if self.photos.pointer.drop_files(event):
+            return
         urls = list(event.mimeData().urls()) if event.mimeData().hasUrls() else []
         # Files go to whoever handles them; addresses from the web dropped
         # in plain text are text, as in TextEdit's plain text.
