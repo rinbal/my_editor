@@ -13,15 +13,16 @@ from __future__ import annotations
 import sys
 
 import pytest
-from PySide6.QtCore import QEvent, QPointF, Qt
-from PySide6.QtGui import QMouseEvent, QTextImageFormat
+from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QPointF, QRect, Qt
+from PySide6.QtGui import QImage, QMouseEvent, QTextImageFormat
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
 
 import announce
 import photo_group_actions
+import picture_crop
 from photo_group_menu import (
-    ADD, CAPTION, DESCRIPTION, DOWN, FIRST, JOIN_ABOVE, JOIN_BELOW, LARGE, LAST, LEFT,
+    ADD, CAPTION, CROP, DESCRIPTION, DOWN, FIRST, JOIN_ABOVE, JOIN_BELOW, LARGE, LAST, LEFT,
     MOVE_MODE, REMOVE, RIGHT, SPLIT, TAKE_OUT, UP,
 )
 from tests.test_photo_group_editing import (
@@ -150,6 +151,33 @@ def test_description_is_written_on_the_picture_and_saved_as_its_alt_text():
     assert _markdown(ed) == _text("Before.", "![A wooden jetty](photo.png)", TWO, THREE, FOUR,
                                   "After.")
     assert _undone(ed)
+    ed.close()
+
+
+def _png(image: QImage) -> bytes:
+    out = QByteArray()
+    buffer = QBuffer(out)
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    image.save(buffer, "PNG")
+    return bytes(out)
+
+
+def test_crop_asks_for_the_part_and_shows_it_as_a_new_file():
+    ed = _selected(number=0)
+    asked = []
+    ed.photos.crop_requested.connect(asked.append)
+    ed.photos.run(CROP)
+    assert asked == [_group(ed).start]
+    # The part is a file of its own; the picture's file is never written.
+    source = QImage(40, 30, QImage.Format.Format_RGB32)
+    source.fill(Qt.GlobalColor.darkCyan)
+    data = _png(source)
+    cut, ext = picture_crop.crop_bytes(data, QRect(5, 5, 20, 10))
+    assert ext == "png" and QImage.fromData(cut).size().toTuple() == (20, 10)
+    ed.photos.set_address(asked[0], "landscape.png")       # (the new file's name)
+    assert _markdown(ed) == _text("Before.", "![one](landscape.png)", TWO, THREE, FOUR,
+                                  "After.")
+    assert ed.undo_name() == "Crop Photo" and _undone(ed)
     ed.close()
 
 

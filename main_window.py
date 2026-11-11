@@ -53,7 +53,7 @@ from speech import Speech
 from atomic_file import (
     decode_text_as_written, encode_text_document, newline_of, one_writer,
     read_json, save_document,
-    save_text_document, with_newlines, write_json,
+    save_text_document, with_newlines, write_bytes, write_json,
 )
 import locked_files
 import password_alert
@@ -109,8 +109,10 @@ import link_url
 import paste
 import export_pictures
 import photo_group
+import photo_group_actions
 import photo_group_menu
 import photo_group_view
+import picture_crop
 import rich_text
 import image_safety
 import url_safety
@@ -1518,6 +1520,7 @@ class MainWindow(QMainWindow):
             lambda e=ed: e is self.current_editor() and self._update_photo_commands())
         ed.photos.add_requested.connect(
             lambda place, paths, e=ed: self._add_photos(e, place, paths))
+        ed.photos.crop_requested.connect(lambda position, e=ed: self._crop_photo(e, position))
         ed.set_structure_check(lambda e=ed: self._editor_kind(e) == "rich")
         ed.set_local_formats_check(lambda e=ed: self._keeps_underline(e))
         ed.set_pictures_check(lambda e=ed: self._keeps_pictures(e))
@@ -7872,6 +7875,64 @@ class MainWindow(QMainWindow):
         if paths:
             self._handle_dropped_images(paths, N_("Add Photo") if len(paths) == 1
                                         else N_("Add Photos"), place=place)
+
+    def _crop_photo(self, editor, position: int) -> None:
+        """Crop… on the picture at ``position``: the sheet, then the part
+        chosen as a new file in the picture's place (_cropped)."""
+        picture = photo_group_actions.picture_at(editor.document(), position)
+        if picture is None:
+            return
+        name = photo_group.without_wide(picture.unit.name)
+        try:
+            path = self._picture_file(editor, name)
+        except PictureNotShown as problem:
+            editor.notice.emit(str(problem))
+            return
+        try:
+            with open(path, "rb") as source:
+                data = source.read()
+        except OSError:
+            editor.notice.emit(_("This picture couldn’t be read. Check that its file is still "
+                                 "there, and try again."))
+            return
+        looks = getattr(self, "_look_files", None)
+        beside = not (looks is not None and os.path.dirname(path) == looks.path())
+        sheet = picture_crop.CropSheet(self, data)
+        sheet.cropped.connect(lambda cut, ext: self._cropped(
+            editor, position, name, path if beside else "", cut, ext, picture.unit.alt))
+        sheet.finished.connect(sheet.deleteLater)
+        sheet.open()
+
+    def _cropped(self, editor, position: int, name: str, path: str, data: bytes, ext: str,
+                 alt: str) -> None:
+        """The crop's bytes as a new file: beside the picture's own file
+        when it has one there ("beach-cropped.jpg"), else the app's own,
+        as a picture added; then in the picture's place, as one step."""
+        new_name = ""
+        if path:
+            stem = os.path.splitext(os.path.basename(path))[0]
+            folder = os.path.dirname(path)
+            word = _("cropped")
+            candidate, number = f"{stem}-{word}.{ext}", 2
+            while os.path.exists(os.path.join(folder, candidate)):
+                candidate, number = f"{stem}-{word}-{number}.{ext}", number + 1
+            try:
+                write_bytes(os.path.join(folder, candidate), data)
+                # The same way to the folder as the picture's own address.
+                cut = max(name.rfind("/"), name.rfind("\\"))
+                new_name = name[:cut + 1] + candidate
+            except OSError as error:
+                # Not writable there: kept as the app's own picture instead.
+                logging.getLogger(__name__).info("crop beside %s: %s", path, error)
+        if not new_name:
+            asset = self._asset_manager.adopt_bytes(data, alt=alt or "image")
+            if asset is None:
+                editor.notice.emit(_("The cropped picture couldn’t be kept. Free some space on "
+                                     "your disk and try again."))
+                return
+            self._asset_image(editor, asset, alt=alt)
+            new_name = asset.key
+        editor.photos.set_address(position, new_name)
 
     def _keeps_pictures(self, ed) -> bool:
         """Whether ``ed``'s document keeps a picture when it is saved:
