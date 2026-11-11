@@ -295,46 +295,50 @@ DESCRIPTIONS = ["Steg", "Loch", "Bay", "Shore", "Pier $& jetty", "Hut", "Panoram
 
 @needs_chrome
 def test_the_page_names_the_group_and_its_pictures_in_the_authors_order(page):
+    """STANDUP's page (its scripts, vendored): each picture is a link to its
+    full view, named by its description; a #wide one has its Enlarge
+    button after it."""
     tree = page.tree()
     groups = [n for n in tree.values() if _role(n) == "group" and _name(n) == "8 photos"]
     assert len(groups) == 1
-    buttons = [_name(n) for n in _below(tree, groups[0]) if _role(n) == "button"]
-    assert buttons == [f"Enlarge: {alt}" for alt in DESCRIPTIONS]
+    below = _below(tree, groups[0])
+    assert [_name(n) for n in below if _role(n) == "link"] == DESCRIPTIONS
+    assert [_name(n) for n in below if _role(n) == "button"] == ["Enlarge: Plan"]
     assert len(DESCRIPTIONS) == len(NAMES)
 
 
 @needs_chrome
 def test_tab_goes_through_the_pictures_in_the_authors_order(page):
     seen = []
-    for _ in DESCRIPTIONS:
+    for _ in range(len(DESCRIPTIONS) + 1):
         page.key("Tab", "Tab", 9)
         seen.append(page.focused())
-    assert seen == [("button", f"Enlarge: {alt}") for alt in DESCRIPTIONS]
+    assert seen == [("link", alt) for alt in DESCRIPTIONS] + [("button", "Enlarge: Plan")]
 
 
 @needs_chrome
 def test_the_full_view_is_a_dialog_that_keeps_the_focus_and_gives_it_back(page):
     page.key("Tab", "Tab", 9)
     page.key("Tab", "Tab", 9)                   # the second picture
-    assert page.focused() == ("button", "Enlarge: Loch")
+    assert page.focused() == ("link", "Loch")
     page.key("Enter", "Enter", 13)
+    page.settle()
     tree = page.tree()
-    dialogs = [n for n in tree.values() if _role(n) == "dialog"]
-    assert [_name(n) for n in dialogs] == ["Full View"]
+    dialogs = [n for n in tree.values() if _role(n) == "dialog" and not n.get("ignored")]
+    assert [_name(n) for n in dialogs] == ["Full view"]
     assert any(p["name"] == "modal" and p["value"].get("value")
                for p in dialogs[0].get("properties", []))
     assert page.focused() == ("button", "Close")
     stops = []
-    for _ in range(5):
+    for _ in range(4):
         page.key("Tab", "Tab", 9)
         stops.append(page.focused())
-    assert stops == [("button", "Open Original in a New Tab"), ("button", "Previous Photo"),
-                     ("button", "Next Photo"), ("button", "Close"),
-                     ("button", "Open Original in a New Tab")]
+    # The original of a picture in the page itself is not offered.
+    assert stops == [("button", "Previous photo"), ("button", "Next photo"),
+                     ("button", "Close"), ("button", "Previous photo")]
     page.key("Escape", "Escape", 27)
-    # It goes once its picture is back in place (at once with Reduce Motion).
-    page.evaluate("new Promise(done => { const look = () => document.querySelector("
-                  "'[role=dialog]').hidden ? done(true) : setTimeout(look, 20); look() })")
+    page.evaluate("new Promise(done => { const look = () => !document.querySelector("
+                  "'.e21-pv:not([hidden])') ? done(true) : setTimeout(look, 20); look() })")
     page.settle()
     assert not [n for n in page.tree().values() if _role(n) == "dialog" and not n.get("ignored")]
-    assert page.focused() == ("button", "Enlarge: Loch")
+    assert page.focused() == ("link", "Loch")
