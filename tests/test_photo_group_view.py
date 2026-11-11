@@ -295,12 +295,16 @@ def test_a_lone_picture_arriving_lays_out_its_own_paragraph_only(app):
 # --------------------------------------------------------------------------- #
 
 def _ink(shot, rect) -> int:
-    """How many pixels in ``rect`` of ``shot`` are not the page's white."""
+    """How many pixels in ``rect`` of ``shot`` stand out from the page. The
+    page is read at the view's corner, inside the document's margin: white,
+    or dark once a window has given the app a dark look (it follows the
+    system's appearance, and the look stays after the window closes)."""
     ratio = shot.devicePixelRatio() or 1.0
+    page = QColor(shot.pixel(1, 1)).lightness()
     count = 0
     for y in range(int(rect.top() * ratio), int(rect.bottom() * ratio)):
         for x in range(int(rect.left() * ratio), int(rect.right() * ratio)):
-            if QColor(shot.pixel(x, y)).lightness() < 200:
+            if abs(QColor(shot.pixel(x, y)).lightness() - page) > 55:
                 count += 1
     return count
 
