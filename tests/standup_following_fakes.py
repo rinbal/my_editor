@@ -247,11 +247,11 @@ class FollowWorld:
         return self.server.submissions[sid]
 
     def correct(self, account: "TestAccount", sid: str, content: str, *, media=(),
-                note: str = "Zwei Zahlen korrigiert.") -> None:
-        """The editor's correction (revision 2) of ``account``'s published work."""
+                note: str = "Zwei Zahlen korrigiert.", revision: int = 2) -> None:
+        """The editor's correction (``revision``) of ``account``'s published work."""
         s_sub = bytes.fromhex(account.submissions.entry(sid).s_sub)
         rev = formats.build_revision(
-            submission_id=sid, revision=2, kind="article",
+            submission_id=sid, revision=revision, kind="article",
             work={"title": "Ein Jahr mit Lightning im Café", "content": content, "d": "ein-jahr"},
             rights={"confirmed": True, "license": None}, media=list(media),
             change_summary=note, client="MyEditor tests")
@@ -259,7 +259,7 @@ class FollowWorld:
         wraps = scrypto.wrap_submission_key(sid, s_sub, {
             "redaktion": json.loads(KEY_EVENT["content"])["pubkey"], "writer": pk("writer")})
         answer = []
-        self.editor.correction(sid, revision=2, revision_hash=sealed.revision_hash,
+        self.editor.correction(sid, revision=revision, revision_hash=sealed.revision_hash,
                                envelope=sealed.envelope_b64,
                                envelope_sha256=sealed.envelope_sha256, wraps=wraps, blobs=[],
                                on_success=answer.append, on_failure=answer.append)

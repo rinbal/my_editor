@@ -523,36 +523,27 @@ class SubmissionsHost(QObject):
         sheet.open()
 
     def compare_correction(self, sid: str) -> None:
-        """Vergleichen … (M15): the correction beside the writer's version
-        before it, and Korrektur übernehmen, bound to the correction's
-        verified revision."""
+        """Vergleichen … (M15): the correction beside the article as it
+        stands in public (never an earlier correction: RG-M4-a 6), what
+        else it changes in plain words, and Korrektur übernehmen, bound to
+        the correction's verified revision."""
         row, following, ports = self._row(sid), self._following, self._ports
         if row is None or row.view is None:
             return
         run = ports.standup().publisher(ports.profile(), sid)
-        if run is None or row.view.revision < 2:
+        published = getattr(run, "published_event", None)
+        if run is None or published is None:
             self._say_in_place(sid, _(NOT_OPENED))
             return
-
-        def with_before(before) -> None:
-            if self._following is not following:
-                return
-            if before is None:
-                ports.say(_(NOT_OPENED))
-                return
-            new = run.revision.get("work") or {}
-            sheet = self._correction_sheet = CorrectionSheet(
-                run=run, publication=following.publication_name(row.publication),
-                old=comparable(str(before.work.get("content") or "")),
-                new=comparable(str(new.get("content") or "")),
-                note=str(run.revision.get("change_summary") or ""), comparer=self.comparer,
-                changes=publishing.correction_changes(run.revision, run.published_event),
-                is_dark=ports.is_dark(), parent=ports.window())
-            sheet.ask_requested.connect(lambda words: self.ask(sid, words))
-            ports.keep(sheet)
-            sheet.open()
-
-        following.version(sid, row.view.revision - 1, with_before)
+        old, new = publishing.correction_texts(run.revision, published)
+        sheet = self._correction_sheet = CorrectionSheet(
+            run=run, publication=following.publication_name(row.publication), old=old, new=new,
+            note=str(run.revision.get("change_summary") or ""), comparer=self.comparer,
+            changes=publishing.correction_changes(run.revision, published),
+            is_dark=ports.is_dark(), parent=ports.window())
+        sheet.ask_requested.connect(lambda words: self.ask(sid, words))
+        ports.keep(sheet)
+        sheet.open()
 
     def ask(self, sid: str, words: str) -> None:
         """Rückfrage stellen: the detail of ``sid``, its composer holding

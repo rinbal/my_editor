@@ -428,6 +428,33 @@ def test_a_correction_is_compared_in_its_sheet_and_a_question_goes_to_the_compos
     assert window.view.detail.composer.toPlainText() == "A short question about the correction: "
 
 
+def test_a_second_correction_is_compared_with_the_article_as_it_stands_in_public(window):
+    # RG-M4-a 6: two corrections wait; the second is compared with the
+    # published article, never with the first correction, so the writer
+    # sees both changes before taking it.
+    from nostr import events
+    from nostr.bech32 import encode_naddr
+    world = window.world
+    seed = world.account()
+    prepared, entry = world.submit(seed, d="ein-jahr", title="Ein Jahr mit Lightning im Café")
+    world.decide(prepared, "accept")
+    article = events.sign_event({"kind": 30023, "created_at": world.clock(), "content": "Alt.",
+                                 "tags": [["d", "ein-jahr"]]}, sk("writer"))
+    seed.api.published(entry.sid, naddr=encode_naddr("ein-jahr", ME, 30023), event=article,
+                       on_success=lambda _v: None, on_failure=lambda _e: None)
+    world.settle()
+    world.correct(seed, entry.sid, "Erste Korrektur.")
+    world.correct(seed, entry.sid, "Zweite Korrektur.", revision=3)
+    window.follow()
+    compared = []
+    window.host.comparer.compare = lambda old, new, done: compared.append((old, new)) or (
+        lambda: None)
+    detail = opened(window, entry)
+    detail.action.click()
+    world.settle()
+    assert compared == [("Alt.", "Zweite Korrektur.")]
+
+
 def test_view_opens_the_address_the_published_event_proves_never_the_servers(window, monkeypatch):
     # Contract 10, The address of a published work: Ansehen opens only the
     # address a counting report proves; until one is read, it says so once.

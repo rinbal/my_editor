@@ -93,6 +93,8 @@ def test_a_correction_changes_only_what_its_sheet_shows():
     assert event["created_at"] == 201 and ["title", "Neuer Titel"] in tags
     assert publishing.correction_changes(correction, published) == [
         ("title", "Neuer Titel"), ("cover", "changed")]
+    assert publishing.correction_texts(correction, published) == (
+        "Text ![](standup-media)", "Text ![](standup-media)")
 
 
 class FakeStore(QObject):
