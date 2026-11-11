@@ -236,6 +236,7 @@ def test_the_widget_uses_only_the_images_it_is_given():
 # below 600 pixels the runs, each strip one picture a line (nothing here
 # swipes); every picture whole.
 
+from doc_walk import iter_blocks  # noqa: E402
 import photo_group_view  # noqa: E402
 from tests.photo_corners import SHAPES, image_of, shows_whole  # noqa: E402
 
@@ -278,6 +279,24 @@ def test_a_groups_rows_stand_where_the_engine_places_them(width):
     # Qt sets each line on a whole pixel: a pixel or two over a group.
     assert [top - shown[0] for top in shown] == pytest.approx([top - placed[0] for top in placed],
                                                               abs=2)
+    view.close()
+
+
+def test_a_caption_on_its_pictures_line_stands_right_under_it():
+    """No 60 % of the picture's height between them (an article's 160 %
+    of a line as tall as the picture)."""
+    from PySide6.QtWidgets import QApplication as App
+    view = pv.NostrPreview(images=lambda name: image_of(name) if name in SHAPES else None)
+    view.resize(1000, 2000)
+    view.show_markdown("![plan](landscape.png)\n*The plan of the whole place*\n")
+    view.show()
+    App.processEvents()
+    block = next(b for b in iter_blocks(view.document()) if b.text().startswith("\ufffc"))
+    lines = block.layout()
+    picture = lines.lineAt(0)
+    caption = lines.lineAt(1)
+    gap = caption.y() - (picture.y() + picture.naturalTextRect().height())
+    assert 0 <= gap < caption.height()
     view.close()
 
 

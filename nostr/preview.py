@@ -53,6 +53,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtGui import (
     QColor,
     QFont,
+    QFontMetricsF,
     QImage,
     QPainter,
     QTextBlockFormat,
@@ -266,25 +267,37 @@ def _style_body(first_block, colors: Palette) -> None:
             fmt.setBottomMargin(0)
             char = _char(size=12.5, color=colors.text, family=SERIF)
         else:
-            # Text gets room between its lines; a picture or a player alone
-            # in its paragraph does not (160 % of a picture's height would
-            # leave a gap below it larger than half the picture), nor does a
-            # photo group's paragraph, whose rows are its lines.
-            pictures = block.text() == "\ufffc" or photo_group.is_group_block(block)
-            height = 100 if pictures else 160
-            fmt.setLineHeight(height, QTextBlockFormat.LineHeightTypes.ProportionalHeight.value)
+            color = colors.muted if isinstance(quote, int) and quote > 0 else colors.text
+            char = _char(size=13.5, color=color, family=SERIF)
+            fmt.setLineHeight(*_line_height(block, char))
             # List items sit closer together than paragraphs.
             if block.textList() is not None:
                 fmt.setTopMargin(0)
             fmt.setBottomMargin(4 if block.textList() is not None else 12)
-            color = colors.muted if isinstance(quote, int) and quote > 0 else colors.text
-            char = _char(size=13.5, color=color, family=SERIF)
             if isinstance(quote, int) and quote > 0:
                 # Room for a bar beside each level (text_look).
                 fmt.setLeftMargin(20 * quote)
         cursor.setBlockFormat(fmt)
         _merge_fragments(block, char, colors)
         block = block.next()
+
+
+def _line_height(block, char: QTextCharFormat) -> tuple:
+    """The room between a paragraph's lines, as QTextBlockFormat takes it.
+    Text gets 160 %; a picture or a player alone in its paragraph none
+    (160 % of a picture's height would leave a gap below it larger than
+    half the picture), nor a photo group's paragraph, whose rows are its
+    lines. A picture with its caption on its line (the caption on the
+    Markdown's next line) gets the room text has, as a distance, so the
+    caption stands under it as under a picture alone, not 60 % of the
+    picture's height lower."""
+    kinds = QTextBlockFormat.LineHeightTypes
+    text = block.text()
+    if text == "\ufffc" or photo_group.is_group_block(block):
+        return 100, kinds.ProportionalHeight.value
+    if text.startswith("\ufffc"):
+        return 0.6 * QFontMetricsF(char.font()).lineSpacing(), kinds.LineDistanceHeight.value
+    return 160, kinds.ProportionalHeight.value
 
 
 def _merge_fragments(block, char: QTextCharFormat, colors: Palette) -> None:
