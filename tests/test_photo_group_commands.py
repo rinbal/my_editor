@@ -14,7 +14,7 @@ import sys
 
 import pytest
 from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QPointF, QRect, Qt
-from PySide6.QtGui import QAction, QImage, QMouseEvent, QTextCursor, QTextImageFormat
+from PySide6.QtGui import QAction, QImage, QMouseEvent, QPainter, QTextCursor, QTextImageFormat
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
 
@@ -525,4 +525,19 @@ def test_the_large_chip_shows_its_new_state_at_once(monkeypatch):
     shown.clear()
     ed.viewport().repaint()
     assert shown == [True]
+    ed.close()
+
+
+def test_the_line_a_split_opens_says_what_it_is_for(monkeypatch):
+    # Gate RG-PG2E-b 9: the empty line had no words (EDITING 2.5).
+    written = []
+    monkeypatch.setattr(QPainter, "drawText", lambda painter, *where: written.append(where[-1]))
+    ed = _selected(number=1)
+    ed.photos.run(SPLIT)
+    ed.viewport().repaint()
+    assert "Write something here, then the group is split" in written
+    written.clear()
+    QTest.keyClicks(ed, "W")
+    ed.viewport().repaint()
+    assert "Write something here, then the group is split" not in written
     ed.close()

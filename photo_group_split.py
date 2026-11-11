@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Split Group Here: the empty line it opens between two pictures of a
-group, while it waits for words (EDITING 2.5).
+group, while it waits for words (EDITING 2.5), with a placeholder that
+says what it is for.
 
 The first words written there join the split's step, so one Undo takes
 both back. When the caret leaves the line with nothing written in it,
@@ -16,7 +17,8 @@ from __future__ import annotations
 
 from typing import Optional, Tuple
 
-from PySide6.QtGui import QTextCursor, QTextDocument
+from PySide6.QtCore import QRectF, Qt
+from PySide6.QtGui import QPalette, QTextCursor, QTextDocument
 
 import photo_group_actions as actions
 from i18n import N_, _
@@ -59,6 +61,21 @@ class SplitLine:
         if self._line is not None and (self._line[0].block()
                                        != self._photos.editor.textCursor().block()):
             self._left()
+
+    def paint(self, painter) -> None:
+        """The placeholder in the line while it is empty, after the caret."""
+        if self._line is None or self._line[0].block().length() > 1:
+            return
+        ed = self._photos.editor
+        caret = ed.cursorRect(QTextCursor(self._line[0].block()))
+        painter.save()
+        painter.setFont(ed.font())
+        painter.setPen(ed.palette().color(QPalette.ColorRole.PlaceholderText))
+        painter.drawText(QRectF(caret.right() + 2, caret.top(),
+                                ed.viewport().width() - caret.right() - 2, caret.height()),
+                         Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                         _("Write something here, then the group is split"))
+        painter.restore()
 
     def outside_change(self, position: int) -> None:
         """The document changed at ``position``, not by a photo command."""

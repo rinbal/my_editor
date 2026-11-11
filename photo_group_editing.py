@@ -577,4 +577,5 @@ class PhotoEditing(QObject):
             self.changed.emit()
 
     def paint(self, painter) -> None:
+        self.split.paint(painter)
         self.pointer.paint(painter)
