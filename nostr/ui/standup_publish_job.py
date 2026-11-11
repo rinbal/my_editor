@@ -60,21 +60,39 @@ class HeldPublish(PublishJob):
 class SignedHere(HeldPublish):
     """Q1: this one article signed with the key kept on this computer.
     The key is read from the keychain into the signer for this signature
-    and dropped with the job; the account's way of signing stays as it
-    is, and nothing is stored."""
+    and wiped once the signer answered, or when the job is cancelled
+    (RG-M4-a 4); the account's way of signing stays as it is, and
+    nothing is stored."""
 
     def __init__(self, *args, secret: bytes, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         from ..local_signer import LocalSigner
         self._here = LocalSigner(secret, parent=self)
 
+    @property
+    def holds_key(self) -> bool:
+        """Whether the key is still in memory here (for the tests)."""
+        return bool(self._here._sk)
+
     def start(self) -> None:
         self._say(_("Signing on this computer…"))
         self._relay_directory.publish_plan(self._author, self._on_plan,
                                            mentioned=self._mentioned,
                                            entitled=relays_from(self._entitled))
-        self._here.sign_event(self._unsigned, on_success=self._on_signed,
-                              on_failure=self._fail)
+
+        def signed(event: dict) -> None:
+            self._here.close()
+            self._on_signed(event)
+
+        def refused(reason: str) -> None:
+            self._here.close()
+            self._fail(reason)
+
+        self._here.sign_event(self._unsigned, on_success=signed, on_failure=refused)
+
+    def cancel(self) -> None:
+        super().cancel()
+        self._here.close()
 
 
 def offers_here(profile, event: Mapping, key_here: Callable[[], bool]) -> bool:

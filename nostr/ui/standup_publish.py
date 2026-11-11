@@ -13,31 +13,26 @@ that accept names, which must be the verified revision opened here:
      article with their addresses as long as they will be is measured
      against the signer first: nothing private goes up in plain for an
      article the signer could not sign.
-  2. Each picture is read (this computer's copy first, else from the
-     servers its opened revision names, then the writer's), decrypted with the key its own
-     submission's signed revision names, checked against its plain hash
-     and put on the writer's media servers. A file the person's library
-     held before is named as it is and never taken down; every file
-     this run put up is written down and taken down again on any
-     failure before a relay took the article.
+  2. Each picture is read (this computer's copy, else the servers its
+     opened revision names, then the writer's), decrypted with the key
+     its submission's signed revision names, checked against its plain
+     hash and put on the writer's media servers. A file the library held
+     before is named as it is and never taken down; every file this run
+     put up comes down again on any failure before a relay took it.
   3. The article is built with the public addresses (credits, the
      writer's own split, carried tags as the web app does), measured
-     again, signed, and kept bound to the revision. Before a picture
-     goes up in plain and right before it is signed, its address is read
-     on this server and on every relay it goes to, and the submission
-     again before it goes out (12.4, Before the writer's work goes out;
-     ``release``): when its revision changed, or another person's
-     article stands at its address, nothing goes out and the pictures
-     come down; it goes only to the relays that answered.
-  4. Only once a relay took it is it reported (``/published``). No
-     relay took it: the same signed article goes again with Erneut. Not
-     reported: Erneut reports it again (it is public by then).
+     again, signed and kept bound to the revision. Before a picture goes
+     up and right before signing, the address is read on this server and
+     every relay it goes to, the submission again before it goes out
+     (12.4; ``release``): changed, or another person's article there,
+     and nothing goes out; it goes only to the relays that answered.
+  4. Only once a relay took it is it reported (``/published``); Erneut
+     sends the same signed article again, or reports it again.
 
 Through a signer app that cannot sign an article this long, with the
 key also kept on this computer, :attr:`Stage.OFFER_HERE` offers once
-to sign this one article with that key (M-4 Q1): explicit, for this
-article only, the key read from the keychain for the signature and
-never stored anywhere.
+to sign this one article with that key (M-4 Q1), read from the keychain
+for the signature, wiped after it and never stored.
 """
 
 from __future__ import annotations
@@ -150,7 +145,7 @@ def run_for(following, account, profile, sid: str, *, store, fetch, session_pool
     def job(profile, unsigned: dict, here: bool, only):
         return publish_job(here=here, relay_pool=relay_pool, relay_directory=relay_directory,
                            session_pool=session_pool, profile=profile, unsigned_event=unsigned,
-                           entitled_relays=entitled_relays or (), only=only, parent=parent)
+                           entitled_relays=entitled_relays or (), only=only)
 
     def relays_hold(unsigned: dict, on_done) -> None:
         read_relays(relay_pool=relay_pool, relay_directory=relay_directory, profile=profile,
@@ -260,14 +255,20 @@ class AcceptedPublish(QObject):
 
     def stop(self) -> None:
         """The account was let go: nothing more is asked; what this run put
-        up and nothing took yet is taken down."""
+        up and nothing took yet comes down, and the job goes."""
         if self._stopped:
             return
         self._stopped = True
-        if self._job is not None and self.signed_article is None:
-            self._job.cancel()
         if self.stage is Stage.WORKING and self.signed_article is None:
             self._take_down()
+        self._let_go()
+
+    def _let_go(self) -> None:
+        """The job goes, with the key kept here and the article (RG-M4-a 4)."""
+        job, self._job = self._job, None
+        if job is not None:
+            job.cancel()
+            job.deleteLater()
 
     # -- 1: before anything goes up ----------------------------------------------
 
@@ -411,6 +412,7 @@ class AcceptedPublish(QObject):
 
     def _sign_now(self, unsigned: dict, relays) -> None:
         job = self._job = self._ports.job(self._profile, unsigned, self._here, list(relays))
+        job.setParent(self)                     # it goes with the run (RG-M4-a 4)
         job.signed.connect(lambda _id: self._signed(job))
         job.completed.connect(lambda results: self._sent(job, results))
         job.failed.connect(lambda _reason: self._not_signed(job))
@@ -516,9 +518,8 @@ class AcceptedPublish(QObject):
         come down."""
         if self.stage is stage and self.words == words:
             return
-        if self._job is not None:
-            self._job.cancel()
-        self.signed_article, self._job = None, None
+        self.signed_article = None
+        self._let_go()
         self._take_down()
         self._say(stage, _(NOT_PUBLISHED), words)
 

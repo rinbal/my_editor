@@ -292,6 +292,39 @@ def test_another_work_at_the_link_name_is_said_in_one_sentence_and_the_name_kept
     assert formats.tag_value(jobs[0].signed_event, "d") == "ein-jahr"
 
 
+def test_the_key_kept_here_is_wiped_after_its_signature_and_goes_with_the_run(accepted):
+    # RG-M4-a 4 (probe p3): the Q1 key is wiped once the signer answered
+    # or the job was cancelled, and the run's jobs are its own, so they go
+    # when the account is let go.
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from nostr.ui.standup_publish_job import SignedHere
+    directory = SimpleNamespace(publish_plan=lambda *_a, **_kw: None)
+    unsigned = {"kind": 30023, "pubkey": pk("writer"), "created_at": 1, "tags": [["d", "x"]],
+                "content": "t"}
+
+    def here():
+        return SignedHere(secret=sk("writer"), relay_pool=None, relay_directory=directory,
+                          session_pool=None, unsigned_event=unsigned,
+                          profile=SimpleNamespace(user_pubkey=pk("writer"), bunker_relays=[]))
+
+    signed, cancelled = here(), here()
+    signed.start()
+    cancelled.start()
+    cancelled.cancel()
+    accepted.world.settle()
+    assert signed.signed_event is not None and not signed.holds_key
+    assert not cancelled.holds_key
+    run, _store, jobs = _run(accepted, took=())          # signed, no relay took it
+    run.start()
+    accepted.world.settle()
+    gone = []
+    jobs[0].destroyed.connect(lambda *_: gone.append(True))
+    assert jobs[0].parent() is run
+    run.stop()                                           # signed out
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    assert gone == [True]
+
+
 def test_the_writer_release_vectors():
     # Contract 12.4 at 569b3f8, Before the writer's work goes out (vector
     # writer_release, releaseRelays): this server, then every relay.
