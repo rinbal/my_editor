@@ -457,6 +457,7 @@ _CORRECTED = frozenset({"d", "client", "title", "summary", "image", "published_a
 _NEVER = frozenset({"expiration"})
 # A public picture's address names its plain file's hash (BUD-01).
 _PUBLIC_PICTURE = re.compile(r"https://[^\s)\"'<>]+?/([0-9a-f]{64})(?:\.[a-z0-9]{2,5})?")
+_IMAGE = re.compile(r"!\[[^\]]*\]\(\s*<?([^\s)>]+)")
 
 
 def _language_tag(tag: List[str]) -> bool:
@@ -483,11 +484,17 @@ def corrected_template(revision: Mapping, published: Mapping, *, writer: str,
     media = [e for e in revision.get("media") or () if isinstance(e, Mapping)]
     content = _with_public_media(work["content"], media_urls)
     image = _with_public_media(work["image"], media_urls) if work["image"] else ""
+    # The media tags follow the corrected text: a picture it adds gets its
+    # imeta, one it removes loses it, one it keeps keeps the published one.
+    def shown(tag: List[str]) -> str:
+        url = next((part[4:] for part in tag[1:] if part.startswith("url ")), "")
+        return url if url and (url in content or url == image) else ""
+
     pictures = [tag for tag in (_carried(tag, media_urls, media)
-                                for tag in work["extra_tags"] if tag[0] == "imeta")
-                if any(part.startswith("url ") and part[4:] and (part[4:] in content
-                                                                  or part[4:] == image)
-                       for part in tag[1:])]
+                                for tag in work["extra_tags"] if tag[0] == "imeta") if shown(tag)]
+    named = {shown(tag) for tag in pictures}
+    pictures += [list(tag) for tag in published.get("tags") or ()
+                 if _is_tag(tag) and tag[0] == "imeta" and shown(tag) not in named | {""}]
     kept = [list(tag) for tag in published.get("tags") or ()
             if _is_tag(tag) and tag[0] not in _CORRECTED and tag[0] not in _NEVER
             and not _language_tag(tag)]
@@ -515,12 +522,25 @@ def _same_cover(revision: Mapping, new: str, old: str) -> bool:
     return new == old
 
 
+def _pictures(text: str, hashes: Mapping[str, str]) -> set:
+    """The pictures ``text`` shows, each by its plain file's hash when
+    known (a reference of the revision, or a public address), else by
+    its address."""
+    found = set()
+    for url in _IMAGE.findall(text):
+        public = _PUBLIC_PICTURE.fullmatch(url)
+        found.add(hashes.get(url, url) if _MEDIA_REF.fullmatch(url)
+                  else public.group(1) if public else url)
+    return found
+
+
 def correction_changes(revision: Mapping, published: Mapping) -> List[Tuple[str, str]]:
     """What the correction ``revision`` changes besides the text, as
     ``(field, new value)``: ``title``, ``summary`` (``""``: it goes),
     ``cover`` (``added``, ``changed`` or ``removed``), ``topics`` (the
-    new ones, ``#``-named and space-separated; ``""``: they go) and
-    ``language`` (its code). [] for a correction that cannot be read."""
+    new ones, ``#``-named and space-separated; ``""``: they go),
+    ``pictures`` (the text's pictures are others) and ``language`` (its
+    code). [] for a correction that cannot be read."""
     try:
         work = work_of(revision)
     except NotPublishable:
@@ -542,6 +562,9 @@ def correction_changes(revision: Mapping, published: Mapping) -> List[Tuple[str,
     old_topics = list(dict.fromkeys(formats.tag_values(published, "t")))
     if set(new_topics) != set(old_topics):
         found.append(("topics", " ".join("#" + t for t in new_topics)))
+    old = published.get("content") if isinstance(published.get("content"), str) else ""
+    if _pictures(old, {}) != _pictures(work["content"], _plain_hashes(revision)):
+        found.append(("pictures", ""))
     old_lang = next((tag[1] for tag in published.get("tags") or ()
                      if _is_tag(tag) and len(tag) >= 3 and tag[0] == "l"
                      and tag[2] == LANGUAGE_NAMESPACE), "")

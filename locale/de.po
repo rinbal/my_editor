@@ -13495,37 +13495,6 @@ msgstr "Dein Profil wird gelesen …"
 msgid "Your profile couldn’t be read, so it’s not known where your share goes."
 msgstr "Dein Profil ließ sich nicht lesen. Darum ist offen, wohin dein Anteil geht."
 
-#, python-brace-format
-msgid "The title becomes “{title}”."
-msgstr "Der Titel wird zu »{title}«."
-
-#, python-brace-format
-msgid "The summary becomes “{summary}”."
-msgstr "Die Zusammenfassung wird zu »{summary}«."
-
-msgid "The summary is removed."
-msgstr "Die Zusammenfassung fällt weg."
-
-msgid "It gets a cover picture."
-msgstr "Er bekommt ein Titelbild."
-
-msgid "The cover picture is a different one."
-msgstr "Das Titelbild ist ein anderes."
-
-msgid "The cover picture is removed."
-msgstr "Das Titelbild fällt weg."
-
-#, python-brace-format
-msgid "The topics become {topics}."
-msgstr "Die Themen werden zu {topics}."
-
-msgid "The topics are removed."
-msgstr "Die Themen fallen weg."
-
-#, python-brace-format
-msgid "The language becomes {language}."
-msgstr "Die Sprache wird zu {language}."
-
 msgid "Another person’s article already stands under this link name. So that it stays, nothing is published."
 msgstr "Unter diesem Linknamen steht schon ein Artikel von jemand anderem. Damit er bleibt, wird nichts veröffentlicht."
 
@@ -13534,3 +13503,31 @@ msgstr "Eine kurze Frage zum Veröffentlichen: "
 
 msgid "Your relays didn’t answer, so nothing was published. Try again in a moment."
 msgstr "Deine Relays haben nicht geantwortet, darum wurde nichts veröffentlicht. Versuche es gleich noch einmal."
+
+#, python-brace-format
+msgid "Also changed: {fields}."
+msgstr "Außerdem geändert: {fields}."
+
+msgctxt "correction field"
+msgid "title"
+msgstr "Titel"
+
+msgctxt "correction field"
+msgid "summary"
+msgstr "Zusammenfassung"
+
+msgctxt "correction field"
+msgid "cover picture"
+msgstr "Titelbild"
+
+msgctxt "correction field"
+msgid "pictures"
+msgstr "Bilder"
+
+msgctxt "correction field"
+msgid "topics"
+msgstr "Themen"
+
+msgctxt "correction field"
+msgid "language"
+msgstr "Sprache"

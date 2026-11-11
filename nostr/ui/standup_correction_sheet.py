@@ -6,7 +6,7 @@ editorial team suggests for a published article, and takes it over
 
     Korrektur von Einundzwanzig Magazin
     „Zwei Zahlen korrigiert."                    (the correction's note)
-    Der Titel wird zu »…«. Das Titelbild ist ein anderes.
+    Außerdem geändert: Titel, Titelbild.
     ┌ the published text beside the correction, word by word ┐
     Übernimmst du sie, ersetzt die Korrektur den Artikel unter
     derselben Adresse. Das Datum der Veröffentlichung bleibt.
@@ -14,9 +14,11 @@ editorial team suggests for a published article, and takes it over
 
 The text is compared with the article as it stands in public, never
 with an earlier correction (RG-M4-a 6); every other public field the
-correction changes (title, summary, cover, topics, language) is said in
-plain words above it (RG-M4-a 1). Nothing else of the published article
-changes: its zaps, credits and carried tags stay.
+correction changes (title, summary, cover, pictures, topics, language)
+is named in one line above it, in the web's words (RG-M4-a 1). Nothing
+else of the published article changes: its zaps, credits, co-authors and
+every tag not taken from the text stay; its pictures' tags follow the
+corrected text.
 
 The run (:class:`~.standup_publish.CorrectionPublish`) is the account's
 and bound to the correction's verified revision: it confirms the
@@ -29,13 +31,13 @@ from __future__ import annotations
 
 from typing import Optional, Sequence, Tuple
 
-from PySide6.QtCore import QLocale, QSize, Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
 from alerts import answer_return_as_the_system_does
-from i18n import N_, _
+from i18n import N_, _, pgettext
 
 from . import appearance
 from .publish_sheet import StatusLine, fit_margins, fit_to_window, make_sheet, sheet_stylesheet
@@ -45,35 +47,26 @@ from .standup_publish import CorrectionPublish, Stage
 REPLACES = N_("If you take it, the correction replaces the article at the same address. "
               "The date of publication stays.")
 ASK_PREFIX = N_("A short question about the correction: ")
-# What else the correction changes, one plain sentence each (RG-M4-a 1).
-TITLE_BECOMES = N_("The title becomes “{title}”.")
-SUMMARY_BECOMES = N_("The summary becomes “{summary}”.")
-SUMMARY_GOES = N_("The summary is removed.")
-COVER_ADDED = N_("It gets a cover picture.")
-COVER_CHANGED = N_("The cover picture is a different one.")
-COVER_GOES = N_("The cover picture is removed.")
-TOPICS_BECOME = N_("The topics become {topics}.")
-TOPICS_GO = N_("The topics are removed.")
-LANGUAGE_BECOMES = N_("The language becomes {language}.")
+# What else the correction changes, named in one line as the web names
+# it (RG-M4-a 1; editorial-release.js compareFields and field).
+ALSO_CHANGED = N_("Also changed: {fields}.")
+
+
+def _field_names() -> dict:
+    return {"title": pgettext("correction field", "title"),
+            "summary": pgettext("correction field", "summary"),
+            "cover": pgettext("correction field", "cover picture"),
+            "pictures": pgettext("correction field", "pictures"),
+            "topics": pgettext("correction field", "topics"),
+            "language": pgettext("correction field", "language")}
 
 
 def change_words(changes: Sequence[Tuple[str, str]]) -> str:
-    """The sentences (translated) for ``publishing.correction_changes``."""
-    out = []
-    for field, value in changes:
-        if field == "title":
-            out.append(_(TITLE_BECOMES).format(title=value))
-        elif field == "summary":
-            out.append(_(SUMMARY_BECOMES).format(summary=value) if value else _(SUMMARY_GOES))
-        elif field == "cover":
-            out.append(_(COVER_ADDED) if value == "added" else _(COVER_GOES)
-                       if value == "removed" else _(COVER_CHANGED))
-        elif field == "topics":
-            out.append(_(TOPICS_BECOME).format(topics=value) if value else _(TOPICS_GO))
-        elif field == "language":
-            name = QLocale(value).nativeLanguageName() if value else ""
-            out.append(_(LANGUAGE_BECOMES).format(language=name or value))
-    return " ".join(out)
+    """The line (translated) for ``publishing.correction_changes``; ``""``
+    when the correction changes nothing besides the text."""
+    names = _field_names()
+    named = [names[field] for field, _value in changes if field in names]
+    return _(ALSO_CHANGED).format(fields=", ".join(named)) if named else ""
 
 
 class CorrectionSheet(QDialog):

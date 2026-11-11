@@ -24,10 +24,10 @@ PLAIN = b"\x89PNG picture bytes"
 SERVER = "https://media.example"
 
 
-def _picture():
+def _picture(plain: bytes = PLAIN):
     key = scrypto.new_secret_key()
     encryptor = scrypto.MediaEncryptor(key)
-    cipher = encryptor.update(PLAIN) + encryptor.finish()
+    cipher = encryptor.update(plain) + encryptor.finish()
     entry = scrypto.media_entry(key=key, encryptor=encryptor, name="cafe.png",
                                 mime="image/png", servers=["https://blossom.example"])
     return entry, cipher
@@ -96,6 +96,35 @@ def test_a_correction_changes_only_what_its_sheet_shows():
         ("title", "Neuer Titel"), ("cover", "changed")]
     assert publishing.correction_texts(correction, published) == (
         "Text ![](standup-media)", "Text ![](standup-media)")
+
+
+def test_a_picture_the_correction_adds_gets_its_tag_and_one_it_removes_loses_it():
+    # RG-M4-a 1, refined: the media tags follow the corrected text, and
+    # the compare names the change with the web's word for it.
+    kept, added = _picture()[0], _picture(PLAIN + b"another")[0]
+    kept_url, gone_url = (f"{SERVER}/{kept['plain_sha256']}.png", f"{SERVER}/{'ee' * 32}.png")
+    published = publishing.published_template(
+        {"work": {"d": "ein-jahr", "title": "Ein Jahr", "summary": "", "image": "", "tags": [],
+                  "lang": "", "content": f"![]({kept_url}) ![]({gone_url})", "authors": [],
+                  "extra_tags": [["imeta", f"url {kept_url}", "m image/png"],
+                                 ["imeta", f"url {gone_url}", "m image/png"]]}, "media": []},
+        writer=pk("writer"), d="ein-jahr", media_urls={}, published_at=100, created_at=200)
+    added_url = f"{SERVER}/{added['plain_sha256']}.png"
+    correction = {"work": {"d": "ein-jahr", "title": "Ein Jahr", "summary": "", "image": "",
+                           "tags": [], "lang": "", "authors": [],
+                           "content": f"![]({kept['ref']}) ![]({added['ref']})",
+                           "extra_tags": [["imeta", f"url {added['ref']}",
+                                           f"x {added['cipher_sha256']}"]]},
+                  "media": [kept, added]}
+    event = publishing.corrected_template(
+        correction, published, writer=pk("writer"), created_at=300,
+        media_urls={kept["ref"]: kept_url, added["ref"]: added_url})
+    imeta = [t for t in event["tags"] if t[0] == "imeta"]
+    assert imeta == [["imeta", f"url {added_url}", f"x {added['plain_sha256']}"],
+                     ["imeta", f"url {kept_url}", "m image/png"]]
+    assert publishing.correction_changes(correction, published) == [("pictures", "")]
+    from nostr.ui.standup_correction_sheet import change_words
+    assert change_words([("title", "T"), ("pictures", "")]) == "Also changed: title, pictures."
 
 
 class FakeStore(QObject):
