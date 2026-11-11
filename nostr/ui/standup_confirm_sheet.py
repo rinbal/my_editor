@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional, Sequence, Tuple
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
@@ -65,8 +65,13 @@ class ConfirmSheet(QDialog):
         self.setMinimumSize(400, 260)
         self._is_dark, self._confirm = bool(is_dark), confirm
         self._contributor = role != "writer"
+        # A share of this person's can reach them only at an address their
+        # profile names: Confirm waits for a read that names one (RG-M4-a 3).
+        self._needs_address = bool(shares) and any(
+            pk == me for pk, weight, _role in shares if weight > 0)
+        self._address, self._zap_address, self._profile_edited = "", zap_address, False
         self._build(publication, number, shares or (), me, name_of)
-        if shares and any(pk == me for pk, weight, _role in shares if weight > 0):
+        if self._needs_address:
             zap_address(me, self._show_address)
         self._refresh()
         fit_to_window(self, QSize(520, min(460, max(300, self.sizeHint().height()))))
@@ -139,15 +144,19 @@ class ConfirmSheet(QDialog):
         try:
             if address is None:
                 return
+            self._address = address
             self.address.setText(_(SHARE_GOES_TO).format(address=address) if address
                                  else _(NO_ADDRESS))
             self.address.show()
             self.edit_profile.setVisible(not address)
+            self._refresh()
         except RuntimeError:
             pass                                # the sheet closed meanwhile
 
     def _refresh(self) -> None:
-        self.confirm_button.setEnabled(not self._contributor or self.rights.isChecked())
+        self.confirm_button.setEnabled(
+            (not self._contributor or self.rights.isChecked())
+            and (not self._needs_address or bool(self._address)))
 
     def _on_confirm(self) -> None:
         confirms = ("split", "rights") if self._contributor else ("split",)
@@ -171,7 +180,17 @@ class ConfirmSheet(QDialog):
         self.reject()
 
     def _edit_profile(self) -> None:
+        self._profile_edited = True
         self.edit_profile_requested.emit()
+
+    def changeEvent(self, event) -> None:  # noqa: N802, Qt's name
+        """Back from editing the profile, the address is read again, so a
+        newly named one enables Confirm without reopening the sheet."""
+        super().changeEvent(event)
+        if (event.type() == QEvent.Type.ActivationChange and self.isActiveWindow()
+                and getattr(self, "_profile_edited", False) and not self._address):
+            self._profile_edited = False
+            self._zap_address(self._me, self._show_address)
 
     def _style(self) -> None:
         self.setStyleSheet(sheet_stylesheet(self._is_dark))

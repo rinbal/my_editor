@@ -366,6 +366,30 @@ def test_a_contributor_confirms_the_split_and_their_rights_from_their_own_app():
     assert OTHER not in rules.waiting_for(mine.row(sid))
 
 
+def test_confirm_waits_for_a_read_that_names_a_lightning_address():
+    # RG-M4-a 3: a share reaches a person only at the address their
+    # profile names; Confirm stays off before the read answers and while it
+    # names none, and turns on once a read names one.
+    from nostr.ui.standup_confirm_sheet import ConfirmSheet
+    answers, sent = [], []
+    sheet = ConfirmSheet(
+        role="writer", publication="Magazin", number=2,
+        shares=((ME, 70, "writer"), (OTHER, 30, "contributor")), me=ME,
+        name_of=lambda p: NAMES.get(p, ""),
+        zap_address=lambda pubkey, answer: answers.append(answer),
+        confirm=lambda confirms, done: sent.append(confirms), is_dark=False)
+    assert not sheet.confirm_button.isEnabled()
+    answers[0]("")
+    assert not sheet.confirm_button.isEnabled() and sheet.edit_profile.isVisibleTo(sheet)
+    sheet.confirm_button.click()
+    assert sent == []
+    answers[0]("jana@getalby.com")
+    assert sheet.confirm_button.isEnabled()
+    sheet.confirm_button.click()
+    assert sent == [("split",)]
+    sheet.close()
+
+
 def test_a_correction_is_compared_in_its_sheet_and_a_question_goes_to_the_composer(window):
     # M-4 M15 at the host: the writer's published article, the editorial
     # team's correction; Compare opens the sheet with the note and the
