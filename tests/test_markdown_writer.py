@@ -666,3 +666,20 @@ def test_a_caption_changed_in_a_group_is_written_in_its_place():
     photo_group_edit.set_unit(QTextCursor(doc), group.start,
                               group.units[0].captioned("New words"))
     assert document_to_markdown(doc, _image_as_read) == "![a](a.png)\n\n*New words*\n\n![b](b.png)\n"
+
+
+def test_a_break_tag_between_two_pictures_is_read_as_a_break():
+    """Gate 17: pictures pasted from a page come as "![a](a.png)<br>![b]
+    (b.png)". Read as a break, each picture keeps its description, and
+    the two are a group; a tag elsewhere, or in code, stays what it was."""
+    from markdown_writer import PASTE_FEATURES
+    for features in (PASTE_FEATURES, READ_FEATURES):
+        doc = QTextDocument()
+        read_markdown(doc, "![a](a.png)<br>![b](b.png) <BR />\n![c](c.png)\n", features)
+        assert document_to_markdown(doc, _image_as_read) == (
+            "![a](a.png)\n\n![b](b.png)\n\n![c](c.png)\n")
+        assert [unit.alt for unit in photo_group.groups_in(doc)[0].units] == ["a", "b", "c"]
+    for source in ("In HTML, <br> breaks a line.\n", "`![a](a.png)<br>![b](b.png)`\n"):
+        doc = QTextDocument()
+        read_markdown(doc, source, PASTE_FEATURES)
+        assert document_to_markdown(doc, _image_as_read) == source

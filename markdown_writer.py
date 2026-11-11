@@ -1040,6 +1040,7 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
     Markdown readers do, as spaces. ``groups``: pictures that follow each
     other are folded into their group, as the editor shows them; without,
     they stay the paragraphs they are in the Markdown."""
+    markdown = _breaks_between_pictures(markdown)
     markdown, alts = _whole_descriptions(markdown, features)
     marked = 0
     if features == READ_FEATURES:
@@ -1213,6 +1214,34 @@ def _descriptions(markdown: str) -> List[Tuple[int, int]]:
     """Where each picture's description is (start, end) in ``markdown``:
     an inline picture ``![...](...)`` or one with a full reference
     ``![...][label]``, outside code."""
+    return [(start, end) for start, end, _after in _pictures(markdown)]
+
+
+_BREAK_TAG = re.compile(r"[ \t]*<br[ \t]*/?>[ \t]*\n?[ \t]*", re.IGNORECASE)
+
+
+def _breaks_between_pictures(markdown: str) -> str:
+    """``markdown`` with an HTML line break that stands between two
+    pictures (``![a](a.png)<br>![b](b.png)``, as pages pasted from the web
+    hold them) written as Markdown's own break. Qt's reader drops such a
+    tag and the description of the picture after it; read without HTML
+    (a paste) the tag is text between the pictures."""
+    if "<" not in markdown or "![" not in markdown:
+        return markdown
+    pictures = _pictures(markdown)
+    pieces, last = [], 0
+    for (_s, _e, after), (start, _e2, _a2) in zip(pictures, pictures[1:]):
+        if _BREAK_TAG.fullmatch(markdown, after, start - 2):
+            pieces.append(markdown[last:after])
+            pieces.append("  \n")
+            last = start - 2
+    pieces.append(markdown[last:])
+    return "".join(pieces)
+
+
+def _pictures(markdown: str) -> List[Tuple[int, int, int]]:
+    """Each picture of ``markdown`` outside code: where its description
+    starts and ends, and where the text after the picture starts."""
     lines = markdown.split("\n")
     code = _code_lines(lines)
     starts, at = [], 0
@@ -1220,7 +1249,7 @@ def _descriptions(markdown: str) -> List[Tuple[int, int]]:
         starts.append(at)
         at += len(line) + 1
     blocked = [(starts[n], starts[n] + len(lines[n])) for n, is_code in enumerate(code) if is_code]
-    found: List[Tuple[int, int]] = []
+    found: List[Tuple[int, int, int]] = []
     index, block = 0, 0
     length = len(markdown)
     while index < length:
@@ -1246,7 +1275,7 @@ def _descriptions(markdown: str) -> List[Tuple[int, int]]:
                     label = _label_end(markdown, end + 1)
                     close = label if label is not None and label > end + 2 else None
                 if close is not None:
-                    found.append((index + 2, end))
+                    found.append((index + 2, end, close + 1))
                     index = close + 1
                     continue
             index += 2
