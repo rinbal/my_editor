@@ -16,7 +16,7 @@ serialize them.
 
 import re
 
-from PySide6.QtGui import QTextFormat
+from PySide6.QtGui import QTextCharFormat, QTextFormat
 
 BULLET_MARKER = "• "
 
@@ -46,10 +46,28 @@ SOFT_BREAK_PROPERTY = QTextFormat.Property.UserProperty + 0x5B1
 # characters they hold (EDITING 2.1): "*", "_" or "[x](y)" typed there is
 # written escaped (markdown_writer.literal_text), so the file reads them
 # back as typed. The caption's own formatting, from the file, stays
-# Markdown. photo_caption.CaptionRun.typed carries it. A character a file
-# escaped ("\*") is text so too, wherever it stands (markdown_writer's
-# _keep_escaped); editor.HtmlEditor keeps it off what is typed after one.
+# Markdown. photo_caption.CaptionRun.typed carries it.
 TYPED_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B3
+
+# A character a file escaped ("\*", "1\.", "\!"), wherever it stands: it
+# is written escaped again, as the file had it, so it never turns into
+# emphasis, a list, a link or a picture, and text without an escape gets
+# none (markdown_writer's _keep_escaped). photo_caption.CaptionRun.escaped
+# carries it in a caption; editor.HtmlEditor keeps it off what is typed
+# after one.
+ESCAPED_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B4
+
+# The marks above belong to the characters that carry them alone.
+READ_MARKS = (SOFT_BREAK_PROPERTY, ESCAPED_TEXT_PROPERTY, TYPED_TEXT_PROPERTY)
+
+
+def without_read_marks(fmt: QTextCharFormat) -> QTextCharFormat:
+    """``fmt`` for new text written in it (typed, or a replacement): without
+    READ_MARKS, so it is Markdown as typed, whatever stood there."""
+    plain = QTextCharFormat(fmt)
+    for mark in READ_MARKS:
+        plain.clearProperty(mark)
+    return plain
 
 
 # Python counts a string in code points; a QTextDocument counts positions

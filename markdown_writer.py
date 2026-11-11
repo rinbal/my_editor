@@ -65,6 +65,7 @@ from PySide6.QtGui import (
 
 from doc_walk import (
     BULLET_MARKER,
+    ESCAPED_TEXT_PROPERTY,
     LINE_SEPARATOR,
     OBJECT_REPLACEMENT,
     SOFT_BREAK_PROPERTY,
@@ -77,7 +78,7 @@ from doc_walk import (
 )
 import photo_group
 import photo_group_find
-from markdown_scan import FENCE_LINE, LIST_LINE, descriptions, escapes, pictures
+from markdown_scan import ESCAPABLE, FENCE_LINE, LIST_LINE, descriptions, escapes, pictures
 from rich_text import normalize_after_markdown_load
 
 ImageTarget = Callable[[object], Optional[str]]
@@ -172,6 +173,7 @@ class _Span:
     href: str = ""
     raw: bool = False          # an image's text from the caller, written as is
     literal: bool = False      # text to be read back as text (see literal_text)
+    escaped: bool = False      # escaped in the file: written escaped again
 
 
 @dataclass
@@ -220,7 +222,8 @@ def _spans_of(runs, image_target: Optional[ImageTarget]) -> List[_Span]:
         href = fmt.anchorHref() if fmt.isAnchor() else ""
         spans.append(_Span(text=text, bold=_is_bold(fmt), italic=fmt.fontItalic(),
                            strike=fmt.fontStrikeOut(), code=_is_code(fmt),
-                           href=href or "", literal=fmt.boolProperty(TYPED_TEXT_PROPERTY)))
+                           href=href or "", literal=fmt.boolProperty(TYPED_TEXT_PROPERTY),
+                           escaped=fmt.boolProperty(ESCAPED_TEXT_PROPERTY)))
     return _merged(spans)
 
 
@@ -249,9 +252,10 @@ def _merged(spans: List[_Span]) -> List[_Span]:
     out: List[_Span] = []
     for span in spans:
         if (out and not span.raw and not out[-1].raw
-                and (out[-1].bold, out[-1].italic, out[-1].strike, out[-1].code,
-                     out[-1].href, out[-1].literal) == (span.bold, span.italic, span.strike,
-                                                        span.code, span.href, span.literal)):
+                and (out[-1].bold, out[-1].italic, out[-1].strike, out[-1].code, out[-1].href,
+                     out[-1].literal, out[-1].escaped) == (span.bold, span.italic, span.strike,
+                                                           span.code, span.href, span.literal,
+                                                           span.escaped)):
             out[-1].text += span.text
         else:
             out.append(span)
@@ -666,10 +670,13 @@ def _style_runs(spans: List[_Span]) -> List[List[_Span]]:
 
 
 def _words(span: _Span, label: bool) -> str:
-    """A span's text as Markdown, without its style: literal text escaped,
-    else web addresses kept text and, in a link's label, a bracket or a
-    "<" (read as HTML) escaped, which would end or change the link when
-    the file is read again."""
+    """A span's text as Markdown, without its style: what the file escaped
+    escaped as it was, literal text escaped, else web addresses kept text
+    and, in a link's label, a bracket or a "<" (read as HTML) escaped,
+    which would end or change the link when the file is read again."""
+    if span.escaped:
+        # (Only the punctuation: a word typed in its format stays words.)
+        return "".join("\\" + char if char in ESCAPABLE else char for char in span.text)
     if span.literal:
         return LINE_SEPARATOR.join(literal_text(part) for part in span.text.split(LINE_SEPARATOR))
     words = LINE_SEPARATOR.join(_protect_addresses(part)
@@ -695,6 +702,10 @@ def _styled(spans: List[_Span], label: bool = False) -> str:
     return LINE_SEPARATOR.join(pieces)
 
 
+# A pipe and the backslashes before it, when they escape none of it.
+_BARE_PIPE = re.compile(r"(?<!\\)((?:\\\\)*)\|")
+
+
 def _table_markdown(block: _Block) -> str:
     if not block.rows:
         return ""
@@ -702,7 +713,8 @@ def _table_markdown(block: _Block) -> str:
 
     def cell(spans):
         text = _inline_markdown(spans, hard_break=" ")
-        return text.replace("|", "\\|").replace("\n", " ").strip() or " "
+        # Every pipe escaped that is not yet (one a file escaped is).
+        return _BARE_PIPE.sub(r"\1\\|", text).replace("\n", " ").strip() or " "
 
     lines = []
     for index, row in enumerate(block.rows):
@@ -1121,8 +1133,10 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
 #
 # Qt's reader reads "\*Stern\*" as the text "*Stern*", and the writer
 # writes text as the Markdown typed into it: saved, the words would turn
-# into emphasis. Each character a file escaped is marked text
-# (TYPED_TEXT_PROPERTY), which the writer escapes again (literal_text).
+# into emphasis, "1\. Platz" into a list, "\![a](u)" into a picture.
+# Each character a file escaped is marked (ESCAPED_TEXT_PROPERTY), and the
+# writer escapes it again where the file did: what is bare in the file
+# stays bare, so the file saves as it was.
 # For the time Qt reads the file, a mark stands before each escape: a
 # punctuation mark as the backslash is, so the emphasis beside it reads
 # as before (whether a star opens or closes emphasis depends on what
@@ -1148,18 +1162,17 @@ def _marked_escapes(markdown: str) -> Tuple[str, int]:
 
 def _keep_escaped(doc: QTextDocument) -> None:
     """Each mark _marked_escapes set gone, and the character after it
-    marked text where the writer would write it as Markdown."""
+    marked escaped."""
     position = 0
     text = QTextCharFormat()
-    text.setProperty(TYPED_TEXT_PROPERTY, True)
+    text.setProperty(ESCAPED_TEXT_PROPERTY, True)
     while True:
         cursor = doc.find(_ESCAPE_MARK, position)
         if cursor.isNull():
             return
         position = cursor.selectionStart()
         cursor.removeSelectedText()
-        char = doc.characterAt(position)
-        if literal_text(char) != char:
+        if doc.characterAt(position) in ESCAPABLE:
             cursor.setPosition(position + 1, QTextCursor.MoveMode.KeepAnchor)
             cursor.mergeCharFormat(text)
 

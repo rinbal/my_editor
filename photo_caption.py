@@ -18,7 +18,7 @@ from typing import List, NamedTuple, Optional, Sequence, Tuple
 
 from PySide6.QtGui import QFont, QGuiApplication, QTextCharFormat
 
-from doc_walk import SOFT_BREAK_PROPERTY, TYPED_TEXT_PROPERTY, doc_length
+from doc_walk import ESCAPED_TEXT_PROPERTY, SOFT_BREAK_PROPERTY, TYPED_TEXT_PROPERTY, doc_length
 
 
 class CaptionRun(NamedTuple):
@@ -32,6 +32,7 @@ class CaptionRun(NamedTuple):
     href: str = ""
     soft: bool = False          # a soft line break, kept as the file had it
     typed: bool = False         # written in the caption field: text (TYPED_TEXT_PROPERTY)
+    escaped: bool = False       # escaped in the file (ESCAPED_TEXT_PROPERTY)
 
     def format(self) -> QTextCharFormat:
         """The format a reader of Markdown gives such a piece."""
@@ -52,6 +53,8 @@ class CaptionRun(NamedTuple):
             fmt.setProperty(SOFT_BREAK_PROPERTY, True)
         if self.typed:
             fmt.setProperty(TYPED_TEXT_PROPERTY, True)
+        if self.escaped:
+            fmt.setProperty(ESCAPED_TEXT_PROPERTY, True)
         return fmt
 
 
@@ -104,7 +107,7 @@ def replaced(runs: Sequence[CaptionRun], start: int, end: int,
             inside = first < last or 0 < first < length
             out.append(run._replace(text=_units(run.text, 0, first)))
             if not placed:
-                out.append(run._replace(text=words, soft=False, typed=True,
+                out.append(run._replace(text=words, soft=False, typed=True, escaped=False,
                                         href=run.href if inside else ""))
             out.append(run._replace(text=_units(run.text, last, None)))
             placed = True

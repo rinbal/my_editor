@@ -704,3 +704,15 @@ def test_what_a_file_escaped_is_saved_escaped():
         "Ein *Stern* hier", ""]
     assert document_to_markdown(doc, _image_as_read) == source
     assert holds_faithfully(source)
+
+
+def test_an_escape_saved_bare_would_change_the_text_so_it_is_kept():
+    # Saved bare, "1\." and "1\)" at a line's start made a list, "\!"
+    # before a link a picture, "\|" in a table cell a column. Text the file
+    # did not escape stays bare.
+    source = ("1\\. Platz geht an Anna.\n\n1\\) Punkt eins\n\nWow\\![Link](https://ex.com/)\n\n"
+              "| a | b |\n| --- | --- |\n| x \\| y | z |\n\n"
+              "Wow! Version 2.0 und a|b bleiben, wie sie sind.\n")
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source

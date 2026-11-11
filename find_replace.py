@@ -38,7 +38,7 @@ from PySide6.QtGui import QTextCharFormat, QTextCursor, QTextDocument
 import photo_caption
 import photo_group
 import photo_group_edit
-from doc_walk import OBJECT_REPLACEMENT, doc_length, doc_offset
+from doc_walk import OBJECT_REPLACEMENT, doc_length, doc_offset, without_read_marks
 
 # (start, end) positions in the document; in a group picture's caption
 # (picture, picture + 1, start, end), start and end in UTF-16 units of
@@ -173,8 +173,9 @@ def _style_of(doc: QTextDocument, position: int) -> QTextCharFormat:
 
 
 def replace_match(doc: QTextDocument, match: Match, replacement: str) -> Match:
-    """Replace one match, in the style of its first character. Returns
-    where the replacement now is. One step on the undo stack."""
+    """Replace one match, in the style of its first character (without
+    the marks only that character has, doc_walk.without_read_marks).
+    Returns where the replacement now is. One step on the undo stack."""
     if len(match) > 2:
         cursor = QTextCursor(doc)
         cursor.beginEditBlock()
@@ -185,7 +186,7 @@ def replace_match(doc: QTextDocument, match: Match, replacement: str) -> Match:
     cursor = QTextCursor(doc)
     cursor.setPosition(start)
     cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
-    style = _style_of(doc, start)
+    style = without_read_marks(_style_of(doc, start))
     cursor.beginEditBlock()
     cursor.insertText(replacement, style)
     cursor.endEditBlock()
@@ -208,7 +209,7 @@ def replace_all(doc: QTextDocument, needle: str, replacement: str,
         _replace_in_caption(cursor, position, list(ones), replacement)
     # From the end backwards: what is not replaced yet keeps its place.
     for start, end in reversed([match for match in matches if len(match) == 2]):
-        style = _style_of(doc, start)
+        style = without_read_marks(_style_of(doc, start))
         cursor.setPosition(start)
         cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
         cursor.insertText(replacement, style)

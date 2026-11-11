@@ -113,7 +113,7 @@ def without_wide_url(url: QUrl) -> QUrl:
 # Units: a picture and its caption                                             #
 # --------------------------------------------------------------------------- #
 
-_BOLD, _ITALIC, _STRIKE, _CODE, _SOFT_RUN, _TYPED = 1, 2, 4, 8, 16, 32
+_BOLD, _ITALIC, _STRIKE, _CODE, _SOFT_RUN, _TYPED, _ESCAPED = 1, 2, 4, 8, 16, 32, 64
 _numbers = itertools.count(1)
 
 
@@ -199,7 +199,8 @@ class Unit:
             fmt.setProperty(UNIT, f"[{self.number},null,null,[]]")
             return fmt
         runs = [[run.text, (_BOLD * run.bold | _ITALIC * run.italic | _STRIKE * run.strike
-                            | _CODE * run.code | _SOFT_RUN * run.soft | _TYPED * run.typed),
+                            | _CODE * run.code | _SOFT_RUN * run.soft | _TYPED * run.typed
+                            | _ESCAPED * run.escaped),
                  run.href]
                 for run in self.caption]
         fmt.setProperty(UNIT, json.dumps([self.number, self.join, self.caption_join, runs],
@@ -228,7 +229,8 @@ def _unit_of_mark(fmt: QTextCharFormat) -> Unit:
         number, join, caption_join, runs = json.loads(raw)
         caption = tuple(CaptionRun(text, bool(flags & _BOLD), bool(flags & _ITALIC),
                                    bool(flags & _STRIKE), bool(flags & _CODE), href,
-                                   bool(flags & _SOFT_RUN), bool(flags & _TYPED))
+                                   bool(flags & _SOFT_RUN), bool(flags & _TYPED),
+                                   bool(flags & _ESCAPED))
                         for text, flags, href in runs)
         if len(_parsed) >= _PARSED_KEPT:
             _parsed.clear()

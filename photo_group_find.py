@@ -26,8 +26,8 @@ from PySide6.QtGui import QFont, QTextBlockFormat, QTextCharFormat, QTextCursor,
 
 import media_files
 import photo_caption
-from doc_walk import (LINE_SEPARATOR, OBJECT_REPLACEMENT, SOFT_BREAK_PROPERTY,
-                      TYPED_TEXT_PROPERTY, doc_length)
+from doc_walk import (ESCAPED_TEXT_PROPERTY, LINE_SEPARATOR, OBJECT_REPLACEMENT,
+                      SOFT_BREAK_PROPERTY, TYPED_TEXT_PROPERTY, doc_length)
 from photo_group import (
     GROUP,
     SOFT,
@@ -124,12 +124,13 @@ def _spaced_caption(pieces) -> Optional[Tuple[CaptionRun, ...]]:
 
 
 def _caption_of(pieces) -> Tuple[CaptionRun, ...]:
-    return photo_caption.trimmed(tuple(CaptionRun(text, fmt.fontWeight() >= QFont.Weight.DemiBold, fmt.fontItalic(),
-                            fmt.fontStrikeOut(), bool(fmt.fontFixedPitch()),
-                            (fmt.anchorHref() if fmt.isAnchor() else "") or "",
-                            fmt.boolProperty(SOFT_BREAK_PROPERTY),
-                            fmt.boolProperty(TYPED_TEXT_PROPERTY))
-                 for _position, text, fmt in pieces))
+    return photo_caption.trimmed(tuple(
+        CaptionRun(text, fmt.fontWeight() >= QFont.Weight.DemiBold, fmt.fontItalic(),
+                   fmt.fontStrikeOut(), bool(fmt.fontFixedPitch()),
+                   (fmt.anchorHref() if fmt.isAnchor() else "") or "",
+                   fmt.boolProperty(SOFT_BREAK_PROPERTY), fmt.boolProperty(TYPED_TEXT_PROPERTY),
+                   fmt.boolProperty(ESCAPED_TEXT_PROPERTY))
+        for _position, text, fmt in pieces))
 
 
 def _after_join(pieces):

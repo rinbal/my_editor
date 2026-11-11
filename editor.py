@@ -31,8 +31,8 @@ from constants import (
 from fonts import code_font, writing_font
 from i18n import N_, _, ngettext
 import announce
-from doc_walk import (SOFT_BREAK_PROPERTY, TYPED_TEXT_PROPERTY, block_units, doc_length,
-                      doc_offset, iter_blocks, text_index)
+from doc_walk import (READ_MARKS, block_units, doc_length, doc_offset, iter_blocks, text_index,
+                      without_read_marks)
 import image_safety
 import file_paths
 import link_url
@@ -943,16 +943,12 @@ class HtmlEditor(QTextEdit):
 
     def _drop_read_marks(self, fmt: QTextCharFormat) -> None:
         """Keep the marks of what was read from the file on it, off what
-        is typed at the caret after it: a soft line break's
-        (SOFT_BREAK_PROPERTY) and an escaped character's
-        (TYPED_TEXT_PROPERTY)."""
-        marks = [mark for mark in (SOFT_BREAK_PROPERTY, TYPED_TEXT_PROPERTY)
-                 if fmt.hasProperty(mark)]
-        if marks and not self.textCursor().hasSelection():
-            plain = QTextCharFormat(fmt)
-            for mark in marks:
-                plain.clearProperty(mark)
-            self.setCurrentCharFormat(plain)
+        is typed at the caret after it (doc_walk.READ_MARKS): a soft line
+        break's, an escaped character's, a caption's typed words' once the
+        caption is text of its own."""
+        if (any(fmt.hasProperty(mark) for mark in READ_MARKS)
+                and not self.textCursor().hasSelection()):
+            self.setCurrentCharFormat(without_read_marks(fmt))
 
     def set_paper_mode(self, on: bool):
         self._paper_mode = bool(on)
