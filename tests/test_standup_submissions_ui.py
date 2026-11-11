@@ -25,7 +25,7 @@ import pytest
 from PySide6.QtCore import QObject, Qt
 from PySide6.QtGui import QColor, QImage
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QLabel, QToolButton
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QToolButton
 
 import alerts
 from document_notice import DocumentNotice
@@ -288,8 +288,8 @@ def test_the_detail_has_one_sentence_and_a_button_only_for_what_the_window_handl
 
 
 def test_publish_opens_the_accepted_version_and_says_when_the_editor_text_differs(window):
-    # M-4 M13: the accepted version is published; edited since, the sheet
-    # says so and offers handing the changes in instead.
+    # M-4 M13, RG-M4-b 1: the accepted version is published; edited since,
+    # the sheet says so, and offers no handing in (contract 11.3).
     from nostr.ui.standup_publish_sheet import PublishSheet
     world = window.world
     prepared, entries = seeded(window, annahme="Steuern")
@@ -301,7 +301,9 @@ def test_publish_opens_the_accepted_version_and_says_when_the_editor_text_differ
     sheet = window.host._publish_sheet
     assert isinstance(sheet, PublishSheet) and sheet.publish.text() == "Publish"
     assert sheet.accepted.text() == "Accepted by Einundzwanzig Magazin, version 1."
-    assert sheet.differs.isVisibleTo(sheet) and sheet.hand_in.isVisibleTo(sheet)
+    assert sheet.differs.isVisibleTo(sheet) and sheet.differs.text().startswith(
+        "The accepted version is published.")
+    assert not any("Hand In" in b.text() for b in sheet.findChildren(QPushButton))
     assert window.host.publish is not None and sheet.run is window.writer.publisher(
         window.profile, entries["annahme"].sid)              # one run per submission
     sheet.reject()

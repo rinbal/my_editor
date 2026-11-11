@@ -15,9 +15,10 @@ the writer publishes (M-4 M13; the prototype's publish sheet).
 
 Everything shown is the accepted version's, read-only: the sheet is the
 deliberate step (no hold after it). When the text in the editor differs
-from the accepted version it says so and offers both: Veröffentlichen
-publishes the accepted version; Änderungen abgeben … hands in the text as
-the next version instead. The run is the account's
+from the accepted version it says, in the prototype's words, that the
+accepted version is published and that the Redaktion sees a later
+change as changed since acceptance (RG-M4-b 1: no version can be handed
+in after acceptance, contract 11.3). The run is the account's
 (:class:`~.standup_publish.AcceptedPublish`): closing the sheet while it
 works lets it go on, and opening it again shows where it is.
 """
@@ -43,8 +44,8 @@ PLACE_LINE = N_("It then gets its place in “{section}”.")
 AS_HANDED_IN = N_("Text and pictures as handed in.")
 PUBLIC_AFTER = N_("Until now it’s private. Once published, everyone can read it, text and "
                   "pictures unencrypted. It can’t be taken back.")
-DIFFERS = N_("The text in the editor differs from the accepted version. Publish publishes "
-             "the accepted version; to publish your changes, hand them in first.")
+DIFFERS = N_("The accepted version is published. If you change anything afterwards, the "
+             "editorial team sees “changed since acceptance”.")
 ONLY_YOU = N_("Only you")
 ASK_PREFIX = N_("A short question about publishing: ")
 SIGN_HERE = N_("Sign with the Key on This Computer")
@@ -55,7 +56,6 @@ class PublishSheet(QDialog):
     credited besides the writer; ``differs``: the editor's text is not
     the accepted version's."""
 
-    hand_in_requested = Signal(str)          # sid
     view_requested = Signal(str)             # naddr
     ask_requested = Signal(str)              # the question's first words
 
@@ -128,11 +128,6 @@ class PublishSheet(QDialog):
         self.signing_as.setVisible(bool(account_name))
         root.addWidget(self.signing_as)
         buttons = QDialogButtonBox()
-        self.hand_in = buttons.addButton(_("Hand In the Changes …"),
-                                         QDialogButtonBox.ButtonRole.ActionRole)
-        self.hand_in.setVisible(bool(differs))
-        self.hand_in.setAutoDefault(False)
-        self.hand_in.clicked.connect(self._hand_in)
         self.cancel_button = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
         self.cancel_button.clicked.connect(self.reject)
         self.view = buttons.addButton(_("View"), QDialogButtonBox.ButtonRole.ActionRole)
@@ -179,7 +174,6 @@ class PublishSheet(QDialog):
         # Once it works, Cancel only closes: the run goes on (it is the
         # account's), and the detail shows where it is.
         self.cancel_button.setText(_("Close") if working or failed or ask else _("Cancel"))
-        self.hand_in.setEnabled(stage in (Stage.READY, Stage.FAILED))
 
     def _primary(self) -> None:
         stage = self.run.stage
@@ -194,10 +188,6 @@ class PublishSheet(QDialog):
             self.run.retry()
         else:
             self.run.start()
-
-    def _hand_in(self) -> None:
-        self.hand_in_requested.emit(self.run.sid)
-        self.reject()
 
     # -- the look ----------------------------------------------------------------------
 

@@ -479,7 +479,6 @@ class SubmissionsHost(QObject):
             number=row.view.revision, section=self._accepted_section(sid),
             account_name=self._name_of(run.writer), people=people, differs=differs,
             is_dark=ports.is_dark(), parent=ports.window())
-        sheet.hand_in_requested.connect(self.hand_in)
         sheet.view_requested.connect(self._view_naddr)
         sheet.ask_requested.connect(lambda words: self.ask(sid, words))
         if run not in self._heard:

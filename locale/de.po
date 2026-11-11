@@ -13379,9 +13379,6 @@ msgstr "Text und Bilder wie abgegeben."
 msgid "Until now it’s private. Once published, everyone can read it, text and pictures unencrypted. It can’t be taken back."
 msgstr "Bisher privat. Danach für alle lesbar, Text und Bilder unverschlüsselt. Zurückholen geht dann nicht mehr."
 
-msgid "The text in the editor differs from the accepted version. Publish publishes the accepted version; to publish your changes, hand them in first."
-msgstr "Der Text im Editor weicht von der angenommenen Fassung ab. Veröffentlichen veröffentlicht die angenommene Fassung; deine Änderungen gibst du zuerst ab."
-
 msgid "Only you"
 msgstr "Nur du"
 
@@ -13390,9 +13387,6 @@ msgstr "Mit dem Schlüssel auf diesem Computer signieren"
 
 msgid "Publish as an Article"
 msgstr "Als Artikel veröffentlichen"
-
-msgid "Hand In the Changes …"
-msgstr "Änderungen abgeben …"
 
 msgid "The accepted version couldn’t be loaded yet: try again in a moment."
 msgstr "Die angenommene Fassung konnte noch nicht geladen werden: versuche es gleich noch einmal."
@@ -13531,3 +13525,6 @@ msgstr "Themen"
 msgctxt "correction field"
 msgid "language"
 msgstr "Sprache"
+
+msgid "The accepted version is published. If you change anything afterwards, the editorial team sees “changed since acceptance”."
+msgstr "Veröffentlicht wird die angenommene Fassung. Änderst du danach etwas, sieht die Redaktion »geändert seit Annahme«."
