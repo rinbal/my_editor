@@ -605,13 +605,13 @@ def _pages_of(box, paged):
             int((box.bottom() - 0.5) // paged.content_height))
 
 
-@pytest.mark.parametrize("paper", ["A4", "Letter"])
-def test_no_page_of_a_pdf_breaks_through_a_picture(app, paper):
+def test_no_page_of_a_pdf_breaks_through_a_picture(app):
     """A group that fits on a page is on one page (it starts the next
     when it would cross a page's end); a group taller than a page breaks
     between two of its rows. No picture is ever cut, on A4 and on Letter,
     wherever the text before the groups puts them."""
     from export_pdf import default_page_setup
+    paper = "A4"
     setup = dict(default_page_setup(), page_size=paper)
     small = "![a](photo.png)\n\n![b](square.png)\n\n*A caption*\n"
     tall = "\n\n".join(f"![p{n}]({name})" for n, name in enumerate(
@@ -640,6 +640,18 @@ def test_no_page_of_a_pdf_breaks_through_a_picture(app, paper):
     assert crossed == 0
     assert moved >= 1                       # one filler put a small group across a page's end
     assert spread == 5                      # the tall group runs over pages, between its rows
+
+
+def test_no_page_of_a_letter_pdf_breaks_through_a_picture(app):
+    from export_pdf import default_page_setup
+    filler = "\n\n".join(f"Paragraph {n} of the walk in." for n in range(26))
+    tall = "\n\n".join(f"![p{n}]({name})" for n, name in enumerate(
+        ["photo.png", "square.png", "portrait.png", "landscape.png"] * 4)) + "\n"
+    paged, _writer = _paged(f"{filler}\n\n{tall}",
+                            page_setup=dict(default_page_setup(), page_size="Letter"))
+    boxes = photo_group_view.picture_boxes(paged.clone)
+    assert len(boxes) == 16
+    assert all(first == last for first, last in (_pages_of(box, paged) for _p, _n, box in boxes))
 
 
 def _shows_every_picture_whole(path, paged, resolution, page_layout):

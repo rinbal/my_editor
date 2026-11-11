@@ -143,7 +143,6 @@ class Unit:
 
     image: QTextCharFormat
     name: str
-    alt: str = ""
     caption: Tuple[CaptionRun, ...] = ()
     # The text between the picture and a caption on its paragraph (None:
     # the caption was a paragraph of its own, or there is none).
@@ -154,6 +153,11 @@ class Unit:
     # Its number in this session: what stands for STANDUP's data-id (SPEC
     # 3.9). A picture keeps it while it stays in a group.
     number: int = 0
+
+    @property
+    def alt(self) -> str:
+        """The picture's description (its alt text)."""
+        return str(self.image.toImageFormat().property(QTextFormat.Property.ImageAltText) or "")
 
     @property
     def wide(self) -> bool:
@@ -172,7 +176,7 @@ class Unit:
         italic, as a caption is; in the paragraph under the picture,
         unless its caption stood on the picture's own line before."""
         caption = (CaptionRun(words),) if words else ()
-        return Unit(self.image, self.name, self.alt, caption,
+        return Unit(self.image, self.name, caption,
                     self.caption_join if words else None, self.join, self.number)
 
     def caption_runs(self) -> List[Tuple[str, QTextCharFormat]]:
@@ -190,6 +194,11 @@ class Unit:
         if not self.number:
             self.number = next(_numbers)
         fmt = QTextCharFormat(self.image)
+        if not self.caption and self.join is None:
+            # A picture alone in its paragraph, the common one: the same
+            # text json.dumps writes, without asking it.
+            fmt.setProperty(UNIT, f"[{self.number},null,null,[]]")
+            return fmt
         runs = [[run.text, (_BOLD * run.bold | _ITALIC * run.italic | _STRIKE * run.strike
                             | _CODE * run.code | _SOFT_RUN * run.soft), run.href]
                 for run in self.caption]
@@ -203,8 +212,7 @@ def unit_of_picture(fmt: QTextCharFormat) -> Unit:
     yet, or, for a picture that was in a group, the unit it carries."""
     if fmt.hasProperty(UNIT):
         return _unit_of_mark(fmt)
-    image = fmt.toImageFormat()
-    return Unit(fmt, image.name(), str(image.property(QTextFormat.Property.ImageAltText) or ""))
+    return Unit(fmt, fmt.toImageFormat().name())
 
 
 # What a unit's mark says, by its text: every layout reads the units of the
@@ -225,9 +233,7 @@ def _unit_of_mark(fmt: QTextCharFormat) -> Unit:
             _parsed.clear()
         found = _parsed[raw] = (number, join, caption_join, caption)
     number, join, caption_join, caption = found
-    image = fmt.toImageFormat()
-    return Unit(fmt, image.name(), str(image.property(QTextFormat.Property.ImageAltText) or ""),
-                caption, caption_join, join, number)
+    return Unit(fmt, fmt.toImageFormat().name(), caption, caption_join, join, number)
 
 
 # --------------------------------------------------------------------------- #
@@ -302,13 +308,15 @@ def unit_stretches(block) -> List[Tuple[int, List[Unit]]]:
             if isinstance(segment[0], Unit)]
 
 
-def is_plain_paragraph(block) -> bool:
+def is_plain_paragraph(block, fmt: Optional[QTextBlockFormat] = None) -> bool:
     """A paragraph outside lists, quotes, headings and code: where a
-    picture paragraph of a group is. (Whether it is at the top of the
-    document, outside a table, is for the caller: _top_paragraphs.)"""
+    picture paragraph of a group is; ``fmt`` is its format when the caller
+    has it. (Whether it is at the top of the document, outside a table, is
+    for the caller: _top_paragraphs.)"""
     if block.textList() is not None:
         return False
-    fmt = block.blockFormat()
+    if fmt is None:
+        fmt = block.blockFormat()
     if fmt.headingLevel():
         return False
     quote = fmt.property(QTextFormat.Property.BlockQuoteLevel)
@@ -343,7 +351,7 @@ def is_picture(text: str, fmt: QTextCharFormat) -> bool:
     if text != OBJECT_REPLACEMENT or not fmt.isImageFormat():
         return False
     name = fmt.toImageFormat().name()
-    return bool(name) and not media_files.is_audio_or_video(name)
+    return bool(name) and not _is_media_address(name)
 
 
 def _join_text(pieces) -> Optional[str]:
@@ -408,18 +416,43 @@ def _after_join(pieces):
     return merged(chars[:start]), merged(chars[start:])
 
 
-def picture_units(block, text: Optional[str] = None) -> Optional[List[Unit]]:
+def _is_media_address(name: str) -> bool:
+    """Whether ``name`` is audio or video by its ending (media_files).
+    Asked for every picture of a document: an ending that stands plainly
+    at the end of the name is looked up once."""
+    dot = name.rfind(".")
+    ending = name[dot:]
+    if dot < 1 or name[dot - 1] in "/\\." or "?" in name or "#" in name \
+            or "/" in ending or "\\" in ending:
+        return media_files.is_audio_or_video(name)
+    found = _media_endings.get(ending)
+    if found is None:
+        found = _media_endings[ending] = media_files.is_audio_or_video(name)
+    return found
+
+
+_media_endings: Dict[str, bool] = {}
+
+
+def picture_units(block, text: Optional[str] = None,
+                  fmt: Optional[QTextBlockFormat] = None) -> Optional[List[Unit]]:
     """The units of a picture paragraph: one picture with an optional
     caption on it, or two or more pictures with only spaces and line
-    breaks between them; None for any other paragraph."""
+    breaks between them; None for any other paragraph. (``text`` and
+    ``fmt``: the paragraph's, when the caller has them.)"""
     if text is None:
         text = block.text()
-    if not text or text[0] != OBJECT_REPLACEMENT or not is_plain_paragraph(block):
+    if not text or text[0] != OBJECT_REPLACEMENT or not is_plain_paragraph(block, fmt):
         return None
     if len(text) == 1:
         # One character, the common case: no other piece to look at.
-        fmt = block.begin().fragment().charFormat()
-        return [unit_of_picture(fmt)] if is_picture(text, fmt) else None
+        picture = block.begin().fragment().charFormat()
+        if not picture.isImageFormat():
+            return None
+        if picture.hasProperty(UNIT):
+            return [_unit_of_mark(picture)]
+        name = picture.toImageFormat().name()
+        return [Unit(picture, name)] if name and not _is_media_address(name) else None
     pieces = _pieces(block)
     if not pieces or not is_picture(pieces[0][1], pieces[0][2]):
         return None
@@ -481,6 +514,11 @@ def _top_paragraphs(doc) -> List[_Paragraph]:
               for frame in doc.rootFrame().childFrames()]
     # A character beyond U+FFFF takes two positions in the document.
     length = doc_length if _BEYOND_BMP.search(raw) else len
+    if not frames and length is len:
+        # Paragraphs alone, a position a character: no loop to find them.
+        texts = raw.split("\u2029")
+        starts = itertools.accumulate((len(text) + 1 for text in texts), initial=0)
+        return list(zip(starts, texts))
     out: List[_Paragraph] = []
     position = 0
     frame = 0
@@ -566,20 +604,23 @@ def find_runs(doc, first: Optional[int] = None, last: Optional[int] = None, *,
             units = segments[0][1] if len(segments) == 1 and isinstance(
                 segments[0][1][0], Unit) else None
         else:
-            units = picture_units(block, text) if lone else None
+            units = picture_units(block, text, fmt) if lone else None
         if units is None:
             run = None
             continue
         end = position + block.length() - 1
-        if (not group and len(units) == 1 and not units[0].has_caption and i < count
-                and items[i][1]):
-            caption = caption_paragraph(doc.findBlock(items[i][0]), items[i][1])
+        if not group and len(units) == 1 and not units[0].caption and i < count:
+            below = items[i][1]
+            # (Looked at only when it can be a caption: it has words and
+            # no picture.)
+            caption = (caption_paragraph(doc.findBlock(items[i][0]), below)
+                       if below and OBJECT_REPLACEMENT not in below else None)
             if caption is not None:
                 units[0].caption = caption
-                end = items[i][0] + doc_length(items[i][1])
+                end = items[i][0] + doc_length(below)
                 i += 1
         if run is None or not lone:
-            run = Found([], position, end, format=own_format(block))
+            run = Found([], position, end, format=own_format(block) if group else fmt)
             found.append(run)
         run.units.extend(units)
         run.pictures.append((position, position + block.length() - 1))

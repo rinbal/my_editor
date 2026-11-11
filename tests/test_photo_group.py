@@ -177,31 +177,34 @@ def test_every_picture_has_its_own_number(app):
     assert len(numbers) == 3 and len(set(numbers)) == 3
 
 
-@pytest.mark.parametrize("markdown", [
+UNFOLDED = [
     _markdown("photo.png", "square.png"),
     "Intro\n\n![a](photo.png)\n*Under*\n\n![b](square.png)\n\n*Own paragraph*\n\nEnd\n",
     "![a](photo.png) ![b](square.png)\n![c](portrait.png)\n\n![d](plan.png#wide)\n",
     "# T\n\n![a](photo.png)\n\n![b](square.png)\n\nText\n\n![c](portrait.png)\n\n![d](panorama.png)\n",
     "![a](photo.png)\n\n*With **bold**, ~~struck~~ and a [link](https://e.org) in it*\n\n"
     "![b](square.png)\n",
-])
-def test_unfold_gives_back_the_paragraphs_as_they_were(app, markdown):
-    plain = QTextDocument()
-    read_markdown_plain(plain, markdown)
-    want = document_to_markdown(plain, _image_as_read)
-    doc = QTextDocument()
-    read_markdown(doc, markdown)
-    assert photo_group.has_groups(doc)
-    # Written from the group as it is, then from its paragraphs again.
-    assert document_to_markdown(doc, _image_as_read) == want
-    assert photo_group.unfold(doc) >= 1
-    assert not photo_group.has_groups(doc)
-    assert document_to_markdown(doc, _image_as_read) == want
-    assert doc.toPlainText() == plain.toPlainText()
-    formats = [(b.blockFormat().topMargin(), b.blockFormat().bottomMargin())
-               for b in _blocks(doc)]
-    assert formats == [(b.blockFormat().topMargin(), b.blockFormat().bottomMargin())
-                       for b in _blocks(plain)]
+]
+
+
+def test_unfold_gives_back_the_paragraphs_as_they_were(app):
+    for markdown in UNFOLDED:
+        plain = QTextDocument()
+        read_markdown_plain(plain, markdown)
+        want = document_to_markdown(plain, _image_as_read)
+        doc = QTextDocument()
+        read_markdown(doc, markdown)
+        assert photo_group.has_groups(doc)
+        # Written from the group as it is, then from its paragraphs again.
+        assert document_to_markdown(doc, _image_as_read) == want
+        assert photo_group.unfold(doc) >= 1
+        assert not photo_group.has_groups(doc)
+        assert document_to_markdown(doc, _image_as_read) == want
+        assert doc.toPlainText() == plain.toPlainText()
+        formats = [(b.blockFormat().topMargin(), b.blockFormat().bottomMargin())
+                   for b in _blocks(doc)]
+        assert formats == [(b.blockFormat().topMargin(), b.blockFormat().bottomMargin())
+                           for b in _blocks(plain)]
 
 
 def read_markdown_plain(doc, markdown: str) -> None:

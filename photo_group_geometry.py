@@ -37,6 +37,9 @@ NARROW_BELOW = 600
 # narrow caps are the engine's own (wideCap, phone capVh).
 REGULAR_CAP_VH = 0.72
 
+# How many of the engine's answers are kept (arrangement, _row_numbers).
+_ARRANGEMENTS_KEPT = 4096
+
 # How much of the text's width a row leaves free, in pixels: Qt adds the
 # widths up in 64ths of a pixel, and a row a hair wider than its line would
 # break in two.
@@ -103,6 +106,29 @@ def _number(properties: dict, key: str) -> float:
     return float(properties.get(key, "0"))
 
 
+# The engine's numbers for a row (--rs, --rg, --rl, --rc and each cell's
+# --r, --k, --c), as the CSS reads them from the markup: rounded to four
+# places. By the row's shapes, so a row laid out at another width, or the
+# same row in another group, is not asked for again.
+_numbers_of_rows: Dict[tuple, tuple] = {}
+
+
+def _row_numbers(cells: List[List[int]], items: List[dict]) -> tuple:
+    key = tuple(tuple((items[i]["w"], items[i]["h"], bool(items[i].get("caption")))
+                      for i in cell) for cell in cells)
+    found = _numbers_of_rows.get(key)
+    if found is None:
+        engine_cells = [cell[0] if len(cell) == 1 else list(cell) for cell in cells]
+        props = photo_layout.cell_properties({"cells": engine_cells}, 0, items)
+        found = (tuple(_number(props[0], name) for name in ("--rs", "--rg", "--rl", "--rc")),
+                 tuple(tuple(_number(prop, name) for name in ("--r", "--k", "--c"))
+                       for prop in props))
+        if len(_numbers_of_rows) >= _ARRANGEMENTS_KEPT:
+            _numbers_of_rows.clear()
+        _numbers_of_rows[key] = found
+    return found
+
+
 def mosaic_places(cells: List[List[int]], items: List[dict], metrics: Metrics) -> Tuple[
         List[List[Place]], float]:
     """The places of one mosaic row's pictures (cell by cell, a stack's
@@ -111,19 +137,15 @@ def mosaic_places(cells: List[List[int]], items: List[dict], metrics: Metrics) -
     and a cell ``r*(hr - k*gap - c*line)`` wide, from the engine's cell
     properties. A #wide picture's cell is the whole width, the picture in
     its middle at most wide_cap tall."""
-    engine_cells = [cell[0] if len(cell) == 1 else list(cell) for cell in cells]
-    props = photo_layout.cell_properties({"cells": engine_cells}, 0, items)
     W, g, line = metrics.width, metrics.gap, metrics.line
     places: List[List[Place]] = []
     if len(cells) == 1 and len(cells[0]) == 1 and items[cells[0][0]].get("wide") is True:
         ratio = photo_layout.ratio_of(items[cells[0][0]])
         pw = min(W, metrics.wide_cap * ratio)
         return [[Place(W, pw / ratio, (W - pw) / 2, pw, pw / ratio)]], W
-    first = props[0]
-    rs, rg, rl, rc = (_number(first, key) for key in ("--rs", "--rg", "--rl", "--rc"))
+    (rs, rg, rl, rc), of_cells = _row_numbers(cells, items)
     hr = min(metrics.cap + rc * line, (W - rg * g + rl * line) / rs) if rs > 0 else 0.0
-    for cell, prop in zip(cells, props):
-        r, k, c = (_number(prop, key) for key in ("--r", "--k", "--c"))
+    for cell, (r, k, c) in zip(cells, of_cells):
         cw = max(1.0, r * (hr - k * g - c * line))
         out = []
         for index in cell:
@@ -182,7 +204,6 @@ def _reads_as_row(indices: Sequence[int], items: List[dict], metrics: Metrics) -
 # The engine's answers by the items asked about: it is deterministic, and a
 # document lays its groups out again at every width.
 _arrangements: Dict[tuple, Tuple[list, list]] = {}
-_ARRANGEMENTS_KEPT = 4096
 
 
 def arrangement(items: List[dict]) -> Tuple[list, list]:

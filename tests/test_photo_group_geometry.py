@@ -18,11 +18,11 @@ import photo_layout
 from tests.photo_corners import SHAPES
 
 
-@pytest.mark.parametrize("size", [(0, 0), (1, 100000), (100000, 1), (-5, 10), (1, 40)])
-def test_hostile_sizes_count_as_unknown(size):
+def test_hostile_sizes_count_as_unknown():
     """A size the engine does not take is the provisional 3:2."""
-    entry = geometry.item(photo_layout.picture_size(*size), "", False)
-    assert photo_layout.ratio_of(entry) == 1.5
+    for size in [(0, 0), (1, 100000), (100000, 1), (-5, 10), (1, 40)]:
+        entry = geometry.item(photo_layout.picture_size(*size), "", False)
+        assert photo_layout.ratio_of(entry) == 1.5, size
 
 
 def _vectors():
@@ -141,42 +141,44 @@ def _items(names):
             for name in names]
 
 
-@pytest.mark.parametrize("width", WIDTHS)
-@pytest.mark.parametrize("names", GROUPS.values(), ids=GROUPS.keys())
-def test_no_picture_overlaps_another_or_leaves_the_column(names, width):
-    items = _items(names)
-    metrics = geometry.metrics_at(width, 1.0, None, 20.0)
-    assert metrics.narrow == (width < 600)
-    rows = geometry.group_rows(items, metrics, _no_captions)
-    assert sorted(tile.index for row in rows for tile in row.tiles) == list(range(len(names)))
-    for row in rows:
-        for tile in row.tiles:
-            assert tile.x >= -0.01 and tile.x + tile.width <= metrics.width + 0.01
-            ratio = photo_layout.ratio_of(items[tile.index])
-            assert tile.width / tile.height == pytest.approx(ratio, rel=0.001)
-        for one in row.tiles:
-            for other in row.tiles:
-                if one.index < other.index:
-                    apart = (one.x + one.width <= other.x + 0.01
-                             or other.x + other.width <= one.x + 0.01
-                             or one.y + one.height <= other.y + 0.01
-                             or other.y + other.height <= one.y + 0.01)
-                    assert apart, (one, other)
+def _every_group_at(widths):
+    for names in GROUPS.values():
+        for width in widths:
+            items = _items(names)
+            metrics = geometry.metrics_at(width, 1.0, None, 20.0)
+            yield names, width, items, metrics, geometry.group_rows(items, metrics, _no_captions)
 
 
-@pytest.mark.parametrize("width", [width for width in WIDTHS if width < 600])
-@pytest.mark.parametrize("names", GROUPS.values(), ids=GROUPS.keys())
-def test_below_600_every_picture_shows_at_least_five_eighths_of_its_size_alone(names, width):
-    """D7: nothing tiny. A picture's size alone is as wide as the column,
-    never taller than the cap (SPEC 5.1)."""
-    items = _items(names)
-    metrics = geometry.metrics_at(width, 1.0, None, 20.0)
-    for row in geometry.group_rows(items, metrics, _no_captions):
-        for tile in row.tiles:
-            ratio = photo_layout.ratio_of(items[tile.index])
-            cap = metrics.wide_cap if items[tile.index]["wide"] else metrics.cap
-            alone = min(metrics.width, cap * ratio)
-            assert tile.width >= 0.625 * alone - 0.01, (tile, alone)
+def test_no_picture_overlaps_another_or_leaves_the_column_at_any_width():
+    for names, width, items, metrics, rows in _every_group_at(WIDTHS):
+        assert metrics.narrow == (width < 600)
+        assert sorted(tile.index for row in rows for tile in row.tiles) == list(range(len(names)))
+        for row in rows:
+            for tile in row.tiles:
+                assert tile.x >= -0.01 and tile.x + tile.width <= metrics.width + 0.01, (names, width)
+                ratio = photo_layout.ratio_of(items[tile.index])
+                assert tile.width / tile.height == pytest.approx(ratio, rel=0.001)
+            for one in row.tiles:
+                for other in row.tiles:
+                    if one.index < other.index:
+                        apart = (one.x + one.width <= other.x + 0.01
+                                 or other.x + other.width <= one.x + 0.01
+                                 or one.y + one.height <= other.y + 0.01
+                                 or other.y + other.height <= one.y + 0.01)
+                        assert apart, (names, width, one, other)
+
+
+def test_below_600_every_picture_shows_at_least_five_eighths_of_its_size_alone():
+    """D7: nothing tiny, in Paper Mode (533 wide, 505 for its text) and
+    down to the window's least width. A picture's size alone is as wide
+    as the column, never taller than the cap (SPEC 5.1)."""
+    for names, width, items, metrics, rows in _every_group_at(w for w in WIDTHS if w < 600):
+        for row in rows:
+            for tile in row.tiles:
+                ratio = photo_layout.ratio_of(items[tile.index])
+                cap = metrics.wide_cap if items[tile.index]["wide"] else metrics.cap
+                alone = min(metrics.width, cap * ratio)
+                assert tile.width >= 0.625 * alone - 0.01, (names, width, tile, alone)
 
 
 def test_a_row_that_no_longer_reads_side_by_side_is_unrolled():
@@ -193,25 +195,21 @@ def test_a_row_that_no_longer_reads_side_by_side_is_unrolled():
     assert [mode for _cells, mode in geometry.narrow_rows(items, narrow)] == ["strip", "strip"]
 
 
-@pytest.mark.parametrize("width", [1100, 600, 505, 271])
-@pytest.mark.parametrize("names", GROUPS.values(), ids=GROUPS.keys())
-def test_the_boxes_of_a_row_fill_its_line_and_a_stack_takes_one_box(names, width):
+def test_the_boxes_of_a_row_fill_its_line_and_a_stack_takes_one_box():
     """What makes Qt's line breaking give the rows: the boxes of a row add
     up to the text's width (less the slack), so the next box starts a
     line; only the first picture of a stack has a box."""
-    items = _items(names)
-    metrics = geometry.metrics_at(width, 1.0, None, 20.0)
-    rows = geometry.group_rows(items, metrics, _no_captions)
-    boxes = geometry.object_boxes(rows, len(names), metrics)
-    for number, row in enumerate(rows):
-        heads = [cell[0] for cell in row.cells]
-        assert sum(boxes[i].width for i in heads) == pytest.approx(metrics.width, abs=0.001)
-        gap = metrics.gap if number < len(rows) - 1 else 0.0
-        assert {boxes[i].height for i in heads} == {row.height + gap}
-        for cell in row.cells:
-            assert [tile.index for tile, _left in boxes[cell[0]].tiles] == list(cell)
-            for member in cell[1:]:
-                assert boxes[member].width == 0 and boxes[member].height == 0
+    for names, width, _items_, metrics, rows in _every_group_at([1100, 600, 505, 271]):
+        boxes = geometry.object_boxes(rows, len(names), metrics)
+        for number, row in enumerate(rows):
+            heads = [cell[0] for cell in row.cells]
+            assert sum(boxes[i].width for i in heads) == pytest.approx(metrics.width, abs=0.001)
+            gap = metrics.gap if number < len(rows) - 1 else 0.0
+            assert {boxes[i].height for i in heads} == {row.height + gap}
+            for cell in row.cells:
+                assert [tile.index for tile, _left in boxes[cell[0]].tiles] == list(cell)
+                for member in cell[1:]:
+                    assert boxes[member].width == 0 and boxes[member].height == 0
 
 
 def test_a_caption_makes_its_row_taller_and_hangs_under_its_picture():

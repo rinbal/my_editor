@@ -172,6 +172,9 @@ class _Handler(QPyTextObject):
         # document, one width and one height (_valid).
         self._valid: Optional[tuple] = None
         self._laid: Dict[int, Tuple[_Laid, int]] = {}
+        # What every group is laid out with in that state: the metrics,
+        # the device's scale, a caption's gap and a group's margin.
+        self._measures: tuple = ()
         # The size each picture was last laid out with, by its unit's
         # number: what picture_arrived compares a new size with.
         self._sized: Dict[int, Optional[Tuple[int, int]]] = {}
@@ -308,6 +311,9 @@ class _Handler(QPyTextObject):
         if valid != self._valid:
             self._valid = valid
             self._laid = {}
+            scale = self._scale(doc)
+            self._measures = (self.metrics(doc), scale, self._caption_gap(doc),
+                              GROUP_MARGIN_EM * _font_pixels(doc.defaultFont(), scale))
         found = self._laid.get(position)
         if found is None:
             block = doc.findBlock(position)
@@ -319,9 +325,7 @@ class _Handler(QPyTextObject):
         return found
 
     def _lay_out(self, doc, block, start: int, units) -> _Laid:
-        metrics = self.metrics(doc)
-        scale = self._scale(doc)
-        gap = self._caption_gap(doc)
+        metrics, scale, gap, margin = self._measures
         items = []
         for unit in units:
             size = self.sizes(unit.name) if self.sizes else None
@@ -336,7 +340,6 @@ class _Handler(QPyTextObject):
         boxes = geometry.object_boxes(rows, len(units), metrics)
         # The room above and below it that its paragraph's own margins do
         # not give already.
-        margin = GROUP_MARGIN_EM * _font_pixels(doc.defaultFont(), scale)
         fmt = block.blockFormat()
         above = max(0.0, margin - fmt.topMargin() * scale)
         below = max(0.0, margin - fmt.bottomMargin() * scale)
@@ -421,13 +424,23 @@ def set_screen_height(doc: QTextDocument, height: Optional[float]) -> None:
     found = _handler(doc)
     if found is None or found.screen_height == height:
         return
+    before = found.metrics(doc)
     found.screen_height = height
+    if found.metrics(doc) == before:
+        return                          # a screen high enough before and after: the same rows
     found.forget()
+    # From the first group to the last, in one go: each call lays out
+    # what it names and places everything after it again.
+    first = last = None
     block = doc.begin()
     while block.isValid():
         if photo_group.is_group_block(block):
-            doc.markContentsDirty(block.position(), block.length())
+            first = block if first is None else first
+            last = block
         block = block.next()
+    if first is not None:
+        doc.markContentsDirty(first.position(),
+                              last.position() + last.length() - first.position())
 
 
 def picture_arrived(doc: QTextDocument, name: str) -> int:
