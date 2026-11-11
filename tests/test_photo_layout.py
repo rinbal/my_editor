@@ -48,7 +48,7 @@ SPDX = (b"# SPDX-FileCopyrightText: 2026 rinbal\n"
 # The SHA-256 of STANDUP's files as vendored. Vendoring a newer engine
 # means copying both files again and writing their new hashes here.
 ENGINE_SHA256 = "1b36a84f33309fc52c4bef9ee58e6591500a468fb7691eb7155b33b292031853"
-VECTORS_SHA256 = "6d1f21f193ebc89bb27bb5c323c195e4a0b48face4d215af6386ca7210ac368d"
+VECTORS_SHA256 = "8be595763573c5659a03c619348e7f4b632428941396f916fa6ef8b508491d95"
 
 
 @pytest.fixture(scope="module")
