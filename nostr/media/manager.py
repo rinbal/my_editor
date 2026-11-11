@@ -328,6 +328,7 @@ class AssetManager(QObject):
             upload_state=AssetState.LOCAL,
             created_at=now,
             updated_at=now,
+            from_library=False,
         )
         self._index.put(asset)
         self.asset_added.emit(sha)
@@ -409,7 +410,8 @@ class AssetManager(QObject):
             return existing
         now = int(time.time())
         asset = DocumentAsset(sha256=sha, mime=mime, size=size, alt=name,
-                              upload_state=AssetState.LOCAL, created_at=now, updated_at=now)
+                              upload_state=AssetState.LOCAL, created_at=now, updated_at=now,
+                              from_library=False)
         self._index.put(asset)
         self.asset_added.emit(sha)
         return asset

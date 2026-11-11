@@ -31,6 +31,7 @@ fakes. No network, no relay, no signer.
 """
 
 import hashlib
+import json
 import os
 import sys
 import types
@@ -153,6 +154,25 @@ def _names(ed):
 # --------------------------------------------------------------------------- #
 # Our own URLs                                                                #
 # --------------------------------------------------------------------------- #
+
+def test_a_description_typed_in_the_library_by_an_earlier_version_is_published(tmp_path):
+    # Lead on a48d0b6, 2: a record saved before it said where its alt came
+    # from. A description typed in the Media Library is never dropped.
+    manager = _Window(tmp_path / "cache")._asset_manager
+    sha = hashlib.sha256(b"a picture in the library").hexdigest()
+    manager.adopt_library_file(sha256=sha, remote_url=f"{OURS}/{sha}", mime="image/png",
+                               alt="Dünen im Wind")
+    manager.index.flush()
+    index = tmp_path / "media_assets.json"
+    saved = json.loads(index.read_text(encoding="utf-8"))
+    for record in saved["assets"]:
+        del record["from_library"]
+    index.write_text(json.dumps(saved), encoding="utf-8")
+    older = _Window(tmp_path / "cache")
+    asset = older._asset_manager.get(sha)
+    _content, tags = _tags_for(older, _editor_with((asset.key, "Dünen im Wind")))
+    assert _entry(tags[0], "alt") == "Dünen im Wind"
+
 
 def test_our_own_uploaded_image_is_fully_described(tmp_path):
     win = _Window(tmp_path / "cache")

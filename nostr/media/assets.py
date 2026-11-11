@@ -148,9 +148,10 @@ class DocumentAsset:
     # whether it is one of the account's private files.
     from_address: bool = False
     # Its alt came from a Media Library pick: what the person typed in its
-    # Alt Text field, a description; any other alt is the name of the file
-    # it was added from (stored_name).
-    from_library: bool = False
+    # Alt Text field, a description (True); the name of the file it was
+    # added from (False); None for a record saved before this was kept,
+    # whose alt may be either (stored_name).
+    from_library: Optional[bool] = None
     # Derived from the blob store on demand, never persisted: a machine
     # local path must not travel between installs or into a document.
     local_path: str = ""
@@ -175,9 +176,12 @@ class DocumentAsset:
     @property
     def stored_name(self) -> str:
         """``alt`` when it is the name of the file this picture was added
-        from (from disk, beside a document, a crop), "" when it came from
-        a Media Library pick (from_library) and is a description."""
-        if self.is_media or self.from_library:
+        from (from disk, beside a document, a crop); "" when it came from
+        a Media Library pick and is a description, and for a record that
+        does not say (from_library None): a description typed in the
+        library is never dropped, and an alt that is the name of the
+        picture's own file is none anyway (photo_group.description_of)."""
+        if self.is_media or self.from_library is not False:
             return ""
         return self.alt
 
@@ -254,6 +258,11 @@ def _clean_str(value: object, default: str = "") -> str:
     return value if isinstance(value, str) else default
 
 
+def _clean_flag(value: object) -> Optional[bool]:
+    """A saved true or false, or None when the record holds neither."""
+    return value if isinstance(value, bool) else None
+
+
 def _clean_int(value: object, default: int = 0) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         return default
@@ -310,7 +319,7 @@ def asset_from_record(data: object) -> Optional[DocumentAsset]:
         failure_code=_clean_str(data.get("failure_code")),
         failure_reason=_clean_str(data.get("failure_reason")),
         from_address=data.get("from_address") is True,
-        from_library=data.get("from_library") is True,
+        from_library=_clean_flag(data.get("from_library")),
     )
 
 
