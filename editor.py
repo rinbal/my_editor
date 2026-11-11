@@ -299,6 +299,7 @@ class HtmlEditor(QTextEdit):
         self._joined_at = None          # a run's step being joined (_typing)
         # Where Copy's data is made, with nothing selected (createMime...).
         self._empty_copy = None
+        self._dropped_here = False        # a drag of the selection let go of here
         # What a paste or a drop is called in Edit > Undo (insertFromMimeData).
         self._mime_step = N_("Paste")
         self.document().undoCommandAdded.connect(self._forget_redone_names)
@@ -2177,7 +2178,37 @@ class HtmlEditor(QTextEdit):
         if self.photos.pointer.mouse_move(event):
             event.accept()
             return
+        cursor = self.textCursor()
+        if not (event.buttons() & Qt.MouseButton.LeftButton) or photo_group_cut.cuts(
+                self.document(), cursor.selectionStart(), cursor.selectionEnd()) is None:
+            super().mouseMoveEvent(event)
+            return
+        self._drag_out_keeping_pictures(event, cursor.selectionStart(), cursor.selectionEnd())
+
+    def _drag_out_keeping_pictures(self, event, start: int, end: int) -> None:
+        """Qt's own move of the pointer over a selection that holds a picture
+        alone only in part, which may drag it (without that picture:
+        photo_group_cut.clipped). Moved into another app, Qt deletes the
+        selection as it is: that is taken back, and it goes as Cut takes
+        it, the picture staying. A drop here is _drop_moving's."""
+        doc = self.document()
+        steps = doc.availableUndoSteps()
+        self._dropped_here = False
         super().mouseMoveEvent(event)
+        if self._dropped_here or doc.availableUndoSteps() == steps:
+            return
+        with self.photos.quietly():
+            doc.undo()
+            if doc.availableUndoSteps() != steps:   # not Qt's one delete: as it was
+                doc.redo()
+                return
+        doc.clearUndoRedoStacks(QTextDocument.Stacks.RedoStack)
+        cursor = QTextCursor(doc)
+        cursor.setPosition(start)
+        cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+        with self.undo_step(N_("Drag")):
+            photo_group_cut.delete(cursor)
+        self.setTextCursor(cursor)
 
     def mouseReleaseEvent(self, event):
         if self.photos.pointer.mouse_release(event):
@@ -3110,6 +3141,7 @@ class HtmlEditor(QTextEdit):
         that holds a picture alone only in part was dragged without that
         picture (photo_group_cut.clipped), so it goes as Cut takes it, the
         picture staying, not by Qt's own delete."""
+        self._dropped_here = True
         cursor = self.textCursor()
         if (event.source() is not self or event.dropAction() != Qt.DropAction.MoveAction
                 or photo_group_cut.cuts(self.document(), cursor.selectionStart(),

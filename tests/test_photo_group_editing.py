@@ -12,10 +12,10 @@ pictures of a group. Each test checks the exact Markdown.
 from __future__ import annotations
 
 import pytest
-from PySide6.QtCore import QMimeData, QPoint, QPointF, Qt
-from PySide6.QtGui import QDropEvent, QInputMethodEvent, QTextCursor, QTextImageFormat
+from PySide6.QtCore import QEvent, QMimeData, QPoint, QPointF, Qt
+from PySide6.QtGui import QDropEvent, QInputMethodEvent, QMouseEvent, QTextCursor, QTextImageFormat
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QTextEdit
 
 import paste
 import photo_group
@@ -477,6 +477,24 @@ def test_a_copy_or_a_drag_holds_only_the_selected_words_of_a_caption():
     drop.source = lambda: ed
     ed.dropEvent(drop)
     assert _markdown(ed) == _text("Before", ONE, "*one words*", "words.", "CapAfter.")
+    assert _undone(ed, source)
+    ed.close()
+
+
+def test_a_selection_moved_into_another_app_keeps_the_picture_it_holds_in_part(monkeypatch):
+    """Its drag carries no such picture, and Qt deletes a selection moved
+    out as it is (QWidgetTextControl, here as Qt does it then): the
+    editor takes that back and deletes it as Cut does, one step."""
+    source = _text("Before words.", ONE, "*Cap one words*", "After.")
+    ed = _editor(source)
+    _select(ed, "words.", "one words")
+    monkeypatch.setattr(QTextEdit, "mouseMoveEvent",
+                        lambda self, event: self.textCursor().removeSelectedText())
+    at = QPointF(ed.cursorRect().center())
+    QApplication.sendEvent(ed.viewport(), QMouseEvent(
+        QEvent.Type.MouseMove, at, at, Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier))
+    assert _markdown(ed) == _text("Before", ONE, "*one words*", "After.")
     assert _undone(ed, source)
     ed.close()
 
