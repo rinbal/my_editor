@@ -25,6 +25,7 @@ from typing import Dict, List, Optional, Tuple
 from PySide6.QtGui import QFont, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument
 
 import media_files
+import photo_caption
 from doc_walk import (LINE_SEPARATOR, OBJECT_REPLACEMENT, SOFT_BREAK_PROPERTY,
                       TYPED_TEXT_PROPERTY, doc_length)
 from photo_group import (
@@ -91,13 +92,44 @@ def _is_caption_pieces(pieces) -> bool:
                for _p, text, fmt in pieces)
 
 
+def _words(pieces):
+    """``pieces`` without the pieces of spaces alone at their two ends (a
+    ``&#x20;`` or a no-break space beside the stars)."""
+    start, end = 0, len(pieces)
+    while start < end and not pieces[start][1].strip():
+        start += 1
+    while end > start and not pieces[end - 1][1].strip():
+        end -= 1
+    return pieces[start:end]
+
+
+# A caption STANDUP wrote with a space inside its stars ("*Der Steg *",
+# a no-break space too), which no reader takes for italic.
+_SPACED_CAPTION = re.compile(r"\*(\s*)([^*\s](?:[^*]*[^*\s])?)(\s*)\*")
+
+
+def _spaced_caption(pieces) -> Optional[Tuple[CaptionRun, ...]]:
+    """The caption ``pieces`` hold as STANDUP wrote it before it trimmed
+    its captions: one piece of plain words, a space inside the stars."""
+    if len(pieces) != 1:
+        return None
+    _position, text, fmt = pieces[0]
+    if (fmt.fontItalic() or fmt.fontWeight() >= QFont.Weight.DemiBold or fmt.isAnchor()
+            or fmt.fontFixedPitch() or fmt.fontStrikeOut()):
+        return None
+    found = _SPACED_CAPTION.fullmatch(text)
+    if found is None or not (found.group(1) or found.group(3)):
+        return None
+    return (CaptionRun(found.group(2)),)
+
+
 def _caption_of(pieces) -> Tuple[CaptionRun, ...]:
-    return tuple(CaptionRun(text, fmt.fontWeight() >= QFont.Weight.DemiBold, fmt.fontItalic(),
+    return photo_caption.trimmed(tuple(CaptionRun(text, fmt.fontWeight() >= QFont.Weight.DemiBold, fmt.fontItalic(),
                             fmt.fontStrikeOut(), bool(fmt.fontFixedPitch()),
                             (fmt.anchorHref() if fmt.isAnchor() else "") or "",
                             fmt.boolProperty(SOFT_BREAK_PROPERTY),
                             fmt.boolProperty(TYPED_TEXT_PROPERTY))
-                 for _position, text, fmt in pieces)
+                 for _position, text, fmt in pieces))
 
 
 def _after_join(pieces):
@@ -162,6 +194,7 @@ def picture_units(block, text: Optional[str] = None,
     if len(pictures) == 1:
         join_pieces, words = _after_join(pieces[1:])
         join = _join_text(join_pieces)
+        words = _words(words)
         if join is None or not _is_caption_pieces(words):
             return None
         unit = unit_of_picture(pieces[0][2])
@@ -184,15 +217,21 @@ def picture_units(block, text: Optional[str] = None,
 
 def caption_paragraph(block, text: Optional[str] = None) -> Optional[Tuple[CaptionRun, ...]]:
     """The caption a paragraph of italic words alone is, for the picture
-    above it; None for any other paragraph."""
+    above it; None for any other paragraph. Spaces around the words (a
+    ``&#x20;``, a no-break space) do not count, nor one inside the stars
+    as STANDUP wrote it before ("*Der Steg *"): older files still group."""
     if text is None:
         text = block.text()
     if not text or OBJECT_REPLACEMENT in text or not text.strip():
         return None
-    if not block.begin().fragment().charFormat().fontItalic() or not is_plain_paragraph(block):
+    if not (text[0].isspace() or text[0] == "*"
+            or block.begin().fragment().charFormat().fontItalic()) \
+            or not is_plain_paragraph(block):
         return None
-    pieces = _pieces(block)
-    return _caption_of(pieces) if _is_caption_pieces(pieces) else None
+    pieces = _words(_pieces(block))
+    if _is_caption_pieces(pieces):
+        return _caption_of(pieces)
+    return _spaced_caption(pieces)
 
 
 # --------------------------------------------------------------------------- #

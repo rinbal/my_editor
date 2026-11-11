@@ -172,8 +172,9 @@ class Unit:
     def with_caption(self, caption: Sequence[CaptionRun]) -> "Unit":
         """This unit with the runs ``caption`` as its caption (none for no
         runs), in the paragraph under the picture, unless its caption stood
-        on the picture's own line before."""
-        caption = tuple(run for run in caption if run.text)
+        on the picture's own line before; without spaces at its ends
+        (photo_caption.trimmed)."""
+        caption = photo_caption.trimmed(caption)
         return Unit(self.image, self.name, caption,
                     self.caption_join if caption else None, self.join, self.number)
 

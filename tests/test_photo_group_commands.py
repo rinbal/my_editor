@@ -10,13 +10,16 @@ each for a drag, the keys and Undo selecting what it took back.
 
 from __future__ import annotations
 
+import re
 import sys
 import types
+from typing import List, Tuple
 
 import pytest
 from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QPointF, QRect, QRectF, Qt
 from PySide6.QtGui import (
-    QAction, QColor, QImage, QMouseEvent, QPainter, QTextCursor, QTextImageFormat,
+    QAction, QColor, QImage, QMouseEvent, QPainter, QTextCursor, QTextDocument,
+    QTextImageFormat,
 )
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
@@ -26,10 +29,12 @@ import i18n
 import photo_group
 import photo_group_actions
 import photo_group_editing
+import photo_group_find
 import photo_group_overlay
 import picture_crop
 import theme
 from editor import HtmlEditor
+from export_html import document_to_html
 from i18n import _
 from main_window import MainWindow
 from markdown_writer import read_markdown
@@ -37,7 +42,7 @@ from photo_group_menu import (
     ADD, CAPTION, CROP, DESCRIPTION, DOWN, FIRST, JOIN_ABOVE, JOIN_BELOW, LARGE, LAST, LEFT,
     MOVE_MODE, REMOVE, RIGHT, SPLIT, TAKE_OUT, UP,
 )
-from tests.photo_corners import image_of
+from tests.photo_corners import PHOTOS, image_of
 from tests.test_photo_group_editing import (
     FOUR, FOUR_PICTURES, ONE, THREE, TWO, _editor, _group, _markdown, _text, _undone,
     app,  # noqa: F401
@@ -658,3 +663,30 @@ def test_german_says_verschieben_and_alt_fehlt():
     assert words == ["Foto verschieben", "Mit Pfeiltasten verschieben", "ALT fehlt",
                      "Fotos zu dieser Gruppe hinzufügen. Du kannst sie auch auf die Gruppe "
                      "ziehen."]
+
+
+def _saved_reloaded_exported(ed) -> Tuple[str, List[Tuple[int, List[str]]], List[str]]:
+    """``ed``'s Markdown as saved, the groups it reopens as (their sizes
+    and captions), and the captions of the page exported from it."""
+    saved = _markdown(ed)
+    doc = QTextDocument()
+    read_markdown(doc, saved)
+    groups = [(len(run.units), [unit.caption_line for unit in run.units])
+              for run in photo_group_find.find_groups(doc)]
+    page = document_to_html(doc, "Trip", image_roots=[str(PHOTOS)])
+    return saved, groups, re.findall(r"<figcaption>(.*?)</figcaption>", page)
+
+
+def test_a_caption_with_spaces_at_its_edges_keeps_its_group():
+    # Gate RG-PG1C-a 1: "*Der Steg*&#x20;" or "*Der Steg *" read as words.
+    trimmed = _text("Before.", "![a](photo.png)", "*Der Steg*", "![b](square.png)", "After.")
+    for written in ("*Der Steg*&#x20;", "&#x20;*Der Steg*", "*Der Steg *", "*Der Steg *",
+                    "*Der Steg* "):
+        ed = _editor(trimmed.replace("*Der Steg*", written))
+        assert _saved_reloaded_exported(ed) == (trimmed, [(2, ["Der Steg", ""])], ["Der Steg"])
+        ed.close()
+    ed = _editor(_text("Before.", "![a](photo.png)", "![b](square.png)", "After."))
+    for typed in ("Der Steg ", " Der Steg", "Der Steg "):
+        ed.photos.set_words(CAPTION, _group(ed).start, typed)
+        assert _saved_reloaded_exported(ed) == (trimmed, [(2, ["Der Steg", ""])], ["Der Steg"])
+    ed.close()

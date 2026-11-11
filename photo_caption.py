@@ -114,6 +114,23 @@ def replaced(runs: Sequence[CaptionRun], start: int, end: int,
     return merged(out)
 
 
+def trimmed(runs: Sequence[CaptionRun]) -> Tuple[CaptionRun, ...]:
+    """``runs`` without the spaces at their two ends (a no-break space and
+    a line break too), and without empty runs. A caption is written
+    between stars, and a space inside them, or one written beside them as
+    ``&#x20;``, keeps readers from seeing a caption at all: STANDUP read
+    "*Der Steg *" as words and the group fell apart."""
+    out = [run for run in runs if run.text]
+    while out and not out[0].text.strip():
+        out.pop(0)
+    while out and not out[-1].text.strip():
+        out.pop()
+    if out:
+        out[0] = out[0]._replace(text=out[0].text.lstrip())
+        out[-1] = out[-1]._replace(text=out[-1].text.rstrip())
+    return tuple(out)
+
+
 def merged(runs: Sequence[CaptionRun]) -> Tuple[CaptionRun, ...]:
     """``runs`` without empty ones, neighbours in the same format as one
     (a soft line break stays a run of its own): a caption that reads and
