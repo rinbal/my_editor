@@ -45,11 +45,19 @@ _SHAPES = {"move": Qt.CursorShape.OpenHandCursor, "t": Qt.CursorShape.SizeVerCur
            "bl": Qt.CursorShape.SizeBDiagCursor}
 
 
+def decode_upright(data: bytes) -> Optional[QImage]:
+    """The picture ``data`` as readers show it, turned the way the camera
+    said (its EXIF orientation): what the sheet shows and the cut is made
+    of, so the new file (which carries no orientation) stands the same
+    way. None when image_safety refuses it."""
+    return image_safety.decode_image_bytes(data, upright=True)
+
+
 def crop_bytes(data: bytes, area: QRect) -> Optional[Tuple[bytes, str]]:
     """The part ``area`` (the picture's pixels, upright) of the picture
     ``data`` as a new file's bytes, and its extension; None when the
     picture cannot be read (image_safety refuses it) or the part is empty."""
-    image = image_safety.decode_image_bytes(data)
+    image = decode_upright(data)
     if image is None:
         return None
     area = area.intersected(image.rect())
@@ -78,13 +86,16 @@ def _formats() -> List[Tuple[str, Optional[float]]]:
 class CropView(QWidget):
     """The picture, fitted, with the frame on it."""
 
+    # The frame moved or changed its size.
+    changed = Signal()
+
     def __init__(self, image: QImage, parent: QWidget) -> None:
         super().__init__(parent)
         self._image = image
         self._pixmap = QPixmap.fromImage(image.scaled(
             _VIEW, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         self._scale = self._pixmap.width() / max(1, image.width())
-        self.frame = QRectF(0, 0, image.width(), image.height())     # the picture's pixels
+        self._frame = QRectF(0, 0, image.width(), image.height())    # the picture's pixels
         self.ratio: Optional[float] = None
         self._drag: Optional[Tuple[str, QPointF, QRectF]] = None
         self.setFixedSize(self._pixmap.size())
@@ -97,6 +108,20 @@ class CropView(QWidget):
 
     # ---- the frame ----
 
+    @property
+    def frame(self) -> QRectF:
+        return self._frame
+
+    @frame.setter
+    def frame(self, frame: QRectF) -> None:
+        self._frame = frame
+        self.update()
+        self.changed.emit()
+
+    def untouched(self) -> bool:
+        """Whether the frame still holds the whole picture."""
+        return self.area() == self._image.rect()
+
     def set_ratio(self, ratio: Optional[float]) -> None:
         """The frame's shape: None free, 0.0 the picture's own, else
         width over height; the largest such frame, centred."""
@@ -108,7 +133,6 @@ class CropView(QWidget):
             w = min(width, height * self.ratio)
             h = w / self.ratio
             self.frame = QRectF((width - w) / 2, (height - h) / 2, w, h)
-        self.update()
 
     def area(self) -> QRect:
         """The frame in whole pixels of the picture."""
@@ -184,7 +208,6 @@ class CropView(QWidget):
             if "b" in grip:
                 moved.setBottom(max(frame.top() + _LEAST, frame.bottom() + delta.y()))
             self.frame = self._fit(moved, grip)
-        self.update()
 
     def mouseReleaseEvent(self, _event) -> None:
         self._drag = None
@@ -204,7 +227,6 @@ class CropView(QWidget):
             self.frame = self._fit(frame, "br" if dx or dy else "move")
         else:
             self.frame = self._fit(frame.translated(dx * pace, dy * pace), "move")
-        self.update()
 
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
@@ -224,7 +246,10 @@ class CropView(QWidget):
         if self.hasFocus():
             focus = self.palette().color(self.palette().ColorRole.Highlight)
             painter.setPen(QPen(focus, 3))
-            painter.drawRect(shown.adjusted(-2, -2, 2, 2))
+            # Around the frame, inside the view where the frame meets its
+            # edge (the whole picture, as the sheet opens).
+            painter.drawRect(shown.adjusted(-2, -2, 2, 2).intersected(
+                QRectF(self.rect()).adjusted(1.5, 1.5, -1.5, -1.5)))
         painter.setPen(QPen(QColor(255, 255, 255), 3))
         for corner in (shown.topLeft(), shown.topRight(), shown.bottomLeft(), shown.bottomRight()):
             sx = 1 if corner.x() == shown.left() else -1
@@ -247,7 +272,7 @@ class CropSheet(QDialog):
         self.setWindowTitle(_("Crop"))
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self.setWindowFlag(Qt.WindowType.Sheet, True)
-        image = image_safety.decode_image_bytes(data)
+        image = decode_upright(data)
         self.view = CropView(image if image is not None else QImage(), self)
         column = QVBoxLayout(self)
         column.setContentsMargins(20, 20, 20, 16)
@@ -272,15 +297,30 @@ class CropSheet(QDialog):
         note.setStyleSheet(f"color: {faint.name(QColor.NameFormat.HexArgb)};")
         column.addWidget(note)
         buttons = QDialogButtonBox()
-        buttons.addButton(QDialogButtonBox.StandardButton.Cancel).setText(_("Cancel"))
+        cancel = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
+        cancel.setText(_("Cancel"))
         self.crop_button = buttons.addButton(_("Crop"), QDialogButtonBox.ButtonRole.AcceptRole)
-        self.crop_button.setDefault(True)
+        for button in (cancel, self.crop_button):
+            button.setAutoDefault(False)            # only Crop, once it cuts (_frame_changed)
         buttons.accepted.connect(self._crop)
         buttons.rejected.connect(self.reject)
         column.addWidget(buttons)
-        self.crop_button.setEnabled(image is not None)
+        # Dimmed while the frame holds the whole picture: Return then makes
+        # no copy of it.
+        self.view.changed.connect(self._frame_changed)
+        self._frame_changed()
         self.shape.setEnabled(image is not None)
         self.view.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        # The button box makes its accepting button the default as it shows.
+        self._frame_changed()
+
+    def _frame_changed(self) -> None:
+        cuts = not self.view.untouched()
+        self.crop_button.setEnabled(cuts)
+        self.crop_button.setDefault(cuts)
 
     def _crop(self) -> None:
         found = crop_bytes(self._data, self.view.area())

@@ -211,7 +211,8 @@ def declared_size(data: bytes) -> Optional[QSize]:
     return size
 
 
-def decode_image_bytes(data: bytes, *, at_least: Optional[QSize] = None) -> Optional[QImage]:
+def decode_image_bytes(data: bytes, *, at_least: Optional[QSize] = None,
+                       upright: bool = False) -> Optional[QImage]:
     """Decode ``data`` to a QImage, or None when the policy refuses it.
 
     Refusal reasons: unrecognised magic, a format outside
@@ -221,7 +222,8 @@ def decode_image_bytes(data: bytes, *, at_least: Optional[QSize] = None) -> Opti
     ``at_least`` decodes no larger than needed to cover that box (a
     width or height of 0 is not asked for): a 64 px thumbnail of a
     4000 px photo then costs 64 px of memory, not 48 MB. Never larger
-    than the image itself.
+    than the image itself. ``upright`` turns it the way the camera said
+    (its EXIF orientation), as readers show it.
     """
     if not data:
         return None
@@ -241,6 +243,7 @@ def decode_image_bytes(data: bytes, *, at_least: Optional[QSize] = None) -> Opti
         reader.setAutoDetectImageFormat(False)
         reader.setDecideFormatFromContent(False)
         reader.setFormat(QByteArray(fmt))
+        reader.setAutoTransform(upright)
         size = reader.size()
         if not size.isValid() or size.width() <= 0 or size.height() <= 0:
             return None

@@ -196,6 +196,48 @@ def test_crop_asks_for_the_part_and_shows_it_as_a_new_file():
     ed.close()
 
 
+def _jpeg_turned(width: int, height: int, orientation: int) -> bytes:
+    """A JPEG ``width`` x ``height`` with an EXIF orientation, as a phone writes it."""
+    out = QByteArray()
+    buffer = QBuffer(out)
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    image = QImage(width, height, QImage.Format.Format_RGB32)
+    image.fill(Qt.GlobalColor.darkCyan)
+    image.save(buffer, "JPEG")
+    tiff = (b"II*\x00\x08\x00\x00\x00\x01\x00" + b"\x12\x01\x03\x00\x01\x00\x00\x00"
+            + orientation.to_bytes(2, "little") + b"\x00\x00" + b"\x00\x00\x00\x00")
+    exif = b"Exif\x00\x00" + tiff
+    return bytes(out)[:2] + b"\xff\xe1" + (len(exif) + 2).to_bytes(2, "big") + exif \
+        + bytes(out)[2:]
+
+
+def test_a_crop_stands_the_way_the_camera_said():
+    # Gate RG-PG2E-a 5: an iPhone portrait (40x20, orientation 6) came out on its side.
+    data = _jpeg_turned(40, 20, 6)
+    cut, _ext = picture_crop.crop_bytes(data, QRect(0, 0, 20, 30))
+    assert QImage.fromData(cut).size().toTuple() == (20, 30)
+
+
+def test_the_crop_sheet_dims_crop_until_the_frame_changes_and_shows_its_focus():
+    window = QWidget()
+    window.resize(700, 600)
+    window.show()
+    sheet = picture_crop.CropSheet(window, _jpeg_turned(40, 20, 6))
+    sheet.show()
+    QApplication.processEvents()
+    assert sheet.view.size().toTuple()[1] > sheet.view.size().toTuple()[0]     # upright
+    assert not sheet.crop_button.isEnabled() and not sheet.crop_button.isDefault()
+    view = sheet.view
+    ring = view.palette().color(view.palette().ColorRole.Highlight)
+    if view.hasFocus():
+        edge = view.grab().toImage().pixelColor(view.width() // 2, 1)
+        assert abs(edge.blue() - ring.blue()) < 40 and abs(edge.red() - ring.red()) < 40
+    sheet.shape.setCurrentIndex(2)                                          # Square
+    assert sheet.crop_button.isEnabled() and sheet.crop_button.isDefault()
+    sheet.reject()
+    window.close()
+
+
 def test_add_photos_puts_the_photos_chosen_at_the_end_of_the_group(said):
     ed = _selected(number=0)
     asked = []
