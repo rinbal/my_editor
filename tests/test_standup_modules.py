@@ -38,6 +38,8 @@ def test_a_standup_module_is_short_or_says_why_not(path):
     ("nostr.ui.standup_handoff", "nostr.ui.standup_waits", ["wait_words"]),
     ("nostr.ui.standup_publish", "nostr.ui.standup_publish_job",
      ["HeldPublish", "SignedHere", "offers_here", "publish_job"]),
+    ("nostr.standup.publishing", "nostr.standup.release",
+     ["credited_writer", "held_credit", "writer_may_release"]),
     ("nostr.ui.standup_publish", "nostr.ui.standup_publish_words",
      ["ADDRESS_TAKEN", "BUSY", "BUSY_DETAIL", "BUSY_SIGNING", "DONE", "LINK_RELAYS",
       "NO_RELAY_READ", "NOT_PUBLISHABLE", "NOT_PUBLISHED", "NOT_REPORTED", "NOT_THE_SAME", "PICTURE_NOT_FOUND",
