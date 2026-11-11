@@ -12904,7 +12904,7 @@ msgstr "Diese Nachricht ist zu lang zum Senden. Kürze sie."
 
 #: nostr/ui/standup_talk.py:51
 msgid "The server didn’t take it: try again later."
-msgstr "Der Server hat sie nicht angenommen: Versuch es später erneut."
+msgstr "Der Server hat sie nicht angenommen: Versuche es später erneut."
 
 #: nostr/ui/standup_talk.py:52
 msgid "MyEditor couldn’t put it together."
@@ -13203,7 +13203,7 @@ msgstr "MyEditor findet diesen Artikel nicht. Öffne ihn im Editor und sende ihn
 
 #: nostr/ui/submissions_host.py:70
 msgid "The version you handed in couldn’t be loaded: try again in a moment."
-msgstr "Die abgegebene Fassung konnte nicht geladen werden: Versuch es gleich noch einmal."
+msgstr "Die abgegebene Fassung konnte nicht geladen werden: Versuche es gleich noch einmal."
 
 #: nostr/ui/submissions_host.py:61
 #, python-brace-format
@@ -13452,7 +13452,7 @@ msgid "Accepted with this split."
 msgstr "Mit dieser Aufteilung angenommen."
 
 msgid "The published article couldn’t be found yet: try again in a moment."
-msgstr "Der veröffentlichte Artikel wurde noch nicht gefunden: versuch es gleich noch einmal."
+msgstr "Der veröffentlichte Artikel wurde noch nicht gefunden: Versuche es gleich noch einmal."
 
 msgid "For your share, your Nostr profile needs a Lightning address."
 msgstr "Für deinen Anteil braucht dein Nostr-Profil eine Lightning-Adresse."
