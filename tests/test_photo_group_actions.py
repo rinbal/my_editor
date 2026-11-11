@@ -94,3 +94,10 @@ def test_a_caption_and_a_description_are_written_on_their_picture():
         "Before.", ONE, "*Der Steg*", TWO, THREE, FOUR, "After.")
     assert _after(lambda doc, c: actions.set_description(c, _picture(doc), "Ein Steg")) == _text(
         "Before.", "![Ein Steg](photo.png)", TWO, THREE, FOUR, "After.")
+
+
+def test_a_caption_on_a_picture_that_shares_its_line_ends_the_line():
+    # Gate RG-PG2E-a 3: "*Cap one* ![two](square.png)" reopened as words.
+    shared = _text("Before.", "![one](photo.png) ![two](square.png)", "After.")
+    assert _after(lambda doc, c: actions.set_caption(c, _picture(doc), "Cap one"), shared) == (
+        _text("Before.", "![one](photo.png)", "*Cap one*", "![two](square.png)", "After."))

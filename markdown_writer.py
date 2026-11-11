@@ -302,11 +302,13 @@ def _unit_paragraphs(units, fmt) -> List[list]:
     that were one paragraph, one again (photo_group.write_paragraphs writes
     the same into a document)."""
     paragraphs: List[list] = []
+    previous = None
     for unit in units:
-        if unit.join is not None and paragraphs:
+        if photo_group.joins_previous(previous, unit):
             paragraphs[-1].extend(photo_group.join_runs(unit.join))
         else:
             paragraphs.append([])
+        previous = unit
         paragraphs[-1].append((OBJECT_REPLACEMENT, unit.picture_format()))
         if not unit.has_caption:
             continue

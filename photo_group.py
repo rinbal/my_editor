@@ -332,19 +332,28 @@ def write_group(cursor: QTextCursor, units: Sequence[Unit], own: QTextBlockForma
         cursor.insertText(OBJECT_REPLACEMENT, unit.unit_format())
 
 
+def joins_previous(previous: Optional[Unit], unit: Unit) -> bool:
+    """Whether ``unit`` is written on the paragraph of the unit before it:
+    it was read so (its join), and that unit has no caption paragraph of
+    its own, after which a picture starts a paragraph (it would be in the
+    caption's words, and the group gone, when the file is read again)."""
+    return (previous is not None and unit.join is not None
+            and not (previous.has_caption and previous.caption_join is None))
+
+
 def write_paragraphs(cursor: QTextCursor, units: Sequence[Unit], own: QTextBlockFormat) -> None:
     """``units`` as the paragraphs Markdown holds, from ``cursor`` (at the
     start of an empty paragraph): each picture's paragraph, its caption
     on it or after it; pictures that were one paragraph, one again."""
     cursor.setBlockFormat(own)
-    first = True
+    previous: Optional[Unit] = None
     for unit in units:
-        if unit.join is not None and not first:
+        if joins_previous(previous, unit):
             for text, fmt in join_runs(unit.join):
                 cursor.insertText(text, fmt)
-        elif not first:
+        elif previous is not None:
             cursor.insertBlock(own, QTextCharFormat())
-        first = False
+        previous = unit
         cursor.insertText(OBJECT_REPLACEMENT, unit.picture_format())
         if not unit.has_caption:
             continue
