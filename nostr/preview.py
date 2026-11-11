@@ -268,8 +268,10 @@ def _style_body(first_block, colors: Palette) -> None:
         else:
             # Text gets room between its lines; a picture or a player alone
             # in its paragraph does not (160 % of a picture's height would
-            # leave a gap below it larger than half the picture).
-            height = 100 if block.text() == "\ufffc" else 160
+            # leave a gap below it larger than half the picture), nor does a
+            # photo group's paragraph, whose rows are its lines.
+            pictures = block.text() == "\ufffc" or photo_group.is_group_block(block)
+            height = 100 if pictures else 160
             fmt.setLineHeight(height, QTextBlockFormat.LineHeightTypes.ProportionalHeight.value)
             # List items sit closer together than paragraphs.
             if block.textList() is not None:

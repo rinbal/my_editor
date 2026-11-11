@@ -265,6 +265,22 @@ def test_a_group_in_the_preview_shows_every_picture_whole(width):
     view.close()
 
 
+@pytest.mark.parametrize("width", [1000, 420])
+def test_a_groups_rows_stand_where_the_engine_places_them(width):
+    """A group's paragraph has no room between its lines (an article's
+    160 % opened a gap of more than half a picture under every row)."""
+    import photo_group
+    view = _group_preview(width)
+    doc = view.document()
+    (group,) = photo_group.groups_in(doc)
+    placed = [box.top() for box in photo_group_view.arrange(doc, group.units).boxes]
+    shown = [box.top() for _p, _n, box in photo_group_view.picture_boxes(doc)]
+    # Qt sets each line on a whole pixel: a pixel or two over a group.
+    assert [top - shown[0] for top in shown] == pytest.approx([top - placed[0] for top in placed],
+                                                              abs=2)
+    view.close()
+
+
 def test_a_narrow_preview_shows_the_runs_strips_one_picture_a_line():
     def tops(view):
         return [round(box.top()) for _p, _n, box in
