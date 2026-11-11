@@ -27,6 +27,12 @@ SOMEONE_ELSES = N_("Another person’s article already stands under this link na
 # failed (12.4, RG-B5-d): the words both apps say, under NOT_PUBLISHED.
 NOT_CHECKED = N_("Whether an article already stands under this link name couldn’t be "
                  "checked just now. Try again in a moment.")
+# Q1, too long for the signer app (the web's N1, tooLongLocal and
+# tooLongElsewhere): the text is the accepted version's, never shortened.
+TOO_LONG_HERE = N_("Your signer app doesn’t sign texts this long. It works with the key on "
+                   "this computer.")
+TOO_LONG_ELSEWHERE = N_("Your signer app doesn’t sign texts this long. Sign in with another "
+                        "signer app, or write to the editorial team.")
 NOT_REPORTED = N_("Published. {publication} doesn’t know yet: try again in a moment.")
 # 12.4 One work per address: a writer's work keeps its link name (F5A's
 # publishedD; another d would not be this work's), so it is only said.
@@ -47,10 +53,12 @@ class Stage(Enum):
     SOMEONE_ELSES = "someone_elses"     # another person's article at its address: nothing out
     NOT_CHECKED = "not_checked"         # its address could not be read: nothing out, Erneut
     CHANGED = "changed"                 # the submission changed meanwhile: the sheet closes
+    TOO_LONG = "too_long"               # the signer app can't sign it, no key here: ask
     DONE = "done"
     FAILED = "failed"                   # nothing went out; the pictures were taken down
 
 
 __all__ = ["ADDRESS_TAKEN", "BUSY", "BUSY_DETAIL", "BUSY_SIGNING", "DONE", "LINK_RELAYS",
            "NOT_CHECKED", "NOT_PUBLISHABLE", "NOT_PUBLISHED", "NOT_REPORTED", "NOT_THE_SAME",
-           "PICTURE_NOT_FOUND", "PICTURE_NOT_UP", "SOMEONE_ELSES", "Stage"]
+           "PICTURE_NOT_FOUND", "PICTURE_NOT_UP", "SOMEONE_ELSES", "Stage", "TOO_LONG_ELSEWHERE",
+           "TOO_LONG_HERE"]

@@ -443,6 +443,8 @@ def test_a_picture_the_servers_refuse_publishes_nothing(accepted):
 
 def test_too_long_for_the_signer_app_with_the_key_here_offers_it_once(accepted, monkeypatch):
     # Q1: explicit and for this article only; never without a key here.
+    # RG-M4-b 4: the web's words, never "shorten it"; without a key, a
+    # question to the Redaktion and no Erneut.
     from nostr import signer_limits
     from nostr.ui import standup_publish_job
     for module in (signer_limits, standup_publish_job):     # the signer app's limit
@@ -452,12 +454,19 @@ def test_too_long_for_the_signer_app_with_the_key_here_offers_it_once(accepted, 
     run.start()
     accepted.world.settle()
     assert run.stage is Stage.OFFER_HERE and store.uploaded == [] and jobs == []
+    assert run.words == ("Your signer app doesn’t sign texts this long. It works with the key "
+                         "on this computer.")
     run.start(here=True)
     accepted.world.settle()
     assert jobs[0].here and run.stage is Stage.DONE
     run, store, jobs = _run(accepted, key_here=False, profile=remote)
     run.start()
-    assert run.stage is Stage.FAILED and store.uploaded == []
+    assert run.stage is Stage.TOO_LONG and store.uploaded == []
+    assert "Sign in with another signer app, or write to the editorial team." in run.words
+    from nostr.ui.standup_publish_sheet import PublishSheet
+    sheet = PublishSheet(run=run, publication="Magazin", number=1, is_dark=False)
+    assert sheet.publish.text() == "Ask a Question"
+    sheet.deleteLater()
 
 
 def test_a_correction_taken_is_confirmed_alone_then_replaces_the_article_keeping_its_date(

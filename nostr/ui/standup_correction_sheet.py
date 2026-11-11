@@ -147,7 +147,7 @@ class CorrectionSheet(QDialog):
         working, done = stage is Stage.WORKING, stage is Stage.DONE
         failed = stage in (Stage.FAILED, Stage.NOT_STORED, Stage.NOT_REPORTED,
                            Stage.NOT_CHECKED)
-        ask = stage is Stage.SOMEONE_ELSES      # nothing to try again: ask the Redaktion
+        ask = stage in (Stage.SOMEONE_ELSES, Stage.TOO_LONG)    # nothing to try again: ask
         if done:
             self.status.say(run.title)
         elif failed or ask or stage is Stage.OFFER_HERE:
@@ -173,7 +173,7 @@ class CorrectionSheet(QDialog):
         stage = self.run.stage
         if stage is Stage.DONE:
             self.accept()
-        elif stage is Stage.SOMEONE_ELSES:
+        elif stage in (Stage.SOMEONE_ELSES, Stage.TOO_LONG):
             self._ask()
         elif stage is Stage.OFFER_HERE:
             self.run.start(here=True)

@@ -62,7 +62,7 @@ from .standup_publish_job import HeldPublish, SignedHere, offers_here, publish_j
 from .standup_publish_words import (
     ADDRESS_TAKEN, BUSY, BUSY_DETAIL, BUSY_SIGNING, DONE, LINK_RELAYS, NOT_CHECKED,
     NOT_PUBLISHABLE, NOT_PUBLISHED, NOT_REPORTED, NOT_THE_SAME, PICTURE_NOT_FOUND,
-    PICTURE_NOT_UP, SOMEONE_ELSES, Stage,
+    PICTURE_NOT_UP, SOMEONE_ELSES, TOO_LONG_ELSEWHERE, TOO_LONG_HERE, Stage,
 )
 
 _log = logging.getLogger(__name__)
@@ -299,14 +299,19 @@ class AcceptedPublish(QObject):
 
     def _too_long(self, event: dict) -> bool:
         """Said, and true, when the signer could not sign ``event``."""
-        problem = size_problem(self._profile, event=event, key_here=self._ports.key_here)
-        if not problem:
+        if not size_problem(self._profile, event=event, key_here=self._ports.key_here):
             return False
-        if offers_here(self._profile, event, self._ports.key_here):
-            self._say(Stage.OFFER_HERE, _(NOT_PUBLISHED), problem)
-        else:
-            self._fail(problem)
+        self._say_too_long(event)
         return True
+
+    def _say_too_long(self, event: dict) -> None:
+        """Q1 in the web's words (N1; RG-M4-b 4): the text is the accepted
+        version's, so never "shorten it"; the key here is the one action,
+        else a question to the Redaktion and no Erneut."""
+        if offers_here(self._profile, event, self._ports.key_here):
+            self._say(Stage.OFFER_HERE, _(NOT_PUBLISHED), _(TOO_LONG_HERE))
+        else:
+            self._fail(_(TOO_LONG_ELSEWHERE), Stage.TOO_LONG)
 
     # -- 2: the pictures ------------------------------------------------------------
 
@@ -426,11 +431,11 @@ class AcceptedPublish(QObject):
         if job is not self._job or self._stopped:
             return
         self._take_down()
-        words = job.failure_words
-        if offers_here(self._profile, job.unsigned_event, self._ports.key_here) and not self._here:
-            self._say(Stage.OFFER_HERE, _(NOT_PUBLISHED), words)
+        if not self._here and size_problem(self._profile, event=job.unsigned_event,
+                                           key_here=self._ports.key_here):
+            self._say_too_long(job.unsigned_event)
         else:
-            self._fail(words)
+            self._fail(job.failure_words)
 
     def _signed(self, job) -> None:
         if job is not self._job or self._stopped:
@@ -606,4 +611,5 @@ __all__ = ["ADDRESS_TAKEN", "AcceptedPublish", "BUSY", "BUSY_DETAIL", "BUSY_SIGN
            "NOT_PUBLISHABLE",
            "NOT_PUBLISHED", "NOT_REPORTED", "NOT_THE_SAME", "PICTURE_NOT_FOUND",
            "PICTURE_NOT_UP", "PublishPorts", "SOMEONE_ELSES", "SignedHere", "Stage",
+           "TOO_LONG_ELSEWHERE", "TOO_LONG_HERE",
            "offers_here", "publish_job", "run_for"]
