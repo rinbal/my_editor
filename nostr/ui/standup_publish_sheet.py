@@ -69,6 +69,7 @@ class PublishSheet(QDialog):
         make_sheet(self)
         self.setMinimumSize(420, 300)
         self.run, self._is_dark = run, bool(is_dark)
+        self._seen = None                    # the stage last shown
         self.destroyed.connect(lambda *_: setattr(run, "on_screen", False))
         self._build(publication, number, section, account_name, people, differs)
         run.changed.connect(self._show)
@@ -123,6 +124,7 @@ class PublishSheet(QDialog):
         root.addWidget(self.privacy)
         root.addStretch(1)
         self.status = StatusLine(self._is_dark)
+        self.status.setFocusPolicy(Qt.FocusPolicy.ClickFocus)   # it takes the focus
         root.addWidget(self.status)
         self.signing_as = self._label(
             _("Publishing as {name}").format(name=account_name) if account_name else "")
@@ -187,6 +189,12 @@ class PublishSheet(QDialog):
         # Not checked: Erneut versuchen or Abbrechen (12.4, the words both apps say).
         self.cancel_button.setText(_("Cancel") if stage is Stage.NOT_CHECKED else _(
             "Close") if working or failed or ask else _("Cancel"))
+        if stage is not self._seen and self.isVisible():
+            # After a stage change the focus is on what it says (RG-M4-c 8),
+            # never on Ansehen, which a second Space would open.
+            target = self.status if self.status.isVisibleTo(self) else self.publish
+            target.setFocus()
+        self._seen = stage
 
     def _cancel(self) -> None:
         """Abbrechen; when the address could not be read, back at

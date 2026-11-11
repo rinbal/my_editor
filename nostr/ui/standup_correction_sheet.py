@@ -93,6 +93,7 @@ class CorrectionSheet(QDialog):
         make_sheet(self)
         self.setMinimumSize(460, 360)
         self.run, self._is_dark = run, bool(is_dark)
+        self._seen = None                    # the stage last shown
         self.destroyed.connect(lambda *_: setattr(run, "on_screen", False))
         self._style()
         appearance.bind(self)
@@ -123,6 +124,7 @@ class CorrectionSheet(QDialog):
         self.replaces.setWordWrap(True)
         root.addWidget(self.replaces)
         self.status = StatusLine(self._is_dark)
+        self.status.setFocusPolicy(Qt.FocusPolicy.ClickFocus)   # it takes the focus
         root.addWidget(self.status)
         buttons = QDialogButtonBox()
         self.ask = buttons.addButton(_("Ask a Question"), QDialogButtonBox.ButtonRole.ActionRole)
@@ -180,6 +182,12 @@ class CorrectionSheet(QDialog):
         self.later.setText(_("Cancel") if stage is Stage.NOT_CHECKED else _(
             "Close") if working or failed or ask else _("Later"))
         self.later.setVisible(not done)
+        if stage is not self._seen and self.isVisible():
+            # After a stage change the focus is on what it says (RG-M4-c 8),
+            # never on Ansehen, which a second Space would open.
+            target = self.status if self.status.isVisibleTo(self) else self.take
+            target.setFocus()
+        self._seen = stage
 
     def _primary(self) -> None:
         stage = self.run.stage

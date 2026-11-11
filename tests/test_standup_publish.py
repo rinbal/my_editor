@@ -447,6 +447,26 @@ def test_through_a_signer_app_a_week_brings_three_quick_tries_and_one_ride_along
     assert len(calls) == 3 + QUICK_TRIES and again.row(sid).publishing == UNREPORTED
 
 
+def test_after_a_stage_change_the_focus_is_on_the_status_line_never_on_view(accepted):
+    # RG-M4-c 8: Space on Veröffentlichen, and once published the focus is
+    # on what the sheet says, so a second Space opens nothing.
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+    from nostr.ui.standup_publish_sheet import PublishSheet
+    run, _store, _jobs = _run(accepted)
+    sheet = PublishSheet(run=run, publication="Magazin", number=1, is_dark=False)
+    sheet.show()
+    sheet.activateWindow()
+    QApplication.processEvents()
+    sheet.publish.setFocus()
+    QTest.keyClick(sheet.publish, Qt.Key.Key_Space)
+    accepted.world.settle()
+    assert run.stage is Stage.DONE and sheet.view.isVisibleTo(sheet)
+    assert sheet.focusWidget() is sheet.status
+    sheet.deleteLater()
+
+
 def test_a_public_work_with_no_quiet_try_left_offers_send_again_and_stays_public(accepted):
     # RG-M4-c 3 (ux/p_giveup.py): once no quiet try is left the row says it
     # is public and offers Erneut senden; the record stays, after 7 days and

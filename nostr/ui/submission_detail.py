@@ -201,6 +201,7 @@ class SubmissionDetail(QWidget):
         self.more.setObjectName("submission_more")
         self.note = QLabel()
         self.note.setObjectName("submission_more")
+        self.note.setFocusPolicy(Qt.FocusPolicy.ClickFocus)    # a reminder's line takes it
         # "Mehr dazu" sits on the sentence's line: it is about the
         # sentence, not about the line under it (RG-M3-b 12).
         said = QHBoxLayout()
@@ -525,7 +526,10 @@ class SubmissionDetail(QWidget):
 
     def _show_reminders(self, sid: str, people) -> None:
         """"<Name> erinnern" for each of ``people`` not reminded in the last
-        24 hours (RG-M4-b 11, as the web): a reminded person's goes."""
+        24 hours (RG-M4-b 11, as the web): a reminded person's goes. One
+        sent by keyboard leaves the focus on the line that says so
+        (RG-M4-c 8), never in the composer."""
+        had_focus = any(button.hasFocus() for button in self._reminders)
         for button in self._reminders:
             self._buttons.removeWidget(button)
             discard(button)
@@ -543,6 +547,8 @@ class SubmissionDetail(QWidget):
             self._buttons.addWidget(button)
             self._reminders.append(button)
         self._buttons.addWidget(self.second)
+        if had_focus and self._line and self.note.isVisibleTo(self):
+            self.note.setFocus()
 
     def reminder_buttons(self) -> list:
         return list(self._reminders)

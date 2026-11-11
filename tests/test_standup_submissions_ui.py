@@ -578,10 +578,15 @@ def test_each_person_still_to_confirm_has_their_own_reminder_until_reminded_toda
     detail = opened(window, entry)
     assert detail.sentence.text() == "Thanks. Paul and Eva still confirm."
     assert [b.text() for b in detail.reminder_buttons()] == ["Remind Paul", "Remind Eva"]
-    detail.reminder_buttons()[1].click()
+    window.view.show()
+    window.view.activateWindow()
+    QApplication.processEvents()
+    detail.reminder_buttons()[1].setFocus()
+    QTest.keyClick(detail.reminder_buttons()[1], Qt.Key.Key_Space)     # by keyboard
     world.settle()
     assert detail.note.text() == "Eva was reminded."
     assert [b.text() for b in detail.reminder_buttons()] == ["Remind Paul"]
+    assert detail.window().focusWidget() is detail.note       # RG-M4-c 8: on what it says
     window.following.remind(entry.sid, eva, lambda _error: None)     # the server says: today
     world.settle()
     window.following._reminded.clear()                                # as after a restart
