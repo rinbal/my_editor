@@ -357,6 +357,7 @@ def test_a_contributor_confirms_the_split_and_their_rights_from_their_own_app():
             split_rumor_id=accepted.split_rumor_id, on_done=done), is_dark=False)
     assert sheet.split.text() == "Jana 70 %  ·  You 30 %"
     assert sheet.rights.isVisibleTo(sheet) and not sheet.confirm_button.isEnabled()
+    assert sheet.rights_text.text() == "My contribution is mine." and sheet.rights_text.wordWrap()
     sheet.rights.setChecked(True)
     sheet.confirm_button.click()
     world.settle()

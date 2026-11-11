@@ -8,8 +8,8 @@ the publication publishes (M-4 M14; editorial contract 9.4, 11.2 step
     Von Einundzwanzig Magazin angenommen, Fassung 2.
     Jana 70 %  ·  Paul 30 %
     Dein Anteil geht an jana@getalby.com.
-    [ ] Ich habe die Rechte an meinem Teil und bin mit der
-        Veröffentlichung einverstanden.            (contributors)
+    [ ] Mein Beitrag (Fotos) gehört mir. Ich bin mit der
+        Lizenz CC BY 4.0 einverstanden.            (contributors)
     [Rückfrage stellen]              [Abbrechen] [Bestätigen]
 
 The split shown is only the ``split-proposal`` the verified accept names
@@ -22,7 +22,9 @@ the web's): where the profile names none, Profil bearbeiten opens Edit
 Profile in its place; where the profile could not be read, Erneut
 versuchen reads it again. The primary action comes first in the focus
 order. Rückfrage stellen closes the sheet and puts the question into the
-conversation's composer.
+conversation's composer. A contributor's rights are the web's sentences
+(RG-M4-b 7), their part as the revision credits it and the license the
+revision names, in a label that wraps.
 """
 
 from __future__ import annotations
@@ -31,7 +33,8 @@ from typing import Callable, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QEvent, QSize, Qt, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QDialog, QDialogButtonBox, QLabel, QPushButton, QVBoxLayout, QWidget,
+    QCheckBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout,
+    QWidget,
 )
 
 from alerts import answer_return_as_the_system_does
@@ -47,9 +50,34 @@ SHARE_GOES_TO = N_("Your share goes to {address}.")
 NO_ADDRESS = N_("For your share, your Nostr profile needs a Lightning address.")
 PROFILE_READING = N_("Reading your profile …")
 PROFILE_NOT_READ = N_("Your profile couldn’t be read, so it’s not known where your share goes.")
-RIGHTS = N_("I hold the rights to my part and agree to it being published.")
+RIGHTS = N_("My contribution is mine.")
+RIGHTS_PART = N_("My contribution ({part}) is mine.")
+LICENSE = N_("I agree to the license {license}.")
 NOT_CONFIRMED = N_("Not confirmed")
 ASK_PREFIX = N_("A short question about the split: ")
+
+
+class _Toggles(QLabel):
+    """The words of a check box, wrapping; a click on them toggles it."""
+
+    def __init__(self, text: str, box: QCheckBox) -> None:
+        super().__init__(text)
+        self._box = box
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.setWordWrap(True)
+        self.setBuddy(box)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802, Qt's name
+        if self._box.isEnabled() and event.button() == Qt.MouseButton.LeftButton:
+            self._box.toggle()
+            self._box.setFocus(Qt.FocusReason.MouseFocusReason)
+
+
+def rights_words(part: str, license: str) -> str:
+    """The rights a contributor confirms, as the web says them: their part
+    as the revision credits it, then the license the revision names."""
+    words = _(RIGHTS_PART).format(part=part) if part else _(RIGHTS)
+    return f"{words} {_(LICENSE).format(license=license)}" if license else words
 
 
 class ConfirmSheet(QDialog):
@@ -64,7 +92,8 @@ class ConfirmSheet(QDialog):
     def __init__(self, *, role: str, publication: str, number: int,
                  shares: Optional[Sequence[Tuple[str, int, str]]], me: str,
                  name_of: Callable[[str], str], zap_address: Callable,
-                 confirm: Callable, is_dark: bool, parent: Optional[QWidget] = None) -> None:
+                 confirm: Callable, is_dark: bool, part: str = "", license: str = "",
+                 parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(_("Confirm Your Part"))
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -80,6 +109,7 @@ class ConfirmSheet(QDialog):
         self._address: Optional[str] = None
         self._reading = self._profile_edited = self._confirming = self._stale = False
         self._zap_address = zap_address
+        self._rights_words = rights_words(part, license)
         self._build(publication, number, shares or (), me, name_of)
         if self._needs_address:
             self._read_address()
@@ -110,10 +140,20 @@ class ConfirmSheet(QDialog):
         self.address = self._label("")
         self.address.setVisible(self._needs_address)
         root.addWidget(self.address)
-        self.rights = QCheckBox(_(RIGHTS))
-        self.rights.setVisible(self._contributor)
+        # A check box's own text does not wrap: the words are a label
+        # beside it that wraps and toggles it, and its accessible name.
+        row = QWidget()
+        line = QHBoxLayout(row)
+        line.setContentsMargins(0, 0, 0, 0)
+        line.setSpacing(6)
+        self.rights = QCheckBox()
+        self.rights.setAccessibleName(self._rights_words)
         self.rights.toggled.connect(self._refresh)
-        root.addWidget(self.rights)
+        line.addWidget(self.rights, 0, Qt.AlignmentFlag.AlignTop)
+        self.rights_text = _Toggles(self._rights_words, self.rights)
+        line.addWidget(self.rights_text, 1)
+        row.setVisible(self._contributor)
+        root.addWidget(row)
         root.addStretch(1)
         self.status = StatusLine(self._is_dark)
         root.addWidget(self.status)

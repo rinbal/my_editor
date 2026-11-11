@@ -325,6 +325,17 @@ def test_the_key_kept_here_is_wiped_after_its_signature_and_goes_with_the_run(ac
     assert gone == [True]
 
 
+def test_a_contributor_confirms_their_part_and_the_license_in_the_webs_words():
+    # RG-M4-b 7: the part as the revision credits it, the license it names.
+    from nostr.ui.standup_confirm_sheet import rights_words
+    revision = {"credits": [{"pubkey": pk("contributor"), "part": "Fotos"}],
+                "rights": {"confirmed": True, "license": "CC BY 4.0"}}
+    assert rights_words(**publishing.rights_of(revision, pk("contributor"))) == (
+        "My contribution (Fotos) is mine. I agree to the license CC BY 4.0.")
+    assert rights_words(**publishing.rights_of({}, pk("contributor"))) == (
+        "My contribution is mine.")
+
+
 def test_the_writer_release_vectors():
     # Contract 12.4 at 569b3f8, Before the writer's work goes out (vector
     # writer_release, releaseRelays): this server, then every relay.

@@ -13405,9 +13405,6 @@ msgstr "Erinnern"
 msgid "Your share goes to {address}."
 msgstr "Dein Anteil geht an {address}."
 
-msgid "I hold the rights to my part and agree to it being published."
-msgstr "Ich habe die Rechte an meinem Teil und bin mit der Veröffentlichung einverstanden."
-
 msgid "Not confirmed"
 msgstr "Nicht bestätigt"
 
@@ -13543,3 +13540,14 @@ msgstr "Deine Signer-App unterschreibt so lange Texte nicht. Mit dem Schlüssel 
 
 msgid "Your signer app doesn’t sign texts this long. Sign in with another signer app, or write to the editorial team."
 msgstr "Deine Signer-App unterschreibt so lange Texte nicht. Melde dich mit einer anderen Signer-App an, oder schreib der Redaktion."
+
+msgid "My contribution is mine."
+msgstr "Mein Beitrag gehört mir."
+
+#, python-brace-format
+msgid "My contribution ({part}) is mine."
+msgstr "Mein Beitrag ({part}) gehört mir."
+
+#, python-brace-format
+msgid "I agree to the license {license}."
+msgstr "Ich bin mit der Lizenz {license} einverstanden."

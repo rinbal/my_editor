@@ -121,6 +121,18 @@ def media_refs_in(revision: Mapping) -> List[str]:
     return list(dict.fromkeys(found))
 
 
+def rights_of(revision: Mapping, person: str) -> Dict[str, str]:
+    """``{"part", "license"}`` a contributor confirms: their part as the
+    revision credits it (``credits[].part``) and the license it names
+    (``rights.license``), each ``""`` when none (RG-M4-b 7)."""
+    credits = revision.get("credits") if isinstance(revision.get("credits"), list) else []
+    part = next((c.get("part") for c in credits if isinstance(c, Mapping)
+                 and c.get("pubkey") == person and isinstance(c.get("part"), str)), "")
+    rights = revision.get("rights") if isinstance(revision.get("rights"), Mapping) else {}
+    license = rights.get("license") if isinstance(rights.get("license"), str) else ""
+    return {"part": part.strip()[:_PART_MAX], "license": license.strip()[:_PART_MAX]}
+
+
 def media_to_publish(revision: Mapping) -> List[Mapping]:
     """The media entries the work needs in public: one per ref it names,
     held by the revision under exactly that file's hash, of a type that is
@@ -563,5 +575,5 @@ __all__ = ["Accepted", "EXTENSIONS", "NEVER_CARRIED", "NotPublishable", "Publish
            "Release", "addresses_before", "corrected_template", "correction_changes",
            "correction_texts", "credited", "credited_writer", "held_credit", "media_refs_in",
            "media_to_publish", "placed_section", "published_revision", "published_template",
-           "published_work", "release", "section_of", "served_at", "verified_accept",
-           "work_address", "work_of"]
+           "published_work", "release", "rights_of", "section_of", "served_at",
+           "verified_accept", "work_address", "work_of"]

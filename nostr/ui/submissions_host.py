@@ -517,10 +517,11 @@ class SubmissionsHost(QObject):
                 or (accepted.split_rumor_id and shares is None)):
             self._say_in_place(sid, _(ACCEPTED_NOT_LOADED))
             return
+        revision = version.opened.revision if version.opened is not None else {}
         sheet = self._confirm_sheet = ConfirmSheet(
             role=row.role, publication=following.publication_name(row.publication),
             number=row.view.revision, shares=shares, me=following.me, name_of=self._name_of,
-            zap_address=ports.zap_address,
+            zap_address=ports.zap_address, **publishing.rights_of(revision, following.me),
             confirm=lambda confirms, done: following.confirm(
                 sid, confirms=confirms, revision_hash=version.revision_hash,
                 split_rumor_id=accepted.split_rumor_id, on_done=done),
