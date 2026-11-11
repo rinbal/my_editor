@@ -945,10 +945,24 @@ class HtmlEditor(QTextEdit):
         """Keep the marks of what was read from the file on it, off what
         is typed at the caret after it (doc_walk.READ_MARKS): a soft line
         break's, an escaped character's, a caption's typed words' once the
-        caption is text of its own."""
+        caption is text of its own. Over a selection, which a format set
+        here would change, the typing takes them off (_clear_to_type)."""
         if (any(fmt.hasProperty(mark) for mark in READ_MARKS)
                 and not self.textCursor().hasSelection()):
             self.setCurrentCharFormat(without_read_marks(fmt))
+
+    def _clear_to_type(self, cursor: QTextCursor) -> QTextCharFormat:
+        """The format to type in at ``cursor``, without READ_MARKS, as a
+        replacement's (find_replace); a selection goes first, and Qt then
+        types in that format too. Qt would type over a selection in the
+        format of its last character: over "\\*Stern\\*", an escaped
+        star's, and every star typed after it was saved escaped."""
+        fmt = without_read_marks(self.currentCharFormat())
+        if cursor.hasSelection():
+            cursor.removeSelectedText()
+            cursor.setCharFormat(fmt)
+            self.setTextCursor(cursor)
+        return fmt
 
     def set_paper_mode(self, on: bool):
         self._paper_mode = bool(on)
@@ -1469,7 +1483,8 @@ class HtmlEditor(QTextEdit):
                     self._open_paragraph_beside_group(cursor)
         if event.commitString():
             # What they compose is typed: in the run of typing going on.
-            with self._typing(TYPED):
+            with self._typing(TYPED) as cursor:
+                self._clear_to_type(cursor)
                 super().inputMethodEvent(event)
         else:
             super().inputMethodEvent(event)
@@ -2588,11 +2603,8 @@ class HtmlEditor(QTextEdit):
         # A typed character: in the run of typing going on, one step of
         # Undo with it (_typing).
         if e.text() and not e.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier):
-            fmt = self.currentCharFormat()
             with self._typing(TYPED) as cursor:
-                if cursor.hasSelection():
-                    cursor.removeSelectedText()
-                cursor.insertText(e.text(), fmt)
+                cursor.insertText(e.text(), self._clear_to_type(cursor))
             self._after_typed(e.text())
             self.ensureCursorVisible()
             return
@@ -2600,7 +2612,8 @@ class HtmlEditor(QTextEdit):
         if e.text() and e.text().isprintable():
             # Typed with Option or AltGr ("@", "€", "[" on many keyboards):
             # in the run of typing going on.
-            with self._typing(TYPED):
+            with self._typing(TYPED) as cursor:
+                self._clear_to_type(cursor)
                 super().keyPressEvent(e)
             self._after_typed(e.text())
         else:

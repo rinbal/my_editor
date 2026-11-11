@@ -600,6 +600,8 @@ def test_a_preview_reads_a_soft_break_as_readers_do():
 import photo_group  # noqa: E402
 import photo_group_find  # noqa: E402
 import photo_group_edit  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from editor import HtmlEditor  # noqa: E402
 
 GROUP_CORPUS = [
     "![a](a.png)\n\n![b](b.png)\n",
@@ -718,6 +720,23 @@ def test_what_a_file_escaped_is_saved_escaped():
         "Ein *Stern* hier", ""]
     assert document_to_markdown(doc, _image_as_read) == source
     assert holds_faithfully(source)
+
+
+def test_words_typed_over_escaped_text_are_saved_as_typed():
+    # Gate RG-PG2E-d 5: typed over a selection, the words took the escaped
+    # star's mark and were saved "x \\*neu\\* y". Undo brings back what was.
+    ed = HtmlEditor()
+    ed.show()
+    read_markdown(ed.document(), "Ein \\*Stern\\* hier.\n")
+    cursor = ed.textCursor()
+    cursor.setPosition(len("Ein "))
+    cursor.setPosition(len("Ein *Stern*"), QTextCursor.MoveMode.KeepAnchor)
+    ed.setTextCursor(cursor)
+    QTest.keyClicks(ed, "x *neu* y")
+    assert document_to_markdown(ed.document(), _image_as_read) == "Ein x *neu* y hier.\n"
+    ed.document().undo()
+    assert document_to_markdown(ed.document(), _image_as_read) == "Ein \\*Stern\\* hier.\n"
+    ed.close()
 
 
 def test_an_escape_saved_bare_would_change_the_text_so_it_is_kept():
