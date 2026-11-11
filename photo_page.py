@@ -19,6 +19,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Sequence, Tuple
+from urllib.parse import urlsplit
 
 import photo_group_geometry
 import photo_layout
@@ -107,12 +108,47 @@ class Figure:
     caption_html: str = ""
     caption_text: str = ""
     wide: bool = False
+    # The address the picture links to ("" for none), one a page may link to.
+    href: str = ""
+
+
+# md.py's arrow of a linked picture's flag.
+_ARROW_SVG = ('<svg class="e21-imgflag-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" '
+              'stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" '
+              'aria-hidden="true"><path d="M7 7h10v10"></path><path d="M7 17 17 7"></path></svg>')
+
+
+def link_host(href: str) -> str:
+    """``example.org`` for a web address (``www.`` dropped), else "": the
+    words of a linked picture's flag (md.py, link_host)."""
+    try:
+        parts = urlsplit(href)
+        host = parts.hostname if parts.scheme in ("http", "https") else None
+    except ValueError:
+        return ""
+    if not host:
+        return ""
+    return host[4:] if host.startswith("www.") else host
+
+
+def _linked(picture: str, href: str) -> str:
+    """A linked picture as md.py writes one: the whole picture is the
+    link, a flag on it names where it leads."""
+    host = link_host(href)
+    flag = ('<span class="e21-imgflag">'
+            + (f'<span class="e21-imgflag-host">{html.escape(host)}</span>' if host else "")
+            + _ARROW_SVG + "</span>")
+    attrs = f' href="{html.escape(href, quote=True)}"'
+    if not href.startswith("#"):
+        attrs += ' target="_blank" rel="noopener noreferrer"'
+    return f'<a class="e21-imglink"{attrs}>{picture}{flag}</a>'
 
 
 def figure_html(f: Figure, properties) -> str:
     """One picture as ``<figure class="e21-figure">``; with ``properties``
-    it is a cell of its group (photo_layout.group_markup)."""
-    alt = html.escape(f.alt, quote=True)
+    it is a cell of its group (photo_layout.group_markup). A description
+    of only spaces is none (md.py)."""
+    alt = html.escape(f.alt if f.alt.strip() else "", quote=True)
     cls = ("e21-figure" + (" e21-figure--wide" if f.wide else "")
            + (" e21-pg-cell" if properties is not None else ""))
     style = f"--ar:{f.size[0]}/{f.size[1]}" if f.size else "--ar:3/2"
@@ -131,6 +167,8 @@ def figure_html(f: Figure, properties) -> str:
         # a page printed or saved as PDF shows every picture).
         img += ' decoding="async">' if f.src.startswith("data:") else \
             ' loading="lazy" decoding="async">'
+    if f.href:
+        img = _linked(img, f.href)
     caption = f"<figcaption>{f.caption_html}</figcaption>" if f.caption_html else ""
     return f'<figure class="{cls}" style="{style}"{provisional}>{img}{caption}</figure>'
 
@@ -165,10 +203,13 @@ def group_figures_html(figures: Sequence[Figure]) -> str:
 # the picture in italic, the picture at its own size.
 _FIGURE = re.compile(r'<figure class="e21-figure[^"]*"[^>]*>(.*?)</figure>', re.S)
 _PICTURE_SIZE = re.compile(r'(<img [^>]*?) width="\d+" height="\d+"')
+# A linked picture's flag: where the link leads, not words of the text.
+_FLAG = re.compile(r'<span class="e21-imgflag">(?:<span class="e21-imgflag-host">[^<]*</span>)?'
+                   r'<svg class="e21-imgflag-icon".*?</svg></span>', re.S)
 
 
 def _figure_paragraph(match) -> str:
-    inside = _PICTURE_SIZE.sub(r"\1", match.group(1))
+    inside = _FLAG.sub("", _PICTURE_SIZE.sub(r"\1", match.group(1)))
     inside = inside.replace("<figcaption>", "<br><em>").replace("</figcaption>", "</em>")
     return f"<p>{inside}</p>"
 

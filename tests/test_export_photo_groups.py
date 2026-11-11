@@ -177,6 +177,36 @@ def test_a_picture_alone_is_a_figure_as_md_py_writes_one(app):
     assert "<p>Words</p>" in page and "<p>More</p>" in page
 
 
+def test_a_linked_picture_is_written_as_md_py_writes_one(app):
+    """A picture an HTML page linked: the whole picture is the link, a flag
+    names where it leads (md.py, e21-imglink); a link a page may not hold
+    is dropped. Opened again, the link is the picture's, the flag no text."""
+    doc = QTextDocument()
+    doc.setHtml('<p><a href="https://www.example.org/a"><img src="landscape.png"></a></p>'
+                '<p><a href="#notes"><img src="photo.png"></a></p>'
+                '<p><a href="javascript:alert(1)"><img src="square.png"></a></p>')
+    photo_group_find.fold(doc)
+    page = document_to_html(doc, "x", image_roots=[str(PHOTOS)])
+    links = re.findall(r'<a class="e21-imglink"[^>]*>|</a></figure>', page)
+    assert links == ['<a class="e21-imglink" href="https://www.example.org/a" target="_blank" '
+                     'rel="noopener noreferrer">', "</a></figure>",
+                     '<a class="e21-imglink" href="#notes">', "</a></figure>"]
+    assert ('<span class="e21-imgflag"><span class="e21-imgflag-host">example.org</span><svg '
+            'class="e21-imgflag-icon"') in page
+    assert "javascript:" not in page
+    edit = QTextEdit()
+    open_page(edit, page)
+    (group,) = photo_group.groups_in(edit.document())
+    assert [u.image.anchorHref() for u in group.units] == ["https://www.example.org/a",
+                                                           "#notes", ""]
+    assert "example.org" not in edit.document().toPlainText()
+
+
+def test_a_description_of_spaces_is_none(app):
+    page = _page("![ ](landscape.png)\n\n![b](photo.png)\n")
+    assert re.findall(r'<img src="[^"]*" alt="([^"]*)"', page) == ["", "b"]
+
+
 def test_a_saved_page_opens_as_the_paragraphs_it_was_written_from(app):
     """Saved as HTML and opened again, a group is a group with its
     captions, and a picture alone has its caption under it in italic."""

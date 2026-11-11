@@ -348,7 +348,9 @@ def _figure_of(unit, picture_of, render_image) -> photo_page.Figure:
     it."""
     src, size, source = picture_of(unit.name)
     caption = _caption_html(unit, render_image) if unit.caption_text.strip() else ""
-    return photo_page.Figure(src, size, source, unit.alt, caption, unit.caption_text, unit.wide)
+    href = safe_href(unit.image.anchorHref()) if unit.image.isAnchor() else ""
+    return photo_page.Figure(src, size, source, unit.alt, caption, unit.caption_text, unit.wide,
+                             href)
 
 
 def _photo_units(doc, is_media) -> List[Tuple[int, int, list, bool]]:
