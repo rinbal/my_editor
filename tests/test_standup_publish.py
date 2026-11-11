@@ -569,6 +569,36 @@ def test_the_published_revision_comes_from_signed_words_never_the_servers():
                                          corrections={"cd" * 32: 2}, **later) == 2
 
 
+def test_each_submission_has_its_own_delete_token_of_at_most_32_files():
+    # RG-M4-a 10: a token names at most 32 files (every server of a file
+    # with it); one per submission, and one that fails fails only its own.
+    from nostr.blossom.store import delete_batches
+    from nostr.standup.cleanup import Cleanups
+    from nostr.ui.standup_cleanup import BlobCleanup
+    files = [f"{n:064x}" for n in range(33)]
+    pairs = [(sha, server) for sha in files for server in (SERVER, "https://b.example")]
+    batches = delete_batches(pairs)
+    assert [len({sha for sha, _s in batch}) for batch in batches] == [32, 1]
+    assert batches[1] == [(files[32], SERVER), (files[32], "https://b.example")]
+
+    class Refusing(FakeStore):
+        def delete_on_servers(self, pairs, on_done):
+            self.batches.append(list(pairs))
+            on_done([] if len(self.batches) == 1 else list(pairs))   # the first token fails
+
+    store, kept = Refusing(), {}
+    owner = QObject()
+    owner.detail_changed = SimpleNamespace(connect=lambda _slot: None)
+    cleaner = BlobCleanup(owner, SimpleNamespace(writer=pk("writer"), stopped=False), None,
+                          store=store,
+                          cleanups=Cleanups(pk("writer"), load=lambda: kept,
+                                            save=kept.__setitem__), clock=lambda: 1000)
+    cleaner._delete({"a": (None, [(files[0], SERVER)]), "b": (None, [(files[1], SERVER)])})
+    records = Cleanups(pk("writer"), load=lambda: kept, save=kept.__setitem__)
+    assert store.batches == [[(files[0], SERVER)], [(files[1], SERVER)]]
+    assert not records.entry("a")["over"] and records.entry("b")["over"]
+
+
 def test_after_publication_the_encrypted_files_go_but_one_another_submission_names_stays():
     # M-4 M14 blob deletion: quietly, from the verified revisions' signed
     # blob lists and the writer's servers; only a file's last user removes it.

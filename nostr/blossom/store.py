@@ -92,6 +92,9 @@ _log = logging.getLogger(__name__)
 
 # How many uploads' refusing servers are kept for their Details.
 _REFUSALS_KEPT = 32
+# At most this many files in one BUD-02 delete authorization (its x
+# tags), so a server never meets a token larger than it reads.
+MOST_FILES_PER_DELETE = 32
 
 # A server's refusal of the file itself (BUD-02: 413 too large, 415 a
 # type it does not take), with the short reason a list of servers says.
@@ -1821,40 +1824,49 @@ class MediaStore(QObject):
 
     def delete_on_servers(self, pairs: Sequence[Tuple[str, str]],
                           on_done: Callable[[List[Tuple[str, str]]], None]) -> None:
-        """Delete each ``(sha256, server origin)`` of ``pairs`` with one
-        BUD-02 authorization that names every file and every server (one
-        signature, so a signer app is asked once), and answer
+        """Delete each ``(sha256, server origin)`` of ``pairs``, with one
+        BUD-02 authorization per :data:`MOST_FILES_PER_DELETE` files that
+        names them and every server (:func:`delete_batches`; one
+        signature each, asked one after another), and answer
         ``on_done(gone)`` with the pairs that are gone (deleted, or 404:
         not there). Nothing is said and the library is left as it is:
         for files this app put up for someone else's reading, such as a
         submission's encrypted pictures."""
         profile = self._profile_provider()
-        pairs = list(dict.fromkeys(pairs))
-        if profile is None or not pairs:
+        batches = delete_batches(pairs)
+        if profile is None or not batches:
             QTimer.singleShot(0, lambda: on_done([]))
             return
-        unsigned = build_blossom_auth_event(
-            "delete", file_hashes=[sha for sha, _server in pairs],
-            servers=[server for _sha, server in pairs], pubkey_hex=profile.user_pubkey)
         gone: List[Tuple[str, str]] = []
-        remaining = {"count": len(pairs)}
 
-        def finish(pair: Tuple[str, str], ok: bool) -> None:
-            if ok:
-                gone.append(pair)
-            remaining["count"] -= 1
-            if remaining["count"] == 0:
+        def next_batch(rest: List[List[Tuple[str, str]]]) -> None:
+            if not rest:
                 on_done(gone)
+                return
+            batch = rest[0]
+            unsigned = build_blossom_auth_event(
+                "delete", file_hashes=[sha for sha, _server in batch],
+                servers=[server for _sha, server in batch], pubkey_hex=profile.user_pubkey)
+            remaining = {"count": len(batch)}
 
-        def after_sign(auth_event: dict) -> None:
-            for pair in pairs:
-                self._client.delete(
-                    pair[1], pair[0], auth_event,
-                    on_success=lambda p=pair: finish(p, True),
-                    on_failure=lambda err, p=pair: finish(p, err.status == 404))
+            def finish(pair: Tuple[str, str], ok: bool) -> None:
+                if ok:
+                    gone.append(pair)
+                remaining["count"] -= 1
+                if remaining["count"] == 0:
+                    next_batch(rest[1:])
 
-        self._sign_with_bunker(profile, unsigned, on_signed=after_sign,
-                               on_failure=lambda _reason: on_done([]))
+            def after_sign(auth_event: dict) -> None:
+                for pair in batch:
+                    self._client.delete(
+                        pair[1], pair[0], auth_event,
+                        on_success=lambda p=pair: finish(p, True),
+                        on_failure=lambda err, p=pair: finish(p, err.status == 404))
+
+            self._sign_with_bunker(profile, unsigned, on_signed=after_sign,
+                                   on_failure=lambda _reason: next_batch(rest[1:]))
+
+        next_batch(batches)
 
     def _delete_one_server(
         self,
@@ -1929,6 +1941,17 @@ class MediaStore(QObject):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def delete_batches(pairs: Sequence[Tuple[str, str]]) -> List[List[Tuple[str, str]]]:
+    """``pairs`` (sha256, server) in groups that name at most
+    :data:`MOST_FILES_PER_DELETE` files each, every server of a file in
+    the group of the file."""
+    pairs = list(dict.fromkeys(pairs))
+    files = list(dict.fromkeys(sha for sha, _server in pairs))
+    groups = [set(files[i:i + MOST_FILES_PER_DELETE])
+              for i in range(0, len(files), MOST_FILES_PER_DELETE)]
+    return [[pair for pair in pairs if pair[0] in group] for group in groups]
+
 
 def servers_holding(media, planned: Sequence[str]) -> Set[str]:
     """Which of ``planned`` a library record says already hold the blob.

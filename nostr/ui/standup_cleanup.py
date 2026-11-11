@@ -16,7 +16,7 @@ When: with the key on this computer, whenever the detail of a published
 submission of the writer's was read and the cleanup is due (no one is
 asked). Through a signer app never at launch: right after the person
 published with it here, once per run, for every due submission read in
-this run, under one authorization (one request to the signer app).
+this run: one authorization each, of at most 32 files (RG-M4-a 10).
 
 It is quiet either way (lessons 36): housekeeping the person never asked
 for. A server that failed is asked again after a pause, for seven days.
@@ -47,7 +47,7 @@ class BlobCleanup(QObject):
         self._cleanups = cleanups or cleanup.Cleanups(account.writer)
         self._running: set = set()
         self._unknown: set = set()        # a revision did not verify: not again this run
-        self._asked = False                # a signer app: one request per run
+        self._asked = False                # a signer app: one round per run
         self._waiting: set = set()         # published here, its report being read
         following.detail_changed.connect(self._read)
 
@@ -140,21 +140,29 @@ class BlobCleanup(QObject):
     # -- deleting ----------------------------------------------------------------------------
 
     def _delete(self, plan: Dict[str, Tuple[Optional[dict], List[cleanup.Pair]]]) -> None:
-        if not plan:
-            return
+        """One authorization per submission (RG-M4-a 10; the store splits
+        one naming more files than a server reads): one that fails fails
+        only its own submission, which is asked again after its pause."""
         now = self._clock()
-        asked = list(dict.fromkeys(
-            pair for entry, pairs in plan.values() for pair in cleanup.left(entry, pairs)))
+        rest = list(plan.items())
 
-        def deleted(gone: List[cleanup.Pair]) -> None:
-            for sid, (entry, pairs) in plan.items():
+        def next_one() -> None:
+            if not rest:
+                return
+            sid, (entry, pairs) = rest.pop(0)
+
+            def deleted(gone: List[cleanup.Pair]) -> None:
                 self._cleanups.keep(sid, cleanup.after_try(entry, pairs, gone, now))
                 self._running.discard(sid)
+                next_one()
 
-        if not asked:
-            deleted([])
-            return
-        self._store.delete_on_servers(asked, live(self._account, deleted))
+            asked = cleanup.left(entry, pairs)
+            if asked:
+                self._store.delete_on_servers(asked, live(self._account, deleted))
+            else:
+                deleted([])
+
+        next_one()
 
 
 __all__ = ["BlobCleanup"]
