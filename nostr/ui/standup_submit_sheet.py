@@ -36,11 +36,15 @@ is Abbrechen while the submission can still be taken back; Im
 Hintergrund fortsetzen, or Escape once the request is on its way,
 closes the sheet and lets it go on in the background
 (StandupWriter.in_background).
+
+One dialog: its form, the round it asks, its blockers and the handoff
+share its state, so the module is a little longer than most.
 """
 
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from typing import Callable, List, Optional, Sequence
 
 import shiboken6
@@ -89,9 +93,12 @@ def _now() -> float:
 
 class SubmitSheet(QDialog):
     """See the module docstring. ``submitted(d)`` when the work goes to a
-    publication under ``d``: the tab keeps it as its identifier."""
+    publication under ``d``: the tab keeps it as its identifier.
+    ``view_submission(sid)`` when Einreichung ansehen is chosen once it
+    is in."""
 
     submitted = Signal(str)
+    view_submission = Signal(str)
 
     def __init__(self, *, writer: StandupWriter, draft: ArticleDraft, cover: QPixmap,
                  byline: str, private_names: Sequence[str], profile: Profile,
@@ -166,6 +173,7 @@ class SubmitSheet(QDialog):
         self.handoff.retry_message_requested.connect(lambda: self.run and self.run.retry_message())
         self.handoff.close_requested.connect(self.accept)
         self.handoff.background_requested.connect(self.accept)
+        self.handoff.view_requested.connect(self._view)
         handoff_page = QWidget()
         column = QVBoxLayout(handoff_page)
         column.setContentsMargins(0, 0, 0, 0)
@@ -554,6 +562,25 @@ class SubmitSheet(QDialog):
     def _cancel_run(self) -> None:
         if self.run is not None and self.run.progress.cancellable:
             self.reject()
+
+    def _view(self) -> None:
+        """Einreichung ansehen: the sheet closes and the detail opens."""
+        sid = self.run.submitting.submission_id if self.run is not None else ""
+        self.accept()
+        if sid:
+            self.view_submission.emit(sid)
+
+    def set_cover(self, cover: QPixmap, thumb: Optional[dict]) -> None:
+        """The cover, fetched from its web address after the sheet opened
+        (submission_cover.CoverFetch): on the card, and, while nothing was
+        submitted yet, as the revision's small cover."""
+        self._cover = cover
+        self.card.show_article(self._draft.title, self._draft.summary, cover, self._byline)
+        if self.run is None:
+            self._draft = replace(self._draft, thumb=thumb)
+        else:
+            self.handoff.track.cover = cover
+            self.handoff.track.update()
 
     def reject(self) -> None:  # noqa: N802, Qt's name
         """Cancel and Escape, which is Cancel (HIG): a run that may still

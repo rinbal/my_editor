@@ -29,7 +29,8 @@ the buttons each state has (Abbrechen while it can still be taken back,
 dimmed once the request is on its way, and beside it Im Hintergrund
 fortsetzen; Abbrechen and Erneut versuchen after a failure, Schließen
 alone when trying again would not help; Schließen while it is being
-checked; Fertig once it is in). It only shows the state and forwards the
+checked; Fertig once it is in, and beside it Einreichung ansehen, which
+opens the submission's detail). It only shows the state and forwards the
 person's choice. After a refusal for a server's limit, Erneut versuchen
 (and Erneut senden for the first message) stays dimmed until the limit's
 wait is over, and the words say when that is.
@@ -357,6 +358,8 @@ class HandoffView(QWidget):
     close_requested = Signal()
     # The sheet closes and the submission goes on (RG-M2b 10).
     background_requested = Signal()
+    # Einreichung ansehen, once it is in: its detail opens.
+    view_requested = Signal()
 
     def __init__(self, *, is_dark: bool, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -419,6 +422,10 @@ class HandoffView(QWidget):
                                                    QDialogButtonBox.ButtonRole.RejectRole)
         self.retry_button = self.buttons.addButton(_("Try Again"),
                                             QDialogButtonBox.ButtonRole.AcceptRole)
+        self.view_button = self.buttons.addButton(_("View Submission"),
+                                                  QDialogButtonBox.ButtonRole.ActionRole)
+        self.view_button.setAutoDefault(False)
+        self.view_button.clicked.connect(self.view_requested)
         self.done_button = self.buttons.addButton(_("Done"),
                                                   QDialogButtonBox.ButtonRole.AcceptRole)
         self.background_button.clicked.connect(self.background_requested)
@@ -565,6 +572,7 @@ class HandoffView(QWidget):
         waiting = retry_at is not None and retry_at > _now()
         self.retry_button.setEnabled(not waiting)
         self.done_button.setVisible(phase is Phase.DONE)
+        self.view_button.setVisible(phase is Phase.DONE)
         default = (self.done_button if phase is Phase.DONE
                    else self.retry_button if retry and not waiting else None)
         for button in (self.cancel_button, self.close_button, self.retry_button,
