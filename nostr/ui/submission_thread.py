@@ -37,8 +37,8 @@ from typing import Callable, Dict, List, Optional
 from PySide6.QtCore import QDate, QLocale, QPoint, Qt, Signal
 from PySide6.QtGui import QFont, QGuiApplication, QPixmap
 from PySide6.QtWidgets import (
-    QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QMenu, QPushButton, QSizePolicy,
-    QToolButton, QToolTip, QVBoxLayout, QWidget, QWidgetAction,
+    QAbstractButton, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QMenu, QPushButton,
+    QSizePolicy, QToolButton, QToolTip, QVBoxLayout, QWidget, QWidgetAction,
 )
 
 from i18n import N_, _
@@ -47,7 +47,7 @@ from ..standup import conversation, following as rules, thread as threads
 from . import appearance
 from .avatar import color_for_pubkey, initials_for, make_avatar_pixmap_from_image, \
     make_initials_pixmap
-from .drafts_common import display_locale, plain_tip, secondary_font
+from .drafts_common import MIN_CONTROL_PX, display_locale, plain_tip, secondary_font
 from .standup_talk import Outgoing, Sending, footer_words, shown_reactions
 
 _AVATAR = 26
@@ -154,8 +154,13 @@ class _Bubble(QFrame):
         self.react_button = QToolButton()
         self.react_button.setText("☺")
         self.react_button.setAutoRaise(True)
-        self.react_button.setAccessibleName(_("React"))
-        self.react_button.setToolTip(_("React"))
+        self.react_button.setFixedSize(MIN_CONTROL_PX, MIN_CONTROL_PX)
+        # Named by whose message it is (RG-M3-b 11): a list of "React"
+        # says nothing to a screen reader.
+        spoken = _("React to your message") if message.mine else _(
+            "React to the message from {name}").format(name=label) if label else _("React")
+        self.react_button.setAccessibleName(spoken)
+        self.react_button.setToolTip(plain_tip(spoken))
         self.react_button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.react_button.setProperty("bubble", bubble.id)
         self.react_button.setEnabled(view.can_react)
@@ -298,6 +303,19 @@ class ThreadView(QWidget):
     @property
     def cards(self) -> List[QFrame]:
         return [shown.card for shown in self._shown if shown.card is not None]
+
+    def focusables(self) -> List[QWidget]:
+        """What Tab reaches in the conversation, top to bottom."""
+        found: List[QWidget] = []
+        for index in range(self._column.count()):
+            widget = self._column.itemAt(index).widget()
+            if widget is None:
+                continue
+            for button in [widget] + widget.findChildren(QAbstractButton):
+                if isinstance(button, QAbstractButton) \
+                        and button.focusPolicy() & Qt.FocusPolicy.TabFocus:
+                    found.append(button)
+        return found
 
     @property
     def footers(self) -> List[QWidget]:

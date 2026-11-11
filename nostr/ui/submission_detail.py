@@ -408,6 +408,17 @@ class SubmissionDetail(QWidget):
             row.publication, detail.publication, size)
         self.thread.show_thread(detail, self._following.me)
         self.composer_bar.setVisible(detail.can_write and row.confirmed)
+        self._order_tabs()
+
+    def _order_tabs(self) -> None:
+        """Tab goes as the eye does, after every rebuild (RG-M3-b 11): the
+        top, the action, the conversation, then the composer."""
+        about = [self._more_about.itemAt(i).widget() for i in range(self._more_about.count())]
+        chain = [self.back, self.info_button, self.more_button, self.action, self.second] \
+            + [w for w in about if w is not None] + self.thread.focusables() \
+            + [self.composer, self.send]
+        for first, second in zip(chain, chain[1:]):
+            QWidget.setTabOrder(first, second)
 
     def _logo(self, address: str, name: str, size: int) -> QPixmap:
         try:

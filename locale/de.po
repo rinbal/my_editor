@@ -351,7 +351,7 @@ msgstr "{title}, {position} von {count}"
 #: update_dialog.py:194
 #: update_dialog.py:202
 #: nostr/ui/account_windows.py:216
-#: nostr/ui/submission_thread.py:233
+#: nostr/ui/submission_thread.py:238
 #: nostr/ui/tag_field.py:101
 msgid "Copy"
 msgstr "Kopieren"
@@ -8159,7 +8159,7 @@ msgid "Published by you"
 msgstr "Von dir veröffentlicht"
 
 #: nostr/standup/thread.py:86
-#: nostr/ui/submission_detail.py:523
+#: nostr/ui/submission_detail.py:534
 msgid "Editorial team"
 msgstr "Redaktion"
 
@@ -8495,7 +8495,7 @@ msgid "The server didn’t receive your submission: try again."
 msgstr "Der Server hat deine Einreichung nicht erhalten: Versuche es erneut."
 
 #: nostr/standup/words.py:131
-#: nostr/ui/submission_detail.py:588
+#: nostr/ui/submission_detail.py:599
 msgid "Your list of submissions couldn’t be saved: check your internet connection and try again."
 msgstr "Deine Liste der Einreichungen konnte nicht gespeichert werden: Prüfe deine Internetverbindung und versuche es erneut."
 
@@ -8581,7 +8581,7 @@ msgid "MyEditor couldn’t check whether you submitted this text before"
 msgstr "MyEditor konnte nicht prüfen, ob du diesen Text schon eingereicht hast"
 
 #: nostr/standup/words.py:194
-#: nostr/ui/submission_detail.py:588
+#: nostr/ui/submission_detail.py:599
 msgid "The earlier try wasn’t discarded"
 msgstr "Der frühere Versuch wurde nicht verworfen"
 
@@ -12653,7 +12653,7 @@ msgstr "Eingang der Redaktion"
 
 #: nostr/ui/standup_handoff.py:567
 #: nostr/ui/standup_ways_out.py:68
-#: nostr/ui/submission_detail.py:479
+#: nostr/ui/submission_detail.py:490
 msgctxt "submissions list"
 msgid "Reload"
 msgstr "Erneut laden"
@@ -12664,7 +12664,7 @@ msgstr "Im Eingang"
 
 #: nostr/ui/standup_privacy.py:28
 #: nostr/ui/standup_submit_sheet.py:249
-#: nostr/ui/submission_detail.py:518
+#: nostr/ui/submission_detail.py:529
 msgid "the publication"
 msgstr "der Publikation"
 
@@ -12779,7 +12779,7 @@ msgid "Details changed"
 msgstr "Details geändert"
 
 #: nostr/ui/standup_revise_sheet.py:178
-#: nostr/ui/submission_thread.py:418
+#: nostr/ui/submission_thread.py:436
 msgid "Show Changes"
 msgstr "Änderungen zeigen"
 
@@ -12836,7 +12836,7 @@ msgid "Submit"
 msgstr "Einreichen"
 
 #: nostr/ui/standup_submit_sheet.py:227
-#: nostr/ui/submission_detail.py:521
+#: nostr/ui/submission_detail.py:532
 msgid "Publication"
 msgstr "Publikation"
 
@@ -12925,7 +12925,7 @@ msgstr "Ein früherer Versuch wurde nicht gesendet: Einreichen sendet ihn erneut
 
 #: nostr/ui/standup_ways_out.py:51
 #: nostr/ui/submission_detail.py:215
-#: nostr/ui/submission_detail.py:489
+#: nostr/ui/submission_detail.py:500
 #: nostr/ui/submissions_view.py:384
 msgid "Discard"
 msgstr "Verwerfen"
@@ -13019,7 +13019,7 @@ msgid "Info"
 msgstr "Info"
 
 #: nostr/ui/submission_detail.py:147
-#: nostr/ui/submission_thread.py:414
+#: nostr/ui/submission_thread.py:432
 #: nostr/ui/submissions_view.py:379
 msgid "Open in Editor"
 msgstr "Im Editor öffnen"
@@ -13047,72 +13047,72 @@ msgstr "Senden"
 msgid "Submissions"
 msgstr "Einreichungen"
 
-#: nostr/ui/submission_detail.py:425
-#: nostr/ui/submission_detail.py:524
+#: nostr/ui/submission_detail.py:436
+#: nostr/ui/submission_detail.py:535
 #: nostr/ui/submission_thread.py:81
 msgid "Someone"
 msgstr "Jemand"
 
-#: nostr/ui/submission_detail.py:517
+#: nostr/ui/submission_detail.py:528
 msgid "you"
 msgstr "dir"
 
-#: nostr/ui/submission_detail.py:521
+#: nostr/ui/submission_detail.py:532
 msgid "Published by"
 msgstr "Veröffentlicht von"
 
-#: nostr/ui/submission_detail.py:522
+#: nostr/ui/submission_detail.py:533
 msgid "Version"
 msgstr "Fassung"
 
-#: nostr/ui/submission_detail.py:523
+#: nostr/ui/submission_detail.py:534
 msgid "Responsible"
 msgstr "Zuständig"
 
-#: nostr/ui/submission_detail.py:429
+#: nostr/ui/submission_detail.py:440
 #, python-brace-format
 msgid "{first}, {second} and {count} more"
 msgstr "{first}, {second} und {count} weitere"
 
-#: nostr/ui/submission_detail.py:517
+#: nostr/ui/submission_detail.py:528
 msgid "the writer"
 msgstr "der schreibenden Person"
 
-#: nostr/ui/submission_detail.py:527
+#: nostr/ui/submission_detail.py:538
 msgid "Taking part"
 msgstr "Beteiligt"
 
-#: nostr/ui/submission_detail.py:648
+#: nostr/ui/submission_detail.py:659
 msgid "Withdraw this submission?"
 msgstr "Einreichung zurückziehen?"
 
-#: nostr/ui/submission_detail.py:652
+#: nostr/ui/submission_detail.py:663
 msgid "Withdraw"
 msgstr "Zurückziehen"
 
-#: nostr/ui/submission_detail.py:467
+#: nostr/ui/submission_detail.py:478
 msgid "Loading …"
 msgstr "Wird geladen …"
 
-#: nostr/ui/submission_detail.py:503
+#: nostr/ui/submission_detail.py:514
 #, python-brace-format
 msgid "{name} and the editorial team of {publication}"
 msgstr "{name} und die Redaktion von {publication}"
 
-#: nostr/ui/submission_detail.py:505
+#: nostr/ui/submission_detail.py:516
 #, python-brace-format
 msgid "The editorial team of {publication}"
 msgstr "Die Redaktion von {publication}"
 
-#: nostr/ui/submission_detail.py:538
+#: nostr/ui/submission_detail.py:549
 msgid "Encryption"
 msgstr "Verschlüsselung"
 
-#: nostr/ui/submission_detail.py:539
+#: nostr/ui/submission_detail.py:550
 msgid "History"
 msgstr "Verlauf"
 
-#: nostr/ui/submission_detail.py:649
+#: nostr/ui/submission_detail.py:660
 #, python-brace-format
 msgid "{publication} no longer sees it in its inbox then. What the editorial team already has stays there."
 msgstr "{publication} sieht sie dann nicht mehr im Eingang. Was die Redaktion schon hat, bleibt dort."
@@ -13126,7 +13126,7 @@ msgstr "Einreichung"
 msgid "Submission to {publication}: {status}"
 msgstr "Einreichung bei {publication}: {status}"
 
-#: nostr/ui/submission_thread.py:487
+#: nostr/ui/submission_thread.py:505
 msgid "More about this"
 msgstr "Mehr dazu"
 
@@ -13159,15 +13159,23 @@ msgstr "Fragezeichen"
 msgid "Reactions: {list}"
 msgstr "Reaktionen: {list}"
 
-#: nostr/ui/submission_thread.py:157
-#: nostr/ui/submission_thread.py:158
-#: nostr/ui/submission_thread.py:223
+#: nostr/ui/submission_thread.py:160
+msgid "React to your message"
+msgstr "Auf deine Nachricht reagieren"
+
+#: nostr/ui/submission_thread.py:228
+#: nostr/ui/submission_thread.py:161
 msgid "React"
 msgstr "Reagieren"
 
-#: nostr/ui/submission_thread.py:189
+#: nostr/ui/submission_thread.py:194
 msgid "edited"
 msgstr "bearbeitet"
+
+#: nostr/ui/submission_thread.py:160
+#, python-brace-format
+msgid "React to the message from {name}"
+msgstr "Auf Nachricht von {name} reagieren"
 
 #: nostr/ui/submissions_host.py:56
 #, python-brace-format

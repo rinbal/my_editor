@@ -308,6 +308,33 @@ def test_a_long_conversation_opens_at_its_end_under_a_pinned_sentence_and_stays_
     window.view.hide()
 
 
+def test_tab_reaches_the_conversation_before_the_composer_and_each_reaction_is_named(window):
+    world = window.world
+    prepared, entries = seeded(window, text="Ein Jahr")
+    world.decide(prepared["text"], "request_changes", text="Bitte einen Absatz mehr.")
+    window.tab("text", "# Ein Jahr\n\nText.")
+    window.follow()
+    detail = opened(window, entries["text"])
+    [bubble] = detail.thread.bubbles
+    react = bubble.react_button
+    assert react.accessibleName() == "React to the message from Anna"
+    assert (react.width(), react.height()) == (28, 28)
+    chain, widget = [], detail.action
+    while widget is not detail.composer and len(chain) < 50:
+        widget = widget.nextInFocusChain()
+        chain.append(widget)
+    assert react in chain                               # before the composer
+    # Drawn again with news: the order holds.
+    world.message(prepared["text"], "Und noch etwas.")
+    window.following.refresh()
+    world.settle()
+    chain, widget = [], detail.action
+    while widget is not detail.composer and len(chain) < 50:
+        widget = widget.nextInFocusChain()
+        chain.append(widget)
+    assert all(b.react_button in chain for b in detail.thread.bubbles)
+
+
 def test_the_composer_is_one_line_that_grows_and_says_how_to_start_a_new_line(window):
     _prepared, entries = seeded(window, text="Ein Jahr")
     window.follow()
@@ -380,7 +407,7 @@ def test_a_reaction_shows_on_the_bubble_dimmed_until_it_is_stored(window):
     window.follow()
     detail = opened(window, entries["reagieren"])
     [bubble] = detail.thread.bubbles
-    assert bubble.react_button.accessibleName() == "React" and bubble.chip is None
+    assert bubble.react_button.accessibleName().startswith("React to") and bubble.chip is None
     assert bubble.react_button.focusPolicy() == Qt.FocusPolicy.TabFocus
     signer = window.accounts[ME].signer
     signer.held = []
