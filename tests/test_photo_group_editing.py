@@ -15,7 +15,7 @@ import pytest
 from PySide6.QtCore import QEvent, QMimeData, QPoint, QPointF, Qt
 from PySide6.QtGui import QDropEvent, QInputMethodEvent, QMouseEvent, QTextCursor, QTextImageFormat
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QTextEdit
+from PySide6.QtWidgets import QApplication, QTextEdit, QWidget
 
 import paste
 import photo_group
@@ -23,6 +23,7 @@ import photo_group_edit
 import photo_group_view
 from editor import HtmlEditor
 from markdown_writer import _image_as_read, document_to_markdown, read_markdown
+from photo_group_menu import CAPTION
 from tests.photo_corners import image_of
 
 
@@ -497,6 +498,67 @@ def test_a_cut_into_a_caption_pasted_straight_back_gives_the_document_before_it(
     _caret(ed, ed.document().characterCount() - 1)
     ed.paste_from_clipboard()
     assert _markdown(ed) == _text("Before", ONE, "*one words*", "After.words.", "Between.", "Cap")
+    ed.close()
+
+
+def _command(widget, key) -> None:
+    """Command and ``key`` on a Mac, which Qt reads as Control."""
+    QTest.keyClick(widget, key, Qt.KeyboardModifier.ControlModifier)
+
+
+def test_the_mac_shortcuts_over_a_selection_do_what_the_edit_menu_does():
+    """Command-C, Command-X, Command-V, Command-Z and Command-A over words,
+    over words in a caption and over words into one; then in the field a
+    group's caption is written in. Qt's text field answered the keys
+    itself: its Cut took the picture with it, a caption's words pasted
+    back came plain (no caption any more), and one Undo took back the
+    paste and the cut before it."""
+    source = _text("Before words.", ONE, "*The old jetty*", "After.")
+    clipboard = QApplication.clipboard()
+    for first, last, words, cut in (
+            ("words", "words", "words", _text("Before .", ONE, "*The old jetty*", "After.")),
+            ("old", "old", "old", _text("Before words.", ONE, "*The  jetty*", "After.")),
+            ("words.", "The old", "words.\nThe old", _text("Before", ONE, " *jetty*", "After."))):
+        ed = _editor(source)
+        cursor = ed.textCursor()                   # from the start of first to the end of last
+        cursor.setPosition(ed.document().find(first).selectionStart())
+        cursor.setPosition(ed.document().find(last).selectionEnd(),
+                           QTextCursor.MoveMode.KeepAnchor)
+        ed.setTextCursor(cursor)
+        clipboard.setText("before")
+        _command(ed, Qt.Key.Key_C)
+        assert (clipboard.text(), _markdown(ed)) == (words, source)
+        _command(ed, Qt.Key.Key_X)
+        assert (clipboard.text(), _markdown(ed)) == (words, cut)
+        _command(ed, Qt.Key.Key_V)
+        assert _markdown(ed) == source
+        _command(ed, Qt.Key.Key_Z)
+        assert _markdown(ed) == cut
+        _command(ed, Qt.Key.Key_Z)
+        assert _markdown(ed) == source and not ed.document().isUndoAvailable()
+        _command(ed, Qt.Key.Key_A)
+        cursor = ed.textCursor()
+        assert (cursor.selectionStart(), cursor.selectionEnd()) == (
+            0, ed.document().characterCount() - 1)
+        assert _markdown(ed) == source
+        ed.close()
+    ed = _editor()
+    ed.photos.select(_group(ed).start + 1)
+    ed.photos.run(CAPTION)
+    line = next(found for found in ed.viewport().findChildren(QWidget, "pictureField")
+                if found.isVisible()).line
+    line.setSelection(4, 3)
+    clipboard.setText("before")
+    seen = []
+    for key in (Qt.Key.Key_C, Qt.Key.Key_X, Qt.Key.Key_V, Qt.Key.Key_Z, Qt.Key.Key_Z,
+                Qt.Key.Key_A):
+        _command(line, key)
+        seen.append((clipboard.text(), line.text(), line.selectedText()))
+    assert seen == [("two", "Cap two", "two"), ("two", "Cap ", ""), ("two", "Cap two", ""),
+                    ("two", "Cap ", ""), ("two", "Cap two", "two"),
+                    ("two", "Cap two", "Cap two")]
+    QTest.keyClick(line, Qt.Key.Key_Escape)
+    assert _markdown(ed) == FOUR_PICTURES and not ed.document().isModified()
     ed.close()
 
 
