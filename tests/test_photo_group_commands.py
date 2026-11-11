@@ -645,7 +645,8 @@ def test_crop_is_dimmed_for_a_stand_in_and_says_why_a_drawing_cannot_be_cut(tmp_
         can.append(ed.photos.state().can[CROP])
     assert can == [False, True]
     drawing = tmp_path / "drawing.svg"
-    drawing.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>')
+    drawing.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>',
+                       encoding="utf-8")
     window = types.SimpleNamespace(_look_files=None,
                                    _picture_file=lambda editor, name: str(drawing))
     notices = []
