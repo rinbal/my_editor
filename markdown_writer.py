@@ -578,14 +578,16 @@ def _ends_a_bare_address(address: str, following: Optional[_Span]) -> bool:
     space, or punctuation that readers leave out of an address."""
     if following is None:
         return True
+    text = following.text
+    if text[0] == _SOFT:
+        return True             # the line's end
     if following.raw or following.href or following.bold or following.italic \
             or following.strike or following.code:
         return False
-    text = following.text
     if text[0].isspace():
         return True
     rest = text.lstrip(".,:;!?" + ("" if "(" in address or ")" in address else ")"))
-    return len(rest) < len(text) and (not rest or rest[0].isspace())
+    return len(rest) < len(text) and (not rest or rest[0].isspace() or rest[0] == _SOFT)
 
 
 def _caption_start(spans: List[_Span]) -> Optional[int]:
@@ -1029,21 +1031,22 @@ def _join_soft_breaks(doc: QTextDocument, mark: str) -> int:
             return joined
         start = cursor.selectionStart()
         block = doc.findBlock(start)
-        cursor.setPosition(start)
         if start + 1 == block.position() + block.length() - 1 and block.next().isValid():
             # The mark and the paragraph's end, in the next block's place,
-            # in the format of the words before it; after a picture (a
+            # in the mark's own format: the words before it may be a link
+            # (an address that ends the line), code or emphasis, which the
+            # break would join to the next line's; after a picture (a
             # caption on the line under it), in none: the format of the
             # picture would make the break a second copy of it.
             fmt = QTextCharFormat(cursor.charFormat())
             if fmt.isImageFormat():
                 fmt = QTextCharFormat()
+            cursor.setPosition(start)
             cursor.setPosition(start + 2, QTextCursor.MoveMode.KeepAnchor)
             fmt.setProperty(SOFT_BREAK_PROPERTY, True)
             cursor.insertText(LINE_SEPARATOR, fmt)
             joined += 1
         else:
-            cursor.setPosition(start + 1, QTextCursor.MoveMode.KeepAnchor)
             cursor.removeSelectedText()
         position = start + 1
 

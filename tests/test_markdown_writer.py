@@ -742,6 +742,26 @@ def test_emphasis_that_ends_a_wrapped_line_is_closed_on_it():
         assert document_to_markdown(doc, _image_as_read) == source
 
 
+@pytest.mark.parametrize("source, saved", [
+    ("…unter https://example.org/docs\nund im Handbuch.\n", None),
+    ("Die Anleitung liegt auf www.example.org\nund ist kurz.\n", None),
+    ("Fragen gern an hallo@example.org\noder im Forum.\n", None),
+    ("Siehe www.example.org.\nweiter\n", None),
+    ("A claim[^1] and another[^2].\n[^1]: https://example.com/source\n[^2]: Ibid.\n", None),
+    ("*a*\n*b*\n", None),
+    ("Ein *[Link](u)*\nweiter.\n", "Ein [*Link*](u)\nweiter.\n"),
+    ("Ein *`code`*\nweiter.\n", "Ein `code`\nweiter.\n"),     # as on one line
+])
+def test_what_ends_a_wrapped_line_keeps_its_format_to_itself(source, saved):
+    # Gate RG-PG2E-d 2: the break took the format of the word before it, a
+    # link, code or emphasis, and joined it to the next line: the file
+    # opened as text, or saved "[*Link*\n](u)weiter" and "*a\nb*".
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == (saved or source)
+
+
 def test_a_soft_wrapped_line_ends_as_a_line_end_does():
     # A word joiner marked a soft break while Qt read the file: no space,
     # so "*(Wort)*" ending a wrapped line showed its stars, and a word
