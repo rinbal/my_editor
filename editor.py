@@ -489,14 +489,6 @@ class HtmlEditor(QTextEdit):
         """What is typed next is a step of Undo of its own."""
         self._run = None
 
-    def type_into_last_step(self) -> None:
-        """What is typed next at the caret is part of the step just made,
-        under its name (the first words written into the line Split Group
-        Here opened). It waits for them as long as the caret stays."""
-        now = self.document().availableUndoSteps()
-        before, name = self._undo_names.get(now, (now, TYPING_STEP))
-        self._run = _Run(TYPED, self.textCursor().position(), now, float("inf"), before, name)
-
     def named_step(self, after: int) -> Optional[Tuple[int, str]]:
         """The step of Undo that ends at Qt's count ``after``: the count
         before it and its name; None when it has none."""

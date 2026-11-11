@@ -4,13 +4,16 @@
 group, while it waits for words (EDITING 2.5), with a placeholder that
 says what it is for.
 
-The first words written there join the split's step, so one Undo takes
-both back. When the caret leaves the line with nothing written in it,
-the split is taken back as if it had never been, and the caret stays
-with what it went to: a picture by its number (photo_group.Unit.number),
-since taking the split back moves the pictures below it; anything else
-as it stands. A change of the document off the line (Undo, another
-command) ends the wait: the line is then the writer's.
+The split is a step of Undo of its own and the words written there are
+typing of their own, as in STANDUP's editor (PG1C session 4d): Undo takes
+the words back first, and the line waits again, then the split. When the
+caret leaves the line with nothing in it while the split is the last
+step, the split is taken back as if it had never been, and the caret
+stays with what it went to: a picture by its number
+(photo_group.Unit.number), since taking the split back moves the
+pictures below it; anything else as it stands. A change of the document
+off the line (another edit, another command) ends the wait: the line is
+then the writer's.
 """
 
 from __future__ import annotations
@@ -49,8 +52,6 @@ class SplitLine:
         caret = ed.textCursor()
         caret.setPosition(at)
         ed.setTextCursor(caret)
-        # The first words written there are part of the same step.
-        ed.type_into_last_step()
         self._line = (QTextCursor(caret), doc.availableUndoSteps())
         photos.steps.keep(before, SPLIT_STEP, picture.position, at)
         photos.changed.emit()
@@ -77,6 +78,18 @@ class SplitLine:
                          _("Write something here, then the group is split"))
         painter.restore()
 
+    def came_back(self) -> None:
+        """Undo or Redo of a step that was no photo command's: one that took
+        the words of the waiting line back leaves the caret there, and the
+        line waits again (STANDUP's editor does the same)."""
+        if self._line is None or self._line[0].block().length() > 1:
+            return
+        ed = self._photos.editor
+        caret = ed.textCursor()
+        caret.setPosition(self._line[0].block().position())
+        with self._photos.quietly():
+            ed.setTextCursor(caret)
+
     def outside_change(self, position: int) -> None:
         """The document changed at ``position``, not by a photo command."""
         if self._line is not None and (self._photos.editor.document().findBlock(position)
@@ -84,14 +97,17 @@ class SplitLine:
             self._line = None
 
     def _left(self) -> None:
-        """The caret left the line: with nothing written in it, the split
-        is taken back."""
+        """The caret left the line: with nothing in it while the split is
+        the last step, the split is taken back. A line with words goes on
+        waiting, since an Undo of them empties it again."""
         line, after = self._line
+        if line.block().length() > 1:
+            return
         self._line = None
         photos = self._photos
         ed = photos.editor
         doc = ed.document()
-        if doc.availableUndoSteps() != after or line.block().length() > 1:
+        if doc.availableUndoSteps() != after:
             return
         went_to = photos.current()
         number = went_to.unit.number if went_to is not None and went_to.grouped else 0

@@ -124,13 +124,27 @@ def test_remove_takes_a_picture_away_and_says_how_to_undo(said):
     ed.close()
 
 
-def test_split_group_here_opens_a_line_whose_first_words_are_the_same_step():
+def test_split_group_here_is_a_step_and_the_words_written_there_another():
+    """As STANDUP's editor does (PG1C 4d): Undo takes the words back first,
+    the empty line waiting again with the caret, then the split; one that
+    is left empty then is taken back."""
     ed = _selected()
     ed.photos.run(SPLIT)
     QTest.keyClicks(ed, "Middle.")
     assert _markdown(ed) == _text("Before.", ONE, TWO, "Middle.", THREE, FOUR, "After.")
-    assert ed.undo_name() == "Split Group"
+    assert ed.undo_name() == "Typing"
+    ed.undo()
+    assert ed.textCursor().block().text() == "" and ed.undo_name() == "Split Group"
     assert _undone(ed)
+    ed.close()
+    ed = _selected()
+    ed.photos.run(SPLIT)
+    QTest.keyClicks(ed, "Middle.")
+    QTest.keyClick(ed, Qt.Key.Key_Down)
+    ed.undo()
+    assert ed.textCursor().block().text() == ""
+    QTest.keyClick(ed, Qt.Key.Key_Up)
+    assert _markdown(ed) == FOUR_PICTURES and not ed.document().isUndoAvailable()
     ed.close()
 
 
@@ -504,6 +518,7 @@ def test_undo_names_a_split_with_its_words_and_a_group_made_from_the_slash_menu(
     ed = _selected(number=1)
     ed.photos.run(SPLIT)
     QTest.keyClicks(ed, "Words")
+    ed.undo()
     ed.undo()
     assert said[-1] == "Undone: Split Group" and ed.photos.current().place == 2
     ed.close()

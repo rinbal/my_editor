@@ -553,6 +553,7 @@ class PhotoEditing(QObject):
         picture stands, briefly lit, and named."""
         found = self.steps.came_back(count, redo)
         if found is None:
+            self.split.came_back()
             self._caret_moved()
             return
         at, name = found

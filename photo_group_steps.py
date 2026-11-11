@@ -7,9 +7,8 @@ A step is kept by Qt's count of steps where it ends, with the count
 before it, as the editor keeps its names (HtmlEditor._record_step). The
 editor tells every step it names (recorded). A photo step just made that
 the step named now holds is that step from then on, kept where it ends,
-under the step's name: the first words written into the line Split Group
-Here opened (the split's step goes on), or a slash command around Add
-Photos (its step began before, with taking "/photo" away). A photo step
+under the step's name: a slash command around Add Photos (its step began
+before, with taking "/photo" away). A photo step
 the named one replaces, undone before it, is gone, as the editor forgets
 its name.
 """
