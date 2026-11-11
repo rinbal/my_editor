@@ -14,7 +14,7 @@ import sys
 
 import pytest
 from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QPointF, QRect, Qt
-from PySide6.QtGui import QImage, QMouseEvent, QTextCursor, QTextImageFormat
+from PySide6.QtGui import QAction, QImage, QMouseEvent, QTextCursor, QTextImageFormat
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
 
@@ -480,4 +480,30 @@ def test_a_command_says_only_what_it_did(said):
     ed.photos.run(REMOVE)
     assert said == ["Description saved",
                     f"Photo removed, 2 photos remain. Undo with {photo_group_editing._undo_keys()}"]
+    ed.close()
+
+
+def test_undo_names_a_split_with_its_words_and_a_group_made_from_the_slash_menu(said):
+    # Gate RG-PG2E-a 8 and RG-PG2E-b 7: both were silent.
+    ed = _selected(number=1)
+    ed.photos.run(SPLIT)
+    QTest.keyClicks(ed, "Words")
+    ed.undo()
+    assert said[-1] == "Undone: Split Group" and ed.photos.current().place == 2
+    ed.close()
+    ed = _editor(_text("Before.", "/photo", "After."))
+    cursor = ed.textCursor()
+    cursor.setPosition(len("Before.\n/photo"))
+    ed.setTextCursor(cursor)
+    ed._slash_at = len("Before.\n")
+    picked = QTextImageFormat()
+    picked.setName("photo.png")
+    group = QAction("Photo Group …", ed)              # as German spells it: " …"
+    group.triggered.connect(lambda: ed.photos.insert(ed.photos.free_place(), [picked],
+                                                     "Add Photos"))
+    said.clear()
+    ed._pick_slash(group)
+    assert said == ["1 photo added"] and ed.undo_name() == "Photo Group"
+    ed.undo()
+    assert said[-1] == "Undone: Photo Group"
     ed.close()

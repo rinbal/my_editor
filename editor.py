@@ -12,7 +12,7 @@ import functools
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from PySide6.QtCore import (
     Qt, QTimer, QMargins, QRect, QRectF, QPoint, QPointF, QMetaMethod, QEvent, QUrl, Signal,
@@ -74,6 +74,13 @@ PROSE_INSET = 48
 # image resolves, and a large box would reflow the whole document twice.
 _PLACEHOLDER_SIZE = (160, 100)
 _PLACEHOLDER_COLOR = "#c8c8c8"
+
+
+def _bare_title(title: str) -> str:
+    """A menu item's title to say or name a step by: without the
+    ellipsis that says it asks first, and the space German puts before it
+    ("Fotos hinzufügen …")."""
+    return title.rstrip("\u2026").rstrip()
 
 
 def _n_pictures_left_out(count: int) -> str:
@@ -483,10 +490,10 @@ class HtmlEditor(QTextEdit):
         before, name = self._undo_names.get(now, (now, TYPING_STEP))
         self._run = _Run(TYPED, self.textCursor().position(), now, float("inf"), before, name)
 
-    def step_named(self, before: int, after: int, name: str) -> bool:
-        """Whether the step of Undo from Qt's count ``before`` to ``after``
-        is the one called ``name`` (not replaced since)."""
-        return self._undo_names.get(after) == (before, name)
+    def named_step(self, after: int) -> Optional[Tuple[int, str]]:
+        """The step of Undo that ends at Qt's count ``after``: the count
+        before it and its name; None when it has none."""
+        return self._undo_names.get(after)
 
     def forget_step(self, after: int) -> None:
         """The step that ended at Qt's count ``after`` is gone (taken back
@@ -560,6 +567,8 @@ class HtmlEditor(QTextEdit):
         self._undo_names = {steps: step for steps, step in self._undo_names.items()
                             if not before < steps < after}
         self._undo_names[after] = (before, name)
+        # A photo step it goes on from or holds is this step now.
+        self.photos.steps.recorded(before, after)
 
     def undo_name(self) -> str:
         """What Undo would take back (an N_ word, "" when not known)."""
@@ -1646,7 +1655,7 @@ class HtmlEditor(QTextEdit):
             return
         position, count = menu.choice_position()
         choice = _("{title}, {position} of {count}").format(
-            title=title.rstrip("\u2026"), position=position, count=count)
+            title=_bare_title(title), position=position, count=count)
         if choice == self._slash_said and not opening:
             return                            # heard already
         self._slash_said = choice
@@ -1661,8 +1670,10 @@ class HtmlEditor(QTextEdit):
         self._close_slash()
         if start < 0:
             return
-        title = action.text().replace("&", "").rstrip("\u2026")
-        announce.announce(self, _("{title} applied").format(title=title))
+        title = _bare_title(action.text().replace("&", ""))
+        if not action.text().endswith("\u2026"):
+            # (One that asks first, "Add Photos…", says nothing done yet.)
+            announce.announce(self, _("{title} applied").format(title=title))
         # One step, called by the command's own name.
         with self.undo_step(title):
             words = QTextCursor(self.document())

@@ -26,7 +26,7 @@ show photo_group_menu's; this module is what each of them asks for.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Callable, Dict, Iterator, NamedTuple, Optional, Sequence
+from typing import Callable, Iterator, Optional, Sequence
 
 from PySide6.QtCore import QObject, QPoint, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QKeySequence, QTextCursor, QTextDocument
@@ -51,6 +51,7 @@ from photo_group_menu import (
 )
 from photo_group_pointer import PhotoPointer
 from photo_group_split import SplitLine
+from photo_group_steps import PhotoSteps
 
 # What each step of Undo is called (Edit > Undo "Move Photo").
 MOVE_STEP = N_("Move Photo")
@@ -61,16 +62,6 @@ _STEPS = {LARGE: (N_("Show Large"), N_("Show Normal")), "wide": (N_("Wide"), N_(
 # How long a note beside a chip stays: long enough to read (EDITING.md 9).
 _NOTE_MS_PER_CHARACTER = 55
 _NOTE_MS_LEAST = 2800
-
-
-class _Step(NamedTuple):
-    """A step of Undo a command made: Qt's count before it, its name, and
-    where its picture stood before and after it."""
-
-    before: int
-    name: str
-    start: int
-    end: int
 
 
 def _undo_keys() -> str:
@@ -100,7 +91,7 @@ class PhotoEditing(QObject):
         # While a command moves the caret: no "Photo 2 of 4" spoken for it
         # (the command says what happened, once).
         self.quiet = False
-        self._steps: Dict[int, _Step] = {}
+        self.steps = PhotoSteps(editor)
         self._context = None
         # While above 0: the document changes by a photo command (writing).
         self._own = 0
@@ -295,7 +286,7 @@ class PhotoEditing(QObject):
             position = ed.textCursor().position()
             self.select(position)
             found = actions.picture_at(doc, position)
-        self.keep_step(before, step, start, found.position if found is not None else -1)
+        self.steps.keep(before, step, start, found.position if found is not None else -1)
         self.changed.emit()
         return found
 
@@ -307,17 +298,6 @@ class PhotoEditing(QObject):
             yield
         finally:
             self._own -= 1
-
-    def keep_step(self, before: int, name: str, start: int, end: int) -> None:
-        """The step that just ended (Qt's count ``before`` it) is a photo
-        step: Undo and Redo select its picture and name it (came_back)."""
-        self._steps[self._editor.document().availableUndoSteps()] = _Step(before, name, start,
-                                                                           end)
-
-    def drop_step(self, after: int) -> None:
-        """The step that ended at Qt's count ``after`` is gone."""
-        self._steps.pop(after, None)
-        self._editor.forget_step(after)
 
     def _document_changed(self, position: int, _removed: int, _added: int) -> None:
         """A change no photo command made (typing, Undo, another command):
@@ -442,7 +422,7 @@ class PhotoEditing(QObject):
             at = actions.remove(QTextCursor(doc), doc, picture)
         if doc.availableUndoSteps() == before:
             return
-        self.keep_step(before, _STEPS[REMOVE], picture.position, -1)
+        self.steps.keep(before, _STEPS[REMOVE], picture.position, -1)
         left = picture.count - 1 if picture.grouped else 0
         if at is not None and left >= 2:
             self.select(at)
@@ -563,28 +543,19 @@ class PhotoEditing(QObject):
         """Undo (``redo`` False) or Redo was done at Qt's count ``count``:
         a photo step it took back or brought again is selected where its
         picture stands, briefly lit, and named."""
-        ed = self._editor
-        if redo:
-            step = next((step for after, step in self._steps.items()
-                         if step.before == count and ed.step_named(step.before, after, step.name)),
-                        None)
-            at = step.end if step is not None else -1
-        else:
-            step = self._steps.get(count)
-            if step is not None and not ed.step_named(step.before, count, step.name):
-                step = None
-            at = step.start if step is not None else -1
-        if step is None:
+        found = self.steps.came_back(count, redo)
+        if found is None:
             self._caret_moved()
             return
-        doc = ed.document()
+        at, name = found
+        doc = self._editor.document()
         if 0 <= at < doc.characterCount() and actions.picture_at(doc, at) is not None:
             self.select(at)
             if not accessibility_display.reduce_motion():
                 self.pointer.flash(at)
         self.changed.emit()
         self.say((_("Redone: {action}") if redo else _("Undone: {action}")).format(
-            action=_(step.name)))
+            action=_(name)))
 
     def focus_lost(self) -> None:
         self.pointer.stop(cancelled=True)

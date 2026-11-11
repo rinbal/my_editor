@@ -50,7 +50,7 @@ class SplitLine:
         # The first words written there are part of the same step.
         ed.type_into_last_step()
         self._line = (QTextCursor(caret), doc.availableUndoSteps())
-        photos.keep_step(before, SPLIT_STEP, picture.position, at)
+        photos.steps.keep(before, SPLIT_STEP, picture.position, at)
         photos.changed.emit()
         photos.say(_("Group split. Write the text between the photos; if the line stays "
                      "empty, they belong together again."))
@@ -82,7 +82,7 @@ class SplitLine:
         with photos.writing():
             doc.undo()
             doc.clearUndoRedoStacks(QTextDocument.Stacks.RedoStack)
-        photos.drop_step(after)
+        photos.steps.drop(after)
         found = actions.picture_numbered(doc, number)
         if found is not None:
             photos.select(found.position)
