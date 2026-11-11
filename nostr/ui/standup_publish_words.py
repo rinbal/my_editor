@@ -23,6 +23,9 @@ NOT_THE_SAME = N_("The submission changed in the meantime, so nothing was publis
 # 12.4, Before the writer's work goes out: the words both apps say.
 SOMEONE_ELSES = N_("Another person’s article already stands under this link name. So that "
                    "it stays, nothing is published.")
+# None of the relays it goes to answered the read of its address (RG-B5-d).
+NO_RELAY_READ = N_("Your relays didn’t answer, so nothing was published. Try again in a "
+                   "moment.")
 NOT_REPORTED = N_("Published. {publication} doesn’t know yet: try again in a moment.")
 # 12.4 One work per address: a writer's work keeps its link name (F5A's
 # publishedD; another d would not be this work's), so it is only said.
@@ -45,4 +48,6 @@ class Stage(Enum):
     FAILED = "failed"                   # nothing went out; the pictures were taken down
 
 
-__all__ = ["ADDRESS_TAKEN", "BUSY", "BUSY_DETAIL", "BUSY_SIGNING", "DONE", "LINK_RELAYS", "NOT_PUBLISHABLE", "NOT_PUBLISHED", "NOT_REPORTED", "NOT_THE_SAME", "PICTURE_NOT_FOUND", "PICTURE_NOT_UP", "SOMEONE_ELSES", "Stage"]
+__all__ = ["ADDRESS_TAKEN", "BUSY", "BUSY_DETAIL", "BUSY_SIGNING", "DONE", "LINK_RELAYS",
+           "NO_RELAY_READ", "NOT_PUBLISHABLE", "NOT_PUBLISHED", "NOT_REPORTED", "NOT_THE_SAME",
+           "PICTURE_NOT_FOUND", "PICTURE_NOT_UP", "SOMEONE_ELSES", "Stage"]

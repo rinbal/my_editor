@@ -40,7 +40,7 @@ def test_a_standup_module_is_short_or_says_why_not(path):
      ["HeldPublish", "SignedHere", "offers_here", "publish_job"]),
     ("nostr.ui.standup_publish", "nostr.ui.standup_publish_words",
      ["ADDRESS_TAKEN", "BUSY", "BUSY_DETAIL", "BUSY_SIGNING", "DONE", "LINK_RELAYS",
-      "NOT_PUBLISHABLE", "NOT_PUBLISHED", "NOT_REPORTED", "NOT_THE_SAME", "PICTURE_NOT_FOUND",
+      "NO_RELAY_READ", "NOT_PUBLISHABLE", "NOT_PUBLISHED", "NOT_REPORTED", "NOT_THE_SAME", "PICTURE_NOT_FOUND",
       "PICTURE_NOT_UP", "SOMEONE_ELSES", "Stage"]),
     ("nostr.standup.following", "nostr.standup.situations",
      ["ACTION_LABELS", "Action", "NOTHING_TO_DO", "ON_A_DECISION", "ON_ITS_WAY", "Section",

@@ -196,7 +196,7 @@ def _run(case, *, store=None, took=(True,), reread_hash=None, key_here=False, pr
     def held_at(address, on_author, on_failure):
         api.article_author(address, on_author, on_failure)
 
-    def job(profile, unsigned, here):
+    def job(profile, unsigned, here, only):
         jobs.append(FakeJob(case.writer.key, unsigned, here, list(took)))
         return jobs[-1]
 
@@ -206,7 +206,8 @@ def _run(case, *, store=None, took=(True,), reread_hash=None, key_here=False, pr
         fetch=lambda url, on_success, on_failure: on_success(case.cipher)
         if url.endswith(case.entry["cipher_sha256"]) else on_failure("404"),
         job=job, key_here=lambda: key_here, serve=following.serve, reread=reread,
-        held_at=held_at, clock=case.world.clock)
+        held_at=held_at, relays_hold=lambda unsigned, done: done(["wss://relay.example"], False),
+        clock=case.world.clock)
     run = AcceptedPublish(sid=case.sid, profile=profile or case.writer.profile,
                           version=following.reading.latest(case.sid),
                           accepted=following.reading.accepted(case.sid),
@@ -286,6 +287,47 @@ def test_nothing_goes_out_over_another_persons_article_at_the_address(accepted):
     assert "So that it stays, nothing is published." in run.words
     assert store.deleted == [(accepted.entry["plain_sha256"], (SERVER,))]
     assert accepted.world.record(accepted.sid).state == "accepted"
+
+
+def test_the_address_is_read_on_every_relay_and_only_clear_ones_take_it():
+    # RG-B5-d: the server's index may miss a guest's work the writer's own
+    # publication released elsewhere. Right before signing the address is
+    # read on every relay it goes to; one that did not answer is left out
+    # quietly, and another person's work on one sends nothing anywhere.
+    from nostr.ui.standup_publish_job import read_relays
+    from tests.outbox_fakes import HandPool, settle
+    A, B, C = "wss://a.example", "wss://b.example", "wss://c.example"
+    writer = pk("writer")
+    unsigned = {"kind": 30023, "pubkey": writer, "tags": [["d", "ein-jahr"]], "content": "x"}
+    own = events.sign_event({"kind": 30023, "created_at": 5, "content": "Alt",
+                             "tags": [["d", "ein-jahr"]]}, sk("writer"))
+    guest = events.sign_event({"kind": 30023, "created_at": 6, "content": "Gast",
+                               "tags": [["d", "ein-jahr"], ["p", pk("contributor"), "", "author"]]},
+                              sk("writer"))
+    directory = SimpleNamespace(publish_plan=lambda author, done, **_kw: done(
+        SimpleNamespace(targets=[A, B, C])))
+
+    owner = QObject()                   # the queries' parent, as the writer's is
+
+    def read(answers):
+        pool, said = HandPool(), []
+        read_relays(relay_pool=pool, relay_directory=directory,
+                    profile=SimpleNamespace(user_pubkey=writer), unsigned_event=unsigned,
+                    on_done=lambda clear, other: said.append((clear, other)), parent=owner)
+        for sub in pool.subs:
+            answers(sub)
+        settle()
+        return said
+
+    def quiet_c(sub, held):
+        relay = sub.urls[0]
+        if relay == C:
+            sub.fail(C)
+        else:
+            sub.answer(relay, *([held] if relay == B else []))
+
+    assert read(lambda sub: quiet_c(sub, own)) == [([A, B], False)]
+    assert read(lambda sub: quiet_c(sub, guest)) == [([A], True)]
 
 
 def test_a_submission_that_changed_meanwhile_is_not_published_and_its_picture_comes_down(

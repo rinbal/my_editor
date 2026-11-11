@@ -57,11 +57,11 @@ from ..standup import formats, opening, publishing
 from ..standup.errors import Code, cause_words
 from ..standup.publishing import Accepted
 from .standup_account import live
-from .standup_publish_job import HeldPublish, SignedHere, offers_here, publish_job
+from .standup_publish_job import HeldPublish, SignedHere, offers_here, publish_job, read_relays
 from .standup_publish_words import (
-    ADDRESS_TAKEN, BUSY, BUSY_DETAIL, BUSY_SIGNING, DONE, LINK_RELAYS, NOT_PUBLISHABLE,
-    NOT_PUBLISHED, NOT_REPORTED, NOT_THE_SAME, PICTURE_NOT_FOUND, PICTURE_NOT_UP, SOMEONE_ELSES,
-    Stage,
+    ADDRESS_TAKEN, BUSY, BUSY_DETAIL, BUSY_SIGNING, DONE, LINK_RELAYS, NO_RELAY_READ,
+    NOT_PUBLISHABLE, NOT_PUBLISHED, NOT_REPORTED, NOT_THE_SAME, PICTURE_NOT_FOUND,
+    PICTURE_NOT_UP, SOMEONE_ELSES, Stage,
 )
 
 _log = logging.getLogger(__name__)
@@ -75,8 +75,10 @@ class PublishPorts:
     - ``api``: the submission's StandupClient; ``media_keys``: the
       account's MediaKeys; ``store``: the Media Library's MediaStore.
     - ``fetch(url, on_success, on_failure)``: one address's bytes.
-    - ``job(profile, unsigned, here)``: a :class:`HeldPublish` (``here``:
-      signed with the key kept on this computer, Q1).
+    - ``job(profile, unsigned, here, only)``: a :class:`HeldPublish`
+      (``here``: signed with the key kept on this computer, Q1) that goes
+      ``only`` to those relays.
+    - ``relays_hold(unsigned, on_done)``: :func:`read_relays` for it.
     - ``key_here()``: whether the account's key is kept on this computer.
     - ``serve(view)``: the server's newer View, for the list and the detail.
     - ``reread(on_detail, on_failure)``: the submission read now
@@ -97,6 +99,7 @@ class PublishPorts:
     serve: Callable
     reread: Callable
     held_at: Callable
+    relays_hold: Callable
     clock: Callable[[], float] = time.time
     confirm: Optional[Callable] = None
     cleanup: Optional[Callable[[str], None]] = None     # after it is published (M14)
@@ -142,10 +145,15 @@ def run_for(following, account, profile, sid: str, *, store, fetch, session_pool
     def held_at(address: str, on_author, on_failure) -> None:
         api.article_author(address, live(account, on_author), live(account, on_failure))
 
-    def job(profile, unsigned: dict, here: bool):
+    def job(profile, unsigned: dict, here: bool, only):
         return publish_job(here=here, relay_pool=relay_pool, relay_directory=relay_directory,
                            session_pool=session_pool, profile=profile, unsigned_event=unsigned,
-                           entitled_relays=entitled_relays or (), parent=parent)
+                           entitled_relays=entitled_relays or (), only=only, parent=parent)
+
+    def relays_hold(unsigned: dict, on_done) -> None:
+        read_relays(relay_pool=relay_pool, relay_directory=relay_directory, profile=profile,
+                    unsigned_event=unsigned, entitled_relays=entitled_relays or (),
+                    on_done=live(account, on_done), parent=parent)
 
     def confirm(confirms, revision_hash: str, on_done) -> None:
         following.confirm(sid, confirms=confirms, revision_hash=revision_hash,
@@ -153,6 +161,7 @@ def run_for(following, account, profile, sid: str, *, store, fetch, session_pool
 
     ports = PublishPorts(api=api, media_keys=account.media_keys, store=store, fetch=fetch,
                          job=job, serve=following.serve, reread=reread, held_at=held_at,
+                         relays_hold=relays_hold,
                          confirm=confirm,
                          key_here=lambda: session_pool.key_here(profile.user_pubkey),
                          cleanup=cleanup)
@@ -389,10 +398,23 @@ class AcceptedPublish(QObject):
             self._take_down()
             return
         self._say(Stage.WORKING, _(BUSY), _(BUSY_SIGNING))
-        self._check(None, lambda: self._sign_now(unsigned))
+        self._check(None, lambda: self._ports.relays_hold(
+            unsigned, lambda clear, other: self._relays_read(unsigned, clear, other)))
 
-    def _sign_now(self, unsigned: dict) -> None:
-        job = self._job = self._ports.job(self._profile, unsigned, self._here)
+    def _relays_read(self, unsigned: dict, clear, someone_elses: bool) -> None:
+        """The address read on every relay it goes to (RG-B5-d): nothing
+        anywhere over another person's article; only to those that answered."""
+        if self._stopped or self._job is not None or self.stage is not Stage.WORKING:
+            return
+        if someone_elses:
+            self._fail(_(SOMEONE_ELSES), Stage.SOMEONE_ELSES)
+        elif not clear:
+            self._fail(_(NO_RELAY_READ))
+        else:
+            self._sign_now(unsigned, clear)
+
+    def _sign_now(self, unsigned: dict, clear) -> None:
+        job = self._job = self._ports.job(self._profile, unsigned, self._here, list(clear))
         job.signed.connect(lambda _id: self._signed(job))
         job.completed.connect(lambda results: self._sent(job, results))
         job.failed.connect(lambda _reason: self._not_signed(job))
@@ -568,7 +590,8 @@ class CorrectionPublish(AcceptedPublish):
 
 
 __all__ = ["ADDRESS_TAKEN", "AcceptedPublish", "BUSY", "BUSY_DETAIL", "BUSY_SIGNING",
-           "CorrectionPublish", "DONE", "HeldPublish", "LINK_RELAYS", "NOT_PUBLISHABLE",
+           "CorrectionPublish", "DONE", "HeldPublish", "LINK_RELAYS", "NO_RELAY_READ",
+           "NOT_PUBLISHABLE",
            "NOT_PUBLISHED", "NOT_REPORTED", "NOT_THE_SAME", "PICTURE_NOT_FOUND",
            "PICTURE_NOT_UP", "PublishPorts", "SOMEONE_ELSES", "SignedHere", "Stage",
            "offers_here", "publish_job", "run_for"]
