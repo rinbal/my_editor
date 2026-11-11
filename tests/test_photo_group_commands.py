@@ -690,3 +690,16 @@ def test_a_caption_with_spaces_at_its_edges_keeps_its_group():
         ed.photos.set_words(CAPTION, _group(ed).start, typed)
         assert _saved_reloaded_exported(ed) == (trimmed, [(2, ["Der Steg", ""])], ["Der Steg"])
     ed.close()
+
+
+def test_a_caption_on_a_picture_that_shares_a_paragraph_is_kept():
+    # Gate RG-PG1C-a 2: "![a]\n![b]" (from other apps), a caption on b, lost it.
+    ed = _selected(_text("Before.", "![a](photo.png)\n![b](square.png)\n![c](portrait.png)",
+                         "After."), number=1)
+    ed.photos.run(CAPTION)
+    _write_in_field(ed, "Neu")
+    assert _saved_reloaded_exported(ed) == (
+        _text("Before.", "![a](photo.png)", "![b](square.png)", "*Neu*", "![c](portrait.png)",
+              "After."),
+        [(3, ["", "Neu", ""])], ["Neu"])
+    ed.close()

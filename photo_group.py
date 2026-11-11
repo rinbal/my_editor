@@ -359,8 +359,11 @@ def joins_previous(previous: Optional[Unit], unit: Unit) -> bool:
     """Whether ``unit`` is written on the paragraph of the unit before it:
     it was read so (its join), and that unit has no caption paragraph of
     its own, after which a picture starts a paragraph (it would be in the
-    caption's words, and the group gone, when the file is read again)."""
-    return (previous is not None and unit.join is not None
+    caption's words, and the group gone, when the file is read again).
+    A unit with a caption opens a paragraph of its own: a reader takes a
+    caption only for a picture alone in its paragraph (STANDUP's md.py
+    too), so "![a] ![b]" with "*Neu*" under it lost the caption."""
+    return (previous is not None and unit.join is not None and not unit.has_caption
             and not (previous.has_caption and previous.caption_join is None))
 
 
