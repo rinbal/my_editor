@@ -50,7 +50,9 @@ from ..failures import markup
 from ..standup import following as rules, formats, thread as threads
 from ..standup.errors import cause_words
 from . import appearance
-from .drafts_common import LIST_GUTTER, MIN_CONTROL_PX, display_locale, secondary_font
+from .drafts_common import (
+    LIST_GUTTER, MIN_CONTROL_PX, display_locale, plain_tip, secondary_font,
+)
 from .flow_layout import FlowLayout
 from .post_list import symbol_pixmap
 from .standup_publications import publication_logo
@@ -380,7 +382,7 @@ class SubmissionDetail(QWidget):
             pill.setIcon(icon)
             pill.setIconSize(QSize(18, 18))
         pill.setAccessibleName(spoken)
-        pill.setToolTip(spoken)
+        pill.setToolTip(plain_tip(spoken))
         return pill
 
     def _show_status(self, detail, r) -> None:

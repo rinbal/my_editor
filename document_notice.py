@@ -99,6 +99,8 @@ class DocumentNotice(QFrame):
         self._text = QLabel()
         self._text.setObjectName("DocumentNoticeText")
         self._text.setWordWrap(True)
+        # What it says names files and people as they are called: as written.
+        self._text.setTextFormat(Qt.TextFormat.PlainText)
         self._text.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         row.addWidget(self._text, 1)
         self._actions = QHBoxLayout()

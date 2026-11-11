@@ -46,7 +46,7 @@ from ..standup import conversation, following as rules, thread as threads
 from . import appearance
 from .avatar import color_for_pubkey, initials_for, make_avatar_pixmap_from_image, \
     make_initials_pixmap
-from .drafts_common import display_locale, secondary_font
+from .drafts_common import display_locale, plain_tip, secondary_font
 from .standup_talk import Outgoing, Sending, footer_words, shown_reactions
 
 _AVATAR = 26
@@ -205,9 +205,9 @@ class _Bubble(QFrame):
             f"padding: 0px 5px; }}")
         spoken = reactions_spoken(shown, view.me, view.name_of)
         chip.setAccessibleName(spoken)
-        chip.setToolTip(spoken)
+        chip.setToolTip(plain_tip(spoken))
         chip.clicked.connect(lambda: QToolTip.showText(
-            chip.mapToGlobal(QPoint(0, chip.height())), spoken, chip))
+            chip.mapToGlobal(QPoint(0, chip.height())), plain_tip(spoken), chip))
         if dimmed:
             effect = QGraphicsOpacityEffect(chip)
             effect.setOpacity(0.45)
@@ -420,10 +420,10 @@ def more_about_button(words: str, r) -> QToolButton:
     more.setAutoRaise(True)
     more.setFont(secondary_font())
     more.setStyleSheet(f"QToolButton {{ color: {r.ink}; border: none; }}")
-    more.setToolTip(words)
+    more.setToolTip(plain_tip(words))
     more.setAccessibleDescription(words)
     more.clicked.connect(lambda: QToolTip.showText(
-        more.mapToGlobal(QPoint(0, more.height())), words, more))
+        more.mapToGlobal(QPoint(0, more.height())), plain_tip(words), more))
     return more
 
 

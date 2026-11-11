@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QToolButton, QWidget
 from i18n import _
 
 from . import appearance
+from .drafts_common import plain_tip
 
 _LOGO = 18
 
@@ -50,7 +51,7 @@ class SubmissionPill(QToolButton):
         spoken = _("Submission to {publication}: {status}").format(publication=publication,
                                                                   status=word)
         self.setAccessibleName(spoken)
-        self.setToolTip(spoken)
+        self.setToolTip(plain_tip(spoken))       # the publication names itself
         self.apply_theme(self._is_dark)
         self.setVisible(bool(word))
 

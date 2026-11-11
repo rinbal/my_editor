@@ -11,8 +11,9 @@ detail and ‹ Einreichungen comes back to it; the detail's sentence with
 at most one action, and a button only for an action the window handles
 (publish and confirm are a later phase's); the composer, the failure in
 place with the text kept; reactions on the bubble; the withdraw alert
-with Cancel as the default; the pill; the notice; Im Editor öffnen; and
-that a view closed while an answer is pending raises nothing."""
+with Cancel as the default; the pill; the notice; Im Editor öffnen;
+that what strangers name shows as written; and that a view closed while
+an answer is pending raises nothing."""
 
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ from types import SimpleNamespace
 import pytest
 from PySide6.QtCore import QObject, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel
 
 import alerts
 from document_notice import DocumentNotice
@@ -351,6 +352,21 @@ def test_a_notice_at_the_article_says_what_is_new_and_opens_the_detail(window):
     world.settle()
     assert window.view.detail.sid == entries["neu"].sid
     assert not window.host.notice_acted(tab, "revert")  # another notice's action
+
+
+def test_a_name_someone_else_chose_shows_as_written_never_as_markup(window):
+    world = window.world
+    prepared, _entries = seeded(window, name="Ein Jahr")
+    tab = window.tab("name")
+    window.follow()
+    window.following.publication_name = lambda _address: "<h1>Bank</h1>"
+    world.decide(prepared["name"], "request_changes", text="Bitte.")
+    window.following.refresh()
+    world.settle()
+    label = tab.notice.findChild(QLabel, "DocumentNoticeText")
+    assert label.textFormat() == Qt.TextFormat.PlainText
+    assert label.text() == "<h1>Bank</h1> asks for changes to “Ein Jahr”."
+    assert "&lt;h1&gt;Bank" in window.pill.toolTip()       # a tooltip shown as written
 
 
 def test_open_in_editor_brings_the_tab_forward_or_opens_the_version(window):
