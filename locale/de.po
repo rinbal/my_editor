@@ -13495,9 +13495,6 @@ msgstr "Unter diesem Linknamen steht schon ein Artikel von jemand anderem. Damit
 msgid "A short question about publishing: "
 msgstr "Eine kurze Frage zum Veröffentlichen: "
 
-msgid "Your relays didn’t answer, so nothing was published. Try again in a moment."
-msgstr "Deine Relays haben nicht geantwortet, darum wurde nichts veröffentlicht. Versuche es gleich noch einmal."
-
 #, python-brace-format
 msgid "Also changed: {fields}."
 msgstr "Außerdem geändert: {fields}."
@@ -13528,3 +13525,6 @@ msgstr "Sprache"
 
 msgid "The accepted version is published. If you change anything afterwards, the editorial team sees “changed since acceptance”."
 msgstr "Veröffentlicht wird die angenommene Fassung. Änderst du danach etwas, sieht die Redaktion »geändert seit Annahme«."
+
+msgid "Whether another person’s article already stands under this link name couldn’t be checked just now. Try again in a moment."
+msgstr "Ob unter diesem Linknamen schon ein Artikel von jemand anderem steht, ließ sich gerade nicht prüfen. Versuche es gleich noch einmal."

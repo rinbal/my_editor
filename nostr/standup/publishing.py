@@ -43,7 +43,7 @@ from . import following as rules
 from . import formats, views
 from .formats import FormatError
 from .former import Formers
-from .release import credited_writer, held_credit, writer_may_release
+from .release import Release, credited_writer, held_credit, release
 
 # A revision names at most this many people and carried tags (5).
 _PEOPLE_MAX = 50
@@ -560,9 +560,8 @@ def correction_texts(revision: Mapping, published: Mapping) -> Tuple[str, str]:
 
 
 __all__ = ["Accepted", "EXTENSIONS", "NEVER_CARRIED", "NotPublishable", "Published",
-           "addresses_before", "corrected_template", "correction_changes",
+           "Release", "addresses_before", "corrected_template", "correction_changes",
            "correction_texts", "credited", "credited_writer", "held_credit", "media_refs_in",
            "media_to_publish", "placed_section", "published_revision", "published_template",
-           "published_work",
-           "section_of", "served_at", "verified_accept", "work_address", "work_of",
-           "writer_may_release"]
+           "published_work", "release", "section_of", "served_at", "verified_accept",
+           "work_address", "work_of"]

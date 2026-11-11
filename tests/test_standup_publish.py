@@ -170,9 +170,10 @@ class FakeJob(QObject):
     completed = Signal(list)
     failed = Signal(str)
 
-    def __init__(self, key, unsigned, here, took) -> None:
+    def __init__(self, key, unsigned, here, took, only=None) -> None:
         super().__init__()
         self.key, self.unsigned_event, self.here, self.took = key, unsigned, here, took
+        self.only = only
         self.signed_event, self.sent, self.cancelled = None, [], False
         self.failure_words = ""
 
@@ -211,14 +212,18 @@ def accepted():
                            cipher=cipher, entry=entry)
 
 
-def _run(case, *, store=None, took=(True,), reread_hash=None, key_here=False, profile=None):
+def _run(case, *, store=None, took=(True,), reread_hash=None, key_here=False, profile=None,
+         relays_hold=None, changed_from=0):
     store = store or FakeStore()
     jobs = []
     following, api = case.following, case.writer.api
 
+    reads = []
+
     def reread(on_detail, on_failure):
         view = following.row(case.sid).view
-        if reread_hash is not None:
+        reads.append(view)
+        if reread_hash is not None and len(reads) > changed_from:
             view = replace(view, revision_hash=reread_hash)
         on_detail(SimpleNamespace(submission=view, address_taken=False))
 
@@ -226,7 +231,7 @@ def _run(case, *, store=None, took=(True,), reread_hash=None, key_here=False, pr
         api.article_author(address, on_author, on_failure)
 
     def job(profile, unsigned, here, only):
-        jobs.append(FakeJob(case.writer.key, unsigned, here, list(took)))
+        jobs.append(FakeJob(case.writer.key, unsigned, here, list(took), list(only)))
         return jobs[-1]
 
     view = following.row(case.sid).view
@@ -235,8 +240,8 @@ def _run(case, *, store=None, took=(True,), reread_hash=None, key_here=False, pr
         fetch=lambda url, on_success, on_failure: on_success(case.cipher)
         if url.endswith(case.entry["cipher_sha256"]) else on_failure("404"),
         job=job, key_here=lambda: key_here, serve=following.serve, reread=reread,
-        held_at=held_at, relays_hold=lambda unsigned, done: done(["wss://relay.example"], False),
-        clock=case.world.clock)
+        held_at=held_at, clock=case.world.clock,
+        relays_hold=relays_hold or (lambda _unsigned, done: done({"wss://r.example": (True, [])})))
     run = AcceptedPublish(sid=case.sid, profile=profile or case.writer.profile,
                           version=following.reading.latest(case.sid),
                           accepted=following.reading.accepted(case.sid),
@@ -288,23 +293,29 @@ def test_another_work_at_the_link_name_is_said_in_one_sentence_and_the_name_kept
 
 
 def test_the_writer_release_vectors():
-    # Contract 12.4, Before the writer's work goes out (vector writer_release).
+    # Contract 12.4 at 569b3f8, Before the writer's work goes out (vector
+    # writer_release, releaseRelays): this server, then every relay.
     vector = VECTORS["writer_release"]
 
-    def may(case):
+    def send_to(case):
         held = case["held"]
-        credited = None if held is None else publishing.held_credit(held, vector["address"])
-        return publishing.writer_may_release(credited, address_taken=case["address_taken"],
-                                             writer=vector["writer"])
+        return publishing.release(
+            writer=vector["writer"], address=vector["address"],
+            address_taken=case["address_taken"], server_read=case["server_read"],
+            held=None if held is None else publishing.held_credit(held, vector["address"]),
+            relays={url: (read["complete"], read["events"])
+                    for url, read in case["relays"].items()}).send_to
 
-    assert all(may(case) for case in vector["may"].values())
-    assert not any(may(case) for case in vector["must_fail"].values())
+    for name, case in vector["may"].items():
+        assert list(send_to(case)) == case["send_to"] and case["send_to"], name
+    for name, case in vector["must_fail"].items():
+        assert send_to(case) == (), name
 
 
 def test_nothing_goes_out_over_another_persons_article_at_the_address(accepted):
-    # RG-M4-a 2: read right before signing; another writer's article stands
-    # at the writer's address, so nothing is signed or sent, the picture
-    # stays private, and the sheet offers a question instead of Erneut.
+    # RG-M4-a 2, 12.4: read before any picture goes up in plain; another
+    # writer's article stands at the writer's address, so nothing is
+    # signed, sent or put up, and the sheet offers a question, not Erneut.
     other = events.sign_event({"kind": 30023, "created_at": 1, "content": "Fremd",
                                "tags": [["d", "ein-jahr"], ["p", pk("contributor"), "", "author"]]},
                               sk("writer"))
@@ -314,57 +325,64 @@ def test_nothing_goes_out_over_another_persons_article_at_the_address(accepted):
     accepted.world.settle()
     assert run.stage is Stage.SOMEONE_ELSES and jobs == []
     assert "So that it stays, nothing is published." in run.words
-    assert store.deleted == [(accepted.entry["plain_sha256"], (SERVER,))]
+    assert store.uploaded == [] and store.deleted == []
     assert accepted.world.record(accepted.sid).state == "accepted"
 
 
-def test_the_address_is_read_on_every_relay_and_only_clear_ones_take_it():
-    # RG-B5-d: the server's index may miss a guest's work the writer's own
-    # publication released elsewhere. Right before signing the address is
-    # read on every relay it goes to; one that did not answer is left out
-    # quietly, and another person's work on one sends nothing anywhere.
+def test_the_address_is_read_on_every_relay_and_only_clear_ones_take_it(accepted):
+    # RG-B5-d, contract 12.4: the server's index may miss a guest's work
+    # the writer's own publication released elsewhere. Before a picture
+    # goes up and right before signing, the address is read on every
+    # relay it goes to: one that did not answer is left out quietly;
+    # another person's work, even on a relay that did not finish, sends
+    # nothing anywhere, and no answer at all says so with Erneut.
     from nostr.ui.standup_publish_job import read_relays
-    from tests.outbox_fakes import HandPool, settle
+    from tests.outbox_fakes import HandPool
     A, B, C = "wss://a.example", "wss://b.example", "wss://c.example"
-    writer = pk("writer")
-    unsigned = {"kind": 30023, "pubkey": writer, "tags": [["d", "ein-jahr"]], "content": "x"}
-    own = events.sign_event({"kind": 30023, "created_at": 5, "content": "Alt",
-                             "tags": [["d", "ein-jahr"]]}, sk("writer"))
     guest = events.sign_event({"kind": 30023, "created_at": 6, "content": "Gast",
                                "tags": [["d", "ein-jahr"], ["p", pk("contributor"), "", "author"]]},
                               sk("writer"))
     directory = SimpleNamespace(publish_plan=lambda author, done, **_kw: done(
         SimpleNamespace(targets=[A, B, C])))
+    pool, owner = HandPool(), QObject()
 
-    owner = QObject()                   # the queries' parent, as the writer's is
-
-    def read(answers):
-        pool, said = HandPool(), []
+    def relays_hold(unsigned, done):
         read_relays(relay_pool=pool, relay_directory=directory,
-                    profile=SimpleNamespace(user_pubkey=writer), unsigned_event=unsigned,
-                    on_done=lambda clear, other: said.append((clear, other)), parent=owner)
-        for sub in pool.subs:
-            answers(sub)
-        settle()
-        return said
+                    profile=SimpleNamespace(user_pubkey=pk("writer")), unsigned_event=unsigned,
+                    on_done=done, parent=owner)
 
-    def quiet_c(sub, held):
-        relay = sub.urls[0]
-        if relay == C:
-            sub.fail(C)
-        else:
-            sub.answer(relay, *([held] if relay == B else []))
+    def publish(answer):
+        run, store, jobs = _run(accepted, relays_hold=relays_hold)
+        pool.subs.clear()
+        run.start()
+        accepted.world.settle()
+        answered = 0
+        while answered < len(pool.subs):         # before the picture, then before signing
+            answer(pool.subs[answered])
+            answered += 1
+            accepted.world.settle()
+        return run, store, jobs
 
-    assert read(lambda sub: quiet_c(sub, own)) == [([A, B], False)]
-    assert read(lambda sub: quiet_c(sub, guest)) == [([A], True)]
+    run, store, jobs = publish(lambda sub: (sub.answer(A), sub.send(B, guest), sub.fail(B),
+                                            sub.fail(C)))
+    assert run.stage is Stage.SOMEONE_ELSES and jobs == [] and store.uploaded == []
+    run, store, jobs = publish(lambda sub: (sub.fail(A), sub.fail(B), sub.fail(C)))
+    assert run.stage is Stage.NOT_CHECKED and jobs == [] and store.uploaded == []
+    assert run.title == "Not published" and "couldn’t be checked just now" in run.words
+    run, store, jobs = publish(lambda sub: (sub.answer(A), sub.answer(B), sub.fail(C)))
+    assert run.stage is Stage.DONE and jobs[-1].only == [A, B] and len(pool.subs) == 2
+    assert pool.subs[0].filters == [{"kinds": [30023], "authors": [pk("writer")],
+                                     "#d": ["ein-jahr"], "limit": 25}]
 
 
 def test_a_submission_that_changed_meanwhile_is_not_published_and_its_picture_comes_down(
         accepted):
-    run, store, jobs = _run(accepted, reread_hash="ab" * 32)
+    # Read again right before signing, after the picture went up: it
+    # changed meanwhile, so nothing is signed and the picture comes down.
+    run, store, jobs = _run(accepted, reread_hash="ab" * 32, changed_from=1)
     run.start()
     accepted.world.settle()
-    assert run.stage is Stage.FAILED and jobs == []      # read before signing: nothing signed
+    assert run.stage is Stage.FAILED and jobs == []
     assert store.deleted == [(accepted.entry["plain_sha256"], (SERVER,))]
     assert run.signed_article is None
 

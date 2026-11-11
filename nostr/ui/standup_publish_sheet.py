@@ -154,7 +154,8 @@ class PublishSheet(QDialog):
         run, stage = self.run, self.run.stage
         working = stage is Stage.WORKING
         done = stage is Stage.DONE
-        failed = stage in (Stage.FAILED, Stage.NOT_STORED, Stage.NOT_REPORTED)
+        failed = stage in (Stage.FAILED, Stage.NOT_STORED, Stage.NOT_REPORTED,
+                           Stage.NOT_CHECKED)
         ask = stage is Stage.SOMEONE_ELSES      # nothing to try again: ask the Redaktion
         if done:
             self.status.say(run.title)
@@ -173,7 +174,9 @@ class PublishSheet(QDialog):
         self.cancel_button.setVisible(not done)
         # Once it works, Cancel only closes: the run goes on (it is the
         # account's), and the detail shows where it is.
-        self.cancel_button.setText(_("Close") if working or failed or ask else _("Cancel"))
+        # Not checked: Erneut versuchen or Abbrechen (12.4, the words both apps say).
+        self.cancel_button.setText(_("Cancel") if stage is Stage.NOT_CHECKED else _(
+            "Close") if working or failed or ask else _("Cancel"))
 
     def _primary(self) -> None:
         stage = self.run.stage
@@ -184,7 +187,7 @@ class PublishSheet(QDialog):
             self.reject()
         elif stage is Stage.OFFER_HERE:
             self.run.start(here=True)           # explicit, this article only (Q1)
-        elif stage in (Stage.NOT_STORED, Stage.NOT_REPORTED, Stage.FAILED):
+        elif stage in (Stage.NOT_STORED, Stage.NOT_REPORTED, Stage.FAILED, Stage.NOT_CHECKED):
             self.run.retry()
         else:
             self.run.start()

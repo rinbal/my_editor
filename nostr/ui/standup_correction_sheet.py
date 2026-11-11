@@ -140,10 +140,12 @@ class CorrectionSheet(QDialog):
     def _show(self) -> None:
         run, stage = self.run, self.run.stage
         working, done = stage is Stage.WORKING, stage is Stage.DONE
-        failed = stage in (Stage.FAILED, Stage.NOT_STORED, Stage.NOT_REPORTED)
+        failed = stage in (Stage.FAILED, Stage.NOT_STORED, Stage.NOT_REPORTED,
+                           Stage.NOT_CHECKED)
+        ask = stage is Stage.SOMEONE_ELSES      # nothing to try again: ask the Redaktion
         if done:
             self.status.say(run.title)
-        elif failed or stage is Stage.OFFER_HERE:
+        elif failed or ask or stage is Stage.OFFER_HERE:
             self.status.say(run.words, error=True, title=run.title)
         elif working:
             self.status.say(" ".join(part for part in (run.title, run.words) if part),
@@ -153,21 +155,24 @@ class CorrectionSheet(QDialog):
         # Taken, the comparison closes (RG-F5a-b 7).
         self.changes.setVisible(not done)
         self.replaces.setVisible(not done)
-        self.ask.setVisible(not done)
-        self.take.setText(_("Done") if done else _("Try Again") if failed else _(
-            "Sign with the Key on This Computer") if stage is Stage.OFFER_HERE
-            else _("Take the Correction"))
+        self.ask.setVisible(not done and not ask)
+        self.take.setText(_("Done") if done else _("Ask a Question") if ask else _(
+            "Try Again") if failed else _("Sign with the Key on This Computer")
+            if stage is Stage.OFFER_HERE else _("Take the Correction"))
         self.take.setEnabled(not working)
-        self.later.setText(_("Close") if working or failed else _("Later"))
+        self.later.setText(_("Cancel") if stage is Stage.NOT_CHECKED else _(
+            "Close") if working or failed or ask else _("Later"))
         self.later.setVisible(not done)
 
     def _primary(self) -> None:
         stage = self.run.stage
         if stage is Stage.DONE:
             self.accept()
+        elif stage is Stage.SOMEONE_ELSES:
+            self._ask()
         elif stage is Stage.OFFER_HERE:
             self.run.start(here=True)
-        elif stage in (Stage.NOT_STORED, Stage.NOT_REPORTED, Stage.FAILED):
+        elif stage in (Stage.NOT_STORED, Stage.NOT_REPORTED, Stage.FAILED, Stage.NOT_CHECKED):
             self.run.retry()
         else:
             self.run.start()

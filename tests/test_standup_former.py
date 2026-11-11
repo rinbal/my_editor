@@ -24,7 +24,8 @@ def _standing(former: dict, person: str, epoch, at):
 
 
 def test_the_standing_of_people_who_left_is_the_vectors():
-    # Contract 53ff043: membership by epoch, the role by time.
+    # Contract 569b3f8: membership by epoch, the role by time, an owner key
+    # event's too (it counts as redaktion from when it was signed).
     acted = FM["acted_at"]
     assert _standing(FM["taken"], FM["stranger"], 3, acted) == {"member": True, "decides": True}
     for name, former in FM["must_fail"].items():

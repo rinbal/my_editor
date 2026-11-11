@@ -6,18 +6,20 @@ The member list holds today's members only. An action signed by someone
 who has left or was removed since verifies from what the owner and the
 publication key signed, never from the server's word: the read of a
 submission serves a ``Former`` for each such signer, with the stored
-grants that gave them the Redaktion's key and the latest key event that
-named them owner.
+grants that gave them the Redaktion's key and the versions of the key
+events that named them owner (``owner_key_events``).
 
 :func:`standing` is the one check, as ``formerStanding`` in the
 contract's ``docs/editorial-fixtures/crosscheck.reference.mjs`` has it
-(contract 53ff043, vector ``former_member``). Membership goes by epoch:
+(contract 569b3f8, vector ``former_member``). Membership goes by epoch:
 a counting grant or owner key event at the action's epoch e or later
-makes the person a member then. The role goes by time: they may decide
-when the owner key event reaches e, or when the counting invitations
-signed last at or before the action's ``created_at`` have the role
-``redaktion`` (all of them, when several share that second). So a higher
-epoch never grants more. :class:`Formers` keeps the Formers of one
+makes the person a member then. The role goes by time, an owner key
+event's too: of the counting invitations and counting owner key events
+(each one counting as ``redaktion``) signed at or before the action's
+``created_at``, the latest decide, and all of them must have the role
+``redaktion`` when several share that second. So a higher epoch never
+grants more, and an earlier owner invited as a curator decides nothing
+after that invitation. :class:`Formers` keeps the Formers of one
 submission, joined by pubkey across reads, checks each grant once, and
 picks the epoch an action names: a decision is checked at the epoch of
 the current revision first, and only when it fails there at its own
@@ -35,9 +37,11 @@ from .formats import FormatError
 from .readers import read_list, read_object, read_text
 
 # At most 8 people in one answer (contract 10); a Former's grants prove
-# the epochs its person's actions name, two at most for each.
+# the epochs its person's actions name, two at most for each, and its
+# owner key events the latest and the one before each decision.
 MAX_FORMERS = 8
 MAX_GRANTS = 64
+MAX_OWNER_KEY_EVENTS = 64
 _MAX_GRANT_BODY = 1_048_576
 ROLES = ("redaktion", "curator")
 # Actions a member may take, which name no epoch (contract 10); the
@@ -61,7 +65,7 @@ class Grant:
 class Former:
     pubkey: str
     grants: Tuple[Grant, ...]
-    owner_key_event: Optional[Mapping[str, Any]]
+    owner_key_events: Tuple[Mapping[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -81,9 +85,10 @@ def parse_formers(value: Any) -> Tuple[Former, ...]:
         grants = tuple(_grant_of(g) for g in read_list(data.get("grants") or [],
                                                          "a former member's grants",
                                                          limit=MAX_GRANTS))
-        owner = data.get("owner_key_event")
-        out.append(Former(pubkey=pubkey, grants=grants, owner_key_event=(
-            dict(read_object(owner, "an owner key event")) if owner is not None else None)))
+        owners = tuple(dict(read_object(e, "an owner key event")) for e in read_list(
+            data.get("owner_key_events") or [], "a former member's owner key events",
+            limit=MAX_OWNER_KEY_EVENTS))
+        out.append(Former(pubkey=pubkey, grants=grants, owner_key_events=owners))
     return tuple(out)
 
 
@@ -147,32 +152,38 @@ def _proof(grant: Grant, person: str, address: str) -> Optional[Tuple[int, Optio
     return None
 
 
-def _owner_epoch(former: Former, address: str) -> int:
-    """The epoch of the owner key event naming the person, or 0."""
-    key = _key(former.owner_key_event, address) if former.owner_key_event else None
-    return key.epoch if key is not None and key.owner == former.pubkey else 0
+def proofs_of(former: Former, address: str) -> List[Tuple[int, Optional[str], int]]:
+    """``(epoch, role or None, created_at)`` of each of ``former``'s
+    grants and owner key events that counts for its person; an owner
+    key event naming the person counts for its epoch, and as
+    ``redaktion`` from when it was signed (contract 10)."""
+    person = former.pubkey
+    found = [p for p in (_proof(g, person, address) for g in former.grants) if p]
+    for event in former.owner_key_events:
+        key = _key(event, address)
+        if key is not None and key.owner == person and formats.is_int(event.get("created_at")):
+            found.append((key.epoch, "redaktion", event["created_at"]))
+    return found
 
 
 def standing(former: Optional[Former], person: str, epoch: Optional[int], at: int, *,
-             address: str, proofs: Optional[List[Tuple[int, Optional[str], int]]] = None,
-             owner_epoch: Optional[int] = None) -> Standing:
+             address: str,
+             proofs: Optional[List[Tuple[int, Optional[str], int]]] = None) -> Standing:
     """Whether ``person`` counts as a member of the Redaktion for an
     action naming ``epoch`` (None: epoch 1) signed at ``at`` (its
-    ``created_at``), and as one who may decide. ``proofs`` and
-    ``owner_epoch`` are what :class:`Formers` checked before."""
+    ``created_at``), and as one who may decide. ``proofs`` are what
+    :class:`Formers` checked before (:func:`proofs_of`)."""
     if former is None or former.pubkey != person:
         return Standing()
     e = 1 if epoch is None else epoch
     if proofs is None:
-        proofs = [p for p in (_proof(g, person, address) for g in former.grants) if p]
-    owner = _owner_epoch(former, address) if owner_epoch is None else owner_epoch
-    owner_reaches = owner >= e > 0
-    if not owner_reaches and not any(of >= e for of, _role, _t in proofs):
+        proofs = proofs_of(former, address)
+    if not any(of >= e for of, _role, _t in proofs):
         return Standing()
     before = [(t, role) for _of, role, t in proofs if role is not None and t <= at]
     latest = max((t for t, _role in before), default=None)
     redaktion = bool(before) and all(role == "redaktion" for t, role in before if t == latest)
-    return Standing(member=True, decides=owner_reaches or redaktion)
+    return Standing(member=True, decides=redaktion)
 
 
 class Formers:
@@ -189,7 +200,7 @@ class Formers:
         self._want = want
         self._wanted: Set[int] = set()
         self._formers: Dict[str, Former] = {}
-        self._checked: Dict[str, Tuple[list, int]] = {}
+        self._checked: Dict[str, list] = {}
 
     def saw(self, revision: int, epoch: int) -> None:
         """``revision`` verified, and its signed body names ``epoch``."""
@@ -202,8 +213,10 @@ class Formers:
             if known is not None:
                 grants = known.grants + tuple(g for g in former.grants
                                               if g not in known.grants)
+                owners = known.owner_key_events + tuple(
+                    e for e in former.owner_key_events if e not in known.owner_key_events)
                 former = Former(former.pubkey, grants[:MAX_GRANTS],
-                                former.owner_key_event or known.owner_key_event)
+                                owners[:MAX_OWNER_KEY_EVENTS])
             if former != known:
                 self._formers[former.pubkey] = former
                 self._checked.pop(former.pubkey, None)
@@ -213,12 +226,9 @@ class Formers:
         if former is None:
             return Standing()
         if person not in self._checked:
-            self._checked[person] = (
-                [p for p in (_proof(g, person, self.address) for g in former.grants) if p],
-                _owner_epoch(former, self.address))
-        proofs, owner = self._checked[person]
-        return standing(former, person, epoch, at, address=self.address, proofs=proofs,
-                        owner_epoch=owner)
+            self._checked[person] = proofs_of(former, self.address)
+        return standing(former, person, epoch, at, address=self.address,
+                        proofs=self._checked[person])
 
     def decides(self, person: str, name: str, body: Mapping[str, Any], *,
                 decisions: Iterable[str], at: Any) -> bool:
@@ -255,5 +265,5 @@ class Formers:
         return False
 
 
-__all__ = ["Former", "Formers", "Grant", "MAX_FORMERS", "MEMBER_ACTIONS", "Standing",
-           "parse_formers", "standing"]
+__all__ = ["Former", "Formers", "Grant", "MAX_FORMERS", "MAX_OWNER_KEY_EVENTS",
+           "MEMBER_ACTIONS", "Standing", "parse_formers", "proofs_of", "standing"]

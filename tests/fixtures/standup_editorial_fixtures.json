@@ -356,7 +356,7 @@
       }
      }
     ],
-    "owner_key_event": null,
+    "owner_key_events": [],
     "pubkey": "16294c061927f6adf4b6a5d12fd17bf55cac9920e4714ed893dcd57ba1b6f330"
    },
    "left": {
@@ -435,33 +435,35 @@
       "key_event": null
      }
     ],
-    "owner_key_event": null,
+    "owner_key_events": [],
     "pubkey": "ff89f794b8597e0e013a9ef4f00322d355fd170961af03e87539b27fc417952a"
    },
    "old_owner": {
     "grants": [],
-    "owner_key_event": {
-     "content": "{\"epoch\":2,\"name\":\"Einundzwanzig Magazin\",\"owner\":\"bd404b770c1347804e52ba2c5c35dbf2653f34fe570044f527044bf70b3341db\",\"pubkey\":\"1d981d429c4040228d1c5a22f27f21161906f1037e62481fff5d7c7fd1be025d\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"rules\":{\"by_link\":true,\"checklist\":[{\"id\":\"summary\",\"label\":\"Zusammenfassung\",\"level\":\"recommended\"}],\"kinds\":[\"article\",\"audio\"],\"license_required\":{\"article\":false,\"audio\":true},\"max_envelope_bytes\":4194304,\"max_open_per_writer\":3,\"open\":true,\"publish_by\":{\"article\":\"writer\",\"audio\":\"publication\"},\"rights_required\":true},\"server\":\"https://standup.example\",\"v\":1}",
-     "created_at": 1762669200,
-     "id": "9cd7be2d003dc380912efc862e5127a748252e6931cd0d55ef363355af5e88ca",
-     "kind": 30078,
-     "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
-     "sig": "6c4bbe9c48292c584b4ecd6772de4cd20bd9b7099389d537989e771cfdae83cd678254878a8d33848823d5cbb563488f832c42e567206b273574630989a0f19c",
-     "tags": [
-      [
-       "d",
-       "standup:redaktion-key:einundzwanzig-magazin"
-      ],
-      [
-       "a",
-       "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin"
-      ],
-      [
-       "alt",
-       "Redaktionsschlüssel von Einundzwanzig Magazin: Einreichungen an diese Publikation werden für diesen Schlüssel verschlüsselt."
+    "owner_key_events": [
+     {
+      "content": "{\"epoch\":2,\"name\":\"Einundzwanzig Magazin\",\"owner\":\"bd404b770c1347804e52ba2c5c35dbf2653f34fe570044f527044bf70b3341db\",\"pubkey\":\"1d981d429c4040228d1c5a22f27f21161906f1037e62481fff5d7c7fd1be025d\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"rules\":{\"by_link\":true,\"checklist\":[{\"id\":\"summary\",\"label\":\"Zusammenfassung\",\"level\":\"recommended\"}],\"kinds\":[\"article\",\"audio\"],\"license_required\":{\"article\":false,\"audio\":true},\"max_envelope_bytes\":4194304,\"max_open_per_writer\":3,\"open\":true,\"publish_by\":{\"article\":\"writer\",\"audio\":\"publication\"},\"rights_required\":true},\"server\":\"https://standup.example\",\"v\":1}",
+      "created_at": 1762669200,
+      "id": "9cd7be2d003dc380912efc862e5127a748252e6931cd0d55ef363355af5e88ca",
+      "kind": 30078,
+      "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+      "sig": "6c4bbe9c48292c584b4ecd6772de4cd20bd9b7099389d537989e771cfdae83cd678254878a8d33848823d5cbb563488f832c42e567206b273574630989a0f19c",
+      "tags": [
+       [
+        "d",
+        "standup:redaktion-key:einundzwanzig-magazin"
+       ],
+       [
+        "a",
+        "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin"
+       ],
+       [
+        "alt",
+        "Redaktionsschlüssel von Einundzwanzig Magazin: Einreichungen an diese Publikation werden für diesen Schlüssel verschlüsselt."
+       ]
       ]
-     ]
-    },
+     }
+    ],
     "pubkey": "bd404b770c1347804e52ba2c5c35dbf2653f34fe570044f527044bf70b3341db"
    },
    "promoted": {
@@ -561,7 +563,7 @@
       }
      }
     ],
-    "owner_key_event": null,
+    "owner_key_events": [],
     "pubkey": "c0fbcf37232389fb027c44dc71590932884e3770a0d1923f76ebcc9537b74508"
    },
    "removed": {
@@ -640,7 +642,7 @@
       "key_event": null
      }
     ],
-    "owner_key_event": null,
+    "owner_key_events": [],
     "pubkey": "41983a398173bc0bfd19c3ee2650b1cca9513558b2376ebdf978fb26665b6988"
    }
   },
@@ -695,7 +697,7 @@
       }
      }
     ],
-    "owner_key_event": null,
+    "owner_key_events": [],
     "pubkey": "2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc"
    },
    "another_publication": {
@@ -748,7 +750,7 @@
       }
      }
     ],
-    "owner_key_event": null,
+    "owner_key_events": [],
     "pubkey": "2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc"
    },
    "another_server": {
@@ -801,7 +803,7 @@
       }
      }
     ],
-    "owner_key_event": null,
+    "owner_key_events": [],
     "pubkey": "2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc"
    },
    "bad_signature": {
@@ -854,7 +856,7 @@
       }
      }
     ],
-    "owner_key_event": null,
+    "owner_key_events": [],
     "pubkey": "2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc"
    },
    "changed_body": {
@@ -907,7 +909,7 @@
       }
      }
     ],
-    "owner_key_event": null,
+    "owner_key_events": [],
     "pubkey": "2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc"
    },
    "invitation_of_another_person": {
@@ -960,7 +962,7 @@
       }
      }
     ],
-    "owner_key_event": null,
+    "owner_key_events": [],
     "pubkey": "2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc"
    },
    "key_event_not_by_the_publication": {
@@ -1013,7 +1015,7 @@
       }
      }
     ],
-    "owner_key_event": null,
+    "owner_key_events": [],
     "pubkey": "2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc"
    },
    "key_event_of_another_epoch": {
@@ -1066,7 +1068,7 @@
       }
      }
     ],
-    "owner_key_event": null,
+    "owner_key_events": [],
     "pubkey": "2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc"
    },
    "key_event_with_another_d": {
@@ -1119,7 +1121,7 @@
       }
      }
     ],
-    "owner_key_event": null,
+    "owner_key_events": [],
     "pubkey": "2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc"
    },
    "new_epoch_without_the_person": {
@@ -1151,59 +1153,63 @@
       "key_event": null
      }
     ],
-    "owner_key_event": null,
+    "owner_key_events": [],
     "pubkey": "2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc"
    },
    "owner_key_event_not_by_the_publication": {
     "grants": [],
-    "owner_key_event": {
-     "content": "{\"epoch\":1,\"name\":\"Einundzwanzig Magazin\",\"owner\":\"2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc\",\"pubkey\":\"654371d2645f2719396f86caa16f01ae32b13fee7776d99a0704d6320ca4052c\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"rules\":{\"by_link\":true,\"checklist\":[{\"id\":\"summary\",\"label\":\"Zusammenfassung\",\"level\":\"recommended\"}],\"kinds\":[\"article\",\"audio\"],\"license_required\":{\"article\":false,\"audio\":true},\"max_envelope_bytes\":4194304,\"max_open_per_writer\":3,\"open\":true,\"publish_by\":{\"article\":\"writer\",\"audio\":\"publication\"},\"rights_required\":true},\"server\":\"https://standup.example\",\"v\":1}",
-     "created_at": 1762666200,
-     "id": "fae755bab4bd031dc2760c9288e04f4b9d6ad5f3f390d38e2f488f3e97361783",
-     "kind": 30078,
-     "pubkey": "1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f",
-     "sig": "f51beda820ebb4d1912e0422bac76c64719a2ed7b05ca27a5c2a0369ec009d41b380343271915b56506ac3cfcbdfea4f6d1723fdb45e12b025a99951b6d0ac38",
-     "tags": [
-      [
-       "d",
-       "standup:redaktion-key:einundzwanzig-magazin"
-      ],
-      [
-       "a",
-       "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin"
-      ],
-      [
-       "alt",
-       "Redaktionsschlüssel von Einundzwanzig Magazin: Einreichungen an diese Publikation werden für diesen Schlüssel verschlüsselt."
+    "owner_key_events": [
+     {
+      "content": "{\"epoch\":1,\"name\":\"Einundzwanzig Magazin\",\"owner\":\"2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc\",\"pubkey\":\"654371d2645f2719396f86caa16f01ae32b13fee7776d99a0704d6320ca4052c\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"rules\":{\"by_link\":true,\"checklist\":[{\"id\":\"summary\",\"label\":\"Zusammenfassung\",\"level\":\"recommended\"}],\"kinds\":[\"article\",\"audio\"],\"license_required\":{\"article\":false,\"audio\":true},\"max_envelope_bytes\":4194304,\"max_open_per_writer\":3,\"open\":true,\"publish_by\":{\"article\":\"writer\",\"audio\":\"publication\"},\"rights_required\":true},\"server\":\"https://standup.example\",\"v\":1}",
+      "created_at": 1762666200,
+      "id": "fae755bab4bd031dc2760c9288e04f4b9d6ad5f3f390d38e2f488f3e97361783",
+      "kind": 30078,
+      "pubkey": "1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f",
+      "sig": "f51beda820ebb4d1912e0422bac76c64719a2ed7b05ca27a5c2a0369ec009d41b380343271915b56506ac3cfcbdfea4f6d1723fdb45e12b025a99951b6d0ac38",
+      "tags": [
+       [
+        "d",
+        "standup:redaktion-key:einundzwanzig-magazin"
+       ],
+       [
+        "a",
+        "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin"
+       ],
+       [
+        "alt",
+        "Redaktionsschlüssel von Einundzwanzig Magazin: Einreichungen an diese Publikation werden für diesen Schlüssel verschlüsselt."
+       ]
       ]
-     ]
-    },
+     }
+    ],
     "pubkey": "2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc"
    },
    "owner_key_event_of_another_owner": {
     "grants": [],
-    "owner_key_event": {
-     "content": "{\"epoch\":3,\"name\":\"Einundzwanzig Magazin\",\"owner\":\"27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e\",\"pubkey\":\"b0347eb493f204e3f88c007370039b0eb33215f4a635d00fc902057b41fc8aa7\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"rules\":{\"by_link\":true,\"checklist\":[{\"id\":\"summary\",\"label\":\"Zusammenfassung\",\"level\":\"recommended\"}],\"kinds\":[\"article\",\"audio\"],\"license_required\":{\"article\":false,\"audio\":true},\"max_envelope_bytes\":4194304,\"max_open_per_writer\":3,\"open\":true,\"publish_by\":{\"article\":\"writer\",\"audio\":\"publication\"},\"rights_required\":true},\"server\":\"https://standup.example\",\"v\":1}",
-     "created_at": 1762675100,
-     "id": "efdf5f21f819d64872a642f0a3851d973d9728ab6ab621463068f7c2911280de",
-     "kind": 30078,
-     "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
-     "sig": "827a2e0997a9fba852ce71c12f4662de289ef315d185a40e22a1e401380e0e0fa6a66ed59e438333ce197e628a10910b5a809403ed0a4fcf994d6aea23aa18e6",
-     "tags": [
-      [
-       "d",
-       "standup:redaktion-key:einundzwanzig-magazin"
-      ],
-      [
-       "a",
-       "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin"
-      ],
-      [
-       "alt",
-       "Redaktionsschlüssel von Einundzwanzig Magazin: Einreichungen an diese Publikation werden für diesen Schlüssel verschlüsselt."
+    "owner_key_events": [
+     {
+      "content": "{\"epoch\":3,\"name\":\"Einundzwanzig Magazin\",\"owner\":\"27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e\",\"pubkey\":\"b0347eb493f204e3f88c007370039b0eb33215f4a635d00fc902057b41fc8aa7\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"rules\":{\"by_link\":true,\"checklist\":[{\"id\":\"summary\",\"label\":\"Zusammenfassung\",\"level\":\"recommended\"}],\"kinds\":[\"article\",\"audio\"],\"license_required\":{\"article\":false,\"audio\":true},\"max_envelope_bytes\":4194304,\"max_open_per_writer\":3,\"open\":true,\"publish_by\":{\"article\":\"writer\",\"audio\":\"publication\"},\"rights_required\":true},\"server\":\"https://standup.example\",\"v\":1}",
+      "created_at": 1762675100,
+      "id": "efdf5f21f819d64872a642f0a3851d973d9728ab6ab621463068f7c2911280de",
+      "kind": 30078,
+      "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+      "sig": "827a2e0997a9fba852ce71c12f4662de289ef315d185a40e22a1e401380e0e0fa6a66ed59e438333ce197e628a10910b5a809403ed0a4fcf994d6aea23aa18e6",
+      "tags": [
+       [
+        "d",
+        "standup:redaktion-key:einundzwanzig-magazin"
+       ],
+       [
+        "a",
+        "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin"
+       ],
+       [
+        "alt",
+        "Redaktionsschlüssel von Einundzwanzig Magazin: Einreichungen an diese Publikation werden für diesen Schlüssel verschlüsselt."
+       ]
       ]
-     ]
-    },
+     }
+    ],
     "pubkey": "2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc"
    },
    "signed_by_an_owner_the_key_event_does_not_name": {
@@ -1256,7 +1262,7 @@
       }
      }
     ],
-    "owner_key_event": null,
+    "owner_key_events": [],
     "pubkey": "2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc"
    },
    "signed_by_another": {
@@ -1309,7 +1315,7 @@
       }
      }
     ],
-    "owner_key_event": null,
+    "owner_key_events": [],
     "pubkey": "2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc"
    }
   },
@@ -1371,7 +1377,7 @@
        }
       }
      ],
-     "owner_key_event": null,
+     "owner_key_events": [],
      "pubkey": "c0fbcf37232389fb027c44dc71590932884e3770a0d1923f76ebcc9537b74508"
     },
     "member": true,
@@ -1525,11 +1531,177 @@
        }
       }
      ],
-     "owner_key_event": null,
+     "owner_key_events": [],
      "pubkey": "c0fbcf37232389fb027c44dc71590932884e3770a0d1923f76ebcc9537b74508"
     },
     "member": true,
     "name": "two_invitations_in_the_same_second_with_different_roles"
+   },
+   {
+    "at": 1762672200,
+    "decides": true,
+    "epoch": 2,
+    "former": {
+     "grants": [
+      {
+       "body": "{\"history\":{\"ct\":\"ArwFlTuj+Hd8U94frdgfgwhtDn3G8DM/vHNA7YYiSmdwTR6l9lts+OxvxG0I0QxAF8kmU3zNZfQAjVwGC7XXUvHM5OmG+6ZNNw6F6Kbi59NvCN8UJuEAwYk16pj05U5k156OIjYwGZDx0MR00sLkzZQjzXaTIuf5xpcpf+4Ix7fI3kb8jNAP57GwJ91J+5BEfMafbXoM+wAeyyl2QO92F2vAYvXo0ahDmBoJM/hNev3s7DZG70w23EF4RhvSuf7HyTxBJaTZoYQgkP8x7aFQjRdjYhUK1n1J+Z1hdAtV0eq5ue5akjOT7UvnE6d51adwAz+BQbOXRqrWTohG/ui5e4OlHhrmaCSjt/x95FsRtM9OXa+e8LXMH/sQXNxtXxM67lql0si46lOmRrCYymN7u2Dotqxe96L+h8TPKDvs3VTK0rAMCjApaffMgKik9X/y/vH88fZ8Hg7QQcuFx4yeafXzn5QTN7GPjUyQmqLvpH3tKxBdl0SlvFwoUDJY/ZtdbGxft85zM8Pp0hxP3qgH94j83UJ2kJ8e6ig/zMpJHVsMGRVQ/oir1WKvKXUZIzvOJW+VEYmnJkHfqvxbJYGBE6CBDQ==\",\"eph\":\"19df1df76bb23159c162e4b001d006c4a8af04279c44f1bb4ca8a3460e1a735c\"},\"pubkey\":\"bd404b770c1347804e52ba2c5c35dbf2653f34fe570044f527044bf70b3341db\",\"role\":\"curator\",\"sees\":\"all\",\"wraps\":[{\"epoch\":3,\"wrap\":{\"ct\":\"Ai+ZZh1P8Q5oOH7pLQ225bF6XWDBs0ZE5e3sthEvf0P/TDjj2AxFfBJLr51FJiOXhkmuxFXe/Ro8fDlvqOXJ/DTAtb/wA3BnGGTLgnxKOu2oDkFvNIg122+/TMyW7wFwUMwnIMAEi8W1QfFZWXhVvjlXPpHhsEES26c9wBHiWXTU7MQ3YIX8Zh3IiVWsNTdGFnwYRvVatgnuzt25DKzdn80ajC6pNWnLl5h/JJG75mZc8dpLCX2mm4jENqWxlqRQHqfuKnCeLrjTcRKQ5924yzR784KTSX59UH0XW15Z9pNozBTW2/yNrQCrBtsYpW3/4FkSaNqAekrOOIs5Bes/UP1u9I9Pq2Nnfn/DBdnB2yxWeihC/8HjdjkHp5yNF1S8Y/gk\",\"eph\":\"0b02519019978db41fa8146c56c5b680cd60b379664d5e9bbf6f4da7495a357b\"}}]}",
+       "event": {
+        "content": "",
+        "created_at": 1762672700,
+        "id": "86a7b11e5c913c724b51f1db6a176e7744baa8452f633509ba2f3d7bfb184093",
+        "kind": 27235,
+        "pubkey": "27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e",
+        "sig": "6c378fe215c27561dd8c73c86752c7bd217523ea6f1b3150707d2c7d05127885c4583c56cb028bfdf77f9a3a2493f1a2dbab5fcb3d2c39ea69229794e56c9b78",
+        "tags": [
+         [
+          "u",
+          "https://standup.example/api/sites/by/3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285/ZWludW5kendhbnppZy1tYWdhemlu/members"
+         ],
+         [
+          "method",
+          "POST"
+         ],
+         [
+          "payload",
+          "dd4cdc7e89af61def763f33c7cb1ab53250817a6b8023a3363cb5f96f31a5603"
+         ]
+        ]
+       },
+       "key_event": {
+        "content": "{\"epoch\":3,\"name\":\"Einundzwanzig Magazin\",\"owner\":\"27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e\",\"pubkey\":\"b0347eb493f204e3f88c007370039b0eb33215f4a635d00fc902057b41fc8aa7\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"rules\":{\"by_link\":true,\"checklist\":[{\"id\":\"summary\",\"label\":\"Zusammenfassung\",\"level\":\"recommended\"}],\"kinds\":[\"article\",\"audio\"],\"license_required\":{\"article\":false,\"audio\":true},\"max_envelope_bytes\":4194304,\"max_open_per_writer\":3,\"open\":true,\"publish_by\":{\"article\":\"writer\",\"audio\":\"publication\"},\"rights_required\":true},\"server\":\"https://standup.example\",\"v\":1}",
+        "created_at": 1762675100,
+        "id": "efdf5f21f819d64872a642f0a3851d973d9728ab6ab621463068f7c2911280de",
+        "kind": 30078,
+        "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+        "sig": "827a2e0997a9fba852ce71c12f4662de289ef315d185a40e22a1e401380e0e0fa6a66ed59e438333ce197e628a10910b5a809403ed0a4fcf994d6aea23aa18e6",
+        "tags": [
+         [
+          "d",
+          "standup:redaktion-key:einundzwanzig-magazin"
+         ],
+         [
+          "a",
+          "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin"
+         ],
+         [
+          "alt",
+          "Redaktionsschlüssel von Einundzwanzig Magazin: Einreichungen an diese Publikation werden für diesen Schlüssel verschlüsselt."
+         ]
+        ]
+       }
+      }
+     ],
+     "owner_key_events": [
+      {
+       "content": "{\"epoch\":2,\"name\":\"Einundzwanzig Magazin\",\"owner\":\"bd404b770c1347804e52ba2c5c35dbf2653f34fe570044f527044bf70b3341db\",\"pubkey\":\"1d981d429c4040228d1c5a22f27f21161906f1037e62481fff5d7c7fd1be025d\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"rules\":{\"by_link\":true,\"checklist\":[{\"id\":\"summary\",\"label\":\"Zusammenfassung\",\"level\":\"recommended\"}],\"kinds\":[\"article\",\"audio\"],\"license_required\":{\"article\":false,\"audio\":true},\"max_envelope_bytes\":4194304,\"max_open_per_writer\":3,\"open\":true,\"publish_by\":{\"article\":\"writer\",\"audio\":\"publication\"},\"rights_required\":true},\"server\":\"https://standup.example\",\"v\":1}",
+       "created_at": 1762669200,
+       "id": "9cd7be2d003dc380912efc862e5127a748252e6931cd0d55ef363355af5e88ca",
+       "kind": 30078,
+       "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+       "sig": "6c4bbe9c48292c584b4ecd6772de4cd20bd9b7099389d537989e771cfdae83cd678254878a8d33848823d5cbb563488f832c42e567206b273574630989a0f19c",
+       "tags": [
+        [
+         "d",
+         "standup:redaktion-key:einundzwanzig-magazin"
+        ],
+        [
+         "a",
+         "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin"
+        ],
+        [
+         "alt",
+         "Redaktionsschlüssel von Einundzwanzig Magazin: Einreichungen an diese Publikation werden für diesen Schlüssel verschlüsselt."
+        ]
+       ]
+      }
+     ],
+     "pubkey": "bd404b770c1347804e52ba2c5c35dbf2653f34fe570044f527044bf70b3341db"
+    },
+    "member": true,
+    "name": "an_earlier_owner_decided_before_being_invited_as_curator"
+   },
+   {
+    "at": 1762674200,
+    "decides": false,
+    "epoch": 2,
+    "former": {
+     "grants": [
+      {
+       "body": "{\"history\":{\"ct\":\"ArwFlTuj+Hd8U94frdgfgwhtDn3G8DM/vHNA7YYiSmdwTR6l9lts+OxvxG0I0QxAF8kmU3zNZfQAjVwGC7XXUvHM5OmG+6ZNNw6F6Kbi59NvCN8UJuEAwYk16pj05U5k156OIjYwGZDx0MR00sLkzZQjzXaTIuf5xpcpf+4Ix7fI3kb8jNAP57GwJ91J+5BEfMafbXoM+wAeyyl2QO92F2vAYvXo0ahDmBoJM/hNev3s7DZG70w23EF4RhvSuf7HyTxBJaTZoYQgkP8x7aFQjRdjYhUK1n1J+Z1hdAtV0eq5ue5akjOT7UvnE6d51adwAz+BQbOXRqrWTohG/ui5e4OlHhrmaCSjt/x95FsRtM9OXa+e8LXMH/sQXNxtXxM67lql0si46lOmRrCYymN7u2Dotqxe96L+h8TPKDvs3VTK0rAMCjApaffMgKik9X/y/vH88fZ8Hg7QQcuFx4yeafXzn5QTN7GPjUyQmqLvpH3tKxBdl0SlvFwoUDJY/ZtdbGxft85zM8Pp0hxP3qgH94j83UJ2kJ8e6ig/zMpJHVsMGRVQ/oir1WKvKXUZIzvOJW+VEYmnJkHfqvxbJYGBE6CBDQ==\",\"eph\":\"19df1df76bb23159c162e4b001d006c4a8af04279c44f1bb4ca8a3460e1a735c\"},\"pubkey\":\"bd404b770c1347804e52ba2c5c35dbf2653f34fe570044f527044bf70b3341db\",\"role\":\"curator\",\"sees\":\"all\",\"wraps\":[{\"epoch\":3,\"wrap\":{\"ct\":\"Ai+ZZh1P8Q5oOH7pLQ225bF6XWDBs0ZE5e3sthEvf0P/TDjj2AxFfBJLr51FJiOXhkmuxFXe/Ro8fDlvqOXJ/DTAtb/wA3BnGGTLgnxKOu2oDkFvNIg122+/TMyW7wFwUMwnIMAEi8W1QfFZWXhVvjlXPpHhsEES26c9wBHiWXTU7MQ3YIX8Zh3IiVWsNTdGFnwYRvVatgnuzt25DKzdn80ajC6pNWnLl5h/JJG75mZc8dpLCX2mm4jENqWxlqRQHqfuKnCeLrjTcRKQ5924yzR784KTSX59UH0XW15Z9pNozBTW2/yNrQCrBtsYpW3/4FkSaNqAekrOOIs5Bes/UP1u9I9Pq2Nnfn/DBdnB2yxWeihC/8HjdjkHp5yNF1S8Y/gk\",\"eph\":\"0b02519019978db41fa8146c56c5b680cd60b379664d5e9bbf6f4da7495a357b\"}}]}",
+       "event": {
+        "content": "",
+        "created_at": 1762672700,
+        "id": "86a7b11e5c913c724b51f1db6a176e7744baa8452f633509ba2f3d7bfb184093",
+        "kind": 27235,
+        "pubkey": "27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e",
+        "sig": "6c378fe215c27561dd8c73c86752c7bd217523ea6f1b3150707d2c7d05127885c4583c56cb028bfdf77f9a3a2493f1a2dbab5fcb3d2c39ea69229794e56c9b78",
+        "tags": [
+         [
+          "u",
+          "https://standup.example/api/sites/by/3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285/ZWludW5kendhbnppZy1tYWdhemlu/members"
+         ],
+         [
+          "method",
+          "POST"
+         ],
+         [
+          "payload",
+          "dd4cdc7e89af61def763f33c7cb1ab53250817a6b8023a3363cb5f96f31a5603"
+         ]
+        ]
+       },
+       "key_event": {
+        "content": "{\"epoch\":3,\"name\":\"Einundzwanzig Magazin\",\"owner\":\"27eefa0b66ba6f8d658b90e7592bf6c32df7e26339c00f277aa82f911f5dfa9e\",\"pubkey\":\"b0347eb493f204e3f88c007370039b0eb33215f4a635d00fc902057b41fc8aa7\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"rules\":{\"by_link\":true,\"checklist\":[{\"id\":\"summary\",\"label\":\"Zusammenfassung\",\"level\":\"recommended\"}],\"kinds\":[\"article\",\"audio\"],\"license_required\":{\"article\":false,\"audio\":true},\"max_envelope_bytes\":4194304,\"max_open_per_writer\":3,\"open\":true,\"publish_by\":{\"article\":\"writer\",\"audio\":\"publication\"},\"rights_required\":true},\"server\":\"https://standup.example\",\"v\":1}",
+        "created_at": 1762675100,
+        "id": "efdf5f21f819d64872a642f0a3851d973d9728ab6ab621463068f7c2911280de",
+        "kind": 30078,
+        "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+        "sig": "827a2e0997a9fba852ce71c12f4662de289ef315d185a40e22a1e401380e0e0fa6a66ed59e438333ce197e628a10910b5a809403ed0a4fcf994d6aea23aa18e6",
+        "tags": [
+         [
+          "d",
+          "standup:redaktion-key:einundzwanzig-magazin"
+         ],
+         [
+          "a",
+          "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin"
+         ],
+         [
+          "alt",
+          "Redaktionsschlüssel von Einundzwanzig Magazin: Einreichungen an diese Publikation werden für diesen Schlüssel verschlüsselt."
+         ]
+        ]
+       }
+      }
+     ],
+     "owner_key_events": [
+      {
+       "content": "{\"epoch\":2,\"name\":\"Einundzwanzig Magazin\",\"owner\":\"bd404b770c1347804e52ba2c5c35dbf2653f34fe570044f527044bf70b3341db\",\"pubkey\":\"1d981d429c4040228d1c5a22f27f21161906f1037e62481fff5d7c7fd1be025d\",\"publication\":\"30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin\",\"rules\":{\"by_link\":true,\"checklist\":[{\"id\":\"summary\",\"label\":\"Zusammenfassung\",\"level\":\"recommended\"}],\"kinds\":[\"article\",\"audio\"],\"license_required\":{\"article\":false,\"audio\":true},\"max_envelope_bytes\":4194304,\"max_open_per_writer\":3,\"open\":true,\"publish_by\":{\"article\":\"writer\",\"audio\":\"publication\"},\"rights_required\":true},\"server\":\"https://standup.example\",\"v\":1}",
+       "created_at": 1762669200,
+       "id": "9cd7be2d003dc380912efc862e5127a748252e6931cd0d55ef363355af5e88ca",
+       "kind": 30078,
+       "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+       "sig": "6c4bbe9c48292c584b4ecd6772de4cd20bd9b7099389d537989e771cfdae83cd678254878a8d33848823d5cbb563488f832c42e567206b273574630989a0f19c",
+       "tags": [
+        [
+         "d",
+         "standup:redaktion-key:einundzwanzig-magazin"
+        ],
+        [
+         "a",
+         "30004:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:einundzwanzig-magazin"
+        ],
+        [
+         "alt",
+         "Redaktionsschlüssel von Einundzwanzig Magazin: Einreichungen an diese Publikation werden für diesen Schlüssel verschlüsselt."
+        ]
+       ]
+      }
+     ],
+     "pubkey": "bd404b770c1347804e52ba2c5c35dbf2653f34fe570044f527044bf70b3341db"
+    },
+    "member": true,
+    "name": "an_earlier_owner_invited_as_curator_decides_nothing_after"
    }
   ],
   "server": "https://standup.example",
@@ -1584,7 +1756,7 @@
      }
     }
    ],
-   "owner_key_event": null,
+   "owner_key_events": [],
    "pubkey": "2ae79898165d385c323a89552f1c056bef9ba803008bc56f625eaaba8327dbdc"
   }
  },
@@ -6522,9 +6694,86 @@
  "writer_release": {
   "address": "30023:3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285:vom-block-zum-buch",
   "may": {
+   "a_relay_that_did_not_answer_is_left_out": {
+    "address_taken": false,
+    "held": null,
+    "relays": {
+     "wss://relay-a.example": {
+      "complete": true,
+      "events": []
+     },
+     "wss://relay-b.example": {
+      "complete": false,
+      "events": []
+     }
+    },
+    "send_to": [
+     "wss://relay-a.example"
+    ],
+    "server_read": true
+   },
+   "an_event_at_another_address_is_no_obstacle": {
+    "address_taken": false,
+    "held": null,
+    "relays": {
+     "wss://relay-a.example": {
+      "complete": true,
+      "events": [
+       {
+        "content": "# Vom Block zum Buch",
+        "created_at": 1762674600,
+        "id": "f67e81430eaae8b47cfaf480ffb8cf917eef7cff70fae6a79c43dcb9b8fe53e0",
+        "kind": 30023,
+        "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+        "sig": "c96a001018f92b5886473581424d6175b3a712c752da8b3dd141f3dad46a699edce8edab5b4adc495a6df3a1199c6465320f3956791a098784d11fe77ced8406",
+        "tags": [
+         [
+          "d",
+          "anderes-werk"
+         ],
+         [
+          "title",
+          "Vom Block zum Buch"
+         ],
+         [
+          "p",
+          "9195d0475fa8deef9f6be73a2626f03b05f83cb9bf1362eac01972ff654fd2f4",
+          "",
+          "author"
+         ]
+        ]
+       }
+      ]
+     },
+     "wss://relay-b.example": {
+      "complete": true,
+      "events": []
+     }
+    },
+    "send_to": [
+     "wss://relay-a.example",
+     "wss://relay-b.example"
+    ],
+    "server_read": true
+   },
    "nothing_there": {
     "address_taken": false,
-    "held": null
+    "held": null,
+    "relays": {
+     "wss://relay-a.example": {
+      "complete": true,
+      "events": []
+     },
+     "wss://relay-b.example": {
+      "complete": true,
+      "events": []
+     }
+    },
+    "send_to": [
+     "wss://relay-a.example",
+     "wss://relay-b.example"
+    ],
+    "server_read": true
    },
    "the_writers_own_version_crediting_nobody": {
     "address_taken": false,
@@ -6545,7 +6794,41 @@
        "Vom Block zum Buch"
       ]
      ]
-    }
+    },
+    "relays": {
+     "wss://relay-a.example": {
+      "complete": true,
+      "events": [
+       {
+        "content": "# Vom Block zum Buch",
+        "created_at": 1762674600,
+        "id": "c9ab47eb05e52c14580e9a10710ed62083b520d3b476352cb9de794644088673",
+        "kind": 30023,
+        "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+        "sig": "906339ae9fd2ffe27c0fa463b4ce7f208edb7760bb4ebf769dc4f22b9b1594bfc268f6336b9d6a6b0fc0181660c853061de0efc2680a409a239b9ef5cf07285f",
+        "tags": [
+         [
+          "d",
+          "vom-block-zum-buch"
+         ],
+         [
+          "title",
+          "Vom Block zum Buch"
+         ]
+        ]
+       }
+      ]
+     },
+     "wss://relay-b.example": {
+      "complete": true,
+      "events": []
+     }
+    },
+    "send_to": [
+     "wss://relay-a.example",
+     "wss://relay-b.example"
+    ],
+    "server_read": true
    },
    "the_writers_own_version_crediting_the_writer_first": {
     "address_taken": false,
@@ -6578,7 +6861,53 @@
        "author"
       ]
      ]
-    }
+    },
+    "relays": {
+     "wss://relay-a.example": {
+      "complete": true,
+      "events": []
+     },
+     "wss://relay-b.example": {
+      "complete": true,
+      "events": [
+       {
+        "content": "# Vom Block zum Buch",
+        "created_at": 1762674600,
+        "id": "c26030011dd7210ebc9aee9d0b6f8acd01b554b11aa51acdaff68005014ae252",
+        "kind": 30023,
+        "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+        "sig": "96e2153108c3db6d33c79fd144b05ded7a880bbeb541728cdd87ab93ff104e37cb84c8349a5bb7eb484a03118aca752005cb8197a95d39df7df6f40d03a5f7d0",
+        "tags": [
+         [
+          "d",
+          "vom-block-zum-buch"
+         ],
+         [
+          "title",
+          "Vom Block zum Buch"
+         ],
+         [
+          "p",
+          "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+          "",
+          "author"
+         ],
+         [
+          "p",
+          "9195d0475fa8deef9f6be73a2626f03b05f83cb9bf1362eac01972ff654fd2f4",
+          "",
+          "author"
+         ]
+        ]
+       }
+      ]
+     }
+    },
+    "send_to": [
+     "wss://relay-a.example",
+     "wss://relay-b.example"
+    ],
+    "server_read": true
    }
   },
   "must_fail": {
@@ -6607,7 +6936,18 @@
        "author"
       ]
      ]
-    }
+    },
+    "relays": {
+     "wss://relay-a.example": {
+      "complete": true,
+      "events": []
+     },
+     "wss://relay-b.example": {
+      "complete": true,
+      "events": []
+     }
+    },
+    "server_read": true
    },
    "another_submissions_work": {
     "address_taken": true,
@@ -6617,7 +6957,7 @@
      "id": "c9ab47eb05e52c14580e9a10710ed62083b520d3b476352cb9de794644088673",
      "kind": 30023,
      "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
-     "sig": "5a1b1e1393250dbeeed684638843507f3c2068e4bd8c8a821ae254afff6522523d8171587ce81797f1cbe18d2ac853f7dc01b73631d9b0a87e540bf2f9d0c890",
+     "sig": "906339ae9fd2ffe27c0fa463b4ce7f208edb7760bb4ebf769dc4f22b9b1594bfc268f6336b9d6a6b0fc0181660c853061de0efc2680a409a239b9ef5cf07285f",
      "tags": [
       [
        "d",
@@ -6628,11 +6968,128 @@
        "Vom Block zum Buch"
       ]
      ]
-    }
+    },
+    "relays": {
+     "wss://relay-a.example": {
+      "complete": true,
+      "events": []
+     },
+     "wss://relay-b.example": {
+      "complete": true,
+      "events": []
+     }
+    },
+    "server_read": true
    },
    "another_submissions_work_the_index_no_longer_holds": {
     "address_taken": true,
-    "held": null
+    "held": null,
+    "relays": {
+     "wss://relay-a.example": {
+      "complete": true,
+      "events": []
+     },
+     "wss://relay-b.example": {
+      "complete": true,
+      "events": []
+     }
+    },
+    "server_read": true
+   },
+   "held_on_a_relay_that_did_not_finish": {
+    "address_taken": false,
+    "held": null,
+    "relays": {
+     "wss://relay-a.example": {
+      "complete": true,
+      "events": []
+     },
+     "wss://relay-b.example": {
+      "complete": false,
+      "events": [
+       {
+        "content": "# Vom Block zum Buch",
+        "created_at": 1762674600,
+        "id": "a83b1f7eba96ca3f31cc35ceaee5a12ccf12e6d5d504f8f0c818c9bf2ea37e77",
+        "kind": 30023,
+        "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+        "sig": "6bcf349000cd8b51b46680ab885f09b44d78a64d3ffda91dded695c8fffcadcd19fba923dc4aea0969789bf917d0c1837b70fc1b4231309763d772d0791f7f72",
+        "tags": [
+         [
+          "d",
+          "vom-block-zum-buch"
+         ],
+         [
+          "title",
+          "Vom Block zum Buch"
+         ],
+         [
+          "p",
+          "9195d0475fa8deef9f6be73a2626f03b05f83cb9bf1362eac01972ff654fd2f4",
+          "",
+          "author"
+         ]
+        ]
+       }
+      ]
+     }
+    },
+    "server_read": true
+   },
+   "held_only_on_the_relays": {
+    "address_taken": false,
+    "held": null,
+    "relays": {
+     "wss://relay-a.example": {
+      "complete": true,
+      "events": [
+       {
+        "content": "# Vom Block zum Buch",
+        "created_at": 1762674600,
+        "id": "a83b1f7eba96ca3f31cc35ceaee5a12ccf12e6d5d504f8f0c818c9bf2ea37e77",
+        "kind": 30023,
+        "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+        "sig": "6bcf349000cd8b51b46680ab885f09b44d78a64d3ffda91dded695c8fffcadcd19fba923dc4aea0969789bf917d0c1837b70fc1b4231309763d772d0791f7f72",
+        "tags": [
+         [
+          "d",
+          "vom-block-zum-buch"
+         ],
+         [
+          "title",
+          "Vom Block zum Buch"
+         ],
+         [
+          "p",
+          "9195d0475fa8deef9f6be73a2626f03b05f83cb9bf1362eac01972ff654fd2f4",
+          "",
+          "author"
+         ]
+        ]
+       }
+      ]
+     },
+     "wss://relay-b.example": {
+      "complete": true,
+      "events": []
+     }
+    },
+    "server_read": true
+   },
+   "no_relay_answered": {
+    "address_taken": false,
+    "held": null,
+    "relays": {
+     "wss://relay-a.example": {
+      "complete": false,
+      "events": []
+     },
+     "wss://relay-b.example": {
+      "complete": false,
+      "events": []
+     }
+    },
+    "server_read": true
    },
    "the_writer_credited_only_after_another": {
     "address_taken": false,
@@ -6665,7 +7122,33 @@
        "author"
       ]
      ]
-    }
+    },
+    "relays": {
+     "wss://relay-a.example": {
+      "complete": true,
+      "events": []
+     },
+     "wss://relay-b.example": {
+      "complete": true,
+      "events": []
+     }
+    },
+    "server_read": true
+   },
+   "this_servers_read_failed": {
+    "address_taken": false,
+    "held": null,
+    "relays": {
+     "wss://relay-a.example": {
+      "complete": true,
+      "events": []
+     },
+     "wss://relay-b.example": {
+      "complete": true,
+      "events": []
+     }
+    },
+    "server_read": false
    }
   },
   "writer": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285"

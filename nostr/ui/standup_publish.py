@@ -22,11 +22,13 @@ that accept names, which must be the verified revision opened here:
      failure before a relay took the article.
   3. The article is built with the public addresses (credits, the
      writer's own split, carried tags as the web app does), measured
-     again, signed, and kept bound to the revision. Right before it is
-     signed and again before it goes out, the submission is read: when
-     its revision changed, or another person's article stands at its
-     address (12.4, Before the writer's work goes out), nothing goes out
-     and the pictures come down.
+     again, signed, and kept bound to the revision. Before a picture
+     goes up in plain and right before it is signed, its address is read
+     on this server and on every relay it goes to, and the submission
+     again before it goes out (12.4, Before the writer's work goes out;
+     ``release``): when its revision changed, or another person's
+     article stands at its address, nothing goes out and the pictures
+     come down; it goes only to the relays that answered.
   4. Only once a relay took it is it reported (``/published``). No
      relay took it: the same signed article goes again with Erneut. Not
      reported: Erneut reports it again (it is public by then).
@@ -59,7 +61,7 @@ from ..standup.publishing import Accepted
 from .standup_account import live
 from .standup_publish_job import HeldPublish, SignedHere, offers_here, publish_job, read_relays
 from .standup_publish_words import (
-    ADDRESS_TAKEN, BUSY, BUSY_DETAIL, BUSY_SIGNING, DONE, LINK_RELAYS, NO_RELAY_READ,
+    ADDRESS_TAKEN, BUSY, BUSY_DETAIL, BUSY_SIGNING, DONE, LINK_RELAYS, NOT_CHECKED,
     NOT_PUBLISHABLE, NOT_PUBLISHED, NOT_REPORTED, NOT_THE_SAME, PICTURE_NOT_FOUND,
     PICTURE_NOT_UP, SOMEONE_ELSES, Stage,
 )
@@ -78,7 +80,8 @@ class PublishPorts:
     - ``job(profile, unsigned, here, only)``: a :class:`HeldPublish`
       (``here``: signed with the key kept on this computer, Q1) that goes
       ``only`` to those relays.
-    - ``relays_hold(unsigned, on_done)``: :func:`read_relays` for it.
+    - ``relays_hold(unsigned, on_done)``: :func:`read_relays` for it
+      (``{relay: (complete, events)}``).
     - ``key_here()``: whether the account's key is kept on this computer.
     - ``serve(view)``: the server's newer View, for the list and the detail.
     - ``reread(on_detail, on_failure)``: the submission read now
@@ -235,7 +238,10 @@ class AcceptedPublish(QObject):
             return
         if not here and self._too_long(before):
             return
-        self._next_picture()
+        if self._entries:               # nothing in plain before the address is read
+            self._guard(None, before, lambda _relays: self._next_picture())
+        else:
+            self._next_picture()
 
     def retry(self) -> None:
         """Erneut: the same signed article to the relays again, or the
@@ -246,7 +252,7 @@ class AcceptedPublish(QObject):
                 self._say(Stage.NOT_STORED, _(NOT_PUBLISHED), self.words)
         elif self.stage is Stage.NOT_REPORTED:
             self._report()
-        elif self.stage in (Stage.FAILED, Stage.READY):
+        elif self.stage in (Stage.FAILED, Stage.NOT_CHECKED, Stage.READY):
             self.start()
 
     def stop(self) -> None:
@@ -398,23 +404,10 @@ class AcceptedPublish(QObject):
             self._take_down()
             return
         self._say(Stage.WORKING, _(BUSY), _(BUSY_SIGNING))
-        self._check(None, lambda: self._ports.relays_hold(
-            unsigned, lambda clear, other: self._relays_read(unsigned, clear, other)))
+        self._guard(None, unsigned, lambda relays: self._sign_now(unsigned, relays))
 
-    def _relays_read(self, unsigned: dict, clear, someone_elses: bool) -> None:
-        """The address read on every relay it goes to (RG-B5-d): nothing
-        anywhere over another person's article; only to those that answered."""
-        if self._stopped or self._job is not None or self.stage is not Stage.WORKING:
-            return
-        if someone_elses:
-            self._fail(_(SOMEONE_ELSES), Stage.SOMEONE_ELSES)
-        elif not clear:
-            self._fail(_(NO_RELAY_READ))
-        else:
-            self._sign_now(unsigned, clear)
-
-    def _sign_now(self, unsigned: dict, clear) -> None:
-        job = self._job = self._ports.job(self._profile, unsigned, self._here, list(clear))
+    def _sign_now(self, unsigned: dict, relays) -> None:
+        job = self._job = self._ports.job(self._profile, unsigned, self._here, list(relays))
         job.signed.connect(lambda _id: self._signed(job))
         job.completed.connect(lambda results: self._sent(job, results))
         job.failed.connect(lambda _reason: self._not_signed(job))
@@ -434,16 +427,38 @@ class AcceptedPublish(QObject):
         if job is not self._job or self._stopped:
             return
         self.signed_article = job.signed_event           # kept with its revision (12.4)
-        self._check(job, job.release)
+        self._guard(job, None, lambda _relays: job.release())
 
-    def _check(self, job, then: Callable[[], None]) -> None:
-        """Right before signing (``job`` None) and before the signed ``job``
-        goes out: the submission is still the one accepted here, and no other
-        person's article stands at its address (12.4); else nothing goes out."""
+    def _guard(self, job, unsigned: Optional[dict], then: Callable[[tuple], None]) -> None:
+        """The address read before anything goes out (12.4): the
+        submission (still the one accepted here; ``address_taken``), what
+        this server holds there and, for ``unsigned`` (before a picture
+        goes up and right before signing), every relay it goes to.
+        ``then(relays)`` with the relays it may go to; else nothing goes."""
         def live_now() -> bool:
-            return not self._stopped and job is self._job
+            return not self._stopped and job is self._job and self.stage is Stage.WORKING
 
-        def read(detail) -> None:
+        def decide(taken: bool, read: bool, held: Optional[str], relays) -> None:
+            if not live_now():
+                return
+            found = publishing.release(writer=self.writer, address=self.address,
+                                       address_taken=taken, server_read=read, held=held,
+                                       relays=relays)
+            if found.someone_elses:
+                self._fail(_(SOMEONE_ELSES), Stage.SOMEONE_ELSES)
+            elif not read or (unsigned is not None and not found.send_to):
+                self._fail(_(NOT_CHECKED), Stage.NOT_CHECKED)
+            else:
+                then(found.send_to)
+
+        def on_relays(taken: bool, read: bool, held: Optional[str]) -> None:
+            if unsigned is None or not live_now():
+                decide(taken, read, held, {})
+            else:
+                self._ports.relays_hold(unsigned, lambda relays: decide(taken, read, held,
+                                                                        relays))
+
+        def got(detail) -> None:
             if not live_now():
                 return
             view = detail.submission
@@ -451,25 +466,12 @@ class AcceptedPublish(QObject):
             if view.revision_hash != self.revision_hash or view.state != self.expected_state \
                     or view.revision != self._accepted.revision:
                 self._fail(_(NOT_THE_SAME))
-            elif detail.address_taken:
-                self._fail(_(SOMEONE_ELSES), Stage.SOMEONE_ELSES)
-            else:
-                self._ports.held_at(self.address, held, unread)
-
-        def held(credited: Optional[str]) -> None:
-            if not live_now():
                 return
-            if publishing.writer_may_release(credited, address_taken=False, writer=self.writer):
-                then()
-            else:
-                self._fail(_(SOMEONE_ELSES), Stage.SOMEONE_ELSES)
+            self._ports.held_at(self.address,
+                                lambda held: on_relays(detail.address_taken, True, held),
+                                lambda _error: on_relays(detail.address_taken, False, None))
 
-        def unread(error) -> None:
-            if live_now():
-                cause = cause_words(getattr(error, "code", ""))
-                self._fail(_(cause))
-
-        self._ports.reread(read, unread)
+        self._ports.reread(got, lambda _error: live_now() and on_relays(False, False, None))
 
     def _sent(self, job, results) -> None:
         if job is not self._job or self._stopped:
@@ -590,7 +592,7 @@ class CorrectionPublish(AcceptedPublish):
 
 
 __all__ = ["ADDRESS_TAKEN", "AcceptedPublish", "BUSY", "BUSY_DETAIL", "BUSY_SIGNING",
-           "CorrectionPublish", "DONE", "HeldPublish", "LINK_RELAYS", "NO_RELAY_READ",
+           "CorrectionPublish", "DONE", "HeldPublish", "LINK_RELAYS", "NOT_CHECKED",
            "NOT_PUBLISHABLE",
            "NOT_PUBLISHED", "NOT_REPORTED", "NOT_THE_SAME", "PICTURE_NOT_FOUND",
            "PICTURE_NOT_UP", "PublishPorts", "SOMEONE_ELSES", "SignedHere", "Stage",
