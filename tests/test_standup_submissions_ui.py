@@ -518,6 +518,20 @@ def test_the_action_turns_into_handing_in_once_the_text_in_the_editor_differs(wi
     assert not window.pill.isHidden()
 
 
+def test_a_text_changed_during_review_is_said_with_a_plain_button(window):
+    prepared, entries = seeded(window, text="Ein Jahr")
+    tab = window.tab("text", "# Ein Jahr\n\nText.\n\nNoch ein Absatz.")
+    window.follow()
+    detail = opened(window, entries["text"])
+    assert detail.more.text() == "You’ve changed the text since."
+    assert detail.action.text() == "Hand In New Version …"
+    assert detail.action.objectName() == "submission_offered"     # not the accent
+    tab.text = "# Ein Jahr\n\nText."
+    window.host.article_changed()
+    assert detail.more.text() == "You don’t need to do anything right now."
+    assert detail.action.objectName() == "submission_action"
+
+
 # -- lifetimes (lesson 19) ---------------------------------------------------------------
 
 def test_a_view_closed_while_answers_are_pending_raises_nothing(window):

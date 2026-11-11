@@ -193,6 +193,9 @@ NOT_SIGNED = N_("This decision carries no signature of the editorial team.")
 # Text that differs from the version handed in (the prototype's words).
 EDITED = N_("Your changes are in the editor.")
 EDITED_MORE = N_("Hand them in as version {number} when you’re ready.")
+# The text changed while nobody asked for changes: said, and offered
+# quietly (RG-M3-b 10).
+EDITED_SINCE = N_("You’ve changed the text since.")
 VERSION_IN_REVIEW = N_("{name} is reviewing version {number}.")
 SECTION_PLACE = N_("In the section “{section}”.")
 
@@ -486,12 +489,14 @@ def pill_word(row: Row, name_of: Callable[[str], str]) -> str:
 class Status:
     """The detail's status block (translated): one sentence, a quieter
     line, at most one action, and whether "Mehr dazu" says the decision
-    is not signed."""
+    is not signed. ``offered``: the action is there to take, not what
+    the situation asks for (a plain button, not the accent)."""
 
     sentence: str
     more: str = ""
     action: Optional[Action] = None
     unsigned: bool = False
+    offered: bool = False
 
 
 def status_of(row: Row, *, publication: str, name_of: Callable[[str], str],
@@ -527,14 +532,17 @@ def status_of(row: Row, *, publication: str, name_of: Callable[[str], str],
         sentence = entry.unnamed_sentence
     if action in ON_A_DECISION and not rests:
         action = None
+    offered = False
     if row.open and row.situation is not Situation.PICTURES_MISSING:
         if edited:
             action = Action.HAND_IN
             if row.situation is Situation.CHANGES_REQUESTED:
                 sentence, more = EDITED, EDITED_MORE
                 fields["number"] = number + 1
+            else:
+                more, offered = EDITED_SINCE, True
     return Status(_(sentence).format(**fields), _(more).format(**fields) if more else "",
-                  action, unsigned)
+                  action, unsigned, offered)
 
 
 def rests_on(situation: Situation, decision: Optional[Decision]) -> bool:

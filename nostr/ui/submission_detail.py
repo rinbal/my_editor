@@ -454,6 +454,11 @@ class SubmissionDetail(QWidget):
             self.action.setText(_(rules.ACTION_LABELS[action]))
         self.action.setVisible(bool(detail.problem) or action is rules.Action.RELOAD
                                or action in self._handled)
+        quiet = "submission_offered" if status.offered else "submission_action"
+        if self.action.objectName() != quiet:
+            self.action.setObjectName(quiet)    # offered: a plain button, not the accent
+            self.action.style().unpolish(self.action)
+            self.action.style().polish(self.action)
         self.second.setText(_("Discard"))
         self.second.setVisible(row.situation is rules.Situation.UNSENT)
         said = " ".join(part for part in (status.sentence, status.more) if part)
