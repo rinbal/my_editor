@@ -118,6 +118,9 @@ class Following(QObject):
         self._deciding: set = set()
         self._names: Dict[str, Tuple[str, Optional[str]]] = {}
         self._noticed: Dict[str, int] = {}
+        # What the lookup brought that is still being opened, by sid: its
+        # notice is decided once it is open.
+        self._telling: Dict[str, Followed] = {}
         self._tries = 0
         self._reading_views = False
         # The one sentence (untranslated) when the status could not be
@@ -150,7 +153,7 @@ class Following(QObject):
         self.talk.stop()
         self.reading.stop()
         self._served, self._nothing, self._decided = {}, set(), {}
-        self._names, self._noticed = {}, {}
+        self._names, self._noticed, self._telling = {}, {}, {}
 
     @property
     def stopped(self) -> bool:
@@ -278,20 +281,36 @@ class Following(QObject):
         upto = view.last_message_seq
         if upto <= max(seen, self._noticed.get(entry.sid, 0)):
             return
-        self._noticed[entry.sid] = upto
         room = secret_of(entry)
+        held, opening = self.reading.open_wraps(entry.sid, room, known.timeline)
+        if opening:
+            self._telling[entry.sid] = known        # decided once it is open
+            return
+        self._noticed[entry.sid] = upto
         for item in sorted(known.timeline, key=lambda i: -i.seq):
             if not seen < item.seq <= upto:
                 continue
-            news = self._news_of(item, entry, view, room)
+            news = self._news_of(item, entry, view, held)
             if news is not None:
                 self.news.emit(news)
                 return
         if not known.item.more and room is not None:
             read_state.mark(entry.sid, upto)        # written with the next write (13)
 
+    def wraps_opened(self, sid: str) -> None:
+        """What was being opened of ``sid``'s conversation is open (on
+        the worker thread): its notice, its row and its detail follow."""
+        if self._stopped:
+            return
+        known = self._telling.pop(sid, None)
+        if known is not None:
+            self._tell(known)
+        self.detail_changed.emit(sid)
+        self.changed.emit()
+
     def _news_of(self, item: views.TimelineItem, entry: SubmissionEntry,
-                 view: views.SubmissionView, room: Optional[bytes]) -> Optional[News]:
+                 view: views.SubmissionView,
+                 held: Mapping[int, Optional[conversation.Opened]]) -> Optional[News]:
         """What ``item`` is news of for the writer, or None: a result, or
         a message of someone else who is not a stranger."""
         said = dict(sid=entry.sid, d=entry.d, title=view.title,
@@ -300,24 +319,22 @@ class Following(QObject):
             if item.event.name in NEWS_EVENTS and item.event.actor != self._account.writer:
                 return News(kind=item.event.name, **said)
             return None
-        message = self._message_of(item, view, room)
+        message = self._message_of(item, view, held)
         if message is None:
             return None
         return News(kind="message", sender=message[0].sender, role=message[1], **said)
 
     def _message_of(self, item: views.TimelineItem, view: views.SubmissionView,
-                    room: Optional[bytes]
+                    held: Mapping[int, Optional[conversation.Opened]]
                     ) -> Optional[Tuple[conversation.Opened, threads.Role]]:
         """The plain message of someone else in ``item`` with its
-        sender's role, or None: not a message, one's own, one that fails
-        a check, or a stranger's."""
-        if item.wrap is None or room is None:
+        sender's role, or None: not a message, one's own, one that failed
+        a check (``held`` is what the conversation held, opened once), or
+        a stranger's."""
+        opened = held.get(item.seq) if item.wrap is not None else None
+        if opened is None:
             return None
         me = self._account.writer
-        try:
-            opened = conversation.open_item(item.wrap, room, view.submission_id, seq=item.seq)
-        except conversation.NotShown:
-            return None
         rumor = opened.rumor
         plain = rumor["kind"] == conversation.MESSAGE_KIND \
             and formats.tag_value(rumor, "edit") is None \
@@ -429,8 +446,9 @@ class Following(QObject):
         known = self._watcher.followed().get(sid)
         room = secret_of(self._account.submissions.entry(sid))
         if known is not None and room is not None:
+            held, _opening = self.reading.open_wraps(sid, room, known.timeline)
             for item in sorted(known.timeline, key=lambda i: -i.seq):
-                message = self._message_of(item, known.item.submission, room)
+                message = self._message_of(item, known.item.submission, held)
                 if message is not None:
                     opened, role = message
                     return opened.sender, role, " ".join(opened.rumor["content"].split())[:200]

@@ -42,7 +42,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Un
 from i18n import N_, _
 
 from . import conversation, formats, views
-from .following import DECISIONS, action_verified
+from .following import DECISIONS, SignedChecks, action_verified
 
 # The steps the conversation shows as captions; the rest (who was named,
 # handed over, reminded) are only in the history.
@@ -144,14 +144,15 @@ def _local_day(at: int) -> datetime.date:
 
 
 def _verified(event: views.TimelineEvent, sid: str, *, writer: str,
-              participants: Iterable[str], deciders: Optional[Iterable[str]]) -> Optional[bool]:
+              participants: Iterable[str], deciders: Optional[Iterable[str]],
+              checks: Optional[SignedChecks]) -> Optional[bool]:
     if event.signed is None:
         return None
     if event.name in _BY_PARTICIPANT:
-        return action_verified(event, sid, (writer, *participants))
+        return action_verified(event, sid, (writer, *participants), checks)
     if event.name == "published" and event.actor == writer:
-        return action_verified(event, sid, (writer,))
-    return action_verified(event, sid, deciders)
+        return action_verified(event, sid, (writer,), checks)
+    return action_verified(event, sid, deciders, checks)
 
 
 def _caption(item: views.TimelineItem, sid: str, **who) -> Caption:
@@ -162,11 +163,12 @@ def _caption(item: views.TimelineItem, sid: str, **who) -> Caption:
 
 
 def history(items: Sequence[views.TimelineItem], *, sid: str, writer: str,
-            participants: Iterable[str] = (),
-            deciders: Optional[Iterable[str]] = None) -> List[Caption]:
+            participants: Iterable[str] = (), deciders: Optional[Iterable[str]] = None,
+            checks: Optional[SignedChecks] = None) -> List[Caption]:
     """Every event of the conversation channel as a caption, oldest
-    first (Info › Verlauf)."""
-    who = dict(writer=writer, participants=tuple(participants), deciders=deciders)
+    first (Info › Verlauf). ``checks`` keeps the signed actions checked."""
+    who = dict(writer=writer, participants=tuple(participants), deciders=deciders,
+               checks=checks)
     return [_caption(item, sid, **who) for item in sorted(items, key=lambda i: i.seq)
             if item.event is not None and item.channel == "conversation"]
 
@@ -175,14 +177,17 @@ def build_thread(items: Sequence[views.TimelineItem],
                  opened: Sequence[conversation.Opened], *, sid: str, me: str, writer: str,
                  participants: Iterable[str] = (), deciders: Optional[Iterable[str]] = None,
                  members: Optional[Iterable[str]] = None,
+                 checks: Optional[SignedChecks] = None,
                  day_of: Callable[[int], object] = _local_day) -> List[ThreadItem]:
     """What the conversation shows (see the module docstring).
     ``opened`` are the messages of ``items`` that passed the checks of
     9.2; ``deciders`` the members who may decide (None while the member
     list is not known: no editor is named then, and structured notes of
     the Redaktion are not read); ``members`` every active member of the
-    Redaktion (None likewise). ``me`` always takes part."""
-    who = dict(writer=writer, participants=tuple(participants), deciders=deciders)
+    Redaktion (None likewise); ``checks`` keeps the signed actions
+    checked. ``me`` always takes part."""
+    who = dict(writer=writer, participants=tuple(participants), deciders=deciders,
+               checks=checks)
     senders = dict(writer=writer, participants=(*who["participants"], me),
                    members=None if members is None else frozenset(members))
     opened = from_known_senders(opened, **senders)

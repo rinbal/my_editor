@@ -31,6 +31,7 @@ stranger wrote is shown as plain text.
 from __future__ import annotations
 
 import datetime
+from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
 from PySide6.QtCore import QDate, QLocale, QPoint, Qt, Signal
@@ -190,8 +191,10 @@ class _Bubble(QFrame):
             edited.setStyleSheet(f"color: {r.muted};")
             column.addWidget(edited, 0, Qt.AlignmentFlag.AlignRight if message.mine
                              else Qt.AlignmentFlag.AlignLeft)
+        self.footer = None
         if waiting is not None and waiting.state in (Sending.FAILED, Sending.UNCONFIRMED):
-            column.addWidget(view.footer(waiting, mine=message.mine))
+            self.footer = view.footer(waiting, mine=message.mine)
+            column.addWidget(self.footer)
 
     def _chip(self, shown: Dict[str, str], dimmed: bool, r) -> QToolButton:
         view = self._view
@@ -235,11 +238,25 @@ class _Bubble(QFrame):
         menu.popup(where)
 
 
+@dataclass
+class _Shown:
+    """One item of the conversation as drawn: what it shows (``key``),
+    its widgets, and what it is."""
+
+    key: tuple
+    widgets: List[QWidget]
+    bubble: Optional[_Bubble] = None
+    caption: str = ""
+    card: Optional[QFrame] = None
+
+
 class ThreadView(QWidget):
     """See the module docstring. ``name_of(pubkey)`` is a person's name
     (``""`` when not known), ``avatar_of(pubkey)`` their picture or None;
     ``publication_face(size)`` is the logo of the publication whose
-    conversation is shown (the detail sets it).
+    conversation is shown (the detail sets it). Drawn again, it keeps
+    every item up to the first that shows something else (RG-M3-a 4):
+    a new message rebuilds nothing before it.
 
     Signals:
       reacted(str, str, str)   the message's id, its author, the emoji
@@ -262,43 +279,93 @@ class ThreadView(QWidget):
         self.can_react = False
         self.publication_face: Callable[[int], QPixmap] = lambda size: QPixmap()
         self.menu: Optional[QMenu] = None
-        self.bubbles: List[_Bubble] = []
-        self.captions: List[str] = []
-        self.cards: List[QFrame] = []
-        self.footers: List[QWidget] = []
+        self._shown: List[_Shown] = []
+        self._tail: List[QWidget] = []          # messages without a seq, and their lines
+        self._tail_footers: List[QWidget] = []
+        self._context: tuple = ()
         self._column = QVBoxLayout(self)
         self._column.setContentsMargins(0, 0, 0, 0)
         self._column.setSpacing(2)
 
+    @property
+    def bubbles(self) -> List[_Bubble]:
+        return [shown.bubble for shown in self._shown if shown.bubble is not None]
+
+    @property
+    def captions(self) -> List[str]:
+        return [shown.caption for shown in self._shown if shown.caption]
+
+    @property
+    def cards(self) -> List[QFrame]:
+        return [shown.card for shown in self._shown if shown.card is not None]
+
+    @property
+    def footers(self) -> List[QWidget]:
+        """The lines under what did not go, with their one action."""
+        return [b.footer for b in self.bubbles if b.footer is not None] + self._tail_footers
+
     def show_thread(self, detail, me: str) -> None:
-        """Draw ``detail`` (a ``standup_following.Detail``) again; the
-        focus stays on the same bubble's button."""
+        """Draw ``detail`` (a ``standup_following.Detail``) again, from
+        the first item that shows something else; the focus stays on the
+        same bubble's button."""
         focused = self.focusWidget()
         keep = focused.property("bubble") if focused is not None else None
-        while self._column.count():
-            discard(self._column.takeAt(0).widget())
-        self.me, self.can_react = me, detail.can_write and detail.row.view is not None \
-            and detail.row.view.is_open
-        self.bubbles, self.captions, self.cards, self.footers = [], [], [], []
+        can_react = detail.can_write and detail.row.view is not None and detail.row.view.is_open
+        context = (me, can_react, self.is_dark)
+        self.me = me
         waiting = {out.target: out for out in detail.outgoing if out.target}
+        keys = [self._key(item, detail, waiting) for item in detail.thread]
+        same = 0
+        if context == self._context:
+            while same < min(len(keys), len(self._shown)) and self._shown[same].key == keys[same]:
+                same += 1
+        for widget in [w for shown in self._shown[same:] for w in shown.widgets] + self._tail:
+            self._column.removeWidget(widget)
+            discard(widget)
+        while self._column.count() and self._column.itemAt(
+                self._column.count() - 1).spacerItem() is not None:
+            self._column.takeAt(self._column.count() - 1)     # the stretch at the end
+        self._shown, self._tail, self._tail_footers = self._shown[:same], [], []
+        self.can_react, self._context = can_react, context
         r = appearance.roles(self.is_dark)
-        for item in detail.thread:
+        for item, key in zip(detail.thread[same:], keys[same:]):
+            start = self._column.count()
+            shown = _Shown(key, [])
             if isinstance(item, threads.Day):
                 self._quiet(day_words(item.at), r, strong=True)
             elif isinstance(item, threads.Caption):
-                self._caption(item, r)
+                shown.caption = self._caption(item, r)
             elif isinstance(item, threads.VersionCard):
-                self._card(item, detail, r)
+                shown.card = self._card(item, detail, r)
             else:
-                bubble = _Bubble(self, item, waiting.get(item.bubble.id))
-                self.bubbles.append(bubble)
-                self._column.addWidget(bubble)
+                shown.bubble = _Bubble(self, item, waiting.get(item.bubble.id))
+                self._column.addWidget(shown.bubble)
                 if keep == item.bubble.id:
-                    bubble.react_button.setFocus()
+                    shown.bubble.react_button.setFocus()
+            shown.widgets = [self._column.itemAt(i).widget()
+                             for i in range(start, self._column.count())]
+            self._shown.append(shown)
+        start = self._column.count()
         for out in detail.outgoing:
             if out.is_message:
                 self._outgoing(out, r)
+        self._tail = [self._column.itemAt(i).widget() for i in range(start, self._column.count())]
         self._column.addStretch(1)
+
+    def _key(self, item: threads.ThreadItem, detail, waiting: Dict[str, Outgoing]) -> tuple:
+        """What ``item`` shows, in words: drawn again only when it differs."""
+        if isinstance(item, threads.Day):
+            return ("day", day_words(item.at))
+        if isinstance(item, threads.Caption):
+            return ("caption", item, threads.caption_text(item, me=self.me,
+                                                          name_of=self.name_of))
+        if isinstance(item, threads.VersionCard):
+            version = detail.versions.get(item.revision)
+            return ("card", item, threads.card_title(item, me=self.me, name_of=self.name_of),
+                    version.change_summary if version is not None else "")
+        out = waiting.get(item.bubble.id)
+        return ("message", item, self.name_of(item.bubble.author),
+                None if out is None else (out.key, out.state, out.text, out.sentence))
 
     def _quiet(self, text: str, r, *, strong: bool = False) -> QLabel:
         label = QLabel(text)
@@ -311,16 +378,16 @@ class ThreadView(QWidget):
         self._column.addWidget(label)
         return label
 
-    def _caption(self, caption: threads.Caption, r) -> None:
+    def _caption(self, caption: threads.Caption, r) -> str:
         text = threads.caption_text(caption, me=self.me, name_of=self.name_of)
-        self.captions.append(text)
         label = self._quiet(text, r)
         if threads.unsigned(caption):
             more = more_about_button(_(rules.NOT_SIGNED), r)
             self._column.addWidget(more, 0, Qt.AlignmentFlag.AlignHCenter)
             label.setAccessibleDescription(_(rules.NOT_SIGNED))
+        return text
 
-    def _card(self, card: threads.VersionCard, detail, r) -> None:
+    def _card(self, card: threads.VersionCard, detail, r) -> QFrame:
         frame = QFrame()
         frame.setObjectName("version_card")
         frame.setStyleSheet(f"#version_card {{ background: {r.field}; border: 1px solid "
@@ -354,8 +421,8 @@ class ThreadView(QWidget):
         buttons.addStretch(1)
         column.addLayout(buttons)
         frame.setAccessibleName(title.text())
-        self.cards.append(frame)
         self._column.addWidget(frame)
+        return frame
 
     def footer(self, out: Outgoing, *, mine: bool = True) -> QWidget:
         """The line under what did not go, with its one action."""
@@ -381,7 +448,6 @@ class ThreadView(QWidget):
             column.addWidget(button, 0, side)
             holder.setProperty("action", action)
         holder.setProperty("words", words)
-        self.footers.append(holder)
         return holder
 
     def _outgoing(self, out: Outgoing, r) -> None:
@@ -399,7 +465,9 @@ class ThreadView(QWidget):
         holder.setLayout(row)
         row.setContentsMargins(0, 8, 0, 0)
         self._column.addWidget(holder)
-        self._column.addWidget(self.footer(out))
+        footer = self.footer(out)
+        self._tail_footers.append(footer)
+        self._column.addWidget(footer)
 
 
 def discard(widget: Optional[QWidget]) -> None:

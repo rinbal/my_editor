@@ -98,6 +98,7 @@ class SubmissionDetail(QWidget):
         self._handled: frozenset = frozenset()
         self._edited: Callable[[rules.Row], bool] = lambda _row: False
         self._said = ""
+        self._shown_row: tuple = ()             # the row and the publication's name shown
         self._build()
         self.apply_theme(is_dark)
 
@@ -292,7 +293,7 @@ class SubmissionDetail(QWidget):
         self.clear()
         self._following, self._sid = following, sid
         following.detail_changed.connect(self._on_changed)
-        following.changed.connect(self.refresh)
+        following.changed.connect(self._on_rows_changed)
         following.open(sid)
         self.refresh()
         self.back.setFocus()
@@ -304,15 +305,24 @@ class SubmissionDetail(QWidget):
         following, self._following = self._following, None
         if following is not None:
             following.detail_changed.disconnect(self._on_changed)
-            following.changed.disconnect(self.refresh)
+            following.changed.disconnect(self._on_rows_changed)
         self._sid = ""
         self._said = ""
+        self._shown_row = ()
         self.composer.clear()
         self.problem.hide()
         self.info_button.setChecked(False)
 
     def _on_changed(self, sid: str) -> None:
         if sid == self._sid:
+            self.refresh()
+
+    def _on_rows_changed(self) -> None:
+        """Another submission's news is not this detail's: it is drawn
+        again only when its own row changed (RG-M3-a 4)."""
+        following = self._following
+        row = following.row(self._sid) if following is not None and self._sid else None
+        if row is None or (row, following.publication_name(row.publication)) != self._shown_row:
             self.refresh()
 
     def detail(self):
@@ -330,6 +340,7 @@ class SubmissionDetail(QWidget):
             return
         at_end = self._at_the_end()
         row, r = detail.row, appearance.roles(self._is_dark)
+        self._shown_row = (row, detail.publication)
         self.title.setText(row.title)
         self.publication.setText(detail.publication)
         self.logo.setPixmap(self._logo(row.publication, detail.publication, 16))

@@ -215,6 +215,36 @@ def test_the_detail_has_one_sentence_and_a_button_only_for_what_the_window_handl
     assert Action.PUBLISH not in window.host.actions()
 
 
+def test_a_conversation_is_opened_once_and_a_refresh_draws_only_what_is_new(window,
+                                                                          monkeypatch):
+    world = window.world
+    prepared, entries = seeded(window, lang="Ein Jahr", andere="Steuern")
+    for number in range(5):
+        world.message(prepared["lang"], f"Nachricht {number}")
+    opened, real = [], conversation.open_item
+    monkeypatch.setattr(conversation, "open_item",
+                        lambda *a, **k: opened.append(a[2]) or real(*a, **k))
+    window.follow()
+    window.view.show_detail(entries["lang"].sid)
+    world.settle()
+    detail = window.view.detail
+    assert opened.count(entries["lang"].sid) == 5      # each message once, list and detail
+    drawn = detail.thread.bubbles
+    world.message(prepared["lang"], "Noch eine")
+    window.following.refresh()
+    world.settle()
+    assert opened.count(entries["lang"].sid) == 6      # only the new one
+    # Nothing before it is drawn again, but the one whose picture moved to
+    # the new last of the group.
+    assert detail.thread.bubbles[:4] == drawn[:4] and detail.thread.bubbles[4] is not drawn[4]
+    redrawn = []
+    monkeypatch.setattr(detail.thread, "show_thread", lambda *a: redrawn.append(a))
+    world.message(prepared["andere"], "Eine andere Einreichung")
+    window.following.refresh()
+    world.settle()
+    assert redrawn == []                                # another submission's news
+
+
 def test_the_composer_sends_with_return_and_a_failure_stays_in_place_with_the_text(window):
     _prepared, entries = seeded(window, reden="Ein Jahr")
     window.follow()

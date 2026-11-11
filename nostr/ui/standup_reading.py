@@ -7,7 +7,11 @@ account.
 
 A detail shows at once what the lookup knows and reads the submission
 with the session: the member list (who may decide, contract 10) and the
-latest version. Nothing is opened on the strength of a View
+latest version. Each gift wrap of a conversation is opened once and kept
+(:meth:`Reading.open_wraps`; RG-M3-a 4): two signatures and two key
+agreements each, so a handful is opened at once and more on the worker
+thread; each stored signed action is checked once
+(``following.SignedChecks``). A refresh opens only what is new. Nothing is opened on the strength of a View
 (``opening.py``): a version is verified against its stored signed
 action first, and one that does not verify is not opened and says so. A
 writer's room key is the ``s_sub`` of their own list; a contributor's
@@ -21,10 +25,12 @@ Everything answers through :func:`~.standup_account.live`.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Mapping, Optional, Tuple
+from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .. import failures
+from ..imports import workers
 from ..later import answer_later
 from ..standup import conversation, crypto, formats, opening, views
 from ..standup import following as rules
@@ -34,6 +40,13 @@ from ..standup.errors import PASSING, Code, StandupError, cause_words
 from ..standup.watcher import AT_THE_END, read_submission
 from .standup_account import live
 from .standup_talk import Outgoing
+
+_log = logging.getLogger(__name__)
+
+# Opening a gift wrap costs about a millisecond (9.2: two signatures, two
+# key agreements): up to this many are opened at once, more on the
+# worker thread.
+OPEN_HERE_UP_TO = 16
 
 
 @dataclass(frozen=True)
@@ -84,6 +97,18 @@ class Detail:
     complete: bool = False
 
 
+@dataclass
+class _Opening:
+    """The conversation of one submission, opened with one room key: by
+    ``seq``, the wrap's id and what it held (None: it failed a check of
+    9.2 and is not shown); ``pending``, by ``seq``, the wraps being opened
+    now (their ids)."""
+
+    room: bytes = field(repr=False)
+    done: Dict[int, Tuple[object, Optional[conversation.Opened]]] = field(default_factory=dict)
+    pending: Dict[int, object] = field(default_factory=dict)
+
+
 def secret_of(entry: Optional[SubmissionEntry]) -> Optional[bytes]:
     """The room key the list holds for an entry, or None."""
     return bytes.fromhex(entry.s_sub) if entry is not None and entry.s_sub else None
@@ -104,11 +129,71 @@ class Reading:
         # The active members of each publication's Redaktion, as its
         # server last listed them with a submission (thread.role_of).
         self._members: Dict[str, Tuple[str, ...]] = {}
+        # What each conversation held, by (sid, room pubkey), and what the
+        # stored signed actions verified to: each worked out once.
+        self._openings: Dict[Tuple[str, str], _Opening] = {}
+        self.checks = rules.SignedChecks()
+        self._generation = 0
 
     def stop(self) -> None:
-        """The room keys and what was opened go with the account."""
+        """The room keys and what was opened go with the account, and
+        nothing still being opened is kept."""
+        self._generation += 1
         self._details = {}
         self._members = {}
+        self._openings = {}
+        self.checks = rules.SignedChecks()
+
+    def open_wraps(self, sid: str, room: Optional[bytes],
+                   items: Sequence[views.TimelineItem]
+                   ) -> Tuple[Dict[int, Optional[conversation.Opened]], bool]:
+        """What the conversation items of ``sid`` held, by ``seq``, opened
+        with ``room`` once each (contract 9.2; internal notes are never
+        opened here), and whether some are still being opened: the owner
+        then hears ``wraps_opened(sid)`` once they are."""
+        if room is None:
+            return {}, False
+        opening = self._openings.setdefault((sid, crypto.pubkey_of(room)), _Opening(room=room))
+        new = [(item.seq, item.wrap) for item in items
+               if item.wrap is not None and item.channel == "conversation"
+               and item.seq not in opening.pending
+               and (item.seq not in opening.done
+                    or opening.done[item.seq][0] != item.wrap.get("id"))]
+        if new:
+            self._open(sid, opening, new)
+        return {seq: opened for seq, (_id, opened) in opening.done.items()}, bool(opening.pending)
+
+    def _open(self, sid: str, opening: _Opening, new: List[tuple]) -> None:
+        room, generation = opening.room, self._generation
+        for seq, wrap in new:
+            opening.pending[seq] = wrap.get("id")
+
+        def work() -> List[tuple]:
+            out = []
+            for seq, wrap in new:
+                try:
+                    out.append((seq, conversation.open_item(wrap, room, sid, seq=seq)))
+                except conversation.NotShown:
+                    out.append((seq, None))         # not shown (9.2)
+            return out
+
+        def done(results: List[tuple]) -> None:
+            if generation != self._generation:
+                return                              # the account was let go meanwhile
+            for seq, opened in results:
+                opening.done[seq] = (opening.pending.pop(seq, None), opened)
+            if not opening.pending and len(new) > OPEN_HERE_UP_TO:
+                self._owner.wraps_opened(sid)
+
+        def failed(error: BaseException) -> None:
+            # A fault of this app, not of the wrap: logged, and not shown.
+            _log.warning("opening a conversation failed: %s", type(error).__name__)
+            done([(seq, None) for seq, _wrap in new])
+
+        if len(new) > OPEN_HERE_UP_TO:
+            workers.run_blocking(work, done, failed, parent=self._owner)
+        else:
+            done(work())
 
     def members_of(self, publication: str) -> Optional[Tuple[str, ...]]:
         """The active members of ``publication``'s Redaktion, or None
@@ -123,11 +208,13 @@ class Reading:
 
     def add(self, sid: str, items) -> bool:
         """``items`` join what is known of ``sid``, when its detail was
-        opened; whether it was."""
+        opened; whether anything new joined (only then is it drawn again)."""
         state = self._details.get(sid)
-        if state is not None:
-            state.items.update({item.seq: item for item in items})
-        return state is not None
+        if state is None:
+            return False
+        new = {item.seq: item for item in items if state.items.get(item.seq) != item}
+        state.items.update(new)
+        return bool(new)
 
     def open(self, sid: str, *, read: bool = True) -> None:
         """What the lookup knows at once, then (``read``) the submission
@@ -314,22 +401,23 @@ class Reading:
             return None
         items = [state.items[seq] for seq in sorted(state.items)]
         deciders = rules.deciders_of(state.members) if state.members is not None else None
-        opened = conversation.open_items(items, state.room, sid).opened \
-            if state.room is not None else ()
+        held, opening = self.open_wraps(sid, state.room, items)
+        opened = [held[item.seq] for item in items if held.get(item.seq) is not None]
         view = row.view
         who = dict(sid=sid, writer=row.writer,
                    participants=view.participants if view is not None else (),
-                   deciders=deciders)
+                   deciders=deciders, checks=self.checks)
         members = rules.members_of(state.members) if state.members is not None else None
         return Detail(
             row=row, publication=owner.publication_name(row.publication),
-            decision=rules.newest_decision(items, sid, deciders),
+            decision=rules.newest_decision(items, sid, deciders, self.checks),
             thread=tuple(threads.build_thread(items, opened, me=self._account.writer,
                                               members=members, **who)),
             history=tuple(threads.history(items, **who)), opened=tuple(opened),
             outgoing=tuple(owner.talk.outgoing(sid)), members=state.members,
             latest=state.versions.get(view.revision) if view is not None else None,
-            versions=dict(state.versions), loading=state.loading, problem=state.problem,
+            versions=dict(state.versions), loading=state.loading or opening,
+            problem=state.problem,
             # Only where the server holds the submission as this person's
             # and its latest version verified: the room key is its own then.
             can_write=state.room is not None and row.confirmed and not state.not_confirmed

@@ -407,27 +407,50 @@ def members_of(members: Iterable) -> Tuple[str, ...]:
     return tuple(m.pubkey for m in members if m.status == "active")
 
 
-def action_verified(event: views.TimelineEvent, sid: str,
-                    signers: Optional[Iterable[str]]) -> Optional[bool]:
+class SignedChecks:
+    """What each stored signed action verified to, kept (RG-M3-a 4): its
+    signature, its payload, its path and its body are checked once per
+    stored action and body, never again on a refresh; who signed it is
+    asked each time (:func:`action_verified`), as the member list may
+    change. One per account, dropped with it."""
+
+    def __init__(self) -> None:
+        self._bodies: dict = {}
+
+    def body(self, signed: views.SignedRecord, *, path: str,
+             sid: str) -> Optional[Mapping]:
+        """The verified body of ``signed`` for ``path``, or None when it
+        does not verify (contract 10, but for the signer's role)."""
+        key = (signed.event.get("id"), path, sid, signed.body)
+        if key not in self._bodies:
+            try:
+                self._bodies[key] = views.signed_action_body(signed, path=path,
+                                                             submission_id=sid)
+            except views.SignedActionInvalid:
+                self._bodies[key] = None
+        return self._bodies[key]
+
+
+def action_verified(event: views.TimelineEvent, sid: str, signers: Optional[Iterable[str]],
+                    checks: Optional[SignedChecks] = None) -> Optional[bool]:
     """Whether a timeline event's stored signed action verifies as one
-    of ``signers`` (10); None while ``signers`` are not known."""
+    of ``signers`` (10); None while ``signers`` are not known. ``checks``
+    keeps what was checked before."""
     if signers is None:
         return None
     path = views.action_path(event.name, sid)
     if path is None or event.signed is None:
         return False
-    try:
-        body = views.signed_action_body(event.signed, path=path, submission_id=sid,
-                                        signers=signers)
-    except views.SignedActionInvalid:
-        return False
-    if event.signed.event.get("pubkey") != event.actor:
+    body = (checks or SignedChecks()).body(event.signed, path=path, sid=sid)
+    signer = event.signed.event.get("pubkey")
+    if body is None or signer not in set(signers) or signer != event.actor:
         return False
     return event.name not in DECISIONS or body.get("outcome") == event.name
 
 
 def newest_decision(items: Sequence[views.TimelineItem], sid: str,
-                    deciders: Optional[Iterable[str]]) -> Optional[Decision]:
+                    deciders: Optional[Iterable[str]],
+                    checks: Optional[SignedChecks] = None) -> Optional[Decision]:
     """The newest decision among ``items``, verified against
     ``deciders`` (None: the member list is not known)."""
     decisions = [item for item in items
@@ -436,7 +459,7 @@ def newest_decision(items: Sequence[views.TimelineItem], sid: str,
         return None
     event = max(decisions, key=lambda item: item.seq).event
     signers = None if deciders is None else tuple(deciders)
-    return Decision(event.name, event.actor, action_verified(event, sid, signers))
+    return Decision(event.name, event.actor, action_verified(event, sid, signers, checks))
 
 
 # --------------------------------------------------------------------------- #
@@ -527,7 +550,7 @@ def rests_on(situation: Situation, decision: Optional[Decision]) -> bool:
 __all__ = [
     "ACTION_LABELS", "Action", "DECIDER_ROLES", "DECISIONS", "Decision", "NOT_SIGNED",
     "ON_A_DECISION", "ON_ITS_WAY", "Row",
-    "Section", "Situation", "Status", "TABLE", "Words", "YOUR_TURN", "action_verified",
+    "Section", "SignedChecks", "Situation", "Status", "TABLE", "Words", "YOUR_TURN", "action_verified",
     "deciders_of", "members_of", "my_turn", "newest_decision", "pill_word", "rests_on",
     "rows_of", "situation_of", "status_of", "status_word",
 ]
