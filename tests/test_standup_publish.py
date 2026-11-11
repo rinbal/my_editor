@@ -467,6 +467,47 @@ def test_after_a_stage_change_the_focus_is_on_the_status_line_never_on_view(acce
     sheet.deleteLater()
 
 
+def test_the_confirm_and_publish_sheets_read_whole_at_their_minimum_size_in_german(accepted):
+    # RG-M4-c 9: at its own minimum size, in German, no button clips and no
+    # wrapping line is cut (Profil bearbeiten …, Erneut versuchen, Q1).
+    import i18n
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+    from nostr.ui.standup_confirm_sheet import ConfirmSheet
+    from nostr.ui.standup_publish_sheet import PublishSheet
+
+    def whole(sheet):
+        sheet.show()
+        sheet.resize(sheet.minimumSize())
+        for _ in range(4):
+            QApplication.processEvents()
+        for button in sheet.findChildren(QPushButton):
+            if button.isVisibleTo(sheet) and button.text():
+                assert button.width() >= button.sizeHint().width(), button.text()
+        for label in sheet.findChildren(QLabel):
+            if label.isVisibleTo(sheet) and label.wordWrap() and label.text():
+                assert label.height() >= label.heightForWidth(label.width()), label.text()
+        sheet.close()
+
+    i18n.install("de")
+    try:
+        for address in ("", None):                   # Profil bearbeiten …, Erneut versuchen
+            sheet = ConfirmSheet(
+                role="writer", publication="Magazin", number=2,
+                shares=((pk("writer"), 70, "writer"), (pk("contributor"), 30, "contributor")),
+                me=pk("writer"), name_of=lambda _pk: "Jana",
+                zap_address=lambda _pk, answer, said=address: answer(said),
+                confirm=lambda confirms, done: None, is_dark=False)
+            whole(sheet)
+        from nostr.ui.standup_publish_words import NOT_CHECKED, TOO_LONG_HERE
+        for stage, words in ((Stage.READY, ""), (Stage.NOT_CHECKED, NOT_CHECKED),
+                             (Stage.OFFER_HERE, TOO_LONG_HERE)):
+            run, _store, _jobs = _run(accepted)
+            run._say(stage, _("Not published") if words else "", _(words) if words else "")
+            whole(PublishSheet(run=run, publication="Magazin", number=1, is_dark=False))
+    finally:
+        i18n.install("en")
+
+
 def test_a_public_work_with_no_quiet_try_left_offers_send_again_and_stays_public(accepted):
     # RG-M4-c 3 (ux/p_giveup.py): once no quiet try is left the row says it
     # is public and offers Erneut senden; the record stays, after 7 days and

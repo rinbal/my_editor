@@ -43,7 +43,9 @@ from i18n import N_, _
 from ..standup.errors import cause_words
 from ..standup.thread import share_text
 from . import appearance
-from .publish_sheet import StatusLine, fit_margins, fit_to_window, make_sheet, sheet_stylesheet
+from .publish_sheet import (
+    StatusLine, fit_margins, fit_minimum, fit_to_window, make_sheet, sheet_stylesheet,
+)
 from .standup_publish_sheet import ACCEPTED_LINE
 
 SHARE_GOES_TO = N_("Your share goes to {address}.")
@@ -99,7 +101,7 @@ class ConfirmSheet(QDialog):
         self.setWindowTitle(_("Confirm Your Share"))
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         make_sheet(self)
-        self.setMinimumSize(400, 260)
+        self._least = QSize(400, 260)                # grows to what its words need
         self._is_dark, self._confirm = bool(is_dark), confirm
         self._contributor = role != "writer"
         # A share of this person's can reach them only at an address their
@@ -222,6 +224,7 @@ class ConfirmSheet(QDialog):
         for button in (self.confirm_button, self.edit_profile, self.read_again):
             button.setDefault(button is primary)
         self._order(primary)
+        fit_minimum(self, self._least)       # the words read whole (RG-M4-c 9)
 
     def _order(self, primary: Optional[QPushButton]) -> None:
         """The focus order (RG-M4-b 2): the rights first where they are

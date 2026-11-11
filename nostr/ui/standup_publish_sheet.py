@@ -36,7 +36,9 @@ from alerts import answer_return_as_the_system_does
 from i18n import N_, _
 
 from . import appearance
-from .publish_sheet import StatusLine, fit_margins, fit_to_window, make_sheet, sheet_stylesheet
+from .publish_sheet import (
+    StatusLine, fit_margins, fit_minimum, fit_to_window, make_sheet, sheet_stylesheet,
+)
 from .standup_publish import AcceptedPublish, Stage
 
 ACCEPTED_LINE = N_("Accepted by {publication}, version {number}.")
@@ -67,7 +69,7 @@ class PublishSheet(QDialog):
         self.setWindowTitle(_("Publish as an Article"))
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         make_sheet(self)
-        self.setMinimumSize(420, 300)
+        self._least = QSize(420, 300)                # grows to what its words need
         self.run, self._is_dark = run, bool(is_dark)
         self._seen = None                    # the stage last shown
         self.destroyed.connect(lambda *_: setattr(run, "on_screen", False))
@@ -189,6 +191,7 @@ class PublishSheet(QDialog):
         # Not checked: Erneut versuchen or Abbrechen (12.4, the words both apps say).
         self.cancel_button.setText(_("Cancel") if stage is Stage.NOT_CHECKED else _(
             "Close") if working or failed or ask else _("Cancel"))
+        fit_minimum(self, self._least)       # the words read whole (RG-M4-c 9)
         if stage is not self._seen and self.isVisible():
             # After a stage change the focus is on what it says (RG-M4-c 8),
             # never on Ansehen, which a second Space would open.
