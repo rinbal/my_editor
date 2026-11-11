@@ -26,6 +26,9 @@ from PySide6.QtGui import (
     QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QTextCharFormat, QTextCursor,
 )
 
+import photo_group
+import photo_group_view
+
 LOCAL = "local"
 UPLOADING = "uploading"
 FAILED = "failed"
@@ -81,8 +84,13 @@ def objects_in_sight(view) -> Iterator[Tuple[str, QRectF]]:
             fragment = it.fragment()
             fmt = fragment.charFormat()
             if fragment.isValid() and fmt.isImageFormat():
-                box = _object_box(layout, block, fragment.position() - block.position(),
-                                  fmt.toImageFormat())
+                if fmt.hasProperty(photo_group.UNIT):
+                    # A picture of a photo group stands where its group's
+                    # layout draws it, not where its character is.
+                    box = photo_group_view.picture_box(view.document(), fragment.position())
+                else:
+                    box = _object_box(layout, block, fragment.position() - block.position(),
+                                      fmt.toImageFormat())
                 if box is not None:
                     yield fmt.toImageFormat().name(), box.translated(-dx, -dy)
             it += 1

@@ -425,3 +425,16 @@ def test_a_picture_inserted_among_the_pictures_is_one_of_the_group():
     assert _markdown(ed) == _text(ONE, THREE, TWO, "After.")
     assert _undone(ed, _text(ONE, TWO, "After."))
     ed.close()
+
+
+def test_a_badge_stands_on_a_group_picture_where_it_is_drawn():
+    """The badges of media_badge (a picture still uploading) go by where
+    an object stands: a group's picture stands where its layout draws it,
+    a stack's lower picture included."""
+    import media_badge
+    ed = _editor(_text("Text.", "![a](portrait.png)", "![b](landscape.png)", "![c](square.png)"))
+    drawn = [box for _p, _n, box in photo_group_view.picture_boxes(ed.document())]
+    seen = dict(media_badge.objects_in_sight(ed))
+    assert [seen[name].center().toPoint() for name in ("portrait.png", "landscape.png", "square.png")] \
+        == [box.center().toPoint() for box in drawn]
+    ed.close()
