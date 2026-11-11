@@ -77,6 +77,7 @@ from doc_walk import (
 )
 import photo_group
 import photo_group_find
+from markdown_scan import FENCE_LINE, LIST_LINE, descriptions, pictures
 from rich_text import normalize_after_markdown_load
 
 ImageTarget = Callable[[object], Optional[str]]
@@ -899,7 +900,6 @@ _LOSSY = [
     re.compile(r"\[!\["),                                  # image inside a link
     re.compile(r"^\s*>\s*#", re.MULTILINE),               # heading in a quote
 ]
-_LIST_LINE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
 _BLOCK_START = re.compile(r"^\s*(?:[-*+]\s|\d+[.)]\s|>|#|\||```|~~~|    |\t)")
 
 
@@ -914,7 +914,7 @@ def _soft_breaks(markdown: str) -> Tuple[bool, List[int]]:
     # Lines in fenced code, the fences among them: code keeps its lines.
     coded, fence = [], ""
     for line in lines:
-        found_fence = _FENCE_LINE.match(line)
+        found_fence = FENCE_LINE.match(line)
         if fence:
             coded.append(True)
             if found_fence and found_fence.group(1)[0] == fence[0] \
@@ -941,7 +941,7 @@ def _soft_breaks(markdown: str) -> Tuple[bool, List[int]]:
                 return True, []
             found.append(index - 1)
         if (line.startswith(("  ", "\t")) and line.strip() and not before.strip()
-                and index >= 2 and _LIST_LINE.match(lines[index - 2])):
+                and index >= 2 and LIST_LINE.match(lines[index - 2])):
             return True, []
     return False, found
 
@@ -1021,9 +1021,8 @@ def _fingerprint(doc) -> bytes:
 
 
 # A footnote definition as typed ("[^1]: Ibid.") at a line's start, maybe
-# inside a quote, and the fence lines around code, where it is code.
+# inside a quote (outside code, found by markdown_scan.FENCE_LINE).
 _FOOTNOTE_DEFINITION = re.compile(r"^((?: {0,3}>)* {0,3})\[(?=\^[^\]\s]+\]:)")
-_FENCE_LINE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 
 
 def literal_footnotes(markdown: str) -> str:
@@ -1037,7 +1036,7 @@ def literal_footnotes(markdown: str) -> str:
     out = []
     fence = ""
     for line in markdown.split("\n"):
-        found = _FENCE_LINE.match(line)
+        found = FENCE_LINE.match(line)
         if fence:
             if (found and found.group(1)[0] == fence[0] and len(found.group(1)) >= len(fence)
                     and not found.group(2).strip()):
@@ -1097,150 +1096,6 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
 
 # What can start a piece of text of its own in a description.
 _PIECE = re.compile(r"[\\&*_`<~\n]|://|www\.|@")
-_ESCAPABLE = set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
-_AUTOLINK_OR_TAG = re.compile(
-    r"<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*|[^\s<>@]+@[^\s<>]+"
-    r"|/?[A-Za-z][\w-]*(?:\s[^<>]*)?/?|!--.*?--)>", re.S)
-_CODE_INDENT = re.compile(r"^(?: {4}|\t)")
-# Where an escape, a code span, an autolink or tag, or a picture may start.
-_STARTS_INLINE = re.compile(r"[\\`<]|!\[")
-
-
-def _code_lines(lines: List[str]) -> List[bool]:
-    """For each line, whether it is code: in a fence, or indented code
-    (after a blank line, outside a list)."""
-    out: List[bool] = []
-    fence = ""
-    in_list = False
-    previous_blank = True
-    for line in lines:
-        found = _FENCE_LINE.match(line)
-        if fence:
-            out.append(True)
-            if found and found.group(1)[0] == fence[0] and len(found.group(1)) >= len(fence) \
-                    and not found.group(2).strip():
-                fence = ""
-            continue
-        if found:
-            fence = found.group(1)
-            out.append(True)
-            continue
-        blank = not line.strip()
-        if _LIST_LINE.match(line):
-            in_list = True
-        elif not blank and not line[:1].isspace():
-            in_list = False
-        code = bool(_CODE_INDENT.match(line)) and previous_blank and not in_list
-        out.append(code)
-        previous_blank = blank or code
-    return out
-
-
-def _code_span_end(text: str, start: int) -> int:
-    """Where the code span opening at ``start`` (a run of backticks) ends,
-    or where the run ends when nothing closes it (then it is text)."""
-    run = 0
-    while start + run < len(text) and text[start + run] == "`":
-        run += 1
-    at = start + run
-    # A code span ends with its paragraph.
-    limit = text.find("\n\n", at)
-    limit = len(text) if limit < 0 else limit
-    while True:
-        close = text.find("`" * run, at, limit)
-        if close < 0:
-            return start + run
-        end = close + run
-        if end < len(text) and text[end] == "`":
-            at = end
-            while at < len(text) and text[at] == "`":
-                at += 1
-            continue
-        return end
-
-
-def _skip_inline(text: str, at: int) -> Optional[int]:
-    """Where an escape, a code span, an autolink or a tag at ``at`` ends;
-    None when none starts there."""
-    char = text[at]
-    if char == "\\" and at + 1 < len(text) and text[at + 1] in _ESCAPABLE:
-        return at + 2
-    if char == "`":
-        return _code_span_end(text, at)
-    if char == "<":
-        found = _AUTOLINK_OR_TAG.match(text, at)
-        return found.end() if found else None
-    return None
-
-
-def _label_end(text: str, at: int) -> Optional[int]:
-    """The ``]`` closing the bracket at ``at``, or None (a paragraph ends
-    first, or nothing closes it)."""
-    depth = 0
-    index = at
-    while index < len(text):
-        if text.startswith("\n\n", index) or text.startswith("\n \n", index):
-            return None
-        skipped = _skip_inline(text, index)
-        if skipped is not None:
-            index = skipped
-            continue
-        char = text[index]
-        if char == "[":
-            depth += 1
-        elif char == "]":
-            depth -= 1
-            if depth == 0:
-                return index
-        index += 1
-    return None
-
-
-def _destination_end(text: str, at: int) -> Optional[int]:
-    """The ``)`` closing an inline link's destination and title, opened
-    at ``at``, or None."""
-    index = at + 1
-    length = len(text)
-
-    def spaces(i: int) -> int:
-        while i < length and text[i] in " \t\n":
-            i += 1
-        return i
-    index = spaces(index)
-    if index < length and text[index] == "<":
-        close = text.find(">", index)
-        if close < 0 or "\n" in text[index:close]:
-            return None
-        index = close + 1
-    else:
-        depth = 0
-        while index < length and not text[index].isspace():
-            char = text[index]
-            if char == "\\" and index + 1 < length:
-                index += 2
-                continue
-            if char == "(":
-                depth += 1
-            elif char == ")":
-                if depth == 0:
-                    break
-                depth -= 1
-            index += 1
-    index = spaces(index)
-    if index < length and text[index] in "\"'(":
-        closer = ")" if text[index] == "(" else text[index]
-        index += 1
-        while index < length and text[index] != closer:
-            index += 2 if text[index] == "\\" else 1
-        index = spaces(index + 1)
-    return index if index < length and text[index] == ")" else None
-
-
-def _descriptions(markdown: str) -> List[Tuple[int, int]]:
-    """Where each picture's description is (start, end) in ``markdown``:
-    an inline picture ``![...](...)`` or one with a full reference
-    ``![...][label]``, outside code."""
-    return [(start, end) for start, end, _after in _pictures(markdown)]
 
 
 _BREAK_TAG = re.compile(r"[ \t]*<br[ \t]*/?>[ \t]*\n?[ \t]*", re.IGNORECASE)
@@ -1254,60 +1109,15 @@ def _breaks_between_pictures(markdown: str) -> str:
     (a paste) the tag is text between the pictures."""
     if "<" not in markdown or "![" not in markdown:
         return markdown
-    pictures = _pictures(markdown)
+    found = pictures(markdown)
     pieces, last = [], 0
-    for (_s, _e, after), (start, _e2, _a2) in zip(pictures, pictures[1:]):
+    for (_s, _e, after), (start, _e2, _a2) in zip(found, found[1:]):
         if _BREAK_TAG.fullmatch(markdown, after, start - 2):
             pieces.append(markdown[last:after])
             pieces.append("  \n")
             last = start - 2
     pieces.append(markdown[last:])
     return "".join(pieces)
-
-
-def _pictures(markdown: str) -> List[Tuple[int, int, int]]:
-    """Each picture of ``markdown`` outside code: where its description
-    starts and ends, and where the text after the picture starts."""
-    lines = markdown.split("\n")
-    code = _code_lines(lines)
-    starts, at = [], 0
-    for line in lines:
-        starts.append(at)
-        at += len(line) + 1
-    blocked = [(starts[n], starts[n] + len(lines[n])) for n, is_code in enumerate(code) if is_code]
-    found: List[Tuple[int, int, int]] = []
-    index, block = 0, 0
-    length = len(markdown)
-    while index < length:
-        nearest = _STARTS_INLINE.search(markdown, index)
-        if nearest is None:
-            break
-        index = nearest.start()
-        while block < len(blocked) and blocked[block][1] < index:
-            block += 1
-        if block < len(blocked) and blocked[block][0] <= index <= blocked[block][1]:
-            index = blocked[block][1] + 1
-            continue
-        skipped = _skip_inline(markdown, index)
-        if skipped is not None:
-            index = skipped
-            continue
-        if markdown.startswith("![", index):
-            end = _label_end(markdown, index + 1)
-            if end is not None:
-                after = markdown[end + 1:end + 2]
-                close = _destination_end(markdown, end + 1) if after == "(" else None
-                if close is None and after == "[":
-                    label = _label_end(markdown, end + 1)
-                    close = label if label is not None and label > end + 2 else None
-                if close is not None:
-                    found.append((index + 2, end, close + 1))
-                    index = close + 1
-                    continue
-            index += 2
-            continue
-        index += 1
-    return found
 
 
 def _plain_description(words: str, features) -> str:
@@ -1327,7 +1137,7 @@ def _whole_descriptions(markdown: str, features) -> Tuple[str, dict]:
     too: Qt's reader leaves a picture with no description out."""
     if "![" not in markdown:
         return markdown, {}
-    spans = [(start, end) for start, end in _descriptions(markdown)
+    spans = [(start, end) for start, end in descriptions(markdown)
              if start == end or _PIECE.search(markdown, start, end)]
     if not spans:
         return markdown, {}
@@ -1376,7 +1186,7 @@ def _tab_in_fence(markdown: str) -> bool:
     and a Makefile stops working)."""
     fence = ""
     for line in markdown.split("\n"):
-        found = _FENCE_LINE.match(line)
+        found = FENCE_LINE.match(line)
         if fence:
             if found and found.group(1)[0] == fence[0] and len(found.group(1)) >= len(fence) \
                     and not found.group(2).strip():
@@ -1458,7 +1268,7 @@ def _description_markdown(alt: str) -> str:
 
 def _reads_back(words: str, alt: str) -> bool:
     """Whether ``![words](x)`` is a picture described ``alt``."""
-    if _descriptions(f"![{words}](x)") != [(2, 2 + len(words))]:
+    if descriptions(f"![{words}](x)") != [(2, 2 + len(words))]:
         return False
     if not _PIECE.search(words):
         return words == alt
