@@ -13,8 +13,10 @@ from __future__ import annotations
 import sys
 
 import pytest
-from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QPointF, QRect, Qt
-from PySide6.QtGui import QAction, QImage, QMouseEvent, QPainter, QTextCursor, QTextImageFormat
+from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QPointF, QRect, QRectF, Qt
+from PySide6.QtGui import (
+    QAction, QColor, QImage, QMouseEvent, QPainter, QTextCursor, QTextImageFormat,
+)
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
 
@@ -24,6 +26,7 @@ import photo_group_actions
 import photo_group_editing
 import photo_group_overlay
 import picture_crop
+import theme
 from photo_group_menu import (
     ADD, CAPTION, CROP, DESCRIPTION, DOWN, FIRST, JOIN_ABOVE, JOIN_BELOW, LARGE, LAST, LEFT,
     MOVE_MODE, REMOVE, RIGHT, SPLIT, TAKE_OUT, UP,
@@ -571,3 +574,29 @@ def test_a_picture_alone_selected_is_not_tinted(said):
     assert ed.textCursor().hasSelection()
     assert ed.viewport().grab().toImage().pixelColor(middle) == plain
     ed.close()
+
+
+def test_the_bars_small_text_stands_out_at_4_5_to_1(monkeypatch):
+    # Gate RG-PG2E-b 12: "Drag to arrange" was 2.5:1 on the light page.
+    pens = []
+    monkeypatch.setattr(QPainter, "setPen", lambda painter, pen: pens.append(pen))
+    for surface, ink in ((QColor(250, 249, 246), QColor("#333333")),
+                         (QColor(38, 38, 38), QColor("#D4D4D4"))):
+        for in_accent in (False, True):
+            pens.clear()
+            image = QImage(600, 40, QImage.Format.Format_ARGB32)
+            painter = QPainter(image)
+            bar = photo_group_overlay.bar_over(QRectF(0, 40, 600, 300), "Photo")
+            photo_group_overlay.paint_bar(painter, bar, "Photo Group · 3 Photos",
+                                          "Drag to arrange", "Photo", ink=ink,
+                                          accent=QColor(theme.focus_ring_color(
+                                              surface.lightness() < 128)),
+                                          surface=surface, hint_in_accent=in_accent, hot=False,
+                                          solid=False)
+            painter.end()
+            for pen in pens:
+                if isinstance(pen, QColor):
+                    alpha = pen.alphaF()
+                    seen = QColor.fromRgbF(*(alpha * mine + (1 - alpha) * page for mine, page in
+                                             zip(pen.getRgbF()[:3], surface.getRgbF()[:3])))
+                    assert theme.contrast_ratio(seen, surface) >= 4.5, pen.name()

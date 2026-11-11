@@ -542,7 +542,8 @@ class PhotoPointer(QObject):
                                                      "Photo Group · {n} Photos",
                                                      count).format(n=count),
                               _("Drag to arrange"), _("Photo"), ink=ink, accent=accent,
-                              hint_in_accent=False, hot=self._hot == overlay.ADD, solid=solid)
+                              surface=surface, hint_in_accent=False,
+                              hot=self._hot == overlay.ADD, solid=solid)
         chips = self._chips(shown)
         if chips is not None:
             doc = self._editor.document()
@@ -594,7 +595,8 @@ class PhotoPointer(QObject):
                 overlay.paint_bar(painter, overlay.bar_over(area, _("Photo")),
                                   ngettext("Photo Group · {n} Photo", "Photo Group · {n} Photos",
                                            count).format(n=count), hint, _("Photo"), ink=ink,
-                                  accent=accent, hint_in_accent=True, hot=False, solid=solid)
+                                  accent=accent, surface=surface, hint_in_accent=True,
+                                  hot=False, solid=solid)
         elif target is not None:
             label = target.words
         if self._ghost is not None and self._how == "drag":

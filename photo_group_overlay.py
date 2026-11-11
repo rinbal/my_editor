@@ -29,6 +29,8 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QApplication
 
+import theme
+
 HANDLE, MORE, ALT, BIG, ADD = "handle", "more", "alt", "big", "add"
 
 # The room kept free above a group for its bar, and the bar's own height.
@@ -247,18 +249,31 @@ def bar_over(group: QRectF, add_words: str) -> Bar:
     return Bar(box, QRectF(box.right() - wide, box.top() + 1, wide, BAR_HEIGHT - 2))
 
 
+def _legible(color: QColor, surface: QColor) -> QColor:
+    """``color`` for small text on ``surface``: darkened (lightened on a
+    dark one) until it stands out at 4.5:1 (WCAG 1.4.3)."""
+    dark = surface.lightness() < 128
+    out = QColor(color)
+    while theme.contrast_ratio(out, surface) < 4.5 and out.lightness() not in (0, 255):
+        out = out.lighter(105) if dark else out.darker(105)
+    return out
+
+
 def paint_bar(painter: QPainter, bar: Bar, label: str, hint: str, add_words: str, *,
-              ink: QColor, accent: QColor, hint_in_accent: bool, hot: bool,
+              ink: QColor, accent: QColor, surface: QColor, hint_in_accent: bool, hot: bool,
               solid: bool) -> None:
-    """A group's bar: what it is, a hint (in the accent colour while it
-    says what letting go will do) and the button to add photos."""
+    """A group's bar on the page ``surface``: what it is, a hint (in the
+    accent colour while it says what letting go will do) and the button to
+    add photos. Its small text stands out at 4.5:1 at least (the label
+    0.80 of the ink, the hint 0.70; 0.70 and 0.60 on a dark page)."""
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     font = bar_font()
     painter.setFont(font)
     metrics = QFontMetricsF(font)
+    dark = surface.lightness() < 128
     muted = QColor(ink)
-    muted.setAlphaF(1.0 if solid else 0.62)
+    muted.setAlphaF(1.0 if solid else 0.70 if dark else 0.80)
     box = bar.box
     glyph = QRectF(box.left(), box.center().y() - 7, 14, 14)
     _pictures(painter, glyph, muted)
@@ -271,12 +286,12 @@ def paint_bar(painter: QPainter, bar: Bar, label: str, hint: str, add_words: str
     left += metrics.horizontalAdvance(label) + 10
     if hint and bar.add.left() - 10 - left > 40:
         if hint_in_accent:
-            painter.setPen(accent)
+            painter.setPen(_legible(accent, surface))
         else:
             font.setWeight(QFont.Weight.Normal)
             painter.setFont(font)
             faint = QColor(ink)
-            faint.setAlphaF(0.8 if solid else 0.45)
+            faint.setAlphaF(0.8 if solid else 0.60 if dark else 0.70)
             painter.setPen(faint)
         room = bar.add.left() - 10 - left
         painter.drawText(QRectF(left, box.top(), room, box.height()), flags,
