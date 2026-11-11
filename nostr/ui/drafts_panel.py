@@ -751,6 +751,15 @@ class _TopBand(QFrame):
         margins = self._box.contentsMargins()
         return self._switch.popup_width() + margins.left() + margins.right()
 
+    def segments_room(self) -> int:
+        """The band's width that shows every view's name side by side,
+        beside the band's buttons (0 with one view)."""
+        if not self._switch.has_choice():
+            return 0
+        margins = self._box.contentsMargins()
+        return (self._switch.segments_width() + self._icons.sizeHint().width()
+                + self._box.spacing() + margins.left() + margins.right())
+
     def reflow(self) -> None:
         margins = self._box.contentsMargins()
         available = self.width() - margins.left() - margins.right()
@@ -1536,6 +1545,13 @@ class DraftsPanel(QFrame):
 
     def views(self) -> List[str]:
         return [key for key, _title, _hint in self._views]
+
+    def default_width(self) -> int:
+        """The width the panel first opens at: DEFAULT_PANEL_WIDTH, or as
+        wide as every view's name needs side by side (RG-M3-b 7: with a
+        third view the switch otherwise turns into a pop-up, and the
+        third view is out of sight), at most MAX_PANEL_WIDTH."""
+        return max(DEFAULT_PANEL_WIDTH, min(MAX_PANEL_WIDTH, self._top_band.segments_room()))
 
     def current_view(self) -> str:
         page = self._mode_stack.currentWidget()

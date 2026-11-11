@@ -185,6 +185,20 @@ def test_an_empty_list_says_how_to_submit_and_offers_it(window):
     assert window.submits == ["the article in front"]
 
 
+def test_with_the_submissions_view_the_panel_opens_wide_enough_for_all_three_names(window):
+    panel = DraftsPanel(is_dark=False)
+    panel.add_view("published", "Published", "", QLabel())
+    two = panel.default_width()
+    add_to_panel(panel, window.view, server=SERVER)
+    width = panel.default_width()
+    assert width >= two
+    panel.resize(width, 600)
+    panel.show()
+    QApplication.processEvents()
+    assert not panel._top_band._switch.is_popup()       # three segments, side by side
+    panel.hide()
+
+
 def test_without_a_server_nothing_is_read_and_the_panel_has_no_submissions_view(monkeypatch):
     window = Window(FollowWorld(), monkeypatch, server="")
     window.follow()

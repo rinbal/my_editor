@@ -307,7 +307,7 @@ from nostr.signer_limits import size_detail
 from nostr.ui.connect_dialog import ConnectDialog
 from nostr.ui.profile_chip import ProfileChip
 from nostr.ui.draft_conflict_banner import DraftConflictBanner
-from nostr.ui.drafts_panel import DEFAULT_PANEL_WIDTH, DraftsPanel
+from nostr.ui.drafts_panel import DraftsPanel
 from nostr.draft_relays import PrivateDraftRelays
 from nostr.published import PublishedList
 from nostr.ui.draft_relays_sheet import DraftRelaysSheet
@@ -3433,7 +3433,7 @@ class MainWindow(QMainWindow):
             default_width=ARTICLE_DETAILS_WIDTH, on_fold=self._article_details_folded)
         self._side_panels.register(
             DRAFTS_PANEL, self._drafts_panel, side=RIGHT, collapse_rank=1,
-            default_width=DEFAULT_PANEL_WIDTH, on_fold=self._drafts_folded)
+            default_width=self._drafts_panel.default_width(), on_fold=self._drafts_folded)
 
         self.setCentralWidget(self._central_splitter)
         # The panels' headers line up with the toolbar and the tab row,
