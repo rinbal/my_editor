@@ -260,20 +260,20 @@ class CropView(QWidget):
 
 
 class CropSheet(QDialog):
-    """Crop…, as a sheet of the window: the frame on the picture, its
-    format, Cancel and Crop. ``cropped`` gets the new file's bytes and
-    extension once Crop is chosen."""
+    """Crop…, as a sheet of the window: the frame on the picture (``data``,
+    decoded upright as ``image``, decode_upright), its format, Cancel and
+    Crop. ``cropped`` gets the new file's bytes and extension once Crop is
+    chosen."""
 
     cropped = Signal(bytes, str)
 
-    def __init__(self, parent: QWidget, data: bytes) -> None:
+    def __init__(self, parent: QWidget, data: bytes, image: QImage) -> None:
         super().__init__(parent)
         self._data = data
         self.setWindowTitle(_("Crop"))
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self.setWindowFlag(Qt.WindowType.Sheet, True)
-        image = decode_upright(data)
-        self.view = CropView(image if image is not None else QImage(), self)
+        self.view = CropView(image, self)
         column = QVBoxLayout(self)
         column.setContentsMargins(20, 20, 20, 16)
         column.setSpacing(12)
@@ -309,7 +309,6 @@ class CropSheet(QDialog):
         # no copy of it.
         self.view.changed.connect(self._frame_changed)
         self._frame_changed()
-        self.shape.setEnabled(image is not None)
         self.view.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def showEvent(self, event) -> None:

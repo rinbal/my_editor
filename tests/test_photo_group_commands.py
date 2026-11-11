@@ -11,6 +11,7 @@ each for a drag, the keys and Undo selecting what it took back.
 from __future__ import annotations
 
 import sys
+import types
 
 import pytest
 from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QPointF, QRect, QRectF, Qt
@@ -27,10 +28,14 @@ import photo_group_editing
 import photo_group_overlay
 import picture_crop
 import theme
+from editor import HtmlEditor
+from main_window import MainWindow
+from markdown_writer import read_markdown
 from photo_group_menu import (
     ADD, CAPTION, CROP, DESCRIPTION, DOWN, FIRST, JOIN_ABOVE, JOIN_BELOW, LARGE, LAST, LEFT,
     MOVE_MODE, REMOVE, RIGHT, SPLIT, TAKE_OUT, UP,
 )
+from tests.photo_corners import image_of
 from tests.test_photo_group_editing import (
     FOUR, FOUR_PICTURES, ONE, THREE, TWO, _editor, _group, _markdown, _text, _undone,
     app,  # noqa: F401
@@ -254,7 +259,8 @@ def test_the_crop_sheet_dims_crop_until_the_frame_changes_and_shows_its_focus():
     window = QWidget()
     window.resize(700, 600)
     window.show()
-    sheet = picture_crop.CropSheet(window, _jpeg_turned(40, 20, 6))
+    data = _jpeg_turned(40, 20, 6)
+    sheet = picture_crop.CropSheet(window, data, picture_crop.decode_upright(data))
     sheet.show()
     QApplication.processEvents()
     assert sheet.view.size().toTuple()[1] > sheet.view.size().toTuple()[0]     # upright
@@ -600,3 +606,29 @@ def test_the_bars_small_text_stands_out_at_4_5_to_1(monkeypatch):
                     seen = QColor.fromRgbF(*(alpha * mine + (1 - alpha) * page for mine, page in
                                              zip(pen.getRgbF()[:3], surface.getRgbF()[:3])))
                     assert theme.contrast_ratio(seen, surface) >= 4.5, pen.name()
+
+
+def test_crop_is_dimmed_for_a_stand_in_and_says_why_a_drawing_cannot_be_cut(tmp_path):
+    # Gate RG-PG2E-a 9: an SVG beside the document opened an empty sheet.
+    ed = HtmlEditor()
+    ed.set_local_image_resolver(lambda name: None if name.endswith(".svg") else image_of(name))
+    read_markdown(ed.document(), _text("Before.", "![a](drawing.svg)", "![b](photo.png)",
+                                       "After."))
+    ed.show()
+    QApplication.processEvents()
+    group = _group(ed)
+    can = []
+    for number in range(2):
+        ed.photos.select(group.start + number)
+        can.append(ed.photos.state().can[CROP])
+    assert can == [False, True]
+    drawing = tmp_path / "drawing.svg"
+    drawing.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>')
+    window = types.SimpleNamespace(_look_files=None,
+                                   _picture_file=lambda editor, name: str(drawing))
+    notices = []
+    ed.notice.connect(notices.append)
+    MainWindow._crop_photo(window, ed, group.start)
+    assert notices == ["This picture is an SVG drawing, which can’t be cropped here. Crop it in "
+                       "a drawing app instead."]
+    ed.close()

@@ -107,7 +107,10 @@ def state_of(photos) -> PhotoState:
         LARGE: True, TAKE_OUT: grouped and photos.take_out_place(picture) is not None,
         SPLIT: grouped and not last,
         JOIN_ABOVE: joins[JOIN_ABOVE] is not None, JOIN_BELOW: joins[JOIN_BELOW] is not None,
-        CAPTION: True, DESCRIPTION: True, CROP: True, ADD: True, REMOVE: True,
+        # Crop… needs the picture itself: not a stand-in (an SVG drawing,
+        # a file not there, one on its way).
+        CAPTION: True, DESCRIPTION: True, ADD: True, REMOVE: True,
+        CROP: photo_group_view.resource_sizes(doc)(picture.unit.name) is not None,
         MOVE_MODE: grouped and picture.count > 1})
     titles = state.titles
     titles[UP] = hop_title(picture, False, hops[UP])

@@ -7931,9 +7931,18 @@ class MainWindow(QMainWindow):
             editor.notice.emit(_("This picture couldn’t be read. Check that its file is still "
                                  "there, and try again."))
             return
+        image = picture_crop.decode_upright(data)
+        if image is None:
+            editor.notice.emit(
+                _("This picture is an SVG drawing, which can’t be cropped here. Crop it in a "
+                  "drawing app instead.")
+                if image_safety.sniff_image_mime(data) == "image/svg+xml" else
+                _("This picture can’t be cropped: it is too large, or not a kind of picture "
+                  "MyEditor shows."))
+            return
         looks = getattr(self, "_look_files", None)
         beside = not (looks is not None and os.path.dirname(path) == looks.path())
-        sheet = picture_crop.CropSheet(self, data)
+        sheet = picture_crop.CropSheet(self, data, image)
         sheet.cropped.connect(lambda cut, ext: self._cropped(
             editor, position, name, path if beside else "", cut, ext, picture.unit.alt))
         sheet.finished.connect(sheet.deleteLater)
