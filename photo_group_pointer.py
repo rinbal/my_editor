@@ -482,14 +482,14 @@ class PhotoPointer(QObject):
             self._editor.viewport().update()
 
     def paint_text(self, event) -> bool:
-        """The text drawn while a picture of a group is selected: as Qt
-        draws it, without its highlight, which would fill the group's
-        whole line around the pictures (the ring shows what is selected,
-        and no caret blinks, as in Pages). False otherwise: Qt draws it."""
+        """The text drawn while a picture is selected, of a group or alone:
+        as Qt draws it, without its highlight, which would fill the group's
+        whole line around the pictures and tint a picture alone (the ring
+        shows what is selected, and no caret blinks, as in Pages). False
+        otherwise: Qt draws it."""
         ed = self._editor
         cursor = ed.textCursor()
-        if (cursor.selectionEnd() - cursor.selectionStart() != 1
-                or not photo_group.is_group_block(cursor.block())):
+        if cursor.selectionEnd() - cursor.selectionStart() != 1 or self._photos.current() is None:
             return False
         dx, dy = ed.horizontalScrollBar().value(), ed.verticalScrollBar().value()
         clip = QRectF(event.rect().translated(dx, dy))

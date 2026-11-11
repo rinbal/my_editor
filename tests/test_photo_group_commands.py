@@ -559,3 +559,15 @@ def test_a_click_beside_a_narrower_picture_of_a_group_selects_the_nearest(said):
     _mouse(ed, QEvent.Type.MouseButtonRelease, beside, Qt.MouseButton.NoButton)
     assert photos.current().place == 2 and ed.textCursor().hasSelection()
     ed.close()
+
+
+def test_a_picture_alone_selected_is_not_tinted(said):
+    # Gate RG-PG2E-b 11: Qt's highlight tinted it blue.
+    ed = _editor(_text("Before.", "![one](photo.png)", "After."))
+    picture = photo_group_actions.picture_at(ed.document(), len("Before.\n"))
+    middle = ed.photos.to_view(ed.photos.box_of(picture)).center().toPoint()
+    plain = ed.viewport().grab().toImage().pixelColor(middle)
+    ed.photos.select(picture.position)
+    assert ed.textCursor().hasSelection()
+    assert ed.viewport().grab().toImage().pixelColor(middle) == plain
+    ed.close()
