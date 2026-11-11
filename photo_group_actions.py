@@ -309,7 +309,8 @@ def beyond(doc: QTextDocument, picture: Picture, down: bool) -> Optional[Place]:
         # A table: behind it, which is before (after) the paragraph there.
         while block.isValid() and not _top(doc, block):
             block = step(block)
-        return Place(GAP, block.position(), before=down) if block.isValid() else None
+        return settle(doc, Place(GAP, block.position(), before=down), down) if block.isValid() \
+            else None
     if photo_group.is_group_block(block):
         return Place(SLOT, block.position(), 0 if down else len(photo_group.block_units(block)))
     if not down and photo_group_find.caption_paragraph(block) is not None:
@@ -319,7 +320,62 @@ def beyond(doc: QTextDocument, picture: Picture, down: bool) -> Optional[Place]:
     lone = _lone(doc, block)
     if lone is not None:
         return Place(BESIDE, lone.position, before=down)
-    return Place(GAP, block.position(), before=not down)
+    return settle(doc, Place(GAP, block.position(), before=not down), down)
+
+
+def settle(doc: QTextDocument, place: Optional[Place], down: Optional[bool]) -> Optional[Place]:
+    """What a GAP is once the file is read again, as the reader's rules
+    have it: past an italic paragraph right under it, which would become
+    the picture's caption, going on ``down`` (None: then no place); in
+    the pictures right above it (at their end) or right under it (at
+    their start), which a picture written there joins. Any other place
+    as it is."""
+    while place is not None and place.kind == GAP:
+        block = doc.findBlock(place.at)
+        above = _filled(doc, block.previous() if place.before else block, False)
+        below = _filled(doc, block if place.before else block.next(), True)
+        if below is not None and photo_group_find.caption_paragraph(below) is not None:
+            if down is None or (above is None and not down):
+                return None
+            place = (Place(GAP, below.position(), before=False) if down
+                     else Place(GAP, above.position(), before=True))
+            continue
+        return _pictures_end(doc, above) or _pictures_start(doc, below) or place
+    return place
+
+
+def _filled(doc: QTextDocument, block, down: bool):
+    """``block``, or the first paragraph past it (``down``, else before it)
+    that is not empty; None at the document's end. A table's paragraphs
+    count as words."""
+    while block.isValid() and _top(doc, block) and not block.text().strip():
+        block = block.next() if down else block.previous()
+    return block if block.isValid() else None
+
+
+def _pictures_end(doc: QTextDocument, block) -> Optional[Place]:
+    """The place at the end of the pictures ``block`` holds (or whose
+    caption it is), for a picture written right under it."""
+    if block is None or not _top(doc, block):
+        return None
+    if photo_group.is_group_block(block):
+        return Place(SLOT, block.position(), len(photo_group.block_units(block)))
+    lone = _lone(doc, block)
+    if lone is None and photo_group_find.caption_paragraph(block) is not None:
+        above = _lone(doc, block.previous())
+        lone = above if above is not None and above.end >= block.position() else None
+    return Place(BESIDE, lone.position, before=False) if lone is not None else None
+
+
+def _pictures_start(doc: QTextDocument, block) -> Optional[Place]:
+    """The place at the start of the pictures ``block`` holds, for a
+    picture written right above it."""
+    if block is None or not _top(doc, block):
+        return None
+    if photo_group.is_group_block(block):
+        return Place(SLOT, block.position(), 0)
+    lone = _lone(doc, block)
+    return Place(BESIDE, lone.position, before=True) if lone is not None else None
 
 
 def neighbour(doc: QTextDocument, picture: Picture, down: bool) -> Optional[Picture]:

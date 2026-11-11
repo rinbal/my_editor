@@ -39,6 +39,7 @@ import photo_group
 import photo_group_actions as actions
 import photo_group_menu
 import photo_group_view
+from doc_walk import OBJECT_REPLACEMENT
 from i18n import N_, _, ngettext
 from photo_group_actions import BESIDE, GAP, SLOT, Picture, Place
 from photo_group_fields import PhotoFields
@@ -77,7 +78,8 @@ def _undo_keys() -> str:
 
 
 def _quoted(words: str) -> str:
-    words = " ".join(words.split())
+    """A paragraph's words to say, without its pictures; empty for none."""
+    words = " ".join(words.replace(OBJECT_REPLACEMENT, " ").split())
     return words if len(words) <= 32 else words[:30].rstrip() + "…"
 
 
@@ -373,12 +375,12 @@ class PhotoEditing(QObject):
         if moved.grouped:
             self.say(_("Put into the group, {photo}").format(photo=self.place_words(moved)))
         else:
-            block = doc.findBlock(moved.first)
-            above = block.previous()
-            while above.isValid() and not above.text().strip():
+            # Quoted: the nearest paragraph with words in it.
+            above = doc.findBlock(moved.first).previous()
+            while above.isValid() and not _quoted(above.text()):
                 above = above.previous()
             below = doc.findBlock(moved.end).next()
-            while below.isValid() and not below.text().strip():
+            while below.isValid() and not _quoted(below.text()):
                 below = below.next()
             if above.isValid():
                 self.say(_("The photo stands alone now, under “{words}”").format(
@@ -475,7 +477,7 @@ class PhotoEditing(QObject):
                 or not (photo_group.is_plain_paragraph(block)
                         or block.blockFormat().headingLevel())):
             return None
-        return Place(GAP, block.position(), before=block.length() == 1)
+        return actions.settle(doc, Place(GAP, block.position(), before=block.length() == 1), True)
 
     def insert(self, place: Place, pictures: Sequence, step: str) -> None:
         """Put new ``pictures`` (image formats) at ``place`` as one step

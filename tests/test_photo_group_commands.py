@@ -19,6 +19,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
 
 import announce
+import photo_group
 import photo_group_actions
 import picture_crop
 from photo_group_menu import (
@@ -318,4 +319,38 @@ def test_leaving_an_empty_split_line_selects_the_picture_the_caret_went_to():
                                                                 picture.position + 1)
     QTest.keyClick(ed, Qt.Key.Key_Backspace)
     assert _markdown(ed) == _text("Before.", ONE, TWO, FOUR, "After.")
+    ed.close()
+
+
+# -- a place between paragraphs is what the file will hold (gates a 4, b 3) ----
+
+def test_take_out_then_up_shows_what_the_file_reopens_as():
+    ed = _selected(number=1)
+    ed.photos.run(TAKE_OUT)
+    ed.photos.run(UP)
+    written = _markdown(ed)
+    assert written == _text("Before.", ONE, THREE, FOUR, TWO, "After.")
+    shown = [len(group.units) for group in photo_group.groups_in(ed.document())]
+    again = _editor(written)
+    assert shown == [len(group.units) for group in photo_group.groups_in(again.document())] == [4]
+    ed.close()
+    again.close()
+
+
+def test_a_picture_moved_up_goes_past_an_italic_paragraph_that_would_be_its_caption():
+    ed = _selected(_text("Words.", "*An italic aside.*", ONE, THREE, FOUR), number=0)
+    ed.photos.run(UP)
+    assert _markdown(ed) == _text(ONE, "Words.", "*An italic aside.*", THREE, FOUR)
+    ed.close()
+
+
+def test_take_out_lands_where_the_file_keeps_it_alone():
+    ed = _selected(_text("Before.", ONE, TWO, THREE, "After.", "*An aside.*", "End."), number=1)
+    ed.photos.run(TAKE_OUT)
+    assert _markdown(ed) == _text("Before.", ONE, THREE, "After.", "*An aside.*", TWO, "End.")
+    ed.close()
+    ed = _selected(TWO_GROUPS, number=1)
+    assert ed.photos.state().hints[TAKE_OUT] == "Then it stands alone above the paragraph before"
+    ed.photos.run(TAKE_OUT)
+    assert _markdown(ed) == _text(TWO, "Before.", ONE, "Middle.", THREE, FOUR, "After.")
     ed.close()

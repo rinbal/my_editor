@@ -314,30 +314,21 @@ class Session:
             number -= number > own
         return self.slot(start, number + (0 if before else 1))
 
-    def _run_at(self, block, *, upward: bool) -> Optional[Target]:
-        """The place that joins the pictures in ``block`` from the gap
-        under them (``upward``) or above them."""
-        if not block.isValid():
-            return None
-        if photo_group.is_group_block(block):
-            count = len(photo_group.block_units(block)) - self._own_group(block.position())
-            return self.slot(block.position(), count if upward else 0)
-        lone = actions.picture_at(self.doc, block.position())
-        if lone is None and upward and block.previous().isValid():
-            above = actions.picture_at(self.doc, block.previous().position())
-            if above is not None and above.end >= block.position():
-                lone = above                  # ``block`` is its caption
-        return self._beside(lone, before=not upward) if lone is not None else None
-
     def _between(self, point: QPointF, block) -> Optional[Target]:
         """The gap nearest to ``point``: above or under ``block``."""
         layout = self.doc.documentLayout()
         rect = layout.blockBoundingRect(block)
         before = point.y() < rect.center().y()
-        upper, lower = (block.previous(), block) if before else (block, block.next())
-        joined = self._run_at(upper, upward=True) or self._run_at(lower, upward=False)
-        if joined is not None:
-            return joined
+        # What the file will hold: no place where an italic paragraph under
+        # it would become the picture's caption; pictures next to it, which
+        # it joins (actions.settle).
+        place = actions.settle(self.doc, Place(GAP, block.position(), before=before), None)
+        if place is None:
+            return None
+        if place.kind == SLOT:
+            return self.slot(place.at, place.index)
+        if place.kind == BESIDE:
+            return self._beside(actions.picture_at(self.doc, place.at), before=place.before)
         # A paragraph of its own: only between plain paragraphs and headings.
         if block.textList() is not None or not (
                 photo_group.is_plain_paragraph(block) or block.blockFormat().headingLevel()):
