@@ -306,8 +306,9 @@ class StandupWriter(QObject):
         """Whether the text ``d`` keeps its link name, and why: a run of
         it on its way (what it holds), an entry of the list as read, or
         this computer's mark (kept across restarts). Without one, while
-        the account is ``in_use``, the list is read (once) and the name
-        stays read-only until a read of it whole answers; with no account
+        the account is ``in_use``, the list is read (once; through a
+        signer app only once the person asks, ``unasked`` till then) and
+        the name stays read-only until a read of it whole answers; with no account
         in use, or no server to submit to (nothing is submitted from
         here, and the list is never read for it: RG-M2r3 17), only the
         mark tells. Never free on a list not read."""
@@ -338,6 +339,12 @@ class StandupWriter(QObject):
             return LinkNameLock()                   # read whole: none of this text
         if account.check_failed:
             return LinkNameLock(unchecked=True)
+        if not getattr(profile, "is_local", False):
+            # Through a signer app each page is a prompt there: read only
+            # on a tap (Check), or with a read the person started
+            # (Einreichungen, the sheet), never as Article Details shows
+            # at launch (RG-M3-a 12).
+            return LinkNameLock(unasked=True)
         self._check(account)
         return LinkNameLock(checking=True)
 

@@ -109,6 +109,8 @@ LINK_NAME_KEPT_FOR_SENDING_WHY = N_("Its submission is made from its link name: 
 LINK_NAME_CHECKING = N_("Checking whether this article was submitted …")
 LINK_NAME_NOT_CHECKED = N_("MyEditor couldn’t check whether this article was submitted, so "
                            "it keeps its link name for now.")
+# With a signer app the list is read for the link name only on a tap.
+LINK_NAME_NOT_ASKED = N_("Not checked yet whether this article was submitted.")
 LINK_NAME_CHECKING_WHY = N_("If it was submitted, another link name would be another "
                             "submission.")
 
@@ -225,7 +227,8 @@ __all__ = [
     "IN_THE_BACKGROUND", "KEY_NOT_CONFIRMED_AGAIN", "LIMIT_AT", "LIMIT_OVER",
     "LIMIT_TOMORROW_AT",
     "LINK_NAME_CHECKING", "LINK_NAME_CHECKING_WHY", "LINK_NAME_KEPT_FOR_SENDING",
-    "LINK_NAME_KEPT_FOR_SENDING_WHY", "LINK_NAME_NOT_CHECKED", "LINK_NAME_SUBMITTED",
+    "LINK_NAME_KEPT_FOR_SENDING_WHY", "LINK_NAME_NOT_ASKED", "LINK_NAME_NOT_CHECKED",
+    "LINK_NAME_SUBMITTED",
     "LINK_NAME_SUBMITTED_WHY", "LIST_CHANGED_ELSEWHERE", "LIST_ENTRY_UNUSABLE", "LIST_NOT_SAVED",
     "MESSAGE_LIMIT_AT", "MESSAGE_LIMIT_LATER", "MESSAGE_LIMIT_OVER", "MESSAGE_LIMIT_TOMORROW_AT",
     "MESSAGE_MAYBE_ARRIVED", "MESSAGE_NOT_BUILT", "MESSAGE_NOT_CONFIRMED", "MESSAGE_NOT_SENT",

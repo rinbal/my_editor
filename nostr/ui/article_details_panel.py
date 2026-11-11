@@ -107,7 +107,7 @@ class ArticleDetailsPanel(QFrame):
     # (document, address): a picture dropped as the cover of a document no
     # longer in front is uploaded: that document's cover.
     cover_uploaded = Signal(object, str)
-    # Check Again: whether the text was submitted could not be told.
+    # Check (Again): whether the text was submitted was not or could not be told.
     check_link_name = Signal()
 
     def __init__(self, *, media_store: Optional[MediaStore] = None,
@@ -267,7 +267,8 @@ class ArticleDetailsPanel(QFrame):
         self.identifier_note.setWordWrap(True)
         advanced.addWidget(self.identifier_note)
         # The way forward when the list of submissions could not be read
-        # (lesson 12): read again, the name read-only meanwhile.
+        # (lesson 12), or was not read as a signer app would be asked:
+        # read it, the name read-only meanwhile.
         self.check_again = QPushButton(_("Check Again"))
         self.check_again.setAutoDefault(False)
         self.check_again.clicked.connect(self.check_link_name)
@@ -435,7 +436,10 @@ class ArticleDetailsPanel(QFrame):
                 note = ""
             self.identifier_note.setText(note)
             self.identifier_note.setVisible(bool(note))
-            self.check_again.setVisible(link_name_lock.unchecked)
+            # Check reads a list not read yet; Check Again one that could not tell.
+            self.check_again.setText(_("Check Again") if link_name_lock.unchecked
+                                     else _("Check"))
+            self.check_again.setVisible(link_name_lock.unchecked or link_name_lock.unasked)
             self._show_first_published(details.published_at)
             self._check_identifier()
             self._suggest_identifier()

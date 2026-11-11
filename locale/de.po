@@ -13330,3 +13330,9 @@ msgstr "leere Antwort"
 #: nostr/ui/tips.py:60
 msgid "Help"
 msgstr "Hilfe"
+
+msgid "Not checked yet whether this article was submitted."
+msgstr "Noch nicht geprüft, ob dieser Artikel eingereicht wurde."
+
+msgid "Check"
+msgstr "Prüfen"

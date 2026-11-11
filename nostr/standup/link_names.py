@@ -148,15 +148,19 @@ class LinkNameLock:
     what the server holds of it as far as this computer knows (a run's
     ``Progress.held``; an entry or a mark, STORED once a receipt was held,
     else NOTHING); ``checking``, the list of submissions is being read;
-    ``unchecked``, it could not be read whole (Check Again reads it)."""
+    ``unchecked``, it could not be read whole (Check Again reads it);
+    ``unasked``, it was not read yet, as the account's signer app would
+    be asked to open it, which only a tap does (Check reads it; RG-M3-a
+    12)."""
 
     held: Optional[Held] = None
     checking: bool = False
     unchecked: bool = False
+    unasked: bool = False
 
     @property
     def locked(self) -> bool:
-        return self.held is not None or self.checking or self.unchecked
+        return self.held is not None or self.checking or self.unchecked or self.unasked
 
     def words(self) -> Tuple[str, str]:
         """(the note, its tooltip), untranslated; empty while it is free."""
@@ -167,6 +171,8 @@ class LinkNameLock:
             return words.LINK_NAME_CHECKING, words.LINK_NAME_CHECKING_WHY
         if self.unchecked:
             return words.LINK_NAME_NOT_CHECKED, words.LINK_NAME_CHECKING_WHY
+        if self.unasked:
+            return words.LINK_NAME_NOT_ASKED, words.LINK_NAME_CHECKING_WHY
         return "", ""
 
 

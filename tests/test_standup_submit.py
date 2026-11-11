@@ -426,7 +426,8 @@ def test_a_lookup_never_asks_one_server_about_anothers_entry():
                     print, print)
 
 
-PROFILE = SimpleNamespace(user_pubkey=WRITER)
+# The key on this computer: the list is read as Article Details shows.
+PROFILE = SimpleNamespace(user_pubkey=WRITER, is_local=True)
 
 
 def _lock(writer, d="ein-jahr", *, in_use=True, profile=PROFILE):
@@ -476,6 +477,22 @@ def test_a_link_name_is_never_free_on_a_list_not_read_whole():
     assert submissions.reads == 1 and heard == [WRITER]
     assert _lock(writer) == LinkNameLock(held=Held.NOTHING)
     assert _lock(writer, "anders") == LinkNameLock()            # read whole: never submitted
+
+
+def test_with_a_signer_app_article_details_reads_the_list_only_on_a_tap():
+    # RG-M3-a 12: Article Details open at launch read the list, and each
+    # page was a prompt of the signer app before anyone asked for it.
+    from nostr.standup.link_names import LinkNameLock
+    submissions = FakeList([_entry()])
+    writer = _writer(submissions, FakeApi())
+    remote = SimpleNamespace(user_pubkey=WRITER, is_local=False)
+    assert _lock(writer, "anders", profile=remote) == LinkNameLock(unasked=True)
+    QApplication.processEvents()
+    assert submissions.reads == 0
+    writer.check_link_name(remote)                              # Check
+    assert _lock(writer, "anders", profile=remote) == LinkNameLock(checking=True)
+    QApplication.processEvents()
+    assert submissions.reads == 1 and _lock(writer, "anders", profile=remote) == LinkNameLock()
 
 
 def test_without_a_server_the_list_is_never_read_for_a_link_name(tmp_path):
@@ -1459,6 +1476,7 @@ def test_one_read_of_the_list_is_on_its_way_at_a_time_and_every_asker_hears_it()
     loads, said = [], []
     account.destinations.find = lambda found, failed: found([])
     account.submissions.load = loads.append
+    writer.check_link_name(profile)                 # Article Details' Check
     assert writer.link_name(profile, "ein-jahr", in_use=True) == LinkNameLock(checking=True)
     writer.destinations(profile, lambda *a: said.append("publications"), said.append)
     writer.round_for(profile, PUBLICATION, "anders", lambda answer: said.append("round"))

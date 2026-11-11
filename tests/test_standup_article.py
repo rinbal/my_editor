@@ -49,7 +49,7 @@ class _Submitting(_Window):
         return ""
 
 
-PROFILE = types.SimpleNamespace(user_pubkey="a" * 64)
+PROFILE = types.SimpleNamespace(user_pubkey="a" * 64, is_local=True)
 
 
 def test_a_local_picture_goes_with_the_text_by_its_key_and_an_uploaded_one_by_address(
