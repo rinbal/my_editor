@@ -52,7 +52,7 @@ class PhotoFields:
             font.setItalic(True)
             field = PictureField(
                 ed.viewport(), name=_("Caption of {photo}").format(
-                    photo=photos.place_words(picture)), text=picture.unit.caption_text,
+                    photo=photos.place_words(picture)), text=picture.unit.caption_line,
                 placeholder=_("Caption, e.g. “The jetty · Photo: Anna Berg”"), font=font,
                 **colors)
         else:

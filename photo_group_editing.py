@@ -513,7 +513,7 @@ class PhotoEditing(QObject):
         picture = actions.picture_at(self._editor.document(), position)
         if picture is None:
             return
-        old = picture.unit.caption_text if kind == CAPTION else picture.unit.alt
+        old = picture.unit.caption_line if kind == CAPTION else picture.unit.alt
         if words == old:
             return
         write = actions.set_caption if kind == CAPTION else actions.set_description

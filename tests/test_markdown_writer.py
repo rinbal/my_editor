@@ -669,6 +669,13 @@ def test_a_caption_changed_in_a_group_is_written_in_its_place():
     assert document_to_markdown(doc, _image_as_read) == "![a](a.png)\n\n*New words*\n\n![b](b.png)\n"
 
 
+def test_a_caption_in_bold_and_with_a_link_is_written_as_one_italic_stretch():
+    """Written "*The* ***old*** *jetty*", the spaces between would be upright
+    and the line no caption, for STANDUP and when read again."""
+    source = "![a](a.png)\n\n*The **old** jetty at [Loch Ossian](https://e.org/loch)*\n"
+    assert document_to_markdown(_read_folded(source), _image_as_read) == source
+
+
 def test_a_break_tag_between_two_pictures_is_read_as_a_break():
     """Gate 17: pictures pasted from a page come as "![a](a.png)<br>![b]
     (b.png)". Read as a break, each picture keeps its description, and

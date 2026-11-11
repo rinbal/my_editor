@@ -54,7 +54,7 @@ from __future__ import annotations
 import hashlib
 import re
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from typing import Callable, List, Optional, Tuple
 
@@ -572,7 +572,29 @@ def _ends_a_bare_address(address: str, following: Optional[_Span]) -> bool:
     return len(rest) < len(text) and (not rest or rest[0].isspace())
 
 
+def _caption_start(spans: List[_Span]) -> Optional[int]:
+    """Where the words in italic that end a paragraph start, when nothing
+    but pictures and spaces comes before them: a caption, under a picture
+    or on its line. Written as one italic stretch ("*The **old** jetty*"),
+    it reads back as it was, and STANDUP reads it as a caption (italic
+    words alone: "*The* ***old***" holds upright spaces). None for words
+    in one style throughout, which are one stretch anyway, and for any
+    other paragraph."""
+    start = len(spans)
+    while start > 0 and spans[start - 1].italic and not spans[start - 1].raw:
+        start -= 1
+    if len(spans) - start < 2 or not all(span.raw or not span.text.strip()
+                                         for span in spans[:start]):
+        return None
+    return start
+
+
 def _inline_markdown(spans: List[_Span], hard_break: str = "  \n") -> str:
+    caption = _caption_start(spans)
+    if caption is not None:
+        words = _inline_markdown([replace(span, italic=False) for span in spans[caption:]],
+                                 hard_break)
+        spans = spans[:caption] + [_Span(text=_wrap(words, "*"), raw=True)]
     out = []
     i = 0
     while i < len(spans):

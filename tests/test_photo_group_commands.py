@@ -126,8 +126,9 @@ def test_a_split_whose_line_stays_empty_is_taken_back(said):
 
 
 def _write_in_field(ed, words: str) -> None:
-    field = ed.viewport().findChild(QWidget, "pictureField")
-    assert field is not None and field.isVisible()
+    field = next((found for found in ed.viewport().findChildren(QWidget, "pictureField")
+                  if found.isVisible()), None)
+    assert field is not None
     field.line.setText(words)
     QTest.keyClick(field.line, Qt.Key.Key_Return)
     QApplication.processEvents()
@@ -141,6 +142,19 @@ def test_caption_is_written_in_place_and_saved_under_the_picture():
                                   FOUR, "After.")
     assert ed.undo_name() == "Caption" and ed.hasFocus()
     assert _undone(ed)
+    ed.close()
+
+
+def test_a_caption_keeps_its_bold_words_and_its_link_when_one_word_is_changed():
+    rich = "![two](square.png)\n\n*The **old** jetty at [Loch Ossian](https://example.org/l)*"
+    markdown = _text("Before.", ONE, rich, THREE, FOUR, "After.")
+    ed = _selected(markdown, number=1)
+    ed.photos.run(CAPTION)
+    _write_in_field(ed, "The old pier at Loch Ossian")
+    assert _markdown(ed) == markdown.replace("jetty", "pier")
+    ed.photos.run(CAPTION)
+    _write_in_field(ed, "The old pier at Loch Ossian")
+    assert _markdown(ed) == markdown.replace("jetty", "pier") and ed.undo_name() == "Caption"
     ed.close()
 
 

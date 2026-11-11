@@ -38,12 +38,10 @@ from __future__ import annotations
 import itertools
 import json
 from dataclasses import dataclass
-from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import (
-    QFont,
-    QGuiApplication,
     QTextBlockFormat,
     QTextCharFormat,
     QTextCursor,
@@ -52,7 +50,9 @@ from PySide6.QtGui import (
     QTextFormat,
 )
 
+import photo_caption
 from doc_walk import LINE_SEPARATOR, OBJECT_REPLACEMENT, SOFT_BREAK_PROPERTY
+from photo_caption import CaptionRun
 
 # --------------------------------------------------------------------------- #
 # Marks in the document                                                        #
@@ -98,37 +98,6 @@ def without_wide_url(url: QUrl) -> QUrl:
 # Units: a picture and its caption                                             #
 # --------------------------------------------------------------------------- #
 
-class CaptionRun(NamedTuple):
-    """A piece of a caption in one format: what Markdown can say of it."""
-
-    text: str
-    bold: bool = False
-    italic: bool = True
-    strike: bool = False
-    code: bool = False
-    href: str = ""
-    soft: bool = False          # a soft line break, kept as the file had it
-
-    def format(self) -> QTextCharFormat:
-        """The format a reader of Markdown gives such a piece."""
-        fmt = QTextCharFormat()
-        if self.bold:
-            fmt.setFontWeight(QFont.Weight.Bold)
-        if self.italic:
-            fmt.setFontItalic(True)
-        if self.strike:
-            fmt.setFontStrikeOut(True)
-        if self.code:
-            fmt.setFontFixedPitch(True)
-        if self.href:
-            fmt.setAnchor(True)
-            fmt.setAnchorHref(self.href)
-            fmt.setForeground(QGuiApplication.palette().link())
-        if self.soft:
-            fmt.setProperty(SOFT_BREAK_PROPERTY, True)
-        return fmt
-
-
 _BOLD, _ITALIC, _STRIKE, _CODE, _SOFT_RUN = 1, 2, 4, 8, 16
 _numbers = itertools.count(1)
 
@@ -169,13 +138,24 @@ class Unit:
     def caption_text(self) -> str:
         return "".join(run.text for run in self.caption)
 
+    @property
+    def caption_line(self) -> str:
+        """The caption's words on one line, as the caption field shows them."""
+        return photo_caption.line(self.caption)
+
     def captioned(self, words: str) -> "Unit":
-        """This unit with ``words`` as its caption (none for no words): in
-        italic, as a caption is; in the paragraph under the picture,
-        unless its caption stood on the picture's own line before."""
-        caption = (CaptionRun(words),) if words else ()
+        """This unit with its caption's line edited into ``words`` (none for
+        no words): what the edit left keeps its format (photo_caption.edited);
+        a new caption is in italic, as a caption is."""
+        return self.with_caption(photo_caption.edited(self.caption, words))
+
+    def with_caption(self, caption: Sequence[CaptionRun]) -> "Unit":
+        """This unit with the runs ``caption`` as its caption (none for no
+        runs), in the paragraph under the picture, unless its caption stood
+        on the picture's own line before."""
+        caption = tuple(run for run in caption if run.text)
         return Unit(self.image, self.name, caption,
-                    self.caption_join if words else None, self.join, self.number)
+                    self.caption_join if caption else None, self.join, self.number)
 
     def caption_runs(self) -> List[Tuple[str, QTextCharFormat]]:
         """The caption as (text, format) pieces, as a paragraph's are."""
