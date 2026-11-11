@@ -645,6 +645,37 @@ def test_too_long_for_the_signer_app_with_the_key_here_offers_it_once(accepted, 
     sheet.deleteLater()
 
 
+def test_q1_learned_only_from_the_signer_apps_refusal_still_publishes_with_the_key_here(
+        accepted, monkeypatch):
+    # RG-M4-c 1 (probe p10): the relays' caps come once the signer app is
+    # connected, so the refusal teaches the limit; the key here then signs.
+    from nostr import signer_limits
+    from nostr.ui import standup_publish_job
+    limit = {"known": False}
+    for module in (signer_limits, standup_publish_job):
+        monkeypatch.setattr(module, "signable", lambda profile, event: not limit["known"])
+    remote = SimpleNamespace(user_pubkey=pk("writer"), signer="remote", bunker_relays=[])
+    run, _store, jobs = _run(accepted, key_here=True, profile=remote)
+    real_start = FakeJob.start
+
+    def refused(job):
+        if job.here:
+            real_start(job)
+        else:
+            limit["known"] = True
+            job.failure_words = "refused"
+            job.failed.emit("too long")
+
+    monkeypatch.setattr(FakeJob, "start", refused)
+    run.start()
+    accepted.world.settle()
+    assert run.stage is Stage.OFFER_HERE
+    run.start(here=True)
+    accepted.world.settle()
+    assert jobs[-1].here and run.stage is Stage.DONE
+    assert accepted.world.record(accepted.sid).state == "published"
+
+
 def test_a_correction_taken_is_confirmed_alone_then_replaces_the_article_keeping_its_date(
         accepted):
     # M-4 M15: bound to the correction's verified revision, at the address

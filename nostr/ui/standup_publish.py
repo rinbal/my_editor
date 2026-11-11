@@ -448,6 +448,9 @@ class AcceptedPublish(QObject):
         self._take_down()
         if not self._here and size_problem(self._profile, event=job.unsigned_event,
                                            key_here=self._ports.key_here):
+            # The refused job goes first: signing with the key here is a
+            # new job, which the guard only follows as the run's (RG-M4-c 1).
+            self._let_go()
             self._say_too_long(job.unsigned_event)
         else:
             self._fail(job.failure_words)
