@@ -89,7 +89,7 @@ def objects_in_sight(view) -> Iterator[Tuple[str, QRectF]]:
                     # layout draws it, not where its character is.
                     box = photo_group_view.picture_box(view.document(), fragment.position())
                 else:
-                    box = _object_box(layout, block, fragment.position() - block.position(),
+                    box = object_box(layout, block, fragment.position() - block.position(),
                                       fmt.toImageFormat())
                 if box is not None:
                     yield fmt.toImageFormat().name(), box.translated(-dx, -dy)
@@ -97,7 +97,7 @@ def objects_in_sight(view) -> Iterator[Tuple[str, QRectF]]:
         block = block.next()
 
 
-def _object_box(layout, block, offset: int, image) -> Optional[QRectF]:
+def object_box(layout, block, offset: int, image) -> Optional[QRectF]:
     """Where the object at ``offset`` in ``block`` stands, in document
     coordinates (a block's own layout is placed within its frame, a table
     cell's within the cell, so the document layout says where it is). It

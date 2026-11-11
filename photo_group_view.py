@@ -120,6 +120,19 @@ def sizes_from(found: Dict[str, object]) -> SizeLookup:
 # --------------------------------------------------------------------------- #
 
 @dataclass
+class Arranged:
+    """A list of pictures as one group at a width, before it is one (a
+    picture being dragged to another place): each picture's box and its
+    figure's left edge and width, from the group's top left corner, and
+    the group's width and height."""
+
+    boxes: List[QRectF]
+    figures: List[Tuple[float, float]]
+    width: float
+    height: float
+
+
+@dataclass
 class _Laid:
     """One group at the width it was laid out for: the place of each of
     its pictures' characters, the units, the box of each character, and
@@ -184,6 +197,9 @@ class _Handler(QPyTextObject):
         # A caption laid out, by its runs and its width.
         self._captions: Dict[tuple, Tuple[QTextLayout, float]] = {}
         self._caption_font: Optional[tuple] = None
+        # Room a view keeps free above every group, in the layout's pixels
+        # (the editor's bar over a group floats there): at least this much.
+        self.room_above = 0.0
 
     # Qt asks for each object's size whenever it lays its line out (also
     # after the width changed), and has it drawn into the box it gave.
@@ -217,6 +233,8 @@ class _Handler(QPyTextObject):
                                              target.bottom() + self._caption_gap(doc)))
 
     def _draw_picture(self, painter, target: QRectF, doc, unit) -> None:
+        if not unit.name:
+            return
         image = doc.resource(QTextDocument.ResourceType.ImageResource.value, QUrl(unit.name))
         if isinstance(image, QPixmap):
             painter.drawPixmap(_fitted(target, image), image, QRectF(image.rect()))
@@ -304,17 +322,21 @@ class _Handler(QPyTextObject):
 
     # ---- the groups laid out ----
 
-    def _at(self, doc, position: int) -> Optional[Tuple[_Laid, int]]:
-        """The group laid out around the picture at ``position``, and the
-        picture's number in it."""
+    def _measure(self, doc) -> None:
+        """What the groups are laid out with, for the document as it is."""
         valid = (doc.revision(), doc.textWidth(), doc.pageSize().width(), self.screen_height,
-                 doc.defaultFont())
+                 doc.defaultFont(), self.room_above)
         if valid != self._valid:
             self._valid = valid
             self._laid = {}
             scale = self._scale(doc)
             self._measures = (self.metrics(doc), scale, self._caption_gap(doc),
                               GROUP_MARGIN_EM * _font_pixels(doc.defaultFont(), scale))
+
+    def _at(self, doc, position: int) -> Optional[Tuple[_Laid, int]]:
+        """The group laid out around the picture at ``position``, and the
+        picture's number in it."""
+        self._measure(doc)
         found = self._laid.get(position)
         if found is None:
             block = doc.findBlock(position)
@@ -325,24 +347,55 @@ class _Handler(QPyTextObject):
             found = self._laid.get(position)
         return found
 
-    def _lay_out(self, doc, block, start: int, units) -> _Laid:
-        metrics, scale, gap, margin = self._measures
+    def _rows(self, doc, units, *, note: bool) -> List[geometry.Row]:
+        """The rows ``units`` stand in at the document's width; with
+        ``note``, the size each was laid out with is kept (picture_arrived)."""
+        metrics, _scale, gap, _margin = self._measures
         items = []
         for unit in units:
-            size = self.sizes(unit.name) if self.sizes else None
-            self._sized[unit.number] = size
+            size = self.sizes(unit.name) if self.sizes and unit.name else None
+            if note:
+                self._sized[unit.number] = size
             items.append(geometry.item(size, unit.caption_text, unit.wide))
 
         def caption_height(index: int, width: float) -> float:
             unit = units[index]
             return self._caption(doc, unit, width)[1] + gap if unit.has_caption else 0.0
 
-        rows = geometry.group_rows(items, metrics, caption_height)
+        return geometry.group_rows(items, metrics, caption_height)
+
+    def arrange(self, doc, units) -> "Arranged":
+        """Where the pictures of ``units`` would stand as one group at
+        the document's width, from the group's top left corner."""
+        self._measure(doc)
+        metrics = self._measures[0]
+        rows = self._rows(doc, units, note=False)
+        boxes: List[QRectF] = [QRectF()] * len(units)
+        figures: List[Tuple[float, float]] = [(0.0, 0.0)] * len(units)
+        top = 0.0
+        for number, row in enumerate(rows):
+            for tile in row.tiles:
+                boxes[tile.index] = QRectF(tile.x, top + tile.y, tile.width, tile.height)
+                figures[tile.index] = (tile.figure_x, tile.figure_width)
+            top += row.height + (metrics.gap if number < len(rows) - 1 else 0.0)
+        return Arranged(boxes, figures, metrics.width, top)
+
+    def draw(self, painter, doc, unit, box: QRectF, figure: Tuple[float, float]) -> None:
+        """``unit``'s picture in ``box``, its caption under it in a figure
+        from ``figure[0]`` and ``figure[1]`` wide."""
+        self._draw_picture(painter, box, doc, unit)
+        if unit.has_caption and figure[1] > 0:
+            layout, _height = self._caption(doc, unit, figure[1])
+            layout.draw(painter, QPointF(figure[0], box.bottom() + self._caption_gap(doc)))
+
+    def _lay_out(self, doc, block, start: int, units) -> _Laid:
+        metrics, scale, gap, margin = self._measures
+        rows = self._rows(doc, units, note=True)
         boxes = geometry.object_boxes(rows, len(units), metrics)
         # The room above and below it that its paragraph's own margins do
         # not give already.
         fmt = block.blockFormat()
-        above = max(0.0, margin - fmt.topMargin() * scale)
+        above = max(0.0, max(margin, self.room_above) - fmt.topMargin() * scale)
         below = max(0.0, margin - fmt.bottomMargin() * scale)
         first = {cell[0] for cell in rows[0].cells} if rows else set()
         last = {cell[0] for cell in rows[-1].cells} if rows else set()
@@ -513,6 +566,32 @@ def picture_boxes(doc: QTextDocument) -> List[Tuple[int, str, QRectF]]:
     return out
 
 
+def group_boxes(doc: QTextDocument, position: int) -> List[Tuple[int, QRectF]]:
+    """Where each picture of the group whose paragraph holds ``position``
+    is drawn: (its position, its box), in the author's order."""
+    found = _handler(doc)
+    block = doc.findBlock(position)
+    if found is None or not block.isValid() or not photo_group.is_group_block(block):
+        return []
+    return [(at, box) for at, _unit, box in _boxes_of(doc, found, block)]
+
+
+def caption_box(doc: QTextDocument, position: int) -> Optional[QRectF]:
+    """Where the caption of the group picture at ``position`` is drawn,
+    under it; for a picture without one, the line where one would start."""
+    found = _handler(doc)
+    box = picture_box(doc, position)
+    at = found._at(doc, position) if found is not None and box is not None else None
+    if at is None:
+        return None
+    laid, index = at
+    tile = laid.drawn[index][3]
+    gap = found._caption_gap(doc)
+    height = max(tile.caption_height - gap, found._fonts(doc)[2])
+    return QRectF(box.left() - (tile.x - tile.figure_x), box.bottom() + gap,
+                  tile.figure_width, height)
+
+
 def picture_box(doc: QTextDocument, position: int) -> Optional[QRectF]:
     """Where the group picture at ``position`` is drawn, or None."""
     found = _handler(doc)
@@ -565,6 +644,53 @@ def picture_at_cursor(cursor: QTextCursor) -> Optional[Tuple[int, int, int, phot
     else:
         k = next((k for k, (at, _unit) in enumerate(places) if at >= position), len(places) - 1)
     return places[k][0], k + 1, len(places), places[k][1]
+
+
+def set_room_above(doc: QTextDocument, pixels: float) -> None:
+    """Keep ``pixels`` free above every group of ``doc`` (the layout's
+    pixels): where a view shows something of its own over a group."""
+    found = _handler(doc)
+    if found is not None and found.room_above != pixels:
+        found.room_above = pixels
+        found.forget()
+
+
+def arrange(doc: QTextDocument, units) -> Optional[Arranged]:
+    """Where ``units`` would stand as one group in ``doc``, at its width
+    (nothing in the document changes); None for a document no view shows."""
+    found = _handler(doc)
+    return found.arrange(doc, list(units)) if found is not None else None
+
+
+def draw_unit(painter, doc: QTextDocument, unit, box: QRectF,
+              figure: Tuple[float, float] = (0.0, 0.0)) -> None:
+    """Draw ``unit``'s picture in ``box`` (and its caption under it, in
+    the figure given), as its group draws it."""
+    found = _handler(doc)
+    if found is not None:
+        found.draw(painter, doc, unit, box, figure)
+
+
+def is_narrow(doc: QTextDocument) -> bool:
+    """Whether ``doc``'s groups show as a narrow column's runs (one
+    picture under another, mostly), not as the mosaic."""
+    found = _handler(doc)
+    return found is not None and found.metrics(doc).narrow
+
+
+def own_row(doc: QTextDocument, unit) -> str:
+    """Why ``unit``'s picture has a row of its own in any group, without
+    being asked to (#wide): "panorama" for one as wide as the engine's
+    panoramas, "tall" for a very tall one, "" for any other picture (or
+    one whose size is not known yet)."""
+    found = _handler(doc)
+    size = found.sizes(unit.name) if found is not None and found.sizes and unit.name else None
+    if size is None:
+        return ""
+    ratio = photo_layout.ratio_of({"w": size[0], "h": size[1]})
+    if ratio >= photo_layout.CONSTANTS["panorama"]:
+        return "panorama"
+    return "tall" if ratio <= photo_layout.CONSTANTS["tall"] else ""
 
 
 def picture_words(found: Optional[Tuple[int, int, int, photo_group.Unit]]) -> Optional[str]:
