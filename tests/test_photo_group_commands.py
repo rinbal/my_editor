@@ -160,6 +160,33 @@ def test_a_caption_keeps_its_bold_words_and_its_link_when_one_word_is_changed():
     ed.close()
 
 
+def test_return_in_an_unchanged_field_writes_nothing():
+    # Gate RG-PG2E-a 7: a soft line break or a double space made it new.
+    markdown = _text("Before.", ONE, "![two  words](square.png)\n\n*Line one\nline two*", THREE,
+                     FOUR, "After.")
+    ed = _selected(markdown, number=1)
+    for kind in (CAPTION, DESCRIPTION):
+        ed.photos.run(kind)
+        field = next(found for found in ed.viewport().findChildren(QWidget, "pictureField")
+                     if found.isVisible())
+        QTest.keyClick(field.line, Qt.Key.Key_Return)
+        QApplication.processEvents()
+    assert _markdown(ed) == markdown and not ed.document().isModified()
+    ed.close()
+
+
+def test_markup_typed_into_a_caption_is_read_back_as_typed():
+    typed = "Mit *Stern* und _Strich_ [x](y)"
+    ed = _selected(number=0)
+    ed.photos.run(CAPTION)
+    _write_in_field(ed, typed)
+    again = _editor(_markdown(ed))
+    unit = photo_group.group_at(again.document(), _group(again).start).units[0]
+    assert unit.caption_line == typed and not any(run.href for run in unit.caption)
+    ed.close()
+    again.close()
+
+
 def test_description_is_written_on_the_picture_and_saved_as_its_alt_text():
     ed = _selected(number=0)
     ed.photos.run(DESCRIPTION)

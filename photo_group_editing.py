@@ -35,6 +35,7 @@ from PySide6.QtWidgets import QToolTip
 import accessibility_display
 import announce
 import media_badge
+import photo_caption
 import photo_group
 import photo_group_actions as actions
 import photo_group_menu
@@ -517,8 +518,9 @@ class PhotoEditing(QObject):
         picture = actions.picture_at(self._editor.document(), position)
         if picture is None:
             return
-        old = picture.unit.caption_line if kind == CAPTION else picture.unit.alt
-        if words == old:
+        old = (picture.unit.caption_line if kind == CAPTION
+               else photo_caption.one_line(picture.unit.alt))
+        if words == old:                # as the field shows it: nothing new
             return
         write = actions.set_caption if kind == CAPTION else actions.set_description
         if self._act(_STEPS[kind], position,

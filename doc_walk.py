@@ -42,6 +42,13 @@ LINE_SEPARATOR = "\u2028"
 # typed after one.)
 SOFT_BREAK_PROPERTY = QTextFormat.Property.UserProperty + 0x5B1
 
+# Words a person wrote in a picture's caption field are text, whatever
+# characters they hold (EDITING 2.1): "*", "_" or "[x](y)" typed there is
+# written escaped (markdown_writer.literal_text), so the file reads them
+# back as typed. The caption's own formatting, from the file, stays
+# Markdown. photo_caption.CaptionRun.typed carries it.
+TYPED_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B3
+
 
 # Python counts a string in code points; a QTextDocument counts positions
 # in UTF-16 units, where a character beyond U+FFFF (an emoji, a skin tone,

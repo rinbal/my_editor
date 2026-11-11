@@ -25,7 +25,8 @@ from typing import Dict, List, Optional, Tuple
 from PySide6.QtGui import QFont, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument
 
 import media_files
-from doc_walk import LINE_SEPARATOR, OBJECT_REPLACEMENT, SOFT_BREAK_PROPERTY, doc_length
+from doc_walk import (LINE_SEPARATOR, OBJECT_REPLACEMENT, SOFT_BREAK_PROPERTY,
+                      TYPED_TEXT_PROPERTY, doc_length)
 from photo_group import (
     GROUP,
     SOFT,
@@ -94,7 +95,8 @@ def _caption_of(pieces) -> Tuple[CaptionRun, ...]:
     return tuple(CaptionRun(text, fmt.fontWeight() >= QFont.Weight.DemiBold, fmt.fontItalic(),
                             fmt.fontStrikeOut(), bool(fmt.fontFixedPitch()),
                             (fmt.anchorHref() if fmt.isAnchor() else "") or "",
-                            fmt.boolProperty(SOFT_BREAK_PROPERTY))
+                            fmt.boolProperty(SOFT_BREAK_PROPERTY),
+                            fmt.boolProperty(TYPED_TEXT_PROPERTY))
                  for _position, text, fmt in pieces)
 
 

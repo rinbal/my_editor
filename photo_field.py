@@ -19,6 +19,8 @@ from PySide6.QtCore import QEvent, QRect, Qt, Signal
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import QFrame, QLabel, QLineEdit, QVBoxLayout, QWidget
 
+import photo_caption
+
 
 class PictureField(QFrame):
     """One line over the text. ``title`` and ``hint`` make it a card (a
@@ -88,7 +90,7 @@ class PictureField(QFrame):
 
     def text(self) -> str:
         """What is written, on one line, without spaces around it."""
-        return " ".join(self.line.text().split())
+        return photo_caption.one_line(self.line.text())
 
     def commit(self) -> None:
         if not self._done:

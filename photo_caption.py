@@ -18,7 +18,7 @@ from typing import List, NamedTuple, Optional, Sequence, Tuple
 
 from PySide6.QtGui import QFont, QGuiApplication, QTextCharFormat
 
-from doc_walk import SOFT_BREAK_PROPERTY, doc_length
+from doc_walk import SOFT_BREAK_PROPERTY, TYPED_TEXT_PROPERTY, doc_length
 
 
 class CaptionRun(NamedTuple):
@@ -31,6 +31,7 @@ class CaptionRun(NamedTuple):
     code: bool = False
     href: str = ""
     soft: bool = False          # a soft line break, kept as the file had it
+    typed: bool = False         # written in the caption field: text (TYPED_TEXT_PROPERTY)
 
     def format(self) -> QTextCharFormat:
         """The format a reader of Markdown gives such a piece."""
@@ -49,13 +50,20 @@ class CaptionRun(NamedTuple):
             fmt.setForeground(QGuiApplication.palette().link())
         if self.soft:
             fmt.setProperty(SOFT_BREAK_PROPERTY, True)
+        if self.typed:
+            fmt.setProperty(TYPED_TEXT_PROPERTY, True)
         return fmt
 
 
+def one_line(text: str) -> str:
+    """``text`` as a picture's field shows it and gives it back: on one
+    line, every run of spaces (a line break too) one space, none around."""
+    return " ".join(text.split())
+
+
 def line(runs: Sequence[CaptionRun]) -> str:
-    """The caption's words as the caption field shows them: on one line,
-    every run of spaces (a line break too) one space, none around them."""
-    return " ".join("".join(run.text for run in runs).split())
+    """The caption's words as the caption field shows them (one_line)."""
+    return one_line("".join(run.text for run in runs))
 
 
 def edited(runs: Sequence[CaptionRun], words: str) -> Tuple[CaptionRun, ...]:
@@ -67,7 +75,7 @@ def edited(runs: Sequence[CaptionRun], words: str) -> Tuple[CaptionRun, ...]:
     if words == shown:
         return tuple(runs)
     if not runs or not words:
-        return (CaptionRun(words),) if words else ()
+        return (CaptionRun(words, typed=True),) if words else ()
     same = _common(shown, words)
     tail = _common(shown[same:][::-1], words[same:][::-1])
     # From right after the last word kept in front to the first one kept
@@ -83,7 +91,8 @@ def replaced(runs: Sequence[CaptionRun], start: int, end: int,
     """``runs`` with their text from ``start`` to ``end`` (UTF-16 units, as
     Qt counts them) replaced by ``words``, in the format of the run the
     range starts in; words put between two runs go with the one before
-    (the first, at the start), but not into a link they only touch."""
+    (the first, at the start), but not into a link they only touch. The
+    words are ``typed``: text, whatever characters they hold."""
     out: List[CaptionRun] = []
     at = 0
     placed = False
@@ -95,7 +104,7 @@ def replaced(runs: Sequence[CaptionRun], start: int, end: int,
             inside = first < last or 0 < first < length
             out.append(run._replace(text=_units(run.text, 0, first)))
             if not placed:
-                out.append(run._replace(text=words, soft=False,
+                out.append(run._replace(text=words, soft=False, typed=True,
                                         href=run.href if inside else ""))
             out.append(run._replace(text=_units(run.text, last, None)))
             placed = True

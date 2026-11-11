@@ -68,6 +68,7 @@ from doc_walk import (
     LINE_SEPARATOR,
     OBJECT_REPLACEMENT,
     SOFT_BREAK_PROPERTY,
+    TYPED_TEXT_PROPERTY,
     bullet_depth,
     iter_block_runs,
     iter_blocks,
@@ -218,7 +219,7 @@ def _spans_of(runs, image_target: Optional[ImageTarget]) -> List[_Span]:
         href = fmt.anchorHref() if fmt.isAnchor() else ""
         spans.append(_Span(text=text, bold=_is_bold(fmt), italic=fmt.fontItalic(),
                            strike=fmt.fontStrikeOut(), code=_is_code(fmt),
-                           href=href or ""))
+                           href=href or "", literal=fmt.boolProperty(TYPED_TEXT_PROPERTY)))
     return _merged(spans)
 
 
@@ -248,8 +249,8 @@ def _merged(spans: List[_Span]) -> List[_Span]:
     for span in spans:
         if (out and not span.raw and not out[-1].raw
                 and (out[-1].bold, out[-1].italic, out[-1].strike, out[-1].code,
-                     out[-1].href) == (span.bold, span.italic, span.strike, span.code,
-                                       span.href)):
+                     out[-1].href, out[-1].literal) == (span.bold, span.italic, span.strike,
+                                                        span.code, span.href, span.literal)):
             out[-1].text += span.text
         else:
             out.append(span)
