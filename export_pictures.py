@@ -27,6 +27,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 import doc_walk
 import photo_group
 from image_safety import MAX_PICTURE_BYTES, data_uri_bytes, sniff_image_mime
+from nostr.rss.urls import is_web
 
 # One picture: what the window's own picture cache takes
 # (nostr/imports/remote_images.py, MAX_BYTES).
@@ -38,17 +39,13 @@ TIMEOUT_MS = 20 * 1000
 HeldBytes = Callable[[str], Optional[bytes]]
 
 
-def is_web_address(name: str) -> bool:
-    return name.lower().startswith(("http://", "https://"))
-
-
 def web_picture_names(doc) -> List[str]:
     """The web addresses of the pictures of ``doc`` (in its photo groups
     and on their own), without #wide, each once, in order."""
     found: Dict[str, None] = {}
     for name in doc_walk.iter_image_names(doc):
         url = photo_group.without_wide(name)
-        if is_web_address(url):
+        if is_web(url):
             found.setdefault(url, None)
     return list(found)
 
@@ -98,7 +95,7 @@ class Gathering(QObject):
             data = held(url) if held is not None else None
             if data and sniff_image_mime(data):
                 self.pictures[url] = data
-            elif is_web_address(url):
+            elif is_web(url):
                 self._wanted.append(url)
         self._fetcher = fetcher
         self._pending: set = set()

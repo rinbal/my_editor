@@ -720,3 +720,25 @@ def test_a_pdf_export_leaves_no_copy_of_the_document_behind(app):
     gc.collect()
     assert gone() is None
     assert doc.children() == [] or all(not isinstance(c, QTextDocument) for c in doc.children())
+
+
+def test_a_picture_is_read_the_same_way_alone_and_in_a_group(app, tmp_path):
+    """Gate 15 and 10: one way to read a picture for a page. A picture
+    alone carries the very bytes it carries in a group, and a
+    decompression bomb is carried in neither place."""
+    import struct
+    import zlib
+    header = struct.pack(">IIBBBBB", 60000, 60000, 8, 2, 0, 0, 0)
+    chunk = b"IHDR" + header
+    (tmp_path / "bomb.png").write_bytes(b"\x89PNG\r\n\x1a\n" + struct.pack(">I", len(header))
+                                        + chunk + struct.pack(">I", zlib.crc32(chunk)))
+    (tmp_path / "own.png").write_bytes((PHOTOS / "square.png").read_bytes())
+
+    def srcs(markdown):
+        page = document_to_html(_doc(markdown), "x", image_roots=[str(tmp_path)])
+        return re.findall(r'<img src="([^"]*)"', page), page.count("[image unavailable]")
+
+    alone = srcs("![a](own.png)\n\nText.\n\n![b](bomb.png)\n")
+    grouped = srcs("![a](own.png)\n\n![b](bomb.png)\n")
+    assert alone == grouped
+    assert len(alone[0]) == 1 and alone[0][0].startswith("data:image/png;base64,") and alone[1] == 1

@@ -90,6 +90,7 @@ from preview_pane import (
 )
 from nostr import preview as preview_module
 from nostr.preview import Article as PreviewArticle
+from nostr.rss.urls import is_web
 from doc_walk import image_positions, iter_block_runs, iter_blocks, iter_image_names
 from plain_writer import serialize_plain_with_images
 from markdown_writer import (
@@ -6298,12 +6299,12 @@ class MainWindow(QMainWindow):
         this app's pictures, or one from the web it holds) in a file of
         this window's that goes when the app quits."""
         doc_path = getattr(editor, "_file_path", "") or ""
-        if doc_path and not export_pictures.is_web_address(name):
+        if doc_path and not is_web(name):
             found = image_safety.ImageRootPolicy(
                 MainWindow._image_roots(doc_path, MainWindow._picture_roots(self))).resolve(name)
             if found is not None:
                 return str(found)
-        if export_pictures.is_web_address(name):
+        if is_web(name):
             data = self._held_picture_bytes(name)
         else:
             data = self._asset_manager.resolve_bytes(name)

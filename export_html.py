@@ -77,6 +77,7 @@ from doc_walk import (
 # boundary needs them too, and main_window plus the tests import them
 # from here.
 from image_safety import (  # noqa: F401
+    DECODABLE_MIMES,
     ImageRootPolicy,
     declared_size,
     is_portable_image_source,
@@ -178,28 +179,48 @@ def _render_image(img_fmt, source_url_for, policy, asset_resolver,
     if media_files.kind_of(str(getattr(resolved, "mime", "") or "")) is not None:
         return _render_media(alt, resolved)
 
-    data, came_from = export_pictures.picture_bytes(
-        plain, policy, asset_resolver=lambda _name: resolved,
-        remote_pictures=remote_pictures)
-    source_url = came_from or (source_url_for(plain) if source_url_for else None)
+    src, _size, source_url = _picture_source(plain, policy, resolved, remote_pictures,
+                                             source_url_for)
     if source_url:
         attrs += f' data-source-url="{html.escape(source_url, quote=True)}"'
+    if src is None:
+        return f"<em>{html.escape(_('[image unavailable]'))}</em>"
+    return f'<img src="{html.escape(src, quote=True)}"{attrs}>'
 
-    uri = image_data_uri(data) if data else None
-    if uri is not None:
-        return f'<img src="{uri}"{attrs}>'
-    if is_portable_image_source(name):
-        # The name is the picture's address: a data: URI already carries
-        # the bytes, and a foreign URL is media this app did not create.
-        # Both must come out exactly as the document holds them, and a
-        # document reopened from HTML names every embedded image this
-        # way, so anything else would erase the user's own picture.
-        return f'<img src="{html.escape(name, quote=True)}"{attrs}>'
-    if source_url:
-        # Bytes are gone from the cache; the original URL is better than
-        # nothing even though it breaks strict self-containment.
-        return f'<img src="{html.escape(source_url, quote=True)}"{attrs}>'
-    return f"<em>{html.escape(_('[image unavailable]'))}</em>"
+
+def _picture_source(plain: str, policy, resolved, remote_pictures, source_url_for):
+    """What a page shows for the picture ``plain`` (its name without
+    #wide): ``(src, (w, h) or None, source address)``. The one way every
+    picture of an export is read, alone or in a photo group.
+
+    - Its bytes inside the page, as a data: URI, read as every export
+      reads a picture (export_pictures.picture_bytes: the app's own
+      pictures through ``resolved``, a web picture the caller gathered, a
+      file ``policy`` may read; never larger than MAX_PICTURE_BYTES), with
+      the pixel size their header declares. Never bytes the decode policy
+      refuses for their size (a decompression bomb).
+    - Else the name itself when it is an address (a data: URI the app
+      does not read, a foreign URL): media this app did not create comes
+      out as the document holds it.
+    - Else the address the picture was uploaded to: the bytes are gone
+      from the cache, and the original is better than nothing even though
+      it breaks strict self-containment.
+    - Else nothing: the page says the picture is unavailable.
+    """
+    data, came_from = export_pictures.picture_bytes(
+        plain, policy, asset_resolver=lambda _name: resolved, remote_pictures=remote_pictures)
+    source = came_from or (source_url_for(plain) if source_url_for else None)
+    mime = sniff_image_mime(data) if data else None
+    if mime in DECODABLE_MIMES:
+        size = declared_size(data)
+        if size is None:
+            return None, None, source
+        return image_data_uri(data), photo_layout.picture_size(size.width(), size.height()), source
+    if mime is not None:
+        return image_data_uri(data), None, source          # a kind only a browser shows (SVG)
+    if is_portable_image_source(plain):
+        return plain, None, source
+    return source, None, source
 
 
 def _render_media(alt: str, resolved) -> str:
@@ -454,27 +475,6 @@ def _group_html(group, picture_of, render_image) -> str:
     return group_figures_html(figures)
 
 
-def _group_picture(name: str, policy, asset_resolver, remote_pictures, source_url_for):
-    """A group picture's (src, (w, h) or None, source address): its bytes as
-    a data: URI when the export may read them, its pixel size from their
-    header. Read without its #wide; only from the trusted places
-    (``policy``), the app's own pictures, a data: name, or what the caller
-    fetched from the web; never larger than MAX_PICTURE_BYTES, never a
-    picture the decode policy refuses (a decompression bomb)."""
-    plain = photo_group.without_wide(name)
-    data, came_from = export_pictures.picture_bytes(
-        plain, policy, asset_resolver=asset_resolver, remote_pictures=remote_pictures)
-    source = came_from or (source_url_for(plain) if source_url_for else None)
-    if data is not None:
-        size = declared_size(data)
-        uri = image_data_uri(data) if size is not None else None
-        if uri is not None:
-            return uri, photo_layout.picture_size(size.width(), size.height()), source
-    if is_portable_image_source(plain) and not plain.lower().startswith("data:"):
-        return plain, None, source
-    return None, None, source
-
-
 def document_to_html(doc, title: str = "", source_url_for=None, *,
                      image_roots=(), asset_resolver=None, remote_pictures=None) -> str:
     """Serialize a QTextDocument to a self-contained semantic HTML5 page.
@@ -499,7 +499,9 @@ def document_to_html(doc, title: str = "", source_url_for=None, *,
         return _render_image(img_fmt, source_url_for, policy, asset_resolver, remote_pictures)
 
     def picture_of(name: str):
-        return _group_picture(name, policy, asset_resolver, remote_pictures, source_url_for)
+        plain = photo_group.without_wide(name)
+        return _picture_source(plain, policy, asset_resolver(plain) if asset_resolver else None,
+                               remote_pictures, source_url_for)
 
     # Photo groups: written whole where their first paragraph is; every
     # paragraph of their tables is theirs.
