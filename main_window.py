@@ -4381,18 +4381,23 @@ class MainWindow(QMainWindow):
             self._asset_manager.request_upload(asset.sha256)
 
     def _insert_image(self) -> None:
-        """Insert > Image…: a picture file chosen in the system's dialog,
-        put in at the caret exactly as dropping it there would
-        (_handle_dropped_images: one step of Undo, kept on this computer
-        until the document is published)."""
+        """Insert > Image… (the toolbar's "+" too): picture files chosen in
+        the system's dialog, put in at the caret exactly as dropping them
+        there would (_handle_dropped_images: one step of Undo, kept on this
+        computer until the document is published). Several chosen at once
+        are a photo group of their own, where the caret's paragraph allows
+        one (PhotoEditing.free_place)."""
         ed = self.current_editor()
         if ed is None or self._editor_kind(ed) != "rich":
             return
         patterns = " ".join("*" + ext for ext in sorted(_IMAGE_EXTS))
-        path, _filter = QFileDialog.getOpenFileName(
+        paths, _filter = QFileDialog.getOpenFileNames(
             self, _("Insert Image"), "", _("Images ({patterns})").format(patterns=patterns))
-        if path:
-            self._handle_dropped_images([file_paths.normalize(path)], N_("Image"))
+        paths = [file_paths.normalize(path) for path in paths]
+        if len(paths) == 1:
+            self._handle_dropped_images(paths, N_("Image"))
+        elif paths:
+            self._handle_dropped_images(paths, N_("Add Photos"), place=ed.photos.free_place())
 
     def _handle_dropped_text(self, text: str):
         ed = self.current_editor()
