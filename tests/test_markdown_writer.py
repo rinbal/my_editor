@@ -35,6 +35,7 @@ from PySide6.QtGui import (  # noqa: E402
 )
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
+from doc_walk import iter_block_runs  # noqa: E402
 from markdown_writer import (  # noqa: E402
     READ_FEATURES, document_to, document_to_markdown, document_to_note_text, holds_faithfully,
 )
@@ -738,3 +739,16 @@ def test_emphasis_that_ends_a_wrapped_line_is_closed_on_it():
         doc = QTextDocument()
         read_markdown(doc, source)
         assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_a_soft_wrapped_line_ends_as_a_line_end_does():
+    # A word joiner marked a soft break while Qt read the file: no space,
+    # so "*(Wort)*" ending a wrapped line showed its stars, and a word
+    # joiner the file held was deleted.
+    source = "Ein *(Wort)*\nweiter mit Wort\u2060joiner.\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert doc.firstBlock().text() == "Ein (Wort)\u2028weiter mit Wort\u2060joiner."
+    assert [text for text, fmt in iter_block_runs(doc.firstBlock())
+            if fmt.fontItalic() and text.strip()] == ["(Wort)"]
+    assert document_to_markdown(doc, _image_as_read) == source

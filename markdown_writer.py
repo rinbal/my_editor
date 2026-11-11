@@ -114,9 +114,13 @@ ALT_SPELLING_PROPERTY = QTextFormat.Property.UserProperty + 0x5B2
 # writer, between reading the document and writing the lines (a character
 # of Unicode's private area).
 _SOFT = "\ue0b1"
-# What marks a soft break while Qt reads the Markdown: a word joiner at the
-# end of a line made a hard break, which becomes the soft break once read.
-_SOFT_MARK = "\u2060"
+# What marks a soft break while Qt reads the Markdown: a space at the end
+# of a line made a hard break, which becomes the soft break once read. A
+# space (Unicode's Zs), so a star beside it reads as at a line's end: the
+# word joiner it was is none, and "*(Wort)*" or "__fett__" ending a
+# wrapped line showed their stars. A file is read with the first one it
+# holds nowhere (_free_mark); one that holds all of them is not held.
+_SOFT_MARKS = ("\u2005", "\u2006", "\u2004", "\u2008")
 
 # Indent per nesting level of a list. Four columns is past the content of
 # both "- " and "1. " markers, and short of the four extra columns that
@@ -983,13 +987,15 @@ def _soft_breaks(markdown: str) -> Tuple[bool, List[int]]:
                 and not set(line.strip()) <= set("=-")):
             # (A pipe may be a table without its outer pipes.)
             if (line[:1] in (" ", "\t") or before[:1] in (" ", "\t")
-                    or before.endswith("\\") or _SOFT_MARK in before
+                    or before.endswith("\\")
                     or "|" in line or "|" in before):
                 return True, []
             found.append(index - 1)
         if (line.startswith(("  ", "\t")) and line.strip() and not before.strip()
                 and index >= 2 and LIST_LINE.match(lines[index - 2])):
             return True, []
+    if found and _free_mark(markdown, _SOFT_MARKS) is None:
+        return True, []
     return False, found
 
 
@@ -999,26 +1005,28 @@ def _soft_wrapped(markdown: str) -> bool:
     return _soft_breaks(markdown)[0]
 
 
-def _marked_soft_breaks(markdown: str) -> Tuple[str, int]:
+def _marked_soft_breaks(markdown: str) -> Tuple[str, Optional[str], int]:
     """The Markdown with each soft line break the editor holds made a hard
-    break with a mark (_SOFT_MARK) before it, and how many there are."""
+    break with a mark (_SOFT_MARKS) before it, the mark, and how many
+    there are."""
     lossy, found = _soft_breaks(markdown)
     if lossy or not found:
-        return markdown, 0
+        return markdown, None, 0
+    mark = _free_mark(markdown, _SOFT_MARKS)
     lines = markdown.split("\n")
     for index in found:
-        lines[index] = lines[index] + _SOFT_MARK + "  "
-    return "\n".join(lines), len(found)
+        lines[index] = lines[index] + mark + "  "
+    return "\n".join(lines), mark, len(found)
 
 
-def _join_soft_breaks(doc: QTextDocument) -> int:
-    """Each marked hard break Qt read (a block ending in _SOFT_MARK) made
+def _join_soft_breaks(doc: QTextDocument, mark: str) -> int:
+    """Each marked hard break Qt read (a block ending in ``mark``) made
     one line of the paragraph again: the mark and the block's end become
     a line separator carrying SOFT_BREAK_PROPERTY. How many were joined."""
     joined = 0
     position = 0
     while True:
-        cursor = doc.find(_SOFT_MARK, position)
+        cursor = doc.find(mark, position)
         if cursor.isNull():
             return joined
         start = cursor.selectionStart()
@@ -1114,14 +1122,14 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
     they stay the paragraphs they are in the Markdown."""
     markdown = _breaks_between_pictures(markdown)
     markdown, alts = _whole_descriptions(markdown, features)
-    marked = 0
+    marked, soft_mark = 0, None
     if features == READ_FEATURES:
-        markdown, marked = _marked_soft_breaks(markdown)
+        markdown, soft_mark, marked = _marked_soft_breaks(markdown)
     markdown, mark = _marked_escapes(markdown)
     doc.setMarkdown(literal_footnotes(markdown), features)
     if alts:
         _restore_descriptions(doc, alts)
-    joined = _join_soft_breaks(doc) if marked else 0
+    joined = _join_soft_breaks(doc, soft_mark) if marked else 0
     if mark:
         _keep_escaped(doc, mark)
     normalize_after_markdown_load(doc)
@@ -1244,8 +1252,7 @@ def _plain_description(words: str, features) -> str:
     # A letter first, so the words start no block of their own.
     doc.setMarkdown("x" + words, features)
     text = doc.toPlainText()[1:]
-    for mark in (OBJECT_REPLACEMENT, _SOFT_MARK):
-        text = text.replace(mark, "")
+    text = text.replace(OBJECT_REPLACEMENT, "")
     return re.sub(r"[\n\u2028\u2029]+", " ", text)
 
 
