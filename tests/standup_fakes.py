@@ -1994,7 +1994,7 @@ class FakeStandupServer:
                 # The writer publishes the correction they confirmed (12.4).
                 record.correction_pending = False
                 record.published = {"naddr": body.get("naddr"), "event_id": event["id"]}
-                self._event(record, "published", who)
+                self._event(record, "published", who, revision=record.revision)
                 return _ok({"submission": self.view(record)})
         else:
             role = "releaser" if who.pubkey in pub.releasers else role
@@ -2005,7 +2005,8 @@ class FakeStandupServer:
         record.state = new_state
         record.step = None
         record.published = {"naddr": body.get("naddr"), "event_id": event["id"]}
-        self._event(record, "published", who)
+        # backend core/editorial_release.py: the event names the revision.
+        self._event(record, "published", who, revision=record.revision)
         return _ok({"submission": self.view(record)})
 
     def _placed(self, who, body, params, query) -> FakeReply:

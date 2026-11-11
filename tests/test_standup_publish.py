@@ -66,7 +66,7 @@ class FakeStore(QObject):
 
     def __init__(self, *, refuse: bool = False) -> None:
         super().__init__()
-        self.refuse, self.uploaded, self.deleted = refuse, [], []
+        self.refuse, self.uploaded, self.deleted, self.batches = refuse, [], [], []
 
     def target_servers(self):
         return [SERVER]
@@ -89,6 +89,10 @@ class FakeStore(QObject):
 
     def delete_file(self, sha, *, servers=()):
         self.deleted.append((sha, tuple(servers)))
+
+    def delete_on_servers(self, pairs, on_done):
+        self.batches.append(list(pairs))
+        on_done(list(pairs))
 
 
 class FakeJob(QObject):
@@ -329,3 +333,49 @@ def test_a_published_works_address_rests_on_its_own_event_as_the_vector_says():
     assert section(placed["report"]) == placed["section"]
     for name, report in vector["placed_must_fail"].items():
         assert section(report) is None, name
+
+
+def test_after_publication_the_encrypted_files_go_but_one_another_submission_names_stays():
+    # M-4 M14 blob deletion: quietly, from the verified revisions' signed
+    # blob lists and the writer's servers; only a file's last user removes it.
+    from nostr import events
+    from nostr.bech32 import encode_naddr
+    from nostr.standup.cleanup import SETTINGS_KEY, Cleanups
+    from nostr.ui.standup_cleanup import BlobCleanup
+    from tests.standup_vectors import sk
+    world = FollowWorld()
+    writer = world.account()
+    shared, own = _picture()[0], _picture()[0]
+    world.server.blob_servers.everywhere.update({shared["cipher_sha256"], own["cipher_sha256"]})
+    def blob(entry):
+        return {"sha256": entry["cipher_sha256"], "size": entry["cipher_size"],
+                "servers": ["https://blossom.example"]}
+
+    prepared, _entry = world.submit(writer, d="ein-jahr", media=(shared, own),
+                                    blobs=(blob(shared), blob(own)),
+                                    content=f"![]({shared['ref']}) ![]({own['ref']})")
+    sid = prepared.body["submission_id"]
+    world.decide(prepared, "accept")
+    article = events.sign_event({"kind": 30023, "created_at": world.clock(), "content": "Text.",
+                                 "tags": [["d", "ein-jahr"]]}, sk("writer"))
+    reported = []
+    writer.api.published(sid, naddr=encode_naddr("ein-jahr", pk("writer"), 30023),
+                         event=article, on_success=reported.append, on_failure=reported.append)
+    other, _ = world.submit(writer, d="zwei", content=f"![]({shared['ref']})", media=(shared,),
+                            blobs=(blob(shared),))
+    following = world.following(writer)
+    following.open(other.body["submission_id"])         # its revision names the shared file
+    world.settle()
+    store, kept = FakeStore(), {}
+    BlobCleanup(following, writer, SimpleNamespace(user_pubkey=pk("writer"), is_local=True),
+                store=store, cleanups=Cleanups(pk("writer"), load=lambda: kept,
+                                               save=kept.__setitem__),
+                clock=world.clock, parent=following)
+    following.open(sid)
+    world.settle()
+    assert store.batches == [[(own["cipher_sha256"], "https://blossom.example"),
+                              (own["cipher_sha256"], SERVER)]]
+    assert kept[SETTINGS_KEY][pk("writer")][sid]["over"]
+    following.open(sid)
+    world.settle()
+    assert len(store.batches) == 1                       # recorded: never asked again

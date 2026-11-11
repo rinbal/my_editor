@@ -118,10 +118,12 @@ class PublishPorts:
     reread: Callable
     clock: Callable[[], float] = time.time
     confirm: Optional[Callable] = None
+    cleanup: Optional[Callable[[str], None]] = None     # after it is published (M14)
 
 
 def run_for(following, account, profile, sid: str, *, store, fetch, session_pool, relay_pool,
-            relay_directory, entitled_relays=None, parent=None) -> Optional["AcceptedPublish"]:
+            relay_directory, entitled_relays=None, parent=None,
+            cleanup=None) -> Optional["AcceptedPublish"]:
     """The one publish run of ``sid``, made when the verified newest
     accept names the verified revision opened here and the writer signs
     (or, for a published work, when that revision is a verified
@@ -168,7 +170,8 @@ def run_for(following, account, profile, sid: str, *, store, fetch, session_pool
 
     ports = PublishPorts(api=api, media_keys=account.media_keys, store=store, fetch=fetch,
                          job=job, serve=following.serve, reread=reread, confirm=confirm,
-                         key_here=lambda: session_pool.key_here(profile.user_pubkey))
+                         key_here=lambda: session_pool.key_here(profile.user_pubkey),
+                         cleanup=cleanup)
     made = dict(sid=sid, profile=profile, version=version, accepted=accepted,
                 revision_hash=view.revision_hash,
                 publication=following.publication_name(view.publication), ports=ports,
@@ -461,6 +464,8 @@ class AcceptedPublish(QObject):
                 return
             self._ports.serve(view)
             self._say(Stage.DONE, _(DONE), "")
+            if self._ports.cleanup is not None:
+                self._ports.cleanup(self.sid)
 
         def not_reported(error) -> None:
             if not self._stopped:

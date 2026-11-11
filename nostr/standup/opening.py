@@ -120,6 +120,8 @@ class VerifiedRevision:
     correction: bool
     epoch: int = 0                     # its signed body's (0: it names none)
     coordinate_hash: str = ""          # the work's, bound to the sid (section 2)
+    # The files its signed body names: (sha256, servers), for the cleanup.
+    blobs: Tuple[Tuple[str, Tuple[str, ...]], ...] = ()
     _token: object = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -215,7 +217,17 @@ def verify_revision(view: SubmissionView, record: RevisionRecord, *,
         envelope_sha256=record.envelope_sha256, p_sub=p_sub, kind=kind, title=title,
         wraps={name: dict(wrap) for name, wrap in wraps.items()},
         signer=signer, correction=correction, epoch=_epoch(body), coordinate_hash=coordinate,
-        _token=_MINTED))
+        blobs=_blobs(body), _token=_MINTED))
+
+
+def _blobs(body: Mapping) -> Tuple[Tuple[str, Tuple[str, ...]], ...]:
+    """The files a revision's signed body names (12.4 ``blobs``)."""
+    out = []
+    for blob in body.get("blobs") or ():
+        if isinstance(blob, dict) and formats.is_hex64(blob.get("sha256")) \
+                and isinstance(blob.get("servers"), list):
+            out.append((blob["sha256"], tuple(s for s in blob["servers"] if isinstance(s, str))))
+    return tuple(out)
 
 
 def _epoch(body: Mapping) -> int:
@@ -437,6 +449,10 @@ class MediaKeys:
 
     def keys(self, submission_id: str, cipher_sha256: str) -> Tuple[bytes, ...]:
         return self._keys.get((submission_id, cipher_sha256), ())
+
+    def named_besides(self, submission_id: str) -> frozenset:
+        """The files the opened revisions of other submissions name."""
+        return frozenset(sha for sid, sha in self._keys if sid != submission_id)
 
     def decrypt(self, submission_id: str, data: bytes, cipher_sha256: str) -> bytes:
         """The file's plaintext, or :class:`NotConfirmed` when no verified

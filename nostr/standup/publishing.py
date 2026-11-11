@@ -281,6 +281,7 @@ class Published:
     address: str
     event: dict
     seq: int
+    revision: Optional[int] = None      # the revision its report names
 
 
 def work_address(signed: views.SignedRecord, sid: str, *, writer: str, coordinate_hash: str,
@@ -353,7 +354,7 @@ def published_work(items: Sequence[views.TimelineItem], sid: str, *, writer: str
                                  coordinate_hash=coordinate_hash, publication=publication,
                                  checks=checks)
             if found is not None:
-                return Published(found.address, found.event, item.seq)
+                return Published(found.address, found.event, item.seq, event.revision)
     return None
 
 

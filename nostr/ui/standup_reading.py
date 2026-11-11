@@ -434,6 +434,10 @@ class Reading:
         return publishing.verified_accept(items, sid, rules.deciders_of(state.members),
                                           self.checks, state.formers)
 
+    def read_sids(self) -> Tuple[str, ...]:
+        """The submissions whose detail was read in this run."""
+        return tuple(self._details)
+
     def published(self, sid: str) -> Optional[publishing.Published]:
         """The published work whose own event proves its address, whoever
         reported it (``publishing.published_work``, contract 10), once a

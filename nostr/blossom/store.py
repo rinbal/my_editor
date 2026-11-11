@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Protocol, Sequence, Set, Tuple
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 
 import media_files
 import url_safety
@@ -1818,6 +1818,43 @@ class MediaStore(QObject):
                 on_ok=finish_one,
                 on_err=lambda code, o=origin: failed_one(o, code),
             )
+
+    def delete_on_servers(self, pairs: Sequence[Tuple[str, str]],
+                          on_done: Callable[[List[Tuple[str, str]]], None]) -> None:
+        """Delete each ``(sha256, server origin)`` of ``pairs`` with one
+        BUD-02 authorization that names every file and every server (one
+        signature, so a signer app is asked once), and answer
+        ``on_done(gone)`` with the pairs that are gone (deleted, or 404:
+        not there). Nothing is said and the library is left as it is:
+        for files this app put up for someone else's reading, such as a
+        submission's encrypted pictures."""
+        profile = self._profile_provider()
+        pairs = list(dict.fromkeys(pairs))
+        if profile is None or not pairs:
+            QTimer.singleShot(0, lambda: on_done([]))
+            return
+        unsigned = build_blossom_auth_event(
+            "delete", file_hashes=[sha for sha, _server in pairs],
+            servers=[server for _sha, server in pairs], pubkey_hex=profile.user_pubkey)
+        gone: List[Tuple[str, str]] = []
+        remaining = {"count": len(pairs)}
+
+        def finish(pair: Tuple[str, str], ok: bool) -> None:
+            if ok:
+                gone.append(pair)
+            remaining["count"] -= 1
+            if remaining["count"] == 0:
+                on_done(gone)
+
+        def after_sign(auth_event: dict) -> None:
+            for pair in pairs:
+                self._client.delete(
+                    pair[1], pair[0], auth_event,
+                    on_success=lambda p=pair: finish(p, True),
+                    on_failure=lambda err, p=pair: finish(p, err.status == 404))
+
+        self._sign_with_bunker(profile, unsigned, on_signed=after_sign,
+                               on_failure=lambda _reason: on_done([]))
 
     def _delete_one_server(
         self,

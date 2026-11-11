@@ -56,6 +56,7 @@ from ..standup.rounds import RoundAnswer, ask_round
 from ..standup.trust import Destination
 from ..standup.watcher import look_up, resolve_unconfirmed
 from .standup_account import Account, live
+from .standup_cleanup import BlobCleanup
 from .standup_following import Following
 from .standup_handoff import phase_words
 from .standup_message import send_first_message
@@ -98,6 +99,7 @@ class StandupWriter(QObject):
         self._account: Optional[Account] = None
         # What is shown of the account's submissions; stopped with it.
         self._following: Optional[Following] = None
+        self._cleanup: Optional[BlobCleanup] = None
         # What this computer holds of the texts submitted, across restarts
         # (RG-M2r2a 1); the window's is kept in its file, a test's is not.
         self._marks = marks if marks is not None else SubmittedMarks(kept=False)
@@ -123,6 +125,9 @@ class StandupWriter(QObject):
                 on_listed=lambda read: self._listed(account, read),
                 discard=lambda entry, on_done: self.discard(profile, entry, on_done),
                 later=_later, clock=self._clock, parent=account)
+            # The published works' encrypted files go, quietly (M-4 M14).
+            self._cleanup = BlobCleanup(self._following, account, profile,
+                                        store=self._media_store, parent=self._following)
         return self._following
 
     def followed(self, profile) -> Optional[Following]:
@@ -148,7 +153,8 @@ class StandupWriter(QObject):
                        store=self._media_store, fetch=self._fetcher.fetch,
                        session_pool=self._session_pool, relay_pool=self._relay_pool,
                        relay_directory=self._relay_directory,
-                       entitled_relays=self._entitled_relays, parent=self)
+                       entitled_relays=self._entitled_relays, parent=self,
+                       cleanup=self._cleanup.after_publishing if self._cleanup else None)
 
     def _new_account(self, profile) -> Account:
         return Account(profile, session_pool=self._session_pool, relay_pool=self._relay_pool,
@@ -489,6 +495,7 @@ class StandupWriter(QObject):
         said = stopped_words(account.runs)
         account.stopped = True
         following, self._following = self._following, None
+        self._cleanup = None                 # goes with its Following
         if following is not None:
             following.stop()
         for run in account.runs:
