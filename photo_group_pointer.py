@@ -196,8 +196,13 @@ class PhotoPointer(QObject):
         point = e.position()
         self._hover_at(point)
         picture, hot = self._hover, self._hot
-        if picture is None:
-            return False
+        # Beside a narrower picture of a group: the nearest, not Qt's caret
+        # as tall as the row.
+        margin = picture is None
+        if margin:
+            picture = self._photos.picture_hit(self._doc_point(point), nearest=True)
+            if picture is None:
+                return False
         self._editor.setFocus(Qt.FocusReason.MouseFocusReason)
         photos = self._photos
         if hot == overlay.ADD:
@@ -218,6 +223,9 @@ class PhotoPointer(QObject):
                     and caption.contains(self._doc_point(point))):
                 photos.fields.open(picture, CAPTION)
                 return True
+        if margin:
+            photos.select(picture.position, quiet=False)
+            return True
         self._pressed = (point.toPoint(), picture, hot == overlay.HANDLE)
         return True
 

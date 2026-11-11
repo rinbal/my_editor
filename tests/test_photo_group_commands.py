@@ -541,3 +541,21 @@ def test_the_line_a_split_opens_says_what_it_is_for(monkeypatch):
     ed.viewport().repaint()
     assert "Write something here, then the group is split" not in written
     ed.close()
+
+
+def test_a_click_beside_a_narrower_picture_of_a_group_selects_the_nearest(said):
+    # Gate RG-PG2E-b 10: Qt's caret as tall as the row was left there.
+    ed = _editor(_text("Before.", "![one](portrait.png)", "![two](portrait.png)", "After."),
+                 width=1400)
+    group = _group(ed)
+    photos = ed.photos
+    box = photos.to_view(photos.box_of(photo_group_actions.picture_at(ed.document(),
+                                                                      group.start + 1)))
+    room = ed.document().documentLayout().blockBoundingRect(ed.document().findBlock(group.start))
+    beside = QPointF(min(box.right() + 30, photos.to_view(room).right() - 4), box.center().y())
+    assert photos.picture_hit(beside + QPointF(ed.horizontalScrollBar().value(),
+                                               ed.verticalScrollBar().value())) is None
+    _mouse(ed, QEvent.Type.MouseButtonPress, beside, Qt.MouseButton.LeftButton)
+    _mouse(ed, QEvent.Type.MouseButtonRelease, beside, Qt.MouseButton.NoButton)
+    assert photos.current().place == 2 and ed.textCursor().hasSelection()
+    ed.close()

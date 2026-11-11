@@ -121,10 +121,11 @@ class PhotoEditing(QObject):
             return None
         return picture
 
-    def picture_hit(self, point: QPointF) -> Optional[Picture]:
-        """The picture drawn at ``point`` (the document's coordinates)."""
+    def picture_hit(self, point: QPointF, *, nearest: bool = False) -> Optional[Picture]:
+        """The picture drawn at ``point`` (the document's coordinates);
+        ``nearest``: in a group, the nearest (photo_group_view.picture_at)."""
         doc = self._editor.document()
-        found = photo_group_view.picture_at(doc, point)
+        found = photo_group_view.picture_at(doc, point, nearest=nearest)
         if found is not None:
             return actions.picture_at(doc, found[0])
         block = doc.findBlock(max(0, doc.documentLayout().hitTest(

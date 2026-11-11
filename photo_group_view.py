@@ -23,6 +23,7 @@ the ring around it and what a screen reader says.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
@@ -635,9 +636,12 @@ def picture_box(doc: QTextDocument, position: int) -> Optional[QRectF]:
     return next((box for at, _unit, box in _boxes_of(doc, found, block) if at == position), None)
 
 
-def picture_at(doc: QTextDocument, point) -> Optional[Tuple[int, str]]:
+def picture_at(doc: QTextDocument, point, *,
+               nearest: bool = False) -> Optional[Tuple[int, str]]:
     """The group picture drawn at ``point`` (the document's coordinates):
-    its position and name, or None."""
+    its position and name, or None. ``nearest``: on no picture but in a
+    group's paragraph (the margin beside a narrower picture, a gap), the
+    picture nearest to it (EDITING 2.3)."""
     found = _handler(doc)
     if found is None:
         return None
@@ -646,9 +650,15 @@ def picture_at(doc: QTextDocument, point) -> Optional[Tuple[int, str]]:
     for near in (block, block.previous(), block.next()):
         if not near.isValid() or not photo_group.is_group_block(near):
             continue
-        for at, unit, box in _boxes_of(doc, found, near):
+        boxes = _boxes_of(doc, found, near)
+        for at, unit, box in boxes:
             if box.contains(point):
                 return at, unit.name
+        if nearest and boxes and doc.documentLayout().blockBoundingRect(near).contains(point):
+            at, unit, _box = min(boxes, key=lambda item: math.hypot(
+                max(item[2].left() - point.x(), 0.0, point.x() - item[2].right()),
+                max(item[2].top() - point.y(), 0.0, point.y() - item[2].bottom())))
+            return at, unit.name
     return None
 
 
