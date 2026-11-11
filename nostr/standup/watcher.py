@@ -174,12 +174,10 @@ class Followed:
 
 @dataclass(frozen=True)
 class Round:
-    """One round of the watcher: the sids it ``asked`` about, those the
-    server answered it holds ``nothing`` for (their status key is
-    unknown to it: the entry was never stored, contract 13), and the
-    ``failures`` it met (a server not reached, an answer not read). A
-    sid in neither ``nothing`` nor a :class:`Followed` is not known
-    about yet: never "not stored" (12.4)."""
+    """One round: the sids it ``asked`` about, those the server holds
+    ``nothing`` for (it does not know their status key: never stored,
+    contract 13), and the ``failures`` it met. A sid in neither
+    ``nothing`` nor a :class:`Followed` is not known about yet (12.4)."""
 
     asked: frozenset = frozenset()
     nothing: frozenset = frozenset()
@@ -280,7 +278,6 @@ class SubmissionWatcher(QObject):
         generation = self._generation
         waiting = {"n": len(batches)}
         learned: Dict[str, Followed] = {}
-        # What this round says beyond what it learned (Round).
         self._nothing: set = set()
         self._failures: List[StandupError] = []
         asked = frozenset(entry.sid for batch in batches for entry in batch)
@@ -332,9 +329,7 @@ class SubmissionWatcher(QObject):
             if answer.unreadable:
                 self._fail(StandupError(
                     Code.BAD_RESPONSE, message=f"{len(answer.unreadable)} answers unreadable"))
-            if continuation == 0:
-                # A key the answer leaves out, and does not fail to read, is
-                # one the server does not know (12.4): nothing is stored.
+            if continuation == 0:       # a key left out and not unreadable: not known
                 self._nothing.update(entry.sid for entry in batch
                                      if entry.status_key not in answer.found
                                      and entry.status_key not in answer.unreadable)

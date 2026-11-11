@@ -76,6 +76,7 @@ class StandupWriter(QObject):
                  entitled_relays=None, server: Optional[str] = None, nam=None,
                  uploads: Optional[Callable] = None, accounts: Optional[Callable] = None,
                  marks: Optional[SubmittedMarks] = None,
+                 clock: Callable[[], float] = time.time,
                  parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self._session_pool = session_pool
@@ -86,9 +87,9 @@ class StandupWriter(QObject):
         self._nam = nam
         self._uploads = uploads or BlossomUploads(media_store, parent=self)
         self._accounts = accounts or self._new_account
+        self._clock = clock
         self._account: Optional[Account] = None
-        # What the Einreichungen list, the pill and the detail show of the
-        # account's submissions: made when first asked for, stopped with it.
+        # What is shown of the account's submissions; stopped with it.
         self._following: Optional[Following] = None
         # What this computer holds of the texts submitted, across restarts
         # (RG-M2r2a 1); the window's is kept in its file, a test's is not.
@@ -108,20 +109,17 @@ class StandupWriter(QObject):
         return account
 
     def following(self, profile) -> Following:
-        """What the Einreichungen list, the pill and the detail show of
-        ``profile``'s submissions: one per account, stopped with it."""
         account = self.account(profile)
         if self._following is None:
             self._following = Following(
                 account, marks=self._marks,
                 on_listed=lambda read: self._listed(account, read),
                 discard=lambda entry, on_done: self.discard(profile, entry, on_done),
-                later=_later, parent=account)
+                later=_later, clock=self._clock, parent=account)
         return self._following
 
     def followed(self, profile) -> Optional[Following]:
-        """:meth:`following`, when ``profile``'s account is the one in
-        use and has one; never makes an account or reads a list."""
+        """:meth:`following`, when the account in use has one; makes none."""
         account = self._account
         if account is None or profile is None or account.writer != profile.user_pubkey:
             return None
@@ -383,10 +381,9 @@ class StandupWriter(QObject):
     def revise(self, profile, draft: ArticleDraft, choice: Choice, *, round_: int,
                revision: int, change_summary: str) -> SubmissionRun:
         """A run that hands in ``revision`` of the work ``draft`` in its
-        round at ``choice``'s publication (plan 8.1: a new version of an
-        open submission, with the keys its list entry holds), or the one
-        already on its way there. ``choice.message`` is the version's
-        note; ``change_summary`` the one line of its card."""
+        round at ``choice``'s publication (plan 8.1: with the keys its
+        list entry holds), or the one already on its way there.
+        ``choice.message`` is its note, ``change_summary`` its card's line."""
         account = self.account(profile)
         running = self.running(profile, draft.d, choice.publication)
         if running is not None:
@@ -399,8 +396,7 @@ class StandupWriter(QObject):
 
     def _keep_run(self, account: Account, run: SubmissionRun) -> None:
         """``run`` joins the account's runs, and the list of submissions
-        follows it: "Wird eingereicht …" while it goes, and a look at the
-        server once it is in."""
+        follows it: on its way, then a look at the server once it is in."""
         account.runs = [r for r in account.runs if not r.finished] + [run]
         was_in = [False]
 
@@ -560,7 +556,7 @@ class StandupWriter(QObject):
                      send_message=send_message, reload=reload,
                      refuse=lambda entry: self._marks.refuse_round(account.writer, entry),
                      refused=lambda entry: self._marks.round_refused(account.writer, entry),
-                     later=_later, clock=time.time)
+                     later=_later, clock=self._clock)
 
     def _reread(self, account: Account, entry: SubmissionEntry,
                 on_done: Callable[[Reread], None]) -> None:

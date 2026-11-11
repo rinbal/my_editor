@@ -199,7 +199,8 @@ print("RESULT " + json.dumps(r))
 
 def test_the_published_view_and_draft_relays_in_the_window(tmp_path):
     r = run_window_script(SCRIPT, tmp_path)
-    assert r["views"] == ["drafts", "published"]
+    # Entwürfe, Veröffentlicht, and Einreichungen as the third (plan 10.4).
+    assert r["views"] == ["drafts", "published", "submissions"]
     # Nostr > Refresh Drafts: offered while the panel is shown, named for its
     # view, with the platform's own key, and it reads that view again (L8).
     assert not r["refresh_while_hidden"]

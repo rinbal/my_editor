@@ -106,6 +106,7 @@ class _Kept(_Submitting):
     _article_details_of = MainWindow._article_details_of
     _set_article_details = MainWindow._set_article_details
     _keep_submitted_identifier = MainWindow._keep_submitted_identifier
+    _submission_for_sheet = MainWindow._submission_for_sheet
 
     def __init__(self, cache_dir) -> None:
         super().__init__(cache_dir, ArticleDetails())
@@ -246,6 +247,7 @@ def test_the_submit_command_keeps_the_identifier_its_sheet_sent(tmp_path, monkey
 
     class Sheet(QObject):
         submitted = Signal(str)
+        view_submission = Signal(str)
         opened = []
 
         def __init__(self, **kw) -> None:
@@ -269,6 +271,7 @@ def test_the_submit_command_keeps_the_identifier_its_sheet_sent(tmp_path, monkey
     win.current_editor = lambda: ed
     win._wants_article_header = lambda _ed: True
     win._standup = lambda: None
+    win._submissions = types.SimpleNamespace(open_detail=lambda _sid: None)
     win._avatars = win._avatar_batcher = types.SimpleNamespace(request=None)
     win.is_dark_theme = False
     MainWindow._on_nostr_submit_publication(win)

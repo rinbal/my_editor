@@ -322,6 +322,9 @@ from nostr.ui.publish_article_dialog import PublishArticleDialog
 from nostr.standup import drafting
 from nostr.ui.standup_submit import StandupWriter, thumbnail
 from nostr.ui.standup_submit_sheet import SubmitSheet
+from nostr.ui.submission_pill import SubmissionPill
+from nostr.ui.submissions_host import Ports as SubmissionPorts, SubmissionsHost
+from nostr.ui.submissions_view import SubmissionsView, add_to_panel as add_submissions_view
 from nostr.ui.publish_copy_dialog import resolve_pick
 from nostr.ui.publish_note_dialog import PublishNoteDialog
 from nostr.ui.save_destination_dialog import SaveDestination, SaveDestinationDialog
@@ -547,10 +550,14 @@ class MainWindow(QMainWindow):
         # over the documents, and in sight whatever the tab or the toolbar.
         self.update_button = UpdateButton()
         self.update_button.update_theme(self.is_dark_theme)
+        # The status of the article in front, where it is submitted by the
+        # account in use (plan 10.4): beside the tabs, and only then.
+        self.submission_pill = SubmissionPill(is_dark=self.is_dark_theme)
         corner = QWidget()
         corner_row = QHBoxLayout(corner)
         corner_row.setContentsMargins(0, 0, 4, 0)
         corner_row.setSpacing(6)
+        corner_row.addWidget(self.submission_pill)
         corner_row.addWidget(self.update_button)
         corner_row.addWidget(self.plus_btn)
         corner_row.addWidget(self.profile_chip)
@@ -957,6 +964,9 @@ class MainWindow(QMainWindow):
             # warm so opening the panel later is instant.
             self._draft_sync.start_for(active)
             self._draft_deletions.start_for(active)
+            # Its submissions are followed from the start (plan 10.4), once
+            # the window is up: the list read, the lookup without a signer.
+            QTimer.singleShot(0, self._follow_submissions)
             # An account created here whose setup was left for later is
             # finished now, once the window is up.
             QTimer.singleShot(0, lambda: self._accounts.profile_activated(
@@ -1808,6 +1818,7 @@ class MainWindow(QMainWindow):
         self._update_print_actions()
         self._update_zoom_commands()
         self._update_submit_command()
+        self._update_submission_pill()
         # The note a file viewer's Insert into Note goes to: the one in
         # front last.
         front = self.current_editor()
@@ -3350,6 +3361,16 @@ class MainWindow(QMainWindow):
         self._published_view.set_preview_image_loader(self._media_image_loader)
         self._published_view.set_preview_pictures(self._text_picture, self._web_images.ready)
         add_published_view(self._drafts_panel, self._published_view)
+        # Einreichungen, the third view: what the account in use submitted
+        # to publications, and each one's detail (plan 10.4).
+        self._submissions_view = SubmissionsView(
+            name_of=self._known_name, avatar_of=self._avatars.get,
+            is_dark=self.is_dark_theme)
+        add_submissions_view(self._drafts_panel, self._submissions_view)
+        self._submissions = SubmissionsHost(self._submission_ports(),
+                                            view=self._submissions_view,
+                                            pill=self.submission_pill,
+                                            name_of=self._known_name, parent=self)
         self._drafts_panel.view_changed.connect(self._follow_account_in_published)
         self._drafts_panel.view_changed.connect(self._update_refresh_command)
         self._published_view.open_requested.connect(self._on_published_open)
@@ -5534,6 +5555,9 @@ class MainWindow(QMainWindow):
 
     def _on_notice_action(self, ed, key: str) -> None:
         """An action of the notice over ``ed`` (document_notice.py)."""
+        host = getattr(self, "_submissions", None)
+        if host is not None and host.notice_acted(ed, key):
+            return                              # Ansehen: the submission's detail
         if key == "revert":
             self._revert_to_disk(ed)
         elif key == "save_as":
@@ -7696,6 +7720,8 @@ class MainWindow(QMainWindow):
         if getattr(self, "_drafts_panel", None) is not None:
             self._drafts_panel.apply_theme(self.is_dark_theme)
             self._published_view.apply_theme(self.is_dark_theme)
+            if getattr(self, "_submissions", None) is not None:
+                self._submissions.apply_theme(self.is_dark_theme)
         if getattr(self, "_article_details_panel", None) is not None:
             self._article_details_panel.set_dark(self.is_dark_theme)
             self._article_headers.set_dark(self.is_dark_theme, self._all_editors())
@@ -8348,6 +8374,11 @@ class MainWindow(QMainWindow):
         # file goes; nothing still on its way goes into a document, nor a
         # phrase still being dictated.
         self._media_saver.cancel()
+        # What was read of the submissions is written when leaving (13).
+        following = self._standup_writer.followed(self._profile_store.default()) \
+            if getattr(self, "_standup_writer", None) is not None else None
+        if following is not None:
+            following.leaving()
         dictating = getattr(self, "_dictating", None)
         if dictating is not None:
             dictating[0].shutdown()
@@ -9008,6 +9039,10 @@ class MainWindow(QMainWindow):
         # list of submissions go, what was read is written first (13).
         if getattr(self, "_standup_writer", None) is not None:
             self._standup_writer.stop()
+        # And nothing of its submissions stays on screen: the list, the
+        # pill, a notice, a compare (criterion 19).
+        if getattr(self, "_submissions", None) is not None:
+            self._submissions.account_stopped()
 
     def _on_nostr_select_profile(self, profile: Profile):
         if getattr(self, "_signing_out", False):
@@ -10197,22 +10232,10 @@ class MainWindow(QMainWindow):
         ed = self.current_editor()
         if active is None or not self._wants_article_header(ed):
             return
-        local = self._uploads_needed(ed)
-        if local is None:
-            return                              # a picture is gone: said why
-        draft, cover, pictures, private, public = self._submission_of(ed, active, local)
-        unreadable = [p.name for p in draft.pictures if not p.data]
-        if unreadable:
-            self._say_pictures_missing(unreadable)
-            return
-        if not draft.content.strip():
-            inform(self, title=_("Nothing to submit"),
-                   message=_("The current document is empty."), nostr=True)
-            return
-        name = active.display_name or active.npub_short()
-        byline = " · ".join([name, _("Article")] + ([ngettext(
-            "{count} picture", "{count} pictures", pictures).format(count=pictures)]
-            if pictures else []))
+        made = self._submission_for_sheet(ed, active)
+        if made is None:
+            return                              # said why
+        draft, cover, byline, private, public = made
         sheet = SubmitSheet(writer=self._standup(), draft=draft, cover=cover, byline=byline,
                             private_names=private, public_pictures=public, profile=active,
                             store=self._profile_store,
@@ -10220,8 +10243,107 @@ class MainWindow(QMainWindow):
                             is_dark=self.is_dark_theme, parent=self)
         sheet.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         sheet.submitted.connect(lambda d, ed=ed: self._keep_submitted_identifier(ed, d))
+        sheet.view_submission.connect(self._submissions.open_detail)
+        if cover.isNull() and draft.image.startswith(("https://", "http://")):
+            # A cover that is only a web address: fetched for the card and
+            # the small cover; a monogram until then, and when it does not come.
+            self._submissions.cover_for_sheet(sheet, draft.image, draft.title)
         self._publish_sheet = sheet                 # follows the appearance while open
         sheet.open()
+
+    def _submission_for_sheet(self, ed, active) -> Optional[tuple]:
+        """``(draft, cover, byline, private, public)`` of the article in
+        ``ed`` for a sheet that submits it (_submission_of), or None when
+        it cannot be submitted as it is, said why."""
+        local = self._uploads_needed(ed)
+        if local is None:
+            return None                         # a picture is gone: said why
+        draft, cover, pictures, private, public = self._submission_of(ed, active, local)
+        unreadable = [p.name for p in draft.pictures if not p.data]
+        if unreadable:
+            self._say_pictures_missing(unreadable)
+            return None
+        if not draft.content.strip():
+            inform(self, title=_("Nothing to submit"),
+                   message=_("The current document is empty."), nostr=True)
+            return None
+        name = active.display_name or active.npub_short()
+        byline = " · ".join([name, _("Article")] + ([ngettext(
+            "{count} picture", "{count} pictures", pictures).format(count=pictures)]
+            if pictures else []))
+        return draft, cover, byline, private, public
+
+    # -- following the submissions (plan 10.4) -----------------------------------
+
+    def _known_name(self, pubkey: str) -> str:
+        """A person's name where it is known (one's own accounts, the
+        people known), else ``""``: the words then say "the editorial
+        team", never an address (lesson 26)."""
+        profile = self._profile_store.get(pubkey) if pubkey else None
+        if profile is not None and profile.display_name:
+            return profile.display_name
+        person = self._known_people.get(pubkey) if pubkey else None
+        return person.display_name if person is not None and person.display_name else ""
+
+    def _editor_of_article(self, d: str):
+        """The tab that holds the article ``d``, or None."""
+        for ed in self._all_editors():
+            if self._wants_article_header(ed) and self._article_details_of(ed).identifier == d:
+                return ed
+        return None
+
+    def _open_submission_text(self, title: str, content: str, d: str, summary: str,
+                              tags: tuple) -> None:
+        """A version of a submission in a new tab: with ``d``, the article
+        itself to go on with; without, a copy to read."""
+        self.new_tab()
+        ed = self.current_editor()
+        if ed is None:
+            return
+        self._load_markdown(ed, content)
+        ed.document().setModified(False)
+        self._set_article_details(ed, ArticleDetails(identifier=d, title=title, summary=summary,
+                                                     hashtags=tuple(tags)))
+        self._update_tab_title()
+
+    def _submission_ports(self) -> SubmissionPorts:
+        def made(ed, profile):
+            found = self._submission_for_sheet(ed, profile)
+            return None if found is None else found[:4]
+
+        def focus(ed) -> None:
+            self.tabs.setCurrentIndex(self._editor_widget_index(ed))
+            ed.setFocus()
+
+        def show_view(key: str) -> None:
+            self._drafts_panel.show_view(key)
+            self._show_drafts_panel()
+
+        return SubmissionPorts(
+            standup=self._standup, profile=self._profile_store.default,
+            current_editor=self.current_editor, editor_of=self._editor_of_article,
+            identifier=lambda ed: self._article_details_of(ed).identifier
+            if self._wants_article_header(ed) else "",
+            text_of=lambda ed: self._publish_payload(ed, "markdown", keep_local=True)[0],
+            focus=focus, open_text=self._open_submission_text, submission_of=made,
+            show_view=show_view, submit=self._on_nostr_submit_publication,
+            notice_of=self._notice_of,
+            say=lambda text: self.status.showMessage(text, 8000, nostr=True),
+            keep=lambda sheet: setattr(self, "_publish_sheet", sheet),
+            avatar_of=self._avatars.get, request_logo=self._avatar_batcher.request,
+            is_dark=lambda: self.is_dark_theme, window=lambda: self)
+
+    def _follow_submissions(self) -> None:
+        """The submissions of the account in use are followed, from launch
+        and whenever the account changes."""
+        host = getattr(self, "_submissions", None)
+        if host is not None:
+            host.follow()
+
+    def _update_submission_pill(self) -> None:
+        host = getattr(self, "_submissions", None)
+        if host is not None:
+            host.update_pill()
 
     def _keep_submitted_identifier(self, ed, d: str) -> None:
         """The work in ``ed`` went to a publication under ``d``: the tab
@@ -10741,6 +10863,7 @@ class MainWindow(QMainWindow):
         relays only while it is shown: shown, it gets the account now;
         hidden, it lets go of another account's items at once and reads
         when it is shown next."""
+        self._follow_submissions()
         view = getattr(self, "_published_view", None)
         if view is None:
             return

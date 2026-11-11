@@ -280,7 +280,7 @@ def test_news_is_a_message_of_someone_else_or_a_result_once():
 def opened(world, following, entry):
     following.open(entry.sid)
     world.settle()
-    return following.detail(entry.sid, name_of=names)
+    return following.detail(entry.sid)
 
 
 def test_the_sentence_names_the_editor_only_once_the_decision_verified():
@@ -361,7 +361,7 @@ def test_a_message_goes_out_shows_sending_and_is_a_bubble_once_it_has_its_seq():
     assert out.state is Sending.SIGNING and footer_words(out) == ("Sending …", "")
     account.signer.release()
     world.settle()
-    detail = following.detail(entry.sid, name_of=names)
+    detail = following.detail(entry.sid)
     assert detail.outgoing == ()
     [message] = [m for m in detail.thread if isinstance(m, threads.Message)]
     assert message.mine and message.bubble.text == "Mach ich, danke!" and message.bubble.seq
@@ -388,7 +388,7 @@ def test_a_message_that_did_not_go_keeps_its_text_and_goes_with_one_retry():
     signed = len(account.key.signed)
     following.talk.retry(out.key)
     world.settle()
-    detail = following.detail(entry.sid, name_of=names)
+    detail = following.detail(entry.sid)
     assert [m.bubble.text for m in detail.thread if isinstance(m, threads.Message)] == ["Hallo?"]
     assert len(account.key.signed) == signed            # the same wrap: no new prompt
 
@@ -407,7 +407,7 @@ def test_a_message_that_may_have_arrived_is_checked_and_never_sent_twice():
     assert footer_words(out) == ("Not confirmed yet.", "Check Again")
     following.talk.retry(out.key)                       # Erneut prüfen
     world.settle()
-    detail = following.detail(entry.sid, name_of=names)
+    detail = following.detail(entry.sid)
     assert detail.outgoing == ()
     assert [m.bubble.text for m in detail.thread
             if isinstance(m, threads.Message)] == ["Angekommen?"]
@@ -428,7 +428,7 @@ def test_a_message_with_a_secret_key_or_no_text_is_said_in_place_and_not_sent():
 
 
 def reactions_of(world, following, entry, target):
-    detail = following.detail(entry.sid, name_of=names)
+    detail = following.detail(entry.sid)
     bubble = next(m.bubble for m in detail.thread
                   if isinstance(m, threads.Message) and m.bubble.id == target)
     return shown_reactions(bubble.reactions, ME, following.talk.reaction_on(entry.sid, target))
@@ -455,11 +455,11 @@ def test_a_reaction_is_added_changed_and_taken_back():
     account.signer.release()
     world.settle()
     assert reactions_of(world, following, entry, target) == ({ME: heart}, False)
-    detail = following.detail(entry.sid, name_of=names)
+    detail = following.detail(entry.sid)
     react(following, detail, entry, target, thumb)      # another one replaces it
     world.settle()
     assert reactions_of(world, following, entry, target) == ({ME: thumb}, False)
-    detail = following.detail(entry.sid, name_of=names)
+    detail = following.detail(entry.sid)
     react(following, detail, entry, target, thumb)      # the same again takes it back
     world.settle()
     assert reactions_of(world, following, entry, target) == ({}, False)
@@ -566,7 +566,7 @@ def test_a_stopped_account_writes_no_row_no_list_and_no_read_state():
     world.settle()
     assert changes == [] and world.news == []
     assert world.relay.published == published
-    assert following.rows() == [] and following.detail(entry.sid, name_of=names) is None
+    assert following.rows() == [] and following.detail(entry.sid) is None
     following.open(entry.sid)                           # late callers get nothing
     following.view_opened()
     following.refresh()

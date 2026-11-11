@@ -102,8 +102,10 @@ class TestAccount(QObject):
         self.submissions = SubmissionsList(self.profile, **lists)
         self.read_state = ReadState(self.profile, **lists)
         self.media_keys = MediaKeys()
-        self.destinations = trust.Destinations(
-            self.api, lambda _pubkey, _d, on_done: on_done([]), trust.EpochStore(), parent=self)
+        self.epochs = trust.EpochStore()
+        self.relay_lookup = lambda _pubkey, _d, on_done: on_done([])
+        self.destinations = trust.Destinations(self.api, self.relay_lookup, self.epochs,
+                                               parent=self)
         self.signer = AccountSigner(self.key)
         self.runs: list = []
         self.stopped = False

@@ -24,13 +24,9 @@ A round that failed is asked again quietly, with backoff; only when
 those tries are spent does the list say once, in place, that the status
 could not be loaded (lessons 36).
 
-A detail (:meth:`Following.open`) shows at once what the lookup knows
-and reads the submission with the session: the member list (who may
-decide, contract 10), the latest version, verified before it is opened
-(``opening.py``). A writer's room key is the list's ``s_sub``; a
-contributor's wrap is opened by their signer once and kept in their
-list (13). Messages and reactions on their way are
-:mod:`.standup_talk`'s.
+A detail (:meth:`Following.open`) is read by :mod:`.standup_reading`
+(the member list, the latest version, verified before it is opened);
+messages and reactions on their way are :mod:`.standup_talk`'s.
 
 Everything answers through :func:`~.standup_account.live`: after
 :meth:`Following.stop` nothing writes a row, the list or the read state.
@@ -39,24 +35,23 @@ Everything answers through :func:`~.standup_account.live`: after
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field, replace
-from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from dataclasses import dataclass, replace
+from typing import Callable, Dict, List, Mapping, Optional, Tuple
 
 from PySide6.QtCore import QObject, Signal
 
 from .. import failures
 from ..later import answer_later
-from ..standup import conversation, crypto, formats, opening, views
+from ..standup import conversation, formats, views
 from ..standup import following as rules
-from ..standup import thread as threads
 from ..standup.entries import SubmissionEntry
 from ..standup.errors import PASSING, StandupError, cause_words
 from ..standup.submitting import Phase
 from ..standup.watcher import (
-    AT_THE_END, Followed, NotHandedIn, Round, StoredCopy, StoredOther, SubmissionWatcher,
-    read_submission, verify_stored,
+    Followed, NotHandedIn, Round, StoredCopy, StoredOther, SubmissionWatcher, verify_stored,
 )
 from .standup_account import live
+from .standup_reading import Detail, Reading, Version, secret_of
 from .standup_talk import Outgoing, Talk
 
 # What an article's notice is about (plan 7.4): a message, or a result.
@@ -73,50 +68,6 @@ class News:
     kind: str
     title: str
     publication: str            # its name
-
-
-@dataclass(frozen=True)
-class Version:
-    """A version opened from its verified envelope (12.4)."""
-
-    revision: int
-    work: Mapping
-    change_summary: str = ""
-    rights: bool = False
-
-
-@dataclass
-class _Open:
-    """What is known of one submission's detail."""
-
-    items: Dict[int, views.TimelineItem] = field(default_factory=dict)
-    members: Optional[tuple] = None
-    role: str = ""
-    view: Optional[views.SubmissionView] = None
-    room: Optional[bytes] = field(default=None, repr=False)
-    versions: Dict[int, Version] = field(default_factory=dict)
-    loading: bool = False
-    problem: str = ""               # the one sentence, when nothing could be read
-    not_confirmed: bool = False     # the latest version did not verify: not opened
-
-
-@dataclass(frozen=True)
-class Detail:
-    """What the detail shows of one submission."""
-
-    row: rules.Row
-    publication: str
-    decision: Optional[rules.Decision]
-    thread: Tuple[threads.ThreadItem, ...]
-    history: Tuple[threads.Caption, ...]
-    opened: Tuple[conversation.Opened, ...]
-    outgoing: Tuple[Outgoing, ...]
-    members: Optional[tuple]
-    latest: Optional[Version]
-    loading: bool
-    problem: str
-    can_write: bool
-    not_confirmed: bool = False
 
 
 class Following(QObject):
@@ -151,7 +102,8 @@ class Following(QObject):
                                           account.client_for, timer=timer, parent=self)
         self._watcher.updated.connect(self._on_updated)
         self._watcher.round_done.connect(self._on_round)
-        self.talk = Talk(account, room=self._room_of, api_for=self._api_for,
+        self.reading = Reading(account, self, later=later, clock=clock)
+        self.talk = Talk(account, room=self.reading.room_of, api_for=self.api_for,
                          stored=self._on_stored, reread=self._reread,
                          changed=self.detail_changed.emit, later=later, clock=clock)
         self._started = False
@@ -161,7 +113,6 @@ class Following(QObject):
         self._decided: Dict[str, object] = {}       # sid -> StoredCopy | NotHandedIn
         self._deciding: set = set()
         self._names: Dict[str, Tuple[str, Optional[str]]] = {}
-        self._details: Dict[str, _Open] = {}
         self._noticed: Dict[str, int] = {}
         self._tries = 0
         self._reading_views = False
@@ -191,12 +142,18 @@ class Following(QObject):
         self._stopped = True
         self._watcher.stop()
         self.talk.stop()
-        self._served, self._nothing, self._decided, self._details = {}, set(), {}, {}
+        self.reading.stop()
+        self._served, self._nothing, self._decided = {}, set(), {}
         self._names, self._noticed = {}, {}
 
     @property
     def stopped(self) -> bool:
         return self._stopped
+
+    @property
+    def me(self) -> str:
+        """The account's pubkey."""
+        return self._account.writer
 
     def view_opened(self) -> None:
         """The Einreichungen view opened: look now, and read the works
@@ -224,6 +181,11 @@ class Following(QObject):
         lookup."""
         if not self._stopped:
             self._account.read_whole(live(self._account, self._listed))
+
+    def leaving(self) -> None:
+        """The app is being left: what was read is written now (13)."""
+        if not self._stopped:
+            self._account.read_state.flush(leaving=True)
 
     def _listed(self, read) -> None:
         self._on_listed(read)
@@ -268,9 +230,7 @@ class Following(QObject):
                 # says so from now on, after a restart too (12.4).
                 account.submissions.mark_stored([entry])
                 self._marks.remember(account.writer, entry.d, stored=True)
-            state = self._details.get(sid)
-            if state is not None:
-                state.items.update({item.seq: item for item in known.timeline})
+            if self.reading.add(sid, known.timeline):
                 self.detail_changed.emit(sid)
             self._tell(known)
         self.changed.emit()
@@ -300,14 +260,17 @@ class Following(QObject):
     def _tell(self, known: Followed) -> None:
         """A notice for what is new to the writer since they last read
         (plan 7.4): the newest message of someone else, or a result;
-        once per ``seq``."""
+        once per ``seq``. When nothing after what they read is news (their
+        own steps and messages, who was named), it counts as read: a
+        state change is an indicator, not something unread."""
         view, entry = known.item.submission, known.entry
-        seen = self._account.read_state.seen(entry.sid)
+        read_state = self._account.read_state
+        seen = read_state.seen(entry.sid)
         upto = view.last_message_seq
         if upto <= max(seen, self._noticed.get(entry.sid, 0)):
             return
         self._noticed[entry.sid] = upto
-        room = self._secret_of(entry)
+        room = secret_of(entry)
         for item in sorted(known.timeline, key=lambda i: -i.seq):
             if not seen < item.seq <= upto:
                 continue
@@ -316,6 +279,8 @@ class Following(QObject):
                 self.news.emit(News(entry.sid, entry.d, kind, view.title,
                                     self.publication_name(view.publication)))
                 return
+        if not known.item.more and room is not None:
+            read_state.mark(entry.sid, upto)        # written with the next write (13)
 
     def _news_kind(self, item: views.TimelineItem, sid: str, room: Optional[bytes]) -> str:
         me = self._account.writer
@@ -426,166 +391,63 @@ class Following(QObject):
     def publication_picture(self, address: str) -> Optional[str]:
         return self._names.get(address, ("", None))[1]
 
-    # -- a detail ----------------------------------------------------------------------
+    def snippet(self, sid: str) -> Tuple[str, str]:
+        """The newest message of someone else in ``sid``'s conversation,
+        ``(sender, text)``, as far as the lookup brought it and the list
+        holds its key; ``("", "")`` otherwise."""
+        known = self._watcher.followed().get(sid)
+        room = secret_of(self._account.submissions.entry(sid))
+        if known is None or room is None:
+            return "", ""
+        for item in sorted(known.timeline, key=lambda i: -i.seq):
+            if item.wrap is None or self._news_kind(item, sid, room) != "message":
+                continue
+            opened = conversation.open_item(item.wrap, room, sid, seq=item.seq)
+            return opened.sender, " ".join(opened.rumor["content"].split())[:200]
+        return "", ""
 
-    def _api_for(self, sid: str):
+    # -- a detail (standup_reading.Reading) ----------------------------------------
+
+    def followed(self) -> Dict[str, Followed]:
+        """What the lookup knows, by sid."""
+        return self._watcher.followed()
+
+    def serve(self, view: views.SubmissionView) -> None:
+        """A View the server just gave joins the rows, unless a newer one
+        is known."""
+        known = self._served.get(view.submission_id)
+        if known is None or view.last_seq >= known.last_seq:
+            self._served[view.submission_id] = view
+        self.changed.emit()
+
+    def api_for(self, sid: str):
         entry = self._account.submissions.entry(sid)
         return self._account.client_for(entry.server) if entry is not None \
             else self._account.api
 
-    def _secret_of(self, entry: Optional[SubmissionEntry]) -> Optional[bytes]:
-        return bytes.fromhex(entry.s_sub) if entry is not None and entry.s_sub else None
-
-    def _room_of(self, sid: str) -> Optional[Tuple[bytes, str]]:
-        state = self._details.get(sid)
-        secret = state.room if state is not None else None
-        return (secret, crypto.pubkey_of(secret)) if secret is not None else None
-
     def open(self, sid: str) -> None:
-        """Show the detail of ``sid``: what the lookup knows at once, then
-        the submission read with the session; what is read up to now
-        counts as read."""
+        """Show the detail of ``sid``; what is read up to now counts as
+        read."""
         if self._stopped:
             return
-        state = self._details.setdefault(sid, _Open())
-        known = self._watcher.followed().get(sid)
-        if known is not None:
-            state.items.update({item.seq: item for item in known.timeline})
-        if state.room is None:
-            state.room = self._secret_of(self._account.submissions.entry(sid))
-        self._read(sid)
+        # What the server holds nothing of has nothing to read there.
+        row = self.row(sid)
+        self.reading.open(sid, read=row is None or row.situation not in (
+            rules.Situation.UNSENT, rules.Situation.ELSEWHERE, rules.Situation.SENDING))
         self.mark_read(sid)
 
-    def _read(self, sid: str, on_read: Optional[Callable[[bool], None]] = None) -> None:
-        state = self._details.get(sid)
-        if state is None:
-            return
-        account, api = self._account, self._api_for(sid)
-        state.loading = True
-
-        def answered(result: object) -> None:
-            state.loading = False
-            ok = not isinstance(result, StandupError)
-            if ok:
-                state.problem = ""
-                self._take(sid, state, result)
-            elif not state.items and getattr(self.row(sid), "view", None) is None:
-                state.problem = cause_words(result.code)    # nothing to show: said once
-            if on_read is not None:
-                on_read(ok)
-            self.detail_changed.emit(sid)
-
-        failures.retry_quietly(
-            lambda answer: read_submission(api, sid, live(account, answer),
-                                           live(account, answer)),
-            settled=lambda result: not (isinstance(result, StandupError)
-                                        and result.code in PASSING),
-            on_done=answered, later=self._later)
-        self.detail_changed.emit(sid)
-
-    def _take(self, sid: str, state: _Open, detail) -> None:
-        """A read of the submission: its view, its members, its items,
-        and its latest version, verified before anything is opened."""
-        state.view, state.role, state.members = detail.submission, detail.my_role, detail.members
-        state.items.update({item.seq: item for item in detail.timeline})
-        known = self._served.get(sid)
-        if known is None or detail.submission.last_seq >= known.last_seq:
-            self._served[sid] = detail.submission
-        record = next((r for r in detail.revisions
-                       if r.revision == detail.submission.revision), None)
-        if record is not None:
-            self._open_version(sid, state, detail.submission, record)
-        self.mark_read(sid)
-        self.changed.emit()
-
-    def _open_version(self, sid: str, state: _Open, view: views.SubmissionView,
-                      record: views.RevisionRecord,
-                      on_done: Optional[Callable[[Optional[Version]], None]] = None) -> None:
-        """``record`` verified against its signed action (12.4), the room
-        key taken (the writer's from their list; a contributor's wrap
-        opened by their signer, once, and kept), its envelope opened."""
-        done = on_done or (lambda _version: None)
-        account = self._account
-        try:
-            verified = opening.verify_revision(
-                view, record, redaktion=rules.deciders_of(state.members or ()))
-        except opening.NotConfirmed:
-            state.not_confirmed = state.not_confirmed or record.revision == view.revision
-            done(None)
-            return
-
-        def with_key(secret: bytes) -> None:
-            if state.room is None:
-                state.room = secret
-                self._keep_key(view, record, verified, secret)
-            version = None
-            if verified.envelope_sha256 is not None:
-                try:
-                    opened = opening.open_envelope(verified, record.envelope, secret)
-                except opening.NotConfirmed:
-                    state.not_confirmed = True
-                else:
-                    account.media_keys.add(opened)
-                    revision = opened.revision
-                    version = state.versions[record.revision] = Version(
-                        revision=record.revision, work=revision["work"],
-                        change_summary=revision.get("change_summary") or "",
-                        rights=bool((revision.get("rights") or {}).get("confirmed")))
-            done(version)
-            self.detail_changed.emit(sid)
-
-        if state.room is not None:
-            if crypto.pubkey_of(state.room) != verified.p_sub:
-                state.not_confirmed = True          # not this submission's key
-                done(None)
-                return
-            with_key(state.room)
-            return
-        opening.open_submission_key(
-            account.signer, verified, account.writer, live(account, with_key),
-            live(account, lambda _error: done(None)),
-            served=record.wraps.get(account.writer))
-
-    def _keep_key(self, view, record, verified, secret: bytes) -> None:
-        """A contributor's opened key goes into their own list (13)."""
-        account = self._account
-        if view.writer == account.writer or account.submissions.entry(view.submission_id):
-            return
-        entry = SubmissionEntry(
-            sid=view.submission_id, publication=view.publication, server=account.api.server,
-            role="contributor", s_sub=secret.hex(), status_key=None, title=verified.title,
-            kind=verified.kind, d="", round=view.round, revision=record.revision,
-            revision_hash=record.revision_hash, envelope_sha256=record.envelope_sha256,
-            wraps_sha256=crypto.wraps_sha256(verified.wraps)
-            if record.envelope_sha256 is not None else None,
-            updated_at=int(self._clock()))
-        account.submissions.record(entry, live(account, lambda _result: None))
+    def detail(self, sid: str) -> Optional[Detail]:
+        return None if self._stopped else self.reading.detail(sid)
 
     def version(self, sid: str, revision: int,
                 on_done: Callable[[Optional[Version]], None]) -> None:
-        """The version ``revision`` of ``sid``, opened from its verified
-        envelope; None when it could not be read or did not verify (it
-        is then not opened, 12.4). Read once."""
-        state = self._details.get(sid)
-        view = state.view if state is not None else None
-        if state is None or view is None or self._stopped:
+        if self._stopped:
             answer_later(on_done, None)
-            return
-        if revision in state.versions:
-            answer_later(on_done, state.versions[revision])
-            return
-        account = self._account
+        else:
+            self.reading.version(sid, revision, on_done)
 
-        def read(detail) -> None:
-            record = next((r for r in detail.revisions if r.revision == revision), None)
-            if record is None:
-                on_done(None)
-            else:
-                self._open_version(sid, state, view, record, on_done)
-
-        self._api_for(sid).submission(sid, live(account, read),
-                                      live(account, lambda _error: on_done(None)),
-                                      since=AT_THE_END, revision=revision)
+    def cover(self, sid: str) -> Optional[bytes]:
+        return self.reading.cover(sid)
 
     def mark_read(self, sid: str) -> None:
         """What the conversation holds up to now is read (9.3: from
@@ -599,39 +461,14 @@ class Following(QObject):
             read_state.flush()
             self.changed.emit()
 
-    def detail(self, sid: str, *, name_of: Callable[[str], str]) -> Optional[Detail]:
-        row, state = self.row(sid), self._details.get(sid)
-        if row is None or state is None:
-            return None
-        items = [state.items[seq] for seq in sorted(state.items)]
-        deciders = rules.deciders_of(state.members) if state.members is not None else None
-        opened = conversation.open_items(items, state.room, sid).opened \
-            if state.room is not None else ()
-        view = row.view
-        who = dict(sid=sid, writer=row.writer,
-                   participants=view.participants if view is not None else (),
-                   deciders=deciders)
-        return Detail(
-            row=row, publication=self.publication_name(row.publication),
-            decision=rules.newest_decision(items, sid, deciders),
-            thread=tuple(threads.build_thread(items, opened, me=self._account.writer, **who)),
-            history=tuple(threads.history(items, **who)), opened=tuple(opened),
-            outgoing=tuple(self.talk.outgoing(sid)), members=state.members,
-            latest=state.versions.get(view.revision) if view is not None else None,
-            loading=state.loading, problem=state.problem,
-            can_write=state.room is not None and row.situation is not rules.Situation.WITHDRAWN,
-            not_confirmed=state.not_confirmed)
-
     # -- what the conversation tells back ----------------------------------------------
 
     def _on_stored(self, out: Outgoing, seq: int) -> None:
         """The server stored a message or reaction of this app: it joins
         the conversation at its ``seq`` at once (a stored reaction is not
         dimmed, whether or not a refresh follows)."""
-        state = self._details.get(out.sid)
-        if state is not None:
-            state.items[seq] = views.TimelineItem(seq=seq, at=int(self._clock()),
-                                                  type="message", wrap=out.wrap, event=None)
+        self.reading.add(out.sid, [views.TimelineItem(
+            seq=seq, at=int(self._clock()), type="message", wrap=out.wrap, event=None)])
         if out.is_message:
             self._account.read_state.mark(out.sid, seq)
             self._noticed[out.sid] = max(self._noticed.get(out.sid, 0), seq)
@@ -640,18 +477,7 @@ class Following(QObject):
     def _reread(self, sid: str, on_done: Callable[[Optional[Dict[str, int]]], None]) -> None:
         """The conversation read again, whole: the gift wrap ids it
         holds with their ``seq``, or None when it could not be read."""
-        def read(ok: bool) -> None:
-            state = self._details.get(sid)
-            if not ok or state is None:
-                on_done(None)
-            else:
-                on_done({item.wrap["id"]: item.seq for item in state.items.values()
-                         if item.wrap is not None and isinstance(item.wrap.get("id"), str)})
-
-        if self._details.get(sid) is None:
-            answer_later(on_done, None)
-        else:
-            self._read(sid, read)
+        self.reading.read(sid, lambda ok: on_done(self.reading.wraps(sid) if ok else None))
 
     # -- actions -----------------------------------------------------------------------
 
@@ -661,13 +487,12 @@ class Following(QObject):
         account = self._account
 
         def withdrawn(view: views.SubmissionView) -> None:
-            self._served[sid] = view
-            self.changed.emit()
+            self.serve(view)
             self.detail_changed.emit(sid)
             self._watcher.refresh()
             on_done(None)
 
-        self._api_for(sid).withdraw(sid, live(account, withdrawn), live(account, on_done))
+        self.api_for(sid).withdraw(sid, live(account, withdrawn), live(account, on_done))
 
     def discard(self, sid: str, on_done: Callable[[bool], None]) -> None:
         """Verwerfen (13): a keyed tombstone for the entry the server has
