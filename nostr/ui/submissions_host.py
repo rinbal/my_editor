@@ -136,8 +136,12 @@ class SubmissionsHost(QObject):
 
     def follow(self) -> None:
         """The account in use is followed (at launch, and whenever it
-        changes): the list read and the lookup started, when a server to
-        submit to is set; without one nothing is read or asked."""
+        changes), when a server to submit to is set; without one nothing
+        is read or asked. The list and the read state are opened by the
+        account's signer: with the key on this computer they are read
+        now; with a signer app, once the person opens Einreichungen (or
+        the detail, through the pill or a sheet), so that starting
+        MyEditor never asks the signer app (RG-M3-a 12)."""
         ports = self._ports
         profile, writer = ports.profile(), ports.standup()
         if writer is not self._writer:
@@ -149,7 +153,8 @@ class SubmissionsHost(QObject):
             if following is not self._following:
                 following.changed.connect(self.update_pill)
                 following.news.connect(self._on_news)
-            following.start()
+            if getattr(profile, "is_local", False):
+                following.start()
         self._following = following
         self.view.set_following(following, signed_in=profile is not None,
                                 server=bool(writer.server))

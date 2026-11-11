@@ -129,8 +129,10 @@ class Following(QObject):
     # -- the account's scope -----------------------------------------------------
 
     def start(self) -> None:
-        """At launch, and when the view first opens: the list read once,
-        then the lookup now and every 15 minutes."""
+        """At launch with the key on this computer, else when the view
+        first opens: the list read once, then the lookup now and every 15
+        minutes. Each read of the list or the read state may be a prompt
+        of the signer app."""
         if self._started or self._stopped:
             return
         self._started = True
@@ -173,6 +175,9 @@ class Following(QObject):
     def refresh(self) -> None:
         """Look now (Erneut versuchen, a run that ended)."""
         if self._stopped:
+            return
+        if not self._started:
+            self.start()                    # nothing read yet: read it now
             return
         self._tries = 0
         if self._watcher.running:

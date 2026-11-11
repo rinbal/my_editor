@@ -51,11 +51,11 @@ class Window:
     tabs that are plain values (an article ``d``, its text, its notice)."""
 
     def __init__(self, world: FollowWorld, monkeypatch, *, server: str = SERVER,
-                 uploads=lambda *a: (lambda: None), **host) -> None:
+                 uploads=lambda *a: (lambda: None), local_key: bool = True, **host) -> None:
         self.world = world
         monkeypatch.setattr(standup_submit, "_later", world.later)
         self.accounts = {}
-        self.profile = SimpleNamespace(user_pubkey=ME, bunker_relays=[])
+        self.profile = SimpleNamespace(user_pubkey=ME, bunker_relays=[], is_local=local_key)
         self.writer = StandupWriter(
             session_pool=None, relay_pool=None, relay_directory=None, media_store=None,
             server=server, uploads=uploads, accounts=self.account,
@@ -154,6 +154,19 @@ def test_without_a_server_nothing_is_read_and_the_list_says_where_the_address_co
     assert window.accounts == {} and window.following is None
     assert window.view.empty_body.text() == "The server’s address comes from the association."
     assert not window.view.empty_action.isVisible()
+
+
+def test_starting_myeditor_asks_no_signer_app_until_einreichungen_opens(monkeypatch):
+    window = Window(FollowWorld(), monkeypatch, local_key=False)
+    world = window.world
+    seeded(window, eins="Ein Jahr")
+    asked = len(world.relay.queries)
+    window.follow()                                     # MyEditor starts
+    assert len(world.relay.queries) == asked and window.view.items() == []
+    window.view.opened()                                # the person opens Einreichungen
+    world.settle()
+    assert len(world.relay.queries) > asked
+    assert window.rows()[1:] == [("row", "Ein Jahr", "Submitted")]
 
 
 def test_a_row_opens_its_detail_and_back_returns_to_the_row(window):
