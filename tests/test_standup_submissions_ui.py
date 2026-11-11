@@ -446,6 +446,15 @@ def test_the_pill_says_the_status_of_the_article_in_front(window):
     pill.click()                                        # opens the detail
     world.settle()
     assert window.shown == [PANEL_VIEW] and window.view.detail.sid == entries["mein"].sid
+    # Finished: said until it is read, then the pill goes.
+    window.view.show_list()
+    world.decide(prepared["mein"], "decline")
+    window.following.refresh()
+    world.settle()
+    assert not pill.isHidden() and pill.text() == "Declined"
+    pill.click()
+    world.settle()
+    assert pill.isHidden()
 
 
 def test_a_notice_at_the_article_says_what_is_new_and_opens_the_detail(window):

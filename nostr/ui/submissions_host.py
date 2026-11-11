@@ -224,11 +224,12 @@ class SubmissionsHost(QObject):
 
     def update_pill(self) -> None:
         """The pill says the status of the article in the current tab,
-        while the account in use submitted it."""
+        while the account in use submitted it; a finished one only until
+        what it ended with was read (RG-M3-b 13)."""
         ed = self._ports.current_editor()
         d = self._ports.identifier(ed) if ed is not None else ""
         row = self._following.row_for_work(d) if self._following is not None and d else None
-        if row is None:
+        if row is None or row.section is rules.Section.DONE and not row.unread:
             self.pill.clear()
             return
         self.pill.show_status(row.sid, rules.pill_word(row, self._name_of),
