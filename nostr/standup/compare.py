@@ -13,8 +13,10 @@ not only the answer:
 - a text of more than :data:`MAX_WORDS` words or :data:`MAX_PARAGRAPHS`
   paragraphs, or a changed stretch whose word-by-word table would have
   more than :data:`MAX_CELLS` cells, is not marked;
-- the clock is read between the stretches, and past :data:`MAX_SECONDS`
-  the marking stops.
+- the clock is read at every step of the matching, inside a long
+  stretch too (:class:`_Matcher`), and past :data:`MAX_SECONDS` the
+  marking stops; so does it once the caller says it was cancelled (the
+  view closed).
 
 Whatever stops it, the answer is ``too_many``: the screen then says "Zu
 viele Änderungen zum Markieren" and still shows both versions. The
@@ -22,7 +24,8 @@ caller runs it off the main thread, once per pair of versions
 (``nostr/ui/standup_compare.py``).
 
 :func:`change_summary` is the one line of a version card ("1 Absatz neu,
-1 ergänzt"), from the paragraphs alone.
+1 ergänzt"), from the paragraphs, within :data:`SUMMARY_SECONDS`: it is
+said on the main thread, and past that it says only "Geändert".
 """
 
 from __future__ import annotations
@@ -39,6 +42,7 @@ MAX_WORDS = 40_000
 MAX_PARAGRAPHS = 4_000
 MAX_CELLS = 4_000_000
 MAX_SECONDS = 2.0
+SUMMARY_SECONDS = 0.25
 
 SAME, ADDED, REMOVED = "same", "added", "removed"
 
@@ -77,12 +81,36 @@ def paragraphs(text: str) -> List[str]:
     return [p for p in _PARAGRAPH_BREAK.split(text.strip("\n")) if p.strip()]
 
 
-def _matcher(a: Sequence[str], b: Sequence[str]) -> difflib.SequenceMatcher:
-    return difflib.SequenceMatcher(None, a, b, autojunk=False)
-
-
 class _Bound(Exception):
     """A bound was met: nothing is marked."""
+
+
+class _Matcher(difflib.SequenceMatcher):
+    """``difflib``'s matcher, asking ``stop()`` at each step of the
+    matching: its work on one long stretch grows with the square of it,
+    so a bound read only between stretches did not hold (RG-M3-a 5)."""
+
+    def __init__(self, a: Sequence[str], b: Sequence[str], stop: Callable[[], bool]) -> None:
+        self._stop = stop
+        super().__init__(None, a, b, autojunk=False)
+
+    def find_longest_match(self, alo=0, ahi=None, blo=0, bhi=None):
+        if self._stop():
+            raise _Bound()
+        return super().find_longest_match(alo, ahi, blo, bhi)
+
+
+def _matcher(a: Sequence[str], b: Sequence[str],
+             stop: Callable[[], bool]) -> difflib.SequenceMatcher:
+    return _Matcher(a, b, stop)
+
+
+def _deadline(clock: Callable[[], float], seconds: float,
+              stopped: Callable[[], bool]) -> Callable[[], bool]:
+    """Whether to stop: ``seconds`` have gone by on ``clock``, or the
+    caller ``stopped`` it."""
+    started = clock()
+    return lambda: stopped() or clock() - started > seconds
 
 
 def _words_apart(old: str, new: str, deadline: Callable[[], bool]) -> List[Part]:
@@ -90,7 +118,7 @@ def _words_apart(old: str, new: str, deadline: Callable[[], bool]) -> List[Part]
     if len(a) * len(b) > MAX_CELLS or deadline():
         raise _Bound()
     parts: List[Part] = []
-    for tag, a1, a2, b1, b2 in _matcher(a, b).get_opcodes():
+    for tag, a1, a2, b1, b2 in _matcher(a, b, deadline).get_opcodes():
         if tag == "equal":
             parts.append(Part(SAME, "".join(a[a1:a2])))
             continue
@@ -101,22 +129,20 @@ def _words_apart(old: str, new: str, deadline: Callable[[], bool]) -> List[Part]
     return parts
 
 
-def compare_words(old: str, new: str, *, clock: Callable[[], float] = time.monotonic,
-                  max_seconds: float = MAX_SECONDS) -> Comparison:
+def compare_words(old: str, new: str, *, clock: Callable[[], float] = time.thread_time,
+                  max_seconds: float = MAX_SECONDS,
+                  stopped: Callable[[], bool] = lambda: False) -> Comparison:
     """``old`` and ``new`` compared word by word within the bounds (see
-    the module docstring). ``clock`` is a seam."""
-    started = clock()
-
-    def deadline() -> bool:
-        return clock() - started > max_seconds
-
+    the module docstring); ``stopped()`` says the caller no longer wants
+    it. ``clock`` is a seam: the work's own time, not the wall's."""
+    deadline = _deadline(clock, max_seconds, stopped)
     a, b = paragraphs(old), paragraphs(new)
     try:
         if max(len(a), len(b)) > MAX_PARAGRAPHS \
                 or len(old.split()) + len(new.split()) > MAX_WORDS:
             raise _Bound()
         parts: List[Part] = []
-        for tag, a1, a2, b1, b2 in _matcher(a, b).get_opcodes():
+        for tag, a1, a2, b1, b2 in _matcher(a, b, deadline).get_opcodes():
             if parts:
                 parts.append(Part(SAME, "\n\n"))
             if tag == "equal":
@@ -145,23 +171,34 @@ def _joined(parts: Sequence[Part]) -> Tuple[Part, ...]:
     return tuple(out)
 
 
-def _extended(old: str, new: str) -> bool:
+def _extended(old: str, new: str, deadline: Callable[[], bool]) -> bool:
     """Whether a changed paragraph kept most of its words and grew."""
     a, b = old.split(), new.split()
     if len(b) <= len(a) or len(a) * len(b) > MAX_CELLS:
         return False
-    kept = sum(block.size for block in _matcher(a, b).get_matching_blocks())
+    kept = sum(block.size for block in _matcher(a, b, deadline).get_matching_blocks())
     return kept >= _EXTENDED_KEEPS * len(a)
 
 
-def change_counts(old: str, new: str) -> Optional[Tuple[int, int, int, int]]:
+def change_counts(old: str, new: str, *, clock: Callable[[], float] = time.thread_time,
+                  max_seconds: float = SUMMARY_SECONDS
+                  ) -> Optional[Tuple[int, int, int, int]]:
     """How many paragraphs are new, were added to, changed otherwise and
     were removed between ``old`` and ``new``; None past the bounds."""
     a, b = paragraphs(old), paragraphs(new)
     if max(len(a), len(b)) > MAX_PARAGRAPHS:
         return None
+    deadline = _deadline(clock, max_seconds, lambda: False)
+    try:
+        return _counted(a, b, deadline)
+    except _Bound:
+        return None
+
+
+def _counted(a: Sequence[str], b: Sequence[str],
+             deadline: Callable[[], bool]) -> Tuple[int, int, int, int]:
     new_count = extended = changed = removed = 0
-    for tag, a1, a2, b1, b2 in _matcher(a, b).get_opcodes():
+    for tag, a1, a2, b1, b2 in _matcher(a, b, deadline).get_opcodes():
         if tag == "insert":
             new_count += b2 - b1
         elif tag == "delete":
@@ -169,7 +206,7 @@ def change_counts(old: str, new: str) -> Optional[Tuple[int, int, int, int]]:
         elif tag == "replace":
             pairs = min(a2 - a1, b2 - b1)
             for offset in range(pairs):
-                if _extended(a[a1 + offset], b[b1 + offset]):
+                if _extended(a[a1 + offset], b[b1 + offset], deadline):
                     extended += 1
                 else:
                     changed += 1
@@ -203,5 +240,5 @@ def change_summary(old: str, new: str) -> str:
 
 
 __all__ = ["ADDED", "Comparison", "MAX_CELLS", "MAX_PARAGRAPHS", "MAX_SECONDS", "MAX_WORDS",
-           "Part", "REMOVED", "SAME", "change_counts", "change_summary", "compare_words",
+           "Part", "REMOVED", "SAME", "SUMMARY_SECONDS", "change_counts", "change_summary", "compare_words",
            "paragraphs"]

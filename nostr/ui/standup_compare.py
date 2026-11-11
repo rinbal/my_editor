@@ -22,6 +22,7 @@ Close.
 from __future__ import annotations
 
 import hashlib
+import threading
 from typing import Callable, Dict, List, Optional
 
 from PySide6.QtCore import QObject, QSize, Qt
@@ -70,25 +71,32 @@ class Comparer(QObject):
         self._compare = compare_words
         self._done: Dict[str, Comparison] = {}
         self._waiting: Dict[str, List[Callable[[Comparison], None]]] = {}
+        # A pair being computed stops once nobody waits for it any more.
+        self._stops: Dict[str, threading.Event] = {}
         self._generation = 0
         self.computed = 0               # pairs computed (each once)
 
-    def compare(self, old: str, new: str, on_done: Callable[[Comparison], None]) -> None:
+    def compare(self, old: str, new: str,
+                on_done: Callable[[Comparison], None]) -> Callable[[], None]:
         """``on_done(comparison)``, on this thread; at once for a pair
-        already compared."""
+        already compared. What it gives back takes the question back (a
+        view that closes): ``on_done`` is not called, and a pair nobody
+        waits for any more stops being computed."""
         key = _pair(old, new)
         if key in self._done:
             on_done(self._done[key])
-            return
+            return lambda: None
         if key in self._waiting:
             self._waiting[key].append(on_done)
-            return
+            return lambda: self._take_back(key, on_done)
         self._waiting[key] = [on_done]
+        stop = self._stops[key] = threading.Event()
         generation = self._generation
 
         def computed(result: Comparison) -> None:
-            if generation != self._generation:
-                return                              # the account was let go meanwhile
+            if generation != self._generation or stop.is_set():
+                return                  # the account was let go, or nobody waits
+            self._stops.pop(key, None)
             self.computed += 1
             self._done[key] = result
             for heard in self._waiting.pop(key, []):
@@ -98,13 +106,24 @@ class Comparer(QObject):
             # Nothing to mark with: both versions are shown all the same.
             computed(Comparison(old, new, too_many=True))
 
-        self._run(lambda: self._compare(old, new), computed, failed)
+        self._run(lambda: self._compare(old, new, stopped=stop.is_set), computed, failed)
+        return lambda: self._take_back(key, on_done)
+
+    def _take_back(self, key: str, on_done: Callable[[Comparison], None]) -> None:
+        waiting = self._waiting.get(key, [])
+        if on_done in waiting:
+            waiting.remove(on_done)
+        if key in self._waiting and not waiting:
+            del self._waiting[key]
+            self._stops.pop(key).set()
 
     def stop(self) -> None:
         """Sign-out or another account: its texts are forgotten, and an
         answer still being computed is heard by nobody."""
         self._generation += 1
-        self._done, self._waiting = {}, {}
+        for stop in self._stops.values():
+            stop.set()
+        self._done, self._waiting, self._stops = {}, {}, {}
 
 
 class CompareView(QWidget):
@@ -115,6 +134,7 @@ class CompareView(QWidget):
         self._is_dark = bool(is_dark)
         self._shown: Optional[Comparison] = None
         self._asked = 0
+        self._take_back: Callable[[], None] = lambda: None
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(6)
@@ -132,13 +152,14 @@ class CompareView(QWidget):
     def show_pair(self, comparer: Comparer, old: str, new: str) -> None:
         """Compare ``old`` with ``new`` and show it; "Wird verglichen …"
         meanwhile. Only the pair asked for last is shown."""
+        self._take_back()
         self._asked += 1
         asked = self._asked
         self._shown = None
         self.state.setText(_(COMPARING))
         self.text.clear()
-        comparer.compare(old, new, lambda result: asked == self._asked
-                         and self.show_comparison(result))
+        self._take_back = comparer.compare(old, new, lambda result: asked == self._asked
+                                           and self.show_comparison(result))
 
     def show_comparison(self, comparison: Comparison) -> None:
         self._shown = comparison
@@ -197,8 +218,10 @@ class CompareView(QWidget):
             self.show_comparison(self._shown)
 
     def forget(self) -> None:
-        """The view closes: the texts go, and an answer still on its way
-        is shown nowhere."""
+        """The view closes: the texts go, and a compare still on its way
+        is taken back (RG-M3-a 5)."""
+        self._take_back()
+        self._take_back = lambda: None
         self._asked += 1
         self._shown = None
         self.text.clear()

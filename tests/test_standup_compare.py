@@ -71,6 +71,25 @@ def test_past_the_time_bound_the_marking_stops():
     assert result.too_many
 
 
+def test_the_time_bound_holds_inside_one_long_stretch_and_closing_stops_the_compare():
+    # One paragraph of two words against itself shortened: the matching
+    # of that one stretch grows with its square (the gate's probe took
+    # 18.8 s). Its own clock is read inside it, at every step.
+    old = " ".join("ja" if i * 7 % 3 else "nein" for i in range(200))
+    new = " ".join("ja" if i * 5 % 4 else "nein" for i in range(199))
+    ticks = iter(range(10_000))
+    assert compare_words(old, new, clock=lambda: next(ticks), max_seconds=3).too_many
+    # Closing the view takes the question back: the compare stops at its
+    # next step, and nobody hears it.
+    held, heard = [], []
+    comparer = Comparer(run=lambda fn, on_done, on_error: held.append((fn, on_done)))
+    take_back = comparer.compare(old, new, heard.append)
+    take_back()
+    fn, on_done = held[0]
+    on_done(fn())
+    assert fn().too_many and heard == [] and comparer.computed == 0
+
+
 def test_the_work_grows_with_the_changes_not_with_the_square_of_the_text():
     # A long text with one changed paragraph compares that paragraph only.
     calls = []
@@ -98,10 +117,10 @@ def test_the_one_line_of_a_version_card():
 def test_a_pair_is_compared_once_on_the_worker_thread():
     threads, calls = [], []
 
-    def counted(old, new):
+    def counted(old, new, **bounds):
         threads.append(threading.current_thread())
         calls.append((old, new))
-        return compare_words(old, new)
+        return compare_words(old, new, **bounds)
 
     comparer = Comparer(compare_words=counted)
     heard = []

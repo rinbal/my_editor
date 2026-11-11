@@ -223,6 +223,7 @@ class ReviseSheet(QDialog):
         self.back.setFocus()
 
     def _hide_changes(self) -> None:
+        self.changes.forget()                       # a compare still on its way stops
         self._pages.setCurrentIndex(0)
         self.show_changes.setFocus()                # focus returns to the opening control
 
