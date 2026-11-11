@@ -630,6 +630,20 @@ def test_a_version_is_opened_only_from_its_verified_envelope():
     assert detail.latest is None and detail.not_confirmed
 
 
+def test_a_detail_answered_with_another_submission_is_refused():
+    # Lesson 3: a server that answers X with Y must not put Y's members,
+    # timeline and version under X.
+    world = FollowWorld()
+    account = world.account()
+    _x, asked = world.submit(account, d="gefragt")
+    _y, other = world.submit(account, d="anderes")
+    following = world.following(account)
+    world.server.submissions[asked.sid] = world.server.submissions[other.sid]
+    detail = opened(world, following, asked)
+    assert not detail.complete and detail.members is None and detail.latest is None
+    assert following.row(asked.sid).view.submission_id == asked.sid
+
+
 def test_a_stopped_account_writes_no_row_no_list_and_no_read_state():
     world = FollowWorld()
     account = world.account()

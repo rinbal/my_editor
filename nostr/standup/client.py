@@ -547,7 +547,8 @@ class StandupApi(SignedJsonApi):
             query["revision"] = revision
         if query:
             path += "?" + urlencode(query)
-        return self._call("GET", path, None, Auth.SESSION, answers.parse_submission_detail,
+        return self._call("GET", path, None, Auth.SESSION,
+                          _about(submission_id, answers.parse_submission_detail),
                           on_success, on_failure, limit=_within(limit, MAX_DETAIL_ANSWER_BYTES),
                           on_bytes=on_bytes)
 
@@ -577,7 +578,7 @@ class StandupApi(SignedJsonApi):
                 on_success, on_failure) -> StandupCall:
         sid = _sid(submission_id)
         return self._call("POST", f"/api/submissions/{sid}/{name}",
-                          {"submission_id": sid, **payload}, Auth.SIGNED, parse,
+                          {"submission_id": sid, **payload}, Auth.SIGNED, _about(sid, parse),
                           on_success, on_failure)
 
     def decision(self, submission_id: str, *, outcome: str, expected_revision: int,
@@ -691,6 +692,19 @@ def _sid(value: str) -> str:
     if not formats.is_hex64(value):
         raise ValueError("a submission id is 64 hex digits")
     return value
+
+
+def _about(submission_id: str, parse: Callable[[Any], Any]) -> Callable[[Any], Any]:
+    """``parse``, refusing an answer whose View is of another submission
+    than the one asked about (lesson 3): a server that answers X with Y
+    would otherwise put Y's version, key and state under X."""
+    def parsed(data: Any) -> Any:
+        result = parse(data)
+        view = getattr(result, "submission", result)
+        if isinstance(view, views.SubmissionView):
+            need(view.submission_id == submission_id, "the answer is for another submission")
+        return result
+    return parsed
 
 
 
