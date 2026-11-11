@@ -512,6 +512,13 @@ def test_markdown_the_editor_can_hold(source):
     # Emphasis around nothing but code: Qt's reader gives code no emphasis.
     "Ein *`code`*\nweiter.\n",
     "Ein **`code`** und ~~`alt`~~.\n",
+    # Re-check 9b111af, 2: a label on two lines of its quote or list item,
+    # a star after an escaped backslash, links and pictures without words.
+    "> [a\n> b]: /u\n\n[a b] und c.\n",
+    "- [a\n  b]: /u\n\n[a b] und c.\n",
+    "Ein \\\\*`code`* hier.\n",
+    "Ein *[`code`](u)* hier.\n",
+    "Ein *`c`![a](p.png)* hier.\n",
 ])
 def test_markdown_the_editor_would_lose(source):
     assert not holds_faithfully(source)

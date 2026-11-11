@@ -24,6 +24,8 @@ _AUTOLINK_OR_TAG = re.compile(
 _CODE_INDENT = re.compile(r"^(?: {4}|\t)")
 # Where an escape, a code span, an autolink or tag, or a picture may start.
 _STARTS_INLINE = re.compile(r"[\\`<]|!\[")
+# The same, and where a link may start.
+_STARTS_INLINE_OR_LINK = re.compile(r"[\\`<\[]|!\[")
 _BACKTICKS = re.compile(r"`+")
 _EMPHASIS_MARKS = ("*", "_", "~")
 # Where an escape, or something an escape inside is no escape of, may
@@ -36,8 +38,12 @@ _STARTS_ESCAPE = re.compile(r"[\\`<]|!\[|\]\(")
 _CONTAINER = r"[ \t]*(?:>|(?:[-*+]|\d{1,9}[.)])(?=[ \t]))"
 _CONTAINERS = rf"(?:{_CONTAINER})*"
 _TITLE = r"""(?:"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|\((?:[^()\\\n]|\\.)*\))"""
-# A link reference definition's label; a footnote's ("[^1]: note") is text.
-_LABEL = r"\[(?!\^)(?:[^\]\\\n]|\\.)+\]"
+# A link reference definition's label, as readers take one: no bracket
+# in it that is not escaped, at most 999 characters, on one line or on
+# lines that go on in its quote or list item ("> [a\n> b]"; a blank line
+# or a list item ends it); a footnote's ("[^1]: note") is text.
+_LABEL = (r"\[(?!\^)(?:[^\[\]\\\n]|\\."
+          r"|\n[ \t>]*(?=[^ \t>\n])(?![-*+][ \t]|\d{1,9}[.)][ \t])){1,999}\]")
 # What follows a link reference definition's label ("[a]: /url 'title'"),
 # its address and title, in a quote or a list item too, the address or
 # the title on the next line.
@@ -338,16 +344,17 @@ def lossy_definition(markdown: str) -> bool:
 
 
 def emphasized_code(markdown: str) -> bool:
-    """Whether emphasis or strike-through holds nothing but a code span
-    ("*`code`*", "**`code`**", "~~`code`~~"), outside code. Qt's reader
-    gives code a font of its own, without the emphasis, and what is
-    written then reads back the same, so the check by reading it twice
-    does not see the loss (more than code in it, it does)."""
+    """Whether emphasis or strike-through holds no words of its own, only
+    code spans, pictures and links that hold only them ("*`code`*",
+    "**[`npm`](u)**", "*`c`![a](p.png)*"), outside code. Qt's reader gives
+    code a font of its own and a picture none, without the emphasis, and
+    what is written then reads back the same, so the check by reading it
+    twice does not see the loss (with words in it, it does)."""
     blocked = _Blocked(_code_ranges(markdown))
     scanned = Found()
     index = 0
     while True:
-        nearest = _STARTS_INLINE.search(markdown, index)
+        nearest = _STARTS_INLINE_OR_LINK.search(markdown, index)
         if nearest is None:
             return False
         index = nearest.start()
@@ -355,16 +362,48 @@ def emphasized_code(markdown: str) -> bool:
         if end is not None:
             index = end + 1
             continue
+        if _after_emphasis_mark(markdown, index):
+            close = _wordless_end(markdown, index, scanned)
+            if close > index and markdown[close:close + 1] in _EMPHASIS_MARKS:
+                return True
         skipped = skip_inline(markdown, index, scanned)
-        if skipped is None:
-            index += 1
+        index = index + 1 if skipped is None else skipped
+
+
+def _after_emphasis_mark(text: str, at: int) -> bool:
+    """Whether an emphasis or strike-through mark is right before ``at``,
+    not escaped (an odd number of backslashes before it escapes it)."""
+    if text[at - 1:at] not in _EMPHASIS_MARKS:
+        return False
+    start = at - 1
+    while start > 0 and text[start - 1] == "\\":
+        start -= 1
+    return (at - 1 - start) % 2 == 0
+
+
+def _wordless_end(text: str, at: int, found: Found, links: bool = True) -> int:
+    """Where the code spans, pictures and (``links``) links holding only
+    code spans and pictures that follow each other from ``at`` end
+    (``at``: none starts there). A link holds no link."""
+    index = at
+    while index < len(text):
+        char = text[index]
+        if char == "`":
+            end = code_span_end(text, index, found)
+            if end == _BACKTICKS.match(text, index).end():
+                break               # backticks nothing closes: text
+            index = end
             continue
-        if (markdown[index] == "`" and skipped > _BACKTICKS.match(markdown, index).end()
-                and markdown[index - 1:index] in _EMPHASIS_MARKS
-                and markdown[index - 2:index - 1] != "\\"
-                and markdown[skipped:skipped + 1] in _EMPHASIS_MARKS):
-            return True
-        index = skipped
+        picture = char == "!" and text.startswith("![", index)
+        if not (picture or (links and char == "[")):
+            break
+        label = label_end(text, index + picture, found)
+        close = None if label is None or text[label + 1:label + 2] != "(" else \
+            destination_end(text, label + 1, found)
+        if close is None or not (picture or _wordless_end(text, index + 1, found, False) == label):
+            break
+        index = close + 1
+    return index
 
 
 def escapes(markdown: str) -> List[int]:
