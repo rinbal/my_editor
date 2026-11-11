@@ -814,10 +814,11 @@ class _Counted(str):
         return super().__getitem__(key)
 
 
-@pytest.mark.parametrize("run", ["](a (b ", "![a "])
+@pytest.mark.parametrize("run", ["](a (b ", "![a ", "](x", "![a](x"])
 def test_the_escape_scan_reads_a_text_once_however_many_openers_it_holds(run):
-    # Gate RG-PG2E-c 5: each opener nothing closed was followed to the
-    # end of the text: twice the text, four times the reading.
+    # Gate RG-PG2E-c 5 and RG-PG2E-d 3: each opener nothing closed was
+    # followed to the end of the text, or of its address: twice the text,
+    # four times the reading.
     import markdown_scan
     reads = []
     for count in (1000, 2000):

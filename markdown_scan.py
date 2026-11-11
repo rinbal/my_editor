@@ -109,15 +109,18 @@ def skip_inline(text: str, at: int) -> Optional[int]:
 
 class Found:
     """What the scans of one text found: the ``]`` closing each ``[`` a
-    scan for a bracket passed (None: nothing does), and where the closer
-    of a title was looked for last. A scan that starts where an earlier
-    one passed steps as it did from there on, so the earlier answer is
-    its own: a text full of openers nothing closes is read once, not
-    once for each of them to the end of the paragraph or the text."""
+    scan for a bracket passed (None: nothing does), where each address
+    a scan passed ends (_bare_address_end), and where the closer of a
+    title, a ``>`` and a line's end were looked for last. A scan that
+    starts where an earlier one passed steps as it did from there on, so the earlier answer is its
+    own: a text full of openers nothing closes is read once, not once
+    for each of them to the end of the paragraph or the text."""
 
     def __init__(self) -> None:
         self.brackets: Dict[int, Optional[int]] = {}
+        self.addresses: Dict[int, int] = {}
         self.closers: Dict[str, Tuple[int, int]] = {}
+        self.next_of: Dict[str, Tuple[int, int]] = {}
 
 
 def label_end(text: str, at: int, found: Optional[Found] = None) -> Optional[int]:
@@ -162,6 +165,53 @@ def _closer_at(text: str, closer: str, start: int, found: Optional[Found]) -> in
     return index
 
 
+def _next_of(text: str, char: str, start: int, found: Optional[Found]) -> int:
+    """Where the first ``char`` is from ``start`` (the text's length: none)."""
+    known = found.next_of.get(char) if found is not None else None
+    if known is not None and known[0] <= start <= known[1]:
+        return known[1]
+    index = text.find(char, start)
+    if index < 0:
+        index = len(text)
+    if found is not None:
+        found.next_of[char] = (start, index)
+    return index
+
+
+def _bare_address_end(text: str, start: int, found: Optional[Found]) -> int:
+    """Where an address not in <...> that starts at ``start`` ends: at a
+    space, the text's end, or the first ``)`` that closes more than it
+    opened.
+
+    One pass over the characters up to the next space answers every
+    address that starts after a ``(`` among them, as a link's does
+    ("](x](x"). ``found`` keeps the answers."""
+    known = found.addresses if found is not None else {}
+    if start in known:
+        return known[start]
+    length = len(text)
+    waiting: Dict[int, List[int]] = {0: [start]}
+    depth = 0
+    index = start
+    while index < length and not text[index].isspace():
+        char = text[index]
+        if char == "\\" and index + 1 < length:
+            index += 2
+            continue
+        if char == "(":
+            depth += 1
+            waiting.setdefault(depth, []).append(index + 1)
+        elif char == ")":
+            for begun in waiting.pop(depth, ()):
+                known[begun] = index
+            depth -= 1
+        index += 1
+    for starts in waiting.values():
+        for begun in starts:
+            known[begun] = index
+    return known[start]
+
+
 def destination_end(text: str, at: int, found: Optional[Found] = None) -> Optional[int]:
     """The ``)`` closing an inline link's destination and title, opened
     at ``at``, or None; ``found`` as for label_end."""
@@ -175,25 +225,12 @@ def destination_end(text: str, at: int, found: Optional[Found] = None) -> Option
     index = spaces(index)
     if index < length and text[index] == "<":
         # An address in <...> ends on its line.
-        line_end = text.find("\n", index)
-        close = text.find(">", index, length if line_end < 0 else line_end)
-        if close < 0:
+        close = _next_of(text, ">", index, found)
+        if close >= _next_of(text, "\n", index, found):
             return None
         index = close + 1
     else:
-        depth = 0
-        while index < length and not text[index].isspace():
-            char = text[index]
-            if char == "\\" and index + 1 < length:
-                index += 2
-                continue
-            if char == "(":
-                depth += 1
-            elif char == ")":
-                if depth == 0:
-                    break
-                depth -= 1
-            index += 1
+        index = _bare_address_end(text, index, found)
     index = spaces(index)
     if index < length and text[index] in "\"'(":
         closer = ")" if text[index] == "(" else text[index]
