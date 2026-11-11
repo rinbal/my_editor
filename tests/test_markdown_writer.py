@@ -584,6 +584,7 @@ def test_a_preview_reads_a_soft_break_as_readers_do():
 # -- photo groups --------------------------------------------------------------------------
 
 import photo_group  # noqa: E402
+import photo_group_find  # noqa: E402
 import photo_group_edit  # noqa: E402
 
 GROUP_CORPUS = [
@@ -643,7 +644,7 @@ def test_a_document_with_groups_comes_back_byte_for_byte(source):
 def test_groups_are_written_as_if_they_were_not_there(source, monkeypatch):
     """Markdown and a note's text alike: what the paragraphs give."""
     folded = _read_folded(source)
-    monkeypatch.setattr(photo_group, "fold", lambda *a, **k: 0)
+    monkeypatch.setattr(photo_group_find, "fold", lambda *a, **k: 0)
     plain = _read_folded(source)
     assert not photo_group.has_groups(plain)
     assert document_to_markdown(folded, _image_as_read) == document_to_markdown(plain, _image_as_read)

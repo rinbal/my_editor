@@ -53,6 +53,7 @@ from atomic_file import write_text
 from doc_walk import iter_blocks, iter_image_names
 from export_html import normalize_after_set_html
 import photo_group
+import photo_group_find
 from markdown_writer import holds_faithfully, read_markdown
 from nostr.media.assets import ASSET_SCHEME
 
@@ -216,7 +217,7 @@ def load_backup_content(editor, record: dict, *, modified: bool = True) -> None:
         if record.get("photo_groups") is True:
             # Kept as their paragraphs (HTML has no place for a group):
             # shown as the groups they were.
-            photo_group.fold(editor.document())
+            photo_group_find.fold(editor.document())
     if record.get("markdown_source"):
         # Opened as its Markdown text: it is still saved as written.
         editor._markdown_source = True

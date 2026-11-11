@@ -27,6 +27,7 @@ from typing import Optional, Sequence, Tuple
 from PySide6.QtGui import QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument
 
 import photo_group
+import photo_group_find
 from doc_walk import OBJECT_REPLACEMENT
 
 # What an edit changed, as QTextDocument.contentsChange says it: (position,
@@ -113,12 +114,12 @@ def settle(doc: QTextDocument, changes: Sequence[Change],
         # (a caption being written between two pictures stays words).
         touched = ((changed_from.position(), changed_to.position()) if len(changes) == 1
                    else (low, high))
-        for run in reversed(photo_group.find_runs(doc, low, stop.position())):
+        for run in reversed(photo_group_find.find_runs(doc, low, stop.position())):
             if (len(run.units) >= 2 and not run.is_group
                     and any(a <= touched[1] and b >= touched[0] for a, b in run.pictures)):
                 _rewrite(doc, step.write(), run, caret)
     # A group left with one picture is that picture's paragraphs again.
-    for run in reversed(photo_group.find_runs(doc, low, stop.position(), lone=False)):
+    for run in reversed(photo_group_find.find_runs(doc, low, stop.position(), lone=False)):
         if len(run.units) < 2:
             _rewrite(doc, step.write(), run, caret)
     return step.end()
@@ -199,7 +200,7 @@ def _reach(doc, first: int, last: int) -> Tuple[int, int]:
         if pictures(before):
             block = before
         elif (before.isValid() and pictures(before.previous())
-              and photo_group.caption_paragraph(before) is not None):
+              and photo_group_find.caption_paragraph(before) is not None):
             block = before.previous()
         else:
             break
@@ -208,14 +209,14 @@ def _reach(doc, first: int, last: int) -> Tuple[int, int]:
     while True:
         after = block.next()
         if pictures(after) or (after.isValid() and pictures(block)
-                               and photo_group.caption_paragraph(after) is not None):
+                               and photo_group_find.caption_paragraph(after) is not None):
             block = after
         else:
             break
     return low, block.position() + block.length() - 1
 
 
-def _rewrite(doc, cursor: QTextCursor, run: photo_group.Found,
+def _rewrite(doc, cursor: QTextCursor, run: photo_group_find.Found,
              caret: Optional[QTextCursor]) -> None:
     """Write ``run`` anew: a group when it holds two pictures or more,
     else its picture's paragraphs. A ``caret`` in it stays before the
@@ -224,7 +225,7 @@ def _rewrite(doc, cursor: QTextCursor, run: photo_group.Found,
     if caret is not None and run.first <= caret.position() <= run.end:
         place = sum(1 for position in range(run.first, caret.position())
                     if doc.characterAt(position) == OBJECT_REPLACEMENT)
-    photo_group.replace_run(cursor, run, run.units)
+    photo_group.replace_paragraphs(cursor, run.first, run.end, run.format, run.units)
     if place is None:
         return
     if len(run.units) >= 2:
@@ -251,5 +252,4 @@ def set_units(cursor: QTextCursor, group: photo_group.Group,
     """Write ``units`` in place of ``group``'s pictures: two or more as
     the group, one as its own paragraphs, none as an empty paragraph. One
     change of the document; inside HtmlEditor.undo_step, one named step."""
-    photo_group.replace_run(
-        cursor, photo_group.Found([], group.start, group.end, format=group.format), list(units))
+    photo_group.replace_paragraphs(cursor, group.start, group.end, group.format, list(units))

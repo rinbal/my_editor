@@ -26,6 +26,7 @@ from PySide6.QtWidgets import QApplication, QTextEdit
 
 import export_html
 import photo_group
+import photo_group_find
 import photo_group_view
 from markdown_writer import holds_faithfully, read_markdown
 
@@ -109,7 +110,7 @@ def test_folding_in_a_shown_editor_lays_each_picture_out_about_once(monkeypatch)
     groups = 300
     doc.setMarkdown(_markdown(groups))
     calls.clear()
-    assert photo_group.fold(doc) == groups
+    assert photo_group_find.fold(doc) == groups
     assert len(calls) <= 2 * 2 * groups, len(calls)
     view.close()
 
@@ -120,8 +121,8 @@ def test_folding_in_a_shown_editor_lays_each_picture_out_about_once(monkeypatch)
 
 def _counting_folds(monkeypatch) -> list:
     folds = []
-    fold = photo_group.fold
-    monkeypatch.setattr(photo_group, "fold",
+    fold = photo_group_find.fold
+    monkeypatch.setattr(photo_group_find, "fold",
                         lambda doc, *a, **k: folds.append(doc) or fold(doc, *a, **k))
     return folds
 
@@ -154,12 +155,12 @@ def _open(text: str) -> QTextDocument:
 
 def _unfolded(work):
     """``work`` with pictures that follow each other left as paragraphs."""
-    fold = photo_group.fold
-    photo_group.fold = lambda doc, *a, **k: 0
+    fold = photo_group_find.fold
+    photo_group_find.fold = lambda doc, *a, **k: 0
     try:
         return work()
     finally:
-        photo_group.fold = fold
+        photo_group_find.fold = fold
 
 
 def test_opening_10000_groups_takes_at_most_three_times_the_unfolded_read():
@@ -172,3 +173,36 @@ def test_opening_10000_groups_takes_at_most_three_times_the_unfolded_read():
               f"{LARGE}: {large:.2f} s, unfolded {large_base:.2f} s")
     assert large < 3 * large_base, report
 
+
+
+def test_laying_groups_out_and_resizing_grow_with_their_number_not_faster():
+    """Gate 4 for the view: eight times the groups take about eight times
+    the processor time to lay out, and to lay out again at another width
+    (a relayout per group was quadratic: 3.3 s for 1,000 groups)."""
+    def shown(groups: int):
+        view = QTextEdit()
+        view.resize(900, 800)
+        doc = view.document()
+        photo_group_view.install(doc, lambda name: (1800, 1200))
+        read_markdown(doc, _markdown(groups))
+        doc.setModified(False)
+        view.show()
+        return view
+
+    def lay_out(groups: int) -> float:
+        view = shown(groups)
+        start = time.process_time()
+        QApplication.processEvents()
+        view.document().documentLayout().documentSize()
+        photo_group_view.set_screen_height(view.document(), 500)
+        view.resize(500, 800)
+        QApplication.processEvents()
+        view.document().documentLayout().documentSize()
+        spent = time.process_time() - start
+        assert not view.document().isModified()
+        view.close()
+        return spent
+
+    small = min(lay_out(150) for _ in range(3))
+    large = min(lay_out(1200) for _ in range(2))
+    assert large < 8 * 2.5 * small, f"150: {small:.3f} s, 1200: {large:.3f} s"

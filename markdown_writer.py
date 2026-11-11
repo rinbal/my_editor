@@ -75,6 +75,7 @@ from doc_walk import (
     skip_prefix,
 )
 import photo_group
+import photo_group_find
 from rich_text import normalize_after_markdown_load
 
 ImageTarget = Callable[[object], Optional[str]]
@@ -1052,7 +1053,7 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
     normalize_after_markdown_load(doc)
     if groups:
         # Pictures that follow each other show as one group (photo_group).
-        photo_group.fold(doc)
+        photo_group_find.fold(doc)
     return marked, joined
 
 

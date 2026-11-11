@@ -32,6 +32,7 @@ from PySide6.QtWidgets import QApplication
 
 import export_pictures
 import photo_group
+import photo_group_find
 import photo_group_geometry
 import photo_group_view
 import photo_layout
@@ -169,7 +170,7 @@ def test_the_plain_and_r_markdown_writers_write_the_paragraphs(app, monkeypatch)
     from rmarkdown import document_to_rmd
     grouped = _doc()
     assert photo_group.has_groups(grouped)
-    monkeypatch.setattr(photo_group, "fold", lambda doc, *a, **k: 0)
+    monkeypatch.setattr(photo_group_find, "fold", lambda doc, *a, **k: 0)
     paragraphs = _doc()
     assert not photo_group.has_groups(paragraphs)
 

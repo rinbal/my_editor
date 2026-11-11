@@ -19,6 +19,7 @@ from PySide6.QtGui import QTextCursor, QTextDocument, QTextDocumentFragment
 from PySide6.QtWidgets import QApplication
 
 import photo_group
+import photo_group_find
 from markdown_writer import _image_as_read, document_to_markdown, read_markdown
 from tests.photo_corners import SHAPES
 
@@ -32,7 +33,7 @@ def _read(markdown: str) -> QTextDocument:
     """Markdown as Qt reads it, with the groups folded."""
     doc = QTextDocument()
     doc.setMarkdown(markdown)
-    photo_group.fold(doc)
+    photo_group_find.fold(doc)
     return doc
 
 
@@ -81,7 +82,7 @@ def _found(markdown: str):
     doc = QTextDocument()
     doc.setMarkdown(markdown)
     return [[(unit.name, unit.caption_text) for unit in group.units]
-            for group in photo_group.find_groups(doc)]
+            for group in photo_group_find.find_groups(doc)]
 
 
 def test_two_pictures_with_empty_lines_between_are_a_group(app):
