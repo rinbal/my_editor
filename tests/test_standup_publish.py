@@ -478,7 +478,7 @@ def test_the_confirm_and_publish_sheets_read_whole_at_their_minimum_size_in_germ
     def whole(sheet):
         sheet.show()
         sheet.resize(sheet.minimumSize())
-        for _ in range(4):
+        for _turn in range(4):
             QApplication.processEvents()
         for button in sheet.findChildren(QPushButton):
             if button.isVisibleTo(sheet) and button.text():
@@ -1098,7 +1098,7 @@ def test_through_a_signer_app_the_cleanup_asks_only_when_said_or_as_the_one_ride
     store = FakeStore()
     _cleaner, following, there = cleaner(store)
     assert store.batches == []                              # nothing asked unsaid
-    for _ in range(2):
+    for _action in range(2):
         following.ride_along.person_signed()
         there.settle()
     assert len(store.batches) == 1                          # the run's one ride
