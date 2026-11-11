@@ -190,11 +190,13 @@ class Reading:
         opened by their signer, once, and kept), its envelope opened."""
         done = on_done or (lambda _version: None)
         account = self._account
+        latest = record.revision == view.revision
         try:
             verified = opening.verify_revision(
                 view, record, redaktion=rules.deciders_of(state.members or ()))
         except opening.NotConfirmed:
-            state.not_confirmed = state.not_confirmed or record.revision == view.revision
+            if latest:
+                state.not_confirmed = True
             done(None)
             return
 
@@ -202,12 +204,12 @@ class Reading:
             if state.room is None:
                 state.room = secret
                 self._keep_key(view, record, verified, secret)
-            version = None
+            version, confirmed = None, True
             if verified.envelope_sha256 is not None:
                 try:
                     opened = opening.open_envelope(verified, record.envelope, secret)
                 except opening.NotConfirmed:
-                    state.not_confirmed = True
+                    confirmed = False
                 else:
                     account.media_keys.add(opened)
                     revision = opened.revision
@@ -216,12 +218,15 @@ class Reading:
                         change_summary=revision.get("change_summary") or "",
                         rights=bool((revision.get("rights") or {}).get("confirmed")),
                         thumb=revision.get("thumb"))
+            if latest:
+                state.not_confirmed = not confirmed
             done(version)
             self._owner.detail_changed.emit(sid)
 
         if state.room is not None:
             if crypto.pubkey_of(state.room) != verified.p_sub:
-                state.not_confirmed = True          # not this submission's key
+                if latest:
+                    state.not_confirmed = True      # not this submission's key
                 done(None)
                 return
             with_key(state.room)
@@ -311,7 +316,10 @@ class Reading:
             outgoing=tuple(owner.talk.outgoing(sid)), members=state.members,
             latest=state.versions.get(view.revision) if view is not None else None,
             versions=dict(state.versions), loading=state.loading, problem=state.problem,
-            can_write=state.room is not None and row.situation is not rules.Situation.WITHDRAWN,
+            # Only where the server holds the submission as this person's
+            # and its latest version verified: the room key is its own then.
+            can_write=state.room is not None and row.confirmed and not state.not_confirmed
+            and row.situation is not rules.Situation.WITHDRAWN,
             not_confirmed=state.not_confirmed)
 
 

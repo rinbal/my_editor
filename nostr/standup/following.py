@@ -95,6 +95,10 @@ class Situation(Enum):
     WITHDRAWN = "withdrawn"
 
 
+# A run or a check on its way: nothing else is started meanwhile.
+ON_ITS_WAY = frozenset({Situation.SENDING, Situation.UNCONFIRMED})
+
+
 @dataclass(frozen=True)
 class Words:
     """What one situation says (untranslated): ``word`` for the row,
@@ -211,7 +215,9 @@ def situation_of(view: views.SubmissionView, me: str) -> Situation:
 class Row:
     """One submission in the list. ``view`` is the server's, when one is
     known; ``entry`` the list's (a writer's, or a contributor's once the
-    wrap was opened)."""
+    wrap was opened). ``confirmed``: the server holds this submission as
+    this person's (a writer's entry by its receipt, 12.4; a contributor's
+    by the server's View), so its conversation can be read and written."""
 
     sid: str
     title: str
@@ -225,6 +231,7 @@ class Row:
     unread: bool = False
     view: Optional[views.SubmissionView] = None
     entry: Optional[SubmissionEntry] = None
+    confirmed: bool = False
 
     @property
     def section(self) -> Section:
@@ -236,27 +243,51 @@ class Row:
 
     @property
     def open(self) -> bool:
-        """Whether it can be revised or withdrawn (11.3)."""
-        return self.view is not None and self.view.is_open and self.role == "writer"
+        """Whether it can be revised or withdrawn (11.3), once nothing
+        of it is on its way."""
+        return self.view is not None and self.view.is_open and self.role == "writer" \
+            and self.situation not in ON_ITS_WAY
 
 
-def _entry_situation(entry: SubmissionEntry, known: Optional[Followed], *, me: str,
+def _held_view(entry: SubmissionEntry, known: Optional[Followed],
+               served: Optional[views.SubmissionView], *,
+               nothing_held: bool) -> Optional[views.SubmissionView]:
+    """The server's View a writer's row may show (lessons 16, 32): the
+    lookup's, asked with the entry's own status key, or a newer one the
+    server gave since. Without a lookup answer, a served View counts
+    only for an entry that was stored once: the server lists a round by
+    its sid, whoever's secrets it holds, so a View alone never says that
+    this entry arrived."""
+    if known is None:
+        return served if entry.stored and not nothing_held else None
+    view = known.item.submission
+    return served if served is not None and served.last_seq > view.last_seq else view
+
+
+def _entry_situation(entry: SubmissionEntry, known: Optional[Followed],
+                     view: Optional[views.SubmissionView], *, me: str,
                      nothing_held: bool, refused: bool) -> Situation:
     """What the list's entry and the lookup's answer for it come to
-    (12.4, 13): never from timing. ``nothing_held``: the server answered
-    that it holds nothing for the entry's status key."""
+    (12.4, 13): never from timing. ``view`` is :func:`_held_view`'s;
+    ``nothing_held``: the server answered that it holds nothing for the
+    entry's status key."""
     if known is None:
-        if not nothing_held:
-            return Situation.UNKNOWN if entry.stored else Situation.UNCONFIRMED
-        if refused:
-            return Situation.ELSEWHERE
-        return Situation.UNKNOWN if entry.stored else Situation.UNSENT
+        if nothing_held:
+            if refused:
+                return Situation.ELSEWHERE
+            return Situation.UNKNOWN if entry.stored else Situation.UNSENT
+        if not entry.stored:
+            return Situation.UNCONFIRMED
+        # Stored once: a View says where it stands now, but "Eingereicht"
+        # is the receipt's to say (a picture may be missing, 12.4).
+        situation = situation_of(view, me) if view is not None else Situation.UNKNOWN
+        return Situation.UNKNOWN if situation is Situation.SUBMITTED else situation
     status = known.status
     if isinstance(status, StoredOther):
         return Situation.UNCONFIRMED
     if isinstance(status, NotHandedIn):
         return Situation.NOT_HANDED_IN
-    situation = situation_of(known.item.submission, me)
+    situation = situation_of(view, me)
     if situation is Situation.SUBMITTED and known.item.receipt.blobs_missing:
         return Situation.PICTURES_MISSING       # never "Eingereicht" then (12.4)
     return situation
@@ -271,7 +302,9 @@ def rows_of(entries: Sequence[SubmissionEntry], *, me: str,
     ``entries`` joined with the lookup's answers (``followed``; ``unknown``
     are the sids the server answered it holds nothing for) and the
     server's Views (``served``, where the person is writer or
-    contributor). ``running`` are the runs on their way, by sid;
+    contributor). A writer's entry takes its situation from the entry
+    and the lookup; a served View only refines one stored before
+    (:func:`_held_view`). ``running`` are the runs on their way, by sid;
     ``refused(entry)`` says its round was refused as another device's;
     ``seen(sid)`` is the read state. Du bist dran first, the newest
     first in each section."""
@@ -279,33 +312,42 @@ def rows_of(entries: Sequence[SubmissionEntry], *, me: str,
     listed = set()
     for entry in entries:
         listed.add(entry.sid)
-        known = followed.get(entry.sid) if entry.role == "writer" else None
-        view = known.item.submission if known is not None else None
-        other = served.get(entry.sid)
-        if other is not None and (view is None or other.last_seq > view.last_seq):
-            view = other
-        progress = running.get(entry.sid)
-        if progress is not None and progress.phase is Phase.UNCONFIRMED:
-            situation = Situation.UNCONFIRMED
-        elif progress is not None:
-            situation = Situation.SENDING
-        elif entry.role != "writer" or (known is None and view is not None):
-            situation = situation_of(view, me) if view is not None else Situation.UNKNOWN
-        else:
-            situation = _entry_situation(entry, known, me=me,
-                                         nothing_held=entry.sid in unknown,
+        served_view = served.get(entry.sid)
+        if entry.role == "writer":
+            known, nothing = followed.get(entry.sid), entry.sid in unknown
+            view = _held_view(entry, known, served_view, nothing_held=nothing)
+            situation = _entry_situation(entry, known, view, me=me, nothing_held=nothing,
                                          refused=refused(entry))
-        rows.append(_row(entry.sid, situation, view, entry, me=me, seen=seen))
+            confirmed = view is not None and situation not in (
+                Situation.UNCONFIRMED, Situation.NOT_HANDED_IN)
+        else:
+            view = served_view
+            situation = situation_of(view, me) if view is not None else Situation.UNKNOWN
+            confirmed = view is not None
+        progress = running.get(entry.sid)
+        if progress is not None:
+            situation = Situation.UNCONFIRMED if progress.phase is Phase.UNCONFIRMED \
+                else Situation.SENDING
+        rows.append(_row(entry.sid, situation, view, entry, me=me, seen=seen,
+                         confirmed=confirmed))
     for sid, view in served.items():
-        if sid not in listed:
-            rows.append(_row(sid, situation_of(view, me), view, None, me=me, seen=seen))
+        if sid in listed:
+            continue
+        situation = situation_of(view, me)
+        if view.writer == me and situation is Situation.SUBMITTED:
+            # The person's own work without its entry here: no receipt
+            # is held for it on this device (12.4).
+            situation = Situation.ELSEWHERE
+        rows.append(_row(sid, situation, view, None, me=me, seen=seen,
+                         confirmed=situation is not Situation.ELSEWHERE))
     order = (Section.TURN, Section.RUNNING, Section.DONE)
     rows.sort(key=lambda row: (order.index(row.section), -row.updated_at, row.sid))
     return rows
 
 
 def _row(sid: str, situation: Situation, view: Optional[views.SubmissionView],
-         entry: Optional[SubmissionEntry], *, me: str, seen: Callable[[str], int]) -> Row:
+         entry: Optional[SubmissionEntry], *, me: str, seen: Callable[[str], int],
+         confirmed: bool) -> Row:
     role = entry.role if entry is not None else ("writer" if view.writer == me
                                                  else "contributor")
     return Row(
@@ -315,7 +357,8 @@ def _row(sid: str, situation: Situation, view: Optional[views.SubmissionView],
         writer=view.writer if view is not None else (me if role == "writer" else ""),
         d=entry.d if entry is not None else "", situation=situation,
         updated_at=view.updated_at if view is not None else entry.updated_at,
-        unread=view is not None and view.unread(seen(sid)), view=view, entry=entry)
+        unread=view is not None and view.unread(seen(sid)), view=view, entry=entry,
+        confirmed=confirmed)
 
 
 # --------------------------------------------------------------------------- #
@@ -453,7 +496,8 @@ def _decider_name(decision: Optional[Decision], name: str,
 
 
 __all__ = [
-    "ACTION_LABELS", "Action", "DECIDER_ROLES", "DECISIONS", "Decision", "NOT_SIGNED", "Row",
+    "ACTION_LABELS", "Action", "DECIDER_ROLES", "DECISIONS", "Decision", "NOT_SIGNED",
+    "ON_ITS_WAY", "Row",
     "Section", "Situation", "Status", "TABLE", "Words", "YOUR_TURN", "action_verified",
     "deciders_of", "my_turn", "newest_decision", "pill_word", "rows_of", "situation_of",
     "status_of", "status_word",

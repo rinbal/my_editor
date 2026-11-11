@@ -16,6 +16,7 @@ message's round trip with its failure and retry; reactions (criterion
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 from PySide6.QtWidgets import QApplication
@@ -90,9 +91,9 @@ def test_every_state_and_role_has_one_word_one_section_and_whose_turn():
     (view_of("withdrawn"), ME, Situation.WITHDRAWN, Section.DONE, "Withdrawn"),
 ]:
         assert rules.situation_of(view, me) is situation
-        row = rules.rows_of([], me=me, followed={}, served={view.submission_id: view},
-                            unknown=set(), running={}, refused=lambda e: False,
-                            seen=lambda sid: 99)[0]
+        row = rules.Row(sid=view.submission_id, title=view.title, publication=ADDRESS,
+                        kind="article", role="writer" if me == ME else "contributor",
+                        writer=ME, d="", situation=situation, updated_at=int(NOW), view=view)
         assert row.section is section and row.turn is rules.my_turn(view, me)
         assert rules.status_word(row, names) == word
         assert rules.pill_word(row, names) == ("Your turn" if row.turn else word)
@@ -178,6 +179,41 @@ def test_a_round_another_device_stored_says_so_and_reloads():
     row = following.rows()[0]
     assert row.situation is Situation.ELSEWHERE
     assert rules.status_of(row, publication="M", name_of=names).action is Action.RELOAD
+
+
+def test_a_view_the_server_gives_never_makes_an_entry_without_a_receipt_submitted():
+    # Lessons 16, 32: another device stored this round with its own
+    # secrets. The server lists the round by its sid, so its View alone
+    # must not turn this device's entry, which has no receipt, into
+    # "Eingereicht", nor offer a composer with a key that is not the room's.
+    world = FollowWorld()
+    account = world.account()
+    world.submit(account, d="doppelt", listed=False)            # the other device's
+    _prepared, entry = world.submit(account, d="doppelt", stored=False, send=False)
+    following = world.following(account, start=False)
+    following.marks.refuse_round(account.writer, entry)
+    following.view_opened()                                     # reads the server's Views
+    world.settle()
+    row = following.rows()[0]
+    assert row.situation is Situation.ELSEWHERE and row.view is None and not row.open
+    following.open(entry.sid)
+    world.settle()
+    assert not following.detail(entry.sid).can_write
+    # The lookup is down and the entry was never stored: not confirmed,
+    # whatever the server's list of the person's works says.
+    served = {entry.sid: view_of("submitted")}
+    rows = rules.rows_of([entry], me=ME, followed={}, served=served, unknown=set(),
+                         running={}, refused=lambda e: False, seen=lambda sid: 0)
+    assert rows[0].situation is Situation.UNCONFIRMED and not rows[0].confirmed
+    # One stored before is refined by the View, but "Eingereicht" stays
+    # the receipt's word.
+    stored = replace(entry, stored=True)
+    for state, situation in (("submitted", Situation.UNKNOWN),
+                             ("changes_requested", Situation.CHANGES_REQUESTED)):
+        served = {entry.sid: view_of(state, turn="writer")}
+        rows = rules.rows_of([stored], me=ME, followed={}, served=served, unknown=set(),
+                             running={}, refused=lambda e: False, seen=lambda sid: 0)
+        assert rows[0].situation is situation
 
 
 def test_a_picture_the_server_misses_is_never_called_submitted():
