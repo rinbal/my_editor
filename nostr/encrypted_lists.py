@@ -116,12 +116,14 @@ class _Request:
     on_done: List[Callable[[PublishResult], None]]
     on_merged: Optional[Callable[[Any, Any, Optional[dict]], None]]
     up_to_date: Optional[Callable[[Any, Any], bool]]
+    # False once the list's account was let go: then nothing is read.
+    live: Optional[Callable[[], bool]] = None
 
     def carrying(self, earlier: Optional["_Request"]) -> "_Request":
         if earlier is None:
             return self
         return _Request(self.profile, self.state, earlier.on_done + self.on_done,
-                        self.on_merged, self.up_to_date)
+                        self.on_merged, self.up_to_date, self.live)
 
 
 class EncryptedList(QObject):
@@ -314,7 +316,8 @@ class EncryptedList(QObject):
     def publish(self, profile, *, state: Callable[[], Tuple[Any, Any, Optional[Tuple[int, str]]]],
                 on_done: Callable[[PublishResult], None],
                 on_merged: Optional[Callable[[Any, Any, Optional[dict]], None]] = None,
-                up_to_date: Optional[Callable[[Any, Any], bool]] = None) -> None:
+                up_to_date: Optional[Callable[[Any, Any], bool]] = None,
+                live: Optional[Callable[[], bool]] = None) -> None:
         """Read the newest list, merge, and write what came of it.
 
         ``state()`` answers ``(base, local, base_mark)``: the version last
@@ -326,7 +329,9 @@ class EncryptedList(QObject):
         relays had was not newer, and ``event`` then None).
         ``up_to_date(merged, remote)`` says when nothing needs writing
         (default: ``same``); an incomplete list is always written, so it
-        is complete again. ``on_done`` gets a PublishResult.
+        is complete again. ``on_done`` gets a PublishResult. ``live()``
+        false once the relays are known (the list's account was let go
+        meanwhile): nothing is read or written, and its signer not asked.
 
         One write runs at a time per account. A publish asked while one
         runs waits and goes next, with ``state()`` asked then; several
@@ -334,7 +339,7 @@ class EncryptedList(QObject):
         answered with its outcome.
         """
         account = profile.user_pubkey.lower()
-        request = _Request(profile, state, [on_done], on_merged, up_to_date)
+        request = _Request(profile, state, [on_done], on_merged, up_to_date, live)
         if account in self._running:
             self._next[account] = request.carrying(self._next.get(account))
             return
@@ -387,7 +392,13 @@ class EncryptedList(QObject):
             _Writing(self, profile, copy.deepcopy(merged), read, reusable, state,
                      on_done).start()
 
-        self.relays(profile, lambda relays: self.read(profile, relays, _on_read), reading=True)
+        def _with_relays(relays) -> None:
+            if request.live is not None and not request.live():
+                on_done(PublishResult(PublishStatus.FAILED, reason="the list was let go"))
+            else:
+                self.read(profile, relays, _on_read)
+
+        self.relays(profile, _with_relays, reading=True)
 
     def _plaintexts(self, value, now: int, profile=None) -> List[str]:
         """Page 0's plaintext first, in pages ``profile``'s signer can

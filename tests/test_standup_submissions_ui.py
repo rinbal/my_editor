@@ -49,14 +49,15 @@ class Window:
     """The window's side: one writer, the view, the pill, the host, and
     tabs that are plain values (an article ``d``, its text, its notice)."""
 
-    def __init__(self, world: FollowWorld, monkeypatch, *, server: str = SERVER) -> None:
+    def __init__(self, world: FollowWorld, monkeypatch, *, server: str = SERVER,
+                 uploads=lambda *a: (lambda: None), **host) -> None:
         self.world = world
         monkeypatch.setattr(standup_submit, "_later", world.later)
         self.accounts = {}
         self.profile = SimpleNamespace(user_pubkey=ME, bunker_relays=[])
         self.writer = StandupWriter(
             session_pool=None, relay_pool=None, relay_directory=None, media_store=None,
-            server=server, uploads=lambda *a: (lambda: None), accounts=self.account,
+            server=server, uploads=uploads, accounts=self.account,
             clock=world.clock)
         self.view = SubmissionsView(name_of=lambda p: NAMES.get(p, ""),
                                     avatar_of=lambda p: None, is_dark=False, clock=world.clock)
@@ -75,7 +76,7 @@ class Window:
             notice_of=lambda ed: ed.notice, say=self.said.append, keep=lambda sheet: None,
             avatar_of=lambda p: None, request_logo=lambda *a: None, is_dark=lambda: False,
             window=lambda: None), view=self.view, pill=self.pill,
-            name_of=lambda p: NAMES.get(p, ""))
+            name_of=lambda p: NAMES.get(p, ""), **host)
 
     def account(self, profile):
         who = {ME: "writer", OTHER: "contributor"}[profile.user_pubkey]

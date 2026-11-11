@@ -202,8 +202,13 @@ class _AccountList(QObject):
             self.complete = result.status is not ReadStatus.INCOMPLETE
             on_done(replace(result, value=self._local))
 
-        self._list.relays(self._profile, lambda relays: self._list.read(
-            self._profile, relays, read), reading=True)
+        def with_relays(relays) -> None:
+            # Let go while its relays were being found: the list is not
+            # read, so the signer of an account that was left is not asked.
+            if generation == self._generation:
+                self._list.read(self._profile, relays, read)
+
+        self._list.relays(self._profile, with_relays, reading=True)
 
     def _merge_local(self, remote):
         raise NotImplementedError
@@ -240,7 +245,8 @@ class _AccountList(QObject):
 
         self._list.publish(self._profile,
                            state=lambda: (self._base, self._outgoing(), self._base_mark),
-                           on_done=done, on_merged=merged)
+                           on_done=done, on_merged=merged,
+                           live=lambda: generation == self._generation)
 
 
 def names_other_secrets(items: SubmissionItems, entry: SubmissionEntry) -> bool:

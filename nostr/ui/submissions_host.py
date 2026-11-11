@@ -105,10 +105,12 @@ class SubmissionsHost(QObject):
 
     def __init__(self, ports: Ports, *, view: SubmissionsView, pill: SubmissionPill,
                  name_of: Callable[[str], str], comparer: Optional[Comparer] = None,
+                 cover_fetch: Callable[[QObject], CoverFetch] = CoverFetch,
                  parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self._ports, self.view, self.pill, self._name_of = ports, view, pill, name_of
         self.comparer = comparer or Comparer(self)
+        self._cover_fetch = cover_fetch             # a seam: the fetch of a sheet's cover
         self._following = None
         self._writer = None
         self._noticed: Dict[object, tuple] = {}     # an editor -> (sid, the notice's text)
@@ -353,7 +355,7 @@ class SubmissionsHost(QObject):
         r = appearance.roles(self._ports.is_dark())
         sheet.set_cover(monogram(title, ArticleCard.WIDTH - 2, ArticleCard.COVER_HEIGHT,
                                  QColor(r.soft), QColor(r.icon)), None)
-        fetch = CoverFetch(sheet)
+        fetch = self._cover_fetch(sheet)
         sheet.finished.connect(lambda _result: fetch.stop())
 
         def fetched(image) -> None:
@@ -361,7 +363,6 @@ class SubmissionsHost(QObject):
                 sheet.set_cover(QPixmap.fromImage(image), thumbnail(png_bytes(image)))
 
         fetch.fetch(url, fetched)
-        self.cover_fetch = fetch
 
     def apply_theme(self, is_dark: bool) -> None:
         self.view.apply_theme(is_dark)
