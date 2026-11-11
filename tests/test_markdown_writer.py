@@ -470,6 +470,10 @@ from markdown_writer import holds_faithfully  # noqa: E402
     "A picture ![Map](pictures/map.png) in a line.\n",
     # A picture without a description, as the app writes one added in it.
     "An image ![](https://x.example/a.png) without alt text.\n",
+    # A reference definition without a title, and words that only look
+    # like one in a list item.
+    "[a][r] und mehr.\n\n[r]: /u\n",
+    "- [Note]: some text here\n",
 ])
 def test_markdown_the_editor_can_hold(source):
     assert holds_faithfully(source)
@@ -493,6 +497,14 @@ def test_markdown_the_editor_can_hold(source):
     "| **a** | b |\n| --- | --- |\n| 1 | 2 |\n",                 # emphasis in a header
     "1. Run this:\n\n   ```sh\n   make\n   ```\n",            # code in a list item
     "Escaped \\[^1\\] stays literal.\n\n[^1]: A note.\n",    # an escaped mark (L3)
+    # Gate RG-PG2E-d 4: a reference definition in a quote or a list item
+    # (the quote goes, the items become one with the paragraph after
+    # them), or with a title (it goes).
+    "> [r]: /u\n\nSee [r] and \\*a\\*.\n",
+    "- [r]: /u\\*v\n- [s]: /w\\_x\n\n[r] [s] \\*a\\*\n",
+    "1. [r]:\n   /u\n\n[r]\n",
+    '[a][r] und \\*b\\*.\n\n[r]: /u "t"\n',
+    "[a][r]\n\n[r]: /u\n  'Titel'\n",
 ])
 def test_markdown_the_editor_would_lose(source):
     assert not holds_faithfully(source)

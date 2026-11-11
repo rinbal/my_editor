@@ -29,15 +29,27 @@ _STARTS_INLINE = re.compile(r"[\\`<]|!\[")
 # address. A web address that holds an escape is none Qt's reader links
 # ("www.x.com/\*y" is text), so its escapes are the text's.
 _STARTS_ESCAPE = re.compile(r"[\\`<]|!\[|\]\(")
-# A line's quote marks and list markers ("> ", "- ", "1. ", "> - ").
-_CONTAINERS = r"(?:[ \t]*(?:>|(?:[-*+]|\d{1,9}[.)])(?=[ \t])))*"
+# A line's quote mark or list marker ("> ", "- ", "1. "), and all of
+# them ("> - ").
+_CONTAINER = r"[ \t]*(?:>|(?:[-*+]|\d{1,9}[.)])(?=[ \t]))"
+_CONTAINERS = rf"(?:{_CONTAINER})*"
 _TITLE = r"""(?:"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|\((?:[^()\\\n]|\\.)*\))"""
+# A link reference definition's label; a footnote's ("[^1]: note") is text.
+_LABEL = r"\[(?!\^)(?:[^\]\\\n]|\\.)+\]"
 # What follows a link reference definition's label ("[a]: /url 'title'"),
 # its address and title, in a quote or a list item too, the address or
-# the title on the next line; a footnote's ("[^1]: note") is text.
+# the title on the next line.
 _DEFINITION = re.compile(
-    rf"^{_CONTAINERS}[ \t]*\[(?!\^)(?:[^\]\\\n]|\\.)+\]"
+    rf"^{_CONTAINERS}[ \t]*{_LABEL}"
     rf"(:(?:[ \t]*\n{_CONTAINERS})?[^\n]*(?:\n{_CONTAINERS}[ \t]*{_TITLE}[ \t]*$)?)", re.M)
+# A link reference definition Qt's reader does not keep as written: in a
+# quote or a list item (the quote or the item goes, and the paragraph
+# after it can join the one before), or with a title (the title goes).
+_ADDRESS_AFTER_LABEL = rf":[ \t]*(?:\n{_CONTAINERS}[ \t]*)?(?:<[^<>\n]*>|[^\s<]\S*)"
+_TITLE_AFTER_ADDRESS = rf"(?:[ \t]+|[ \t]*\n{_CONTAINERS}[ \t]*){_TITLE}"
+LOSSY_DEFINITION = re.compile(
+    rf"^(?:(?:{_CONTAINER})+[ \t]*{_LABEL}{_ADDRESS_AFTER_LABEL}(?:{_TITLE_AFTER_ADDRESS})?"
+    rf"|{_CONTAINERS}[ \t]*{_LABEL}{_ADDRESS_AFTER_LABEL}{_TITLE_AFTER_ADDRESS})[ \t]*$", re.M)
 
 
 def code_lines(lines: List[str]) -> List[bool]:

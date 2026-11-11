@@ -78,7 +78,8 @@ from doc_walk import (
 )
 import photo_group
 import photo_group_find
-from markdown_scan import ESCAPABLE, FENCE_LINE, LIST_LINE, descriptions, escapes, pictures
+from markdown_scan import (ESCAPABLE, FENCE_LINE, LIST_LINE, LOSSY_DEFINITION, descriptions,
+                           escapes, pictures)
 from rich_text import normalize_after_markdown_load
 
 ImageTarget = Callable[[object], Optional[str]]
@@ -933,8 +934,9 @@ def has_local_only_formatting(doc) -> bool:
 # editor keeps footnotes as their text, one paragraph each), a tab where a
 # line starts (lists and code are indented with spaces), code inside a
 # list item (it moves out of the item), an escaped footnote mark, raw
-# HTML, a link title, a link around an image, a heading inside a quote, a paragraph continued inside
-# a list item, and lines that wrap inside a paragraph (a draft saved as
+# HTML, a link title, a link reference definition in a quote or a list
+# item or with a title, a link around an image, a heading inside a quote,
+# a paragraph continued inside a list item, and lines that wrap inside a paragraph (a draft saved as
 # plain text by an earlier version). Also (below): a tab inside fenced
 # code, a column's alignment, emphasis in a table's header row.
 _LOSSY = [
@@ -948,6 +950,7 @@ _LOSSY = [
     re.compile(r"(?<!\\)(?<!\]\()<(?:[A-Za-z][\w-]*[\s/>]|/[A-Za-z]|!--)"),
     re.compile(r"\]\(<(?![^<>\n]*>\))"),
     re.compile(r"\]\((?!<)[^)\s]+\s+[\"'(]"),              # link title
+    LOSSY_DEFINITION,                                      # (markdown_scan)
     re.compile(r"\[!\["),                                  # image inside a link
     re.compile(r"^\s*>\s*#", re.MULTILINE),               # heading in a quote
 ]
