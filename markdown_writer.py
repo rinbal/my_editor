@@ -56,7 +56,7 @@ import re
 import uuid
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple
 
 from PySide6.QtGui import (
     QFont, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument, QTextFormat,
@@ -1113,13 +1113,13 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
     marked = 0
     if features == READ_FEATURES:
         markdown, marked = _marked_soft_breaks(markdown)
-    markdown, escaped = _marked_escapes(markdown)
+    markdown, mark = _marked_escapes(markdown)
     doc.setMarkdown(literal_footnotes(markdown), features)
     if alts:
         _restore_descriptions(doc, alts)
     joined = _join_soft_breaks(doc) if marked else 0
-    if escaped:
-        _keep_escaped(doc)
+    if mark:
+        _keep_escaped(doc, mark)
     normalize_after_markdown_load(doc)
     if groups:
         # Pictures that follow each other show as one group (photo_group).
@@ -1128,7 +1128,7 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
 
 
 # --------------------------------------------------------------------------- #
-# What a file escaped, kept text                                               #
+# What a file escaped, saved escaped                                           #
 # --------------------------------------------------------------------------- #
 #
 # Qt's reader reads "\*Stern\*" as the text "*Stern*", and the writer
@@ -1140,34 +1140,52 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
 # For the time Qt reads the file, a mark stands before each escape: a
 # punctuation mark as the backslash is, so the emphasis beside it reads
 # as before (whether a star opens or closes emphasis depends on what
-# stands beside it), and one no text holds.
-_ESCAPE_MARK = "\u2e2c"           # SQUARED FOUR DOT PUNCTUATION
+# stands beside it; a mark from the private use area is no punctuation,
+# and "*(a)*\*b" lost its emphasis). Each is a Po character no HTML
+# entity names; a file is read with the first one it holds nowhere
+# (_free_mark: Qt's reader makes "&#x2E2C;" the character), and without
+# marks when it holds all of them.
+_ESCAPE_MARKS = ("\u2e2c", "\u2e2d", "\u2e2b", "\u2e2e", "\u2e30")
+_NUMERIC_REFERENCE = re.compile(r"&#(?:[xX]([0-9a-fA-F]{1,6})|([0-9]{1,7}));")
 
 
-def _marked_escapes(markdown: str) -> Tuple[str, int]:
-    """The Markdown with _ESCAPE_MARK before each escape a reader takes
-    for its character (markdown_scan.escapes), and how many; as it was
-    when it holds the mark itself."""
-    if "\\" not in markdown or _ESCAPE_MARK in markdown:
-        return markdown, 0
+def _free_mark(markdown: str, marks: Sequence[str]) -> Optional[str]:
+    """The first of ``marks`` ``markdown`` holds nowhere, as a character or
+    as a numeric reference, or None: a mark of this reading that Qt's
+    reader could also make of the file would be taken for one."""
+    held = ({int(hexadecimal, 16) if hexadecimal else int(decimal)
+             for hexadecimal, decimal in _NUMERIC_REFERENCE.findall(markdown)}
+            if "&#" in markdown else set())
+    return next((mark for mark in marks if mark not in markdown and ord(mark) not in held), None)
+
+
+def _marked_escapes(markdown: str) -> Tuple[str, Optional[str]]:
+    """The Markdown with a mark (_ESCAPE_MARKS) before each escape a reader
+    takes for its character (markdown_scan.escapes), and the mark; as it
+    was and None when it has no escape or no mark can be used."""
+    if "\\" not in markdown:
+        return markdown, None
     found = escapes(markdown)
+    mark = _free_mark(markdown, _ESCAPE_MARKS) if found else None
+    if mark is None:
+        return markdown, None
     pieces, last = [], 0
     for at in found:
         pieces.append(markdown[last:at])
-        pieces.append(_ESCAPE_MARK)
+        pieces.append(mark)
         last = at
     pieces.append(markdown[last:])
-    return "".join(pieces), len(found)
+    return "".join(pieces), mark
 
 
-def _keep_escaped(doc: QTextDocument) -> None:
-    """Each mark _marked_escapes set gone, and the character after it
+def _keep_escaped(doc: QTextDocument, mark: str) -> None:
+    """Each ``mark`` _marked_escapes set gone, and the character after it
     marked escaped."""
     position = 0
     text = QTextCharFormat()
     text.setProperty(ESCAPED_TEXT_PROPERTY, True)
     while True:
-        cursor = doc.find(_ESCAPE_MARK, position)
+        cursor = doc.find(mark, position)
         if cursor.isNull():
             return
         position = cursor.selectionStart()

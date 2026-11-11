@@ -716,3 +716,16 @@ def test_an_escape_saved_bare_would_change_the_text_so_it_is_kept():
     doc = QTextDocument()
     read_markdown(doc, source)
     assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_a_file_that_holds_the_escape_mark_is_read_as_it_is():
+    # U+2E2C stood before each escape while Qt read a file: a file that held
+    # it lost its escapes on save, and "&#x2E2C;" was taken for a mark.
+    source = "Vier Punkte ⸬ und ein \\*Stern\\*.\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
+    doc = QTextDocument()
+    read_markdown(doc, "Vier Punkte &#x2E2C; und ein \\*Stern\\*.\n")
+    assert doc.firstBlock().text() == "Vier Punkte ⸬ und ein *Stern*."
+    assert document_to_markdown(doc, _image_as_read).endswith("\\*Stern\\*.\n")
