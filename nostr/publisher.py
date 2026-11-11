@@ -460,7 +460,7 @@ def build_article(
     tags.extend(build_imeta_tags(media, content))
     if extra_tags:
         tags.extend(extra_tags)
-    tags = _one_tag_per_person(tags)
+    tags = _one_tag_per_person(tags, pubkey_hex)
     return build_event(
         kind=30023,
         content=content,
@@ -1483,24 +1483,39 @@ class DraftBulkDeleteJob(QObject):
         self.finished.emit(self._deleted, list(self._failures))
 
 
-def _one_tag_per_person(tags: List[List[str]]) -> List[List[str]]:
-    """``tags`` with one ``p`` tag per person: a co-author also mentioned in
-    the text keeps the tag that names them a co-author (with its marker),
-    and the mention's relay hint when that one has none."""
-    marked = {tag[1]: tag for tag in tags
-              if tag[0] == "p" and len(tag) >= 4 and tag[3] == AUTHOR_MARKER}
-    out: List[List[str]] = []
+def _one_tag_per_person(tags: List[List[str]], signer: str = "") -> List[List[str]]:
+    """``tags`` with one ``p`` tag per person. The authors' tags come
+    first, where the first ``p`` tag stood, in their order with the
+    signer's first: whoever reads the first author tag as the writer
+    (the editorial index, contract 10) never meets a person the text
+    only mentions, or a co-author, before them (RG-M4-c 2). A co-author
+    also mentioned in the text keeps the tag that names them a co-author
+    (with its marker), and the mention's relay hint when that one has
+    none."""
+    hints: Dict[str, str] = {}
+    for tag in tags:
+        if tag[0] == "p" and len(tag) >= 3 and tag[2]:
+            hints.setdefault(tag[1], tag[2])
+    authors: List[List[str]] = []
     seen = set()
+    for tag in tags:
+        if tag[0] == "p" and len(tag) >= 4 and tag[3] == AUTHOR_MARKER \
+                and tag[1] not in seen:
+            seen.add(tag[1])
+            relay = tag[2] or hints.get(tag[1], "")
+            authors.append(list(tag) if relay == tag[2] else
+                           ["p", tag[1], relay, AUTHOR_MARKER])
+    authors.sort(key=lambda tag: tag[1] != signer)          # stable: the rest keep order
+    out: List[List[str]] = []
+    placed = False
     for tag in tags:
         if tag[0] != "p" or len(tag) < 2:
             out.append(tag)
             continue
-        person = tag[1]
-        if person in seen:
-            continue
-        seen.add(person)
-        keep = marked.get(person, tag)
-        if keep is not tag and len(tag) >= 3 and tag[2] and not keep[2]:
-            keep = ["p", person, tag[2], AUTHOR_MARKER]
-        out.append(list(keep))
+        if not placed:
+            out.extend(authors)
+            placed = True
+        if tag[1] not in seen:
+            seen.add(tag[1])
+            out.append(list(tag))
     return out

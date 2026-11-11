@@ -521,6 +521,33 @@ def test_the_writer_release_vectors():
         assert send_to(case) == (), name
 
 
+def test_the_writer_is_the_first_author_though_the_text_mentions_a_contributor_first():
+    # RG-M4-c 2 (probe p8): a mention ahead of the credits never takes the
+    # first author tag (vector the_writer_credited_only_after_another), and
+    # a correction of a work published in that order puts the writer first.
+    from nostr.bech32 import encode_npub
+    writer, contributor = pk("writer"), pk("contributor")
+    revision = {"work": {"d": "ein-jahr", "title": "Ein Jahr", "summary": "", "image": "",
+                         "tags": [], "lang": "de", "authors": [], "extra_tags": [],
+                         "content": f"Fotos: nostr:{encode_npub(contributor)}\n\nText."},
+                "media": [], "credits": [{"pubkey": contributor, "part": "Fotos"}]}
+
+    def authors(event):
+        return [tag[1] for tag in event["tags"] if tag[0] == "p" and tag[3:4] == ["author"]]
+
+    event = publishing.published_template(revision, writer=writer, d="ein-jahr",
+                                          media_urls={}, published_at=100, created_at=100)
+    assert authors(event) == [writer, contributor]
+    assert [t[1] for t in event["tags"] if t[0] == "p"] == [writer, contributor]
+    shape = VECTORS["writer_release"]["must_fail"]["the_writer_credited_only_after_another"]
+    assert shape and publishing.credited_writer(event) == writer
+    old = dict(event, tags=[t for t in event["tags"] if t[0] != "p"]
+               + [["p", contributor, "", "author"], ["p", writer, "", "author"]])
+    corrected = publishing.corrected_template(revision, events.sign_event(old, sk("writer")),
+                                              writer=writer, media_urls={}, created_at=200)
+    assert authors(corrected) == [writer, contributor]
+
+
 def test_nothing_goes_out_over_another_persons_article_at_the_address(accepted):
     # RG-M4-a 2, 12.4: read before any picture goes up in plain; another
     # writer's article stands at the writer's address, so nothing is

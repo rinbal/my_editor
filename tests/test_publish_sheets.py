@@ -273,9 +273,10 @@ def test_people_are_everyone_tagged_by_name_never_by_key(tmp_path, captured):
     sheet = article(tmp_path, body=body, default_title="T",
                     details=ArticleDetails(coauthors=((CAROL, ""),)))
     names = [name for _pubkey, name in sheet._people.people()]
-    stranger = "@" not in names[1] and names[1].startswith("npub1") and "…" in names[1]
-    assert names[0] == "Bob Writer, mentioned" and stranger and names[1].endswith(", quoted")
-    assert names[2] == "Carol, co-author"
+    # The authors first, as the event tags them (RG-M4-c 2), then the text's people.
+    stranger = "@" not in names[2] and names[2].startswith("npub1") and "…" in names[2]
+    assert names[0] == "Carol, co-author" and names[1] == "Bob Writer, mentioned"
+    assert stranger and names[2].endswith(", quoted")
     assert not any(BOB_NPUB in label.text() or BOB in label.text()
                    for label in sheet._people.findChildren(QLabel))
     sheet._publish("t", sheet._body, 1_800_000_000)
@@ -292,7 +293,7 @@ def test_co_authors_are_added_and_removed_as_in_article_details(tmp_path, captur
     picker.picked.emit(Person(pubkey=CAROL))                   # twice: nothing
     picker.picked.emit(Person(pubkey=PK))                      # the author: nothing
     assert sheet.details().coauthors == ((CAROL, RELAY),) and sheet.details_changed()
-    assert [name for _p, name in sheet._people.people()][-1] == "Carol, co-author"
+    assert [name for _p, name in sheet._people.people()][0] == "Carol, co-author"   # authors first
     sheet._publish("t", sheet._body, 1_800_000_000)
     assert ["p", CAROL, RELAY, AUTHOR_MARKER] in p_tags(captured[0])
     sheet._on_failed("relay down")                            # to try again
