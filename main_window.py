@@ -469,6 +469,11 @@ def spelling_language_names(tags) -> list:
         named.append((tag, name))
     return sorted(named, key=lambda pair: pair[1].casefold())
 
+class PictureNotShown(Exception):
+    """Quick Look cannot show a picture; its text says why and what to do,
+    in the person's language."""
+
+
 class MainWindow(QMainWindow):
     def __init__(self, initial_path: str | None = None):
         super().__init__()
@@ -6275,9 +6280,11 @@ class MainWindow(QMainWindow):
             if panel is not None:
                 panel.close()
             return
-        path = self._picture_file(editor, photo_group.without_wide(name))
-        if path is None:
-            editor.notice.emit(_("This picture can’t be shown yet: it hasn’t arrived."))
+        try:
+            path = self._picture_file(editor, photo_group.without_wide(name))
+        except PictureNotShown as problem:
+            # Said once, with what to do about it (LESSONS 36).
+            editor.notice.emit(str(problem))
             return
         if panel is None:
             from quick_look import QuickLookPanel
@@ -6293,31 +6300,51 @@ class MainWindow(QMainWindow):
         panel.setWindowTitle((picture[3].alt if picture is not None else "")
                              or (_("Picture") if copy else os.path.basename(path)))
 
-    def _picture_file(self, editor, name: str) -> Optional[str]:
+    def _picture_file(self, editor, name: str) -> str:
         """A file Quick Look can show for the picture called ``name``: the
         picture's own file beside the document, else its bytes (one of
         this app's pictures, or one from the web it holds) in a file of
-        this window's that goes when the app quits."""
+        this window's that goes when the app quits. PictureNotShown, with
+        the words for the person, when there is none."""
         doc_path = getattr(editor, "_file_path", "") or ""
-        if doc_path and not is_web(name):
+        from_web = is_web(name)
+        # (One letter: a drive of a Windows path, no scheme.)
+        own = QUrl(name).scheme() or ""
+        beside_document = not from_web and (own in ("", "file") or len(own) == 1)
+        if doc_path and not from_web:
             found = image_safety.ImageRootPolicy(
                 MainWindow._image_roots(doc_path, MainWindow._picture_roots(self))).resolve(name)
             if found is not None:
                 return str(found)
-        if is_web(name):
-            data = self._held_picture_bytes(name)
-        else:
-            data = self._asset_manager.resolve_bytes(name)
+        data = (self._held_picture_bytes(name) if from_web
+                else self._asset_manager.resolve_bytes(name))
+        if not data:
+            if beside_document and not doc_path:
+                raise PictureNotShown(_(
+                    "Save this document first: its pictures are looked for beside it."))
+            if beside_document:
+                raise PictureNotShown(_(
+                    "The picture “{name}” is no longer beside this document. "
+                    "Put it back there, or insert it again.").format(name=os.path.basename(name)))
+            raise PictureNotShown(_("This picture can’t be shown yet: it hasn’t arrived."))
         # Only a picture the app itself would decode (never SVG, never a
         # decompression bomb).
-        ext = image_safety.sniff_image_ext(data) if data else None
-        if not data or not ext or image_safety.declared_size(data) is None:
-            return None
+        if image_safety.sniff_image_mime(data) == "image/svg+xml":
+            raise PictureNotShown(_(
+                "This picture is an SVG drawing, which can’t be shown large here. "
+                "Open it in your browser instead."))
+        ext = image_safety.sniff_image_ext(data)
+        if not ext or image_safety.declared_size(data) is None:
+            raise PictureNotShown(_(
+                "This picture can’t be shown large: it is too large, "
+                "or not a kind of picture MyEditor shows."))
         if getattr(self, "_look_files", None) is None:
             from PySide6.QtCore import QTemporaryDir
             self._look_files = QTemporaryDir()
+        no_room = _("This picture couldn’t be shown: there is no room for a temporary copy "
+                    "of it. Free some space on your disk and try again.")
         if not self._look_files.isValid():
-            return None
+            raise PictureNotShown(no_room)
         import hashlib
         path = os.path.join(self._look_files.path(),
                             f"picture-{hashlib.sha1(name.encode('utf-8')).hexdigest()[:16]}{ext}")
@@ -6325,8 +6352,8 @@ class MainWindow(QMainWindow):
             try:
                 with open(path, "wb") as out:
                     out.write(data)
-            except OSError:
-                return None
+            except OSError as error:
+                raise PictureNotShown(no_room) from error
         return path
 
     def _save_as_pdf(self, editor, path: str, *, then=None) -> bool:

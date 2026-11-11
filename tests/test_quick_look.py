@@ -49,3 +49,40 @@ def test_a_spreadsheet_is_a_quiet_preview(tmp_path, panel):
     sheet = panel.content()
     assert sheet.read_only
     assert sheet._formula_bar.isHidden() and sheet._add_button.isHidden()
+
+
+def test_quick_look_says_why_a_picture_cannot_be_shown_and_what_to_do(tmp_path):
+    """Gate 14: every case said "it hasn't arrived". Each has its own
+    cause and remedy: a document not saved yet, a file moved away, an SVG
+    drawing, no room for the temporary copy, and a picture still on its
+    way from the web."""
+    from types import SimpleNamespace
+    from main_window import MainWindow, PictureNotShown
+    from tests.photo_corners import PHOTOS
+    QApplication.instance() or QApplication([])
+    held = {}
+    window = SimpleNamespace(
+        _asset_manager=SimpleNamespace(resolve_bytes=lambda name: None),
+        _held_picture_bytes=lambda url: held.get(url), _look_files=None)
+
+    def said(editor, name) -> str:
+        with pytest.raises(PictureNotShown) as problem:
+            MainWindow._picture_file(window, editor, name)
+        return str(problem.value)
+
+    unsaved = SimpleNamespace(_file_path="")
+    saved = SimpleNamespace(_file_path=str(tmp_path / "note.md"))
+    (tmp_path / "here.png").write_bytes((PHOTOS / "square.png").read_bytes())
+    assert MainWindow._picture_file(window, saved, "here.png") == str(tmp_path / "here.png")
+    assert "Save this document first" in said(unsaved, "here.png")
+    assert "“gone.png” is no longer beside this document" in said(saved, "pictures/gone.png")
+    assert "hasn’t arrived" in said(saved, "https://example.org/late.png")
+    held["https://example.org/drawing.svg"] = b'<svg xmlns="http://www.w3.org/2000/svg"/>'
+    assert "SVG drawing" in said(saved, "https://example.org/drawing.svg")
+    # A web picture it holds is shown from a temporary copy; without room
+    # for one, that is what it says.
+    held["https://example.org/photo.png"] = (PHOTOS / "square.png").read_bytes()
+    copy = MainWindow._picture_file(window, saved, "https://example.org/photo.png")
+    assert open(copy, "rb").read() == held["https://example.org/photo.png"]
+    window._look_files = SimpleNamespace(isValid=lambda: False)
+    assert "no room for a temporary copy" in said(saved, "https://example.org/photo.png")
