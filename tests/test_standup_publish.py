@@ -397,6 +397,37 @@ def test_published_on_another_device_with_its_report_missing_reads_public_and_si
     assert signed == [] and store.uploaded == [] and len(jobs) == 1
 
 
+def test_an_earlier_article_at_the_link_name_that_credits_or_pays_less_is_not_this_version():
+    # RG-M4-c short look 1: the writer's own earlier article at the same link
+    # name, without the version's co-author, contributor credit or zap shares,
+    # is not the version: it is signed and published, never taken as public.
+    from nostr.standup import unlisted
+    writer, other = pk("writer"), pk("member")
+    address = f"30023:{writer}:ein-jahr"
+
+    def version(work=(), **more):
+        return {"work": {"d": "ein-jahr", "title": "Ein Jahr", "content": "Text.",
+                         "summary": "", "tags": ["bitcoin"], "lang": "de", **dict(work)},
+                "credits": [], **more}
+
+    def public(revision):
+        return events.sign_event(
+            unlisted.template_before(revision, writer=writer, d="ein-jahr"), sk("writer"))
+
+    def found(revision, event):
+        return unlisted.found_public(revision, writer=writer, address=address,
+                                     relays={"wss://r.example": (True, [event])}) is not None
+
+    paid = version({"authors": [{"pubkey": other}],
+                    "extra_tags": [["zap", writer, "", "70"], ["zap", other, "", "30"]]})
+    credited = version(credits=[{"pubkey": other, "weight": 30, "role": "illustration"}])
+    earlier = public(version())
+    assert not found(paid, earlier) and not found(credited, earlier)
+    assert not found(paid, public(version({"authors": [{"pubkey": other}],
+                                           "extra_tags": [["zap", writer, "", "100"]]})))
+    assert found(paid, public(paid)) and found(credited, public(credited))
+
+
 def _flaky_report(api, failures):
     """``api.published`` failing ``failures[0]`` times while it is above 0."""
     from nostr.standup.errors import Code, StandupError

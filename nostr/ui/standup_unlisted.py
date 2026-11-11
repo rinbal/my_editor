@@ -194,9 +194,7 @@ class QuietReport(QObject):
         revision, writer = version.opened.revision, self._account.writer
         try:
             d = str(revision["work"]["d"])
-            unsigned = publishing.published_template(
-                revision, writer=writer, d=d, published_at=0, created_at=0,
-                media_urls=publishing.addresses_before(publishing.media_to_publish(revision), ()))
+            unsigned = unlisted.template_before(revision, writer=writer, d=d)
         except (KeyError, TypeError, publishing.NotPublishable):
             return
         address = f"{formats.ARTICLE_KIND}:{writer}:{d}"

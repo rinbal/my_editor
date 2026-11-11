@@ -30,6 +30,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .. import events as nostr_events
+from ..article_details import AUTHOR_MARKER
 from . import formats, publishing
 
 # The pauses between tries, in seconds; the last one repeats.
@@ -60,16 +61,41 @@ def first(*, event: Mapping, naddr: str, revision: int, now: float,
             "tries": 1, "next": now + PAUSES[0], "taken": bool(taken)}
 
 
+def template_before(revision: Mapping, *, writer: str, d: str) -> dict:
+    """The template of ``revision`` as it reads before anything goes up
+    (its pictures where :func:`publishing.addresses_before` names them):
+    where it goes, and whom it credits and pays. Raises
+    :class:`publishing.NotPublishable` for one that cannot be published."""
+    return publishing.published_template(
+        revision, writer=writer, d=d, published_at=0, created_at=0,
+        media_urls=publishing.addresses_before(publishing.media_to_publish(revision), ()))
+
+
+def _credits(event: Mapping) -> Tuple[List[Any], List[Any]]:
+    """Whom ``event`` credits (its author ``p`` tags, in order) and pays
+    (its ``zap`` tags, in order)."""
+    tags = [tag for tag in event.get("tags") or () if isinstance(tag, list) and tag]
+    return ([tag for tag in tags if tag[0] == "p" and len(tag) >= 4 and tag[3] == AUTHOR_MARKER],
+            [tag for tag in tags if tag[0] == "zap"])
+
+
 def found_public(revision: Mapping, *, writer: str, address: str,
                  relays: Mapping[str, Tuple[bool, Sequence[Any]]]
                  ) -> Optional[Tuple[dict, List[str]]]:
     """The newest event at ``address`` in the relays' read (12.4) that
     credits ``writer`` and shows ``revision``, with the relays that hold
     it; None when none does. It shows the revision when nothing tells the
-    two apart: :func:`publishing.correction_changes` finds no change and
-    :func:`publishing.correction_texts` reads both texts alike."""
+    two apart: :func:`publishing.correction_changes` finds no change,
+    :func:`publishing.correction_texts` reads both texts alike, and it
+    credits and pays exactly whom the revision's template does (an
+    earlier article of the writer's at the same link name does not)."""
+    try:
+        wanted = _credits(template_before(revision, writer=writer, d=address.split(":", 2)[2]))
+    except (publishing.NotPublishable, KeyError, TypeError, IndexError):
+        return None
     shown = [(url, event) for url, (_complete, events) in relays.items() for event in events
              if publishing.held_credit(event, address) == writer
+             and _credits(event) == wanted
              and not publishing.correction_changes(revision, event)
              and len(set(publishing.correction_texts(revision, event))) == 1]
     if not shown:
@@ -158,4 +184,4 @@ class Unlisted:
 
 
 __all__ = ["GIVES_UP", "MOST_KEPT", "PAUSES", "SETTINGS_KEY", "Unlisted", "after_try", "due",
-           "first", "found_public", "over"]
+           "first", "found_public", "over", "template_before"]
