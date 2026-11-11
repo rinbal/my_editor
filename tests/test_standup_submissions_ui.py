@@ -276,6 +276,38 @@ def test_a_conversation_is_opened_once_and_a_refresh_draws_only_what_is_new(wind
     assert redrawn == []                                # another submission's news
 
 
+def test_a_long_conversation_opens_at_its_end_under_a_pinned_sentence_and_stays_there(window):
+    world = window.world
+    prepared, entries = seeded(window, lang="Ein Jahr")
+    world.decide(prepared["lang"], "request_changes", text="Bitte.")
+    for number in range(8):
+        world.message(prepared["lang"], f"Nachricht {number}: " + "ein ganzer Satz. " * 12)
+    window.tab("lang", "# Ein Jahr\n\nText.")
+    window.follow()
+    window.view.show()
+    detail = opened(window, entries["lang"])
+    QApplication.processEvents()
+    bar = detail._scroll.verticalScrollBar()
+    assert bar.maximum() > 0 and bar.value() == bar.maximum()      # the newest message
+    # The sentence and the action are not in what scrolls.
+    assert not detail._scroll.widget().isAncestorOf(detail.action)
+    assert detail.action.isVisible() and detail.action.text() == "Revise in the Editor"
+    # Sent: still at the end, the new bubble in sight.
+    detail.composer.setPlainText("Mach ich.")
+    QTest.keyClick(detail.composer, Qt.Key.Key_Return)
+    world.settle()
+    QApplication.processEvents()
+    assert bar.value() == bar.maximum()
+    # Scrolled up to read: news does not pull it down.
+    bar.setValue(0)
+    world.message(prepared["lang"], "Noch eine")
+    window.following.refresh()
+    world.settle()
+    QApplication.processEvents()
+    assert bar.value() == 0
+    window.view.hide()
+
+
 def test_the_composer_sends_with_return_and_a_failure_stays_in_place_with_the_text(window):
     _prepared, entries = seeded(window, reden="Ein Jahr")
     window.follow()

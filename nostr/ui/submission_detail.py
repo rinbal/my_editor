@@ -23,6 +23,11 @@ who is responsible, who takes part, the privacy lines and the history;
 the menu holds Im Editor öffnen and Zurückziehen …, which asks first
 with Cancel as the default.
 
+The header, the sentence and the action stay where they are; only the
+conversation (with Info above it) scrolls (RG-M3-b 2). It opens at the
+newest message and stays at the end while it grows, after sending too,
+unless the person scrolled up to read.
+
 The composer stays at the bottom: Return sends, Shift-Return starts a
 new line. What cannot be sent as it is (no text, a secret key) is said
 above it and the text is kept. The widget shows what
@@ -35,7 +40,7 @@ from __future__ import annotations
 from html import escape
 from typing import Callable, Iterable, Optional
 
-from PySide6.QtCore import QDateTime, QEvent, QLocale, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QDateTime, QEvent, QLocale, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QMenu, QPlainTextEdit, QPushButton, QScrollArea, QToolButton,
@@ -145,14 +150,11 @@ class SubmissionDetail(QWidget):
         top.addWidget(self.more_button)
         root.addLayout(top)
 
-        self._scroll = QScrollArea()
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        content = QWidget()
-        content.setObjectName("submission_detail_content")
-        column = QVBoxLayout(content)
-        column.setContentsMargins(LIST_GUTTER, 4, LIST_GUTTER, 8)
+        # Pinned: the header, the sentence and the action.
+        pinned = QWidget()
+        pinned.setObjectName("submission_detail_content")
+        column = QVBoxLayout(pinned)
+        column.setContentsMargins(LIST_GUTTER, 4, LIST_GUTTER, 6)
         column.setSpacing(8)
         head = QHBoxLayout()
         head.setSpacing(10)
@@ -214,6 +216,22 @@ class SubmissionDetail(QWidget):
         buttons.addStretch(1)
         block.addLayout(buttons)
         column.addWidget(self.status)
+        root.addWidget(pinned)
+
+        # Scrolled: Info, who reads, and the conversation.
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._stick = True                      # at the end, and kept there as it grows
+        bar = self._scroll.verticalScrollBar()
+        bar.valueChanged.connect(self._on_scrolled)
+        bar.rangeChanged.connect(self._on_range)
+        content = QWidget()
+        content.setObjectName("submission_detail_content")
+        column = QVBoxLayout(content)
+        column.setContentsMargins(LIST_GUTTER, 2, LIST_GUTTER, 8)
+        column.setSpacing(8)
 
         self.info = QLabel()
         self.info.setObjectName("submission_info")
@@ -302,9 +320,10 @@ class SubmissionDetail(QWidget):
         following.detail_changed.connect(self._on_changed)
         following.changed.connect(self._on_rows_changed)
         following.open(sid)
+        self._stick = True                      # it opens at the newest message
         self.refresh()
         self.back.setFocus()
-        QTimer.singleShot(0, self, self._to_the_end)
+        self._to_the_end()
 
     def clear(self) -> None:
         """Nothing of a submission is shown or followed any more (the
@@ -354,7 +373,6 @@ class SubmissionDetail(QWidget):
             if self._sid:
                 self.back_requested.emit()      # it is gone (discarded, the account left)
             return
-        at_end = self._at_the_end()
         row, r = detail.row, appearance.roles(self._is_dark)
         self._shown_row = (row, detail.publication)
         self.title.setText(row.title)
@@ -379,8 +397,6 @@ class SubmissionDetail(QWidget):
             row.publication, detail.publication, size)
         self.thread.show_thread(detail, self._following.me)
         self.composer_bar.setVisible(detail.can_write and row.confirmed)
-        if at_end:
-            QTimer.singleShot(0, self, self._to_the_end)
 
     def _logo(self, address: str, name: str, size: int) -> QPixmap:
         try:
@@ -513,12 +529,22 @@ class SubmissionDetail(QWidget):
 
     def _show_info(self, shown: bool) -> None:
         self.info.setVisible(shown)
+        if shown:
+            self._stick = False
+            self._scroll.verticalScrollBar().setValue(0)        # Info is at the top
 
-    def _at_the_end(self) -> bool:
-        bar = self._scroll.verticalScrollBar()
-        return bar.value() >= bar.maximum() - 4
+    def _on_scrolled(self, value: int) -> None:
+        """Scrolled up to read: it stays there; back at the end: it
+        follows the end again."""
+        self._stick = value >= self._scroll.verticalScrollBar().maximum() - 4
+
+    def _on_range(self, _minimum: int, maximum: int) -> None:
+        # The conversation grew or got its height: still at the end.
+        if self._stick:
+            self._scroll.verticalScrollBar().setValue(maximum)
 
     def _to_the_end(self) -> None:
+        self._stick = True
         bar = self._scroll.verticalScrollBar()
         bar.setValue(bar.maximum())
 
@@ -578,7 +604,7 @@ class SubmissionDetail(QWidget):
             return
         self.composer.clear()
         self.composer.setFocus()                    # focus returns to the same control
-        QTimer.singleShot(0, self, self._to_the_end)
+        self._to_the_end()
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802, Qt's name
         if watched is self.composer and event.type() == QEvent.Type.KeyPress \
