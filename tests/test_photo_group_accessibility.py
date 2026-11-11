@@ -4,10 +4,11 @@
 Look, and on the exported page, read from the accessibility tree.
 
 In the editor a picture is one character of the text, which VoiceOver
-cannot read: the caret reaching one says its place and description
-("Photo 2 of 5. Loch"), in the author's order, and never a table cell's
-row and column (the group's tables only lay it out). Quick Look is named
-by the picture's description and leaves the keyboard in the text.
+cannot read, and its caption is drawn with it: the caret has one stop at
+each picture and says its place, its description and its caption there
+("Photo 2 of 5. Loch. The loch at dusk"), in the author's order. Quick
+Look is named by the picture's description and leaves the keyboard in
+the text.
 
 The page is read from Chrome's own accessibility tree (the DevTools
 protocol, over a socket on this computer to a headless Chrome started
@@ -66,8 +67,9 @@ def _walk(ed, monkeypatch):
 def test_the_caret_says_each_picture_of_a_group_in_the_authors_order(monkeypatch):
     ed, _asked = _group_editor(900)
     said = _walk(ed, monkeypatch)
-    assert said == ["Photo 1 of 5. Steg", "Photo 2 of 5. Loch", "Photo 3 of 5. Hut",
-                    "Photo 4 of 5. Panorama", "Photo 5 of 5. Plan"]
+    assert said == ["Photo 1 of 5. Steg. The jetty at dusk", "Photo 2 of 5. Loch",
+                    "Photo 3 of 5. Hut", "Photo 4 of 5. Panorama",
+                    "Photo 5 of 5. Plan. Floor plan of the bothy"]
     ed.close()
 
 
@@ -90,15 +92,6 @@ def test_a_picture_without_a_description_is_said_by_its_place(monkeypatch):
             it += 1
         block = block.next()
     assert _walk(ed, monkeypatch) == ["Photo 1 of 2. A", "Photo 2 of 2"]
-    ed.close()
-
-
-def test_the_text_a_screen_reader_reads_has_the_captions_in_the_authors_order():
-    ed, _asked = _group_editor(900)
-    text = QAccessible.queryAccessibleInterface(ed).textInterface()
-    words = text.text(0, text.characterCount())
-    assert (words.index("We walked in") < words.index("The jetty at dusk")
-            < words.index("Floor plan of the bothy") < words.index("The next morning"))
     ed.close()
 
 

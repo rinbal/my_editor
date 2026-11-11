@@ -236,7 +236,7 @@ def test_the_widget_uses_only_the_images_it_is_given():
 # below 600 pixels the runs, each strip one picture a line (nothing here
 # swipes); every picture whole.
 
-import photo_group  # noqa: E402
+import photo_group_view  # noqa: E402
 from tests.photo_corners import SHAPES, image_of, shows_whole  # noqa: E402
 
 STRIPPED = ("![a](landscape.png)\n\n![b](photo.png)\n\n![c](photo.png)\n\n![d](landscape.png)\n\n"
@@ -257,7 +257,7 @@ def _group_preview(width):
 def test_a_group_in_the_preview_shows_every_picture_whole(width):
     view = _group_preview(width)
     shot = view.viewport().grab().toImage()
-    boxes = photo_group.picture_boxes(view.document())
+    boxes = photo_group_view.picture_boxes(view.document())
     assert len(boxes) == 6
     for _p, name, box in boxes:
         assert shows_whole(shot, box), name
@@ -266,15 +266,19 @@ def test_a_group_in_the_preview_shows_every_picture_whole(width):
 
 
 def test_a_narrow_preview_shows_the_runs_strips_one_picture_a_line():
+    def tops(view):
+        return [round(box.top()) for _p, _n, box in
+                photo_group_view.picture_boxes(view.document())]
+
     wide = _group_preview(1000)
-    assert photo_group.arrangement_of(wide.document()) == photo_group.MOSAIC
+    assert len(set(tops(wide))) < len(tops(wide))            # the mosaic: rows of pictures
     narrow = _group_preview(420)
-    assert photo_group.arrangement_of(narrow.document()) == photo_group.NARROW
-    tops = [round(box.top()) for _p, _n, box in photo_group.picture_boxes(narrow.document())]
-    assert len(set(tops)) == len(tops)
+    assert len(set(tops(narrow))) == len(tops(narrow))
+    revision = narrow.document().revision()
     narrow.resize(1000, 3200)
     from PySide6.QtWidgets import QApplication as App
     App.processEvents()
-    assert photo_group.arrangement_of(narrow.document()) == photo_group.MOSAIC
+    assert tops(narrow) == tops(wide)                        # the mosaic again
+    assert narrow.document().revision() == revision          # by its layout alone
     wide.close()
     narrow.close()

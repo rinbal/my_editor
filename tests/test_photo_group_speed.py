@@ -26,6 +26,7 @@ from PySide6.QtWidgets import QApplication, QTextEdit
 
 import export_html
 import photo_group
+import photo_group_view
 from markdown_writer import holds_faithfully, read_markdown
 
 SMALL, LARGE = 2500, 10000
@@ -96,15 +97,15 @@ def test_folding_in_a_shown_editor_lays_each_picture_out_about_once(monkeypatch)
     that asked the layout where they stood: every paragraph about to be
     replaced was laid out first, eight or nine times a picture."""
     calls = []
-    measure = photo_group._Handler.intrinsicSize
-    monkeypatch.setattr(photo_group._Handler, "intrinsicSize",
+    measure = photo_group_view._Handler.intrinsicSize
+    monkeypatch.setattr(photo_group_view._Handler, "intrinsicSize",
                         lambda self, *args: calls.append(1) or measure(self, *args))
     view = QTextEdit()
     view.resize(900, 800)
     view.show()
     QApplication.processEvents()
     doc = view.document()
-    photo_group.install(doc)
+    photo_group_view.install(doc)
     groups = 300
     doc.setMarkdown(_markdown(groups))
     calls.clear()

@@ -58,6 +58,7 @@ from PySide6.QtGui import (
 import export_pictures
 import media_files
 import photo_group
+import photo_group_geometry
 import photo_layout
 import rich_text
 from constants import DARK_BG, DARK_FG, LIGHT_BG, LIGHT_FG, MONO_FONT
@@ -375,20 +376,13 @@ def group_scripts() -> str:
             f'<script>\n{(_WEB / "photo_viewer.js").read_text(encoding="utf-8")}</script>\n')
 
 
-def _caption_html(caption, render_image) -> str:
-    """A caption as the readers write it: the words of its emphasis, not
-    in italic (the figure shows it as a caption)."""
-    if caption is None:
-        return ""
-    from PySide6.QtGui import QTextDocument
-    doc = QTextDocument()
-    QTextCursor(doc).insertFragment(caption)
+def _caption_html(unit, render_image) -> str:
+    """A unit's caption as the readers write it: the words of its
+    emphasis, not in italic (the figure shows it as a caption)."""
     runs = []
-    for block in iter_blocks(doc):
-        for text, fmt in iter_block_runs(block):
-            upright = QTextCharFormat(fmt)
-            upright.setFontItalic(False)
-            runs.append((text, upright))
+    for text, fmt in unit.caption_runs():
+        fmt.setFontItalic(False)
+        runs.append((text, fmt))
     return _render_runs(runs, render_image)
 
 
@@ -413,7 +407,7 @@ def group_figures_html(figures: Sequence[GroupFigure]) -> str:
     _image_group): the engine's cells in Markdown order, each picture a
     figure with its shape and its place, its caption under it. The one
     writer of a group's markup, for the export and for a knitted page."""
-    items = [photo_group.item(f.size, f.caption_text, f.wide) for f in figures]
+    items = [photo_group_geometry.item(f.size, f.caption_text, f.wide) for f in figures]
     result = photo_layout.layout(items)
 
     def figure(index: int, properties) -> str:
@@ -454,8 +448,7 @@ def _group_html(group, picture_of, render_image) -> str:
     figures = []
     for unit in group.units:
         src, size, source = picture_of(unit.name)
-        caption = (_caption_html(unit.caption_fragment(), render_image)
-                   if unit.caption_text.strip() else "")
+        caption = _caption_html(unit, render_image) if unit.caption_text.strip() else ""
         figures.append(GroupFigure(src, size, source, unit.alt, caption, unit.caption_text,
                                    unit.wide))
     return group_figures_html(figures)

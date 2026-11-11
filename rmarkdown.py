@@ -34,9 +34,7 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, Signal
-from PySide6.QtGui import (
-    QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument, QTextListFormat,
-)
+from PySide6.QtGui import QTextBlockFormat, QTextCharFormat, QTextListFormat
 
 import atomic_file
 import export_html
@@ -228,12 +226,9 @@ def _group_rmd(group, copy_image) -> list[str]:
             lines.append(_UNAVAILABLE_MD)
         if not unit.has_caption or not unit.caption_text.strip():
             continue
-        caption = QTextDocument()
-        QTextCursor(caption).insertFragment(unit.caption_fragment())
-        for block in iter_blocks(caption):
-            text = _render_runs_md(list(iter_block_runs(block)), copy_image).strip()
-            if text:
-                lines.extend(_guard_line_start(line) for line in text.split("\\\n"))
+        text = _render_runs_md(unit.caption_runs(), copy_image).strip()
+        if text:
+            lines.extend(_guard_line_start(line) for line in text.split("\\\n"))
     return [f"::: {{.{GROUP_CLASS}}}", "\\\n".join(lines), ":::"]
 
 

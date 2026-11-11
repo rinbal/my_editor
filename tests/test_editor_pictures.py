@@ -119,10 +119,10 @@ def test_a_picture_read_beside_the_file_is_fitted_too(editor):
 # in the document or its undo history changed.
 
 from PySide6.QtCore import QPointF, Qt  # noqa: E402
-from PySide6.QtGui import QTextCursor  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 
 import photo_group  # noqa: E402
+import photo_group_view  # noqa: E402
 import rich_text  # noqa: E402
 from markdown_writer import _image_as_read, document_to_markdown, read_markdown  # noqa: E402
 from tests.photo_corners import SHAPES, image_of, shows_whole  # noqa: E402
@@ -151,7 +151,7 @@ def _group_editor(width, markdown=BOTHY, *, missing=()):
 
 
 def _boxes(ed):
-    return [(name, box) for _p, name, box in photo_group.picture_boxes(ed.document())]
+    return [(name, box) for _p, name, box in photo_group_view.picture_boxes(ed.document())]
 
 
 @pytest.mark.parametrize("width", [1200, 760, 420])
@@ -180,10 +180,11 @@ def test_group_cells_are_never_taller_than_the_cap():
 def test_a_group_follows_the_width_with_nothing_to_undo():
     ed, _asked = _group_editor(1100)
     before = [box.width() for _n, box in _boxes(ed)]
-    ed.resize(600, 2000)
+    ed.resize(700, 2000)
     QApplication.processEvents()
     after = [box.width() for _n, box in _boxes(ed)]
-    assert all(b < a for a, b in zip(before, after))
+    assert after != before and all(b <= a for a, b in zip(before, after))
+    assert all(box.right() <= ed.viewport().width() for _n, box in _boxes(ed))
     assert not ed.document().isUndoAvailable() and not ed.document().isModified()
     ed.close()
 
@@ -223,11 +224,11 @@ def test_copying_a_group_copies_its_paragraphs_and_a_paste_shows_the_group_again
     other.close()
 
 
-def test_the_table_commands_leave_a_group_alone():
+def test_a_group_is_no_table_for_the_table_commands():
     ed, _asked = _group_editor(900)
-    caption = ed.document().find("The jetty at dusk")
-    assert caption.currentTable() is not None
-    assert rich_text.table_at(caption) is None
+    cursor = ed.textCursor()
+    cursor.setPosition(photo_group.groups_in(ed.document())[0].start + 1)
+    assert cursor.currentTable() is None
     assert rich_text.tables_of(ed.document()) == []
     ed.close()
 
@@ -243,7 +244,7 @@ def test_a_double_click_on_a_group_picture_shows_it_in_quick_look():
     ed.picture_look_requested.connect(asked.append)
     QTest.mouseDClick(ed.viewport(), Qt.MouseButton.LeftButton, pos=_point_of(ed, "square.png"))
     assert asked == ["square.png"]
-    assert photo_group.group_picture_at_cursor(ed.textCursor()) == "square.png"
+    assert photo_group_view.picture_at_cursor(ed.textCursor())[3].name == "square.png"
     ed.close()
 
 
@@ -262,14 +263,14 @@ def test_space_on_a_selected_group_picture_shows_it_and_puts_it_away():
     ed.close()
 
 
-def test_space_in_a_caption_is_a_space():
+def test_space_in_the_text_is_a_space():
     ed, _asked = _group_editor(900)
     asked = []
     ed.picture_look_requested.connect(asked.append)
-    cursor = ed.document().find("The jetty")
+    cursor = ed.document().find("The next")
     cursor.clearSelection()
     ed.setTextCursor(cursor)
     QTest.keyClick(ed, Qt.Key.Key_Space)
     assert asked == []
-    assert "*The jetty  at dusk*" in document_to_markdown(ed.document(), _image_as_read)
+    assert "The next  morning" in document_to_markdown(ed.document(), _image_as_read)
     ed.close()

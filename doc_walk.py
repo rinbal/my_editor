@@ -16,6 +16,8 @@ serialize them.
 
 import re
 
+from PySide6.QtGui import QTextFormat
+
 BULLET_MARKER = "• "
 
 # Spaces per bullet nesting level. Mirrors tab_width in editor.py; kept as a
@@ -29,6 +31,16 @@ OBJECT_REPLACEMENT = "\ufffc"
 # maps it to a newline; fragment text does not, so any serializer that
 # replaces toPlainText has to do the mapping itself.
 LINE_SEPARATOR = "\u2028"
+
+# A soft line break: lines of one paragraph that follow each other in the
+# file ("hard-wrapped" prose, a picture on the line under its words). The
+# editor holds it as a line separator whose character format carries this
+# property, shows it as a new line, and writes it back as the plain line
+# end it was, so a note keeps its line layout (markdown_writer). A line
+# break typed here (Shift+Return) has no such property and is written as
+# Markdown's hard break. (editor.HtmlEditor keeps the property off what is
+# typed after one.)
+SOFT_BREAK_PROPERTY = QTextFormat.Property.UserProperty + 0x5B1
 
 
 # Python counts a string in code points; a QTextDocument counts positions
@@ -144,36 +156,6 @@ def image_positions(doc, name: str) -> list:
                 found.extend(range(frag.position(), frag.position() + frag.length()))
             it += 1
     return found
-
-
-def serialize_plain_with_images(doc, image_target) -> str:
-    """Plain text with each image replaced by image_target(QTextImageFormat).
-
-    The text half reproduces toPlainText exactly, which is why this can
-    stand in for it everywhere images must survive: blocks joined with
-    newlines, U+2028 line separators mapped to newlines, stray
-    object-replacement characters in plain runs dropped.
-
-    A target function returning None omits the image entirely, which is
-    what a format with no way to carry one (.txt) needs. A photo group is
-    written as the paragraphs it was read from.
-    """
-    import photo_group  # it reads this module: imported where it is used
-    doc = photo_group.unfolded(doc)
-    lines = []
-    for block in iter_blocks(doc):
-        parts = []
-        for text, fmt in iter_block_runs(block):
-            if fmt.isImageFormat():
-                target = image_target(fmt.toImageFormat())
-                if target:
-                    parts.append(target)
-                continue
-            text = text.replace(OBJECT_REPLACEMENT, "")
-            if text:
-                parts.append(text.replace(LINE_SEPARATOR, "\n"))
-        lines.append("".join(parts))
-    return "\n".join(lines)
 
 
 def skip_prefix(runs, n: int):

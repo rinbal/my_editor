@@ -32,6 +32,8 @@ from PySide6.QtWidgets import QApplication
 
 import export_pictures
 import photo_group
+import photo_group_geometry
+import photo_group_view
 import photo_layout
 from export_html import document_to_html
 from markdown_writer import read_markdown
@@ -67,7 +69,7 @@ def _page(markdown: str = DOC, **kwargs) -> str:
 
 def test_a_group_is_written_as_the_engine_writes_it(app):
     page = _page()
-    items = [photo_group.item(SHAPES[name], caption, name == "plan.png")
+    items = [photo_group_geometry.item(SHAPES[name], caption, name == "plan.png")
              for name, caption in zip(NAMES, ["The jetty at dusk"] + [""] * 6
                                       + ["Floor plan of the bothy"])]
     result = photo_layout.layout(items)
@@ -163,7 +165,7 @@ def test_the_plain_and_r_markdown_writers_write_the_paragraphs(app, monkeypatch)
     it wrote of it before there were groups; the .Rmd export writes the
     rest as before, and the group as a div of its pictures
     (tests/test_rmarkdown_photo_groups.py)."""
-    from doc_walk import serialize_plain_with_images
+    from plain_writer import serialize_plain_with_images
     from rmarkdown import document_to_rmd
     grouped = _doc()
     assert photo_group.has_groups(grouped)
@@ -587,7 +589,7 @@ def _paged(markdown: str = DOC, page_setup=None):
 
 def test_the_pdf_lays_a_group_out_on_the_page(app):
     paged, _writer = _paged()
-    boxes = photo_group.picture_boxes(paged.clone)
+    boxes = photo_group_view.picture_boxes(paged.clone)
     assert [photo_group.without_wide(name) for _p, name, _b in boxes] == NAMES
     for _p, name, box in boxes:
         w, h = SHAPES[photo_group.without_wide(name)]
@@ -598,19 +600,46 @@ def test_the_pdf_lays_a_group_out_on_the_page(app):
         assert box.height() <= 0.85 * paged.content_height + 0.5
 
 
-def test_a_pdf_keeps_a_row_on_one_page(app):
-    filler = "\n\n".join(f"Paragraph {n} of the walk in." for n in range(34))
-    paged, _writer = _paged(filler + "\n\n" + DOC)
-    layout = paged.clone.documentLayout()
-    rows = [frame for frame in paged.clone.rootFrame().childFrames()
-            if photo_group.is_group_table(frame)]
-    moved = 0
-    for frame in rows:
-        box = layout.frameBoundingRect(frame)
-        assert int(box.top() // paged.content_height) == int((box.bottom() - 0.5)
-                                                            // paged.content_height)
-        moved += frame.format().pageBreakPolicy() != 0
-    assert moved >= 1                       # the filler puts a row across a page end
+def _pages_of(box, paged):
+    return (int(box.top() // paged.content_height),
+            int((box.bottom() - 0.5) // paged.content_height))
+
+
+@pytest.mark.parametrize("paper", ["A4", "Letter"])
+def test_no_page_of_a_pdf_breaks_through_a_picture(app, paper):
+    """A group that fits on a page is on one page (it starts the next
+    when it would cross a page's end); a group taller than a page breaks
+    between two of its rows. No picture is ever cut, on A4 and on Letter,
+    wherever the text before the groups puts them."""
+    from export_pdf import default_page_setup
+    setup = dict(default_page_setup(), page_size=paper)
+    small = "![a](photo.png)\n\n![b](square.png)\n\n*A caption*\n"
+    tall = "\n\n".join(f"![p{n}]({name})" for n, name in enumerate(
+        ["photo.png", "square.png", "portrait.png", "landscape.png"] * 4)) + "\n"
+    crossed = moved = spread = 0
+    for lines in (2, 9, 17, 26, 34):
+        filler = "\n\n".join(f"Paragraph {n} of the walk in." for n in range(lines))
+        paged, _writer = _paged(f"{filler}\n\n{small}\nBetween.\n\n{tall}\nAfter.\n\n{small}",
+                                page_setup=setup)
+        clone = paged.clone
+        layout = clone.documentLayout()
+        for _p, name, box in photo_group_view.picture_boxes(clone):
+            first, last = _pages_of(box, paged)
+            crossed += first != last
+        block = clone.begin()
+        while block.isValid():
+            if photo_group.is_group_block(block):
+                box = layout.blockBoundingRect(block)
+                first, last = _pages_of(box, paged)
+                if box.height() < paged.content_height:
+                    assert first == last, (paper, lines)
+                    moved += block.blockFormat().pageBreakPolicy() != 0
+                else:
+                    spread += last > first
+            block = block.next()
+    assert crossed == 0
+    assert moved >= 1                       # one filler put a small group across a page's end
+    assert spread == 5                      # the tall group runs over pages, between its rows
 
 
 def _shows_every_picture_whole(path, paged, resolution, page_layout):
@@ -625,7 +654,7 @@ def _shows_every_picture_whole(path, paged, resolution, page_layout):
     area = page_layout.paintRectPixels(resolution)
     pages = {}
     seen = []
-    for _p, name, box in photo_group.picture_boxes(paged.clone):
+    for _p, name, box in photo_group_view.picture_boxes(paged.clone):
         page = int(box.top() // paged.content_height)
         if page not in pages:
             size = pdf.pagePointSize(page)

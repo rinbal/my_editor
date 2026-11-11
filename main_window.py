@@ -90,10 +90,8 @@ from preview_pane import (
 )
 from nostr import preview as preview_module
 from nostr.preview import Article as PreviewArticle
-from doc_walk import (
-    image_positions, iter_block_runs, iter_blocks, iter_image_names,
-    serialize_plain_with_images,
-)
+from doc_walk import image_positions, iter_block_runs, iter_blocks, iter_image_names
+from plain_writer import serialize_plain_with_images
 from markdown_writer import (
     document_to, document_to_markdown, has_local_only_formatting, holds_faithfully,
     image_markdown, read_markdown,
@@ -110,6 +108,7 @@ import link_url
 import paste
 import export_pictures
 import photo_group
+import photo_group_view
 import rich_text
 import image_safety
 import url_safety
@@ -1833,7 +1832,11 @@ class MainWindow(QMainWindow):
         """Count the current document's words again (after it changed, or
         another tab came to the front)."""
         ed = self.current_editor()
-        self._document_words = count_words(ed.toPlainText()) if ed is not None else 0
+        # A photo group's captions count (they are drawn with its
+        # pictures, not text of the document).
+        self._document_words = (count_words(ed.toPlainText()) + sum(
+            count_words(caption) for caption in photo_group.captions(ed.document()))
+            if ed is not None else 0)
         self._show_word_count(ed)
 
     def _show_word_count(self, ed) -> None:
@@ -6161,8 +6164,9 @@ class MainWindow(QMainWindow):
         Walks the document block by block, fragment by fragment.
         Each fragment becomes an RTF group carrying its formatting codes.
         Non-ASCII characters are escaped as \\uN? (RTF Unicode escape).
+        A photo group is written as its paragraphs: its captions are text.
         """
-        doc = editor.document()
+        doc = photo_group.unfolded(editor.document())
 
         # --- Pass 1: collect all unique foreground colors used in the document ---
         colors: list[tuple[int, int, int]] = []
@@ -6284,7 +6288,8 @@ class MainWindow(QMainWindow):
         # name; never the name of the copy made for showing it.
         looks = getattr(self, "_look_files", None)
         copy = looks is not None and os.path.dirname(path) == looks.path()
-        panel.setWindowTitle(photo_group.group_picture_description_at_cursor(editor.textCursor())
+        picture = photo_group_view.picture_at_cursor(editor.textCursor())
+        panel.setWindowTitle((picture[3].alt if picture is not None else "")
                              or (_("Picture") if copy else os.path.basename(path)))
 
     def _picture_file(self, editor, name: str) -> Optional[str]:
@@ -7272,8 +7277,9 @@ class MainWindow(QMainWindow):
         ed = self.current_editor()
         if ed is not None:
             cursor = ed.textCursor()
+            # (A photo group as its paragraphs: its captions are read.)
             self.speech.speak(cursor.selectedText() if cursor.hasSelection()
-                              else ed.toPlainText())
+                              else photo_group.unfolded(ed.document()).toPlainText())
 
     def _start_dictation(self) -> None:
         """Edit > Start Dictation… (Stop Dictation while dictating here):
@@ -7399,7 +7405,7 @@ class MainWindow(QMainWindow):
         if not editing:
             return False, False
         return (MainWindow._caret_in_code(ed),
-                rich_text.table_at(ed.textCursor()) is not None)
+                ed.textCursor().currentTable() is not None)
 
     @staticmethod
     def _caret_in_code(ed) -> bool:
@@ -7777,7 +7783,7 @@ class MainWindow(QMainWindow):
         # The Format menu's own submenus, by their menu action: given to
         # addMenu, PySide makes this menu, built for one click, their owner,
         # and they would go with it.
-        if self._editor_kind(editor) == "rich" and rich_text.table_at(editor.textCursor()) is not None:
+        if self._editor_kind(editor) == "rich" and editor.textCursor().currentTable() is not None:
             # In a table: its rows and columns.
             menu.addAction(self.m_table.menuAction())
             menu.addSeparator()
@@ -8316,10 +8322,9 @@ class MainWindow(QMainWindow):
             # address with #wide (photo_group).
             names = [name for name in set(iter_image_names(doc))
                      if photo_group.without_wide(name) == url]
+            # (The paragraphs that show it are laid out again, no other.)
             for name in names:
                 ed.add_picture_resource(name, image)
-            if names:
-                doc.markContentsDirty(0, doc.characterCount())
             pane = getattr(ed, "_preview_pane", None)
             if pane is not None and pane.isVisible():
                 pane.schedule()

@@ -1,33 +1,26 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""photo_group: pictures that follow each other, shown as one group.
+"""photo_group: pictures that follow each other, held as one group.
 
-Folding builds a group's tables from the paragraphs Markdown gave, the way
-STANDUP finds groups; unfolding gives the very same paragraphs back. The
-handler sizes the pictures by the readers' CSS from the engine's numbers,
-so every picture shows whole (the coloured corners of the fixtures), the
-mosaic fills the text's width at any width, and a row is never taller
-than its cap. A read-only surface narrower than 600 pixels shows the
-runs, strips unrolled: one picture a line.
+Groups are found the way STANDUP finds them. Folding makes each group one
+paragraph holding a picture character for each picture, its caption on
+it; unfolding gives the very same paragraphs back, and a writer writes
+them without unfolding. Nothing about how a group is arranged is in the
+document.
 """
 
 from __future__ import annotations
-
-import itertools
 
 import time
 
 import pytest
 from PySide6.QtCore import QUrl
-from PySide6.QtGui import QColor, QImage, QTextDocument, QTextTable
-from PySide6.QtWidgets import QApplication, QTextEdit
+from PySide6.QtGui import QTextCursor, QTextDocument, QTextDocumentFragment
+from PySide6.QtWidgets import QApplication
 
 import photo_group
-import photo_layout
-from markdown_writer import _image_as_read, document_to_markdown
-from tests.photo_corners import SHAPES, corner_colours, image_of, shows_whole
-
-IMAGE = QTextDocument.ResourceType.ImageResource.value
+from markdown_writer import _image_as_read, document_to_markdown, read_markdown
+from tests.photo_corners import SHAPES
 
 
 @pytest.fixture(scope="module")
@@ -35,15 +28,11 @@ def app():
     return QApplication.instance() or QApplication([])
 
 
-def _sizes(name):
-    return SHAPES.get(photo_group.without_wide(name))
-
-
-def _read(markdown: str, *, sizes=_sizes, narrow: bool = False) -> QTextDocument:
+def _read(markdown: str) -> QTextDocument:
     """Markdown as Qt reads it, with the groups folded."""
     doc = QTextDocument()
     doc.setMarkdown(markdown)
-    photo_group.fold(doc, sizes, narrow=narrow)
+    photo_group.fold(doc)
     return doc
 
 
@@ -57,31 +46,19 @@ def _markdown(*names, captions=None) -> str:
     return "\n\n".join(parts) + "\n"
 
 
-def _group_tables(doc):
-    return [frame for frame in doc.rootFrame().childFrames() if photo_group.is_group_table(frame)]
-
-
-def _shown(markdown: str, width: int, *, narrow: bool = False):
-    """A view of ``markdown`` ``width`` wide, its pictures the fixtures."""
-    view = QTextEdit()
-    view.resize(width, 3000)
-    doc = view.document()
-    photo_group.install(doc, _sizes)
-    doc.setMarkdown(markdown)
-    photo_group.fold(doc, narrow=narrow)
-    for name in SHAPES:
-        image = image_of(name)
-        doc.addResource(IMAGE, QUrl(name), image)
-        doc.addResource(IMAGE, QUrl(name + "#wide"), image)
-    view.show()
-    QApplication.processEvents()
-    view.verticalScrollBar().setValue(0)
-    QApplication.processEvents()
-    return view
+def _paragraphs(doc):
+    """Each paragraph as "G<pictures>" for a group, else its text."""
+    out = []
+    block = doc.begin()
+    while block.isValid():
+        out.append(f"G{len(photo_group.block_units(block))}"
+                   if photo_group.is_group_block(block) else block.text())
+        block = block.next()
+    return out
 
 
 # --------------------------------------------------------------------------- #
-# #wide and stand-ins                                                          #
+# #wide                                                                        #
 # --------------------------------------------------------------------------- #
 
 def test_wide_is_read_from_the_end_of_the_address_and_loaded_without():
@@ -94,23 +71,6 @@ def test_wide_is_read_from_the_end_of_the_address_and_loaded_without():
     url = photo_group.without_wide_url(QUrl("https://e.org/p.png#wide"))
     assert url.toString() == "https://e.org/p.png"
     assert photo_group.without_wide_url(QUrl("p.png#top")).toString() == "p.png#top"
-
-
-def test_a_stand_in_has_no_size(app):
-    stand_in = photo_group.mark_placeholder(QImage(160, 100, QImage.Format.Format_RGB32))
-    assert photo_group.picture_size(stand_in) is None
-    assert photo_group.picture_size(QImage(160, 100, QImage.Format.Format_RGB32)) == (160, 100)
-    assert photo_group.picture_size(None) is None
-    assert photo_group.picture_size(QImage()) is None
-
-
-@pytest.mark.parametrize("size", [(0, 0), (1, 100000), (100000, 1), (-5, 10), (1, 40)])
-def test_hostile_sizes_count_as_unknown(size):
-    """A size the engine does not take is the provisional 3:2."""
-    found = photo_group.table_sizes({"a.png": size})("a.png")
-    assert found is None
-    entry = photo_group.item(found, "", False)
-    assert photo_layout.ratio_of(entry) == 1.5
 
 
 # --------------------------------------------------------------------------- #
@@ -173,25 +133,42 @@ def test_wide_stays_in_the_group(app):
     assert [name for name, _ in groups[0]] == ["photo.png", "plan.png#wide", "square.png"]
 
 
+def test_pictures_each_side_of_a_table_are_no_group(app):
+    assert _found("![a](a.png)\n\n| t |\n|---|\n| c |\n\n![b](b.png)\n") == []
+
+
+def test_a_picture_in_a_table_is_not_in_a_group(app):
+    assert _found("| ![a](a.png) |\n|---|\n| c |\n\n![b](b.png)\n") == []
+
+
+def test_groups_are_found_where_letters_take_two_places(app):
+    """A character beyond U+FFFF takes two positions in a document."""
+    doc = _read("An emoji \U0001F600 here\n\n![a](a.png)\n\n![b](b.png)\n\nEnd \U0001F600\n")
+    assert _paragraphs(doc) == ["An emoji \U0001F600 here", "G2", "End \U0001F600"]
+
+
 # --------------------------------------------------------------------------- #
 # Fold and unfold                                                              #
 # --------------------------------------------------------------------------- #
 
-def test_fold_builds_one_table_a_row_with_the_engines_rows(app):
-    names = ("portrait.png", "landscape.png", "square.png", "panorama.png")
-    doc = _read(_markdown(*names))
-    items = [photo_group.item(SHAPES[n], "", False) for n in names]
-    rows = photo_layout.layout(items)
-    tables = _group_tables(doc)
-    assert len(tables) == len(rows)
-    for table, row in zip(tables, rows):
-        # A spacer each side, then a cell for each of the row's cells.
-        assert table.columns() == len(row["cells"]) + 2
-        assert table.format().property(photo_group.ARRANGEMENT) == photo_group.MOSAIC
-    stacks = [cell for row in rows for cell in row["cells"] if not isinstance(cell, int)]
-    nested = [frame for table in tables for frame in table.childFrames()
-              if isinstance(frame, QTextTable) and frame.format().boolProperty(photo_group.STACK)]
-    assert len(nested) == len(stacks)
+def test_a_group_is_one_paragraph_with_a_character_for_each_picture(app):
+    doc = _read("Before\n\n" + _markdown("portrait.png", "landscape.png", "square.png",
+                                         captions={"landscape.png": "The caption"}) + "\nAfter\n")
+    assert _paragraphs(doc) == ["Before", "G3", "After"]
+    group = photo_group.groups_in(doc)[0]
+    assert doc.findBlock(group.start).text() == "\ufffc" * 3
+    assert [(unit.name, unit.caption_text) for unit in group.units] == [
+        ("portrait.png", ""), ("landscape.png", "The caption"), ("square.png", "")]
+    assert photo_group.group_at(doc, group.start + 1).units[1].name == "landscape.png"
+    assert photo_group.group_at(doc, 0) is None
+
+
+def test_the_captions_of_a_documents_groups_can_be_read_for_counting_its_words(app):
+    doc = _read(_markdown("photo.png", "square.png", captions={"photo.png": "Two words"})
+                + "\nText\n\n" + _markdown("photo.png", "square.png",
+                                           captions={"square.png": "Three more words"}))
+    assert photo_group.captions(doc) == ["Two words", "Three more words"]
+    assert "Two words" not in doc.toPlainText()
 
 
 def test_every_picture_has_its_own_number(app):
@@ -205,17 +182,39 @@ def test_every_picture_has_its_own_number(app):
     "Intro\n\n![a](photo.png)\n*Under*\n\n![b](square.png)\n\n*Own paragraph*\n\nEnd\n",
     "![a](photo.png) ![b](square.png)\n![c](portrait.png)\n\n![d](plan.png#wide)\n",
     "# T\n\n![a](photo.png)\n\n![b](square.png)\n\nText\n\n![c](portrait.png)\n\n![d](panorama.png)\n",
+    "![a](photo.png)\n\n*With **bold**, ~~struck~~ and a [link](https://e.org) in it*\n\n"
+    "![b](square.png)\n",
 ])
 def test_unfold_gives_back_the_paragraphs_as_they_were(app, markdown):
     plain = QTextDocument()
-    plain.setMarkdown(markdown)
+    read_markdown_plain(plain, markdown)
     want = document_to_markdown(plain, _image_as_read)
-    doc = _read(markdown)
+    doc = QTextDocument()
+    read_markdown(doc, markdown)
     assert photo_group.has_groups(doc)
+    # Written from the group as it is, then from its paragraphs again.
+    assert document_to_markdown(doc, _image_as_read) == want
     assert photo_group.unfold(doc) >= 1
     assert not photo_group.has_groups(doc)
     assert document_to_markdown(doc, _image_as_read) == want
     assert doc.toPlainText() == plain.toPlainText()
+    formats = [(b.blockFormat().topMargin(), b.blockFormat().bottomMargin())
+               for b in _blocks(doc)]
+    assert formats == [(b.blockFormat().topMargin(), b.blockFormat().bottomMargin())
+                       for b in _blocks(plain)]
+
+
+def read_markdown_plain(doc, markdown: str) -> None:
+    """Markdown as the editor reads it, its pictures left as paragraphs."""
+    from markdown_writer import _read_counting
+    _read_counting(doc, markdown, groups=False)
+
+
+def _blocks(doc):
+    block = doc.begin()
+    while block.isValid():
+        yield block
+        block = block.next()
 
 
 def test_unfolded_leaves_the_document_as_it_is(app):
@@ -226,206 +225,37 @@ def test_unfolded_leaves_the_document_as_it_is(app):
     assert photo_group.unfolded(plain) is plain
 
 
-def test_refold_arranges_a_document_again(app):
-    doc = _read(_markdown("landscape.png", "landscape.png", "landscape.png"))
-    assert photo_group.arrangement_of(doc) == photo_group.MOSAIC
-    photo_group.refold(doc, _sizes, narrow=True)
-    assert photo_group.arrangement_of(doc) == photo_group.NARROW
+def test_a_selection_that_starts_inside_a_group_is_copied_as_its_paragraphs(app):
+    """A fragment keeps the characters of its first paragraph, not its
+    format: the pictures it starts with are unfolded all the same."""
+    doc = _read("Before\n\n" + _markdown("photo.png", "square.png", "portrait.png",
+                                         captions={"square.png": "Two"}) + "\nAfter\n")
+    group = photo_group.groups_in(doc)[0]
+    cursor = QTextCursor(doc)
+    cursor.setPosition(group.start + 1)
+    cursor.setPosition(group.end + 3, QTextCursor.MoveMode.KeepAnchor)
+    copy = QTextDocument()
+    QTextCursor(copy).insertFragment(photo_group.unfolded_fragment(cursor.selection()))
+    assert not photo_group.has_groups(copy)
+    assert document_to_markdown(copy, _image_as_read) == (
+        "![square.png](square.png)\n\n*Two*\n\n![portrait.png](portrait.png)\n\nAf\n")
+    whole = QTextDocumentFragment(doc)
+    assert photo_group.unfolded_fragment(QTextDocumentFragment(QTextDocument())).isEmpty()
+    copy = QTextDocument()
+    QTextCursor(copy).insertFragment(photo_group.unfolded_fragment(whole))
+    assert document_to_markdown(copy, _image_as_read) == document_to_markdown(doc, _image_as_read)
 
 
-# --------------------------------------------------------------------------- #
-# Geometry                                                                     #
-# --------------------------------------------------------------------------- #
-
-def _vectors():
-    import json
-    from pathlib import Path
-    path = Path(__file__).resolve().parent / "fixtures" / "photo_layout_vectors.json"
-    return json.loads(path.read_text(encoding="utf-8"))["cases"]
-
-
-def test_the_mosaic_rows_have_the_engines_geometry():
-    """Without captions, the CSS formulas the handler uses give the
-    engine's own row geometry (rowGeometry), at the reference width."""
-    regular = photo_layout.CONSTANTS["regular"]
-    metrics = photo_group.Metrics(regular["width"], regular["gap"], regular["cap"],
-                                  photo_layout.CONSTANTS["wideCap"]["px"], 0.0, 136)
-    checked = 0
-    for case in _vectors():
-        items = case["items"]
-        if any(item.get("caption") for item in items):
-            continue
-        for row, want in zip(photo_layout.layout(items), case["geometry"]["rows"]):
-            cells = [[c] if isinstance(c, int) else list(c) for c in row["cells"]]
-            places, width = photo_group.mosaic_places(cells, items, metrics)
-            tiles = [tile for cell in places for tile in cell]
-            if row["name"] == "wide":
-                assert tiles[0].picture_height == pytest.approx(want["height"], abs=0.2)
-                continue
-            assert width == pytest.approx(want["width"], abs=0.2)
-            for got, tile in zip(tiles, want["tiles"]):
-                assert got.picture_width == pytest.approx(tile[3], abs=0.2)
-                assert got.picture_height == pytest.approx(tile[4], abs=0.2)
-            checked += 1
-    assert checked > 100
-
-
-def test_a_row_is_never_taller_than_its_cap():
-    """A picture is at most the cap tall; in a row with a stack whose upper
-    pictures have captions, a cell's pictures and those captions together
-    at most the cap and that stack's caption lines (the readers' --rc and
-    --c: the caption under a cell's last picture is below the row), as in
-    STANDUP."""
-    # The engine writes its numbers to four places (fixed4), as the CSS
-    # reads them: a tenth of a pixel is that rounding.
-    line, gap, rounding = 20.0, 12, 0.1
-    metrics = photo_group.Metrics(2000, gap, 560, 900, line, 136)
-    for case in _vectors():
-        items = case["items"]
-        for row in photo_layout.layout(items):
-            cells = [[c] if isinstance(c, int) else list(c) for c in row["cells"]]
-            places, width = photo_group.mosaic_places(cells, items, metrics)
-            cap = 900 if row["name"] == "wide" else 560
-            captions = [sum(1 for i in cell[:-1] if items[i].get("caption")) for cell in cells]
-            for cell, places_of_cell, own in zip(cells, places, captions):
-                tall = sum(place.picture_height for place in places_of_cell)
-                assert tall + own * line + (len(cell) - 1) * gap <= cap + max(captions) * line + rounding
-                if not any(captions):
-                    assert tall + (len(cell) - 1) * gap <= cap + rounding
-            assert width <= 2000 + rounding
-
-
-def test_narrow_rows_unroll_a_strip_one_picture_a_line():
-    """Below 600 pixels a strip is unrolled: each picture on a line of its
-    own; a run that still reads side by side is one row (SPEC 18, 4)."""
-    shapes = [SHAPES["landscape.png"], SHAPES["photo.png"], SHAPES["photo.png"],
-              SHAPES["landscape.png"], SHAPES["portrait.png"], SHAPES["portrait.png"]]
-    items = [photo_group.item(size, "", False) for size in shapes]
-    segments = photo_layout.phone_segments(photo_layout.layout(items), items)
-    assert {segment["mode"] for segment in segments} >= {"strip", "row"}
-    rows = photo_group.narrow_rows(items)
-    expected = []
-    for segment in segments:
-        if segment["mode"] == "row":
-            expected.append([[i] for i in segment["figures"]])
-        else:
-            expected.extend([[i]] for i in segment["figures"])
-    assert [row.cells for row in rows] == expected
-
-
-def test_a_narrow_picture_alone_is_at_most_as_wide_as_the_column_and_the_cap():
-    metrics = photo_group.Metrics(390, 8, 520, 900, 0.0, 136)
-    tall = photo_group.item(SHAPES["portrait.png"], "", False)
-    places, width = photo_group.narrow_places([[0]], "single", [tall], metrics)
-    place = places[0][0]
-    assert place.picture_height == pytest.approx(520)
-    assert place.picture_width == pytest.approx(520 * 809 / 1800)
-    captioned = photo_group.item(SHAPES["portrait.png"], "A caption", False)
-    places, _ = photo_group.narrow_places([[0]], "single", [captioned], metrics)
-    # The figure is at least 8em wide for its caption, the picture centred.
-    assert places[0][0].width == pytest.approx(max(520 * 809 / 1800, 136))
-    wide = photo_group.item(SHAPES["plan.png"], "", True)
-    places, width = photo_group.narrow_places([[0]], "single", [wide], metrics)
-    assert places[0][0].width == 390 and places[0][0].picture_width == 390
-
-
-# --------------------------------------------------------------------------- #
-# Shown: every picture whole, at every width                                   #
-# --------------------------------------------------------------------------- #
-
-ALL = ("portrait.png", "landscape.png", "square.png", "panorama.png", "photo.png",
-       "plan.png#wide", "landscape.png")
-
-
-@pytest.mark.parametrize("width", [1200, 900, 640, 420])
-def test_every_picture_shows_whole_at_every_width(app, width):
-    view = _shown(_markdown(*ALL, captions={"square.png": "A caption under the square"}), width)
-    shot = view.viewport().grab().toImage()
-    boxes = photo_group.picture_boxes(view.document())
-    assert [name for _p, name, _b in boxes] == list(ALL)
-    room = view.viewport().width()
-    for _position, name, box in boxes:
-        assert shows_whole(shot, box), (name, box, [c.name() for c in corner_colours(shot, box)])
-        w, h = SHAPES[photo_group.without_wide(name)]
-        assert box.width() / box.height() == pytest.approx(w / h, rel=0.01)
-        assert box.right() <= room
-    view.close()
-
-
-def test_a_cropped_picture_fails_the_check(app):
-    """The negative control: what object-fit: cover would show."""
-    view = _shown(_markdown("photo.png", "square.png"), 900)
-    doc = view.document()
-    whole = image_of("square.png")
-    cropped = whole.copy(whole.width() // 8, whole.height() // 8, whole.width() * 3 // 4,
-                         whole.height() * 3 // 4)
-    doc.addResource(IMAGE, QUrl("square.png"), cropped)
-    doc.markContentsDirty(0, doc.characterCount())
-    QApplication.processEvents()
-    view.viewport().update()
-    QApplication.processEvents()
-    shot = view.viewport().grab().toImage()
-    boxes = {name: box for _p, name, box in photo_group.picture_boxes(doc)}
-    assert shows_whole(shot, boxes["photo.png"])
-    assert not shows_whole(shot, boxes["square.png"])
-    view.close()
-
-
-def test_the_layout_follows_the_width_without_a_change_to_the_document(app):
-    view = _shown(_markdown("photo.png", "square.png", "landscape.png"), 1000)
-    doc = view.document()
-    revision = doc.revision()
-    before = [box.width() for _p, _n, box in photo_group.picture_boxes(doc)]
-    view.resize(500, 3000)
-    QApplication.processEvents()
-    after = [box.width() for _p, _n, box in photo_group.picture_boxes(doc)]
-    assert all(b < a for a, b in zip(before, after))
-    assert doc.revision() == revision
-    view.close()
-
-
-def test_rows_fill_the_width_and_stay_below_the_cap(app):
-    view = _shown(_markdown("photo.png", "photo.png", "square.png", "landscape.png"), 1100)
-    room = view.viewport().width()
-    for _p, _n, box in photo_group.picture_boxes(view.document()):
-        assert box.height() <= 560 + 0.5
-    rows = {}
-    for _p, _n, box in photo_group.picture_boxes(view.document()):
-        rows.setdefault(round(box.top()), []).append(box)
-    for boxes in rows.values():
-        if len(boxes) > 1:
-            left = min(b.left() for b in boxes)
-            right = max(b.right() for b in boxes)
-            assert right - left <= room
-    view.close()
-
-
-def test_a_row_takes_at_most_its_share_of_the_screens_height(app):
-    """As on a reader's screen: min(560px, 72svh), #wide min(900px, 85svh)."""
-    view = _shown(_markdown("portrait.png", "portrait.png", "plan.png#wide"), 1400)
-    doc = view.document()
-    tall = {name: box.height() for _p, name, box in photo_group.picture_boxes(doc)}
-    # A whole number of pixels wide: a portrait is up to 1/ratio pixels lower.
-    assert tall["portrait.png"] == pytest.approx(560, abs=1800 / 809)
-    photo_group.set_screen_height(doc, 500)
-    QApplication.processEvents()
-    tall = {name: box.height() for _p, name, box in photo_group.picture_boxes(doc)}
-    assert tall["portrait.png"] <= 0.72 * 500 + 0.5
-    assert tall["plan.png#wide"] <= 0.85 * 500 + 0.5
-    view.close()
-
-
-def test_below_600_pixels_a_read_only_view_unrolls_a_strip(app):
-    strip = ("landscape.png", "photo.png", "photo.png", "landscape.png")
-    view = _shown(_markdown(*strip), 400, narrow=True)
-    boxes = [box for _p, _n, box in photo_group.picture_boxes(view.document())]
-    tops = [round(box.top()) for box in boxes]
-    assert len(set(tops)) == len(boxes)          # one picture a line
-    shot = view.viewport().grab().toImage()
-    for box in boxes:
-        assert shows_whole(shot, box)
-        assert box.width() <= view.viewport().width()
-    view.close()
+def test_what_an_edit_left_beside_a_groups_pictures_is_still_written(app):
+    """Text that got between the pictures of a group (before the editor
+    put it right) is written as a paragraph of its own, and every picture
+    with its caption: a writer loses nothing."""
+    doc = _read(_markdown("photo.png", "square.png", captions={"square.png": "Two"}))
+    cursor = QTextCursor(doc)
+    cursor.setPosition(photo_group.groups_in(doc)[0].start + 1)
+    cursor.insertText("typed")
+    assert document_to_markdown(doc, _image_as_read) == (
+        "![photo.png](photo.png)\n\ntyped\n\n![square.png](square.png)\n\n*Two*\n")
 
 
 # --------------------------------------------------------------------------- #
@@ -438,12 +268,11 @@ def _cpu(work) -> float:
     return time.process_time() - start
 
 
-def test_a_group_of_500_pictures_is_not_searched(app):
-    """Past the engine's limit every picture gets a row of its own."""
+def test_a_group_of_500_pictures_is_one_paragraph_and_written_whole(app):
     names = [list(SHAPES)[n % 5] for n in range(500)]
     doc = _read(_markdown(*names))
-    assert len(_group_tables(doc)) == 500
-    assert document_to_markdown(photo_group.unfolded(doc), _image_as_read).count("![") == 500
+    assert _paragraphs(doc) == ["G500"]
+    assert document_to_markdown(doc, _image_as_read).count("![") == 500
 
 
 def test_folding_grows_with_the_number_of_groups_not_faster():
@@ -459,83 +288,3 @@ def test_folding_grows_with_the_number_of_groups_not_faster():
 
     small, large = fold(40), fold(320)
     assert large < small * 8 * 2.5
-
-
-def test_the_engine_lays_a_group_of_twelve_out_in_under_2_ms_of_cpu():
-    items = [photo_group.item(list(SHAPES.values())[n % 6], "", False) for n in range(12)]
-    rounds = 50
-    spent = _cpu(lambda: [photo_layout.layout(items) for _ in range(rounds)])
-    assert spent / rounds < 0.002
-
-
-def test_a_caption_wider_than_its_picture_wraps_under_it(app):
-    """No picture is drawn over another: Qt gives a column of words its
-    whole width, taken from the pictures beside it, unless a picture's
-    line may not break (_write_unit)."""
-    markdown = ("![a](landscape.png)\n\n![b](portrait.png)\n\n"
-                "*A caption far wider than the narrow portrait above it*\n")
-    view = _shown(markdown, 700)
-    doc = view.document()
-    boxes = {name: box for _p, name, box in photo_group.picture_boxes(doc)}
-    assert not boxes["landscape.png"].intersects(boxes["portrait.png"])
-    caption = doc.find("A caption far wider").block()
-    rect = doc.documentLayout().blockBoundingRect(caption)
-    assert rect.left() >= boxes["landscape.png"].right()
-    assert rect.right() <= view.viewport().width()
-    shot = view.viewport().grab().toImage()
-    assert all(shows_whole(shot, box) for box in boxes.values())
-    view.close()
-
-
-@pytest.mark.parametrize("caption", ["Unbreakable" * 40,
-                                     "שלום ​‏‮ reversed? ⁦x"])
-def test_a_long_or_right_to_left_caption_stays_under_its_picture(app, caption):
-    view = _shown(f"![a](photo.png)\n\n*{caption}*\n\n![b](square.png)\n\n![c](portrait.png)\n",
-                  760)
-    doc = view.document()
-    boxes = [box for _p, _n, box in photo_group.picture_boxes(doc)]
-    assert len(boxes) == 3
-    for one, other in itertools.combinations(boxes, 2):
-        assert not one.intersects(other)
-    width = view.viewport().width()
-    assert all(box.right() <= width + 0.5 for box in boxes)
-    block = doc.find(caption[:8]).block()
-    rect = doc.documentLayout().blockBoundingRect(block)
-    # In its picture's column: from its left edge, short of the next.
-    assert rect.left() == pytest.approx(boxes[0].left(), abs=0.5)
-    assert rect.right() <= min(box.left() for box in boxes[1:] if box.left() > boxes[0].left())
-    assert not any(rect.intersects(box) for box in boxes)
-    shot = view.viewport().grab().toImage()
-    assert all(shows_whole(shot, box) for box in boxes)
-    view.close()
-
-
-@pytest.mark.parametrize("shape", [(3300, 100), (100, 3300)])
-def test_a_picture_past_the_engines_limits_is_drawn_whole_not_stretched(app, shape):
-    """The engine lays a picture of a shape past its limits out at 3:2
-    (photo_layout.picture_size); it is drawn inside at its own shape."""
-    blue = QColor("#0090FF")
-    odd = QImage(*shape, QImage.Format.Format_RGB32)
-    odd.fill(blue)
-    view = QTextEdit()
-    view.resize(760, 3000)
-    doc = view.document()
-    photo_group.install(doc, photo_group.resource_sizes(doc))
-    doc.setMarkdown("![a](odd.png)\n\n![b](photo.png)\n")
-    doc.addResource(IMAGE, QUrl("odd.png"), odd)
-    doc.addResource(IMAGE, QUrl("photo.png"), image_of("photo.png"))
-    photo_group.fold(doc)
-    view.show()
-    QApplication.processEvents()
-    shot = view.viewport().grab().toImage()
-    box = next(box for _p, name, box in photo_group.picture_boxes(doc) if name == "odd.png")
-    assert box.width() / box.height() == pytest.approx(1.5, rel=0.02)
-    ratio = shot.devicePixelRatio() or 1.0
-    found = [(x, y) for y in range(int(box.top()), int(box.bottom()) + 1)
-             for x in range(int(box.left()), int(box.right()) + 1)
-             if QColor(shot.pixel(int(x * ratio), int(y * ratio))) == blue]
-    xs = [x for x, _y in found]
-    ys = [y for _x, y in found]
-    drawn = (max(xs) - min(xs) + 1) / (max(ys) - min(ys) + 1)
-    assert drawn == pytest.approx(shape[0] / shape[1], rel=0.15)
-    view.close()

@@ -40,9 +40,8 @@ from PySide6.QtWidgets import QApplication
 import alerts
 import image_safety
 import main_window as main_window_module
-from doc_walk import (
-    iter_block_runs, iter_blocks, iter_image_names, serialize_plain_with_images,
-)
+from doc_walk import iter_block_runs, iter_blocks, iter_image_names
+from plain_writer import serialize_plain_with_images
 from editor import HtmlEditor
 from export_html import document_to_html  # noqa: E402
 from markdown_writer import document_to_markdown

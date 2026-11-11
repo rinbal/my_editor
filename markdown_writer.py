@@ -67,6 +67,7 @@ from doc_walk import (
     BULLET_MARKER,
     LINE_SEPARATOR,
     OBJECT_REPLACEMENT,
+    SOFT_BREAK_PROPERTY,
     bullet_depth,
     iter_block_runs,
     iter_blocks,
@@ -100,16 +101,9 @@ PASTE_FEATURES = QTextDocument.MarkdownFeature(
 MARKDOWN = "markdown"
 NOTE = "note"
 
-# A soft line break: lines of one paragraph that follow each other in the
-# file ("hard-wrapped" prose, a picture on the line under its words). The
-# editor holds it as a line separator whose character format carries this
-# property, shows it as a new line, and writes it back as the plain line
-# end it was, so a note keeps its line layout. A line break typed here
-# (Shift+Return) has no such property and is written as Markdown's hard
-# break. (editor.HtmlEditor keeps the property off what is typed after one.)
-SOFT_BREAK_PROPERTY = QTextFormat.Property.UserProperty + 0x5B1
-# How a soft break travels through the writer, between reading the
-# document and writing the lines (a character of Unicode's private area).
+# How a soft line break (doc_walk.SOFT_BREAK_PROPERTY) travels through the
+# writer, between reading the document and writing the lines (a character
+# of Unicode's private area).
 _SOFT = "\ue0b1"
 # What marks a soft break while Qt reads the Markdown: a word joiner at the
 # end of a line made a hard break, which becomes the soft break once read.
@@ -247,9 +241,12 @@ def _block_runs(block):
 
 
 def _paragraph_block(block, image_target) -> _Block:
-    fmt = block.blockFormat()
-    runs = _block_runs(block)
-    text = block.text()
+    return _paragraph_of(block.blockFormat(), _block_runs(block), block.text(), image_target)
+
+
+def _paragraph_of(fmt, runs, text: str, image_target) -> _Block:
+    """A paragraph in the format ``fmt`` holding ``runs`` (``text`` being
+    their text), as the block it is written as."""
     spaced = fmt.topMargin() > 0 or fmt.bottomMargin() > 0
     spaces, is_bullet = parse_bullet_line(text)
     if is_bullet:
@@ -277,6 +274,46 @@ def _paragraph_block(block, image_target) -> _Block:
     if isinstance(quote, int) and quote > 0:
         return _Block("quote", spans, level=quote, spaced=spaced)
     return _Block("paragraph", spans, spaced=spaced, indent=indent)
+
+
+def _unit_paragraphs(units, fmt) -> List[list]:
+    """The paragraphs ``units`` were read from, each as its (text, format)
+    runs: a picture's paragraph, its caption on it or in the next; pictures
+    that were one paragraph, one again (photo_group.write_paragraphs writes
+    the same into a document)."""
+    paragraphs: List[list] = []
+    for unit in units:
+        if unit.join is not None and paragraphs:
+            paragraphs[-1].extend(photo_group.join_runs(unit.join))
+        else:
+            paragraphs.append([])
+        paragraphs[-1].append((OBJECT_REPLACEMENT, unit.picture_format()))
+        if not unit.has_caption:
+            continue
+        if unit.caption_join is not None:
+            paragraphs[-1].extend(photo_group.join_runs(unit.caption_join))
+        else:
+            paragraphs.append([])
+        paragraphs[-1].extend(unit.caption_runs())
+    return paragraphs
+
+
+def _group_blocks(block, segments, image_target) -> List[_Block]:
+    """A paragraph that holds units (a photo group's) as the paragraphs it
+    was read from; anything else an edit left beside them, as paragraphs
+    of its own between them."""
+    fmt = QTextBlockFormat(block.blockFormat())
+    fmt.clearProperty(photo_group.GROUP)
+    blocks = []
+    for _position, segment in segments:
+        if isinstance(segment[0], photo_group.Unit):
+            paragraphs = _unit_paragraphs(segment, fmt)
+        else:
+            paragraphs = [[(text, piece) for _at, text, piece in segment]]
+        for runs in paragraphs:
+            blocks.append(_paragraph_of(fmt, runs, "".join(text for text, _f in runs),
+                                        image_target))
+    return blocks
 
 
 def _list_block(block, text_list, image_target) -> _Block:
@@ -321,45 +358,26 @@ def _table_block(table: QTextTable, image_target) -> _Block:
     return _Block("table", rows=rows, spaced=True)
 
 
-def _blocks_of_frame(doc, frame, image_target) -> List[_Block]:
+def _blocks_of_frame(frame, image_target) -> List[_Block]:
     blocks: List[_Block] = []
-    # A photo group is written as the paragraphs it was read from: its
-    # pictures, each with its caption (photo_group). Its tables are one
-    # after another, with the empty paragraphs Qt keeps between them.
-    group: List[photo_group.Unit] = []
-    number = None
-
-    def flush() -> None:
-        if group:
-            paragraphs = photo_group.paragraphs_document(group)
-            blocks.extend(_blocks_of_frame(paragraphs, paragraphs.rootFrame(), image_target))
-            group.clear()
-
     it = frame.begin()
     while not it.atEnd():
         child = it.currentFrame()
         block = it.currentBlock()
-        if photo_group.is_group_table(child):
-            found = child.format().property(photo_group.GROUP)
-            if found != number:
-                flush()
-            number = found
-            group.extend(photo_group.table_units(doc, child))
-        elif child is None and block.isValid() and photo_group.is_structure(block) \
-                and block.length() == 1:
-            pass
-        else:
-            flush()
-            number = None
-            if child is not None:
-                if isinstance(child, QTextTable):
-                    blocks.append(_table_block(child, image_target))
-                else:
-                    blocks.extend(_blocks_of_frame(doc, child, image_target))
-            elif block.isValid():
+        if child is not None:
+            if isinstance(child, QTextTable):
+                blocks.append(_table_block(child, image_target))
+            else:
+                blocks.extend(_blocks_of_frame(child, image_target))
+        elif block.isValid():
+            # A photo group is written as the paragraphs it was read from:
+            # its pictures, each with its caption (photo_group).
+            segments = photo_group.block_segments(block)
+            if segments is not None:
+                blocks.extend(_group_blocks(block, segments, image_target))
+            else:
                 blocks.append(_one_block(block, image_target))
         it += 1
-    flush()
     return _joined_code(blocks)
 
 
@@ -405,7 +423,7 @@ def _joined_code(blocks: List[_Block]) -> List[_Block]:
 
 def document_blocks(doc, image_target: Optional[ImageTarget] = None) -> List[_Block]:
     """The document as the blocks both writers share. Exposed for tests."""
-    return _blocks_of_frame(doc, doc.rootFrame(), image_target)
+    return _blocks_of_frame(doc.rootFrame(), image_target)
 
 
 # --------------------------------------------------------------------------- #

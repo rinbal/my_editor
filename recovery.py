@@ -320,7 +320,8 @@ def _restore_older_markdown(doc, markdown: str) -> None:
         return
     candidate = QTextDocument()
     read_markdown(candidate, markdown)
-    if candidate.toPlainText() == doc.toPlainText():
+    # (The HTML holds a photo group as its paragraphs.)
+    if photo_group.unfolded(candidate).toPlainText() == doc.toPlainText():
         read_markdown(doc, markdown)
 
 

@@ -21,7 +21,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import (
     QPainter, QTextBlockFormat, QTextCursor, QTextCharFormat, QColor, QClipboard, QPen,
     QTextOption, QImage, QPixmap, QTextDocument, QTextDocumentFragment, QTextFormat,
-    QDesktopServices, QFont, QKeyEvent,
+    QDesktopServices, QFont, QKeyEvent, QKeySequence,
 )
 from PySide6.QtWidgets import QTextEdit, QMenu, QApplication, QToolTip, QWidget
 from constants import (
@@ -41,6 +41,8 @@ import media_badge
 import media_files
 import paste
 import photo_group
+import photo_group_edit
+import photo_group_view
 import rich_text
 import text_look
 from slash_menu import SlashMenu
@@ -162,6 +164,18 @@ def _open_paragraph_above(cursor: QTextCursor) -> None:
     cursor.movePosition(QTextCursor.MoveOperation.PreviousBlock)
     cursor.setBlockFormat(QTextBlockFormat())
     cursor.setBlockCharFormat(QTextCharFormat())
+
+
+# The width of the ring around the picture of a photo group the caret is at.
+_PICTURE_RING = 3.0
+
+# The keys Qt's text field deletes with by itself (on a Mac the Emacs keys
+# among them: Control-D, Control-H, Control-K).
+_QT_DELETING_KEYS = (
+    QKeySequence.StandardKey.Delete, QKeySequence.StandardKey.Backspace,
+    QKeySequence.StandardKey.DeleteEndOfLine, QKeySequence.StandardKey.DeleteEndOfWord,
+    QKeySequence.StandardKey.DeleteStartOfWord, QKeySequence.StandardKey.DeleteCompleteLine,
+)
 
 
 # The text cursors Settings offers, as the setting stores them: Qt's own
@@ -310,11 +324,11 @@ class HtmlEditor(QTextEdit):
         doc.setDocumentMargin(text_look.CODE_PAD_X + 4)
         doc.setUndoRedoEnabled(True)
         doc.setModified(False)
-        # Photo groups (photo_group): their pictures sized as readers size
-        # them, from the pictures this view loads (loadResource), at every
-        # width and height of the window, with nothing in the document
-        # changed.
-        photo_group.install(doc, photo_group.resource_sizes(doc))
+        # Photo groups (photo_group_view): their pictures sized as readers
+        # size them, from the pictures this view loads (loadResource), at
+        # every width and height of the window, with nothing in the
+        # document changed.
+        photo_group_view.install(doc, photo_group_view.resource_sizes(doc))
         # Whether Quick Look shows a picture of this document (the window
         # answers): Space and Escape then put it away.
         self._picture_look_open = lambda: False
@@ -353,6 +367,9 @@ class HtmlEditor(QTextEdit):
         # a table cell's place (announce.py).
         self._spoken_place = None
         self.cursorPositionChanged.connect(self._announce_place)
+        # The ring around the picture of a photo group the caret is at.
+        self._picture_ring = None
+        self.cursorPositionChanged.connect(self._renew_picture_ring)
 
         # The text cursor chosen in Settings (set_caret_style): Qt's own
         # insertion point at a width, or a block drawn here.
@@ -425,6 +442,10 @@ class HtmlEditor(QTextEdit):
             cursor.endEditBlock()
             self._joined_at = None
             doc.contentsChange.disconnect(changed)
+            # A photo group the run changed is whole again within its step
+            # (photo_group_edit); only a deletion lets pictures that became
+            # neighbours join, never words being typed.
+            photo_group_edit.settle(doc, changes, cursor, join=kind != TYPED)
             if changes:
                 self._run = _Run(kind, cursor.position(), doc.availableUndoSteps(),
                                  time.monotonic(), before)
@@ -450,12 +471,40 @@ class HtmlEditor(QTextEdit):
         self.end_typing_run()
         before = self.document().availableUndoSteps()
         whole = QTextCursor(self.document())
-        whole.beginEditBlock()
+        try:
+            with self._groups_kept():
+                whole.beginEditBlock()
+                try:
+                    yield
+                finally:
+                    whole.endEditBlock()
+        finally:
+            self._name_step(before, name)
+
+    @contextmanager
+    def _groups_kept(self):
+        """What an edit block inside this changes leaves every photo group
+        whole (photo_group_edit.settle), in the block's own step of Undo.
+        A change of format alone (the same characters, in italic now)
+        joins no pictures."""
+        doc = self.document()
+        changes = []
+
+        def changed(*where) -> None:
+            changes.append(where)
+
+        # The document says what changed when an edit block ends.
+        doc.contentsChange.connect(changed)
         try:
             yield
         finally:
-            whole.endEditBlock()
-            self._name_step(before, name)
+            doc.contentsChange.disconnect(changed)
+            caret = self.textCursor()
+            if photo_group_edit.settle(
+                    doc, changes, caret,
+                    join=any(removed != added for _at, removed, added in changes)) \
+                    and caret.position() != self.textCursor().position():
+                self.setTextCursor(caret)
 
     def _name_step(self, before: int, name: str) -> None:
         """Call the step made since Qt's count of changes was ``before``
@@ -551,7 +600,7 @@ class HtmlEditor(QTextEdit):
             image = QImage(*_PLACEHOLDER_SIZE, QImage.Format_RGB32)
             image.fill(QColor(_PLACEHOLDER_COLOR))
             # Its shape is not the picture's: a group lays it out at 3:2.
-            self._asset_placeholder = photo_group.mark_placeholder(image)
+            self._asset_placeholder = photo_group_view.mark_placeholder(image)
         return self._asset_placeholder
 
     def loadResource(self, type_, url):
@@ -637,8 +686,8 @@ class HtmlEditor(QTextEdit):
                 return
         self.document().addResource(QTextDocument.ImageResource, QUrl(name),
                                     self.fitted_picture(image))
-        # A group lays its pictures out again by the size now known.
-        photo_group.relayout(self.document())
+        # The groups that show it are laid out again by the size now known.
+        photo_group_view.picture_arrived(self.document(), name)
 
     def set_picture_look_check(self, is_open) -> None:
         """``is_open()`` says whether Quick Look shows a picture of this
@@ -936,8 +985,8 @@ class HtmlEditor(QTextEdit):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         # A group's rows are never taller than their share of the window,
-        # as on a reader's screen (photo_group).
-        photo_group.set_screen_height(self.document(), self.viewport().height())
+        # as on a reader's screen (photo_group_view).
+        photo_group_view.set_screen_height(self.document(), self.viewport().height())
         if self._paper_mode:
             self._update_paper_margins()
         if self._room_for_pictures() != self._picture_room:
@@ -1133,7 +1182,8 @@ class HtmlEditor(QTextEdit):
         # it ourselves. This is what lets the guides sit behind the text.
         painter.fillRect(vp.rect(), self._surface_color())
 
-        if (self._highlight_line and self.hasFocus()
+        ring = self._group_picture_ring()
+        if (self._highlight_line and self.hasFocus() and ring is None
                 and not self.textCursor().hasSelection()):
             line_rect = self.cursorRect()
             band = QRect(0, line_rect.top(), vp.width(), line_rect.height())
@@ -1151,6 +1201,15 @@ class HtmlEditor(QTextEdit):
 
         p2 = QPainter(vp)
         try:
+            if ring is not None:
+                # Which picture of a photo group the caret is at (or which
+                # one is selected): a ring in the accent colour, as around
+                # a selected picture in Pages.
+                p2.setRenderHint(QPainter.RenderHint.Antialiasing)
+                p2.setPen(QPen(self.palette().color(self.palette().ColorRole.Highlight),
+                               _PICTURE_RING))
+                p2.setBrush(Qt.BrushStyle.NoBrush)
+                p2.drawRoundedRect(ring, 3, 3)
             media_badge.paint(self, p2, self._media_badge)
             # Block cursor on top of the text, in code and plain text.
             if self.block_caret_shown():
@@ -1158,6 +1217,32 @@ class HtmlEditor(QTextEdit):
                 p2.fillRect(self._block_cursor_rect(), color)
         finally:
             p2.end()
+
+    def _group_picture_ring(self):
+        """Where the ring around a photo group's picture goes (the
+        viewport's coordinates): around the picture the caret is at, or
+        the one selected, while the editor has the focus; else None."""
+        if not self.hasFocus():
+            return None
+        picture = photo_group_view.picture_at_cursor(self.textCursor())
+        box = (photo_group_view.picture_box(self.document(), picture[0])
+               if picture is not None else None)
+        if box is None:
+            return None
+        half = _PICTURE_RING / 2
+        return box.translated(-self.horizontalScrollBar().value(),
+                              -self.verticalScrollBar().value()).adjusted(half, half, -half, -half)
+
+    def _renew_picture_ring(self) -> None:
+        """Have the ring painted where it is now, and wiped where it was."""
+        ring = self._group_picture_ring()
+        if ring == self._picture_ring:
+            return
+        for rect in (self._picture_ring, ring):
+            if rect is not None:
+                self.viewport().update(rect.adjusted(-_PICTURE_RING, -_PICTURE_RING,
+                                                     _PICTURE_RING, _PICTURE_RING).toAlignedRect())
+        self._picture_ring = ring
 
     def _paint_guides(self, painter):
         vp = self.viewport()
@@ -1251,6 +1336,7 @@ class HtmlEditor(QTextEdit):
         self._cursor_visible = True
         self._blink_timer.start()
         self.viewport().update(self._block_cursor_rect())
+        self._renew_picture_ring()
 
     def focusOutEvent(self, event):
         super().focusOutEvent(event)
@@ -1261,6 +1347,7 @@ class HtmlEditor(QTextEdit):
         self._cursor_visible = False
         self._blink_timer.stop()
         self.viewport().update(self._block_cursor_rect())
+        self._renew_picture_ring()
 
     def set_markdown_shortcuts_check(self, check) -> None:
         """Install ``check()``: whether Markdown Shortcuts are on."""
@@ -1307,6 +1394,12 @@ class HtmlEditor(QTextEdit):
         # after it, as typed letters do (composing starts there too).
         if event.commitString() or event.preeditString():
             self._step_out_of_mention()
+            cursor = self.textCursor()
+            if not cursor.hasSelection() and photo_group.is_group_block(cursor.block()):
+                # Among the pictures of a photo group: composed after it,
+                # as typed letters go (_keep_groups_whole).
+                with self._typing(TYPED, cursor):
+                    self._open_paragraph_beside_group(cursor)
         if event.commitString():
             # What they compose is typed: in the run of typing going on.
             with self._typing(TYPED):
@@ -1331,20 +1424,21 @@ class HtmlEditor(QTextEdit):
         """Tell a screen reader what the caret has entered that its words
         do not say: a checklist item ticked or not, a table cell's row,
         column and header, a photo group's picture (its place in the group
-        and its description, photo_group.picture_words_at). Once per item,
+        and its description, photo_group_view.picture_words). Once per item,
         cell or picture."""
         if not self._holds_structure():
             return
         cursor = self.textCursor()
         block = cursor.block()
-        picture = photo_group.picture_words_at(self.document(), cursor.position())
+        at = photo_group_view.picture_at_cursor(cursor)
+        picture = photo_group_view.picture_words(at)
         if picture is not None:
-            place = ("picture", block.position(), picture)
+            place = ("picture", at[0], picture)
             if place != self._spoken_place:
                 self._spoken_place = place
                 announce.announce(self, picture)
             return
-        table = rich_text.table_at(cursor)
+        table = cursor.currentTable()
         if table is not None:
             cell = table.cellAt(cursor)
             place = ("cell", table.firstPosition(), cell.row(), cell.column())
@@ -1676,6 +1770,73 @@ class HtmlEditor(QTextEdit):
             return True
         return False
 
+    def _keep_groups_whole(self, e) -> bool:
+        """A photo group holds pictures and nothing else. What is typed
+        with the caret among its pictures (or Return there) goes into a
+        new paragraph after the group, before it with the caret before its
+        first picture, as one run of typing with the words. Backspace
+        from the words below a group, or Delete from the words above it,
+        goes to the group's edge and takes nothing away: the next one
+        takes a picture. (Backspace and Delete among the pictures are
+        Qt's own: one picture each.) True when the key was answered here."""
+        cursor = self.textCursor()
+        block = cursor.block()
+        in_group = photo_group.is_group_block(block)
+        plain = e.modifiers() in (Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.KeypadModifier,
+                                  Qt.KeyboardModifier.ShiftModifier)
+        returns = e.key() in (Qt.Key_Return, Qt.Key_Enter)
+        typing = bool(e.text()) and e.text().isprintable() and not e.modifiers() & (
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier)
+        if in_group and (returns or typing):
+            if cursor.hasSelection() and self.document().findBlock(cursor.anchor()) != block:
+                return False            # a selection that reaches out of the group
+            with self._typing(TYPED, cursor):
+                if cursor.hasSelection():
+                    cursor.removeSelectedText()
+                self._open_paragraph_beside_group(cursor, stay=returns)
+            return returns              # a character is typed there
+        if in_group and e.key() in (Qt.Key_Tab, Qt.Key_Backtab):
+            return True                 # nothing to indent among pictures
+        if cursor.hasSelection() or not plain:
+            return False
+        # From a paragraph with something in it: to the edge, nothing lost.
+        if e.key() == Qt.Key_Backspace and cursor.atBlockStart():
+            before = block.previous()
+            if before.isValid() and (before.length() > 1 if in_group else (
+                    block.length() > 1 and photo_group.is_group_block(before))):
+                cursor.setPosition(before.position() + before.length() - 1)
+                self.setTextCursor(cursor)
+                return True
+        if e.key() == Qt.Key_Delete and cursor.atBlockEnd():
+            after = block.next()
+            if after.isValid() and (after.length() > 1 if in_group else (
+                    block.length() > 1 and photo_group.is_group_block(after))):
+                cursor.setPosition(after.position())
+                self.setTextCursor(cursor)
+                return True
+        return False
+
+    @staticmethod
+    def _open_paragraph_beside_group(cursor: QTextCursor, *, stay: bool = False) -> None:
+        """A clean paragraph after the photo group ``cursor`` is in, the
+        cursor in it; with the cursor before the group's first picture,
+        above the group (and with ``stay``, Return there, the cursor
+        stays before that picture)."""
+        block = cursor.block()
+        own = photo_group.own_format(block)
+        if block.length() == 1:
+            cursor.setBlockFormat(own)             # its pictures all gone
+        elif cursor.atBlockStart():
+            cursor.insertBlock(block.blockFormat(), block.charFormat())
+            cursor.movePosition(QTextCursor.MoveOperation.PreviousBlock)
+            cursor.setBlockFormat(own)
+            cursor.setBlockCharFormat(QTextCharFormat())
+            if stay:
+                cursor.movePosition(QTextCursor.MoveOperation.NextBlock)
+        else:
+            cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+            cursor.insertBlock(own, QTextCharFormat())
+
     def _remove_media_block(self, block, kind: str) -> None:
         """Take the paragraph of audio or video ``block`` away, in the run
         of Backspace (``kind`` BACKWARD) or of Delete (FORWARD)."""
@@ -1901,7 +2062,7 @@ class HtmlEditor(QTextEdit):
         """The group picture under ``point`` (the viewport's), or None."""
         at = QPointF(point) + QPointF(self.horizontalScrollBar().value(),
                                       self.verticalScrollBar().value())
-        return photo_group.picture_at(self.document(), at)
+        return photo_group_view.picture_at(self.document(), at)
 
     def mousePressEvent(self, event):
         self._pressed_at = event.position().toPoint()
@@ -1936,6 +2097,15 @@ class HtmlEditor(QTextEdit):
             hit = self._media_hit(point)
             if hit is not None:
                 self.media_clicked.emit(hit[0], hit[1], False)
+            picture = self._group_picture_hit(point)
+            if picture is not None and event.modifiers() == Qt.KeyboardModifier.NoModifier:
+                # A picture of a photo group clicked is selected, as a
+                # picture is in Pages: Space then shows it, Backspace
+                # takes it away.
+                cursor = self.textCursor()
+                cursor.setPosition(picture[0])
+                cursor.setPosition(picture[0] + 1, QTextCursor.MoveMode.KeepAnchor)
+                self.setTextCursor(cursor)
 
     def jump_to_footnote(self, at: QTextCursor) -> bool:
         """From a footnote's mark to the words of its note, or from a
@@ -2135,13 +2305,15 @@ class HtmlEditor(QTextEdit):
             self._refresh_slash()
 
     def _key_press(self, e):
-        # Space with a picture of a photo group selected shows it in Quick
-        # Look, or puts Quick Look away, as in the Finder; so does Escape.
+        # Space with the caret at a picture of a photo group (or the
+        # picture selected) shows it in Quick Look, or puts Quick Look
+        # away, as in the Finder; so does Escape.
         if e.modifiers() in (Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.KeypadModifier):
             if e.key() == Qt.Key.Key_Space:
-                name = photo_group.group_picture_at_cursor(self.textCursor())
-                if name is not None:
-                    self.picture_look_requested.emit("" if self._picture_look_open() else name)
+                picture = photo_group_view.picture_at_cursor(self.textCursor())
+                if picture is not None:
+                    self.picture_look_requested.emit(
+                        "" if self._picture_look_open() else picture[3].name)
                     return
             if e.key() == Qt.Key.Key_Escape and self._picture_look_open():
                 self.picture_look_requested.emit("")
@@ -2166,17 +2338,19 @@ class HtmlEditor(QTextEdit):
             cursor = self.textCursor()
             backward = e.key() == Qt.Key_Backspace
             if cursor.hasSelection() or (cursor.atBlockStart() if backward
-                                         else cursor.atBlockEnd()):
-                # With words selected, or at a paragraph's edge, it does
-                # what Backspace or Delete does there (out of a list, a
-                # divider taken away, two paragraphs joined).
+                                         else cursor.atBlockEnd()) \
+                    or photo_group.is_group_block(cursor.block()):
+                # With words selected, at a paragraph's edge or among the
+                # pictures of a photo group, it does what Backspace or
+                # Delete does there (out of a list, a divider taken away,
+                # two paragraphs joined, one picture taken away).
                 e = QKeyEvent(e.type(), e.key(), Qt.KeyboardModifier.NoModifier, e.text())
             else:
                 self._delete_reach(BACKWARD if backward else FORWARD, reach)
                 self.ensureCursorVisible()
                 return
 
-        if self._keep_media_apart(e):
+        if self._keep_media_apart(e) or self._keep_groups_whole(e):
             self.ensureCursorVisible()
             return
 
@@ -2337,9 +2511,21 @@ class HtmlEditor(QTextEdit):
             self._after_typed(e.text())
         else:
             # Qt's own keys: what one of them changes (Control-K on a Mac
-            # deletes to the end of the line) is a step of typing.
+            # deletes to the end of the line) is a step of typing. A key
+            # that deletes is handled in an edit block, so that a photo
+            # group it changed is put right in the same step; a key that
+            # moves the caret is not (Qt finds no line inside one).
             before = self.document().availableUndoSteps()
-            super().keyPressEvent(e)
+            if any(e.matches(key) for key in _QT_DELETING_KEYS):
+                whole = QTextCursor(self.document())
+                with self._groups_kept():
+                    whole.beginEditBlock()
+                    try:
+                        super().keyPressEvent(e)
+                    finally:
+                        whole.endEditBlock()
+            else:
+                super().keyPressEvent(e)
             if self.document().availableUndoSteps() != before:
                 self._name_step(before, N_("Typing"))
         self.ensureCursorVisible()
@@ -2413,7 +2599,7 @@ class HtmlEditor(QTextEdit):
         key = e.key()
         if rich_text.is_code_block(block) and self._holds_structure():
             return self._code_key(e, cursor, block)
-        if rich_text.table_at(cursor) is not None and self._holds_structure() \
+        if cursor.currentTable() is not None and self._holds_structure() \
                 and self._table_key(e, cursor):
             return True
         if key in (Qt.Key_Tab, Qt.Key_Backtab) and e.modifiers() in (
@@ -2761,7 +2947,10 @@ class HtmlEditor(QTextEdit):
             before = self.document().availableUndoSteps()
             self._mime_step = ""
             try:
-                super().dropEvent(event)
+                # What the drag took away is part of the step too (a
+                # picture dragged out of a photo group).
+                with self._groups_kept():
+                    super().dropEvent(event)
             finally:
                 self._mime_step = N_("Paste")
             self._name_step(before, N_("Drag"))

@@ -51,6 +51,7 @@ from PySide6.QtGui import (
 import export_pictures
 import media_files
 import photo_group
+import photo_group_view
 import user_dirs
 from atomic_file import read_json, write_json
 from fonts import monospace_font
@@ -155,7 +156,7 @@ def _placeholder_image(alt: str = "") -> QImage:
         painter.end()
     image.setDevicePixelRatio(_STAND_IN_SCALE)
     # Its shape is not the picture's: a photo group lays it out at 3:2.
-    return photo_group.mark_placeholder(image)
+    return photo_group_view.mark_placeholder(image)
 
 
 def _elided_lines(words: str, metrics: QFontMetricsF, width: float, lines: int) -> str:
@@ -276,7 +277,7 @@ def _cap_image_widths(doc, available_css_px: float, images: dict) -> None:
     """
     block = doc.begin()
     while block.isValid():
-        if block.blockFormat().hasProperty(photo_group.UNIT):
+        if photo_group.is_group_block(block):
             block = block.next()
             continue
         it = block.begin()
@@ -323,23 +324,26 @@ class PagedDocument:
     page_count: int
 
 
-def _keep_rows_on_pages(clone, content_h: float) -> None:
-    """A row of a photo group that would run over the end of a page, and
-    fits on one, starts the next page (as print CSS keeps a figure whole).
-    One row after the other: moving one moves the rest."""
+def _keep_groups_on_pages(clone, content_h: float) -> None:
+    """A photo group that would run over the end of a page, and fits on
+    one, starts the next page (as print CSS keeps a figure whole). One
+    group after the other: moving one moves the rest. A group taller than
+    a page breaks between two of its rows: each row is a line of its
+    paragraph, and Qt moves a line that would cross a page to the next
+    (photo_group_view), so no picture is cut."""
     layout = clone.documentLayout()
-    for frame in clone.rootFrame().childFrames():
-        if not photo_group.is_group_table(frame):
-            continue
-        box = layout.frameBoundingRect(frame)
-        if box.height() >= content_h or box.height() <= 0:
-            continue
-        first = int(box.top() // content_h)
-        last = int((box.bottom() - 0.5) // content_h)
-        if first != last:
-            fmt = frame.format()
-            fmt.setPageBreakPolicy(QTextFormat.PageBreakFlag.PageBreak_AlwaysBefore)
-            frame.setFormat(fmt)
+    block = clone.begin()
+    while block.isValid():
+        if photo_group.is_group_block(block):
+            box = layout.blockBoundingRect(block)
+            if 0 < box.height() < content_h:
+                first = int(box.top() // content_h)
+                last = int((box.bottom() - 0.5) // content_h)
+                if first != last:
+                    fmt = block.blockFormat()
+                    fmt.setPageBreakPolicy(QTextFormat.PageBreakFlag.PageBreak_AlwaysBefore)
+                    QTextCursor(block).setBlockFormat(fmt)
+        block = block.next()
 
 
 def paginate(doc, device, resolution: int, *, image_roots=(), asset_resolver=None,
@@ -352,8 +356,8 @@ def paginate(doc, device, resolution: int, *, image_roots=(), asset_resolver=Non
     tab closed). See the module docstring for why images are primed and
     fonts are measured against the device. A photo group is laid out as
     on a reader's screen the size of the page (on paper narrower than 600
-    CSS pixels as on a phone, its strips unrolled), and each of its rows
-    stays on one page.
+    CSS pixels as on a phone, its strips unrolled); it stays on one page
+    when it fits on one, and no page breaks through a picture.
     """
     paint = device.pageLayout().paintRectPixels(resolution)
     page_w = float(paint.width())
@@ -366,7 +370,7 @@ def paginate(doc, device, resolution: int, *, image_roots=(), asset_resolver=Non
                                  remote_pictures)
     groups = photo_group.has_groups(clone)
     if groups:
-        photo_group.install(clone, photo_group.table_sizes(images))
+        photo_group_view.install(clone, photo_group_view.sizes_from(images))
     # Layout must measure fonts against the device's dpi, exactly as
     # doc.print_() would.
     clone.documentLayout().setPaintDevice(device)
@@ -381,13 +385,12 @@ def paginate(doc, device, resolution: int, *, image_roots=(), asset_resolver=Non
     paint_width_pt = page_w * 72.0 / resolution
     _cap_image_widths(clone, paint_width_pt * 96.0 / 72.0, images)
 
-    if groups and paint_width_pt * 96.0 / 72.0 < photo_group.NARROW_BELOW:
-        photo_group.refold(clone, narrow=True)
+    if groups:
+        photo_group_view.set_screen_height(clone, content_h)
     clone.setTextWidth(page_w)
     clone.setPageSize(QSizeF(page_w, content_h))
     if groups:
-        photo_group.set_screen_height(clone, content_h)
-        _keep_rows_on_pages(clone, content_h)
+        _keep_groups_on_pages(clone, content_h)
     return PagedDocument(clone, page_w, content_h, footer_px, clone.pageCount())
 
 

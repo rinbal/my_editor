@@ -584,6 +584,7 @@ def test_a_preview_reads_a_soft_break_as_readers_do():
 # -- photo groups --------------------------------------------------------------------------
 
 import photo_group  # noqa: E402
+import photo_group_edit  # noqa: E402
 
 GROUP_CORPUS = [
     "![a](a.png)\n\n![b](b.png)\n",
@@ -661,6 +662,7 @@ def test_captions_stay_with_their_pictures_through_fold_and_unfold():
 
 def test_a_caption_changed_in_a_group_is_written_in_its_place():
     doc = _read_folded("![a](a.png)\n\n*Old words*\n\n![b](b.png)\n")
-    found = doc.find("Old words")
-    found.insertText("New words")
+    group = photo_group.groups_in(doc)[0]
+    photo_group_edit.set_unit(QTextCursor(doc), group.start,
+                              group.units[0].captioned("New words"))
     assert document_to_markdown(doc, _image_as_read) == "![a](a.png)\n\n*New words*\n\n![b](b.png)\n"
