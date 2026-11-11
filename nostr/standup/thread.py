@@ -221,13 +221,17 @@ def build_thread(items: Sequence[views.TimelineItem],
     checked; ``formers`` verify people who left. ``me`` always takes part."""
     who = dict(writer=writer, participants=tuple(participants), deciders=deciders,
                checks=checks, formers=formers)
+    # People who left count as the Redaktion's where what they were served
+    # proves it (RG-M4-a 7): their messages and split proposals stay.
+    proven = formers.proven() if formers is not None else frozenset()
     senders = dict(writer=writer, participants=(*who["participants"], me),
-                   members=None if members is None else frozenset(members))
+                   members=None if members is None else frozenset(members) | proven)
     opened = from_known_senders(opened, **senders)
     notes: Dict[int, str] = {}
     shown: List[Tuple[int, int, object]] = []          # (seq, time, what)
     named = _named_split(items, sid, deciders, checks, formers)
-    for bubble in conversation.fold(opened, writer=writer, redaktion=deciders or ()):
+    redaktion = (*(deciders or ()), *(formers.deciding() if formers is not None else ()))
+    for bubble in conversation.fold(opened, writer=writer, redaktion=redaktion):
         if bubble.structured is None:
             shown.append((bubble.seq, bubble.created_at, bubble))
         elif bubble.structured[0] == "revision-note":

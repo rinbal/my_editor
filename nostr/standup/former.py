@@ -29,7 +29,7 @@ revision's, which is then read with ``?revision=n``.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Set, Tuple
 
 from .. import events as nostr_events
 from . import formats
@@ -42,6 +42,8 @@ from .readers import read_list, read_object, read_text
 MAX_FORMERS = 8
 MAX_GRANTS = 64
 MAX_OWNER_KEY_EVENTS = 64
+# Later than every signature: the standing as of the newest proof.
+_LATEST = 2 ** 63
 _MAX_GRANT_BODY = 1_048_576
 ROLES = ("redaktion", "curator")
 # Actions a member may take, which name no epoch (contract 10); the
@@ -229,6 +231,18 @@ class Formers:
             self._checked[person] = proofs_of(former, self.address)
         return standing(former, person, epoch, at, address=self.address,
                         proofs=self._checked[person])
+
+    def proven(self) -> FrozenSet[str]:
+        """The people whose served grants or owner key events prove they
+        were members (at epoch 1 or later): their messages are shown as
+        the Redaktion's (RG-M4-a 7)."""
+        return frozenset(p for p in self._formers if self._standing(p, 1, _LATEST).member)
+
+    def deciding(self) -> FrozenSet[str]:
+        """Those of :meth:`proven` who may decide as of their newest proof
+        (the role goes by time): their structured notes, a split
+        proposal among them, are read as a decider's."""
+        return frozenset(p for p in self._formers if self._standing(p, 1, _LATEST).decides)
 
     def decides(self, person: str, name: str, body: Mapping[str, Any], *,
                 decisions: Iterable[str], at: Any) -> bool:

@@ -90,3 +90,29 @@ def test_a_member_who_left_verifies_taking_a_submission_but_never_a_report():
     assert not formers.decides(curator, "published", {}, decisions=rules.DECISIONS, at=at)
     assert not formers.decides(curator, "correction", {"epoch": 3}, decisions=rules.DECISIONS,
                                at=at)
+
+
+def test_what_someone_who_left_wrote_stays_in_the_conversation():
+    # RG-M4-a 7, RG-M4-b 5: an editor asks for changes and leaves. Their
+    # served Former proves they were of the Redaktion, so their message
+    # and their split proposal stay, though the member list lost them.
+    from nostr.standup import conversation as conv
+    from nostr.standup import thread as threads
+    formers = Formers(FM["publication"])
+    formers.join(parse_formers([FM["former"]["left"]]))
+    left, writer = FM["former"]["left"]["pubkey"], FM["stranger"]
+    room = FM["publication"].split(":")[1]
+    said = conv.message_rumor(room=room, submission_id=SID, text="Bitte kürzen.", sender=left,
+                              created_at=FM["acted_at"])
+    split = conv.structured_rumor(
+        room=room, submission_id=SID, kind="split-proposal", sender=left,
+        created_at=FM["acted_at"], content=conv.split_proposal_content(
+            "ef" * 32, [{"pubkey": writer, "weight": 100, "role": "writer"}]))
+    opened = [conv.Opened(rumor=r, sender=left, wrap_id=str(n), seq=n)
+              for n, r in enumerate((said, split), 1)]
+    shown = threads.build_thread((), opened, sid=SID, me=writer, writer=writer, deciders=(),
+                                 members=(), formers=formers)
+    assert [type(item).__name__ for item in shown if not isinstance(item, threads.Day)] == [
+        "Message", "SplitCard"]
+    assert threads.build_thread((), opened, sid=SID, me=writer, writer=writer, deciders=(),
+                                members=()) == []
