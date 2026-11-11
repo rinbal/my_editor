@@ -870,13 +870,16 @@ def test_the_escape_scan_reads_a_text_once_however_many_openers_it_holds(run):
     # Gate RG-PG2E-c 5 and RG-PG2E-d 3: each opener nothing closed was
     # followed to the end of the text, or of its address, and each code
     # span looked for the end of its paragraph: twice the text, four times
-    # the reading.
+    # the reading. Re-check 9b111af, 3: a link's title was looked for so
+    # too (by a pattern: 8 seconds for 50 KB of "](x").
     import markdown_scan
     reads = []
-    for count in (1000, 2000):
+    for size in (25_000, 50_000):
         _Counted.reads = 0
-        text = _Counted("\\* " + run * count)
+        text = _Counted("\\* " + run * (size // len(run)))
         markdown_scan.escapes(text)
         markdown_scan.pictures(text)
+        markdown_scan.titled_link(text)
+        markdown_scan.emphasized_code(text)
         reads.append(_Counted.reads)
     assert reads[1] < 2.5 * reads[0]

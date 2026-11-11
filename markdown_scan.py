@@ -238,6 +238,36 @@ def _bare_address_end(text: str, start: int, found: Optional[Found]) -> int:
 def destination_end(text: str, at: int, found: Optional[Found] = None) -> Optional[int]:
     """The ``)`` closing an inline link's destination and title, opened
     at ``at``, or None; ``found`` as for label_end."""
+    ended = _destination(text, at, found)
+    return None if ended is None else ended[0]
+
+
+def titled_link(markdown: str) -> bool:
+    """Whether an inline link or picture outside code has a title
+    ("[a](/u 'Titel')"), which Qt's reader drops."""
+    blocked = _Blocked(_code_ranges(markdown))
+    scanned = Found()
+    index = 0
+    while True:
+        nearest = _STARTS_ESCAPE.search(markdown, index)
+        if nearest is None:
+            return False
+        index = nearest.start()
+        end = blocked.end(index)
+        if end is not None:
+            index = end + 1
+        elif markdown.startswith("](", index):
+            ended = _destination(markdown, index + 1, scanned)
+            if ended is not None and ended[1]:
+                return True
+            index += 2
+        else:
+            skipped = skip_inline(markdown, index, scanned)
+            index = index + 1 if skipped is None else skipped
+
+
+def _destination(text: str, at: int, found: Optional[Found]) -> Optional[Tuple[int, bool]]:
+    """destination_end's ``)``, and whether a title stands before it."""
     index = at + 1
     length = len(text)
 
@@ -255,10 +285,11 @@ def destination_end(text: str, at: int, found: Optional[Found] = None) -> Option
     else:
         index = _bare_address_end(text, index, found)
     index = spaces(index)
-    if index < length and text[index] in "\"'(":
+    titled = index < length and text[index] in "\"'("
+    if titled:
         closer = ")" if text[index] == "(" else text[index]
         index = spaces(_closer_at(text, closer, index + 1, found) + 1)
-    return index if index < length and text[index] == ")" else None
+    return (index, titled) if index < length and text[index] == ")" else None
 
 
 def descriptions(markdown: str) -> List[Tuple[int, int]]:
