@@ -9320,6 +9320,8 @@ class MainWindow(QMainWindow):
         return default_title(self._publish_payload(ed, "markdown")[0], self._preview_name)
 
     def _on_document_changed_for_article(self, ed) -> None:
+        if ed is self.current_editor():
+            self._update_submission_pill(typing=True)
         panel = self._article_details_panel
         shown = (panel.isVisible() and panel.shows_article()
                  or self._article_headers.header_of(ed) is not None)
@@ -10371,10 +10373,12 @@ class MainWindow(QMainWindow):
         if host is not None:
             host.follow()
 
-    def _update_submission_pill(self) -> None:
+    def _update_submission_pill(self, *, typing: bool = False) -> None:
+        """The pill and the submission's detail follow the article in
+        front: at once, or once the typing pauses (RG-M3-b 1)."""
         host = getattr(self, "_submissions", None)
         if host is not None:
-            host.update_pill()
+            host.article_changed(typing=typing)
 
     def _keep_submitted_identifier(self, ed, d: str) -> None:
         """The work in ``ed`` went to a publication under ``d``: the tab
@@ -11770,6 +11774,7 @@ class MainWindow(QMainWindow):
         self._article_headers.update(ed)
         if ed is self.current_editor():
             self._fill_article_details_panel()
+            self._update_submission_pill()
 
     def _stash_defaults_for(
         self,

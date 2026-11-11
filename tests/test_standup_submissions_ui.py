@@ -502,10 +502,20 @@ def test_the_action_turns_into_handing_in_once_the_text_in_the_editor_differs(wi
     window.follow()
     detail = opened(window, entries["text"])
     assert detail.action.text() == "Revise in the Editor"
+    # Typed in: the detail follows once the typing pauses (RG-M3-b 1).
     tab.text = "# Ein Jahr\n\nText.\n\nUnd ein Absatz mehr."
-    detail.refresh()
+    window.host.article_changed(typing=True)
+    assert detail.action.text() == "Revise in the Editor"      # still typing
+    window.host._typing.timeout.emit()                          # the pause
     assert detail.sentence.text() == "Your changes are in the editor."
     assert detail.action.text() == "Hand In New Version …" and detail.action.isVisibleTo(detail)
+    # Another tab in front, then this one again: at once.
+    window.tab("anders")
+    window.host.article_changed()
+    assert window.pill.isHidden()
+    window.current = tab
+    window.host.article_changed()
+    assert not window.pill.isHidden()
 
 
 # -- lifetimes (lesson 19) ---------------------------------------------------------------

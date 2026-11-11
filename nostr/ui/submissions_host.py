@@ -14,6 +14,11 @@ handing in the next version, sending an unsent one again. Publishing
 after acceptance, confirming and taking a correction are a later
 phase's: each adds its handler to the table and nothing else.
 
+The pill and the detail follow the article in front (RG-M3-b 1): the
+window says :meth:`SubmissionsHost.article_changed` as it is typed in
+(drawn again :data:`FOLLOW_MS` after the last change) and when another
+tab comes forward or its details change (at once).
+
 Everything is the account's: when it is let go (sign-out, another
 account), the view empties, the pill and the notices go, the compare
 forgets its texts and a cover still being fetched is dropped (criterion
@@ -26,7 +31,7 @@ from dataclasses import dataclass, replace
 from typing import Callable, Dict, Optional
 
 import shiboken6
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, QTimer
 from PySide6.QtGui import QColor, QPixmap
 
 from i18n import N_, _
@@ -59,6 +64,7 @@ NEWS_WORDS = {
     "published": N_("“{title}” is published in {publication}."),
     "correction": N_("{publication} suggests a correction to “{title}”."),
 }
+FOLLOW_MS = 400
 OPEN_IT_FIRST = N_("Open the article in the editor first.")
 NOT_FOUND = N_("MyEditor can’t find this article. Open it in the editor, then send it again.")
 VERSION_NOT_LOADED = N_("The version you handed in couldn’t be loaded: try again in a moment.")
@@ -128,6 +134,10 @@ class SubmissionsHost(QObject):
         # with the account (each deletes itself once it is closed).
         self._dialog: Optional[CompareDialog] = None
         self._sheet: Optional[ReviseSheet] = None
+        self._typing = QTimer(self)
+        self._typing.setSingleShot(True)
+        self._typing.setInterval(FOLLOW_MS)
+        self._typing.timeout.connect(self._follow_article)
         view.set_handled(self.actions())
         view.set_edited(self.edited)
         view.action_requested.connect(self._on_action)
@@ -194,6 +204,23 @@ class SubmissionsHost(QObject):
             self._ports.request_logo(pubkey, picture)
         return publication_logo(name, pubkey, self._ports.avatar_of(pubkey) if pubkey else None,
                                 size)
+
+    def article_changed(self, *, typing: bool = False) -> None:
+        """The article in front changed: its text (``typing``: once the
+        typing pauses), its tab or its details (at once)."""
+        if typing:
+            self._typing.start()
+        else:
+            self._typing.stop()
+            self._follow_article()
+
+    def _follow_article(self) -> None:
+        """The pill, and the detail when it shows the article in front:
+        Neue Fassung abgeben appears once the text differs, and goes when
+        it is the same again."""
+        self.update_pill()
+        if self._following is not None and self.view.showing_detail():
+            self.view.detail.refresh()
 
     def update_pill(self) -> None:
         """The pill says the status of the article in the current tab,
