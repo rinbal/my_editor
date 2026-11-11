@@ -78,6 +78,11 @@ it = ed.document().findBlock(len("Look: ")).begin()
 while not it.fragment().charFormat().isImageFormat():
     it += 1
 r["alt"] = it.fragment().charFormat().stringProperty(QTextFormat.Property.ImageAltText)
+# Described by the name its asset keeps, as an earlier version did: none.
+named = it.fragment().charFormat().toImageFormat()
+named.setProperty(QTextFormat.Property.ImageAltText, "holiday")
+unit = photo_group.unit_of_picture(named)
+r["described"] = [ed.photos.stored_name(unit.name), ed.photos.described(unit)]
 r["filters"] = dialogs[-1][1]
 ed.undo()
 r["undone"] = ed.toPlainText()
@@ -153,6 +158,7 @@ def test_insert_image_is_a_drop_of_the_chosen_file(r):
     assert r["inserted"] == [True, "Image", [], "Insert Image"]
     # Gate RG-PG2E-b 5: no description, never the file's name.
     assert r["alt"] == ""
+    assert r["described"] == ["holiday", ""]
     assert "*.png" in r["filters"] and "*.jpg" in r["filters"]
     assert r["undone"] == "Look: "
     assert r["cancelled"] == ["Look: ", "Typing"]

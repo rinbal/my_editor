@@ -1505,6 +1505,7 @@ class MainWindow(QMainWindow):
         ed.set_resource_resolver(self._resolve_asset_image, ASSET_SCHEME)
         ed.set_object_lookup(self._outside_of)
         ed.set_local_image_resolver(lambda name, e=ed: self._resolve_local_image(e, name))
+        ed.photos.stored_name = lambda name, e=ed: self._stored_name(e, name)
         ed.set_web_image_resolver(self._resolve_web_image)
         ed.picture_look_requested.connect(lambda name, e=ed: self._look_at_picture(e, name))
         ed.set_picture_look_check(self._picture_look_shown)
@@ -5084,10 +5085,11 @@ class MainWindow(QMainWindow):
             # Audio and video have no alternative text: their name is a
             # name. A picture's is the description the document gives it,
             # by the rule the editor's "ALT missing" follows: none for
-            # none, never its file's name or "image" (an asset's stored
-            # alt is its name, for a picture added from disk).
+            # none, never its file's name, the one its asset keeps (what an
+            # earlier version gave a picture it added) or "image".
             alt = "" if asset.is_media else photo_group.description_of(
-                str(fmt.property(QTextImageFormat.ImageAltText) or ""), fmt.name())
+                str(fmt.property(QTextImageFormat.ImageAltText) or ""), fmt.name(),
+                asset.stored_name)
             records[url] = PublishedMedia(
                 url=url,
                 sha256=asset.sha256,
@@ -7964,10 +7966,14 @@ class MainWindow(QMainWindow):
         when it has one there ("beach-cropped.jpg"), else the app's own,
         as a picture added; then in the picture's place, as one step."""
         new_name = ""
+        # Named as the picture's file was, cropped; as the app's own file
+        # too, whose stored name is a name (description_of), never the
+        # description, which is the text's.
+        stem = os.path.splitext(os.path.basename(path))[0] if path else (
+            self._stored_name(editor, name) or "image")
+        word = _("cropped")
         if path:
-            stem = os.path.splitext(os.path.basename(path))[0]
             folder = os.path.dirname(path)
-            word = _("cropped")
             candidate, number = f"{stem}-{word}.{ext}", 2
             while os.path.exists(os.path.join(folder, candidate)):
                 candidate, number = f"{stem}-{word}-{number}.{ext}", number + 1
@@ -7980,7 +7986,7 @@ class MainWindow(QMainWindow):
                 # Not writable there: kept as the app's own picture instead.
                 logging.getLogger(__name__).info("crop beside %s: %s", path, error)
         if not new_name:
-            asset = self._asset_manager.adopt_bytes(data, alt=alt or "image")
+            asset = self._asset_manager.adopt_bytes(data, alt=f"{stem}-{word}")
             if asset is None:
                 editor.notice.emit(_("The cropped picture couldn’t be kept. Free some space on "
                                      "your disk and try again."))
@@ -10065,6 +10071,12 @@ class MainWindow(QMainWindow):
         data = None if address else self._asset_manager.resolve_bytes(asset.key)
         return paste.Outside(False, address or asset.alt, address,
                              address or (image_data_uri(data) or "" if data else ""))
+
+    def _stored_name(self, ed, name: str) -> str:
+        """The name this app keeps for the file of the picture ``name`` of
+        ``ed`` (DocumentAsset.stored_name), or ""."""
+        asset = self._asset_named(ed, name)
+        return asset.stored_name if asset is not None else ""
 
     def _asset_named(self, ed, name: str, *, adopt: bool = False):
         """The file of this app behind the object of ``ed`` named ``name``:

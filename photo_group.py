@@ -87,18 +87,20 @@ def without_wide(name: str) -> str:
     return name[:-len(WIDE_SUFFIX)] if is_wide(name) else name
 
 
-def description_of(alt: str, name: str) -> str:
+def description_of(alt: str, name: str, stored: str = "") -> str:
     """``alt``, the description of the picture at ``name``, when it
     describes it; "" when it says nothing a person could not see: empty,
-    "image" (what the app and Qt's writer put for none) or the file's own
+    "image" (what the app and Qt's writer put for none), the file's own
     name, with or without its extension (what the app gave a picture it
-    added, before)."""
+    added, before), or ``stored``, the name the app keeps for a file of
+    its own (an asset's, its file's name when it was added: the address
+    "myeditor-asset:…" does not say it)."""
     words = alt.strip()
     file = posixpath.basename(without_wide(name).replace("\\", "/").split("?")[0])
-    if words.casefold() in ("", "image", file.casefold(),
-                            posixpath.splitext(file)[0].casefold()):
-        return ""
-    return words
+    names = {"", "image"}
+    for named in (file, stored):
+        names.update((named.casefold(), posixpath.splitext(named)[0].casefold()))
+    return "" if words.casefold() in names else words
 
 
 def without_wide_url(url: QUrl) -> QUrl:
@@ -140,11 +142,6 @@ class Unit:
     def alt(self) -> str:
         """The picture's description (its alt text)."""
         return str(self.image.toImageFormat().property(QTextFormat.Property.ImageAltText) or "")
-
-    @property
-    def description(self) -> str:
-        """The description when it describes the picture (description_of)."""
-        return description_of(self.alt, self.name)
 
     @property
     def wide(self) -> bool:

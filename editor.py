@@ -1498,7 +1498,7 @@ class HtmlEditor(QTextEdit):
         cursor = self.textCursor()
         block = cursor.block()
         at = photo_group_view.picture_at_cursor(cursor)
-        picture = photo_group_view.picture_words(at)
+        picture = photo_group_view.picture_words(at, self.photos)
         if picture is not None:
             place = ("picture", at[0], picture)
             if place != self._spoken_place:

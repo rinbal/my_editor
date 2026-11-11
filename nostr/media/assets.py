@@ -169,6 +169,17 @@ class DocumentAsset:
         )
 
     @property
+    def stored_name(self) -> str:
+        """``alt`` when it is the name of the file this picture was added
+        from (from disk, beside a document, a crop: on this computer, or
+        sent to the servers by this app); "" when it may be a description:
+        a Media Library pick, on the servers before this app sent it
+        (``attempts`` 0), keeps the alt text typed in the library."""
+        if self.is_media or (self.is_uploaded and self.attempts == 0):
+            return ""
+        return self.alt
+
+    @property
     def can_retry(self) -> bool:
         return self.upload_state is AssetState.FAILED
 

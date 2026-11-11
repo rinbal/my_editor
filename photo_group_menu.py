@@ -145,7 +145,7 @@ def chip_words(photos, picture: Picture, chip: str) -> str:
     if chip == overlay.MORE:
         return _("All commands for {photo}").format(photo=photos.place_words(picture))
     if chip == overlay.ALT:
-        alt = picture.unit.description
+        alt = photos.described(picture.unit)
         return (_("Description: {words}").format(words=alt) if alt
                 else _("Description missing: for people who can’t see the photo"))
     if chip == overlay.BIG:

@@ -344,8 +344,10 @@ def own_row(doc: QTextDocument, unit) -> str:
     return "tall" if ratio <= photo_layout.CONSTANTS["tall"] else ""
 
 
-def picture_words(found: Optional[Tuple[int, int, int, photo_group.Unit]]) -> Optional[str]:
-    """What a screen reader says for a group picture (picture_at_cursor):
+def picture_words(found: Optional[Tuple[int, int, int, photo_group.Unit]],
+                  photos) -> Optional[str]:
+    """What a screen reader says for a group picture (picture_at_cursor;
+    ``photos`` the editor's photo_group_editing.PhotoEditing):
     its place, its description and its caption, "Photo 2 of 5. Loch. The
     loch at dusk", as the exported page's viewer says it. (The text holds
     a picture as one character, which a screen reader cannot read, and a
@@ -354,5 +356,5 @@ def picture_words(found: Optional[Tuple[int, int, int, photo_group.Unit]]) -> Op
         return None
     _position, k, n, unit = found
     words = _("Photo {k} of {n}").format(k=k, n=n)
-    return ". ".join(part for part in (words, unit.description, unit.caption_text.strip())
+    return ". ".join(part for part in (words, photos.described(unit), unit.caption_text.strip())
                      if part)

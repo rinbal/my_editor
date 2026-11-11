@@ -91,6 +91,9 @@ class PhotoEditing(QObject):
         # While a command moves the caret: no "Photo 2 of 4" spoken for it
         # (the command says what happened, once).
         self.quiet = False
+        # The name the app keeps for the file of the picture named so, ""
+        # for none (main_window's, for description_of).
+        self.stored_name: Callable[[str], str] = lambda name: ""
         self.steps = PhotoSteps(editor)
         self._context = None
         # While above 0: the document changes by a photo command (writing).
@@ -106,6 +109,10 @@ class PhotoEditing(QObject):
     # ------------------------------------------------------------------ #
     # The picture a command acts on                                       #
     # ------------------------------------------------------------------ #
+
+    def described(self, unit: photo_group.Unit) -> str:
+        """The unit's description when it describes its picture."""
+        return photo_group.description_of(unit.alt, unit.name, self.stored_name(unit.name))
 
     def current(self) -> Optional[Picture]:
         """The picture selected, or a group's at the caret; None for

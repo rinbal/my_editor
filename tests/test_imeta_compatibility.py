@@ -43,6 +43,7 @@ from PySide6.QtGui import QTextImageFormat
 from PySide6.QtWidgets import QApplication
 
 import image_safety
+import photo_group
 from doc_walk import iter_image_names
 from editor import HtmlEditor
 from main_window import MainWindow
@@ -74,6 +75,9 @@ class _Window:
     _asset_named = MainWindow._asset_named
     _local_image_bytes = staticmethod(MainWindow._local_image_bytes)
     _publish_text = MainWindow._publish_text
+    _stored_name = MainWindow._stored_name
+    _asset_image = MainWindow._asset_image
+    _cropped = MainWindow._cropped
 
     def __init__(self, cache_dir):
         cache_dir = Path(cache_dir)
@@ -415,3 +419,20 @@ def test_a_picture_without_a_description_is_published_without_one(tmp_path):
     for alt in ("", "image"):
         _content, tags = _tags_for(win, _editor_with((asset.key, alt)))
         assert _entry(tags[0], "alt") is None
+    # Gate RG-PG2E-c 4: nor the name its asset keeps, which an earlier
+    # version gave a picture added from disk ("![IMG_2041](myeditor-
+    # asset:…)"), once this app sent it to the servers. A Media Library
+    # pick keeps the alt typed there (test_our_own_uploaded_image_...).
+    asset.attempts = 1
+    _content, tags = _tags_for(win, _editor_with((asset.key, "IMG_2041")))
+    assert _entry(tags[0], "alt") is None
+    _content, tags = _tags_for(win, _editor_with((asset.key, "Der Steg am Abend")))
+    assert _entry(tags[0], "alt") == "Der Steg am Abend"
+    # A crop's own file is stored by the picture's name, never by its
+    # description, which would then read as none.
+    ed = _editor_with((asset.key, "Der Steg am Abend"))
+    win._cropped(ed, 0, asset.key, "", GIF_BYTES, "gif", "Der Steg am Abend")
+    cropped = win._asset_named(ed, _names(ed)[0])
+    assert cropped.stored_name == "IMG_2041-cropped"
+    assert photo_group.description_of("Der Steg am Abend", cropped.key,
+                                      cropped.stored_name) == "Der Steg am Abend"
