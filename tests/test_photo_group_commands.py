@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QApplication, QWidget
 import announce
 import photo_group
 import photo_group_actions
+import photo_group_editing
 import photo_group_overlay
 import picture_crop
 from photo_group_menu import (
@@ -467,4 +468,16 @@ def test_move_mode_shows_its_keys_beside_the_picture_and_lets_a_click_or_a_key_o
     _mouse(ed, QEvent.Type.MouseButtonRelease, QPointF(text), Qt.MouseButton.NoButton)
     assert said[-1] == "Cancelled, the photo is back in its place"
     assert _markdown(ed) == FOUR_PICTURES and ed.textCursor().block().text() == "Before."
+    ed.close()
+
+
+def test_a_command_says_only_what_it_did(said):
+    # Gate RG-PG2E-b 6: "Photo 3 of 3. boats" came first.
+    ed = _selected(_text("Before.", ONE, TWO, "![boats](portrait.png)", "After."), number=1)
+    said.clear()
+    ed.photos.run(DESCRIPTION)
+    _write_in_field(ed, "Two boats")
+    ed.photos.run(REMOVE)
+    assert said == ["Description saved",
+                    f"Photo removed, 2 photos remain. Undo with {photo_group_editing._undo_keys()}"]
     ed.close()

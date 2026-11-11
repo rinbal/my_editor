@@ -279,15 +279,15 @@ class PhotoEditing(QObject):
         ed = self._editor
         doc = ed.document()
         before = doc.availableUndoSteps()
-        with self.writing(), ed.undo_step(step):
+        # Quietly: the caret moves with the change; what was done says so.
+        with self.quietly(), self.writing(), ed.undo_step(step):
             at = change(QTextCursor(doc))
             if at is not None:
                 # Inside the step: the group written anew around it when
                 # the step ends keeps the caret before this picture.
                 caret = ed.textCursor()
                 caret.setPosition(at)
-                with self.quietly():
-                    ed.setTextCursor(caret)
+                ed.setTextCursor(caret)
         if doc.availableUndoSteps() == before:
             return None
         found = None
@@ -438,7 +438,7 @@ class PhotoEditing(QObject):
         doc = self._editor.document()
         ed = self._editor
         before = doc.availableUndoSteps()
-        with self.writing(), ed.undo_step(_STEPS[REMOVE]):
+        with self.quietly(), self.writing(), ed.undo_step(_STEPS[REMOVE]):
             at = actions.remove(QTextCursor(doc), doc, picture)
         if doc.availableUndoSteps() == before:
             return
@@ -449,7 +449,9 @@ class PhotoEditing(QObject):
         elif at is not None:
             caret = ed.textCursor()
             caret.setPosition(min(at, doc.characterCount() - 1))
-            ed.setTextCursor(caret)
+            with self.quietly():
+                ed.setTextCursor(caret)
+            self._caret_moved()
         self.changed.emit()
         keys = _undo_keys()
         if left:

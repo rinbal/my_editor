@@ -42,7 +42,7 @@ class SplitLine:
         ed = photos.editor
         doc = ed.document()
         before = doc.availableUndoSteps()
-        with photos.writing(), ed.undo_step(SPLIT_STEP):
+        with photos.quietly(), photos.writing(), ed.undo_step(SPLIT_STEP):
             at = actions.split_after(QTextCursor(doc), picture)
         caret = ed.textCursor()
         caret.setPosition(at)
