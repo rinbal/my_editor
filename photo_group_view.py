@@ -169,7 +169,7 @@ class _Handler(QPyTextObject):
         # the layout's pixels: no row is taller than its share of it.
         self.screen_height: Optional[float] = None
         # The groups laid out, by a picture's place; for one state of the
-        # document, one width and one height (_valid).
+        # document, one width, one height and one font of the text (_valid).
         self._valid: Optional[tuple] = None
         self._laid: Dict[int, Tuple[_Laid, int]] = {}
         # What every group is laid out with in that state: the metrics,
@@ -307,7 +307,8 @@ class _Handler(QPyTextObject):
     def _at(self, doc, position: int) -> Optional[Tuple[_Laid, int]]:
         """The group laid out around the picture at ``position``, and the
         picture's number in it."""
-        valid = (doc.revision(), doc.textWidth(), doc.pageSize().width(), self.screen_height)
+        valid = (doc.revision(), doc.textWidth(), doc.pageSize().width(), self.screen_height,
+                 doc.defaultFont())
         if valid != self._valid:
             self._valid = valid
             self._laid = {}

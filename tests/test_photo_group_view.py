@@ -407,3 +407,22 @@ def test_the_picture_at_a_point_is_the_one_drawn_there_also_in_a_stack(app):
         assert photo_group_view.picture_box(doc, position) == box
     assert photo_group_view.picture_at(doc, QPointF(5, 5)) is None
     view.close()
+
+
+def test_a_larger_text_gives_a_caption_more_room_without_a_change_to_the_document(app):
+    """The app's text size (View > Zoom, the previews): a caption is drawn
+    in the text's font, so its group is laid out again for the new one."""
+    view = _shown(_markdown("photo.png", "square.png", captions={"square.png": "Under the square"})
+                  + "\nAfter.\n", 900)
+    doc = view.document()
+    before = _state(doc)
+    layout = doc.documentLayout()
+    gap = layout.blockBoundingRect(doc.lastBlock()).top() - _boxes(doc)[1][2].bottom()
+    font = doc.defaultFont()
+    font.setPointSizeF(font.pointSizeF() * 2)
+    doc.setDefaultFont(font)
+    QApplication.processEvents()
+    larger = layout.blockBoundingRect(doc.lastBlock()).top() - _boxes(doc)[1][2].bottom()
+    assert larger > gap * 1.5
+    assert _state(doc) == before
+    view.close()
