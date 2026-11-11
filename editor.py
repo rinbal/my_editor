@@ -193,6 +193,17 @@ _QT_DELETING_KEYS = (
 )
 
 
+def _qt_types(e) -> bool:
+    """Whether Qt's text field types the printable text of ``e``. It never
+    does with Control or Control-Shift alone (QInputControl::
+    isAcceptableInput), which on a Mac are Command and Command-Shift:
+    Copy, Cut and Undo carry their letter there. AltGr (Control-Alt on
+    Windows), Option and the rest type."""
+    return e.modifiers() not in (Qt.KeyboardModifier.ControlModifier,
+                                 Qt.KeyboardModifier.ControlModifier
+                                 | Qt.KeyboardModifier.ShiftModifier)
+
+
 # The text cursors Settings offers, as the setting stores them: Qt's own
 # insertion point at a width in pixels, or a block over the next letter.
 CARET_STYLES = ("thin", "medium", "thick", "block")
@@ -2675,9 +2686,12 @@ class HtmlEditor(QTextEdit):
 
         if e.text() and e.text().isprintable():
             # Typed with Option or AltGr ("@", "€", "[" on many keyboards):
-            # in the run of typing going on.
+            # in the run of typing going on. Command-C and Command-X carry
+            # their letter too: they type nothing, so the selection stays
+            # for Qt to copy or cut.
             with self._typing(TYPED) as cursor:
-                self._clear_to_type(cursor)
+                if _qt_types(e):
+                    self._clear_to_type(cursor)
                 super().keyPressEvent(e)
             self._after_typed(e.text())
         else:
