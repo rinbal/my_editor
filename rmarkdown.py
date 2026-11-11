@@ -37,7 +37,7 @@ from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, Signal
 from PySide6.QtGui import QTextBlockFormat, QTextCharFormat, QTextListFormat
 
 import atomic_file
-import export_html
+import photo_page
 import photo_group
 import photo_layout
 from doc_walk import (
@@ -411,7 +411,7 @@ def _knitted_figure(tag: str):
             size = photo_layout.picture_size(found.width(), found.height())
     # pandoc may break a long line where a description has a space.
     alt = " ".join(attributes.get("alt", "").split())
-    return export_html.GroupFigure(src, size, None, alt,
+    return photo_page.GroupFigure(src, size, None, alt,
                                    wide="wide" in attributes.get("class", "").split())
 
 
@@ -436,7 +436,7 @@ def _knitted_figures(paragraph: str):
         if picture is not None or line == _UNAVAILABLE_HTML:
             close_caption()
             figures.append(_knitted_figure(picture.group(1)) if picture is not None
-                           else export_html.GroupFigure(None, None, None, ""))
+                           else photo_page.GroupFigure(None, None, None, ""))
         elif figures and "<img" not in line:
             captions.append(line)
         else:
@@ -447,7 +447,7 @@ def _knitted_figures(paragraph: str):
 
 def lay_out_knitted_groups(page: str) -> str:
     """``page``, knitted from R Markdown MyEditor wrote, with each photo
-    group as the HTML export writes it (export_html.group_figures_html),
+    group as the HTML export writes it (photo_page.group_figures_html),
     and the groups' stylesheet and scripts in it once. In the page's own
     light colours: a knitted page does not change with Dark Mode."""
     laid = [False]
@@ -457,7 +457,7 @@ def lay_out_knitted_groups(page: str) -> str:
         if figures is None:
             return match.group(0)
         laid[0] = True
-        return export_html.group_figures_html(figures)
+        return photo_page.group_figures_html(figures)
 
     out = _GROUP_PARAGRAPH.sub(group, page)
     body = out.find("<body")
@@ -465,8 +465,8 @@ def lay_out_knitted_groups(page: str) -> str:
     body_end = out.rfind("</body>")
     if not laid[0] or head_end < 0 or body_end < body:
         return page
-    style = f"<style>{export_html.group_head(dark=False)}</style>\n"
-    out = out[:body_end] + export_html.group_scripts() + out[body_end:]
+    style = f"<style>{photo_page.group_head(dark=False)}</style>\n"
+    out = out[:body_end] + photo_page.group_scripts() + out[body_end:]
     return out[:head_end] + style + out[head_end:]
 
 

@@ -27,6 +27,7 @@ from PySide6.QtGui import QTextDocument
 from PySide6.QtWidgets import QApplication
 
 import export_html
+import photo_page
 from markdown_writer import read_markdown
 from rmarkdown import KnitRunner, document_to_rmd, lay_out_knitted_groups
 from tests.photo_corners import PHOTOS
@@ -141,13 +142,13 @@ def test_a_knitted_group_has_the_markup_of_the_export(wrapped):
 def test_the_stylesheet_and_scripts_come_once_in_the_pages_light_colours():
     knitted = lay_out_knitted_groups(_knitted())
     head = knitted[:knitted.index("<body")]
-    assert head.count(export_html.group_head(dark=False)) == 1
-    assert head.index(export_html.group_head(dark=False)) > head.index('var tag = "</head>"')
-    assert "prefers-color-scheme: dark" not in export_html.group_head(dark=False)
-    assert "prefers-color-scheme: dark" in export_html.group_head()
-    tail = knitted[knitted.rindex(export_html.group_scripts()):]
-    assert knitted.count(export_html.group_scripts()) == 1
-    assert tail.startswith(export_html.group_scripts() + "</body>\n</html>")
+    assert head.count(photo_page.group_head(dark=False)) == 1
+    assert head.index(photo_page.group_head(dark=False)) > head.index('var tag = "</head>"')
+    assert "prefers-color-scheme: dark" not in photo_page.group_head(dark=False)
+    assert "prefers-color-scheme: dark" in photo_page.group_head()
+    tail = knitted[knitted.rindex(photo_page.group_scripts()):]
+    assert knitted.count(photo_page.group_scripts()) == 1
+    assert tail.startswith(photo_page.group_scripts() + "</body>\n</html>")
 
 
 @pytest.mark.parametrize("group", [

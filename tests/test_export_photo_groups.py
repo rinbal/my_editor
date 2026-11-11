@@ -36,6 +36,7 @@ import photo_group_find
 import photo_group_geometry
 import photo_group_view
 import photo_layout
+import photo_page
 from export_html import document_to_html
 from markdown_writer import read_markdown
 from tests.photo_corners import PHOTOS, SHAPES, gathered, shows_whole
@@ -130,11 +131,10 @@ def test_a_page_speaks_the_apps_language(app):
 def test_the_built_app_carries_the_page_parts():
     """The app as built (packaging/my_editor.spec) holds web/, where the
     export reads the page's stylesheet and scripts."""
-    import export_html
     spec = (Path(__file__).resolve().parent.parent / "packaging" / "my_editor.spec").read_text(
         encoding="utf-8")
     assert '"web"' in spec
-    assert {path.name for path in export_html._WEB.iterdir()} >= {
+    assert {path.name for path in photo_page._WEB.iterdir()} >= {
         "photo_groups.css", "photo_groups.js", "photo_viewer.js"}
 
 
