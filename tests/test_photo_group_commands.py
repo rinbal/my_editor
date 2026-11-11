@@ -22,6 +22,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
 
 import announce
+import i18n
 import photo_group
 import photo_group_actions
 import photo_group_editing
@@ -29,6 +30,7 @@ import photo_group_overlay
 import picture_crop
 import theme
 from editor import HtmlEditor
+from i18n import _
 from main_window import MainWindow
 from markdown_writer import read_markdown
 from photo_group_menu import (
@@ -643,3 +645,16 @@ def test_move_up_hops_a_list_or_a_quote_whole(words):
     assert _markdown(ed) == _text("Words.", ONE, words, "![two](square.png)", "After.")
     assert _undone(ed, markdown)
     ed.close()
+
+
+def test_german_says_verschieben_and_alt_fehlt():
+    # Gate RG-PG2E-b 15: "bewegen" beside "verschieben", "Kein ALT", a fragment.
+    i18n.install("de")
+    try:
+        words = [_("Move Photo"), _("Move With Arrow Keys"), _("No ALT"),
+                 _("Add photos to this group. Or drag them onto it.")]
+    finally:
+        i18n.install(i18n.ENGLISH)
+    assert words == ["Foto verschieben", "Mit Pfeiltasten verschieben", "ALT fehlt",
+                     "Fotos zu dieser Gruppe hinzufügen. Du kannst sie auch auf die Gruppe "
+                     "ziehen."]

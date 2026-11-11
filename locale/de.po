@@ -4526,7 +4526,7 @@ msgstr ""
 
 #: photo_group_editing.py:57
 msgid "Move Photo"
-msgstr "Foto bewegen"
+msgstr "Foto verschieben"
 
 #: photo_group_editing.py:59
 msgid "Join Groups"
@@ -4804,7 +4804,7 @@ msgstr "Fotos hinzufügen …"
 
 #: photo_group_menu.py:58
 msgid "Move With Arrow Keys"
-msgstr "Mit Pfeiltasten bewegen"
+msgstr "Mit Pfeiltasten verschieben"
 
 #: photo_group_menu.py:83
 msgid "Move Below the Next Paragraph"
@@ -4862,7 +4862,7 @@ msgstr "Mit dem Foto darunter verbinden"
 
 #: photo_group_pointer.py:268
 msgid "Add photos to this group. Or drag them onto it."
-msgstr "Fotos zu dieser Gruppe hinzufügen. Oder auf sie ziehen."
+msgstr "Fotos zu dieser Gruppe hinzufügen. Du kannst sie auch auf die Gruppe ziehen."
 
 #: photo_group_pointer.py:110
 #: nostr/ui/preview_parts.py:486
