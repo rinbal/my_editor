@@ -23,9 +23,16 @@ rides along with the next signer action the person takes here anyway
 per run, shared with the cleanup of the private copies.
 
 Nothing is said either way (lessons 36): a report that arrives makes the
-work listed, which the rows show. A signer app that declined is not
-asked again in this run; an answer that will not change (the work is
-another revision's, the person no longer its writer) ends the record.
+work listed, which the rows show. The record stays until the View lists
+the work, or no longer waits for this report (another state, a newer
+version), restart or not; the seven days end only the quiet tries
+(RG-M4-c 3). While a quiet try is left the work "learns of it shortly";
+once none is, the row says it is public and offers Erneut senden
+(:meth:`QuietReport.send_again`, the person's own request). A signer app
+that declined is not asked again in this run; an answer that will not
+change (the work is another revision's, the person no longer its
+writer) ends the record. No try and no ride is spent on a work the View
+already lists.
 """
 
 from __future__ import annotations
@@ -98,13 +105,19 @@ class QuietReport(QObject):
         return self._record
 
     def state(self, sid: str) -> str:
-        """:data:`rules.PUBLIC` or :data:`rules.NOT_LISTED` for a work kept
-        here, else ``""`` (also once it was tried long enough: it is let go
-        at the next resume or ride)."""
+        """For a work kept here :data:`rules.NOT_LISTED`, :data:`rules.PUBLIC`
+        while a quiet try is left (due or on its way; with the key here,
+        before the view first opens), else :data:`rules.UNREPORTED`;
+        ``""`` for none."""
         entry = self._record.entry(sid)
-        if entry is None or unlisted.over(entry, self._clock()):
+        if entry is None:
             return ""
-        return rules.NOT_LISTED if entry.get("taken") else rules.PUBLIC
+        if entry.get("taken"):
+            return rules.NOT_LISTED
+        if sid in self._waiting or (self._here() and not self._resumed and not self._stopped
+                                    and not unlisted.over(entry, self._clock())):
+            return rules.PUBLIC
+        return rules.UNREPORTED
 
     def states(self) -> Dict[str, str]:
         return {sid: self.state(sid) for sid in self._record.sids()}
@@ -122,24 +135,46 @@ class QuietReport(QObject):
         self._schedule(sid)
 
     def resume(self) -> None:
-        """Once per run, when the view first opens: one tried long enough
-        goes; with the key here, every other is reported again when due
-        (through a signer app only as a ride-along)."""
+        """Once per run, when the view first opens: with the key here every
+        work kept is reported again when due, for its seven days (through
+        a signer app only as a ride-along, or by hand)."""
         if self._resumed or self._stopped:
             return
         self._resumed = True
-        now = self._clock()
         for sid in self._record.sids():
-            entry = self._record.entry(sid)
-            if entry is not None and unlisted.over(entry, now):
-                self._record.forget(sid)
-            else:
-                self._schedule(sid)
+            self._schedule(sid)
+        for sid in self._record.sids():
+            self._following.publishing_changed(sid)
+
+    def send_again(self, sid: str, on_done: Callable[[Optional[object]], None]) -> None:
+        """Erneut senden: the report, now, as the person's own request
+        (never the run's ride-along). ``on_done(None)`` once it arrived,
+        else with why not."""
+        entry = self._record.entry(sid)
+        if self._stopped or entry is None or entry.get("taken") or sid in self._waiting:
+            return
+        self._resting.discard(sid)
+        self._waiting.add(sid)
+        self._following.publishing_changed(sid)
+        self._try(sid, by_hand=on_done)
 
     def forget(self, sid: str) -> None:
         """The work is listed (or no longer this writer's to report)."""
         self._record.forget(sid)
         self._listed.pop(sid, None)
+
+    def _settled(self, sid: str) -> bool:
+        """Whether the View no longer waits for this report: it lists the
+        work, it is in another state, or a newer version is there. Such a
+        record goes, with no request."""
+        entry, row = self._record.entry(sid), self._following.row(sid)
+        view = row.view if row is not None else None
+        if entry is None or view is None:
+            return False
+        if row.situation in rules.PUBLISHED_HERE and view.revision <= int(entry["revision"]):
+            return False
+        self.forget(sid)
+        return True
 
     def stop(self) -> None:
         self._stopped = True
@@ -154,7 +189,8 @@ class QuietReport(QObject):
     def _schedule(self, sid: str) -> None:
         entry = self._record.entry(sid)
         if self._stopped or entry is None or entry.get("taken") or sid in self._waiting \
-                or sid in self._resting or not self._may_wait(sid):
+                or sid in self._resting or not self._may_wait(sid) \
+                or unlisted.over(entry, self._clock()):
             return
         self._waiting.add(sid)
         wait = max(0.0, float(entry.get("next", 0)) - self._clock())
@@ -169,26 +205,26 @@ class QuietReport(QObject):
         now = self._clock()
         for sid in self._record.sids():
             entry = self._record.entry(sid)
-            if entry is not None and unlisted.over(entry, now):
-                self.forget(sid)
-            elif entry is not None and not entry.get("taken") \
-                    and sid not in self._waiting and sid not in self._resting:
+            if entry is not None and not entry.get("taken") and not unlisted.over(entry, now) \
+                    and sid not in self._waiting and sid not in self._resting \
+                    and not self._settled(sid):
                 self._waiting.add(sid)
                 self._try(sid, riding=True)
                 return True
         return False
 
-    def _try(self, sid: str, *, riding: bool = False) -> None:
+    def _try(self, sid: str, *, riding: bool = False,
+             by_hand: Optional[Callable[[Optional[object]], None]] = None) -> None:
         if self._stopped:
             return
         entry, now = self._record.entry(sid), self._clock()
-        if entry is None or entry.get("taken") or unlisted.over(entry, now) or not (
-                riding or unlisted.due(entry, now)):
+        quiet = by_hand is None
+        if entry is None or entry.get("taken") or self._settled(sid) or quiet and (
+                unlisted.over(entry, now) or not (riding or unlisted.due(entry, now))):
             self._waiting.discard(sid)
-            if entry is not None and unlisted.over(entry, now):
-                self.forget(sid)
+            self._following.publishing_changed(sid)
             return
-        if not riding and not self._here():
+        if quiet and not riding and not self._here():
             self._quick[sid] = self._quick.get(sid, 0) + 1
 
         def reported(view) -> None:
@@ -198,6 +234,8 @@ class QuietReport(QObject):
             self.forget(sid)
             if answer is not None:
                 answer(view)
+            if by_hand is not None:
+                by_hand(None)
 
         def not_reported(error) -> None:
             self._waiting.discard(sid)
@@ -212,6 +250,8 @@ class QuietReport(QObject):
             else:
                 self.forget(sid)              # an answer a later try would meet again
             self._following.publishing_changed(sid)
+            if by_hand is not None:
+                by_hand(error)
 
         self._following.api_for(sid).published(
             sid, naddr=entry["naddr"], event=entry["event"], revision=entry["revision"],

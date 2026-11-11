@@ -82,6 +82,8 @@ PUBLISHED_NOT_LOADED = N_("The published article couldn’t be found yet: try ag
 REMINDED = N_("{name} was reminded.")
 REMINDED_TODAY = N_("{name} was already reminded today.")
 NOT_REMINDED = N_("{name} wasn’t reminded.")
+# Erneut senden for a public work's report (RG-M4-c 3), when it failed.
+NOT_LEARNED = N_("{publication} still hasn’t learned of it.")
 
 
 @dataclass(frozen=True)
@@ -314,6 +316,8 @@ class SubmissionsHost(QObject):
                 rules.Action.VIEW: self.view_published,
                 rules.Action.CONFIRM: self.confirm,
                 rules.Action.REMIND: self.remind,
+                rules.Action.REPORT: self.report_again,
+                rules.Action.ASK: lambda sid: self.ask(sid, ""),
                 rules.Action.COMPARE_CORRECTION: self.compare_correction}
 
     def _on_action(self, sid: str, action) -> None:
@@ -594,6 +598,22 @@ class SubmissionsHost(QObject):
                 self._say_in_place(sid, f"{_(NOT_REMINDED).format(name=name)} {_(cause)}")
 
         following.remind(sid, to, done)
+
+    def report_again(self, sid: str) -> None:
+        """Erneut senden: a public work's report, once no quiet try is left
+        (RG-M4-c 3); a failure is said in place, with its cause."""
+        row, following = self._row(sid), self._following
+        if row is None or following is None:
+            return
+        publication = following.publication_name(row.publication)
+
+        def done(error) -> None:
+            if error is not None:
+                cause = cause_words(getattr(error, "code", ""))
+                self._say_in_place(sid, f"{_(NOT_LEARNED).format(publication=publication)} "
+                                        f"{_(cause)}")
+
+        following.unlisted.send_again(sid, done)
 
     def view_published(self, sid: str) -> None:
         """Ansehen: the published article, where articles are read, at

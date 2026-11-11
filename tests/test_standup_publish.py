@@ -413,7 +413,7 @@ def test_through_a_signer_app_a_week_brings_three_quick_tries_and_one_ride_along
     # app the quiet report tries at most 3 times right after the publish;
     # then a try only rides along with a signer action of the person's, and
     # never more than one such request per run, restart or not; after 7 days
-    # it is let go. Each report is one signed request (NIP-98), so its calls
+    # none at all. Each report is one signed request (NIP-98), so its calls
     # count the signer app's asks over the week.
     world, sid, following = accepted.world, accepted.sid, accepted.following
     calls = _flaky_report(accepted.writer.api, [10 ** 6])
@@ -442,7 +442,49 @@ def test_through_a_signer_app_a_week_brings_three_quick_tries_and_one_ride_along
     _days_pass(world, 2)
     again.talk.send(sid, "Eine Woche später")
     world.settle()
-    assert len(calls) == 3 + QUICK_TRIES and again.row(sid).publishing == ""     # let go
+    from nostr.standup.following import UNREPORTED                    # kept, by hand now
+    assert len(calls) == 3 + QUICK_TRIES and again.row(sid).publishing == UNREPORTED
+
+
+def test_a_public_work_with_no_quiet_try_left_offers_send_again_and_stays_public(accepted):
+    # RG-M4-c 3 (ux/p_giveup.py): once no quiet try is left the row says it
+    # is public and offers Erneut senden; the record stays, after 7 days and
+    # a restart too, so a public text never reads as private again.
+    from nostr.standup import following as rules
+    from nostr.ui.standup_publish_sheet import PublishSheet
+    world, sid, following = accepted.world, accepted.sid, accepted.following
+    failures = [10 ** 6]
+    calls = _flaky_report(accepted.writer.api, failures)
+    run, _store, _jobs = _run(accepted)
+    run.start()
+    world.settle()
+    assert following.row(sid).publishing == rules.PUBLIC
+    _days_pass(world, 8)
+    row = following.row(sid)
+    status = rules.status_of(row, publication="Magazin", name_of=lambda _pk: "")
+    assert (row.publishing, run.going, status.action) == (
+        rules.UNREPORTED, rules.UNREPORTED, rules.Action.REPORT)
+    assert (status.sentence, status.more) == (f"“{row.title}” is public.",
+                                              "Magazin hasn’t learned of it yet.")
+    following.stop()                                        # a restart
+    world.later.waiting.clear()
+    again = world.following(accepted.writer, unlisted=following.unlisted.record)
+    again.view_opened()
+    again.open(sid)
+    world.settle()
+    assert again.row(sid).publishing == rules.UNREPORTED and not again.row(sid).turn
+    later, _store, _jobs = _run(SimpleNamespace(**dict(vars(accepted), following=again)))
+    sheet = PublishSheet(run=later, publication="Magazin", number=1, is_dark=False)
+    assert later.stage is Stage.PUBLIC and not sheet.privacy.isVisibleTo(sheet)
+    sheet.deleteLater()
+    failures[0] = 0
+    asked = len(calls)
+    answers = []
+    again.unlisted.send_again(sid, answers.append)          # Erneut senden, by hand
+    world.settle()
+    assert answers == [None] and len(calls) == asked + 1
+    assert world.record(sid).state == "published" and again.unlisted.record.sids() == []
+    assert again.row(sid).publishing == ""
 
 
 def test_the_key_kept_here_is_wiped_after_its_signature_and_goes_with_the_run(accepted):

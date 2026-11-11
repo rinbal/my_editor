@@ -40,6 +40,8 @@ class Action(Enum):
     RELOAD = "reload"                   # Erneut laden
     VIEW = "view"                       # Ansehen: the published article
     REMIND = "remind"                   # Paul erinnern (the writer, 12.4 /remind)
+    REPORT = "report"                   # Erneut senden: a public work's report, by hand
+    ASK = "ask"                         # Rückfrage stellen: the composer, with the focus
 
 
 ACTION_LABELS = {
@@ -51,6 +53,8 @@ ACTION_LABELS = {
     Action.RESEND: N_("Send Again"),
     Action.VIEW: N_("View"),
     Action.REMIND: N_("Send a Reminder"),
+    Action.REPORT: N_("Send Again"),
+    Action.ASK: N_("Ask a Question"),
 }
 
 

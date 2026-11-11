@@ -213,6 +213,24 @@ class AcceptedPublish(QObject):
         self._stopped = False
         self._here = False
         self._listening = False
+        self._kept_public()
+
+    def _kept_public(self) -> None:
+        """A run made for a work kept as public (after a restart, RG-M4-c
+        3) starts there: never "Bisher privat …" for a public text."""
+        unlisted = self._ports.unlisted
+        state = unlisted.state(self.sid) if unlisted is not None else ""
+        entry = unlisted.record.entry(self.sid) if state else None
+        if entry is None or int(entry.get("revision", 0)) != self._version.revision:
+            return
+        self.signed_article, self.naddr = dict(entry["event"]), str(entry["naddr"])
+        self.stage = Stage.NOT_LISTED if state == rules.NOT_LISTED else Stage.PUBLIC
+        self.words = self._public_words(state)
+
+    def _public_words(self, state: str) -> str:
+        title = str((self.revision.get("work") or {}).get("title") or "")
+        return _(rules.PUBLISHING_WORDS[state][1]).format(title=title,
+                                                          publication=self._publication)
 
     # -- what the sheet calls ---------------------------------------------------
 
@@ -223,7 +241,11 @@ class AcceptedPublish(QObject):
     @property
     def going(self) -> str:
         """How it stands for the list, the pill and the detail, with the
-        sheet closed too (RG-M4-b 3, 9): on its way, public, or ""."""
+        sheet closed too (RG-M4-b 3, 9): on its way, public, or "". Once
+        public, the record says how (RG-M4-c 3): whether a quiet try is
+        left, and nothing once the work is listed."""
+        if self.stage in (Stage.PUBLIC, Stage.NOT_LISTED) and self._ports.unlisted is not None:
+            return self._ports.unlisted.state(self.sid)
         return {Stage.WORKING: rules.PUBLISHING, Stage.PUBLIC: rules.PUBLIC,
                 Stage.NOT_LISTED: rules.NOT_LISTED}.get(self.stage, "")
 
@@ -540,10 +562,7 @@ class AcceptedPublish(QObject):
                 self._ports.unlisted.hand_over(self.sid, event=event, naddr=self.naddr,
                                                revision=self._version.revision, taken=taken,
                                                on_listed=reported)
-            title = str((self.revision.get("work") or {}).get("title") or "")
-            self._say(Stage.NOT_LISTED if taken else Stage.PUBLIC, "",
-                      _(rules.PUBLISHING_WORDS[state][1]).format(
-                          title=title, publication=self._publication))
+            self._say(Stage.NOT_LISTED if taken else Stage.PUBLIC, "", self._public_words(state))
 
         self._ports.api.published(self.sid, naddr=self.naddr, event=event,
                                   revision=self._version.revision,

@@ -13585,3 +13585,15 @@ msgstr "»{title}« ist öffentlich, aber {publication} führt unter diesem Link
 #, python-brace-format
 msgid "“{note}”"
 msgstr "»{note}«"
+
+#, python-brace-format
+msgid "“{title}” is public."
+msgstr "»{title}« ist öffentlich."
+
+#, python-brace-format
+msgid "{publication} hasn’t learned of it yet."
+msgstr "{publication} hat es noch nicht erfahren."
+
+#, python-brace-format
+msgid "{publication} still hasn’t learned of it."
+msgstr "{publication} hat es noch immer nicht erfahren."

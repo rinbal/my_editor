@@ -14,7 +14,10 @@ kept as that, and never tried again.
 The record (per account, in the app's settings, like
 :mod:`.cleanup`'s) holds, by sid, the signed article, its naddr and the
 revision it publishes: public already, nothing secret, and never a key.
-So the work stays known as public across a restart.
+So the work stays known as public across a restart, and it is kept
+until the View lists the work (or no longer waits for this report):
+the seven days end only the quiet tries (RG-M4-c 3), and after them the
+person sends it again by hand.
 """
 
 from __future__ import annotations

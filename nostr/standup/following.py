@@ -71,16 +71,23 @@ REMIND_EVERY = 86400
 
 # How a publish of the writer's own stands, as this app's run or record
 # says (RG-M4-b 3, 9), while the server's View still waits for it: on its
-# way; public, its publication learns of it shortly; public, and its
-# publication lists another work at the link name.
+# way; public, its publication learns of it shortly; public, with no
+# quiet try left, so the person sends the report again (RG-M4-c 3);
+# public, and its publication lists another work at the link name.
 PUBLISHING = "publishing"
 PUBLIC = "public"
+UNREPORTED = "unreported"
 NOT_LISTED = "not listed"
+# By state: the row's word, the detail's sentence and quieter line, and
+# its one action.
 PUBLISHING_WORDS = {
-    PUBLISHING: (N_("Being published …"), N_("Being published …")),
-    PUBLIC: (N_("Published"), N_("“{title}” is public. {publication} learns of it shortly.")),
+    PUBLISHING: (N_("Being published …"), N_("Being published …"), "", None),
+    PUBLIC: (N_("Published"), N_("“{title}” is public. {publication} learns of it shortly."),
+             "", None),
+    UNREPORTED: (N_("Published"), N_("“{title}” is public."),
+                 N_("{publication} hasn’t learned of it yet."), Action.REPORT),
     NOT_LISTED: (N_("Published"), N_("“{title}” is public, but {publication} already lists "
-                                     "another work under this link name.")),
+                                     "another work under this link name."), "", Action.ASK),
 }
 # The situations a publish of the writer's runs from.
 PUBLISHED_HERE = frozenset({Situation.PUBLISH, Situation.CORRECTION,
@@ -148,7 +155,7 @@ class Row:
     view: Optional[views.SubmissionView] = None
     entry: Optional[SubmissionEntry] = None
     confirmed: bool = False
-    # :data:`PUBLISHING`, :data:`PUBLIC`, :data:`NOT_LISTED` or "".
+    # A key of :data:`PUBLISHING_WORDS`, or "".
     publishing: str = ""
 
     @property
@@ -428,8 +435,9 @@ def status_of(row: Row, *, publication: str, name_of: Callable[[str], str],
     a placed report that counts names (10), never the server's alone.
     A publish of the writer's on its way or out says only that (RG-M4-b 3, 9)."""
     if row.publishing:
-        return Status(_(PUBLISHING_WORDS[row.publishing][1]).format(
-            title=row.title, publication=publication))
+        _word, sentence, more, action = PUBLISHING_WORDS[row.publishing]
+        return Status(_(sentence).format(title=row.title, publication=publication),
+                      _(more).format(publication=publication) if more else "", action)
     entry = TABLE[row.situation]
     view = row.view
     number = view.revision if view is not None else 1
@@ -506,6 +514,7 @@ def rests_on(situation: Situation, decision: Optional[Decision]) -> bool:
 __all__ = [
     "ACTION_LABELS", "Action", "DECIDER_ROLES", "DECISIONS", "Decision", "NOTHING_TO_DO",
     "NOT_LISTED", "PUBLIC", "PUBLISHED_HERE", "PUBLISHING", "PUBLISHING_WORDS", "REMIND_EVERY",
+    "UNREPORTED",
     "correction_taken", "reminded_lately",
     "NOT_SIGNED", "ON_A_DECISION", "ON_ITS_WAY", "Row",
     "Section", "SignedChecks", "Situation", "Status", "TABLE", "Words", "YOUR_TURN", "action_verified",

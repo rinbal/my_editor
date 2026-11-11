@@ -659,6 +659,8 @@ class Following(QObject):
             return
 
         def discarded(stored: bool) -> None:
+            if stored:
+                self.unlisted.forget(sid)     # let go: nothing reported for it again
             on_done(stored)
             self.changed.emit()
 
