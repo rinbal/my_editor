@@ -412,6 +412,29 @@ def test_cutting_pictures_out_of_a_group_and_pasting_them_keeps_their_captions()
     ed.close()
 
 
+def test_return_over_a_selection_that_starts_in_a_caption_only_deletes_it():
+    """STANDUP's rule (PG1C 4f): no line breaks there; the pictures
+    outside the selection stay and the caret is where it started. Within
+    one caption, from a caption into the next one, to a later line."""
+    source = _text(ONE, "*Cap one words*", "Text between.", TWO, "End.")
+    for start, end, saved, line in (
+            ("one words", "words*", _text(ONE, "*Cap words*", "Text between.", TWO, "End."),
+             "Cap words"),
+            ("one words", "two*", _text(ONE, "*Cap*", "![two](square.png)", "*two*", "End."),
+             None),
+            ("one words", "between.", _text(ONE, "*Cap* between.", TWO, "End."),
+             "Cap between.")):
+        ed = _editor(source)
+        _select(ed, start, end.rstrip("*"))
+        QTest.keyClick(ed, Qt.Key.Key_Return)
+        assert _markdown(ed) == saved, start + " to " + end
+        if line is not None:
+            caret = ed.textCursor()
+            assert (caret.block().text(), caret.positionInBlock()) == (line, len("Cap "))
+        assert _undone(ed, source)
+        ed.close()
+
+
 def test_a_cut_or_a_paste_from_words_into_a_caption_keeps_its_picture():
     """As the keys do (PG1C 4f): Cut puts the selection on the clipboard
     as it is written and takes what is selected, the picture stays; a

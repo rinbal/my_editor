@@ -2426,17 +2426,25 @@ class HtmlEditor(QTextEdit):
         """Backspace, Delete or Return over a selection that holds a picture
         alone only in part (from words into its caption): what is selected
         goes and the picture stays (photo_group_cut), in a step of its own;
-        Return leaves the caret at the caption. True when answered here."""
+        Return leaves the caret at the caption. Return over a selection
+        that starts in a caption deletes it and breaks no line, the caret
+        where it started (STANDUP's rule). True when answered here."""
         key = e.key()
         cursor = self.textCursor()
         if (key not in _CUT_KEYS or e.modifiers() & ~Qt.KeyboardModifier.KeypadModifier
-                or photo_group_cut.cuts(self.document(), cursor.selectionStart(),
-                                        cursor.selectionEnd()) is None):
+                or not cursor.hasSelection()):
             return False
+        doc = self.document()
         returns = key in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+        from_caption = returns and photo_group_cut.in_caption(doc, cursor.selectionStart())
+        if not from_caption and photo_group_cut.cuts(doc, cursor.selectionStart(),
+                                                     cursor.selectionEnd()) is None:
+            return False
         with self._typing(BACKWARD if key == Qt.Key.Key_Backspace else FORWARD, cursor):
             words = photo_group_cut.delete(cursor)
-            if returns:
+            if words is None:
+                cursor.removeSelectedText()
+            elif returns and not from_caption:
                 cursor.setPosition(words)
         if returns:
             self.end_typing_run()

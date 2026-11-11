@@ -13,7 +13,9 @@ a selection deletes a picture alone only when it holds its whole unit.
   the picture's paragraph and the caption's selected words;
 - **delete** deletes a selection that way, inside the step its caller
   has open (Backspace, Delete, Return, typing, Cut and Paste all come
-  here), and says where the kept caption's words now start.
+  here), and says where the kept caption's words now start;
+- **in_caption** tells Return over a selection that starts in a caption,
+  which deletes it and breaks no line there (STANDUP's rule).
 """
 
 from __future__ import annotations
@@ -28,24 +30,40 @@ import photo_group_actions as actions
 Cuts = List[Tuple[int, int]]
 
 
-def _held_in_part(doc: QTextDocument, end: int) -> Optional[Tuple[int, int]]:
-    """The picture alone whose unit a selection ending at ``end`` reaches
-    into without holding all of it: the picture's position and where its
-    caption's words start (its unit's end when it has none)."""
-    block = doc.findBlock(end)
+def _alone_around(doc: QTextDocument, position: int) -> Optional[Tuple[actions.Picture, int]]:
+    """The picture alone whose unit ``position`` is in (its paragraph, or
+    the caption paragraph under it), with where its caption's words start
+    (its unit's end when it has none)."""
+    block = doc.findBlock(position)
     for candidate in (block, block.previous()):
         picture = actions.alone(doc, candidate) if candidate.isValid() else None
-        if picture is None or not picture.position < end < picture.end:
+        if picture is None or not picture.position <= position <= picture.end:
             continue
         own_end = candidate.position() + candidate.length() - 1
         if picture.end > own_end:                       # the caption is the paragraph below
-            return picture.position, own_end + 1
+            return picture, own_end + 1
         text = candidate.text()
         lead = 1
         while lead < len(text) and text[lead].isspace():
             lead += 1
-        return picture.position, candidate.position() + lead
+        return picture, candidate.position() + lead
     return None
+
+
+def _held_in_part(doc: QTextDocument, end: int) -> Optional[Tuple[int, int]]:
+    """The picture alone whose unit a selection ending at ``end`` reaches
+    into without holding all of it: the picture's position and where its
+    caption's words start."""
+    found = _alone_around(doc, end)
+    if found is None or not found[0].position < end < found[0].end:
+        return None
+    return found[0].position, found[1]
+
+
+def in_caption(doc: QTextDocument, position: int) -> bool:
+    """Whether ``position`` is in the caption of a picture alone."""
+    found = _alone_around(doc, position)
+    return found is not None and bool(found[0].unit.caption) and found[1] <= position
 
 
 def cuts(doc: QTextDocument, start: int, end: int) -> Optional[Cuts]:
