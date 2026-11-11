@@ -237,6 +237,7 @@ def test_the_widget_uses_only_the_images_it_is_given():
 # swipes); every picture whole.
 
 from doc_walk import iter_blocks  # noqa: E402
+import photo_group_drawing  # noqa: E402
 import photo_group_view  # noqa: E402
 from tests.photo_corners import SHAPES, image_of, shows_whole  # noqa: E402
 
@@ -279,6 +280,27 @@ def test_a_groups_rows_stand_where_the_engine_places_them(width):
     # Qt sets each line on a whole pixel: a pixel or two over a group.
     assert [top - shown[0] for top in shown] == pytest.approx([top - placed[0] for top in placed],
                                                               abs=2)
+    view.close()
+
+
+def test_a_wide_picture_of_a_group_holds_the_pages_enlarge_place():
+    """As article.css holds it at the end of the caption's line (PG1C 4d):
+    the row below stands at least its 40 pixels under the picture, and the
+    caption wraps beside it. The editor holds none."""
+    from PySide6.QtWidgets import QApplication as App
+    import photo_group
+    view = pv.NostrPreview(images=lambda name: image_of(name) if name in SHAPES else None)
+    view.resize(1000, 3200)
+    view.show_markdown("![a](landscape.png#wide)\n*Short*\n\n![b](photo.png)\n\n"
+                       "![c](photo.png)\n")
+    view.show()
+    App.processEvents()
+    doc = view.document()
+    (group,) = photo_group.groups_in(doc)
+    boxes = photo_group_view.arrange(doc, group.units).boxes
+    assert boxes[1].top() - boxes[0].bottom() >= photo_group_drawing.ZOOM_HEIGHT
+    photo_group_view.set_zoom_place(doc, 0.0)
+    assert photo_group_view.arrange(doc, group.units).boxes[1].top() < boxes[1].top()
     view.close()
 
 

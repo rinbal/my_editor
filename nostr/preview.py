@@ -78,6 +78,7 @@ from i18n import _, ngettext
 import photo_group
 import photo_group_drawing
 import photo_group_view
+import photo_page
 from markdown_writer import READ_FEATURES, read_markdown
 from nostr import refs
 from nostr.refs import outside_code
@@ -280,6 +281,19 @@ def _style_body(first_block, colors: Palette) -> None:
         cursor.setBlockFormat(fmt)
         _merge_fragments(block, char, colors)
         block = block.next()
+
+
+def _zoom_place() -> float:
+    """The width a reader's page gives a #wide picture's "Enlarge" place at
+    the end of its caption line, with the 12-pixel gap before it: the
+    word in the page's language, in the interface's type at 13 pixels,
+    semibold, after a 14-pixel icon and a 6-pixel gap, 2 pixels of
+    padding a side (article.css .e21-pg-zoom)."""
+    font = QFont()
+    font.setPixelSize(13)
+    font.setWeight(QFont.Weight.DemiBold)
+    word = photo_page.MESSAGES[photo_page.page_language()]["enlarge"]
+    return 12 + 2 + 14 + 6 + QFontMetricsF(font).horizontalAdvance(word) + 2
 
 
 def _line_height(block, char: QTextCharFormat) -> tuple:
@@ -708,6 +722,7 @@ class NostrPreview(QTextBrowser):
         # Photo groups sized as readers size them, from the pictures this
         # view loads (photo_group_view).
         photo_group_view.install(doc, photo_group_view.resource_sizes(doc))
+        photo_group_view.set_zoom_place(doc, _zoom_place())
         self.setDocument(doc)
         # Qt deletes a document the view made itself; one made here goes now.
         if (previous is not doc and shiboken6.isValid(previous)

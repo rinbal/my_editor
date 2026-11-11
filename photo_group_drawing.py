@@ -50,6 +50,10 @@ class CaptionMark(NamedTuple):
 # A caption sits this share of the text's font size under its picture (the
 # readers: 0.6em of a caption at 0.833em).
 CAPTION_GAP_EM = 0.5
+# The height a #wide picture's "Enlarge" place holds beside its caption on
+# a reader's page, in CSS pixels: article.css's .e21-pg-zoom, at least
+# 44 pixels high, 4 of them over the caption's line.
+ZOOM_HEIGHT = 40.0
 # Room above and below a group, in the text's font size: a group stands
 # apart from the paragraphs around it, as a figure does (the readers give
 # it 2em of their larger type).
@@ -166,6 +170,12 @@ class Handler(QPyTextObject):
         # Room a view keeps free above every group, in the layout's pixels
         # (the editor's bar over a group floats there): at least this much.
         self.room_above = 0.0
+        # The width a #wide picture's "Enlarge" place takes at the end of
+        # its caption line on a reader's page, the gap before it included,
+        # in CSS pixels: a preview holds it, so the rows below stand as on
+        # the page. 0 where nothing holds it (the editor shows no such
+        # control; it has its own chips).
+        self.zoom_place = 0.0
 
     # Qt asks for each object's size whenever it lays its line out (also
     # after the width changed), and has it drawn into the box it gave.
@@ -302,7 +312,7 @@ class Handler(QPyTextObject):
     def _measure(self, doc) -> None:
         """What the groups are laid out with, for the document as it is."""
         valid = (doc.revision(), doc.textWidth(), doc.pageSize().width(), self.screen_height,
-                 doc.defaultFont(), self.room_above)
+                 doc.defaultFont(), self.room_above, self.zoom_place)
         if valid != self._valid:
             self._valid = valid
             self._laid = {}
@@ -337,7 +347,10 @@ class Handler(QPyTextObject):
 
         def caption_height(index: int, width: float) -> float:
             unit = units[index]
-            return self._caption(doc, unit, width)[1] + gap if unit.has_caption else 0.0
+            place = self._zoom_place(doc, unit)
+            words = (self._caption(doc, unit, width - place)[1] + gap if unit.has_caption
+                     else 0.0)
+            return max(words, ZOOM_HEIGHT * self._scale(doc)) if place else words
 
         return geometry.group_rows(items, metrics, caption_height)
 
@@ -357,12 +370,17 @@ class Handler(QPyTextObject):
             top += row.height + (metrics.gap if number < len(rows) - 1 else 0.0)
         return Arranged(boxes, figures, metrics.width, top)
 
+    def _zoom_place(self, doc, unit) -> float:
+        """The width ``unit``'s "Enlarge" place takes beside its caption."""
+        return self.zoom_place * self._scale(doc) if unit.wide else 0.0
+
     def draw(self, painter, doc, unit, box: QRectF, figure: Tuple[float, float]) -> None:
         """``unit``'s picture in ``box``, its caption under it in a figure
-        from ``figure[0]`` and ``figure[1]`` wide."""
+        from ``figure[0]`` and ``figure[1]`` wide (beside the "Enlarge"
+        place, which is held, not drawn)."""
         self._draw_picture(painter, box, doc, unit)
         if unit.has_caption and figure[1] > 0:
-            layout, _height = self._caption(doc, unit, figure[1])
+            layout, _height = self._caption(doc, unit, figure[1] - self._zoom_place(doc, unit))
             layout.draw(painter, QPointF(figure[0], box.bottom() + self._caption_gap(doc)))
 
     def _lay_out(self, doc, block, start: int, units) -> _Laid:

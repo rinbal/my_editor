@@ -113,6 +113,17 @@ def set_marks(doc: QTextDocument, marks: Sequence[CaptionMark]) -> None:
         found.marks = tuple(marks)
 
 
+def set_zoom_place(doc: QTextDocument, width: float) -> None:
+    """Hold a reader's "Enlarge" place, ``width`` CSS pixels with its gap,
+    beside the caption of every #wide picture of ``doc``'s groups
+    (Handler.zoom_place); the groups are laid out again when it changed."""
+    found = _handler(doc)
+    if found is None or found.zoom_place == width:
+        return
+    found.zoom_place = width
+    _lay_out_again(doc, found)
+
+
 def set_screen_height(doc: QTextDocument, height: Optional[float]) -> None:
     """The height ``doc`` is read on (a view's, a page's), in its layout's
     pixels: a row takes at most its share of it, as on a reader's screen.
@@ -124,9 +135,13 @@ def set_screen_height(doc: QTextDocument, height: Optional[float]) -> None:
     found.screen_height = height
     if found.metrics(doc) == before:
         return                          # a screen high enough before and after: the same rows
+    _lay_out_again(doc, found)
+
+
+def _lay_out_again(doc: QTextDocument, found: Handler) -> None:
+    """Lay ``doc``'s groups out anew, from the first to the last in one go:
+    each call lays out what it names and places everything after it again."""
     found.forget()
-    # From the first group to the last, in one go: each call lays out
-    # what it names and places everything after it again.
     first = last = None
     block = doc.begin()
     while block.isValid():
