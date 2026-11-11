@@ -51,7 +51,7 @@ from .standup_publish import CorrectionPublish, Stage
 REPLACES = N_("If you take it, the correction replaces the article at the same address. "
               "The date of publication stays.")
 ASK_PREFIX = N_("A short question about the correction: ")
-# The correction's note, quoted as each language quotes (German »…«).
+# The correction's note, quoted as each language quotes (German „…“).
 QUOTED = N_("“{note}”")
 # What else the correction changes, named in one line as the web names
 # it (RG-M4-a 1; editorial-release.js compareFields and field).

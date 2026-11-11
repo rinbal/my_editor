@@ -7780,7 +7780,7 @@ msgstr "Bestätige die Rechte, um einzureichen."
 #: nostr/standup/drafting.py:44
 #, python-brace-format
 msgid "“{name}” is private in your Media Library. Share it, or take it out of the text, to submit."
-msgstr "»{name}« ist in deiner Mediathek privat. Gib es frei oder nimm es aus dem Text, um einzureichen."
+msgstr "„{name}“ ist in deiner Mediathek privat. Gib es frei oder nimm es aus dem Text, um einzureichen."
 
 #: nostr/standup/drafting.py:46
 #, python-brace-format
@@ -7790,7 +7790,7 @@ msgstr "Eine Einreichung hat höchstens {count} Bilder."
 #: nostr/standup/drafting.py:47
 #, python-brace-format
 msgid "“{name}” can’t be submitted: the editorial team’s app shows only PNG, JPEG, GIF, WebP and AVIF pictures. Save it in one of these formats, or take it out of the text, to submit."
-msgstr "»{name}« kann nicht eingereicht werden: Die App der Redaktion zeigt nur Bilder im Format PNG, JPEG, GIF, WebP und AVIF. Speichere es in einem dieser Formate oder nimm es aus dem Text, um einzureichen."
+msgstr "„{name}“ kann nicht eingereicht werden: Die App der Redaktion zeigt nur Bilder im Format PNG, JPEG, GIF, WebP und AVIF. Speichere es in einem dieser Formate oder nimm es aus dem Text, um einzureichen."
 
 #: nostr/standup/drafting.py:50
 #, python-brace-format
@@ -8333,12 +8333,12 @@ msgstr "Deine Einreichung bei {publication} ist angekommen. Bestätige deine Nac
 #: nostr/standup/words.py:56
 #, python-brace-format
 msgid "Your message to the editorial team of {publication} wasn’t sent: open Submit to a Publication for this text to send it again."
-msgstr "Deine Nachricht an die Redaktion von {publication} wurde nicht gesendet: Öffne »Bei Publikation einreichen« für diesen Text, um sie erneut zu senden."
+msgstr "Deine Nachricht an die Redaktion von {publication} wurde nicht gesendet: Öffne „Bei Publikation einreichen“ für diesen Text, um sie erneut zu senden."
 
 #: nostr/standup/words.py:59
 #, python-brace-format
 msgid "Your message to the editorial team of {publication} may not have arrived: open Submit to a Publication for this text before you send it again."
-msgstr "Deine Nachricht an die Redaktion von {publication} ist vielleicht nicht angekommen: Öffne »Bei Publikation einreichen« für diesen Text, bevor du sie erneut sendest."
+msgstr "Deine Nachricht an die Redaktion von {publication} ist vielleicht nicht angekommen: Öffne „Bei Publikation einreichen“ für diesen Text, bevor du sie erneut sendest."
 
 #: nostr/standup/words.py:64
 #, python-brace-format
@@ -8348,7 +8348,7 @@ msgstr "Deine Einreichung bei {publication} wurde beim Kontowechsel angehalten, 
 #: nostr/standup/words.py:66
 #, python-brace-format
 msgid "Your submission to {publication} stopped when the account changed, before the server confirmed it: open Submit to a Publication with that account to see whether it arrived."
-msgstr "Deine Einreichung bei {publication} wurde beim Kontowechsel angehalten, bevor der Server sie bestätigt hat: Öffne »Bei Publikation einreichen« mit diesem Konto, um zu sehen, ob sie angekommen ist."
+msgstr "Deine Einreichung bei {publication} wurde beim Kontowechsel angehalten, bevor der Server sie bestätigt hat: Öffne „Bei Publikation einreichen“ mit diesem Konto, um zu sehen, ob sie angekommen ist."
 
 #: nostr/standup/words.py:69
 #, python-brace-format
@@ -13163,22 +13163,22 @@ msgstr "Auf Nachricht von {name} reagieren"
 #: nostr/ui/submissions_host.py:56
 #, python-brace-format
 msgid "New message from {publication} about “{title}”."
-msgstr "Neue Nachricht von {publication} zu »{title}«."
+msgstr "Neue Nachricht von {publication} zu „{title}“."
 
 #: nostr/ui/submissions_host.py:57
 #, python-brace-format
 msgid "New message from {name} about “{title}”."
-msgstr "Neue Nachricht von {name} zu »{title}«."
+msgstr "Neue Nachricht von {name} zu „{title}“."
 
 #: nostr/ui/submissions_host.py:58
 #, python-brace-format
 msgid "New message from a contributor about “{title}”."
-msgstr "Neue Nachricht von Mitwirkenden zu »{title}«."
+msgstr "Neue Nachricht von Mitwirkenden zu „{title}“."
 
 #: nostr/ui/submissions_host.py:59
 #, python-brace-format
 msgid "New message about “{title}”."
-msgstr "Neue Nachricht zu »{title}«."
+msgstr "Neue Nachricht zu „{title}“."
 
 #: nostr/ui/submissions_host.py:68
 msgid "Open the article in the editor first."
@@ -13195,27 +13195,27 @@ msgstr "Die abgegebene Fassung konnte nicht geladen werden: Versuche es gleich n
 #: nostr/ui/submissions_host.py:61
 #, python-brace-format
 msgid "{publication} asks for changes to “{title}”."
-msgstr "{publication} möchte Änderungen an »{title}«."
+msgstr "{publication} möchte Änderungen an „{title}“."
 
 #: nostr/ui/submissions_host.py:62
 #, python-brace-format
 msgid "{publication} accepted “{title}”."
-msgstr "{publication} hat »{title}« angenommen."
+msgstr "{publication} hat „{title}“ angenommen."
 
 #: nostr/ui/submissions_host.py:63
 #, python-brace-format
 msgid "{publication} declined “{title}”."
-msgstr "{publication} hat »{title}« abgelehnt."
+msgstr "{publication} hat „{title}“ abgelehnt."
 
 #: nostr/ui/submissions_host.py:64
 #, python-brace-format
 msgid "“{title}” is published in {publication}."
-msgstr "»{title}« ist in {publication} veröffentlicht."
+msgstr "„{title}“ ist in {publication} veröffentlicht."
 
 #: nostr/ui/submissions_host.py:65
 #, python-brace-format
 msgid "{publication} suggests a correction to “{title}”."
-msgstr "{publication} schlägt eine Korrektur an »{title}« vor."
+msgstr "{publication} schlägt eine Korrektur an „{title}“ vor."
 
 #: nostr/ui/submissions_host.py:331
 #, python-brace-format
@@ -13229,7 +13229,7 @@ msgstr "Fassung {before} und Fassung {after}"
 
 #: nostr/ui/submissions_view.py:58
 msgid "Follow here what you submit to publications. Open an article and choose “Submit to a Publication…” in the Nostr menu."
-msgstr "Hier verfolgst du, was du bei Publikationen einreichst. Öffne einen Artikel und wähle im Nostr-Menü »Bei Publikation einreichen …«."
+msgstr "Hier verfolgst du, was du bei Publikationen einreichst. Öffne einen Artikel und wähle im Nostr-Menü „Bei Publikation einreichen …“."
 
 #: nostr/ui/submissions_view.py:68
 msgid "What you submitted to publications"
@@ -13475,7 +13475,7 @@ msgid "language"
 msgstr "Sprache"
 
 msgid "The accepted version is published. If you change anything afterwards, the editorial team sees “changed since acceptance”."
-msgstr "Veröffentlicht wird die angenommene Fassung. Änderst du danach etwas, sieht die Redaktion »geändert seit Annahme«."
+msgstr "Veröffentlicht wird die angenommene Fassung. Änderst du danach etwas, sieht die Redaktion „geändert seit Annahme“."
 
 msgid "There is a newer version in the meantime."
 msgstr "Inzwischen gibt es eine neuere Fassung."
@@ -13547,7 +13547,7 @@ msgstr "Wird veröffentlicht …"
 
 #, python-brace-format
 msgid "“{title}” is public. {publication} learns of it shortly."
-msgstr "»{title}« ist öffentlich. {publication} erfährt es gleich."
+msgstr "„{title}“ ist öffentlich. {publication} erfährt es gleich."
 
 msgid "Confirm Share …"
 msgstr "Anteil bestätigen …"
@@ -13566,11 +13566,11 @@ msgstr "Die Aufteilung steht unten im Gespräch."
 
 #, python-brace-format
 msgid "Published in the section “{section}”."
-msgstr "Veröffentlicht in der Rubrik »{section}«."
+msgstr "Veröffentlicht in der Rubrik „{section}“."
 
 #, python-brace-format
 msgid "It then gets its place in the section “{section}”."
-msgstr "Danach bekommt der Beitrag seinen Platz in der Rubrik »{section}«."
+msgstr "Danach bekommt der Beitrag seinen Platz in der Rubrik „{section}“."
 
 msgid "Another person’s work already stands under this link name. So that it stays, nothing is published."
 msgstr "Unter diesem Linknamen steht schon ein Beitrag von jemand anderem. Damit er bleibt, wird nichts veröffentlicht."
@@ -13580,15 +13580,15 @@ msgstr "Ob unter diesem Linknamen schon ein Beitrag steht, ließ sich gerade nic
 
 #, python-brace-format
 msgid "“{title}” is public, but {publication} already lists another work under this link name."
-msgstr "»{title}« ist öffentlich, aber {publication} führt unter diesem Linknamen schon einen anderen Beitrag."
+msgstr "„{title}“ ist öffentlich, aber {publication} führt unter diesem Linknamen schon einen anderen Beitrag."
 
 #, python-brace-format
 msgid "“{note}”"
-msgstr "»{note}«"
+msgstr "„{note}“"
 
 #, python-brace-format
 msgid "“{title}” is public."
-msgstr "»{title}« ist öffentlich."
+msgstr "„{title}“ ist öffentlich."
 
 #, python-brace-format
 msgid "{publication} hasn’t learned of it yet."

@@ -6,7 +6,7 @@ it (RG-M4-b 3; editorial contract 12.4 ``/published``;
 
 A publish run whose report did not arrive hands the signed article over
 (:meth:`QuietReport.hand_over`): the work is public, so the run, the
-list, the pill and the detail say so ("»Titel« ist öffentlich.
+list, the pill and the detail say so ("„Titel“ ist öffentlich.
 <Publikation> erfährt es gleich."), and this reports it again. One the
 server refused because its publication lists another work at the link
 name (409 ``address_taken``) is only kept as that: trying again would
