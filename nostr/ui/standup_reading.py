@@ -80,6 +80,8 @@ class Detail:
     problem: str
     can_write: bool
     not_confirmed: bool = False
+    # The submission was read whole, with its member list (contract 10).
+    complete: bool = False
 
 
 def secret_of(entry: Optional[SubmissionEntry]) -> Optional[bytes]:
@@ -320,7 +322,7 @@ class Reading:
             # and its latest version verified: the room key is its own then.
             can_write=state.room is not None and row.confirmed and not state.not_confirmed
             and row.situation is not rules.Situation.WITHDRAWN,
-            not_confirmed=state.not_confirmed)
+            not_confirmed=state.not_confirmed, complete=state.members is not None)
 
 
 __all__ = ["Detail", "Reading", "Version", "secret_of"]

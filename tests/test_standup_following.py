@@ -353,11 +353,57 @@ def test_a_decision_that_does_not_verify_is_said_as_reported_with_more_about_it(
     detail = opened(world, following, entry)
     assert detail.decision.verified is False
     status = rules.status_of(detail.row, publication="M", name_of=names,
-                             decision=detail.decision)
+                             decision=detail.decision, complete=detail.complete)
     assert status.sentence == "The editorial team asks for changes." and status.unsigned
     caption = [c for c in detail.thread if isinstance(c, threads.Caption)][-1]
     assert threads.caption_text(caption, me=ME, name_of=names) == "Changes requested"
     assert threads.unsigned(caption)
+
+
+def test_a_sentence_rests_on_the_newest_verified_decision_or_says_that_it_does_not():
+    # Contract 10, from the one table: what a situation rests on, and
+    # what is said when the newest decision is missing, another one or
+    # not verified. Nothing is said while the submission is not read.
+    resting = {s: w.decision for s, w in rules.TABLE.items() if w.decision}
+    assert resting == {
+        Situation.CHANGES_REQUESTED: "request_changes",
+        Situation.CHANGES_BY_WRITER: "request_changes", Situation.CONFIRM: "accept",
+        Situation.ACCEPTED: "accept", Situation.PUBLISH: "accept",
+        Situation.PUBLISHED_UNPLACED: "accept", Situation.PUBLISHED: "accept",
+        Situation.DECLINED: "decline"}
+    for situation, required in resting.items():
+        row = rules.Row(sid="ab" * 32, title="Ein Jahr", publication=ADDRESS, kind="article",
+                        role="writer", writer=ME, d="", situation=situation,
+                        updated_at=int(NOW), view=view_of("declined"), confirmed=True)
+
+        def status(decision, complete=True):
+            return rules.status_of(row, publication="M", name_of=names, decision=decision,
+                                   complete=complete)
+
+        other = "decline" if required != "decline" else "accept"
+        assert not status(rules.Decision(required, EDITOR, True)).unsigned
+        assert status(None).unsigned                                    # left out
+        assert status(rules.Decision(other, EDITOR, True)).unsigned     # another one
+        assert status(rules.Decision(required, EDITOR, False)).unsigned
+        assert not status(None, complete=False).unsigned                # not read yet
+        # What acts on the Redaktion's word waits for that word.
+        action = rules.TABLE[situation].action
+        if action in rules.ON_A_DECISION:
+            assert status(None).action is None
+            assert status(rules.Decision(required, EDITOR, True)).action is action
+    # A server that reports "declined" and leaves the decision out.
+    world = FollowWorld()
+    account = world.account()
+    prepared, entry = world.submit(account, d="ohne")
+    world.decide(prepared, "decline")
+    record = world.record(entry.sid)
+    record.timeline = [i for i in record.timeline
+                       if (i.get("event") or {}).get("name") != "decline"]
+    detail = opened(world, world.following(account), entry)
+    assert detail.row.situation is Situation.DECLINED and detail.complete
+    said = rules.status_of(detail.row, publication="M", name_of=names,
+                           decision=detail.decision, complete=detail.complete)
+    assert said.sentence == "Declined." and said.unsigned
 
 
 def test_internal_notes_and_forged_senders_are_never_shown():

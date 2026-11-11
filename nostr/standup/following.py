@@ -20,9 +20,12 @@ comes from what is held, never from timing (lessons 2, 32):
 :func:`rows_of` joins the list's entries with the lookup's answers and
 the server's Views (works the person is named in) into rows, unread
 from ``last_message_seq`` (9.3). :func:`newest_decision` verifies the
-newest decision's signed action against the member list (10): the
-sentence names the editor only then, and a decision that does not
-verify is said as the server reports it, with "Mehr dazu".
+newest decision's signed action against the member list (10), and the
+table names the decision each situation rests on (:func:`rests_on`):
+the sentence names the editor only then. Once the submission was read
+whole, a decision that is missing, another one or not verified is said
+as the server reports it, with "Mehr dazu", and nothing that acts on the
+Redaktion's word is offered.
 """
 
 from __future__ import annotations
@@ -106,7 +109,9 @@ class Words:
     the editor, ``{publication}`` the publication, ``{writer}`` the
     writer, ``{number}`` the version. ``unnamed_word`` and
     ``unnamed_sentence`` stand in while the editor has no known name or
-    no verified signature."""
+    no verified signature. ``decision`` is the Redaktion's decision the
+    situation rests on (10, 11.3): it is true only as far as the newest
+    decision of the timeline is that one and its signed action verifies."""
 
     word: str
     section: Section
@@ -115,6 +120,7 @@ class Words:
     action: Optional[Action] = None
     unnamed_word: str = ""
     unnamed_sentence: str = ""
+    decision: str = ""
 
 
 NOTHING_TO_DO = N_("You don’t need to do anything right now.")
@@ -144,30 +150,42 @@ TABLE = {
     Situation.CHANGES_REQUESTED: Words(
         N_("Changes requested"), Section.TURN, N_("{name} asks for changes."),
         N_("What exactly is in the conversation below."), Action.REVISE,
-        unnamed_sentence=N_("The editorial team asks for changes.")),
+        unnamed_sentence=N_("The editorial team asks for changes."),
+        decision="request_changes"),
     Situation.CHANGES_BY_WRITER: Words(
         N_("Changes requested"), Section.RUNNING, N_("{name} asks for changes."),
         N_("{writer} is revising the text."),
-        unnamed_sentence=N_("The editorial team asks for changes.")),
+        unnamed_sentence=N_("The editorial team asks for changes."),
+        decision="request_changes"),
     Situation.CONFIRM: Words(N_("Please confirm"), Section.TURN, N_("Accepted."),
-                             N_("Confirm your part so it can be published."), Action.CONFIRM),
+                             N_("Confirm your part so it can be published."), Action.CONFIRM,
+                             decision="accept"),
     Situation.ACCEPTED: Words(N_("Accepted"), Section.RUNNING, N_("Accepted."),
-                              N_("{publication} takes the next step.")),
+                              N_("{publication} takes the next step."), decision="accept"),
     Situation.PUBLISH: Words(N_("Accepted"), Section.TURN, N_("Accepted."),
-                             N_("Publish it when you’re ready."), Action.PUBLISH),
+                             N_("Publish it when you’re ready."), Action.PUBLISH,
+                             decision="accept"),
     Situation.PUBLISHED_UNPLACED: Words(N_("Published, place to follow"), Section.RUNNING,
                                         N_("Published."),
-                                        N_("{publication} gives it its place next.")),
+                                        N_("{publication} gives it its place next."),
+                                        decision="accept"),
     Situation.CORRECTION: Words(N_("Correction suggested"), Section.TURN,
                                 N_("{publication} suggests a correction."),
                                 N_("Compare it. If you accept it, the address stays the same."),
                                 Action.COMPARE_CORRECTION),
-    Situation.PUBLISHED: Words(N_("Published"), Section.DONE, N_("Published in {publication}.")),
+    Situation.PUBLISHED: Words(N_("Published"), Section.DONE, N_("Published in {publication}."),
+                               decision="accept"),
     Situation.DECLINED: Words(N_("Declined"), Section.DONE, N_("Declined."),
-                              N_("You can submit the text again, or somewhere else.")),
+                              N_("You can submit the text again, or somewhere else."),
+                              decision="decline"),
     Situation.WITHDRAWN: Words(N_("Withdrawn"), Section.DONE, N_("Withdrawn."),
                                N_("What the editorial team already had stays there.")),
 }
+
+# What rests on the Redaktion's word is offered only once that word
+# verified (9.4, 12.4): a split is confirmed, a text published, on the
+# verified accept alone. A later phase's handlers get no other.
+ON_A_DECISION = frozenset({Action.PUBLISH, Action.CONFIRM})
 
 YOUR_TURN = N_("Your turn")
 # 10: a decision whose signed action does not verify (the contract's words).
@@ -448,10 +466,16 @@ class Status:
 
 
 def status_of(row: Row, *, publication: str, name_of: Callable[[str], str],
-              decision: Optional[Decision] = None, edited: bool = False) -> Status:
-    """The detail's sentence and action for ``row``. ``edited``: the
-    text in the editor differs from the version handed in, so the next
-    version can be handed in (while the submission is open)."""
+              decision: Optional[Decision] = None, complete: bool = False,
+              edited: bool = False) -> Status:
+    """The detail's sentence and action for ``row``. ``decision`` is the
+    newest decision of its timeline (:func:`newest_decision`);
+    ``complete``: the submission was read whole, with its member list,
+    so a decision that is missing, another one or not verified is said
+    (10: nothing is said while the page did not load, and a server
+    cannot unsay it by leaving the item out). ``edited``: the text in
+    the editor differs from the version handed in, so the next version
+    can be handed in (while the submission is open)."""
     entry = TABLE[row.situation]
     view = row.view
     number = view.revision if view is not None else 1
@@ -459,22 +483,21 @@ def status_of(row: Row, *, publication: str, name_of: Callable[[str], str],
     fields = dict(publication=publication, writer=writer or _("The writer"), number=number,
                   name="")
     sentence, more, action = entry.sentence, entry.more, entry.action
-    unsigned = False
-    if row.situation in (Situation.CHANGES_REQUESTED, Situation.CHANGES_BY_WRITER):
-        fields["name"] = _decider_name(decision, "request_changes", name_of)
-        unsigned = decision is not None and decision.verified is False
+    rests = rests_on(row.situation, decision)
+    unsigned = complete and not rests
+    if entry.decision:
+        fields["name"] = name_of(decision.actor) if rests and decision.actor else ""
     elif row.situation is Situation.IN_REVIEW:
         fields["name"] = name_of(view.responsible) if view.responsible else ""
         if fields["name"] and number > 1:
             sentence = VERSION_IN_REVIEW
-    elif row.situation in (Situation.CONFIRM, Situation.ACCEPTED, Situation.PUBLISH,
-                           Situation.DECLINED):
-        unsigned = decision is not None and decision.verified is False
-    elif row.situation is Situation.PUBLISHED and view.section:
+    if row.situation is Situation.PUBLISHED and view.section:
         more = SECTION_PLACE
         fields["section"] = view.section
     if "{name}" in sentence and not fields["name"]:
         sentence = entry.unnamed_sentence
+    if action in ON_A_DECISION and not rests:
+        action = None
     if row.open and row.situation is not Situation.PICTURES_MISSING:
         if edited:
             action = Action.HAND_IN
@@ -485,20 +508,20 @@ def status_of(row: Row, *, publication: str, name_of: Callable[[str], str],
                   action, unsigned)
 
 
-def _decider_name(decision: Optional[Decision], name: str,
-                  name_of: Callable[[str], str]) -> str:
-    """The editor a sentence may name: the signer of the verified newest
-    decision of that kind, never an unverified one's."""
-    if decision is None or decision.name != name or decision.verified is not True \
-            or not decision.actor:
-        return ""
-    return name_of(decision.actor)
+def rests_on(situation: Situation, decision: Optional[Decision]) -> bool:
+    """Whether ``situation`` rests on what it must (10): on no decision
+    of the Redaktion at all, or on the newest one of the timeline, which
+    is the one :data:`TABLE` names for it and whose signed action
+    verified."""
+    required = TABLE[situation].decision
+    return not required or (decision is not None and decision.name == required
+                            and decision.verified is True)
 
 
 __all__ = [
     "ACTION_LABELS", "Action", "DECIDER_ROLES", "DECISIONS", "Decision", "NOT_SIGNED",
-    "ON_ITS_WAY", "Row",
+    "ON_A_DECISION", "ON_ITS_WAY", "Row",
     "Section", "Situation", "Status", "TABLE", "Words", "YOUR_TURN", "action_verified",
-    "deciders_of", "my_turn", "newest_decision", "pill_word", "rows_of", "situation_of",
+    "deciders_of", "my_turn", "newest_decision", "pill_word", "rests_on", "rows_of", "situation_of",
     "status_of", "status_word",
 ]

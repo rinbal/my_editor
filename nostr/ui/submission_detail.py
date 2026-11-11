@@ -384,7 +384,8 @@ class SubmissionDetail(QWidget):
     def _show_status(self, detail, r) -> None:
         row = detail.row
         status = rules.status_of(row, publication=detail.publication, name_of=self._name_of,
-                                 decision=detail.decision, edited=self._edited(row))
+                                 decision=detail.decision, complete=detail.complete,
+                                 edited=self._edited(row))
         self._status = status
         self.sentence.setText(status.sentence)
         self.more.setText(status.more)
