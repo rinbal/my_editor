@@ -68,6 +68,7 @@ def add_to_panel(panel, view: "SubmissionsView", *, server: str) -> bool:
     panel.add_view(PANEL_VIEW, _("Submissions"), _("What you submitted to publications"), view,
                    refresh=view.refresh, refresh_name=_("Refresh Submissions"),
                    search=view.set_search_text, search_name=_("Search Submissions"))
+    view.detail_shown.connect(lambda shown: panel.set_view_focused(PANEL_VIEW, shown))
     return True
 
 
@@ -86,6 +87,7 @@ class SubmissionsView(QWidget):
     open_in_editor = Signal(str, int)
     compare_requested = Signal(str, int)
     submit_requested = Signal()
+    detail_shown = Signal(bool)             # a detail, or the list, is shown now
 
     def __init__(self, *, name_of: Callable[[str], str],
                  avatar_of: Callable[[str], Optional[QPixmap]], is_dark: bool = True,
@@ -110,6 +112,7 @@ class SubmissionsView(QWidget):
 
     def _build(self, avatar_of) -> None:
         self._stack = QStackedLayout(self)
+        self._stack.currentChanged.connect(lambda _i: self.detail_shown.emit(self.showing_detail()))
         self._stack.setContentsMargins(0, 0, 0, 0)
         page = QWidget()
         column = QVBoxLayout(page)

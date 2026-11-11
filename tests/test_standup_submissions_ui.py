@@ -199,6 +199,24 @@ def test_with_the_submissions_view_the_panel_opens_wide_enough_for_all_three_nam
     panel.hide()
 
 
+def test_an_open_detail_has_no_search_field_and_no_second_menu_above_it(window):
+    _prepared, entries = seeded(window, text="Ein Jahr")
+    panel = DraftsPanel(is_dark=False)
+    add_to_panel(panel, window.view, server=SERVER)
+    panel.show_view(PANEL_VIEW)
+    panel.show()
+    window.follow()
+    QApplication.processEvents()
+    assert panel._search_edit.isVisible() and panel._actions_btn.isVisible()
+    opened(window, entries["text"])
+    QApplication.processEvents()
+    assert not panel._search_edit.isVisible() and not panel._actions_btn.isVisible()
+    window.view.detail.back.click()                     # ‹ Submissions
+    QApplication.processEvents()
+    assert panel._search_edit.isVisible() and panel._actions_btn.isVisible()
+    panel.hide()
+
+
 def test_without_a_server_nothing_is_read_and_the_panel_has_no_submissions_view(monkeypatch):
     window = Window(FollowWorld(), monkeypatch, server="")
     window.follow()

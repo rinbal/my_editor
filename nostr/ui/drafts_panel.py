@@ -1117,6 +1117,8 @@ class DraftsPanel(QFrame):
         self._search_names: dict = {self.DRAFTS_VIEW: _("Search Drafts")}
         self._view_search: dict = {}
         self._view_search_text: dict = {}
+        # Views showing one item of their own, with their own top bar.
+        self._view_focused: dict = {}
 
         self._status_timer = QTimer(self)
         self._status_timer.setSingleShot(True)
@@ -1428,7 +1430,9 @@ class DraftsPanel(QFrame):
     def _show_search_of(self, key: str) -> None:
         """The search field as the view ``key`` has it: its name, what was
         typed into it there, or no field for a view that has no search."""
-        searchable = key == self.DRAFTS_VIEW or key in self._view_search
+        focused = self._view_focused.get(key, False)
+        self._actions_btn.setVisible(not focused)
+        searchable = (key == self.DRAFTS_VIEW or key in self._view_search) and not focused
         self._search_edit.setVisible(searchable)
         if not searchable:
             return
@@ -1545,6 +1549,19 @@ class DraftsPanel(QFrame):
 
     def views(self) -> List[str]:
         return [key for key, _title, _hint in self._views]
+
+    def set_view_focused(self, key: str, focused: bool) -> None:
+        """The view ``key`` shows one item of its own (a submission's
+        detail, with its own back button and menu): while it does, no
+        search field (typing there would do nothing) and no second action
+        menu above it (RG-M3-b 8). The band itself stays, level with the
+        tabs."""
+        if self._view_focused.get(key, False) == focused:
+            return
+        self._view_focused[key] = focused
+        if key == self.current_view():
+            self._show_search_of(key)
+            self._top_band.reflow()
 
     def default_width(self) -> int:
         """The width the panel first opens at: DEFAULT_PANEL_WIDTH, or as
