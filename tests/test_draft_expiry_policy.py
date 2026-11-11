@@ -80,7 +80,9 @@ def test_the_editor_save_passes_no_expiration(monkeypatch):
 
     class RecordingJob(QObject):
         status_changed = Signal(str)
+        signed = Signal(dict)
         stashed = Signal(str, str, int)
+        completed = Signal(list)
         failed = Signal(str)
 
         def __init__(self, **kwargs):
@@ -96,6 +98,7 @@ def test_the_editor_save_passes_no_expiration(monkeypatch):
         _relay_directory=FakeRelayDirectory(), _session_pool=None,
         _entitled_relays=lambda: (), status=types.SimpleNamespace(showMessage=print),
         _attach_active_stash=lambda _ed, _job: None)
+    host._draft_job = types.MethodType(MainWindow._draft_job, host)
     choice = types.SimpleNamespace(identifier="rss-0123456789abcdef")
     inner = {"kind": 30023, "content": "An edited import", "tags": [["d", "x"]],
              "created_at": 1_800_000_000, "pubkey": PROFILE.user_pubkey}

@@ -73,6 +73,10 @@ class FakeResend(QObject):
 
     def send_signed(self, event):
         self.harness.resent.append(event["id"])
+        if self.harness.resend_fails:
+            self.words = "Your signer app declined the request: allow it there and try again."
+            self.failed.emit("user rejected")
+            return
         self.completed.emit([("wss://r", True, "")])
 
 
@@ -82,6 +86,7 @@ class Harness:
         self.catalogue = catalogue or FakeCatalogue()
         self.script = dict(script or {})
         self.started, self.held, self.resent, self.kwargs = [], [], [], []
+        self.resend_fails = False
         self.runner = self.make_runner()
 
     def make_runner(self):
@@ -209,6 +214,19 @@ def test_a_draft_no_relay_took_is_kept_and_sent_again():
     h.runner.run(job.id)
     assert h.resent == ["wrap-" + d("a")]
     assert h.status(job) == ("completed", ["done"])
+
+
+def test_a_draft_sent_again_that_fails_keeps_the_job_s_one_sentence():
+    # Lessons 36: the post's line is the draft job's sentence, never the
+    # signer's own words.
+    h = Harness(script={"a": "norelay"})
+    job = h.job("a")
+    h.runner.run(job.id)
+    h.resend_fails = True
+    h.runner.run(job.id)
+    saved = h.store.job(job.id)
+    assert saved.rows[0].error == (
+        "Your signer app declined the request: allow it there and try again.")
 
 
 def test_one_job_at_a_time():

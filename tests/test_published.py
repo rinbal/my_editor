@@ -70,7 +70,8 @@ def setup(*, client=None, lists=None, refuse_publish=()):
     model.deletion_done.connect(lambda item, results: seen["done"].append((item.id, results)))
     model.deletion_not_taken.connect(
         lambda item, results: seen["not_taken"].append((item.id, results)))
-    model.deletion_refused.connect(lambda item, why: seen["refused"].append((item.id, why)))
+    model.deletion_refused.connect(
+        lambda item, _words, why: seen["refused"].append((item.id, why)))
     model.deletion_status.connect(lambda item, text: seen["status"].append(text))
     return model, relays, seen
 

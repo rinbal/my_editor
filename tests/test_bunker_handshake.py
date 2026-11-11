@@ -257,6 +257,35 @@ def test_qr_answers_a_connect_request_but_not_a_connect_response():
     assert "connect" not in [p.get("method") for p in signer.seen]
 
 
+def test_a_code_answered_with_its_secret_says_it_was_contacted_once():
+    # RG-M2r3 4: the dialog makes the answered code the way in flight.
+    _, signer, client, outcome, secret = _qr_client()
+    contacted = []
+    client.contacted.connect(lambda: contacted.append(client.bunker_pubkey))
+    signer.send({"id": "nc0", "result": "not-the-secret"})
+    assert contacted == []
+    signer.send({"id": "nc1", "result": secret})
+    assert contacted == [signer.pk] and outcome.get("ok") == signer.user_pk
+
+
+@pytest.mark.parametrize("answer", [
+    "f" * 64,                                   # 64 hex digits, no point of the curve
+    "ab" * 31,
+    "zz" * 32,
+])
+def test_a_user_key_that_is_no_public_key_fails_the_pairing(answer):
+    # RG-M2r3 16: the account's key must be a key (crypto.is_public_key).
+    assert not crypto.is_public_key(bytes.fromhex("f" * 64))      # above the field
+    for make in (_qr_client, _bunker_client):
+        pool, signer, client, outcome, *rest = make()
+        signer.user_pk = answer
+        if make is _qr_client:
+            signer.send({"id": "nc1", "result": rest[0]})
+        else:
+            rest[0]()
+        assert "ok" not in outcome and "malformed user pubkey" in outcome.get("err", "")
+
+
 def test_qr_rejects_a_wrong_secret_without_pairing():
     _, signer, _, outcome, _ = _qr_client()
     signer.send({"id": "nc1", "result": "not-the-secret"})
@@ -424,8 +453,9 @@ def _asked(client, **kw):
 
 
 def test_a_signer_that_answered_just_now_is_not_asked_again():
-    # Amber does not answer ping: asking again right after the channel was
-    # proven would cost six seconds before the first draft opens.
+    # A signer that leaves ping unanswered (one asleep, an Amber before
+    # 4.0.3): asking again right after the channel was proven would cost
+    # six seconds before the first draft opens.
     signer, client, _outcome = _reattach(signer_answers_ping=False)
     before = len(signer.seen)
     assert _asked(client) == {"answered": True}

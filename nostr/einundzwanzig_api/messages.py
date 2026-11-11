@@ -2,7 +2,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The words around joining, and the checks that run before anything is signed.
 
-Alerts (:func:`humanize`), inline field messages, and the input checks
+Why a request did not work, in one sentence with what to do
+(:func:`failure_sentence`; what the server said is
+:func:`failure_details`, for Details only), inline field messages, and
+the input checks
 that spare the user a signer prompt for a request certain to be refused.
 The person reading these is joining a club, not debugging a client, so
 the copy says what happened and what to do next, and nothing else.
@@ -14,10 +17,11 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
-from i18n import _, ngettext
+from i18n import N_, _, ngettext
 
+from .. import failures
 from .models import ApiError, ErrorCode
 from .prices import format_number
 
@@ -97,91 +101,83 @@ def application_text_problem(text: str) -> Optional[str]:
 # Plain-language copy                                                          #
 # --------------------------------------------------------------------------- #
 
-def _wait_advice(seconds: Optional[int]) -> str:
+def _wait_words(seconds: Optional[int]) -> str:
+    """A limit of EINUNDZWANZIG, in one sentence with how long to wait."""
     if not seconds or seconds <= 0:
-        return _("Wait a few minutes, then try again.")
+        return _("EINUNDZWANZIG takes no more requests from you right now: wait a few "
+                 "minutes, then try again.")
     if seconds < 60:
-        return ngettext("Wait {count} second, then try again.",
-                        "Wait {count} seconds, then try again.", seconds).format(count=seconds)
+        return ngettext("EINUNDZWANZIG takes no more requests from you right now: wait "
+                        "{count} second, then try again.",
+                        "EINUNDZWANZIG takes no more requests from you right now: wait "
+                        "{count} seconds, then try again.", seconds).format(count=seconds)
     minutes = math.ceil(seconds / 60)
     if minutes < 60:
-        return ngettext("Wait about {count} minute, then try again.",
-                        "Wait about {count} minutes, then try again.",
+        return ngettext("EINUNDZWANZIG takes no more requests from you right now: wait "
+                        "about {count} minute, then try again.",
+                        "EINUNDZWANZIG takes no more requests from you right now: wait "
+                        "about {count} minutes, then try again.",
                         minutes).format(count=minutes)
     hours = math.ceil(minutes / 60)
     if hours < 24:
-        return ngettext("Try again in about {count} hour.",
-                        "Try again in about {count} hours.", hours).format(count=hours)
-    return _("Try again tomorrow.")
+        return ngettext("EINUNDZWANZIG takes no more requests from you right now: try "
+                        "again in about {count} hour.",
+                        "EINUNDZWANZIG takes no more requests from you right now: try "
+                        "again in about {count} hours.", hours).format(count=hours)
+    return _("EINUNDZWANZIG takes no more requests from you right now: try again "
+             "tomorrow.")
 
 
-_COPY: Dict[str, Tuple[str, str]] = {
-    ErrorCode.UNAVAILABLE: (
-        _("Joining in the app isn't available right now"),
-        _("You can join on the EINUNDZWANZIG website instead."),
-    ),
-    ErrorCode.OFFLINE: (
-        _("Cannot reach EINUNDZWANZIG"),
-        _("Check your internet connection and try again."),
-    ),
-    ErrorCode.TIMEOUT: (
-        _("EINUNDZWANZIG is taking too long to respond"),
-        _("Check your internet connection and try again in a moment."),
-    ),
-    ErrorCode.UNAUTHORIZED: (
-        _("EINUNDZWANZIG could not confirm it is you"),
-        _("Make sure the date and time on this computer are set "
-          "automatically, then try again. If it keeps happening, check for "
-          "a MyEditor update."),
-    ),
-    ErrorCode.VALIDATION: (
-        _("Some details need another look"),
-        _("Check the highlighted fields and try again."),
-    ),
-    ErrorCode.NOT_FOUND: (
-        _("No application on file yet"),
-        _("EINUNDZWANZIG has nothing on file for this account yet. Send your "
-          "membership application first. If you already did, reload and "
-          "try again."),
-    ),
-    ErrorCode.CONFLICT: (
-        _("Your membership changed in the meantime"),
-        _("Reload to see where things stand, then try again."),
-    ),
-    ErrorCode.SERVER: (
-        _("EINUNDZWANZIG is having trouble right now"),
-        _("Try again in a few minutes."),
-    ),
-    ErrorCode.SIGNER_DECLINED: (
-        _("The request was not approved"),
-        _("Your signer app did not approve it. Try again, and approve the "
-          "request when your signer app asks."),
-    ),
-    ErrorCode.SIGNER_UNREACHABLE: (
-        _("Your signer app did not answer"),
-        _("Open your signer app, make sure it is running, and try again."),
-    ),
-    ErrorCode.BAD_RESPONSE: (
-        _("Something went wrong"),
-        _("MyEditor could not understand the answer from EINUNDZWANZIG. Try "
-          "again later. If it keeps happening, check for a MyEditor update."),
-    ),
+# Why a request to EINUNDZWANZIG did not work and what to do, one sentence
+# each (lessons 36). What did not happen is the title, said by the screen
+# that asked (the membership window), so it names the action, not the cause.
+_SENTENCES: Dict[str, str] = {
+    ErrorCode.UNAVAILABLE: N_("Joining in the app isn’t available right now: you can join "
+                              "on the EINUNDZWANZIG website instead."),
+    ErrorCode.OFFLINE: failures.CHECK_CONNECTION,
+    ErrorCode.TIMEOUT: N_("EINUNDZWANZIG took too long to answer: check your internet "
+                          "connection and try again."),
+    ErrorCode.UNAUTHORIZED: N_("EINUNDZWANZIG couldn’t confirm it’s you: let this computer "
+                               "set its date and time automatically, then try again."),
+    ErrorCode.VALIDATION: N_("Some details need another look: check the highlighted fields "
+                             "and try again."),
+    ErrorCode.NOT_FOUND: N_("EINUNDZWANZIG has no application from this account yet: send "
+                            "your membership application first."),
+    ErrorCode.CONFLICT: N_("Your membership changed in the meantime: try again to see where "
+                           "it stands now."),
+    ErrorCode.SERVER: N_("EINUNDZWANZIG had a problem just now: try again in a few minutes."),
+    ErrorCode.SIGNER_DECLINED: failures.SIGNER_DECLINED,
+    ErrorCode.SIGNER_UNREACHABLE: failures.SIGNER_SILENT,
+    ErrorCode.BAD_RESPONSE: N_("MyEditor couldn’t read the answer from EINUNDZWANZIG: try "
+                               "again later, or check for a MyEditor update."),
 }
+_VALIDATION_UNNAMED = N_("Some details need another look: check them and try again.")
+# What the server said, kept for Details only, and only this much of it.
+_DETAILS_MAX = 300
 
 
-def humanize(error: ApiError) -> Tuple[str, str]:
-    """``(title, message)`` for an alert about ``error``.
-
-    The title says what happened, the message says what to do next. No
-    protocol words, status numbers or internals: the person reading it
-    is joining a club, not debugging a client.
-    """
+def failure_sentence(error: ApiError) -> str:
+    """Why ``error``'s request did not work and what to do, in one
+    sentence (translated). No protocol words, status numbers or the
+    server's own text: the person reading it is joining a club, not
+    debugging a client (the server's text is :func:`failure_details`)."""
     code = getattr(error, "code", "")
     if code == ErrorCode.RATE_LIMITED:
-        return (_("Too many attempts"), _wait_advice(getattr(error, "retry_after", None)))
+        return _wait_words(getattr(error, "retry_after", None))
     if code == ErrorCode.VALIDATION and not getattr(error, "field_errors", None):
-        return (_COPY[code][0], _("Check your details and try again."))
-    return _COPY.get(code, _COPY[ErrorCode.BAD_RESPONSE])
+        return _(_VALIDATION_UNNAMED)
+    sentence = _SENTENCES.get(code, _SENTENCES[ErrorCode.BAD_RESPONSE])
+    return _(sentence)
+
+
+def failure_details(error: ApiError) -> str:
+    """What the server said of ``error``, for Details: its code and status,
+    and its own words, bounded (they come from elsewhere)."""
+    status = getattr(error, "status", None)
+    said = " ".join(str(getattr(error, "message", "") or "").split())[:_DETAILS_MAX]
+    head = " ".join(part for part in (str(getattr(error, "code", "") or ""),
+                                       f"({status})" if status else "") if part)
+    return ": ".join(part for part in (head, said) if part)
 
 
 def _field_reasons(error: ApiError, name: str) -> List[str]:

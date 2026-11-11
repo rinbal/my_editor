@@ -321,8 +321,9 @@ try:
     rep.info("nak bunker URI", uri[:80] + "…")
     dialog = ConnectDialog(stack.pool, stack.store, parent=host, is_dark=False)
     connected = nd.Catch(dialog.profile_connected)
-    dialog._paste_edit.setPlainText(uri.replace(uri.split("secret=")[-1], pair_secret)
-                                    if "secret=" in uri else uri + f"&secret={pair_secret}")
+    dialog.details_toggle.setChecked(True)          # the connection address is in Details
+    dialog._paste_edit.setText(uri.replace(uri.split("secret=")[-1], pair_secret)
+                               if "secret=" in uri else uri + f"&secret={pair_secret}")
     dialog._paste_btn.click()
     connected.wait(60_000)
     dana = connected.last[0] if connected.fired else None
@@ -341,7 +342,8 @@ try:
         dana_rl = latest([RNOSTR, NRS, STRFRY], 10002, dana_pk)
         rep.check("a paired account with no relay list is offered one, and it is "
                   "signed by the remote signer",
-                  any(a["title"].startswith("Publish a relay list") for a in nd.ALERTS_SEEN)
+                  any(a["title"].startswith("Tell Nostr apps where your posts are")
+                      for a in nd.ALERTS_SEEN)
                   and dana_rl is not None, str([a["title"] for a in nd.ALERTS_SEEN][-3:]))
         if dana_rl:
             nd.review_event(rep, "relay list signed through NIP-46", dana_rl, kind=10002)
@@ -399,10 +401,10 @@ erin_sk, erin_hex, erin_pk = nd.new_identity()
 bunker2 = nd.NakBunker(erin_hex, [NRS, RNOSTR], profile="ndak")
 try:
     bunker2.uri()
-    qr = ConnectDialog(stack.pool, stack.store, parent=host, is_dark=False, start_on_qr=True)
+    qr = ConnectDialog(stack.pool, stack.store, parent=host, is_dark=False)
     qr_connected = nd.Catch(qr.profile_connected)
-    nd.wait_until(lambda: qr._qr_uri_field.text().startswith("nostrconnect://"), 5_000)
-    nc_uri = qr._qr_uri_field.text()
+    nd.wait_until(lambda: qr._qr_uri.startswith("nostrconnect://"), 5_000)
+    nc_uri = qr._qr_uri
     from urllib.parse import parse_qs, urlsplit
     query = parse_qs(urlsplit(nc_uri).query)
     rep.check("the nostrconnect URI names the meeting relays, a secret, perms and the app",
@@ -466,22 +468,23 @@ if dana is not None and SENT_24133:
     rep.event("NIP-46 request (24133)", sample)
 
 # --------------------------------------------------------------------------- #
-rep.section("Connect Signer, Manual tab (bunker key, relays, secret typed in)")
+rep.section("Connect Signer App, a connection address made of a key, a relay and a secret")
 gus_sk, gus_hex, gus_pk = nd.new_identity()
 manual_secret = uuid.uuid4().hex[:10]
 bunker3 = nd.NakBunker(gus_hex, [RNOSTR], secret=manual_secret)
 try:
     signer_pk = bunker3.uri().split("bunker://", 1)[1].split("?", 1)[0]
+    # The one-page dialog (P1) has no form for the parts: a signer app that
+    # shows them shows them as one connection address, so the parts are
+    # put together here as such an address, on a relay of its own.
     manual = ConnectDialog(stack.pool, stack.store, parent=host, is_dark=False)
     got = nd.Catch(manual.profile_connected)
-    manual._tabs.setCurrentIndex(2)
-    manual._manual_pk.setText(signer_pk)
-    manual._manual_relays.setPlainText(RNOSTR)
-    manual._manual_secret.setText(manual_secret)
-    rep.check("the manual Connect button enables for a valid key and relay", manual._manual_btn.isEnabled())
-    manual._manual_btn.click()
+    manual.details_toggle.setChecked(True)
+    manual._paste_edit.setText(f"bunker://{signer_pk}?relay={RNOSTR}&secret={manual_secret}")
+    rep.check("Connect enables for a connection address", manual._paste_btn.isEnabled())
+    manual._paste_btn.click()
     got.wait(60_000)
-    rep.check("the manual tab pairs", got.fired and got.last[0].user_pubkey == gus_pk,
+    rep.check("the connection address pairs", got.fired and got.last[0].user_pubkey == gus_pk,
               manual._status.text())
 finally:
     bunker3.stop()
@@ -495,14 +498,14 @@ def pair_with_bunker(on_profile, parent=None):
     """What AccountController._pair_signer does, without the modal exec():
     the QR dialog, answered by a nak bunker that holds the given key."""
     dialog = ConnectDialog(stack.pool, stack.store, parent=parent or host, is_dark=False,
-                           persist=False, start_on_qr=True, offer_alternatives=False)
+                           persist=False, offer_alternatives=False)
     dialog.profile_connected.connect(on_profile)
-    nd.wait_until(lambda: dialog._qr_uri_field.text().startswith("nostrconnect://"), 5_000)
+    nd.wait_until(lambda: dialog._qr_uri.startswith("nostrconnect://"), 5_000)
     key = pairings.pop(0)
     signer = nd.NakBunker(key, [NRS, RNOSTR], profile=f"amber{len(pairings)}")
     try:
         signer.uri()
-        signer.connect(dialog._qr_uri_field.text())
+        signer.connect(dialog._qr_uri)
         done = nd.Catch(dialog.profile_connected, dialog.finished)
         done.wait(60_000)
         nd.spin(500)

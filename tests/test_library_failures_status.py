@@ -47,11 +47,12 @@ def shown():
 
 
 r = {"quiet": shown()}
-store.upload_failed.emit("Holiday.png", "Your media server is busy. Try again later.")
+store.upload_failed.emit("Holiday.png", "Your media server is busy: try again later.")
 app.processEvents()
 r["one"] = shown()
 for name in ("Talk.mp4", "Scan.pdf"):
-    store.upload_failed.emit(name, "Couldn’t reach your media server. Check your internet connection.")
+    store.upload_failed.emit(name, "Couldn’t reach your media server: check your internet "
+                                   "connection and try again.")
 app.processEvents()
 r["three"] = shown()
 r["tooltip"] = w._library_problem.toolTip()
@@ -118,18 +119,19 @@ print("RESULT " + json.dumps(r))
 """
 
 
-def test_failures_after_the_library_closed_are_counted_and_stay_until_it_opens(tmp_path):
+def test_failures_after_the_library_closed_are_said_and_stay_until_it_opens(tmp_path):
     r = run_window_script(SCRIPT, tmp_path)
     assert r["quiet"] == [False, "", False]
     assert r["one"] == [True, "“Holiday.png” wasn’t added to your Media Library.", True]
-    assert r["three"] == [True, "3 files weren’t added to your Media Library.", True]
+    # Lessons 36: never how many; each file and its sentence is the tooltip.
+    assert r["three"] == [True, "Some files weren’t added to your Media Library.", True]
     assert r["tooltip"].splitlines() == [
-        "“Holiday.png” wasn’t added to your Media Library. Your media server is busy. "
-        "Try again later.",
-        "“Talk.mp4” wasn’t added to your Media Library. Couldn’t reach your media server. "
-        "Check your internet connection.",
-        "“Scan.pdf” wasn’t added to your Media Library. Couldn’t reach your media server. "
-        "Check your internet connection.",
+        "“Holiday.png” wasn’t added to your Media Library. Your media server is busy: "
+        "try again later.",
+        "“Talk.mp4” wasn’t added to your Media Library. Couldn’t reach your media server: "
+        "check your internet connection and try again.",
+        "“Scan.pdf” wasn’t added to your Media Library. Couldn’t reach your media server: "
+        "check your internet connection and try again.",
     ]
     assert r["after_other_message"] == r["three"]
     assert r["names"] == []

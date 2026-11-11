@@ -197,6 +197,19 @@ class ArticleDetails:
         """The fields (``title``, ``hashtags``, ...) of the details kept."""
         return frozenset(_FIELDS[name] for name in self.kept)
 
+    @property
+    def language(self) -> str:
+        """The language the article labels itself with, as NIP-32 has it
+        (``["l", "de", "ISO-639-1"]``) and STANDUP reads it, two letters,
+        or ``""``: a bare ``l`` tag is some other label, and no language
+        is better than a wrong one."""
+        for tag in self.carried:
+            if len(tag) >= 3 and tag[0] == "l" and tag[2] == "ISO-639-1":
+                code = re.split(r"[-_]", tag[1].strip().lower(), maxsplit=1)[0]
+                if re.fullmatch(r"[a-z]{2}", code):
+                    return code
+        return ""
+
     def carried_tags(self, content: str) -> List[List[str]]:
         """The carried tags, as lists: picture descriptions only for the
         pictures still in ``content``."""

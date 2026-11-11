@@ -751,6 +751,15 @@ class _TopBand(QFrame):
         margins = self._box.contentsMargins()
         return self._switch.popup_width() + margins.left() + margins.right()
 
+    def segments_room(self) -> int:
+        """The band's width that shows every view's name side by side,
+        beside the band's buttons (0 with one view)."""
+        if not self._switch.has_choice():
+            return 0
+        margins = self._box.contentsMargins()
+        return (self._switch.segments_width() + self._icons.sizeHint().width()
+                + self._box.spacing() + margins.left() + margins.right())
+
     def reflow(self) -> None:
         margins = self._box.contentsMargins()
         available = self.width() - margins.left() - margins.right()
@@ -1108,6 +1117,8 @@ class DraftsPanel(QFrame):
         self._search_names: dict = {self.DRAFTS_VIEW: _("Search Drafts")}
         self._view_search: dict = {}
         self._view_search_text: dict = {}
+        # Views showing one item of their own, with their own top bar.
+        self._view_focused: dict = {}
 
         self._status_timer = QTimer(self)
         self._status_timer.setSingleShot(True)
@@ -1419,7 +1430,9 @@ class DraftsPanel(QFrame):
     def _show_search_of(self, key: str) -> None:
         """The search field as the view ``key`` has it: its name, what was
         typed into it there, or no field for a view that has no search."""
-        searchable = key == self.DRAFTS_VIEW or key in self._view_search
+        focused = self._view_focused.get(key, False)
+        self._actions_btn.setVisible(not focused)
+        searchable = (key == self.DRAFTS_VIEW or key in self._view_search) and not focused
         self._search_edit.setVisible(searchable)
         if not searchable:
             return
@@ -1536,6 +1549,26 @@ class DraftsPanel(QFrame):
 
     def views(self) -> List[str]:
         return [key for key, _title, _hint in self._views]
+
+    def set_view_focused(self, key: str, focused: bool) -> None:
+        """The view ``key`` shows one item of its own (a submission's
+        detail, with its own back button and menu): while it does, no
+        search field (typing there would do nothing) and no second action
+        menu above it (RG-M3-b 8). The band itself stays, level with the
+        tabs."""
+        if self._view_focused.get(key, False) == focused:
+            return
+        self._view_focused[key] = focused
+        if key == self.current_view():
+            self._show_search_of(key)
+            self._top_band.reflow()
+
+    def default_width(self) -> int:
+        """The width the panel first opens at: DEFAULT_PANEL_WIDTH, or as
+        wide as every view's name needs side by side (RG-M3-b 7: with a
+        third view the switch otherwise turns into a pop-up, and the
+        third view is out of sight), at most MAX_PANEL_WIDTH."""
+        return max(DEFAULT_PANEL_WIDTH, min(MAX_PANEL_WIDTH, self._top_band.segments_room()))
 
     def current_view(self) -> str:
         page = self._mode_stack.currentWidget()
@@ -1886,12 +1919,9 @@ class DraftsPanel(QFrame):
                 ready += 1
 
         if failed:
-            text = ngettext(
-                "{n} draft could not be decrypted",
-                "{n} drafts could not be decrypted",
-                failed,
-            )
-            return text.format(n=failed), True
+            # One quiet line in place, never how many (lessons 36): each
+            # row says what keeps it from being shown, and how to retry.
+            return _("Some drafts can’t be shown: each says why in the list."), False
         if self._loading or self._sync_message:
             return self._sync_message or _("Refreshing drafts"), False
         if total and ready < total:

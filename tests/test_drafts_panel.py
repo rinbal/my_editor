@@ -118,7 +118,7 @@ def populated_store() -> DraftStore:
         store.upsert_skeleton(wrap_meta(f"d{i}", created_at=1700000000 + i))
     store.set_decrypted("d2", inner={"kind": 1, "content": "Pineapple notes", "tags": []})
     store.set_decrypted("d3", inner={"kind": 1, "content": "Second body", "tags": []})
-    store.set_failed("d1", "signer timed out")
+    store.set_failed("d1", "Your signer app couldn’t open it")
     return store
 
 
@@ -622,13 +622,16 @@ def test_an_unsupported_signer_outranks_everything_else():
     assert "NIP" not in panel._empty_body.text()          # no protocol terms
 
 
-def test_failed_drafts_are_counted_on_the_status_line():
+def test_failed_drafts_are_one_quiet_line_never_a_count():
+    # Lessons 36: data missing for the person is one quiet line in place,
+    # not red, and never how many; each row says why.
     store = populated_store()
     panel = bound_panel(store)
-    assert panel._status_label.full_text() == "1 draft could not be decrypted"
-    assert panel._status_label.property("error") == "true"
-    store.set_failed("d0", "signer timed out")
-    assert panel._status_label.full_text() == "2 drafts could not be decrypted"
+    line = "Some drafts can’t be shown: each says why in the list."
+    assert panel._status_label.full_text() == line
+    assert panel._status_label.property("error") == "false"
+    store.set_failed("d0", "Your signer app couldn’t open it")
+    assert panel._status_label.full_text() == line
 
 
 def test_a_sync_message_survives_the_records_that_arrive_after_it():
@@ -735,7 +738,7 @@ def test_a_screen_reader_hears_the_row_and_not_a_blank():
 
     failed = panel._items["d1"]
     spoken = failed.data(Qt.AccessibleTextRole)
-    assert "signer timed out" in spoken
+    assert "Your signer app couldn’t open it" in spoken
     assert "Press Return to retry" in spoken
 
 

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The tests keep out of the person's own files (tests/home_guard.py)."""
 
+import ast
 import builtins
 import importlib
 import os
@@ -14,6 +15,7 @@ import pytest
 import recovery
 import user_dirs
 from tests import conftest, home_guard
+from tests.test_portability import python_files
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -24,7 +26,8 @@ PATH_MODULES = (
     "nostr.blossom.names", "nostr.blossom.settings", "nostr.first_publications",
     "nostr.imports.favicons", "nostr.imports.subscriptions", "nostr.imports_controller",
     "nostr.key_vault", "nostr.known_people", "nostr.media.assets", "nostr.media.visibility",
-    "nostr.metadata", "nostr.outbox.directory", "nostr.profiles", "nostr.ui.thumbnail_loader",
+    "nostr.metadata", "nostr.outbox.directory", "nostr.profiles", "nostr.standup.link_names",
+    "nostr.ui.thumbnail_loader",
 )
 
 
@@ -77,6 +80,36 @@ def test_no_app_module_builds_a_path_into_the_home_at_import():
     assert found == []
 
 
+def test_only_user_dirs_spells_out_the_apps_folders():
+    # One helper says where the folders are: a module spelling them out
+    # itself would go on using its own copy when that helper changes.
+    found = []
+    for path in python_files():
+        where = path.relative_to(REPO)
+        if where.parts[0] == "tests" or where == Path("user_dirs.py"):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        docstrings = {id(body[0].value) for node in ast.walk(tree)
+                      if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                                           ast.AsyncFunctionDef))
+                      for body in [node.body]
+                      if body and isinstance(body[0], ast.Expr)
+                      and isinstance(body[0].value, ast.Constant)}
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                    and id(node) not in docstrings and _spells_a_folder(node.value)):
+                found.append(f"{where}:{node.lineno}")
+    assert found == []
+
+
+def _spells_a_folder(text):
+    # A part of the path ("my_editor") or a whole one ("~/.config/my_editor");
+    # the project's address ("rinbal/my_editor") names no folder.
+    folders = (".config", ".cache")
+    return text in (*folders, user_dirs.APP_FOLDER) \
+        or any(f"{folder}/{user_dirs.APP_FOLDER}" in text for folder in folders)
+
+
 def _resolvers():
     import diagnostics
     import export_pdf
@@ -90,6 +123,7 @@ def _resolvers():
     from nostr.blossom import names, settings as blossom_settings
     from nostr.media import assets, visibility
     from nostr.outbox import directory
+    from nostr.standup import link_names
     return {
         "settings": settings._settings_file, "recent files": recent_files._recent_file,
         "pdf positions": pdf_viewer._positions_path, "page setup": export_pdf._config_path,
@@ -102,6 +136,7 @@ def _resolvers():
         "known people": known_people.known_people_file,
         "relay lists": directory.relay_lists_file,
         "first publications": first_publications.default_path,
+        "submitted marks": link_names.default_path,
     }
 
 

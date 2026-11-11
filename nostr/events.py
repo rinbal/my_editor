@@ -147,6 +147,53 @@ def fingerprint(event: Event) -> str:
         return repr(event)
 
 
+def _is_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_lower_hex(value: object, length: int) -> bool:
+    return (isinstance(value, str) and len(value) == length
+            and all(c in "0123456789abcdef" for c in value))
+
+
+def has_event_shape(event: object) -> bool:
+    """True when ``event`` has the shape of a Nostr event at all: the
+    fields every later check reads, each of the type it must be (an
+    integer that is an integer, not text or true/false). Checked before
+    any of them is read, so an event with ``tags: null`` or a tag that is
+    a number is refused like any other, not a crash."""
+    if not isinstance(event, dict):
+        return False
+    if not _is_int(event.get("kind")) or not _is_int(event.get("created_at")):
+        return False
+    if not isinstance(event.get("content"), str):
+        return False
+    tags = event.get("tags")
+    if not isinstance(tags, list):
+        return False
+    for entry in tags:
+        if not isinstance(entry, list) or not entry:
+            return False
+        if not all(isinstance(item, str) for item in entry):
+            return False
+    return all(isinstance(event.get(name), str) for name in ("id", "pubkey", "sig"))
+
+
+def is_verified_event(event: object, *, kind: Optional[int] = None) -> bool:
+    """An event exactly as NIP-01 shapes it (:func:`has_event_shape`,
+    lowercase hex id, pubkey and signature), of ``kind`` when given,
+    whose id and signature verify. :func:`verify_event` alone converts
+    with ``int()``, so a kind sent as text would pass it."""
+    if not has_event_shape(event):
+        return False
+    if not (_is_lower_hex(event["id"], 64) and _is_lower_hex(event["pubkey"], 64)
+            and _is_lower_hex(event["sig"], 128)):
+        return False
+    if kind is not None and event["kind"] != kind:
+        return False
+    return verify_event(event)
+
+
 def verify_event(event: Event) -> bool:
     """Validate id, pubkey shape, and signature. Returns False on any failure."""
     try:

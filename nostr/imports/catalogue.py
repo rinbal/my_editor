@@ -61,7 +61,8 @@ ARTICLE_KIND = 30023
 ARTICLE_DRAFT_KIND = 30024
 QUERY_TIMEOUT_MS = 8_000
 
-UNAVAILABLE = _("Couldn't check your existing drafts. Try again when you're online.")
+UNAVAILABLE = _("Your existing drafts couldn't be checked first: check your internet "
+                "connection, then choose Resume.")
 
 _RANK = {REMOVED: 1, DRAFTED: 2, PUBLISHED: 3}
 

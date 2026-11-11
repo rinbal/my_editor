@@ -435,7 +435,7 @@ def _mimeapps(mime: str) -> Tuple[List[str], List[str], List[str]]:
     folders = _config_dirs() + [os.path.join(d, "applications") for d in _data_dirs()]
     for folder in folders:
         path = os.path.join(folder, "mimeapps.list")
-        groups = _read_groups(path)
+        groups = read_key_file(path)
         for group, into in (("Default Applications", defaults), ("Added Associations", added),
                             ("Removed Associations", removed)):
             into.extend(i for i in _ids(groups.get(group, {}).get(mime)) if i not in into)
@@ -445,7 +445,7 @@ def _mimeapps(mime: str) -> Tuple[List[str], List[str], List[str]]:
 def _mime_cache(mime: str) -> List[str]:
     ids: List[str] = []
     for data in _data_dirs():
-        groups = _read_groups(os.path.join(data, "applications", "mimeinfo.cache"))
+        groups = read_key_file(os.path.join(data, "applications", "mimeinfo.cache"))
         ids.extend(i for i in _ids(groups.get("MIME Cache", {}).get(mime)) if i not in ids)
     return ids
 
@@ -454,8 +454,10 @@ def _ids(value: Optional[str]) -> List[str]:
     return [part.strip() for part in (value or "").split(";") if part.strip()]
 
 
-def _read_groups(path: str) -> Dict[str, Dict[str, str]]:
-    """The groups of a freedesktop key file, {} when it is not there."""
+def read_key_file(path: str) -> Dict[str, Dict[str, str]]:
+    """The groups of a freedesktop key file, {} when it is not there or
+    cannot be read. GTK's settings.ini files are read with it too
+    (nostr/ui/native_appearance.py)."""
     if not os.path.isfile(path):
         return {}
     parser = configparser.RawConfigParser(strict=False, interpolation=None,

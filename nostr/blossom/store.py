@@ -28,17 +28,18 @@ declarative.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Protocol, Sequence, Set
+from typing import Callable, Dict, List, Optional, Protocol, Sequence, Set, Tuple
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 
 import media_files
 import url_safety
-from i18n import _
+from i18n import N_, _
 
 from ..bunker import BunkerClient, BunkerSessionPool
 from ..profiles import Profile
@@ -60,11 +61,15 @@ from .plan import get_effective_max_file, lists_publicly, plan_upload, UploadPla
 from .settings import BlossomSettings
 from .upload_progress import UploadProgress
 from ..imports.workers import run_for_size
+from ..standup import crypto as scrypto
 
 
 # How long a fetched library stays "fresh". A second call within this
 # window is a no-op (matches STANDUP's 30 s constant).
 _FETCH_FRESHNESS_SECONDS = 30.0
+# Files whose first bytes are read at once to tell a submission's
+# encrypted file (check_submission_file); the others wait their turn.
+MAX_HEADS_AT_ONCE = 4
 
 # BUD-12 cursor pagination. 200 keeps a page comfortably inside the
 # client's 8 MiB response cap; 25 pages is 5000 blobs, which is far more
@@ -81,7 +86,22 @@ _MAX_UPLOAD_ATTEMPTS = 2
 # Failures worth trying the next server for. 413 is here because it is
 # precisely the case the size planner cannot know about: a server whose
 # real cap is below its published one.
-_RETRYABLE_STATUSES = frozenset({0, 413, 429, 502, 503})
+_RETRYABLE_STATUSES = frozenset({0, 413, 415, 429, 502, 503})
+
+_log = logging.getLogger(__name__)
+
+# How many uploads' refusing servers are kept for their Details.
+_REFUSALS_KEPT = 32
+# At most this many files in one BUD-02 delete authorization (its x
+# tags), so a server never meets a token larger than it reads.
+MOST_FILES_PER_DELETE = 32
+
+# A server's refusal of the file itself (BUD-02: 413 too large, 415 a
+# type it does not take), with the short reason a list of servers says.
+_FILE_REFUSALS = {
+    ERROR_CODES.SERVER_TOO_LARGE: N_("too large"),
+    ERROR_CODES.UNSUPPORTED_TYPE: N_("not a type it takes"),
+}
 
 # 401 and 403 are deliberately absent: they usually mean the signer or
 # the clock is the problem, so the next server would demand auth too and
@@ -101,6 +121,19 @@ _NO_DIRECT_UPLOAD = frozenset({
 })
 
 
+# The types a submission's encrypted file is served as: it is uploaded as a
+# byte stream (contract 7, never the plaintext's type), and a server that
+# reads the bytes finds no other type in them.
+_SEALED_TYPES = frozenset({"", "application/octet-stream", "binary/octet-stream"})
+
+
+def may_be_sealed(mime_type: Optional[str]) -> bool:
+    """Whether a file served as ``mime_type`` may be a submission's SMF1
+    file: a byte stream, no type, or none that names a kind."""
+    mime = (mime_type or "").lower().split(";", 1)[0].strip()
+    return mime in _SEALED_TYPES or "/" not in mime
+
+
 # ---------------------------------------------------------------------------
 # Types and data classes
 # ---------------------------------------------------------------------------
@@ -111,11 +144,12 @@ class BlobCache(Protocol):
     ``ThumbnailLoader`` is the implementation; it is a UI module and the
     store must not import it, so the object arrives as a constructor
     argument the way every other boundary in this codebase is crossed.
-    Only the write half is named here, because writing is all the store
-    does with it.
+    The write half, and where a blob's bytes are, to tell a submission's
+    encrypted file by its first bytes (:meth:`MediaStore.is_submission_file`).
     """
 
     def put_bytes(self, data: bytes) -> str: ...
+    def cache_path(self, sha256: str) -> Path: ...
 
 
 @dataclass
@@ -195,6 +229,9 @@ class _Added:
     body: Optional[bytes] = None
     failed: bool = False
     error: str = ""
+    # Which servers refused it and why: a tooltip's, never the sentence's
+    # (lessons 36; contract 7 names them).
+    detail: str = ""
 
 
 @dataclass(frozen=True)
@@ -207,6 +244,7 @@ class AddedUpload:
     state: str
     error: str = ""
     path: str = ""
+    detail: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -259,6 +297,9 @@ class MediaStore(QObject):
     listings_changed = Signal()
 
     # Delete lifecycle.
+    # Whether a listed file is a submission's encrypted file was read
+    # from its first bytes, or could not be (submission_state).
+    submission_checked = Signal(str)                   # file_hash
     file_deleted = Signal(str)                         # file_hash
     delete_failed = Signal(str, str)                   # file_hash, reason
 
@@ -320,6 +361,19 @@ class MediaStore(QObject):
         # rather than from a /list response of unknown age, which is what
         # makes them safe to dedup against without listing again.
         self._committed: Set[str] = set()
+        # Submissions' encrypted files: uploaded for one this session, and
+        # what the cache's first bytes said (is_submission_file).
+        self._submission_files: Set[str] = set()
+        self._sealed_known: Dict[str, bool] = {}
+        # First bytes being read from a server, or waiting for their turn
+        # (MAX_HEADS_AT_ONCE are read at once), and those no server gave.
+        self._heads_asked: Set[str] = set()
+        self._heads_waiting: List[str] = []
+        self._heads_running = 0
+        self._heads_failed: Set[str] = set()
+        # What stops each read on its way, by file: a new listing or
+        # another account aborts them (RG-M2r3 10).
+        self._heads_reading: Dict[str, Callable[[], None]] = {}
 
         # Upload jobs by name, from upload_started until they end. The
         # asset manager names its own (an asset key); a file added to the
@@ -329,6 +383,10 @@ class MediaStore(QObject):
         # are added until they land, are cancelled, or a failure is
         # dismissed: what Retry sends again.
         self._added: Dict[str, _Added] = {}
+        # Which servers refused the last try of an upload not added to
+        # the library (a submission's picture), and why: what its Details
+        # name (contract 7), never its sentence. The newest few only.
+        self._refused: Dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Read API
@@ -373,6 +431,129 @@ class MediaStore(QObject):
                 return name
         return self._session_names.get(sha, "")
 
+    def is_submission_file(self, sha256: str) -> bool:
+        """Whether this file is known to be a submission's encrypted file
+        (SMF1, contract 7): :meth:`submission_state` is True. Such a file
+        is never offered to insert, and deleting it takes it from the
+        editorial team."""
+        return self.submission_state(sha256) is True
+
+    def submission_state(self, sha256: str) -> Optional[bool]:
+        """Whether this file is a submission's encrypted file: uploaded
+        for one in this session, or its first bytes (cached here, or read
+        from its server by :meth:`check_submission_file`) start like one.
+        None while that cannot be told: a listed file of a type a sealed
+        file is served as (a byte stream, or none) whose first bytes are
+        not here, as on another computer (RG-M2r 5). It is neither
+        inserted nor deleted as a plain file until it is told."""
+        sha = (sha256 or "").lower()
+        if sha in self._submission_files:
+            return True
+        known = self._sealed_known.get(sha)
+        if known is not None:
+            return known
+        head = self._cached_head(sha)
+        if head is not None:
+            # A content address never changes its bytes: the answer is kept.
+            self._sealed_known[sha] = not scrypto.media_header_problem(head)
+            return self._sealed_known[sha]
+        media = self._files.get(sha)
+        if media is None or not may_be_sealed(media.mime_type):
+            return False
+        return None
+
+    def submission_check_failed(self, sha256: str) -> bool:
+        """No server gave this file's first bytes the last time they were
+        asked for (:meth:`check_submission_file` asks again)."""
+        return (sha256 or "").lower() in self._heads_failed
+
+    def check_submission_file(self, sha256: str, *, again: bool = False) -> None:
+        """Read the first bytes of a file whose :meth:`submission_state`
+        is None from its servers, one after the other, with a ranged GET
+        of :data:`~nostr.standup.crypto.MEDIA_HEADER_BYTES` bytes; then
+        :attr:`submission_checked`. Once at a time per file, and at most
+        :data:`MAX_HEADS_AT_ONCE` files at once (a library listed from
+        another computer may hold a thousand: RG-M2r2a 4); one that no
+        server gave is asked for again only ``again`` (Try Again)."""
+        sha = (sha256 or "").lower()
+        media = self._files.get(sha)
+        if media is None or sha in self._heads_asked or self.submission_state(sha) is not None:
+            return
+        if sha in self._heads_failed and not again:
+            return
+        self._heads_asked.add(sha)
+        self._heads_failed.discard(sha)
+        self._heads_waiting.append(sha)
+        self._next_heads()
+
+    def _next_heads(self) -> None:
+        while self._heads_running < MAX_HEADS_AT_ONCE and self._heads_waiting:
+            sha = self._heads_waiting.pop(0)
+            media = self._files.get(sha)
+            if media is None:
+                self._heads_asked.discard(sha)
+                continue
+            self._heads_running += 1
+            urls = [u.get("url", "") for u in media.urls if u.get("url")] or [media.url]
+            self._read_head_of(sha, urls, self._fetch_generation)
+
+    def _read_head_of(self, sha: str, urls: List[str], generation: int) -> None:
+        def done(sealed: Optional[bool]) -> None:
+            if generation != self._fetch_generation:
+                return                      # another listing: read anew for it
+            self._heads_running -= 1
+            self._heads_asked.discard(sha)
+            self._heads_reading.pop(sha, None)
+            if sealed is None:
+                self._heads_failed.add(sha)
+            else:
+                self._sealed_known[sha] = sealed
+            self.submission_checked.emit(sha)
+            self._next_heads()
+
+        def ask(left: List[str]) -> None:
+            if not left:
+                done(None)
+                return
+            stop = self._client.read_head(
+                left[0], scrypto.MEDIA_HEADER_BYTES,
+                lambda head: done(not scrypto.media_header_problem(head)),
+                lambda _error: ask(left[1:]) if generation == self._fetch_generation else None)
+            if stop is not None:            # None: it answered at once (the next one is held)
+                self._heads_reading[sha] = stop
+
+        ask(urls)
+
+    def _drop_head_reads(self) -> None:
+        """A new listing, or another account: the head reads on their way
+        answer for nothing now: each is stopped (its reply aborted, so no
+        socket stays open for it), and what waits is asked anew when shown."""
+        reading, self._heads_reading = self._heads_reading, {}
+        for stop in reading.values():
+            stop()
+        self._heads_asked.clear()
+        self._heads_waiting.clear()
+        self._heads_running = 0
+
+    def _cached_head(self, sha: str) -> Optional[bytes]:
+        if self._blob_cache is None:
+            return None
+        try:
+            with self._blob_cache.cache_path(sha).open("rb") as cached:
+                return cached.read(scrypto.MEDIA_HEADER_BYTES)
+        except OSError:
+            return None                     # not cached
+
+    def cached_bytes(self, sha256: str) -> Optional[bytes]:
+        """The whole file this computer keeps of ``sha256``, or None (the
+        caller checks its hash: a cache is not a source of truth)."""
+        if self._blob_cache is None:
+            return None
+        try:
+            return self._blob_cache.cache_path(sha256).read_bytes()
+        except (OSError, ValueError):
+            return None                     # not cached
+
     def added_here(self, sha256: str) -> bool:
         """Whether this file was added to the library on this computer
         (it then has the name it was added with)."""
@@ -395,7 +576,7 @@ class MediaStore(QObject):
             else:
                 state = "finishing" if job.status == "mirroring" else "sending"
             out.append(AddedUpload(name=name, mime=added.mime, state=state,
-                                   error=added.error,
+                                   error=added.error, detail=added.detail,
                                    path=str(added.path) if added.path else ""))
         return out
 
@@ -483,6 +664,7 @@ class MediaStore(QObject):
             return
 
         self._fetch_generation += 1
+        self._drop_head_reads()
         generation = self._fetch_generation
         pubkey = (profile.user_pubkey or "").lower()
         self._fetch_in_flight = True
@@ -778,6 +960,7 @@ class MediaStore(QObject):
         account being left, and the next fetch starts a walk of its own
         instead of being folded into that one.
         """
+        self._stop_uploads()
         self._fetch_generation += 1
         self._fetch_in_flight = False
         self._fetch_requested = False
@@ -787,8 +970,27 @@ class MediaStore(QObject):
         self._last_fetch_at = 0.0
         self._last_targets = ()
         self._committed.clear()
+        self._submission_files.clear()
+        self._sealed_known.clear()
+        self._drop_head_reads()
+        self._heads_failed.clear()
         self.library_changed.emit()
         self.listings_changed.emit()
+
+    def _stop_uploads(self) -> None:
+        """Every upload of the account being left stops: what is on its
+        way is aborted, a signer, a hash or a read answering later goes
+        nowhere (the job is gone), and each is reported cancelled."""
+        jobs, self._uploads = self._uploads, {}
+        added, self._added = self._added, {}
+        self._refused = {}
+        for job in jobs.values():
+            if job.sending is not None:
+                job.sending.abort()
+        # Files being read, and added files that failed, go too: a retry
+        # would send them as the next account.
+        for name in dict.fromkeys([*jobs, *added]):
+            self.upload_cancelled.emit(name)
 
     # ------------------------------------------------------------------
     # Upload
@@ -919,6 +1121,8 @@ class MediaStore(QObject):
         *,
         name: str,
         mime_type: str = "application/octet-stream",
+        force: bool = False,
+        submission: bool = False,
     ) -> None:
         """Upload an in-memory buffer. Used by the drop handler when the
         bytes come from a QMimeData payload rather than a file path.
@@ -934,11 +1138,18 @@ class MediaStore(QObject):
         might not, the upload walks to the next one. It only ever walks
         the servers the planner accepted, so a server skipped for size
         can never be reached by a retry.
+
+        ``force`` sends the bytes to every eligible server whatever the
+        library says it holds: for a file a server said it is missing
+        (a STANDUP receipt's ``blobs_missing``), where the library's word
+        would stand in for the server's. ``submission`` marks the file as
+        a submission's encrypted file (:meth:`is_submission_file`).
         """
-        self._dispatch(body, name, mime_type, None)
+        self._dispatch(body, name, mime_type, None, force=force, submission=submission)
 
     def _dispatch(self, body: bytes, name: str, mime_type: str,
-                  added: Optional[_Added]) -> None:
+                  added: Optional[_Added], *, force: bool = False,
+                  submission: bool = False) -> None:
         profile = self._profile_provider()
         if profile is None:
             self._refuse(name, ERROR_CODES.NO_SIGNER)
@@ -964,25 +1175,31 @@ class MediaStore(QObject):
             ).format(size=media_files.format_size(limit)))
             return
 
-        # Hashing a large file, and keeping it in the cache, happens off
-        # the UI thread; the upload goes on from here once it is done.
+        # The job exists from here on, before the hash: Cancel and
+        # clear() reach it while a large file is hashed off the UI
+        # thread, and nothing goes on for a job that is gone.
+        state = UploadJobState(name=name, status="queued")
+        self._uploads[name] = state
         run_for_size(len(body), lambda: self._hash_and_keep(body),
-                     lambda sha: self._upload_hashed(body, name, mime_type, profile, sha,
-                                                     servers, plan, added),
+                     lambda sha: self._upload_hashed(state, body, mime_type, profile, sha,
+                                                     servers, plan, force, submission),
                      parent=self)
 
-    def _upload_hashed(self, body: bytes, name: str, mime_type: str, profile, sha: str,
-                       servers, plan: UploadPlan, added: Optional[_Added] = None) -> None:
-        if added is not None and self._added.get(name) is not added:
-            return                           # cancelled while it was hashed
+    def _upload_hashed(self, state: UploadJobState, body: bytes, mime_type: str, profile,
+                       sha: str, servers, plan: UploadPlan, force: bool,
+                       submission: bool) -> None:
+        name = state.name
+        if self._uploads.get(name) is not state:
+            return                           # cancelled while it was hashed, or left
+        if submission:
+            self._submission_files.add(sha)
         eligible = [server for server in plan.eligible
                     if self._has_room(server, sha, len(body), name)]
         if not eligible:
-            self._refuse(name, ERROR_CODES.QUOTA_FULL)
+            self._fail_upload(name, ERROR_CODES.QUOTA_FULL)
             return
-        state = UploadJobState(name=name, status="queued", hash=sha)
+        state.hash = sha
         state.meter.expect(len(eligible) - 1)
-        self._uploads[name] = state
         self.upload_started.emit(name)
         self.upload_status.emit(name, state.status)
         if self._uploads.get(name) is not state:
@@ -995,7 +1212,7 @@ class MediaStore(QObject):
             profile=profile,
             sha=sha,
             eligible=eligible,
-            present=self._servers_holding(sha, eligible),
+            present=[] if force else self._servers_holding(sha, eligible),
             configured_primary=servers[0],
         )
 
@@ -1024,6 +1241,7 @@ class MediaStore(QObject):
             return True
         if self.bytes_on(origin) + size <= quota:
             return True
+        _log.info("%s skipped %s: it is full", name, _hostname(server))
         self.server_skipped.emit(name, _hostname(server), "full")
         return False
 
@@ -1199,16 +1417,17 @@ class MediaStore(QObject):
             exhausted.append(missing[index])
             missed.append((_hostname(missing[index]), _error_code(err)))
             next_index = index + 1
-            if (
-                next_index < _MAX_UPLOAD_ATTEMPTS
-                and next_index < len(missing)
-                and _is_retryable(err)
-            ):
+            # A server that refused the file itself (413, 415) says
+            # nothing of the others: every one is tried (BUD-02).
+            attempts = len(missing) if _refused_file(err) else _MAX_UPLOAD_ATTEMPTS
+            if next_index < min(attempts, len(missing)) and _is_retryable(err):
                 if job is not None:
                     job.meter.retrying()
                 attempt(next_index)
                 return
-            self._fail_upload(name, _error_code(err), _format_err(err))
+            sentence, detail = (_refusals(missed, err) if _refused_file(err)
+                                else (_format_err(err), ""))
+            self._fail_upload(name, _error_code(err), sentence, detail=detail)
 
         attempt(0)
 
@@ -1354,7 +1573,7 @@ class MediaStore(QObject):
         failures: List[tuple] = list(missed)
         if not mirror_servers:
             for host, code in failures:
-                self.mirror_failed.emit(name, host, code)
+                self._copy_missing(name, host, code)
             self._commit_upload(name, media, configured_primary=configured_primary)
             return
 
@@ -1368,12 +1587,17 @@ class MediaStore(QObject):
             state.meter.copying(len(mirror_servers))
             self.upload_status.emit(name, state.status)
 
+        def live() -> bool:
+            return self._uploads.get(name) is state
+
         def step(index: int) -> None:
+            if not live():
+                return                       # its account was left: no more copies
             if state is not None and index > 0:
                 state.meter.copied()
             if index >= len(mirror_servers):
                 for host, code in failures:
-                    self.mirror_failed.emit(name, host, code)
+                    self._copy_missing(name, host, code)
                 self._commit_upload(
                     name, media, configured_primary=configured_primary
                 )
@@ -1402,6 +1626,7 @@ class MediaStore(QObject):
                     sha256=media.hash,
                     on_success=lambda result, o=o, i=i: on_ok(result, o, i),
                     on_failure=lambda err2, o=o, i=i: on_err(err2, o, i),
+                    live=live,
                 )
 
             replicate.mirror_to_server(
@@ -1413,6 +1638,7 @@ class MediaStore(QObject):
                 sha256=media.hash,
                 on_success=on_ok,
                 on_failure=on_mirror_err,
+                live=live,
             )
 
         step(0)
@@ -1459,21 +1685,42 @@ class MediaStore(QObject):
         self.upload_finished.emit(name, media)
         self.library_changed.emit()
 
-    def _fail_upload(self, name: str, code: str, reason: str = "") -> None:
+    def _fail_upload(self, name: str, code: str, reason: str = "", *,
+                     detail: str = "") -> None:
         state = self._uploads.pop(name, None)
         if state is not None:
             state.status = "failed"
             state.error = reason or friendly_message(code)
         self.upload_status.emit(name, "failed")
-        self._refuse(name, code, reason)
+        self._refuse(name, code, reason, detail=detail)
 
-    def _refuse(self, name: str, code: str, reason: str = "") -> None:
+    def _copy_missing(self, name: str, host: str, code: str) -> None:
+        """A server kept no copy of a file the others have: the upload
+        worked, so this is logged and told, never said (lessons 36)."""
+        _log.info("%s has no copy on %s: %s", name, host, code)
+        self.mirror_failed.emit(name, host, code)
+
+    def refusal_detail(self, name: str) -> str:
+        """Which servers refused the last try of an upload and why, one
+        per line, for a tooltip or Details; "" when none did."""
+        added = self._added.get(name)
+        return added.detail if added is not None else self._refused.get(name, "")
+
+    def _refuse(self, name: str, code: str, reason: str = "", *, detail: str = "") -> None:
         """Report one upload's failure: the sentence, then its code. An
         added file stays, to be retried or dismissed."""
+        if detail:
+            _log.info("media servers refused %s: %s", name, detail.replace("\n", "; "))
         added = self._added.get(name)
+        self._refused.pop(name, None)
         if added is not None:
             added.failed = True
             added.error = reason or friendly_message(code)
+            added.detail = detail
+        elif detail:
+            self._refused[name] = detail
+            while len(self._refused) > _REFUSALS_KEPT:
+                del self._refused[next(iter(self._refused))]
         self.upload_failed.emit(name, reason or friendly_message(code))
         self.upload_failed_code.emit(name, code)
 
@@ -1575,6 +1822,62 @@ class MediaStore(QObject):
                 on_err=lambda code, o=origin: failed_one(o, code),
             )
 
+    def delete_on_servers(self, pairs: Sequence[Tuple[str, str]],
+                          on_done: Callable[[List[Tuple[str, str]]], None], *,
+                          going: Callable[[], bool] = lambda: True,
+                          on_not_signed: Optional[Callable[[], None]] = None) -> None:
+        """Delete each ``(sha256, server origin)`` of ``pairs``, with one
+        BUD-02 authorization per :data:`MOST_FILES_PER_DELETE` files that
+        names them and every server (:func:`delete_batches`; one
+        signature each, asked one after another), and answer
+        ``on_done(gone)`` with the pairs that are gone (deleted, or 404:
+        not there). Nothing is said and the library is left as it is:
+        for files this app put up for someone else's reading, such as a
+        submission's encrypted pictures. A signature refused or not given
+        ends it (``on_not_signed()``, then ``on_done``): the signer is not
+        asked for the next batch; nor is it once ``going()`` is false
+        (signed out, RG-M4-c 5)."""
+        profile = self._profile_provider()
+        batches = delete_batches(pairs)
+        if profile is None or not batches:
+            QTimer.singleShot(0, lambda: on_done([]))
+            return
+        gone: List[Tuple[str, str]] = []
+
+        def next_batch(rest: List[List[Tuple[str, str]]]) -> None:
+            if not rest or not going():
+                on_done(gone)
+                return
+            batch = rest[0]
+            unsigned = build_blossom_auth_event(
+                "delete", file_hashes=[sha for sha, _server in batch],
+                servers=[server for _sha, server in batch], pubkey_hex=profile.user_pubkey)
+            remaining = {"count": len(batch)}
+
+            def finish(pair: Tuple[str, str], ok: bool) -> None:
+                if ok:
+                    gone.append(pair)
+                remaining["count"] -= 1
+                if remaining["count"] == 0:
+                    next_batch(rest[1:])
+
+            def after_sign(auth_event: dict) -> None:
+                for pair in batch:
+                    self._client.delete(
+                        pair[1], pair[0], auth_event,
+                        on_success=lambda p=pair: finish(p, True),
+                        on_failure=lambda err, p=pair: finish(p, err.status == 404))
+
+            def not_signed(_reason) -> None:
+                if on_not_signed is not None:
+                    on_not_signed()
+                on_done(gone)
+
+            self._sign_with_bunker(profile, unsigned, on_signed=after_sign,
+                                   on_failure=not_signed)
+
+        next_batch(batches)
+
     def _delete_one_server(
         self,
         *,
@@ -1648,6 +1951,17 @@ class MediaStore(QObject):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def delete_batches(pairs: Sequence[Tuple[str, str]]) -> List[List[Tuple[str, str]]]:
+    """``pairs`` (sha256, server) in groups that name at most
+    :data:`MOST_FILES_PER_DELETE` files each, every server of a file in
+    the group of the file."""
+    pairs = list(dict.fromkeys(pairs))
+    files = list(dict.fromkeys(sha for sha, _server in pairs))
+    groups = [set(files[i:i + MOST_FILES_PER_DELETE])
+              for i in range(0, len(files), MOST_FILES_PER_DELETE)]
+    return [[pair for pair in pairs if pair[0] in group] for group in groups]
+
 
 def servers_holding(media, planned: Sequence[str]) -> Set[str]:
     """Which of ``planned`` a library record says already hold the blob.
@@ -1732,6 +2046,22 @@ def _delete_failure_code(failures) -> str:
         if wanted in codes:
             return wanted
     return codes[0] if codes else ERROR_CODES.UPLOAD_FAILED
+
+
+def _refused_file(err) -> bool:
+    return isinstance(err, BlossomError) and err.status in (413, 415)
+
+
+def _refusals(missed: Sequence[tuple], err: BlossomError) -> Tuple[str, str]:
+    """``(sentence, detail)`` for a file every server refused, never the
+    plaintext uploaded instead: the one server's remedy, or that none
+    took it; which servers and why is ``detail`` (contract 7 names them,
+    behind a tooltip: lessons 36)."""
+    detail = "\n".join(f"{host}: {_(_FILE_REFUSALS[code])}" if code in _FILE_REFUSALS
+                       else host for host, code in missed)
+    if len(missed) == 1:
+        return _format_err(err), detail
+    return _("No media server took the file: add another one in Media Servers."), detail
 
 
 def _is_retryable(err) -> bool:

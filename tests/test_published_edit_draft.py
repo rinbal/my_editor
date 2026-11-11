@@ -327,11 +327,11 @@ def test_edit_tells_accounts_apart_and_waits_for_a_draft_not_decrypted_yet(tmp_p
     assert r["bob"] == {"tabs": 1, "text": "Bob's words."}           # his own, in a tab of its own
     assert r["not_ready_question"] == {
         "title": "This article has a draft that can’t be shown yet.",
-        "message": "The draft is still being decrypted. Choose Edit again once its title "
+        "message": "Its draft is still being decrypted: choose Edit again once its title "
                    "shows in the Drafts panel, or open the version that is published now.",
         "buttons": [["Open Published Version", "normal"], ["Cancel", "default"]]}
     assert r["failed_question"]["message"] == (
-        "The draft couldn’t be decrypted. Double-click it in the Drafts panel to try again, "
+        "Its draft couldn’t be decrypted: double-click it in the Drafts panel to try again, "
         "or open the version that is published now.")
     assert r["failed_question"]["buttons"] == r["not_ready_question"]["buttons"]
     assert r["not_ready_cancel"] == 0

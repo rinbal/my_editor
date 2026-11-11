@@ -20,7 +20,7 @@ from typing import List, Tuple
 from unittest.mock import MagicMock
 
 import pytest
-from PySide6.QtCore import QCoreApplication
+from PySide6.QtCore import QCoreApplication, QObject, Signal
 
 from nostr.publisher import DraftBulkDeleteJob
 from tests.outbox_fakes import FakeRelayDirectory, settle
@@ -242,6 +242,18 @@ def test_the_failures_name_the_drafts_that_did_not_go():
     _deleted, failures = seen["finished"][0]
     assert [ident for ident, _reason in failures] == ["d0", "d2"]
     assert all("denied" in reason for _ident, reason in failures)
+    # Lessons 36: the run's one sentence, the signer's, never a count.
+    assert job.words == "Your signer app declined the request: allow it there and try again."
+
+
+def test_the_run_keeps_the_first_failure_s_words_for_its_one_sentence():
+    # Said once for the whole run: a later draft's cause does not replace
+    # the first one's.
+    job, _signer, seen = run(targets(3), script=["denied by user", "ok", "bad padding"])
+    job.start()
+    settle(500)
+    assert [ident for ident, _reason in seen["finished"][0][1]] == ["d0", "d2"]
+    assert job.words == "Your signer app declined the request: allow it there and try again."
 
 
 def test_a_deletion_no_relay_accepted_is_not_counted_as_deleted():
@@ -263,6 +275,15 @@ def test_a_deletion_no_relay_accepted_is_not_counted_as_deleted():
     deleted, failures = out[0]
     assert deleted == 0 and len(failures) == 1
     assert "no relay accepted" in failures[0][1]
+    # The relay answered "blocked:": it turned it down, not the connection.
+    assert job.words == "The servers your posts go to turned it down: try again later."
+
+
+def test_a_run_with_nothing_failed_has_no_words():
+    job, _signer, seen = run(targets(2), script=["ok", "ok"])
+    job.start()
+    settle(500)
+    assert seen["finished"] == [(2, [])] and job.words == ""
 
 
 def test_finishing_is_announced_exactly_once():
@@ -392,3 +413,101 @@ def test_the_total_is_known_before_the_run_starts():
     # The progress dialog needs its maximum before the first prompt.
     job, _signer, _ = run(targets(7))
     assert job.total == 7
+
+
+# --------------------------------------------------------------------- #
+# What the window says when it is over (lessons 36)                     #
+# --------------------------------------------------------------------- #
+
+class _Run(QObject):
+    """Stands in for DraftBulkDeleteJob in the window."""
+
+    progress = Signal(int, int)
+    tombstoned = Signal(str, str)
+    finished = Signal(int, list)
+    made: list = []
+
+    def __init__(self, **kwargs):
+        super().__init__()
+        self.kwargs = kwargs
+        self.total = len(kwargs["targets"])
+        self.words = ""
+        _Run.made.append(self)
+
+    def start(self):
+        pass
+
+    def cancel(self):
+        pass
+
+
+def _window(monkeypatch, *, try_again):
+    import types
+    import main_window
+    from main_window import MainWindow
+    _Run.made = []
+    monkeypatch.setattr(main_window, "DraftBulkDeleteJob", _Run)
+    host = types.SimpleNamespace(
+        said=[], informed=[], statuses=[], _relay_pool=None, _relay_directory=None,
+        _session_pool=None, _entitled_relays=lambda: (), _on_draft_tombstoned=print,
+        _draft_wraps_to_name=lambda deletable: {},
+        _drafts_not_deleted=MainWindow._drafts_not_deleted)
+    host.status = types.SimpleNamespace(
+        showMessage=lambda text, _ms, **kw: host.statuses.append(text))
+    for name in ("_run_draft_deletion", "_on_draft_deletion_finished"):
+        setattr(host, name, types.MethodType(getattr(MainWindow, name), host))
+    monkeypatch.setattr(main_window, "ask_try_again",
+                        lambda parent, **kw: host.said.append(kw) or try_again)
+    monkeypatch.setattr(main_window, "inform", lambda parent, **kw: host.informed.append(kw))
+    monkeypatch.setattr(main_window, "QProgressDialog", MagicMock())
+    return host
+
+
+def test_drafts_that_did_not_go_are_said_once_and_try_again_asks_for_those(monkeypatch):
+    host = _window(monkeypatch, try_again=True)
+    host._run_draft_deletion(profile(), [("d0", 1), ("d1", 30023), ("d2", 1)])
+    run = _Run.made[-1]
+    run.words = "Your signer app declined the request: allow it there and try again."
+    run.finished.emit(1, [("d0", "denied by user"), ("d2", "denied by user")])
+    asked, = host.said
+    # What did not happen, never how many; the one sentence; each draft's
+    # reason behind Details.
+    assert asked["title"] == "Some drafts weren’t deleted"
+    assert asked["message"] == run.words
+    assert asked["details"] == "d0: denied by user\nd2: denied by user"
+    again = _Run.made[-1]
+    assert again is not run and again.kwargs["targets"] == [("d0", 1), ("d2", 1)]
+
+
+def test_one_draft_or_none_that_went_is_titled_so_and_cancel_asks_nothing_more(monkeypatch):
+    host = _window(monkeypatch, try_again=False)
+    host._run_draft_deletion(profile(), [("d0", 1)])
+    _Run.made[-1].finished.emit(0, [("d0", "no relay accepted the deletion")])
+    host._run_draft_deletion(profile(), [("d0", 1), ("d1", 1)])
+    _Run.made[-1].finished.emit(0, [("d0", "x"), ("d1", "x")])
+    assert [a["title"] for a in host.said] == ["Your draft wasn’t deleted",
+                                               "Your drafts weren’t deleted"]
+    assert host.said[0]["message"] == "Check your internet connection and try again."
+    assert len(_Run.made) == 2
+
+
+def test_drafts_that_all_went_say_so_in_the_status_bar(monkeypatch):
+    host = _window(monkeypatch, try_again=False)
+    host._run_draft_deletion(profile(), [("d0", 1), ("d1", 1)])
+    _Run.made[-1].finished.emit(2, [])
+    assert host.statuses == ["2 drafts deleted."] and host.said == []
+
+
+def test_drafts_that_cannot_be_deleted_from_here_are_said_with_ok_only(monkeypatch):
+    import main_window
+    host = _window(monkeypatch, try_again=True)
+
+    def refuse(**kwargs):
+        raise ValueError("unsupported inner kind 7")
+    monkeypatch.setattr(main_window, "DraftBulkDeleteJob", refuse)
+    host._run_draft_deletion(profile(), [("d0", 7), ("d1", 7)])
+    told, = host.informed
+    assert told["title"] == "Your drafts weren’t deleted"
+    assert told["message"] == ("These drafts can’t be deleted from here: delete them in the app "
+                               "that made them.")
+    assert told["details"] == "unsupported inner kind 7" and host.said == []

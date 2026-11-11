@@ -23,7 +23,7 @@ from typing import Callable, List, Optional, Tuple
 from PySide6.QtCore import QObject, Signal
 
 from atomic_file import free_path, save_document
-from i18n import _, ngettext
+from i18n import _
 
 from ..blossom.store import MediaFile
 from .thumbnail_loader import write_problem
@@ -206,22 +206,25 @@ class MediaSaver(QObject):
 def save_failure(why: str, path: str) -> str:
     """Why the file saved at ``path`` wasn't, in a sentence."""
     said = {
-        "network": _("“{name}” couldn’t be downloaded. Check your internet connection "
+        "network": _("“{name}” couldn’t be downloaded: check your internet connection "
                      "and try again."),
         "missing": _("“{name}” isn’t on your media servers anymore, so it couldn’t be "
                      "saved."),
-        "server": _("“{name}” couldn’t be downloaded: your media server didn’t send it. "
-                    "Try again later."),
-        "too_large": _("“{name}” wasn’t saved: a media server sent more than the file."),
-        "wrong_file": _("“{name}” wasn’t saved: a media server returned the wrong file."),
-        "unsafe": _("“{name}” wasn’t saved: a media server sent it from an address "
-                    "MyEditor doesn’t trust."),
+        "server": _("“{name}” couldn’t be downloaded, as your media server didn’t send it: "
+                    "try again later."),
+        "too_large": _("“{name}” wasn’t saved, as a media server sent more than the file: "
+                       "try again later."),
+        "wrong_file": _("“{name}” wasn’t saved, as a media server returned the wrong file: "
+                        "try again later."),
+        "unsafe": _("“{name}” wasn’t saved, as a media server sent it from an address "
+                    "MyEditor doesn’t trust: try again later."),
         "key": _("“{name}” wasn’t saved: it’s kept privately, and its key doesn’t open it."),
-        "full": _("“{name}” couldn’t be saved: there isn’t enough space for it there. "
-                  "Free up some space or choose another folder."),
-        "unreadable": _("“{name}” couldn’t be saved. Try again."),
-        "name": _("“{name}” couldn’t be saved: its name is too long. Choose a shorter one."),
-    }.get(why) or _("“{name}” couldn’t be saved there. Choose another folder.")
+        "full": _("“{name}” couldn’t be saved, as there isn’t enough space for it there: "
+                  "free up some space or choose another folder."),
+        "unreadable": _("“{name}” couldn’t be saved: try again."),
+        "name": _("“{name}” couldn’t be saved, as its name is too long: choose a shorter "
+                  "one."),
+    }.get(why) or _("“{name}” couldn’t be saved there: choose another folder.")
     return said.format(name=os.path.basename(path))
 
 
@@ -229,7 +232,8 @@ def saves_failure(total: int, failures: list) -> Tuple[str, str]:
     """What a Save to Folder that didn't save every file says at its end,
     and every reason, one per line, for its tooltip."""
     reasons = [save_failure(why, path) for path, why in failures]
-    saved = total - len(failures)
-    head = ngettext("Saved {saved} of {total} file.", "Saved {saved} of {total} files.",
-                    total).format(saved=saved, total=total)
-    return f"{head} {reasons[0]}", "\n".join(reasons)
+    # What did not happen, never how many of how many (lessons 36).
+    head = (_("Your file wasn’t saved") if total == 1
+            else _("Your files weren’t saved") if len(failures) >= total
+            else _("Some files weren’t saved"))
+    return f"{head}. {reasons[0]}", "\n".join(reasons)

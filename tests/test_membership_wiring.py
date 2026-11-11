@@ -76,7 +76,7 @@ def qt_app():
 
 @pytest.fixture(autouse=True)
 def quiet_alerts(monkeypatch):
-    monkeypatch.setattr(mw, "inform", lambda parent, **kw: None)
+    monkeypatch.setattr(mw, "ask_try_again", lambda parent, **kw: False)   # Cancel
     monkeypatch.setattr(mw, "confirm_destructive", lambda parent, **kw: True)
 
 
@@ -144,10 +144,12 @@ class RelayLists:
 
 class Job(QObject):
     finished = Signal(str)
+    NOT_DONE = rla.NOT_CHANGED
 
     def __init__(self):
         super().__init__()
         self.started = 0
+        self.write = None           # the writer's outcome: none here
 
     def start(self):
         self.started += 1
@@ -457,6 +459,35 @@ def shows(widget) -> bool:
     return widget.isVisibleTo(widget.window())
 
 
+def test_a_relay_list_not_changed_is_said_by_the_writers_cause():
+    from nostr.outbox import writer as outbox_writer
+    h = member_harness()
+    window = open_member_window(h)
+    row = window._relay_row
+    row.button.click()
+    job = h.jobs[0]
+    job.write = outbox_writer.WriteOutcome(outbox_writer.FAILED, cause=outbox_writer.CAUSE_SIGNER,
+                                           reason="user rejected")
+    job.NOT_DONE = rla.NOT_PUBLISHED
+    job.finished.emit(rla.FAILED)
+    assert row.note_label.text() == ("Your relay list wasn’t published. Your signer app "
+                                     "declined the request: allow it there and try again.")
+    window.close()
+
+
+def test_a_profile_address_not_shown_is_said_by_the_writers_cause():
+    from nostr.outbox import writer as outbox_writer
+    h = member_harness()
+    window = open_member_window(h)
+    window._address_row.button.click()
+    job = h.jobs[0]
+    job.write = outbox_writer.WriteOutcome(outbox_writer.FAILED, cause=outbox_writer.CAUSE_CLOCK)
+    job.finished.emit(pa.FAILED)
+    assert window._address_row.note_label.text().startswith(
+        "Your profile wasn’t changed. The version on the network is dated ahead")
+    window.close()
+
+
 @pytest.mark.parametrize("outcome,done,offered", [
     (rla.ADDED, True, False),
     (rla.ALREADY, True, False),
@@ -600,7 +631,9 @@ def test_a_profile_address_for_an_account_no_longer_active_is_not_written():
     assert h.jobs == []
     # The window is not left waiting: it says nothing was changed, and the
     # button can be used again.
-    assert window._address_row.note_label.text() == pa.outcome_message(pa.FAILED)
+    assert window._address_row.note_label.text() == (
+        "Your profile wasn’t changed. This window is for an account that isn’t active any "
+        "more: close it and open it again.")
     assert window._address_row.button.isEnabled()
     window.close()
 
@@ -799,7 +832,7 @@ def test_the_main_windows_providers_are_the_controllers():
 # --------------------------------------------------------------------- #
 
 @pytest.mark.parametrize("handler,job", [
-    ("_fire_draft_publish_job", "DraftPublishJob"),
+    ("_draft_job", "DraftPublishJob"),
     ("_run_draft_deletion", "DraftBulkDeleteJob"),
 ])
 def test_a_publish_job_is_given_the_resolved_relays(handler, job):
@@ -863,7 +896,7 @@ def test_identity_teardown_names_the_drafts_the_media_keys_and_the_window():
 @pytest.mark.parametrize("handler", [
     "_on_nostr_select_profile",
     "_on_nostr_profile_connected",
-    "_on_nostr_sign_out",
+    "_finish_sign_out",                 # the sign-out's end, once the person confirmed
 ])
 def test_every_identity_transition_releases_the_previous_account(handler):
     # Three separate paths change the active account. Missing any one of
@@ -888,3 +921,119 @@ def test_reselecting_the_same_account_does_not_tear_it_down():
         )
     ]
     assert guarded, "the teardown is unconditional, so re-selecting costs prompts"
+
+
+class _Status:
+    def __init__(self) -> None:
+        self.message = ""
+
+    def showMessage(self, text, _ms=0, **_context):  # noqa: N802, Qt's name
+        self.message = text
+
+    def currentMessage(self):  # noqa: N802, Qt's name
+        return self.message
+
+    def clearMessage(self):  # noqa: N802, Qt's name
+        self.message = ""
+
+
+class SignOutStandIn:
+    """The parts of MainWindow its sign-out touches, each step logged.
+    ``A`` signs out; ``B`` is another account in the store."""
+
+    _on_nostr_sign_out = MainWindow._on_nostr_sign_out
+    _finish_sign_out = MainWindow._finish_sign_out
+    _on_nostr_select_profile = MainWindow._on_nostr_select_profile
+
+    def __init__(self, *, confirmed=True, forgotten=True, writer=True) -> None:
+        self.log = []
+        self.written = []
+        self.a = SimpleNamespace(user_pubkey="a1" * 32)
+        self.b = SimpleNamespace(user_pubkey="b2" * 32)
+        self.default = self.a
+        self.stored = {self.a.user_pubkey: self.a, self.b.user_pubkey: self.b}
+
+        def forget(profile):
+            self.log.append("forget")
+            if forgotten:
+                self.stored.pop(profile.user_pubkey, None)
+                if self.default is profile:
+                    self.default = None
+            return forgotten
+
+        def set_default(pubkey):
+            self.default = self.stored.get(pubkey)
+
+        self._profile_store = SimpleNamespace(default=lambda: self.default,
+                                              get=self.stored.get, set_default=set_default)
+        self._accounts = SimpleNamespace(
+            confirm_sign_out=lambda _p: self.log.append("ask") or confirmed,
+            forget_account=forget,
+            profile_activated=lambda p: self.log.append(f"bound {p.user_pubkey[:2]}"))
+        if writer:
+            self._standup_writer = SimpleNamespace(
+                stop=lambda on_written: (self.log.append("stop writer"),
+                                         self.written.append(on_written)))
+        self.status = _Status()
+        self._avatars = {}
+        self._drafts_panel = None
+        self._update_profile_chip = self._refresh_profile_chip_menu = lambda: None
+        self._release_identity_state = lambda: self.log.append("release")
+        quiet = SimpleNamespace(start_for=lambda _p: None, refresh=lambda _p: None,
+                                account_changed=lambda _p: None)
+        self._membership = self._draft_sync = self._draft_deletions = quiet
+        self._server_list = quiet
+
+
+def test_the_signer_is_forgotten_only_after_the_read_state_is_written():
+    # RG-M2r 8: the controller forgot the signer before the submission
+    # writer wrote what was read (lists.py: before_sign_out comes first).
+    window = SignOutStandIn()
+    window._on_nostr_sign_out()
+    assert window.log == ["ask", "stop writer"]
+    window._on_nostr_sign_out()                     # Sign Out again while it waits
+    assert window.log == ["ask", "stop writer"]
+    window.written[0]()                             # written, or its 5 seconds passed
+    assert window.log == ["ask", "stop writer", "forget", "release"]
+
+
+@pytest.mark.parametrize("confirmed, forgotten, writer, log", [
+    (False, True, True, ["ask"]),                               # nothing is let go
+    (True, False, False, ["ask", "forget"]),                    # the key stayed
+    (True, True, False, ["ask", "forget", "release"]),          # no writer to wait for
+], ids=["declined", "key not deleted", "no writer"])
+def test_a_sign_out_lets_go_only_what_it_should(confirmed, forgotten, writer, log):
+    window = SignOutStandIn(confirmed=confirmed, forgotten=forgotten, writer=writer)
+    window._on_nostr_sign_out()
+    assert window.log == log
+    assert getattr(window, "_signing_out", False) is False     # a later one asks again
+
+
+def test_while_it_waits_the_sign_out_says_so_and_then_clears_it():
+    # RG-M2r2a 6: up to 5 seconds with nothing to say it is going on.
+    window = SignOutStandIn()
+    window._on_nostr_sign_out()
+    assert window.status.message == "Signing Out …"
+    window.written[0]()
+    assert window.status.message == ""
+
+
+def test_a_switch_of_account_while_it_waits_waits_for_it():
+    # RG-M2r2a 6: B chosen within the 5 seconds had its library cleared and
+    # its submission stopped when A's wait ended.
+    window = SignOutStandIn()
+    window._on_nostr_sign_out()
+    window._on_nostr_select_profile(window.b)
+    assert window.log == ["ask", "stop writer"] and window.default is window.a
+    window.written[0]()
+    assert window.log == ["ask", "stop writer", "forget", "release", "bound b2"]
+    assert window.default is window.b
+
+
+def test_an_account_connected_while_it_waits_is_never_torn_down():
+    window = SignOutStandIn()
+    window._on_nostr_sign_out()
+    window.default = window.b                       # connected meanwhile: A went with it
+    window.written[0]()
+    assert window.log == ["ask", "stop writer", "forget"]
+    assert window.default is window.b

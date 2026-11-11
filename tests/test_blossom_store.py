@@ -203,6 +203,21 @@ def test_delete_targets_every_server_the_blob_lives_on(tmp_path):
     assert SHA not in ctx.store.files
 
 
+def test_a_refused_delete_signature_ends_the_batches_and_a_sign_out_asks_nothing(tmp_path):
+    # RG-M4-c 5: 33 files are two tokens; the first refused, the second is
+    # never asked for; once ``going()`` is false nothing is asked at all.
+    pairs = [(f"{n:064x}", SERVER) for n in range(33)]
+    ctx = make_store(tmp_path, signer=FakeSigner(failure="declined"))
+    answers, refused = [], []
+    ctx.store.delete_on_servers(pairs, answers.append, on_not_signed=lambda: refused.append(1))
+    ctx.settle()
+    assert len(ctx.tokens()) == 1 and refused == [1] and answers == [[]]
+    ctx = make_store(tmp_path)
+    ctx.store.delete_on_servers(pairs, answers.append, going=lambda: False)
+    ctx.settle()
+    assert ctx.tokens() == [] and answers[-1] == []
+
+
 def test_delete_auth_carries_the_hash_and_the_bare_domain(tmp_path):
     ctx = make_store(tmp_path, responder=FakeBlossomServer(SERVER))
     ctx.store.upload_bytes(BODY, name="a.png")

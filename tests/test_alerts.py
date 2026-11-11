@@ -91,6 +91,29 @@ def test_escape_answers_cancel():
     assert alert.value == "cancel"
 
 
+@pytest.mark.parametrize("choose, again", [("Try Again", True), ("Cancel", False),
+                                           (None, False)], ids=["Try Again", "Cancel", "Esc"])
+def test_a_total_failure_offers_try_again_and_cancel(monkeypatch, choose, again):
+    # Lessons 36: what did not happen, one sentence, the details behind
+    # Details, Try Again the default beside Cancel; only Try Again says yes.
+    shown = []
+
+    def run(alert):
+        shown.append(alert)
+        if choose is None:
+            alert.reject()
+        else:
+            alert.buttons[choose].click()
+        return alert.value
+
+    monkeypatch.setattr(Alert, "run", run)
+    assert alerts.ask_try_again(None, title="Your data wasn’t saved", message="It didn’t work.",
+                                details="errno 28") is again
+    alert, = shown
+    assert list(alert.buttons) == ["Cancel", "Try Again"]
+    assert alert.buttons["Try Again"].isDefault()
+
+
 def test_escape_answers_the_default_when_there_is_no_cancel():
     alert = Alert(None, title="t", buttons=(Button("Upload", True, NORMAL),
                                             Button("Keep Local", False, DEFAULT)))

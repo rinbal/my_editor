@@ -63,10 +63,11 @@ import theme
 from i18n import _, ngettext
 
 from .. import web_readers
-from ..bunker import humanize_failure, is_signer_silent
+from .. import failures
+from ..bunker import signer_failure_words
 from ..draft_store import DraftState
 from ..drafts import derive_preview_snippet
-from ..publish_pipeline import refused_by_relay
+from ..publish_pipeline import answers_detail, not_taken_words
 from ..published import (
     DELETING, LOADING, READY, SIGNED_OUT, UNREACHABLE, PublishedItem, PublishedList,
 )
@@ -207,8 +208,8 @@ def more_label(model: PublishedList) -> str:
 
 
 def more_problem(model: PublishedList) -> str:
-    """Under the action, after a Load More that reached no relay. Short,
-    so it fits the narrowest panel; the status line says the rest."""
+    """Under the action, after a Load More that reached no relay: said
+    there once, in place, and short, so it fits the narrowest panel."""
     return _("Couldn’t load.") if model.more_failed and not model.loading_more else ""
 
 
@@ -605,8 +606,7 @@ class PublishedView(QWidget):
             self._show_placeholder("", _("Looking for your notes and articles…"), busy=True)
         elif state == UNREACHABLE:
             self._show_placeholder(_("Couldn’t load what you published"),
-                                   _("Check your internet connection, then try again."),
-                                   action=True, symbol="alert")
+                                   _(failures.CHECK_CONNECTION), action=True, symbol="alert")
         elif not self._model.items() and self._model.loading_more:
             # Reading on past pages that showed nothing (all deleted):
             # still the first read, as far as the person can tell.
@@ -654,9 +654,7 @@ class PublishedView(QWidget):
         was_state, was_refreshing, more_had_failed = self._last
         self._last = (model.state, model.refreshing, model.more_failed)
         if model.more_failed and not more_had_failed:
-            self.status_message.emit(_("Couldn’t load more notes. Check your internet "
-                                       "connection, then try again."))
-            return
+            return                  # said once, in place, under Load More (lessons 36)
         if model.refreshing and not was_refreshing:
             self.status_message.emit(_("Refreshing what you published…"))
             return
@@ -665,12 +663,10 @@ class PublishedView(QWidget):
         if not ended:
             return
         if model.refresh_failed:
-            self.status_message.emit(_("Couldn’t refresh. Check your internet connection, "
-                                       "then try again."))
-        elif model.partial:
-            self.status_message.emit(_("Some relays didn’t answer, so something may be "
-                                       "missing."))
+            self.status_message.emit(_("What you published couldn’t be refreshed: check your "
+                                       "internet connection and try again."))
         elif was_refreshing:
+            # Some relays not answering is said by nobody (lessons 36).
             self.status_message.emit("")
 
     # -- the actions ------------------------------------------------------------
@@ -954,31 +950,15 @@ class PublishedView(QWidget):
         self.status_message.emit(text)
 
     def _on_deleted(self, item: PublishedItem, results: list) -> None:
-        accepted = sum(1 for _url, ok, _message in results if ok)
-        self.status_message.emit(ngettext(
-            "{accepted} of {total} relay accepted the request to delete “{title}”.",
-            "{accepted} of {total} relays accepted the request to delete “{title}”.",
-            len(results)).format(accepted=accepted, total=len(results),
-                                 title=short_title(item)))
+        # Taken somewhere: said once, never how many took it (lessons 36).
+        self.status_message.emit(_("The request to delete “{title}” was sent.").format(
+            title=short_title(item)))
 
     def _on_not_taken(self, item: PublishedItem, results: list) -> None:
-        details = "\n".join(f"{url}: {message or _('no answer')}"
-                            for url, _ok, message in results)
-        if any(refused_by_relay(message) for _url, _ok, message in results):
-            message = _("The relays turned the request down. Show Details says why; you can "
-                        "try again later.")
-        else:
-            message = _("No relay accepted the request. Check your internet connection, "
-                        "then try again.")
-        self._offer_try_again(item, message, details)
+        self._offer_try_again(item, not_taken_words(results), answers_detail(results))
 
-    def _on_refused(self, item: PublishedItem, reason: str) -> None:
-        if is_signer_silent(reason):
-            self._offer_try_again(item, humanize_failure(reason), "")
-        else:
-            self._offer_try_again(item, _("Your signer app didn’t approve the request. Try "
-                                          "again, and approve it when your signer app "
-                                          "asks."), reason)
+    def _on_refused(self, item: PublishedItem, words: str, reason: str) -> None:
+        self._offer_try_again(item, words or signer_failure_words(reason), reason)
 
     def _offer_try_again(self, item: PublishedItem, message: str, details: str) -> None:
         again = alerts.ask(

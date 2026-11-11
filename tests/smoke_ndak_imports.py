@@ -224,9 +224,13 @@ if result is not None:
     second = next((w for w in wraps_for(ids[1:2], RNOSTR)), None)
     inner2 = inner_of(second) if second else None
     if inner2:
+        # A post whose source gives no summary gets its opening words as
+        # one (nostr/rss/normalize.py summary_from_body, since 19645e2).
         summary = [t[1] for t in inner2["tags"] if t[0] == "summary"]
-        rep.check("an item with only a description has no summary tag and the text as its body",
-                  not summary and "Only a description" in inner2["content"], str(summary))
+        rep.check("an item with only a description has the text as its body and its opening "
+                  "words as summary",
+                  len(summary) == 1 and summary[0].startswith("Only a description")
+                  and "Only a description" in inner2["content"], str(summary))
     rehost_log = [e for e in blossom.log() if e.get("method") == "PUT"]
     rep.check("rehosting uploads (BUD-02) each body image with an auth signed by the account",
               len(rehost_log) >= 1 and all(e["verdict"] == "ok" and e["auth"]["pubkey"] == pk
@@ -303,10 +307,15 @@ if item is not None:
               ids3 == [expected], f"{ids3} vs {expected}")
     w = next((x for x in wraps_for(ids3, RNOSTR)), None)
     inner3 = inner_of(w) if w else None
-    rep.check("the draft carries the article's body verbatim and its original published_at",
-              inner3 is not None and inner3["content"].startswith(article["content"])
+    # The article's first heading only repeats its title, which is shown
+    # above the body: it is dropped (normalize.py, since 6244138), the
+    # rest is taken as written.
+    rep.check("the draft carries the article's body, less the heading that repeats its title, "
+              "and its original published_at",
+              inner3 is not None and inner3["content"].startswith(f"Body {run}.")
+              and "# Bob's article" not in inner3["content"]
               and ["published_at", "1788000000"] in inner3["tags"],
-              json.dumps(inner3["tags"] if inner3 else None)[:300])
+              json.dumps([inner3["content"][:80], inner3["tags"]] if inner3 else None)[:300])
 
 
 class RewritingFetcher(SourceFetcher):
