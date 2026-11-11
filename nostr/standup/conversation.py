@@ -34,7 +34,7 @@ import json
 import secrets
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from .. import crypto as nostr_crypto
 from .. import events as nostr_events
@@ -471,13 +471,17 @@ def _from_its_sender(kind: str, sender: str, writer: str, redaktion: frozenset, 
 
 
 def fold(opened: Sequence[Opened], *, writer: str, redaktion: Iterable[str],
-         decided_then: Optional[Callable[[str, Any], bool]] = None) -> List[Bubble]:
+         decided_then: Optional[Callable[[str, Any], bool]] = None,
+         taken_at: Optional[Mapping[int, int]] = None) -> List[Bubble]:
     """The bubbles of a conversation, in ``seq`` order. ``writer`` is the
     submission's (from its verified revision), ``redaktion`` the members
     who may decide (from the member list); ``decided_then(person, at)``
-    says whether one who left could decide when they wrote at ``at``
-    (:meth:`.former.Formers.decided_then`). A structured note from anyone
-    else is dropped (9.4)."""
+    says whether one who left could decide at ``at``
+    (:meth:`.former.Formers.decided_then`), judged at the time the server
+    took the item (``taken_at``, by ``seq``), never the rumor's own
+    ``created_at``, which is the sender's word (RG-M4-c, contract 4). A
+    structured note from anyone else is dropped (9.4)."""
+    taken_at = taken_at or {}
     members = frozenset(redaktion)
     items = sorted(opened, key=lambda o: o.seq)
     bubbles: Dict[str, Bubble] = {}
@@ -499,7 +503,7 @@ def fold(opened: Sequence[Opened], *, writer: str, redaktion: Iterable[str],
             except NotShown:
                 continue
             if structured is not None and not _from_its_sender(
-                    structured[0], item.sender, writer, members, rumor["created_at"],
+                    structured[0], item.sender, writer, members, taken_at.get(item.seq),
                     decided_then):
                 continue
             if rumor["id"] in bubbles:

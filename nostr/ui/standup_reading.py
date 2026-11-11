@@ -504,8 +504,9 @@ class Reading:
         deciders = tuple({*rules.deciders_of(state.members), accepted.actor})
         decision = next(item.event.signed for item in items if item.seq == accepted.seq)
         then = state.formers.decided_then if state.formers is not None else None
+        taken = {item.seq: item.at for item in items if item.channel == "conversation"}
         bubbles = conversation.fold(opened, writer=row.writer, redaktion=deciders,
-                                    decided_then=then)
+                                    decided_then=then, taken_at=taken)
         split = conversation.accepted_split(bubbles, decision, submission_id=sid,
                                             redaktion=deciders)
         content = split.structured[1] if split is not None else {}

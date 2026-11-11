@@ -110,7 +110,9 @@ def test_what_someone_who_left_wrote_stays_in_the_conversation():
             "ef" * 32, [{"pubkey": writer, "weight": 100, "role": "writer"}]))
     opened = [conv.Opened(rumor=r, sender=left, wrap_id=str(n), seq=n)
               for n, r in enumerate((said, split), 1)]
-    shown = threads.build_thread((), opened, sid=SID, me=writer, writer=writer, deciders=(),
+    taken = [views.TimelineItem(seq=n, at=FM["acted_at"], type="message", wrap=None,
+                                event=None) for n in (1, 2)]       # when the server took them
+    shown = threads.build_thread(taken, opened, sid=SID, me=writer, writer=writer, deciders=(),
                                  members=(), formers=formers)
     assert [type(item).__name__ for item in shown if not isinstance(item, threads.Day)] == [
         "Message", "SplitCard"]
@@ -135,14 +137,21 @@ def test_a_split_card_goes_by_the_role_its_proposer_held_when_they_proposed_it()
     assert formers.decided_then(former["pubkey"], after["at"]) is False
     writer, room = FM["stranger"], FM["publication"].split(":")[1]
 
-    def proposed(at):
+    def proposed(written, taken):
+        """What a split proposal written at ``written`` (the sender's word)
+        and taken by the server at ``taken`` shows as."""
         split = conv.structured_rumor(
             room=room, submission_id=SID, kind="split-proposal", sender=former["pubkey"],
-            created_at=at, content=conv.split_proposal_content(
+            created_at=written, content=conv.split_proposal_content(
                 "ef" * 32, [{"pubkey": writer, "weight": 100, "role": "writer"}]))
         opened = [conv.Opened(rumor=split, sender=former["pubkey"], wrap_id="1", seq=1)]
-        shown = threads.build_thread((), opened, sid=SID, me=writer, writer=writer,
+        items = [views.TimelineItem(seq=1, at=taken, type="message", wrap=None, event=None)]
+        shown = threads.build_thread(items, opened, sid=SID, me=writer, writer=writer,
                                      deciders=(), members=(), formers=formers)
         return [type(item).__name__ for item in shown if not isinstance(item, threads.Day)]
 
-    assert proposed(then["at"]) == ["SplitCard"] and proposed(after["at"]) == []
+    assert proposed(then["at"], then["at"]) == ["SplitCard"]
+    assert proposed(after["at"], after["at"]) == []
+    # Dated back to a Redaktion time, but taken after the curator invitation:
+    # judged by the server's time, so no split card (an ordinary message at most).
+    assert "SplitCard" not in proposed(then["at"], after["at"])
