@@ -21,6 +21,7 @@ from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import QObject, Qt
+from PySide6.QtGui import QColor, QImage
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel
 
@@ -29,8 +30,9 @@ from document_notice import DocumentNotice
 from nostr.standup import conversation
 from nostr.standup.errors import Code, StandupError
 from nostr.standup.following import Action
-from nostr.ui import standup_submit, submission_detail
+from nostr.ui import standup_submit, submission_cover, submission_detail
 from nostr.ui.standup_submit import StandupWriter
+from nostr.ui.submission_cover import cover_pixmap, png_bytes
 from nostr.ui.submission_pill import SubmissionPill
 from nostr.ui.submissions_host import Ports, SubmissionsHost
 from nostr.ui.submissions_view import PANEL_VIEW, SubmissionsView
@@ -142,6 +144,29 @@ def test_the_list_has_three_sections_one_word_a_row_and_done_closed_with_its_cou
     done = window.view.list.model().index(4)
     window.view.list.activated.emit(done)               # Return or a click opens Erledigt
     assert window.rows()[-2:] == [("done", "Done (1)", ""), ("row", "Wallets", "Declined")]
+
+
+def test_a_cover_is_decoded_once_and_one_too_large_shows_the_symbol(monkeypatch):
+    decoded = []
+    real = submission_cover.decode_image_bytes
+    monkeypatch.setattr(submission_cover, "decode_image_bytes",
+                        lambda *a, **k: decoded.append(a) or real(*a, **k))
+    look = ("article", 40, QColor("#eeeeee"), QColor("#333333"))
+
+    def picture(width, height):
+        image = QImage(width, height, QImage.Format.Format_RGB32)
+        image.fill(QColor("#cc3300"))
+        return png_bytes(image)
+
+    small = picture(80, 80)
+    first = cover_pixmap(small, *look)
+    for _paint in range(20):                            # a row painted again and again
+        assert cover_pixmap(small, *look) is first
+    assert len(decoded) == 1
+    # A thumb far larger than any thumb is never decoded: the symbol stands in.
+    wide = picture(4000, 40)
+    assert cover_pixmap(wide, *look).toImage() == cover_pixmap(None, *look).toImage()
+    assert len(decoded) == 1
 
 
 def test_an_empty_list_says_how_to_submit_and_offers_it(window):

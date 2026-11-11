@@ -5,7 +5,11 @@ detail's header and on the submit sheet's card.
 
 - :func:`cover_pixmap`: the cover as a rounded square. Its picture is
   the revision's own small cover (``thumb``, read only from a verified,
-  opened revision); before that, the kind's symbol (plan 9.4).
+  opened revision); before that, the kind's symbol (plan 9.4). A thumb
+  is decoded once, no larger than it is drawn, and kept drawn: a row is
+  painted again and again (RG-M3-a 8). One larger than
+  :data:`MAX_THUMB_SIDE` a side, or of more than its bytes, is not
+  decoded at all: the symbol stands in.
 - :func:`monogram`: a card picture made of the title's first letters,
   for a cover that is only a web address and could not be fetched.
 - :class:`CoverFetch`: such a cover fetched for the card and the
@@ -18,10 +22,11 @@ detail's header and on the submit sheet's card.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from typing import Callable, Optional
 
-from PySide6.QtCore import QBuffer, QIODevice, QObject, QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPixmap
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QObject, QRectF, QSize, Qt, QTimer
+from PySide6.QtGui import QColor, QFont, QImage, QImageReader, QPainter, QPainterPath, QPixmap
 
 import format_icons
 from image_safety import decode_image_bytes
@@ -31,8 +36,13 @@ from .avatar import initials_for
 
 MAX_BYTES = 5 * 1024 * 1024
 TIMEOUT_MS = 10_000
-# A revision's thumb is at most 24 KB (contract 5); more is not decoded.
+# A revision's thumb is at most 24 KB (contract 5); more is not decoded,
+# nor one larger a side than a thumb needs to be.
 _MAX_THUMB_BYTES = 64 * 1024
+MAX_THUMB_SIDE = 512
+# Covers drawn, by their thumb, kind, size and colours: a list's worth.
+_DRAWN: "OrderedDict[tuple, QPixmap]" = OrderedDict()
+_KEEP = 256
 
 
 def _rounded(size: int, radius: float) -> tuple:
@@ -51,9 +61,37 @@ def cover_pixmap(data: Optional[bytes], kind: str, size: int, fill: QColor,
                  ink: QColor) -> QPixmap:
     """The cover as a rounded square of ``size`` points: the picture in
     ``data`` (a revision's ``thumb``), cropped to fill it, or the symbol
-    of ``kind`` on ``fill``."""
+    of ``kind`` on ``fill``. Drawn once for the same thumb and look."""
+    key = (data or b"", kind, size, fill.rgba(), ink.rgba())
+    drawn = _DRAWN.get(key)
+    if drawn is not None:
+        _DRAWN.move_to_end(key)
+        return drawn
+    drawn = _draw(data, kind, size, fill, ink)
+    _DRAWN[key] = drawn
+    while len(_DRAWN) > _KEEP:
+        _DRAWN.popitem(last=False)
+    return drawn
+
+
+def _thumb(data: Optional[bytes], size: int) -> Optional[QImage]:
+    """The thumb decoded no larger than ``size`` device pixels need, or
+    None: too many bytes, too large a side, or no picture."""
+    if not data or len(data) > _MAX_THUMB_BYTES:
+        return None
+    buffer = QBuffer()
+    buffer.setData(QByteArray(data))
+    if not buffer.open(QIODevice.OpenModeFlag.ReadOnly):
+        return None
+    declared = QImageReader(buffer).size()
+    if not declared.isValid() or max(declared.width(), declared.height()) > MAX_THUMB_SIDE:
+        return None
+    return decode_image_bytes(data, at_least=QSize(size, size))
+
+
+def _draw(data: Optional[bytes], kind: str, size: int, fill: QColor, ink: QColor) -> QPixmap:
     pixmap, painter, path = _rounded(size, size * 0.18)
-    image = decode_image_bytes(data) if data and len(data) <= _MAX_THUMB_BYTES else None
+    image = _thumb(data, size * 2)
     if image is not None and not image.isNull():
         scaled = image.scaled(size * 2, size * 2,
                               Qt.AspectRatioMode.KeepAspectRatioByExpanding,
@@ -135,4 +173,5 @@ class CoverFetch(QObject):
         asked(image if image is not None and not image.isNull() else None)
 
 
-__all__ = ["CoverFetch", "MAX_BYTES", "TIMEOUT_MS", "cover_pixmap", "monogram", "png_bytes"]
+__all__ = ["CoverFetch", "MAX_BYTES", "MAX_THUMB_SIDE", "TIMEOUT_MS", "cover_pixmap", "monogram",
+           "png_bytes"]
