@@ -109,6 +109,18 @@ app.processEvents()
 group = photo_group.group_at(ed.document(), ed.document().findBlockByNumber(1).position())
 r["several"] = [len(group.units) if group is not None else 0, ed.undo_name()]
 
+# Saved and opened again: the pictures and their group, not the file's
+# Markdown text (gate RG-PG2E-c 1: "![](...)" read as lossy).
+holiday = os.path.join(home, "Holiday.md")
+w._save_to(holiday)
+saved = open(holiday, encoding="utf-8").read()
+w.close_tab(w.tabs.currentIndex())
+again = w.open_path(holiday)
+app.processEvents()
+group = photo_group.group_at(again.document(), again.document().findBlockByNumber(1).position())
+r["reopened"] = [saved.count("![]("), again._markdown_source,
+                 len(group.units) if group is not None else 0]
+
 # Where a picture cannot be kept, it is dimmed.
 for name, body in (("doc.md", "# Doc\n"), ("doc.html", "<p>doc</p>"), ("doc.txt", "doc\n"),
                    ("doc.Rmd", "doc\n"), ("doc.py", "x = 1\n")):
@@ -147,6 +159,7 @@ def test_insert_image_is_a_drop_of_the_chosen_file(r):
     assert r["account"] == [] and r["account_inserted"] == 1
     # Gate RG-PG2E-b 14: one file is one picture, several are a group.
     assert r["several"] == [2, "Add Photos"]
+    assert r["reopened"] == [2, False, 2]
 
 
 def test_one_image_item_in_the_insert_menu(r):

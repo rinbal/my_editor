@@ -468,6 +468,8 @@ from markdown_writer import holds_faithfully  # noqa: E402
     # the picture in its place, not as its Markdown text.
     "Before\n\n![Sunset](https://blossom.example/" + "a" * 64 + ".png)\n\nAfter\n",
     "A picture ![Map](pictures/map.png) in a line.\n",
+    # A picture without a description, as the app writes one added in it.
+    "An image ![](https://x.example/a.png) without alt text.\n",
 ])
 def test_markdown_the_editor_can_hold(source):
     assert holds_faithfully(source)
@@ -476,7 +478,6 @@ def test_markdown_the_editor_can_hold(source):
 @pytest.mark.parametrize("source", [
     "Footnote[^1].\n\n[^1]: The note,\n\n    and its second paragraph.\n",
     "<div>raw</div>\n",
-    "An image ![](https://x.example/a.png) without alt text.\n",
     'A [link](https://x.example "with a title").\n',
     "[![badge](https://x.example/b.png)](https://x.example)\n",
     "> # a heading in a quote\n",
@@ -502,7 +503,7 @@ def test_a_draft_the_editor_cannot_hold_opens_as_its_text_and_comes_back_unchang
     from main_window import MainWindow
     from nostr.drafts import INNER_KIND_LONG_FORM
 
-    source = "Footnote[^1] and ![](https://x.example/a.png)\n\n[^1]: The note.\n"
+    source = 'Footnote[^1] and a [link](https://x.example "with a title")\n\n[^1]: The note.\n'
     ed = HtmlEditor()
     MainWindow._load_draft_content(ed, draft(INNER_KIND_LONG_FORM, source))
     assert ed._markdown_source
