@@ -278,7 +278,7 @@ def test_the_detail_has_one_sentence_and_a_button_only_for_what_the_window_handl
     assert detail.sentence.text() == "Anna asks for changes."
     assert detail.more.text() == "What exactly is in the conversation below."
     assert detail.action.isVisibleTo(detail) and detail.action.text() == "Revise in the Editor"
-    assert detail.thread.captions == ["Submitted · Version 1", "Anna took it on",
+    assert detail.conversation.captions == ["Submitted · Version 1", "Anna took it on",
                                       "Anna asked for changes"]
     # Accepted, the writer publishes (M-4 M13): one button for it.
     detail = opened(window, entries["annahme"])
@@ -300,7 +300,7 @@ def test_publish_opens_the_accepted_version_and_says_when_the_editor_text_differ
     detail.action.click()
     sheet = window.host._publish_sheet
     assert isinstance(sheet, PublishSheet) and sheet.publish.text() == "Publish"
-    assert sheet.accepted.text() == "Accepted by Einundzwanzig Magazin, version 1."
+    assert sheet.accepted_line.text() == "Accepted by Einundzwanzig Magazin, version 1."
     assert sheet.differs.isVisibleTo(sheet) and sheet.differs.text().startswith(
         "The accepted version is published.")
     assert not any("Hand In" in b.text() for b in sheet.findChildren(QPushButton))
@@ -497,7 +497,7 @@ def test_confirming_names_the_accepted_split_and_where_the_share_goes_then_remin
     assert detail.action.text() == "Confirm …"
     # Item 7: the proposal is in the conversation, marked as the one accepted.
     assert "Anna proposes a split: You 70 %, Paul 30 %. Accepted with this split." in \
-        detail.thread.captions
+        detail.conversation.captions
     detail.action.click()
     sheet = window.host._confirm_sheet
     assert isinstance(sheet, ConfirmSheet) and sheet.split.text() == "You 70 %  ·  Paul 30 %"
@@ -531,16 +531,16 @@ def test_a_conversation_is_opened_once_and_a_refresh_draws_only_what_is_new(wind
     world.settle()
     detail = window.view.detail
     assert opened.count(entries["lang"].sid) == 5      # each message once, list and detail
-    drawn = detail.thread.bubbles
+    drawn = detail.conversation.bubbles
     world.message(prepared["lang"], "Noch eine")
     window.following.refresh()
     world.settle()
     assert opened.count(entries["lang"].sid) == 6      # only the new one
     # Nothing before it is drawn again, but the one whose picture moved to
     # the new last of the group.
-    assert detail.thread.bubbles[:4] == drawn[:4] and detail.thread.bubbles[4] is not drawn[4]
+    assert detail.conversation.bubbles[:4] == drawn[:4] and detail.conversation.bubbles[4] is not drawn[4]
     redrawn = []
-    monkeypatch.setattr(detail.thread, "show_thread", lambda *a: redrawn.append(a))
+    monkeypatch.setattr(detail.conversation, "show_thread", lambda *a: redrawn.append(a))
     world.message(prepared["andere"], "Eine andere Einreichung")
     window.following.refresh()
     world.settle()
@@ -586,7 +586,7 @@ def test_tab_reaches_the_conversation_before_the_composer_and_each_reaction_is_n
     window.tab("text", "# Ein Jahr\n\nText.")
     window.follow()
     detail = opened(window, entries["text"])
-    [bubble] = detail.thread.bubbles
+    [bubble] = detail.conversation.bubbles
     react = bubble.react_button
     assert react.accessibleName() == "React to the message from Anna"
     assert (react.width(), react.height()) == (28, 28)
@@ -603,7 +603,7 @@ def test_tab_reaches_the_conversation_before_the_composer_and_each_reaction_is_n
     while widget is not detail.composer and len(chain) < 50:
         widget = widget.nextInFocusChain()
         chain.append(widget)
-    assert all(b.react_button in chain for b in detail.thread.bubbles)
+    assert all(b.react_button in chain for b in detail.conversation.bubbles)
 
 
 def test_more_about_sits_on_the_sentence_and_a_narrow_unread_row_shows_the_message(window):
@@ -658,7 +658,7 @@ def test_the_composer_sends_with_return_and_a_failure_stays_in_place_with_the_te
     QTest.keyClick(detail.composer, Qt.Key.Key_Return)
     world.settle()
     assert detail.composer.toPlainText() == ""
-    assert [b.message.bubble.text for b in detail.thread.bubbles] == ["Mach ich, danke!"]
+    assert [b.message.bubble.text for b in detail.conversation.bubbles] == ["Mach ich, danke!"]
     for _ in range(4):
         world.server.inject("messages", DROP_BEFORE)
     detail.composer.setPlainText("Bis morgen.")
@@ -667,16 +667,16 @@ def test_the_composer_sends_with_return_and_a_failure_stays_in_place_with_the_te
     while world.later.waiting:
         world.later.run()
         world.settle()
-    [footer] = detail.thread.footers
+    [footer] = detail.conversation.footers
     assert footer.property("words").startswith("Not sent.")
     assert footer.property("action") == "Send Again"
     [out] = window.following.talk.outgoing(entries["reden"].sid)
     assert out.text == "Bis morgen."                    # the text is kept
-    detail.thread.retry.emit(out.key)                   # Erneut senden
+    detail.conversation.retry.emit(out.key)                   # Erneut senden
     world.settle()
-    assert [b.message.bubble.text for b in detail.thread.bubbles] == ["Mach ich, danke!",
+    assert [b.message.bubble.text for b in detail.conversation.bubbles] == ["Mach ich, danke!",
                                                                      "Bis morgen."]
-    assert detail.thread.footers == []
+    assert detail.conversation.footers == []
 
 
 def test_a_message_that_cannot_be_sent_is_said_above_the_composer_and_kept(window):
@@ -697,22 +697,22 @@ def test_a_reaction_shows_on_the_bubble_dimmed_until_it_is_stored(window):
     world.message(prepared["reagieren"], "Perfekt.")
     window.follow()
     detail = opened(window, entries["reagieren"])
-    [bubble] = detail.thread.bubbles
+    [bubble] = detail.conversation.bubbles
     assert bubble.react_button.accessibleName().startswith("React to") and bubble.chip is None
     assert bubble.react_button.focusPolicy() == Qt.FocusPolicy.TabFocus
     signer = window.accounts[ME].signer
     signer.held = []
-    detail.thread.reacted.emit(bubble.message.bubble.id, EDITOR, conversation.REACTIONS[0])
-    [bubble] = detail.thread.bubbles
+    detail.conversation.reacted.emit(bubble.message.bubble.id, EDITOR, conversation.REACTIONS[0])
+    [bubble] = detail.conversation.bubbles
     assert bubble.chip.text() == conversation.REACTIONS[0] and bubble.dimmed
     assert bubble.chip.accessibleName() == "Reactions: You: Heart"
     signer.release()
     world.settle()
-    [bubble] = detail.thread.bubbles
+    [bubble] = detail.conversation.bubbles
     assert bubble.chip.text() == conversation.REACTIONS[0] and not bubble.dimmed
-    detail.thread.reacted.emit(bubble.message.bubble.id, EDITOR, conversation.REACTIONS[0])
+    detail.conversation.reacted.emit(bubble.message.bubble.id, EDITOR, conversation.REACTIONS[0])
     world.settle()
-    assert detail.thread.bubbles[0].chip is None        # the same again took it back
+    assert detail.conversation.bubbles[0].chip is None        # the same again took it back
 
 
 def test_withdrawing_asks_first_and_cancel_is_the_default(window, monkeypatch):

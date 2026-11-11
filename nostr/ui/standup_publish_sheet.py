@@ -91,8 +91,8 @@ class PublishSheet(QDialog):
         line = _(ACCEPTED_LINE).format(publication=publication, number=number)
         if section:
             line += " " + _(PLACE_LINE).format(section=section)
-        self.accepted = self._label(line, "")
-        root.addWidget(self.accepted)
+        self.accepted_line = self._label(line, "")
+        root.addWidget(self.accepted_line)
         work = self.run.revision.get("work") or {}
         card = QFrame()
         card.setObjectName("publish_card")

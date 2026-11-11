@@ -266,13 +266,13 @@ class SubmissionDetail(QWidget):
         self.encrypted.setObjectName("submission_more")
         self.encrypted.setFont(secondary_font())
         column.addWidget(self.encrypted)
-        self.thread = ThreadView(name_of=self._name_of, avatar_of=self._avatar_of,
+        self.conversation = ThreadView(name_of=self._name_of, avatar_of=self._avatar_of,
                                  is_dark=self._is_dark)
-        self.thread.reacted.connect(self._on_reacted)
-        self.thread.retry.connect(lambda key: self._following and self._following.talk.retry(key))
-        self.thread.open_version.connect(lambda n: self.open_in_editor.emit(self._sid, n))
-        self.thread.compare_version.connect(lambda n: self.compare_requested.emit(self._sid, n))
-        column.addWidget(self.thread, 1)
+        self.conversation.reacted.connect(self._on_reacted)
+        self.conversation.retry.connect(lambda key: self._following and self._following.talk.retry(key))
+        self.conversation.open_version.connect(lambda n: self.open_in_editor.emit(self._sid, n))
+        self.conversation.compare_version.connect(lambda n: self.compare_requested.emit(self._sid, n))
+        column.addWidget(self.conversation, 1)
         self._scroll.setWidget(content)
         root.addWidget(self._scroll, 1)
 
@@ -410,9 +410,9 @@ class SubmissionDetail(QWidget):
         self.faces.setVisible(row.confirmed)
         self.readers.setVisible(row.confirmed)
         self.encrypted.setVisible(row.confirmed)
-        self.thread.publication_face = lambda size: self._logo(
+        self.conversation.publication_face = lambda size: self._logo(
             row.publication, detail.publication, size)
-        self.thread.show_thread(detail, self._following.me)
+        self.conversation.show_thread(detail, self._following.me)
         self.composer_bar.setVisible(detail.can_write and row.confirmed)
         self._order_tabs()
 
@@ -421,7 +421,7 @@ class SubmissionDetail(QWidget):
         top, the action, the conversation, then the composer."""
         about = [self._more_about.itemAt(i).widget() for i in range(self._more_about.count())]
         chain = [self.back, self.info_button, self.more_button, self.action, self.second] \
-            + [w for w in about if w is not None] + self.thread.focusables() \
+            + [w for w in about if w is not None] + self.conversation.focusables() \
             + [self.composer, self.send]
         for first, second in zip(chain, chain[1:]):
             QWidget.setTabOrder(first, second)
@@ -700,7 +700,7 @@ class SubmissionDetail(QWidget):
 
     def apply_theme(self, is_dark: bool) -> None:
         self._is_dark = bool(is_dark)
-        self.thread.is_dark = self._is_dark
+        self.conversation.is_dark = self._is_dark
         r = appearance.roles(self._is_dark)
         self.info_button.setIcon(QIcon(symbol_pixmap("info", 16, QColor(r.icon))))
         self.more_button.setIcon(QIcon(symbol_pixmap("ellipsis", 16, QColor(r.icon))))
