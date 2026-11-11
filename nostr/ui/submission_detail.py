@@ -259,6 +259,8 @@ class SubmissionDetail(QWidget):
         self.composer.installEventFilter(self)
         self.composer.textChanged.connect(self._on_typed)
         self.send = QToolButton()
+        self.send.setObjectName("submission_send")
+        self.send.setFixedSize(MIN_CONTROL_PX, MIN_CONTROL_PX)
         self.send.setText("↑")
         self.send.setAccessibleName(_("Send"))
         self.send.setToolTip(_("Send"))
@@ -551,7 +553,8 @@ class SubmissionDetail(QWidget):
             if error is None or self._following is not following:
                 return
             # Said once, with its cause and one way on (lessons 36).
-            if ask_try_again(self, title=_(NOT_WITHDRAWN), message=_(cause_words(error.code)),
+            cause = cause_words(error.code)
+            if ask_try_again(self, title=_(NOT_WITHDRAWN), message=_(cause),
                              is_dark=self._is_dark, nostr=True):
                 following.withdraw(sid, answered)
 
@@ -577,6 +580,10 @@ class SubmissionDetail(QWidget):
             #submission_pill {{ background: {r.control}; color: {r.text};
                 border: 1px solid {r.line}; border-radius: 10px; padding: 1px 8px 1px 4px; }}
             {appearance.accent_button_css('#submission_action', self._is_dark)}
+            #submission_send {{ background: {r.button}; color: {r.on_accent};
+                border: none; border-radius: {MIN_CONTROL_PX // 2}px; font-weight: 700; }}
+            #submission_send:disabled {{ background: {r.soft}; color: {r.disabled}; }}
+            #submission_send:focus {{ border: 2px solid {r.focus}; }}
             QToolButton::menu-indicator {{ image: none; }}
         """)
         if self._sid:

@@ -49,17 +49,18 @@ def test_the_same_text_has_no_changes():
     assert not result.changed and result.parts == (Part(SAME, OLD),)
 
 
-@pytest.mark.parametrize("old, new", [
-    # One changed stretch whose word table is past the bound.
-    (" ".join(f"a{i}" for i in range(1100)), " ".join(f"b{i}" for i in range(1100))),
-    # More words than are compared at all.
-    ("wort " * (compare.MAX_WORDS // 2 + 10), "wort " * (compare.MAX_WORDS // 2 + 10) + "x"),
-    # More paragraphs than are matched.
-    ("\n\n".join(["a"] * (compare.MAX_PARAGRAPHS + 1)), "b"),
-], ids=["one huge change", "too many words", "too many paragraphs"])
-def test_past_the_size_bound_nothing_is_marked_and_both_versions_stay(old, new):
-    result = compare_words(old, new)
-    assert result.too_many and result.parts == () and (result.old, result.new) == (old, new)
+def test_past_the_size_bound_nothing_is_marked_and_both_versions_stay():
+    for old, new in [
+        # One changed stretch whose word table is past the bound.
+        (" ".join(f"a{i}" for i in range(1100)), " ".join(f"b{i}" for i in range(1100))),
+        # More words than are compared at all.
+        ("wort " * (compare.MAX_WORDS // 2 + 10), "wort " * (compare.MAX_WORDS // 2 + 10) + "x"),
+        # More paragraphs than are matched.
+        ("\n\n".join(["a"] * (compare.MAX_PARAGRAPHS + 1)), "b"),
+    ]:
+        result = compare_words(old, new)
+        assert result.too_many and result.parts == ()
+        assert (result.old, result.new) == (old, new)
 
 
 def test_past_the_time_bound_the_marking_stops():
@@ -86,14 +87,12 @@ def test_the_work_grows_with_the_changes_not_with_the_square_of_the_text():
     assert calls == [(6, 6)] and not result.too_many
 
 
-@pytest.mark.parametrize("old, new, said", [
-    (OLD, NEW, "1 paragraph new, 1 changed"),
-    ("Eins.\n\nZwei.", "Eins.\n\nZwei.", "No changes to the text"),
-    ("Eins kurz.", "Eins kurz. Und jetzt noch deutlich länger geschrieben.", "1 added to"),
-    ("Eins.\n\nZwei.\n\nDrei.", "Eins.", "2 removed"),
-])
-def test_the_one_line_of_a_version_card(old, new, said):
-    assert change_summary(old, new) == said
+def test_the_one_line_of_a_version_card():
+    assert change_summary(OLD, NEW) == "1 paragraph new, 1 changed"
+    assert change_summary("Eins.\n\nZwei.", "Eins.\n\nZwei.") == "No changes to the text"
+    assert change_summary("Eins kurz.", "Eins kurz. Und jetzt noch deutlich länger "
+                          "geschrieben.") == "1 added to"
+    assert change_summary("Eins.\n\nZwei.\n\nDrei.", "Eins.") == "2 removed"
 
 
 def test_a_pair_is_compared_once_on_the_worker_thread():

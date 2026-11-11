@@ -104,6 +104,7 @@ class ReviseSheet(QDialog):
         if running is not None:
             self._show_run(running)                 # one run per work
         self._refresh()
+        self.note.setFocus()                        # the one thing to fill in
         fit_to_window(self, QSize(600, min(560, max(380, self.sizeHint().height()))))
 
     def _build(self) -> None:

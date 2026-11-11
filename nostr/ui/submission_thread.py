@@ -75,8 +75,11 @@ def day_words(at: int, now: Optional[datetime.date] = None) -> str:
 
 def reactions_spoken(reactions: Dict[str, str], me: str, name_of: Callable[[str], str]) -> str:
     """"Reaktionen: Anna: Daumen hoch" (plan 10.8)."""
-    said = [f"{_('You') if who == me else (name_of(who) or _('Someone'))}: "
-            f"{_(REACTION_NAMES.get(emoji, emoji))}" for who, emoji in reactions.items()]
+    said = []
+    for who, emoji in reactions.items():
+        person = _("You") if who == me else (name_of(who) or _("Someone"))
+        named = REACTION_NAMES.get(emoji)
+        said.append(person + ": " + (_(named) if named else emoji))
     return _("Reactions: {list}").format(list=", ".join(said))
 
 
@@ -349,26 +352,24 @@ class ThreadView(QWidget):
         r = appearance.roles(self.is_dark)
         words, action = footer_words(out)
         holder = QWidget()
-        row = QHBoxLayout(holder)
-        row.setContentsMargins(0, 0, 0, 2)
-        row.setSpacing(6)
+        column = QVBoxLayout(holder)
+        column.setContentsMargins(0, 0, 0, 4)
+        column.setSpacing(4)
+        side = Qt.AlignmentFlag.AlignRight if mine else Qt.AlignmentFlag.AlignLeft
         label = QLabel(words)
         label.setFont(secondary_font())
         label.setWordWrap(True)
+        label.setAlignment(side)
         label.setTextFormat(Qt.TextFormat.PlainText)
         failed = out.state is Sending.FAILED
         label.setStyleSheet(f"color: {r.error if failed else r.muted};")
-        if mine:
-            row.addStretch(1)
-        row.addWidget(label, 1 if mine else 0)
+        column.addWidget(label)
         if action:
             button = QPushButton(action)
             button.setFont(secondary_font())
             button.clicked.connect(lambda: self.retry.emit(out.key))
-            row.addWidget(button)
+            column.addWidget(button, 0, side)
             holder.setProperty("action", action)
-        if not mine:
-            row.addStretch(1)
         holder.setProperty("words", words)
         self.footers.append(holder)
         return holder

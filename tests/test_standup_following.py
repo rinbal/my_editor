@@ -56,7 +56,9 @@ def view_of(state, *, step=None, turn="none", pending=(), writer=ME, placed=Fals
 
 # -- one word, one section, whose turn (criterion 6) ----------------------------------
 
-@pytest.mark.parametrize("view, me, situation, section, word", [
+def test_every_state_and_role_has_one_word_one_section_and_whose_turn():
+    # Criterion 6, as one table: the View, who looks, and what they see.
+    for view, me, situation, section, word in [
     (view_of("submitted", turn="redaktion"), ME, Situation.SUBMITTED, Section.RUNNING,
      "Submitted"),
     (view_of("in_review", turn="editor", responsible=EDITOR), ME, Situation.IN_REVIEW,
@@ -86,16 +88,14 @@ def view_of(state, *, step=None, turn="none", pending=(), writer=ME, placed=Fals
     (view_of("published", placed=True), ME, Situation.PUBLISHED, Section.DONE, "Published"),
     (view_of("declined"), ME, Situation.DECLINED, Section.DONE, "Declined"),
     (view_of("withdrawn"), ME, Situation.WITHDRAWN, Section.DONE, "Withdrawn"),
-])
-def test_every_state_and_role_has_one_word_one_section_and_whose_turn(view, me, situation,
-                                                                     section, word):
-    assert rules.situation_of(view, me) is situation
-    row = rules.rows_of([], me=me, followed={}, served={view.submission_id: view},
-                        unknown=set(), running={}, refused=lambda e: False,
-                        seen=lambda sid: 99)[0]
-    assert row.section is section and row.turn is rules.my_turn(view, me)
-    assert rules.status_word(row, names) == word
-    assert rules.pill_word(row, names) == ("Your turn" if row.turn else word)
+]:
+        assert rules.situation_of(view, me) is situation
+        row = rules.rows_of([], me=me, followed={}, served={view.submission_id: view},
+                            unknown=set(), running={}, refused=lambda e: False,
+                            seen=lambda sid: 99)[0]
+        assert row.section is section and row.turn is rules.my_turn(view, me)
+        assert rules.status_word(row, names) == word
+        assert rules.pill_word(row, names) == ("Your turn" if row.turn else word)
 
 
 def test_the_table_has_a_row_for_every_situation_and_at_most_one_action():

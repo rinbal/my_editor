@@ -154,8 +154,12 @@ class CompareView(QWidget):
                 cursor.insertText(body.strip("\n") + "\n\n", plain)
         else:
             self.state.setText(_(LEGEND) if comparison.changed else _(NO_CHANGES))
+            before = ""
             for part in comparison.parts:
+                if (before, part.kind) == (REMOVED, ADDED):
+                    cursor.insertText(" ", plain)   # a word replaced: the two apart
                 cursor.insertText(part.text, self._format(part.kind))
+                before = part.kind
         self.text.moveCursor(QTextCursor.MoveOperation.Start)
         announce.announce(self.state, self.state.text())
 
