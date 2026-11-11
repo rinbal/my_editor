@@ -130,8 +130,8 @@ TABLE = {
     Situation.UNCONFIRMED: Words(N_("Not confirmed yet"), Section.RUNNING,
                                  N_("Not confirmed yet."), N_("MyEditor keeps checking.")),
     Situation.UNSENT: Words(N_("Not sent"), Section.TURN, N_("Not sent."),
-                            N_("The server has nothing of this submission. Send it again, "
-                               "or discard it."), Action.RESEND),
+                            N_("This submission didn’t reach {publication}. Send it again or "
+                               "discard the attempt. Your article stays."), Action.RESEND),
     Situation.ELSEWHERE: Words(words.SUBMITTED_ELSEWHERE, Section.RUNNING,
                                words.SUBMITTED_ELSEWHERE, words.ELSEWHERE_NOT_HERE_YET,
                                Action.RELOAD),

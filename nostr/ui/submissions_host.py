@@ -60,6 +60,7 @@ NEWS_WORDS = {
     "correction": N_("{publication} suggests a correction to “{title}”."),
 }
 OPEN_IT_FIRST = N_("Open the article in the editor first.")
+NOT_FOUND = N_("MyEditor can’t find this article. Open it in the editor, then send it again.")
 VERSION_NOT_LOADED = N_("The version you handed in couldn’t be loaded: try again in a moment.")
 
 
@@ -84,6 +85,8 @@ class Ports:
       the appearance while it is open.
     - ``avatar_of(pubkey)``, ``request_logo(pubkey, url)``, ``is_dark()``,
       ``window()``.
+    - ``open_article(d)``: the tab that holds the article ``d``, opened
+      from where this computer keeps it when no tab does, or None.
     """
 
     standup: Callable
@@ -104,6 +107,7 @@ class Ports:
     request_logo: Callable
     is_dark: Callable
     window: Callable
+    open_article: Callable = lambda d: None
 
 
 class SubmissionsHost(QObject):
@@ -304,19 +308,38 @@ class SubmissionsHost(QObject):
         following.version(sid, number, opened)
 
     def send_again(self, sid: str) -> None:
-        """Erneut senden for an entry the server has nothing of: Submit
-        to a Publication for its text, which reuses the entry (13)."""
+        """Erneut senden (RG-M3-a 6, b 3). The article is opened by its
+        link name when no tab holds it; when it cannot be found, one line
+        says so in place. An entry the server has nothing of goes through
+        Submit to a Publication, which reuses the entry (13); a version
+        stored but not shown to be the writer's ("Nicht eingereicht",
+        12.4) goes again as the next version."""
         row = self._row(sid)
-        ed = self._ports.editor_of(row.d) if row is not None and row.d else None
+        if row is None:
+            return
+        ed = (self._ports.editor_of(row.d) or self._ports.open_article(row.d)) if row.d else None
         if ed is None:
-            self._ports.say(_(OPEN_IT_FIRST))
+            self._say_in_place(sid, _(NOT_FOUND))
+            return
+        if row.situation is rules.Situation.NOT_HANDED_IN:
+            self.hand_in(sid, again=True)
             return
         self._ports.focus(ed)
         self._ports.submit()
 
-    def hand_in(self, sid: str) -> None:
+    def _say_in_place(self, sid: str, text: str) -> None:
+        """Said where it was asked for: on the detail when it shows ``sid``."""
+        detail = self.view.detail
+        if self.view.showing_detail() and detail.sid == sid:
+            detail.say(text)
+        else:
+            self._ports.say(text)
+
+    def hand_in(self, sid: str, *, again: bool = False) -> None:
         """Neue Fassung abgeben …: the sheet, for the article's tab and
-        the version handed in before (read first when it is not here)."""
+        the version handed in before (read first when it is not here).
+        ``again``: the text goes once more as the next version, beside
+        the writer's newest version that can still be opened, if any."""
         row, following, ports = self._row(sid), self._following, self._ports
         ed = ports.editor_of(row.d) if row is not None and row.d else None
         if row is None or not row.open:
@@ -328,7 +351,7 @@ class SubmissionsHost(QObject):
         def with_version(previous) -> None:
             if self._following is not following or not shiboken6.isValid(ed):
                 return
-            if previous is None:
+            if previous is None and not again:
                 ports.say(_(VERSION_NOT_LOADED))
                 return
             profile = ports.profile()
@@ -344,12 +367,18 @@ class SubmissionsHost(QObject):
                 publication=following.publication_name(row.publication),
                 logo=self._logo(row.publication, 40), previous=previous,
                 comparer=self.comparer, private_names=private, is_dark=ports.is_dark(),
-                parent=ports.window())
+                again=again, parent=ports.window())
             sheet.view_submission.connect(self.open_detail)
             ports.keep(sheet)
             sheet.open()
 
-        following.version(sid, row.view.revision, with_version)
+        # Sent again, the version stored last is not the writer's: the one
+        # before it is, when there is one.
+        number = row.view.revision - 1 if again else row.view.revision
+        if number < 1:
+            with_version(None)
+        else:
+            following.version(sid, number, with_version)
 
     def compare(self, sid: str, revision: int) -> None:
         """Änderungen zeigen on a version's card: that version beside the

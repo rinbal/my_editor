@@ -65,6 +65,7 @@ class Window:
         self.view.resize(380, 640)
         self.pill = SubmissionPill()
         self.tabs, self.current = [], None
+        self.kept = {}                              # articles this computer keeps, by d
         self.said, self.shown, self.opened, self.submits = [], [], [], []
         self.host = SubmissionsHost(Ports(
             standup=lambda: self.writer, profile=lambda: self.profile,
@@ -76,7 +77,8 @@ class Window:
             show_view=self.shown.append, submit=lambda: self.submits.append(self.current),
             notice_of=lambda ed: ed.notice, say=self.said.append, keep=lambda sheet: None,
             avatar_of=lambda p: None, request_logo=lambda *a: None, is_dark=lambda: False,
-            window=lambda: None), view=self.view, pill=self.pill,
+            window=lambda: None, open_article=lambda d: self.tab(d, self.kept[d])
+            if d in self.kept else None), view=self.view, pill=self.pill,
             name_of=lambda p: NAMES.get(p, ""), **host)
 
     def account(self, profile):
@@ -90,6 +92,9 @@ class Window:
         self.tabs.append(ed)
         self.current = ed
         return ed
+
+    def tab_of(self, d: str):
+        return next(t for t in self.tabs if t.d == d)
 
     def follow(self) -> None:
         self.host.follow()
@@ -346,11 +351,21 @@ def test_an_unsent_entry_offers_to_send_it_again_or_discard_it(window):
     detail = opened(window, entry)
     assert detail.action.text() == "Send Again" and detail.second.text() == "Discard"
     assert detail.action.isVisibleTo(detail) and detail.second.isVisibleTo(detail)
+    assert detail.more.text() == ("This submission didn’t reach Einundzwanzig Magazin. Send it "
+                                  "again or discard the attempt. Your article stays.")
+    # Nothing to write into, nobody reading, no version that would refuse.
+    assert not detail.composer_bar.isVisibleTo(detail) and not detail.readers.isVisibleTo(detail)
+    assert not detail.encrypted.isVisibleTo(detail) and not detail.open_action.isVisible()
+    # Not found: said in place, and it stays through a refresh.
     detail.action.click()
-    assert window.said == ["Open the article in the editor first."]
-    tab = window.tab("nie")
+    window.following.refresh()
+    window.world.settle()
+    assert detail.note.isVisibleTo(detail) and window.said == []
+    assert "can’t find this article" in detail.note.text()
+    # Found by its link name: it opens, and the sheet reuses the entry.
+    window.kept["nie"] = "Der Text"
     detail.action.click()
-    assert window.submits == [tab]                      # the sheet reuses the entry
+    assert window.submits == [window.tab_of("nie")] and not detail.note.isVisibleTo(detail)
     detail.second.click()
     window.world.settle()
     assert not window.view.showing_detail() and window.view.items() == []

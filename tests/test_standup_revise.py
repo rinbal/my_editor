@@ -114,6 +114,29 @@ def test_the_same_text_again_is_not_handed_in(window):
     assert sheet.run is None
 
 
+def test_sent_again_the_same_text_goes_as_the_next_version_and_asks_the_rights(window):
+    # "Nicht eingereicht": the version stored last is not shown to be the
+    # writer's, and no earlier one of theirs opens. The text goes again.
+    world = window.world
+    world.clock.now = time.time()
+    _prepared, entry = world.submit(world.account(), d="text", title="Ein Jahr", content=FIRST)
+    window.follow()
+    sheet = ReviseSheet(
+        writer=window.writer, profile=window.profile,
+        draft=ArticleDraft(d="text", title="Ein Jahr", summary="", content=FIRST),
+        cover=QPixmap(), byline="Jana · Article", row=window.following.row(entry.sid),
+        publication="Einundzwanzig Magazin", logo=QPixmap(), previous=None,
+        comparer=Comparer(run=inline), is_dark=False, again=True)
+    assert sheet.heading.text() == "Version 2 to Einundzwanzig Magazin"
+    assert sheet.changed.text() == "Will be sent again as version 2."
+    assert sheet.show_changes.isHidden() and not sheet.hand_in.isEnabled()
+    sheet.rights.setChecked(True)
+    assert sheet.hand_in.isEnabled()
+    sheet.hand_in.click()
+    world.settle()
+    assert sheet.run.progress.phase is Phase.DONE and world.record(entry.sid).revision == 2
+
+
 def test_the_changes_show_word_by_word_on_a_page_of_the_sheet(window):
     sheet, _entry = sheet_for(window)
     sheet.show_changes.click()

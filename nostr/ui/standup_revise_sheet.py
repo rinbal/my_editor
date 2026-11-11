@@ -24,6 +24,12 @@ as its note (the contract's ``revision-note``).
 
 The run is the writer's (``StandupWriter.revise``): closing the sheet
 once the request is on its way lets it go on in the background.
+
+``again``: the version stored last could not be shown to be the
+writer's ("Nicht eingereicht", 12.4), so the text goes once more as the
+next version (RG-M3-a 6). Then the same text is no blocker, the card
+says so, and when no earlier version of the writer could be opened, the
+rights are asked here as in the first submission.
 """
 
 from __future__ import annotations
@@ -34,8 +40,8 @@ from typing import List, Optional, Sequence
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
-    QStackedWidget, QVBoxLayout, QWidget,
+    QCheckBox, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QPlainTextEdit,
+    QPushButton, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from alerts import answer_return_as_the_system_does
@@ -52,6 +58,8 @@ from .standup_handoff import HandoffView
 from .standup_submit import StandupWriter, SubmissionRun
 
 SAME_TEXT = N_("This text is the same as version {number}. Change it to hand in a new one.")
+SENT_AGAIN = N_("Will be sent again as version {number}.")
+RIGHTS = N_("I have the rights to the text and the pictures.")
 DETAILS_CHANGED = N_("Details changed")
 # A picture named by a key of its own in each version: the same picture.
 _PICTURE = re.compile(r"(?:standup-media|myeditor-asset):[0-9a-f]{64}")
@@ -85,9 +93,10 @@ class ReviseSheet(QDialog):
     def __init__(self, *, writer: StandupWriter, profile, draft: ArticleDraft, cover: QPixmap,
                  byline: str, row, publication: str, logo: QPixmap, previous,
                  comparer: Comparer, private_names: Sequence[str] = (), is_dark: bool,
-                 parent: Optional[QWidget] = None) -> None:
+                 again: bool = False, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle(_("Hand In New Version"))
+        self._again = bool(again)
+        self.setWindowTitle(_("Send Again") if again else _("Hand In New Version"))
         # It holds the version handed in, opened: gone with the sheet.
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         make_sheet(self)
@@ -98,7 +107,7 @@ class ReviseSheet(QDialog):
         self._comparer, self._private = comparer, list(private_names)
         self._is_dark = bool(is_dark)
         self._number = row.view.revision + 1
-        self._summary = change_line(draft, previous.work)
+        self._summary = change_line(draft, previous.work) if previous is not None else ""
         self.run: Optional[SubmissionRun] = None
         self._build()
         writer.stopped.connect(self._on_account_stopped)
@@ -156,8 +165,10 @@ class ReviseSheet(QDialog):
         title.setObjectName("revise_title")
         title.setTextFormat(Qt.TextFormat.PlainText)
         title.setWordWrap(True)
-        self.changed = QLabel(_("Changed: {summary}").format(summary=self._summary)
-                              if self._summary else _(NO_CHANGES))
+        self.changed = QLabel(
+            _(SENT_AGAIN).format(number=self._number) if self._again
+            else _("Changed: {summary}").format(summary=self._summary) if self._summary
+            else _(NO_CHANGES))
         self.changed.setObjectName("help")
         self.changed.setTextFormat(Qt.TextFormat.PlainText)
         self.changed.setWordWrap(True)
@@ -168,7 +179,13 @@ class ReviseSheet(QDialog):
         self.show_changes.setAutoDefault(False)
         self.show_changes.clicked.connect(self._show_changes)
         row.addWidget(self.show_changes, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.show_changes.setVisible(self._previous is not None)
         column.addWidget(card)
+        # Asked only when no earlier version of the writer could be read.
+        self.rights = QCheckBox(_(RIGHTS))
+        self.rights.toggled.connect(self._refresh)
+        self.rights.setVisible(self._previous is None)
+        column.addWidget(self.rights)
         label = QLabel(_("Note to the editorial team (optional)"))
         self.note = QPlainTextEdit()
         self.note.setPlaceholderText(_("What changed?"))
@@ -231,10 +248,11 @@ class ReviseSheet(QDialog):
 
     def blockers(self) -> List[str]:
         """Why Abgeben is dimmed, most pressing first."""
-        if not self._summary:
+        if not self._summary and not self._again:
             return [_(SAME_TEXT).format(number=self._number - 1)]
         return drafting.blockers(
-            self._draft, writer=self._profile.user_pubkey, rights=True, rights_required=False,
+            self._draft, writer=self._profile.user_pubkey, rights=self._rights(),
+            rights_required=self._previous is None,
             private_names=self._private, message=self.note.toPlainText(),
             publication=self._publication,
             signable=lambda unsigned: signable(self._profile, unsigned))
@@ -251,12 +269,15 @@ class ReviseSheet(QDialog):
             return
         view = self._row.view
         choice = Choice(publication=self._row.publication, name=self._publication,
-                        signer=view.signer, rights=self._previous.rights,
+                        signer=view.signer, rights=self._rights(),
                         message=self.note.toPlainText())
         run = self._writer.revise(self._profile, self._draft, choice, round_=view.round,
                                   revision=self._number, change_summary=self._summary)
         self._show_run(run)
         run.start()
+
+    def _rights(self) -> bool:
+        return self._previous.rights if self._previous is not None else self.rights.isChecked()
 
     def _show_run(self, run: SubmissionRun) -> None:
         self.run = run

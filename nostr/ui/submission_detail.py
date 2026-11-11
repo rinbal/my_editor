@@ -98,6 +98,7 @@ class SubmissionDetail(QWidget):
         self._handled: frozenset = frozenset()
         self._edited: Callable[[rules.Row], bool] = lambda _row: False
         self._said = ""
+        self._line = ""                         # what an action said in place
         self._shown_row: tuple = ()             # the row and the publication's name shown
         self._build()
         self.apply_theme(is_dark)
@@ -308,10 +309,19 @@ class SubmissionDetail(QWidget):
             following.changed.disconnect(self._on_rows_changed)
         self._sid = ""
         self._said = ""
+        self._line = ""
         self._shown_row = ()
         self.composer.clear()
         self.problem.hide()
         self.info_button.setChecked(False)
+
+    def say(self, text: str) -> None:
+        """One line in place, under the sentence (an action that could
+        not go on says why there), until the next action."""
+        self._line = text
+        self.note.setText(escape(text))
+        self.note.show()
+        announce.announce(self.note, text)
 
     def _on_changed(self, sid: str) -> None:
         if sid == self._sid:
@@ -351,10 +361,18 @@ class SubmissionDetail(QWidget):
         self._show_readers(detail)
         self._fill_info(detail)
         self.withdraw_action.setEnabled(row.open)
+        # Not with the publication (unsent, elsewhere, not handed in): no
+        # conversation to write into, nobody reading, no version to open
+        # that would only refuse (RG-M3-b 3).
+        self.open_action.setVisible(row.confirmed)
+        self.more_button.setVisible(row.confirmed or row.open)
+        self.faces.setVisible(row.confirmed)
+        self.readers.setVisible(row.confirmed)
+        self.encrypted.setVisible(row.confirmed)
         self.thread.publication_face = lambda size: self._logo(
             row.publication, detail.publication, size)
         self.thread.show_thread(detail, self._following.me)
-        self.composer_bar.setVisible(detail.can_write)
+        self.composer_bar.setVisible(detail.can_write and row.confirmed)
         if at_end:
             QTimer.singleShot(0, self, self._to_the_end)
 
@@ -408,6 +426,8 @@ class SubmissionDetail(QWidget):
         note = ""
         if detail.problem:
             note = markup(_(NOT_LOADED), _(detail.problem))
+        elif self._line:
+            note = escape(self._line)
         elif detail.not_confirmed:
             note = _(NOT_OPENED)
         elif detail.loading and not detail.thread:
@@ -451,7 +471,6 @@ class SubmissionDetail(QWidget):
         else:
             # Nobody named: the Redaktion has the publication's face.
             self.faces.setPixmap(self._logo(detail.row.publication, detail.publication, 22))
-        self.faces.setVisible(True)
 
     def _fill_info(self, detail) -> None:
         """Info: the facts, the privacy lines, the history (plan 10.4)."""
@@ -498,6 +517,9 @@ class SubmissionDetail(QWidget):
         detail = self.detail()
         if detail is None:
             return
+        if self._line:
+            self._line = ""
+            self.note.hide()
         if detail.problem:
             self._following.open(self._sid)         # Erneut versuchen
         elif self._status.action is rules.Action.RELOAD:

@@ -10331,7 +10331,38 @@ class MainWindow(QMainWindow):
             say=lambda text: self.status.showMessage(text, 8000, nostr=True),
             keep=lambda sheet: setattr(self, "_publish_sheet", sheet),
             avatar_of=self._avatars.get, request_logo=self._avatar_batcher.request,
-            is_dark=lambda: self.is_dark_theme, window=lambda: self)
+            is_dark=lambda: self.is_dark_theme, window=lambda: self,
+            open_article=self._open_article_named)
+
+    def _open_article_named(self, d: str):
+        """The tab that holds the article ``d`` (its link name), opened when
+        no tab does (RG-M3-b 3): from the drafts kept on Nostr under that
+        name, then from the recent files whose link name it is. None when
+        this computer keeps it nowhere it knows of."""
+        ed = self._editor_of_article(d) if d else None
+        if ed is not None or not d:
+            return ed
+        active = self._profile_store.default()
+        author = active.user_pubkey if active else ""
+        store = getattr(self, "_draft_store", None)
+        record = store.get(d) if store is not None else None
+        if record is not None and record.state is DraftState.READY \
+                and record.inner_kind == INNER_KIND_LONG_FORM:
+            self._on_panel_open_draft(d)
+            return self._bound_to(self.current_editor(), d)
+        for path in load_recent():
+            if os.path.exists(path) and self._link_name_for_file(path, author) == d:
+                self.open_path(path)
+                return self._bound_to(self.current_editor(), d)
+        return None
+
+    def _bound_to(self, ed, d: str):
+        """``ed``, just opened for the article ``d``, keeps ``d`` as its
+        identifier (another title makes no other submission)."""
+        if ed is None or not self._wants_article_header(ed):
+            return None
+        self._keep_submitted_identifier(ed, d)
+        return ed
 
     def _follow_submissions(self) -> None:
         """The submissions of the account in use are followed, from launch

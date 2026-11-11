@@ -114,7 +114,9 @@ class Following(QObject):
         self._stopped = False
         self._served: Dict[str, views.SubmissionView] = {}
         self._nothing: set = set()
-        self._decided: Dict[str, object] = {}       # sid -> StoredCopy | NotHandedIn
+        # sid -> (the receipt's revision and hash, StoredCopy | NotHandedIn):
+        # a verdict holds for that revision only (RG-M3-a 6).
+        self._decided: Dict[str, Tuple[tuple, object]] = {}
         self._deciding: set = set()
         self._names: Dict[str, Tuple[str, Optional[str]]] = {}
         self._noticed: Dict[str, int] = {}
@@ -251,14 +253,15 @@ class Following(QObject):
         """This revision is stored with another envelope than the entry
         names: its signed action decides (12.4), once per receipt."""
         sid, entry = known.entry.sid, known.entry
-        if sid in self._deciding or sid in self._decided:
+        receipt = _receipt_key(known)
+        if sid in self._deciding or self._decided.get(sid, ((),))[0] == receipt:
             return
         self._deciding.add(sid)
         account = self._account
 
         def decided(outcome: object) -> None:
             self._deciding.discard(sid)
-            self._decided[sid] = outcome
+            self._decided[sid] = (receipt, outcome)
             if isinstance(outcome, StoredCopy):
                 self._marks.remember(account.writer, entry.d, stored=True)
                 account.submissions.record(outcome.entry, live(account, lambda _r: None))
@@ -384,8 +387,8 @@ class Following(QObject):
 
     def _followed(self) -> Dict[str, Followed]:
         known = self._watcher.followed()
-        for sid, outcome in self._decided.items():
-            if sid in known:
+        for sid, (receipt, outcome) in self._decided.items():
+            if sid in known and _receipt_key(known[sid]) == receipt:
                 known[sid] = replace(known[sid], status=outcome if isinstance(
                     outcome, NotHandedIn) else outcome.status)
         return known
@@ -555,6 +558,13 @@ class Following(QObject):
             self.changed.emit()
 
         self._discard(entry, live(self._account, discarded))
+
+
+
+def _receipt_key(known: Followed) -> tuple:
+    """The revision a receipt speaks of: its number and hash."""
+    receipt = known.item.receipt
+    return (receipt.revision, receipt.revision_hash)
 
 
 __all__ = ["Detail", "Following", "NEWS_EVENTS", "News", "Version"]
