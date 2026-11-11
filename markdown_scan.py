@@ -46,10 +46,11 @@ _DEFINITION = re.compile(
     rf"(:(?:[ \t]*\n{_CONTAINERS})?[^\n]*(?:\n{_CONTAINERS}[ \t]*{_TITLE}[ \t]*$)?)", re.M)
 # A link reference definition Qt's reader does not keep as written: in a
 # quote or a list item (the quote or the item goes, and the paragraph
-# after it can join the one before), or with a title (the title goes).
+# after it can join the one before), or with a title (the title goes);
+# outside code (lossy_definition).
 _ADDRESS_AFTER_LABEL = rf":[ \t]*(?:\n{_CONTAINERS}[ \t]*)?(?:<[^<>\n]*>|[^\s<]\S*)"
 _TITLE_AFTER_ADDRESS = rf"(?:[ \t]+|[ \t]*\n{_CONTAINERS}[ \t]*){_TITLE}"
-LOSSY_DEFINITION = re.compile(
+_LOSSY_DEFINITION = re.compile(
     rf"^(?:(?:{_CONTAINER})+[ \t]*{_LABEL}{_ADDRESS_AFTER_LABEL}(?:{_TITLE_AFTER_ADDRESS})?"
     rf"|{_CONTAINERS}[ \t]*{_LABEL}{_ADDRESS_AFTER_LABEL}{_TITLE_AFTER_ADDRESS})[ \t]*$", re.M)
 
@@ -325,6 +326,15 @@ def pictures(markdown: str) -> List[Tuple[int, int, int]]:
             continue
         index += 1
     return found
+
+
+def lossy_definition(markdown: str) -> bool:
+    """Whether a link reference definition Qt's reader does not keep as
+    written stands in ``markdown``, outside code: one shown in a fence or
+    as indented code ("> [r]: /u" in a README) is text."""
+    blocked = _Blocked(_code_ranges(markdown))
+    return any(blocked.end(found.start()) is None
+               for found in _LOSSY_DEFINITION.finditer(markdown))
 
 
 def emphasized_code(markdown: str) -> bool:

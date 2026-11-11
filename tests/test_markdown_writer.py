@@ -475,6 +475,9 @@ from markdown_writer import holds_faithfully  # noqa: E402
     "[a][r] und mehr.\n\n[r]: /u\n",
     "- [Note]: some text here\n",
     "Mit `*` und `_` schreibt man *Betonung*, \\*`code`\\* ist kein Stern.\n",
+    # What would be lost outside code, shown in code (a README's example).
+    "So steht ein Verweis im Zitat:\n\n```\n> [r]: /u\n[s]: /w \"Titel\"\n*`code`*\n```\n\nUnd *weiter*.\n",
+    "Eingerückt:\n\n    > [r]: /u\n    [s]: /w 'Titel'\n\nUnd *weiter*.\n",
 ])
 def test_markdown_the_editor_can_hold(source):
     assert holds_faithfully(source)

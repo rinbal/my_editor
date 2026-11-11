@@ -78,8 +78,8 @@ from doc_walk import (
 )
 import photo_group
 import photo_group_find
-from markdown_scan import (ESCAPABLE, FENCE_LINE, LIST_LINE, LOSSY_DEFINITION, descriptions,
-                           emphasized_code, escapes, pictures)
+from markdown_scan import (ESCAPABLE, FENCE_LINE, LIST_LINE, descriptions, emphasized_code,
+                           escapes, lossy_definition, pictures)
 from rich_text import normalize_after_markdown_load
 
 ImageTarget = Callable[[object], Optional[str]]
@@ -934,12 +934,13 @@ def has_local_only_formatting(doc) -> bool:
 # editor keeps footnotes as their text, one paragraph each), a tab where a
 # line starts (lists and code are indented with spaces), code inside a
 # list item (it moves out of the item), an escaped footnote mark, raw
-# HTML, a link title, a link reference definition in a quote or a list
-# item or with a title, a link around an image, a heading inside a quote,
+# HTML, a link title, a link around an image, a heading inside a quote,
 # a paragraph continued inside a list item, and lines that wrap inside a paragraph (a draft saved as
 # plain text by an earlier version). Also (below): a tab inside fenced
-# code, a column's alignment, emphasis in a table's header row, emphasis
-# around nothing but code (markdown_scan.emphasized_code).
+# code, a column's alignment, emphasis in a table's header row, a link
+# reference definition in a quote or a list item or with a title
+# (markdown_scan.lossy_definition), emphasis around nothing but code
+# (markdown_scan.emphasized_code); both outside code.
 _LOSSY = [
     re.compile(r"^ {0,3}\[\^[^\]]+\]:.*\n(?:[ \t]*\n)+(?: {4}|\t)\S",
                re.MULTILINE),                              # a note of two paragraphs
@@ -951,7 +952,6 @@ _LOSSY = [
     re.compile(r"(?<!\\)(?<!\]\()<(?:[A-Za-z][\w-]*[\s/>]|/[A-Za-z]|!--)"),
     re.compile(r"\]\(<(?![^<>\n]*>\))"),
     re.compile(r"\]\((?!<)[^)\s]+\s+[\"'(]"),              # link title
-    LOSSY_DEFINITION,                                      # (markdown_scan)
     re.compile(r"\[!\["),                                  # image inside a link
     re.compile(r"^\s*>\s*#", re.MULTILINE),               # heading in a quote
 ]
@@ -1386,7 +1386,8 @@ def holds_faithfully(markdown: str) -> bool:
     """Whether the editor can hold this Markdown and write it back without
     losing anything. When it cannot, open it as its Markdown text."""
     if (any(pattern.search(markdown) for pattern in _LOSSY) or _soft_wrapped(markdown)
-            or _tab_in_fence(markdown) or _table_loses(markdown) or emphasized_code(markdown)):
+            or _tab_in_fence(markdown) or _table_loses(markdown) or lossy_definition(markdown)
+            or emphasized_code(markdown)):
         return False
     # Read as the editor reads it (footnotes as their text, code in cells
     # without the escape of its pipes), but with its pictures as the
