@@ -6,7 +6,7 @@ the publication publishes (M-4 M14; editorial contract 9.4, 11.2 step
 
     Deinen Teil bestätigen
     Von Einundzwanzig Magazin angenommen, Fassung 2.
-    Jana 70 %  ·  Paul 30 %
+    Jana 70 %  ·  Paul 30 %                        (a narrow no-break space)
     Dein Anteil geht an jana@getalby.com.
     [ ] Mein Beitrag (Fotos) gehört mir. Ich bin mit der
         Lizenz CC BY 4.0 einverstanden.            (contributors)
@@ -41,6 +41,7 @@ from alerts import answer_return_as_the_system_does
 from i18n import N_, _
 
 from ..standup.errors import cause_words
+from ..standup.thread import share_text
 from . import appearance
 from .publish_sheet import StatusLine, fit_margins, fit_to_window, make_sheet, sheet_stylesheet
 from .standup_publish_sheet import ACCEPTED_LINE
@@ -178,9 +179,8 @@ class ConfirmSheet(QDialog):
     def show_names(self) -> None:
         """The split by the people's names (again when a profile's name
         came in late), read as one line with what it is (VoiceOver)."""
-        parts = ["{name} {weight} %".format(
-            name=_("You") if pk == self._me else (self._name_of(pk) or _("Someone")),
-            weight=weight) for pk, weight, _role in self._shares]
+        parts = [share_text(_("You") if pk == self._me else (self._name_of(pk) or _("Someone")),
+                            weight) for pk, weight, _role in self._shares]
         self.split.setText("  ·  ".join(parts))
         self.split.setAccessibleName(_("The split: {shares}").format(shares=", ".join(parts)))
 

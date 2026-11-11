@@ -155,14 +155,21 @@ ThreadItem = Union[Day, Caption, VersionCard, Message, SplitCard]
 SPLIT_PROPOSED = N_("{name} proposes a split: {shares}")
 SPLIT_PROPOSED_PLAIN = N_("The editorial team proposes a split: {shares}")
 SPLIT_ACCEPTED = N_("Accepted with this split.")
+# One person's share; German keeps "70 %" together with a narrow
+# no-break space (RG-M4-b 10).
+SHARE = N_("{name} {weight}%")
+
+
+def share_text(name: str, weight: int) -> str:
+    """One share of a split, as the split card and the confirm sheet say it."""
+    return _(SHARE).format(name=name, weight=weight)
 
 
 def split_text(card: SplitCard, *, me: str, name_of: Callable[[str], str]) -> str:
     """A split card's line (translated): who proposed it, then each
     share; the person reading it is "you"."""
-    shares = ", ".join("{name} {weight} %".format(
-        name=_("You") if pk == me else (name_of(pk) or _("Someone")), weight=weight)
-        for pk, weight in card.shares)
+    shares = ", ".join(share_text(_("You") if pk == me else (name_of(pk) or _("Someone")),
+                                  weight) for pk, weight in card.shares)
     name = name_of(card.author)
     words = (_(SPLIT_PROPOSED).format(name=name, shares=shares) if name
              else _(SPLIT_PROPOSED_PLAIN).format(shares=shares))
@@ -383,5 +390,5 @@ def unsigned(caption: Caption) -> bool:
 __all__ = [
     "CAPTIONS", "CARDS", "Caption", "Day", "Message", "Role", "SplitCard", "ThreadItem",
     "VersionCard", "build_thread", "caption_text", "card_title", "from_known_senders", "history",
-    "own_reaction", "role_of", "sender_label", "split_text", "unsigned",
+    "own_reaction", "role_of", "sender_label", "share_text", "split_text", "unsigned",
 ]

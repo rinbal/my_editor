@@ -13558,3 +13558,7 @@ msgstr "Veröffentliche sie, damit alle den korrigierten Text lesen."
 #, python-brace-format
 msgid "Published on {publication}."
 msgstr "Veröffentlicht auf {publication}."
+
+#, python-brace-format
+msgid "{name} {weight}%"
+msgstr "{name} {weight} %"

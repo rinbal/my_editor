@@ -336,6 +336,18 @@ def test_a_contributor_confirms_their_part_and_the_license_in_the_webs_words():
         "My contribution is mine.")
 
 
+def test_a_share_keeps_its_percent_sign_on_the_line_of_its_number_in_german():
+    # RG-M4-b 10: "70 %" never breaks before "%" (U+202F).
+    import i18n
+    from nostr.standup.thread import share_text
+    i18n.install("de")
+    try:
+        text = share_text("Jana", 70)
+    finally:
+        i18n.install("en")
+    assert text == "Jana 70\u202f%" and share_text("Jana", 70) == "Jana 70%"
+
+
 def test_the_writer_release_vectors():
     # Contract 12.4 at 569b3f8, Before the writer's work goes out (vector
     # writer_release, releaseRelays): this server, then every relay.

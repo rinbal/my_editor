@@ -355,7 +355,7 @@ def test_a_contributor_confirms_the_split_and_their_rights_from_their_own_app():
         confirm=lambda confirms, done: following.confirm(
             sid, confirms=confirms, revision_hash=version.revision_hash,
             split_rumor_id=accepted.split_rumor_id, on_done=done), is_dark=False)
-    assert sheet.split.text() == "Jana 70 %  ·  You 30 %"
+    assert sheet.split.text() == "Jana 70%  ·  You 30%"
     assert sheet.rights.isVisibleTo(sheet) and not sheet.confirm_button.isEnabled()
     assert sheet.rights_text.text() == "My contribution is mine." and sheet.rights_text.wordWrap()
     sheet.rights.setChecked(True)
@@ -537,11 +537,11 @@ def test_confirming_names_the_accepted_split_and_where_the_share_goes_then_remin
     detail = opened(window, entry)
     assert detail.action.text() == "Confirm …"
     # Item 7: the proposal is in the conversation, marked as the one accepted.
-    assert "Anna proposes a split: You 70 %, Paul 30 %. Accepted with this split." in \
+    assert "Anna proposes a split: You 70%, Paul 30%. Accepted with this split." in \
         detail.conversation.captions
     detail.action.click()
     sheet = window.host._confirm_sheet
-    assert isinstance(sheet, ConfirmSheet) and sheet.split.text() == "You 70 %  ·  Paul 30 %"
+    assert isinstance(sheet, ConfirmSheet) and sheet.split.text() == "You 70%  ·  Paul 30%"
     assert sheet.address.text() == "Your share goes to jana@getalby.com."
     assert not sheet.rights.isVisibleTo(sheet)               # the writer confirms the split
     sheet.confirm_button.click()
