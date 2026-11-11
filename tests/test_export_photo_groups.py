@@ -215,6 +215,18 @@ def test_a_picture_opens_at_its_web_address_or_at_itself(app, tmp_path):
     assert 'aria-label="Enlarge: Plan"' in figures[2]
 
 
+def test_a_page_of_very_many_groups_is_marked_from_the_first_layout_on(app):
+    """From 200 groups on, the stylesheet lays a group out only near the
+    view (photo_scripts.py, many_groups_attr): the page says so itself."""
+    def marked(n):
+        page = _page("Words\n\n".join("![a](gone.png)\n\n![b](gone.png)\n\n" for _ in range(n)))
+        columns = re.findall(r'<div class="article-content" lang="en"( data-pg-many)?><div '
+                             r'class="e21-imagegroup ', page)
+        assert len(columns) == n
+        return set(columns)
+    assert marked(199) == {""} and marked(200) == {" data-pg-many"}
+
+
 def test_a_linked_picture_is_written_as_md_py_writes_one(app):
     """A picture an HTML page linked: the whole picture is the link, a flag
     names where it leads (md.py, e21-imglink); a link a page may not hold

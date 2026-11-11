@@ -451,23 +451,20 @@ def lay_out_knitted_groups(page: str) -> str:
     group as the HTML export writes it (photo_page.group_figures_html),
     and the groups' stylesheet and scripts in it once. In the page's own
     light colours: a knitted page does not change with Dark Mode."""
-    laid = [False]
+    found = [(match, _knitted_figures(match.group(1))) for match in _GROUP_PARAGRAPH.finditer(page)]
+    found = [(match, figures) for match, figures in found if figures is not None]
     places = itertools.count(1)
-
-    def group(match):
-        figures = _knitted_figures(match.group(1))
-        if figures is None:
-            return match.group(0)
-        laid[0] = True
+    parts, at = [], 0
+    for match, figures in found:
         for figure in figures:
             figure.place = next(places)
-        return photo_page.group_figures_html(figures)
-
-    out = _GROUP_PARAGRAPH.sub(group, page)
+        parts += [page[at:match.start()], photo_page.group_figures_html(figures, len(found))]
+        at = match.end()
+    out = "".join(parts) + page[at:]
     body = out.find("<body")
     head_end = out.rfind("</head>", 0, body) if body >= 0 else -1
     body_end = out.rfind("</body>")
-    if not laid[0] or head_end < 0 or body_end < body:
+    if not found or head_end < 0 or body_end < body:
         return page
     style = f"<style>{photo_page.group_head(dark=False)}</style>\n"
     out = out[:body_end] + photo_page.group_scripts() + out[body_end:]

@@ -43,6 +43,9 @@ MESSAGES = json.loads((_WEB / "photo-group-messages.json").read_text(encoding="u
 # The scripts in the order STANDUP's pages inline them (photo_scripts.py):
 # the engine, the viewer, the group behaviour, which uses both.
 _SCRIPTS = ("photo_layout.js", "photo_viewer.js", "photo_groups.js")
+# From this many groups on a page, its stylesheet lays a group out only
+# near the view (photo_scripts.py and photo_groups.js, MANY_GROUPS).
+MANY_GROUPS = 200
 # JSON inside a script element (STANDUP's script_json): nothing that could
 # end the element or change how the page's parser reads it.
 _SCRIPT_UNSAFE = {ord("<"): "\\u003c", ord(">"): "\\u003e", ord("&"): "\\u0026",
@@ -227,10 +230,12 @@ def figure_html(f: Figure, properties) -> str:
     return f'<figure class="{cls}" style="{style}"{provisional}{named}>{img}{zoom}{caption}</figure>'
 
 
-def _column(inside: str) -> str:
+def _column(inside: str, many: bool = False) -> str:
     """A part of the page in STANDUP's article column, in the language of
-    its words."""
-    return f'<div class="article-content" lang="{page_language()}">{inside}</div>'
+    its words; ``many``: on a page of MANY_GROUPS groups or more, marked
+    so from the first layout on (photo_scripts.py, many_groups_attr)."""
+    marked = " data-pg-many" if many else ""
+    return f'<div class="article-content" lang="{page_language()}"{marked}>{inside}</div>'
 
 
 def figure_alone_html(f: Figure) -> str:
@@ -239,11 +244,12 @@ def figure_alone_html(f: Figure) -> str:
     return _column(figure_html(f, None))
 
 
-def group_figures_html(figures: Sequence[Figure]) -> str:
+def group_figures_html(figures: Sequence[Figure], groups: int = 1) -> str:
     """One photo group as STANDUP's renderer writes it (md.py,
     _image_group): the engine's cells in Markdown order, each picture a
-    figure with its shape and its place, its caption under it. The one
-    writer of a group's markup, for the export and for a knitted page."""
+    figure with its shape and its place, its caption under it, on a page
+    of ``groups`` groups. The one writer of a group's markup, for the
+    export and for a knitted page."""
     items = [photo_group_geometry.item(f.size, f.caption_text, f.wide) for f in figures]
     result = photo_layout.layout(items)
     track = photo_layout.group_html(
@@ -253,7 +259,7 @@ def group_figures_html(figures: Sequence[Figure]) -> str:
     label = html.escape(_words()["group"].replace("{n}", str(n)), quote=True)
     return _column(f'<div class="e21-imagegroup e21-imagegroup--{n if n <= 4 else "many"}" '
                    f'role="group" aria-label="{label}" data-layout="{photo_layout.notation(result)}">'
-                   f'<div class="e21-imagegroup-track">{track}</div></div>')
+                   f'<div class="e21-imagegroup-track">{track}</div></div>', groups >= MANY_GROUPS)
 
 
 # A figure this module wrote, as Qt's HTML reader would take it (it knows

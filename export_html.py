@@ -416,6 +416,7 @@ def document_to_html(doc, title: str = "", source_url_for=None, *,
     pending = list(photos)
     photos_end = -1
     places = itertools.count(1)
+    groups = sum(1 for _first, _end, _units, grouped in photos if grouped)
 
     body: list[str] = []
     # List markup is emitted compactly (no newlines): whitespace text nodes
@@ -499,7 +500,7 @@ def document_to_html(doc, title: str = "", source_url_for=None, *,
             close_to(0)
             close_real(0)
             figures = [_figure_of(unit, picture_of, render_image, next(places)) for unit in units]
-            body.append(photo_page.group_figures_html(figures) if grouped
+            body.append(photo_page.group_figures_html(figures, groups) if grouped
                         else photo_page.figure_alone_html(figures[0]))
             continue
         if block.position() <= photos_end:
