@@ -3368,7 +3368,10 @@ class HtmlEditor(QTextEdit):
                 self.setTextCursor(cursor)
                 return
             self._clear_beside_pictures()
+            caption = photo_group_cut.in_caption(self.document(), start)
             self._insert_mime(source)
+            if caption:
+                photo_group_cut.into_caption(self.textCursor(), start)
             self._set_media_apart(start, self.textCursor().position())
 
     def _set_media_apart(self, start: int, end: int) -> None:

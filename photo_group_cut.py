@@ -21,6 +21,7 @@ it holds its whole unit, and a line that still holds a picture keeps it.
 - **clipped** is such a selection as copied, cut or dragged (PG1C 4g):
   the selected text and the pictures wholly in it; of a picture whose
   caption it starts or ends in, only the selected caption words;
+- **into_caption** gives words pasted into such a caption its italic;
 - **cut** deletes it as delete does and keeps what it took (a Cut), so
   that **put_back** gives the document before it when that clipboard is
   pasted straight back at the cut point (PG1C 4g).
@@ -110,6 +111,24 @@ def delete(cursor: QTextCursor) -> Optional[int]:
         cursor.removeSelectedText()
     cursor.setPosition(start)
     return end - sum(last - first for first, last in found)
+
+
+def into_caption(cursor: QTextCursor, start: int) -> None:
+    """Words pasted or dropped into the caption of a picture alone, from
+    ``start`` to ``cursor``: they take the caption's italic, which they
+    lost on the clipboard (clipped), and so stay in its caption. Not
+    when what came holds a picture or a paragraph of its own."""
+    doc = cursor.document()
+    end = cursor.position()
+    words = QTextCursor(doc)
+    words.setPosition(start)
+    words.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+    text = words.selectedText()
+    if not text or " " in text or OBJECT_REPLACEMENT in text:
+        return
+    italic = QTextCharFormat()
+    italic.setFontItalic(True)
+    words.mergeCharFormat(italic)
 
 
 def _caption_end(doc: QTextDocument, position: int) -> int:
