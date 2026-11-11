@@ -109,6 +109,7 @@ import link_url
 import paste
 import export_pictures
 import photo_group
+import photo_group_menu
 import photo_group_view
 import rich_text
 import image_safety
@@ -1513,6 +1514,10 @@ class MainWindow(QMainWindow):
         ed.visible_area_changed.connect(lambda e=ed: self._on_visible_area_changed(e))
         ed.urls_dropped.connect(self._handle_dropped_urls)
         ed.set_context_menu_filler(self._fill_editor_context_menu)
+        ed.photos.changed.connect(
+            lambda e=ed: e is self.current_editor() and self._update_photo_commands())
+        ed.photos.add_requested.connect(
+            lambda place, paths, e=ed: self._add_photos(e, place, paths))
         ed.set_structure_check(lambda e=ed: self._editor_kind(e) == "rich")
         ed.set_local_formats_check(lambda e=ed: self._keeps_underline(e))
         ed.set_pictures_check(lambda e=ed: self._keeps_pictures(e))
@@ -1537,10 +1542,12 @@ class MainWindow(QMainWindow):
     def _wants_selection_bar(self, ed) -> bool:
         """Whether the format bar may show over ``ed``'s selection: chosen
         in Settings, in the tab in front, where formatting applies (a
-        document that holds Markdown), while it is being written."""
+        document that holds Markdown), while it is being written; not over
+        a picture selected (words' styles mean nothing to it, and Escape
+        must reach a picture being moved)."""
         return (self.format_bar_on_selection and ed is self.current_editor()
                 and self._editor_kind(ed) == "rich" and not self._shows_preview_only(ed)
-                and not ed.isReadOnly())
+                and not ed.isReadOnly() and ed.photos.current() is None)
 
     def _set_format_bar_on_selection(self, on: bool) -> None:
         """Settings' Show the Format Bar When Selecting Text, remembered."""
@@ -2431,6 +2438,29 @@ class MainWindow(QMainWindow):
                 ("add_column_after", _("Add Column After")),
                 ("delete_row", _("Delete Row")), ("delete_column", _("Delete Column")),
                 ("delete_table", _("Delete Table")))]
+        # A picture's commands (photo_group_editing): Format > Photo, the
+        # picture's context menu and the chips on it. The move keys are
+        # EDITING.md's: Control-Command-arrows on a Mac, Ctrl+Shift+arrows
+        # elsewhere (Notion's and Google Docs' keys for moving a block);
+        # none of them was used. Their titles follow the picture
+        # (_update_photo_commands). Add Photos… is also the slash menu's
+        # Photo Group…: from the words, a new group at the caret.
+        photo_keys = {
+            name: platform_keys(f"Meta+Ctrl+{arrow}", f"Ctrl+Shift+{arrow}")
+            for name, arrow in ((photo_group_menu.LEFT, "Left"),
+                                (photo_group_menu.RIGHT, "Right"),
+                                (photo_group_menu.UP, "Up"), (photo_group_menu.DOWN, "Down"))}
+        photo_titles = photo_group_menu.base_titles()
+        self.act_photo = {}
+        for name in photo_group_menu.COMMANDS:
+            adding = name == photo_group_menu.ADD
+            self.act_photo[name] = add(
+                Command(f"format.photo.{name}", photo_titles[name], FORMAT, photo_keys.get(name),
+                        checkable=name == photo_group_menu.LARGE,
+                        keywords=(_("photo"), _("picture"), _("image"), _("group")),
+                        slash_section=slash_menu.INSERT if adding else "",
+                        insert_title=_("Photo Group\u2026") if adding else ""),
+                triggered=lambda n=name: self._photo_command(n))
         # A workbook's sheets: Format > Sheet, while a spreadsheet is in
         # front (as Numbers has them in its Table menu); the sheet bar's
         # context menu has them too.
@@ -3098,6 +3128,17 @@ class MainWindow(QMainWindow):
             if index in (2, 4, 6):
                 self.m_table.addSeparator()     # rows | columns | delete | the table
             self.m_table.addAction(action)
+        # Format > Photo, as Format > Table: what can be done to the picture
+        # selected, dimmed where it cannot (the menu bar's rule).
+        self.m_photo = m_format.addMenu(_("Photo"))
+        self.m_photo.setToolTipsVisible(True)
+        for names in photo_group_menu.MENU_SECTIONS:
+            if not self.m_photo.isEmpty():
+                self.m_photo.addSeparator()
+            for name in names:
+                self.m_photo.addAction(self.act_photo[name])
+        self.m_photo.aboutToShow.connect(self._update_photo_commands)
+        m_format.aboutToShow.connect(self._update_photo_commands)
         self.m_sheet = m_format.addMenu(_("Sheet"))
         for index, action in enumerate(self.act_sheet_commands):
             if index == 3:
@@ -4265,10 +4306,11 @@ class MainWindow(QMainWindow):
         store = getattr(self, "_media_store", None)
         return store.files.get(sha) if sha and store is not None else None
 
-    def _handle_dropped_images(self, paths, step: str = N_("Drag")):
+    def _handle_dropped_images(self, paths, step: str = N_("Drag"), place=None):
         """Images were dropped on the window: adopt and insert them now, as
         one step of Undo called ``step`` (an N_ word; a paste's own
-        name stays the paste's).
+        name stays the paste's): at the caret, or at ``place`` (a
+        photo_group_actions.Place: a slot of a group, beside a picture).
 
         The insert never waits for a signer or a server, and asks nothing:
         a picture added stays on this computer until the document is
@@ -4292,15 +4334,28 @@ class MainWindow(QMainWindow):
 
         adopted = []
         refused = []
-        with ed.undo_step(step):
+        if place is not None:
+            # Taken in first, then put at the place as one step.
+            images = []
             for path in paths:
                 alt = os.path.splitext(os.path.basename(path))[0] or "image"
                 asset = self._asset_manager.adopt_file(path, alt=alt)
                 if asset is None:
                     refused.append(os.path.basename(path))
                     continue
-                self._insert_asset(ed, asset, alt=alt)
+                images.append(self._asset_image(ed, asset, alt=alt))
                 adopted.append(asset)
+            ed.photos.insert(place, images, step)
+        else:
+            with ed.undo_step(step):
+                for path in paths:
+                    alt = os.path.splitext(os.path.basename(path))[0] or "image"
+                    asset = self._asset_manager.adopt_file(path, alt=alt)
+                    if asset is None:
+                        refused.append(os.path.basename(path))
+                        continue
+                    self._insert_asset(ed, asset, alt=alt)
+                    adopted.append(asset)
 
         if refused:
             self.status.showMessage(
@@ -7727,6 +7782,7 @@ class MainWindow(QMainWindow):
             action.setEnabled(in_table or sheet is not None
                               and not action.objectName().endswith("delete_table"))
         self.act_select_all.setEnabled(bool(kind) or sheet is not None)
+        self._update_photo_commands()
         # A sheet takes the Edit menu's commands (Undo and Redo by its steps,
         # Cut, Copy, Paste and Delete by its cells) and Format > Sheet.
         if sheet is not None:
@@ -7756,6 +7812,67 @@ class MainWindow(QMainWindow):
         if kind or sheet is not None:
             self._update_undo_redo_buttons()
 
+    def _update_photo_commands(self) -> None:
+        """Format > Photo follows the picture selected in the document in
+        front: what each command would do to it (its title), and whether
+        it can (photo_group_menu.state_of)."""
+        actions = getattr(self, "act_photo", None)
+        if not actions:
+            return
+        ed = self.current_editor()
+        editable = (ed is not None and self._editor_kind(ed) == "rich"
+                    and not self._shows_preview_only(ed))
+        state = ed.photos.state() if editable else None
+        titles = (state.titles if state is not None
+                  else photo_group_menu.base_titles())
+        for name, action in actions.items():
+            action.setText(titles[name])
+            action.setToolTip(state.hints.get(name, "") if state is not None else "")
+            action.setEnabled(state is not None and state.can.get(name, False))
+        large = actions[photo_group_menu.LARGE]
+        large.setChecked(state is not None and state.large)
+
+    def _photo_command(self, name: str) -> None:
+        ed = self.current_editor()
+        if ed is not None and self._editor_kind(ed) == "rich":
+            ed.photos.run(name)
+            self._update_photo_commands()
+
+    def _photo_context(self, menu, editor) -> None:
+        """The context menu of a picture: its header ("Photo 2 of 4"), what
+        can be done to it (only that: the context menu's rule), then Cut,
+        Copy and Paste."""
+        self._update_photo_commands()
+        state = editor.photos.state()
+        menu.setToolTipsVisible(True)
+        header = menu.addAction(state.header)
+        header.setEnabled(False)
+        grouped = state.picture.grouped
+        narrow = photo_group_view.is_narrow(editor.document())
+        for names in photo_group_menu.context_sections(grouped, narrow):
+            shown = [name for name in names if state.can.get(name)]
+            if not shown:
+                continue
+            menu.addSeparator()
+            for name in shown:
+                menu.addAction(self.act_photo[name])
+        menu.addSeparator()
+        for action in (self.act_cut, self.act_copy, self.act_paste):
+            menu.addAction(action)
+
+    def _add_photos(self, editor, place, paths) -> None:
+        """Photos added at ``place`` (the group's "+ Photo", Format > Photo
+        > Add Photos…, files dropped on a slot): the files given, else the
+        ones chosen in the system's dialog, several at once."""
+        if paths is None:
+            patterns = " ".join("*" + ext for ext in sorted(_IMAGE_EXTS))
+            paths, _filter = QFileDialog.getOpenFileNames(
+                self, _("Add Photos"), "", _("Images ({patterns})").format(patterns=patterns))
+            paths = [file_paths.normalize(path) for path in paths]
+        if paths:
+            self._handle_dropped_images(paths, N_("Add Photo") if len(paths) == 1
+                                        else N_("Add Photos"), place=place)
+
     def _keeps_pictures(self, ed) -> bool:
         """Whether ``ed``'s document keeps a picture when it is saved:
         Markdown (shown formatted or as its text), HTML, R Markdown and new
@@ -7777,7 +7894,11 @@ class MainWindow(QMainWindow):
     def _fill_editor_context_menu(self, menu, editor, pos) -> None:
         """The editor's context menu: the window's own commands, so it
         offers what the menus offer, under the same names. On a link, the
-        link's own commands come first."""
+        link's own commands come first; on a picture, its own."""
+        if self._editor_kind(editor) == "rich" and editor.photos.current() is not None \
+                and editor.textCursor().hasSelection():
+            self._photo_context(menu, editor)
+            return
         clicked = editor.cursorForPosition(pos)
         if not editor.textCursor().hasSelection() and (
                 editor.anchorAt(pos) or (self._editor_kind(editor) == "rich"
@@ -10574,23 +10695,26 @@ class MainWindow(QMainWindow):
         the old markdown path, and Qt's markdown writer escapes it into
         a link, so the image reopened as text.
         """
+        cursor = editor.textCursor()
+        cursor.insertImage(self._asset_image(editor, asset, alt=alt))
+        editor.setTextCursor(cursor)
+
+    def _asset_image(self, editor, asset, *, alt: str) -> QTextImageFormat:
+        """The picture format that shows ``asset`` in ``editor``'s
+        document, its bytes already in the document."""
         alt = alt or "image"
         data = self._asset_manager.resolve_bytes(asset.key)
         if data:
             # Priming the document means the first paint needs no
             # resolver round trip and no decode on the paint path.
             editor.add_picture_resource(asset.key, QByteArray(data))
-
         fmt = QTextImageFormat()
         fmt.setName(asset.key)
         # Never leave alt empty: Qt's markdown writer substitutes the
         # word "image" for an empty one, which makes round trips differ
         # from what was inserted.
         fmt.setProperty(QTextImageFormat.ImageAltText, alt)
-
-        cursor = editor.textCursor()
-        cursor.insertImage(fmt)
-        editor.setTextCursor(cursor)
+        return fmt
 
     def _refresh_asset_in_documents(self, sha: str) -> None:
         """Repaint every open document that shows this asset.
