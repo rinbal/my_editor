@@ -43,9 +43,9 @@ def credited_writer(event: Mapping) -> Optional[str]:
 def credit_in(tags: Sequence[Any], signer: Any) -> Any:
     """Whom an article with ``tags`` credits as its author: the first
     author tag's key as it stands, else ``signer``. The one rule for an
-    event from a relay and for the server's read of its index (P1: the
-    read's ``author_pubkey`` is the signer, never whom a publication's
-    work credits)."""
+    event from a relay and for the server's read of its index, whose
+    ``author_pubkey`` names whom readers are shown and is never read
+    (12.4, Who readers see as the author)."""
     first = next((tag for tag in tags if isinstance(tag, list) and len(tag) >= 4
                   and tag[0] == "p" and tag[3] == AUTHOR_MARKER), None)
     return first[1] if first is not None else signer

@@ -10804,6 +10804,9 @@ class MainWindow(QMainWindow):
             return None                         # a picture is gone: said why
         draft, cover, pictures, private, public = self._submission_of(ed, active, local)
         unreadable = [p.name for p in draft.pictures if not p.data]
+        if draft.image and parse_asset_key(draft.image) is None \
+                and not image_safety.is_portable_image_source(draft.image):
+            unreadable.append(draft.image)      # a cover beside the document that is gone
         if unreadable:
             self._say_pictures_missing(unreadable)
             return None
@@ -10954,7 +10957,11 @@ class MainWindow(QMainWindow):
              or self._link_name_for_file(getattr(ed, "_file_path", None), profile.user_pubkey)
              or slugify(title) or hashlib.sha256(title.encode()).hexdigest()[:16])
         names = list(dict.fromkeys(iter_image_names(ed.document())))
-        cover_asset = self._asset_named(ed, details.image) if details.image else None
+        # A cover named as a file beside the document (front matter
+        # "image: cover.png") is taken in as its body pictures are
+        # (_local_objects), so it goes with the work (F3 M-5).
+        cover_asset = (self._asset_named(ed, details.image, adopt=True)
+                       if details.image else None)
         private, public = [], 0
         for name in list(dict.fromkeys(names + ([details.image] if details.image else []))):
             asset = self._asset_named(ed, name)
@@ -10974,8 +10981,15 @@ class MainWindow(QMainWindow):
                        if cover_asset is not None else None) or b""
         cover = QPixmap()
         cover.loadFromData(cover_bytes)
-        image = (cover_asset.key if cover_asset is not None and not cover_asset.is_uploaded
-                 else details.image)
+        if cover_asset is not None and not cover_asset.is_uploaded:
+            image = cover_asset.key
+        elif cover_asset is not None and parse_asset_key(details.image) is None \
+                and not image_safety.is_portable_image_source(details.image):
+            # A file beside the document already on the media servers:
+            # by its address, as a body picture of it goes (_publish_payload).
+            image = _published_address(cover_asset)
+        else:
+            image = details.image
         draft = drafting.ArticleDraft(
             d=d, title=title, summary=details.summary, content=content.rstrip(),
             tags=tuple(details.hashtags), image=image, authors=tuple(details.coauthors),

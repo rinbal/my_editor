@@ -7327,6 +7327,123 @@
     "server_read": false
    }
   },
+  "server_reads": {
+   "a_guest_work_the_publication_reported": {
+    "article": {
+     "author_pubkey": "9195d0475fa8deef9f6be73a2626f03b05f83cb9bf1362eac01972ff654fd2f4",
+     "event_tags": [
+      [
+       "d",
+       "vom-block-zum-buch"
+      ],
+      [
+       "title",
+       "Vom Block zum Buch"
+      ],
+      [
+       "p",
+       "9195d0475fa8deef9f6be73a2626f03b05f83cb9bf1362eac01972ff654fd2f4",
+       "",
+       "author"
+      ]
+     ],
+     "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285"
+    },
+    "credited": "9195d0475fa8deef9f6be73a2626f03b05f83cb9bf1362eac01972ff654fd2f4"
+   },
+   "author_pubkey_is_never_read": {
+    "article": {
+     "author_pubkey": "9195d0475fa8deef9f6be73a2626f03b05f83cb9bf1362eac01972ff654fd2f4",
+     "event_tags": [
+      [
+       "d",
+       "vom-block-zum-buch"
+      ],
+      [
+       "title",
+       "Vom Block zum Buch"
+      ],
+      [
+       "p",
+       "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+       "",
+       "author"
+      ]
+     ],
+     "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285"
+    },
+    "credited": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285"
+   },
+   "crediting_nobody": {
+    "article": {
+     "author_pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+     "event_tags": [
+      [
+       "d",
+       "vom-block-zum-buch"
+      ],
+      [
+       "title",
+       "Vom Block zum Buch"
+      ]
+     ],
+     "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285"
+    },
+    "credited": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285"
+   },
+   "the_signer_shown_while_the_tags_credit_another": {
+    "article": {
+     "author_pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+     "event_tags": [
+      [
+       "d",
+       "vom-block-zum-buch"
+      ],
+      [
+       "title",
+       "Vom Block zum Buch"
+      ],
+      [
+       "p",
+       "9195d0475fa8deef9f6be73a2626f03b05f83cb9bf1362eac01972ff654fd2f4",
+       "",
+       "author"
+      ]
+     ],
+     "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285"
+    },
+    "credited": "9195d0475fa8deef9f6be73a2626f03b05f83cb9bf1362eac01972ff654fd2f4"
+   },
+   "the_writer_credited_after_another": {
+    "article": {
+     "author_pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+     "event_tags": [
+      [
+       "d",
+       "vom-block-zum-buch"
+      ],
+      [
+       "title",
+       "Vom Block zum Buch"
+      ],
+      [
+       "p",
+       "9195d0475fa8deef9f6be73a2626f03b05f83cb9bf1362eac01972ff654fd2f4",
+       "",
+       "author"
+      ],
+      [
+       "p",
+       "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285",
+       "",
+       "author"
+      ]
+     ],
+     "pubkey": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285"
+    },
+    "credited": "9195d0475fa8deef9f6be73a2626f03b05f83cb9bf1362eac01972ff654fd2f4"
+   }
+  },
   "writer": "3377875a270dfb65fd5333b3b4fb59d30cc2a1a5f220811c120b65d9b448c285"
  }
 }

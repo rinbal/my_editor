@@ -17,6 +17,7 @@ from i18n import _
 from nostr import events
 from nostr.standup import crypto as scrypto
 from nostr.standup import formats, publishing, views
+from nostr.standup.answers import parse_article_author
 from nostr.ui.standup_publish import AcceptedPublish, PublishPorts, Stage
 from nostr.ui.standup_unlisted import QUICK_TRIES
 from tests.standup_following_fakes import FollowWorld
@@ -831,6 +832,10 @@ def test_the_writer_release_vectors():
         assert list(send_to(case)) == case["send_to"] and case["send_to"], name
     for name, case in vector["must_fail"].items():
         assert send_to(case) == (), name
+    # 56e09cad, Who readers see as the author: what this server holds
+    # credits whom its tags name, else its signer, never author_pubkey.
+    for name, case in vector["server_reads"].items():
+        assert parse_article_author({"article": case["article"]}) == case["credited"], name
 
 
 def test_the_writer_is_the_first_author_though_the_text_mentions_a_contributor_first():

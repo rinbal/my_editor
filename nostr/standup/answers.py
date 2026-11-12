@@ -440,11 +440,12 @@ def parse_article_author(data: Any) -> str:
     """``GET /api/articles/<address>`` (not in the ``ok`` envelope): who
     the article held there credits as its author, read from the event's
     own tags (``event_tags``): its first author tag, else its signer
-    (contract 12.4, Before the writer's work goes out). Never from
-    ``author_pubkey``, which is the signer (STANDUP P1): for a work a
-    publication signed that is the publication, not its writer. A read
-    without the tags (an event has its ``d`` at least) cannot tell, and
-    fails."""
+    ``pubkey`` (contract 12.4, Before the writer's work goes out; vector
+    ``writer_release.server_reads``). Never from ``author_pubkey``, which
+    names whom readers are shown: the signer, or the writer once the
+    server holds the publication's verified report (12.4, Who readers see
+    as the author). A read without the tags (an event has its ``d`` at
+    least) cannot tell, and fails."""
     article = read_object(read_object(data, "the answer").get("article"), "the article")
     tags = article.get("event_tags")
     need(isinstance(tags, list) and bool(tags), "the article's tags")

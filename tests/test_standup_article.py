@@ -14,6 +14,7 @@ the work's identifier, so a new title makes no other work."""
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import types
 
@@ -21,12 +22,15 @@ import pytest
 
 from PySide6.QtGui import QPixmap
 
+import alerts
 import tab_details
 from main_window import MainWindow
 from nostr.article_details import ArticleDetails
+from nostr.media.assets import parse_asset_key
 from nostr.media.media_visibility import PRIVATE, PUBLIC
 from nostr.standup.link_names import LinkNameLock
 from nostr.standup.progress import Held
+from tests.media_fakes import fake_alert
 from tests.test_media_document import GIF_BYTES, PNG_BYTES, _editor_with, _Window
 
 CO_AUTHOR = ("c" * 64, "wss://relay.example")
@@ -87,6 +91,28 @@ def test_a_cover_on_this_computer_is_a_picture_of_the_submission_and_its_small_c
     assert isinstance(pixmap, QPixmap) and not pixmap.isNull()
     assert pictures == 0 and public == 0           # the cover goes encrypted
     assert draft.d                                  # a title makes the identifier
+
+
+def test_a_cover_named_as_a_file_beside_the_document_goes_with_it_or_is_said_gone(
+        tmp_path, monkeypatch):
+    # F3 M-5: front matter "image: cover.png" beside the .md stayed
+    # "cover.png", so neither the submission nor the article had a cover.
+    (tmp_path / "cover.png").write_bytes(PNG_BYTES)
+    win = _Submitting(tmp_path / "cache", ArticleDetails(title="T", image="cover.png"))
+    ed = _editor_with(text="Just words.")
+    ed._file_path = str(tmp_path / "Text.md")
+    draft, pixmap, *_rest = win._submission_of(ed, PROFILE, win._uploads_needed(ed))
+    assert parse_asset_key(draft.image) == hashlib.sha256(PNG_BYTES).hexdigest()
+    assert [(p.key, p.data) for p in draft.pictures] == [(draft.image, PNG_BYTES)]
+    assert not pixmap.isNull()
+    # Gone from beside the document: said as a body picture's is.
+    (tmp_path / "cover.png").unlink()
+    box, shown = fake_alert()
+    monkeypatch.setattr(alerts, "Alert", box)
+    assert MainWindow._submission_for_sheet(win, ed, PROFILE) is None
+    assert [a.message for a in shown] == [
+        "“cover.png” is not on this computer any more. Insert it again, or delete it, "
+        "to go on."]
 
 
 def test_a_picture_of_the_private_library_is_named(tmp_path):
