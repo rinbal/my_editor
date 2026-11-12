@@ -48,6 +48,7 @@ Rückfrage stellen).
 
 from __future__ import annotations
 
+import math
 import time
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -306,10 +307,17 @@ class QuietReport(QObject):
             return
         entry, now = self._record.entry(sid), self._clock()
         quiet = by_hand is None
-        if entry is None or entry.get("taken") or self._settled(sid) or quiet and (
-                unlisted.over(entry, now) or not (riding or unlisted.due(entry, now))):
+        if entry is None or entry.get("taken") or self._settled(sid) or quiet and \
+                unlisted.over(entry, now):
             self._waiting.discard(sid)
             self._following.publishing_changed(sid)
+            return
+        if quiet and not riding and not unlisted.due(entry, now):
+            # Its timer fired before its time (Qt's timers do, by some 40 ms
+            # on a wait of seconds, F3): the rest is waited out, so the
+            # schedule is never dropped. It stays waiting, the one timer.
+            rest = float(entry.get("next", 0)) - now
+            self._later(max(1, math.ceil(rest * 1000)), lambda: self._try(sid))
             return
         if quiet and not riding and not self._here():
             self._quick[sid] = self._quick.get(sid, 0) + 1
