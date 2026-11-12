@@ -13329,7 +13329,7 @@ msgid "Replace with Public Key"
 msgstr ""
 
 #: nostr/ui/signer_approval.py:28
-msgid "Confirm in your signer"
+msgid "Confirm in your signer app"
 msgstr ""
 
 #: nostr/ui/standup_compare.py:43
