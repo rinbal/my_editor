@@ -14,8 +14,10 @@ thread; each stored signed action is checked once
 (``following.SignedChecks``). A refresh opens only what is new. Nothing is opened on the strength of a View
 (``opening.py``): a version is verified against its stored signed
 action first, and one that does not verify is not opened and says so. A
-writer's room key is the ``s_sub`` of their own list; a contributor's
-wrap is opened by their signer once and kept in their list (13). The
+writer's room key is the ``s_sub`` of their own list, else (a device whose
+list does not hold it yet) the wrap named ``writer``, opened by their
+signer; a contributor's wrap is opened by their signer once and kept in
+their list (13). The
 connection, or the server's own trouble, is asked again quietly; only
 when nothing at all could be read does the detail say so, once (lessons
 36).
@@ -300,8 +302,10 @@ class Reading:
                       record: views.RevisionRecord,
                       on_done: Optional[Callable[[Optional[Version]], None]] = None) -> None:
         """``record`` verified against its signed action (12.4), the room
-        key taken (the writer's from their list; a contributor's wrap
-        opened by their signer, once, and kept), its envelope opened."""
+        key taken (the writer's from their list, else their wrap; a
+        contributor's wrap opened by their signer, once, and kept), its
+        envelope opened. The wrap is the one named for the person
+        (:func:`opening.recipient_name`)."""
         done = on_done or (lambda _version: None)
         account = self._account
         latest = record.revision == view.revision
@@ -365,10 +369,10 @@ class Reading:
                 return
             with_key(state.room)
             return
+        name = opening.recipient_name(view, account.writer)
         opening.open_submission_key(
-            account.signer, verified, account.writer, live(account, with_key),
-            live(account, lambda _error: done(None)),
-            served=record.wraps.get(account.writer))
+            account.signer, verified, name, live(account, with_key),
+            live(account, lambda _error: done(None)), served=record.wraps.get(name))
 
     def _formers(self, state: _Open, detail) -> None:
         """The people who left that a read served, joined by pubkey
@@ -401,7 +405,8 @@ class Reading:
     def _keep_key(self, view, record, verified, secret: bytes) -> None:
         """A contributor's opened key goes into their own list (13)."""
         account = self._account
-        if view.writer == account.writer or account.submissions.entry(view.submission_id):
+        if opening.recipient_name(view, account.writer) != account.writer \
+                or account.submissions.entry(view.submission_id):
             return
         entry = SubmissionEntry(
             sid=view.submission_id, publication=view.publication, server=account.api.server,

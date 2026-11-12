@@ -60,7 +60,8 @@ from .views import (
 
 __all__ = [
     "MediaKeys", "NotConfirmed", "NotOpened", "OpenedRevision", "VerifiedRevision",
-    "named_files", "open_envelope", "open_submission_key", "own_files", "verify_revision",
+    "named_files", "open_envelope", "open_submission_key", "own_files", "recipient_name",
+    "verify_revision",
 ]
 
 
@@ -356,6 +357,15 @@ def _open_wrap_with_signer(client, wrap: Any, on_success: Callable[[dict], None]
         on_success(value)
 
     client.nip44_decrypt(wrap["eph"], wrap["ct"], on_success=opened, on_failure=on_failure)
+
+
+def recipient_name(view: SubmissionView, pubkey: str) -> str:
+    """The wrap ``pubkey`` opens on ``view`` (contract 12.4, Revision.wraps):
+    ``"writer"`` for the writer who handed it in, ``"proposer"`` for a
+    proposal's proposer, else their own pubkey (a contributor)."""
+    if view.proposal_by is not None:
+        return "proposer" if pubkey == view.proposal_by else pubkey
+    return "writer" if pubkey == view.writer else pubkey
 
 
 def open_submission_key(client, verified: VerifiedRevision, recipient: str,
