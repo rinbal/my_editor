@@ -46,7 +46,7 @@ import url_safety
 from i18n import _, display_locale, ngettext
 
 from . import CLIENT_NAME
-from .article_details import AUTHOR_MARKER
+from .article_details import AUTHOR_MARKER, imeta_url
 from .bech32 import bech32_decode, decode_npub, decode_nprofile
 from .blossom.hashes import blob_url, hash_from_url
 from .bunker import BunkerClient, BunkerSessionPool
@@ -330,6 +330,16 @@ def build_imeta_tags(
     return tags
 
 
+def _beside_own_imeta(carried: List[List[str]], own: List[List[str]]) -> List[List[str]]:
+    """``carried`` without an ``imeta`` for an address ``own`` describes:
+    NIP-92 asks for one ``imeta`` per URL, and this app's own is measured
+    from the bytes it holds, where a carried one says what an earlier
+    version (or another app) knew."""
+    described = {imeta_url(tag) for tag in own}
+    return [tag for tag in carried
+            if not (tag and tag[0] == "imeta" and imeta_url(tag) in described)]
+
+
 def _is_publishable_cover(url: str) -> bool:
     """Whether a NIP-23 cover address may be signed into an event.
 
@@ -457,9 +467,10 @@ def build_article(
         tag = raw.strip().lstrip("#").lower()
         if tag:
             tags.append(["t", tag])
-    tags.extend(build_imeta_tags(media, content))
+    own = build_imeta_tags(media, content)
+    tags.extend(own)
     if extra_tags:
-        tags.extend(extra_tags)
+        tags.extend(_beside_own_imeta(extra_tags, own))
     tags = _one_tag_per_person(tags)
     return build_event(
         kind=30023,

@@ -15,7 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from PySide6.QtCore import QRectF, QSize
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QImage
 
 PHOTOS = Path(__file__).resolve().parent / "fixtures" / "photos"
@@ -42,6 +42,22 @@ def image_of(name: str) -> QImage:
     image = QImage(str(path_of(name)))
     assert not image.isNull(), name
     return image
+
+
+def jpeg_turned(width: int, height: int, orientation: int) -> bytes:
+    """A JPEG ``width`` x ``height`` with an EXIF orientation, as a phone
+    writes it (6: a portrait photo, stored on its side)."""
+    out = QByteArray()
+    buffer = QBuffer(out)
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    image = QImage(width, height, QImage.Format.Format_RGB32)
+    image.fill(Qt.GlobalColor.darkCyan)
+    image.save(buffer, "JPEG")
+    tiff = (b"II*\x00\x08\x00\x00\x00\x01\x00" + b"\x12\x01\x03\x00\x01\x00\x00\x00"
+            + orientation.to_bytes(2, "little") + b"\x00\x00" + b"\x00\x00\x00\x00")
+    exif = b"Exif\x00\x00" + tiff
+    return bytes(out)[:2] + b"\xff\xe1" + (len(exif) + 2).to_bytes(2, "big") + exif \
+        + bytes(out)[2:]
 
 
 def corner_colours(shot: QImage, box: QRectF) -> List[QColor]:

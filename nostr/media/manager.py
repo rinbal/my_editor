@@ -546,7 +546,9 @@ class AssetManager(QObject):
             return None
         data = self.resolve_bytes(name)
         if data is not None:
-            return self._decoder(data) if self._decoder is not None else None
+            image = self._decoder(data) if self._decoder is not None else None
+            self._measure_again(sha, image)
+            return image
 
         asset = self._index.get(sha)
         if asset is not None and asset.remote_url and sha not in self._fetching:
@@ -904,6 +906,18 @@ class AssetManager(QObject):
         if self._decoder is None:
             return 0, 0
         return _size_of(self._decoder(data))
+
+    def _measure_again(self, sha: str, image: object) -> None:
+        """The size of the picture as it was just decoded to be shown
+        becomes its asset's, when they differ: an asset measured before
+        pictures were read upright kept a phone's portrait photo on its
+        side, and that size is what publishing writes (imeta ``dim``)."""
+        width, height = _size_of(image)
+        asset = self._index.get(sha)
+        if not width or asset is None or (asset.width, asset.height) == (width, height):
+            return
+        asset.width, asset.height = width, height
+        self._index.put(asset)
 
 
 def _size_of(image: object) -> Tuple[int, int]:
