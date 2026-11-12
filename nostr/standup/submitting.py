@@ -192,6 +192,9 @@ class Submitting:
         # Built again once for the round the server expects (409
         # ``conflict``, contract 2): never twice, never the same body.
         self._rebuilt = False
+        # Sealed again once, by itself, after the list refused the entry
+        # for another device's keys of this sid (F3 M-6).
+        self._resealed = False
         # The entry of a round another device stored (``stale_revision``),
         # whose stored entry the list is read again for.
         self._waits_for: Optional[SubmissionEntry] = None
@@ -455,6 +458,11 @@ class Submitting:
         self._record()
 
     def _record(self) -> None:
+        if self._sealed is None:
+            # Refused for another device's keys (_superseded): built
+            # again with the keys the list names now.
+            self._seal_and_record()
+            return
         self._show(Step.RECORDING, failure=None)
         self._ports.record(self._sealed.entry, self._answer())
 
@@ -463,13 +471,28 @@ class Submitting:
             self._sealed = replace(self._sealed, entry=result.entry)
             self._send()
         elif result.status is RecordStatus.SUPERSEDED:
-            self._fail(words.LIST_CHANGED_ELSEWHERE, None)
+            self._superseded()
         else:
             # A list that could not be read now says why in its own words
             # (BLOCKED as UNREADABLE) in the sentence's place, one retry.
             said = result.reason if result.publish.status in (
                 PublishStatus.BLOCKED, PublishStatus.UNREADABLE) else ""
             self._fail(words.LIST_NOT_SAVED, Step.RECORDING, said=said)
+
+    def _superseded(self) -> None:
+        """Another device recorded this submission after the list was last
+        read here (F3 M-6): nothing was sent, and this entry must not be.
+        The refused write read the list on the relays and merged it here
+        (lists.py), so the work is sealed again once, by itself, with the
+        keys that list names for its sid (drafting.seal keeps them: one
+        sid, one set of secrets) and recorded again. Refused once more, it
+        says so once, calmly, with Try Again beside Close."""
+        self._sealed = None
+        if not self._resealed:
+            self._resealed = True
+            self._seal_and_record()
+            return
+        self._fail(words.LIST_CHANGED_ELSEWHERE, Step.RECORDING, error=False)
 
     # -- 5. the request ------------------------------------------------------
 
