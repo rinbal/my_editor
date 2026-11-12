@@ -24,9 +24,12 @@ import re
 from typing import Any, List, Mapping, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice
-from PySide6.QtGui import QImageIOHandler, QImageReader
+from PySide6.QtGui import QImageReader
+
+import image_safety
 
 from . import formats
+from ..article_details import imeta_url
 
 MAX_SIDE = 65535
 # The pictures a revision may hold (5); an audio entry has no size.
@@ -44,17 +47,15 @@ def upright_size(data: bytes) -> Optional[Tuple[int, int]]:
     if not buffer.open(QIODevice.OpenModeFlag.ReadOnly):
         return None
     try:
-        reader = QImageReader(buffer)
-        reader.setAutoTransform(True)
-        size = reader.size()
-        if not size.isValid():
-            return None
-        w, h = size.width(), size.height()
-        # size() is the stored size; a quarter turn shows it the other way.
-        if reader.transformation() & QImageIOHandler.Transformation.TransformationRotate90:
-            w, h = h, w
+        # The app's one rule for a picture's upright size (a quarter turn
+        # shows the stored size the other way), on a reader of any kind
+        # Qt reads: the contract judges the size, not the decode policy.
+        size = image_safety.upright_size(QImageReader(buffer))
     finally:
         buffer.close()
+    if size is None:
+        return None
+    w, h = size.width(), size.height()
     return (w, h) if _side(w) and _side(h) else None
 
 
@@ -98,12 +99,6 @@ def picture_imeta(media: Sequence[Mapping], urls: Mapping[str, str]) -> List[Lis
             tag.append(f"alt {alt}")
         tags.append(tag)
     return tags
-
-
-def imeta_url(tag: Sequence[str]) -> str:
-    """The address an ``imeta`` describes, or ``""``."""
-    return next((part[4:] for part in tag[1:] if isinstance(part, str)
-                 and part.startswith("url ")), "")
 
 
 def one_per_address(tags: Sequence[List[str]]) -> List[List[str]]:
