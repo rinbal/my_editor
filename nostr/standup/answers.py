@@ -126,7 +126,9 @@ class Listing:
 
     address: str
     name: str
-    picture: Optional[str]
+    # The tag of its logo (12.3, 12.9): the logo is read only from this
+    # server's /api/avatars with it, never from the listing's ``picture``.
+    avatar: Optional[str]
     key_event: Mapping[str, Any]
 
 
@@ -142,10 +144,9 @@ def parse_listings(data: Mapping[str, Any]) -> Tuple[Listing, ...]:
             address = read_address(item.get("address"))
         except FormatError:
             continue
-        picture = item.get("picture")
+        avatar = item.get("avatar")
         found.append(Listing(address=address, name=clean_text(item.get("name")),
-                             picture=picture if isinstance(picture, str)
-                             and picture.startswith("https://") else None,
+                             avatar=avatar if formats.is_avatar_tag(avatar) else None,
                              key_event=item["key_event"]))
     return tuple(found)
 

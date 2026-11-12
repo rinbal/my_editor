@@ -106,10 +106,13 @@ class SubmissionDetail(QWidget):
 
     def __init__(self, *, name_of: Callable[[str], str],
                  avatar_of: Callable[[str], Optional[QPixmap]], is_dark: bool,
+                 logo_of: Callable[[str], Optional[QPixmap]] = lambda _address: None,
                  parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setObjectName("submission_detail")
         self._name_of, self._avatar_of, self._is_dark = name_of, avatar_of, is_dark
+        # A publication's logo, by its address (12.9), never a person's face.
+        self._logo_of = logo_of
         self._following = None
         self._sid = ""
         self._handled: frozenset = frozenset()
@@ -440,7 +443,7 @@ class SubmissionDetail(QWidget):
             pubkey = formats.parse_address(address)[0]
         except formats.FormatError:
             pubkey = ""
-        return publication_logo(name, pubkey, self._avatar_of(pubkey) if pubkey else None, size)
+        return publication_logo(name, pubkey, self._logo_of(address), size)
 
     def _show_pills(self, row: rules.Row) -> None:
         while self._pill_row.count():

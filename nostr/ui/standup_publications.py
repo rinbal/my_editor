@@ -5,13 +5,22 @@ one's logo, its rules as the picker says them under it, whether it can
 be chosen, who publishes an accepted article there, and the order they
 are listed in. They were part of :mod:`.standup_submit_sheet`, which
 still offers them.
+
+A logo comes only from the server that lists the publication, as
+``GET /api/avatars/by/<pk>/<id>?v=<tag>`` with the tag its read gave
+(contract 12.9), keyed by the publication's address
+(:class:`PublicationLogos`): never from the profile's ``picture``,
+whose host would learn who looks when, and never into the people's
+avatars, where a publication's key would stand for a person (F5 M5).
+Without one it is the monogram, as in the web app.
 """
 
 from __future__ import annotations
 
-from typing import Callable, List, Optional, Sequence
+import hashlib
+from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPixmap, QStandardItemModel
 from PySide6.QtWidgets import QComboBox
 
@@ -49,6 +58,54 @@ def publication_logo(name: str, pubkey: str, picture: Optional[QPixmap], size: i
         painter.drawText(0, 0, size, size, Qt.AlignmentFlag.AlignCenter, initials_for(name))
     painter.end()
     return out
+
+
+# 12.9: a logo the server is still fetching answers 503 with Retry-After 5;
+# the monogram stands meanwhile and the address is asked once more.
+RETRY_MS = 5000
+
+
+class PublicationLogos(QObject):
+    """Publication logos by address. ``fetch(key, url, on_done(pixmap or
+    None))`` is the picture loader's (:meth:`AvatarLoader.fetch`, with a
+    key of their own, so nothing lands among the people's avatars).
+    ``changed(address)`` once one arrived."""
+
+    changed = Signal(str)
+
+    def __init__(self, fetch: Callable, *,
+                 later: Callable[[int, Callable[[], None]], None] = QTimer.singleShot,
+                 parent: Optional[QObject] = None) -> None:
+        super().__init__(parent)
+        self._fetch, self._later = fetch, later
+        self._held: Dict[str, QPixmap] = {}
+        self._asked: Set[Tuple[str, str]] = set()
+
+    def get(self, address: str) -> Optional[QPixmap]:
+        return self._held.get(address)
+
+    def request(self, server: str, address: str, tag: Optional[str]) -> None:
+        """The logo of ``address`` from ``server`` with the ``tag`` a read
+        gave (none: the monogram stays); once per address and tag."""
+        try:
+            url = server.rstrip("/") + formats.avatar_path(address, tag or "")
+        except (formats.FormatError, AttributeError):
+            return
+        if not url.startswith(("https://", "http://")) or (address, url) in self._asked:
+            return
+        self._asked.add((address, url))
+        self._ask(address, url, again=True)
+
+    def _ask(self, address: str, url: str, *, again: bool) -> None:
+        def done(pixmap: Optional[QPixmap]) -> None:
+            if pixmap is not None and not pixmap.isNull():
+                self._held[address] = pixmap
+                self.changed.emit(address)
+            elif again:
+                self._later(RETRY_MS, lambda: self._ask(address, url, again=False))
+
+        key = "publication-" + hashlib.sha256(address.encode("utf-8")).hexdigest()[:32]
+        self._fetch(key, url, done)
 
 
 def rules_words(rules) -> str:
@@ -92,9 +149,9 @@ def publish_by(destination: Destination) -> str:
 
 def fill_picker(picker: QComboBox, destinations: Sequence[Destination], *, loading: bool,
                 logo_for: Callable[[Destination], QPixmap],
-                request_logo: Callable[[str, str], None]) -> None:
+                request_logo: Callable[[Destination], None]) -> None:
     """The publications in Submit to a Publication's picker, each with its
-    logo (asked for when it has a picture), one that cannot be chosen
+    logo (asked for when its listing names one), one that cannot be chosen
     dimmed with why, and the first that can chosen; while loading, or
     with none, one dimmed line (the reason is said once, by the sheet)."""
     picker.blockSignals(True)
@@ -105,9 +162,8 @@ def fill_picker(picker: QComboBox, destinations: Sequence[Destination], *, loadi
         picker.setEnabled(False)
     else:
         for destination in destinations:
-            pubkey = formats.parse_address(destination.address)[0]
-            if destination.picture and destination.picture.startswith("https://"):
-                request_logo(pubkey, destination.picture)
+            if destination.avatar:
+                request_logo(destination)
             label = destination.name
             if not can_choose(destination):
                 label = f"{destination.name} · {rules_words(destination.key.rules)}"
@@ -129,5 +185,5 @@ def recent_first(destinations: Sequence[Destination], used: Sequence[str]) -> Li
     return sorted(destinations, key=lambda d: rank.get(d.address, len(rank)))
 
 
-__all__ = ["can_choose", "fill_picker", "publication_logo", "publish_by", "recent_first", "rules_words",
-           "takes_articles"]
+__all__ = ["PublicationLogos", "RETRY_MS", "can_choose", "fill_picker", "publication_logo",
+           "publish_by", "recent_first", "rules_words", "takes_articles"]

@@ -323,6 +323,7 @@ from nostr.ui.media_servers_dialog import MediaServersDialog
 from nostr.ui.publish_article_dialog import PublishArticleDialog
 from nostr.standup import drafting
 from nostr.ui.standup_submit import StandupWriter, thumbnail
+from nostr.ui.standup_publications import PublicationLogos
 from nostr.ui.standup_submit_sheet import SubmitSheet
 from nostr.ui.submission_pill import SubmissionPill
 from nostr.ui.submissions_host import Ports as SubmissionPorts, SubmissionsHost
@@ -718,6 +719,10 @@ class MainWindow(QMainWindow):
         # The own-profile chip refresh is still triggered explicitly so we can
         # also flip the menu if the active profile's avatar landed.
         self._avatars.avatar_added.connect(self._on_avatar_added)
+        # Publications' logos, by address, only from the STANDUP server's
+        # /api/avatars (contract 12.9): a loader of their own, so a logo
+        # never lands among the people's avatars (F5 M5).
+        self._publication_logos = PublicationLogos(AvatarLoader(parent=self).fetch, parent=self)
 
         # Mentions infrastructure: cached known people, NIP-50 search,
         # background contact-list fetcher. All process-wide singletons.
@@ -3371,13 +3376,14 @@ class MainWindow(QMainWindow):
             self._relay_pool, self._relay_directory, known=self._known_name, parent=self)
         self._submissions_view = SubmissionsView(
             name_of=self._profile_names.name, avatar_of=self._avatars.get,
-            is_dark=self.is_dark_theme)
+            is_dark=self.is_dark_theme, logo_of=self._publication_logos.get)
         add_submissions_view(self._drafts_panel, self._submissions_view,
                              server=configured_server())
         self._submissions = SubmissionsHost(self._submission_ports(),
                                             view=self._submissions_view,
                                             pill=self.submission_pill,
                                             name_of=self._profile_names.name, parent=self)
+        self._publication_logos.changed.connect(self._submissions.logo_arrived)
         self._profile_names.learned.connect(self._submissions.names_learned)
         self._drafts_panel.view_changed.connect(self._follow_account_in_published)
         self._drafts_panel.view_changed.connect(self._update_refresh_command)
@@ -10249,7 +10255,7 @@ class MainWindow(QMainWindow):
         sheet = SubmitSheet(writer=self._standup(), draft=draft, cover=cover, byline=byline,
                             private_names=private, public_pictures=public, profile=active,
                             store=self._profile_store,
-                            avatars=self._avatars, request_logo=self._avatar_batcher.request,
+                            avatars=self._avatars, logos=self._publication_logos,
                             is_dark=self.is_dark_theme, parent=self)
         sheet.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         sheet.submitted.connect(lambda d, ed=ed: self._keep_submitted_identifier(ed, d))
@@ -10340,7 +10346,8 @@ class MainWindow(QMainWindow):
             notice_of=self._notice_of,
             say=lambda text: self.status.showMessage(text, 8000, nostr=True),
             keep=lambda sheet: setattr(self, "_publish_sheet", sheet),
-            avatar_of=self._avatars.get, request_logo=self._avatar_batcher.request,
+            avatar_of=self._avatars.get, request_logo=self._publication_logos.request,
+            logo_of=self._publication_logos.get,
             is_dark=lambda: self.is_dark_theme, window=lambda: self,
             open_article=self._open_article_named,
             zap_address=lambda pubkey, answer: zap_address(

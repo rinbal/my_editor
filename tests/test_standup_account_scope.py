@@ -131,9 +131,10 @@ def test_signing_out_and_switching_stops_everything_that_was_running(monkeypatch
     profile = Profile(user_pubkey=ME, bunker_pubkey="b" * 64, display_name="Jana",
                       bunker_relays=[], local_secret_hex="0" * 64)
     store.upsert(profile)
+    from nostr.ui.standup_publications import PublicationLogos
     sheet = SubmitSheet(writer=window.writer, draft=draft, cover=QPixmap(), byline="Jana",
                         private_names=(), profile=profile, store=store, avatars=AvatarStore(),
-                        request_logo=lambda *_a: None, is_dark=False)
+                        logos=PublicationLogos(lambda *_a: None), is_dark=False)
     sheet.open()
     window.host.cover_for_sheet(sheet, "https://bilder.example/cover.jpg", "Ein Jahr")
     covers = []

@@ -79,7 +79,8 @@ from .standup_waits import limit_words, server_limit_words
 from .standup_ways_out import WaysOut
 from .standup_privacy import PrivacyBox, privacy_words
 from .standup_publications import (
-    can_choose, fill_picker, publication_logo, publish_by, recent_first, rules_words,
+    PublicationLogos, can_choose, fill_picker, publication_logo, publish_by, recent_first,
+    rules_words,
 )
 from .standup_submit import RoundAnswer, StandupWriter, SubmissionRun
 
@@ -103,7 +104,7 @@ class SubmitSheet(QDialog):
     def __init__(self, *, writer: StandupWriter, draft: ArticleDraft, cover: QPixmap,
                  byline: str, private_names: Sequence[str], profile: Profile,
                  store: ProfileStore, avatars: AvatarStore,
-                 request_logo: Callable[[str, str], None], is_dark: bool,
+                 logos: PublicationLogos, is_dark: bool,
                  public_pictures: int = 0, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(_("Submit to a Publication"))
@@ -117,8 +118,8 @@ class SubmitSheet(QDialog):
         # Pictures that are public links already: they stay public.
         self._public_pictures = max(0, int(public_pictures))
         self._store = store
-        self._avatars = avatars
-        self._request_logo = request_logo
+        self._avatars = avatars             # the people's (the account row)
+        self._logos = logos                 # the publications', by address (12.9)
         self._is_dark = is_dark
         self._destinations: List[Destination] = []
         # The round this text would go in at the chosen publication, as
@@ -142,7 +143,7 @@ class SubmitSheet(QDialog):
         self._bound_known = False
         self.run: Optional[SubmissionRun] = None
         self._build(profile)
-        avatars.avatar_added.connect(self._on_logo)
+        logos.changed.connect(self._on_logo)
         writer.stopped.connect(self._on_account_stopped)
         running = writer.running(profile, draft.d)
         if running is not None:
@@ -398,16 +399,17 @@ class SubmitSheet(QDialog):
         self._destinations = destinations
         self._load_problem = problem
         fill_picker(self.picker, destinations, loading=loading, logo_for=self._logo_for,
-                    request_logo=self._request_logo)
+                    request_logo=lambda d: self._logos.request(d.server, d.address, d.avatar))
         self._on_picked(self.picker.currentIndex())
 
     def _logo_for(self, destination: Destination, size: int = _LOGO) -> QPixmap:
         pubkey = formats.parse_address(destination.address)[0]
-        return publication_logo(destination.name, pubkey, self._avatars.get(pubkey), size)
+        return publication_logo(destination.name, pubkey, self._logos.get(destination.address),
+                                size)
 
-    def _on_logo(self, pubkey: str, _picture) -> None:
+    def _on_logo(self, address: str) -> None:
         for index, destination in enumerate(self._destinations):
-            if formats.parse_address(destination.address)[0] == pubkey:
+            if destination.address == address:
                 self.picker.setItemIcon(index, self._logo_for(destination))
 
     def destination(self) -> Optional[Destination]:
@@ -551,8 +553,7 @@ class SubmitSheet(QDialog):
         self.handoff.set_work(title=self._draft.title, summary=self._draft.summary,
                               byline=self._byline, cover=self._cover, publication=name,
                               logo=publication_logo(name, formats.parse_address(address)[0],
-                                                    self._avatars.get(
-                                                        formats.parse_address(address)[0]), 40))
+                                                    self._logos.get(address), 40))
         run.behind_the_sheet(None)                  # the sheet says it now
         run.changed.connect(self.handoff.show_progress)
         self._pages.setCurrentIndex(1)

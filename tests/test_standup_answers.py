@@ -102,7 +102,8 @@ def test_the_editorial_answer_names_invitations():
 def test_a_listing_without_a_publication_address_or_key_event_is_left_out():
     event = {"kind": 30078}
     listed = answers.parse_listings({"publications": [
-        {"address": ADDRESS, "name": "Magazin", "picture": "http://x", "key_event": event},
+        {"address": ADDRESS, "name": "Magazin", "picture": "https://x", "avatar": "zz",
+         "key_event": event},
         {"address": "30004:xyz:d", "key_event": event},
         {"address": ADDRESS},
     ]})

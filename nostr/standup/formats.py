@@ -195,6 +195,21 @@ def is_hex128(value: Any) -> bool:
     return isinstance(value, str) and bool(_HEX128.match(value))
 
 
+def is_avatar_tag(value: Any) -> bool:
+    """A face's tag as the server makes it (12.9): 32 lowercase hex."""
+    return isinstance(value, str) and len(value) == 32 \
+        and all(c in "0123456789abcdef" for c in value)
+
+
+def avatar_path(address: str, tag: str) -> str:
+    """``/api/avatars/by/<pk>/<id>?v=<tag>``: a publication's logo as this
+    server serves it (12.9), by its route key; the only place a logo is
+    read from."""
+    pubkey, site_d = parse_address(address)
+    need(is_avatar_tag(tag), "not a face's tag")
+    return f"/api/avatars/{route_key(pubkey, site_d)}?v={tag}"
+
+
 def is_pubkey(value: Any) -> bool:
     """A valid x-only public key: 64 lowercase hex digits naming a point
     on the curve (BIP-340 lift_x)."""

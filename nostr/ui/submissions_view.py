@@ -74,7 +74,8 @@ def add_to_panel(panel, view: "SubmissionsView", *, server: str) -> bool:
 
 class SubmissionsView(QWidget):
     """See the module docstring. ``name_of(pubkey)`` is a person's name
-    (``""`` when not known), ``avatar_of(pubkey)`` their picture.
+    (``""`` when not known), ``avatar_of(pubkey)`` their picture,
+    ``logo_of(address)`` a publication's logo (contract 12.9).
 
     Signals:
       action_requested(str, object)   a sid and the primary Action chosen
@@ -94,6 +95,7 @@ class SubmissionsView(QWidget):
     def __init__(self, *, name_of: Callable[[str], str],
                  avatar_of: Callable[[str], Optional[QPixmap]], is_dark: bool = True,
                  clock: Callable[[], float] = time.time,
+                 logo_of: Callable[[str], Optional[QPixmap]] = lambda _address: None,
                  parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setObjectName("submissions_view")
@@ -106,6 +108,7 @@ class SubmissionsView(QWidget):
         self._search = ""
         self._said = ""
         self._rows = Rows(self)
+        self._logo_of = logo_of
         self._build(avatar_of)
         self.apply_theme(self._is_dark)
         self._reload()
@@ -181,7 +184,7 @@ class SubmissionsView(QWidget):
         self._stack.addWidget(self._placeholder)
 
         self.detail = SubmissionDetail(name_of=self._name_of, avatar_of=avatar_of,
-                                       is_dark=self._is_dark)
+                                       is_dark=self._is_dark, logo_of=self._logo_of)
         self.detail.back_requested.connect(self.show_list)
         self.detail.action_requested.connect(self.action_requested)
         self.detail.open_in_editor.connect(self.open_in_editor)

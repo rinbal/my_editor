@@ -145,7 +145,7 @@ class Following(QObject):
         # a verdict holds for that revision only (RG-M3-a 6).
         self._decided: Dict[str, Tuple[tuple, object]] = {}
         self._deciding: set = set()
-        self._names: Dict[str, Tuple[str, Optional[str]]] = {}
+        self._names: Dict[str, Tuple[str, Optional[Tuple[str, str]]]] = {}
         self._noticed: Dict[str, int] = {}
         # What the lookup brought that is still being opened, by sid: its
         # notice is decided once it is open.
@@ -247,7 +247,8 @@ class Following(QObject):
         self.changed.emit()
 
     def _named(self, destinations) -> None:
-        self._names = {d.address: (d.name, d.picture) for d in destinations}
+        self._names = {d.address: (d.name, (d.server, d.avatar) if d.avatar else None)
+                       for d in destinations}
         self.changed.emit()
 
     # -- the lookup ----------------------------------------------------------------
@@ -501,7 +502,9 @@ class Following(QObject):
         except formats.FormatError:
             return ""
 
-    def publication_picture(self, address: str) -> Optional[str]:
+    def publication_avatar(self, address: str) -> Optional[Tuple[str, str]]:
+        """``(server, tag)`` of the publication's logo as its listing names
+        it (12.9), or None: the monogram then."""
         return self._names.get(address, ("", None))[1]
 
     def snippet(self, sid: str) -> Tuple[str, threads.Role, str]:

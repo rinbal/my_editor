@@ -1179,7 +1179,7 @@ class FakeStandupServer:
             if pub.open and not pub.paused:
                 content = pub.content
                 items.append({"address": pub.address, "name": content.get("name"),
-                              "picture": None, "key_event": pub.key_event,
+                              "picture": None, "avatar": None, "key_event": pub.key_event,
                               "rules": content.get("rules")})
         return _ok({"publications": items})
 
