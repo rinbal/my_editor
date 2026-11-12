@@ -15,7 +15,9 @@ The work card moves only as far as the protocol got
 pictures are encrypted and uploaded (a determinate bar along the
 cover's lower edge) and while the signer app is asked; it travels 60
 percent of the way and **holds** while the request is on its way and
-while no answer has come; it settles into the publication's inbox only
+while no answer has come, never closer to the inbox than a gap (a
+narrow sheet draws the whole track smaller, so the card never lies over
+the inbox); it settles into the publication's inbox only
 when the phase is DONE, which only a matching receipt reaches
 (submitting.py), and glides back when nothing was sent. Every state's
 words are the plan's, said to screen readers as they change.
@@ -38,6 +40,9 @@ wait is over, and the words say when that is.
 A failure is said once (lessons 36): its title, what did not happen,
 and one sentence, the likely cause and what to do. What an upload's
 servers answered is technical: only behind Details.
+
+The painted track and the view that shows it, with the words of each
+state, stay together, so the module is longer than most.
 """
 
 from __future__ import annotations
@@ -69,6 +74,9 @@ _INBOX_WIDTH = 190
 _LOGO = 40
 _HOLD = 0.6            # of the way, while the request is on its way
 _LIFT = 0.03           # the card's scale when lifted (1.00 to 1.03)
+# At the least between the card held while sending and the inbox: room
+# for the lifted card's 3 % and its shadow.
+_GAP = 24
 
 
 def _elide(painter: QPainter, text: str, width: float) -> str:
@@ -181,17 +189,36 @@ class HandoffTrack(QWidget):
     def _card_height(self) -> float:
         return _COVER_HEIGHT + 74
 
+    def _scale(self) -> float:
+        """1, or less where the track is narrower than the card and the
+        inbox side by side with the gap between them (a sheet down to its
+        minimum width): the whole scene drawn smaller, never on top of
+        each other."""
+        return min(1.0, self.width() / (_CARD_WIDTH + _GAP + _INBOX_WIDTH))
+
+    def _card_x(self, inbox: QRectF) -> float:
+        """Where the card stands on its way (``travel``): held (_HOLD) at
+        60 % of it, though never closer than _GAP to the inbox, so a narrow
+        sheet never shows it over the inbox while sending; then on, centred
+        on the inbox at the end. One even way in both parts."""
+        end = inbox.center().x() - _CARD_WIDTH / 2
+        held = max(0.0, min(end * _HOLD, inbox.left() - _GAP - _CARD_WIDTH))
+        travel = self._values["travel"]
+        if travel <= _HOLD:
+            return held * travel / _HOLD
+        return held + (end - held) * (travel - _HOLD) / (1 - _HOLD)
+
     def paintEvent(self, _event) -> None:  # noqa: N802, Qt's name
         r = appearance.roles(self._is_dark)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        width, height = self.width(), self.height()
+        zoom = self._scale()
+        painter.scale(zoom, zoom)
+        width, height = self.width() / zoom, self.height() / zoom
         card_h = self._card_height()
         top = (height - card_h) / 2
         inbox = QRectF(width - _INBOX_WIDTH, top + 24, _INBOX_WIDTH, card_h - 48)
-        # The card: centred on the inbox at the end of its way.
-        end = inbox.center().x() - _CARD_WIDTH / 2
-        x = end * self._values["travel"]
+        x = self._card_x(inbox)
         # The way still to go: from the card as it stands to the inbox, and
         # none once the work is in, never from where the card started.
         start, finish = x + _CARD_WIDTH + 12, inbox.left() - 12
