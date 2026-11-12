@@ -74,7 +74,7 @@ import secrets
 from typing import Callable, List, Optional
 from urllib.parse import urlsplit
 
-from PySide6.QtCore import QEvent, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -105,6 +105,7 @@ from ..relay import RelayPool
 # module: what makes it an address is not the dialog's).
 from .bunker46 import BUNKER46_SETTING, bunker46_address, bunker46_link, remembered_bunker46
 from .assistant import link_button, stylesheet, text_label
+from .signer_approval import open_approval
 from .tips import HelpButton, help_button_stylesheet, tip_on_focus
 from ..failures import markup, spoken
 
@@ -112,7 +113,6 @@ from . import appearance
 import announce as announcing
 from announce import announce
 from i18n import N_, _
-from url_safety import is_safe_external_url
 
 # A pairing that did not work, said once above its sentence (lessons 36).
 _NOT_CONNECTED = N_("Your signer app wasn’t connected")
@@ -754,8 +754,7 @@ class ConnectDialog(QDialog):
         """The signer wants the user to approve in a browser before it
         answers. An address that cannot be opened safely ends the way: it
         is said once, and nothing waits for it any more."""
-        if is_safe_external_url(url):
-            QDesktopServices.openUrl(QUrl(url))
+        if open_approval(url):
             self._set_status(_(
                 "Your signer app needs you to approve this in the browser window "
                 "that just opened. Waiting…"

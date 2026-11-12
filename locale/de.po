@@ -13597,3 +13597,6 @@ msgstr "{publication} hat es noch nicht erfahren."
 #, python-brace-format
 msgid "{publication} still hasn’t learned of it."
 msgstr "{publication} hat es noch immer nicht erfahren."
+
+msgid "Confirm in your signer"
+msgstr "Im Signer bestätigen"

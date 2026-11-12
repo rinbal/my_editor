@@ -323,6 +323,7 @@ from nostr.ui.media_servers_dialog import MediaServersDialog
 from nostr.ui.publish_article_dialog import PublishArticleDialog
 from nostr.standup import drafting
 from nostr.ui.standup_submit import StandupWriter, thumbnail
+from nostr.ui.signer_approval import SignerApprovals
 from nostr.ui.standup_publications import PublicationLogos
 from nostr.ui.standup_submit_sheet import SubmitSheet
 from nostr.ui.submission_pill import SubmissionPill
@@ -683,6 +684,11 @@ class MainWindow(QMainWindow):
         self._session_pool = BunkerSessionPool(self._relay_pool, parent=self,
                                                vault=self._key_vault,
                                                relay_caps=RelayCapsReader(parent=self))
+        # An approval a paired signer app asks for in a browser: opened
+        # once when it is safe, and said once in the status bar (audit F8).
+        self._signer_approvals = SignerApprovals(
+            lambda text: self.status.showMessage(text, 8000, nostr=True), parent=self)
+        self._session_pool.auth_challenge.connect(self._signer_approvals.asked)
         # A relay of the account's own that asks for a sign-in (NIP-42)
         # gets one, signed by the account's signer; no other relay does.
         self._relay_pool.sign_in = AccountSignIn(

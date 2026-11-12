@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import shiboken6  # noqa: E402
-from PySide6.QtCore import QCoreApplication, QEvent, QObject  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Signal  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from nostr import bech32, bunker, crypto, events, nip49  # noqa: E402
@@ -276,6 +276,7 @@ def test_old_profile_files_load_as_signer_app_accounts():
 class FakeRemote(QObject):
     """Stands in for BunkerClient: a reattach that answers when told to."""
 
+    auth_challenge = Signal(str)
     made = []
 
     def __init__(self, pool, parent=None):

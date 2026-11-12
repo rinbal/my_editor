@@ -99,6 +99,7 @@ class FakeSigner:
         self.user_pk = crypto.get_public_key(crypto.generate_secret_key()).hex()
         self.seen = []
         self.auth_url_for_connect = None
+        self.auth_url_for_ping = None
         self.withhold_after_auth = False
         self.refuse_ping = False
         self.refuse_public_key = False
@@ -130,6 +131,12 @@ class FakeSigner:
             self.send({"id": rid, "result": "auth_url", "error": url})
             if not self.withhold_after_auth:
                 self.send({"id": rid, "result": "ack"})
+            return
+
+        if method == "ping" and self.auth_url_for_ping is not None:
+            self.send({"id": rid, "result": "auth_url", "error": self.auth_url_for_ping})
+            self.auth_url_for_ping = None
+            self.send({"id": rid, "result": "pong"})
             return
 
         if method == "connect":
@@ -401,6 +408,30 @@ def _reattach(signer_answers_ping=True, signer_user_pk=None):
         on_failure=lambda r: outcome.setdefault("err", r),
     )
     return signer, client, outcome
+
+
+def test_an_approval_a_paired_signer_asks_for_opens_once_and_is_said_once():
+    # Audit F8: after pairing, a challenge reaches the window through the
+    # pool; it is opened when safe and said once, calmly.
+    from types import SimpleNamespace
+    from nostr.ui.signer_approval import SignerApprovals
+    pool = FakePool()
+    signer = FakeSigner(pool)
+    local_sk = crypto.generate_secret_key()
+    signer.watch(crypto.get_public_key(local_sk).hex())
+    signer.auth_url_for_ping = "https://signer.example/approve"
+    sessions = bunker.BunkerSessionPool(pool)
+    opened, said, ready = [], [], []
+    approvals = SignerApprovals(said.append, open_url=opened.append)
+    sessions.auth_challenge.connect(approvals.asked)
+    profile = SimpleNamespace(user_pubkey=signer.user_pk, signer="remote",
+                              local_secret_hex=local_sk.hex(), bunker_pubkey=signer.pk,
+                              bunker_relays=["wss://fake"])
+    sessions.get(profile, ready.append, lambda _reason: None)
+    approvals.asked("https://signer.example/approve")           # asked again
+    approvals.asked("file:///etc/passwd")                       # never opened
+    assert [url.toString() for url in opened] == ["https://signer.example/approve"]
+    assert said == ["Confirm in your signer"] and len(ready) == 1
 
 
 def test_reattach_succeeds_on_a_ping():

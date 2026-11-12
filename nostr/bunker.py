@@ -1293,6 +1293,10 @@ class BunkerSessionPool(QObject):
     those of relays that state no cap, and of the ones the contract names.
     """
 
+    # A paired signer app asks for an approval in a browser before it
+    # answers (46.md auth_url): the address, from any client of the pool.
+    auth_challenge = Signal(str)
+
     def __init__(self, pool: RelayPool, parent: Optional[QObject] = None, *,
                  vault=None, relay_caps=None) -> None:
         super().__init__(parent)
@@ -1364,6 +1368,7 @@ class BunkerSessionPool(QObject):
 
         self._inflight[pubkey] = [(on_ready, on_error)]
         new_client = BunkerClient(self._pool, parent=self)
+        new_client.auth_challenge.connect(self.auth_challenge)    # audit F8
         self._attaching[pubkey] = new_client
 
         def current() -> bool:
