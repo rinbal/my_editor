@@ -573,7 +573,7 @@ def test_each_person_still_to_confirm_has_their_own_reminder_until_reminded_toda
         {"pubkey": ME, "weight": 50, "role": "writer"},
         {"pubkey": OTHER, "weight": 25, "role": "contributor"},
         {"pubkey": eva, "weight": 25, "role": "contributor"}])
-    world.record(entry.sid).confirmations[ME] = ["split"]
+    world.confirm(seed, prepared)
     window.follow()
     detail = opened(window, entry)
     assert detail.sentence.text() == "Thanks. Paul and Eva still confirm."
@@ -609,7 +609,7 @@ def test_the_named_reminders_and_the_version_card_wrap_and_read_whole_in_a_narro
     world.decide(prepared, "accept", split=[
         {"pubkey": ME, "weight": 40, "role": "writer"},
         *({"pubkey": key, "weight": 20, "role": "contributor"} for key in (OTHER, eva, tom))])
-    world.record(entry.sid).confirmations[ME] = ["split"]
+    world.confirm(seed, prepared)
     i18n.install("de")
     try:
         window.follow()

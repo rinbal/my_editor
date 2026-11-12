@@ -224,6 +224,7 @@ class FollowWorld:
                                                             split),
                 sender=pk("editor"), created_at=int(self.clock()))
             split_wrap, split_id = room_wrap(prepared, rumor, "editor"), rumor["id"]
+        self.split_id = split_id        # what the last decision named, for confirm()
         if text:
             wrap = room_wrap(prepared, conversation.message_rumor(
                 room=scrypto.pubkey_of(prepared.s_sub),
@@ -237,6 +238,17 @@ class FollowWorld:
         self.settle()
         assert hasattr(answer[0], "submission"), answer
         return answer[0].submission
+
+    def confirm(self, account: "TestAccount", prepared, confirms=("split",)) -> None:
+        """``account`` confirms the accepted revision and the split the last
+        accept named, signed (12.4 ``/confirmation``)."""
+        answer = []
+        account.api.confirm(prepared.body["submission_id"],
+                            revision_hash=prepared.body["revision_hash"], confirms=list(confirms),
+                            split_rumor_id=getattr(self, "split_id", None),
+                            on_success=answer.append, on_failure=answer.append)
+        self.settle()
+        assert hasattr(answer[0], "confirmations"), answer
 
     def take(self, prepared):
         answer = []

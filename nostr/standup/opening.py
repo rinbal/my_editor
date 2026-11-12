@@ -120,6 +120,9 @@ class VerifiedRevision:
     correction: bool
     epoch: int = 0                     # its signed body's (0: it names none)
     coordinate_hash: str = ""          # the work's, bound to the sid (section 2)
+    # The contributors its writer's body names (12.4 ``participants``): with
+    # the writer, the creators who confirm (11.3).
+    participants: Tuple[str, ...] = ()
     _token: object = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -201,11 +204,13 @@ def verify_revision(view: SubmissionView, record: RevisionRecord, *,
               and not writer_revision.correction, "the writer's revision is not verified")
         p_sub, kind, title = writer_revision.p_sub, writer_revision.kind, writer_revision.title
         coordinate = writer_revision.coordinate_hash
+        participants = writer_revision.participants
     else:
         _writer_binding(body, view, signer)
         _source_binding(body, view, record, signer)
         p_sub, kind, title = body.get("p_sub"), body.get("kind"), body.get("title")
         coordinate = body["coordinate_hash"]           # the sid recomputed from it
+        participants = _participants(body)
     _need(p_sub == view.p_sub, "the submission key signed is another")
     _need(kind == view.kind, "the kind signed is another")
     if record.revision == view.revision:
@@ -216,7 +221,14 @@ def verify_revision(view: SubmissionView, record: RevisionRecord, *,
         envelope_sha256=record.envelope_sha256, p_sub=p_sub, kind=kind, title=title,
         wraps={name: dict(wrap) for name, wrap in wraps.items()},
         signer=signer, correction=correction, epoch=_epoch(body), coordinate_hash=coordinate,
-        _token=_MINTED))
+        participants=participants, _token=_MINTED))
+
+
+def _participants(body: Mapping) -> Tuple[str, ...]:
+    """The contributors a writer's signed body names, each once."""
+    named = body.get("participants")
+    return tuple(dict.fromkeys(pk for pk in named if formats.is_hex64(pk))) \
+        if isinstance(named, list) else ()
 
 
 def _epoch(body: Mapping) -> int:

@@ -43,6 +43,9 @@ from . import following as rules
 from . import formats, views
 from .formats import FormatError
 from .former import Formers
+from .confirmations import (
+    Confirmation, correction_taken, published_revision, to_confirm, verified_confirmations,
+)
 from .release import Release, credited_writer, held_credit, release
 
 # A revision names at most this many people and carried tags (5).
@@ -385,39 +388,6 @@ def published_work(items: Sequence[views.TimelineItem], sid: str, *, writer: str
     return None
 
 
-def published_revision(items: Sequence[views.TimelineItem], sid: str,
-                       report: views.TimelineItem, *, writer: str, accepted: Optional[int],
-                       corrections: Mapping[str, int],
-                       checks: rules.SignedChecks) -> Optional[int]:
-    """The revision a ``published`` ``report`` published, from signed words
-    only (12.4, Which revision is published; RG-M4-a 11): the verified
-    accept's (``accepted``), or a later correction (``corrections``: the
-    verified corrections opened here, by their hash) that the writer's
-    verified confirmation named before the report, or, for a work the
-    publication signs, the one its report names when that is one of them.
-    Never the server's ``Item.event.revision``, so a later revision it
-    claims cannot have the files of a correction nobody took deleted."""
-    found = accepted
-    taken = set(corrections.values())
-    body = checks.body(report.event.signed, path=views.action_path("published", sid),
-                       sid=sid) or {}
-    named = body.get("revision")
-    if report.event.signed.event.get("pubkey") != writer and formats.is_int(named) \
-            and named in taken:
-        found = max(found or 0, named)
-    path = views.action_path("confirmed", sid)
-    for item in items:
-        event = item.event
-        if (item.seq < report.seq and event is not None and event.name == "confirmed"
-                and event.signed is not None and event.signed.event.get("pubkey") == writer):
-            said = checks.body(event.signed, path=path, sid=sid) or {}
-            confirms, named_hash = said.get("confirms"), said.get("revision_hash")
-            if isinstance(confirms, list) and "correction" in confirms \
-                    and isinstance(named_hash, str) and named_hash in corrections:
-                found = max(found or 0, corrections[named_hash])
-    return found
-
-
 def section_of(items: Sequence[views.TimelineItem], sid: str, address: str, publication: str,
                checks: Optional[rules.SignedChecks] = None) -> Optional[str]:
     """The section of the newest ``placed`` report that counts for
@@ -573,9 +543,10 @@ def correction_texts(revision: Mapping, published: Mapping) -> Tuple[str, str]:
     return old.rstrip(), _MEDIA_REF.sub("standup-media", new).rstrip()
 
 
-__all__ = ["Accepted", "EXTENSIONS", "NEVER_CARRIED", "NotPublishable", "Published",
-           "Release", "addresses_before", "corrected_template", "correction_changes",
-           "correction_texts", "credited", "credited_writer", "held_credit", "media_refs_in",
-           "media_to_publish", "placed_section", "published_revision", "published_template",
-           "published_work", "release", "rights_of", "section_of", "served_at",
-           "verified_accept", "work_address", "work_of"]
+__all__ = ["Accepted", "Confirmation", "EXTENSIONS", "NEVER_CARRIED", "NotPublishable",
+           "Published", "Release", "addresses_before", "corrected_template",
+           "correction_changes", "correction_taken", "correction_texts", "credited",
+           "credited_writer", "held_credit", "media_refs_in", "media_to_publish",
+           "placed_section", "published_revision", "published_template", "published_work",
+           "release", "rights_of", "section_of", "served_at", "to_confirm",
+           "verified_accept", "verified_confirmations", "work_address", "work_of"]

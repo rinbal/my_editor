@@ -61,7 +61,6 @@ from ..signer_limits import size_problem
 from ..standup import formats, opening, publishing
 from ..standup.errors import Code, cause_words
 from ..standup import following as rules
-from ..standup.following import correction_taken
 from ..standup.publishing import Accepted
 from .standup_account import live
 from .standup_publish_job import HeldPublish, SignedHere, offers_here, publish_job, read_relays
@@ -179,7 +178,8 @@ def run_for(following, account, profile, sid: str, *, store, fetch, session_pool
                 revision_hash=view.revision_hash,
                 publication=following.publication_name(view.publication), ports=ports,
                 parent=following)
-    run = (CorrectionPublish(published=published, taken=correction_taken(view), **made)
+    run = (CorrectionPublish(published=published, taken=following.reading.signed(sid).taken,
+                             **made)
            if correction else AcceptedPublish(**made))
     following.track(sid, run)
     return run
@@ -652,8 +652,9 @@ class CorrectionPublish(AcceptedPublish):
 
     def __init__(self, *, published: dict, taken: bool = False, **kwargs) -> None:
         super().__init__(**kwargs)
-        # ``taken``: the View holds the writer's confirmation of it, so it
-        # is published without being confirmed again (RG-M4-b 8).
+        # ``taken``: the writer's own verified confirmation names it
+        # (``Reading.signed``, never the View: F5 M1), so it is published
+        # without being confirmed again (RG-M4-b 8); else start() takes it.
         self._published, self._taken = published, bool(taken)
         self.expected_state = "published"
 

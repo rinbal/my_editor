@@ -117,15 +117,28 @@ def my_turn(view: views.SubmissionView, me: str) -> bool:
         turn.type == "contributors" and me in turn.pending)
 
 
-def correction_taken(view: views.SubmissionView) -> bool:
-    """Whether the writer confirmed the waiting correction (12.4: the
-    server drops the word when the next correction comes)."""
-    return "correction" in (view.confirmations.get(view.writer) or ())
+@dataclass(frozen=True)
+class Signed:
+    """What the creators' own verified confirmations say of a submission
+    once its detail was read here (12.4; ``publishing.correction_taken``,
+    ``publishing.to_confirm``), never the View's ``confirmations`` or
+    ``step`` (F5 M1). ``taken``: the writer took the waiting correction.
+    ``to_confirm``: for a work the publication signs, the creators whose
+    confirmation of the accepted revision and its split is missing; None
+    while that is not known (the View's word then stands for the words
+    only, never for an action)."""
+
+    taken: bool = False
+    to_confirm: Optional[Tuple[str, ...]] = None
 
 
-def situation_of(view: views.SubmissionView, me: str) -> Situation:
+UNREAD = Signed()
+
+
+def situation_of(view: views.SubmissionView, me: str, signed: Signed = UNREAD) -> Situation:
     """A View's situation for ``me`` (11.1, 11.2): the state, the step
-    and the turn, all the server's."""
+    and the turn, all the server's, except what rests on a creator's own
+    signed word (``signed``)."""
     state, mine = view.state, view.writer == me
     if state == "submitted":
         return Situation.SUBMITTED
@@ -134,6 +147,10 @@ def situation_of(view: views.SubmissionView, me: str) -> Situation:
     if state == "changes_requested":
         return Situation.CHANGES_REQUESTED if mine else Situation.CHANGES_BY_WRITER
     if state == "accepted":
+        if view.signer == "publication" and signed.to_confirm is not None:
+            # Ready for release only on every creator's verified word: one
+            # whose confirmation is missing confirms, whatever the step says.
+            return Situation.CONFIRM if me in signed.to_confirm else Situation.ACCEPTED
         if view.step == "confirm" and me in view.turn.pending:
             return Situation.CONFIRM
         if view.step == "writer_publishes" and mine:
@@ -141,11 +158,10 @@ def situation_of(view: views.SubmissionView, me: str) -> Situation:
         return Situation.ACCEPTED
     if state == "published":
         # A correction stored and not yet published is the writer's turn
-        # for a writer-signed work (11.2, ceac858); once they took it, the
-        # View holds their ``correction`` confirmation (RG-M4-b 8).
+        # for a writer-signed work (11.2, ceac858); it is taken only once
+        # their own verified confirmation names it (12.4, F5 M1).
         if mine and view.turn.type == "writer":
-            return (Situation.CORRECTION_TAKEN if correction_taken(view)
-                    else Situation.CORRECTION)
+            return Situation.CORRECTION_TAKEN if signed.taken else Situation.CORRECTION
         return Situation.PUBLISHED if view.placed else Situation.PUBLISHED_UNPLACED
     return Situation.DECLINED if state == "declined" else Situation.WITHDRAWN
 
@@ -173,6 +189,8 @@ class Row:
     confirmed: bool = False
     # A key of :data:`PUBLISHING_WORDS`, or "".
     publishing: str = ""
+    # What the creators' verified confirmations say (:class:`Signed`).
+    signed: Signed = UNREAD
 
     @property
     def section(self) -> Section:
@@ -211,7 +229,7 @@ def _held_view(entry: SubmissionEntry, known: Optional[Followed],
 
 def _entry_situation(entry: SubmissionEntry, known: Optional[Followed],
                      view: Optional[views.SubmissionView], *, me: str,
-                     nothing_held: bool, refused: bool) -> Situation:
+                     nothing_held: bool, refused: bool, signed: Signed = UNREAD) -> Situation:
     """What the list's entry and the lookup's answer for it come to
     (12.4, 13): never from timing. ``view`` is :func:`_held_view`'s;
     ``nothing_held``: the server answered that it holds nothing for the
@@ -225,14 +243,14 @@ def _entry_situation(entry: SubmissionEntry, known: Optional[Followed],
             return Situation.UNCONFIRMED
         # Stored once: a View says where it stands now, but "Eingereicht"
         # is the receipt's to say (a picture may be missing, 12.4).
-        situation = situation_of(view, me) if view is not None else Situation.UNKNOWN
+        situation = situation_of(view, me, signed) if view is not None else Situation.UNKNOWN
         return Situation.UNKNOWN if situation is Situation.SUBMITTED else situation
     status = known.status
     if isinstance(status, StoredOther):
         return Situation.UNCONFIRMED
     if isinstance(status, NotHandedIn):
         return Situation.NOT_HANDED_IN
-    situation = situation_of(view, me)
+    situation = situation_of(view, me, signed)
     if situation is Situation.SUBMITTED and known.item.receipt.blobs_missing:
         return Situation.PICTURES_MISSING       # never "Eingereicht" then (12.4)
     return situation
@@ -243,7 +261,8 @@ def rows_of(entries: Sequence[SubmissionEntry], *, me: str,
             unknown: AbstractSet[str], running: Mapping[str, Progress],
             refused: Callable[[SubmissionEntry], bool],
             seen: Callable[[str], int],
-            publishing: Optional[Mapping[str, str]] = None) -> List[Row]:
+            publishing: Optional[Mapping[str, str]] = None,
+            signed: Callable[[str], Signed] = lambda _sid: UNREAD) -> List[Row]:
     """The rows of the list (contract 12.4 at 3b00351): the list's
     ``entries`` joined with the lookup's answers (``followed``; ``unknown``
     are the sids the server answered it holds nothing for) and the
@@ -254,39 +273,42 @@ def rows_of(entries: Sequence[SubmissionEntry], *, me: str,
     ``refused(entry)`` says its round was refused as another device's;
     ``seen(sid)`` is the read state; ``publishing`` how a publish of the
     writer's own stands, by sid (:data:`PUBLISHING`; only while the View
-    waits for it). Du bist dran first, the newest first in each section."""
+    waits for it); ``signed(sid)`` what the creators' verified
+    confirmations say (:class:`Signed`). Du bist dran first, the newest
+    first in each section."""
     rows: List[Row] = []
     listed = set()
     for entry in entries:
         listed.add(entry.sid)
-        served_view = served.get(entry.sid)
+        served_view, said = served.get(entry.sid), signed(entry.sid)
         if entry.role == "writer":
             known, nothing = followed.get(entry.sid), entry.sid in unknown
             view = _held_view(entry, known, served_view, nothing_held=nothing)
             situation = _entry_situation(entry, known, view, me=me, nothing_held=nothing,
-                                         refused=refused(entry))
+                                         refused=refused(entry), signed=said)
             confirmed = view is not None and situation not in (
                 Situation.UNCONFIRMED, Situation.NOT_HANDED_IN)
         else:
             view = served_view
-            situation = situation_of(view, me) if view is not None else Situation.UNKNOWN
+            situation = situation_of(view, me, said) if view is not None else Situation.UNKNOWN
             confirmed = view is not None
         progress = running.get(entry.sid)
         if progress is not None:
             situation = Situation.UNCONFIRMED if progress.phase is Phase.UNCONFIRMED \
                 else Situation.SENDING
         rows.append(_row(entry.sid, situation, view, entry, me=me, seen=seen,
-                         confirmed=confirmed))
+                         confirmed=confirmed, signed=said))
     for sid, view in served.items():
         if sid in listed:
             continue
-        situation = situation_of(view, me)
+        said = signed(sid)
+        situation = situation_of(view, me, said)
         if view.writer == me and situation is Situation.SUBMITTED:
             # The person's own work without its entry here: no receipt
             # is held for it on this device (12.4).
             situation = Situation.ELSEWHERE
         rows.append(_row(sid, situation, view, None, me=me, seen=seen,
-                         confirmed=situation is not Situation.ELSEWHERE))
+                         confirmed=situation is not Situation.ELSEWHERE, signed=said))
     publishing = publishing or {}
     rows = [replace(row, publishing=publishing[row.sid]) if row.sid in publishing
             and row.role == "writer" and row.situation in PUBLISHED_HERE else row
@@ -298,7 +320,7 @@ def rows_of(entries: Sequence[SubmissionEntry], *, me: str,
 
 def _row(sid: str, situation: Situation, view: Optional[views.SubmissionView],
          entry: Optional[SubmissionEntry], *, me: str, seen: Callable[[str], int],
-         confirmed: bool) -> Row:
+         confirmed: bool, signed: Signed = UNREAD) -> Row:
     role = entry.role if entry is not None else ("writer" if view.writer == me
                                                  else "contributor")
     return Row(
@@ -309,7 +331,7 @@ def _row(sid: str, situation: Situation, view: Optional[views.SubmissionView],
         d=entry.d if entry is not None else "", situation=situation,
         updated_at=view.updated_at if view is not None else entry.updated_at,
         unread=view is not None and view.unread(seen(sid)), view=view, entry=entry,
-        confirmed=confirmed)
+        confirmed=confirmed, signed=signed)
 
 
 # --------------------------------------------------------------------------- #
@@ -511,10 +533,14 @@ def reminded_lately(history: Iterable, to: str, now: float) -> bool:
 
 def waiting_for(row: Row) -> Tuple[str, ...]:
     """Whom the writer waits for once they confirmed (11.2 ``confirm``,
-    turn ``contributors``): the contributors still to confirm."""
+    turn ``contributors``): the contributors still to confirm, as their
+    verified confirmations say once the detail was read (F5 M1)."""
     view = row.view
-    if (row.situation is not Situation.ACCEPTED or row.role != "writer" or view is None
-            or view.step != "confirm" or view.turn.type != "contributors"):
+    if row.situation is not Situation.ACCEPTED or row.role != "writer" or view is None:
+        return ()
+    if row.signed.to_confirm is not None:
+        return tuple(pk for pk in row.signed.to_confirm if pk != row.writer)
+    if view.step != "confirm" or view.turn.type != "contributors":
         return ()
     return tuple(pk for pk in view.turn.pending if pk != row.writer)
 
@@ -533,7 +559,7 @@ __all__ = [
     "ACTION_LABELS", "Action", "DECIDER_ROLES", "DECISIONS", "Decision", "NOTHING_TO_DO",
     "NOT_LISTED", "PUBLIC", "PUBLISHED_HERE", "PUBLISHING", "PUBLISHING_WORDS", "REMIND_EVERY",
     "REFUSED", "SOMEONE_ELSES", "SOMEONE_ELSES_WORDS", "TOO_LONG", "TOO_LONG_WORDS", "UNREPORTED",
-    "correction_taken", "reminded_lately",
+    "Signed", "UNREAD", "reminded_lately",
     "NOT_SIGNED", "ON_A_DECISION", "ON_ITS_WAY", "Row",
     "Section", "SignedChecks", "Situation", "Status", "TABLE", "Words", "YOUR_TURN", "action_verified",
     "deciders_of", "members_of", "my_turn", "newest_decision", "pill_word", "rests_on",

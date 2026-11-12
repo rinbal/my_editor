@@ -441,7 +441,8 @@ class Following(QObject):
             account.submissions.entries(), me=account.writer, followed=self._followed(),
             served=self._served, unknown=self._nothing, running=running,
             refused=lambda entry: self._marks.round_refused(account.writer, entry),
-            seen=account.read_state.seen, publishing=self._publishing())
+            seen=account.read_state.seen, publishing=self._publishing(),
+            signed=self.reading.signed)
         listed = {row.sid for row in rows}
         for run in account.runs:
             sid = run.submitting.submission_id
@@ -618,6 +619,9 @@ class Following(QObject):
         def confirmed(view: views.SubmissionView) -> None:
             self.serve(view)
             self.detail_changed.emit(sid)
+            # The signed confirmation is read back, so the phases that rest
+            # on it come from it, never from the View (F5 M1).
+            self.reading.read(sid)
             on_done(None)
             self.ride_along.person_signed()
 

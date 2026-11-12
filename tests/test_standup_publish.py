@@ -1108,6 +1108,41 @@ def test_a_correction_taken_before_is_said_so_and_published_without_asking_again
         "content"]
 
 
+def test_a_correction_only_the_server_calls_taken_is_taken_before_it_is_published(accepted):
+    # F5 M1 (probe p4): the View names the writer's correction confirmation,
+    # but no signed one is stored. It is not taken, so publishing it signs
+    # the confirmation first.
+    from nostr.standup import following as rules
+    from nostr.standup.publishing import Accepted
+    from nostr.ui.standup_publish import CorrectionPublish
+    world, sid, following = accepted.world, accepted.sid, accepted.following
+    first, _store, _jobs = _run(accepted)
+    first.start()
+    world.settle()
+    world.clock.advance(60)
+    world.correct(accepted.writer, sid, f"Korrigiert ![]({accepted.entry['ref']})",
+                  media=[accepted.entry])
+    world.record(sid).confirmations[pk("writer")] = ["correction"]
+    following.refresh()
+    world.settle()
+    following.open(sid)
+    world.settle()
+    row = following.row(sid)
+    assert row.view.confirmations[pk("writer")] == ("correction",)
+    assert row.situation is rules.Situation.CORRECTION
+    asked = []
+    run = CorrectionPublish(
+        published=following.reading.published_event(sid),
+        taken=following.reading.signed(sid).taken, sid=sid, profile=accepted.writer.profile,
+        version=following.reading.latest(sid),
+        accepted=Accepted(revision=2, split_rumor_id=None, actor="", seq=0),
+        revision_hash=row.view.revision_hash, publication="Magazin",
+        ports=replace(first._ports, confirm=lambda confirms, hash_, _done: asked.append(
+            (tuple(confirms), hash_))))
+    run.start()
+    assert asked == [(("correction",), row.view.revision_hash)]
+
+
 def publishing_tag(event):
     return next(tag[1] for tag in event["tags"] if tag[0] == "published_at")
 
