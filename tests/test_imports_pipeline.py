@@ -180,6 +180,31 @@ class TestHappyPath:
         assert [e[1] for e in rec.of("item_succeeded")] == [1]
         assert rec.of("completed") == [("completed", 1, 2)]
 
+    def test_a_draft_that_failed_is_said_in_its_job_s_sentence(self):
+        words = "Your signer app declined the request: allow it there and try again."
+        factory, _ = make_factory([("fail", "user rejected", words)])
+        job = make_job(TWO_ITEMS, factory=factory)
+        rec = Recorder(job)
+        job.start()
+        settle()
+        assert rec.of("item_failed") == [("item_failed", 0, words)]
+
+    def test_a_post_that_cannot_become_a_draft_says_what_to_do(self, monkeypatch, caplog):
+        import logging
+
+        def refuse(**_kwargs):
+            raise ValueError("inner kind 30024 is not allowed")
+
+        job = make_job([make_item("One", guid="g1")], factory=refuse)
+        rec = Recorder(job)
+        with caplog.at_level(logging.INFO, logger="nostr.imports.pipeline"):
+            job.start()
+            settle()
+        assert rec.of("item_failed") == [("item_failed", 0, (
+            "MyEditor couldn't turn this post into a draft: import it from its link "
+            "instead."))]
+        assert any("30024" in line for line in caplog.messages)
+
     def test_unnormalisable_item_fails_cleanly(self):
         # No guid, link, or title: nothing to derive a d-tag from.
         bad = make_item("", guid="", link=None)
@@ -189,7 +214,9 @@ class TestHappyPath:
         settle()
         (failure,) = rec.of("item_failed")
         assert failure[1] == 0
-        assert "Could not normalise item" in failure[2]
+        # Lessons 36: one sentence with what to do; what went wrong is
+        # for the log.
+        assert failure[2] == "MyEditor couldn't read this post: import it from its link instead."
         assert rec.of("completed") == [("completed", 1, 2)]
 
     def test_empty_item_list_completes_immediately(self):

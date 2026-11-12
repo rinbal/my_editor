@@ -53,6 +53,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtGui import (
     QColor,
     QFont,
+    QFontMetricsF,
     QImage,
     QPainter,
     QTextBlockFormat,
@@ -65,6 +66,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QTextBrowser
 
+import bare_pictures
 import i18n
 import media_files
 import rich_text
@@ -74,6 +76,10 @@ from fonts import monospace_family
 from text_size import text_size
 from doc_walk import doc_length, doc_offset, iter_blocks
 from i18n import _, ngettext
+import photo_group
+import photo_group_drawing
+import photo_group_view
+import photo_page
 from markdown_writer import READ_FEATURES, read_markdown
 from nostr import refs
 from nostr.refs import outside_code
@@ -263,23 +269,50 @@ def _style_body(first_block, colors: Palette) -> None:
             fmt.setBottomMargin(0)
             char = _char(size=12.5, color=colors.text, family=SERIF)
         else:
-            # Text gets room between its lines; a picture or a player alone
-            # in its paragraph does not (160 % of a picture's height would
-            # leave a gap below it larger than half the picture).
-            height = 100 if block.text() == "\ufffc" else 160
-            fmt.setLineHeight(height, QTextBlockFormat.LineHeightTypes.ProportionalHeight.value)
+            color = colors.muted if isinstance(quote, int) and quote > 0 else colors.text
+            char = _char(size=13.5, color=color, family=SERIF)
+            fmt.setLineHeight(*_line_height(block, char))
             # List items sit closer together than paragraphs.
             if block.textList() is not None:
                 fmt.setTopMargin(0)
             fmt.setBottomMargin(4 if block.textList() is not None else 12)
-            color = colors.muted if isinstance(quote, int) and quote > 0 else colors.text
-            char = _char(size=13.5, color=color, family=SERIF)
             if isinstance(quote, int) and quote > 0:
                 # Room for a bar beside each level (text_look).
                 fmt.setLeftMargin(20 * quote)
         cursor.setBlockFormat(fmt)
         _merge_fragments(block, char, colors)
         block = block.next()
+
+
+def _zoom_place() -> float:
+    """The width a reader's page gives a #wide picture's "Enlarge" place at
+    the end of its caption line, with the 12-pixel gap before it: the
+    word in the page's language, in the interface's type at 13 pixels,
+    semibold, after a 14-pixel icon and a 6-pixel gap, 2 pixels of
+    padding a side (article.css .e21-pg-zoom)."""
+    font = QFont()
+    font.setPixelSize(13)
+    font.setWeight(QFont.Weight.DemiBold)
+    word = photo_page.MESSAGES[photo_page.page_language()]["enlarge"]
+    return 12 + 2 + 14 + 6 + QFontMetricsF(font).horizontalAdvance(word) + 2
+
+
+def _line_height(block, char: QTextCharFormat) -> tuple:
+    """The room between a paragraph's lines, as QTextBlockFormat takes it.
+    Text gets 160 %; a picture or a player alone in its paragraph none
+    (160 % of a picture's height would leave a gap below it larger than
+    half the picture), nor a photo group's paragraph, whose rows are its
+    lines. A picture with its caption on its line (the caption on the
+    Markdown's next line) gets the room text has, as a distance, so the
+    caption stands under it as under a picture alone, not 60 % of the
+    picture's height lower."""
+    kinds = QTextBlockFormat.LineHeightTypes
+    text = block.text()
+    if text == "\ufffc" or photo_group.is_group_block(block):
+        return 100, kinds.ProportionalHeight.value
+    if text.startswith("\ufffc"):
+        return 0.6 * QFontMetricsF(char.font()).lineSpacing(), kinds.LineDistanceHeight.value
+    return 160, kinds.ProportionalHeight.value
 
 
 def _merge_fragments(block, char: QTextCharFormat, colors: Palette) -> None:
@@ -332,6 +365,8 @@ def body_document(markdown: str, *, names: Optional[NameLookup] = None,
     body.setPointSizeF(13.5)
     doc.setDefaultFont(body)
     read_markdown(doc, markdown_for_preview(markdown, names, media_names), MARKDOWN_FEATURES)
+    # A picture's address standing bare is the picture, as on the page.
+    bare_pictures.show(doc)
     notes = _render_footnotes(doc)
     _style_body(doc.begin(), palette(dark))
     if notes:
@@ -687,6 +722,10 @@ class NostrPreview(QTextBrowser):
         # through loadResource below; the one it replaces goes.
         previous = self.document()
         self._scale = 1.0
+        # Photo groups sized as readers size them, from the pictures this
+        # view loads (photo_group_view).
+        photo_group_view.install(doc, photo_group_view.resource_sizes(doc))
+        photo_group_view.set_zoom_place(doc, _zoom_place())
         self.setDocument(doc)
         # Qt deletes a document the view made itself; one made here goes now.
         if (previous is not doc and shiboken6.isValid(previous)
@@ -704,6 +743,8 @@ class NostrPreview(QTextBrowser):
         self._center_column()
 
     def loadResource(self, kind: int, url: QUrl):
+        # A picture as wide as the page (#wide) is the picture without it.
+        url = photo_group.without_wide_url(url)
         if kind == QTextDocument.ResourceType.ImageResource.value and self._images:
             image = self._images(url.toString())
             if image is not None and not image.isNull():
@@ -711,7 +752,8 @@ class NostrPreview(QTextBrowser):
         if kind == QTextDocument.ResourceType.ImageResource.value:
             placeholder = QImage(COLUMN_WIDTH, COLUMN_WIDTH * 9 // 16, QImage.Format.Format_RGB32)
             placeholder.fill(QColor(palette(self._dark).hairline))
-            return placeholder
+            # Its shape is not the picture's: a group lays it out at 3:2.
+            return photo_group_drawing.mark_placeholder(placeholder)
         return super().loadResource(kind, url)
 
     def resizeEvent(self, event) -> None:
@@ -726,6 +768,10 @@ class NostrPreview(QTextBrowser):
         side = spare // 2 + 16
         self.setViewportMargins(side, 16, side, 16)
         column = max(120, min(widest, self.width() - 2 * side - 24))
+        # Photo groups follow the column by themselves (below 600 pixels
+        # as on a phone, strips one picture a line: nothing here swipes);
+        # their rows are never taller than their share of the view.
+        photo_group_view.set_screen_height(self.document(), self.viewport().height())
         self._fit_images(column)
 
     def _fit_images(self, width: int) -> None:
@@ -736,7 +782,10 @@ class NostrPreview(QTextBrowser):
             while not it.atEnd():
                 fragment = it.fragment()
                 fmt = fragment.charFormat()
-                if fragment.isValid() and fmt.isImageFormat():
+                # A group's pictures are sized by its layout
+                # (photo_group_view).
+                if fragment.isValid() and fmt.isImageFormat() \
+                        and not fmt.hasProperty(photo_group.UNIT):
                     image = fmt.toImageFormat()
                     if int(image.width()) != width:
                         image.setWidth(width)

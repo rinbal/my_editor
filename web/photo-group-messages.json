@@ -1,0 +1,14 @@
+{
+  "en": {
+    "group": "{n} photos", "enlarge": "Enlarge", "enlargeNamed": "Enlarge: {alt}",
+    "strip": "{n} photos to swipe through", "photo": "Photo {k} of {n}", "count": "{k} of {n}",
+    "viewer": "Full view", "close": "Close", "original": "Open original in a new tab",
+    "previous": "Previous photo", "next": "Next photo", "failed": "This photo can’t be loaded right now. Open the original or try again later."
+  },
+  "de": {
+    "group": "{n} Fotos", "enlarge": "Vergrößern", "enlargeNamed": "Vergrößern: {alt}",
+    "strip": "{n} Fotos zum Blättern", "photo": "Foto {k} von {n}", "count": "{k} von {n}",
+    "viewer": "Vollansicht", "close": "Schließen", "original": "Original in neuem Tab öffnen",
+    "previous": "Vorheriges Foto", "next": "Nächstes Foto", "failed": "Dieses Foto lässt sich gerade nicht laden. Öffne das Original oder versuche es später."
+  }
+}

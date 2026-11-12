@@ -37,7 +37,7 @@ from typing import Callable, FrozenSet, Iterable, List, Optional, Sequence, Tupl
 
 from PySide6.QtCore import QObject
 
-from i18n import _, ngettext
+from i18n import _
 
 from . import events, refs
 from .outbox.policy import created_at_of
@@ -242,5 +242,4 @@ class DeletionJob(PublishPipeline):
         return _("Waiting for your signer app. Approve the deletion there…")
 
     def _sending_words(self, count: int) -> str:
-        return ngettext("Asking {n} relay to delete it…", "Asking {n} relays to delete it…",
-                        count).format(n=count)
+        return _("Asking for it to be deleted…")

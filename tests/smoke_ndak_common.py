@@ -755,19 +755,19 @@ class Stack:
         from nostr import key_vault
         from nostr.bunker import BunkerSessionPool
         from nostr.key_vault import KeyVault
-        from nostr.outbox.directory import RELAY_LISTS_FILE, RelayDirectory
-        from nostr.profiles import PROFILES_FILE, ProfileStore
+        from nostr.outbox.directory import RelayDirectory, relay_lists_file
+        from nostr.profiles import ProfileStore, profiles_file
         from nostr.relay import RelayPool
         base = HOME / f"device-{device}" if device else None
         if base is not None:
             base.mkdir(parents=True, exist_ok=True)
         self.base = base or (HOME / ".config" / "my_editor")
         self.pool = RelayPool()
-        self.store = ProfileStore(base / "nostr_profiles.json" if base else PROFILES_FILE)
+        self.store = ProfileStore(base / "nostr_profiles.json" if base else profiles_file())
         self.directory = RelayDirectory(
-            self.pool, store_path=(base / "nostr_relay_lists.json") if base else RELAY_LISTS_FILE,
+            self.pool, store_path=(base / "nostr_relay_lists.json") if base else relay_lists_file(),
             own_pubkeys=lambda: [p.user_pubkey for p in self.store.list()])
-        self.vault = KeyVault(base / "nostr_keys.json" if base else key_vault.KEYS_FILE)
+        self.vault = KeyVault(base / "nostr_keys.json" if base else key_vault.keys_file())
         self.sessions = BunkerSessionPool(self.pool, vault=self.vault)
 
     def signer_for(self, profile, timeout_ms: int = 20_000):
@@ -918,9 +918,9 @@ class Report:
         # Said as checks, so they print the lines the runners count.
         self.check("nothing contacted a host off this computer", not VIOLATIONS,
                    "; ".join(VIOLATIONS[:10]) if VIOLATIONS else "guard saw no attempt")
-        if SLOT_ERRORS:
-            self.check("no exception escaped into Qt", False,
-                       " | ".join(e.strip().splitlines()[-1] for e in SLOT_ERRORS[:5]))
+        self.check("no exception escaped into Qt", not SLOT_ERRORS,
+                   " | ".join(e.strip().splitlines()[-1] for e in SLOT_ERRORS[:5])
+                   if SLOT_ERRORS else "no slot raised")
         failed = [c for c in self.checks if c["status"] == FAIL]
         remote = audit_remote_names()
         data = {"name": self.name, "seconds": round(time.time() - self.started, 1),

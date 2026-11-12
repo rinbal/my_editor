@@ -22,7 +22,7 @@ colour. The Drafts panel shows the same line (activity_line).
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Optional
 
 from PySide6.QtCore import QPoint, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPalette, QPen, QPixmap
@@ -39,10 +39,10 @@ from PySide6.QtWidgets import (
 
 import theme
 from i18n import _, ngettext
-import theme
 from . import appearance
+from .. import failures
 
-from ..imports.inbox_store import ROW_DONE, ROW_EXISTING, ROW_FAILED, Job
+from ..imports.inbox_store import JOB_FINISHED, ROW_DONE, ROW_EXISTING, ROW_FAILED, Job
 from ..imports.jobs import (
     STAGE_FULL_TEXT,
     STAGE_IMAGES,
@@ -63,6 +63,9 @@ _STAGES = {
 }
 
 
+# How many failed posts the problem line's tooltip names.
+_DETAIL_ROWS = 20
+
 def done_count(job: Job) -> int:
     return job.count(ROW_DONE, ROW_EXISTING)
 
@@ -72,9 +75,16 @@ def progress_text(job: Job) -> str:
     return _("{done} of {total}").format(done=done_count(job), total=job.total)
 
 
+def not_imported_text(job: Job) -> str:
+    """What did not happen when posts failed, never how many (lessons 36):
+    the post, all of them, or some."""
+    if job.count(ROW_FAILED) < job.total:
+        return _("Some posts weren't imported")
+    return _("Your post wasn't imported") if job.total == 1 else _("Your posts weren't imported")
+
+
 def status_text(job: Job) -> str:
     """What the import is doing, in words."""
-    failed = job.count(ROW_FAILED)
     if job.status == "running":
         return _("Creating drafts")
     if job.status == "pausing":
@@ -83,22 +93,19 @@ def status_text(job: Job) -> str:
         return _("Stopping after this post")
     if job.status == "paused":
         return _("Import paused")
-    if failed:
-        return ngettext("{count} post couldn't be imported",
-                        "{count} posts couldn't be imported", failed).format(count=failed)
+    if job.count(ROW_FAILED):
+        return not_imported_text(job)
     return _("Import finished")
 
 
 def counts_text(job: Job) -> str:
-    """"29 created, 2 were already there, 1 failed"."""
-    created, existing, failed = job.count(ROW_DONE), job.count(ROW_EXISTING), job.count(
-        ROW_FAILED)
+    """"29 created, 2 were already there": what was made; what was not
+    is said once on its own (JobCard's problem line)."""
+    created, existing = job.count(ROW_DONE), job.count(ROW_EXISTING)
     parts = [ngettext("{count} created", "{count} created", created).format(count=created)]
     if existing:
         parts.append(ngettext("{count} was already there", "{count} were already there",
                               existing).format(count=existing))
-    if failed:
-        parts.append(ngettext("{count} failed", "{count} failed", failed).format(count=failed))
     return ", ".join(parts)
 
 
@@ -124,15 +131,17 @@ def finished_text(job: Job) -> str:
     """The one sentence said when an import went through all its posts."""
     created, existing, failed = job.count(ROW_DONE), job.count(ROW_EXISTING), job.count(
         ROW_FAILED)
+    if failed:
+        # What did not happen and what to do, never how many were made
+        # of how many (lessons 36): the card says why.
+        return _("{what}: open the import’s progress and choose Try Again.").format(
+            what=not_imported_text(job))
     parts = [_("Import finished."),
              ngettext("{count} draft created.", "{count} drafts created.", created).format(
                  count=created)]
     if existing:
         parts.append(ngettext("{count} was already there.", "{count} were already there.",
                               existing).format(count=existing))
-    if failed:
-        parts.append(ngettext("{count} couldn't be imported.", "{count} couldn't be imported.",
-                              failed).format(count=failed))
     return " ".join(parts)
 
 
@@ -192,15 +201,17 @@ class ActivityButton(QToolButton):
         self.setVisible(job is not None)
         if job is None:
             return
-        failed = job.count(ROW_FAILED)
         if job.status in RUNNING or job.status == "paused":
             short = progress_text(job)
         else:
-            short = ngettext("{count} failed", "{count} failed", failed).format(count=failed)
+            short = _("Not all imported")
         self.setText(short)
         self.setIcon(ring_icon(job, self.palette(), dpr=self.devicePixelRatioF()))
+        # An import that ended is said by what happened, never how many
+        # of how many (lessons 36).
         spoken = _("Import progress: {status}, {progress}").format(
-            status=status_text(job), progress=progress_text(job))
+            status=status_text(job), progress=progress_text(job)) \
+            if job.status in RUNNING or job.status == "paused" else status_text(job)
         self.setAccessibleName(spoken)
         self.setToolTip(spoken)
 
@@ -282,11 +293,23 @@ class JobCard(QFrame):
         self.bar.setValue(done_count(job))
         self.progress.setText(progress_text(job))
         self.counts.setText(counts_text(job))
+        # An import that ended with posts not imported says that once, in
+        # its problem line, and counts nothing (lessons 36).
+        ended_short = job.status in JOB_FINISHED and bool(job.count(ROW_FAILED))
+        for line in (self.status, self.bar, self.progress, self.counts):
+            line.setVisible(not ended_short)
         stage = stage_text(job)
         self.stage.setText(stage)
         self.stage.setVisible(bool(stage))
-        self.problem.setText(self._problem(job))
-        self.problem.setVisible(bool(self.problem.text()))
+        title, sentence, detail = self._problem(job)
+        # A total failure's shape: the title in bold, its one sentence,
+        # each post's reason in the tooltip (lessons 36).
+        self.problem.setTextFormat(Qt.TextFormat.RichText if title
+                                   else Qt.TextFormat.PlainText)
+        self.problem.setText(failures.markup(title, sentence) if title else sentence)
+        self.problem.setAccessibleName(failures.spoken(title, sentence))
+        self.problem.setToolTip(detail)
+        self.problem.setVisible(bool(sentence))
         running = job.status in RUNNING
         if running:
             self.go_button.setText(_("Pause"))
@@ -300,20 +323,21 @@ class JobCard(QFrame):
         self.stop_button.setEnabled(job.status != "stopping")
 
     @staticmethod
-    def _problem(job: Job) -> str:
-        """Why it paused, and what failed (the first three)."""
-        lines: List[str] = []
-        if job.error:
-            lines.append(job.error)
+    def _problem(job: Job) -> tuple:
+        """``(title, sentence, detail)``: why it paused, in its one
+        sentence; or, when posts failed, what did not happen, the first
+        one's sentence (each post's in ``detail``, for the tooltip), never
+        a count (lessons 36)."""
         failed = [row for row in job.rows if row.status == ROW_FAILED]
-        for row in failed[:3]:
-            lines.append(_("“{title}”: {reason}").format(
-                title=row.title or _("Untitled"), reason=row.error or _("Unknown problem")))
-        if len(failed) > 3:
-            more = len(failed) - 3
-            lines.append(ngettext("and {count} more", "and {count} more", more).format(
-                count=more))
-        return "\n".join(lines)
+        if job.error and (job.status == "paused" or not failed):
+            return "", job.error, ""
+        if not failed:
+            return "", "", ""
+        detail = "\n".join(_("“{title}”: {reason}").format(
+            title=row.title or _("Untitled"), reason=row.error or _(failures.CHECK_CONNECTION))
+            for row in failed[:_DETAIL_ROWS])
+        return (not_imported_text(job), failed[0].error or _(failures.CHECK_CONNECTION),
+                detail)
 
     def _go(self) -> None:
         job = self._job

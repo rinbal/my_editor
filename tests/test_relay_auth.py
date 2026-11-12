@@ -8,10 +8,11 @@ What must hold:
   for drafts, a membership's. Any other relay that asks is told nothing.
 - The answer is signed by the account's own signer, and only an answer
   for this relay, this challenge and this account is sent.
-- A signer app that says no is told apart from other failures, so the
-  window can say so; a key kept here never "declines".
-- What the person sees: "Signing in to …", and plain words when it did
-  not work.
+- A signer app that says no is told apart from other failures, for the
+  log; a key kept here never "declines".
+- What the person sees: nothing (lessons 36). A sign-in to one relay,
+  begun, refused or not done, is a partial failure; which relay, and
+  why, is kept for the log only.
 """
 
 import os
@@ -165,27 +166,44 @@ def test_without_an_account_nobody_signs_in(pool):
     assert done == [(False, NOT_CHOSEN)]
 
 
-def test_the_window_says_what_happened(qt_app):
-    from main_window import MainWindow
-    window = MainWindow.__new__(MainWindow)
-    shown = []
+WINDOW_SCRIPT = r"""
+import json, os, sys
+sys.path.insert(0, sys.argv[1])
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+from PySide6.QtWidgets import QApplication
+app = QApplication(sys.argv[:1])
+import logging, main_window
+from nostr.relay import NOT_CHOSEN
+from nostr.relay_auth import DECLINED
+logged = []
+handler = logging.Handler()
+handler.emit = lambda record: logged.append(record.getMessage())
+logging.getLogger("main_window").addHandler(handler)
+logging.getLogger("main_window").setLevel(logging.INFO)
+w = main_window.MainWindow()
+said = []
+w.status.messageChanged.connect(lambda text: said.append(text) if text else None)
+pool = w._relay_pool
+mine, stranger = "wss://mine.example", "wss://stranger.example"
+pool.signing_in.emit(mine)
+pool.sign_in_failed.emit(mine, DECLINED, False)
+pool.sign_in_failed.emit(mine, "restricted: members only", True)
+pool.sign_in_failed.emit(mine, "relay disconnected", False)
+pool.sign_in_failed.emit(stranger, NOT_CHOSEN, False)
+app.processEvents()
+r = {"said": said, "logged": logged}
+print("RESULT " + json.dumps(r))
+"""
 
-    class Status:
-        def showMessage(self, text, _ms, **context):
-            shown.append(text)
 
-    window.status = Status()
-    MainWindow._on_relay_signing_in(window, MINE)
-    MainWindow._on_relay_sign_in_failed(window, MINE, DECLINED, False)
-    MainWindow._on_relay_sign_in_failed(window, MINE, "restricted", True)
-    MainWindow._on_relay_sign_in_failed(window, MINE, "relay disconnected", False)
-    MainWindow._on_relay_sign_in_failed(window, STRANGER, NOT_CHOSEN, False)
-    assert shown == [
-        f"Signing in to {MINE}…",
-        f"{MINE} asks you to sign in, and your signer app declined.",
-        f"{MINE} didn’t accept your sign-in.",
-        f"Couldn’t sign in to {MINE}.",
-    ]
+def test_the_window_says_nothing_of_a_sign_in_to_one_relay(tmp_path):
+    # Lessons 36: a relay's sign-in, begun, refused or not done, is a
+    # partial failure: no relay name and no line, only the log.
+    from tests.app_process import run_window_script
+    r = run_window_script(WINDOW_SCRIPT, tmp_path)
+    assert r["said"] == []
+    assert len(r["logged"]) == 3 and all(MINE in line for line in r["logged"])
+    assert not any(STRANGER in line for line in r["logged"])     # never asked: nothing
 
 
 def test_every_change_of_account_ends_the_other_accounts_sign_ins(qt_app):

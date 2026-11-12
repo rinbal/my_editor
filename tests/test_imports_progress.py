@@ -116,6 +116,7 @@ class TestTheCard:
         win._show_job_card()
         card = win.job_card
         assert card.go_button.text() == "Pause"
+        assert not any(w.isHidden() for w in (card.status, card.bar, card.progress, card.counts))
         card.go_button.click()
         assert card.status.text() == "Pausing after this post"
         jobs.held.pop(0).play("ok")
@@ -159,14 +160,25 @@ class TestTheCard:
         settle()
         job = controller.activity()
         assert job.status == "partial"
-        assert win.activity_button.text() == "1 failed"
-        assert "1 couldn't be imported" in win.banner.label.text()
+        # Lessons 36: what did not happen, never how many.
+        assert win.activity_button.text() == "Not all imported"
+        assert win.activity_button.accessibleName() == "Your post wasn't imported"
+        assert win.banner.label.text() == (
+            "Your post wasn't imported: open the import’s progress and choose Try Again.")
         row = next(r for r in range(model.rowCount()) if model.post(r).title == failing)
         assert model.word_for(model.post(row)) == "Failed"
         win._show_job_card()
         card = win.job_card
         assert card.go_button.text() == "Try Again"
-        assert f"“{failing}”: could not read it" in card.problem.text()
+        from nostr.failures import markup
+        assert card.problem.text() == markup("Your post wasn't imported", "could not read it")
+        assert card.problem.accessibleName() == "Your post wasn't imported. could not read it."
+        assert card.problem.toolTip() == f"“{failing}”: could not read it"
+        # Said once, in the problem line: no status repeating it, no
+        # bar, no "0 of 1", no "0 created".
+        assert [w.isHidden() for w in (card.status, card.bar, card.progress, card.counts)] == \
+            [True] * 4
+        assert not card.problem.isHidden()
         jobs.script = {}
         card.go_button.click()
         settle()
@@ -225,7 +237,12 @@ def test_the_words():
     assert activity_line(paused) == "Import paused, 1 of 2"
     assert stage_text(paused) == ""
     partial = job("partial", rows=[row("done"), row("failed"), row("failed")])
-    assert status_text(partial) == "2 posts couldn't be imported"
+    assert status_text(partial) == "Some posts weren't imported"
+    assert counts_text(partial) == "1 created"              # never how many failed
+    assert finished_text(partial) == ("Some posts weren't imported: open the import’s progress "
+                                      "and choose Try Again.")
+    assert status_text(job("partial", rows=[row("failed")])) == "Your post wasn't imported"
+    assert status_text(job("partial", rows=[row("failed")] * 2)) == "Your posts weren't imported"
     assert activity_line(None) == ""
     done = job("completed", rows=[row("done"), row("existing"), row("existing")])
     assert finished_text(done) == ("Import finished. 1 draft created. 2 were already there.")

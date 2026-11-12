@@ -177,7 +177,8 @@ class TestReadingAFile:
     def test_a_file_that_cannot_be_read(self, tmp_path):
         with pytest.raises(ValueError) as failure:
             read_export(str(tmp_path / "missing.xml"))
-        assert str(failure.value).startswith("Couldn't read that file")
+        assert str(failure.value) == (
+            "That file couldn't be read: check that it is still there and try again.")
 
 
 @pytest.mark.parametrize("address, whole", [

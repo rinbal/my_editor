@@ -74,14 +74,16 @@ def _copy_passes(printer: QPrinter, pages: list) -> list:
     return [page for page in pages for _ in range(copies)]
 
 
-def print_document(doc, printer: QPrinter, *, image_roots=(), asset_resolver=None) -> int:
+def print_document(doc, printer: QPrinter, *, image_roots=(), asset_resolver=None,
+                   remote_pictures=None) -> int:
     """Print a note (QTextDocument). Returns the number of pages printed.
 
-    ``image_roots`` and ``asset_resolver`` mean what they mean for
-    export_pdf(): only images from trusted places are read.
+    ``image_roots``, ``asset_resolver`` and ``remote_pictures`` mean what
+    they mean for export_pdf(): only images from trusted places are read,
+    and a web picture is printed from the bytes the caller gathered.
     """
     paged = paginate(doc, printer, printer.resolution(), image_roots=image_roots,
-                     asset_resolver=asset_resolver)
+                     asset_resolver=asset_resolver, remote_pictures=remote_pictures)
     pages = selected_pages(printer, paged.page_count)
     if not pages:
         return 0

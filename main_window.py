@@ -21,14 +21,14 @@ from send2trash import send2trash
 import shiboken6
 from PySide6.QtCore import (
     QBuffer, QByteArray, QDateTime, QEvent, QIODevice, QObject, Qt, QLocale,
-    QMarginsF, QSize,
+    QSize,
     QTimer,
     QUrl, QFileSystemWatcher, QMimeData,
 )
 from PySide6.QtNetwork import QLocalServer
 from PySide6.QtGui import (
     QAction, QActionGroup, QKeySequence, QTextCursor, QTextDocument, QTextCharFormat, QColor,
-    QImage, QPageLayout, QPageSize, QPixmap, QGuiApplication, QDesktopServices, QFontMetrics,
+    QImage, QPixmap, QGuiApplication, QDesktopServices, QFontMetrics,
     QTextImageFormat
 )
 from PySide6.QtPrintSupport import QPrintDialog, QPrintPreviewDialog
@@ -53,13 +53,14 @@ from speech import Speech
 from atomic_file import (
     decode_text_as_written, encode_text_document, newline_of, one_writer,
     read_json, save_document,
-    save_text_document, with_newlines, write_json,
+    save_text_document, with_newlines, write_bytes, write_json,
 )
 import locked_files
 import password_alert
 from locked_files import Lock, WrongPassword
 import diagnostics
 import dictation
+import user_dirs
 from dictation import models as dictation_models, on_device, setup as dictation_setup
 from dictation.indicator import DictationIndicator
 from dictation.preferences import Preferences
@@ -89,10 +90,9 @@ from preview_pane import (
 )
 from nostr import preview as preview_module
 from nostr.preview import Article as PreviewArticle
-from doc_walk import (
-    image_positions, iter_block_runs, iter_blocks, iter_image_names,
-    serialize_plain_with_images,
-)
+from nostr.rss.urls import is_web
+from doc_walk import image_positions, iter_block_runs, iter_blocks, iter_image_names
+from plain_writer import serialize_plain_with_images
 from markdown_writer import (
     document_to, document_to_markdown, has_local_only_formatting, holds_faithfully,
     image_markdown, read_markdown,
@@ -107,6 +107,14 @@ from library_window import FILE_LIST_PANEL, SIDEBAR_PANEL, LibraryWindow
 from sheet_window import SheetWindow
 import link_url
 import paste
+import bare_pictures
+import export_pictures
+import photo_group
+import photo_group_actions
+import photo_group_drawing
+import photo_group_menu
+import photo_group_view
+import picture_crop
 import rich_text
 import image_safety
 import url_safety
@@ -122,7 +130,7 @@ from updater import (
     sweep_stale_downloads,
 )
 from alerts import (
-    CANCEL, DEFAULT, DESTRUCTIVE, NORMAL, Button, ask,
+    CANCEL, DEFAULT, DESTRUCTIVE, NORMAL, Button, ask, ask_try_again,
     confirm_destructive, inform,
 )
 from update_dialog import UpdateDialog, WhatsNewDialog
@@ -131,7 +139,7 @@ from update_flow import AUTOMATIC, guide_url, plan_for
 import theme
 from nostr.ui.context_widgets import ContextStatusBar, ContextTabBar
 from export_html import (
-    MEDIA_EMBED_LIMIT, document_to_html, image_data_uri, normalize_after_set_html,
+    MEDIA_EMBED_LIMIT, document_to_html, image_data_uri, open_page,
     sniff_image_ext)
 from find_replace import find_all, replace_all, replace_match, visible_matches
 from word_count import count_words, reading_minutes
@@ -230,6 +238,7 @@ from nostr.ui.reference_popover import ReferencePopover
 from nostr.ui.article_details_panel import ArticleDetailsPanel, DEFAULT_WIDTH as ARTICLE_DETAILS_WIDTH
 from nostr.ui.article_headers import ArticleHeaders
 from nostr import refs
+from nostr.failures import CHECK_CONNECTION, spoken as failure_spoken
 from nostr.blossom.errors import friendly_message
 from nostr.blossom.names import MediaNames
 from nostr.blossom.hashes import hash_from_url
@@ -238,7 +247,7 @@ from nostr.media_server_list import publish_server_list, server_list_tags
 from nostr.outbox import writer as outbox_writer
 from nostr.profile_editing import ProfileEditing
 from nostr.relay import NOT_CHOSEN
-from nostr.relay_auth import DECLINED, AccountSignIn
+from nostr.relay_auth import AccountSignIn
 from nostr.state import NostrState
 from nostr.ui.cover_field import MediaServices
 from nostr.ui.profile_window import ProfileWindow
@@ -247,6 +256,7 @@ from nostr.blossom.plan import get_effective_max_file
 from nostr.blossom.server_list import UserServerList
 from nostr.blossom.store import MediaFile, MediaStore
 from nostr.bunker import BunkerSessionPool
+from nostr.relay_caps import RelayCapsReader
 from nostr.contacts import ContactListFetcher
 from nostr.draft_store import DraftState, DraftStore
 from nostr.draft_deletions import DraftDeletions
@@ -266,10 +276,11 @@ from nostr.imports.constants import SOURCE_TAG as IMPORT_SOURCE_TAG
 from nostr.article_details import (
     ArticleDetails, default_title, front_matter_with)
 from nostr.first_publications import FirstPublications
+from nostr.standup.link_names import LinkNameLock, SubmittedMarks
+from nostr.standup.servers import configured_server
 from nostr.drafts import (
     INNER_KIND_LONG_FORM,
     INNER_KIND_SHORT_NOTE,
-    MAX_INNER_PAYLOAD_BYTES,
     SUPPORTED_INNER_KINDS,
     build_inner_event,
     serialize_inner_event,
@@ -278,28 +289,33 @@ from nostr.known_people import KnownPeople, Person
 from nostr.media.assets import ASSET_SCHEME, AssetState, asset_key, parse_asset_key
 from nostr.imports.sources.nostr import RelayQueryAdapter
 from nostr.media.manager import MAX_MEDIA_BYTES, AssetManager
-from nostr.media.media_visibility import MediaVisibility
+from nostr.media.media_visibility import PRIVATE, MediaVisibility
 from nostr.media.private_library import PrivateLibrary
 from nostr.media.upload_wait import UploadWait
 from nostr.media.publish_copy import PublicCopyMaker
 from nostr.media.visibility import PublicLedger
-from nostr.metadata import AvatarLoader, ProfileMetadataFetcher, can_receive_zaps
+from nostr.metadata import AvatarLoader, ProfileMetadataFetcher, can_receive_zaps, zap_address
+from nostr.ui.standup_names import ProfileNames
 from nostr.outbox.directory import RelayDirectory
 from nostr.profiles import Profile, ProfileStore, short_npub
+from nostr.publish_pipeline import answers_detail, kept_by_relay, not_taken_words
 from nostr.publisher import (
+    DRAFT_NOT_SAVED,
     DraftBulkDeleteJob,
     DraftPublishJob,
     PublishedMedia,
+    draft_size_problem,
     file_link_names,
     library_audio_video_in,
     slugify,
 )
 from nostr.relay import RelayPool
 from nostr.search import Nip50SearchClient
+from nostr.signer_limits import size_detail
 from nostr.ui.connect_dialog import ConnectDialog
 from nostr.ui.profile_chip import ProfileChip
 from nostr.ui.draft_conflict_banner import DraftConflictBanner
-from nostr.ui.drafts_panel import DEFAULT_PANEL_WIDTH, DraftsPanel
+from nostr.ui.drafts_panel import DraftsPanel
 from nostr.draft_relays import PrivateDraftRelays
 from nostr.published import PublishedList
 from nostr.ui.draft_relays_sheet import DraftRelaysSheet
@@ -312,6 +328,14 @@ from nostr.ui.media_library_dialog import MediaLibraryDialog, format_size
 from nostr.ui.media_saver import MediaSaver, save_failure, saves_failure
 from nostr.ui.media_servers_dialog import MediaServersDialog
 from nostr.ui.publish_article_dialog import PublishArticleDialog
+from nostr.standup import drafting
+from nostr.ui.standup_submit import StandupWriter, thumbnail
+from nostr.ui.signer_approval import SignerApprovals
+from nostr.ui.standup_publications import PublicationLogos
+from nostr.ui.standup_submit_sheet import SubmitSheet
+from nostr.ui.submission_pill import SubmissionPill
+from nostr.ui.submissions_host import Ports as SubmissionPorts, SubmissionsHost
+from nostr.ui.submissions_view import SubmissionsView, add_to_panel as add_submissions_view
 from nostr.ui.publish_copy_dialog import resolve_pick
 from nostr.ui.publish_note_dialog import PublishNoteDialog
 from nostr.ui.save_destination_dialog import SaveDestination, SaveDestinationDialog
@@ -466,6 +490,11 @@ def spelling_language_names(tags) -> list:
         named.append((tag, name))
     return sorted(named, key=lambda pair: pair[1].casefold())
 
+class PictureNotShown(Exception):
+    """Quick Look cannot show a picture; its text says why and what to do,
+    in the person's language."""
+
+
 class MainWindow(QMainWindow):
     def __init__(self, initial_path: str | None = None):
         super().__init__()
@@ -537,10 +566,14 @@ class MainWindow(QMainWindow):
         # over the documents, and in sight whatever the tab or the toolbar.
         self.update_button = UpdateButton()
         self.update_button.update_theme(self.is_dark_theme)
+        # The status of the article in front, where it is submitted by the
+        # account in use (plan 10.4): beside the tabs, and only then.
+        self.submission_pill = SubmissionPill(is_dark=self.is_dark_theme)
         corner = QWidget()
         corner_row = QHBoxLayout(corner)
         corner_row.setContentsMargins(0, 0, 4, 0)
         corner_row.setSpacing(6)
+        corner_row.addWidget(self.submission_pill)
         corner_row.addWidget(self.update_button)
         corner_row.addWidget(self.plus_btn)
         corner_row.addWidget(self.profile_chip)
@@ -658,15 +691,25 @@ class MainWindow(QMainWindow):
         # Keys kept on this computer, for accounts that chose that over a
         # signer app (Create Account, Restore Account).
         self._key_vault = KeyVault()
+        # What a signer connection's relays carry is read as it reattaches
+        # (contract 12.5), so no request is longer than they take.
         self._session_pool = BunkerSessionPool(self._relay_pool, parent=self,
-                                               vault=self._key_vault)
+                                               vault=self._key_vault,
+                                               relay_caps=RelayCapsReader(parent=self))
+        # An approval a paired signer app asks for in a browser: opened
+        # once when it is safe, and said once in the status bar (audit F8).
+        self._signer_approvals = SignerApprovals(
+            lambda text: self.status.showMessage(text, 8000, nostr=True), parent=self)
+        self._session_pool.auth_challenge.connect(self._signer_approvals.asked)
         # A relay of the account's own that asks for a sign-in (NIP-42)
         # gets one, signed by the account's signer; no other relay does.
         self._relay_pool.sign_in = AccountSignIn(
             profile=lambda: self._profile_store.default(),
             session_pool=self._session_pool, directory=self._relay_directory,
             entitled=self._entitled_relays)
-        self._relay_pool.signing_in.connect(self._on_relay_signing_in)
+        # A sign-in to one relay that did not work is a partial failure,
+        # said nowhere (lessons 36): what it kept from working says so
+        # itself, once, if nothing else could do it.
         self._relay_pool.sign_in_failed.connect(self._on_relay_sign_in_failed)
         # Creating, restoring, backing up and signing out of accounts, and
         # telling the network about a new one (nostr/account_controller.py).
@@ -694,6 +737,10 @@ class MainWindow(QMainWindow):
         # The own-profile chip refresh is still triggered explicitly so we can
         # also flip the menu if the active profile's avatar landed.
         self._avatars.avatar_added.connect(self._on_avatar_added)
+        # Publications' logos, by address, only from the STANDUP server's
+        # /api/avatars (contract 12.9): a loader of their own, so a logo
+        # never lands among the people's avatars (F5 M5).
+        self._publication_logos = PublicationLogos(AvatarLoader(parent=self).fetch, parent=self)
 
         # Mentions infrastructure: cached known people, NIP-50 search,
         # background contact-list fetcher. All process-wide singletons.
@@ -719,6 +766,9 @@ class MainWindow(QMainWindow):
         # When the articles published from here first went out, for when
         # the relays cannot tell (an edit keeps that date).
         self._first_publications = FirstPublications()
+        # The texts submitted from here, per account: their link names
+        # stay after a restart too (RG-M2r2a 1).
+        self._submitted_marks = SubmittedMarks()
         self._draft_sync = DraftSync(
             relay_pool=self._relay_pool,
             relay_directory=self._relay_directory,
@@ -939,6 +989,9 @@ class MainWindow(QMainWindow):
             # warm so opening the panel later is instant.
             self._draft_sync.start_for(active)
             self._draft_deletions.start_for(active)
+            # Its submissions are followed from the start (plan 10.4), once
+            # the window is up: the list read, the lookup without a signer.
+            QTimer.singleShot(0, self._follow_submissions)
             # An account created here whose setup was left for later is
             # finished now, once the window is up.
             QTimer.singleShot(0, lambda: self._accounts.profile_activated(
@@ -1493,7 +1546,10 @@ class MainWindow(QMainWindow):
         ed.set_resource_resolver(self._resolve_asset_image, ASSET_SCHEME)
         ed.set_object_lookup(self._outside_of)
         ed.set_local_image_resolver(lambda name, e=ed: self._resolve_local_image(e, name))
+        ed.photos.stored_name = lambda name, e=ed: self._stored_name(e, name)
         ed.set_web_image_resolver(self._resolve_web_image)
+        ed.picture_look_requested.connect(lambda name, e=ed: self._look_at_picture(e, name))
+        ed.set_picture_look_check(self._picture_look_shown)
         ed.set_library_check(lambda url: self._library_file_at(url) is not None)
         ed.set_media_badges(lambda name, e=ed: self._media_badge(e, name))
         ed.set_drop_check(self._accepts_drop)
@@ -1503,6 +1559,11 @@ class MainWindow(QMainWindow):
         ed.visible_area_changed.connect(lambda e=ed: self._on_visible_area_changed(e))
         ed.urls_dropped.connect(self._handle_dropped_urls)
         ed.set_context_menu_filler(self._fill_editor_context_menu)
+        ed.photos.changed.connect(
+            lambda e=ed: e is self.current_editor() and self._update_photo_commands())
+        ed.photos.add_requested.connect(
+            lambda place, paths, e=ed: self._add_photos(e, place, paths))
+        ed.photos.crop_requested.connect(lambda position, e=ed: self._crop_photo(e, position))
         ed.set_structure_check(lambda e=ed: self._editor_kind(e) == "rich")
         ed.set_local_formats_check(lambda e=ed: self._keeps_underline(e))
         ed.set_pictures_check(lambda e=ed: self._keeps_pictures(e))
@@ -1527,10 +1588,12 @@ class MainWindow(QMainWindow):
     def _wants_selection_bar(self, ed) -> bool:
         """Whether the format bar may show over ``ed``'s selection: chosen
         in Settings, in the tab in front, where formatting applies (a
-        document that holds Markdown), while it is being written."""
+        document that holds Markdown), while it is being written; not over
+        a picture selected (words' styles mean nothing to it, and Escape
+        must reach a picture being moved)."""
         return (self.format_bar_on_selection and ed is self.current_editor()
                 and self._editor_kind(ed) == "rich" and not self._shows_preview_only(ed)
-                and not ed.isReadOnly())
+                and not ed.isReadOnly() and ed.photos.current() is None)
 
     def _set_format_bar_on_selection(self, on: bool) -> None:
         """Settings' Show the Format Bar When Selecting Text, remembered."""
@@ -1789,6 +1852,8 @@ class MainWindow(QMainWindow):
         self._update_knit_actions()
         self._update_print_actions()
         self._update_zoom_commands()
+        self._update_submit_command()
+        self._update_submission_pill()
         # The note a file viewer's Insert into Note goes to: the one in
         # front last.
         front = self.current_editor()
@@ -1828,7 +1893,11 @@ class MainWindow(QMainWindow):
         """Count the current document's words again (after it changed, or
         another tab came to the front)."""
         ed = self.current_editor()
-        self._document_words = count_words(ed.toPlainText()) if ed is not None else 0
+        # A photo group's captions count (they are drawn with its
+        # pictures, not text of the document).
+        self._document_words = (count_words(ed.toPlainText()) + sum(
+            count_words(caption) for caption in photo_group.captions(ed.document()))
+            if ed is not None else 0)
         self._show_word_count(ed)
 
     def _show_word_count(self, ed) -> None:
@@ -2417,6 +2486,31 @@ class MainWindow(QMainWindow):
                 ("add_column_after", _("Add Column After")),
                 ("delete_row", _("Delete Row")), ("delete_column", _("Delete Column")),
                 ("delete_table", _("Delete Table")))]
+        # A picture's commands (photo_group_editing): Format > Photo, the
+        # picture's context menu and the chips on it. The move keys are
+        # EDITING.md's: Control-Command-arrows on a Mac, Ctrl+Shift+arrows
+        # elsewhere (Notion's and Google Docs' keys for moving a block);
+        # none of them was used. Their titles follow the picture
+        # (_update_photo_commands). Add Photos… is also the slash menu's
+        # Photo Group…: from the words, a new group at the caret.
+        photo_keys = {
+            name: platform_keys(f"Meta+Ctrl+{arrow}", f"Ctrl+Shift+{arrow}")
+            for name, arrow in ((photo_group_menu.LEFT, "Left"),
+                                (photo_group_menu.RIGHT, "Right"),
+                                (photo_group_menu.UP, "Up"), (photo_group_menu.DOWN, "Down"))}
+        photo_titles = photo_group_menu.base_titles()
+        self.act_photo = {}
+        for name in photo_group_menu.COMMANDS:
+            adding = name == photo_group_menu.ADD
+            self.act_photo[name] = add(
+                Command(f"format.photo.{name}", photo_titles[name], FORMAT, photo_keys.get(name),
+                        checkable=name == photo_group_menu.LARGE,
+                        keywords=(_("photo"), _("picture"), _("image"), _("group"))
+                        # Both spellings, in every language: "/foto" in English too.
+                        + (("photo", "foto") if adding else ()),
+                        slash_section=slash_menu.INSERT if adding else "",
+                        insert_title=_("Photo Group\u2026") if adding else ""),
+                triggered=lambda n=name: self._photo_command(n))
         # A workbook's sheets: Format > Sheet, while a spreadsheet is in
         # front (as Numbers has them in its Table menu); the sheet bar's
         # context menu has them too.
@@ -2747,6 +2841,13 @@ class MainWindow(QMainWindow):
             Command("nostr.publish_article", _("Publish as Article…"), NOSTR,
                     "Ctrl+Shift+A", nostr=True, listed_as=_("Publish as article"), keywords=("long", "blog")),
             triggered=self._on_nostr_publish_article)
+        # The article, end to end encrypted, to a STANDUP publication's
+        # editorial team: enabled for an article (see _update_submit_command).
+        self.act_nostr_submit = add(
+            Command("nostr.submit_publication", _("Submit to a Publication…"), NOSTR,
+                    nostr=True, listed_as=_("Submit to a publication"),
+                    keywords=("standup", "editorial", "redaktion")),
+            triggered=self._on_nostr_submit_publication)
         # Media (Blossom) - browse the user's uploaded blobs, upload new
         # ones, or insert one into the current document at the cursor.
         self.act_nostr_media = add(
@@ -3084,6 +3185,17 @@ class MainWindow(QMainWindow):
             if index in (2, 4, 6):
                 self.m_table.addSeparator()     # rows | columns | delete | the table
             self.m_table.addAction(action)
+        # Format > Photo, as Format > Table: what can be done to the picture
+        # selected, dimmed where it cannot (the menu bar's rule).
+        self.m_photo = m_format.addMenu(_("Photo"))
+        self.m_photo.setToolTipsVisible(True)
+        for names in photo_group_menu.MENU_SECTIONS:
+            if not self.m_photo.isEmpty():
+                self.m_photo.addSeparator()
+            for name in names:
+                self.m_photo.addAction(self.act_photo[name])
+        self.m_photo.aboutToShow.connect(self._update_photo_commands)
+        m_format.aboutToShow.connect(self._update_photo_commands)
         self.m_sheet = m_format.addMenu(_("Sheet"))
         for index, action in enumerate(self.act_sheet_commands):
             if index == 3:
@@ -3143,6 +3255,8 @@ class MainWindow(QMainWindow):
         m_nostr = self.menuBar().addMenu("&Nostr")
         m_nostr.addAction(self.act_nostr_publish_note)
         m_nostr.addAction(self.act_nostr_publish_article)
+        m_nostr.addAction(self.act_nostr_submit)
+        m_nostr.aboutToShow.connect(self._update_submit_command)
         m_nostr.addSeparator()
         m_nostr.addAction(self.act_nostr_media)
         m_nostr.addAction(self.act_nostr_insert_image)
@@ -3322,6 +3436,23 @@ class MainWindow(QMainWindow):
         self._published_view.set_preview_image_loader(self._media_image_loader)
         self._published_view.set_preview_pictures(self._text_picture, self._web_images.ready)
         add_published_view(self._drafts_panel, self._published_view)
+        # Einreichungen, the third view: what the account in use submitted
+        # to publications, and each one's detail (plan 10.4).
+        # The editors and the people taking part by their profiles' names
+        # (M-4), read once each, after the ones this window knows.
+        self._profile_names = ProfileNames.on_relays(
+            self._relay_pool, self._relay_directory, known=self._known_name, parent=self)
+        self._submissions_view = SubmissionsView(
+            name_of=self._profile_names.name, avatar_of=self._avatars.get,
+            is_dark=self.is_dark_theme, logo_of=self._publication_logos.get)
+        add_submissions_view(self._drafts_panel, self._submissions_view,
+                             server=configured_server())
+        self._submissions = SubmissionsHost(self._submission_ports(),
+                                            view=self._submissions_view,
+                                            pill=self.submission_pill,
+                                            name_of=self._profile_names.name, parent=self)
+        self._publication_logos.changed.connect(self._submissions.logo_arrived)
+        self._profile_names.learned.connect(self._submissions.names_learned)
         self._drafts_panel.view_changed.connect(self._follow_account_in_published)
         self._drafts_panel.view_changed.connect(self._update_refresh_command)
         self._published_view.open_requested.connect(self._on_published_open)
@@ -3357,6 +3488,7 @@ class MainWindow(QMainWindow):
         self._article_details_panel.changed.connect(
             lambda details: self._set_article_details(self.current_editor(), details))
         self._article_details_panel.cover_uploaded.connect(self._cover_uploaded_for)
+        self._article_details_panel.check_link_name.connect(self._check_link_name)
         # An article's cover, title and summary on its page (decision 1 of
         # the Article Details review), for the tabs that are articles.
         self._article_headers = ArticleHeaders(
@@ -3381,7 +3513,7 @@ class MainWindow(QMainWindow):
             default_width=ARTICLE_DETAILS_WIDTH, on_fold=self._article_details_folded)
         self._side_panels.register(
             DRAFTS_PANEL, self._drafts_panel, side=RIGHT, collapse_rank=1,
-            default_width=DEFAULT_PANEL_WIDTH, on_fold=self._drafts_folded)
+            default_width=self._drafts_panel.default_width(), on_fold=self._drafts_folded)
 
         self.setCentralWidget(self._central_splitter)
         # The panels' headers line up with the toolbar and the tab row,
@@ -3978,6 +4110,10 @@ class MainWindow(QMainWindow):
             if active_job is not None:
                 active_job.cancel()
                 editor._active_stash_job = None
+            # An export waiting for its pictures goes quietly.
+            waiting = getattr(editor, "_export_waiting", None)
+            if waiting is not None:
+                waiting()
         self.tabs.removeTab(index)
         if editor is not None:
             # The tab goes, its editor and document with it, once what is
@@ -4247,10 +4383,11 @@ class MainWindow(QMainWindow):
         store = getattr(self, "_media_store", None)
         return store.files.get(sha) if sha and store is not None else None
 
-    def _handle_dropped_images(self, paths, step: str = N_("Drag")):
+    def _handle_dropped_images(self, paths, step: str = N_("Drag"), place=None):
         """Images were dropped on the window: adopt and insert them now, as
         one step of Undo called ``step`` (an N_ word; a paste's own
-        name stays the paste's).
+        name stays the paste's): at the caret, or at ``place`` (a
+        photo_group_actions.Place: a slot of a group, beside a picture).
 
         The insert never waits for a signer or a server, and asks nothing:
         a picture added stays on this computer until the document is
@@ -4274,15 +4411,30 @@ class MainWindow(QMainWindow):
 
         adopted = []
         refused = []
-        with ed.undo_step(step):
+        if place is not None:
+            # Taken in first, then put at the place as one step.
+            images = []
             for path in paths:
-                alt = os.path.splitext(os.path.basename(path))[0] or "image"
-                asset = self._asset_manager.adopt_file(path, alt=alt)
+                # The file's name names the asset; the picture has no
+                # description until the writer gives it one.
+                name = os.path.splitext(os.path.basename(path))[0] or "image"
+                asset = self._asset_manager.adopt_file(path, alt=name)
                 if asset is None:
                     refused.append(os.path.basename(path))
                     continue
-                self._insert_asset(ed, asset, alt=alt)
+                images.append(self._asset_image(ed, asset, alt=""))
                 adopted.append(asset)
+            ed.photos.insert(place, images, step)
+        else:
+            with ed.undo_step(step):
+                for path in paths:
+                    name = os.path.splitext(os.path.basename(path))[0] or "image"
+                    asset = self._asset_manager.adopt_file(path, alt=name)
+                    if asset is None:
+                        refused.append(os.path.basename(path))
+                        continue
+                    self._insert_asset(ed, asset, alt="")
+                    adopted.append(asset)
 
         if refused:
             self.status.showMessage(
@@ -4301,18 +4453,23 @@ class MainWindow(QMainWindow):
             self._asset_manager.request_upload(asset.sha256)
 
     def _insert_image(self) -> None:
-        """Insert > Image…: a picture file chosen in the system's dialog,
-        put in at the caret exactly as dropping it there would
-        (_handle_dropped_images: one step of Undo, kept on this computer
-        until the document is published)."""
+        """Insert > Image… (the toolbar's "+" too): picture files chosen in
+        the system's dialog, put in at the caret exactly as dropping them
+        there would (_handle_dropped_images: one step of Undo, kept on this
+        computer until the document is published). Several chosen at once
+        are a photo group of their own, where the caret's paragraph allows
+        one (PhotoEditing.free_place)."""
         ed = self.current_editor()
         if ed is None or self._editor_kind(ed) != "rich":
             return
         patterns = " ".join("*" + ext for ext in sorted(_IMAGE_EXTS))
-        path, _filter = QFileDialog.getOpenFileName(
+        paths, _filter = QFileDialog.getOpenFileNames(
             self, _("Insert Image"), "", _("Images ({patterns})").format(patterns=patterns))
-        if path:
-            self._handle_dropped_images([file_paths.normalize(path)], N_("Image"))
+        paths = [file_paths.normalize(path) for path in paths]
+        if len(paths) == 1:
+            self._handle_dropped_images(paths, N_("Image"))
+        elif paths:
+            self._handle_dropped_images(paths, N_("Add Photos"), place=ed.photos.free_place())
 
     def _handle_dropped_text(self, text: str):
         ed = self.current_editor()
@@ -4357,6 +4514,7 @@ class MainWindow(QMainWindow):
         ed.clear_highlights()
         ext = path.lower()
         front = None
+        as_read = content
         if ext.endswith('.md'):
             front, content = front_matter.split(content)
             if front is not None:
@@ -4365,10 +4523,10 @@ class MainWindow(QMainWindow):
                     else front.newline
         content = with_newlines(content)
         if ext.endswith(('.html', '.htm')):
-            ed.setHtml(content)
-            # Lists stay real lists (the editor edits them as such); what
-            # the reader leaves behind is tidied.
-            normalize_after_set_html(ed.document())
+            # Lists stay real lists (the editor edits them as such), the
+            # page's figures are the paragraphs they were written from, and
+            # what the reader leaves behind is tidied.
+            open_page(ed, content)
             ed.document().clearUndoRedoStacks()
         elif ext.endswith('.md'):
             # The article's details are the file's front matter (Q-F): shown
@@ -4378,6 +4536,13 @@ class MainWindow(QMainWindow):
             ed._front_matter = front
             tab_details.hold(ed, None)
             self._load_markdown(ed, content)
+            # The file as read: saved untouched, it is written back byte
+            # for byte (_untouched); the first edit lets go of it.
+            ed._as_read = as_read
+            if not getattr(ed, "_as_read_watched", False):
+                ed._as_read_watched = True
+                ed.document().modificationChanged.connect(
+                    lambda modified, ed=ed: modified and setattr(ed, "_as_read", None))
         elif ext.endswith('.rmd'):
             # R Markdown is edited as source, the way RStudio does it.
             ed.setPlainText(content)
@@ -4862,13 +5027,16 @@ class MainWindow(QMainWindow):
         why) when a picture of it cannot be found."""
         assets, missing = self._local_objects(ed)
         if missing:
-            inform(self, title=ngettext("A picture can’t be found",
-                                        "{count} pictures can’t be found",
-                                        len(missing)).format(count=len(missing)),
-                   message=_("“{name}” is not on this computer any more. Insert it again, "
-                             "or delete it, to go on.").format(name=missing[0]), nostr=True)
+            self._say_pictures_missing(missing)
             return None
         return assets
+
+    def _say_pictures_missing(self, missing) -> None:
+        inform(self, title=ngettext("A picture can’t be found",
+                                    "{count} pictures can’t be found",
+                                    len(missing)).format(count=len(missing)),
+               message=_("“{name}” is not on this computer any more. Insert it again, "
+                         "or delete it, to go on.").format(name=missing[0]), nostr=True)
 
     def _agree_to_upload(self, assets, *, draft: bool) -> bool:
         count = len(assets)
@@ -4960,7 +5128,7 @@ class MainWindow(QMainWindow):
         if waits:
             self.status.clearMessage()
 
-    def _publish_payload(self, ed, flavor: str) -> tuple[str, list]:
+    def _publish_payload(self, ed, flavor: str, *, keep_local: bool = False) -> tuple[str, list]:
         """Document text for a signed event, plus what its media is.
 
         toPlainText() emits U+FFFC for every image, so a published note
@@ -4980,16 +5148,23 @@ class MainWindow(QMainWindow):
         rewritten either way; the only effect is whether the image gets
         described. A picture beside the document's file goes out at the
         address publishing uploaded it to (_asset_named), its name in the
-        document unchanged.
+        document unchanged. With ``keep_local`` a file on this computer only
+        is written as its asset key (a submission encrypts and uploads it
+        itself, drafting.py) instead of being left out.
         """
         records: dict = {}
 
         def remember(asset, url: str, fmt) -> None:
             if not url or url in records:
                 return
-            # Audio and video have no alternative text: their name is a name.
-            alt = "" if asset.is_media else (
-                str(fmt.property(QTextImageFormat.ImageAltText) or "") or asset.alt)
+            # Audio and video have no alternative text: their name is a
+            # name. A picture's is the description the document gives it,
+            # by the rule the editor's "ALT missing" follows: none for
+            # none, never its file's name, the one its asset keeps (what an
+            # earlier version gave a picture it added) or "image".
+            alt = "" if asset.is_media else photo_group.description_of(
+                str(fmt.property(QTextImageFormat.ImageAltText) or ""), fmt.name(),
+                asset.stored_name)
             records[url] = PublishedMedia(
                 url=url,
                 sha256=asset.sha256,
@@ -5008,9 +5183,13 @@ class MainWindow(QMainWindow):
                 if asset is not None:
                     remember(asset, name, fmt)
                 return name
-            if asset is None or not asset.is_uploaded:
+            if asset is None:
                 return None
-            url = _published_address(asset)
+            # The #wide stays in the text, as it does on a web address.
+            wide = photo_group.WIDE_SUFFIX if photo_group.is_wide(name) else ""
+            if not asset.is_uploaded:
+                return asset.key + wide if keep_local else None
+            url = _published_address(asset) + wide
             remember(asset, url, fmt)
             return url
 
@@ -5190,27 +5369,39 @@ class MainWindow(QMainWindow):
                 return self.save_as(self._suggest_path(path, '.rtf'), ".rtf (*.rtf)")
 
         old_path = self.current_path()
-        ok = self._save_to(path)
+
+        def saved() -> None:
+            # A page or a PDF written once its pictures came: the tab it
+            # was saved from, while it is still the one in front.
+            if ed is None or self.current_editor() is ed:
+                self._saved_as(path, old_path)
+        ok = self._save_to(path, then=saved)
         if ok:
-            if old_path and old_path != path:
-                self._unwatch(old_path)
-            self._watcher.addPath(path)
-            self.set_current_path(path)
-            ed = self.current_editor()
-            if ed:
-                self._attach_highlighter(ed, path)
-                self._update_status_bar()
-            if ed and hasattr(ed, '_backup'):
-                ed._backup.update_file_path(path)
-            add_recent(path)
-            self._populate_recent_menu()
-            self._update_knit_actions()
+            self._saved_as(path, old_path)
         return ok
 
-    def _save_to(self, path: str, *, asked: bool = False) -> bool:
+    def _saved_as(self, path: str, old_path: str) -> None:
+        """The current tab is the file ``path`` now (Save As)."""
+        if old_path and old_path != path:
+            self._unwatch(old_path)
+        self._watcher.addPath(path)
+        self.set_current_path(path)
+        ed = self.current_editor()
+        if ed:
+            self._attach_highlighter(ed, path)
+            self._update_status_bar()
+        if ed and hasattr(ed, '_backup'):
+            ed._backup.update_file_path(path)
+        add_recent(path)
+        self._populate_recent_menu()
+        self._update_knit_actions()
+
+    def _save_to(self, path: str, *, asked: bool = False, then=None) -> bool:
         """Write the current document to ``path``; True once it is written.
         ``asked``: the caller asked already about writing over a file that
-        another app changed (_confirm_save_over_changes)."""
+        another app changed (_confirm_save_over_changes). A page or a PDF
+        whose web pictures are still to come is written once they are
+        (_with_web_pictures): False now, and ``then()`` once it is."""
         ed = self.current_editor()
         if not ed:
             return False
@@ -5221,6 +5412,7 @@ class MainWindow(QMainWindow):
         front = None
         head = ""                   # a Markdown file's front matter, as written
         left_out = []               # audio or video a Markdown file could not hold
+        as_read = None              # a Markdown file opened and not changed, as read
         try:
             if ext.endswith(('.pdf', '.rtf')) and getattr(ed, "_lock", None) is not None:
                 inform(self, title=_("A locked document can’t be saved as PDF or RTF"),
@@ -5229,19 +5421,21 @@ class MainWindow(QMainWindow):
                                  "first (File > Change Password…)."))
                 return False
             if ext.endswith('.pdf'):
-                return self._save_as_pdf(ed, path)
+                return self._save_as_pdf(ed, path, then=then)
             elif ext.endswith('.rtf'):
                 return self._save_as_rtf(ed, path)
 
             if ext.endswith(('.html', '.htm')):
-                content = document_to_html(
-                    ed.document(),
-                    title=self._export_title_for(path),
-                    image_roots=self._image_roots_for(path),
-                    asset_resolver=self._asset_manager.export_view,
-                )
+                return self._with_web_pictures(
+                    ed, lambda doc, pictures, revision: self._save_html(
+                        ed, path, doc, pictures, revision), then=then)
             elif ext.endswith('.rmd'):
                 content = self._to_rmd_content(ed, path)
+            elif ext.endswith('.md') and MainWindow._untouched(ed, path):
+                # Nothing changed since it was opened: the file stays as it
+                # is, whatever the writer would make of what it holds.
+                as_read = ed._as_read
+                front = getattr(ed, "_front_matter", None)
             elif ext.endswith('.md'):
                 # The same Markdown an article publishes, whether the tab
                 # came from a .md file or was typed here.
@@ -5272,8 +5466,11 @@ class MainWindow(QMainWindow):
                 # placeholder the old toPlainText call wrote out.
                 content = serialize_plain_with_images(ed.document(), lambda fmt: None)
 
-            MainWindow._write_document(self, ed, path, encode_text_document(
+            MainWindow._write_document(self, ed, path, as_read.encode("utf-8")
+                                       if as_read is not None else encode_text_document(
                 content, newline=getattr(ed, "_newline", None), head=head))
+            if as_read is None:
+                ed._as_read = None          # the file is the writer's now
             if ext.endswith('.md'):
                 ed._front_matter = front
                 ed._details_not_saved = front.refused if front is not None else frozenset()
@@ -5295,6 +5492,95 @@ class MainWindow(QMainWindow):
             # (sealing a locked document takes a while): finding the file as
             # written here, _on_file_changed knows the change is this save.
             self._saved_stamps[path] = regular_files.file_stamp(path)
+
+    @staticmethod
+    def _untouched(ed, path: str) -> bool:
+        """``ed`` holds the Markdown file ``path`` as it was read: never
+        edited since it was opened (the editor fitting its pictures to the
+        window is no edit), no detail set or read."""
+        own = getattr(ed, "_file_path", None)
+        return (getattr(ed, "_as_read", None) is not None and not ed.document().isModified()
+                and bool(own) and os.path.realpath(own) == os.path.realpath(path)
+                and tab_details.untouched(ed))
+
+    def _save_html(self, ed, path: str, doc, pictures: dict, revision: int) -> bool:
+        """Write ``doc`` (a copy of ``ed``'s document made at ``revision``)
+        to ``path`` as a page that holds its pictures; True once written.
+        The tab counts as saved when it was not edited since."""
+        try:
+            content = document_to_html(
+                doc, title=self._export_title_for(path),
+                image_roots=self._image_roots_for(ed),
+                asset_resolver=self._asset_manager.export_view,
+                remote_pictures=pictures)
+            MainWindow._write_document(self, ed, path, encode_text_document(
+                content, newline=getattr(ed, "_newline", None), head=""))
+            ed._recovered_title = ""
+            self._resolve_disk_change(ed)
+            if ed.document().revision() == revision:
+                ed.document().setModified(False)
+            self._update_tab_title(ed)
+            self._say_saved(ed, path)
+            return True
+        except Exception as e:
+            inform(self, title=_("Couldn't save \u201c{name}\u201d").format(
+                       name=os.path.basename(path)),
+                   message=f"{e}\n\n{_SAVE_FAILED_HINT}", caution=True)
+            return False
+        finally:
+            self._saved_stamps[path] = regular_files.file_stamp(path)
+
+    def _with_web_pictures(self, ed, work, *, then=None) -> bool:
+        """Run ``work(doc, pictures, revision)`` for an export or a print of
+        ``ed``: ``doc`` a copy of its document as it is now (at
+        ``revision``), a picture's address standing bare shown as the
+        picture (bare_pictures), ``pictures`` its web pictures. Held ones are there
+        at once and ``work`` runs now: its answer. The rest are fetched
+        while the app goes on (export_pictures.Gathering): False now, and
+        ``work`` runs once they are in, then ``then()`` when it said True.
+        A sheet with Cancel shows only when that takes longer than a second
+        (Apple's progress pattern); closing the tab drops the work quietly.
+        One at a time: a request while another waits is refused."""
+        doc = photo_group.copy_of(ed.document())
+        # A picture's address standing bare is the picture, as on the page
+        # (the editor keeps it as typed).
+        bare_pictures.show(doc)
+        revision = ed.document().revision()
+        gathering = export_pictures.Gathering(
+            export_pictures.web_picture_names(doc), held=self._held_picture_bytes)
+        if gathering.complete:
+            return work(doc, gathering.pictures, revision)
+        if getattr(self, "_gathering", None) is not None:
+            self.status.showMessage(_("Another export is still loading its pictures."), 4000)
+            return False
+        sheet = QProgressDialog(_("Loading the document\u2019s pictures\u2026"),
+                                _("Cancel"), 0, 0, self)
+        sheet.setWindowModality(Qt.WindowModal)
+        sheet.setAutoClose(False)
+        sheet.setAutoReset(False)
+        sheet.setMinimumDuration(1000)
+        sheet.setValue(0)
+
+        def stop() -> None:
+            gathering.cancel()
+            sheet.canceled.disconnect()
+            sheet.hide()
+            sheet.setParent(None)
+            sheet.deleteLater()
+            if getattr(self, "_gathering", None) is gathering:
+                self._gathering = None
+            ed._export_waiting = None
+
+        def finished() -> None:
+            stop()
+            if ed in self._all_editors() and work(doc, gathering.pictures, revision) and then:
+                then()
+        self._gathering = gathering
+        ed._export_waiting = stop
+        gathering.finished.connect(finished)
+        sheet.canceled.connect(stop)
+        gathering.start()
+        return False
 
     def _say_saved(self, ed, path: str, left_out=()) -> None:
         """Say a document was saved, and whether audio or video in it is
@@ -5498,6 +5784,9 @@ class MainWindow(QMainWindow):
 
     def _on_notice_action(self, ed, key: str) -> None:
         """An action of the notice over ``ed`` (document_notice.py)."""
+        host = getattr(self, "_submissions", None)
+        if host is not None and host.notice_acted(ed, key):
+            return                              # Ansehen: the submission's detail
         if key == "revert":
             self._revert_to_disk(ed)
         elif key == "save_as":
@@ -5759,19 +6048,26 @@ class MainWindow(QMainWindow):
         """Directory holding the content-addressed image cache."""
         return str(self._media_image_loader.cache_path("x").parent)
 
-    def _image_roots_for(self, save_path: str) -> tuple:
-        """Directories an exporter may read local image bytes from.
+    def _image_roots_for(self, editor) -> tuple:
+        """Directories an exporter may read the local pictures of
+        ``editor``'s document from, wherever the export goes: the folders
+        the editor itself shows them from (_image_roots: the document's
+        own folder, where this app keeps a file's pictures beside it, and
+        the sidebar folder it links pictures in where they lie), plus the
+        blob cache, because a document written by an older build names
+        its pictures by their absolute cache path. A document not saved
+        yet has no folder of its own: the blob cache alone.
 
-        The document's own directory, because sidecar media beside a
-        file is this app's own pattern, plus the blob cache, because a
-        document written by an older build names its images by their
-        absolute cache path.
+        Never the export's own folder: a document's relative picture
+        names mean "beside the document", and a PDF saved to another
+        folder would read none of them (or a stranger's file that happens
+        to lie there under the same name).
         """
-        doc_dir = os.path.dirname(os.path.abspath(save_path))
-        # And the folders a note links pictures in where they lie, so an
-        # export carries them too (file_links.link_root).
-        linked = file_links.link_root(save_path, self._library_roots())
-        return (doc_dir, linked, self._blob_cache_root())
+        path = getattr(editor, "_file_path", "") or ""
+        cache = self._blob_cache_root()
+        if not path:
+            return (cache,)
+        return (*MainWindow._image_roots(path, MainWindow._picture_roots(self)), cache)
 
     def _markdown_reference_for(self, target):
         """Wrap a destination function so plain text gets ![alt](dest)."""
@@ -5815,7 +6111,16 @@ class MainWindow(QMainWindow):
             return written[name]
 
         def target(fmt) -> Optional[str]:
-            name = fmt.name()
+            # A picture's #wide (photo_group) is how it is laid out, not
+            # where it is: one of the app's pictures is written as its copy
+            # beside the document, and keeps it.
+            name = photo_group.without_wide(fmt.name())
+            if name != fmt.name() and parse_asset_key(name) is not None:
+                found = place(name, fmt)
+                return found + photo_group.WIDE_SUFFIX if found else found
+            return place(fmt.name(), fmt)
+
+        def place(name: str, fmt) -> Optional[str]:
             sha = parse_asset_key(name)
             if sha is None:
                 return self._foreign_image_target(name, sidecar)
@@ -5844,7 +6149,7 @@ class MainWindow(QMainWindow):
                 # The cache lost the bytes but the open document still
                 # holds the decoded image; re-encoding it is lossy for
                 # nothing else but keeps the picture.
-                rescued = self._encode_document_image(doc, name)
+                rescued = self._encode_document_image(doc, fmt.name())
                 if rescued is not None:
                     written_path = sidecar(sha, rescued, ".png")
                     if written_path:
@@ -5933,9 +6238,9 @@ class MainWindow(QMainWindow):
             return source
         title = derive_title(ed.document(), self._export_title_for(path))
         return document_to_rmd(ed.document(), title,
-                               copy_image=self._make_rmd_image_copier(path))
+                               copy_image=self._make_rmd_image_copier(ed, path))
 
-    def _make_rmd_image_copier(self, rmd_path: str):
+    def _make_rmd_image_copier(self, ed, rmd_path: str):
         """Copy images into the .Rmd's sidecar media folder.
 
         Returns a callback mapping a local cache path to a relative
@@ -5944,9 +6249,13 @@ class MainWindow(QMainWindow):
         rendered artifact stays a single shareable file.
         """
         media_dir = media_dir_for(rmd_path)
-        policy = image_safety.ImageRootPolicy(self._image_roots_for(rmd_path))
+        policy = image_safety.ImageRootPolicy(self._image_roots_for(ed))
 
         def copy(name: str):
+            if not image_safety.is_portable_image_source(name):
+                # A picture's #wide (photo_group) is how it is laid out,
+                # not where it is.
+                name = photo_group.without_wide(name)
             media = _media_asset(self._asset_manager, name)
             if media is not None:
                 return self._media_file_link(media, rmd_path)
@@ -6030,8 +6339,9 @@ class MainWindow(QMainWindow):
         Walks the document block by block, fragment by fragment.
         Each fragment becomes an RTF group carrying its formatting codes.
         Non-ASCII characters are escaped as \\uN? (RTF Unicode escape).
+        A photo group is written as its paragraphs: its captions are text.
         """
-        doc = editor.document()
+        doc = photo_group.unfolded(editor.document())
 
         # --- Pass 1: collect all unique foreground colors used in the document ---
         colors: list[tuple[int, int, int]] = []
@@ -6117,18 +6427,124 @@ class MainWindow(QMainWindow):
         parts.append("\n}")
         return "".join(parts)
 
-    def _save_as_pdf(self, editor, path: str) -> bool:
+    def _held_picture_bytes(self, url: str) -> Optional[bytes]:
+        """The bytes of the picture at a web address, when this app holds
+        them: one it uploaded, or one the text showed (RemoteImages)."""
+        asset = self._asset_manager.find_by_url(url)
+        if asset is not None:
+            data = self._asset_manager.resolve_bytes(asset.key)
+            if data:
+                return data
+        return self._web_images.raw(url)
+
+    def _picture_look_shown(self) -> bool:
+        panel = getattr(self, "_picture_look", None)
+        return panel is not None and panel.isVisible()
+
+    def _look_at_picture(self, editor, name: str) -> None:
+        """Quick Look of a picture of a photo group (double-click, or Space
+        with it selected), or Quick Look away ("")."""
+        panel = getattr(self, "_picture_look", None)
+        if not name:
+            if panel is not None:
+                panel.close()
+            return
+        try:
+            path = self._picture_file(editor, photo_group.without_wide(name))
+        except PictureNotShown as problem:
+            # Said once, with what to do about it (LESSONS 36).
+            editor.notice.emit(str(problem))
+            return
+        if panel is None:
+            from quick_look import QuickLookPanel
+            panel = self._picture_look = QuickLookPanel(self, is_dark=self.is_dark_theme)
+            # Back to the text it was opened from, as Quick Look does.
+            panel.closed.connect(lambda: self.current_editor() and self.current_editor().setFocus())
+        panel.show_path(path)
+        # Named as the reader knows it: its description, else its own file's
+        # name; never the name of the copy made for showing it.
+        looks = getattr(self, "_look_files", None)
+        copy = looks is not None and os.path.dirname(path) == looks.path()
+        picture = photo_group_view.picture_at_cursor(editor.textCursor())
+        panel.setWindowTitle((picture[3].alt if picture is not None else "")
+                             or (_("Picture") if copy else os.path.basename(path)))
+
+    def _picture_file(self, editor, name: str) -> str:
+        """A file Quick Look can show for the picture called ``name``: the
+        picture's own file beside the document, else its bytes (one of
+        this app's pictures, or one from the web it holds) in a file of
+        this window's that goes when the app quits. PictureNotShown, with
+        the words for the person, when there is none."""
+        doc_path = getattr(editor, "_file_path", "") or ""
+        from_web = is_web(name)
+        # (One letter: a drive of a Windows path, no scheme.)
+        own = QUrl(name).scheme() or ""
+        beside_document = not from_web and (own in ("", "file") or len(own) == 1)
+        if doc_path and not from_web:
+            found = image_safety.ImageRootPolicy(
+                MainWindow._image_roots(doc_path, MainWindow._picture_roots(self))).resolve(name)
+            if found is not None:
+                return str(found)
+        data = (self._held_picture_bytes(name) if from_web
+                else self._asset_manager.resolve_bytes(name))
+        if not data:
+            if beside_document and not doc_path:
+                raise PictureNotShown(_(
+                    "Save this document first: its pictures are looked for beside it."))
+            if beside_document:
+                raise PictureNotShown(_(
+                    "The picture “{name}” is no longer beside this document. "
+                    "Put it back there, or insert it again.").format(name=os.path.basename(name)))
+            raise PictureNotShown(_("This picture can’t be shown yet: it hasn’t arrived."))
+        # Only a picture the app itself would decode (never SVG, never a
+        # decompression bomb).
+        if image_safety.sniff_image_mime(data) == "image/svg+xml":
+            raise PictureNotShown(_(
+                "This picture is an SVG drawing, which can’t be shown large here. "
+                "Open it in your browser instead."))
+        ext = image_safety.sniff_image_ext(data)
+        if not ext or image_safety.declared_size(data) is None:
+            raise PictureNotShown(_(
+                "This picture can’t be shown large: it is too large, "
+                "or not a kind of picture MyEditor shows."))
+        if getattr(self, "_look_files", None) is None:
+            from PySide6.QtCore import QTemporaryDir
+            self._look_files = QTemporaryDir()
+        no_room = _("This picture couldn’t be shown: there is no room for a temporary copy "
+                    "of it. Free some space on your disk and try again.")
+        if not self._look_files.isValid():
+            raise PictureNotShown(no_room)
+        import hashlib
+        path = os.path.join(self._look_files.path(),
+                            f"picture-{hashlib.sha1(name.encode('utf-8')).hexdigest()[:16]}{ext}")
+        if not os.path.exists(path):
+            try:
+                with open(path, "wb") as out:
+                    out.write(data)
+            except OSError as error:
+                raise PictureNotShown(no_room) from error
+        return path
+
+    def _save_as_pdf(self, editor, path: str, *, then=None) -> bool:
         """Export via the native Qt PDF pipeline (export_pdf.py): document
         metadata, persisted page setup, page-number footer, images capped
-        to the printable width."""
+        to the printable width; once its web pictures are in
+        (_with_web_pictures)."""
+        return self._with_web_pictures(
+            editor, lambda doc, pictures, revision: self._write_pdf(
+                editor, path, doc, pictures, revision), then=then)
+
+    def _write_pdf(self, editor, path: str, doc, pictures: dict, revision: int) -> bool:
         try:
-            export_pdf(editor.document(), path,
+            export_pdf(doc, path,
                        title=self._export_title_for(path),
-                       image_roots=self._image_roots_for(path),
-                       asset_resolver=self._asset_manager.export_view)
+                       image_roots=self._image_roots_for(editor),
+                       asset_resolver=self._asset_manager.export_view,
+                       remote_pictures=pictures)
             editor._recovered_title = ""
-            editor.document().setModified(False)
-            self._update_tab_title()
+            if editor.document().revision() == revision:
+                editor.document().setModified(False)
+            self._update_tab_title(editor)
             self._say_saved(editor, path)
             return True
         except Exception as e:
@@ -6159,10 +6575,12 @@ class MainWindow(QMainWindow):
             self._print_device = printing.make_printer()
         return self._print_device
 
-    def _print_job(self):
+    def _print_job(self, doc=None, pictures=None):
         """What Print prints for the current tab: ``(title, paint)``, where
         ``paint(printer)`` prints and returns the page count. None when
-        the tab has nothing to print."""
+        the tab has nothing to print. A document's tab prints ``doc`` (a
+        copy of its document) with its web pictures ``pictures``, gathered
+        before (_print_document)."""
         viewer = self.current_pdf_viewer()
         if viewer is not None:
             return viewer.document_title(), lambda printer: printing.print_pdf(
@@ -6172,15 +6590,30 @@ class MainWindow(QMainWindow):
             return None
         path = getattr(ed, "_file_path", None)
         title = self._export_title_for(path) if path else _("Untitled")
-        roots = self._image_roots_for(path) if path else (self._blob_cache_root(),)
+        roots = self._image_roots_for(ed)
+        document = doc if doc is not None else ed.document()
         return title, lambda printer: printing.print_document(
-            ed.document(), printer, image_roots=roots,
-            asset_resolver=self._asset_manager.export_view)
+            document, printer, image_roots=roots,
+            asset_resolver=self._asset_manager.export_view,
+            remote_pictures=pictures or {})
+
+    def _print_document(self, show) -> None:
+        """``show(job)`` for the current tab's print job, a document's once
+        its web pictures are in (_with_web_pictures), so a preview that
+        paints again on every change of its settings fetches nothing."""
+        ed = self.current_editor() if self.current_pdf_viewer() is None else None
+        if ed is None:
+            job = self._print_job()
+            if job is not None:
+                show(job)
+            return
+        self._with_web_pictures(ed, lambda doc, pictures, _revision: show(
+            self._print_job(doc, pictures)) or True)
 
     def _on_print(self):
-        job = self._print_job()
-        if job is None:
-            return
+        self._print_document(self._print_now)
+
+    def _print_now(self, job) -> None:
         title, paint = job
         printer = self._printer()
         printing.prepare(printer, title, load_page_setup())
@@ -6214,9 +6647,9 @@ class MainWindow(QMainWindow):
     def _on_print_preview(self):
         """File > Print Preview (Windows and Linux; macOS previews in its
         print panel). The preview's own Print button prints for real."""
-        job = self._print_job()
-        if job is None:
-            return
+        self._print_document(self._preview_now)
+
+    def _preview_now(self, job) -> None:
         title, paint = job
         printer = self._printer()
         printing.prepare(printer, title, load_page_setup())
@@ -6382,16 +6815,17 @@ class MainWindow(QMainWindow):
             return
         self._update_search_matches(needle)
         self._last_search_text = needle
-        cursor = ed.textCursor()
-        selected = (cursor.selectionStart(), cursor.selectionEnd())
+        selected = self._selected_match(ed)
+        replaced = None
         if selected in self._search_matches:
             # No highlight cursors for the document to move while it changes.
             ed.set_highlights("find", [])
             with ed.undo_step(N_("Replace")):
-                _start, end = replace_match(ed.document(), selected,
-                                            self.findbar.replacement())
-            cursor.setPosition(end)
-            ed.setTextCursor(cursor)
+                replaced = replace_match(ed.document(), selected, self.findbar.replacement())
+            if len(replaced) == 2:
+                cursor = ed.textCursor()
+                cursor.setPosition(replaced[1])
+                ed.setTextCursor(cursor)
             self._find_refresh.stop()          # found again right here
             self._update_search_matches(needle)
             self._last_search_text = needle
@@ -6400,7 +6834,7 @@ class MainWindow(QMainWindow):
                 self._update_match_display()
                 return
         # The next match after the caret (after the replacement).
-        self._find_once(True)
+        self._find_once(True, after=replaced)
 
     def _replace_all(self):
         """Replace All: every match, as one step to undo."""
@@ -6730,6 +7164,7 @@ class MainWindow(QMainWindow):
         ed = self.current_editor()
         if not ed:
             return
+        selected = self._selected_match(ed)
         self._search_matches = find_all(ed.document(), needle, self.findbar.options())
         # Whose they are: a tab's matches are never painted on another.
         self._matches_of = ed
@@ -6739,10 +7174,19 @@ class MainWindow(QMainWindow):
         self._matches_revision = ed.document().revision()
         # The match that is selected stays the current one when the matches
         # are found again (after typing, after a replacement).
-        cursor = ed.textCursor()
-        selected = (cursor.selectionStart(), cursor.selectionEnd())
         self._current_match_index = (self._search_matches.index(selected)
                                      if selected in self._search_matches else -1)
+
+    def _selected_match(self, ed) -> tuple:
+        """What is selected, as a match: the current match in a caption
+        while its picture is selected, else the selection's start and end."""
+        cursor = ed.textCursor()
+        selected = (cursor.selectionStart(), cursor.selectionEnd())
+        matches = getattr(self, "_search_matches", [])
+        index = getattr(self, "_current_match_index", -1)
+        if 0 <= index < len(matches) and matches[index][:2] == selected:
+            return matches[index]
+        return selected
 
     def _highlight_all_matches(self):
         """Paint the matches on screen (all of them are counted, but only
@@ -6763,16 +7207,20 @@ class MainWindow(QMainWindow):
         current_fmt.setBackground(QColor("#264F78" if self.is_dark_theme else "#0078D4"))
         current_fmt.setForeground(QColor("#FFFFFF"))
         first, last = ed.visible_range()
-        selections = []
-        for index, (start, end) in visible_matches(self._search_matches, first, last):
+        selections, captions = [], []
+        for index, match in visible_matches(self._search_matches, first, last):
+            look = current_fmt if index == self._current_match_index else match_fmt
             cursor = QTextCursor(ed.document())
-            cursor.setPosition(start)
-            cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+            cursor.setPosition(match[0])
+            if len(match) > 2:
+                captions.append(photo_group_drawing.CaptionMark(cursor, match[2], match[3], look))
+                continue
+            cursor.setPosition(match[1], QTextCursor.MoveMode.KeepAnchor)
             selection = QTextEdit.ExtraSelection()
             selection.cursor = cursor
-            selection.format = current_fmt if index == self._current_match_index else match_fmt
+            selection.format = look
             selections.append(selection)
-        ed.set_highlights("find", selections)
+        ed.set_highlights("find", selections, captions)
 
     def _on_visible_area_changed(self, ed) -> None:
         """Scrolled or resized: the matches now on screen get painted."""
@@ -6784,7 +7232,9 @@ class MainWindow(QMainWindow):
         if ed:
             ed.set_highlights("find", [])
 
-    def _find_once(self, forward=True):
+    def _find_once(self, forward=True, after=None):
+        """The next match (the one before, going back) is selected: after
+        the selection, or after the match ``after`` was replaced with."""
         ed = self.current_editor()
         if not ed:
             return
@@ -6800,12 +7250,15 @@ class MainWindow(QMainWindow):
 
         matches = self._search_matches
         total = len(matches)
-        cursor = ed.textCursor()
-        selected = (cursor.selectionStart(), cursor.selectionEnd())
+        selected = after or self._selected_match(ed)
         index = self._current_match_index
         if 0 <= index < total and matches[index] == selected:
             # On a match: the one after it (before it, going back).
             index = index + 1 if forward else index - 1
+        elif len(selected) > 2:
+            # Right after words replaced in a caption: on in that caption.
+            index = (bisect.bisect_right(matches, selected) if forward
+                     else bisect.bisect_left(matches, selected) - 1)
         elif forward:
             # Anywhere else: from the caret, the way every editor searches.
             index = bisect.bisect_left(matches, selected[1], key=lambda match: match[0])
@@ -6815,12 +7268,15 @@ class MainWindow(QMainWindow):
         self._current_match_index = index % total
 
         if 0 <= self._current_match_index < len(self._search_matches):
-            start_pos, end_pos = self._search_matches[self._current_match_index]
+            match = self._search_matches[self._current_match_index]
             cursor = QTextCursor(ed.document())
-            cursor.setPosition(start_pos)
-            cursor.setPosition(end_pos, QTextCursor.KeepAnchor)
+            cursor.setPosition(match[0])
+            cursor.setPosition(match[1], QTextCursor.KeepAnchor)
             ed.setTextCursor(cursor)
-            ed.ensureCursorVisible()
+            if len(match) > 2:
+                ed.show_document_rect(photo_group_view.caption_box(ed.document(), match[0]))
+            else:
+                ed.ensureCursorVisible()
 
         self._highlight_all_matches()
         self._update_match_display()
@@ -6884,7 +7340,8 @@ class MainWindow(QMainWindow):
         "view.line_numbers", "view.syntax_highlighting", "view.paper_mode", "view.toolbar",
         "view.highlight_line", "view.write", "view.preview", "view.split",
         "edit.footnote_jump", "nostr.publish_note", "nostr.publish_article",
-        "nostr.insert_image", "nostr.insert_mention", "nostr.insert_reference",
+        "nostr.submit_publication", "nostr.insert_image", "nostr.insert_mention",
+        "nostr.insert_reference",
         "nostr.insert_audio_video"})
     _DOCUMENT_PREFIXES = ("format.", "insert.")
 
@@ -7041,8 +7498,9 @@ class MainWindow(QMainWindow):
         ed = self.current_editor()
         if ed is not None:
             cursor = ed.textCursor()
+            # (A photo group as its paragraphs: its captions are read.)
             self.speech.speak(cursor.selectedText() if cursor.hasSelection()
-                              else ed.toPlainText())
+                              else photo_group.unfolded(ed.document()).toPlainText())
 
     def _start_dictation(self) -> None:
         """Edit > Start Dictation… (Stop Dictation while dictating here):
@@ -7462,6 +7920,7 @@ class MainWindow(QMainWindow):
             action.setEnabled(in_table or sheet is not None
                               and not action.objectName().endswith("delete_table"))
         self.act_select_all.setEnabled(bool(kind) or sheet is not None)
+        self._update_photo_commands()
         # A sheet takes the Edit menu's commands (Undo and Redo by its steps,
         # Cut, Copy, Paste and Delete by its cells) and Format > Sheet.
         if sheet is not None:
@@ -7491,6 +7950,138 @@ class MainWindow(QMainWindow):
         if kind or sheet is not None:
             self._update_undo_redo_buttons()
 
+    def _update_photo_commands(self) -> None:
+        """Format > Photo follows the picture selected in the document in
+        front: what each command would do to it (its title), and whether
+        it can (photo_group_menu.state_of)."""
+        actions = getattr(self, "act_photo", None)
+        if not actions:
+            return
+        ed = self.current_editor()
+        editable = (ed is not None and self._editor_kind(ed) == "rich"
+                    and not self._shows_preview_only(ed))
+        state = ed.photos.state() if editable else None
+        titles = (state.titles if state is not None
+                  else photo_group_menu.base_titles())
+        for name, action in actions.items():
+            action.setText(titles[name])
+            action.setToolTip(state.hints.get(name, "") if state is not None else "")
+            action.setEnabled(state is not None and state.can.get(name, False))
+        large = actions[photo_group_menu.LARGE]
+        large.setChecked(state is not None and state.large)
+
+    def _photo_command(self, name: str) -> None:
+        ed = self.current_editor()
+        if ed is not None and self._editor_kind(ed) == "rich":
+            ed.photos.run(name)
+            self._update_photo_commands()
+
+    def _photo_context(self, menu, editor) -> None:
+        """The context menu of a picture: its header ("Photo 2 of 4"), what
+        can be done to it (only that: the context menu's rule), then Cut,
+        Copy and Paste."""
+        self._update_photo_commands()
+        state = editor.photos.state()
+        menu.setToolTipsVisible(True)
+        header = menu.addAction(state.header)
+        header.setEnabled(False)
+        grouped = state.picture.grouped
+        narrow = photo_group_view.is_narrow(editor.document())
+        for names in photo_group_menu.context_sections(grouped, narrow):
+            shown = [name for name in names if state.can.get(name)]
+            if not shown:
+                continue
+            menu.addSeparator()
+            for name in shown:
+                menu.addAction(self.act_photo[name])
+        menu.addSeparator()
+        for action in (self.act_cut, self.act_copy, self.act_paste):
+            menu.addAction(action)
+
+    def _add_photos(self, editor, place, paths) -> None:
+        """Photos added at ``place`` (the group's "+ Photo", Format > Photo
+        > Add Photos…, files dropped on a slot): the files given, else the
+        ones chosen in the system's dialog, several at once."""
+        if paths is None:
+            patterns = " ".join("*" + ext for ext in sorted(_IMAGE_EXTS))
+            paths, _filter = QFileDialog.getOpenFileNames(
+                self, _("Add Photos"), "", _("Images ({patterns})").format(patterns=patterns))
+            paths = [file_paths.normalize(path) for path in paths]
+        if paths:
+            self._handle_dropped_images(paths, N_("Add Photo") if len(paths) == 1
+                                        else N_("Add Photos"), place=place)
+
+    def _crop_photo(self, editor, position: int) -> None:
+        """Crop… on the picture at ``position``: the sheet, then the part
+        chosen as a new file in the picture's place (_cropped)."""
+        picture = photo_group_actions.picture_at(editor.document(), position)
+        if picture is None:
+            return
+        name = photo_group.without_wide(picture.unit.name)
+        try:
+            path = self._picture_file(editor, name)
+        except PictureNotShown as problem:
+            editor.notice.emit(str(problem))
+            return
+        try:
+            with open(path, "rb") as source:
+                data = source.read()
+        except OSError:
+            editor.notice.emit(_("This picture couldn’t be read. Check that its file is still "
+                                 "there, and try again."))
+            return
+        image = image_safety.decode_image_bytes(data)
+        if image is None:
+            editor.notice.emit(
+                _("This picture is an SVG drawing, which can’t be cropped here. Crop it in a "
+                  "drawing app instead.")
+                if image_safety.sniff_image_mime(data) == "image/svg+xml" else
+                _("This picture can’t be cropped: it is too large, or not a kind of picture "
+                  "MyEditor shows."))
+            return
+        looks = getattr(self, "_look_files", None)
+        beside = not (looks is not None and os.path.dirname(path) == looks.path())
+        sheet = picture_crop.CropSheet(self, data, image)
+        sheet.cropped.connect(lambda cut, ext: self._cropped(
+            editor, position, name, path if beside else "", cut, ext, picture.unit.alt))
+        sheet.finished.connect(sheet.deleteLater)
+        sheet.open()
+
+    def _cropped(self, editor, position: int, name: str, path: str, data: bytes, ext: str,
+                 alt: str) -> None:
+        """The crop's bytes as a new file: beside the picture's own file
+        when it has one there ("beach-cropped.jpg"), else the app's own,
+        as a picture added; then in the picture's place, as one step."""
+        new_name = ""
+        # Named as the picture's file was, cropped; as the app's own file
+        # too, whose stored name is a name (description_of), never the
+        # description, which is the text's.
+        stem = os.path.splitext(os.path.basename(path))[0] if path else (
+            self._stored_name(editor, name) or "image")
+        word = _("cropped")
+        if path:
+            folder = os.path.dirname(path)
+            candidate, number = f"{stem}-{word}.{ext}", 2
+            while os.path.exists(os.path.join(folder, candidate)):
+                candidate, number = f"{stem}-{word}-{number}.{ext}", number + 1
+            try:
+                write_bytes(os.path.join(folder, candidate), data)
+                # The same way to the folder as the picture's own address.
+                cut = max(name.rfind("/"), name.rfind("\\"))
+                new_name = name[:cut + 1] + candidate
+            except OSError as error:
+                # Not writable there: kept as the app's own picture instead.
+                logging.getLogger(__name__).info("crop beside %s: %s", path, error)
+        if not new_name:
+            asset = self._asset_manager.adopt_bytes(data, alt=f"{stem}-{word}")
+            if asset is None:
+                editor.notice.emit(_("The cropped picture couldn’t be kept. Free some space on "
+                                     "your disk and try again."))
+                return
+            self._asset_image(editor, asset, alt=alt)
+            new_name = asset.key
+        editor.photos.set_address(position, new_name)
+
     def _keeps_pictures(self, ed) -> bool:
         """Whether ``ed``'s document keeps a picture when it is saved:
         Markdown (shown formatted or as its text), HTML, R Markdown and new
@@ -7512,7 +8103,11 @@ class MainWindow(QMainWindow):
     def _fill_editor_context_menu(self, menu, editor, pos) -> None:
         """The editor's context menu: the window's own commands, so it
         offers what the menus offer, under the same names. On a link, the
-        link's own commands come first."""
+        link's own commands come first; on a picture, its own."""
+        if self._editor_kind(editor) == "rich" and editor.photos.current() is not None \
+                and editor.textCursor().hasSelection():
+            self._photo_context(menu, editor)
+            return
         clicked = editor.cursorForPosition(pos)
         if not editor.textCursor().hasSelection() and (
                 editor.anchorAt(pos) or (self._editor_kind(editor) == "rich"
@@ -7659,6 +8254,8 @@ class MainWindow(QMainWindow):
         if getattr(self, "_drafts_panel", None) is not None:
             self._drafts_panel.apply_theme(self.is_dark_theme)
             self._published_view.apply_theme(self.is_dark_theme)
+            if getattr(self, "_submissions", None) is not None:
+                self._submissions.apply_theme(self.is_dark_theme)
         if getattr(self, "_article_details_panel", None) is not None:
             self._article_details_panel.set_dark(self.is_dark_theme)
             self._article_headers.set_dark(self.is_dark_theme, self._all_editors())
@@ -8081,9 +8678,13 @@ class MainWindow(QMainWindow):
             if ed is None:
                 continue
             doc = ed.document()
-            if url in set(iter_image_names(doc)):
-                ed.add_picture_resource(url, image)
-                doc.markContentsDirty(0, doc.characterCount())
+            # The picture by each name it has here: its address, and its
+            # address with #wide (photo_group).
+            names = [name for name in set(iter_image_names(doc))
+                     if photo_group.without_wide(name) == url]
+            # (The paragraphs that show it are laid out again, no other.)
+            for name in names:
+                ed.add_picture_resource(name, image)
             pane = getattr(ed, "_preview_pane", None)
             if pane is not None and pane.isVisible():
                 pane.schedule()
@@ -8204,7 +8805,12 @@ class MainWindow(QMainWindow):
     # ----------------------------------------------------------------------
     # CLOSE EVENT
     # ----------------------------------------------------------------------
-    _SESSION_FILE = os.path.join(os.path.expanduser("~"), ".cache", "my_editor", "session.json")
+    # A file of its own (a test's); None: session.json in the person's cache
+    # folder, found each time (user_dirs).
+    _SESSION_FILE: Optional[str] = None
+
+    def _session_file(self) -> str:
+        return self._SESSION_FILE or str(user_dirs.cache_dir() / "session.json")
 
     def _save_session(self):
         paths = []
@@ -8215,15 +8821,16 @@ class MainWindow(QMainWindow):
         if not paths:
             return
         data = {"paths": paths, "active": self.tabs.currentIndex()}
-        write_json(self._SESSION_FILE, data)
+        write_json(self._session_file(), data)
 
     def _restore_session(self) -> bool:
-        if not os.path.isfile(self._SESSION_FILE):
+        session_file = self._session_file()
+        if not os.path.isfile(session_file):
             return False
-        data = read_json(self._SESSION_FILE, dict)
+        data = read_json(session_file, dict)
         # Restored at most once, and a damaged record never restores.
         try:
-            os.remove(self._SESSION_FILE)
+            os.remove(session_file)
         except OSError:
             pass
         listed = data.get("paths")
@@ -8305,6 +8912,11 @@ class MainWindow(QMainWindow):
         # file goes; nothing still on its way goes into a document, nor a
         # phrase still being dictated.
         self._media_saver.cancel()
+        # What was read of the submissions is written when leaving (13).
+        following = self._standup_writer.followed(self._profile_store.default()) \
+            if getattr(self, "_standup_writer", None) is not None else None
+        if following is not None:
+            following.leaving()
         dictating = getattr(self, "_dictating", None)
         if dictating is not None:
             dictating[0].shutdown()
@@ -8494,6 +9106,8 @@ class MainWindow(QMainWindow):
             enabled = active
             if command.id in self._LOCAL_KEY_COMMANDS:
                 enabled = active and current is not None and current.is_local
+            elif command.id == "nostr.submit_publication":
+                enabled = active and bool(self._wants_article_header(self.current_editor()))
             if dimmed and self._is_document_command(command.id):
                 kept[command.id] = enabled
             else:
@@ -8619,19 +9233,13 @@ class MainWindow(QMainWindow):
 
     # -- relays that ask for a sign-in (NIP-42) -------------------------------
 
-    def _on_relay_signing_in(self, relay: str) -> None:
-        self.status.showMessage(_("Signing in to {relay}…").format(relay=relay), 5000, nostr=True)
-
     def _on_relay_sign_in_failed(self, relay: str, reason: str, answered: bool) -> None:
-        if reason == NOT_CHOSEN:
-            return
-        if answered:
-            text = _("{relay} didn’t accept your sign-in.")
-        elif reason == DECLINED:
-            text = _("{relay} asks you to sign in, and your signer app declined.")
-        else:
-            text = _("Couldn’t sign in to {relay}.")
-        self.status.showMessage(text.format(relay=relay), 8000, nostr=True, error=True)
+        """Counted for the log, never for words (lessons 36): which relay,
+        and why, is no business of the person writing."""
+        if reason != NOT_CHOSEN:
+            logging.getLogger(__name__).info(
+                "sign-in to %s did not work (%s, %s)", relay, reason[:200],
+                "refused" if answered else "not done")
 
     # -- association membership --------------------------------------------
 
@@ -8965,8 +9573,21 @@ class MainWindow(QMainWindow):
         # The membership window speaks for one identity; never show one
         # account's membership, invoice or name to another.
         self._membership.close_window()
+        # Submissions on their way stop answering; the media keys and the
+        # list of submissions go, what was read is written first (13).
+        if getattr(self, "_standup_writer", None) is not None:
+            self._standup_writer.stop()
+        # And nothing of its submissions stays on screen: the list, the
+        # pill, a notice, a compare (criterion 19).
+        if getattr(self, "_submissions", None) is not None:
+            self._submissions.account_stopped()
 
     def _on_nostr_select_profile(self, profile: Profile):
+        if getattr(self, "_signing_out", False):
+            # The account being left is let go first (its read state is
+            # written with its signer): the switch waits for that.
+            self._switch_after_sign_out = profile
+            return
         previous = self._profile_store.default()
         leaving = previous is not None and (
             previous.user_pubkey.lower() != profile.user_pubkey.lower()
@@ -8996,18 +9617,55 @@ class MainWindow(QMainWindow):
 
     def _on_nostr_sign_out(self):
         active = self._profile_store.default()
-        # The controller asks, then forgets every key kept for the account,
-        # its signer and its profile.
-        if active is None or not self._accounts.sign_out(active):
+        # The controller asks first; nothing is let go before the person
+        # agrees, and a second Sign Out while one waits asks nothing.
+        if active is None or getattr(self, "_signing_out", False) \
+                or not self._accounts.confirm_sign_out(active):
+            return
+        # What the account read of its submissions is written with its
+        # signer (13), so the submission writer stops first and the
+        # account is forgotten once that is written, or its 5 seconds
+        # passed (RG-M2r 8).
+        self._signing_out = True
+        self._switch_after_sign_out = None
+        writer = getattr(self, "_standup_writer", None)
+        if writer is None:
+            self._finish_sign_out(active)
+        else:
+            # Up to 5 seconds: said, and a second Sign Out or a switch of
+            # account waits for it (RG-M2r2a 6).
+            self.status.showMessage(_("Signing Out …"), 0, nostr=True)
+            writer.stop(on_written=lambda: self._finish_sign_out(active))
+
+    def _finish_sign_out(self, active: Profile) -> None:
+        self._signing_out = False
+        waiting, self._switch_after_sign_out = getattr(self, "_switch_after_sign_out",
+                                                       None), None
+        if self.status.currentMessage() == _("Signing Out …"):
+            self.status.clearMessage()
+        # Only the account still in use is torn down here: one connected
+        # meanwhile let the signed-out one go as it came in.
+        current = self._profile_store.default()
+        still = current is not None and current.user_pubkey.lower() == \
+            active.user_pubkey.lower()
+        # Every key kept for the account, its signer and its profile.
+        if not self._accounts.forget_account(active):
             return
         self._avatars.pop(active.user_pubkey, None)
         self._update_profile_chip()
         self._refresh_profile_chip_menu()
+        if not still:
+            return
         # Tear down everything scoped to the account just removed. If
         # another profile remains, the caller (or chip menu) can re-bind
         # to it; otherwise the panel falls back to its "Connect a Nostr
         # profile" empty state.
         self._release_identity_state()
+        chosen = self._profile_store.get(waiting.user_pubkey) if waiting is not None else None
+        if chosen is not None:
+            # The switch asked for while it waited binds everything to it.
+            self._on_nostr_select_profile(chosen)
+            return
         remaining = self._profile_store.default()
         if self._drafts_panel is not None:
             self._drafts_panel.set_active_profile(remaining)
@@ -9173,8 +9831,26 @@ class MainWindow(QMainWindow):
             made = (self._link_name_for_file(self.current_path(), profile.user_pubkey)
                     if not details.identifier and profile is not None else "")
             panel.show_article(details, fixed_identifier=fixed, kept_in_file=details.kept,
-                               document=ed, made_identifier=made)
+                               document=ed, made_identifier=made,
+                               link_name_lock=self._link_name_lock(profile, details.identifier))
             panel.set_derived_title(self._derived_title_of(ed))
+
+    def _link_name_lock(self, profile, d: str) -> LinkNameLock:
+        """Whether the text ``d`` keeps its link name for its submissions:
+        held by a run, the list or this computer's mark; while an account
+        is in use and none tells, the list is read and the name stays
+        read-only until it answers (RG-M2r2a 1)."""
+        if profile is None or not d:
+            return LinkNameLock()
+        # The default account is the one in use (NostrState).
+        state = getattr(self, "nostr_state", None)
+        in_use = bool(state is not None and state.active)
+        return self._standup().link_name(profile, d, in_use=in_use)
+
+    def _check_link_name(self) -> None:
+        profile = self._profile_store.default()
+        if profile is not None:
+            self._standup().check_link_name(profile)
 
     def _derived_title_of(self, ed) -> str:
         """The title ``ed``'s article publishes with while none is set: its
@@ -9182,6 +9858,8 @@ class MainWindow(QMainWindow):
         return default_title(self._publish_payload(ed, "markdown")[0], self._preview_name)
 
     def _on_document_changed_for_article(self, ed) -> None:
+        if ed is self.current_editor():
+            self._update_submission_pill(typing=True)
         panel = self._article_details_panel
         shown = (panel.isVisible() and panel.shows_article()
                  or self._article_headers.header_of(ed) is not None)
@@ -9554,6 +10232,12 @@ class MainWindow(QMainWindow):
         return paste.Outside(False, address or asset.alt, address,
                              address or (image_data_uri(data) or "" if data else ""))
 
+    def _stored_name(self, ed, name: str) -> str:
+        """The name this app keeps for the file of the picture ``name`` of
+        ``ed`` (DocumentAsset.stored_name), or ""."""
+        asset = self._asset_named(ed, name)
+        return asset.stored_name if asset is not None else ""
+
     def _asset_named(self, ed, name: str, *, adopt: bool = False):
         """The file of this app behind the object of ``ed`` named ``name``:
         its own (an asset key), one it uploaded (by its address), or a
@@ -9562,7 +10246,9 @@ class MainWindow(QMainWindow):
         in as an asset only when ``adopt`` asks (to upload it), read again
         then (it may have been changed on disk), and its name stays as the
         file has it: the document is not edited, and saving writes it back
-        as it was. None for anything else."""
+        as it was. None for anything else. A picture's #wide (photo_group)
+        is how it is laid out, not which file it is (F3 M-2)."""
+        name = photo_group.without_wide(name)
         sha = parse_asset_key(name)
         if sha is not None:
             return self._asset_manager.get(sha)
@@ -9904,15 +10590,16 @@ class MainWindow(QMainWindow):
         self._show_library_failures()
 
     def _show_library_failures(self) -> None:
-        failures = self._library_failures
-        text = ngettext("“{name}” wasn’t added to your Media Library.",
-                        "{count} files weren’t added to your Media Library.",
-                        len(failures)).format(name=next(iter(failures), ""),
-                                              count=len(failures)) if failures else ""
+        waiting = self._library_failures
+        # Never how many (lessons 36); each file and its sentence is the
+        # tooltip.
+        text = "" if not waiting else (
+            _("“{name}” wasn’t added to your Media Library.").format(name=next(iter(waiting)))
+            if len(waiting) == 1 else _("Some files weren’t added to your Media Library."))
         self._library_problem.setText(text)
         self._library_problem.setToolTip("\n".join(
             _("“{name}” wasn’t added to your Media Library. {reason}").format(
-                name=name, reason=reason) for name, reason in failures.items()))
+                name=name, reason=reason) for name, reason in waiting.items()))
         self._library_problem.setStyleSheet(
             f"color: {theme.error_text_color(self.is_dark_theme)}; padding-right: 4px;")
         link = theme.dialog_link_color(self.is_dark_theme)
@@ -10063,6 +10750,258 @@ class MainWindow(QMainWindow):
         self._publish_sheet = dialog
         dialog.open()
 
+    # -- submitting to a STANDUP publication (plan 10.2) -----------------------
+
+    def _update_submit_command(self, *_args) -> None:
+        """Submit to a Publication… is for an article (as its head on the
+        page), while an account is in use."""
+        action = getattr(self, "act_nostr_submit", None)
+        state = getattr(self, "nostr_state", None)
+        if action is not None and state is not None \
+                and not getattr(self, "_document_commands_dimmed", False):
+            action.setEnabled(bool(state.active
+                                   and self._wants_article_header(self.current_editor())))
+
+    def _standup(self) -> StandupWriter:
+        writer = getattr(self, "_standup_writer", None)
+        if writer is None:
+            writer = self._standup_writer = StandupWriter(
+                session_pool=self._session_pool, relay_pool=self._relay_pool,
+                relay_directory=self._relay_directory, media_store=self._media_store,
+                entitled_relays=self._entitled_relays,
+                marks=getattr(self, "_submitted_marks", None), parent=self)
+            writer.status.connect(lambda text: self.statusBar().showMessage(text, 8000))
+            # A text submitted before keeps its link name (RG-M2r 10).
+            writer.listed.connect(lambda _writer: self._fill_article_details_panel())
+        return writer
+
+    def _on_nostr_submit_publication(self) -> None:
+        active = self._profile_store.default()
+        ed = self.current_editor()
+        if active is None or not self._wants_article_header(ed):
+            return
+        made = self._submission_for_sheet(ed, active)
+        if made is None:
+            return                              # said why
+        draft, cover, byline, private, public = made
+        sheet = SubmitSheet(writer=self._standup(), draft=draft, cover=cover, byline=byline,
+                            private_names=private, public_pictures=public, profile=active,
+                            store=self._profile_store,
+                            avatars=self._avatars, logos=self._publication_logos,
+                            is_dark=self.is_dark_theme, parent=self)
+        sheet.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        sheet.submitted.connect(lambda d, ed=ed: self._keep_submitted_identifier(ed, d))
+        sheet.view_submission.connect(self._submissions.open_detail)
+        if cover.isNull() and draft.image.startswith(("https://", "http://")):
+            # A cover that is only a web address: fetched for the card and
+            # the small cover; a monogram until then, and when it does not come.
+            self._submissions.cover_for_sheet(sheet, draft.image, draft.title)
+        self._publish_sheet = sheet                 # follows the appearance while open
+        sheet.open()
+
+    def _submission_for_sheet(self, ed, active) -> Optional[tuple]:
+        """``(draft, cover, byline, private, public)`` of the article in
+        ``ed`` for a sheet that submits it (_submission_of), or None when
+        it cannot be submitted as it is, said why."""
+        local = self._uploads_needed(ed)
+        if local is None:
+            return None                         # a picture is gone: said why
+        draft, cover, pictures, private, public = self._submission_of(ed, active, local)
+        unreadable = [p.name for p in draft.pictures if not p.data]
+        if draft.image and parse_asset_key(draft.image) is None \
+                and not image_safety.is_portable_image_source(draft.image):
+            unreadable.append(draft.image)      # a cover beside the document that is gone
+        if unreadable:
+            self._say_pictures_missing(unreadable)
+            return None
+        if not draft.content.strip():
+            inform(self, title=_("Nothing to submit"),
+                   message=_("The current document is empty."), nostr=True)
+            return None
+        name = active.display_name or active.npub_short()
+        byline = " · ".join([name, _("Article")] + ([ngettext(
+            "{count} picture", "{count} pictures", pictures).format(count=pictures)]
+            if pictures else []))
+        return draft, cover, byline, private, public
+
+    # -- following the submissions (plan 10.4) -----------------------------------
+
+    def _known_name(self, pubkey: str) -> str:
+        """A person's name where it is known (one's own accounts, the
+        people known), else ``""``: the words then say "the editorial
+        team", never an address (lesson 26)."""
+        profile = self._profile_store.get(pubkey) if pubkey else None
+        if profile is not None and profile.display_name:
+            return profile.display_name
+        person = self._known_people.get(pubkey) if pubkey else None
+        return person.display_name if person is not None and person.display_name else ""
+
+    def _editor_of_article(self, d: str):
+        """The tab that holds the article ``d``, or None."""
+        for ed in self._all_editors():
+            if self._wants_article_header(ed) and self._article_details_of(ed).identifier == d:
+                return ed
+        return None
+
+    def _open_submission_text(self, title: str, content: str, d: str, summary: str,
+                              tags: tuple) -> None:
+        """A version of a submission in a new tab: with ``d``, the article
+        itself to go on with; without, a copy to read."""
+        self.new_tab()
+        ed = self.current_editor()
+        if ed is None:
+            return
+        self._load_markdown(ed, content)
+        ed.document().setModified(False)
+        self._set_article_details(ed, ArticleDetails(identifier=d, title=title, summary=summary,
+                                                     hashtags=tuple(tags)))
+        self._update_tab_title()
+
+    def _submission_ports(self) -> SubmissionPorts:
+        def made(ed, profile):
+            found = self._submission_for_sheet(ed, profile)
+            return None if found is None else found[:4]
+
+        def focus(ed) -> None:
+            self.tabs.setCurrentIndex(self._editor_widget_index(ed))
+            ed.setFocus()
+
+        def show_view(key: str) -> None:
+            self._drafts_panel.show_view(key)
+            self._show_drafts_panel()
+
+        return SubmissionPorts(
+            standup=self._standup, profile=self._profile_store.default,
+            current_editor=self.current_editor, editor_of=self._editor_of_article,
+            identifier=lambda ed: self._article_details_of(ed).identifier
+            if self._wants_article_header(ed) else "",
+            text_of=lambda ed: self._publish_payload(ed, "markdown", keep_local=True)[0],
+            focus=focus, open_text=self._open_submission_text, submission_of=made,
+            show_view=show_view, submit=self._on_nostr_submit_publication,
+            notice_of=self._notice_of,
+            say=lambda text: self.status.showMessage(text, 8000, nostr=True),
+            keep=lambda sheet: setattr(self, "_publish_sheet", sheet),
+            avatar_of=self._avatars.get, request_logo=self._publication_logos.request,
+            logo_of=self._publication_logos.get,
+            is_dark=lambda: self.is_dark_theme, window=lambda: self,
+            open_article=self._open_article_named,
+            zap_address=lambda pubkey, answer: zap_address(
+                self._relay_pool, self._relay_directory, pubkey, "", answer, parent=self),
+            edit_profile=self._on_edit_profile)
+
+    def _open_article_named(self, d: str):
+        """The tab that holds the article ``d`` (its link name), opened when
+        no tab does (RG-M3-b 3): from the drafts kept on Nostr under that
+        name, then from the recent files whose link name it is. None when
+        this computer keeps it nowhere it knows of."""
+        ed = self._editor_of_article(d) if d else None
+        if ed is not None or not d:
+            return ed
+        active = self._profile_store.default()
+        author = active.user_pubkey if active else ""
+        store = getattr(self, "_draft_store", None)
+        record = store.get(d) if store is not None else None
+        if record is not None and record.state is DraftState.READY \
+                and record.inner_kind == INNER_KIND_LONG_FORM:
+            self._on_panel_open_draft(d)
+            return self._bound_to(self.current_editor(), d)
+        for path in load_recent():
+            if os.path.exists(path) and self._link_name_for_file(path, author) == d:
+                self.open_path(path)
+                return self._bound_to(self.current_editor(), d)
+        return None
+
+    def _bound_to(self, ed, d: str):
+        """``ed``, just opened for the article ``d``, keeps ``d`` as its
+        identifier (another title makes no other submission)."""
+        if ed is None or not self._wants_article_header(ed):
+            return None
+        self._keep_submitted_identifier(ed, d)
+        return ed
+
+    def _follow_submissions(self) -> None:
+        """The submissions of the account in use are followed, from launch
+        and whenever the account changes."""
+        host = getattr(self, "_submissions", None)
+        if host is not None:
+            host.follow()
+
+    def _update_submission_pill(self, *, typing: bool = False) -> None:
+        """The pill and the submission's detail follow the article in
+        front: at once, or once the typing pauses (RG-M3-b 1)."""
+        host = getattr(self, "_submissions", None)
+        if host is not None:
+            host.article_changed(typing=typing)
+
+    def _keep_submitted_identifier(self, ed, d: str) -> None:
+        """The work in ``ed`` went to a publication under ``d``: the tab
+        keeps it as its identifier, so a later title or file name makes no
+        other work, and publishing it once accepted names this one."""
+        if ed is None or not shiboken6.isValid(ed) or self._editor_widget_index(ed) < 0:
+            return
+        details = self._article_details_of(ed)
+        if details.identifier != d:
+            self._set_article_details(ed, details.with_changes(identifier=d))
+        elif ed is self.current_editor():
+            self._fill_article_details_panel()      # its link name is fixed from now on
+
+    def _submission_of(self, ed, profile, local) -> tuple:
+        """``(draft, cover, pictures, private, public)``: the article of
+        ``ed`` as drafting.ArticleDraft (its files on this computer only
+        kept by their asset keys, to be encrypted with it), its cover as a
+        picture for the card, how many pictures it shows, the names of
+        those of the private library, which the editorial team could not
+        open, and how many of its pictures (the cover too) are public links
+        already and stay so: they are never called encrypted (contract 7,
+        feat/redaktion ee3e5d7)."""
+        content, _media = self._publish_payload(ed, "markdown", keep_local=True)
+        details = self._article_details_of(ed)
+        title = details.title or default_title(content, self._preview_name)
+        d = (details.identifier
+             or self._link_name_for_file(getattr(ed, "_file_path", None), profile.user_pubkey)
+             or slugify(title) or hashlib.sha256(title.encode()).hexdigest()[:16])
+        names = list(dict.fromkeys(iter_image_names(ed.document())))
+        # A cover named as a file beside the document (front matter
+        # "image: cover.png") is taken in as its body pictures are
+        # (_local_objects), so it goes with the work (F3 M-5).
+        cover_asset = (self._asset_named(ed, details.image, adopt=True)
+                       if details.image else None)
+        private, public = [], 0
+        for name in list(dict.fromkeys(names + ([details.image] if details.image else []))):
+            asset = self._asset_named(ed, name)
+            if asset is not None and asset.is_uploaded \
+                    and self._media_visibility.state_of(asset.sha256) == PRIVATE:
+                private.append(self._file_label(asset))
+            elif asset is None or asset.is_uploaded:
+                public += 1             # a web address, or a file of the media servers
+        if cover_asset is not None and not cover_asset.is_uploaded \
+                and cover_asset not in local:
+            local = [*local, cover_asset]
+        pictures = tuple(drafting.LocalPicture(
+            key=asset.key, name=os.path.basename(asset.local_path) or self._file_label(asset),
+            mime=asset.mime, alt=asset.alt, data=self._asset_manager.resolve_bytes(asset.key)
+            or b"") for asset in local)
+        cover_bytes = (self._asset_manager.resolve_bytes(cover_asset.key)
+                       if cover_asset is not None else None) or b""
+        cover = QPixmap()
+        cover.loadFromData(cover_bytes)
+        if cover_asset is not None and not cover_asset.is_uploaded:
+            image = cover_asset.key
+        elif cover_asset is not None and parse_asset_key(details.image) is None \
+                and not image_safety.is_portable_image_source(details.image):
+            # A file beside the document already on the media servers:
+            # by its address, as a body picture of it goes (_publish_payload).
+            image = _published_address(cover_asset)
+        else:
+            image = details.image
+        draft = drafting.ArticleDraft(
+            d=d, title=title, summary=details.summary, content=content.rstrip(),
+            tags=tuple(details.hashtags), image=image, authors=tuple(details.coauthors),
+            pictures=pictures, thumb=thumbnail(cover_bytes) if cover_bytes else None,
+            lang=details.language, published_at=details.published_at,
+            zaps=tuple(tuple(tag) for tag in details.zaps))
+        return draft, cover, len(names), list(dict.fromkeys(private)), public
+
     @staticmethod
     def _file_name(path: str) -> str:
         """A file's name without its extension ("My Post" for My Post.md)."""
@@ -10095,22 +11034,11 @@ class MainWindow(QMainWindow):
         self._say_published(results, article=True)
 
     def _say_published(self, results, *, article: bool) -> None:
-        """That it went out, in the status bar, and how many relays took it
-        when not every one did. No event id, which the person has nothing
-        to do with: the Published list and the dialog itself say more."""
-        accepted = sum(1 for _relay, ok, _message in results if ok)
-        total = len(results)
-        if accepted >= total:
-            message = (_("Your article is published.") if article
-                       else _("Your note is published."))
-        elif article:
-            message = ngettext("Your article is published; {accepted} of {total} relay took it.",
-                               "Your article is published; {accepted} of {total} relays took "
-                               "it.", total).format(accepted=accepted, total=total)
-        else:
-            message = ngettext("Your note is published; {accepted} of {total} relay took it.",
-                               "Your note is published; {accepted} of {total} relays took it.",
-                               total).format(accepted=accepted, total=total)
+        """That it went out, in the status bar: never how many relays took
+        it (lessons 36: a relay that did not is said by nobody). No event
+        id, which the person has nothing to do with: the Published list
+        and the dialog itself say more."""
+        message = _("Your article is published.") if article else _("Your note is published.")
         self.status.showMessage(message, 8000, nostr=True)
 
     # -- media (Blossom) --------------------------------------------------
@@ -10253,7 +11181,7 @@ class MainWindow(QMainWindow):
             if asset is None:
                 self._insert_url_as_text(editor, picked.url)
                 return
-            self._insert_asset(editor, asset, alt=alt_text or "image")
+            self._insert_asset(editor, asset, alt=alt_text)
 
     def _library_name(self, media) -> str:
         """The name a library file goes by: the one it was added with, a
@@ -10299,23 +11227,23 @@ class MainWindow(QMainWindow):
         the old markdown path, and Qt's markdown writer escapes it into
         a link, so the image reopened as text.
         """
-        alt = alt or "image"
+        cursor = editor.textCursor()
+        cursor.insertImage(self._asset_image(editor, asset, alt=alt))
+        editor.setTextCursor(cursor)
+
+    def _asset_image(self, editor, asset, *, alt: str) -> QTextImageFormat:
+        """The picture format that shows ``asset`` in ``editor``'s
+        document, its bytes already in the document, described ``alt``
+        (none: "")."""
         data = self._asset_manager.resolve_bytes(asset.key)
         if data:
             # Priming the document means the first paint needs no
             # resolver round trip and no decode on the paint path.
             editor.add_picture_resource(asset.key, QByteArray(data))
-
         fmt = QTextImageFormat()
         fmt.setName(asset.key)
-        # Never leave alt empty: Qt's markdown writer substitutes the
-        # word "image" for an empty one, which makes round trips differ
-        # from what was inserted.
         fmt.setProperty(QTextImageFormat.ImageAltText, alt)
-
-        cursor = editor.textCursor()
-        cursor.insertImage(fmt)
-        editor.setTextCursor(cursor)
+        return fmt
 
     def _refresh_asset_in_documents(self, sha: str) -> None:
         """Repaint every open document that shows this asset.
@@ -10348,11 +11276,11 @@ class MainWindow(QMainWindow):
                 pane.schedule()
 
     def _on_asset_upload_failed(self, sha: str, code: str) -> None:
-        waiting = len(self._asset_manager.failed_assets())
-        message = friendly_message(code)
-        if waiting > 1:
-            message += " " + ngettext("{count} file is waiting.", "{count} files are waiting.",
-                                      waiting).format(count=waiting)
+        # What did not happen and its one sentence, never how many wait
+        # (lessons 36): publishing uploads what waits again.
+        message = failure_spoken(
+            _("Your file wasn’t uploaded") if len(self._asset_manager.failed_assets()) <= 1
+            else _("Some files weren’t uploaded"), friendly_message(code))
         self.status.showMessage(message, 8000, nostr=True, error=True)
 
     # -- Blossom: paste image from clipboard ------------------------------
@@ -10378,7 +11306,7 @@ class MainWindow(QMainWindow):
         if asset is None:
             self.status.showMessage(_("That image could not be added."), 5000)
             return
-        self._insert_asset(editor, asset, alt="image")
+        self._insert_asset(editor, asset, alt="")
         self._upload_added(asset)
 
     def _upload_choice(self) -> str:
@@ -10535,6 +11463,7 @@ class MainWindow(QMainWindow):
         relays only while it is shown: shown, it gets the account now;
         hidden, it lets go of another account's items at once and reads
         when it is shown next."""
+        self._follow_submissions()
         view = getattr(self, "_published_view", None)
         if view is None:
             return
@@ -10582,10 +11511,10 @@ class MainWindow(QMainWindow):
                 # nothing to open as the draft.
                 choice = ask(
                     self, title=_("This article has a draft that can’t be shown yet."),
-                    message=_("The draft couldn’t be decrypted. Double-click it in the Drafts "
+                    message=_("Its draft couldn’t be decrypted: double-click it in the Drafts "
                               "panel to try again, or open the version that is published now.")
                     if draft.state is DraftState.FAILED else
-                    _("The draft is still being decrypted. Choose Edit again once its title "
+                    _("Its draft is still being decrypted: choose Edit again once its title "
                       "shows in the Drafts panel, or open the version that is published now."),
                     buttons=(Button(_("Open Published Version"), "published", NORMAL),
                              Button(_("Cancel"), None, DEFAULT)), nostr=True)
@@ -10894,9 +11823,10 @@ class MainWindow(QMainWindow):
                 parent=self,
             )
         except ValueError as exc:
-            inform(self, title=_("Couldn't start the deletion"),
-                   message=_("These drafts can't be removed from here.\n\n{error}").format(
-                       error=exc), nostr=True)
+            # Trying again meets the same refusal: OK only, why in Details.
+            inform(self, title=self._drafts_not_deleted(len(deletable), 0),
+                   message=_("These drafts can’t be deleted from here: delete them in the app "
+                             "that made them."), details=str(exc), nostr=True)
             return
 
         total = job.total
@@ -10925,10 +11855,17 @@ class MainWindow(QMainWindow):
         job.tombstoned.connect(self._on_draft_tombstoned)
         job.finished.connect(
             lambda deleted, failures: self._on_draft_deletion_finished(
-                deleted, failures, total, progress,
+                deleted, failures, total, progress, job, profile, deletable,
             )
         )
         job.start()
+
+    @staticmethod
+    def _drafts_not_deleted(total: int, deleted: int) -> str:
+        """What did not happen, never how many (lessons 36)."""
+        if total == 1:
+            return _("Your draft wasn’t deleted")
+        return _("Some drafts weren’t deleted") if deleted else _("Your drafts weren’t deleted")
 
     def _on_draft_tombstoned(self, identifier: str, event_id: str) -> None:
         """A draft deleted here: remembered as deleted, as a request from
@@ -10968,7 +11905,8 @@ class MainWindow(QMainWindow):
         return found
 
     def _on_draft_deletion_finished(
-        self, deleted: int, failures: list, total: int, progress,
+        self, deleted: int, failures: list, total: int, progress, job, profile,
+        deletable: List[Tuple[str, int]],
     ) -> None:
         if progress is not None:
             progress.close()
@@ -10980,24 +11918,18 @@ class MainWindow(QMainWindow):
             return
 
         # A partial result reported as a whole one is how a user comes to
-        # believe a draft is gone when it is not, so the count that did
-        # not go is the headline and the reasons are one click away.
-        if deleted:
-            title = ngettext("{deleted} of {total} draft deleted",
-                             "{deleted} of {total} drafts deleted",
-                             total).format(deleted=deleted, total=total)
-        else:
-            title = _("No drafts were deleted")
-        inform(
-            self,
-            title=title,
-            message=ngettext("{count} could not be removed and is still on your relays. "
-                             "You can try again.",
-                             "{count} could not be removed and are still on your relays. "
-                             "You can try again.", len(failures)).format(count=len(failures)),
-            caution=True,
-            details="\n".join(
-                f"{identifier[:16]}: {reason}" for identifier, reason in failures), nostr=True)
+        # believe a draft is gone when it is not: the drafts that did not
+        # go are said, once, by what did not happen and why, with what
+        # each relay or the signer said behind Details, and Try Again asks
+        # for those again (lessons 36).
+        words = job.words or _(CHECK_CONNECTION)
+        if ask_try_again(
+                self, title=self._drafts_not_deleted(total, deleted), message=words,
+                details="\n".join(f"{identifier[:16]}: {reason}"
+                                  for identifier, reason in failures), nostr=True):
+            left = {identifier for identifier, _reason in failures}
+            self._run_draft_deletion(profile, [(identifier, kind) for identifier, kind
+                                               in deletable if identifier in left])
 
     def _on_draft_sync_status(self, text: str) -> None:
         if self._drafts_panel is not None:
@@ -11254,18 +12186,33 @@ class MainWindow(QMainWindow):
         # than letting the publish job fail mid-pipeline. The job also
         # checks, but doing it here means no signer round-trip wasted.
         try:
-            payload_bytes = len(serialize_inner_event(inner).encode("utf-8"))
+            too_large = draft_size_problem(
+                inner, profile, key_here=lambda: self._key_vault.has(profile.user_pubkey))
         except (KeyError, TypeError, ValueError):
             inform(self, title=_("Couldn't prepare the draft"),
                    message=_("Its contents could not be prepared for encryption."), nostr=True)
             return
-        if payload_bytes > MAX_INNER_PAYLOAD_BYTES:
-            inform(self, title=_("This draft is too large"),
-                   message=_("It has {size} bytes, and encryption allows {limit}. "
-                             "Split it into smaller drafts or publish it directly.").format(
-                       size=_number(payload_bytes), limit=_number(MAX_INNER_PAYLOAD_BYTES)), nostr=True)
+        if too_large:
+            # Saving it again would meet the same limit: OK only, the
+            # numbers in Details (lessons 26, 36).
+            inform(self, title=_(DRAFT_NOT_SAVED), message=too_large,
+                   details=size_detail(profile, draft=serialize_inner_event(inner)), nostr=True)
             return
 
+        job = self._draft_job(ed, profile, choice, inner)
+        job.start()
+
+    def _draft_job(self, ed, profile: Profile, choice: StashChoice, inner: dict,
+                   signed: Optional[dict] = None) -> DraftPublishJob:
+        """A job that saves ``inner`` as the tab's draft, watched.
+
+        The draft is saved once a relay keeps it, never before (lessons
+        9, 17): only then is the tab bound to it, the store updated and
+        the tab no longer modified. A draft no relay kept, or one never
+        sent, is said once: what did not happen, its cause in one
+        sentence, what was said behind Details, and Try Again, which
+        sends a draft signed before as it is (lessons 36). ``signed``:
+        the wrap signed for it before, for a job that sends it again."""
         job = DraftPublishJob(
             relay_pool=self._relay_pool,
             relay_directory=self._relay_directory,
@@ -11276,20 +12223,36 @@ class MainWindow(QMainWindow):
             identifier=choice.identifier,
             parent=self,
         )
-        # Pass the editor + inner through the closure so the stashed
-        # handler can bind the tab and update the store optimistically.
-        job.status_changed.connect(lambda s: self.status.showMessage(s, 5000, nostr=True))
-        job.stashed.connect(
-            lambda ident, eid, ts, _ed=ed, _inner=inner, _choice=choice:
-            self._on_draft_stashed(_ed, _choice, eid, ts, _inner)
-        )
-        job.failed.connect(
-            lambda reason: inform(self, title=_("Couldn't save the draft"), message=reason, nostr=True)
-        )
-        # Register before starting so a synchronous failure path can't
+        # Registered first, so it is released before what follows asks
+        # again; and before starting, so a synchronous failure path can't
         # leave the tab thinking nothing is in flight.
         self._attach_active_stash(ed, job)
-        job.start()
+        sent = {"signed": signed}
+        job.status_changed.connect(lambda s: self.status.showMessage(s, 5000, nostr=True))
+        job.signed.connect(lambda event: sent.update(signed=event))
+        job.stashed.connect(lambda _ident, eid, ts: sent.update(eid=eid, ts=ts))
+
+        def completed(results) -> None:
+            if any(kept_by_relay(ok, message) for _url, ok, message in results):
+                self._on_draft_stashed(ed, choice, sent["eid"], sent["ts"], inner)
+                self.status.showMessage(_("Draft saved."), 5000, nostr=True)
+                return
+            if ask_try_again(self, title=_(DRAFT_NOT_SAVED), message=not_taken_words(results),
+                             details=answers_detail(results), nostr=True):
+                again = self._draft_job(ed, profile, choice, inner, sent["signed"])
+                again.send_signed(sent["signed"])
+
+        def failed(reason: str) -> None:
+            if not job.can_retry:
+                inform(self, title=_(DRAFT_NOT_SAVED), message=job.words, details=reason,
+                       nostr=True)
+            elif ask_try_again(self, title=_(DRAFT_NOT_SAVED), message=job.words,
+                               details=reason, nostr=True):
+                self._fire_draft_publish_job(ed, profile, choice, inner)
+
+        job.completed.connect(completed)
+        job.failed.connect(failed)
+        return job
 
     def _published_article_of(self, ed) -> Optional[ArticleDetails]:
         """The published article a tab edits (from the Published view),
@@ -11376,6 +12339,7 @@ class MainWindow(QMainWindow):
         self._article_headers.update(ed)
         if ed is self.current_editor():
             self._fill_article_details_panel()
+            self._update_submission_pill()
 
     def _stash_defaults_for(
         self,
@@ -11466,10 +12430,9 @@ class MainWindow(QMainWindow):
         created_at: int,
         inner: dict,
     ) -> None:
-        """Job has signed the wrap. Bind the tab + update the store
-        optimistically so the panel reflects the new state immediately
-        rather than waiting for the relay echo to round-trip back
-        through ``DraftSync``."""
+        """A relay kept the signed wrap. Bind the tab + update the store
+        now, so the panel reflects the new state without waiting for the
+        relay echo to round-trip back through ``DraftSync``."""
         # The editor may have been closed mid-flight - bail gracefully.
         if ed is None or self._editor_widget_index(ed) < 0:
             return
@@ -11482,8 +12445,8 @@ class MainWindow(QMainWindow):
             title=choice.title or (choice.identifier if choice.kind is StashKind.NOTE else ""),
             profile_pubkey=active.user_pubkey.lower() if active else "",
         )
-        # Optimistic store update - by the time the relay echo arrives
-        # via DraftSync, the panel already shows the row. First, so that
+        # Store update - by the time the relay echo arrives via
+        # DraftSync, the panel already shows the row. First, so that
         # nothing read after this point finds the draft as it was.
         self._draft_store.upsert_from_inner(
             identifier=choice.identifier,

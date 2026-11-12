@@ -43,10 +43,11 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+import user_dirs
 from atomic_file import write_text
 
 from .. import events
@@ -54,7 +55,15 @@ from . import defaults, policy
 from .lookup import Lookup, classify, fetch_replaceable, fetch_replaceable_many
 from .policy import KIND_RELAY_LIST, LookupState, RelayList
 
-RELAY_LISTS_FILE = Path.home() / ".config" / "my_editor" / "nostr_relay_lists.json"
+def relay_lists_file() -> Path:
+    """nostr_relay_lists.json in the person's config folder, found each time
+    (user_dirs)."""
+    return user_dirs.config_dir() / "nostr_relay_lists.json"
+
+
+# ``store_path`` not given: relay_lists_file(), found when the directory is
+# made (None keeps nothing on disk).
+_PERSONS_FILE = object()
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +93,7 @@ class RelayDirectory(QObject):
     changed = Signal(str)       # pubkey whose known list became newer
 
     def __init__(self, pool, *, query=fetch_replaceable, query_many=fetch_replaceable_many,
-                 store_path: Optional[Path] = RELAY_LISTS_FILE,
+                 store_path: Any = _PERSONS_FILE,
                  own_pubkeys: Callable[[], Iterable[str]] = tuple,
                  clock: Callable[[], float] = time.monotonic,
                  parent: Optional[QObject] = None) -> None:
@@ -92,6 +101,8 @@ class RelayDirectory(QObject):
         self._pool = pool
         self._query = query
         self._query_many = query_many
+        if store_path is _PERSONS_FILE:
+            store_path = relay_lists_file()
         self._store_path = Path(store_path) if store_path else None
         self._own_pubkeys = own_pubkeys
         self._clock = clock

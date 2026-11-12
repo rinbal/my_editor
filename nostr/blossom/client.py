@@ -39,7 +39,7 @@ import json
 import re
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
-from PySide6.QtCore import QByteArray, QObject, QUrl, QUrlQuery, Signal
+from PySide6.QtCore import QByteArray, QObject, QTimer, QUrl, QUrlQuery, Signal
 from PySide6.QtNetwork import (
     QNetworkAccessManager,
     QNetworkReply,
@@ -61,6 +61,17 @@ _UPLOAD_TIMEOUT_MS = 5 * 60 * 1000     # five minutes of *idle* time
 _LIST_TIMEOUT_MS = 30 * 1000
 _DELETE_TIMEOUT_MS = 30 * 1000
 _MIRROR_TIMEOUT_MS = 60 * 1000
+_HEAD_TIMEOUT_MS = 30 * 1000
+# The whole of a head read, however the bytes come: a server that keeps
+# sending, slowly, is stopped there too (RG-M2r2a 4).
+_HEAD_DEADLINE_MS = 45 * 1000
+# A blob's first bytes are asked for to tell its kind (a submission's
+# SMF1 file); more is never read.
+MAX_HEAD_BYTES = 64
+# What a head read may receive before it is stopped: one network buffer
+# or so (a chunk may bring more than the bytes asked for, which are read
+# from it), never a body.
+_HEAD_RECEIVED_MAX = 64 * 1024
 
 _USER_AGENT = b"my-editor-blossom/1"
 
@@ -528,20 +539,22 @@ def _oversize_error(status: int) -> BlossomError:
     )
 
 
-def _guard_response_size(reply, max_bytes: int) -> dict:
+def _guard_response_size(reply, max_bytes: int, *, announced: bool = True) -> dict:
     """Abort ``reply`` the moment the body passes ``max_bytes``.
 
     Returns the flag dict the finished handler reads, so an abort is
     reported as a size rejection rather than a generic network failure.
-    The announced total is honoured too: a server that declares a huge
-    Content-Length is stopped before it sends the first chunk.
+    The announced total is honoured too (``announced``): a server that
+    declares a huge Content-Length is stopped before it sends the first
+    chunk. A head read counts only what arrives: a server that ignores
+    its range announces the whole blob, of which the first bytes are read.
     """
     oversize = {"hit": False}
 
     def _on_progress(received: int, total: int, r=reply) -> None:
         if oversize["hit"]:
             return
-        if received > max_bytes or (total > 0 and total > max_bytes):
+        if received > max_bytes or (announced and total > 0 and total > max_bytes):
             oversize["hit"] = True
             r.abort()
 
@@ -868,6 +881,151 @@ class BlossomClient(QObject):
 
         reply.finished.connect(_finished)
         # Keep a strong ref via the inflight map.
+        self._inflight[key] = reply
+
+    # -- the first bytes of a blob --------------------------------------------
+
+    def read_head(
+        self,
+        url: str,
+        count: int,
+        on_success: Callable[[bytes], None],
+        on_failure: Callable[[BlossomError], None],
+    ) -> Optional[Callable[[], None]]:
+        """The first ``count`` bytes of the blob at ``url`` (BUD-01 ``GET
+        /<sha256>``), asked for with ``Range: bytes=0-<count-1>`` (RFC
+        9110 14.2). A server that ignores the range answers 200 with the
+        whole blob: the reply is stopped once ``count`` bytes are in, so
+        no more is ever kept. A blob shorter than ``count`` answers what
+        it has. Only an address the media policy takes (https, http on
+        loopback), as every blob address the library holds.
+
+        Bounded whatever the server does (RG-M2r2a 4): ``count`` bytes are
+        buffered (the read buffer; the size guard stops one past a chunk),
+        a refusal is stopped at its headers (its body is never read), and
+        the whole read ends at its deadline however slowly bytes come.
+
+        Returns what stops the read on its way (its reply aborted, nothing
+        answered after it), or None when it answered at once."""
+        if not 0 < count <= MAX_HEAD_BYTES or not url_safety.is_safe_media_url(url):
+            on_failure(BlossomError("not a blob address to read from"))
+            return None
+        try:
+            request = self._prepare(url, accept=b"*/*", timeout_ms=_HEAD_TIMEOUT_MS)
+        except BlossomError as exc:
+            on_failure(exc)
+            return None
+        request.setRawHeader(b"Range", f"bytes=0-{count - 1}".encode("ascii"))
+        reply = self._nam.get(request)
+        reply.setReadBufferSize(count)
+        oversize = _guard_response_size(reply, _HEAD_RECEIVED_MAX, announced=False)
+        key = id(reply)
+        head = bytearray()
+        answered = {"done": False, "late": False}
+        deadline = QTimer(reply)
+        deadline.setSingleShot(True)
+
+        def too_late() -> None:
+            answered["late"] = True
+            reply.abort()
+
+        deadline.timeout.connect(too_late)
+        deadline.start(_HEAD_DEADLINE_MS)
+
+        def status_of() -> int:
+            return int(reply.attribute(QNetworkRequest.HttpStatusCodeAttribute) or 0)
+
+        def ok_status() -> bool:
+            return status_of() in (200, 206)
+
+        def headers() -> None:
+            # A refusal or a redirect is told by its status: its body is
+            # never read (a 500 may announce any length).
+            if status_of() and not ok_status():
+                reply.abort()
+
+        def take() -> None:
+            if not answered["done"] and ok_status():
+                head.extend(bytes(reply.read(count - len(head))))
+                if len(head) >= count:
+                    answered["done"] = True
+                    deadline.stop()
+                    reply.abort()
+                    self._finish(key, lambda: on_success(bytes(head[:count])))
+
+        def _finished() -> None:
+            try:
+                deadline.stop()
+                if answered["done"]:
+                    return
+                answered["done"] = True
+                err = reply.error()
+                status = status_of()
+                redirect = _redirect_error(reply, status)
+                if redirect is not None:
+                    self._finish(key, lambda: on_failure(redirect))
+                    return
+                if answered["late"] or oversize["hit"]:
+                    failure = BlossomError("the head read took too long" if answered["late"]
+                                           else "the head read was larger than asked for",
+                                           status=status)
+                    self._finish(key, lambda: on_failure(failure))
+                    return
+                if err != QNetworkReply.NoError or not ok_status():
+                    failure = _http_error(reply, status, "")
+                    self._finish(key, lambda: on_failure(failure))
+                    return
+                head.extend(bytes(reply.read(count - len(head))))
+                self._finish(key, lambda: on_success(bytes(head[:count])))
+            finally:
+                reply.deleteLater()
+
+        def stop() -> None:
+            if not answered["done"]:
+                answered["done"] = True
+                deadline.stop()
+                self._inflight.pop(key, None)
+                reply.abort()
+
+        reply.metaDataChanged.connect(headers)
+        reply.readyRead.connect(take)
+        reply.finished.connect(_finished)
+        self._inflight[key] = reply
+        return stop
+
+    # -- whether a server holds a blob -------------------------------------
+
+    def holds(
+        self,
+        url: str,
+        on_answer: Callable[[Optional[bool]], None],
+    ) -> None:
+        """BUD-01 ``HEAD /<sha256>`` at ``url``, unsigned: ``on_answer(True)``
+        for 2xx, ``False`` for 404, ``None`` for anything else (no answer,
+        a redirect, another refusal). A HEAD has no body to read, and the
+        whole request ends at its deadline. Only an address the media
+        policy takes, as for every blob read."""
+        if not url_safety.is_safe_media_url(url):
+            on_answer(None)
+            return
+        try:
+            request = self._prepare(url, timeout_ms=_HEAD_TIMEOUT_MS)
+        except BlossomError:
+            on_answer(None)
+            return
+        reply = self._nam.head(request)
+        key = id(reply)
+
+        def _finished() -> None:
+            try:
+                status = int(reply.attribute(QNetworkRequest.HttpStatusCodeAttribute) or 0)
+                held = True if 200 <= status < 300 and reply.error() == QNetworkReply.NoError \
+                    else False if status == 404 else None
+                self._finish(key, lambda: on_answer(held))
+            finally:
+                reply.deleteLater()
+
+        reply.finished.connect(_finished)
         self._inflight[key] = reply
 
     # -- delete ------------------------------------------------------------

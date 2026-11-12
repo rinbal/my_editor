@@ -25,13 +25,16 @@ Geometry notes, established empirically against QPdfDocument:
   outside the trusted-root policy.
 """
 
-import os
 from dataclasses import dataclass
+from typing import Optional
 
 from PySide6.QtCore import QMarginsF, QRectF, QSizeF, Qt, QLocale, QUrl
 from PySide6.QtGui import (
     QAbstractTextDocumentLayout,
     QColor,
+    QFont,
+    QFontMetricsF,
+    QGuiApplication,
     QImage,
     QPageLayout,
     QPageSize,
@@ -41,14 +44,20 @@ from PySide6.QtGui import (
     QTextCharFormat,
     QTextCursor,
     QTextDocument,
+    QTextFormat,
     QTextImageFormat,
 )
 
+import export_pictures
 import media_files
+import photo_group
+import photo_group_drawing
+import photo_group_view
+import user_dirs
 from atomic_file import read_json, write_json
 from fonts import monospace_font
 from i18n import _
-from image_safety import ImageRootPolicy, data_uri_bytes, decode_image_bytes
+from image_safety import ImageRootPolicy, decode_image_bytes
 
 CREATOR = "minimal texteditor"
 
@@ -61,7 +70,13 @@ FOOTER_POINT_SIZE = 8
 FOOTER_BAND_PT = 30.0
 FOOTER_COLOR = "#808080"
 
-_CONFIG_PATH = os.path.expanduser("~/.config/my_editor/page_setup.json")
+# A file of its own (a test's); None: page_setup.json in the person's config
+# folder, found each time it is read or written (user_dirs).
+_CONFIG_PATH: Optional[str] = None
+
+
+def _config_path() -> str:
+    return _CONFIG_PATH or str(user_dirs.config_dir() / "page_setup.json")
 
 # Offered in the Page Setup dialog; keys are stored in page_setup.json.
 PAGE_SIZES = {
@@ -87,7 +102,7 @@ def default_page_setup() -> dict:
 
 def load_page_setup() -> dict:
     setup = default_page_setup()
-    data = read_json(_CONFIG_PATH, dict)
+    data = read_json(_config_path(), dict)
     if data:
         if data.get("page_size") in PAGE_SIZES:
             setup["page_size"] = data["page_size"]
@@ -100,7 +115,7 @@ def load_page_setup() -> dict:
 
 
 def save_page_setup(setup: dict) -> None:
-    write_json(_CONFIG_PATH, setup, indent=2)
+    write_json(_config_path(), setup, indent=2)
 
 
 def make_page_layout(setup: dict) -> QPageLayout:
@@ -111,42 +126,89 @@ def make_page_layout(setup: dict) -> QPageLayout:
                        QMarginsF(m, m, m, m), QPageLayout.Millimeter)
 
 
-def _placeholder_image() -> QImage:
-    """Neutral stand-in for an image the export is not allowed to read."""
-    image = QImage(160, 100, QImage.Format_RGB32)
-    image.fill(QColor("#c8c8c8"))
-    return image
+# A stand-in is drawn this many times finer than its size on the page, so
+# its words stay sharp on paper.
+_STAND_IN_SCALE = 3
+_STAND_IN_SIZE = (240, 160)
 
 
-def _prime_clone_images(clone, policy: ImageRootPolicy, asset_resolver) -> dict:
-    """Register every image as a resource on ``clone`` and return sizes.
+def _placeholder_image(alt: str = "") -> QImage:
+    """The quiet stand-in for a picture the export cannot carry (one it may
+    not read, or a web picture that did not come): a plate in the page's
+    quiet grey with the picture's description, in place, and nothing else
+    (lesson 36: data missing for the reader is one quiet line where it
+    is, never an alert)."""
+    width, height = _STAND_IN_SIZE
+    image = QImage(width * _STAND_IN_SCALE, height * _STAND_IN_SCALE, QImage.Format_RGB32)
+    image.fill(QColor("#f1f0ec"))
+    words = " ".join(alt.split())
+    if words:
+        painter = QPainter(image)
+        font = QFont(QGuiApplication.font())
+        font.setPixelSize(13 * _STAND_IN_SCALE)
+        painter.setFont(font)
+        painter.setPen(QColor("#6b6760"))
+        margin = 14 * _STAND_IN_SCALE
+        box = QRectF(margin, margin, image.width() - 2 * margin, image.height() - 2 * margin)
+        metrics = QFontMetricsF(font)
+        lines = max(1, int(box.height() // metrics.lineSpacing()))
+        text = _elided_lines(words, metrics, box.width(), lines)
+        painter.drawText(box, int(Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap), text)
+        painter.end()
+    image.setDevicePixelRatio(_STAND_IN_SCALE)
+    # Its shape is not the picture's: a photo group lays it out at 3:2.
+    return photo_group_drawing.mark_placeholder(image)
+
+
+def _elided_lines(words: str, metrics: QFontMetricsF, width: float, lines: int) -> str:
+    """``words`` wrapped to at most ``lines`` lines of ``width``, the last
+    one ending in an ellipsis when they do not all fit."""
+    out: list[str] = []
+    rest = words.split(" ")
+    while rest and len(out) < lines:
+        line = rest.pop(0)
+        while rest and metrics.horizontalAdvance(line + " " + rest[0]) <= width:
+            line += " " + rest.pop(0)
+        out.append(line)
+    if rest or (out and metrics.horizontalAdvance(out[-1]) > width):
+        out[-1] = metrics.elidedText(out[-1] + " " + " ".join(rest), Qt.TextElideMode.ElideRight,
+                                     width)
+    return "\n".join(out)
+
+
+def _prime_clone_images(clone, policy: ImageRootPolicy, asset_resolver,
+                        remote_pictures=None) -> dict:
+    """Register every image as a resource on ``clone`` and return them by
+    name (the stand-in for one that cannot be read).
 
     Mandatory, not defensive: the clone is a plain QTextDocument, so it
     resolves image names itself unless they are already registered, and
     a name that resolves to nothing renders as an empty box. Priming
     also means Qt never touches the disk during layout or paint, which
     is what keeps the trusted-root policy in force.
+
+    The bytes come from export_pictures.picture_bytes (a web picture from
+    ``remote_pictures``, export_pictures.gather), read without #wide; a
+    picture that cannot be had is a quiet stand-in with its description.
     """
     sizes: dict[str, object] = {}
-    for name in _iter_image_names(clone):
+    for name, alt in _image_names_and_alts(clone):
         if name in sizes:
             continue
-        image = None
-        resolved = asset_resolver(name) if asset_resolver else None
-        if resolved is not None and getattr(resolved, "data", b""):
-            image = decode_image_bytes(resolved.data)
+        data, _source = export_pictures.picture_bytes(
+            name, policy, asset_resolver=asset_resolver, remote_pictures=remote_pictures)
+        image = decode_image_bytes(data) if data else None
         if image is None:
-            # A document reopened from HTML names its embedded images by
-            # the whole data: URI, so the bytes are in the name; without
-            # this every such image prints as the placeholder.
-            data = policy.read(name) or data_uri_bytes(name)
-            if data:
-                image = decode_image_bytes(data)
-        if image is None:
-            image = _placeholder_image()
+            image = _placeholder_image(alt)
         clone.addResource(QTextDocument.ImageResource, QUrl(name), image)
-        sizes[name] = image.size()
+        sizes[name] = image
     return sizes
+
+
+def _image_names_and_alts(doc):
+    """Each picture's name and description, in document order."""
+    for name, fmt in _iter_image_formats(doc):
+        yield name, str(fmt.property(QTextFormat.Property.ImageAltText) or "")
 
 
 def _media_as_links(clone, asset_resolver) -> None:
@@ -186,7 +248,7 @@ def _media_as_links(clone, asset_resolver) -> None:
         cursor.insertText(media_files.link_words(mime, name or remote.rsplit("/", 1)[-1]), link)
 
 
-def _iter_image_names(doc):
+def _iter_image_formats(doc):
     block = doc.begin()
     while block.isValid():
         it = block.begin()
@@ -194,21 +256,32 @@ def _iter_image_names(doc):
             frag = it.fragment()
             fmt = frag.charFormat()
             if frag.isValid() and fmt.isImageFormat():
-                yield fmt.toImageFormat().name()
+                image = fmt.toImageFormat()
+                yield image.name(), image
             it += 1
         block = block.next()
 
 
-def _cap_image_widths(doc, available_css_px: float, sizes: dict) -> None:
+def _iter_image_names(doc):
+    for name, _fmt in _iter_image_formats(doc):
+        yield name
+
+
+def _cap_image_widths(doc, available_css_px: float, images: dict) -> None:
     """Shrink images wider than the printable area, keeping aspect ratio.
 
-    Sizes are in CSS pixels (96/inch). Images with no explicit size are
+    Sizes are in the document's own pixels, text_dpi of them to the inch
+    (photo_group_drawing: 96, on a Mac 72). Images with no explicit size are
     measured from the primed resources: opening the file again here
     would put back the untrusted disk read that priming removed, and an
-    asset key is not a filename any reader could open anyway.
+    asset key is not a filename any reader could open anyway. The
+    pictures of a photo group are left to its layout.
     """
     block = doc.begin()
     while block.isValid():
+        if photo_group.is_group_block(block):
+            block = block.next()
+            continue
         it = block.begin()
         while not it.atEnd():
             frag = it.fragment()
@@ -218,7 +291,8 @@ def _cap_image_widths(doc, available_css_px: float, sizes: dict) -> None:
                 width = imf.width()
                 height = imf.height()
                 if width <= 0:
-                    intrinsic = sizes.get(imf.name())
+                    image = images.get(imf.name())
+                    intrinsic = image.size() if image is not None else None
                     if intrinsic is not None and intrinsic.isValid():
                         width = float(intrinsic.width())
                         if height <= 0:
@@ -252,21 +326,53 @@ class PagedDocument:
     page_count: int
 
 
-def paginate(doc, device, resolution: int, *, image_roots=(), asset_resolver=None) -> PagedDocument:
+def _keep_groups_on_pages(clone, content_h: float) -> None:
+    """A photo group that would run over the end of a page, and fits on
+    one, starts the next page (as print CSS keeps a figure whole). One
+    group after the other: moving one moves the rest. A group taller than
+    a page breaks between two of its rows: each row is a line of its
+    paragraph, and Qt moves a line that would cross a page to the next
+    (photo_group_view), so no picture is cut."""
+    layout = clone.documentLayout()
+    block = clone.begin()
+    while block.isValid():
+        if photo_group.is_group_block(block):
+            box = layout.blockBoundingRect(block)
+            if 0 < box.height() < content_h:
+                first = int(box.top() // content_h)
+                last = int((box.bottom() - 0.5) // content_h)
+                if first != last:
+                    fmt = block.blockFormat()
+                    fmt.setPageBreakPolicy(QTextFormat.PageBreakFlag.PageBreak_AlwaysBefore)
+                    QTextCursor(block).setBlockFormat(fmt)
+        block = block.next()
+
+
+def paginate(doc, device, resolution: int, *, image_roots=(), asset_resolver=None,
+             remote_pictures=None) -> PagedDocument:
     """Lay ``doc`` out into pages for ``device`` (a QPdfWriter or a QPrinter).
 
-    Works on a clone, so the editor's document is never touched. See the
-    module docstring for why images are primed and fonts are measured
-    against the device.
+    Works on a copy, so the editor's document is never touched; a copy
+    PySide frees once dropped (a clone() lives as long as the document,
+    with every picture of it: the memory of each export kept until the
+    tab closed). See the module docstring for why images are primed and
+    fonts are measured against the device. A photo group is laid out as
+    on a reader's screen the size of the page (on paper narrower than 600
+    CSS pixels as on a phone, its strips unrolled); it stays on one page
+    when it fits on one, and no page breaks through a picture.
     """
     paint = device.pageLayout().paintRectPixels(resolution)
     page_w = float(paint.width())
     footer_px = FOOTER_BAND_PT * resolution / 72.0
     content_h = float(paint.height()) - footer_px
 
-    clone = doc.clone()
+    clone = photo_group.copy_of(doc)
     _media_as_links(clone, asset_resolver)
-    sizes = _prime_clone_images(clone, ImageRootPolicy(image_roots), asset_resolver)
+    images = _prime_clone_images(clone, ImageRootPolicy(image_roots), asset_resolver,
+                                 remote_pictures)
+    groups = photo_group.has_groups(clone)
+    if groups:
+        photo_group_view.install(clone, photo_group_view.sizes_from(images))
     # Layout must measure fonts against the device's dpi, exactly as
     # doc.print_() would.
     clone.documentLayout().setPaintDevice(device)
@@ -279,10 +385,16 @@ def paginate(doc, device, resolution: int, *, image_roots=(), asset_resolver=Non
     clone.rootFrame().setFrameFormat(frame_fmt)
 
     paint_width_pt = page_w * 72.0 / resolution
-    _cap_image_widths(clone, paint_width_pt * 96.0 / 72.0, sizes)
+    # In the document's own pixels, which Qt turns into the page's by its
+    # text dpi: 96 an inch, on a Mac 72 (photo_group_drawing.text_dpi).
+    _cap_image_widths(clone, paint_width_pt * photo_group_drawing.text_dpi() / 72.0, images)
 
+    if groups:
+        photo_group_view.set_screen_height(clone, content_h)
     clone.setTextWidth(page_w)
     clone.setPageSize(QSizeF(page_w, content_h))
+    if groups:
+        _keep_groups_on_pages(clone, content_h)
     return PagedDocument(clone, page_w, content_h, footer_px, clone.pageCount())
 
 
@@ -321,7 +433,7 @@ def paint_pages(painter: QPainter, device, paged: PagedDocument, page_numbers) -
 
 
 def export_pdf(doc, path: str, title: str = "", page_setup: dict | None = None,
-               *, image_roots=(), asset_resolver=None) -> None:
+               *, image_roots=(), asset_resolver=None, remote_pictures=None) -> None:
     """Write the document to ``path`` as a paginated PDF.
 
     ``image_roots`` are the directories a local image name may be read
@@ -339,7 +451,7 @@ def export_pdf(doc, path: str, title: str = "", page_setup: dict | None = None,
     writer.setPageLayout(make_page_layout(setup))
 
     paged = paginate(doc, writer, RESOLUTION, image_roots=image_roots,
-                     asset_resolver=asset_resolver)
+                     asset_resolver=asset_resolver, remote_pictures=remote_pictures)
     painter = QPainter(writer)
     if not painter.isActive():
         raise OSError(f"could not open {path!r} for writing")

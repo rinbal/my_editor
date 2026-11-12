@@ -361,3 +361,20 @@ def test_an_address_joined_to_a_word_by_an_underscore_is_another_address(content
 
 def test_underscores_around_an_address_are_still_emphasis():
     assert len(build_imeta_tags([full_record()], f"see _{URL}_ now")) == 1
+
+
+def test_an_article_published_again_has_one_imeta_per_picture_its_own():
+    # NIP audit F12: reopened, an article carries its old imeta, and the
+    # same picture comes in again as this app's own record.
+    from nostr.article_details import ArticleDetails
+
+    published = [["d", "hafen"], ["title", "Hafen"],
+                 ["imeta", f"url {URL}", "m image/png", f"x {SHA}", "dim 600x800", "alt Old"],
+                 ["imeta", f"url {OURS}/{OTHER_SHA}.png", "m image/png", "alt Kept"]]
+    body = f"![A kitten]({URL})\n\n![Kept]({OURS}/{OTHER_SHA}.png)\n"
+    details = ArticleDetails.from_tags(published, signer=PK)
+    event = build_article(body, PK, "hafen", media=[full_record()],
+                          extra_tags=details.published_tags(body, author=(PK, "")))
+    imetas = [tag for tag in event["tags"] if tag[0] == "imeta"]
+    assert [tag[1] for tag in imetas] == [f"url {URL}", f"url {OURS}/{OTHER_SHA}.png"]
+    assert "dim 800x600" in imetas[0]

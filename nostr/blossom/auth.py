@@ -18,7 +18,7 @@ from __future__ import annotations
 import base64
 import json
 import time
-from typing import Optional
+from typing import Optional, Sequence
 
 import url_safety
 
@@ -80,6 +80,8 @@ def build_blossom_auth_event(
     server: Optional[str] = None,
     expiration: Optional[int] = None,
     pubkey_hex: Optional[str] = None,
+    file_hashes: Sequence[str] = (),
+    servers: Sequence[str] = (),
 ) -> dict:
     """Return an *unsigned* kind 24242 auth event for ``action``.
 
@@ -100,6 +102,11 @@ def build_blossom_auth_event(
     mandates. Scoping a token stops it being replayed on another server
     for the rest of its validity window.
 
+    ``file_hashes`` and ``servers`` name several blobs and servers in
+    one token (one ``x`` and one ``server`` tag each, after ``file_hash``
+    and ``server``): one signature for a batch of deletes, scoped to
+    exactly those servers.
+
     ``expiration`` is a unix timestamp in seconds; defaults to now + 5 min.
 
     ``pubkey_hex``, when supplied, is set on the unsigned event so the
@@ -116,12 +123,11 @@ def build_blossom_auth_event(
         ["t", action],
         ["expiration", str(int(expires_at))],
     ]
-    if file_hash:
-        tags.append(["x", file_hash.lower()])
-    if server:
-        domain = auth_server_domain(server)
-        if domain:
-            tags.append(["server", domain])
+    for value in dict.fromkeys(h.lower() for h in (file_hash, *file_hashes) if h):
+        tags.append(["x", value])
+    domains = (auth_server_domain(s) for s in (server, *servers) if s)
+    for domain in dict.fromkeys(d for d in domains if d):
+        tags.append(["server", domain])
 
     event: dict = {
         "kind": BLOSSOM_AUTH_KIND,

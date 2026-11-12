@@ -47,15 +47,19 @@ its drafts stay ``LOADING``, waiting for it.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections import deque
 from typing import Callable, Deque, Dict, List, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from i18n import _, ngettext
+from i18n import N_, _, ngettext
 
-from .bunker import BunkerClient, BunkerSessionPool, is_signer_silent
+from . import failures
+from .bunker import (
+    BunkerClient, BunkerSessionPool, declined_by_signer, is_signer_silent, signer_failure_words,
+)
 from .draft_relays import DraftMove, MoveOutcome, PrivateDraftRelays
 from .draft_store import DraftState, DraftStore
 from .drafts import (
@@ -91,6 +95,13 @@ _BUNKER_UNSUPPORTED_NEEDLES: Tuple[str, ...] = (
 # drafts should follow without anyone pressing a button.
 SIGNER_RECHECK_MS: int = 60 * 1000
 
+
+_log = logging.getLogger(__name__)
+
+# What did not happen when the drafts could not be read or opened at all,
+# said in place with its cause (lessons 36).
+DRAFTS_NOT_READ = N_("Your drafts couldn’t be read")
+DRAFTS_NOT_OPENED = N_("Your drafts can’t be opened yet")
 
 class DraftSync(QObject):
     """Drive the draft list for one Nostr profile at a time.
@@ -451,8 +462,11 @@ class DraftSync(QObject):
         self._checking = False
         silent = is_signer_silent(reason)
         if not silent:
-            self.status_changed.emit(
-                _("Signer app unavailable: {reason}").format(reason=reason))
+            # Said once, in place, with its cause; the signer's own words
+            # only in the log (lessons 36).
+            _log.info("signer app unavailable for drafts: %s", (reason or "")[:200])
+            self.status_changed.emit(failures.spoken(_(DRAFTS_NOT_OPENED),
+                                                     signer_failure_words(reason)))
         # Without a signer we can't decrypt anything, but the drafts are
         # read anyway: the user should see there *are* drafts, just
         # locked. Once: a handshake asked again every minute does not read
@@ -472,7 +486,8 @@ class DraftSync(QObject):
             self._subscription = None
         if self._profile is None or not self._read_relays:
             self._store.set_loading(False)
-            self.status_changed.emit(_("No relays available to fetch drafts."))
+            self.status_changed.emit(failures.spoken(_(DRAFTS_NOT_READ),
+                                                     _(failures.CHECK_CONNECTION)))
             return
         filters = [{
             "kinds": [DRAFT_WRAP_KIND],
@@ -565,10 +580,10 @@ class DraftSync(QObject):
             (normalize_relay_url(url) or url) in self._asking_sign_in for url in chosen)
         self._relay_directory.set_draft_relays_locked(author, locked)
         if locked:
+            # One quiet line: saving still works (lessons 36).
             self.status_changed.emit(_(
-                "Your draft relays ask you to sign in before they show your drafts, and "
-                "signing in didn’t work. New drafts are saved on your usual relays until "
-                "it does."))
+                "Drafts kept where you chose stay hidden until signing in there works: new "
+                "drafts are saved with your posts meanwhile."))
 
     # -- internal: drafts left on relays no longer used --------------------
 
@@ -695,8 +710,9 @@ class DraftSync(QObject):
         try:
             inner = parse_inner_event(plaintext)
         except ValueError as exc:
-            self._store.set_failed(
-                identifier, _("The draft is damaged: {error}").format(error=exc))
+            # What was wrong with it is for the log (lessons 36).
+            _log.info("draft %s is damaged: %s", identifier[:16], str(exc)[:200])
+            self._store.set_failed(identifier, _("This draft is damaged"))
             self._after_decrypt(identifier)
             return
 
@@ -753,9 +769,13 @@ class DraftSync(QObject):
             return
 
         # A reasoned refusal proves the signer is there, even though this
-        # particular draft failed.
+        # particular draft failed. Its words are the row's, the signer's
+        # own only in the log (lessons 36).
         self._clear_signer_unreachable()
-        self._store.set_failed(identifier, reason or _("Could not decrypt"))
+        _log.info("draft %s not decrypted: %s", identifier[:16], (reason or "")[:200])
+        self._store.set_failed(identifier, _("Your signer app declined to open it")
+                               if declined_by_signer(lowered)
+                               else _("Your signer app couldn’t open it"))
         self._after_decrypt(identifier)
 
     # -- internal: is the signer app there? ---------------------------------

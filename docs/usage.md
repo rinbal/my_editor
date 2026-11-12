@@ -370,7 +370,7 @@ macOS shows a preview inside its print dialog. On Windows and Linux,
 | Format | Notes |
 |---|---|
 | `.txt` | Plain text, no formatting |
-| `.html` | Clean semantic HTML5: headings, lists (bulleted, numbered, checklists), links, strikethrough and inline code are kept, and bullets typed as text become real lists; images are embedded as data URIs so the single file is shareable; adapts to the reader's light/dark mode. Opened again, its lists are real lists |
+| `.html` | Clean semantic HTML5: headings, lists (bulleted, numbered, checklists), links, strikethrough and inline code are kept, and bullets typed as text become real lists; images are embedded as data URIs so the single file is shareable; a picture's web address standing on its own in the text (typed or pasted, not as a named link) is shown as that picture, as the published article shows it, while the document keeps the address (so do a PDF, a printed page and the article preview); adapts to the reader's light/dark mode. Opened again, its lists are real lists |
 | `.pdf` | Native PDF export: document metadata, locale-aware page size (A4/Letter), page-number footer, images scaled to the printable width; configure via `File > Page Setup…` |
 | `.md` | Markdown: bold, italic, strikethrough, inline code, links, headings, lists, quotes, code blocks, tables, task lists and footnotes are kept; underline and colors are not (MyEditor asks first when the document has them). It is the same Markdown an article publishes. |
 | `.rtf` | Rich Text Format |
@@ -391,6 +391,8 @@ Files are saved when you choose Save. What you type is backed up as you go (two 
 `.Rmd` tabs get `File > R Markdown > Knit to HTML` (`Ctrl+Shift+K`) and `File > R Markdown > Knit to PDF`.
 Knitting saves the tab, then renders the file through `rmarkdown::render` and
 opens the result.
+
+Pictures that follow each other (a photo group) are saved to R Markdown as one paragraph in a `::: {.photo-group}` block, a picture or a caption on each line. Knit to HTML lays them out side by side in rows, as a document saved as `.html` shows them. In a PDF or Word document knit from the file, here or in RStudio, they stand one under another, each picture with its caption under it, as other apps show them.
 
 If R, pandoc, or the rmarkdown package are missing, the editor offers to install
 them from their official sources (CRAN and the pandoc GitHub releases) into a

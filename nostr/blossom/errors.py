@@ -73,68 +73,76 @@ class ERROR_CODES:
     LIST_FAILED = "LIST_FAILED"
 
 
-# One short sentence per code, or two: what happened, and what to do
-# about it. No protocol words, no host names, no "we", no blame. The
+# One sentence per code: what happened, then what to do about it
+# (lessons 36). No protocol words, no host names, no "we", no blame. The
 # library shows these under a file and the editor in its status bar, so
 # none of them assumes where the file is.
-_TRY_AGAIN = N_("The upload didn’t finish. Try again.")
+_TRY_AGAIN = N_("The upload didn’t finish: try again.")
 _FRIENDLY = {
     ERROR_CODES.REDIRECT_REFUSED: _(
-        "Your media server answered in a way MyEditor doesn’t trust, so nothing "
-        "was sent."
+        "Your media server answered in a way MyEditor doesn’t trust: choose another one in "
+        "Media Servers."
     ),
-    ERROR_CODES.UNSAFE_URL: _("That address can’t be used."),
+    ERROR_CODES.UNSAFE_URL: _("That address can’t be used: use a media server’s https address."),
     ERROR_CODES.TOO_LARGE: _(
-        "A media server sent more than MyEditor accepts, so it was stopped."
+        "A media server sent more than MyEditor accepts, so it was stopped: try again later."
     ),
-    ERROR_CODES.UNSUPPORTED_FORMAT: _("MyEditor can’t show this kind of file."),
+    ERROR_CODES.UNSUPPORTED_FORMAT: _(
+        "MyEditor can’t show this kind of file: open it in another app."),
     # Only a mis-wired request reaches this, never the person's doing.
     ERROR_CODES.HOST_MISMATCH: _(_TRY_AGAIN),
     ERROR_CODES.SIGNER_REJECTED: _(
-        "Your signer app didn’t approve the request. Check it and try again."
+        "Your signer app didn’t approve the request: check it and try again."
     ),
     ERROR_CODES.SIGNER_SILENT: _(
-        "Your signer app didn’t answer. Open it, make sure it’s running, and try again."
+        "Your signer app didn’t answer: open it, make sure it’s running, and try again."
     ),
     ERROR_CODES.UPLOAD_FAILED: _(_TRY_AGAIN),
     ERROR_CODES.NETWORK_UNAVAILABLE: _(
-        "Couldn’t reach your media server. Check your internet connection."
+        "Couldn’t reach your media server: check your internet connection and try again."
     ),
     ERROR_CODES.SIGNER_IDENTITY_MISMATCH: _(
-        "Your signer app answered for a different account, so nothing was sent."
+        "Your signer app answered for another account, so nothing was sent: switch it and try "
+        "again."
     ),
-    ERROR_CODES.NO_SIGNER: _("Connect your signer app first."),
-    ERROR_CODES.FILE_UNREADABLE: _("This file couldn’t be read."),
-    ERROR_CODES.FILE_TOO_LARGE: _("This file is larger than your media servers take."),
+    ERROR_CODES.NO_SIGNER: _("No signer app is connected: connect it, then try again."),
+    ERROR_CODES.FILE_UNREADABLE: _(
+        "This file couldn’t be read: check that it is still there and try again."),
+    ERROR_CODES.FILE_TOO_LARGE: _(
+        "This file is larger than your media servers take: choose a smaller one."),
     ERROR_CODES.QUOTA_FULL: _(
-        "There isn’t enough space left on your media servers for this file."
+        "Your media servers are full: delete files you don’t need, or add a server in Media "
+        "Servers."
     ),
-    ERROR_CODES.NO_SERVER: _("Add a media server first, in Media Servers."),
+    ERROR_CODES.NO_SERVER: _("No media server is set up: add one in Media Servers."),
     # The check stays (client.py, replicate.py); the words are plain.
     ERROR_CODES.HASH_MISMATCH: _(
-        "A media server returned the wrong file, so it wasn’t used. Try again."
+        "A media server returned the wrong file, so it wasn’t used: try again."
     ),
-    ERROR_CODES.SERVER_TOO_LARGE: _("This file is too large for your media server."),
+    ERROR_CODES.SERVER_TOO_LARGE: _(
+        "This file is too large for your media server: choose a smaller one, or add a server "
+        "in Media Servers."),
     ERROR_CODES.PAYMENT_REQUIRED: _(
-        "Your media server asks for payment. Choose another one in Media Servers."
+        "Your media server asks for payment: choose another one in Media Servers."
     ),
-    ERROR_CODES.RATE_LIMITED: _("Your media server is busy. Try again later."),
+    ERROR_CODES.RATE_LIMITED: _("Your media server is busy: try again later."),
     ERROR_CODES.AUTH_REJECTED: _(
-        "This media server doesn’t accept your account. Choose another one in Media Servers."
+        "This media server doesn’t accept your account: choose another one in Media Servers."
     ),
     ERROR_CODES.UNSUPPORTED_TYPE: _(
-        "This media server doesn’t take this kind of file. Choose another one in Media Servers."
+        "This media server doesn’t take this kind of file: choose another one in Media "
+        "Servers."
     ),
     ERROR_CODES.LOOKALIKE_REFUSED: _(
-        "Your media server keeps one copy of a picture like this. Add another server "
-        "in Media Servers."
+        "Your media server keeps one copy of a picture like this: add another server in "
+        "Media Servers."
     ),
     ERROR_CODES.LIST_FAILED: _(
-        "Your media servers didn’t list your files. Try again later."
+        "Your media servers didn’t list your files: try again later."
     ),
 }
 
-_FALLBACK = _("Something went wrong with that media request. Nothing was lost.")
+_FALLBACK = _("Something went wrong with that media request, and nothing was lost: try again.")
 
 # The signer's own words, for the importer's record of what it copied.
 # The person reads the code's sentence above instead.

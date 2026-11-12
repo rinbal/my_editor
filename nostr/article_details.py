@@ -59,6 +59,12 @@ REBUILT = ("client", "p", "q")
 AUTHOR_MARKER = "author"
 
 
+def imeta_url(tag) -> str:
+    """The address a NIP-92 ``imeta`` tag describes (its ``url`` entry),
+    or "" when it names none."""
+    return next((str(part)[4:].strip() for part in tag[1:] if str(part).startswith("url ")), "")
+
+
 # A heading line (CommonMark: one to six "#" and a space), and a reference.
 _HEADING = re.compile(r"^\s{0,3}#{1,6}\s")
 _REFERENCE = re.compile(r"nostr:((?:npub|nprofile|note|nevent|naddr)1[02-9ac-hj-np-z]+)")
@@ -197,13 +203,26 @@ class ArticleDetails:
         """The fields (``title``, ``hashtags``, ...) of the details kept."""
         return frozenset(_FIELDS[name] for name in self.kept)
 
+    @property
+    def language(self) -> str:
+        """The language the article labels itself with, as NIP-32 has it
+        (``["l", "de", "ISO-639-1"]``) and STANDUP reads it, two letters,
+        or ``""``: a bare ``l`` tag is some other label, and no language
+        is better than a wrong one."""
+        for tag in self.carried:
+            if len(tag) >= 3 and tag[0] == "l" and tag[2] == "ISO-639-1":
+                code = re.split(r"[-_]", tag[1].strip().lower(), maxsplit=1)[0]
+                if re.fullmatch(r"[a-z]{2}", code):
+                    return code
+        return ""
+
     def carried_tags(self, content: str) -> List[List[str]]:
         """The carried tags, as lists: picture descriptions only for the
         pictures still in ``content``."""
         kept = []
         for tag in self.carried:
             if tag[0] == "imeta":
-                url = next((part[4:] for part in tag[1:] if part.startswith("url ")), "")
+                url = imeta_url(tag)
                 if not url or not refs.address_in(url, content):
                     continue
             kept.append(list(tag))

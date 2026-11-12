@@ -252,18 +252,29 @@ class TestRssDiscoveryFlow(unittest.TestCase):
 
 
 class TestFriendlyMessages(unittest.TestCase):
-    def test_fetch_error_embeds_reason(self):
+    def test_fetch_error_says_what_to_do_and_logs_the_reason(self):
+        # Lessons 36: the transport's own words are for the log only.
+        from nostr.imports.errors import failure_words
         err = SourceError("Host not found.", ERROR_CODES.FETCH_ERROR)
-        self.assertEqual(
-            friendly_message(err),
-            "Couldn't reach that URL: Host not found.",
-        )
+        with self.assertLogs("nostr.imports.errors", level="INFO") as logged:
+            said = failure_words(err)
+        self.assertEqual(said, "This address couldn't be reached: check it and your internet "
+                               "connection, then try again.")
+        self.assertIn("Host not found.", "\n".join(logged.output))
+
+    def test_every_code_s_copy_is_one_sentence_with_what_to_do(self):
+        from nostr.imports.errors import _FRIENDLY
+        for code, copy in _FRIENDLY.items():
+            self.assertTrue(copy.endswith("."), code)
+            self.assertEqual(copy.count(". "), 0, code)       # one sentence
+            self.assertIn(": ", copy, code)                   # its cause, then what to do
 
     def test_mapped_codes_use_fixed_copy(self):
         err = SourceError("raw detail", ERROR_CODES.NO_FEED_FOUND)
         self.assertIn("No feed found", friendly_message(err))
         err = SourceError("raw detail", ERROR_CODES.NOT_A_FEED)
-        self.assertIn("isn't a feed", friendly_message(err))
+        self.assertIn("doesn't give a feed", friendly_message(err))
+        self.assertNotIn("raw detail", friendly_message(err))
 
     def test_no_first_person_plural_in_friendly_copy(self):
         # Platform writing guidance: never "we" in user-facing errors.
@@ -274,10 +285,17 @@ class TestFriendlyMessages(unittest.TestCase):
             self.assertNotIn(" we'", lowered, code)
             self.assertNotIn(" our ", lowered, code)
 
-    def test_unknown_code_falls_back_to_raw_message(self):
-        err = SourceError("Feed exceeds the 16 MiB size limit", ERROR_CODES.TOO_LARGE)
-        self.assertEqual(friendly_message(err),
-                         "Feed exceeds the 16 MiB size limit")
+    def test_unknown_code_says_the_generic_sentence_never_the_raw_message(self):
+        from nostr.imports.errors import GENERIC, failure_words
+        err = SourceError("the document could not be read: bad byte", ERROR_CODES.UNKNOWN)
+        self.assertEqual(friendly_message(err), GENERIC)
+        with self.assertLogs("nostr.imports.errors", level="INFO"):
+            self.assertEqual(failure_words(OSError("disk on fire")), GENERIC)
+
+    def test_a_resolver_s_own_words_are_shown_as_they_are(self):
+        err = SourceError("That folder has no .md or .mdx files: choose a folder that has some.",
+                          ERROR_CODES.SOURCE_ERROR)
+        self.assertEqual(friendly_message(err), err.message)
 
     def test_empty_message_never_yields_empty_copy(self):
         err = SourceError("", ERROR_CODES.UNKNOWN)

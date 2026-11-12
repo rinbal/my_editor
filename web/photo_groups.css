@@ -1,0 +1,535 @@
+/* SPDX-FileCopyrightText: 2026 DoktorShift
+ * SPDX-License-Identifier: MIT
+ *
+ * Photo groups, pictures and their full view in the HTML export, as
+ * STANDUP shows them: lines 181-187 (a picture is a block) and 476-993 of
+ * STANDUP backend/htmlgen/article.css (commit bf7c1fb), as they are.
+ * export_html.py inlines this file in every page with a picture, and
+ * photo_page.py gives .article-content the variables these rules read.
+ */
+
+.article-content :where(img) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1.5em 0;
+  border-radius: 0.5em;
+}
+/* Figures: an image and its caption. The caption is set smaller and quieter
+   than the text, as captions are in Photos and Pages.
+
+   Every picture is shown whole at its own shape: --ar, its pixel size from
+   the renderer (or the provisional 3:2, marked data-provisional, until the
+   page script knows it). Nothing is cropped: a picture whose real shape
+   differs from --ar is shown whole inside its place, on a quiet plate. A
+   picture alone is as wide as the column and never taller than
+   min(640px, 78svh); a #wide one widens to the bleed, up to min(900px, 85svh).
+   The picture's box is the link around it when there is one, so a link's
+   flag and focus ring sit on the picture itself. */
+.article-content { --e21-vh: 1svh; }
+@supports not (height: 1svh) {
+  .article-content { --e21-vh: 1vh; }
+}
+.article-content :where(figure) { margin: 0; }
+.article-content .e21-figure {
+  --fig-cap: min(640px, 78 * var(--e21-vh));
+  --fig-w: min(100%, calc(var(--fig-cap) * var(--ar, 3 / 2)));
+  position: relative;
+  margin: 2em 0;
+}
+.article-content .e21-figure > img,
+.article-content .e21-figure > :is(.e21-pg-open, .e21-imglink) {
+  display: block;
+  inline-size: var(--fig-w);
+  max-inline-size: 100%;
+  margin-inline: auto;
+}
+/* The corners round by 0.5em on every surface (Discover rounds other media
+   by 20px): a larger radius would hide the corners of a small picture, a
+   panorama on a phone. */
+.article-content .e21-figure img {
+  block-size: auto;
+  aspect-ratio: var(--ar, 3 / 2);
+  margin-block: 0;
+  border-radius: 0.5em;
+  object-fit: contain;
+  background: var(--theme-bg-subtle);
+}
+.article-content .e21-figure > :is(.e21-pg-open, .e21-imglink) > img { inline-size: 100%; margin: 0; }
+.article-content .e21-figure figcaption {
+  margin-top: 0.6em;
+  color: var(--theme-text-muted);
+  font-size: 0.833em;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.article-content .e21-figure--wide {
+  --fig-cap: min(900px, 85 * var(--e21-vh));
+  margin-inline: calc(-1 * var(--article-bleed, 0px));
+}
+.article-content .e21-figure--wide figcaption { padding-inline: var(--article-bleed, 0px); }
+
+/* The picture is the way to its full view: a link to the original without
+   script, the viewer with it (photo_viewer.js). */
+.article-content .e21-pg-open {
+  border-radius: 0.5em;
+  cursor: zoom-in;
+  -webkit-tap-highlight-color: transparent;
+}
+.article-content .e21-pg-open:focus-visible { outline: 2px solid var(--article-link); outline-offset: 3px; }
+.article-content .e21-pg-open img { transition: filter 0.2s; }
+.article-content .e21-pg-open:hover img { filter: brightness(0.94); }
+
+/* "Vergrößern" for drawings and plans (#wide): a plain button at the end of
+   the caption line, so nothing covers the picture. It opens the viewer, so
+   it holds its place but shows only once the viewer is there (the page
+   script marks the root with data-photo-viewer); without script the picture
+   link opens the original. */
+.article-content .e21-figure:has(> .e21-pg-zoom) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 12px;
+  align-items: start;
+}
+.article-content .e21-figure:has(> .e21-pg-zoom) > :is(.e21-pg-open, .e21-imglink) { grid-column: 1 / -1; }
+.article-content .e21-figure:has(> .e21-pg-zoom) > figcaption { grid-row: 2; grid-column: 1; }
+.article-content .e21-pg-zoom {
+  grid-row: 2;
+  grid-column: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: 44px;
+  margin-top: -4px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--article-link);
+  cursor: pointer;
+  font: 600 0.8125rem/1 var(--e21-ui-font);
+  visibility: hidden;
+}
+:root[data-photo-viewer] .article-content .e21-pg-zoom { visibility: visible; }
+.article-content .e21-figure--wide > .e21-pg-zoom { margin-inline-end: var(--article-bleed, 0px); }
+.article-content .e21-pg-zoom:hover { text-decoration: underline; text-underline-offset: 0.2em; }
+.article-content .e21-pg-zoom:focus-visible { outline: 2px solid var(--article-link); outline-offset: 2px; border-radius: 6px; }
+.article-content .e21-pg-zoom-icon { flex: none; }
+@media print {
+  .article-content .e21-pg-zoom { display: none; }
+}
+
+/* Linked images: the whole picture is the link; a small flag names where it
+   leads, so readers can tell before they tap. */
+.article-content .e21-imglink {
+  position: relative;
+  border-radius: 0.5em;
+  color: inherit;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.article-content .e21-imglink img { transition: filter 0.2s; }
+.article-content .e21-imglink:hover img { filter: brightness(0.92); }
+.article-content .e21-imglink:focus-visible { outline: 2px solid var(--article-link); outline-offset: 3px; }
+.article-content .e21-imgflag {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: calc(100% - 20px);
+  height: 28px;
+  padding: 0 9px 0 11px;
+  border-radius: 999px;
+  /* Dark enough for white text at 4.5:1 even over a white picture. */
+  background: rgb(20 18 15 / 0.66);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  backdrop-filter: blur(10px) saturate(1.4);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16);
+  color: #fff;
+  font: 600 0.75rem/1 var(--e21-ui-font);
+  white-space: nowrap;
+  pointer-events: none;
+  transition: background-color 0.2s, color 0.2s;
+}
+.article-content .e21-imgflag-host { overflow: hidden; text-overflow: ellipsis; }
+.article-content .e21-imgflag sup { margin-left: -3px; font-size: 0.8em; line-height: 0; }
+.article-content .e21-imgflag-icon { flex: none; }
+.article-content .e21-imglink:is(:hover, :focus-visible) .e21-imgflag {
+  background: var(--theme-accent);
+  color: var(--e21-on-accent);
+}
+
+/* Photo groups (docs/publishing-experience.md, "Photo groups"). The engine
+   (photo_layout.py and .js) writes the group: its cells in Markdown order,
+   each run of two or more similar pictures one .e21-pg-run element around
+   its cells, and on every cell the numbers that place it:
+   --ar               a picture's own shape, "w/h" from its pixel size
+   --rs --rg --rl --rc  its row's sums: ratios, gap term, caption term, the
+                      most captions inside one stack
+   --r --k --c        the cell's ratio (a stack: 1 / sum(1/ratio)), its
+                      inside gaps and inside captions
+   --xr --xg --xl     the same sums over the cells before it in the row
+   --n --sr --srmax   on a run: its pictures, their sum of ratios, the widest
+   A property left out is 0. Only bounded plain numbers ever reach them: the
+   renderers pass a size to the engine only when it accepts it.
+
+   Wide columns (600 px and more): a one-column grid, the runs invisible
+   (display: contents), each cell in grid row --row. A row is --hr tall (its
+   pictures, inside gaps and inside caption lines of its tallest cell), never
+   more than the cap, and centred; a cell is r times what the row's height
+   leaves for its pictures. */
+.article-content .e21-imagegroup {
+  --pg-gap: 12px;
+  --pg-cap: min(560px, 72 * var(--e21-vh));
+  --pg-line: 1.708em;                 /* one caption line: 0.6em margin + 1.45 line, both of 0.833em */
+  container: pg / inline-size;
+  margin: 2em calc(-1 * var(--article-bleed, 0px));
+}
+.article-content .e21-imagegroup-track {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--pg-gap);
+}
+/* Chromium and WebKit place 12,000 grid rows; Firefox stops at 10,000. A
+   group that long (only past the engine's size limit, every picture a row of
+   its own) stacks as a column, which gives the same places. */
+.article-content .e21-imagegroup-track:has(> :nth-child(9999)) { display: flex; flex-direction: column; }
+.article-content .e21-pg-run { display: contents; }
+.article-content .e21-imagegroup .e21-figure { --fig-w: 100%; margin: 0; }
+.article-content .e21-imagegroup-track .e21-pg-cell {
+  --hr: min(var(--pg-cap) + var(--rc, 0) * var(--pg-line),
+            (100% - var(--rg, 0) * var(--pg-gap) + var(--rl, 0) * var(--pg-line)) / var(--rs));
+  grid-row: var(--row);
+  grid-column: 1;
+  justify-self: start;
+  align-self: start;
+  inline-size: calc(var(--r) * (var(--hr) - var(--k, 0) * var(--pg-gap) - var(--c, 0) * var(--pg-line)));
+  margin-inline-start: calc((100% - var(--rs) * var(--hr) - var(--rg, 0) * var(--pg-gap) + var(--rl, 0) * var(--pg-line)) / 2
+    + var(--xr, 0) * var(--hr) + var(--xg, 0) * var(--pg-gap) - var(--xl, 0) * var(--pg-line));
+}
+.article-content .e21-pg-stack { display: flex; flex-direction: column; gap: var(--pg-gap); }
+/* A #wide picture in a group ("Groß"): a row of its own, shown as a lone
+   #wide figure is: the group's full width (already the bleed width, so no
+   negative margin), as tall as min(900px, 85svh), its caption and
+   "Vergrößern" placed as alone. */
+.article-content .e21-imagegroup .e21-figure--wide {
+  --pg-cap: min(900px, 85 * var(--e21-vh));
+  --fig-w: min(100%, calc(var(--pg-cap) * var(--ar, 3 / 2)));
+}
+.article-content .e21-imagegroup-track .e21-figure--wide { inline-size: 100%; margin-inline: 0; }
+.article-content .e21-imagegroup .e21-figure--wide figcaption { padding-inline: 0; }
+.article-content .e21-imagegroup .e21-figure--wide > .e21-pg-zoom { margin-inline-end: 0; }
+
+/* Narrow columns (below 600 px), on every surface: the group shows as its
+   runs, never as the wide rows and stacks. A picture outside a run stands
+   alone at its size alone: as wide as the column, never taller than the
+   cap. A run whose pictures all still show at least 5/8 of that size side
+   by side is one row. Every other run is a strip: on a phone reader (below)
+   one swipe strip of equal height; in editors and in print its pictures
+   stand one under another, each at its size alone. Nothing is ever smaller
+   than 5/8 of its size alone. */
+@container pg (max-width: 599.98px) {
+  .article-content .e21-imagegroup-track {
+    --pg-gap: 8px;
+    --pg-cap: min(520px, 65 * var(--e21-vh));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--pg-gap);
+  }
+  .article-content .e21-imagegroup-track .e21-pg-cell { margin-inline-start: 0; align-self: auto; }
+  .article-content .e21-pg-stack { display: contents; }
+  .article-content .e21-pg-run { display: flex; flex-direction: column; align-items: center; align-self: stretch; gap: var(--pg-gap); }
+  .article-content .e21-imagegroup .e21-figure {
+    --pw: min(100cqi, calc(var(--pg-cap) * var(--ar, 3 / 2)));
+    --fig-w: var(--pw);
+    flex: none;
+    inline-size: var(--pw);
+  }
+  /* A narrow picture keeps a readable caption: its figure is at least 8em
+     wide (about 19 characters a line), the picture centred above it. */
+  .article-content .e21-imagegroup .e21-figure:has(> figcaption) { inline-size: max(var(--pw), min(8em, 100cqi)); }
+  .article-content .e21-imagegroup figcaption { -webkit-hyphens: auto; hyphens: auto; }
+  .article-content .e21-imagegroup .e21-figure.e21-figure--wide { inline-size: 100cqi; }
+  .article-content .e21-pg-run[data-phone="row"] {
+    --sh: min(var(--pg-cap), calc((100cqi - (var(--n) - 1) * var(--pg-gap)) / var(--sr)));
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: center;
+  }
+  .article-content .e21-pg-run[data-phone="row"] .e21-figure { --pw: calc(var(--sh) * var(--ar, 3 / 2)); }
+  .article-content .e21-pg-run[data-phone="row"] .e21-figure:has(> figcaption) { inline-size: var(--pw); }
+}
+
+/* Phone readers (screen only; editors, marked data-surface="editor", and
+   print keep the strip unrolled): a strip swipes. Its pictures share one
+   height, each whole at its own width; the strip is as tall as its widest
+   picture is at the column's width, never taller than the cap, and reaches
+   the screen edges through the page gutter, so the next picture peeks in.
+   Its shapes differ by at most 1.6 times, so no picture shows smaller than
+   5/8 of its size alone. Without script it still swipes; photo_groups.js
+   adds the dots, the spoken position and the arrow keys. The dots' room (a
+   44 px row, 4 px under the strip) is the strip's from the start, and the
+   pager stands in it, so dots that come or go move nothing on the page. */
+.article-content .e21-pg-pager { display: none; }
+@media screen {
+  @container pg (max-width: 599.98px) {
+    .article-content:not([data-surface="editor"]) .e21-pg-run[data-phone="strip"] {
+      --sh: min(var(--pg-cap), calc(100cqi / var(--srmax)));
+      flex-direction: row;
+      align-items: flex-start;
+      align-self: stretch;
+      margin-block-end: 48px;
+      margin-inline: calc(-1 * var(--article-gutter, 0px));
+      padding-inline: var(--article-gutter, 0px);
+      scroll-padding-inline: var(--article-gutter, 0px);
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+      scroll-snap-type: x mandatory;
+      scrollbar-width: none;
+    }
+    .article-content:not([data-surface="editor"]) .e21-pg-run[data-phone="strip"]::-webkit-scrollbar { display: none; }
+    .article-content:not([data-surface="editor"]) .e21-pg-run[data-phone="strip"]:focus-visible { outline: 2px solid var(--article-link); outline-offset: 2px; border-radius: 4px; }
+    .article-content:not([data-surface="editor"]) .e21-pg-run[data-phone="strip"] .e21-figure { --pw: calc(var(--sh) * var(--ar, 3 / 2)); scroll-snap-align: start; }
+    .article-content:not([data-surface="editor"]) .e21-pg-pager {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      block-size: 44px;
+      margin-block-start: calc(-44px - var(--pg-gap));
+    }
+    .article-content .e21-pg-pager[hidden] { display: none; }
+    /* Each dot is a 44 x 44 px target (Apple's minimum) around the 7 px dot
+       it draws; photo_groups.js shows dots only while all fit in a row. */
+    .article-content .e21-pg-dot {
+      display: grid;
+      place-items: center;
+      inline-size: 44px;
+      block-size: 44px;
+      padding: 0;
+      border: 0;
+      background: none;
+      cursor: pointer;
+    }
+    .article-content .e21-pg-dot::before {
+      content: "";
+      inline-size: 7px;
+      block-size: 7px;
+      border-radius: 50%;
+      background: var(--theme-text-muted);
+      opacity: 0.35;
+      transition: opacity 0.2s;
+    }
+    .article-content .e21-pg-dot[aria-current="true"]::before { opacity: 1; background: var(--theme-text-heading); }
+    .article-content .e21-pg-dot:focus-visible { outline: 2px solid var(--article-link); outline-offset: -8px; border-radius: 8px; }
+    .article-content .e21-pg-count {
+      display: inline-flex;
+      align-items: center;
+      min-block-size: 44px;
+      color: var(--theme-text-muted);
+      font: 0.8125rem/1 var(--e21-ui-font);
+      font-variant-numeric: tabular-nums;
+    }
+    .article-content .e21-pg-dot[hidden],
+    .article-content .e21-pg-count[hidden] { display: none; }
+  }
+}
+.article-content .e21-pg-sr {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (forced-colors: active) {
+  .article-content .e21-pg-dot::before { background: CanvasText; }
+  .article-content .e21-pg-dot[aria-current="true"]::before { background: Highlight; }
+}
+/* Increase Contrast: every dot drawn whole, the current one ringed. */
+@media (prefers-contrast: more) {
+  .article-content .e21-pg-dot::before { opacity: 1; }
+  .article-content .e21-pg-dot[aria-current="true"]::before { outline: 2px solid var(--theme-text-heading); outline-offset: 2px; }
+}
+
+/* An article of very many groups (200 and more: the page marks it, and
+   photo_groups.js does where a page did not). Thousands of strips that swipe
+   cost WebKit seconds for every frame (measured on a phone: 10,000 groups,
+   17 s to load and 4 s for each scrolled screen, growing with the square of
+   their number). There a group is laid out and painted only near the view,
+   and far away it holds a guessed height until its own is known. Such a
+   group clips what it paints, so it takes the page gutter (6 px at least,
+   for the focus rings) into its box as padding and gives it back as margin:
+   its column keeps its width, and a strip still reaches the screen edges.
+   Every other article is untouched. */
+@media screen {
+  .article-content[data-pg-many]:not([data-surface="editor"]) .e21-imagegroup {
+    --pg-pad: max(var(--article-gutter, 0px), 6px);
+    content-visibility: auto;
+    contain-intrinsic-block-size: auto 300px;
+    margin: calc(2em - 6px) calc(-1 * var(--article-bleed, 0px) - var(--pg-pad));
+    padding: 6px var(--pg-pad);
+  }
+}
+
+/* Safari 15 has no container queries: the wide rules apply at every width,
+   and below a 640 px screen (the blog and Discover give the text 600 px from
+   there) the narrow block stands in with widths in %, its strips unrolled.
+   Keep in step with the narrow block above. */
+@supports not (container-type: inline-size) {
+  @media (max-width: 640px) {
+    .article-content .e21-imagegroup-track {
+      --pg-gap: 8px;
+      --pg-cap: min(520px, 65 * var(--e21-vh));
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--pg-gap);
+    }
+    .article-content .e21-imagegroup-track .e21-pg-cell { margin-inline-start: 0; align-self: auto; }
+    .article-content .e21-pg-stack { display: contents; }
+    .article-content .e21-pg-run { display: flex; flex-direction: column; align-items: center; align-self: stretch; gap: var(--pg-gap); }
+    .article-content .e21-imagegroup .e21-figure {
+      --pw: min(100%, calc(var(--pg-cap) * var(--ar, 3 / 2)));
+      --fig-w: 100%;
+      flex: none;
+      inline-size: var(--pw);
+    }
+    .article-content .e21-imagegroup .e21-figure.e21-figure--wide { inline-size: 100%; }
+    .article-content .e21-pg-run[data-phone="row"] { flex-direction: row; align-items: flex-start; justify-content: center; }
+    .article-content .e21-pg-run[data-phone="row"] .e21-figure {
+      inline-size: min(calc(var(--pg-cap) * var(--ar, 3 / 2)), calc((100% - (var(--n) - 1) * var(--pg-gap)) * var(--ar, 3 / 2) / var(--sr)));
+    }
+  }
+}
+
+/* The full view of a picture (photo_viewer.js): a black backdrop, Close,
+   "2 von 4" and the original along the top, the whole caption below, the
+   picture whole in between. It covers the page, so it sits outside
+   .article-content. */
+.e21-pv {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: #000;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.e21-pv[hidden] { display: none; }
+/* Focus rests on the viewer itself after a click on its picture: no ring. */
+.e21-pv:focus { outline: none; }
+.e21-pv.is-open { opacity: 1; }
+.e21-pv-bar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: max(8px, env(safe-area-inset-top)) 8px 4px;
+}
+.e21-pv-bar > :last-child { justify-self: end; }
+.e21-pv-count { font-size: 0.9375rem; font-weight: 600; font-variant-numeric: tabular-nums; opacity: 0.9; }
+.e21-pv-btn {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 44px;
+  block-size: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.12);
+  color: #fff;
+  cursor: pointer;
+}
+.e21-pv-btn:hover { background: rgb(255 255 255 / 0.2); }
+.e21-pv-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.e21-pv-btn[hidden] { display: none; }
+.e21-pv-stage { position: relative; overflow: hidden; touch-action: none; cursor: zoom-in; }
+.e21-pv-stage.is-zoomed { cursor: grab; }
+.e21-pv-stage.is-panning { cursor: grabbing; }
+.e21-pv-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-inline-size: none;
+  margin: 0;
+  border-radius: 0;
+  transform-origin: 0 0;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  will-change: transform;
+}
+.e21-pv-img[hidden] { display: none; }
+.e21-pv-img.is-animated { transition: transform 0.26s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.e21-pv-failed {
+  position: absolute;
+  inset: 50% 20px auto;
+  margin: 0;
+  transform: translateY(-50%);
+  color: rgb(255 255 255 / 0.86);
+  font-size: 0.9375rem;
+  text-align: center;
+}
+.e21-pv-failed[hidden] { display: none; }
+.e21-pv-side { position: absolute; top: 50%; transform: translateY(-50%); }
+.e21-pv-prev { left: 8px; }
+.e21-pv-next { right: 8px; }
+@media (hover: none) {
+  .e21-pv-side { display: none; }
+}
+.e21-pv-foot { padding: 10px 20px max(16px, env(safe-area-inset-bottom)); text-align: center; }
+.e21-pv-caption {
+  max-inline-size: 62ch;
+  margin: 0 auto;
+  color: rgb(255 255 255 / 0.86);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  text-wrap: pretty;
+  /* The picture keeps the screen: a long caption scrolls in a third of it. */
+  max-block-size: 30vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  white-space: pre-line;
+}
+.e21-pv-caption:focus-visible { outline: 2px solid #fff; outline-offset: 4px; border-radius: 4px; }
+.e21-pv-caption:empty { display: none; }
+/* The post a picture of a media wall belongs to, one step away. */
+.e21-pv-post {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 44px;
+  padding-inline: 12px;
+  color: #fff;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.e21-pv-post:focus-visible { outline: 2px solid #fff; outline-offset: 2px; border-radius: 8px; }
+.e21-pv-post[hidden] { display: none; }
+.e21-pv-sr {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (forced-colors: active) {
+  .e21-pv { background: Canvas; color: CanvasText; }
+  .e21-pv-btn { border: 1px solid ButtonText; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .e21-pv, .e21-pv-img.is-animated { transition: none; }
+}
+@media print {
+  .e21-pv { display: none; }
+}
+

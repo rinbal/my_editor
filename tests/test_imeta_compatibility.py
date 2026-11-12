@@ -30,8 +30,11 @@ Runs against the real ``AssetManager`` over the blob-store and uploader
 fakes. No network, no relay, no signer.
 """
 
+import hashlib
+import json
 import os
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -43,6 +46,7 @@ from PySide6.QtGui import QTextImageFormat
 from PySide6.QtWidgets import QApplication
 
 import image_safety
+import photo_group
 from doc_walk import iter_image_names
 from editor import HtmlEditor
 from main_window import MainWindow
@@ -74,6 +78,9 @@ class _Window:
     _asset_named = MainWindow._asset_named
     _local_image_bytes = staticmethod(MainWindow._local_image_bytes)
     _publish_text = MainWindow._publish_text
+    _stored_name = MainWindow._stored_name
+    _asset_image = MainWindow._asset_image
+    _cropped = MainWindow._cropped
 
     def __init__(self, cache_dir):
         cache_dir = Path(cache_dir)
@@ -88,7 +95,7 @@ class _Window:
             index=AssetIndex(path=cache_dir.parent / "media_assets.json"),
         )
 
-    def uploaded_asset(self, data=PNG_BYTES, *, alt="a photo", servers=()):
+    def uploaded_asset(self, data=PNG_BYTES, *, alt="IMG_0001", servers=()):
         adopted = self._asset_manager.adopt_bytes(data, alt=alt)
         assert adopted is not None
         asset = self._asset_manager.adopt_library_file(
@@ -147,6 +154,37 @@ def _names(ed):
 # --------------------------------------------------------------------------- #
 # Our own URLs                                                                #
 # --------------------------------------------------------------------------- #
+
+def test_records_saved_by_an_earlier_version_keep_descriptions_and_file_names_apart(tmp_path):
+    # Lead on a48d0b6, 2 and on 9b111af, 1: records saved before they said
+    # where an alt came from. A description typed in the Media Library is
+    # never dropped; a file added from disk and not yet sent keeps its
+    # name as a name, also once this app sends it.
+    manager = _Window(tmp_path / "cache")._asset_manager
+    sha = hashlib.sha256(b"a picture in the library").hexdigest()
+    manager.adopt_library_file(sha256=sha, remote_url=f"{OURS}/{sha}", mime="image/png",
+                               alt="Dünen im Wind")
+    local = manager.adopt_bytes(GIF_BYTES, alt="sketch")
+    manager.index.flush()
+    index = tmp_path / "media_assets.json"
+    saved = json.loads(index.read_text(encoding="utf-8"))
+    for record in saved["assets"]:
+        del record["from_library"]
+    index.write_text(json.dumps(saved), encoding="utf-8")
+    older = _Window(tmp_path / "cache")
+    picked = older._asset_manager.get(sha)
+    _content, tags = _tags_for(older, _editor_with((picked.key, "Dünen im Wind")))
+    assert _entry(tags[0], "alt") == "Dünen im Wind"
+    sketch = older._asset_manager.get(local.sha256)
+    assert photo_group.description_of("sketch", sketch.key, sketch.stored_name) == ""
+    older._asset_manager.request_upload(sketch.sha256)
+    QApplication.processEvents()
+    older._uploader.finish(older._uploader.calls[-1].name, types.SimpleNamespace(
+        url=f"{OURS}/{sketch.sha256}.gif", size=len(GIF_BYTES)))
+    QApplication.processEvents()
+    _content, tags = _tags_for(older, _editor_with((sketch.key, "sketch")))
+    assert _entry(tags[0], "alt") is None
+
 
 def test_our_own_uploaded_image_is_fully_described(tmp_path):
     win = _Window(tmp_path / "cache")
@@ -405,3 +443,40 @@ def test_a_legacy_post_with_no_media_at_all_is_unchanged(tmp_path):
     assert media == []
     assert not any(t[0] == "imeta" for t in event["tags"])
 
+
+
+def test_a_picture_without_a_description_is_published_without_one(tmp_path):
+    # The record took the asset's stored alt, a picture's file name, when
+    # the document gave none, and published "image" as a description.
+    win = _Window(tmp_path / "cache")
+    # Gate RG-PG2E-c 4 and RG-PG2E-d 1: nor the name its asset keeps, which
+    # an earlier version gave a picture added from disk ("![IMG_2041](
+    # myeditor-asset:…)"): added and sent by this app at the first try.
+    manager = win._asset_manager
+    asset = manager.adopt_bytes(PNG_BYTES, alt="IMG_2041")
+    manager.request_upload(asset.sha256)
+    QApplication.processEvents()
+    win._uploader.finish(win._uploader.calls[-1].name, types.SimpleNamespace(
+        url=f"{OURS}/{asset.sha256}.png", size=len(PNG_BYTES)))
+    QApplication.processEvents()
+    asset = manager.get(asset.sha256)
+    assert asset.is_uploaded
+    for alt in ("", "image", "IMG_2041"):
+        _content, tags = _tags_for(win, _editor_with((asset.key, alt)))
+        assert _entry(tags[0], "alt") is None
+    _content, tags = _tags_for(win, _editor_with((asset.key, "Der Steg am Abend")))
+    assert _entry(tags[0], "alt") == "Der Steg am Abend"
+    # A crop's own file is stored by the picture's name, never by its
+    # description, which would then read as none.
+    ed = _editor_with((asset.key, "Der Steg am Abend"))
+    win._cropped(ed, 0, asset.key, "", GIF_BYTES, "gif", "Der Steg am Abend")
+    cropped = win._asset_named(ed, _names(ed)[0])
+    assert cropped.stored_name == "IMG_2041-cropped"
+    assert photo_group.description_of("Der Steg am Abend", cropped.key,
+                                      cropped.stored_name) == "Der Steg am Abend"
+    # A Media Library pick's alt is what was typed there: a description.
+    sha = hashlib.sha256(b"a picture in the library").hexdigest()
+    picked = manager.adopt_library_file(sha256=sha, remote_url=f"{OURS}/{sha}", mime="image/gif",
+                                        alt="Dünen im Wind")
+    _content, tags = _tags_for(win, _editor_with((picked.key, "Dünen im Wind")))
+    assert _entry(tags[0], "alt") == "Dünen im Wind"

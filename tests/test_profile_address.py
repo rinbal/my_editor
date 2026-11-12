@@ -46,7 +46,7 @@ def qt_app():
     yield app
 
 
-def run(answer, *, client=None, pool=None):
+def run(answer, *, client=None, pool=None, jobs=None):
     client = client or FakeClient()
     pool = pool or FakePool()
     query = FakeQuery({0: answer})
@@ -57,6 +57,8 @@ def run(answer, *, client=None, pool=None):
     job.finished.connect(outcomes.append)
     job.start()
     settle(10)
+    if jobs is not None:
+        jobs.append(job)
     return outcomes, client, pool
 
 
@@ -110,9 +112,28 @@ def test_a_profile_that_is_not_an_object_is_never_guessed_at():
 
 
 def test_a_signer_that_says_no_changes_nothing():
-    outcomes, _client, pool = run(found(profile(name="Alice")),
+    jobs = []
+    outcomes, _client, pool = run(found(profile(name="Alice")), jobs=jobs,
                                   client=FakeClient(fail="user rejected"))
     assert outcomes == [pa.FAILED] and pool.published == []
+    # Lessons 36: what did not happen, then the one sentence of its cause.
+    assert pa.outcome_message(pa.FAILED, jobs[0].write) == (
+        "Your profile wasn’t changed. Your signer app declined the request: allow it there "
+        "and try again.")
+
+
+def test_a_profile_no_relay_answered_for_is_said_as_the_connection():
+    jobs = []
+    outcomes, _client, _pool = run(UNKNOWN, jobs=jobs)
+    assert outcomes == [pa.UNREADABLE]
+    assert pa.outcome_message(pa.UNREADABLE, jobs[0].write) == (
+        "Your profile wasn’t changed. Check your internet connection and try again.")
+
+
+def test_a_window_for_another_account_says_so():
+    assert pa.inactive_message() == (
+        "Your profile wasn’t changed. This window is for an account that isn’t active any "
+        "more: close it and open it again.")
 
 
 def test_every_outcome_has_plain_words():

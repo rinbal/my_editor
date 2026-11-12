@@ -48,6 +48,7 @@ from i18n import _
 from popup_placement import fitting_size
 
 from ..article_details import AUTHOR_MARKER
+from ..failures import markup, spoken
 from ..avatar_store import AvatarStore
 from ..bech32 import encode_npub
 from ..known_people import KnownPeople
@@ -92,6 +93,27 @@ def fit_to_window(dialog: QDialog, wanted: QSize) -> None:
     dialog.setMinimumSize(QSize(min(least.width(), size.width()),
                                 min(least.height(), size.height())))
     dialog.resize(size)
+
+
+def fit_minimum(dialog: QDialog, least: QSize) -> None:
+    """``dialog``'s minimum size: ``least``, or more where its content
+    needs it to read whole (RG-M4-c 9): its widest row of buttons in the
+    words of the language, and the height its wrapping lines take at
+    that width. Called again whenever its words change."""
+    layout = dialog.layout()
+    if layout is None:
+        dialog.setMinimumSize(least)
+        return
+    layout.activate()
+    margins = layout.contentsMargins()
+    # A row of buttons needs each button at its full width, not the least
+    # width Qt would squeeze it to.
+    rows = [box.sizeHint().width() for box in dialog.findChildren(QDialogButtonBox)
+            if box.isVisibleTo(dialog)]
+    width = max(least.width(), layout.minimumSize().width(),
+                max(rows, default=0) + margins.left() + margins.right())
+    tall = layout.heightForWidth(width) if layout.hasHeightForWidth() else -1
+    dialog.setMinimumSize(width, max(least.height(), tall, layout.minimumSize().height()))
 
 
 # The sheet's margins, and in a window too low for them (the smallest
@@ -334,15 +356,18 @@ class PeopleRow(QWidget):
 
 
 class AccountRow(QWidget):
-    """"Publishing as" and the account, with a menu of the others.
-    ``switched(profile)`` when another is chosen; it becomes the account
-    in use, as at the window's own account menu."""
+    """"Publishing as" (or ``label``, with ``accessible`` naming the
+    button, ``{name}`` the account's) and the account, with a menu of the
+    others. ``switched(profile)`` when another is chosen; it becomes the
+    account in use, as at the window's own account menu."""
 
     switched = Signal(object)
 
     def __init__(self, profile: Profile, store: ProfileStore, avatars: AvatarStore, *,
-                 is_dark: bool, parent: Optional[QWidget] = None) -> None:
+                 is_dark: bool, label: str = "", accessible: str = "",
+                 parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        self._accessible = accessible or _("Publishing as {name}")
         self._profile = profile
         self._store = store
         self._avatars = avatars
@@ -350,8 +375,7 @@ class AccountRow(QWidget):
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(4)
-        label = QLabel(_("Publishing as"))
-        row.addWidget(label)
+        row.addWidget(QLabel(label or _("Publishing as")))
         self.button = QToolButton()
         self.button.setObjectName("profile_switch")
         self.button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
@@ -380,7 +404,7 @@ class AccountRow(QWidget):
         name = profile.display_name or profile.npub_short()
         self.button.setText(f"  {name}")
         self.button.setToolTip(profile.npub_short())
-        self.button.setAccessibleName(_("Publishing as {name}").format(name=name))
+        self.button.setAccessibleName(self._accessible.format(name=name))
         self.menu.clear()
         profiles = self._store.list()
         if not profiles:
@@ -406,23 +430,38 @@ class AccountRow(QWidget):
 
 
 class StatusLine(QLabel):
-    """What is going on, or what went wrong, above the buttons."""
+    """What is going on, or what went wrong, above the buttons. A total
+    failure has a ``title`` too, what did not happen, shown above its
+    sentence in bold and said once (lessons 36)."""
 
     def __init__(self, is_dark: bool, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._is_dark = is_dark
         self._error = False
+        # What is shown: (its title, its words), plain.
+        self.shown = ("", "")
         self.setWordWrap(True)
         self.setTextFormat(Qt.TextFormat.PlainText)
         self.setVisible(False)
 
-    def say(self, text: str, *, error: bool = False) -> None:
-        self.setText(text)
+    def say(self, text: str, *, error: bool = False, title: str = "",
+            detail: str = "", quietly: bool = False) -> None:
+        """Show ``text`` (with its ``title``, for a total failure); the
+        technical ``detail`` only in the tooltip (lessons 26 and 36).
+        ``quietly``: shown and not announced (a wait that is over)."""
+        self.setToolTip(detail)
+        if title:
+            self.setTextFormat(Qt.TextFormat.RichText)
+            self.setText(markup(title, text))
+        else:
+            self.setTextFormat(Qt.TextFormat.PlainText)
+            self.setText(text)
         self.setVisible(bool(text))
         self._error = error
         self._color()
-        if text and error:
-            announce.announce(self, text)
+        if text and (error or title) and (title, text) != self.shown and not quietly:
+            announce.announce(self, spoken(title, text))
+        self.shown = (title, text)
 
     def set_dark(self, is_dark: bool) -> None:
         self._is_dark = is_dark

@@ -70,13 +70,13 @@ from PySide6.QtWidgets import (
 
 import i18n
 import media_files
-import theme
 import url_safety
 from alerts import confirm_destructive
 from . import appearance
-from i18n import _, ngettext
+from i18n import N_, _, ngettext
 from media_files import format_size  # noqa: F401, imported from here too
 
+from .. import failures
 from ..blossom.errors import ERROR_CODES, friendly_message
 from ..blossom.store import MediaFile, MediaStore
 from ..media.media_visibility import PRIVATE, PUBLISHED_COPY, MediaVisibility
@@ -97,6 +97,9 @@ from .media_source import PreviewResolver
 from .media_thumbnails import MediaThumbnails
 from .media_saver import MediaSaver, save_failure, saves_failure
 from .thumbnail_loader import ThumbnailLoader
+
+# Why a file that is no media wasn't added, and what to do.
+_ONLY_MEDIA = N_("Only images, videos, audio and documents can be added: choose one of those.")
 
 # Types a file being added is shown from its own bytes while it uploads:
 # the ones the app decodes anyway.
@@ -190,9 +193,6 @@ class MediaLibraryDialog(QDialog):
         self._ticker = QTimer(self)
         self._ticker.setInterval(33)
         self._ticker.timeout.connect(self._tick)
-        # What a finished upload has to say (a copy a server did not
-        # keep), said once it is added.
-        self._job_notes: Dict[str, str] = {}
         # What the store said about a job before its tile was made (a
         # small file starts, or is refused, inside upload_file): the
         # tile's state, and for a failure its reason, by job name.
@@ -353,6 +353,9 @@ class MediaLibraryDialog(QDialog):
         for kind, label in (("all", _("All Items")), ("image", _("Images")),
                             ("video", _("Videos")), ("audio", _("Audio")), ("file", _("Files"))):
             self._filter_combo.addItem(label, kind)
+        if not self._pick_mode:
+            # Submissions' encrypted files, apart: never offered to insert.
+            self._filter_combo.addItem(_("Submission Files"), "submission")
         self._filter_combo.currentIndexChanged.connect(self._rebuild)
         self._filter_combo.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         bar.addWidget(self._filter_combo)
@@ -451,10 +454,9 @@ class MediaLibraryDialog(QDialog):
         store.upload_finished.connect(self._on_upload_finished)
         store.upload_failed.connect(self._on_upload_failed)
         store.upload_cancelled.connect(self._on_upload_cancelled)
-        store.mirror_failed.connect(self._on_copy_missing)
-        store.server_skipped.connect(self._on_copy_missing)
         store.file_deleted.connect(self._on_file_deleted)
         store.delete_failed.connect(self._on_delete_failed)
+        store.submission_checked.connect(self._on_submission_checked)
         self._loader.ready.connect(self._on_thumbnail_ready)
         self._loader.failed.connect(self._on_thumbnail_failed)
 
@@ -486,7 +488,10 @@ class MediaLibraryDialog(QDialog):
         self._refresh_pick_notice()
 
     def _check_private_again(self) -> None:
-        if self._private_library is not None:
+        files = self._selected_files()
+        if len(files) == 1 and files[0].unsure:
+            self._store.check_submission_file(files[0].key, again=True)
+        elif self._private_library is not None:
             self._private_library.refresh()
         self._refresh_pick_notice()
 
@@ -513,7 +518,10 @@ class MediaLibraryDialog(QDialog):
     def _matches(self, tile: Tile) -> bool:
         kind = self._filter_combo.currentData() or "all"
         text = self._search.text().strip().casefold()
-        return (kind == "all" or tile.kind == kind) and (not text or text in tile.name.casefold())
+        if tile.submission != (kind == "submission"):
+            return False                    # in their own group only
+        return (kind in ("all", "submission") or tile.kind == kind) and (
+            not text or text in tile.name.casefold())
 
     def _job_tiles(self) -> List[Tile]:
         return [tile for tile in self._jobs.values() if self._matches(tile)]
@@ -536,6 +544,16 @@ class MediaLibraryDialog(QDialog):
             and self._visibility.state_of(source) == PUBLISHED_COPY
 
     def _file_tile(self, media: MediaFile) -> Tile:
+        sealed = self._store.submission_state(media.hash)
+        if sealed:
+            day = _day_of(media)
+            return Tile(key=media.hash, name=_("Encrypted file of a submission"),
+                        detail=" · ".join(filter(None, (day, format_size(media.size)))),
+                        kind="file", media=media, submission=True)
+        if sealed is None:
+            # Listed from a server, its first bytes not here (another
+            # computer): they are read before it is offered (RG-M2r 5).
+            self._store.check_submission_file(media.hash)
         name = self._store.name_of(media.hash) or self._visibility.name_of(media.hash)
         mime = (self._visibility.declared_mime(media.hash) or media.mime_type or "").lower().split(";", 1)[0].strip()
         if mime in ("", "application/octet-stream"):
@@ -549,7 +567,43 @@ class MediaLibraryDialog(QDialog):
         state = self._visibility.state_of(media.hash)
         return Tile(key=media.hash, name=name, detail=detail, kind=kind,
                     private=state == PRIVATE, media=media,
-                    pixmap=self._thumbs.get(media.hash), mime=mime)
+                    pixmap=self._thumbs.get(media.hash), mime=mime, unsure=sealed is None)
+
+    def _on_submission_checked(self, sha: str) -> None:
+        """A file's first bytes told (or no server gave them): its tile is
+        made again, and only it moves: in place, taken out when the
+        filter no longer takes it, put in where a layout would put it
+        when it does now or names sort it elsewhere. Never the whole grid
+        laid out again: a library of a thousand files listed from another
+        computer answers one file per turn (RG-M2r2a 4, RG-M2r3 2)."""
+        old, media = self._model.tile(sha), self._store.files.get(sha)
+        new = self._file_tile(media) if media is not None \
+            and not self._is_hidden_copy(sha) else None
+        sort = self._sort_combo.currentData() or "newest"
+        if new is None or not self._matches(new):
+            self._model.remove(sha)                 # a selected one: Qt says so
+        elif old is not None and (sort != "name" or new.name == old.name):
+            self._model.replace(new)
+        else:
+            self._model.remove(sha)
+            self._model.insert(self._row_for(new), new)
+        self._show_page()
+        self._refresh_pick_notice()
+
+    def _row_for(self, tile: Tile) -> int:
+        """The row a layout of the grid gives ``tile``, a file's: after
+        the uploads, among the files in the order chosen (by name, ties
+        as listed newest first; else as listed)."""
+        sort = self._sort_combo.currentData() or "newest"
+        order = {media.hash: at for at, media in enumerate(self._store.file_list(
+            filter_type="all", sort_by="newest" if sort == "name" else sort))}
+
+        def rank(each: Tile) -> tuple:
+            at = order.get(each.key, len(order))
+            return (each.name.casefold(), at) if sort == "name" else (at,)
+
+        mine = rank(tile)
+        return sum(1 for each in self._model.tiles if not each.is_file or rank(each) < mine)
 
     def _show_page(self) -> None:
         """The grid, or one plain sentence where it would be."""
@@ -742,7 +796,8 @@ class MediaLibraryDialog(QDialog):
 
     def _can_insert(self) -> bool:
         files = self._selected_files()
-        return len(files) == 1 and not self._visibility.is_unknown(files[0].key)
+        return len(files) == 1 and not files[0].submission and not files[0].unsure \
+            and not self._visibility.is_unknown(files[0].key)
 
     def set_inserter(self, insert: Callable[[MediaFile, str], None],
                      can_take: Callable[[], bool]) -> None:
@@ -778,6 +833,17 @@ class MediaLibraryDialog(QDialog):
         if not self._pick_mode:
             return
         files = self._selected_files()
+        if len(files) == 1 and files[0].unsure:
+            # Whether it is a submission's encrypted file is still read
+            # from its server, or no server answered: Try Again asks.
+            failed = self._store.submission_check_failed(files[0].key)
+            self._pick_notice_text.setText(
+                _("This file can’t be used until its server answers.") if failed
+                else _("MyEditor is still checking this file. One moment."))
+            self._pick_notice_button.setVisible(failed)
+            self._pick_notice.setVisible(True)
+            self._insert_button.setEnabled(False)
+            return
         blocked = len(files) == 1 and self._visibility.is_unknown(files[0].key)
         library = self._private_library
         checking = library is not None and library.loading
@@ -844,7 +910,10 @@ class MediaLibraryDialog(QDialog):
     def _link_of(self, tile: Tile) -> str:
         """The address that shows someone this file, or "": a shared
         original's is its public copy's (its own serves sealed bytes), and
-        a private file has none."""
+        a private file or a submission's encrypted file has none, nor a
+        file not told yet to be no such file."""
+        if tile.submission or tile.unsure:
+            return ""
         copy = self._visibility.public_copy_of(tile.key)
         if copy is not None:
             return copy.url
@@ -937,7 +1006,20 @@ class MediaLibraryDialog(QDialog):
         title = (_("Delete “{name}”?").format(name=files[0].name) if len(files) == 1
                  else ngettext("Delete {count} item?", "Delete {count} items?",
                                len(files)).format(count=len(files)))
-        if all(self._visibility.state_of(tile.key) == PRIVATE for tile in files):
+        if any(tile.submission for tile in files):
+            message = ngettext(
+                "The editorial team can no longer open this file of your submission. You "
+                "can’t undo this action.",
+                "The editorial team can no longer open these files of your submissions. You "
+                "can’t undo this action.", len(files))
+        elif any(tile.unsure for tile in files):
+            # Not told yet whether it is one: never the plain warning.
+            message = ngettext(
+                "If this is a file of one of your submissions, the editorial team can no "
+                "longer open it. You can’t undo this action.",
+                "If these are files of your submissions, the editorial team can no longer "
+                "open them. You can’t undo this action.", len(files))
+        elif all(self._visibility.state_of(tile.key) == PRIVATE for tile in files):
             # Another app's private files (Lotus, say): gone from it too.
             message = ngettext(
                 "It’s also gone from the other app that keeps it privately. You can’t undo "
@@ -1057,11 +1139,12 @@ class MediaLibraryDialog(QDialog):
                 self._adding = False
             self._add_job(name, mime, _local_preview(mime=mime, path=path))
         if refused:
-            self._say(ngettext(
-                "“{name}” wasn’t added. Choose a supported image, video, audio or document file.",
-                "{count} files weren’t added. Choose supported images, videos, audio or document files.",
-                len(refused)).format(name=refused[0], count=len(refused)),
-                error=True)
+            # What did not happen, never how many (lessons 36); which
+            # files is the tooltip.
+            title = (_("“{name}” wasn’t added").format(name=refused[0]) if len(refused) == 1
+                     else _("Some files weren’t added"))
+            self._say(failures.spoken(title, _(_ONLY_MEDIA)), error=True,
+                      detail="\n".join(refused) if len(refused) > 1 else "")
 
     def _paste(self) -> None:
         """Command-V on the grid adds a pasted image."""
@@ -1175,12 +1258,11 @@ class MediaLibraryDialog(QDialog):
         sha = getattr(media, "hash", "")
         if tile.pixmap is not None and sha:
             self._thumbs.setdefault(sha, tile.pixmap)
-        note = self._job_notes.pop(name, "")
+        # A server that kept no copy is not said: the file is on the
+        # others (lessons 36; the store logs it).
         self._rebuild()
         if sha and self._model.row_of(sha) >= 0:
             self._grid.setCurrentIndex(self._model.index(self._model.row_of(sha)))
-        if note:
-            self._say(note)
 
     def _on_upload_failed(self, name: str, reason: str) -> None:
         tile = self._jobs.get(name)
@@ -1189,27 +1271,18 @@ class MediaLibraryDialog(QDialog):
                 # Refused inside upload_file, before its tile was made.
                 self._early[name] = (FAILED, reason)
             return
-        self._job_notes.pop(name, None)
         tile.state, tile.detail = FAILED, reason
         self._model.changed(name)
+        # Which servers refused it, and why, is the line's tooltip.
         self._say(_("“{name}” wasn’t added. {reason}").format(name=name, reason=reason),
-                  error=True)
+                  error=True, detail=self._store.refusal_detail(name))
         self._refresh_pick_notice()
 
     def _on_upload_cancelled(self, name: str) -> None:
         if self._jobs.pop(name, None) is not None:
-            self._job_notes.pop(name, None)
             self._rebuild()
         elif self._adding:
             self._early[name] = ("cancelled", "")
-
-    def _on_copy_missing(self, name: str, _host: str, _why: str) -> None:
-        """A server did not take a copy, or was full. The file is on the
-        others, so it is said once, when it is added, and plainly."""
-        if name in self._jobs:
-            self._job_notes[name] = _(
-                "“{name}” is added, but one of your media servers didn’t keep a copy."
-            ).format(name=name)
 
     # ------------------------------------------------------------------
     # Listing, storage, and the line at the bottom
@@ -1232,12 +1305,13 @@ class MediaLibraryDialog(QDialog):
         self._show_page()
         if any(listing.ok and listing.truncated
                for listing in self._store.server_listings().values()):
-            self._say(_("Your media servers may not have listed every file. Refresh to "
-                        "look again."))
+            self._say(_("Your media servers may not have listed every file: choose Refresh "
+                        "to look again."))
 
     def _on_fetch_error(self, code: str) -> None:
         if code == ERROR_CODES.NETWORK_UNAVAILABLE:
-            text = _("Couldn’t reach your media servers. Check your internet connection.")
+            text = _("Couldn’t reach your media servers: check your internet connection and "
+                     "try again.")
         else:
             text = friendly_message(code)
         if self._store.files:
@@ -1259,8 +1333,8 @@ class MediaLibraryDialog(QDialog):
         self._storage.setText("  ·  ".join(lines))
         self._storage.setVisible(bool(lines))
 
-    def _say(self, text: str, *, error: bool = False) -> None:
-        self._show_status(text, "error" if error else "")
+    def _say(self, text: str, *, error: bool = False, detail: str = "") -> None:
+        self._show_status(text, "error" if error else "", detail)
         if error:
             self._status_timer.stop()
         else:
@@ -1269,9 +1343,9 @@ class MediaLibraryDialog(QDialog):
     def _rest_status(self) -> None:
         self._show_status(_("Anyone with the link can see the files you add here."), "rest")
 
-    def _show_status(self, text: str, tone: str) -> None:
+    def _show_status(self, text: str, tone: str, detail: str = "") -> None:
         self._status.setText(text)
-        self._status.setToolTip("")
+        self._status.setToolTip(detail)
         self._status.setProperty("tone", tone)
         self._status.style().unpolish(self._status)
         self._status.style().polish(self._status)
@@ -1367,7 +1441,8 @@ def _delete_reason(code: str) -> str:
     the file is on refusing: choosing another server, the remedy when
     adding, can't delete it there."""
     if code == ERROR_CODES.AUTH_REJECTED:
-        return _("A media server it’s on didn’t let your account delete it.")
+        return _("A media server it’s on didn’t let your account delete it: try again with "
+                 "the account that added it.")
     return friendly_message(code)
 
 

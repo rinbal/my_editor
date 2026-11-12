@@ -223,6 +223,7 @@ class _SaveAsWindow:
     """The slice of MainWindow that Save As uses."""
 
     save_as = MainWindow.save_as
+    _saved_as = MainWindow._saved_as
 
     def __init__(self):
         self.saved, self.watched, self.current = [], [], []
@@ -241,7 +242,7 @@ class _SaveAsWindow:
     def current_path(self):
         return None
 
-    def _save_to(self, path):
+    def _save_to(self, path, then=None):
         self.saved.append(path)
         return True
 

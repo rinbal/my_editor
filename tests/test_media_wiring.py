@@ -363,7 +363,7 @@ def test_a_library_upload_that_fails_with_no_library_open_is_said_in_the_window(
         _library_failures={},
     )
     host._show_library_failures = lambda: shown.append(dict(host._library_failures))
-    reason = "Couldn’t reach your media server. Check your internet connection."
+    reason = "Couldn’t reach your media server: check your internet connection and try again."
     MainWindow._on_library_upload_failed(host, "Holiday.png", reason)
     MainWindow._on_library_upload_failed(host, f"asset:{'e' * 64}", reason)   # the editor's own
     assert shown == [{"Holiday.png": reason}]

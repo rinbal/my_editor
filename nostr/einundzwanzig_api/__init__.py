@@ -82,9 +82,10 @@ from .messages import (
     NIP05_HANDLE_MAX_LENGTH,
     application_text_problem,
     email_problem,
+    failure_details,
+    failure_sentence,
     field_message,
     handle_field_message,
-    humanize,
     nip05_handle_problem,
 )
 from .models import (
@@ -110,7 +111,6 @@ from .models import (
     parse_invoice,
     parse_membership,
     parse_payments,
-    parse_retry_after,
 )
 from .prices import (
     CHF,
@@ -141,9 +141,9 @@ __all__ = [
     "PaymentWatcher", "PriceLookup", "Prices", "SignFn",
     "application_text_problem", "bolt11_amount_sats", "display_locale", "email_problem",
     "fee_amounts", "field_message", "format_fee", "format_number", "format_one",
-    "handle_field_message", "humanize",
+    "handle_field_message", "failure_details", "failure_sentence",
     "nip05_handle_problem", "parse_config",
     "parse_erasure", "parse_export", "parse_fee_entry", "parse_invoice",
-    "parse_membership", "parse_payments", "parse_prices", "parse_retry_after", "service_url",
+    "parse_membership", "parse_payments", "parse_prices", "service_url",
     "session_signer", "upstream_url",
 ]
