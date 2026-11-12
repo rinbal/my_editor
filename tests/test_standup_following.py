@@ -728,3 +728,25 @@ def test_ready_for_release_rests_on_every_creators_signed_confirmation():
     world.settle()
     row = following.row(sid)
     assert row.situation is Situation.ACCEPTED and rules.waiting_for(row) == (OTHER,)
+
+
+def test_a_writers_device_whose_list_lacks_the_entry_opens_the_version_by_the_writer_wrap():
+    # F3's final run (C1): a device open since before another device of the
+    # writer submitted has no list entry for it. The room key then comes from
+    # the wrap named "writer" (contract 12.4), never one named by the
+    # writer's pubkey, so the version opens (and with it the relays' look
+    # that finds a work published on the other device public).
+    world = FollowWorld()
+    phone, laptop = world.account(), world.account()
+    here = world.following(laptop)
+    world.settle()
+    prepared, _entry = world.submit(phone, d="ein-jahr", content="Text.")
+    sid = prepared.body["submission_id"]
+    world.decide(prepared, "accept")
+    here.open(sid)
+    world.settle()
+    assert laptop.submissions.entry(sid) is None              # its list has not read it
+    opened = []
+    here.reading.version(sid, 1, opened.append)
+    world.settle()
+    assert opened[0] is not None and opened[0].work["d"] == "ein-jahr"

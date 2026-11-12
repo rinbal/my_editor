@@ -633,6 +633,28 @@ def test_through_a_signer_app_a_week_brings_three_quick_tries_and_one_ride_along
     assert len(calls) == 3 + QUICK_TRIES and again.row(sid).publishing == UNREPORTED
 
 
+def test_a_quick_try_whose_timer_fires_a_little_early_still_comes(accepted):
+    # F3's final run: Qt's timers fire some 40 ms early, so a quick try
+    # came before its time, found itself not due and dropped the schedule:
+    # none came after the first. It waits out the rest now.
+    world, sid = accepted.world, accepted.sid
+    calls = _flaky_report(accepted.writer.api, [10 ** 6])
+    run, _store, _jobs = _run(accepted)
+    run.start()
+    world.settle()
+    record = accepted.following.unlisted.record
+    for tried in range(1, 1 + QUICK_TRIES):
+        pause = record.entry(sid)["next"] - world.clock()   # 30 s, then 120 s, 600 s
+        world.clock.advance(pause - 0.04)                    # its timer fires early
+        _waiting(world, int(pause * 1000))
+        assert len(calls) == tried                           # not yet
+        rest = [ms for ms, _call in world.later.waiting if ms < 1000]
+        assert len(rest) == 1                                # the rest, still waited for
+        world.clock.advance(rest[0] / 1000)
+        _waiting(world, rest[0])
+        assert len(calls) == tried + 1
+
+
 def test_after_a_stage_change_the_focus_is_on_the_status_line_never_on_view(accepted):
     # RG-M4-c 8: Space on Veröffentlichen, and once published the focus is
     # on what the sheet says, so a second Space opens nothing.
