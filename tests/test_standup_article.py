@@ -272,7 +272,7 @@ def test_the_submit_command_keeps_the_identifier_its_sheet_sent(tmp_path, monkey
     win._wants_article_header = lambda _ed: True
     win._standup = lambda: None
     win._submissions = types.SimpleNamespace(open_detail=lambda _sid: None)
-    win._avatars = win._avatar_batcher = types.SimpleNamespace(request=None)
+    win._avatars = win._publication_logos = types.SimpleNamespace(request=None)
     win.is_dark_theme = False
     MainWindow._on_nostr_submit_publication(win)
     sheet, = Sheet.opened
