@@ -52,7 +52,9 @@ def test_the_article_credits_its_people_and_names_its_pictures_in_public():
         published_at=100, created_at=200)
     tags = event["tags"]
     assert event["content"] == f"Text ![]({url})" and ["image", url] in tags
-    assert ["imeta", f"url {url}", f"x {entry['plain_sha256']}"] in tags
+    # One imeta per address: the entry's (contract 5), the carried one goes.
+    assert [t for t in tags if t[0] == "imeta"] == [
+        ["imeta", f"url {url}", "m image/png", f"x {entry['plain_sha256']}"]]
     authors = [t[1] for t in tags if t[0] == "p" and t[3:] == ["author"]]
     assert authors == [pk("writer"), coauthor]             # never one the work carried
     assert ["zap", coauthor, "", "30"] in tags and not any(t[0] == "expiration" for t in tags)
@@ -122,8 +124,9 @@ def test_a_picture_the_correction_adds_gets_its_tag_and_one_it_removes_loses_it(
         correction, published, writer=pk("writer"), created_at=300,
         media_urls={kept["ref"]: kept_url, added["ref"]: added_url})
     imeta = [t for t in event["tags"] if t[0] == "imeta"]
-    assert imeta == [["imeta", f"url {added_url}", f"x {added['plain_sha256']}"],
-                     ["imeta", f"url {kept_url}", "m image/png"]]
+    # Each picture of its media[] by its entry, in that order (contract 5).
+    assert imeta == [["imeta", f"url {kept_url}", "m image/png", f"x {kept['plain_sha256']}"],
+                     ["imeta", f"url {added_url}", "m image/png", f"x {added['plain_sha256']}"]]
     assert publishing.correction_changes(correction, published) == [("pictures", "")]
     from nostr.ui.standup_correction_sheet import change_words
     assert change_words([("title", "T"), ("pictures", "")]) == "Also changed: title, pictures."
@@ -783,6 +786,29 @@ def test_a_share_keeps_its_percent_sign_on_the_line_of_its_number_in_german():
     finally:
         i18n.install("en")
     assert text == "Jana 70\u202f%" and share_text("Jana", 70) == "Jana 70%"
+
+
+def test_the_picture_imeta_vectors():
+    # Contract 5 at b9aa31f (vector picture_imeta, audit F4): a release
+    # builds one imeta per picture of media[], in its order, and a pair
+    # that breaks the rule gives no size and refuses nothing.
+    from nostr.standup.pictures import picture_size
+    vector = VECTORS["picture_imeta"]
+    media, urls = vector["media"], vector["urls"]
+    pictures = [e["ref"] for e in media if e["mime"].startswith("image/")]
+    carried = ["imeta", f"url {pictures[0]}", "dim 1x1"]      # the same address
+    revision = {"work": {"d": "ein-jahr", "title": "Ein Jahr", "summary": "", "image": "",
+                         "tags": [], "lang": "", "authors": [], "extra_tags": [carried],
+                         "content": " ".join(f"![]({ref})" for ref in pictures)},
+                "media": media}
+    event = publishing.published_template(revision, writer=pk("writer"), d="ein-jahr",
+                                          media_urls=urls, published_at=1, created_at=1)
+    assert [t for t in event["tags"] if t[0] == "imeta"] == vector["imeta"]
+    for name, pair in vector["pairs"]["valid"].items():
+        assert picture_size(dict(pair, mime="image/jpeg")) == (pair["w"], pair["h"]), name
+    for name, pair in vector["pairs"]["no_size"].items():
+        assert picture_size(dict(pair, mime="image/jpeg")) is None, name
+    assert picture_size(vector["audio_with_size"]) is None
 
 
 def test_the_writer_release_vectors():

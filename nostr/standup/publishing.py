@@ -46,6 +46,7 @@ from .former import Formers
 from .confirmations import (
     Confirmation, correction_taken, published_revision, to_confirm, verified_confirmations,
 )
+from .pictures import imeta_url, one_per_address, picture_imeta
 from .release import Release, credited_writer, held_credit, release
 
 # A revision names at most this many people and carried tags (5).
@@ -235,6 +236,9 @@ def published_template(revision: Mapping, *, writer: str, d: str,
     carried = [_carried(tag, media_urls, media) for tag in work["extra_tags"]
                if tag[0] not in NEVER_CARRIED
                and not (tag[0] == "p" and len(tag) >= 4 and tag[3] == AUTHOR_MARKER)]
+    # One imeta per picture, from its entry (5), before the carried tags:
+    # a carried imeta for the same address goes (one per address, 92.md).
+    carried = one_per_address(picture_imeta(media, media_urls) + carried)
     own_zaps = [["zap", pk, relay or fallback_relay, _weight(weight)]
                 for pk, relay, weight in zap_shares.read_zaps(work["extra_tags"])]
     people = ([["p", writer, "", AUTHOR_MARKER]] if others else []) + others
@@ -436,17 +440,19 @@ def corrected_template(revision: Mapping, published: Mapping, *, writer: str,
     media = [e for e in revision.get("media") or () if isinstance(e, Mapping)]
     content = _with_public_media(work["content"], media_urls)
     image = _with_public_media(work["image"], media_urls) if work["image"] else ""
-    # The media tags follow the corrected text: a picture it adds gets its
-    # imeta, one it removes loses it, one it keeps keeps the published one.
+    # The media tags follow the corrected text: a picture of its media[]
+    # gets the imeta of its entry (5), one it removes loses it, one it
+    # keeps keeps the published one; one per address.
     def shown(tag: List[str]) -> str:
-        url = next((part[4:] for part in tag[1:] if part.startswith("url ")), "")
+        url = imeta_url(tag)
         return url if url and (url in content or url == image) else ""
 
-    pictures = [tag for tag in (_carried(tag, media_urls, media)
-                                for tag in work["extra_tags"] if tag[0] == "imeta") if shown(tag)]
-    named = {shown(tag) for tag in pictures}
-    pictures += [list(tag) for tag in published.get("tags") or ()
-                 if _is_tag(tag) and tag[0] == "imeta" and shown(tag) not in named | {""}]
+    pictures = one_per_address(
+        picture_imeta(media, media_urls)
+        + [tag for tag in (_carried(tag, media_urls, media)
+                           for tag in work["extra_tags"] if tag[0] == "imeta") if shown(tag)]
+        + [list(tag) for tag in published.get("tags") or ()
+           if _is_tag(tag) and tag[0] == "imeta" and shown(tag)])
     kept = [list(tag) for tag in published.get("tags") or ()
             if _is_tag(tag) and tag[0] not in _CORRECTED and tag[0] not in _NEVER
             and not _language_tag(tag)]

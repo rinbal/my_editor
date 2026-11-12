@@ -270,3 +270,21 @@ def test_a_picture_is_named_on_at_most_ten_servers():
     assert len(picture.blob(servers)["servers"]) == 10
     assert len(picture.entry(servers)["servers"]) == 10
     assert picture.blob(servers)["size"] == len(picture.cipher)
+
+
+def test_a_picture_goes_in_with_its_upright_size():
+    # Contract 5 (audit F4): w and h are the size as shown, after the
+    # EXIF orientation; a file whose size cannot be told has neither.
+    import io
+    from PIL import Image
+    exif = Image.Exif()
+    exif[0x0112] = 6                            # stored 400x300, shown turned
+    stored = io.BytesIO()
+    Image.new("RGB", (400, 300)).save(stored, "JPEG", exif=exif.tobytes())
+    turned, broken = drafting.encrypt_pictures([
+        LocalPicture(key=asset_key("ab" * 32), name="boot.jpg", mime="image/jpeg",
+                     data=stored.getvalue()),
+        LocalPicture(key=asset_key("cd" * 32), name="a.png", mime="image/png", data=b"png")])
+    entry = turned.entry(["https://m.example"])
+    assert (entry["w"], entry["h"]) == (300, 400)
+    assert "w" not in broken.entry([]) and "h" not in broken.entry([])
