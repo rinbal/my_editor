@@ -59,6 +59,12 @@ REBUILT = ("client", "p", "q")
 AUTHOR_MARKER = "author"
 
 
+def imeta_url(tag) -> str:
+    """The address a NIP-92 ``imeta`` tag describes (its ``url`` entry),
+    or "" when it names none."""
+    return next((str(part)[4:].strip() for part in tag[1:] if str(part).startswith("url ")), "")
+
+
 # A heading line (CommonMark: one to six "#" and a space), and a reference.
 _HEADING = re.compile(r"^\s{0,3}#{1,6}\s")
 _REFERENCE = re.compile(r"nostr:((?:npub|nprofile|note|nevent|naddr)1[02-9ac-hj-np-z]+)")
@@ -216,7 +222,7 @@ class ArticleDetails:
         kept = []
         for tag in self.carried:
             if tag[0] == "imeta":
-                url = next((part[4:] for part in tag[1:] if part.startswith("url ")), "")
+                url = imeta_url(tag)
                 if not url or not refs.address_in(url, content):
                     continue
             kept.append(list(tag))

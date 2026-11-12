@@ -26,6 +26,7 @@ from PySide6.QtWidgets import QApplication, QWidget
 
 import announce
 import i18n
+import image_safety
 import photo_group
 import photo_group_actions
 import photo_group_editing
@@ -42,7 +43,7 @@ from photo_group_menu import (
     ADD, CAPTION, CROP, DESCRIPTION, DOWN, FIRST, JOIN_ABOVE, JOIN_BELOW, LARGE, LAST, LEFT,
     MOVE_MODE, REMOVE, RIGHT, SPLIT, TAKE_OUT, UP,
 )
-from tests.photo_corners import PHOTOS, image_of
+from tests.photo_corners import PHOTOS, image_of, jpeg_turned
 from tests.test_photo_group_editing import (
     FOUR, FOUR_PICTURES, ONE, THREE, TWO, _editor, _group, _markdown, _text, _undone,
     app,  # noqa: F401
@@ -254,24 +255,9 @@ def test_crop_asks_for_the_part_and_shows_it_as_a_new_file():
     ed.close()
 
 
-def _jpeg_turned(width: int, height: int, orientation: int) -> bytes:
-    """A JPEG ``width`` x ``height`` with an EXIF orientation, as a phone writes it."""
-    out = QByteArray()
-    buffer = QBuffer(out)
-    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-    image = QImage(width, height, QImage.Format.Format_RGB32)
-    image.fill(Qt.GlobalColor.darkCyan)
-    image.save(buffer, "JPEG")
-    tiff = (b"II*\x00\x08\x00\x00\x00\x01\x00" + b"\x12\x01\x03\x00\x01\x00\x00\x00"
-            + orientation.to_bytes(2, "little") + b"\x00\x00" + b"\x00\x00\x00\x00")
-    exif = b"Exif\x00\x00" + tiff
-    return bytes(out)[:2] + b"\xff\xe1" + (len(exif) + 2).to_bytes(2, "big") + exif \
-        + bytes(out)[2:]
-
-
 def test_a_crop_stands_the_way_the_camera_said():
     # Gate RG-PG2E-a 5: an iPhone portrait (40x20, orientation 6) came out on its side.
-    data = _jpeg_turned(40, 20, 6)
+    data = jpeg_turned(40, 20, 6)
     cut, _ext = picture_crop.crop_bytes(data, QRect(0, 0, 20, 30))
     assert QImage.fromData(cut).size().toTuple() == (20, 30)
 
@@ -280,8 +266,8 @@ def test_the_crop_sheet_dims_crop_until_the_frame_changes_and_shows_its_focus():
     window = QWidget()
     window.resize(700, 600)
     window.show()
-    data = _jpeg_turned(40, 20, 6)
-    sheet = picture_crop.CropSheet(window, data, picture_crop.decode_upright(data))
+    data = jpeg_turned(40, 20, 6)
+    sheet = picture_crop.CropSheet(window, data, image_safety.decode_image_bytes(data))
     sheet.show()
     QApplication.processEvents()
     assert sheet.view.size().toTuple()[1] > sheet.view.size().toTuple()[0]     # upright

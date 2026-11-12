@@ -11,7 +11,11 @@ on this Qt to disable that, so the only closing move is an explicit
 format allowlist: bytes are sniffed by magic number, refused unless the
 type is in :data:`DECODABLE_MIMES`, and then read by a QImageReader with
 auto-detection switched off and the format forced. A pixel budget stops
-a header that claims 30000x30000 from allocating gigabytes.
+a header that claims 30000x30000 from allocating gigabytes. A picture
+comes out upright, turned the way the camera said (its EXIF
+orientation), as browsers and readers show it: a phone stores a
+portrait photo on its side, and its size, its public copy and the
+editor would otherwise all stand it on its side too.
 
 Reading: an exporter embeds files named by the document, and a document
 can name any path on the machine. :class:`ImageRootPolicy` restricts
@@ -34,7 +38,7 @@ from urllib.parse import unquote, unquote_to_bytes, urlsplit
 from urllib.request import url2pathname
 
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QSize
-from PySide6.QtGui import QImage, QImageReader
+from PySide6.QtGui import QImage, QImageIOHandler, QImageReader
 
 
 # The picture files a document takes in when they are dropped or pasted
@@ -185,79 +189,107 @@ def _decodable_format(data: bytes) -> Optional[bytes]:
     return _QT_FORMAT_FOR_MIME.get(mime)
 
 
-def declared_size(data: bytes) -> Optional[QSize]:
-    """The pixel size ``data`` says it has, read from its header without
-    decoding it, or None when decode_image_bytes would refuse it (its
-    kind, or more than MAX_DECODE_PIXELS: a decompression bomb)."""
-    fmt = _decodable_format(data)
-    if fmt is None:
-        return None
-    buffer = QBuffer()
-    buffer.setData(QByteArray(data))
-    if not buffer.open(QIODevice.ReadOnly):
-        return None
-    try:
-        reader = QImageReader(buffer)
-        reader.setAutoDetectImageFormat(False)
-        reader.setDecideFormatFromContent(False)
-        reader.setFormat(QByteArray(fmt))
-        size = reader.size()
-    finally:
-        buffer.close()
+def _on_its_side(reader: QImageReader) -> bool:
+    """Whether the camera's orientation (EXIF) turns the picture a
+    quarter: stored as 400x300, it stands 300x400."""
+    return bool(reader.transformation() & QImageIOHandler.Transformation.TransformationRotate90)
+
+
+def upright_size(reader: QImageReader) -> Optional[QSize]:
+    """The pixel size of the picture ``reader`` holds as it is shown,
+    upright (its EXIF orientation applied), read from its header without
+    decoding it; None when the header names none. Qt's own ``size()`` is
+    the size as stored, on its side for a phone's portrait photo."""
+    size = reader.size()
     if not size.isValid() or size.width() <= 0 or size.height() <= 0:
         return None
-    if size.width() * size.height() > MAX_DECODE_PIXELS:
+    return size.transposed() if _on_its_side(reader) else size
+
+
+def _decodable_size(reader: QImageReader) -> Optional[QSize]:
+    """upright_size, or None past MAX_DECODE_PIXELS (a decompression
+    bomb, refused before a pixel is read)."""
+    size = upright_size(reader)
+    if size is None or size.width() * size.height() > MAX_DECODE_PIXELS:
         return None
     return size
 
 
-def decode_image_bytes(data: bytes, *, at_least: Optional[QSize] = None,
-                       upright: bool = False) -> Optional[QImage]:
-    """Decode ``data`` to a QImage, or None when the policy refuses it.
+def read_upright(reader: QImageReader, at_least: Optional[QSize] = None) -> Optional[QImage]:
+    """The picture ``reader`` holds (its format already forced), decoded
+    upright as readers show it, or None when it is refused (more than
+    MAX_DECODE_PIXELS) or does not decode. ``at_least`` decodes no larger
+    than needed to cover that box, upright (a width or height of 0 is not
+    asked for); never larger than the picture itself. The one decode of
+    this app's pictures: decode_image_bytes, and safe_picture for files
+    on disk."""
+    reader.setAutoTransform(True)
+    size = _decodable_size(reader)
+    if size is None:
+        return None
+    scaled = _scaled_to_cover(size, at_least)
+    if scaled is not None:
+        # Qt scales the picture as stored, then turns it.
+        reader.setScaledSize(scaled.transposed() if _on_its_side(reader) else scaled)
+    image = reader.read()
+    if image is None or image.isNull():
+        return None
+    return image
+
+
+def _forced_reader(data: bytes):
+    """A QImageReader for ``data`` that reads only the format its magic
+    bytes claim, and the buffer it reads from (keep both while reading);
+    (None, None) when the policy refuses its kind."""
+    fmt = _decodable_format(data) if data else None
+    if fmt is None:
+        return None, None
+    buffer = QBuffer()
+    buffer.setData(QByteArray(data))
+    if not buffer.open(QIODevice.ReadOnly):
+        return None, None
+    reader = QImageReader(buffer)
+    # Sniffing is what hands SVG (and any future format Qt learns) to a
+    # renderer this policy never approved; force the format the magic
+    # bytes actually claimed instead.
+    reader.setAutoDetectImageFormat(False)
+    reader.setDecideFormatFromContent(False)
+    reader.setFormat(QByteArray(fmt))
+    return reader, buffer
+
+
+def declared_size(data: bytes) -> Optional[QSize]:
+    """The pixel size ``data`` says it has, upright (upright_size), read
+    from its header without decoding it, or None when decode_image_bytes
+    would refuse it (its kind, or more than MAX_DECODE_PIXELS: a
+    decompression bomb)."""
+    reader, buffer = _forced_reader(data)
+    if reader is None:
+        return None
+    try:
+        return _decodable_size(reader)
+    finally:
+        buffer.close()
+
+
+def decode_image_bytes(data: bytes, *, at_least: Optional[QSize] = None) -> Optional[QImage]:
+    """Decode ``data`` to a QImage, upright (read_upright), or None when
+    the policy refuses it.
 
     Refusal reasons: unrecognised magic, a format outside
     :data:`DECODABLE_MIMES`, a declared size past
     :data:`MAX_DECODE_PIXELS`, or a decoder failure.
 
-    ``at_least`` decodes no larger than needed to cover that box (a
-    width or height of 0 is not asked for): a 64 px thumbnail of a
-    4000 px photo then costs 64 px of memory, not 48 MB. Never larger
-    than the image itself. ``upright`` turns it the way the camera said
-    (its EXIF orientation), as readers show it.
+    ``at_least`` decodes no larger than needed to cover that box: a 64 px
+    thumbnail of a 4000 px photo then costs 64 px of memory, not 48 MB.
     """
-    if not data:
-        return None
-    fmt = _decodable_format(data)
-    if fmt is None:
-        return None
-
-    buffer = QBuffer()
-    buffer.setData(QByteArray(data))
-    if not buffer.open(QIODevice.ReadOnly):
+    reader, buffer = _forced_reader(data)
+    if reader is None:
         return None
     try:
-        reader = QImageReader(buffer)
-        # Sniffing is what hands SVG (and any future format Qt learns)
-        # to a renderer this policy never approved; force the format the
-        # magic bytes actually claimed instead.
-        reader.setAutoDetectImageFormat(False)
-        reader.setDecideFormatFromContent(False)
-        reader.setFormat(QByteArray(fmt))
-        reader.setAutoTransform(upright)
-        size = reader.size()
-        if not size.isValid() or size.width() <= 0 or size.height() <= 0:
-            return None
-        if size.width() * size.height() > MAX_DECODE_PIXELS:
-            return None
-        scaled = _scaled_to_cover(size, at_least)
-        if scaled is not None:
-            reader.setScaledSize(scaled)
-        image = reader.read()
+        return read_upright(reader, at_least)
     finally:
         buffer.close()
-    if image is None or image.isNull():
-        return None
-    return image
 
 
 class ImageRootPolicy:

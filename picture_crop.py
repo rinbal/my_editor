@@ -45,19 +45,14 @@ _SHAPES = {"move": Qt.CursorShape.OpenHandCursor, "t": Qt.CursorShape.SizeVerCur
            "bl": Qt.CursorShape.SizeBDiagCursor}
 
 
-def decode_upright(data: bytes) -> Optional[QImage]:
-    """The picture ``data`` as readers show it, turned the way the camera
-    said (its EXIF orientation): what the sheet shows and the cut is made
-    of, so the new file (which carries no orientation) stands the same
-    way. None when image_safety refuses it."""
-    return image_safety.decode_image_bytes(data, upright=True)
-
-
 def crop_bytes(data: bytes, area: QRect) -> Optional[Tuple[bytes, str]]:
     """The part ``area`` (the picture's pixels, upright) of the picture
     ``data`` as a new file's bytes, and its extension; None when the
-    picture cannot be read (image_safety refuses it) or the part is empty."""
-    image = decode_upright(data)
+    picture cannot be read (image_safety refuses it) or the part is empty.
+    The cut is made of the picture as readers show it (image_safety
+    decodes upright), so the new file, which carries no orientation,
+    stands the same way."""
+    image = image_safety.decode_image_bytes(data)
     if image is None:
         return None
     area = area.intersected(image.rect())
@@ -261,7 +256,7 @@ class CropView(QWidget):
 
 class CropSheet(QDialog):
     """Crop…, as a sheet of the window: the frame on the picture (``data``,
-    decoded upright as ``image``, decode_upright), its format, Cancel and
+    decoded upright as ``image``, image_safety), its format, Cancel and
     Crop. ``cropped`` gets the new file's bytes and extension once Crop is
     chosen."""
 

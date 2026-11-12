@@ -17,11 +17,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
-from PySide6.QtCore import QPointF, QRectF, QSizeF, QUrl
+from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt, QUrl
 from PySide6.QtGui import (
     QFont,
     QFontMetricsF,
+    QGuiApplication,
     QImage,
+    QPagedPaintDevice,
     QPixmap,
     QPyTextObject,
     QTextCharFormat,
@@ -112,10 +114,24 @@ class _Laid:
     drawn: List[Tuple[int, float, float, geometry.Tile]]
 
 
-def _font_pixels(font: QFont, scale: float) -> float:
+def _font_pixels(font: QFont, dpi: float) -> float:
+    """The font's size in the pixels of a device of ``dpi`` logical dots
+    per inch (a point is 1/72 inch)."""
     if font.pixelSize() > 0:
         return float(font.pixelSize())
-    return font.pointSizeF() * 96.0 / 72.0 * scale
+    return font.pointSizeF() * dpi / 72.0
+
+
+def text_dpi() -> float:
+    """The dots per inch Qt's text layout reads a document's own lengths
+    (a margin) in before it turns them into a device's pixels: the
+    screen's logical ones (qt_defaultDpiY), 72 on a Mac and 96 on other
+    systems, or 96 when the app asks for that."""
+    app = QGuiApplication.instance()
+    if app is not None and app.testAttribute(Qt.ApplicationAttribute.AA_Use96Dpi):
+        return 96.0
+    screen = QGuiApplication.primaryScreen()
+    return float(round(screen.logicalDotsPerInchY())) if screen is not None else 100.0
 
 
 def _fitted(target: QRectF, image) -> QRectF:
@@ -230,9 +246,31 @@ class Handler(QPyTextObject):
 
     # ---- the room and the fonts ----
 
-    def _scale(self, doc) -> float:
+    # Three measures, kept apart: a Mac lays text out at 72 logical dots
+    # per inch and other systems at 96, so a rule that takes 96 for every
+    # screen made the rows on a Mac a quarter too small, and 2 pixels too
+    # wide for their line, where Qt put the last picture on a row of its own.
+
+    def _dpi(self, doc) -> float:
+        """The logical dots per inch of the device the document is laid
+        out for (the editor's view, a page)."""
         device = doc.documentLayout().paintDevice()
-        return device.logicalDpiY() / 96.0 if device is not None else 1.0
+        return float(device.logicalDpiY()) if device is not None else text_dpi()
+
+    def _length_scale(self, doc) -> float:
+        """The layout's pixels per pixel of the document's own lengths (its
+        margins), as Qt's text layout turns them: 1 on a screen."""
+        return self._dpi(doc) / text_dpi()
+
+    def _scale(self, doc) -> float:
+        """The layout's pixels per CSS pixel. On a screen a CSS pixel is a
+        device-independent pixel, as in a browser, which is what the
+        editor lays out in on a Mac (72 logical dots per inch) and on
+        other systems (96) alike; on paper it is 1/96 inch."""
+        device = doc.documentLayout().paintDevice()
+        if isinstance(device, QPagedPaintDevice):
+            return device.logicalDpiY() / 96.0
+        return self._length_scale(doc)
 
     def room(self, doc) -> float:
         """The width a row has: the text's, inside the document's margins."""
@@ -242,27 +280,27 @@ class Handler(QPyTextObject):
         # The root frame's margins hold the document's margin.
         root = doc.rootFrame().frameFormat()
         return width - (root.leftMargin() + root.rightMargin()
-                        + 2 * (root.padding() + root.border())) * self._scale(doc)
+                        + 2 * (root.padding() + root.border())) * self._length_scale(doc)
 
     def _fonts(self, doc) -> Tuple[QFont, QFont, float]:
         """The text's font, a caption's (the text's, in italic) and the
         height of one caption line, on the device the document is laid
         out for."""
         font = doc.defaultFont()
-        scale = self._scale(doc)
+        dpi = self._dpi(doc)
         found = self._caption_font
-        if found is None or found[0] != font or found[3] != scale:
+        if found is None or found[0] != font or found[3] != dpi:
             caption = QFont(font)
             caption.setItalic(True)
             device = doc.documentLayout().paintDevice()
             metrics = (QFontMetricsF(caption, device) if device is not None
                        else QFontMetricsF(caption))
-            found = self._caption_font = (QFont(font), caption, metrics.lineSpacing(), scale)
+            found = self._caption_font = (QFont(font), caption, metrics.lineSpacing(), dpi)
             self._captions.clear()
         return found[:3]
 
     def _caption_gap(self, doc) -> float:
-        return round(CAPTION_GAP_EM * _font_pixels(doc.defaultFont(), self._scale(doc)), 2)
+        return round(CAPTION_GAP_EM * _font_pixels(doc.defaultFont(), self._dpi(doc)), 2)
 
     def metrics(self, doc) -> geometry.Metrics:
         line = self._caption_gap(doc) + self._fonts(doc)[2]
@@ -316,9 +354,8 @@ class Handler(QPyTextObject):
         if valid != self._valid:
             self._valid = valid
             self._laid = {}
-            scale = self._scale(doc)
-            self._measures = (self.metrics(doc), scale, self._caption_gap(doc),
-                              GROUP_MARGIN_EM * _font_pixels(doc.defaultFont(), scale))
+            self._measures = (self.metrics(doc), self._length_scale(doc), self._caption_gap(doc),
+                              GROUP_MARGIN_EM * _font_pixels(doc.defaultFont(), self._dpi(doc)))
 
     def _at(self, doc, position: int) -> Optional[Tuple[_Laid, int]]:
         """The group laid out around the picture at ``position``, and the
@@ -337,7 +374,7 @@ class Handler(QPyTextObject):
     def _rows(self, doc, units, *, note: bool) -> List[geometry.Row]:
         """The rows ``units`` stand in at the document's width; with
         ``note``, the size each was laid out with is kept (picture_arrived)."""
-        metrics, _scale, gap, _margin = self._measures
+        metrics, _lengths, gap, _margin = self._measures
         items = []
         for unit in units:
             size = self.sizes(unit.name) if self.sizes and unit.name else None
@@ -384,14 +421,14 @@ class Handler(QPyTextObject):
             layout.draw(painter, QPointF(figure[0], box.bottom() + self._caption_gap(doc)))
 
     def _lay_out(self, doc, block, start: int, units) -> _Laid:
-        metrics, scale, gap, margin = self._measures
+        metrics, lengths, gap, margin = self._measures
         rows = self._rows(doc, units, note=True)
         boxes = geometry.object_boxes(rows, len(units), metrics)
         # The room above and below it that its paragraph's own margins do
         # not give already.
         fmt = block.blockFormat()
-        above = max(0.0, max(margin, self.room_above) - fmt.topMargin() * scale)
-        below = max(0.0, margin - fmt.bottomMargin() * scale)
+        above = max(0.0, max(margin, self.room_above) - fmt.topMargin() * lengths)
+        below = max(0.0, margin - fmt.bottomMargin() * lengths)
         first = {cell[0] for cell in rows[0].cells} if rows else set()
         last = {cell[0] for cell in rows[-1].cells} if rows else set()
         sizes = []

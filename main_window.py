@@ -8016,7 +8016,7 @@ class MainWindow(QMainWindow):
             editor.notice.emit(_("This picture couldn’t be read. Check that its file is still "
                                  "there, and try again."))
             return
-        image = picture_crop.decode_upright(data)
+        image = image_safety.decode_image_bytes(data)
         if image is None:
             editor.notice.emit(
                 _("This picture is an SVG drawing, which can’t be cropped here. Crop it in a "
