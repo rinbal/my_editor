@@ -152,6 +152,38 @@ def parse_listings(data: Mapping[str, Any]) -> Tuple[Listing, ...]:
     return tuple(found)
 
 
+def _publication_address(value: Any) -> bool:
+    try:
+        read_address(value)
+    except FormatError:
+        return False
+    return True
+
+
+def publication_logos(data: Any) -> Dict[str, Optional[str]]:
+    """The publications' logos a read names (12.9), by address: from its
+    ``avatars`` map, whose keys are people (64 hex, left out here: a
+    person's face is never a publication's logo) and publications, and
+    from each ``publications[].avatar`` of the Destinations (12.3), where
+    null means the publication names no logo any more. Whatever is no
+    valid address or tag is left out and fails no read, as the web app's
+    rememberFaces keeps it."""
+    found: Dict[str, Optional[str]] = {}
+    if not isinstance(data, dict):
+        return found
+    avatars = data.get("avatars")
+    for key, tag in avatars.items() if isinstance(avatars, dict) else ():
+        if formats.is_avatar_tag(tag) and _publication_address(key):
+            found[key] = tag
+    publications = data.get("publications")
+    for item in publications if isinstance(publications, list) else ():
+        if isinstance(item, dict) and _publication_address(item.get("address")):
+            avatar = item.get("avatar", "")
+            if avatar is None or formats.is_avatar_tag(avatar):
+                found[item["address"]] = avatar
+    return found
+
+
 @dataclass(frozen=True)
 class SiteSettings:
     """``GET .../settings`` (``members_count`` too) and the answer of

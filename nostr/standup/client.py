@@ -116,6 +116,9 @@ class StandupCall(Call):
     # to another address than this server's (12.1: the grants and the
     # leave, signed for the key event's server); "" for url_for.
     sign_for: str = ""
+    # A read that carries the faces it names (12.9): its publication
+    # logos are kept once it parsed.
+    faces: bool = False
 
 
 class StandupApi(SignedJsonApi):
@@ -143,6 +146,9 @@ class StandupApi(SignedJsonApi):
         # Stopped with its account: nothing more is signed or sent, no
         # session opened (lesson 31).
         self._closed = False
+        # The tag of each publication's logo, by address, as this
+        # server's newest read named it (12.9).
+        self._logos: Dict[str, str] = {}
 
     @property
     def server(self) -> str:
@@ -150,6 +156,12 @@ class StandupApi(SignedJsonApi):
 
     def configured(self) -> bool:
         return bool(self._server)
+
+    def logo_tag(self, address: str) -> Optional[str]:
+        """The tag of the publication's logo as the newest read of this
+        server named it (its ``avatars``, a Destination's ``avatar``;
+        12.9), or None: the monogram then. Only this server answers it."""
+        return self._logos.get(address)
 
     def url_for(self, path: str) -> str:
         return self._server + path
@@ -171,6 +183,7 @@ class StandupApi(SignedJsonApi):
         that was let go (RG-M2r 3, lesson 31)."""
         self.cancel()
         self._session = None
+        self._logos.clear()
         self._closed = True
 
     @property
@@ -217,10 +230,19 @@ class StandupApi(SignedJsonApi):
             if call.in_envelope:
                 need(isinstance(data, dict) and data.get("ok") is True,
                      "the answer is not a success")
-            return (call.parse(data),)
+            parsed = call.parse(data)
         except FormatError as exc:
             return StandupError(Code.BAD_RESPONSE, status=status,
                                 message=clean_text(str(exc)), maybe_stored=True)
+        if call.faces:
+            # As the web app's withFaces: once the answer parsed, the
+            # newest read winning, a logo named no more forgotten.
+            for address, tag in answers.publication_logos(data).items():
+                if tag is None:
+                    self._logos.pop(address, None)
+                else:
+                    self._logos[address] = tag
+        return (parsed,)
 
     def _http_error(self, status: int, raw: bytes, reply) -> StandupError:
         retry_after = None
@@ -284,9 +306,12 @@ class StandupApi(SignedJsonApi):
     def _call(self, method: str, path: str, payload: Optional[Mapping[str, Any]], auth: str,
               parse: Callable[[Any], Any], on_success, on_failure, *,
               limit: Optional[int] = None,
-              on_bytes: Optional[Callable[[int], None]] = None) -> StandupCall:
-        return self._dispatch(self._build(method, path, payload, auth, parse, on_success,
-                                          on_failure, limit=limit, on_bytes=on_bytes))
+              on_bytes: Optional[Callable[[int], None]] = None,
+              faces: bool = False) -> StandupCall:
+        call = self._build(method, path, payload, auth, parse, on_success, on_failure,
+                           limit=limit, on_bytes=on_bytes)
+        call.faces = faces
+        return self._dispatch(call)
 
     def _refuse(self, method: str, path: str, problem: str, on_success,
                 on_failure) -> StandupCall:
@@ -373,7 +398,7 @@ class StandupApi(SignedJsonApi):
         as the server lists them, for ``trust`` to verify."""
         return self._call("GET", "/api/submissions/destinations", None, Auth.NONE,
                           answers.parse_listings, on_success, on_failure,
-                          limit=MAX_LIST_ANSWER_BYTES)
+                          limit=MAX_LIST_ANSWER_BYTES, faces=True)
 
     @staticmethod
     def _site(address: str) -> str:
@@ -400,7 +425,7 @@ class StandupApi(SignedJsonApi):
                 on_failure) -> StandupCall:
         return self._call("GET", self._site(address) + "/members", None, Auth.SESSION,
                           answers.parse_members, on_success, on_failure,
-                          limit=MAX_LIST_ANSWER_BYTES)
+                          limit=MAX_LIST_ANSWER_BYTES, faces=True)
 
     def _key_action(self, address: str, rest: str, payload: Mapping[str, Any], key,
                     parse: Callable[[Any], Any], on_success, on_failure) -> StandupCall:
@@ -560,7 +585,7 @@ class StandupApi(SignedJsonApi):
                           {"items": [{"status_key": k, "since": s} for k, s in items]},
                           Auth.NONE, lambda data: answers.parse_lookup(data, asked=asked),
                           on_success, on_failure, limit=_within(limit, MAX_LOOKUP_ANSWER_BYTES),
-                          on_bytes=on_bytes)
+                          on_bytes=on_bytes, faces=True)
 
     def submission(self, submission_id: str,
                    on_success: Callable[[answers.SubmissionDetail], None],
@@ -591,7 +616,7 @@ class StandupApi(SignedJsonApi):
         return self._call("GET", path, None, Auth.SESSION,
                           _about(submission_id, answers.parse_submission_detail),
                           on_success, on_failure, limit=_within(limit, MAX_DETAIL_ANSWER_BYTES),
-                          on_bytes=on_bytes)
+                          on_bytes=on_bytes, faces=True)
 
     def send_message(self, submission_id: str, wrap: Mapping[str, Any], *, kind_hint: str,
                      on_success: Callable[[int], None], on_failure,
@@ -709,19 +734,19 @@ class StandupApi(SignedJsonApi):
             query["q"] = q
         return self._call("GET", self._site(address) + "/submissions?" + urlencode(query),
                           None, Auth.SESSION, answers.parse_submission_page, on_success,
-                          on_failure, limit=MAX_LIST_ANSWER_BYTES)
+                          on_failure, limit=MAX_LIST_ANSWER_BYTES, faces=True)
 
     def my_editorial(self, on_success: Callable[[answers.Editorial], None],
                      on_failure) -> StandupCall:
         return self._call("GET", "/api/me/editorial", None, Auth.SESSION,
                           answers.parse_editorial, on_success, on_failure,
-                          limit=MAX_LIST_ANSWER_BYTES)
+                          limit=MAX_LIST_ANSWER_BYTES, faces=True)
 
     def my_submissions(self, on_success: Callable[[Tuple[views.SubmissionView, ...]], None],
                        on_failure) -> StandupCall:
         return self._call("GET", "/api/me/submissions", None, Auth.SESSION,
                           answers.parse_views, on_success, on_failure,
-                          limit=MAX_LIST_ANSWER_BYTES)
+                          limit=MAX_LIST_ANSWER_BYTES, faces=True)
 
 
 def _within(limit: Optional[int], most: int) -> int:

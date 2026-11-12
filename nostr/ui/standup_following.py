@@ -145,7 +145,7 @@ class Following(QObject):
         # a verdict holds for that revision only (RG-M3-a 6).
         self._decided: Dict[str, Tuple[tuple, object]] = {}
         self._deciding: set = set()
-        self._names: Dict[str, Tuple[str, Optional[Tuple[str, str]]]] = {}
+        self._names: Dict[str, str] = {}
         self._noticed: Dict[str, int] = {}
         # What the lookup brought that is still being opened, by sid: its
         # notice is decided once it is open.
@@ -247,8 +247,7 @@ class Following(QObject):
         self.changed.emit()
 
     def _named(self, destinations) -> None:
-        self._names = {d.address: (d.name, (d.server, d.avatar) if d.avatar else None)
-                       for d in destinations}
+        self._names = {d.address: d.name for d in destinations}
         self.changed.emit()
 
     # -- the lookup ----------------------------------------------------------------
@@ -494,7 +493,7 @@ class Following(QObject):
     def publication_name(self, address: str) -> str:
         """The publication's name: as its server lists it, else the name
         of its Site."""
-        name = self._names.get(address, ("", None))[0]
+        name = self._names.get(address, "")
         if name:
             return name
         try:
@@ -503,9 +502,16 @@ class Following(QObject):
             return ""
 
     def publication_avatar(self, address: str) -> Optional[Tuple[str, str]]:
-        """``(server, tag)`` of the publication's logo as its listing names
-        it (12.9), or None: the monogram then."""
-        return self._names.get(address, ("", None))[1]
+        """``(server, tag)`` of the publication's logo as the newest read
+        of a server of this account named it (12.9: the list, a detail,
+        the lookup, the destinations), or None: the monogram then. The
+        logo is asked only of the server that gave the tag."""
+        account = self._account
+        for api in (account.api, *account.clients.values()):
+            tag = api.logo_tag(address)
+            if tag:
+                return api.server, tag
+        return None
 
     def snippet(self, sid: str) -> Tuple[str, threads.Role, str]:
         """The newest message of someone else in ``sid``'s conversation:
