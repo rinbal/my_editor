@@ -165,7 +165,8 @@ class LocalPicture:
 class ArticleDraft:
     """The article to submit. ``image`` is the cover: a web address, a
     local picture's key, or ``""``. ``authors`` are the co-authors,
-    ``(pubkey, relay)`` each, as Article Details keeps them."""
+    ``(pubkey, relay)`` each, as Article Details keeps them; ``zaps`` the
+    writer's own split, as NIP-57 ``zap`` tags (Article Details)."""
 
     d: str
     title: str
@@ -178,6 +179,7 @@ class ArticleDraft:
     thumb: Optional[Mapping[str, str]] = None
     lang: str = ""
     published_at: Optional[int] = None
+    zaps: Tuple[Tuple[str, ...], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -276,7 +278,11 @@ def _work(draft: ArticleDraft, pictures: Sequence[EncryptedPicture]) -> dict:
             "tags": list(draft.tags), "lang": draft.lang, "published_at": draft.published_at,
             "content": content,
             "authors": [{"pubkey": pk, "relay": relay} for pk, relay in draft.authors],
-            "extra_tags": []}
+            # The writer's split goes with the work: a work the writer signs
+            # is published with it (publishing.published_template, plan
+            # A.3); one the publication signs takes the agreed split instead.
+            "extra_tags": [list(tag) for tag in draft.zaps
+                           if tag[:1] == ("zap",) and all(isinstance(x, str) for x in tag)]}
 
 
 def submission_id_of(draft: ArticleDraft, choice: Choice, writer: str, round_: int) -> str:

@@ -288,3 +288,20 @@ def test_a_picture_goes_in_with_its_upright_size():
     entry = turned.entry(["https://m.example"])
     assert (entry["w"], entry["h"]) == (300, 400)
     assert "w" not in broken.entry([]) and "h" not in broken.entry([])
+
+
+def test_the_writers_own_split_reaches_the_article_they_publish():
+    # Audit F11 (lead's decision): Article Details' zap split goes with the
+    # work, and a release the writer signs carries it (plan A.3).
+    from nostr.standup import crypto as sc, publishing
+    zaps = (("zap", pk("writer"), "wss://r.example", "50"),
+            ("zap", pk("contributor"), "wss://r.example", "50"))
+    key = trust.verify_key_event(KEY_EVENT, ADDRESS)
+    sealed = drafting.seal(replace(DRAFT, zaps=zaps), CHOICE, key, (), {}, writer=pk("writer"),
+                           round_=1, now=NOW)
+    revision = sc._open_revision(sealed.body["envelope"], sealed.s_sub,
+                                 submission_id=sealed.body["submission_id"], revision=1)
+    assert revision["work"]["extra_tags"] == [list(tag) for tag in zaps]
+    event = publishing.published_template(revision, writer=pk("writer"), d=DRAFT.d,
+                                          media_urls={}, published_at=NOW, created_at=NOW)
+    assert [t for t in event["tags"] if t[0] == "zap"] == [list(tag) for tag in zaps]

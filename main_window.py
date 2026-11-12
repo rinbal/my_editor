@@ -10458,7 +10458,8 @@ class MainWindow(QMainWindow):
             d=d, title=title, summary=details.summary, content=content.rstrip(),
             tags=tuple(details.hashtags), image=image, authors=tuple(details.coauthors),
             pictures=pictures, thumb=thumbnail(cover_bytes) if cover_bytes else None,
-            lang=details.language, published_at=details.published_at)
+            lang=details.language, published_at=details.published_at,
+            zaps=tuple(tuple(tag) for tag in details.zaps))
         return draft, cover, len(names), list(dict.fromkeys(private)), public
 
     @staticmethod
