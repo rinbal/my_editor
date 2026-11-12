@@ -486,13 +486,16 @@ def fold(opened: Sequence[Opened], *, writer: str, redaktion: Iterable[str],
     items = sorted(opened, key=lambda o: o.seq)
     bubbles: Dict[str, Bubble] = {}
     order: List[str] = []
-    edits: Dict[str, List[Tuple[Tuple[int, int], str, str]]] = {}     # target -> versions
-    reactions: Dict[str, Tuple[str, str, str, Tuple[int, int]]] = {}  # id -> target, who, emoji, when
-    taken_back: Dict[str, set] = {}                                    # reaction id -> by whom
+    edits: Dict[str, List[Tuple[int, str, str]]] = {}           # target -> versions
+    reactions: Dict[str, Tuple[str, str, str, int]] = {}        # id -> target, who, emoji, when
+    taken_back: Dict[str, set] = {}                              # reaction id -> by whom
 
     for item in items:
         rumor = item.rumor
-        when = (rumor["created_at"], item.seq)
+        # Which edit and reaction is the newest goes by the server's seq
+        # (9.2), never the rumor's created_at, the sender's own word: a
+        # clock ahead must not keep an older one in place (audit F6).
+        when = item.seq
         if rumor["kind"] == MESSAGE_KIND:
             target = formats.tag_value(rumor, "edit")
             if target is not None:
@@ -531,7 +534,7 @@ def fold(opened: Sequence[Opened], *, writer: str, redaktion: Iterable[str],
             bubble.edited = True
 
     # One reaction per person per message: the newest replaces the earlier.
-    newest: Dict[Tuple[str, str], Tuple[Tuple[int, int], str, str]] = {}
+    newest: Dict[Tuple[str, str], Tuple[int, str, str]] = {}
     for reaction_id, (target, who, emoji, when) in reactions.items():
         key = (target, who)
         if key not in newest or when > newest[key][0]:
