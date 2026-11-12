@@ -72,7 +72,7 @@ class Account(QObject):
         self.read_state = ReadState(profile, **lists)
         self.media_keys = MediaKeys()
         self.epochs = trust.EpochStore()
-        self.relay_lookup = trust.relay_key_lookup(relay_pool, relay_directory)
+        self.relay_lookup = trust.relay_key_lookup(relay_pool, relay_directory, parent=self)
         self.destinations = trust.Destinations(self.api, self.relay_lookup, self.epochs,
                                                parent=self)
         self.signer = PoolSigner(session_pool, profile)

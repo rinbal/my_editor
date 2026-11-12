@@ -208,10 +208,14 @@ def newest_key(candidates: Iterable[Any], address: str, store: EpochStore, *,
 RelayLookup = Callable[[str, str, Callable[[Sequence[dict]], None]], None]
 
 
-def relay_key_lookup(pool, directory, *, timeout_ms: int = 8_000) -> RelayLookup:
+def relay_key_lookup(pool, directory, *, timeout_ms: int = 8_000,
+                     parent: Optional[QObject] = None) -> RelayLookup:
     """A :data:`RelayLookup` over the app's relay pool: the publication's
     outbox relays (``RelayDirectory.outbox_of``), one query, only validly
-    signed events by that key (``queries.fetch_events``)."""
+    signed events by that key (``queries.fetch_events``). Each query
+    lives as long as ``parent`` (the account), as every other asker's
+    does: one nobody holds is deleted at once and never answers, so the
+    publications never load (F3 M-1)."""
 
     def lookup(pubkey: str, d_tag: str, on_done: Callable[[Sequence[dict]], None]) -> None:
         def got_relays(relays: List[str]) -> None:
@@ -224,7 +228,7 @@ def relay_key_lookup(pool, directory, *, timeout_ms: int = 8_000) -> RelayLookup
                                  lambda fetched: on_done(list(fetched.events)),
                                  accept=lambda e: e.get("pubkey") == pubkey
                                  and e.get("kind") == formats.APP_DATA_KIND,
-                                 timeout_ms=timeout_ms)
+                                 timeout_ms=timeout_ms, parent=parent)
 
         directory.outbox_of(pubkey, got_relays)
 

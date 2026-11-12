@@ -1404,6 +1404,34 @@ def _wired_writer():
     return writer, profile
 
 
+def test_the_accounts_key_lookup_keeps_its_relay_question_until_the_relays_answer():
+    # F3 M-1: the question to the publication's relays had no owner and
+    # was deleted at once, so Submit to a Publication stayed on "Loading
+    # publications …" and confirm_key never heard back.
+    import gc
+    from nostr.profiles import Profile
+    from tests.outbox_fakes import FakeClient, FakeSessionPool, HandPool
+    from tests.standup_fakes import KEY_EVENT
+
+    class Directory:
+        def outbox_of(self, _pubkey, on_done, *, hints=()):
+            on_done(["wss://relay.example"])
+
+    pool = HandPool()
+    writer = StandupWriter(session_pool=FakeSessionPool(FakeClient()), relay_pool=pool,
+                           relay_directory=Directory(), media_store=Store(),
+                           server="https://standup.example")
+    account = writer.account(Profile(user_pubkey=WRITER, bunker_pubkey="b" * 64,
+                                     bunker_relays=["wss://bunker.example"],
+                                     local_secret_hex="0" * 64))
+    got = []
+    d = next(tag[1] for tag in KEY_EVENT["tags"] if tag[0] == "d")
+    account.relay_lookup(KEY_EVENT["pubkey"], d, got.append)
+    gc.collect()
+    pool.subs[0].answer("wss://relay.example", KEY_EVENT)
+    assert got == [[KEY_EVENT]]
+
+
 @pytest.mark.parametrize("deleted", [False, True], ids=["let go", "deleted"])
 def test_a_first_message_sealed_after_the_account_was_let_go_is_never_posted(monkeypatch,
                                                                               deleted):
