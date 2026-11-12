@@ -15,7 +15,8 @@ cancellable (a revocation that must still reach the server). Nothing a
 server sends raises into Qt.
 
 What differs between APIs is left to subclasses: where a request goes
-and which URL its signature names (``url_for``, ``request_url_for``),
+and which URL its signature names (``url_for``, ``signed_url_for``,
+``request_url_for``),
 what a successful answer looks like (``_parse_success``), how a refusal
 reads (``_http_error``), the error type (``_error``), whether a call can
 go at all (``_unavailable``), what else a request carries
@@ -187,6 +188,11 @@ class SignedJsonApi(QObject):
         """Where the request for ``path`` travels (by default the same)."""
         return self.url_for(path)
 
+    def signed_url_for(self, call: Call) -> str:
+        """The URL ``call``'s signature names (by default ``url_for`` of
+        its path; a call bound to another address names that)."""
+        return self.url_for(call.path)
+
     def _error(self, code: str, **fields) -> Any:
         """The client's error for ``code``: status, message, retry_after..."""
         raise NotImplementedError
@@ -262,7 +268,7 @@ class SignedJsonApi(QObject):
         # Built here, immediately before signing, every time: an event id
         # is accepted once and its timestamp only for 60 seconds.
         unsigned = nip98.build_unsigned_auth_event(
-            self.url_for(call.path), call.method, call.body, now=int(self._clock()),
+            self.signed_url_for(call), call.method, call.body, now=int(self._clock()),
         )
         answered = {"done": False}
 

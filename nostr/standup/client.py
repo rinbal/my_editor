@@ -112,6 +112,10 @@ class StandupCall(Call):
     status: int = 0
     # The answer is in the contract's envelope (``"ok": true``).
     in_envelope: bool = True
+    # The exact URL the signature names when the contract binds the call
+    # to another address than this server's (12.1: the grants and the
+    # leave, signed for the key event's server); "" for url_for.
+    sign_for: str = ""
 
 
 class StandupApi(SignedJsonApi):
@@ -149,6 +153,9 @@ class StandupApi(SignedJsonApi):
 
     def url_for(self, path: str) -> str:
         return self._server + path
+
+    def signed_url_for(self, call: StandupCall) -> str:
+        return call.sign_for or self.url_for(call.path)
 
     # -- account scope -------------------------------------------------------
 
@@ -395,33 +402,50 @@ class StandupApi(SignedJsonApi):
                           answers.parse_members, on_success, on_failure,
                           limit=MAX_LIST_ANSWER_BYTES)
 
-    def invite_member(self, address: str, *, pubkey: str, role: str, sees: str,
+    def _key_action(self, address: str, rest: str, payload: Mapping[str, Any], key,
+                    parse: Callable[[Any], Any], on_success, on_failure) -> StandupCall:
+        """A POST the contract binds to the publication's verified key
+        event ``key`` (trust.RedaktionKey; 12.1, 12.3, 12.7): signed for
+        exactly ``<key.server>/api/sites/<route key>/<rest>``, whatever
+        server this client is set to, and sent to this one, as the web
+        app's keyAction (audit F16)."""
+        path = self._site(address) + "/" + rest
+        if getattr(key, "address", None) != address or not getattr(key, "server", ""):
+            return self._refuse("POST", path, "the key event is another publication's",
+                                on_success, on_failure)
+        call = self._build("POST", path, payload, Auth.SIGNED, parse, on_success, on_failure)
+        call.sign_for = key.server.rstrip("/") + path
+        return self._dispatch(call)
+
+    def invite_member(self, address: str, *, key, pubkey: str, role: str, sees: str,
                       wraps: Sequence[Mapping[str, Any]], history: Optional[Mapping[str, str]],
                       on_success: Callable[[answers.Member], None], on_failure) -> StandupCall:
         """``history`` is the member's own chain of older epoch keys
         (12.3): for ``"all"`` once the epoch is above 1, never for
-        ``"since_join"``, who must not get any older secret."""
+        ``"since_join"``, who must not get any older secret. ``key`` is
+        the verified key event it is signed for (:meth:`_key_action`)."""
         if sees == "since_join" and history is not None:
             raise ValueError("a member who sees only what follows gets no history chain")
-        return self._call("POST", self._site(address) + "/members",
-                          {"pubkey": pubkey, "role": role, "sees": sees, "wraps": list(wraps),
-                           "history": history},
-                          Auth.SIGNED, answers.parse_one_member, on_success, on_failure)
+        return self._key_action(address, "members",
+                                {"pubkey": pubkey, "role": role, "sees": sees,
+                                 "wraps": list(wraps), "history": history},
+                                key, answers.parse_one_member, on_success, on_failure)
 
     def accept_membership(self, address: str, on_success: Callable[[answers.Member], None],
                           on_failure) -> StandupCall:
         return self._call("POST", self._site(address) + "/members/accept", {}, Auth.SIGNED,
                           answers.parse_one_member, on_success, on_failure)
 
-    def remove_member(self, address: str, *, pubkey: str, key_event: Mapping[str, Any],
+    def remove_member(self, address: str, *, key, pubkey: str, key_event: Mapping[str, Any],
                       wraps: Mapping[str, Mapping[str, str]],
                       on_success: Callable[[int], None], on_failure) -> StandupCall:
-        """Remove ``pubkey`` and start the next epoch, whose ``wraps``
-        cover every member who keeps access. ``on_success(epoch)``: the
-        epoch now current."""
-        return self._call("POST", self._site(address) + "/members/remove",
-                          {"pubkey": pubkey, "epoch": _new_epoch(key_event, wraps)},
-                          Auth.SIGNED, answers.parse_epoch_number, on_success, on_failure)
+        """Remove ``pubkey`` and start the next epoch (``key_event``, its
+        new key event), whose ``wraps`` cover every member who keeps
+        access; signed for the verified ``key`` (:meth:`_key_action`).
+        ``on_success(epoch)``: the epoch now current."""
+        return self._key_action(address, "members/remove",
+                                {"pubkey": pubkey, "epoch": _new_epoch(key_event, wraps)},
+                                key, answers.parse_epoch_number, on_success, on_failure)
 
     def update_my_membership(self, address: str, changes: Mapping[str, Any],
                              on_success: Callable[[answers.Member], None],
@@ -433,12 +457,13 @@ class StandupApi(SignedJsonApi):
         return self._call("PATCH", self._site(address) + "/members/me", dict(changes),
                           Auth.SIGNED, answers.parse_one_member, on_success, on_failure)
 
-    def new_epoch(self, address: str, *, key_event: Mapping[str, Any],
+    def new_epoch(self, address: str, *, key, key_event: Mapping[str, Any],
                   wraps: Mapping[str, Mapping[str, str]],
                   on_success: Callable[[int], None], on_failure) -> StandupCall:
-        return self._call("POST", self._site(address) + "/epochs",
-                          _new_epoch(key_event, wraps), Auth.SIGNED,
-                          answers.parse_epoch_number, on_success, on_failure)
+        """The next epoch (``key_event``, its new key event), signed for
+        the verified ``key`` (:meth:`_key_action`)."""
+        return self._key_action(address, "epochs", _new_epoch(key_event, wraps), key,
+                                answers.parse_epoch_number, on_success, on_failure)
 
     def keys(self, address: str, on_success: Callable[[answers.EpochKeys], None],
              on_failure) -> StandupCall:
