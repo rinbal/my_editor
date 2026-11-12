@@ -436,7 +436,7 @@ def test_an_approval_a_paired_signer_asks_for_opens_once_and_is_said_once():
     approvals.asked("https://signer.example/approve")           # asked again
     approvals.asked("file:///etc/passwd")                       # never opened
     assert [url.toString() for url in opened] == ["https://signer.example/approve"]
-    assert said == ["Confirm in your signer"] and len(ready) == 1
+    assert said == ["Confirm in your signer app"] and len(ready) == 1
 
 
 def test_a_signer_that_names_other_relays_is_reached_there():

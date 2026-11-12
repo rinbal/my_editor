@@ -25,7 +25,7 @@ from url_safety import is_safe_external_url
 
 log = logging.getLogger(__name__)
 
-CONFIRM_IN_SIGNER = N_("Confirm in your signer")
+CONFIRM_IN_SIGNER = N_("Confirm in your signer app")
 
 
 def open_approval(url: str, *, open_url: Optional[Callable[[QUrl], object]] = None) -> bool:

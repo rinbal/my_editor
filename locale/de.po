@@ -13598,5 +13598,5 @@ msgstr "{publication} hat es noch nicht erfahren."
 msgid "{publication} still hasn’t learned of it."
 msgstr "{publication} hat es noch immer nicht erfahren."
 
-msgid "Confirm in your signer"
-msgstr "Im Signer bestätigen"
+msgid "Confirm in your signer app"
+msgstr "In deiner Signer-App bestätigen"
