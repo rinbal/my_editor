@@ -122,7 +122,7 @@ def _font_pixels(font: QFont, dpi: float) -> float:
     return font.pointSizeF() * dpi / 72.0
 
 
-def _text_dpi() -> float:
+def text_dpi() -> float:
     """The dots per inch Qt's text layout reads a document's own lengths
     (a margin) in before it turns them into a device's pixels: the
     screen's logical ones (qt_defaultDpiY), 72 on a Mac and 96 on other
@@ -255,12 +255,12 @@ class Handler(QPyTextObject):
         """The logical dots per inch of the device the document is laid
         out for (the editor's view, a page)."""
         device = doc.documentLayout().paintDevice()
-        return float(device.logicalDpiY()) if device is not None else _text_dpi()
+        return float(device.logicalDpiY()) if device is not None else text_dpi()
 
     def _length_scale(self, doc) -> float:
         """The layout's pixels per pixel of the document's own lengths (its
         margins), as Qt's text layout turns them: 1 on a screen."""
-        return self._dpi(doc) / _text_dpi()
+        return self._dpi(doc) / text_dpi()
 
     def _scale(self, doc) -> float:
         """The layout's pixels per CSS pixel. On a screen a CSS pixel is a

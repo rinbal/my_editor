@@ -270,7 +270,8 @@ def _iter_image_names(doc):
 def _cap_image_widths(doc, available_css_px: float, images: dict) -> None:
     """Shrink images wider than the printable area, keeping aspect ratio.
 
-    Sizes are in CSS pixels (96/inch). Images with no explicit size are
+    Sizes are in the document's own pixels, text_dpi of them to the inch
+    (photo_group_drawing: 96, on a Mac 72). Images with no explicit size are
     measured from the primed resources: opening the file again here
     would put back the untrusted disk read that priming removed, and an
     asset key is not a filename any reader could open anyway. The
@@ -384,7 +385,9 @@ def paginate(doc, device, resolution: int, *, image_roots=(), asset_resolver=Non
     clone.rootFrame().setFrameFormat(frame_fmt)
 
     paint_width_pt = page_w * 72.0 / resolution
-    _cap_image_widths(clone, paint_width_pt * 96.0 / 72.0, images)
+    # In the document's own pixels, which Qt turns into the page's by its
+    # text dpi: 96 an inch, on a Mac 72 (photo_group_drawing.text_dpi).
+    _cap_image_widths(clone, paint_width_pt * photo_group_drawing.text_dpi() / 72.0, images)
 
     if groups:
         photo_group_view.set_screen_height(clone, content_h)
