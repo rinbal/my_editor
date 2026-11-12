@@ -50,6 +50,7 @@ import photo_group_editing
 import photo_group_overlay
 import photo_group_view
 import rich_text
+import safe_picture
 import text_look
 from slash_menu import SlashMenu
 import url_safety
@@ -106,6 +107,22 @@ def _is_document_relative(url) -> bool:
         return False
     name = url.toString()
     return bool(name) and not name.startswith(("/", "\\")) and not os.path.isabs(name)
+
+
+def _picture_at_path(url):
+    """The photo a full path or a ``file:`` address names, read the one
+    safe way and upright (safe_picture), or None when it names none or
+    that does not read it. A drawing (SVG) is not a photo: Qt draws it
+    at its own size, as before."""
+    if url.isLocalFile():
+        path = url.toLocalFile()
+    elif not url.scheme() or (sys.platform == "win32" and len(url.scheme()) == 1):
+        path = url.toString()      # a bare path (on Windows: C:/...)
+    else:
+        return None
+    if not path or not os.path.isabs(path) or path.lower().endswith(".svg"):
+        return None
+    return safe_picture.read_picture(path)
 
 
 # A line break inside a paragraph (Shift+Return), and inside a table cell
@@ -687,6 +704,13 @@ class HtmlEditor(QTextEdit):
             # would stay blank, and be asked for again on every repaint.
             image = self._web_image_resolver(url.toString())
             return self.fitted_picture(image) if image is not None else self._placeholder_image()
+        if type_ == QTextDocument.ImageResource:
+            # A picture named by its full path: read the one safe way,
+            # upright (Qt's own reading stands a phone's photo on its
+            # side). What that does not read is left to Qt, as before.
+            image = _picture_at_path(url)
+            if image is not None:
+                return self.fitted_picture(image)
         found = super().loadResource(type_, url)
         if type_ == QTextDocument.ImageResource and isinstance(found, (QImage, QPixmap)):
             return self.fitted_picture(found)
