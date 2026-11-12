@@ -170,7 +170,9 @@ class FakeStore(QObject):
 
 class FakeJob(QObject):
     """HeldPublish's side the run uses: signs with the account's key, and
-    sends only once released; ``took`` says whether a relay takes it."""
+    sends only once released; ``took`` says whether the relay takes it,
+    and an empty one that no relay answered (as ``completed`` then says
+    with no answer in it)."""
 
     signed = Signal(str)
     completed = Signal(list)
@@ -194,7 +196,7 @@ class FakeJob(QObject):
 
     def send_again(self):
         self.sent.append(self.signed_event)
-        self.completed.emit([("wss://relay.example", self.took[0], "")])
+        self.completed.emit([("wss://relay.example", self.took[0], "")] if self.took else [])
         return True
 
     def cancel(self):
