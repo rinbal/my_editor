@@ -436,8 +436,8 @@ class BunkerClient(QObject):
     # is the one being paired now (bunker_pubkey is set).
     contacted = Signal()
     # The signer named other relays to listen on (switch_relays): the
-    # channel is there now, and the account should keep them.
-    relays_switched = Signal(list)
+    # account's key and the relays the channel is on now, to keep.
+    relays_switched = Signal(str, list)
 
     def __init__(self, pool: RelayPool, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -1143,7 +1143,7 @@ class BunkerClient(QObject):
             self._subscription = self._subscribe()   # listening there before the old closes
             if old is not None:
                 old.close()
-            self.relays_switched.emit(list(relays))
+            self.relays_switched.emit(self._user_pubkey or "", list(relays))
 
         self._send_request(method="switch_relays", params=[], on_success=answered,
                            on_failure=lambda _reason: None, timeout_ms=SWITCH_RELAYS_TIMEOUT_MS)
@@ -1429,8 +1429,7 @@ class BunkerSessionPool(QObject):
         self._inflight[pubkey] = [(on_ready, on_error)]
         new_client = BunkerClient(self._pool, parent=self)
         new_client.auth_challenge.connect(self.auth_challenge)    # audit F8
-        new_client.relays_switched.connect(                       # audit F17
-            lambda relays, pk=pubkey: self.relays_switched.emit(pk, relays))
+        new_client.relays_switched.connect(self.relays_switched)  # audit F17
         self._attaching[pubkey] = new_client
 
         def current() -> bool:
