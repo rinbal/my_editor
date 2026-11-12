@@ -133,9 +133,10 @@ class FakeStore(QObject):
     upload_finished = Signal(str, object)
     upload_failed = Signal(str, str)
 
-    def __init__(self, *, refuse: bool = False) -> None:
+    def __init__(self, *, refuse: bool = False, held=()) -> None:
         super().__init__()
         self.refuse, self.uploaded, self.deleted, self.batches = refuse, [], [], []
+        self.held = set(held)               # what a server holds already
 
     def target_servers(self):
         return [SERVER]
@@ -143,8 +144,8 @@ class FakeStore(QObject):
     def cached_bytes(self, _sha):
         return None
 
-    def files(self):
-        return {}
+    def held_on_servers(self, sha, on_answer):
+        on_answer(sha in self.held)
 
     def upload_bytes(self, body, *, name, mime_type):
         self.uploaded.append((body, name, mime_type))
@@ -927,6 +928,18 @@ def test_a_submission_that_changed_meanwhile_is_not_published_and_its_picture_co
     assert run.stage is Stage.CHANGED and jobs == []
     assert store.deleted == [(accepted.entry["plain_sha256"], (SERVER,))]
     assert run.signed_article is None
+
+
+def test_a_failed_publish_never_takes_down_a_picture_a_server_held_before(accepted):
+    # F5 H4 (probe p2): the picture is the writer's other article's, so a
+    # server holds it before this run; the run fails after the upload, and
+    # it stays up. The library was never fetched in this run.
+    store = FakeStore(held={accepted.entry["plain_sha256"]})
+    run, store, jobs = _run(accepted, store=store, reread_hash="ab" * 32, changed_from=1)
+    run.start()
+    accepted.world.settle()
+    assert run.stage is Stage.CHANGED and len(store.uploaded) == 1
+    assert store.deleted == []
 
 
 def test_a_picture_the_servers_refuse_publishes_nothing(accepted):
