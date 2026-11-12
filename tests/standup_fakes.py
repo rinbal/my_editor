@@ -1164,8 +1164,9 @@ class FakeStandupServer:
 
     def _article_get(self, who, payload, params, query) -> FakeReply:
         """backend api/articles.py detail: the article the index holds at
-        the address, its signer as ``author_pubkey`` (STANDUP P1: a credit
-        never replaces it) and the event's own ``event_tags``; 404 none."""
+        the address, its signer as ``author_pubkey`` (whom readers are
+        shown while the server holds no verified report of it, 12.4) and
+        the event's own ``event_tags``; 404 none."""
         held = self.articles.get(unquote(params["address"]))
         if held is None:
             return json_reply({"error": "not found"}, status=404)
