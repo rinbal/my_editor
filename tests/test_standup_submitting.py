@@ -923,6 +923,42 @@ def test_a_submission_another_device_recorded_meanwhile_is_sealed_again_and_sent
     assert Step.FAILED not in world.steps
 
 
+@pytest.mark.parametrize("press", ["first, sealed again", "second"])
+def test_a_cancel_takes_back_only_an_entry_with_keys_the_run_made(press):
+    # F3 M-6: sealed with the keys the laptop recorded for the sid, by
+    # itself or at a second press, a cancel while recording deleted the
+    # laptop's entry, though the laptop may be sending with those keys.
+    world = World()
+    laptop = SubmissionEntry(
+        sid=world.submitting.submission_id, publication=ADDRESS, server=SERVER, role="writer",
+        s_sub="ab" * 32, status_key="cd" * 32, title="Ein Jahr mit Lightning im Café",
+        kind="article", d="ein-jahr-mit-lightning", round=1, revision=1,
+        revision_hash="ef" * 32, envelope_sha256="12" * 32, wraps_sha256={"writer": "34" * 32},
+        stored=False, updated_at=int(NOW) - 60)
+    if press == "second":
+        world.list.put(laptop)              # what the first press's write brought here
+    waiting = []
+
+    def recording(entry, on_done):
+        if world.list.held(laptop.sid) is None:
+            world.list.put(laptop)          # the write reads the relays' list
+            world.later(0, lambda: on_done(RecordResult(
+                RecordStatus.SUPERSEDED, entry, PublishResult(PublishStatus.SENT),
+                on_list=laptop)))
+            return
+        waiting.append(entry)               # this write is still on its way
+
+    world.submitting._ports = replace(world.submitting._ports, record=recording)
+    world.go()
+    assert world.submitting.progress.step is Step.RECORDING
+    assert [e.status_key for e in waiting] == [laptop.status_key]
+    world.submitting.cancel()
+    world.settle()
+    assert world.submitting.progress.step is Step.CANCELLED
+    assert world.list.forgotten == [] and world.list.held(laptop.sid) == laptop
+    assert world.posted() == []
+
+
 @pytest.mark.parametrize("status, said", [
     (PublishStatus.BLOCKED, "Your list of submissions couldn’t be read: try again in a moment."),
     (PublishStatus.UNREADABLE, "Your list of submissions couldn’t be read: try again in a "

@@ -195,6 +195,9 @@ class Submitting:
         # Sealed again once, by itself, after the list refused the entry
         # for another device's keys of this sid (F3 M-6).
         self._resealed = False
+        # Whether the keys sealed are this run's own (new) or a record's
+        # the list held for the sid: only its own are ever taken back.
+        self._own_keys = False
         # The entry of a round another device stored (``stale_revision``),
         # whose stored entry the list is read again for.
         self._waits_for: Optional[SubmissionEntry] = None
@@ -242,15 +245,25 @@ class Submitting:
 
     def cancel(self) -> None:
         """Until the request is on its way; then nothing changes. An
-        entry recorded (or being recorded) for it is taken back from the
-        list: no device keeps the keys of a submission never sent."""
+        entry this run recorded (or is recording) with keys of its own is
+        taken back from the list: no device keeps the keys of a submission
+        never sent (:meth:`_forget_own`)."""
         if not self._progress.cancellable:
             return
         recorded = self._progress.step in (Step.RECORDING, Step.SIGNING)
         self._halt()
-        if recorded and self._sealed is not None:
-            self._ports.forget(self._sealed.entry)
+        if recorded:
+            self._forget_own()
         self._show(Step.CANCELLED)
+
+    def _forget_own(self) -> None:
+        """Take back the entry sealed, only when this run made its keys.
+        Keys it took from a record the list held for the sid (another
+        device's, which may be on its way with them, or one left here
+        before) are never taken back: unsure, it stays, and the next read
+        reconciles it (F3 M-6)."""
+        if self._sealed is not None and self._own_keys:
+            self._ports.forget(self._sealed.entry)
 
     def retry(self) -> None:
         failure = self._progress.failure
@@ -435,11 +448,12 @@ class Submitting:
 
     def _seal_and_record(self) -> None:
         sid = drafting.submission_id_of(self._draft, self._choice, self._writer, self._round)
+        held = self._ports.held(sid)
         try:
             self._sealed = drafting.seal(self._draft, self._choice, self._key, self._pictures,
                                          self._servers, writer=self._writer,
                                          round_=self._round, now=int(self._ports.clock()),
-                                         held=self._ports.held(sid), revision=self._revision,
+                                         held=held, revision=self._revision,
                                          change_summary=self._change_summary)
         except SecretKeyFound as refusal:
             self._fail(str(refusal), None)
@@ -455,6 +469,7 @@ class Submitting:
         except drafting.HeldNotUsable:
             self._fail(words.LIST_ENTRY_UNUSABLE, None)
             return
+        self._own_keys = held is None           # drafting.seal made new ones
         self._record()
 
     def _record(self) -> None:
@@ -518,19 +533,21 @@ class Submitting:
 
     def _round_open(self, _conflict: _RoundOpen) -> None:
         """The work is handed in in the server's latest round, still open
-        (contract 2): nothing of this body was stored, so its entry goes;
-        the server holds the work in that round."""
+        (contract 2): nothing of this body was stored, so its entry goes
+        (when its keys are this run's); the server holds the work in that
+        round."""
         self._stop = None
-        self._ports.forget(self._sealed.entry)
+        self._forget_own()
         self._fail(drafting.ALREADY_SUBMITTED, None, held=Held.OTHER)
 
     def _other_round(self, conflict: _OtherRound) -> None:
         """The server expects another round (contract 2): its latest for
         this work is closed. Nothing of this body was stored, so its entry
-        goes; the run builds round ``latest + 1`` once (a server that names
-        the same round again must not hold it in a loop)."""
+        goes (when its keys are this run's); the run builds round
+        ``latest + 1`` once (a server that names the same round again must
+        not hold it in a loop)."""
         self._stop = None
-        self._ports.forget(self._sealed.entry)
+        self._forget_own()
         if self._rebuilt or conflict.latest + 1 == self._round:
             self._fail(words.NOT_TAKEN, None, held=self._refused_held())
             return
