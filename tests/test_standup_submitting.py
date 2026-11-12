@@ -879,13 +879,83 @@ def test_a_key_that_is_not_confirmed_stops_everything_before_it_starts():
 
 
 def test_an_entry_the_list_does_not_hold_is_never_sent():
+    # Refused twice for another device's record: said once, calmly, with
+    # Try Again beside Close (F3 M-6), and nothing sent until it is held.
     world = World()
-    world.list.outcomes.append(RecordResult(
-        RecordStatus.SUPERSEDED, None, PublishResult(PublishStatus.SENT)))
+    world.list.outcomes += [RecordResult(
+        RecordStatus.SUPERSEDED, None, PublishResult(PublishStatus.SENT))] * 2
     progress = world.go()
     assert progress.step is Step.FAILED
     assert progress.failure.sentence == words.LIST_CHANGED_ELSEWHERE
-    assert progress.failure.retry is None
+    assert progress.failure.retry is Step.RECORDING and not progress.failure.error
+    assert world.posted() == [] and world.log.count("record") == 2
+    world.submitting.retry()
+    world.settle()
+    assert world.submitting.progress.step is Step.SUBMITTED and len(world.posted()) == 1
+
+
+def test_a_submission_another_device_recorded_meanwhile_is_sealed_again_and_sent_once():
+    # F3 M-6: the laptop recorded this work after the phone last read its
+    # list; the phone's write found the laptop's keys and gave up with only
+    # Close, and a second press went. Now it seals again by itself.
+    world = World()
+    record = world.submitting._ports.record
+    laptop = []
+
+    def meanwhile(entry, on_done):
+        if not laptop:
+            # The write reads the relays' list and merges it here, as
+            # SubmissionsList's does: the laptop's keys are on it.
+            laptop.append(replace(entry, s_sub="ab" * 32, status_key="cd" * 32,
+                                  updated_at=entry.updated_at + 1))
+            world.list.put(laptop[0])
+            world.later(0, lambda: on_done(RecordResult(
+                RecordStatus.SUPERSEDED, entry, PublishResult(PublishStatus.SENT),
+                on_list=laptop[0])))
+            return
+        record(entry, on_done)
+
+    world.submitting._ports = replace(world.submitting._ports, record=meanwhile)
+    progress = world.go()
+    assert progress.step is Step.SUBMITTED and progress.failure is None
+    [sent] = world.posted()
+    assert sent["status_key_hash"] == formats.status_key_hash("cd" * 32)   # one sid, one set
+    assert Step.FAILED not in world.steps
+
+
+@pytest.mark.parametrize("press", ["first, sealed again", "second"])
+def test_a_cancel_takes_back_only_an_entry_with_keys_the_run_made(press):
+    # F3 M-6: sealed with the keys the laptop recorded for the sid, by
+    # itself or at a second press, a cancel while recording deleted the
+    # laptop's entry, though the laptop may be sending with those keys.
+    world = World()
+    laptop = SubmissionEntry(
+        sid=world.submitting.submission_id, publication=ADDRESS, server=SERVER, role="writer",
+        s_sub="ab" * 32, status_key="cd" * 32, title="Ein Jahr mit Lightning im Café",
+        kind="article", d="ein-jahr-mit-lightning", round=1, revision=1,
+        revision_hash="ef" * 32, envelope_sha256="12" * 32, wraps_sha256={"writer": "34" * 32},
+        stored=False, updated_at=int(NOW) - 60)
+    if press == "second":
+        world.list.put(laptop)              # what the first press's write brought here
+    waiting = []
+
+    def recording(entry, on_done):
+        if world.list.held(laptop.sid) is None:
+            world.list.put(laptop)          # the write reads the relays' list
+            world.later(0, lambda: on_done(RecordResult(
+                RecordStatus.SUPERSEDED, entry, PublishResult(PublishStatus.SENT),
+                on_list=laptop)))
+            return
+        waiting.append(entry)               # this write is still on its way
+
+    world.submitting._ports = replace(world.submitting._ports, record=recording)
+    world.go()
+    assert world.submitting.progress.step is Step.RECORDING
+    assert [e.status_key for e in waiting] == [laptop.status_key]
+    world.submitting.cancel()
+    world.settle()
+    assert world.submitting.progress.step is Step.CANCELLED
+    assert world.list.forgotten == [] and world.list.held(laptop.sid) == laptop
     assert world.posted() == []
 
 
