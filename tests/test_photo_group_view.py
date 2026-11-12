@@ -24,6 +24,7 @@ import photo_group_geometry as geometry
 import photo_group_view
 import photo_layout
 from markdown_writer import _image_as_read, document_to_markdown, read_markdown
+from tests.app_process import run_window_script
 from tests.photo_corners import SHAPES, corner_colours, image_of, shows_whole
 
 IMAGE = QTextDocument.ResourceType.ImageResource.value
@@ -207,6 +208,34 @@ def test_below_600_pixels_a_strip_is_unrolled_one_picture_a_line(app):
     for box in boxes:
         assert shows_whole(shot, box)
         assert box.width() <= view.viewport().width()
+    view.close()
+
+
+_THREE_PORTRAITS = """
+import json, sys
+sys.path.insert(0, sys.argv[1])
+from PySide6.QtWidgets import QApplication
+app = QApplication([])
+from tests.test_photo_group_view import _boxes, _markdown, _shown
+view = _shown(_markdown("portrait.png", "portrait.png", "portrait.png"), 760)
+boxes = [box for _p, _n, box in _boxes(view.document())]
+print("RESULT", json.dumps({"dpi": view.logicalDpiY(), "tops": [round(b.top()) for b in boxes],
+                            "widths": [round(b.width()) for b in boxes]}))
+view.close()
+"""
+
+
+def test_at_a_macs_72_dots_per_inch_three_portraits_stay_in_one_row(app, tmp_path, monkeypatch):
+    # A Mac lays text out at 72 logical dots per inch, other systems at 96:
+    # there the third picture stood on a row of its own, all of them a
+    # quarter smaller. Qt's offscreen platform takes 72 from QT_FONT_DPI,
+    # read when it starts, so in a run of its own.
+    monkeypatch.setenv("QT_FONT_DPI", "72")
+    at_72 = run_window_script(_THREE_PORTRAITS, tmp_path)
+    assert at_72["dpi"] == 72
+    assert len(at_72["tops"]) == 3 and len(set(at_72["tops"])) == 1
+    view = _shown(_markdown("portrait.png", "portrait.png", "portrait.png"), 760)
+    assert at_72["widths"] == [round(box.width()) for _p, _n, box in _boxes(view.document())]
     view.close()
 
 
