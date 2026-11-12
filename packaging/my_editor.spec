@@ -43,6 +43,11 @@ datas = [(os.path.join(ICON_DIR, "icon-256.png"), os.path.join("packaging", "ico
 datas += [(os.path.join(ROOT, "locale", name), "locale")
           for name in sorted(os.listdir(os.path.join(ROOT, "locale")))
           if name.endswith(".po")]
+# The stylesheet and scripts an exported page with photo groups carries
+# (export_html.py inlines web/ in the page).
+datas += [(os.path.join(ROOT, "web", name), "web")
+          for name in sorted(os.listdir(os.path.join(ROOT, "web")))
+          if name.endswith((".css", ".js"))]
 
 # Static analysis misses these (native ext / lazily-imported Qt submodules).
 hiddenimports = [

@@ -146,6 +146,8 @@ MyEditor is free software, licensed under the [GNU Affero General Public License
 
 Copyright (C) 2026 rinbal.
 
+The photo group engine and page parts taken over from STANDUP keep STANDUP's MIT licence, Copyright (c) 2026 DoktorShift ([LICENSES/MIT-STANDUP.txt](LICENSES/MIT-STANDUP.txt)): `photo_layout.py`, `web/photo_layout.js`, `web/photo_viewer.js`, `web/photo_groups.js`, `web/photo_groups.css` and `web/photo-group-messages.json`, and the test data `tests/fixtures/photo_layout_vectors.json` and `tests/fixtures/photo_markup_cases.json`.
+
 This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. You should have received a copy of the license along with this program; if not, see <https://www.gnu.org/licenses/>.
 
 ---

@@ -40,9 +40,8 @@ from PySide6.QtWidgets import QApplication
 import alerts
 import image_safety
 import main_window as main_window_module
-from doc_walk import (
-    iter_block_runs, iter_blocks, iter_image_names, serialize_plain_with_images,
-)
+from doc_walk import iter_block_runs, iter_blocks, iter_image_names
+from plain_writer import serialize_plain_with_images
 from editor import HtmlEditor
 from export_html import document_to_html  # noqa: E402
 from markdown_writer import document_to_markdown
@@ -155,6 +154,11 @@ def _fmt(name, alt=""):
     if alt:
         fmt.setProperty(QTextImageFormat.ImageAltText, alt)
     return fmt
+
+
+def _at(path):
+    """An editor stand-in whose document is the file at ``path``."""
+    return types.SimpleNamespace(_file_path=str(path))
 
 
 def _editor_with(*assets, text=""):
@@ -328,7 +332,7 @@ def test_rmd_copier_refuses_a_path_outside_the_roots(tmp_path):
     export_dir.mkdir()
     win = _Window(tmp_path / "cache")
 
-    copy = win._make_rmd_image_copier(str(export_dir / "note.Rmd"))
+    copy = win._make_rmd_image_copier(_at(export_dir / "note.md"), str(export_dir / "note.Rmd"))
 
     assert copy(secret) is None
     assert copy(f"file://{secret}") is None
@@ -342,11 +346,25 @@ def test_rmd_copier_still_copies_an_image_beside_the_document(tmp_path):
     picture = _png(export_dir / "chart.png")
     win = _Window(tmp_path / "cache")
 
-    copy = win._make_rmd_image_copier(str(export_dir / "note.Rmd"))
+    copy = win._make_rmd_image_copier(_at(export_dir / "note.md"), str(export_dir / "note.Rmd"))
     reference = copy(picture)
 
     assert reference.startswith("note_media/")
     assert (export_dir / "note_media" / os.path.basename(reference)).exists()
+
+
+def test_rmd_copier_copies_a_wide_picture_of_a_photo_group(tmp_path):
+    """#wide (photo_group) is how a picture is laid out, not where it is."""
+    export_dir = tmp_path / "shared"
+    export_dir.mkdir()
+    picture = _png(export_dir / "plan.png")
+    win = _Window(tmp_path / "cache")
+
+    copy = win._make_rmd_image_copier(_at(export_dir / "note.md"), str(export_dir / "note.Rmd"))
+
+    assert copy(picture + "#wide") == copy(picture)
+    assert copy(picture).startswith("note_media/plan.png")
+    assert copy("https://other.example/cat.png#wide") == "https://other.example/cat.png#wide"
 
 
 def test_rmd_copier_passes_foreign_urls_through(tmp_path):
@@ -354,7 +372,7 @@ def test_rmd_copier_passes_foreign_urls_through(tmp_path):
     export_dir.mkdir()
     win = _Window(tmp_path / "cache")
 
-    copy = win._make_rmd_image_copier(str(export_dir / "note.Rmd"))
+    copy = win._make_rmd_image_copier(_at(export_dir / "note.md"), str(export_dir / "note.Rmd"))
 
     assert copy("https://other.example/cat.png") == "https://other.example/cat.png"
     assert not (export_dir / "note_media").exists()
@@ -399,12 +417,12 @@ def test_no_serializer_ever_writes_the_asset_key(tmp_path):
     ed = _editor_with(hosted, local, text="Look:")
     save_path = str(tmp_path / "story.md")
     target = win._image_target_for_file_save(ed.document(), save_path)
-    copy_image = win._make_rmd_image_copier(str(tmp_path / "story.Rmd"))
+    copy_image = win._make_rmd_image_copier(ed, str(tmp_path / "story.Rmd"))
 
     outputs = {
         "html": document_to_html(
             ed.document(), title="Story",
-            image_roots=win._image_roots_for(save_path),
+            image_roots=win._image_roots_for(ed),
             asset_resolver=win._asset_manager.export_view,
         ),
         "markdown tab": document_to_markdown(ed.document(),
@@ -825,3 +843,12 @@ def test_a_picture_named_by_a_web_address_is_asked_for_not_left_blank():
     image = ed.loadResource(QTextDocument.ImageResource, QUrl("https://cdn.example/a.png"))
     assert asked == ["https://cdn.example/a.png"]
     assert image is not None and not image.isNull()
+
+
+def test_a_wide_picture_of_the_app_is_saved_as_its_copy_and_stays_wide(tmp_path):
+    # Gate RG-PG2E-b 1: Large or Wide wrote "myeditor-asset:…#wide" and no copy.
+    win = _Window(tmp_path / "cache")
+    asset = win.local_asset()
+    target = win._image_target_for_file_save(QTextDocument(), str(tmp_path / "story.md"))
+    assert target(_fmt(asset.key + "#wide")) == f"story_media/{asset.sha256}.gif#wide"
+    assert (tmp_path / "story_media" / f"{asset.sha256}.gif").read_bytes() == GIF_BYTES

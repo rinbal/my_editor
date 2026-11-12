@@ -446,3 +446,53 @@ def test_matches_from_before_an_edit_are_not_painted(tmp_path):
     from tests.app_process import run_window_script
     r = run_window_script(STALE_SCRIPT, tmp_path)
     assert r["found"] == 60 and r["warnings"] == [] and r["after"] == 0
+
+
+CAPTION_SCRIPT = r"""
+import json, os, sys
+sys.path.insert(0, sys.argv[1])
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+from PySide6.QtWidgets import QApplication
+app = QApplication(sys.argv[:1])
+import main_window
+from markdown_writer import document_to_markdown
+
+path = os.path.join(sys.argv[2], "trip.md")
+with open(path, "w", encoding="utf-8") as out:
+    out.write("Before the jetty.\n\n![a](a.png)\n\n*The **old** jetty, the jetty*\n\n"
+              "![b](b.png)\n")
+w = main_window.MainWindow()
+w.show()
+ed = w.open_path(path)
+w._show_find(replace=True)
+w.findbar.edit.setText("jetty")
+r = {"matches": w._search_matches}
+w._find_next()
+w._find_next()
+cursor = ed.textCursor()
+r["selected"] = [cursor.selectionStart(), cursor.selectionEnd()]
+r["painted"] = [[m.start, m.end, m.format.foreground().color().name()]
+                for m in ed.caption_highlights("find")]
+w.findbar.replace_edit.setText("pier")
+w._replace_current()
+r["after_replace"] = document_to_markdown(ed.document())
+r["next"] = w._search_matches[w._current_match_index]
+w._replace_all()
+r["after_all"] = document_to_markdown(ed.document())
+ed.document().setModified(False)
+w.close()
+print("RESULT " + json.dumps(r))
+"""
+
+
+def test_find_and_replace_reach_a_photo_caption(tmp_path):
+    from tests.app_process import run_window_script
+    r = run_window_script(CAPTION_SCRIPT, tmp_path, str(tmp_path))
+    # The body's match, then the caption's two, after their picture (18).
+    assert r["matches"] == [[11, 16], [18, 19, 8, 13], [18, 19, 19, 24]]
+    assert r["selected"] == [18, 19]                  # the first picture, its caption's match
+    assert sorted(color for _s, _e, color in r["painted"]) == ["#000000", "#ffffff"]
+    # (Written without the pictures: no image target.)
+    assert r["after_replace"] == "Before the jetty.\n\n*The **old** pier, the jetty*\n"
+    assert r["next"] == [18, 19, 18, 23]
+    assert r["after_all"] == "Before the pier.\n\n*The **old** pier, the pier*\n"

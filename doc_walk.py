@@ -16,6 +16,8 @@ serialize them.
 
 import re
 
+from PySide6.QtGui import QTextCharFormat, QTextFormat
+
 BULLET_MARKER = "• "
 
 # Spaces per bullet nesting level. Mirrors tab_width in editor.py; kept as a
@@ -29,6 +31,43 @@ OBJECT_REPLACEMENT = "\ufffc"
 # maps it to a newline; fragment text does not, so any serializer that
 # replaces toPlainText has to do the mapping itself.
 LINE_SEPARATOR = "\u2028"
+
+# A soft line break: lines of one paragraph that follow each other in the
+# file ("hard-wrapped" prose, a picture on the line under its words). The
+# editor holds it as a line separator whose character format carries this
+# property, shows it as a new line, and writes it back as the plain line
+# end it was, so a note keeps its line layout (markdown_writer). A line
+# break typed here (Shift+Return) has no such property and is written as
+# Markdown's hard break. (editor.HtmlEditor keeps the property off what is
+# typed after one.)
+SOFT_BREAK_PROPERTY = QTextFormat.Property.UserProperty + 0x5B1
+
+# Words a person wrote in a picture's caption field are text, whatever
+# characters they hold (EDITING 2.1): "*", "_" or "[x](y)" typed there is
+# written escaped (markdown_writer.literal_text), so the file reads them
+# back as typed. The caption's own formatting, from the file, stays
+# Markdown. photo_caption.CaptionRun.typed carries it.
+TYPED_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B3
+
+# A character a file escaped ("\*", "1\.", "\!"), wherever it stands: it
+# is written escaped again, as the file had it, so it never turns into
+# emphasis, a list, a link or a picture, and text without an escape gets
+# none (markdown_writer's _keep_escaped). photo_caption.CaptionRun.escaped
+# carries it in a caption; editor.HtmlEditor keeps it off what is typed
+# after one.
+ESCAPED_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B4
+
+# The marks above belong to the characters that carry them alone.
+READ_MARKS = (SOFT_BREAK_PROPERTY, ESCAPED_TEXT_PROPERTY, TYPED_TEXT_PROPERTY)
+
+
+def without_read_marks(fmt: QTextCharFormat) -> QTextCharFormat:
+    """``fmt`` for new text written in it (typed, or a replacement): without
+    READ_MARKS, so it is Markdown as typed, whatever stood there."""
+    plain = QTextCharFormat(fmt)
+    for mark in READ_MARKS:
+        plain.clearProperty(mark)
+    return plain
 
 
 # Python counts a string in code points; a QTextDocument counts positions
@@ -144,33 +183,6 @@ def image_positions(doc, name: str) -> list:
                 found.extend(range(frag.position(), frag.position() + frag.length()))
             it += 1
     return found
-
-
-def serialize_plain_with_images(doc, image_target) -> str:
-    """Plain text with each image replaced by image_target(QTextImageFormat).
-
-    The text half reproduces toPlainText exactly, which is why this can
-    stand in for it everywhere images must survive: blocks joined with
-    newlines, U+2028 line separators mapped to newlines, stray
-    object-replacement characters in plain runs dropped.
-
-    A target function returning None omits the image entirely, which is
-    what a format with no way to carry one (.txt) needs.
-    """
-    lines = []
-    for block in iter_blocks(doc):
-        parts = []
-        for text, fmt in iter_block_runs(block):
-            if fmt.isImageFormat():
-                target = image_target(fmt.toImageFormat())
-                if target:
-                    parts.append(target)
-                continue
-            text = text.replace(OBJECT_REPLACEMENT, "")
-            if text:
-                parts.append(text.replace(LINE_SEPARATOR, "\n"))
-        lines.append("".join(parts))
-    return "\n".join(lines)
 
 
 def skip_prefix(runs, n: int):

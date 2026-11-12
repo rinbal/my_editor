@@ -1,0 +1,265 @@
+{
+  "//": "The picture cases of STANDUP's tests/fixtures/article_render.json (commit bf7c1fb), as they are: each Markdown case, its page language and picture sizes when it has them, and the HTML STANDUP's md.py writes for it. tests/test_export_photo_groups.py holds the export to the same markup. Copy them again when STANDUP changes the cases.",
+  "cases": [
+    {
+      "name": "an image alone is a figure",
+      "markdown": "![Loch Ossian](https://img.example/a.jpg)",
+      "html": "<figure class=\"e21-figure\" style=\"--ar:3/2\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/a.jpg\"><img src=\"https://img.example/a.jpg\" alt=\"Loch Ossian\" loading=\"lazy\" decoding=\"async\" /></a></figure>\n"
+    },
+    {
+      "name": "an italic line under an image is its caption",
+      "markdown": "![Loch](https://img.example/a.jpg)\n*Am Abend*",
+      "html": "<figure class=\"e21-figure\" style=\"--ar:3/2\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/a.jpg\"><img src=\"https://img.example/a.jpg\" alt=\"Loch\" loading=\"lazy\" decoding=\"async\" /></a><figcaption>Am Abend</figcaption></figure>\n"
+    },
+    {
+      "name": "a caption may follow as its own paragraph",
+      "markdown": "![Loch](https://img.example/a.jpg)\n\n_Am Abend_\n\nText.",
+      "html": "<figure class=\"e21-figure\" style=\"--ar:3/2\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/a.jpg\"><img src=\"https://img.example/a.jpg\" alt=\"Loch\" loading=\"lazy\" decoding=\"async\" /></a><figcaption>Am Abend</figcaption></figure>\n<p>Text.</p>\n"
+    },
+    {
+      "name": "a caption line with blank text at its edges, even as a reference, is a caption",
+      "markdown": "![A](https://img.example/1.jpg)\n\n![B](https://img.example/2.jpg)\n\n&#x20;*Der Steg*&#x20;\n\nText.",
+      "html": "<div class=\"e21-imagegroup e21-imagegroup--2\" role=\"group\" aria-label=\"2 photos\" data-layout=\"0 | 1\"><div class=\"e21-imagegroup-track\"><div class=\"e21-pg-run\" data-phone=\"strip\" style=\"--n:2;--sr:3;--srmax:1.5\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:3;--rg:1;--r:1.5\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/1.jpg\"><img src=\"https://img.example/1.jpg\" alt=\"A\" loading=\"lazy\" decoding=\"async\" /></a></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:3;--rg:1;--r:1.5;--xr:1.5;--xg:1\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/2.jpg\"><img src=\"https://img.example/2.jpg\" alt=\"B\" loading=\"lazy\" decoding=\"async\" /></a><figcaption>Der Steg</figcaption></figure></div></div></div>\n<p>Text.</p>\n"
+    },
+    {
+      "name": "#wide breaks out of the column",
+      "markdown": "![Weit](https://img.example/w.jpg#wide)\n*Weit*",
+      "html": "<figure class=\"e21-figure e21-figure--wide\" style=\"--ar:3/2\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/w.jpg\"><img src=\"https://img.example/w.jpg\" alt=\"Weit\" loading=\"lazy\" decoding=\"async\" /></a><button type=\"button\" class=\"e21-pg-zoom\" aria-label=\"Enlarge: Weit\"><svg class=\"e21-pg-zoom-icon\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M15 3h6v6\"></path><path d=\"M9 21H3v-6\"></path><path d=\"m21 3-7 7\"></path><path d=\"m3 21 7-7\"></path></svg>Enlarge</button><figcaption>Weit</figcaption></figure>\n"
+    },
+    {
+      "name": "two images in a row form a group",
+      "markdown": "![A](https://img.example/1.jpg)\n*Eins*\n\n![B](https://img.example/2.jpg)\n*Zwei*",
+      "html": "<div class=\"e21-imagegroup e21-imagegroup--2\" role=\"group\" aria-label=\"2 photos\" data-layout=\"0 | 1\"><div class=\"e21-imagegroup-track\"><div class=\"e21-pg-run\" data-phone=\"strip\" style=\"--n:2;--sr:3;--srmax:1.5\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:3;--rg:1;--r:1.5\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/1.jpg\"><img src=\"https://img.example/1.jpg\" alt=\"A\" loading=\"lazy\" decoding=\"async\" /></a><figcaption>Eins</figcaption></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:3;--rg:1;--r:1.5;--xr:1.5;--xg:1\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/2.jpg\"><img src=\"https://img.example/2.jpg\" alt=\"B\" loading=\"lazy\" decoding=\"async\" /></a><figcaption>Zwei</figcaption></figure></div></div></div>\n"
+    },
+    {
+      "name": "images on one line form a group",
+      "markdown": "![A](https://img.example/1.jpg) ![B](https://img.example/2.jpg) ![C](https://img.example/3.jpg)",
+      "html": "<div class=\"e21-imagegroup e21-imagegroup--3\" role=\"group\" aria-label=\"3 photos\" data-layout=\"0 | 1 | 2\"><div class=\"e21-imagegroup-track\"><div class=\"e21-pg-run\" data-phone=\"strip\" style=\"--n:3;--sr:4.5;--srmax:1.5\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:4.5;--rg:2;--r:1.5\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/1.jpg\"><img src=\"https://img.example/1.jpg\" alt=\"A\" loading=\"lazy\" decoding=\"async\" /></a></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:4.5;--rg:2;--r:1.5;--xr:1.5;--xg:1\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/2.jpg\"><img src=\"https://img.example/2.jpg\" alt=\"B\" loading=\"lazy\" decoding=\"async\" /></a></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:4.5;--rg:2;--r:1.5;--xr:3;--xg:2\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/3.jpg\"><img src=\"https://img.example/3.jpg\" alt=\"C\" loading=\"lazy\" decoding=\"async\" /></a></figure></div></div></div>\n"
+    },
+    {
+      "name": "five images: many",
+      "markdown": "![0](https://img.example/0.jpg)\n\n![1](https://img.example/1.jpg)\n\n![2](https://img.example/2.jpg)\n\n![3](https://img.example/3.jpg)\n\n![4](https://img.example/4.jpg)",
+      "html": "<div class=\"e21-imagegroup e21-imagegroup--many\" role=\"group\" aria-label=\"5 photos\" data-layout=\"0 | 1 | 2 ; 3 | 4\"><div class=\"e21-imagegroup-track\"><div class=\"e21-pg-run\" data-phone=\"strip\" style=\"--n:5;--sr:7.5;--srmax:1.5\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:4.5;--rg:2;--r:1.5\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/0.jpg\"><img src=\"https://img.example/0.jpg\" alt=\"0\" loading=\"lazy\" decoding=\"async\" /></a></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:4.5;--rg:2;--r:1.5;--xr:1.5;--xg:1\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/1.jpg\"><img src=\"https://img.example/1.jpg\" alt=\"1\" loading=\"lazy\" decoding=\"async\" /></a></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:4.5;--rg:2;--r:1.5;--xr:3;--xg:2\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/2.jpg\"><img src=\"https://img.example/2.jpg\" alt=\"2\" loading=\"lazy\" decoding=\"async\" /></a></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:2;--rs:3;--rg:1;--r:1.5\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/3.jpg\"><img src=\"https://img.example/3.jpg\" alt=\"3\" loading=\"lazy\" decoding=\"async\" /></a></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:2;--rs:3;--rg:1;--r:1.5;--xr:1.5;--xg:1\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/4.jpg\"><img src=\"https://img.example/4.jpg\" alt=\"4\" loading=\"lazy\" decoding=\"async\" /></a></figure></div></div></div>\n"
+    },
+    {
+      "name": "a wide image stays in its group",
+      "markdown": "![A](https://img.example/1.jpg)\n\n![B](https://img.example/2.jpg)\n\n![W](https://img.example/w.jpg#wide)",
+      "html": "<div class=\"e21-imagegroup e21-imagegroup--3\" role=\"group\" aria-label=\"3 photos\" data-layout=\"0 | 1 ; 2\"><div class=\"e21-imagegroup-track\"><div class=\"e21-pg-run\" data-phone=\"strip\" style=\"--n:2;--sr:3;--srmax:1.5\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:3;--rg:1;--r:1.5\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/1.jpg\"><img src=\"https://img.example/1.jpg\" alt=\"A\" loading=\"lazy\" decoding=\"async\" /></a></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:3;--rg:1;--r:1.5;--xr:1.5;--xg:1\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/2.jpg\"><img src=\"https://img.example/2.jpg\" alt=\"B\" loading=\"lazy\" decoding=\"async\" /></a></figure></div><figure class=\"e21-figure e21-figure--wide e21-pg-cell\" style=\"--ar:3/2;--row:2;--rs:1.5;--r:1.5\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/w.jpg\"><img src=\"https://img.example/w.jpg\" alt=\"W\" loading=\"lazy\" decoding=\"async\" /></a><button type=\"button\" class=\"e21-pg-zoom\" aria-label=\"Enlarge: W\"><svg class=\"e21-pg-zoom-icon\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M15 3h6v6\"></path><path d=\"M9 21H3v-6\"></path><path d=\"m21 3-7 7\"></path><path d=\"m3 21 7-7\"></path></svg>Enlarge</button></figure></div></div>\n"
+    },
+    {
+      "name": "known sizes lay the group out: a portrait beside two landscapes",
+      "markdown": "![Der Steg](https://media.example/steg.jpg)\n*Der Steg im Abendlicht*\n\n![Der See](https://media.example/see.jpg)\n*Blick über den See*\n\n![Der Weg](https://media.example/weg.jpg)\n*Rückweg im Regen. Foto: Jonas Weber*",
+      "lang": "de",
+      "media_dims": {
+        "https://media.example/steg.jpg": [
+          809,
+          1800
+        ],
+        "https://media.example/see.jpg": [
+          1800,
+          809
+        ],
+        "https://media.example/weg.jpg": [
+          1800,
+          809
+        ]
+      },
+      "html": "<div class=\"e21-imagegroup e21-imagegroup--3\" role=\"group\" aria-label=\"3 Fotos\" data-layout=\"0 | 1/2\"><div class=\"e21-imagegroup-track\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:809/1800;--row:1;--rs:1.5619;--rg:-0.1125;--rl:1.1125;--rc:1;--r:0.4494\"><a class=\"e21-pg-open\" href=\"https://media.example/steg.jpg\"><img src=\"https://media.example/steg.jpg\" alt=\"Der Steg\" width=\"809\" height=\"1800\" loading=\"lazy\" decoding=\"async\" /></a><figcaption>Der Steg im Abendlicht</figcaption></figure><div class=\"e21-pg-run\" data-phone=\"strip\" style=\"--n:2;--sr:4.4499;--srmax:2.225\"><div class=\"e21-pg-cell e21-pg-stack\" style=\"--row:1;--rs:1.5619;--rg:-0.1125;--rl:1.1125;--rc:1;--r:1.1125;--k:1;--c:1;--xr:0.4494;--xg:1\"><figure class=\"e21-figure\" style=\"--ar:1800/809\"><a class=\"e21-pg-open\" href=\"https://media.example/see.jpg\"><img src=\"https://media.example/see.jpg\" alt=\"Der See\" width=\"1800\" height=\"809\" loading=\"lazy\" decoding=\"async\" /></a><figcaption>Blick über den See</figcaption></figure><figure class=\"e21-figure\" style=\"--ar:1800/809\"><a class=\"e21-pg-open\" href=\"https://media.example/weg.jpg\"><img src=\"https://media.example/weg.jpg\" alt=\"Der Weg\" width=\"1800\" height=\"809\" loading=\"lazy\" decoding=\"async\" /></a><figcaption>Rückweg im Regen. Foto: Jonas Weber</figcaption></figure></div></div></div></div>\n"
+    },
+    {
+      "name": "the words follow the page language",
+      "markdown": "![Der Steg](https://media.example/steg.jpg)\n*Der Steg im Abendlicht*\n\n![Der See](https://media.example/see.jpg)\n*Blick über den See*\n\n![Der Weg](https://media.example/weg.jpg)\n*Rückweg im Regen. Foto: Jonas Weber*",
+      "lang": "en",
+      "media_dims": {
+        "https://media.example/steg.jpg": [
+          809,
+          1800
+        ],
+        "https://media.example/see.jpg": [
+          1800,
+          809
+        ],
+        "https://media.example/weg.jpg": [
+          1800,
+          809
+        ]
+      },
+      "html": "<div class=\"e21-imagegroup e21-imagegroup--3\" role=\"group\" aria-label=\"3 photos\" data-layout=\"0 | 1/2\"><div class=\"e21-imagegroup-track\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:809/1800;--row:1;--rs:1.5619;--rg:-0.1125;--rl:1.1125;--rc:1;--r:0.4494\"><a class=\"e21-pg-open\" href=\"https://media.example/steg.jpg\"><img src=\"https://media.example/steg.jpg\" alt=\"Der Steg\" width=\"809\" height=\"1800\" loading=\"lazy\" decoding=\"async\" /></a><figcaption>Der Steg im Abendlicht</figcaption></figure><div class=\"e21-pg-run\" data-phone=\"strip\" style=\"--n:2;--sr:4.4499;--srmax:2.225\"><div class=\"e21-pg-cell e21-pg-stack\" style=\"--row:1;--rs:1.5619;--rg:-0.1125;--rl:1.1125;--rc:1;--r:1.1125;--k:1;--c:1;--xr:0.4494;--xg:1\"><figure class=\"e21-figure\" style=\"--ar:1800/809\"><a class=\"e21-pg-open\" href=\"https://media.example/see.jpg\"><img src=\"https://media.example/see.jpg\" alt=\"Der See\" width=\"1800\" height=\"809\" loading=\"lazy\" decoding=\"async\" /></a><figcaption>Blick über den See</figcaption></figure><figure class=\"e21-figure\" style=\"--ar:1800/809\"><a class=\"e21-pg-open\" href=\"https://media.example/weg.jpg\"><img src=\"https://media.example/weg.jpg\" alt=\"Der Weg\" width=\"1800\" height=\"809\" loading=\"lazy\" decoding=\"async\" /></a><figcaption>Rückweg im Regen. Foto: Jonas Weber</figcaption></figure></div></div></div></div>\n"
+    },
+    {
+      "name": "a wide picture is a row of its own and the group goes on",
+      "markdown": "![A](https://img.example/1.jpg)\n\n![B](https://img.example/2.jpg)\n\n![Die Bothy am Ufer](https://img.example/w.jpg#wide)\n*Die Bothy am Loch Ossian*\n\n![C](https://img.example/3.jpg)\n\n![D](https://img.example/4.jpg)",
+      "lang": "de",
+      "media_dims": {
+        "https://img.example/1.jpg": [
+          1800,
+          809
+        ],
+        "https://img.example/2.jpg": [
+          1800,
+          809
+        ],
+        "https://img.example/w.jpg": [
+          1800,
+          1200
+        ],
+        "https://img.example/3.jpg": [
+          809,
+          1800
+        ],
+        "https://img.example/4.jpg": [
+          809,
+          1800
+        ]
+      },
+      "html": "<div class=\"e21-imagegroup e21-imagegroup--many\" role=\"group\" aria-label=\"5 Fotos\" data-layout=\"0 | 1 ; 2 ; 3 | 4\"><div class=\"e21-imagegroup-track\"><div class=\"e21-pg-run\" data-phone=\"strip\" style=\"--n:2;--sr:4.4499;--srmax:2.225\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:1800/809;--row:1;--rs:4.4499;--rg:1;--r:2.225\"><a class=\"e21-pg-open\" href=\"https://img.example/1.jpg\"><img src=\"https://img.example/1.jpg\" alt=\"A\" width=\"1800\" height=\"809\" loading=\"lazy\" decoding=\"async\" /></a></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:1800/809;--row:1;--rs:4.4499;--rg:1;--r:2.225;--xr:2.225;--xg:1\"><a class=\"e21-pg-open\" href=\"https://img.example/2.jpg\"><img src=\"https://img.example/2.jpg\" alt=\"B\" width=\"1800\" height=\"809\" loading=\"lazy\" decoding=\"async\" /></a></figure></div><figure class=\"e21-figure e21-figure--wide e21-pg-cell\" style=\"--ar:1800/1200;--row:2;--rs:1.5;--r:1.5\"><a class=\"e21-pg-open\" href=\"https://img.example/w.jpg\"><img src=\"https://img.example/w.jpg\" alt=\"Die Bothy am Ufer\" width=\"1800\" height=\"1200\" loading=\"lazy\" decoding=\"async\" /></a><button type=\"button\" class=\"e21-pg-zoom\" aria-label=\"Vergrößern: Die Bothy am Ufer\"><svg class=\"e21-pg-zoom-icon\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M15 3h6v6\"></path><path d=\"M9 21H3v-6\"></path><path d=\"m21 3-7 7\"></path><path d=\"m3 21 7-7\"></path></svg>Vergrößern</button><figcaption>Die Bothy am Loch Ossian</figcaption></figure><div class=\"e21-pg-run\" data-phone=\"row\" style=\"--n:2;--sr:0.8989;--srmax:0.4494\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:809/1800;--row:3;--rs:0.8989;--rg:1;--r:0.4494\"><a class=\"e21-pg-open\" href=\"https://img.example/3.jpg\"><img src=\"https://img.example/3.jpg\" alt=\"C\" width=\"809\" height=\"1800\" loading=\"lazy\" decoding=\"async\" /></a></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:809/1800;--row:3;--rs:0.8989;--rg:1;--r:0.4494;--xr:0.4494;--xg:1\"><a class=\"e21-pg-open\" href=\"https://img.example/4.jpg\"><img src=\"https://img.example/4.jpg\" alt=\"D\" width=\"809\" height=\"1800\" loading=\"lazy\" decoding=\"async\" /></a></figure></div></div></div>\n"
+    },
+    {
+      "name": "sizes outside the limits count as unknown",
+      "markdown": "![A](https://img.example/1.jpg) ![B](https://img.example/2.jpg) ![C](https://img.example/3.jpg) ![D](https://img.example/4.jpg)",
+      "media_dims": {
+        "https://img.example/1.jpg": [
+          0,
+          0
+        ],
+        "https://img.example/2.jpg": [
+          1,
+          100000
+        ],
+        "https://img.example/3.jpg": [
+          "1800",
+          "1200"
+        ],
+        "https://img.example/4.jpg": [
+          1800
+        ]
+      },
+      "html": "<div class=\"e21-imagegroup e21-imagegroup--4\" role=\"group\" aria-label=\"4 photos\" data-layout=\"0 | 1 ; 2 | 3\"><div class=\"e21-imagegroup-track\"><div class=\"e21-pg-run\" data-phone=\"strip\" style=\"--n:4;--sr:6;--srmax:1.5\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:3;--rg:1;--r:1.5\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/1.jpg\"><img src=\"https://img.example/1.jpg\" alt=\"A\" loading=\"lazy\" decoding=\"async\" /></a></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:3;--rg:1;--r:1.5;--xr:1.5;--xg:1\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/2.jpg\"><img src=\"https://img.example/2.jpg\" alt=\"B\" loading=\"lazy\" decoding=\"async\" /></a></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:2;--rs:3;--rg:1;--r:1.5\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/3.jpg\"><img src=\"https://img.example/3.jpg\" alt=\"C\" loading=\"lazy\" decoding=\"async\" /></a></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:2;--rs:3;--rg:1;--r:1.5;--xr:1.5;--xg:1\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/4.jpg\"><img src=\"https://img.example/4.jpg\" alt=\"D\" loading=\"lazy\" decoding=\"async\" /></a></figure></div></div></div>\n"
+    },
+    {
+      "name": "a linked picture in a group keeps its link",
+      "markdown": "[![Hütte](https://img.example/h.jpg)](https://www.bothies.example/ossian)\n*Die Bothy*\n\n![See](https://img.example/s.jpg)",
+      "media_dims": {
+        "https://img.example/h.jpg": [
+          1800,
+          1200
+        ],
+        "https://img.example/s.jpg": [
+          1800,
+          1200
+        ]
+      },
+      "html": "<div class=\"e21-imagegroup e21-imagegroup--2\" role=\"group\" aria-label=\"2 photos\" data-layout=\"0 | 1\"><div class=\"e21-imagegroup-track\"><div class=\"e21-pg-run\" data-phone=\"strip\" style=\"--n:2;--sr:3;--srmax:1.5\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:1800/1200;--row:1;--rs:3;--rg:1;--r:1.5\"><a class=\"e21-imglink\" href=\"https://www.bothies.example/ossian\" target=\"_blank\" rel=\"noopener noreferrer\"><img src=\"https://img.example/h.jpg\" alt=\"Hütte\" width=\"1800\" height=\"1200\" loading=\"lazy\" decoding=\"async\" /><span class=\"e21-imgflag\"><span class=\"e21-imgflag-host\">bothies.example</span><svg class=\"e21-imgflag-icon\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M7 7h10v10\"></path><path d=\"M7 17 17 7\"></path></svg></span></a><figcaption>Die Bothy</figcaption></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:1800/1200;--row:1;--rs:3;--rg:1;--r:1.5;--xr:1.5;--xg:1\"><a class=\"e21-pg-open\" href=\"https://img.example/s.jpg\"><img src=\"https://img.example/s.jpg\" alt=\"See\" width=\"1800\" height=\"1200\" loading=\"lazy\" decoding=\"async\" /></a></figure></div></div></div>\n"
+    },
+    {
+      "name": "a caption counts the text it shows",
+      "markdown": "![A](https://img.example/1.jpg)\n*Foto: [Anna Berg](https://anna.example) & Team*\n\n![B](https://img.example/2.jpg)",
+      "media_dims": {
+        "https://img.example/1.jpg": [
+          809,
+          1800
+        ],
+        "https://img.example/2.jpg": [
+          1800,
+          809
+        ]
+      },
+      "html": "<div class=\"e21-imagegroup e21-imagegroup--2\" role=\"group\" aria-label=\"2 photos\" data-layout=\"0 | 1\"><div class=\"e21-imagegroup-track\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:809/1800;--row:1;--rs:2.6744;--rg:1;--r:0.4494\"><a class=\"e21-pg-open\" href=\"https://img.example/1.jpg\"><img src=\"https://img.example/1.jpg\" alt=\"A\" width=\"809\" height=\"1800\" loading=\"lazy\" decoding=\"async\" /></a><figcaption>Foto: <a href=\"https://anna.example\">Anna Berg</a> &amp; Team</figcaption></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:1800/809;--row:1;--rs:2.6744;--rg:1;--r:2.225;--xr:0.4494;--xg:1\"><a class=\"e21-pg-open\" href=\"https://img.example/2.jpg\"><img src=\"https://img.example/2.jpg\" alt=\"B\" width=\"1800\" height=\"809\" loading=\"lazy\" decoding=\"async\" /></a></figure></div></div>\n"
+    },
+    {
+      "name": "a picture whose address is not ASCII keeps its size",
+      "markdown": "![Bild](https://img.example/bildä.jpg)\n\n![Bild](https://img.example/b%C3%BCro.jpg)",
+      "media_dims": {
+        "https://img.example/bildä.jpg": [
+          1800,
+          1200
+        ],
+        "https://img.example/b%C3%BCro.jpg": [
+          809,
+          1800
+        ]
+      },
+      "html": "<div class=\"e21-imagegroup e21-imagegroup--2\" role=\"group\" aria-label=\"2 photos\" data-layout=\"0 | 1\"><div class=\"e21-imagegroup-track\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:1800/1200;--row:1;--rs:1.9494;--rg:1;--r:1.5\"><a class=\"e21-pg-open\" href=\"https://img.example/bild%C3%A4.jpg\"><img src=\"https://img.example/bild%C3%A4.jpg\" alt=\"Bild\" width=\"1800\" height=\"1200\" loading=\"lazy\" decoding=\"async\" /></a></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:809/1800;--row:1;--rs:1.9494;--rg:1;--r:0.4494;--xr:1.5;--xg:1\"><a class=\"e21-pg-open\" href=\"https://img.example/b%C3%BCro.jpg\"><img src=\"https://img.example/b%C3%BCro.jpg\" alt=\"Bild\" width=\"809\" height=\"1800\" loading=\"lazy\" decoding=\"async\" /></a></figure></div></div>\n"
+    },
+    {
+      "name": "an entity the author wrote is its character, escaped once",
+      "markdown": "![A](https://img.example/1.jpg)\n*Tom &amp; Jerry &lt;3*\n\nText mit &amp; und &copy; und &lt;b&gt;.",
+      "html": "<figure class=\"e21-figure\" style=\"--ar:3/2\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/1.jpg\"><img src=\"https://img.example/1.jpg\" alt=\"A\" loading=\"lazy\" decoding=\"async\" /></a><figcaption>Tom &amp; Jerry &lt;3</figcaption></figure>\n<p>Text mit &amp; und © und &lt;b&gt;.</p>\n"
+    },
+    {
+      "name": "captions and descriptions are text, never markup",
+      "markdown": "![<img src=x onerror=alert(1)>](https://img.example/1.jpg)\n*<script>alert(1)</script> שלום​‮*\n\n![\" onload=\"alert(1)](https://img.example/2.jpg#wide)",
+      "html": "<div class=\"e21-imagegroup e21-imagegroup--2\" role=\"group\" aria-label=\"2 photos\" data-layout=\"0 ; 1\"><div class=\"e21-imagegroup-track\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:1.5;--r:1.5\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/1.jpg\"><img src=\"https://img.example/1.jpg\" alt=\"&lt;img src=x onerror=alert(1)&gt;\" loading=\"lazy\" decoding=\"async\" /></a><figcaption>&lt;script&gt;alert(1)&lt;/script&gt; שלום​‮</figcaption></figure><figure class=\"e21-figure e21-figure--wide e21-pg-cell\" style=\"--ar:3/2;--row:2;--rs:1.5;--r:1.5\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/2.jpg\"><img src=\"https://img.example/2.jpg\" alt=\"&quot; onload=&quot;alert(1)\" loading=\"lazy\" decoding=\"async\" /></a><button type=\"button\" class=\"e21-pg-zoom\" aria-label=\"Enlarge: &quot; onload=&quot;alert(1)\"><svg class=\"e21-pg-zoom-icon\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M15 3h6v6\"></path><path d=\"M9 21H3v-6\"></path><path d=\"m21 3-7 7\"></path><path d=\"m3 21 7-7\"></path></svg>Enlarge</button></figure></div></div>\n"
+    },
+    {
+      "name": "unsafe picture addresses open nothing",
+      "markdown": "![a](javascript:void) ![b](data:image/svg+xml,%3Csvg%3E) ![c](data:image/png;base64,AAAA) ![d](//cdn.example/x.jpg)",
+      "html": "<div class=\"e21-imagegroup e21-imagegroup--4\" role=\"group\" aria-label=\"4 photos\" data-layout=\"0 | 1 ; 2 | 3\"><div class=\"e21-imagegroup-track\"><div class=\"e21-pg-run\" data-phone=\"strip\" style=\"--n:4;--sr:6;--srmax:1.5\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:3;--rg:1;--r:1.5\" data-provisional><img src=\"#harmful-link\" alt=\"a\" loading=\"lazy\" decoding=\"async\" /></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:3;--rg:1;--r:1.5;--xr:1.5;--xg:1\" data-provisional><img src=\"#harmful-link\" alt=\"b\" loading=\"lazy\" decoding=\"async\" /></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:2;--rs:3;--rg:1;--r:1.5\" data-provisional><img src=\"data:image/png;base64,AAAA\" alt=\"c\" loading=\"lazy\" decoding=\"async\" /></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:2;--rs:3;--rg:1;--r:1.5;--xr:1.5;--xg:1\" data-provisional><img src=\"//cdn.example/x.jpg\" alt=\"d\" loading=\"lazy\" decoding=\"async\" /></figure></div></div></div>\n"
+    },
+    {
+      "name": "a picture written into the page shows by one rule of prefixes",
+      "markdown": "![a](data:image/png,AAAA) ![b](data:image/gifx;base64,AAAA) ![c](data:image/png;base64,AAAA) ![d](data:image/jpeg;base64,AAAA) ![e](DATA:image/webp;base64,AAAA) ![f](data:image/gif;base64,AAAA)",
+      "html": "<div class=\"e21-imagegroup e21-imagegroup--many\" role=\"group\" aria-label=\"6 photos\" data-layout=\"0 | 1 ; 2 | 3 ; 4 | 5\"><div class=\"e21-imagegroup-track\"><div class=\"e21-pg-run\" data-phone=\"strip\" style=\"--n:6;--sr:9;--srmax:1.5\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:3;--rg:1;--r:1.5\" data-provisional><img src=\"#harmful-link\" alt=\"a\" loading=\"lazy\" decoding=\"async\" /></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:3;--rg:1;--r:1.5;--xr:1.5;--xg:1\" data-provisional><img src=\"#harmful-link\" alt=\"b\" loading=\"lazy\" decoding=\"async\" /></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:2;--rs:3;--rg:1;--r:1.5\" data-provisional><img src=\"data:image/png;base64,AAAA\" alt=\"c\" loading=\"lazy\" decoding=\"async\" /></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:2;--rs:3;--rg:1;--r:1.5;--xr:1.5;--xg:1\" data-provisional><img src=\"data:image/jpeg;base64,AAAA\" alt=\"d\" loading=\"lazy\" decoding=\"async\" /></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:3;--rs:3;--rg:1;--r:1.5\" data-provisional><img src=\"DATA:image/webp;base64,AAAA\" alt=\"e\" loading=\"lazy\" decoding=\"async\" /></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:3;--rs:3;--rg:1;--r:1.5;--xr:1.5;--xg:1\" data-provisional><img src=\"data:image/gif;base64,AAAA\" alt=\"f\" loading=\"lazy\" decoding=\"async\" /></figure></div></div></div>\n"
+    },
+    {
+      "name": "picture addresses on lines of their own are a group",
+      "markdown": "Text.\n\nhttps://img.example/a.jpg\n\nhttps://img.example/b.png\n\nMehr Text.",
+      "media_dims": {
+        "https://img.example/a.jpg": [
+          1800,
+          1200
+        ],
+        "https://img.example/b.png": [
+          809,
+          1800
+        ]
+      },
+      "html": "<p>Text.</p>\n<div class=\"e21-imagegroup e21-imagegroup--2\" role=\"group\" aria-label=\"2 photos\" data-layout=\"0 | 1\"><div class=\"e21-imagegroup-track\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:1800/1200;--row:1;--rs:1.9494;--rg:1;--r:1.5\"><a class=\"e21-pg-open\" href=\"https://img.example/a.jpg\"><img src=\"https://img.example/a.jpg\" alt=\"\" width=\"1800\" height=\"1200\" loading=\"lazy\" decoding=\"async\" /></a></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:809/1800;--row:1;--rs:1.9494;--rg:1;--r:0.4494;--xr:1.5;--xg:1\"><a class=\"e21-pg-open\" href=\"https://img.example/b.png\"><img src=\"https://img.example/b.png\" alt=\"\" width=\"809\" height=\"1800\" loading=\"lazy\" decoding=\"async\" /></a></figure></div></div>\n<p>Mehr Text.</p>\n"
+    },
+    {
+      "name": "a picture address on a line of its own stands as a picture",
+      "markdown": "Text.\n\nhttps://img.example/a.jpg?size=large\n\nhttps://img.example/kein-bild\n\nIm Satz https://img.example/b.jpg bleibt es ein Link.",
+      "html": "<p>Text.</p>\n<figure class=\"e21-figure\" style=\"--ar:3/2\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/a.jpg?size=large\"><img src=\"https://img.example/a.jpg?size=large\" alt=\"\" loading=\"lazy\" decoding=\"async\" /></a></figure>\n<p><a href=\"https://img.example/kein-bild\">https://img.example/kein-bild</a></p>\n<p>Im Satz <img src=\"https://img.example/b.jpg\" alt=\"\" /> bleibt es ein Link.</p>\n"
+    },
+    {
+      "name": "an address with brackets is taken whole",
+      "markdown": "![Karte](https://img.example/karte_(1).jpg)\n*Die Karte*\n\n[Artikel](https://de.wikipedia.org/wiki/Bothy_(Schutzhütte)) und https://img.example/plan_(2).png\n\nhttps://img.example/weg_(3).jpg",
+      "html": "<figure class=\"e21-figure\" style=\"--ar:3/2\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/karte_(1).jpg\"><img src=\"https://img.example/karte_(1).jpg\" alt=\"Karte\" loading=\"lazy\" decoding=\"async\" /></a><figcaption>Die Karte</figcaption></figure>\n<p><a href=\"https://de.wikipedia.org/wiki/Bothy_(Schutzh%C3%BCtte)\">Artikel</a> und <img src=\"https://img.example/plan_(2).png\" alt=\"\" /></p>\n<figure class=\"e21-figure\" style=\"--ar:3/2\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/weg_(3).jpg\"><img src=\"https://img.example/weg_(3).jpg\" alt=\"\" loading=\"lazy\" decoding=\"async\" /></a></figure>\n"
+    },
+    {
+      "name": "emphasis inside a caption stays inside it",
+      "markdown": "![A](https://img.example/1.jpg)\n*Foto: **Anna Berg** und _Team_, `2026`*\n\n![B](https://img.example/2.jpg)\n_Blick **nach *Norden***_",
+      "media_dims": {
+        "https://img.example/1.jpg": [
+          809,
+          1800
+        ],
+        "https://img.example/2.jpg": [
+          1800,
+          809
+        ]
+      },
+      "html": "<div class=\"e21-imagegroup e21-imagegroup--2\" role=\"group\" aria-label=\"2 photos\" data-layout=\"0 | 1\"><div class=\"e21-imagegroup-track\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:809/1800;--row:1;--rs:2.6744;--rg:1;--r:0.4494\"><a class=\"e21-pg-open\" href=\"https://img.example/1.jpg\"><img src=\"https://img.example/1.jpg\" alt=\"A\" width=\"809\" height=\"1800\" loading=\"lazy\" decoding=\"async\" /></a><figcaption>Foto: <strong>Anna Berg</strong> und <em>Team</em>, <code>2026</code></figcaption></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:1800/809;--row:1;--rs:2.6744;--rg:1;--r:2.225;--xr:0.4494;--xg:1\"><a class=\"e21-pg-open\" href=\"https://img.example/2.jpg\"><img src=\"https://img.example/2.jpg\" alt=\"B\" width=\"1800\" height=\"809\" loading=\"lazy\" decoding=\"async\" /></a><figcaption>Blick <strong>nach <em>Norden</em></strong></figcaption></figure></div></div>\n"
+    },
+    {
+      "name": "a description of blanks is no description",
+      "markdown": "![ ](https://img.example/1.jpg)\n\n![](https://img.example/2.jpg)\n\nText ![  ](https://img.example/3.jpg) im Satz.",
+      "html": "<div class=\"e21-imagegroup e21-imagegroup--2\" role=\"group\" aria-label=\"2 photos\" data-layout=\"0 | 1\"><div class=\"e21-imagegroup-track\"><div class=\"e21-pg-run\" data-phone=\"strip\" style=\"--n:2;--sr:3;--srmax:1.5\"><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:3;--rg:1;--r:1.5\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/1.jpg\"><img src=\"https://img.example/1.jpg\" alt=\"\" loading=\"lazy\" decoding=\"async\" /></a></figure><figure class=\"e21-figure e21-pg-cell\" style=\"--ar:3/2;--row:1;--rs:3;--rg:1;--r:1.5;--xr:1.5;--xg:1\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/2.jpg\"><img src=\"https://img.example/2.jpg\" alt=\"\" loading=\"lazy\" decoding=\"async\" /></a></figure></div></div></div>\n<p>Text <img src=\"https://img.example/3.jpg\" alt=\"\" /> im Satz.</p>\n"
+    },
+    {
+      "name": "a linked image carries its destination flag",
+      "markdown": "[![Hütte](https://img.example/h.jpg)](https://www.bothies.example/ossian)\n*Die Bothy*",
+      "html": "<figure class=\"e21-figure\" style=\"--ar:3/2\" data-provisional><a class=\"e21-imglink\" href=\"https://www.bothies.example/ossian\" target=\"_blank\" rel=\"noopener noreferrer\"><img src=\"https://img.example/h.jpg\" alt=\"Hütte\" loading=\"lazy\" decoding=\"async\" /><span class=\"e21-imgflag\"><span class=\"e21-imgflag-host\">bothies.example</span><svg class=\"e21-imgflag-icon\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M7 7h10v10\"></path><path d=\"M7 17 17 7\"></path></svg></span></a><figcaption>Die Bothy</figcaption></figure>\n"
+    },
+    {
+      "name": "an advertising image link is starred and sponsored",
+      "markdown": "[![Boot](https://img.example/b.jpg)](https://boats.example/x \"Werbelink\")",
+      "html": "<figure class=\"e21-figure\" style=\"--ar:3/2\" data-provisional><a class=\"e21-imglink\" href=\"https://boats.example/x\" title=\"Werbelink\" target=\"_blank\" rel=\"sponsored nofollow noopener noreferrer\"><img src=\"https://img.example/b.jpg\" alt=\"Boot\" loading=\"lazy\" decoding=\"async\" /><span class=\"e21-imgflag\"><span class=\"e21-imgflag-host\">boats.example</span><sup>*</sup><svg class=\"e21-imgflag-icon\" viewBox=\"0 0 24 24\" width=\"14\" height=\"14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M7 7h10v10\"></path><path d=\"M7 17 17 7\"></path></svg></span></a></figure>\n"
+    },
+    {
+      "name": "an unsafe image link drops the link, keeps the image",
+      "markdown": "[![x](https://img.example/a.jpg)](javascript:void)",
+      "html": "<figure class=\"e21-figure\" style=\"--ar:3/2\" data-provisional><a class=\"e21-pg-open\" href=\"https://img.example/a.jpg\"><img src=\"https://img.example/a.jpg\" alt=\"x\" loading=\"lazy\" decoding=\"async\" /></a></figure>\n"
+    }
+  ]
+}

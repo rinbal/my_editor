@@ -229,3 +229,130 @@ def test_the_widget_uses_only_the_images_it_is_given():
     QApplication.processEvents()
     assert seen == ["https://x.example/a.png"]
     view.close()
+
+
+# -- photo groups --------------------------------------------------------------------------
+# The preview shows a group as readers do: the mosaic in a wide column,
+# below 600 pixels the runs, each strip one picture a line (nothing here
+# swipes); every picture whole.
+
+from doc_walk import iter_block_runs, iter_blocks  # noqa: E402
+import photo_group  # noqa: E402
+import photo_group_drawing  # noqa: E402
+import photo_group_view  # noqa: E402
+from tests.photo_corners import SHAPES, image_of, shows_whole  # noqa: E402
+
+STRIPPED = ("![a](landscape.png)\n\n![b](photo.png)\n\n![c](photo.png)\n\n![d](landscape.png)\n\n"
+            "![e](portrait.png)\n\n*A caption under the portrait*\n\n![f](plan.png#wide)\n")
+
+
+def _group_preview(width):
+    from PySide6.QtWidgets import QApplication as App
+    view = pv.NostrPreview(images=lambda name: image_of(name) if name in SHAPES else None)
+    view.resize(width, 3200)
+    view.show_markdown(STRIPPED)
+    view.show()
+    App.processEvents()
+    return view
+
+
+@pytest.mark.parametrize("width", [1000, 420])
+def test_a_group_in_the_preview_shows_every_picture_whole(width):
+    view = _group_preview(width)
+    shot = view.viewport().grab().toImage()
+    boxes = photo_group_view.picture_boxes(view.document())
+    assert len(boxes) == 6
+    for _p, name, box in boxes:
+        assert shows_whole(shot, box), name
+        assert box.right() <= view.viewport().width()
+    view.close()
+
+
+@pytest.mark.parametrize("width", [1000, 420])
+def test_a_groups_rows_stand_where_the_engine_places_them(width):
+    """A group's paragraph has no room between its lines (an article's
+    160 % opened a gap of more than half a picture under every row)."""
+    import photo_group
+    view = _group_preview(width)
+    doc = view.document()
+    (group,) = photo_group.groups_in(doc)
+    placed = [box.top() for box in photo_group_view.arrange(doc, group.units).boxes]
+    shown = [box.top() for _p, _n, box in photo_group_view.picture_boxes(doc)]
+    # Qt sets each line on a whole pixel: a pixel or two over a group.
+    assert [top - shown[0] for top in shown] == pytest.approx([top - placed[0] for top in placed],
+                                                              abs=2)
+    view.close()
+
+
+def test_a_wide_picture_of_a_group_holds_the_pages_enlarge_place():
+    """As article.css holds it at the end of the caption's line (PG1C 4d):
+    the row below stands at least its 40 pixels under the picture, and the
+    caption wraps beside it. The editor holds none."""
+    from PySide6.QtWidgets import QApplication as App
+    import photo_group
+    view = pv.NostrPreview(images=lambda name: image_of(name) if name in SHAPES else None)
+    view.resize(1000, 3200)
+    view.show_markdown("![a](landscape.png#wide)\n*Short*\n\n![b](photo.png)\n\n"
+                       "![c](photo.png)\n")
+    view.show()
+    App.processEvents()
+    doc = view.document()
+    (group,) = photo_group.groups_in(doc)
+    boxes = photo_group_view.arrange(doc, group.units).boxes
+    assert boxes[1].top() - boxes[0].bottom() >= photo_group_drawing.ZOOM_HEIGHT
+    photo_group_view.set_zoom_place(doc, 0.0)
+    assert photo_group_view.arrange(doc, group.units).boxes[1].top() < boxes[1].top()
+    view.close()
+
+
+def test_a_picture_address_standing_bare_shows_as_the_picture():
+    """As on STANDUP's page (md.py bare_urls, bare_pictures): two on lines
+    of their own are a group, one in a sentence a picture there; an
+    address of no picture stays a link."""
+    doc = pv.body_document("Text.\n\nhttps://img.example/a.jpg\n\nhttps://img.example/b.png\n\n"
+                           "Im Satz https://img.example/c.jpg hier.\n\nhttps://img.example/kein-bild\n")
+    (group,) = photo_group.groups_in(doc)
+    assert [unit.name for unit in group.units] == ["https://img.example/a.jpg",
+                                                   "https://img.example/b.png"]
+    sentence = doc.find("Im Satz").block()
+    assert sentence.text() == "Im Satz \ufffc hier."
+    assert [fmt.toImageFormat().name() for _text, fmt in iter_block_runs(sentence)
+            if fmt.isImageFormat()] == ["https://img.example/c.jpg"]
+    assert doc.find("https://img.example/kein-bild").charFormat().isAnchor()
+
+
+def test_a_caption_on_its_pictures_line_stands_right_under_it():
+    """No 60 % of the picture's height between them (an article's 160 %
+    of a line as tall as the picture)."""
+    from PySide6.QtWidgets import QApplication as App
+    view = pv.NostrPreview(images=lambda name: image_of(name) if name in SHAPES else None)
+    view.resize(1000, 2000)
+    view.show_markdown("![plan](landscape.png)\n*The plan of the whole place*\n")
+    view.show()
+    App.processEvents()
+    block = next(b for b in iter_blocks(view.document()) if b.text().startswith("\ufffc"))
+    lines = block.layout()
+    picture = lines.lineAt(0)
+    caption = lines.lineAt(1)
+    gap = caption.y() - (picture.y() + picture.naturalTextRect().height())
+    assert 0 <= gap < caption.height()
+    view.close()
+
+
+def test_a_narrow_preview_shows_the_runs_strips_one_picture_a_line():
+    def tops(view):
+        return [round(box.top()) for _p, _n, box in
+                photo_group_view.picture_boxes(view.document())]
+
+    wide = _group_preview(1000)
+    assert len(set(tops(wide))) < len(tops(wide))            # the mosaic: rows of pictures
+    narrow = _group_preview(420)
+    assert len(set(tops(narrow))) == len(tops(narrow))
+    revision = narrow.document().revision()
+    narrow.resize(1000, 3200)
+    from PySide6.QtWidgets import QApplication as App
+    App.processEvents()
+    assert tops(narrow) == tops(wide)                        # the mosaic again
+    assert narrow.document().revision() == revision          # by its layout alone
+    wide.close()
+    narrow.close()

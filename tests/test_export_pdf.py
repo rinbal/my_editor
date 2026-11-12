@@ -188,10 +188,11 @@ def test_image_outside_the_roots_renders_a_placeholder(tmp_path):
                     image_roots=(str(root),))
     pdf = _load(out)
     red = _count_pixels(pdf, lambda c: c.red() > 200 and c.green() < 80)
-    grey = _count_pixels(
-        pdf, lambda c: 180 < c.red() < 220 and abs(c.red() - c.blue()) < 12)
+    # The quiet stand-in: a plate in the page's quiet grey (#f1f0ec).
+    plate = _count_pixels(
+        pdf, lambda c: 234 < c.red() < 248 and 0 < c.red() - c.blue() < 12)
     assert red == 0
-    assert grey > 0
+    assert plate > 0
 
 
 def test_cold_document_renders_images_from_the_asset_resolver(tmp_path):

@@ -53,13 +53,14 @@ from speech import Speech
 from atomic_file import (
     decode_text_as_written, encode_text_document, newline_of, one_writer,
     read_json, save_document,
-    save_text_document, with_newlines, write_json,
+    save_text_document, with_newlines, write_bytes, write_json,
 )
 import locked_files
 import password_alert
 from locked_files import Lock, WrongPassword
 import diagnostics
 import dictation
+import user_dirs
 from dictation import models as dictation_models, on_device, setup as dictation_setup
 from dictation.indicator import DictationIndicator
 from dictation.preferences import Preferences
@@ -89,10 +90,9 @@ from preview_pane import (
 )
 from nostr import preview as preview_module
 from nostr.preview import Article as PreviewArticle
-from doc_walk import (
-    image_positions, iter_block_runs, iter_blocks, iter_image_names,
-    serialize_plain_with_images,
-)
+from nostr.rss.urls import is_web
+from doc_walk import image_positions, iter_block_runs, iter_blocks, iter_image_names
+from plain_writer import serialize_plain_with_images
 from markdown_writer import (
     document_to, document_to_markdown, has_local_only_formatting, holds_faithfully,
     image_markdown, read_markdown,
@@ -107,6 +107,14 @@ from library_window import FILE_LIST_PANEL, SIDEBAR_PANEL, LibraryWindow
 from sheet_window import SheetWindow
 import link_url
 import paste
+import bare_pictures
+import export_pictures
+import photo_group
+import photo_group_actions
+import photo_group_drawing
+import photo_group_menu
+import photo_group_view
+import picture_crop
 import rich_text
 import image_safety
 import url_safety
@@ -131,7 +139,7 @@ from update_flow import AUTOMATIC, guide_url, plan_for
 import theme
 from nostr.ui.context_widgets import ContextStatusBar, ContextTabBar
 from export_html import (
-    MEDIA_EMBED_LIMIT, document_to_html, image_data_uri, normalize_after_set_html,
+    MEDIA_EMBED_LIMIT, document_to_html, image_data_uri, open_page,
     sniff_image_ext)
 from find_replace import find_all, replace_all, replace_match, visible_matches
 from word_count import count_words, reading_minutes
@@ -465,6 +473,11 @@ def spelling_language_names(tags) -> list:
             name = f"{name} ({locale.nativeTerritoryName()})"
         named.append((tag, name))
     return sorted(named, key=lambda pair: pair[1].casefold())
+
+class PictureNotShown(Exception):
+    """Quick Look cannot show a picture; its text says why and what to do,
+    in the person's language."""
+
 
 class MainWindow(QMainWindow):
     def __init__(self, initial_path: str | None = None):
@@ -1493,7 +1506,10 @@ class MainWindow(QMainWindow):
         ed.set_resource_resolver(self._resolve_asset_image, ASSET_SCHEME)
         ed.set_object_lookup(self._outside_of)
         ed.set_local_image_resolver(lambda name, e=ed: self._resolve_local_image(e, name))
+        ed.photos.stored_name = lambda name, e=ed: self._stored_name(e, name)
         ed.set_web_image_resolver(self._resolve_web_image)
+        ed.picture_look_requested.connect(lambda name, e=ed: self._look_at_picture(e, name))
+        ed.set_picture_look_check(self._picture_look_shown)
         ed.set_library_check(lambda url: self._library_file_at(url) is not None)
         ed.set_media_badges(lambda name, e=ed: self._media_badge(e, name))
         ed.set_drop_check(self._accepts_drop)
@@ -1503,6 +1519,11 @@ class MainWindow(QMainWindow):
         ed.visible_area_changed.connect(lambda e=ed: self._on_visible_area_changed(e))
         ed.urls_dropped.connect(self._handle_dropped_urls)
         ed.set_context_menu_filler(self._fill_editor_context_menu)
+        ed.photos.changed.connect(
+            lambda e=ed: e is self.current_editor() and self._update_photo_commands())
+        ed.photos.add_requested.connect(
+            lambda place, paths, e=ed: self._add_photos(e, place, paths))
+        ed.photos.crop_requested.connect(lambda position, e=ed: self._crop_photo(e, position))
         ed.set_structure_check(lambda e=ed: self._editor_kind(e) == "rich")
         ed.set_local_formats_check(lambda e=ed: self._keeps_underline(e))
         ed.set_pictures_check(lambda e=ed: self._keeps_pictures(e))
@@ -1527,10 +1548,12 @@ class MainWindow(QMainWindow):
     def _wants_selection_bar(self, ed) -> bool:
         """Whether the format bar may show over ``ed``'s selection: chosen
         in Settings, in the tab in front, where formatting applies (a
-        document that holds Markdown), while it is being written."""
+        document that holds Markdown), while it is being written; not over
+        a picture selected (words' styles mean nothing to it, and Escape
+        must reach a picture being moved)."""
         return (self.format_bar_on_selection and ed is self.current_editor()
                 and self._editor_kind(ed) == "rich" and not self._shows_preview_only(ed)
-                and not ed.isReadOnly())
+                and not ed.isReadOnly() and ed.photos.current() is None)
 
     def _set_format_bar_on_selection(self, on: bool) -> None:
         """Settings' Show the Format Bar When Selecting Text, remembered."""
@@ -1828,7 +1851,11 @@ class MainWindow(QMainWindow):
         """Count the current document's words again (after it changed, or
         another tab came to the front)."""
         ed = self.current_editor()
-        self._document_words = count_words(ed.toPlainText()) if ed is not None else 0
+        # A photo group's captions count (they are drawn with its
+        # pictures, not text of the document).
+        self._document_words = (count_words(ed.toPlainText()) + sum(
+            count_words(caption) for caption in photo_group.captions(ed.document()))
+            if ed is not None else 0)
         self._show_word_count(ed)
 
     def _show_word_count(self, ed) -> None:
@@ -2417,6 +2444,31 @@ class MainWindow(QMainWindow):
                 ("add_column_after", _("Add Column After")),
                 ("delete_row", _("Delete Row")), ("delete_column", _("Delete Column")),
                 ("delete_table", _("Delete Table")))]
+        # A picture's commands (photo_group_editing): Format > Photo, the
+        # picture's context menu and the chips on it. The move keys are
+        # EDITING.md's: Control-Command-arrows on a Mac, Ctrl+Shift+arrows
+        # elsewhere (Notion's and Google Docs' keys for moving a block);
+        # none of them was used. Their titles follow the picture
+        # (_update_photo_commands). Add Photos… is also the slash menu's
+        # Photo Group…: from the words, a new group at the caret.
+        photo_keys = {
+            name: platform_keys(f"Meta+Ctrl+{arrow}", f"Ctrl+Shift+{arrow}")
+            for name, arrow in ((photo_group_menu.LEFT, "Left"),
+                                (photo_group_menu.RIGHT, "Right"),
+                                (photo_group_menu.UP, "Up"), (photo_group_menu.DOWN, "Down"))}
+        photo_titles = photo_group_menu.base_titles()
+        self.act_photo = {}
+        for name in photo_group_menu.COMMANDS:
+            adding = name == photo_group_menu.ADD
+            self.act_photo[name] = add(
+                Command(f"format.photo.{name}", photo_titles[name], FORMAT, photo_keys.get(name),
+                        checkable=name == photo_group_menu.LARGE,
+                        keywords=(_("photo"), _("picture"), _("image"), _("group"))
+                        # Both spellings, in every language: "/foto" in English too.
+                        + (("photo", "foto") if adding else ()),
+                        slash_section=slash_menu.INSERT if adding else "",
+                        insert_title=_("Photo Group\u2026") if adding else ""),
+                triggered=lambda n=name: self._photo_command(n))
         # A workbook's sheets: Format > Sheet, while a spreadsheet is in
         # front (as Numbers has them in its Table menu); the sheet bar's
         # context menu has them too.
@@ -3084,6 +3136,17 @@ class MainWindow(QMainWindow):
             if index in (2, 4, 6):
                 self.m_table.addSeparator()     # rows | columns | delete | the table
             self.m_table.addAction(action)
+        # Format > Photo, as Format > Table: what can be done to the picture
+        # selected, dimmed where it cannot (the menu bar's rule).
+        self.m_photo = m_format.addMenu(_("Photo"))
+        self.m_photo.setToolTipsVisible(True)
+        for names in photo_group_menu.MENU_SECTIONS:
+            if not self.m_photo.isEmpty():
+                self.m_photo.addSeparator()
+            for name in names:
+                self.m_photo.addAction(self.act_photo[name])
+        self.m_photo.aboutToShow.connect(self._update_photo_commands)
+        m_format.aboutToShow.connect(self._update_photo_commands)
         self.m_sheet = m_format.addMenu(_("Sheet"))
         for index, action in enumerate(self.act_sheet_commands):
             if index == 3:
@@ -3978,6 +4041,10 @@ class MainWindow(QMainWindow):
             if active_job is not None:
                 active_job.cancel()
                 editor._active_stash_job = None
+            # An export waiting for its pictures goes quietly.
+            waiting = getattr(editor, "_export_waiting", None)
+            if waiting is not None:
+                waiting()
         self.tabs.removeTab(index)
         if editor is not None:
             # The tab goes, its editor and document with it, once what is
@@ -4247,10 +4314,11 @@ class MainWindow(QMainWindow):
         store = getattr(self, "_media_store", None)
         return store.files.get(sha) if sha and store is not None else None
 
-    def _handle_dropped_images(self, paths, step: str = N_("Drag")):
+    def _handle_dropped_images(self, paths, step: str = N_("Drag"), place=None):
         """Images were dropped on the window: adopt and insert them now, as
         one step of Undo called ``step`` (an N_ word; a paste's own
-        name stays the paste's).
+        name stays the paste's): at the caret, or at ``place`` (a
+        photo_group_actions.Place: a slot of a group, beside a picture).
 
         The insert never waits for a signer or a server, and asks nothing:
         a picture added stays on this computer until the document is
@@ -4274,15 +4342,30 @@ class MainWindow(QMainWindow):
 
         adopted = []
         refused = []
-        with ed.undo_step(step):
+        if place is not None:
+            # Taken in first, then put at the place as one step.
+            images = []
             for path in paths:
-                alt = os.path.splitext(os.path.basename(path))[0] or "image"
-                asset = self._asset_manager.adopt_file(path, alt=alt)
+                # The file's name names the asset; the picture has no
+                # description until the writer gives it one.
+                name = os.path.splitext(os.path.basename(path))[0] or "image"
+                asset = self._asset_manager.adopt_file(path, alt=name)
                 if asset is None:
                     refused.append(os.path.basename(path))
                     continue
-                self._insert_asset(ed, asset, alt=alt)
+                images.append(self._asset_image(ed, asset, alt=""))
                 adopted.append(asset)
+            ed.photos.insert(place, images, step)
+        else:
+            with ed.undo_step(step):
+                for path in paths:
+                    name = os.path.splitext(os.path.basename(path))[0] or "image"
+                    asset = self._asset_manager.adopt_file(path, alt=name)
+                    if asset is None:
+                        refused.append(os.path.basename(path))
+                        continue
+                    self._insert_asset(ed, asset, alt="")
+                    adopted.append(asset)
 
         if refused:
             self.status.showMessage(
@@ -4301,18 +4384,23 @@ class MainWindow(QMainWindow):
             self._asset_manager.request_upload(asset.sha256)
 
     def _insert_image(self) -> None:
-        """Insert > Image…: a picture file chosen in the system's dialog,
-        put in at the caret exactly as dropping it there would
-        (_handle_dropped_images: one step of Undo, kept on this computer
-        until the document is published)."""
+        """Insert > Image… (the toolbar's "+" too): picture files chosen in
+        the system's dialog, put in at the caret exactly as dropping them
+        there would (_handle_dropped_images: one step of Undo, kept on this
+        computer until the document is published). Several chosen at once
+        are a photo group of their own, where the caret's paragraph allows
+        one (PhotoEditing.free_place)."""
         ed = self.current_editor()
         if ed is None or self._editor_kind(ed) != "rich":
             return
         patterns = " ".join("*" + ext for ext in sorted(_IMAGE_EXTS))
-        path, _filter = QFileDialog.getOpenFileName(
+        paths, _filter = QFileDialog.getOpenFileNames(
             self, _("Insert Image"), "", _("Images ({patterns})").format(patterns=patterns))
-        if path:
-            self._handle_dropped_images([file_paths.normalize(path)], N_("Image"))
+        paths = [file_paths.normalize(path) for path in paths]
+        if len(paths) == 1:
+            self._handle_dropped_images(paths, N_("Image"))
+        elif paths:
+            self._handle_dropped_images(paths, N_("Add Photos"), place=ed.photos.free_place())
 
     def _handle_dropped_text(self, text: str):
         ed = self.current_editor()
@@ -4357,6 +4445,7 @@ class MainWindow(QMainWindow):
         ed.clear_highlights()
         ext = path.lower()
         front = None
+        as_read = content
         if ext.endswith('.md'):
             front, content = front_matter.split(content)
             if front is not None:
@@ -4365,10 +4454,10 @@ class MainWindow(QMainWindow):
                     else front.newline
         content = with_newlines(content)
         if ext.endswith(('.html', '.htm')):
-            ed.setHtml(content)
-            # Lists stay real lists (the editor edits them as such); what
-            # the reader leaves behind is tidied.
-            normalize_after_set_html(ed.document())
+            # Lists stay real lists (the editor edits them as such), the
+            # page's figures are the paragraphs they were written from, and
+            # what the reader leaves behind is tidied.
+            open_page(ed, content)
             ed.document().clearUndoRedoStacks()
         elif ext.endswith('.md'):
             # The article's details are the file's front matter (Q-F): shown
@@ -4378,6 +4467,13 @@ class MainWindow(QMainWindow):
             ed._front_matter = front
             tab_details.hold(ed, None)
             self._load_markdown(ed, content)
+            # The file as read: saved untouched, it is written back byte
+            # for byte (_untouched); the first edit lets go of it.
+            ed._as_read = as_read
+            if not getattr(ed, "_as_read_watched", False):
+                ed._as_read_watched = True
+                ed.document().modificationChanged.connect(
+                    lambda modified, ed=ed: modified and setattr(ed, "_as_read", None))
         elif ext.endswith('.rmd'):
             # R Markdown is edited as source, the way RStudio does it.
             ed.setPlainText(content)
@@ -4987,9 +5083,14 @@ class MainWindow(QMainWindow):
         def remember(asset, url: str, fmt) -> None:
             if not url or url in records:
                 return
-            # Audio and video have no alternative text: their name is a name.
-            alt = "" if asset.is_media else (
-                str(fmt.property(QTextImageFormat.ImageAltText) or "") or asset.alt)
+            # Audio and video have no alternative text: their name is a
+            # name. A picture's is the description the document gives it,
+            # by the rule the editor's "ALT missing" follows: none for
+            # none, never its file's name, the one its asset keeps (what an
+            # earlier version gave a picture it added) or "image".
+            alt = "" if asset.is_media else photo_group.description_of(
+                str(fmt.property(QTextImageFormat.ImageAltText) or ""), fmt.name(),
+                asset.stored_name)
             records[url] = PublishedMedia(
                 url=url,
                 sha256=asset.sha256,
@@ -5190,27 +5291,39 @@ class MainWindow(QMainWindow):
                 return self.save_as(self._suggest_path(path, '.rtf'), ".rtf (*.rtf)")
 
         old_path = self.current_path()
-        ok = self._save_to(path)
+
+        def saved() -> None:
+            # A page or a PDF written once its pictures came: the tab it
+            # was saved from, while it is still the one in front.
+            if ed is None or self.current_editor() is ed:
+                self._saved_as(path, old_path)
+        ok = self._save_to(path, then=saved)
         if ok:
-            if old_path and old_path != path:
-                self._unwatch(old_path)
-            self._watcher.addPath(path)
-            self.set_current_path(path)
-            ed = self.current_editor()
-            if ed:
-                self._attach_highlighter(ed, path)
-                self._update_status_bar()
-            if ed and hasattr(ed, '_backup'):
-                ed._backup.update_file_path(path)
-            add_recent(path)
-            self._populate_recent_menu()
-            self._update_knit_actions()
+            self._saved_as(path, old_path)
         return ok
 
-    def _save_to(self, path: str, *, asked: bool = False) -> bool:
+    def _saved_as(self, path: str, old_path: str) -> None:
+        """The current tab is the file ``path`` now (Save As)."""
+        if old_path and old_path != path:
+            self._unwatch(old_path)
+        self._watcher.addPath(path)
+        self.set_current_path(path)
+        ed = self.current_editor()
+        if ed:
+            self._attach_highlighter(ed, path)
+            self._update_status_bar()
+        if ed and hasattr(ed, '_backup'):
+            ed._backup.update_file_path(path)
+        add_recent(path)
+        self._populate_recent_menu()
+        self._update_knit_actions()
+
+    def _save_to(self, path: str, *, asked: bool = False, then=None) -> bool:
         """Write the current document to ``path``; True once it is written.
         ``asked``: the caller asked already about writing over a file that
-        another app changed (_confirm_save_over_changes)."""
+        another app changed (_confirm_save_over_changes). A page or a PDF
+        whose web pictures are still to come is written once they are
+        (_with_web_pictures): False now, and ``then()`` once it is."""
         ed = self.current_editor()
         if not ed:
             return False
@@ -5221,6 +5334,7 @@ class MainWindow(QMainWindow):
         front = None
         head = ""                   # a Markdown file's front matter, as written
         left_out = []               # audio or video a Markdown file could not hold
+        as_read = None              # a Markdown file opened and not changed, as read
         try:
             if ext.endswith(('.pdf', '.rtf')) and getattr(ed, "_lock", None) is not None:
                 inform(self, title=_("A locked document can’t be saved as PDF or RTF"),
@@ -5229,19 +5343,21 @@ class MainWindow(QMainWindow):
                                  "first (File > Change Password…)."))
                 return False
             if ext.endswith('.pdf'):
-                return self._save_as_pdf(ed, path)
+                return self._save_as_pdf(ed, path, then=then)
             elif ext.endswith('.rtf'):
                 return self._save_as_rtf(ed, path)
 
             if ext.endswith(('.html', '.htm')):
-                content = document_to_html(
-                    ed.document(),
-                    title=self._export_title_for(path),
-                    image_roots=self._image_roots_for(path),
-                    asset_resolver=self._asset_manager.export_view,
-                )
+                return self._with_web_pictures(
+                    ed, lambda doc, pictures, revision: self._save_html(
+                        ed, path, doc, pictures, revision), then=then)
             elif ext.endswith('.rmd'):
                 content = self._to_rmd_content(ed, path)
+            elif ext.endswith('.md') and MainWindow._untouched(ed, path):
+                # Nothing changed since it was opened: the file stays as it
+                # is, whatever the writer would make of what it holds.
+                as_read = ed._as_read
+                front = getattr(ed, "_front_matter", None)
             elif ext.endswith('.md'):
                 # The same Markdown an article publishes, whether the tab
                 # came from a .md file or was typed here.
@@ -5272,8 +5388,11 @@ class MainWindow(QMainWindow):
                 # placeholder the old toPlainText call wrote out.
                 content = serialize_plain_with_images(ed.document(), lambda fmt: None)
 
-            MainWindow._write_document(self, ed, path, encode_text_document(
+            MainWindow._write_document(self, ed, path, as_read.encode("utf-8")
+                                       if as_read is not None else encode_text_document(
                 content, newline=getattr(ed, "_newline", None), head=head))
+            if as_read is None:
+                ed._as_read = None          # the file is the writer's now
             if ext.endswith('.md'):
                 ed._front_matter = front
                 ed._details_not_saved = front.refused if front is not None else frozenset()
@@ -5295,6 +5414,95 @@ class MainWindow(QMainWindow):
             # (sealing a locked document takes a while): finding the file as
             # written here, _on_file_changed knows the change is this save.
             self._saved_stamps[path] = regular_files.file_stamp(path)
+
+    @staticmethod
+    def _untouched(ed, path: str) -> bool:
+        """``ed`` holds the Markdown file ``path`` as it was read: never
+        edited since it was opened (the editor fitting its pictures to the
+        window is no edit), no detail set or read."""
+        own = getattr(ed, "_file_path", None)
+        return (getattr(ed, "_as_read", None) is not None and not ed.document().isModified()
+                and bool(own) and os.path.realpath(own) == os.path.realpath(path)
+                and tab_details.untouched(ed))
+
+    def _save_html(self, ed, path: str, doc, pictures: dict, revision: int) -> bool:
+        """Write ``doc`` (a copy of ``ed``'s document made at ``revision``)
+        to ``path`` as a page that holds its pictures; True once written.
+        The tab counts as saved when it was not edited since."""
+        try:
+            content = document_to_html(
+                doc, title=self._export_title_for(path),
+                image_roots=self._image_roots_for(ed),
+                asset_resolver=self._asset_manager.export_view,
+                remote_pictures=pictures)
+            MainWindow._write_document(self, ed, path, encode_text_document(
+                content, newline=getattr(ed, "_newline", None), head=""))
+            ed._recovered_title = ""
+            self._resolve_disk_change(ed)
+            if ed.document().revision() == revision:
+                ed.document().setModified(False)
+            self._update_tab_title(ed)
+            self._say_saved(ed, path)
+            return True
+        except Exception as e:
+            inform(self, title=_("Couldn't save \u201c{name}\u201d").format(
+                       name=os.path.basename(path)),
+                   message=f"{e}\n\n{_SAVE_FAILED_HINT}", caution=True)
+            return False
+        finally:
+            self._saved_stamps[path] = regular_files.file_stamp(path)
+
+    def _with_web_pictures(self, ed, work, *, then=None) -> bool:
+        """Run ``work(doc, pictures, revision)`` for an export or a print of
+        ``ed``: ``doc`` a copy of its document as it is now (at
+        ``revision``), a picture's address standing bare shown as the
+        picture (bare_pictures), ``pictures`` its web pictures. Held ones are there
+        at once and ``work`` runs now: its answer. The rest are fetched
+        while the app goes on (export_pictures.Gathering): False now, and
+        ``work`` runs once they are in, then ``then()`` when it said True.
+        A sheet with Cancel shows only when that takes longer than a second
+        (Apple's progress pattern); closing the tab drops the work quietly.
+        One at a time: a request while another waits is refused."""
+        doc = photo_group.copy_of(ed.document())
+        # A picture's address standing bare is the picture, as on the page
+        # (the editor keeps it as typed).
+        bare_pictures.show(doc)
+        revision = ed.document().revision()
+        gathering = export_pictures.Gathering(
+            export_pictures.web_picture_names(doc), held=self._held_picture_bytes)
+        if gathering.complete:
+            return work(doc, gathering.pictures, revision)
+        if getattr(self, "_gathering", None) is not None:
+            self.status.showMessage(_("Another export is still loading its pictures."), 4000)
+            return False
+        sheet = QProgressDialog(_("Loading the document\u2019s pictures\u2026"),
+                                _("Cancel"), 0, 0, self)
+        sheet.setWindowModality(Qt.WindowModal)
+        sheet.setAutoClose(False)
+        sheet.setAutoReset(False)
+        sheet.setMinimumDuration(1000)
+        sheet.setValue(0)
+
+        def stop() -> None:
+            gathering.cancel()
+            sheet.canceled.disconnect()
+            sheet.hide()
+            sheet.setParent(None)
+            sheet.deleteLater()
+            if getattr(self, "_gathering", None) is gathering:
+                self._gathering = None
+            ed._export_waiting = None
+
+        def finished() -> None:
+            stop()
+            if ed in self._all_editors() and work(doc, gathering.pictures, revision) and then:
+                then()
+        self._gathering = gathering
+        ed._export_waiting = stop
+        gathering.finished.connect(finished)
+        sheet.canceled.connect(stop)
+        gathering.start()
+        return False
 
     def _say_saved(self, ed, path: str, left_out=()) -> None:
         """Say a document was saved, and whether audio or video in it is
@@ -5759,19 +5967,26 @@ class MainWindow(QMainWindow):
         """Directory holding the content-addressed image cache."""
         return str(self._media_image_loader.cache_path("x").parent)
 
-    def _image_roots_for(self, save_path: str) -> tuple:
-        """Directories an exporter may read local image bytes from.
+    def _image_roots_for(self, editor) -> tuple:
+        """Directories an exporter may read the local pictures of
+        ``editor``'s document from, wherever the export goes: the folders
+        the editor itself shows them from (_image_roots: the document's
+        own folder, where this app keeps a file's pictures beside it, and
+        the sidebar folder it links pictures in where they lie), plus the
+        blob cache, because a document written by an older build names
+        its pictures by their absolute cache path. A document not saved
+        yet has no folder of its own: the blob cache alone.
 
-        The document's own directory, because sidecar media beside a
-        file is this app's own pattern, plus the blob cache, because a
-        document written by an older build names its images by their
-        absolute cache path.
+        Never the export's own folder: a document's relative picture
+        names mean "beside the document", and a PDF saved to another
+        folder would read none of them (or a stranger's file that happens
+        to lie there under the same name).
         """
-        doc_dir = os.path.dirname(os.path.abspath(save_path))
-        # And the folders a note links pictures in where they lie, so an
-        # export carries them too (file_links.link_root).
-        linked = file_links.link_root(save_path, self._library_roots())
-        return (doc_dir, linked, self._blob_cache_root())
+        path = getattr(editor, "_file_path", "") or ""
+        cache = self._blob_cache_root()
+        if not path:
+            return (cache,)
+        return (*MainWindow._image_roots(path, MainWindow._picture_roots(self)), cache)
 
     def _markdown_reference_for(self, target):
         """Wrap a destination function so plain text gets ![alt](dest)."""
@@ -5815,7 +6030,16 @@ class MainWindow(QMainWindow):
             return written[name]
 
         def target(fmt) -> Optional[str]:
-            name = fmt.name()
+            # A picture's #wide (photo_group) is how it is laid out, not
+            # where it is: one of the app's pictures is written as its copy
+            # beside the document, and keeps it.
+            name = photo_group.without_wide(fmt.name())
+            if name != fmt.name() and parse_asset_key(name) is not None:
+                found = place(name, fmt)
+                return found + photo_group.WIDE_SUFFIX if found else found
+            return place(fmt.name(), fmt)
+
+        def place(name: str, fmt) -> Optional[str]:
             sha = parse_asset_key(name)
             if sha is None:
                 return self._foreign_image_target(name, sidecar)
@@ -5844,7 +6068,7 @@ class MainWindow(QMainWindow):
                 # The cache lost the bytes but the open document still
                 # holds the decoded image; re-encoding it is lossy for
                 # nothing else but keeps the picture.
-                rescued = self._encode_document_image(doc, name)
+                rescued = self._encode_document_image(doc, fmt.name())
                 if rescued is not None:
                     written_path = sidecar(sha, rescued, ".png")
                     if written_path:
@@ -5933,9 +6157,9 @@ class MainWindow(QMainWindow):
             return source
         title = derive_title(ed.document(), self._export_title_for(path))
         return document_to_rmd(ed.document(), title,
-                               copy_image=self._make_rmd_image_copier(path))
+                               copy_image=self._make_rmd_image_copier(ed, path))
 
-    def _make_rmd_image_copier(self, rmd_path: str):
+    def _make_rmd_image_copier(self, ed, rmd_path: str):
         """Copy images into the .Rmd's sidecar media folder.
 
         Returns a callback mapping a local cache path to a relative
@@ -5944,9 +6168,13 @@ class MainWindow(QMainWindow):
         rendered artifact stays a single shareable file.
         """
         media_dir = media_dir_for(rmd_path)
-        policy = image_safety.ImageRootPolicy(self._image_roots_for(rmd_path))
+        policy = image_safety.ImageRootPolicy(self._image_roots_for(ed))
 
         def copy(name: str):
+            if not image_safety.is_portable_image_source(name):
+                # A picture's #wide (photo_group) is how it is laid out,
+                # not where it is.
+                name = photo_group.without_wide(name)
             media = _media_asset(self._asset_manager, name)
             if media is not None:
                 return self._media_file_link(media, rmd_path)
@@ -6030,8 +6258,9 @@ class MainWindow(QMainWindow):
         Walks the document block by block, fragment by fragment.
         Each fragment becomes an RTF group carrying its formatting codes.
         Non-ASCII characters are escaped as \\uN? (RTF Unicode escape).
+        A photo group is written as its paragraphs: its captions are text.
         """
-        doc = editor.document()
+        doc = photo_group.unfolded(editor.document())
 
         # --- Pass 1: collect all unique foreground colors used in the document ---
         colors: list[tuple[int, int, int]] = []
@@ -6117,18 +6346,124 @@ class MainWindow(QMainWindow):
         parts.append("\n}")
         return "".join(parts)
 
-    def _save_as_pdf(self, editor, path: str) -> bool:
+    def _held_picture_bytes(self, url: str) -> Optional[bytes]:
+        """The bytes of the picture at a web address, when this app holds
+        them: one it uploaded, or one the text showed (RemoteImages)."""
+        asset = self._asset_manager.find_by_url(url)
+        if asset is not None:
+            data = self._asset_manager.resolve_bytes(asset.key)
+            if data:
+                return data
+        return self._web_images.raw(url)
+
+    def _picture_look_shown(self) -> bool:
+        panel = getattr(self, "_picture_look", None)
+        return panel is not None and panel.isVisible()
+
+    def _look_at_picture(self, editor, name: str) -> None:
+        """Quick Look of a picture of a photo group (double-click, or Space
+        with it selected), or Quick Look away ("")."""
+        panel = getattr(self, "_picture_look", None)
+        if not name:
+            if panel is not None:
+                panel.close()
+            return
+        try:
+            path = self._picture_file(editor, photo_group.without_wide(name))
+        except PictureNotShown as problem:
+            # Said once, with what to do about it (LESSONS 36).
+            editor.notice.emit(str(problem))
+            return
+        if panel is None:
+            from quick_look import QuickLookPanel
+            panel = self._picture_look = QuickLookPanel(self, is_dark=self.is_dark_theme)
+            # Back to the text it was opened from, as Quick Look does.
+            panel.closed.connect(lambda: self.current_editor() and self.current_editor().setFocus())
+        panel.show_path(path)
+        # Named as the reader knows it: its description, else its own file's
+        # name; never the name of the copy made for showing it.
+        looks = getattr(self, "_look_files", None)
+        copy = looks is not None and os.path.dirname(path) == looks.path()
+        picture = photo_group_view.picture_at_cursor(editor.textCursor())
+        panel.setWindowTitle((picture[3].alt if picture is not None else "")
+                             or (_("Picture") if copy else os.path.basename(path)))
+
+    def _picture_file(self, editor, name: str) -> str:
+        """A file Quick Look can show for the picture called ``name``: the
+        picture's own file beside the document, else its bytes (one of
+        this app's pictures, or one from the web it holds) in a file of
+        this window's that goes when the app quits. PictureNotShown, with
+        the words for the person, when there is none."""
+        doc_path = getattr(editor, "_file_path", "") or ""
+        from_web = is_web(name)
+        # (One letter: a drive of a Windows path, no scheme.)
+        own = QUrl(name).scheme() or ""
+        beside_document = not from_web and (own in ("", "file") or len(own) == 1)
+        if doc_path and not from_web:
+            found = image_safety.ImageRootPolicy(
+                MainWindow._image_roots(doc_path, MainWindow._picture_roots(self))).resolve(name)
+            if found is not None:
+                return str(found)
+        data = (self._held_picture_bytes(name) if from_web
+                else self._asset_manager.resolve_bytes(name))
+        if not data:
+            if beside_document and not doc_path:
+                raise PictureNotShown(_(
+                    "Save this document first: its pictures are looked for beside it."))
+            if beside_document:
+                raise PictureNotShown(_(
+                    "The picture “{name}” is no longer beside this document. "
+                    "Put it back there, or insert it again.").format(name=os.path.basename(name)))
+            raise PictureNotShown(_("This picture can’t be shown yet: it hasn’t arrived."))
+        # Only a picture the app itself would decode (never SVG, never a
+        # decompression bomb).
+        if image_safety.sniff_image_mime(data) == "image/svg+xml":
+            raise PictureNotShown(_(
+                "This picture is an SVG drawing, which can’t be shown large here. "
+                "Open it in your browser instead."))
+        ext = image_safety.sniff_image_ext(data)
+        if not ext or image_safety.declared_size(data) is None:
+            raise PictureNotShown(_(
+                "This picture can’t be shown large: it is too large, "
+                "or not a kind of picture MyEditor shows."))
+        if getattr(self, "_look_files", None) is None:
+            from PySide6.QtCore import QTemporaryDir
+            self._look_files = QTemporaryDir()
+        no_room = _("This picture couldn’t be shown: there is no room for a temporary copy "
+                    "of it. Free some space on your disk and try again.")
+        if not self._look_files.isValid():
+            raise PictureNotShown(no_room)
+        import hashlib
+        path = os.path.join(self._look_files.path(),
+                            f"picture-{hashlib.sha1(name.encode('utf-8')).hexdigest()[:16]}{ext}")
+        if not os.path.exists(path):
+            try:
+                with open(path, "wb") as out:
+                    out.write(data)
+            except OSError as error:
+                raise PictureNotShown(no_room) from error
+        return path
+
+    def _save_as_pdf(self, editor, path: str, *, then=None) -> bool:
         """Export via the native Qt PDF pipeline (export_pdf.py): document
         metadata, persisted page setup, page-number footer, images capped
-        to the printable width."""
+        to the printable width; once its web pictures are in
+        (_with_web_pictures)."""
+        return self._with_web_pictures(
+            editor, lambda doc, pictures, revision: self._write_pdf(
+                editor, path, doc, pictures, revision), then=then)
+
+    def _write_pdf(self, editor, path: str, doc, pictures: dict, revision: int) -> bool:
         try:
-            export_pdf(editor.document(), path,
+            export_pdf(doc, path,
                        title=self._export_title_for(path),
-                       image_roots=self._image_roots_for(path),
-                       asset_resolver=self._asset_manager.export_view)
+                       image_roots=self._image_roots_for(editor),
+                       asset_resolver=self._asset_manager.export_view,
+                       remote_pictures=pictures)
             editor._recovered_title = ""
-            editor.document().setModified(False)
-            self._update_tab_title()
+            if editor.document().revision() == revision:
+                editor.document().setModified(False)
+            self._update_tab_title(editor)
             self._say_saved(editor, path)
             return True
         except Exception as e:
@@ -6159,10 +6494,12 @@ class MainWindow(QMainWindow):
             self._print_device = printing.make_printer()
         return self._print_device
 
-    def _print_job(self):
+    def _print_job(self, doc=None, pictures=None):
         """What Print prints for the current tab: ``(title, paint)``, where
         ``paint(printer)`` prints and returns the page count. None when
-        the tab has nothing to print."""
+        the tab has nothing to print. A document's tab prints ``doc`` (a
+        copy of its document) with its web pictures ``pictures``, gathered
+        before (_print_document)."""
         viewer = self.current_pdf_viewer()
         if viewer is not None:
             return viewer.document_title(), lambda printer: printing.print_pdf(
@@ -6172,15 +6509,30 @@ class MainWindow(QMainWindow):
             return None
         path = getattr(ed, "_file_path", None)
         title = self._export_title_for(path) if path else _("Untitled")
-        roots = self._image_roots_for(path) if path else (self._blob_cache_root(),)
+        roots = self._image_roots_for(ed)
+        document = doc if doc is not None else ed.document()
         return title, lambda printer: printing.print_document(
-            ed.document(), printer, image_roots=roots,
-            asset_resolver=self._asset_manager.export_view)
+            document, printer, image_roots=roots,
+            asset_resolver=self._asset_manager.export_view,
+            remote_pictures=pictures or {})
+
+    def _print_document(self, show) -> None:
+        """``show(job)`` for the current tab's print job, a document's once
+        its web pictures are in (_with_web_pictures), so a preview that
+        paints again on every change of its settings fetches nothing."""
+        ed = self.current_editor() if self.current_pdf_viewer() is None else None
+        if ed is None:
+            job = self._print_job()
+            if job is not None:
+                show(job)
+            return
+        self._with_web_pictures(ed, lambda doc, pictures, _revision: show(
+            self._print_job(doc, pictures)) or True)
 
     def _on_print(self):
-        job = self._print_job()
-        if job is None:
-            return
+        self._print_document(self._print_now)
+
+    def _print_now(self, job) -> None:
         title, paint = job
         printer = self._printer()
         printing.prepare(printer, title, load_page_setup())
@@ -6214,9 +6566,9 @@ class MainWindow(QMainWindow):
     def _on_print_preview(self):
         """File > Print Preview (Windows and Linux; macOS previews in its
         print panel). The preview's own Print button prints for real."""
-        job = self._print_job()
-        if job is None:
-            return
+        self._print_document(self._preview_now)
+
+    def _preview_now(self, job) -> None:
         title, paint = job
         printer = self._printer()
         printing.prepare(printer, title, load_page_setup())
@@ -6382,16 +6734,17 @@ class MainWindow(QMainWindow):
             return
         self._update_search_matches(needle)
         self._last_search_text = needle
-        cursor = ed.textCursor()
-        selected = (cursor.selectionStart(), cursor.selectionEnd())
+        selected = self._selected_match(ed)
+        replaced = None
         if selected in self._search_matches:
             # No highlight cursors for the document to move while it changes.
             ed.set_highlights("find", [])
             with ed.undo_step(N_("Replace")):
-                _start, end = replace_match(ed.document(), selected,
-                                            self.findbar.replacement())
-            cursor.setPosition(end)
-            ed.setTextCursor(cursor)
+                replaced = replace_match(ed.document(), selected, self.findbar.replacement())
+            if len(replaced) == 2:
+                cursor = ed.textCursor()
+                cursor.setPosition(replaced[1])
+                ed.setTextCursor(cursor)
             self._find_refresh.stop()          # found again right here
             self._update_search_matches(needle)
             self._last_search_text = needle
@@ -6400,7 +6753,7 @@ class MainWindow(QMainWindow):
                 self._update_match_display()
                 return
         # The next match after the caret (after the replacement).
-        self._find_once(True)
+        self._find_once(True, after=replaced)
 
     def _replace_all(self):
         """Replace All: every match, as one step to undo."""
@@ -6730,6 +7083,7 @@ class MainWindow(QMainWindow):
         ed = self.current_editor()
         if not ed:
             return
+        selected = self._selected_match(ed)
         self._search_matches = find_all(ed.document(), needle, self.findbar.options())
         # Whose they are: a tab's matches are never painted on another.
         self._matches_of = ed
@@ -6739,10 +7093,19 @@ class MainWindow(QMainWindow):
         self._matches_revision = ed.document().revision()
         # The match that is selected stays the current one when the matches
         # are found again (after typing, after a replacement).
-        cursor = ed.textCursor()
-        selected = (cursor.selectionStart(), cursor.selectionEnd())
         self._current_match_index = (self._search_matches.index(selected)
                                      if selected in self._search_matches else -1)
+
+    def _selected_match(self, ed) -> tuple:
+        """What is selected, as a match: the current match in a caption
+        while its picture is selected, else the selection's start and end."""
+        cursor = ed.textCursor()
+        selected = (cursor.selectionStart(), cursor.selectionEnd())
+        matches = getattr(self, "_search_matches", [])
+        index = getattr(self, "_current_match_index", -1)
+        if 0 <= index < len(matches) and matches[index][:2] == selected:
+            return matches[index]
+        return selected
 
     def _highlight_all_matches(self):
         """Paint the matches on screen (all of them are counted, but only
@@ -6763,16 +7126,20 @@ class MainWindow(QMainWindow):
         current_fmt.setBackground(QColor("#264F78" if self.is_dark_theme else "#0078D4"))
         current_fmt.setForeground(QColor("#FFFFFF"))
         first, last = ed.visible_range()
-        selections = []
-        for index, (start, end) in visible_matches(self._search_matches, first, last):
+        selections, captions = [], []
+        for index, match in visible_matches(self._search_matches, first, last):
+            look = current_fmt if index == self._current_match_index else match_fmt
             cursor = QTextCursor(ed.document())
-            cursor.setPosition(start)
-            cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+            cursor.setPosition(match[0])
+            if len(match) > 2:
+                captions.append(photo_group_drawing.CaptionMark(cursor, match[2], match[3], look))
+                continue
+            cursor.setPosition(match[1], QTextCursor.MoveMode.KeepAnchor)
             selection = QTextEdit.ExtraSelection()
             selection.cursor = cursor
-            selection.format = current_fmt if index == self._current_match_index else match_fmt
+            selection.format = look
             selections.append(selection)
-        ed.set_highlights("find", selections)
+        ed.set_highlights("find", selections, captions)
 
     def _on_visible_area_changed(self, ed) -> None:
         """Scrolled or resized: the matches now on screen get painted."""
@@ -6784,7 +7151,9 @@ class MainWindow(QMainWindow):
         if ed:
             ed.set_highlights("find", [])
 
-    def _find_once(self, forward=True):
+    def _find_once(self, forward=True, after=None):
+        """The next match (the one before, going back) is selected: after
+        the selection, or after the match ``after`` was replaced with."""
         ed = self.current_editor()
         if not ed:
             return
@@ -6800,12 +7169,15 @@ class MainWindow(QMainWindow):
 
         matches = self._search_matches
         total = len(matches)
-        cursor = ed.textCursor()
-        selected = (cursor.selectionStart(), cursor.selectionEnd())
+        selected = after or self._selected_match(ed)
         index = self._current_match_index
         if 0 <= index < total and matches[index] == selected:
             # On a match: the one after it (before it, going back).
             index = index + 1 if forward else index - 1
+        elif len(selected) > 2:
+            # Right after words replaced in a caption: on in that caption.
+            index = (bisect.bisect_right(matches, selected) if forward
+                     else bisect.bisect_left(matches, selected) - 1)
         elif forward:
             # Anywhere else: from the caret, the way every editor searches.
             index = bisect.bisect_left(matches, selected[1], key=lambda match: match[0])
@@ -6815,12 +7187,15 @@ class MainWindow(QMainWindow):
         self._current_match_index = index % total
 
         if 0 <= self._current_match_index < len(self._search_matches):
-            start_pos, end_pos = self._search_matches[self._current_match_index]
+            match = self._search_matches[self._current_match_index]
             cursor = QTextCursor(ed.document())
-            cursor.setPosition(start_pos)
-            cursor.setPosition(end_pos, QTextCursor.KeepAnchor)
+            cursor.setPosition(match[0])
+            cursor.setPosition(match[1], QTextCursor.KeepAnchor)
             ed.setTextCursor(cursor)
-            ed.ensureCursorVisible()
+            if len(match) > 2:
+                ed.show_document_rect(photo_group_view.caption_box(ed.document(), match[0]))
+            else:
+                ed.ensureCursorVisible()
 
         self._highlight_all_matches()
         self._update_match_display()
@@ -7041,8 +7416,9 @@ class MainWindow(QMainWindow):
         ed = self.current_editor()
         if ed is not None:
             cursor = ed.textCursor()
+            # (A photo group as its paragraphs: its captions are read.)
             self.speech.speak(cursor.selectedText() if cursor.hasSelection()
-                              else ed.toPlainText())
+                              else photo_group.unfolded(ed.document()).toPlainText())
 
     def _start_dictation(self) -> None:
         """Edit > Start Dictation… (Stop Dictation while dictating here):
@@ -7462,6 +7838,7 @@ class MainWindow(QMainWindow):
             action.setEnabled(in_table or sheet is not None
                               and not action.objectName().endswith("delete_table"))
         self.act_select_all.setEnabled(bool(kind) or sheet is not None)
+        self._update_photo_commands()
         # A sheet takes the Edit menu's commands (Undo and Redo by its steps,
         # Cut, Copy, Paste and Delete by its cells) and Format > Sheet.
         if sheet is not None:
@@ -7491,6 +7868,138 @@ class MainWindow(QMainWindow):
         if kind or sheet is not None:
             self._update_undo_redo_buttons()
 
+    def _update_photo_commands(self) -> None:
+        """Format > Photo follows the picture selected in the document in
+        front: what each command would do to it (its title), and whether
+        it can (photo_group_menu.state_of)."""
+        actions = getattr(self, "act_photo", None)
+        if not actions:
+            return
+        ed = self.current_editor()
+        editable = (ed is not None and self._editor_kind(ed) == "rich"
+                    and not self._shows_preview_only(ed))
+        state = ed.photos.state() if editable else None
+        titles = (state.titles if state is not None
+                  else photo_group_menu.base_titles())
+        for name, action in actions.items():
+            action.setText(titles[name])
+            action.setToolTip(state.hints.get(name, "") if state is not None else "")
+            action.setEnabled(state is not None and state.can.get(name, False))
+        large = actions[photo_group_menu.LARGE]
+        large.setChecked(state is not None and state.large)
+
+    def _photo_command(self, name: str) -> None:
+        ed = self.current_editor()
+        if ed is not None and self._editor_kind(ed) == "rich":
+            ed.photos.run(name)
+            self._update_photo_commands()
+
+    def _photo_context(self, menu, editor) -> None:
+        """The context menu of a picture: its header ("Photo 2 of 4"), what
+        can be done to it (only that: the context menu's rule), then Cut,
+        Copy and Paste."""
+        self._update_photo_commands()
+        state = editor.photos.state()
+        menu.setToolTipsVisible(True)
+        header = menu.addAction(state.header)
+        header.setEnabled(False)
+        grouped = state.picture.grouped
+        narrow = photo_group_view.is_narrow(editor.document())
+        for names in photo_group_menu.context_sections(grouped, narrow):
+            shown = [name for name in names if state.can.get(name)]
+            if not shown:
+                continue
+            menu.addSeparator()
+            for name in shown:
+                menu.addAction(self.act_photo[name])
+        menu.addSeparator()
+        for action in (self.act_cut, self.act_copy, self.act_paste):
+            menu.addAction(action)
+
+    def _add_photos(self, editor, place, paths) -> None:
+        """Photos added at ``place`` (the group's "+ Photo", Format > Photo
+        > Add Photos…, files dropped on a slot): the files given, else the
+        ones chosen in the system's dialog, several at once."""
+        if paths is None:
+            patterns = " ".join("*" + ext for ext in sorted(_IMAGE_EXTS))
+            paths, _filter = QFileDialog.getOpenFileNames(
+                self, _("Add Photos"), "", _("Images ({patterns})").format(patterns=patterns))
+            paths = [file_paths.normalize(path) for path in paths]
+        if paths:
+            self._handle_dropped_images(paths, N_("Add Photo") if len(paths) == 1
+                                        else N_("Add Photos"), place=place)
+
+    def _crop_photo(self, editor, position: int) -> None:
+        """Crop… on the picture at ``position``: the sheet, then the part
+        chosen as a new file in the picture's place (_cropped)."""
+        picture = photo_group_actions.picture_at(editor.document(), position)
+        if picture is None:
+            return
+        name = photo_group.without_wide(picture.unit.name)
+        try:
+            path = self._picture_file(editor, name)
+        except PictureNotShown as problem:
+            editor.notice.emit(str(problem))
+            return
+        try:
+            with open(path, "rb") as source:
+                data = source.read()
+        except OSError:
+            editor.notice.emit(_("This picture couldn’t be read. Check that its file is still "
+                                 "there, and try again."))
+            return
+        image = image_safety.decode_image_bytes(data)
+        if image is None:
+            editor.notice.emit(
+                _("This picture is an SVG drawing, which can’t be cropped here. Crop it in a "
+                  "drawing app instead.")
+                if image_safety.sniff_image_mime(data) == "image/svg+xml" else
+                _("This picture can’t be cropped: it is too large, or not a kind of picture "
+                  "MyEditor shows."))
+            return
+        looks = getattr(self, "_look_files", None)
+        beside = not (looks is not None and os.path.dirname(path) == looks.path())
+        sheet = picture_crop.CropSheet(self, data, image)
+        sheet.cropped.connect(lambda cut, ext: self._cropped(
+            editor, position, name, path if beside else "", cut, ext, picture.unit.alt))
+        sheet.finished.connect(sheet.deleteLater)
+        sheet.open()
+
+    def _cropped(self, editor, position: int, name: str, path: str, data: bytes, ext: str,
+                 alt: str) -> None:
+        """The crop's bytes as a new file: beside the picture's own file
+        when it has one there ("beach-cropped.jpg"), else the app's own,
+        as a picture added; then in the picture's place, as one step."""
+        new_name = ""
+        # Named as the picture's file was, cropped; as the app's own file
+        # too, whose stored name is a name (description_of), never the
+        # description, which is the text's.
+        stem = os.path.splitext(os.path.basename(path))[0] if path else (
+            self._stored_name(editor, name) or "image")
+        word = _("cropped")
+        if path:
+            folder = os.path.dirname(path)
+            candidate, number = f"{stem}-{word}.{ext}", 2
+            while os.path.exists(os.path.join(folder, candidate)):
+                candidate, number = f"{stem}-{word}-{number}.{ext}", number + 1
+            try:
+                write_bytes(os.path.join(folder, candidate), data)
+                # The same way to the folder as the picture's own address.
+                cut = max(name.rfind("/"), name.rfind("\\"))
+                new_name = name[:cut + 1] + candidate
+            except OSError as error:
+                # Not writable there: kept as the app's own picture instead.
+                logging.getLogger(__name__).info("crop beside %s: %s", path, error)
+        if not new_name:
+            asset = self._asset_manager.adopt_bytes(data, alt=f"{stem}-{word}")
+            if asset is None:
+                editor.notice.emit(_("The cropped picture couldn’t be kept. Free some space on "
+                                     "your disk and try again."))
+                return
+            self._asset_image(editor, asset, alt=alt)
+            new_name = asset.key
+        editor.photos.set_address(position, new_name)
+
     def _keeps_pictures(self, ed) -> bool:
         """Whether ``ed``'s document keeps a picture when it is saved:
         Markdown (shown formatted or as its text), HTML, R Markdown and new
@@ -7512,7 +8021,11 @@ class MainWindow(QMainWindow):
     def _fill_editor_context_menu(self, menu, editor, pos) -> None:
         """The editor's context menu: the window's own commands, so it
         offers what the menus offer, under the same names. On a link, the
-        link's own commands come first."""
+        link's own commands come first; on a picture, its own."""
+        if self._editor_kind(editor) == "rich" and editor.photos.current() is not None \
+                and editor.textCursor().hasSelection():
+            self._photo_context(menu, editor)
+            return
         clicked = editor.cursorForPosition(pos)
         if not editor.textCursor().hasSelection() and (
                 editor.anchorAt(pos) or (self._editor_kind(editor) == "rich"
@@ -8081,9 +8594,13 @@ class MainWindow(QMainWindow):
             if ed is None:
                 continue
             doc = ed.document()
-            if url in set(iter_image_names(doc)):
-                ed.add_picture_resource(url, image)
-                doc.markContentsDirty(0, doc.characterCount())
+            # The picture by each name it has here: its address, and its
+            # address with #wide (photo_group).
+            names = [name for name in set(iter_image_names(doc))
+                     if photo_group.without_wide(name) == url]
+            # (The paragraphs that show it are laid out again, no other.)
+            for name in names:
+                ed.add_picture_resource(name, image)
             pane = getattr(ed, "_preview_pane", None)
             if pane is not None and pane.isVisible():
                 pane.schedule()
@@ -8204,7 +8721,12 @@ class MainWindow(QMainWindow):
     # ----------------------------------------------------------------------
     # CLOSE EVENT
     # ----------------------------------------------------------------------
-    _SESSION_FILE = os.path.join(os.path.expanduser("~"), ".cache", "my_editor", "session.json")
+    # A file of its own (a test's); None: session.json in the person's cache
+    # folder, found each time (user_dirs).
+    _SESSION_FILE: Optional[str] = None
+
+    def _session_file(self) -> str:
+        return self._SESSION_FILE or str(user_dirs.cache_dir() / "session.json")
 
     def _save_session(self):
         paths = []
@@ -8215,15 +8737,16 @@ class MainWindow(QMainWindow):
         if not paths:
             return
         data = {"paths": paths, "active": self.tabs.currentIndex()}
-        write_json(self._SESSION_FILE, data)
+        write_json(self._session_file(), data)
 
     def _restore_session(self) -> bool:
-        if not os.path.isfile(self._SESSION_FILE):
+        session_file = self._session_file()
+        if not os.path.isfile(session_file):
             return False
-        data = read_json(self._SESSION_FILE, dict)
+        data = read_json(session_file, dict)
         # Restored at most once, and a damaged record never restores.
         try:
-            os.remove(self._SESSION_FILE)
+            os.remove(session_file)
         except OSError:
             pass
         listed = data.get("paths")
@@ -9554,6 +10077,12 @@ class MainWindow(QMainWindow):
         return paste.Outside(False, address or asset.alt, address,
                              address or (image_data_uri(data) or "" if data else ""))
 
+    def _stored_name(self, ed, name: str) -> str:
+        """The name this app keeps for the file of the picture ``name`` of
+        ``ed`` (DocumentAsset.stored_name), or ""."""
+        asset = self._asset_named(ed, name)
+        return asset.stored_name if asset is not None else ""
+
     def _asset_named(self, ed, name: str, *, adopt: bool = False):
         """The file of this app behind the object of ``ed`` named ``name``:
         its own (an asset key), one it uploaded (by its address), or a
@@ -10253,7 +10782,7 @@ class MainWindow(QMainWindow):
             if asset is None:
                 self._insert_url_as_text(editor, picked.url)
                 return
-            self._insert_asset(editor, asset, alt=alt_text or "image")
+            self._insert_asset(editor, asset, alt=alt_text)
 
     def _library_name(self, media) -> str:
         """The name a library file goes by: the one it was added with, a
@@ -10299,23 +10828,23 @@ class MainWindow(QMainWindow):
         the old markdown path, and Qt's markdown writer escapes it into
         a link, so the image reopened as text.
         """
-        alt = alt or "image"
+        cursor = editor.textCursor()
+        cursor.insertImage(self._asset_image(editor, asset, alt=alt))
+        editor.setTextCursor(cursor)
+
+    def _asset_image(self, editor, asset, *, alt: str) -> QTextImageFormat:
+        """The picture format that shows ``asset`` in ``editor``'s
+        document, its bytes already in the document, described ``alt``
+        (none: "")."""
         data = self._asset_manager.resolve_bytes(asset.key)
         if data:
             # Priming the document means the first paint needs no
             # resolver round trip and no decode on the paint path.
             editor.add_picture_resource(asset.key, QByteArray(data))
-
         fmt = QTextImageFormat()
         fmt.setName(asset.key)
-        # Never leave alt empty: Qt's markdown writer substitutes the
-        # word "image" for an empty one, which makes round trips differ
-        # from what was inserted.
         fmt.setProperty(QTextImageFormat.ImageAltText, alt)
-
-        cursor = editor.textCursor()
-        cursor.insertImage(fmt)
-        editor.setTextCursor(cursor)
+        return fmt
 
     def _refresh_asset_in_documents(self, sha: str) -> None:
         """Repaint every open document that shows this asset.
@@ -10378,7 +10907,7 @@ class MainWindow(QMainWindow):
         if asset is None:
             self.status.showMessage(_("That image could not be added."), 5000)
             return
-        self._insert_asset(editor, asset, alt="image")
+        self._insert_asset(editor, asset, alt="")
         self._upload_added(asset)
 
     def _upload_choice(self) -> str:

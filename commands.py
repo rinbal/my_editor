@@ -165,6 +165,26 @@ NO_SHORTCUT: Tuple[Tuple[str, str, str], ...] = (
     ("nostr.move_to_signer", "all",
      "Removes the key from this computer; destructive, so no easy key."),
     ("nostr.sign_out", "all", "Ends the account's use here; no easy key, as for Log Out."),
+    ("format.photo.first", "all",
+     "Rare: the move keys step a photo along its group one place at a time."),
+    ("format.photo.last", "all",
+     "Rare: the move keys step a photo along its group one place at a time."),
+    ("format.photo.large", "all", "Set once for a photo; its chip on the photo does it too."),
+    ("format.photo.take_out", "all",
+     "The move keys take a photo out at the group's end; a one-off otherwise."),
+    ("format.photo.split", "all", "A one-off; the photo's context menu has it too."),
+    ("format.photo.join_above", "all", "A one-off; the move keys join a photo too."),
+    ("format.photo.join_below", "all", "A one-off; the move keys join a photo too."),
+    ("format.photo.caption", "all", "Return on the selected photo writes its caption."),
+    ("format.photo.description", "all", "The ALT chip on the photo opens it."),
+    ("format.photo.crop", "all", "A one-off that makes a new file."),
+    ("format.photo.add", "all",
+     "Insert > Image… has the key; the group's + Photo button adds at its end."),
+    ("format.photo.remove", "all",
+     "Backspace or Delete removes the photo selected; a key of its own would remove one "
+     "while the caret is merely beside it."),
+    ("format.photo.move_mode", "all",
+     "A click on the photo's handle starts it, and the move keys move a photo directly."),
     ("window.zoom", "mac", "Apple's Window menu gives it no key."),
     ("window.bring_all", "mac", "Apple's Window menu gives it no key."),
     ("help.welcome", "all", "A one-off."),
@@ -414,10 +434,12 @@ class CommandRegistry(QObject):
              ) -> List[Command]:
         """What the slash menu offers for ``query`` (the words typed after
         the slash), best first: commands in a slash section, enabled,
-        Nostr ones only while Nostr is in use. A command whose title or
-        keywords have a word starting with each word of the query comes
-        before one that only contains them; otherwise the menu's order
-        (group by group, then the order the commands were made) stays."""
+        Nostr ones only while Nostr is in use. A command whose name in the
+        menu has a word starting with each word of the query comes first
+        ("/photo": Photo Group… before Image…, whose keywords have it), then
+        one whose title or keywords have, then one that only contains them;
+        otherwise the menu's order (group by group, then the order the
+        commands were made) stays."""
         order = {section: i for i, section in enumerate(sections)}
         offered = [c for c in self.available(nostr=nostr)
                    if c.slash_section in order and self.action(c.id).isEnabled()]
@@ -430,7 +452,9 @@ class CommandRegistry(QObject):
             text = " ".join((command.title, command.listed_as, *command.keywords)).lower()
             tokens = re.split(r"[^\w]+", text)
             if all(any(t.startswith(w) for t in tokens) for w in words):
-                scored.append((2, command))
+                named = re.split(r"[^\w]+", (command.insert_title or command.title).lower())
+                named_first = all(any(t.startswith(w) for t in named) for w in words)
+                scored.append((3 if named_first else 2, command))
             elif all(w in text for w in words):
                 scored.append((1, command))
         scored.sort(key=lambda pair: -pair[0])

@@ -290,6 +290,7 @@ class AssetManager(QObject):
         if existing is not None:
             if alt and not existing.alt:
                 existing.alt = alt
+                existing.from_library = False
             if caption and not existing.caption:
                 existing.caption = caption
             existing.updated_at = int(time.time())
@@ -327,6 +328,7 @@ class AssetManager(QObject):
             upload_state=AssetState.LOCAL,
             created_at=now,
             updated_at=now,
+            from_library=False,
         )
         self._index.put(asset)
         self.asset_added.emit(sha)
@@ -408,7 +410,8 @@ class AssetManager(QObject):
             return existing
         now = int(time.time())
         asset = DocumentAsset(sha256=sha, mime=mime, size=size, alt=name,
-                              upload_state=AssetState.LOCAL, created_at=now, updated_at=now)
+                              upload_state=AssetState.LOCAL, created_at=now, updated_at=now,
+                              from_library=False)
         self._index.put(asset)
         self.asset_added.emit(sha)
         return asset
@@ -483,6 +486,7 @@ class AssetManager(QObject):
                     self._enter_complete(existing, remote_url, existing.servers or servers)
             if alt and not existing.alt:
                 existing.alt = alt
+                existing.from_library = True
             existing.updated_at = int(time.time())
             self._index.put(existing)
             return existing
@@ -499,6 +503,7 @@ class AssetManager(QObject):
             created_at=now,
             updated_at=now,
             from_address=from_address,
+            from_library=True,
         )
         self._index.put(asset)
         self.asset_added.emit(sha)
@@ -541,7 +546,9 @@ class AssetManager(QObject):
             return None
         data = self.resolve_bytes(name)
         if data is not None:
-            return self._decoder(data) if self._decoder is not None else None
+            image = self._decoder(data) if self._decoder is not None else None
+            self._measure_again(sha, image)
+            return image
 
         asset = self._index.get(sha)
         if asset is not None and asset.remote_url and sha not in self._fetching:
@@ -643,6 +650,10 @@ class AssetManager(QObject):
             self._fail(asset, AssetErrorCodes.UPLOAD_FAILED, "cached bytes missing")
             return
         self._jobs[asset.key] = (sha, asset.attempts)
+        # What this app sends is a file of its own, never a library pick:
+        # a record saved before it said so (None) says so from now on.
+        if asset.from_library is None:
+            asset.from_library = False
         self._set_state(asset, AssetState.SIGNING)
         # The uploader may fail synchronously and re-enter the slots
         # below, so nothing may be touched after this call returns.
@@ -895,6 +906,18 @@ class AssetManager(QObject):
         if self._decoder is None:
             return 0, 0
         return _size_of(self._decoder(data))
+
+    def _measure_again(self, sha: str, image: object) -> None:
+        """The size of the picture as it was just decoded to be shown
+        becomes its asset's, when they differ: an asset measured before
+        pictures were read upright kept a phone's portrait photo on its
+        side, and that size is what publishing writes (imeta ``dim``)."""
+        width, height = _size_of(image)
+        asset = self._index.get(sha)
+        if not width or asset is None or (asset.width, asset.height) == (width, height):
+            return
+        asset.width, asset.height = width, height
+        self._index.put(asset)
 
 
 def _size_of(image: object) -> Tuple[int, int]:

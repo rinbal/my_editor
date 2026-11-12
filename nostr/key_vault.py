@@ -36,11 +36,14 @@ import time
 from pathlib import Path
 from typing import Dict, Optional
 
+import user_dirs
 from atomic_file import write_text
 from nostr import crypto
 
-KEYS_DIR = Path.home() / ".config" / "my_editor"
-KEYS_FILE = KEYS_DIR / "nostr_keys.json"
+def keys_file() -> Path:
+    """nostr_keys.json in the person's config folder, found each time
+    (user_dirs)."""
+    return user_dirs.config_dir() / "nostr_keys.json"
 
 
 class KeyVaultError(OSError):
@@ -54,8 +57,8 @@ class _Damaged(Exception):
 class KeyVault:
     """Secret keys by public key, in a file only this account can read."""
 
-    def __init__(self, path: Path = KEYS_FILE) -> None:
-        self._path = Path(path)
+    def __init__(self, path: Optional[Path] = None) -> None:
+        self._path = Path(path) if path is not None else keys_file()
 
     def store(self, secret_key: bytes) -> str:
         """Keep ``secret_key``; return its public key (hex)."""
