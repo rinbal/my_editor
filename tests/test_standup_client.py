@@ -1011,6 +1011,18 @@ def test_a_signed_action_for_another_path_submission_or_signer_does_not_verify()
         signers={pk("writer")})
 
 
+def test_a_signed_action_whose_url_is_only_a_path_reads_as_unsigned():
+    # Audit F2: 98.md's u is the absolute URL; the web app reads a path
+    # alone as unsigned, and so does the writer's app.
+    action = _fixture_action()
+    path = f"/api/submissions/{SID}/decision"
+    tags = [["u", path] if tag[0] == "u" else tag for tag in action.event["tags"]]
+    relative = events.sign_event({"kind": 27235, "created_at": action.event["created_at"],
+                                  "content": "", "tags": tags}, sk("editor"))
+    assert "another action" in views.signed_action_problem(
+        views.SignedRecord(event=relative, body=action.body), path=path, submission_id=SID)
+
+
 def test_the_timeline_carries_signed_actions_that_verify():
     world = World()
     prepared = _after_submit(world)
