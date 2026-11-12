@@ -620,12 +620,19 @@ def signed_action_problem(signed: Optional[SignedRecord], *, path: str, submissi
 
 
 def signed_path(signed: SignedRecord) -> Optional[str]:
-    """The path of the one URL a signed action was signed for, or None."""
+    """The path of the one URL a signed action was signed for, or None.
+    The URL must be absolute (98.md: "exactly the same as the absolute
+    request URL"; contract 10): a ``u`` of a path alone reads as unsigned,
+    as the web app reads it (audit F2)."""
     urls = formats.tag_values(signed.event, "u")
+    if len(urls) != 1 or not isinstance(urls[0], str):
+        return None
     try:
-        return urlsplit(urls[0]).path if len(urls) == 1 else None
+        parts = urlsplit(urls[0])
+        host = parts.hostname
     except ValueError:
         return None
+    return parts.path if parts.scheme in ("https", "http") and host else None
 
 
 __all__ = [

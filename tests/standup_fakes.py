@@ -731,6 +731,9 @@ class FakeStandupServer:
         self.bote = {"pubkey": VECTORS["keys"]["bote"]["pubkey"], "npub": "npub1bote",
                      "nip05": "bote@standup.example"}
         self.publications: Dict[str, Publication] = {}
+        # The faces the server holds (contract 12.9): the tag of a
+        # person's picture by pubkey, of a publication's logo by address.
+        self.faces: Dict[str, str] = {}
         # The public index: what it holds at an address (``GET /api/articles``).
         self.articles: Dict[str, dict] = {}
         event = key_event or KEY_EVENT
@@ -1161,14 +1164,14 @@ class FakeStandupServer:
 
     def _article_get(self, who, payload, params, query) -> FakeReply:
         """backend api/articles.py detail: the article the index holds at
-        the address, with whom it credits (``author_pubkey``); 404 none."""
+        the address, its signer as ``author_pubkey`` (STANDUP P1: a credit
+        never replaces it) and the event's own ``event_tags``; 404 none."""
         held = self.articles.get(unquote(params["address"]))
         if held is None:
             return json_reply({"error": "not found"}, status=404)
         return json_reply({"article": {
             "pubkey": held["pubkey"], "d": formats.tag_value(held, "d"),
-            "author_pubkey": next((t[1] for t in held["tags"] if len(t) >= 4 and t[0] == "p"
-                                   and t[3] == "author"), held["pubkey"])}})
+            "author_pubkey": held["pubkey"], "event_tags": held["tags"]}})
 
     def _nip05(self, who, payload, params, query) -> FakeReply:
         return json_reply({"names": {"bote": self.bote["pubkey"]}})
@@ -1179,7 +1182,8 @@ class FakeStandupServer:
             if pub.open and not pub.paused:
                 content = pub.content
                 items.append({"address": pub.address, "name": content.get("name"),
-                              "picture": None, "key_event": pub.key_event,
+                              "picture": None, "avatar": self.faces.get(pub.address),
+                              "key_event": pub.key_event,
                               "rules": content.get("rules")})
         return _ok({"publications": items})
 
@@ -1808,7 +1812,7 @@ class FakeStandupServer:
                                 if self._reads_epoch(pub, p, record.epoch)],
                     # Contract 10: always there; this fake keeps no one who left.
                     "former": [],
-                    "address_taken": record.address_taken})
+                    "address_taken": record.address_taken, **self._faces([record])})
 
     def _before_messages(self, raw: bytes, who) -> Optional[FakeReply]:
         """backend post_message before the body is read: the address, then
@@ -2183,8 +2187,15 @@ class FakeStandupServer:
 
     def _me_submissions(self, who, body, params, query) -> FakeReply:
         # db/editorial_inbox.py of_person: what I handed in or contribute to.
-        return _ok({"items": [self.view(r) for r in self.submissions.values()
-                              if who.pubkey == r.submitter or who.pubkey in r.participants]})
+        records = [r for r in self.submissions.values()
+                   if who.pubkey == r.submitter or who.pubkey in r.participants]
+        return _ok({"items": [self.view(r) for r in records], **self._faces(records)})
+
+    def _faces(self, records) -> dict:
+        """Contract 12.9: the reads carry the tags of the people and the
+        publications they name."""
+        named = {key for r in records for key in (r.publication, r.submitter, *r.participants)}
+        return {"avatars": {key: tag for key, tag in self.faces.items() if key in named}}
 
 
 # =========================================================================== #

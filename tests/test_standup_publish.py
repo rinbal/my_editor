@@ -52,7 +52,9 @@ def test_the_article_credits_its_people_and_names_its_pictures_in_public():
         published_at=100, created_at=200)
     tags = event["tags"]
     assert event["content"] == f"Text ![]({url})" and ["image", url] in tags
-    assert ["imeta", f"url {url}", f"x {entry['plain_sha256']}"] in tags
+    # One imeta per address: the entry's (contract 5), the carried one goes.
+    assert [t for t in tags if t[0] == "imeta"] == [
+        ["imeta", f"url {url}", "m image/png", f"x {entry['plain_sha256']}"]]
     authors = [t[1] for t in tags if t[0] == "p" and t[3:] == ["author"]]
     assert authors == [pk("writer"), coauthor]             # never one the work carried
     assert ["zap", coauthor, "", "30"] in tags and not any(t[0] == "expiration" for t in tags)
@@ -122,8 +124,9 @@ def test_a_picture_the_correction_adds_gets_its_tag_and_one_it_removes_loses_it(
         correction, published, writer=pk("writer"), created_at=300,
         media_urls={kept["ref"]: kept_url, added["ref"]: added_url})
     imeta = [t for t in event["tags"] if t[0] == "imeta"]
-    assert imeta == [["imeta", f"url {added_url}", f"x {added['plain_sha256']}"],
-                     ["imeta", f"url {kept_url}", "m image/png"]]
+    # Each picture of its media[] by its entry, in that order (contract 5).
+    assert imeta == [["imeta", f"url {kept_url}", "m image/png", f"x {kept['plain_sha256']}"],
+                     ["imeta", f"url {added_url}", "m image/png", f"x {added['plain_sha256']}"]]
     assert publishing.correction_changes(correction, published) == [("pictures", "")]
     from nostr.ui.standup_correction_sheet import change_words
     assert change_words([("title", "T"), ("pictures", "")]) == "Also changed: title, pictures."
@@ -133,9 +136,10 @@ class FakeStore(QObject):
     upload_finished = Signal(str, object)
     upload_failed = Signal(str, str)
 
-    def __init__(self, *, refuse: bool = False) -> None:
+    def __init__(self, *, refuse: bool = False, held=()) -> None:
         super().__init__()
         self.refuse, self.uploaded, self.deleted, self.batches = refuse, [], [], []
+        self.held = set(held)               # what a server holds already
 
     def target_servers(self):
         return [SERVER]
@@ -143,8 +147,8 @@ class FakeStore(QObject):
     def cached_bytes(self, _sha):
         return None
 
-    def files(self):
-        return {}
+    def held_on_servers(self, sha, on_answer):
+        on_answer(sha in self.held)
 
     def upload_bytes(self, body, *, name, mime_type):
         self.uploaded.append((body, name, mime_type))
@@ -166,7 +170,9 @@ class FakeStore(QObject):
 
 class FakeJob(QObject):
     """HeldPublish's side the run uses: signs with the account's key, and
-    sends only once released; ``took`` says whether a relay takes it."""
+    sends only once released; ``took`` says whether the relay takes it,
+    and an empty one that no relay answered (as ``completed`` then says
+    with no answer in it)."""
 
     signed = Signal(str)
     completed = Signal(list)
@@ -190,7 +196,7 @@ class FakeJob(QObject):
 
     def send_again(self):
         self.sent.append(self.signed_event)
-        self.completed.emit([("wss://relay.example", self.took[0], "")])
+        self.completed.emit([("wss://relay.example", self.took[0], "")] if self.took else [])
         return True
 
     def cancel(self):
@@ -784,6 +790,29 @@ def test_a_share_keeps_its_percent_sign_on_the_line_of_its_number_in_german():
     assert text == "Jana 70\u202f%" and share_text("Jana", 70) == "Jana 70%"
 
 
+def test_the_picture_imeta_vectors():
+    # Contract 5 at b9aa31f (vector picture_imeta, audit F4): a release
+    # builds one imeta per picture of media[], in its order, and a pair
+    # that breaks the rule gives no size and refuses nothing.
+    from nostr.standup.pictures import picture_size
+    vector = VECTORS["picture_imeta"]
+    media, urls = vector["media"], vector["urls"]
+    pictures = [e["ref"] for e in media if e["mime"].startswith("image/")]
+    carried = ["imeta", f"url {pictures[0]}", "dim 1x1"]      # the same address
+    revision = {"work": {"d": "ein-jahr", "title": "Ein Jahr", "summary": "", "image": "",
+                         "tags": [], "lang": "", "authors": [], "extra_tags": [carried],
+                         "content": " ".join(f"![]({ref})" for ref in pictures)},
+                "media": media}
+    event = publishing.published_template(revision, writer=pk("writer"), d="ein-jahr",
+                                          media_urls=urls, published_at=1, created_at=1)
+    assert [t for t in event["tags"] if t[0] == "imeta"] == vector["imeta"]
+    for name, pair in vector["pairs"]["valid"].items():
+        assert picture_size(dict(pair, mime="image/jpeg")) == (pair["w"], pair["h"]), name
+    for name, pair in vector["pairs"]["no_size"].items():
+        assert picture_size(dict(pair, mime="image/jpeg")) is None, name
+    assert picture_size(vector["audio_with_size"]) is None
+
+
 def test_the_writer_release_vectors():
     # Contract 12.4 at 569b3f8, Before the writer's work goes out (vector
     # writer_release, releaseRelays): this server, then every relay.
@@ -927,6 +956,18 @@ def test_a_submission_that_changed_meanwhile_is_not_published_and_its_picture_co
     assert run.stage is Stage.CHANGED and jobs == []
     assert store.deleted == [(accepted.entry["plain_sha256"], (SERVER,))]
     assert run.signed_article is None
+
+
+def test_a_failed_publish_never_takes_down_a_picture_a_server_held_before(accepted):
+    # F5 H4 (probe p2): the picture is the writer's other article's, so a
+    # server holds it before this run; the run fails after the upload, and
+    # it stays up. The library was never fetched in this run.
+    store = FakeStore(held={accepted.entry["plain_sha256"]})
+    run, store, jobs = _run(accepted, store=store, reread_hash="ab" * 32, changed_from=1)
+    run.start()
+    accepted.world.settle()
+    assert run.stage is Stage.CHANGED and len(store.uploaded) == 1
+    assert store.deleted == []
 
 
 def test_a_picture_the_servers_refuse_publishes_nothing(accepted):
@@ -1093,6 +1134,41 @@ def test_a_correction_taken_before_is_said_so_and_published_without_asking_again
     accepted.world.settle()
     assert run.stage is Stage.DONE and asked == [] and "Korrigiert" in jobs[-1].signed_event[
         "content"]
+
+
+def test_a_correction_only_the_server_calls_taken_is_taken_before_it_is_published(accepted):
+    # F5 M1 (probe p4): the View names the writer's correction confirmation,
+    # but no signed one is stored. It is not taken, so publishing it signs
+    # the confirmation first.
+    from nostr.standup import following as rules
+    from nostr.standup.publishing import Accepted
+    from nostr.ui.standup_publish import CorrectionPublish
+    world, sid, following = accepted.world, accepted.sid, accepted.following
+    first, _store, _jobs = _run(accepted)
+    first.start()
+    world.settle()
+    world.clock.advance(60)
+    world.correct(accepted.writer, sid, f"Korrigiert ![]({accepted.entry['ref']})",
+                  media=[accepted.entry])
+    world.record(sid).confirmations[pk("writer")] = ["correction"]
+    following.refresh()
+    world.settle()
+    following.open(sid)
+    world.settle()
+    row = following.row(sid)
+    assert row.view.confirmations[pk("writer")] == ("correction",)
+    assert row.situation is rules.Situation.CORRECTION
+    asked = []
+    run = CorrectionPublish(
+        published=following.reading.published_event(sid),
+        taken=following.reading.signed(sid).taken, sid=sid, profile=accepted.writer.profile,
+        version=following.reading.latest(sid),
+        accepted=Accepted(revision=2, split_rumor_id=None, actor="", seq=0),
+        revision_hash=row.view.revision_hash, publication="Magazin",
+        ports=replace(first._ports, confirm=lambda confirms, hash_, _done: asked.append(
+            (tuple(confirms), hash_))))
+    run.start()
+    assert asked == [(("correction",), row.view.revision_hash)]
 
 
 def publishing_tag(event):
@@ -1330,3 +1406,57 @@ def test_after_publication_the_encrypted_files_go_but_one_another_submission_nam
     following.open(sid)
     world.settle()
     assert len(store.batches) == 1                       # recorded: never asked again
+
+
+def test_a_corrections_list_never_makes_the_writers_key_delete_a_file(accepted):
+    # F5 H2 (probe p1): a Redaktion member's correction names the writer's
+    # other public picture in its lists. Once the writer took and published
+    # it, the cleanup deletes only the encrypted file the writer put up.
+    from nostr.bech32 import encode_naddr
+    from nostr.standup.cleanup import Cleanups
+    from nostr.ui.standup_cleanup import BlobCleanup
+    world, sid, following, writer = accepted.world, accepted.sid, accepted.following, accepted.writer
+    first, _store, _jobs = _run(accepted)
+    first.start()
+    world.settle()
+    other_picture = hashlib.sha256(b"the writer's other public picture").hexdigest()
+    named = dict(accepted.entry, cipher_sha256=other_picture, ref=formats.media_ref(other_picture),
+                 servers=[SERVER])
+    world.clock.advance(60)
+    world.server.blob_servers.everywhere.add(other_picture)
+    world.correct(writer, sid, f"Korrigiert ![]({named['ref']})", media=[named], blobs=[
+        {"sha256": other_picture, "size": 1, "servers": [SERVER]}])
+    following.refresh()
+    world.settle()
+    following.open(sid)
+    world.settle()
+    hash_ = following.row(sid).view.revision_hash
+    following.confirm(sid, confirms=("correction",), revision_hash=hash_, split_rumor_id=None,
+                      on_done=lambda _error: None)
+    world.settle()
+    article = events.sign_event({"kind": 30023, "created_at": world.clock(), "content": "Neu.",
+                                 "tags": [["d", "ein-jahr"]]}, sk("writer"))
+    writer.api.published(sid, naddr=encode_naddr("ein-jahr", pk("writer"), 30023), event=article,
+                         revision=2, on_success=lambda _v: None, on_failure=lambda _e: None)
+    world.settle()
+    store, kept = FakeStore(), {}
+    BlobCleanup(following, writer, SimpleNamespace(user_pubkey=pk("writer"), is_local=True),
+                store=store, cleanups=Cleanups(pk("writer"), load=lambda: kept,
+                                               save=kept.__setitem__),
+                clock=world.clock, parent=following)
+    following.open(sid)
+    world.settle()
+    assert following.reading.published(sid).revision == 2
+    own = accepted.entry["cipher_sha256"]
+    assert store.batches == [[(own, "https://blossom.example"), (own, SERVER)]]
+
+
+def test_a_file_the_published_article_names_is_never_deleted():
+    # F5 H2, the third rule: whatever the revisions say, a hash the
+    # published event names in its text or tags stays.
+    from nostr.standup import cleanup
+    own, kept = "ab" * 32, "cd" * 32
+    event = {"content": f"![](https://media.example/{kept.upper()}.png)", "tags": []}
+    records = [(1, [(own, [SERVER]), (kept, [SERVER])], {own, kept})]
+    assert cleanup.to_delete(records, 1, [], referenced=cleanup.referenced_by(event)) == [
+        (own, SERVER)]

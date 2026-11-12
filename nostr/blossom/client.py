@@ -993,6 +993,41 @@ class BlossomClient(QObject):
         self._inflight[key] = reply
         return stop
 
+    # -- whether a server holds a blob -------------------------------------
+
+    def holds(
+        self,
+        url: str,
+        on_answer: Callable[[Optional[bool]], None],
+    ) -> None:
+        """BUD-01 ``HEAD /<sha256>`` at ``url``, unsigned: ``on_answer(True)``
+        for 2xx, ``False`` for 404, ``None`` for anything else (no answer,
+        a redirect, another refusal). A HEAD has no body to read, and the
+        whole request ends at its deadline. Only an address the media
+        policy takes, as for every blob read."""
+        if not url_safety.is_safe_media_url(url):
+            on_answer(None)
+            return
+        try:
+            request = self._prepare(url, timeout_ms=_HEAD_TIMEOUT_MS)
+        except BlossomError:
+            on_answer(None)
+            return
+        reply = self._nam.head(request)
+        key = id(reply)
+
+        def _finished() -> None:
+            try:
+                status = int(reply.attribute(QNetworkRequest.HttpStatusCodeAttribute) or 0)
+                held = True if 200 <= status < 300 and reply.error() == QNetworkReply.NoError \
+                    else False if status == 404 else None
+                self._finish(key, lambda: on_answer(held))
+            finally:
+                reply.deleteLater()
+
+        reply.finished.connect(_finished)
+        self._inflight[key] = reply
+
     # -- delete ------------------------------------------------------------
 
     def delete(

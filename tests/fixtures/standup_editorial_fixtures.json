@@ -4402,6 +4402,182 @@
   },
   "writer": "1931c316fa01f6ccbb65197956d9ac0ffdb99bd7bdb00a1a4dd5cddeafae481f"
  },
+ "picture_imeta": {
+  "audio_with_size": {
+   "h": 10,
+   "mime": "audio/mpeg",
+   "w": 10
+  },
+  "imeta": [
+   [
+    "imeta",
+    "url https://cdn.example/9a3330067f981398acbe72a2745bb97055e6165070274d5041dde953f61aeb3e.jpeg",
+    "m image/jpeg",
+    "x 9a3330067f981398acbe72a2745bb97055e6165070274d5041dde953f61aeb3e",
+    "dim 1200x1600",
+    "alt Die Kasse im Café"
+   ],
+   [
+    "imeta",
+    "url https://cdn.example/dcb4344bdd11e442e081e259cb8ec2961a951846a96853aabd88655e00427e09.png",
+    "m image/png",
+    "x dcb4344bdd11e442e081e259cb8ec2961a951846a96853aabd88655e00427e09",
+    "dim 65535x1"
+   ],
+   [
+    "imeta",
+    "url https://cdn.example/8ade59f1935a6ee7999ef3df28249f29dd94ac63b14d8506d1e7038b8a035098.webp",
+    "m image/webp",
+    "x 8ade59f1935a6ee7999ef3df28249f29dd94ac63b14d8506d1e7038b8a035098",
+    "alt Logo"
+   ],
+   [
+    "imeta",
+    "url https://cdn.example/2932bdc6a27598e9018a9bb0e2a9dcda6e415ecf90bc4e3530dc99b9b6d3e3ba.jpeg",
+    "m image/jpeg",
+    "x 2932bdc6a27598e9018a9bb0e2a9dcda6e415ecf90bc4e3530dc99b9b6d3e3ba",
+    "alt Nur die Breite"
+   ]
+  ],
+  "media": [
+   {
+    "alt": "  Die Kasse\n im\tCafé ",
+    "chunk_size": 1048576,
+    "cipher_sha256": "a904d1482c98e489ba02de6cd178e24917826f687cc6deffcdc71637f60bfd11",
+    "cipher_size": 1105,
+    "h": 1600,
+    "key": "UX3tXBq4fW83F2CyiHm/97VHyIR98iw9Oe09lN1QAUQ=",
+    "mime": "image/jpeg",
+    "name": "kasse.jpeg",
+    "plain_sha256": "9a3330067f981398acbe72a2745bb97055e6165070274d5041dde953f61aeb3e",
+    "ref": "standup-media:a904d1482c98e489ba02de6cd178e24917826f687cc6deffcdc71637f60bfd11",
+    "servers": [
+     "https://media.example"
+    ],
+    "size": 1005,
+    "w": 1200
+   },
+   {
+    "alt": "",
+    "chunk_size": 1048576,
+    "cipher_sha256": "82c9d5f236859c9c3006936d3f539d773a88e9b48c31d7c3f85834012ef1d231",
+    "cipher_size": 1104,
+    "h": 1,
+    "key": "y4v4W2I/sZtKmnvMHRqvFrPIy1G/2hf9wFN1imhJs8w=",
+    "mime": "image/png",
+    "name": "plan.png",
+    "plain_sha256": "dcb4344bdd11e442e081e259cb8ec2961a951846a96853aabd88655e00427e09",
+    "ref": "standup-media:82c9d5f236859c9c3006936d3f539d773a88e9b48c31d7c3f85834012ef1d231",
+    "servers": [
+     "https://media.example"
+    ],
+    "size": 1004,
+    "w": 65535
+   },
+   {
+    "alt": "Logo",
+    "chunk_size": 1048576,
+    "cipher_sha256": "82a9434327f73b27071f54e8ce1943bdde2a7177f4fc4b385cc916bd5893008c",
+    "cipher_size": 1104,
+    "key": "A2oog95iT4Fi3KKwxAu94rxaS0zfiHrDgBpiASNEj3g=",
+    "mime": "image/webp",
+    "name": "logo.webp",
+    "plain_sha256": "8ade59f1935a6ee7999ef3df28249f29dd94ac63b14d8506d1e7038b8a035098",
+    "ref": "standup-media:82a9434327f73b27071f54e8ce1943bdde2a7177f4fc4b385cc916bd5893008c",
+    "servers": [
+     "https://media.example"
+    ],
+    "size": 1004
+   },
+   {
+    "alt": "Nur die Breite",
+    "chunk_size": 1048576,
+    "cipher_sha256": "29fc267e4a87df7cfe3e95977b13037dc2984ef80688e904f9f3fc5cadd6c7d5",
+    "cipher_size": 1104,
+    "key": "ezF4HshpX5XB2KkcR07Xhgx2msMnwF5yqJM5CX+8K/I=",
+    "mime": "image/jpeg",
+    "name": "halb.jpeg",
+    "plain_sha256": "2932bdc6a27598e9018a9bb0e2a9dcda6e415ecf90bc4e3530dc99b9b6d3e3ba",
+    "ref": "standup-media:29fc267e4a87df7cfe3e95977b13037dc2984ef80688e904f9f3fc5cadd6c7d5",
+    "servers": [
+     "https://media.example"
+    ],
+    "size": 1004,
+    "w": 1600
+   },
+   {
+    "alt": "",
+    "chunk_size": 1048576,
+    "cipher_sha256": "c7914eaaa75e2966d6832b1bd9503ca095523b3ea66ea0c973b4495c217144f9",
+    "cipher_size": 1105,
+    "key": "vbyVSGpj5+65uBB52QyiHczVq2craq4kY5yGmXHk5NE=",
+    "mime": "audio/mpeg",
+    "name": "folge.mpeg",
+    "plain_sha256": "ae9dfc9b2022b96612e2111bde096b7df214c34ae406334e2e703f5561168f16",
+    "ref": "standup-media:c7914eaaa75e2966d6832b1bd9503ca095523b3ea66ea0c973b4495c217144f9",
+    "servers": [
+     "https://media.example"
+    ],
+    "size": 1005
+   }
+  ],
+  "pairs": {
+   "no_size": {
+    "a_string": {
+     "h": 900,
+     "w": "1600"
+    },
+    "negative": {
+     "h": 900,
+     "w": -1600
+    },
+    "neither": {},
+    "null": {
+     "h": 900,
+     "w": null
+    },
+    "only_h": {
+     "h": 900
+    },
+    "only_w": {
+     "w": 1600
+    },
+    "too_wide": {
+     "h": 900,
+     "w": 65536
+    },
+    "true": {
+     "h": 900,
+     "w": true
+    },
+    "zero": {
+     "h": 900,
+     "w": 0
+    }
+   },
+   "valid": {
+    "largest": {
+     "h": 65535,
+     "w": 65535
+    },
+    "smallest": {
+     "h": 1,
+     "w": 1
+    },
+    "upright_portrait": {
+     "h": 1600,
+     "w": 1200
+    }
+   }
+  },
+  "urls": {
+   "standup-media:29fc267e4a87df7cfe3e95977b13037dc2984ef80688e904f9f3fc5cadd6c7d5": "https://cdn.example/2932bdc6a27598e9018a9bb0e2a9dcda6e415ecf90bc4e3530dc99b9b6d3e3ba.jpeg",
+   "standup-media:82a9434327f73b27071f54e8ce1943bdde2a7177f4fc4b385cc916bd5893008c": "https://cdn.example/8ade59f1935a6ee7999ef3df28249f29dd94ac63b14d8506d1e7038b8a035098.webp",
+   "standup-media:82c9d5f236859c9c3006936d3f539d773a88e9b48c31d7c3f85834012ef1d231": "https://cdn.example/dcb4344bdd11e442e081e259cb8ec2961a951846a96853aabd88655e00427e09.png",
+   "standup-media:a904d1482c98e489ba02de6cd178e24917826f687cc6deffcdc71637f60bfd11": "https://cdn.example/9a3330067f981398acbe72a2745bb97055e6165070274d5041dde953f61aeb3e.jpeg",
+   "standup-media:c7914eaaa75e2966d6832b1bd9503ca095523b3ea66ea0c973b4495c217144f9": "https://cdn.example/ae9dfc9b2022b96612e2111bde096b7df214c34ae406334e2e703f5561168f16.mpeg"
+  }
+ },
  "published_address": {
   "coordinate_hash": "526ebc8dcdd01e1c291a1cf83852e0c440a06b3115cfe1417638a91323cad2ad",
   "counts": {

@@ -112,6 +112,13 @@ class StandupCall(Call):
     status: int = 0
     # The answer is in the contract's envelope (``"ok": true``).
     in_envelope: bool = True
+    # The exact URL the signature names when the contract binds the call
+    # to another address than this server's (12.1: the grants and the
+    # leave, signed for the key event's server); "" for url_for.
+    sign_for: str = ""
+    # A read that carries the faces it names (12.9): its publication
+    # logos are kept once it parsed.
+    faces: bool = False
 
 
 class StandupApi(SignedJsonApi):
@@ -139,6 +146,9 @@ class StandupApi(SignedJsonApi):
         # Stopped with its account: nothing more is signed or sent, no
         # session opened (lesson 31).
         self._closed = False
+        # The tag of each publication's logo, by address, as this
+        # server's newest read named it (12.9).
+        self._logos: Dict[str, str] = {}
 
     @property
     def server(self) -> str:
@@ -147,8 +157,17 @@ class StandupApi(SignedJsonApi):
     def configured(self) -> bool:
         return bool(self._server)
 
+    def logo_tag(self, address: str) -> Optional[str]:
+        """The tag of the publication's logo as the newest read of this
+        server named it (its ``avatars``, a Destination's ``avatar``;
+        12.9), or None: the monogram then. Only this server answers it."""
+        return self._logos.get(address)
+
     def url_for(self, path: str) -> str:
         return self._server + path
+
+    def signed_url_for(self, call: StandupCall) -> str:
+        return call.sign_for or self.url_for(call.path)
 
     # -- account scope -------------------------------------------------------
 
@@ -164,6 +183,7 @@ class StandupApi(SignedJsonApi):
         that was let go (RG-M2r 3, lesson 31)."""
         self.cancel()
         self._session = None
+        self._logos.clear()
         self._closed = True
 
     @property
@@ -210,10 +230,19 @@ class StandupApi(SignedJsonApi):
             if call.in_envelope:
                 need(isinstance(data, dict) and data.get("ok") is True,
                      "the answer is not a success")
-            return (call.parse(data),)
+            parsed = call.parse(data)
         except FormatError as exc:
             return StandupError(Code.BAD_RESPONSE, status=status,
                                 message=clean_text(str(exc)), maybe_stored=True)
+        if call.faces:
+            # As the web app's withFaces: once the answer parsed, the
+            # newest read winning, a logo named no more forgotten.
+            for address, tag in answers.publication_logos(data).items():
+                if tag is None:
+                    self._logos.pop(address, None)
+                else:
+                    self._logos[address] = tag
+        return (parsed,)
 
     def _http_error(self, status: int, raw: bytes, reply) -> StandupError:
         retry_after = None
@@ -277,9 +306,12 @@ class StandupApi(SignedJsonApi):
     def _call(self, method: str, path: str, payload: Optional[Mapping[str, Any]], auth: str,
               parse: Callable[[Any], Any], on_success, on_failure, *,
               limit: Optional[int] = None,
-              on_bytes: Optional[Callable[[int], None]] = None) -> StandupCall:
-        return self._dispatch(self._build(method, path, payload, auth, parse, on_success,
-                                          on_failure, limit=limit, on_bytes=on_bytes))
+              on_bytes: Optional[Callable[[int], None]] = None,
+              faces: bool = False) -> StandupCall:
+        call = self._build(method, path, payload, auth, parse, on_success, on_failure,
+                           limit=limit, on_bytes=on_bytes)
+        call.faces = faces
+        return self._dispatch(call)
 
     def _refuse(self, method: str, path: str, problem: str, on_success,
                 on_failure) -> StandupCall:
@@ -366,7 +398,7 @@ class StandupApi(SignedJsonApi):
         as the server lists them, for ``trust`` to verify."""
         return self._call("GET", "/api/submissions/destinations", None, Auth.NONE,
                           answers.parse_listings, on_success, on_failure,
-                          limit=MAX_LIST_ANSWER_BYTES)
+                          limit=MAX_LIST_ANSWER_BYTES, faces=True)
 
     @staticmethod
     def _site(address: str) -> str:
@@ -393,35 +425,52 @@ class StandupApi(SignedJsonApi):
                 on_failure) -> StandupCall:
         return self._call("GET", self._site(address) + "/members", None, Auth.SESSION,
                           answers.parse_members, on_success, on_failure,
-                          limit=MAX_LIST_ANSWER_BYTES)
+                          limit=MAX_LIST_ANSWER_BYTES, faces=True)
 
-    def invite_member(self, address: str, *, pubkey: str, role: str, sees: str,
+    def _key_action(self, address: str, rest: str, payload: Mapping[str, Any], key,
+                    parse: Callable[[Any], Any], on_success, on_failure) -> StandupCall:
+        """A POST the contract binds to the publication's verified key
+        event ``key`` (trust.RedaktionKey; 12.1, 12.3, 12.7): signed for
+        exactly ``<key.server>/api/sites/<route key>/<rest>``, whatever
+        server this client is set to, and sent to this one, as the web
+        app's keyAction (audit F16)."""
+        path = self._site(address) + "/" + rest
+        if getattr(key, "address", None) != address or not getattr(key, "server", ""):
+            return self._refuse("POST", path, "the key event is another publication's",
+                                on_success, on_failure)
+        call = self._build("POST", path, payload, Auth.SIGNED, parse, on_success, on_failure)
+        call.sign_for = key.server.rstrip("/") + path
+        return self._dispatch(call)
+
+    def invite_member(self, address: str, *, key, pubkey: str, role: str, sees: str,
                       wraps: Sequence[Mapping[str, Any]], history: Optional[Mapping[str, str]],
                       on_success: Callable[[answers.Member], None], on_failure) -> StandupCall:
         """``history`` is the member's own chain of older epoch keys
         (12.3): for ``"all"`` once the epoch is above 1, never for
-        ``"since_join"``, who must not get any older secret."""
+        ``"since_join"``, who must not get any older secret. ``key`` is
+        the verified key event it is signed for (:meth:`_key_action`)."""
         if sees == "since_join" and history is not None:
             raise ValueError("a member who sees only what follows gets no history chain")
-        return self._call("POST", self._site(address) + "/members",
-                          {"pubkey": pubkey, "role": role, "sees": sees, "wraps": list(wraps),
-                           "history": history},
-                          Auth.SIGNED, answers.parse_one_member, on_success, on_failure)
+        return self._key_action(address, "members",
+                                {"pubkey": pubkey, "role": role, "sees": sees,
+                                 "wraps": list(wraps), "history": history},
+                                key, answers.parse_one_member, on_success, on_failure)
 
     def accept_membership(self, address: str, on_success: Callable[[answers.Member], None],
                           on_failure) -> StandupCall:
         return self._call("POST", self._site(address) + "/members/accept", {}, Auth.SIGNED,
                           answers.parse_one_member, on_success, on_failure)
 
-    def remove_member(self, address: str, *, pubkey: str, key_event: Mapping[str, Any],
+    def remove_member(self, address: str, *, key, pubkey: str, key_event: Mapping[str, Any],
                       wraps: Mapping[str, Mapping[str, str]],
                       on_success: Callable[[int], None], on_failure) -> StandupCall:
-        """Remove ``pubkey`` and start the next epoch, whose ``wraps``
-        cover every member who keeps access. ``on_success(epoch)``: the
-        epoch now current."""
-        return self._call("POST", self._site(address) + "/members/remove",
-                          {"pubkey": pubkey, "epoch": _new_epoch(key_event, wraps)},
-                          Auth.SIGNED, answers.parse_epoch_number, on_success, on_failure)
+        """Remove ``pubkey`` and start the next epoch (``key_event``, its
+        new key event), whose ``wraps`` cover every member who keeps
+        access; signed for the verified ``key`` (:meth:`_key_action`).
+        ``on_success(epoch)``: the epoch now current."""
+        return self._key_action(address, "members/remove",
+                                {"pubkey": pubkey, "epoch": _new_epoch(key_event, wraps)},
+                                key, answers.parse_epoch_number, on_success, on_failure)
 
     def update_my_membership(self, address: str, changes: Mapping[str, Any],
                              on_success: Callable[[answers.Member], None],
@@ -433,12 +482,13 @@ class StandupApi(SignedJsonApi):
         return self._call("PATCH", self._site(address) + "/members/me", dict(changes),
                           Auth.SIGNED, answers.parse_one_member, on_success, on_failure)
 
-    def new_epoch(self, address: str, *, key_event: Mapping[str, Any],
+    def new_epoch(self, address: str, *, key, key_event: Mapping[str, Any],
                   wraps: Mapping[str, Mapping[str, str]],
                   on_success: Callable[[int], None], on_failure) -> StandupCall:
-        return self._call("POST", self._site(address) + "/epochs",
-                          _new_epoch(key_event, wraps), Auth.SIGNED,
-                          answers.parse_epoch_number, on_success, on_failure)
+        """The next epoch (``key_event``, its new key event), signed for
+        the verified ``key`` (:meth:`_key_action`)."""
+        return self._key_action(address, "epochs", _new_epoch(key_event, wraps), key,
+                                answers.parse_epoch_number, on_success, on_failure)
 
     def keys(self, address: str, on_success: Callable[[answers.EpochKeys], None],
              on_failure) -> StandupCall:
@@ -535,7 +585,7 @@ class StandupApi(SignedJsonApi):
                           {"items": [{"status_key": k, "since": s} for k, s in items]},
                           Auth.NONE, lambda data: answers.parse_lookup(data, asked=asked),
                           on_success, on_failure, limit=_within(limit, MAX_LOOKUP_ANSWER_BYTES),
-                          on_bytes=on_bytes)
+                          on_bytes=on_bytes, faces=True)
 
     def submission(self, submission_id: str,
                    on_success: Callable[[answers.SubmissionDetail], None],
@@ -566,7 +616,7 @@ class StandupApi(SignedJsonApi):
         return self._call("GET", path, None, Auth.SESSION,
                           _about(submission_id, answers.parse_submission_detail),
                           on_success, on_failure, limit=_within(limit, MAX_DETAIL_ANSWER_BYTES),
-                          on_bytes=on_bytes)
+                          on_bytes=on_bytes, faces=True)
 
     def send_message(self, submission_id: str, wrap: Mapping[str, Any], *, kind_hint: str,
                      on_success: Callable[[int], None], on_failure,
@@ -684,19 +734,19 @@ class StandupApi(SignedJsonApi):
             query["q"] = q
         return self._call("GET", self._site(address) + "/submissions?" + urlencode(query),
                           None, Auth.SESSION, answers.parse_submission_page, on_success,
-                          on_failure, limit=MAX_LIST_ANSWER_BYTES)
+                          on_failure, limit=MAX_LIST_ANSWER_BYTES, faces=True)
 
     def my_editorial(self, on_success: Callable[[answers.Editorial], None],
                      on_failure) -> StandupCall:
         return self._call("GET", "/api/me/editorial", None, Auth.SESSION,
                           answers.parse_editorial, on_success, on_failure,
-                          limit=MAX_LIST_ANSWER_BYTES)
+                          limit=MAX_LIST_ANSWER_BYTES, faces=True)
 
     def my_submissions(self, on_success: Callable[[Tuple[views.SubmissionView, ...]], None],
                        on_failure) -> StandupCall:
         return self._call("GET", "/api/me/submissions", None, Auth.SESSION,
                           answers.parse_views, on_success, on_failure,
-                          limit=MAX_LIST_ANSWER_BYTES)
+                          limit=MAX_LIST_ANSWER_BYTES, faces=True)
 
 
 def _within(limit: Optional[int], most: int) -> int:

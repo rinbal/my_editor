@@ -251,9 +251,10 @@ class Destination:
 
     address: str
     name: str
-    picture: Optional[str]
+    avatar: Optional[str]                # the tag of its logo (12.3, 12.9)
     key: Optional[RedaktionKey]
     problem: str = ""
+    server: str = ""                     # the server that listed it, which serves its logo
 
     @property
     def usable(self) -> bool:
@@ -319,10 +320,10 @@ class Destinations(QObject):
             key = key_for_server(newest_key(candidates, item.address, self._store,
                                             local_http=self._local_http), self._api.server)
         except KeyNotConfirmed as refusal:
-            return Destination(address=item.address, name=item.name, picture=item.picture,
-                               key=None, problem=refusal.reason)
+            return Destination(address=item.address, name=item.name, avatar=item.avatar,
+                               key=None, problem=refusal.reason, server=self._api.server)
         return Destination(address=item.address, name=key.name or item.name,
-                           picture=item.picture, key=key)
+                           avatar=item.avatar, key=key, server=self._api.server)
 
 
 def confirm_key(api: StandupApi, address: str, relay_lookup: RelayLookup, store: EpochStore,

@@ -20,7 +20,7 @@ import pytest
 from PySide6.QtNetwork import QNetworkReply
 
 from nostr import crypto, events
-from nostr.standup import answers, conversation, formats, views
+from nostr.standup import answers, conversation, formats, trust, views
 from nostr.standup import crypto as scrypto
 from nostr.standup.client import Auth, StandupApi
 from nostr.standup.errors import Code, StandupError
@@ -823,8 +823,9 @@ def test_every_endpoint_of_the_contract_goes_through_the_checking_server():
         == [pk("editor")]
     keys = world.ok(lambda ok, fail: editor.keys(ADDRESS, ok, fail))
     assert keys.epochs[0].epoch == 3 and keys.history is None
+    key = trust.verify_key_event(KEY_EVENT, ADDRESS)
     assert world.ok(lambda ok, fail: editor.invite_member(
-        ADDRESS, pubkey=pk("contributor"), role="redaktion", sees="all", wraps=[],
+        ADDRESS, key=key, pubkey=pk("contributor"), role="redaktion", sees="all", wraps=[],
         history=None, on_success=ok, on_failure=fail)).status == "invited"
     contributor = world.api("contributor")
     invited = world.ok(contributor.my_editorial)
@@ -838,15 +839,16 @@ def test_every_endpoint_of_the_contract_goes_through_the_checking_server():
     with pytest.raises(ValueError):
         contributor.update_my_membership(ADDRESS, {"role": "owner"}, print, print)
     assert world.ok(lambda ok, fail: editor.new_epoch(
-        ADDRESS, key_event=KEY_EVENT, wraps={}, on_success=ok, on_failure=fail)) == 4
+        ADDRESS, key=key, key_event=KEY_EVENT, wraps={}, on_success=ok,
+        on_failure=fail)) == 4
     assert json.loads(world.server.requests[-1][2]) == {"key_event": KEY_EVENT, "wraps": {}}
     with pytest.raises(ValueError):
-        editor.invite_member(ADDRESS, pubkey=pk("contributor"), role="curator",
+        editor.invite_member(ADDRESS, key=key, pubkey=pk("contributor"), role="curator",
                              sees="since_join", wraps=[], history={"eph": "x", "ct": "y"},
                              on_success=print, on_failure=print)
     assert world.ok(lambda ok, fail: editor.remove_member(
-        ADDRESS, pubkey=pk("contributor"), key_event=KEY_EVENT, wraps={}, on_success=ok,
-        on_failure=fail)) == 4
+        ADDRESS, key=key, pubkey=pk("contributor"), key_event=KEY_EVENT, wraps={},
+        on_success=ok, on_failure=fail)) == 4
     assert world.ok(lambda ok, fail: editor.put_site_settings(
         ADDRESS, key_event=None, settings_event=None, on_success=ok,
         on_failure=fail)).key_event == KEY_EVENT
@@ -973,6 +975,29 @@ def test_an_accepted_work_is_published_only_in_its_step():
         sid, naddr="naddr1test", event=article, revision=1, on_success=ok, on_failure=fail))
     assert view.state == "published"
 
+def test_a_grant_is_signed_for_the_key_events_server_not_the_one_set_here():
+    # Audit F16 (contract 12.1, 12.3): an invitation, a removal and a new
+    # epoch name <server of the verified key event>/api/sites/<route>/...,
+    # as the web app's keyAction; they still go to the server set here.
+    world = World()
+    editor = world.api("editor")
+    key = replace(trust.verify_key_event(KEY_EVENT, ADDRESS), server="https://keys.example")
+    site = "https://keys.example" + formats.site_path(ADDRESS)
+    world.ok(lambda ok, fail: editor.invite_member(
+        ADDRESS, key=key, pubkey=pk("contributor"), role="redaktion", sees="all", wraps=[],
+        history=None, on_success=ok, on_failure=fail))
+    world.ok(lambda ok, fail: editor.new_epoch(ADDRESS, key=key, key_event=KEY_EVENT, wraps={},
+                                               on_success=ok, on_failure=fail))
+    world.ok(lambda ok, fail: editor.remove_member(
+        ADDRESS, key=key, pubkey=pk("contributor"), key_event=KEY_EVENT, wraps={},
+        on_success=ok, on_failure=fail))
+    assert [formats.tag_value(e, "u") for e in world.server.accepted[-3:]] == [
+        site + "/members", site + "/epochs", site + "/members/remove"]
+    other = replace(key, address="30004:" + pk("editor") + ":other")
+    assert world.err(lambda ok, fail: editor.new_epoch(
+        ADDRESS, key=other, key_event=KEY_EVENT, wraps={}, on_success=ok, on_failure=fail))
+
+
 # -- signed actions (10) -------------------------------------------------------------
 
 def _fixture_action():
@@ -1009,6 +1034,18 @@ def test_a_signed_action_for_another_path_submission_or_signer_does_not_verify()
     assert "without that role" in views.signed_action_problem(
         action, path=f"/api/submissions/{SID}/decision", submission_id=SID,
         signers={pk("writer")})
+
+
+def test_a_signed_action_whose_url_is_only_a_path_reads_as_unsigned():
+    # Audit F2: 98.md's u is the absolute URL; the web app reads a path
+    # alone as unsigned, and so does the writer's app.
+    action = _fixture_action()
+    path = f"/api/submissions/{SID}/decision"
+    tags = [["u", path] if tag[0] == "u" else tag for tag in action.event["tags"]]
+    relative = events.sign_event({"kind": 27235, "created_at": action.event["created_at"],
+                                  "content": "", "tags": tags}, sk("editor"))
+    assert "another action" in views.signed_action_problem(
+        views.SignedRecord(event=relative, body=action.body), path=path, submission_id=SID)
 
 
 def test_the_timeline_carries_signed_actions_that_verify():

@@ -43,6 +43,7 @@ from i18n import _
 from . import CLIENT_NAME, CLIENT_URL, crypto, events, failures, refs
 from .relay import KeySignIn, RelayPool, Subscription
 from .answer_size import OWN_REQUEST_ID_BYTES, request_json
+from .outbox.policy import dedupe_relays
 from .signer_limits import (
     bound_known, connection_answer_limit, connection_message_limit,
     connection_plaintext_limit, sign_answer_size,
@@ -85,6 +86,15 @@ ANSWERED_RECENTLY_MS = 30_000
 # answer arrives later under the same request id, so the pending request is
 # held open this long rather than failing.
 AUTH_CHALLENGE_TIMEOUT_MS = 180_000
+
+# switch_relays (46.md) is asked once after a pairing and after every
+# reattach, in the background: nothing waits on it, and a signer that
+# does not know it (an error, or silence) changes nothing. Its answer is
+# a question of where it listens, never one for the person, so it is
+# given as long as a ping.
+SWITCH_RELAYS_TIMEOUT_MS = 6_000
+# At most this many relays are taken from its answer.
+MAX_SWITCHED_RELAYS = 10
 
 # The failure reasons that mean nobody answered, as opposed to the signer
 # answering "no". Defined here, next to the code that produces them, so
@@ -242,6 +252,23 @@ class BunkerURI:
     bunker_pubkey: str          # hex, 64 chars
     relays: List[str]           # one or more wss:// URLs
     secret: Optional[str]       # optional pairing token
+
+
+def switched_relays(result: str, current) -> Optional[List[str]]:
+    """The relays a signer's answer to ``switch_relays`` moves the channel
+    to: a JSON list of relay addresses (46.md), each ws:// or wss:// as a
+    bunker:// link may name them, in its order, at most ten; None for
+    ``null``, for one naming none or the ``current`` ones, or for an
+    answer that is no list: then nothing moves."""
+    try:
+        value = json.loads(result)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(value, list):
+        return None
+    relays = dedupe_relays([item for item in value if isinstance(item, str)],
+                           cap=MAX_SWITCHED_RELAYS)
+    return relays if relays and relays != dedupe_relays(current) else None
 
 
 def _is_hex64(value: str) -> bool:
@@ -408,6 +435,9 @@ class BunkerClient(QObject):
     # A signer answered a nostrconnect code with its secret: this channel
     # is the one being paired now (bunker_pubkey is set).
     contacted = Signal()
+    # The signer named other relays to listen on (switch_relays): the
+    # account's key and the relays the channel is on now, to keep.
+    relays_switched = Signal(str, list)
 
     def __init__(self, pool: RelayPool, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -486,9 +516,13 @@ class BunkerClient(QObject):
             # channel can be opened to: refused, never a wait for nothing.
             self._refuse(on_failure, str(exc))
             return
+        # The fourth parameter is the client's metadata (46.md: a bunker://
+        # client SHOULD send it), the name and page a nostrconnect code
+        # carries, so the signer says who asks (audit F7).
         self._send_request(
             method="connect",
-            params=[parsed.bunker_pubkey, parsed.secret or "", DEFAULT_PERMS],
+            params=[parsed.bunker_pubkey, parsed.secret or "", DEFAULT_PERMS,
+                    json.dumps({"name": CLIENT_NAME, "url": CLIENT_URL})],
             on_success=lambda result: self._on_connect_acked(result, parsed.secret, on_success, on_failure),
             on_failure=on_failure,
             timeout_ms=timeout_ms,
@@ -623,6 +657,7 @@ class BunkerClient(QObject):
         self._is_connected = True
         self.connected.emit(pk_hex)
         on_success(pk_hex)
+        self._switch_relays()
 
     def _on_nostrconnect_timeout(self) -> None:
         if self._is_connected or self._bunker_pk_hex is not None:
@@ -686,6 +721,7 @@ class BunkerClient(QObject):
             self._is_connected = True
             self.connected.emit(user_pubkey)
             on_success()
+            self._switch_relays()
 
         def _confirm_identity(pk_hex: str) -> None:
             if pk_hex.strip().lower() != user_pubkey.strip().lower():
@@ -1076,7 +1112,11 @@ class BunkerClient(QObject):
 
         # Subscribe to responses BEFORE publishing the connect request,
         # otherwise a fast signer could reply before we're listening.
-        self._subscription = self._pool.subscribe(
+        self._subscription = self._subscribe()
+
+    def _subscribe(self) -> Subscription:
+        """The channel's answers, on its relays."""
+        subscription = self._pool.subscribe(
             self._relays,
             filters=[{
                 "kinds": [24133],
@@ -1085,7 +1125,28 @@ class BunkerClient(QObject):
             }],
             sign_in=self._channel_sign_in(),
         )
-        self._subscription.event.connect(self._on_response_event)
+        subscription.event.connect(self._on_response_event)
+        return subscription
+
+    def _switch_relays(self) -> None:
+        """Ask once where the signer listens (46.md: right after a
+        connection is made), and move there when it names other relays;
+        any other answer, or none, changes nothing (audit F17)."""
+        if not self._is_connected or self._bunker_pk_hex is None:
+            return
+
+        def answered(result: str) -> None:
+            relays = switched_relays(result, self._relays)
+            if relays is None or not self._is_connected:
+                return
+            old, self._relays = self._subscription, relays
+            self._subscription = self._subscribe()   # listening there before the old closes
+            if old is not None:
+                old.close()
+            self.relays_switched.emit(self._user_pubkey or "", list(relays))
+
+        self._send_request(method="switch_relays", params=[], on_success=answered,
+                           on_failure=lambda _reason: None, timeout_ms=SWITCH_RELAYS_TIMEOUT_MS)
 
     def _channel_sign_in(self) -> KeySignIn:
         """A relay of the channel that asks for a sign-in gets the
@@ -1289,6 +1350,13 @@ class BunkerSessionPool(QObject):
     those of relays that state no cap, and of the ones the contract names.
     """
 
+    # A paired signer app asks for an approval in a browser before it
+    # answers (46.md auth_url): the address, from any client of the pool.
+    auth_challenge = Signal(str)
+    # A paired signer named other relays (switch_relays): the account's
+    # key and the relays its channel is on now, for the profile to keep.
+    relays_switched = Signal(str, list)
+
     def __init__(self, pool: RelayPool, parent: Optional[QObject] = None, *,
                  vault=None, relay_caps=None) -> None:
         super().__init__(parent)
@@ -1360,6 +1428,8 @@ class BunkerSessionPool(QObject):
 
         self._inflight[pubkey] = [(on_ready, on_error)]
         new_client = BunkerClient(self._pool, parent=self)
+        new_client.auth_challenge.connect(self.auth_challenge)    # audit F8
+        new_client.relays_switched.connect(self.relays_switched)  # audit F17
         self._attaching[pubkey] = new_client
 
         def current() -> bool:

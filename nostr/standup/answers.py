@@ -35,6 +35,7 @@ from .readers import (
     read_pubkey,
     read_text,
 )
+from .release import credit_in
 from .servers import usable_server_url
 
 MEMBER_STATUSES = ("invited", "active")
@@ -126,7 +127,9 @@ class Listing:
 
     address: str
     name: str
-    picture: Optional[str]
+    # The tag of its logo (12.3, 12.9): the logo is read only from this
+    # server's /api/avatars with it, never from the listing's ``picture``.
+    avatar: Optional[str]
     key_event: Mapping[str, Any]
 
 
@@ -142,12 +145,43 @@ def parse_listings(data: Mapping[str, Any]) -> Tuple[Listing, ...]:
             address = read_address(item.get("address"))
         except FormatError:
             continue
-        picture = item.get("picture")
+        avatar = item.get("avatar")
         found.append(Listing(address=address, name=clean_text(item.get("name")),
-                             picture=picture if isinstance(picture, str)
-                             and picture.startswith("https://") else None,
+                             avatar=avatar if formats.is_avatar_tag(avatar) else None,
                              key_event=item["key_event"]))
     return tuple(found)
+
+
+def _publication_address(value: Any) -> bool:
+    try:
+        read_address(value)
+    except FormatError:
+        return False
+    return True
+
+
+def publication_logos(data: Any) -> Dict[str, Optional[str]]:
+    """The publications' logos a read names (12.9), by address: from its
+    ``avatars`` map, whose keys are people (64 hex, left out here: a
+    person's face is never a publication's logo) and publications, and
+    from each ``publications[].avatar`` of the Destinations (12.3), where
+    null means the publication names no logo any more. Whatever is no
+    valid address or tag is left out and fails no read, as the web app's
+    rememberFaces keeps it."""
+    found: Dict[str, Optional[str]] = {}
+    if not isinstance(data, dict):
+        return found
+    avatars = data.get("avatars")
+    for key, tag in avatars.items() if isinstance(avatars, dict) else ():
+        if formats.is_avatar_tag(tag) and _publication_address(key):
+            found[key] = tag
+    publications = data.get("publications")
+    for item in publications if isinstance(publications, list) else ():
+        if isinstance(item, dict) and _publication_address(item.get("address")):
+            avatar = item.get("avatar", "")
+            if avatar is None or formats.is_avatar_tag(avatar):
+                found[item["address"]] = avatar
+    return found
 
 
 @dataclass(frozen=True)
@@ -404,12 +438,17 @@ def parse_submission_detail(data: Mapping[str, Any]) -> SubmissionDetail:
 
 def parse_article_author(data: Any) -> str:
     """``GET /api/articles/<address>`` (not in the ``ok`` envelope): who
-    the article held there credits as its author, the index's
-    ``author_pubkey`` (its first author tag, else its signer: contract
-    12.4, Before the writer's work goes out)."""
+    the article held there credits as its author, read from the event's
+    own tags (``event_tags``): its first author tag, else its signer
+    (contract 12.4, Before the writer's work goes out). Never from
+    ``author_pubkey``, which is the signer (STANDUP P1): for a work a
+    publication signed that is the publication, not its writer. A read
+    without the tags (an event has its ``d`` at least) cannot tell, and
+    fails."""
     article = read_object(read_object(data, "the answer").get("article"), "the article")
-    return read_pubkey(article.get("author_pubkey") or article.get("pubkey"),
-                       "the article's author")
+    tags = article.get("event_tags")
+    need(isinstance(tags, list) and bool(tags), "the article's tags")
+    return read_pubkey(credit_in(tags, article.get("pubkey")), "the article's author")
 
 
 def _read_more(data: Mapping[str, Any]) -> bool:

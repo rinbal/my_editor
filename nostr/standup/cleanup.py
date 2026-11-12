@@ -8,13 +8,16 @@ writer's media servers; once the work is public its plain files are on
 the writer's servers, and the encrypted copies go. Pure: what to delete,
 and the record of what is done and when to try again.
 
-- What goes: every file the verified revisions up to the published one
-  name, except one a later revision names too (a correction that still
-  waits may show it, and the editorial team must read it), and except
-  one another submission of this account names: only the last user of a
-  file removes it.
-- Where: the servers each verified revision's signed blob list names for
-  the file, and the writer's own media servers.
+- What goes: the encrypted files this account put up, the ``media``
+  entries of the writer's own verified revisions up to the published
+  one, never what a correction names (a Redaktion member's list could
+  name any file of the writer's: F5 H2). Except one a later revision
+  names too (a correction that still waits may show it, and the
+  editorial team must read it), one another submission of this account
+  names (only the last user of a file removes it), and one the
+  published event itself names.
+- Where: the servers the writer's revision names for the file, and the
+  writer's own media servers.
 - The record (per account, in the app's settings; hashes and server
   addresses only, which the servers hold anyway, nothing secret): each
   success is kept, so nothing is asked twice; a server that failed is
@@ -24,6 +27,7 @@ and the record of what is done and when to try again.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from . import formats
@@ -37,28 +41,43 @@ SETTINGS_KEY = "standup_blob_cleanups"
 Pair = Tuple[str, str]                    # (cipher sha256, server origin)
 
 
-def to_delete(records: Sequence[Tuple[int, Sequence[Tuple[str, Sequence[str]]]]],
+def to_delete(records: Sequence[Tuple[int, Sequence[Tuple[str, Sequence[str]]], Iterable[str]]],
               published: int, servers: Iterable[str],
-              named_elsewhere: Iterable[str] = ()) -> List[Pair]:
+              named_elsewhere: Iterable[str] = (), referenced: Iterable[str] = ()) -> List[Pair]:
     """The ``(sha256, server)`` to delete for a work published as revision
-    ``published``. ``records`` are ``(revision, blobs)`` of the verified
-    revisions, each blob ``(sha256, servers)`` as its signed body names
-    it; ``servers`` the writer's own media servers; ``named_elsewhere``
-    the files another submission of this account names."""
-    keep = set(named_elsewhere)
-    keep.update(sha for revision, blobs in records if revision > published for sha, _s in blobs)
+    ``published``. ``records`` are ``(revision, own, named)`` of the
+    verified revisions: ``own`` the files this account put up for it
+    (``opening.own_files``, none for a correction), each ``(sha256,
+    servers)``, and ``named`` every file it names; ``servers`` the
+    writer's own media servers; ``named_elsewhere`` the files another
+    submission of this account names; ``referenced`` the hashes the
+    published event names (:func:`referenced_by`)."""
+    keep = set(named_elsewhere) | set(referenced)
+    keep.update(sha for revision, _own, named in records if revision > published for sha in named)
     further = [s for s in (_origin(server) for server in servers) if s]
     pairs: Dict[Pair, None] = {}
-    for revision, blobs in records:
+    for revision, own, _named in records:
         if revision > published:
             continue
-        for sha, named in blobs:
+        for sha, named in own:
             if sha in keep:
                 continue
             for server in dict.fromkeys([*(_origin(s) for s in named), *further]):
                 if server:
                     pairs[(sha, server)] = None
     return list(pairs)
+
+
+_HASH = re.compile(r"(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])")
+
+
+def referenced_by(event: Mapping[str, Any]) -> frozenset:
+    """Every hash the published ``event`` names in its text or its tags (a
+    picture's address, an ``imeta`` ``x``): none of them is deleted."""
+    parts = [event.get("content")] + [part for tag in event.get("tags") or ()
+                                      if isinstance(tag, list) for part in tag]
+    return frozenset(found for part in parts if isinstance(part, str)
+                     for found in _HASH.findall(part.lower()))
 
 
 def _origin(server: str) -> str:
@@ -129,4 +148,4 @@ class Cleanups:
 
 
 __all__ = ["Cleanups", "GIVES_UP", "PAUSES", "Pair", "SETTINGS_KEY", "after_try", "due",
-           "left", "to_delete"]
+           "left", "referenced_by", "to_delete"]

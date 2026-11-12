@@ -16,9 +16,10 @@ that accept names, which must be the verified revision opened here:
   2. Each picture is read (this computer's copy, else the servers its
      opened revision names, then the writer's), decrypted with the key
      its submission's signed revision names, checked against its plain
-     hash and put on the writer's media servers. A file the library held
-     before is named as it is and never taken down; every file this run
-     put up comes down again on any failure before a relay took it.
+     hash and put on the writer's media servers. The servers are asked
+     first: a file one of them held before is never taken down; every
+     file this run put up new comes down again on any failure before a
+     relay took it.
   3. The article is built with the public addresses (credits, the
      writer's own split, carried tags as the web app does), measured
      again, signed and kept bound to the revision. Before a picture goes
@@ -60,7 +61,6 @@ from ..signer_limits import size_problem
 from ..standup import formats, opening, publishing
 from ..standup.errors import Code, cause_words
 from ..standup import following as rules
-from ..standup.following import correction_taken
 from ..standup.publishing import Accepted
 from .standup_account import live
 from .standup_publish_job import HeldPublish, SignedHere, offers_here, publish_job, read_relays
@@ -178,7 +178,8 @@ def run_for(following, account, profile, sid: str, *, store, fetch, session_pool
                 revision_hash=view.revision_hash,
                 publication=following.publication_name(view.publication), ports=ports,
                 parent=following)
-    run = (CorrectionPublish(published=published, taken=correction_taken(view), **made)
+    run = (CorrectionPublish(published=published, taken=following.reading.signed(sid).taken,
+                             **made)
            if correction else AcceptedPublish(**made))
     following.track(sid, run)
     return run
@@ -414,18 +415,20 @@ class AcceptedPublish(QObject):
         if formats.sha256_hex(plain) != entry["plain_sha256"]:
             self._fail(_(PICTURE_NOT_FOUND))
             return
-        store, sha = self._ports.store, entry["plain_sha256"]
-        held = store.files().get(sha)
-        if held is not None and getattr(held, "url", ""):
-            # Held before this run (another work's picture, perhaps public):
-            # named as it is, never this run's to take down.
-            self._urls[entry["ref"]] = held.url
-            self._next_picture()
+        # The servers are asked before it goes up (F5 H4, RG-F5a-a 2): only a
+        # file no server held before is this run's to take down. One held
+        # already (another work's picture, perhaps public) goes up all the
+        # same, so it is the writer's there, and stays on any failure.
+        self._ports.store.held_on_servers(
+            entry["plain_sha256"], lambda held: self._put_up(entry, plain, new=held is False))
+
+    def _put_up(self, entry: Mapping, plain: bytes, *, new: bool) -> None:
+        if self._stopped:
             return
-        name = f"{sha}.{publishing.EXTENSIONS[entry['mime']]}"
-        self._waiting[name] = (lambda media: self._up(entry, media), lambda: self._fail(
+        name = f"{entry['plain_sha256']}.{publishing.EXTENSIONS[entry['mime']]}"
+        self._waiting[name] = (lambda media: self._up(entry, media, new=new), lambda: self._fail(
             _(PICTURE_NOT_UP)))
-        store.upload_bytes(plain, name=name, mime_type=entry["mime"])
+        self._ports.store.upload_bytes(plain, name=name, mime_type=entry["mime"])
 
     def _uploaded(self, name: str, media) -> None:
         waiting = self._waiting.pop(name, None)
@@ -437,9 +440,9 @@ class AcceptedPublish(QObject):
         if waiting is not None and not self._stopped:
             waiting[1]()
 
-    def _up(self, entry: Mapping, media) -> None:
+    def _up(self, entry: Mapping, media, *, new: bool) -> None:
         servers = tuple(u.get("server", "") for u in getattr(media, "urls", ()) if u.get("server"))
-        if media.hash == entry["plain_sha256"]:
+        if media.hash == entry["plain_sha256"] and new:
             self._created.append((media.hash, servers))
         if media.hash != entry["plain_sha256"] or not str(media.url).startswith("https://"):
             self._fail(_(PICTURE_NOT_UP))
@@ -649,8 +652,9 @@ class CorrectionPublish(AcceptedPublish):
 
     def __init__(self, *, published: dict, taken: bool = False, **kwargs) -> None:
         super().__init__(**kwargs)
-        # ``taken``: the View holds the writer's confirmation of it, so it
-        # is published without being confirmed again (RG-M4-b 8).
+        # ``taken``: the writer's own verified confirmation names it
+        # (``Reading.signed``, never the View: F5 M1), so it is published
+        # without being confirmed again (RG-M4-b 8); else start() takes it.
         self._published, self._taken = published, bool(taken)
         self.expected_state = "published"
 

@@ -23,7 +23,7 @@ from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import QObject, Qt
-from PySide6.QtGui import QColor, QImage
+from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication, QLabel, QPushButton, QToolButton, QVBoxLayout, QWidget,
@@ -31,18 +31,19 @@ from PySide6.QtWidgets import (
 
 import alerts
 from document_notice import DocumentNotice
-from nostr.standup import conversation
+from nostr.standup import conversation, formats
 from nostr.standup.errors import Code, StandupError
 from nostr.standup import following as rules
 from nostr.standup.following import Action
 from nostr.ui import standup_submit, submission_cover, submission_detail
+from nostr.ui.standup_publications import PublicationLogos
 from nostr.ui.standup_submit import StandupWriter
 from nostr.ui.submission_cover import cover_pixmap, png_bytes
 from nostr.ui.submission_pill import SubmissionPill
 from nostr.ui.submissions_host import Ports, SubmissionsHost
 from nostr.ui.drafts_panel import DraftsPanel
 from nostr.ui.submissions_view import PANEL_VIEW, SubmissionsView, add_to_panel
-from tests.standup_fakes import DROP_BEFORE, SERVER
+from tests.standup_fakes import ADDRESS, DROP_BEFORE, SERVER
 from tests.standup_following_fakes import FollowWorld
 from tests.standup_vectors import pk, sk
 
@@ -69,8 +70,14 @@ class Window:
             session_pool=None, relay_pool=None, relay_directory=None, media_store=None,
             server=server, uploads=uploads, accounts=self.account,
             clock=world.clock)
+        # The publications' logos, from the server's route only (12.9):
+        # what was asked, with how to answer it.
+        self.fetched = []
+        self.logos = PublicationLogos(lambda _key, url, done: self.fetched.append((url, done)),
+                                      later=world.later)
         self.view = SubmissionsView(name_of=lambda p: NAMES.get(p, ""),
-                                    avatar_of=lambda p: None, is_dark=False, clock=world.clock)
+                                    avatar_of=lambda p: None, is_dark=False, clock=world.clock,
+                                    logo_of=self.logos.get)
         self.view.resize(380, 640)
         self.pill = SubmissionPill()
         self.tabs, self.current = [], None
@@ -85,10 +92,12 @@ class Window:
             open_text=lambda *a: self.opened.append(a), submission_of=lambda ed, p: None,
             show_view=self.shown.append, submit=lambda: self.submits.append(self.current),
             notice_of=lambda ed: ed.notice, say=self.said.append, keep=lambda sheet: None,
-            avatar_of=lambda p: None, request_logo=lambda *a: None, is_dark=lambda: False,
+            avatar_of=lambda p: None, request_logo=self.logos.request,
+            logo_of=self.logos.get, is_dark=lambda: False,
             window=lambda: None, open_article=lambda d: self.tab(d, self.kept[d])
             if d in self.kept else None), view=self.view, pill=self.pill,
             name_of=lambda p: NAMES.get(p, ""), **host)
+        self.logos.changed.connect(self.host.logo_arrived)
 
     def account(self, profile):
         who = {ME: "writer", OTHER: "contributor"}[profile.user_pubkey]
@@ -267,6 +276,25 @@ def opened(window, entry):
     window.view.show_detail(entry.sid)
     window.world.settle()
     return window.view.detail
+
+
+def test_a_logo_any_read_names_shows_in_the_detail_from_the_servers_route_only(window):
+    _prepared, entries = seeded(window, mein="Ein Jahr")
+    server = window.world.server
+    server.publication().paused = True                  # not among the destinations
+    logo, face = "a" * 32, "b" * 32
+    server.faces.update({ADDRESS: logo, ME: face})      # what the reads carry (12.9)
+    window.follow()
+    detail = opened(window, entries["mein"])
+    # Keyed by address, from the publication's route; a person's tag
+    # never stands for a publication.
+    route = formats.route_key(*formats.parse_address(ADDRESS))
+    assert [url for url, _done in window.fetched] == [f"{SERVER}/api/avatars/{route}?v={logo}"]
+    red = QPixmap(8, 8)
+    red.fill(QColor("red"))
+    window.fetched[0][1](red)
+    shown = detail.logo.pixmap().toImage()
+    assert shown.pixelColor(shown.width() // 2, shown.height() // 2) == QColor("red")
 
 
 def test_the_detail_has_one_sentence_and_a_button_only_for_what_the_window_handles(window):
@@ -573,7 +601,7 @@ def test_each_person_still_to_confirm_has_their_own_reminder_until_reminded_toda
         {"pubkey": ME, "weight": 50, "role": "writer"},
         {"pubkey": OTHER, "weight": 25, "role": "contributor"},
         {"pubkey": eva, "weight": 25, "role": "contributor"}])
-    world.record(entry.sid).confirmations[ME] = ["split"]
+    world.confirm(seed, prepared)
     window.follow()
     detail = opened(window, entry)
     assert detail.sentence.text() == "Thanks. Paul and Eva still confirm."
@@ -609,7 +637,7 @@ def test_the_named_reminders_and_the_version_card_wrap_and_read_whole_in_a_narro
     world.decide(prepared, "accept", split=[
         {"pubkey": ME, "weight": 40, "role": "writer"},
         *({"pubkey": key, "weight": 20, "role": "contributor"} for key in (OTHER, eva, tom))])
-    world.record(entry.sid).confirmations[ME] = ["split"]
+    world.confirm(seed, prepared)
     i18n.install("de")
     try:
         window.follow()

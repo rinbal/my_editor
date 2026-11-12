@@ -701,3 +701,30 @@ def test_a_stopped_account_writes_no_row_no_list_and_no_read_state():
     assert following.talk.send(entry.sid, "zu spät") != ""
     world.settle()
     assert changes == [] and world.relay.published == published
+
+
+def test_ready_for_release_rests_on_every_creators_signed_confirmation():
+    # F5 M1 (contract 12.4, 11.3): the server says every creator confirmed
+    # (ready for release) but holds no signed confirmation of the writer:
+    # their app asks them to confirm. Once they did, Paul still confirms.
+    world = FollowWorld()
+    writer = world.account()
+    prepared, entry = world.submit(writer, d="gemeinsam", title="Gemeinsam",
+                                   participants=(OTHER,))
+    sid = entry.sid
+    world.record(sid).signer = "publication"
+    world.decide(prepared, "accept", split=[{"pubkey": ME, "weight": 70, "role": "writer"},
+                                            {"pubkey": OTHER, "weight": 30,
+                                             "role": "contributor"}])
+    record = world.record(sid)
+    record.confirmations.update({ME: ["split"], OTHER: ["split", "rights"]})
+    record.step = "ready_for_release"
+    following = world.following(writer)
+    following.open(sid)
+    world.settle()
+    assert following.row(sid).situation is Situation.CONFIRM
+    world.confirm(writer, prepared)
+    following.open(sid)
+    world.settle()
+    row = following.row(sid)
+    assert row.situation is Situation.ACCEPTED and rules.waiting_for(row) == (OTHER,)

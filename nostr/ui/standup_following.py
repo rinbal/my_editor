@@ -145,7 +145,7 @@ class Following(QObject):
         # a verdict holds for that revision only (RG-M3-a 6).
         self._decided: Dict[str, Tuple[tuple, object]] = {}
         self._deciding: set = set()
-        self._names: Dict[str, Tuple[str, Optional[str]]] = {}
+        self._names: Dict[str, str] = {}
         self._noticed: Dict[str, int] = {}
         # What the lookup brought that is still being opened, by sid: its
         # notice is decided once it is open.
@@ -247,7 +247,7 @@ class Following(QObject):
         self.changed.emit()
 
     def _named(self, destinations) -> None:
-        self._names = {d.address: (d.name, d.picture) for d in destinations}
+        self._names = {d.address: d.name for d in destinations}
         self.changed.emit()
 
     # -- the lookup ----------------------------------------------------------------
@@ -441,7 +441,8 @@ class Following(QObject):
             account.submissions.entries(), me=account.writer, followed=self._followed(),
             served=self._served, unknown=self._nothing, running=running,
             refused=lambda entry: self._marks.round_refused(account.writer, entry),
-            seen=account.read_state.seen, publishing=self._publishing())
+            seen=account.read_state.seen, publishing=self._publishing(),
+            signed=self.reading.signed)
         listed = {row.sid for row in rows}
         for run in account.runs:
             sid = run.submitting.submission_id
@@ -492,7 +493,7 @@ class Following(QObject):
     def publication_name(self, address: str) -> str:
         """The publication's name: as its server lists it, else the name
         of its Site."""
-        name = self._names.get(address, ("", None))[0]
+        name = self._names.get(address, "")
         if name:
             return name
         try:
@@ -500,8 +501,17 @@ class Following(QObject):
         except formats.FormatError:
             return ""
 
-    def publication_picture(self, address: str) -> Optional[str]:
-        return self._names.get(address, ("", None))[1]
+    def publication_avatar(self, address: str) -> Optional[Tuple[str, str]]:
+        """``(server, tag)`` of the publication's logo as the newest read
+        of a server of this account named it (12.9: the list, a detail,
+        the lookup, the destinations), or None: the monogram then. The
+        logo is asked only of the server that gave the tag."""
+        account = self._account
+        for api in (account.api, *account.clients.values()):
+            tag = api.logo_tag(address)
+            if tag:
+                return api.server, tag
+        return None
 
     def snippet(self, sid: str) -> Tuple[str, threads.Role, str]:
         """The newest message of someone else in ``sid``'s conversation:
@@ -618,6 +628,9 @@ class Following(QObject):
         def confirmed(view: views.SubmissionView) -> None:
             self.serve(view)
             self.detail_changed.emit(sid)
+            # The signed confirmation is read back, so the phases that rest
+            # on it come from it, never from the View (F5 M1).
+            self.reading.read(sid)
             on_done(None)
             self.ride_along.person_signed()
 

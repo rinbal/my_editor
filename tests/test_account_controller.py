@@ -160,6 +160,16 @@ class Setup:
 
 # -- a created account ---------------------------------------------------------------
 
+def test_the_relays_a_paired_signer_moved_to_are_kept_with_the_account(tmp_path):
+    # Audit F17: the next start reaches the signer where it listens now.
+    setup = Setup(tmp_path)
+    pubkey = crypto.get_public_key(crypto.generate_secret_key()).hex()
+    setup.store.upsert(remote_profile(pubkey))
+    setup.sessions.relays_switched.emit(pubkey, ["wss://moved.example"])
+    assert ProfileStore(tmp_path / "profiles.json").get(pubkey).bunker_relays == [
+        "wss://moved.example"]
+
+
 def test_a_failed_setup_can_be_tried_again_until_it_succeeds(tmp_path, alerts, slot_errors):
     s = Setup(tmp_path)
     s.relays.refuse = Everything()            # offline

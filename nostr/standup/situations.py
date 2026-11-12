@@ -160,7 +160,8 @@ TABLE = {
                                    "replaces your published text."),
                                 Action.COMPARE_CORRECTION),
     # Taken and not published yet, as the web says it (RG-M4-b 8): the
-    # writer's confirmation is in the View, so it is not asked again.
+    # writer's own verified confirmation names it (F5 M1), so it is not
+    # asked again.
     Situation.CORRECTION_TAKEN: Words(N_("Correction taken"), Section.TURN,
                                       N_("Correction taken, not published yet."),
                                       N_("Publish it so everyone reads the corrected text."),

@@ -105,7 +105,9 @@ class Ports:
     - ``notice_of(ed)``: the tab's DocumentNotice.
     - ``say(text)``: the status bar. ``keep(sheet)``: a sheet follows
       the appearance while it is open.
-    - ``avatar_of(pubkey)``, ``request_logo(pubkey, url)``, ``is_dark()``,
+    - ``avatar_of(pubkey)``, a person's picture; ``logo_of(address)`` and
+      ``request_logo(server, address, tag)``, a publication's logo
+      (``standup_publications.PublicationLogos``, 12.9); ``is_dark()``,
       ``window()``.
     - ``open_article(d)``: the tab that holds the article ``d``, opened
       from where this computer keeps it when no tab does, or None.
@@ -135,6 +137,7 @@ class Ports:
     open_article: Callable = lambda d: None
     zap_address: Callable = lambda pubkey, answer: answer(None)
     edit_profile: Callable = lambda: None
+    logo_of: Callable = lambda address: None
 
 
 class SubmissionsHost(QObject):
@@ -169,6 +172,7 @@ class SubmissionsHost(QObject):
         view.open_in_editor.connect(self.open_in_editor)
         view.compare_requested.connect(self.compare)
         view.remind_requested.connect(self.remind)
+        view.detail_shown.connect(self._detail_logo)
         view.submit_requested.connect(lambda: ports.submit())
         pill.clicked.connect(lambda: self.open_detail(pill.sid))
 
@@ -192,6 +196,7 @@ class SubmissionsHost(QObject):
             following = writer.following(profile)
             if following is not self._following:
                 following.changed.connect(self.update_pill)
+                following.changed.connect(self._detail_logo)
                 following.news.connect(self._on_news)
             if getattr(profile, "is_local", False):
                 following.start()
@@ -227,11 +232,31 @@ class SubmissionsHost(QObject):
             pubkey = formats.parse_address(address)[0]
         except formats.FormatError:
             pubkey = ""
-        picture = self._following.publication_picture(address)
-        if pubkey and picture and picture.startswith("https://"):
-            self._ports.request_logo(pubkey, picture)
-        return publication_logo(name, pubkey, self._ports.avatar_of(pubkey) if pubkey else None,
-                                size)
+        self._request_logo(address)
+        return publication_logo(name, pubkey, self._ports.logo_of(address), size)
+
+    def _request_logo(self, address: str) -> None:
+        """The logo of ``address``, asked of the server whose read named
+        it (12.9); logo_arrived shows it once it came."""
+        following = self._following
+        known = following.publication_avatar(address) if following is not None else None
+        if known is not None:
+            self._ports.request_logo(known[0], address, known[1])
+
+    def _detail_logo(self, *_changed) -> None:
+        """The detail in sight shows its publication's logo, as the web
+        app does, asked once a read named it (opened, or read anew)."""
+        following, sid = self._following, self.view.detail.sid
+        if following is None or not sid or not self.view.showing_detail():
+            return
+        row = following.row(sid)
+        if row is not None:
+            self._request_logo(row.publication)
+
+    def logo_arrived(self, _address: str) -> None:
+        """A publication's logo came in: the pill and the list show it."""
+        self.update_pill()
+        self.view.names_learned()
 
     def article_changed(self, *, typing: bool = False) -> None:
         """The article in front changed: its text (``typing``: once the

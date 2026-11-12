@@ -400,3 +400,30 @@ def test_a_failure_is_announced_once_however_often_it_is_shown(view, monkeypatch
     for _ in range(3):
         view.show_progress(Progress(Step.FAILED, failure=NOT_SENT))
     assert len(said) == 1
+
+
+def test_the_dotted_way_runs_only_from_the_card_to_the_inbox_and_is_gone_once_in(app, moving):
+    # PR pictures: once in, the dotted line was still drawn from where
+    # the card started. It is the way still to go, from the card.
+    track = standup_handoff.HandoffTrack(is_dark=False)
+    track.resize(720, standup_handoff._COVER_HEIGHT + 120)
+    y = round((track.height() - track._card_height()) / 2 + track._card_height() / 2)
+    start = standup_handoff._CARD_WIDTH + 14
+    inbox_left = track.width() - standup_handoff._INBOX_WIDTH - 14
+
+    def drawn(left, right) -> bool:
+        image = track.grab().toImage()
+        ratio = image.devicePixelRatio()
+        row = int(y * ratio)
+        blank = image.pixel(int(2 * ratio), row)
+        return any(image.pixel(int(x * ratio), row) != blank for x in range(left, right))
+
+    assert drawn(start, inbox_left)                    # the whole way, still to go
+    held = 0.6 * (track.width() - standup_handoff._INBOX_WIDTH / 2
+                  - standup_handoff._CARD_WIDTH / 2)
+    track._set("travel", 0.6)
+    assert not drawn(start, int(held) - 2)             # behind the held card: nothing
+    for name, value in (("travel", 1.0), ("settle", 1.0), ("fade", 0.0)):
+        track._set(name, value)
+    track.set_got(True)
+    assert not drawn(start, inbox_left)                # in: nothing stale

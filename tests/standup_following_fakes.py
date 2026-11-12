@@ -224,6 +224,7 @@ class FollowWorld:
                                                             split),
                 sender=pk("editor"), created_at=int(self.clock()))
             split_wrap, split_id = room_wrap(prepared, rumor, "editor"), rumor["id"]
+        self.split_id = split_id        # what the last decision named, for confirm()
         if text:
             wrap = room_wrap(prepared, conversation.message_rumor(
                 room=scrypto.pubkey_of(prepared.s_sub),
@@ -238,6 +239,17 @@ class FollowWorld:
         assert hasattr(answer[0], "submission"), answer
         return answer[0].submission
 
+    def confirm(self, account: "TestAccount", prepared, confirms=("split",)) -> None:
+        """``account`` confirms the accepted revision and the split the last
+        accept named, signed (12.4 ``/confirmation``)."""
+        answer = []
+        account.api.confirm(prepared.body["submission_id"],
+                            revision_hash=prepared.body["revision_hash"], confirms=list(confirms),
+                            split_rumor_id=getattr(self, "split_id", None),
+                            on_success=answer.append, on_failure=answer.append)
+        self.settle()
+        assert hasattr(answer[0], "confirmations"), answer
+
     def take(self, prepared):
         answer = []
         self.editor.responsible(prepared.body["submission_id"], action="take",
@@ -249,8 +261,9 @@ class FollowWorld:
         return self.server.submissions[sid]
 
     def correct(self, account: "TestAccount", sid: str, content: str, *, media=(),
-                note: str = "Zwei Zahlen korrigiert.", revision: int = 2) -> None:
-        """The editor's correction (``revision``) of ``account``'s published work."""
+                note: str = "Zwei Zahlen korrigiert.", revision: int = 2, blobs=()) -> None:
+        """The editor's correction (``revision``) of ``account``'s published work,
+        naming ``blobs`` in its signed body."""
         s_sub = bytes.fromhex(account.submissions.entry(sid).s_sub)
         rev = formats.build_revision(
             submission_id=sid, revision=revision, kind="article",
@@ -263,7 +276,8 @@ class FollowWorld:
         answer = []
         self.editor.correction(sid, revision=revision, revision_hash=sealed.revision_hash,
                                envelope=sealed.envelope_b64,
-                               envelope_sha256=sealed.envelope_sha256, wraps=wraps, blobs=[],
+                               envelope_sha256=sealed.envelope_sha256, wraps=wraps,
+                               blobs=list(blobs),
                                on_success=answer.append, on_failure=answer.append)
         self.settle()
         assert hasattr(answer[0], "submission"), answer

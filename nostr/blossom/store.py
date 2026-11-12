@@ -524,6 +524,36 @@ class MediaStore(QObject):
 
         ask(urls)
 
+    def held_on_servers(self, sha256: str,
+                        on_answer: Callable[[Optional[bool]], None]) -> None:
+        """Whether a server this library writes to holds ``sha256`` right
+        now, asked of each server with an unsigned ``HEAD /<sha256>``
+        (BUD-01), never the library's word, which is empty until a fetch
+        ran (F5 H4). ``on_answer(True)`` once one holds it, ``False`` when
+        every one answered 404, ``None`` when that cannot be told (one did
+        not answer, or refused otherwise): a caller that takes down only
+        what it put up new treats None as held."""
+        sha = (sha256 or "").lower()
+        servers = [url_safety.origin_of(s) for s in self._target_servers()]
+        servers = [s for s in dict.fromkeys(servers) if s]
+        unknown = {"any": False}
+
+        def ask(left: List[str]) -> None:
+            if not left:
+                on_answer(None if unknown["any"] else False)
+                return
+
+            def answered(held: Optional[bool]) -> None:
+                if held:
+                    on_answer(True)
+                    return
+                unknown["any"] = unknown["any"] or held is None
+                ask(left[1:])
+
+            self._client.holds(f"{left[0]}/{sha}", answered)
+
+        ask(servers)
+
     def _drop_head_reads(self) -> None:
         """A new listing, or another account: the head reads on their way
         answer for nothing now: each is stopped (its reply aborted, so no

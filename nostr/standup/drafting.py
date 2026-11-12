@@ -30,6 +30,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 from i18n import N_, _
 
 from . import conversation, crypto, formats
+from .pictures import PICTURE_MIMES, upright_size
 from .formats import FormatError
 from .entries import SubmissionEntry
 from .submission import submission_body
@@ -164,7 +165,8 @@ class LocalPicture:
 class ArticleDraft:
     """The article to submit. ``image`` is the cover: a web address, a
     local picture's key, or ``""``. ``authors`` are the co-authors,
-    ``(pubkey, relay)`` each, as Article Details keeps them."""
+    ``(pubkey, relay)`` each, as Article Details keeps them; ``zaps`` the
+    writer's own split, as NIP-57 ``zap`` tags (Article Details)."""
 
     d: str
     title: str
@@ -177,6 +179,7 @@ class ArticleDraft:
     thumb: Optional[Mapping[str, str]] = None
     lang: str = ""
     published_at: Optional[int] = None
+    zaps: Tuple[Tuple[str, ...], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -201,6 +204,8 @@ class EncryptedPicture:
     file_key: bytes = field(repr=False)
     encryptor: crypto.MediaEncryptor = field(repr=False, compare=False)
     cipher: bytes = field(repr=False)
+    # The upright size of the file (contract 5 ``w``/``h``), None unknown.
+    size: Optional[Tuple[int, int]] = None
 
     @property
     def sha256(self) -> str:
@@ -211,9 +216,12 @@ class EncryptedPicture:
         return formats.media_ref(self.sha256)
 
     def entry(self, servers: Sequence[str]) -> dict:
-        return crypto.media_entry(key=self.file_key, encryptor=self.encryptor,
-                                  name=self.name, mime=self.mime, alt=self.alt,
-                                  servers=list(servers)[:formats.MAX_BLOB_SERVERS])
+        entry = crypto.media_entry(key=self.file_key, encryptor=self.encryptor,
+                                   name=self.name, mime=self.mime, alt=self.alt,
+                                   servers=list(servers)[:formats.MAX_BLOB_SERVERS])
+        if self.size is not None and self.mime in PICTURE_MIMES:
+            entry["w"], entry["h"] = self.size      # both or neither, never on audio
+        return entry
 
     def blob(self, servers: Sequence[str]) -> dict:
         return {"sha256": self.sha256, "size": self.encryptor.cipher_size,
@@ -241,7 +249,8 @@ class Sealed:
 
 
 def encrypt_pictures(pictures: Sequence[LocalPicture]) -> Tuple[EncryptedPicture, ...]:
-    """Each picture under a fresh 32-byte key, as one SMF1 file."""
+    """Each picture under a fresh 32-byte key, as one SMF1 file, with its
+    upright size as the file says it (contract 5)."""
     done = []
     for picture in pictures:
         key = crypto.new_secret_key()
@@ -249,7 +258,7 @@ def encrypt_pictures(pictures: Sequence[LocalPicture]) -> Tuple[EncryptedPicture
         cipher = encryptor.update(picture.data) + encryptor.finish()
         done.append(EncryptedPicture(key=picture.key, name=picture.name, mime=picture.mime,
                                      alt=picture.alt, file_key=key, encryptor=encryptor,
-                                     cipher=cipher))
+                                     cipher=cipher, size=upright_size(picture.data)))
     return tuple(done)
 
 
@@ -269,7 +278,11 @@ def _work(draft: ArticleDraft, pictures: Sequence[EncryptedPicture]) -> dict:
             "tags": list(draft.tags), "lang": draft.lang, "published_at": draft.published_at,
             "content": content,
             "authors": [{"pubkey": pk, "relay": relay} for pk, relay in draft.authors],
-            "extra_tags": []}
+            # The writer's split goes with the work: a work the writer signs
+            # is published with it (publishing.published_template, plan
+            # A.3); one the publication signs takes the agreed split instead.
+            "extra_tags": [list(tag) for tag in draft.zaps
+                           if tag[:1] == ("zap",) and all(isinstance(x, str) for x in tag)]}
 
 
 def submission_id_of(draft: ArticleDraft, choice: Choice, writer: str, round_: int) -> str:

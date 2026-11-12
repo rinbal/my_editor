@@ -32,7 +32,7 @@ from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 from .. import failures
 from ..imports import workers
 from ..later import answer_later
-from ..standup import conversation, crypto, formats, opening, publishing, views
+from ..standup import confirmations, conversation, crypto, formats, opening, publishing, views
 from ..standup.publishing import Accepted
 from ..standup import following as rules
 from ..standup import thread as threads
@@ -449,6 +449,20 @@ class Reading:
         items = [state.items[seq] for seq in sorted(state.items)]
         return publishing.verified_accept(items, sid, rules.deciders_of(state.members),
                                           self.checks, state.formers)
+
+    def signed(self, sid: str) -> rules.Signed:
+        """What the creators' own verified confirmations of ``sid`` say
+        (``confirmations.signed_of``; F5 M1), once its detail was read;
+        :data:`rules.UNREAD` before that. Read from the detail alone (the
+        rows ask it while they are made)."""
+        state = self._details.get(sid)
+        if state is None or state.view is None:
+            return rules.UNREAD
+        return confirmations.signed_of(
+            state.view, [state.items[seq] for seq in sorted(state.items)],
+            verified={n: v.opened.verified for n, v in state.versions.items()
+                      if v.opened is not None},
+            accepted=self.accepted(sid), checks=self.checks)
 
     def read_sids(self) -> Tuple[str, ...]:
         """The submissions whose detail was read in this run."""

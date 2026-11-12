@@ -336,6 +336,20 @@ def test_the_newest_edit_by_the_author_wins_and_others_are_ignored():
     assert conv.kind_hint(edit1) == "edit"
 
 
+def test_the_newest_edit_and_reaction_go_by_seq_though_a_clock_ran_ahead():
+    # Audit F6 (contract 9.2): a device ten minutes ahead sends an edit and
+    # a thumbs up; later the right clock sends another edit and a heart.
+    first = editor_message("Erste Fassung", at=NOW)
+    ahead = conv.message_rumor(room=ROOM, submission_id=SID, text="Vorgestellt",
+                               sender=pk("editor"), created_at=NOW + 600, edit_of=first["id"])
+    later = conv.message_rumor(room=ROOM, submission_id=SID, text="Später", sender=pk("editor"),
+                               created_at=NOW + 60, edit_of=first["id"])
+    thumbs, heart = react(first, "\U0001f44d", at=NOW + 600), react(first, "❤️", at=NOW + 60)
+    bubble, = fold([opened(first, 1), opened(ahead, 2), opened(thumbs, 3), opened(later, 4),
+                    opened(heart, 5)])
+    assert bubble.text == "Später" and bubble.reactions == {pk("writer"): "❤️"}
+
+
 def test_order_is_the_servers_seq_not_the_rumors_time():
     late = editor_message("später geschrieben", at=NOW + 500)
     early = editor_message("früher geschrieben", at=NOW)

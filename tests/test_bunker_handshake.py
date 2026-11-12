@@ -99,6 +99,9 @@ class FakeSigner:
         self.user_pk = crypto.get_public_key(crypto.generate_secret_key()).hex()
         self.seen = []
         self.auth_url_for_connect = None
+        self.auth_url_for_ping = None
+        # What it answers switch_relays: None stays where it is ("null").
+        self.relays_to_switch = None
         self.withhold_after_auth = False
         self.refuse_ping = False
         self.refuse_public_key = False
@@ -132,6 +135,12 @@ class FakeSigner:
                 self.send({"id": rid, "result": "ack"})
             return
 
+        if method == "ping" and self.auth_url_for_ping is not None:
+            self.send({"id": rid, "result": "auth_url", "error": self.auth_url_for_ping})
+            self.auth_url_for_ping = None
+            self.send({"id": rid, "result": "pong"})
+            return
+
         if method == "connect":
             self.send({"id": rid, "result": "ack"})
         elif method == "get_public_key":
@@ -139,6 +148,8 @@ class FakeSigner:
                 self.send({"id": rid, "error": "not allowed"})
             else:
                 self.send({"id": rid, "result": self.user_pk})
+        elif method == "switch_relays":
+            self.send({"id": rid, "result": json.dumps(self.relays_to_switch)})
         elif method == "ping":
             if self.refuse_ping:
                 self.send({"id": rid, "error": "unknown method"})
@@ -363,7 +374,8 @@ def test_bunker_uri_pairing_still_works():
     _, signer, client, outcome, start = _bunker_client()
     start()
     assert outcome.get("ok") == signer.user_pk
-    assert [p["method"] for p in signer.seen] == ["connect", "get_public_key"]
+    # 46.md: switch_relays right after the connection is made (audit F17).
+    assert [p["method"] for p in signer.seen] == ["connect", "get_public_key", "switch_relays"]
 
 
 def test_connect_request_sends_the_secret_and_requested_perms():
@@ -373,6 +385,8 @@ def test_connect_request_sends_the_secret_and_requested_perms():
     assert connect["params"][0] == signer.pk
     assert connect["params"][1] == "pairing-token"
     assert "sign_event:30023" in connect["params"][2]
+    # Audit F7: the client's metadata, so the signer says who asks.
+    assert json.loads(connect["params"][3])["name"] == "MyEditor"
 
 
 # --------------------------------------------------------------------- #
@@ -401,6 +415,53 @@ def _reattach(signer_answers_ping=True, signer_user_pk=None):
     return signer, client, outcome
 
 
+def test_an_approval_a_paired_signer_asks_for_opens_once_and_is_said_once():
+    # Audit F8: after pairing, a challenge reaches the window through the
+    # pool; it is opened when safe and said once, calmly.
+    from types import SimpleNamespace
+    from nostr.ui.signer_approval import SignerApprovals
+    pool = FakePool()
+    signer = FakeSigner(pool)
+    local_sk = crypto.generate_secret_key()
+    signer.watch(crypto.get_public_key(local_sk).hex())
+    signer.auth_url_for_ping = "https://signer.example/approve"
+    sessions = bunker.BunkerSessionPool(pool)
+    opened, said, ready = [], [], []
+    approvals = SignerApprovals(said.append, open_url=opened.append)
+    sessions.auth_challenge.connect(approvals.asked)
+    profile = SimpleNamespace(user_pubkey=signer.user_pk, signer="remote",
+                              local_secret_hex=local_sk.hex(), bunker_pubkey=signer.pk,
+                              bunker_relays=["wss://fake"])
+    sessions.get(profile, ready.append, lambda _reason: None)
+    approvals.asked("https://signer.example/approve")           # asked again
+    approvals.asked("file:///etc/passwd")                       # never opened
+    assert [url.toString() for url in opened] == ["https://signer.example/approve"]
+    assert said == ["Confirm in your signer"] and len(ready) == 1
+
+
+def test_a_signer_that_names_other_relays_is_reached_there():
+    # Audit F17: after a reattach the client asks switch_relays once, and
+    # the channel moves to the relays the answer names; the pool says so.
+    from types import SimpleNamespace
+    pool = FakePool()
+    signer = FakeSigner(pool)
+    local_sk = crypto.generate_secret_key()
+    signer.watch(crypto.get_public_key(local_sk).hex())
+    signer.relays_to_switch = ["wss://Moved.example/", "https://not.a.relay"]
+    sessions = bunker.BunkerSessionPool(pool)
+    moved, ready = [], []
+    sessions.relays_switched.connect(lambda pk, relays: moved.append((pk, relays)))
+    sessions.get(SimpleNamespace(user_pubkey=signer.user_pk, signer="remote",
+                                 local_secret_hex=local_sk.hex(), bunker_pubkey=signer.pk,
+                                 bunker_relays=["wss://fake"]), ready.append, print)
+    client, = ready
+    assert client.relays == ["wss://moved.example"]
+    assert moved == [(signer.user_pk, ["wss://moved.example"])]
+    assert _asked(client, timeout_ms=2000) == {"answered": True}    # heard on the new channel
+    assert bunker.switched_relays("null", ["wss://fake"]) is None
+    assert bunker.switched_relays('["wss://fake/"]', ["wss://fake"]) is None
+
+
 def test_reattach_succeeds_on_a_ping():
     signer, client, outcome = _reattach()
     assert outcome.get("ok") is True
@@ -411,7 +472,7 @@ def test_reattach_falls_back_when_the_signer_ignores_ping():
     # A signer that does not answer ping is still a working signer.
     signer, client, outcome = _reattach(signer_answers_ping=False)
     assert outcome.get("ok") is True
-    assert [p["method"] for p in signer.seen] == ["ping", "get_public_key"]
+    assert [p["method"] for p in signer.seen] == ["ping", "get_public_key", "switch_relays"]
 
 
 def test_reattach_refuses_a_signer_holding_a_different_account():
@@ -466,7 +527,7 @@ def test_the_signer_is_asked_with_a_ping(monkeypatch):
     monkeypatch.setattr(bunker, "ANSWERED_RECENTLY_MS", 0)
     signer, client, _outcome = _reattach()
     assert _asked(client) == {"answered": True}
-    assert [p["method"] for p in signer.seen] == ["ping", "ping"]
+    assert [p["method"] for p in signer.seen] == ["ping", "switch_relays", "ping"]
 
 
 def test_a_signer_that_ignores_ping_is_asked_for_its_public_key(monkeypatch):
@@ -490,4 +551,4 @@ def test_silence_is_reported_as_silence(monkeypatch):
     signer._sub.close()                       # the phone went to sleep
     outcome = _asked(client, timeout_ms=5)
     assert bunker.is_signer_silent(outcome.get("silent", ""))
-    assert [p["method"] for p in signer.seen] == ["ping"]
+    assert [p["method"] for p in signer.seen] == ["ping", "switch_relays"]

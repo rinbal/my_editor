@@ -33,6 +33,7 @@ from nostr.standup.drafting import ArticleDraft
 from nostr.standup.submitting import MessageStatus, Progress, Step
 from nostr.standup.trust import Destination, RedaktionKey
 from nostr.ui.standup_submit import RoundAnswer
+from nostr.ui.standup_publications import PublicationLogos
 from nostr.ui.standup_submit_sheet import SubmitSheet, recent_first, rules_words
 from nostr import crypto as nostr_crypto
 from tests.standup_vectors import pk
@@ -69,14 +70,14 @@ def _rules(**more) -> dict:
     return rules
 
 
-def _destination(who: str, name: str, *, key=True, **rules) -> Destination:
+def _destination(who: str, name: str, *, key=True, avatar=None, **rules) -> Destination:
     address = f"30004:{_key(who)}:site"
     redaktion = RedaktionKey(
         address=address, publication_pubkey=_key(who), site_d="site", epoch=1,
         pubkey=_key(who + "-epoch"), server="https://standup.example", owner=_key(who),
         name=name, rules=_rules(**rules), event_id="e" * 64, created_at=1, event={})
-    return Destination(address=address, name=name, picture=None,
-                       key=redaktion if key else None)
+    return Destination(address=address, name=name, avatar=avatar,
+                       key=redaktion if key else None, server="https://standup.example")
 
 
 MAGAZIN = _destination("magazin", "Einundzwanzig Magazin")
@@ -186,15 +187,17 @@ DRAFT = ArticleDraft(d="ein-jahr", title="Ein Jahr mit Lightning im Café",
 
 
 def _sheet(tmp_path, writer=None, *, draft=DRAFT, dark=False, private=(),
-           public=0, relays=("wss://bunker.example",)) -> SubmitSheet:
+           public=0, relays=("wss://bunker.example",), logos=None,
+           avatars=None) -> SubmitSheet:
     store = ProfileStore(path=tmp_path / "profiles.json")
     profile = Profile(user_pubkey=WRITER, bunker_pubkey="b" * 64, display_name="Jana Roth",
                       bunker_relays=list(relays), local_secret_hex="0" * 64)
     store.upsert(profile)
     return SubmitSheet(writer=writer or Writer(), draft=draft, cover=QPixmap(),
                        byline="Jana Roth · Artikel · 1 Bild", private_names=private,
-                       profile=profile, store=store, avatars=AvatarStore(),
-                       request_logo=lambda *_a: None, is_dark=dark, public_pictures=public)
+                       profile=profile, store=store, avatars=avatars or AvatarStore(),
+                       logos=logos or PublicationLogos(lambda *_a: None), is_dark=dark,
+                       public_pictures=public)
 
 
 def _entries(sheet) -> List[tuple]:
@@ -208,6 +211,25 @@ def test_without_the_servers_address_nothing_is_sent_and_it_comes_from_the_assoc
     sheet = _sheet(tmp_path, Writer(server=""))
     assert sheet.status.text() == "Die Adresse des Servers kommt vom Verein."
     assert not sheet.submit_button.isEnabled() and not sheet.picker.isEnabled()
+
+
+def test_a_publications_logo_comes_only_from_the_servers_avatar_route_by_its_address(
+        tmp_path):
+    # F5 M5 (contract 12.9): the listing's tag, this server's route, keyed
+    # by the publication's address; never its picture's host, never among
+    # the people's avatars (its key may be its owner's).
+    tag = "0123456789abcdef" * 2
+    magazin = _destination("magazin", "Einundzwanzig Magazin", avatar=tag)
+    asked, picture = [], QPixmap(8, 8)
+    picture.fill()
+    logos = PublicationLogos(lambda key, url, done: (asked.append(url), done(picture)))
+    avatars = AvatarStore()
+    sheet = _sheet(tmp_path, Writer(destinations=(magazin, BLOG)), logos=logos, avatars=avatars)
+    route = "by/" + _key("magazin") + "/c2l0ZQ"
+    assert asked == [f"https://standup.example/api/avatars/{route}?v={tag}"]   # BLOG: none
+    assert logos.get(magazin.address) is picture and len(avatars) == 0
+    assert not sheet.picker.itemIcon(0).isNull()
+    sheet.deleteLater()
 
 
 def test_the_picker_offers_the_publications_for_articles_the_used_ones_first(tmp_path):
