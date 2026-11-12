@@ -373,6 +373,8 @@ def test_connect_request_sends_the_secret_and_requested_perms():
     assert connect["params"][0] == signer.pk
     assert connect["params"][1] == "pairing-token"
     assert "sign_event:30023" in connect["params"][2]
+    # Audit F7: the client's metadata, so the signer says who asks.
+    assert json.loads(connect["params"][3])["name"] == "MyEditor"
 
 
 # --------------------------------------------------------------------- #

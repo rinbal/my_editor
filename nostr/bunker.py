@@ -486,9 +486,13 @@ class BunkerClient(QObject):
             # channel can be opened to: refused, never a wait for nothing.
             self._refuse(on_failure, str(exc))
             return
+        # The fourth parameter is the client's metadata (46.md: a bunker://
+        # client SHOULD send it), the name and page a nostrconnect code
+        # carries, so the signer says who asks (audit F7).
         self._send_request(
             method="connect",
-            params=[parsed.bunker_pubkey, parsed.secret or "", DEFAULT_PERMS],
+            params=[parsed.bunker_pubkey, parsed.secret or "", DEFAULT_PERMS,
+                    json.dumps({"name": CLIENT_NAME, "url": CLIENT_URL})],
             on_success=lambda result: self._on_connect_acked(result, parsed.secret, on_success, on_failure),
             on_failure=on_failure,
             timeout_ms=timeout_ms,
