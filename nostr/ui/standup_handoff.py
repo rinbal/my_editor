@@ -189,15 +189,18 @@ class HandoffTrack(QWidget):
         card_h = self._card_height()
         top = (height - card_h) / 2
         inbox = QRectF(width - _INBOX_WIDTH, top + 24, _INBOX_WIDTH, card_h - 48)
-        if not motion.reduce_motion():
-            pen = QPen(QColor(r.line), 1.5, Qt.PenStyle.DotLine)
-            painter.setPen(pen)
-            y = top + card_h / 2
-            painter.drawLine(QPointF(_CARD_WIDTH + 12, y), QPointF(inbox.left() - 12, y))
-        self._paint_inbox(painter, r, inbox)
         # The card: centred on the inbox at the end of its way.
         end = inbox.center().x() - _CARD_WIDTH / 2
         x = end * self._values["travel"]
+        # The way still to go: from the card as it stands to the inbox, and
+        # none once the work is in, never from where the card started.
+        start, finish = x + _CARD_WIDTH + 12, inbox.left() - 12
+        if not motion.reduce_motion() and not self._got and start < finish:
+            pen = QPen(QColor(r.line), 1.5, Qt.PenStyle.DotLine)
+            painter.setPen(pen)
+            y = top + card_h / 2
+            painter.drawLine(QPointF(start, y), QPointF(finish, y))
+        self._paint_inbox(painter, r, inbox)
         scale = 1 + _LIFT * self._values["lift"] - 0.45 * self._values["settle"]
         painter.save()
         painter.setOpacity(max(0.0, min(1.0, self._values["fade"])))
