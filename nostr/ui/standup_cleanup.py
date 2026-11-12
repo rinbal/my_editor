@@ -6,11 +6,13 @@ what goes and keeps the record), as the web app's ``blobCleanup.js``.
 
 Nothing is deleted on the word of a View: the work counts as published
 as the newest ``published`` report whose own event proves the address
-says (``Reading.published``), and every revision is verified before its
-signed blob list is read; when one after the published revision does
-not verify, what it names is unknown and nothing is deleted. A file
-another submission of this account names stays (only its last user
-removes it).
+says (``Reading.published``), and every revision is opened from its
+verified envelope before its files are read; when one after the
+published revision does not verify, what it names is unknown and
+nothing is deleted. Only the files of the writer's own revisions go
+(``opening.own_files``), never one a correction names, nor one the
+published event names (F5 H2). A file another submission of this
+account names stays (only its last user removes it).
 
 When: with the key on this computer, whenever the detail of a published
 submission of the writer's was read and the cleanup is due (no one is
@@ -38,7 +40,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 from PySide6.QtCore import QObject
 
 from ..blossom.store import delete_batches
-from ..standup import cleanup
+from ..standup import cleanup, opening
 from .standup_account import live
 
 
@@ -132,7 +134,8 @@ class BlobCleanup(QObject):
                     published = self._following.reading.published(sid)
                     pairs = cleanup.to_delete(
                         records, published.revision or 0, self._store.target_servers(),
-                        self._account.media_keys.named_besides(sid))
+                        self._account.media_keys.named_besides(sid),
+                        cleanup.referenced_by(published.event))
                     plan[sid] = (self._cleanups.entry(sid), pairs)
                 else:
                     self._running.discard(sid)
@@ -144,9 +147,10 @@ class BlobCleanup(QObject):
         next_one(sids)
 
     def _records(self, sid: str, done: Callable) -> None:
-        """``done([(revision, blobs)])`` of revisions 1 to the current one,
-        verified here; ``done(None)`` when one after the published one
-        does not verify (what it names is unknown) or it is not known."""
+        """``done([(revision, own, named)])`` of revisions 1 to the current
+        one, opened here (``cleanup.to_delete``); ``done(None)`` when one
+        after the published one does not verify (what it names is
+        unknown) or it is not known."""
         row, published = self._following.row(sid), self._following.reading.published(sid)
         if row is None or row.view is None or published is None or not published.revision:
             done(None)
@@ -160,7 +164,9 @@ class BlobCleanup(QObject):
 
             def got(version) -> None:
                 if version is not None and version.opened is not None:
-                    records.append((n, version.opened.verified.blobs))
+                    opened = version.opened
+                    records.append((n, opening.own_files(opened, self._account.writer),
+                                    opening.named_files(opened)))
                 elif n > published.revision:
                     done(None)
                     return

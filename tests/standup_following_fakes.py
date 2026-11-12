@@ -249,8 +249,9 @@ class FollowWorld:
         return self.server.submissions[sid]
 
     def correct(self, account: "TestAccount", sid: str, content: str, *, media=(),
-                note: str = "Zwei Zahlen korrigiert.", revision: int = 2) -> None:
-        """The editor's correction (``revision``) of ``account``'s published work."""
+                note: str = "Zwei Zahlen korrigiert.", revision: int = 2, blobs=()) -> None:
+        """The editor's correction (``revision``) of ``account``'s published work,
+        naming ``blobs`` in its signed body."""
         s_sub = bytes.fromhex(account.submissions.entry(sid).s_sub)
         rev = formats.build_revision(
             submission_id=sid, revision=revision, kind="article",
@@ -263,7 +264,8 @@ class FollowWorld:
         answer = []
         self.editor.correction(sid, revision=revision, revision_hash=sealed.revision_hash,
                                envelope=sealed.envelope_b64,
-                               envelope_sha256=sealed.envelope_sha256, wraps=wraps, blobs=[],
+                               envelope_sha256=sealed.envelope_sha256, wraps=wraps,
+                               blobs=list(blobs),
                                on_success=answer.append, on_failure=answer.append)
         self.settle()
         assert hasattr(answer[0], "submission"), answer

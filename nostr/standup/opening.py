@@ -60,7 +60,7 @@ from .views import (
 
 __all__ = [
     "MediaKeys", "NotConfirmed", "NotOpened", "OpenedRevision", "VerifiedRevision",
-    "open_envelope", "open_submission_key", "verify_revision",
+    "named_files", "open_envelope", "open_submission_key", "own_files", "verify_revision",
 ]
 
 
@@ -120,8 +120,6 @@ class VerifiedRevision:
     correction: bool
     epoch: int = 0                     # its signed body's (0: it names none)
     coordinate_hash: str = ""          # the work's, bound to the sid (section 2)
-    # The files its signed body names: (sha256, servers), for the cleanup.
-    blobs: Tuple[Tuple[str, Tuple[str, ...]], ...] = ()
     _token: object = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -218,17 +216,7 @@ def verify_revision(view: SubmissionView, record: RevisionRecord, *,
         envelope_sha256=record.envelope_sha256, p_sub=p_sub, kind=kind, title=title,
         wraps={name: dict(wrap) for name, wrap in wraps.items()},
         signer=signer, correction=correction, epoch=_epoch(body), coordinate_hash=coordinate,
-        blobs=_blobs(body), _token=_MINTED))
-
-
-def _blobs(body: Mapping) -> Tuple[Tuple[str, Tuple[str, ...]], ...]:
-    """The files a revision's signed body names (12.4 ``blobs``)."""
-    out = []
-    for blob in body.get("blobs") or ():
-        if isinstance(blob, dict) and formats.is_hex64(blob.get("sha256")) \
-                and isinstance(blob.get("servers"), list):
-            out.append((blob["sha256"], tuple(s for s in blob["servers"] if isinstance(s, str))))
-    return tuple(out)
+        _token=_MINTED))
 
 
 def _epoch(body: Mapping) -> int:
@@ -423,6 +411,27 @@ def open_envelope(verified: VerifiedRevision, envelope_b64: Optional[str],
     except (StandupCryptoError, formats.FormatError) as exc:
         raise NotConfirmed(str(exc)) from None
     return _made(OpenedRevision(verified=verified, revision=revision, _token=_MINTED))
+
+
+def named_files(opened: OpenedRevision) -> frozenset:
+    """The ``cipher_sha256`` of every media entry of an opened revision."""
+    _made_here(opened, OpenedRevision, "opened revision")
+    return frozenset(entry["cipher_sha256"] for entry in opened.revision.get("media") or ())
+
+
+def own_files(opened: OpenedRevision, writer: str) -> Tuple[Tuple[str, Tuple[str, ...]], ...]:
+    """The encrypted files ``writer`` put up for an opened revision, as
+    ``(cipher_sha256, servers)`` of its media entries, when it is their
+    own verified revision; none for a correction or anyone else's. A
+    correction's lists are a Redaktion member's word: they may name any
+    file of the writer's, so the writer's key never deletes from them
+    (F5 H2; the web app's writer keeps the same rule)."""
+    _made_here(opened, OpenedRevision, "opened revision")
+    verified = opened.verified
+    if verified.correction or verified.signer != writer:
+        return ()
+    return tuple((entry["cipher_sha256"], tuple(entry.get("servers") or ()))
+                 for entry in opened.revision.get("media") or ())
 
 
 class MediaKeys:

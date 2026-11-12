@@ -1330,3 +1330,57 @@ def test_after_publication_the_encrypted_files_go_but_one_another_submission_nam
     following.open(sid)
     world.settle()
     assert len(store.batches) == 1                       # recorded: never asked again
+
+
+def test_a_corrections_list_never_makes_the_writers_key_delete_a_file(accepted):
+    # F5 H2 (probe p1): a Redaktion member's correction names the writer's
+    # other public picture in its lists. Once the writer took and published
+    # it, the cleanup deletes only the encrypted file the writer put up.
+    from nostr.bech32 import encode_naddr
+    from nostr.standup.cleanup import Cleanups
+    from nostr.ui.standup_cleanup import BlobCleanup
+    world, sid, following, writer = accepted.world, accepted.sid, accepted.following, accepted.writer
+    first, _store, _jobs = _run(accepted)
+    first.start()
+    world.settle()
+    other_picture = hashlib.sha256(b"the writer's other public picture").hexdigest()
+    named = dict(accepted.entry, cipher_sha256=other_picture, ref=formats.media_ref(other_picture),
+                 servers=[SERVER])
+    world.clock.advance(60)
+    world.server.blob_servers.everywhere.add(other_picture)
+    world.correct(writer, sid, f"Korrigiert ![]({named['ref']})", media=[named], blobs=[
+        {"sha256": other_picture, "size": 1, "servers": [SERVER]}])
+    following.refresh()
+    world.settle()
+    following.open(sid)
+    world.settle()
+    hash_ = following.row(sid).view.revision_hash
+    following.confirm(sid, confirms=("correction",), revision_hash=hash_, split_rumor_id=None,
+                      on_done=lambda _error: None)
+    world.settle()
+    article = events.sign_event({"kind": 30023, "created_at": world.clock(), "content": "Neu.",
+                                 "tags": [["d", "ein-jahr"]]}, sk("writer"))
+    writer.api.published(sid, naddr=encode_naddr("ein-jahr", pk("writer"), 30023), event=article,
+                         revision=2, on_success=lambda _v: None, on_failure=lambda _e: None)
+    world.settle()
+    store, kept = FakeStore(), {}
+    BlobCleanup(following, writer, SimpleNamespace(user_pubkey=pk("writer"), is_local=True),
+                store=store, cleanups=Cleanups(pk("writer"), load=lambda: kept,
+                                               save=kept.__setitem__),
+                clock=world.clock, parent=following)
+    following.open(sid)
+    world.settle()
+    assert following.reading.published(sid).revision == 2
+    own = accepted.entry["cipher_sha256"]
+    assert store.batches == [[(own, "https://blossom.example"), (own, SERVER)]]
+
+
+def test_a_file_the_published_article_names_is_never_deleted():
+    # F5 H2, the third rule: whatever the revisions say, a hash the
+    # published event names in its text or tags stays.
+    from nostr.standup import cleanup
+    own, kept = "ab" * 32, "cd" * 32
+    event = {"content": f"![](https://media.example/{kept.upper()}.png)", "tags": []}
+    records = [(1, [(own, [SERVER]), (kept, [SERVER])], {own, kept})]
+    assert cleanup.to_delete(records, 1, [], referenced=cleanup.referenced_by(event)) == [
+        (own, SERVER)]
