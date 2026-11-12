@@ -419,11 +419,33 @@ def test_the_dotted_way_runs_only_from_the_card_to_the_inbox_and_is_gone_once_in
         return any(image.pixel(int(x * ratio), row) != blank for x in range(left, right))
 
     assert drawn(start, inbox_left)                    # the whole way, still to go
-    held = 0.6 * (track.width() - standup_handoff._INBOX_WIDTH / 2
-                  - standup_handoff._CARD_WIDTH / 2)
+    held = min(0.6 * (track.width() - standup_handoff._INBOX_WIDTH / 2
+                      - standup_handoff._CARD_WIDTH / 2),
+               inbox_left + 14 - standup_handoff._GAP - standup_handoff._CARD_WIDTH)
     track._set("travel", 0.6)
     assert not drawn(start, int(held) - 2)             # behind the held card: nothing
     for name, value in (("travel", 1.0), ("settle", 1.0), ("fade", 0.0)):
         track._set(name, value)
     track.set_got(True)
     assert not drawn(start, inbox_left)                # in: nothing stale
+
+
+@pytest.mark.parametrize("width", [720, 560, 380])     # 380: a sheet at its minimum, 420
+def test_the_card_held_while_sending_never_lies_over_the_inbox(app, moving, width):
+    # F6 pictures: below about 720 of sheet width, the card held at 60 %
+    # of its way lay over the inbox while the request was on its way.
+    track = standup_handoff.HandoffTrack(is_dark=False)
+    track.publication = "Einundzwanzig Magazin"
+    track.resize(width, standup_handoff._COVER_HEIGHT + 120)
+    track._set("travel", standup_handoff._HOLD)
+    track._set("lift", 1.0)
+    with_card = track.grab().toImage()
+    track._set("fade", 0.0)                             # the same, the card unseen
+    inbox_only = track.grab().toImage()
+    w, h = with_card.width(), with_card.height()
+    blank, mid = inbox_only.pixel(0, 0), h // 2
+    card = [x for y in range(0, h, 2) for x in range(w)
+            if with_card.pixel(x, y) != inbox_only.pixel(x, y)]
+    inbox = [x for y in range(0, h, 2) if abs(y - mid) > 6 for x in range(w // 3, w)
+             if inbox_only.pixel(x, y) != blank]
+    assert card and inbox and max(card) < min(inbox)
