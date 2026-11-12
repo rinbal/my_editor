@@ -651,6 +651,26 @@ def test_a_picture_beside_the_document_is_published_by_its_address(tmp_path, mon
         "the document names it as its file does: saving writes it back as it was")
 
 
+def test_a_wide_picture_beside_the_document_or_of_the_app_goes_out_and_stays_wide(tmp_path):
+    # F3 M-2: "plan.png#wide" was looked for as a file of that name, so a
+    # wide picture on this computer could be neither submitted nor
+    # published ("not on this computer any more").
+    win = _Window(tmp_path / "cache")
+    (tmp_path / "plan.png").write_bytes(PNG_BYTES)
+    own = win.local_asset()
+    ed = HtmlEditor()
+    ed._file_path = str(tmp_path / "Text.md")
+    cursor = ed.textCursor()
+    cursor.insertImage(_fmt("plan.png#wide", "Plan"))
+    cursor.insertImage(_fmt(own.key + "#wide", "Own"))
+    assets, missing = win._local_objects(ed)
+    assert missing == [] and len(assets) == 2
+    plan = win._asset_manager.get(hashlib.sha256(PNG_BYTES).hexdigest())
+    text, _media = win._publish_payload(ed, "markdown", keep_local=True)
+    assert f"]({plan.key}#wide)" in text and f"]({own.key}#wide)" in text
+    assert list(iter_image_names(ed.document())) == ["plan.png#wide", own.key + "#wide"]
+
+
 def _two_local(win):
     first = win._asset_manager.adopt_bytes(GIF_BYTES, alt="sketch")
     second = win._asset_manager.adopt_bytes(PNG_BYTES, alt="photo")

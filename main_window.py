@@ -5185,9 +5185,11 @@ class MainWindow(QMainWindow):
                 return name
             if asset is None:
                 return None
+            # The #wide stays in the text, as it does on a web address.
+            wide = photo_group.WIDE_SUFFIX if photo_group.is_wide(name) else ""
             if not asset.is_uploaded:
-                return asset.key if keep_local else None
-            url = _published_address(asset)
+                return asset.key + wide if keep_local else None
+            url = _published_address(asset) + wide
             remember(asset, url, fmt)
             return url
 
@@ -10244,7 +10246,9 @@ class MainWindow(QMainWindow):
         in as an asset only when ``adopt`` asks (to upload it), read again
         then (it may have been changed on disk), and its name stays as the
         file has it: the document is not edited, and saving writes it back
-        as it was. None for anything else."""
+        as it was. None for anything else. A picture's #wide (photo_group)
+        is how it is laid out, not which file it is (F3 M-2)."""
+        name = photo_group.without_wide(name)
         sha = parse_asset_key(name)
         if sha is not None:
             return self._asset_manager.get(sha)
