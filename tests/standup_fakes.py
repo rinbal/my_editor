@@ -1161,14 +1161,14 @@ class FakeStandupServer:
 
     def _article_get(self, who, payload, params, query) -> FakeReply:
         """backend api/articles.py detail: the article the index holds at
-        the address, with whom it credits (``author_pubkey``); 404 none."""
+        the address, its signer as ``author_pubkey`` (STANDUP P1: a credit
+        never replaces it) and the event's own ``event_tags``; 404 none."""
         held = self.articles.get(unquote(params["address"]))
         if held is None:
             return json_reply({"error": "not found"}, status=404)
         return json_reply({"article": {
             "pubkey": held["pubkey"], "d": formats.tag_value(held, "d"),
-            "author_pubkey": next((t[1] for t in held["tags"] if len(t) >= 4 and t[0] == "p"
-                                   and t[3] == "author"), held["pubkey"])}})
+            "author_pubkey": held["pubkey"], "event_tags": held["tags"]}})
 
     def _nip05(self, who, payload, params, query) -> FakeReply:
         return json_reply({"names": {"bote": self.bote["pubkey"]}})

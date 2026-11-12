@@ -40,17 +40,26 @@ def credited_writer(event: Mapping) -> Optional[str]:
     return None
 
 
+def credit_in(tags: Sequence[Any], signer: Any) -> Any:
+    """Whom an article with ``tags`` credits as its author: the first
+    author tag's key as it stands, else ``signer``. The one rule for an
+    event from a relay and for the server's read of its index (P1: the
+    read's ``author_pubkey`` is the signer, never whom a publication's
+    work credits)."""
+    first = next((tag for tag in tags if isinstance(tag, list) and len(tag) >= 4
+                  and tag[0] == "p" and tag[3] == AUTHOR_MARKER), None)
+    return first[1] if first is not None else signer
+
+
 def held_credit(event: Any, address: str) -> Optional[str]:
-    """Whom an event at ``address`` credits as its author: the first
-    author tag's key as it stands, else the signer. None for an event
-    that is no valid kind 30023 at that address (it is in nobody's way)."""
+    """Whom an event at ``address`` credits as its author
+    (:func:`credit_in`). None for an event that is no valid kind 30023
+    at that address (it is in nobody's way)."""
     if not nostr_events.is_verified_event(event, kind=formats.ARTICLE_KIND) \
             or f"{formats.ARTICLE_KIND}:{event['pubkey']}:{formats.tag_value(event, 'd')}" \
             != address:
         return None
-    first = next((tag for tag in event["tags"] if len(tag) >= 4 and tag[0] == "p"
-                  and tag[3] == AUTHOR_MARKER), None)
-    return first[1] if first is not None else event["pubkey"]
+    return credit_in(event["tags"], event["pubkey"])
 
 
 @dataclass(frozen=True)
@@ -66,7 +75,8 @@ class Release:
 def release(*, writer: str, address: str, address_taken: bool, server_read: bool,
             held: Optional[str], relays: Mapping[str, Tuple[bool, Sequence[Any]]]) -> Release:
     """``held``: whom the article this server holds at ``address``
-    credits (the read's ``author_pubkey``; None: nothing there);
+    credits (its tags as the read gives them, :func:`credit_in`; None:
+    nothing there);
     ``relays``: each relay's read, ``(complete, events)``."""
     if address_taken or (held is not None and held != writer) or any(
             held_credit(event, address) not in (None, writer)

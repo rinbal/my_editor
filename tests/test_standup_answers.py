@@ -116,3 +116,18 @@ def test_the_instance_never_guesses_an_address():
     assert answers.parse_instance(data).server is None
     with pytest.raises(FormatError):
         answers.parse_instance(dict(data, bote={"pubkey": "x"}))
+
+
+def test_the_writer_the_server_holds_is_read_from_the_articles_own_tags():
+    # STANDUP P1: author_pubkey is now always the signer. A publication's
+    # key that also writes (its owner) holds a guest's work at the shared
+    # address: the guest, credited first, is in the way; never the signer.
+    owner, guest = pk("editor"), pk("contributor")
+    article = {"pubkey": owner, "author_pubkey": owner,
+               "event_tags": [["d", "ein-jahr"], ["p", guest, "", "author"],
+                              ["p", owner, "", "author"]]}
+    assert answers.parse_article_author({"article": article}) == guest
+    own = dict(article, event_tags=[["d", "ein-jahr"]])
+    assert answers.parse_article_author({"article": own}) == owner
+    with pytest.raises(FormatError):                   # no tags: it cannot tell
+        answers.parse_article_author({"article": dict(article, event_tags=None)})

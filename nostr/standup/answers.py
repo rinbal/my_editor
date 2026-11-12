@@ -35,6 +35,7 @@ from .readers import (
     read_pubkey,
     read_text,
 )
+from .release import credit_in
 from .servers import usable_server_url
 
 MEMBER_STATUSES = ("invited", "active")
@@ -405,12 +406,17 @@ def parse_submission_detail(data: Mapping[str, Any]) -> SubmissionDetail:
 
 def parse_article_author(data: Any) -> str:
     """``GET /api/articles/<address>`` (not in the ``ok`` envelope): who
-    the article held there credits as its author, the index's
-    ``author_pubkey`` (its first author tag, else its signer: contract
-    12.4, Before the writer's work goes out)."""
+    the article held there credits as its author, read from the event's
+    own tags (``event_tags``): its first author tag, else its signer
+    (contract 12.4, Before the writer's work goes out). Never from
+    ``author_pubkey``, which is the signer (STANDUP P1): for a work a
+    publication signed that is the publication, not its writer. A read
+    without the tags (an event has its ``d`` at least) cannot tell, and
+    fails."""
     article = read_object(read_object(data, "the answer").get("article"), "the article")
-    return read_pubkey(article.get("author_pubkey") or article.get("pubkey"),
-                       "the article's author")
+    tags = article.get("event_tags")
+    need(isinstance(tags, list) and bool(tags), "the article's tags")
+    return read_pubkey(credit_in(tags, article.get("pubkey")), "the article's author")
 
 
 def _read_more(data: Mapping[str, Any]) -> bool:
