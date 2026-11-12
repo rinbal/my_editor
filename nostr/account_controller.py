@@ -125,6 +125,9 @@ class AccountController(QObject):
         # finishes a setup left for later.
         self._setups: Dict[str, QObject] = {}
         self._relay_list_declined: set = set()
+        # A paired signer that names other relays (switch_relays) is
+        # reached there from now on: the account keeps them (audit F17).
+        session_pool.relays_switched.connect(self.keep_signer_relays)
 
     # -- the windows ---------------------------------------------------------------
 
@@ -292,6 +295,15 @@ class AccountController(QObject):
         stored = self._store.get(pubkey)
         if stored is not None and stored.setup_pending != pending:
             stored.setup_pending = pending
+            self._save(stored)
+
+    def keep_signer_relays(self, pubkey: str, relays: list) -> None:
+        """The account's signer listens on ``relays`` now: kept with it, so
+        the next start reaches it there."""
+        stored = self._store.get(pubkey)
+        if stored is not None and not stored.is_local and relays \
+                and list(stored.bunker_relays) != list(relays):
+            stored.bunker_relays = list(relays)
             self._save(stored)
 
     def _save(self, profile) -> None:

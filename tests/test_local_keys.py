@@ -277,6 +277,7 @@ class FakeRemote(QObject):
     """Stands in for BunkerClient: a reattach that answers when told to."""
 
     auth_challenge = Signal(str)
+    relays_switched = Signal(list)
     made = []
 
     def __init__(self, pool, parent=None):
