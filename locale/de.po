@@ -8885,7 +8885,7 @@ msgid "Published by you"
 msgstr "Von dir veröffentlicht"
 
 #: nostr/standup/thread.py:87
-#: nostr/ui/submission_detail.py:705
+#: nostr/ui/submission_detail.py:711
 msgid "Editorial team"
 msgstr "Redaktion"
 
@@ -9008,8 +9008,8 @@ msgstr "Du"
 
 #: nostr/standup/thread.py:171
 #: nostr/ui/standup_confirm_sheet.py:192
-#: nostr/ui/submission_detail.py:535
-#: nostr/ui/submission_detail.py:706
+#: nostr/ui/submission_detail.py:541
+#: nostr/ui/submission_detail.py:712
 #: nostr/ui/submission_thread.py:147
 #: nostr/ui/submissions_host.py:617
 #: nostr/ui/submissions_host.py:360
@@ -9243,7 +9243,7 @@ msgid "The server didn’t receive your submission: try again."
 msgstr "Der Server hat deine Einreichung nicht erhalten: Versuche es erneut."
 
 #: nostr/standup/words.py:133
-#: nostr/ui/submission_detail.py:779
+#: nostr/ui/submission_detail.py:785
 msgid "Your list of submissions couldn’t be saved: check your internet connection and try again."
 msgstr "Deine Liste der Einreichungen konnte nicht gespeichert werden: Prüfe deine Internetverbindung und versuche es erneut."
 
@@ -9329,7 +9329,7 @@ msgid "MyEditor couldn’t check whether you submitted this text before"
 msgstr "MyEditor konnte nicht prüfen, ob du diesen Text schon eingereicht hast"
 
 #: nostr/standup/words.py:196
-#: nostr/ui/submission_detail.py:779
+#: nostr/ui/submission_detail.py:785
 msgid "The earlier try wasn’t discarded"
 msgstr "Der frühere Versuch wurde nicht verworfen"
 
@@ -13521,7 +13521,7 @@ msgstr "Eingang der Redaktion"
 
 #: nostr/ui/standup_handoff.py:605
 #: nostr/ui/standup_ways_out.py:68
-#: nostr/ui/submission_detail.py:620
+#: nostr/ui/submission_detail.py:626
 msgctxt "submissions list"
 msgid "Reload"
 msgstr "Erneut laden"
@@ -13532,7 +13532,7 @@ msgstr "Im Eingang"
 
 #: nostr/ui/standup_privacy.py:28
 #: nostr/ui/standup_submit_sheet.py:250
-#: nostr/ui/submission_detail.py:700
+#: nostr/ui/submission_detail.py:706
 msgid "the publication"
 msgstr "der Publikation"
 
@@ -13791,7 +13791,7 @@ msgid "Submit"
 msgstr "Einreichen"
 
 #: nostr/ui/standup_submit_sheet.py:228
-#: nostr/ui/submission_detail.py:703
+#: nostr/ui/submission_detail.py:709
 msgid "Publication"
 msgstr "Publikation"
 
@@ -13879,7 +13879,7 @@ msgstr "Ein früherer Versuch wurde nicht gesendet: Einreichen sendet ihn erneut
 
 #: nostr/ui/standup_ways_out.py:51
 #: nostr/ui/submission_detail.py:261
-#: nostr/ui/submission_detail.py:633
+#: nostr/ui/submission_detail.py:639
 #: nostr/ui/submissions_view.py:475
 msgid "Discard"
 msgstr "Verwerfen"
@@ -14001,77 +14001,77 @@ msgstr "Senden"
 msgid "Submissions"
 msgstr "Einreichungen"
 
-#: nostr/ui/submission_detail.py:699
+#: nostr/ui/submission_detail.py:705
 msgid "you"
 msgstr "dir"
 
-#: nostr/ui/submission_detail.py:703
+#: nostr/ui/submission_detail.py:709
 msgid "Published by"
 msgstr "Veröffentlicht von"
 
-#: nostr/ui/submission_detail.py:704
+#: nostr/ui/submission_detail.py:710
 msgid "Version"
 msgstr "Fassung"
 
-#: nostr/ui/submission_detail.py:705
+#: nostr/ui/submission_detail.py:711
 msgid "Responsible"
 msgstr "Zuständig"
 
-#: nostr/ui/submission_detail.py:540
+#: nostr/ui/submission_detail.py:546
 #, python-brace-format
 msgid "{first}, {second} and {count} more"
 msgstr "{first}, {second} und {count} weitere"
 
-#: nostr/ui/submission_detail.py:699
+#: nostr/ui/submission_detail.py:705
 msgid "the writer"
 msgstr "der schreibenden Person"
 
-#: nostr/ui/submission_detail.py:709
+#: nostr/ui/submission_detail.py:715
 msgid "Taking part"
 msgstr "Beteiligt"
 
-#: nostr/ui/submission_detail.py:853
+#: nostr/ui/submission_detail.py:859
 msgid "Withdraw this submission?"
 msgstr "Einreichung zurückziehen?"
 
-#: nostr/ui/submission_detail.py:857
+#: nostr/ui/submission_detail.py:863
 msgid "Withdraw"
 msgstr "Zurückziehen"
 
-#: nostr/ui/submission_detail.py:546
+#: nostr/ui/submission_detail.py:552
 #, python-brace-format
 msgid "{first} and {count} more"
 msgstr "{first} und {count} weitere"
 
-#: nostr/ui/submission_detail.py:608
+#: nostr/ui/submission_detail.py:614
 #: nostr/ui/submissions_view.py:383
 msgid "Loading …"
 msgstr "Wird geladen …"
 
-#: nostr/ui/submission_detail.py:723
+#: nostr/ui/submission_detail.py:729
 msgid "Encryption"
 msgstr "Verschlüsselung"
 
-#: nostr/ui/submission_detail.py:724
+#: nostr/ui/submission_detail.py:730
 msgid "History"
 msgstr "Verlauf"
 
-#: nostr/ui/submission_detail.py:657
+#: nostr/ui/submission_detail.py:663
 #, python-brace-format
 msgid "Remind {name}"
 msgstr "{name} erinnern"
 
-#: nostr/ui/submission_detail.py:685
+#: nostr/ui/submission_detail.py:691
 #, python-brace-format
 msgid "{name} and the editorial team of {publication}"
 msgstr "{name} und die Redaktion von {publication}"
 
-#: nostr/ui/submission_detail.py:687
+#: nostr/ui/submission_detail.py:693
 #, python-brace-format
 msgid "The editorial team of {publication}"
 msgstr "Die Redaktion von {publication}"
 
-#: nostr/ui/submission_detail.py:854
+#: nostr/ui/submission_detail.py:860
 #, python-brace-format
 msgid "{publication} no longer sees it in its inbox then. What the editorial team already has stays there."
 msgstr "{publication} sieht sie dann nicht mehr im Eingang. Was die Redaktion schon hat, bleibt dort."
