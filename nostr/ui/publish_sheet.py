@@ -468,11 +468,9 @@ class AccountRow(QWidget):
 
     def _show(self) -> None:
         profile = self._profile
-        # Twice the points, for a screen that shows them (it was blurred).
         avatar = pixmap_for_profile(profile.display_name, profile.user_pubkey,
                                     self._avatars.get(profile.user_pubkey),
-                                    size=_ACCOUNT_AVATAR * 2)
-        avatar.setDevicePixelRatio(2.0)
+                                    size=_ACCOUNT_AVATAR)
         self.button.setIcon(QIcon(avatar))
         appearance.menu_arrow(self.button, self._is_dark, end=_ACCOUNT_ARROW_END)
         name = profile.display_name or profile.npub_short()
