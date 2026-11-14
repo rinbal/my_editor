@@ -15,7 +15,7 @@ msgstr ""
 #: alerts.py:208
 #: nostr/ui/connect_dialog.py:389
 #: nostr/ui/connect_dialog.py:392
-#: nostr/ui/standup_handoff.py:395
+#: nostr/ui/standup_handoff.py:422
 #: nostr/ui/standup_privacy.py:81
 msgid "Details"
 msgstr ""
@@ -367,7 +367,7 @@ msgstr ""
 #: update_dialog.py:194
 #: update_dialog.py:202
 #: nostr/ui/account_windows.py:216
-#: nostr/ui/submission_thread.py:239
+#: nostr/ui/submission_thread.py:357
 #: nostr/ui/tag_field.py:101
 msgid "Copy"
 msgstr ""
@@ -562,7 +562,7 @@ msgstr ""
 #: file_list.py:329
 #: nostr/imports/workspace.py:242
 #: nostr/ui/post_list.py:139
-#: nostr/ui/submission_thread.py:73
+#: nostr/ui/submission_thread.py:138
 msgid "Yesterday"
 msgstr ""
 
@@ -573,7 +573,7 @@ msgstr ""
 
 #: file_list.py:327
 #: nostr/ui/post_list.py:137
-#: nostr/ui/submission_thread.py:71
+#: nostr/ui/submission_thread.py:136
 msgid "Today"
 msgstr ""
 
@@ -609,8 +609,8 @@ msgid "New Note"
 msgstr ""
 
 #: file_list.py:884
-#: nostr/ui/drafts_panel.py:1439
-#: nostr/ui/drafts_panel.py:1544
+#: nostr/ui/drafts_panel.py:1494
+#: nostr/ui/drafts_panel.py:1599
 #: nostr/ui/imports_window.py:380
 #: nostr/ui/media_library_dialog.py:373
 msgid "Search"
@@ -1516,8 +1516,8 @@ msgstr ""
 
 #: main_window.py:3576
 #: main_window.py:2902
-#: nostr/ui/drafts_panel.py:1455
-#: nostr/ui/drafts_panel.py:1109
+#: nostr/ui/drafts_panel.py:1510
+#: nostr/ui/drafts_panel.py:1148
 msgid "Drafts"
 msgstr ""
 
@@ -1794,6 +1794,7 @@ msgstr ""
 
 #: main_window.py:2188
 #: nostr/imports/workspace.py:46
+#: nostr/ui/drafts_panel.py:667
 #: nostr/ui/imports_window.py:509
 #: nostr/ui/imports_window.py:784
 #: nostr/ui/imports_window.py:798
@@ -2060,7 +2061,7 @@ msgid "Publish as Article…"
 msgstr ""
 
 #: main_window.py:2847
-#: nostr/ui/submissions_view.py:353
+#: nostr/ui/submissions_view.py:387
 msgid "Submit to a Publication…"
 msgstr ""
 
@@ -2086,10 +2087,10 @@ msgid "Insert Audio or Video…"
 msgstr ""
 
 #: main_window.py:2907
-#: nostr/standup/following.py:99
-#: nostr/standup/following.py:101
 #: nostr/standup/following.py:103
-#: nostr/standup/situations.py:169
+#: nostr/standup/following.py:105
+#: nostr/standup/following.py:107
+#: nostr/standup/situations.py:173
 #: nostr/standup/thread.py:349
 #: nostr/ui/published_view.py:442
 #: nostr/ui/published_view.py:526
@@ -2097,12 +2098,12 @@ msgid "Published"
 msgstr ""
 
 #: main_window.py:2915
-#: nostr/ui/drafts_panel.py:1114
+#: nostr/ui/drafts_panel.py:1153
 msgid "Refresh Drafts"
 msgstr ""
 
 #: main_window.py:2923
-#: nostr/ui/drafts_panel.py:1259
+#: nostr/ui/drafts_panel.py:1301
 msgid "Draft Relays…"
 msgstr ""
 
@@ -2140,7 +2141,7 @@ msgstr ""
 
 #: main_window.py:2962
 #: main_window.py:9046
-#: nostr/ui/standup_confirm_sheet.py:173
+#: nostr/ui/standup_confirm_sheet.py:181
 msgid "Edit Profile…"
 msgstr ""
 
@@ -4838,8 +4839,8 @@ msgstr ""
 #: photo_group_pointer.py:112
 #: nostr/ui/preview_parts.py:486
 #: nostr/ui/preview_parts.py:487
-#: nostr/ui/submission_detail.py:147
-#: nostr/ui/submission_detail.py:148
+#: nostr/ui/submission_detail.py:175
+#: nostr/ui/submission_detail.py:176
 msgid "More"
 msgstr ""
 
@@ -7077,8 +7078,8 @@ msgid "This draft is damaged"
 msgstr ""
 
 #: nostr/draft_sync.py:861
-#: nostr/ui/drafts_panel.py:1899
-#: nostr/ui/drafts_panel.py:1966
+#: nostr/ui/drafts_panel.py:1979
+#: nostr/ui/drafts_panel.py:2046
 msgid "Your signer app can’t decrypt drafts"
 msgstr ""
 
@@ -7357,7 +7358,6 @@ msgid "unknown error"
 msgstr ""
 
 #: nostr/publisher.py:804
-#: nostr/standup/situations.py:154
 #: nostr/ui/standup_publish_words.py:20
 msgid "Published."
 msgstr ""
@@ -8476,65 +8476,69 @@ msgstr ""
 msgid "{name} is reviewing version {number}."
 msgstr ""
 
-#: nostr/standup/following.py:64
+#: nostr/standup/following.py:66
+msgid "It’s published after the release. You don’t need to do anything."
+msgstr ""
+
+#: nostr/standup/following.py:68
 #, python-brace-format
 msgid "Published in the section “{section}”."
 msgstr ""
 
-#: nostr/standup/following.py:66
+#: nostr/standup/following.py:70
 #, python-brace-format
 msgid "Thanks. {name} still confirms."
 msgstr ""
 
-#: nostr/standup/following.py:67
+#: nostr/standup/following.py:71
 #, python-brace-format
 msgid "Thanks. {names} still confirm."
 msgstr ""
 
-#: nostr/standup/following.py:68
+#: nostr/standup/following.py:72
 msgid "Thanks. The others still confirm."
 msgstr ""
 
-#: nostr/standup/following.py:89
+#: nostr/standup/following.py:93
 msgid "Another person’s work already stands under this link name. So that it stays, nothing is published."
 msgstr ""
 
-#: nostr/standup/following.py:93
+#: nostr/standup/following.py:97
 msgid "Your signer app doesn’t sign texts this long. Sign in with another signer app, or write to the editorial team."
 msgstr ""
 
-#: nostr/standup/following.py:98
-#: nostr/standup/following.py:98
-msgid "Being published …"
-msgstr ""
-
-#: nostr/standup/following.py:99
-#, python-brace-format
-msgid "“{title}” is public. {publication} learns of it shortly."
-msgstr ""
-
-#: nostr/standup/following.py:101
-#, python-brace-format
-msgid "“{title}” is public."
-msgstr ""
-
 #: nostr/standup/following.py:102
-#, python-brace-format
-msgid "{publication} hasn’t learned of it yet."
+#: nostr/standup/following.py:102
+msgid "Being published …"
 msgstr ""
 
 #: nostr/standup/following.py:103
 #, python-brace-format
-msgid "“{title}” is public, but {publication} already lists another work under this link name."
+msgid "“{title}” is public. {publication} learns of it shortly."
 msgstr ""
 
 #: nostr/standup/following.py:105
+#, python-brace-format
+msgid "“{title}” is public."
+msgstr ""
+
 #: nostr/standup/following.py:106
+#, python-brace-format
+msgid "{publication} hasn’t learned of it yet."
+msgstr ""
+
+#: nostr/standup/following.py:107
+#, python-brace-format
+msgid "“{title}” is public, but {publication} already lists another work under this link name."
+msgstr ""
+
+#: nostr/standup/following.py:109
+#: nostr/standup/following.py:110
 #: nostr/ui/standup_publish_words.py:21
 msgid "Not published"
 msgstr ""
 
-#: nostr/standup/following.py:485
+#: nostr/standup/following.py:489
 msgid "The writer"
 msgstr ""
 
@@ -8600,19 +8604,19 @@ msgstr ""
 
 #: nostr/standup/situations.py:53
 #: nostr/standup/situations.py:56
-#: nostr/ui/standup_handoff.py:416
-#: nostr/ui/standup_handoff.py:580
+#: nostr/ui/standup_handoff.py:443
+#: nostr/ui/standup_handoff.py:607
 #: nostr/ui/standup_revise_sheet.py:99
 #: nostr/ui/standup_talk.py:295
-#: nostr/ui/submissions_view.py:410
+#: nostr/ui/submissions_view.py:458
 msgid "Send Again"
 msgstr ""
 
 #: nostr/standup/situations.py:54
 #: nostr/ui/draft_conflict_banner.py:48
-#: nostr/ui/drafts_panel.py:607
-#: nostr/ui/standup_publish_sheet.py:138
-#: nostr/ui/submissions_host.py:302
+#: nostr/ui/drafts_panel.py:621
+#: nostr/ui/standup_publish_sheet.py:144
+#: nostr/ui/submissions_host.py:303
 msgid "View"
 msgstr ""
 
@@ -8621,10 +8625,10 @@ msgid "Send a Reminder"
 msgstr ""
 
 #: nostr/standup/situations.py:57
-#: nostr/ui/standup_confirm_sheet.py:164
+#: nostr/ui/standup_confirm_sheet.py:172
 #: nostr/ui/standup_correction_sheet.py:130
 #: nostr/ui/standup_correction_sheet.py:177
-#: nostr/ui/standup_publish_sheet.py:183
+#: nostr/ui/standup_publish_sheet.py:190
 msgid "Ask a Question"
 msgstr ""
 
@@ -8675,7 +8679,7 @@ msgstr ""
 
 #: nostr/standup/situations.py:124
 #, python-brace-format
-msgid "In the inbox of {publication}, a picture is missing."
+msgid "In the inbox of {publication}. A picture is missing."
 msgstr ""
 
 #: nostr/standup/situations.py:126
@@ -8714,7 +8718,7 @@ msgid "{name} asks for changes."
 msgstr ""
 
 #: nostr/standup/situations.py:135
-msgid "What exactly is in the conversation below."
+msgid "The conversation below says what exactly."
 msgstr ""
 
 #: nostr/standup/situations.py:140
@@ -8734,89 +8738,88 @@ msgstr ""
 msgid "The split is in the conversation below."
 msgstr ""
 
-#: nostr/standup/situations.py:148
 #: nostr/standup/situations.py:150
+#: nostr/standup/situations.py:152
 #: nostr/standup/thread.py:344
 msgid "Accepted"
 msgstr ""
 
-#: nostr/standup/situations.py:148
 #: nostr/standup/situations.py:150
+#: nostr/standup/situations.py:152
 msgid "Accepted."
 msgstr ""
 
-#: nostr/standup/situations.py:149
-#, python-brace-format
-msgid "{publication} takes the next step."
-msgstr ""
-
-#: nostr/standup/situations.py:151
+#: nostr/standup/situations.py:153
 msgid "Publish it when you’re ready."
 msgstr ""
 
-#: nostr/standup/situations.py:153
+#: nostr/standup/situations.py:156
 msgid "Published, place to follow"
 msgstr ""
 
-#: nostr/standup/situations.py:155
-#, python-brace-format
-msgid "{publication} gives it its place next."
-msgstr ""
-
 #: nostr/standup/situations.py:157
-#: nostr/standup/thread.py:351
-msgid "Correction suggested"
+msgid "Published, place to follow."
 msgstr ""
 
 #: nostr/standup/situations.py:158
 #, python-brace-format
+msgid "Its place on {publication} is still being released. You don’t need to do anything."
+msgstr ""
+
+#: nostr/standup/situations.py:161
+#: nostr/standup/thread.py:351
+msgid "Correction suggested"
+msgstr ""
+
+#: nostr/standup/situations.py:162
+#, python-brace-format
 msgid "{publication} suggests a correction."
 msgstr ""
 
-#: nostr/standup/situations.py:159
+#: nostr/standup/situations.py:163
 msgid "Compare it with what is public. If you take it, it replaces your published text."
 msgstr ""
 
-#: nostr/standup/situations.py:165
+#: nostr/standup/situations.py:169
 msgid "Correction taken"
 msgstr ""
 
-#: nostr/standup/situations.py:166
+#: nostr/standup/situations.py:170
 msgid "Correction taken, not published yet."
 msgstr ""
 
-#: nostr/standup/situations.py:167
+#: nostr/standup/situations.py:171
 msgid "Publish it so everyone reads the corrected text."
 msgstr ""
 
-#: nostr/standup/situations.py:169
+#: nostr/standup/situations.py:173
 #, python-brace-format
 msgid "Published on {publication}."
 msgstr ""
 
-#: nostr/standup/situations.py:171
+#: nostr/standup/situations.py:175
 #: nostr/standup/thread.py:345
 msgid "Declined"
 msgstr ""
 
-#: nostr/standup/situations.py:171
+#: nostr/standup/situations.py:175
 msgid "Declined."
 msgstr ""
 
-#: nostr/standup/situations.py:172
+#: nostr/standup/situations.py:176
 msgid "You can submit the text again, or somewhere else."
 msgstr ""
 
-#: nostr/standup/situations.py:174
+#: nostr/standup/situations.py:178
 #: nostr/standup/thread.py:347
 msgid "Withdrawn"
 msgstr ""
 
-#: nostr/standup/situations.py:174
+#: nostr/standup/situations.py:178
 msgid "Withdrawn."
 msgstr ""
 
-#: nostr/standup/situations.py:175
+#: nostr/standup/situations.py:179
 msgid "What the editorial team already had stays there."
 msgstr ""
 
@@ -8833,7 +8836,7 @@ msgstr ""
 msgid "The editorial team asks for changes."
 msgstr ""
 
-#: nostr/standup/situations.py:183
+#: nostr/standup/situations.py:187
 #, python-brace-format
 msgid "{items} and {last}"
 msgstr ""
@@ -8870,7 +8873,7 @@ msgid "Published by you"
 msgstr ""
 
 #: nostr/standup/thread.py:87
-#: nostr/ui/submission_detail.py:590
+#: nostr/ui/submission_detail.py:711
 msgid "Editorial team"
 msgstr ""
 
@@ -8953,7 +8956,7 @@ msgid "Confirmed"
 msgstr ""
 
 #: nostr/standup/thread.py:350
-msgid "Placed"
+msgid "Placed on the site"
 msgstr ""
 
 #: nostr/standup/thread.py:352
@@ -8986,18 +8989,18 @@ msgstr ""
 
 #: nostr/standup/thread.py:171
 #: nostr/ui/authors_section.py:178
-#: nostr/ui/standup_confirm_sheet.py:184
-#: nostr/ui/submission_thread.py:82
+#: nostr/ui/standup_confirm_sheet.py:192
+#: nostr/ui/submission_thread.py:147
 msgid "You"
 msgstr ""
 
 #: nostr/standup/thread.py:171
-#: nostr/ui/standup_confirm_sheet.py:184
-#: nostr/ui/submission_detail.py:454
-#: nostr/ui/submission_detail.py:591
-#: nostr/ui/submission_thread.py:82
-#: nostr/ui/submissions_host.py:614
-#: nostr/ui/submissions_host.py:359
+#: nostr/ui/standup_confirm_sheet.py:192
+#: nostr/ui/submission_detail.py:541
+#: nostr/ui/submission_detail.py:712
+#: nostr/ui/submission_thread.py:147
+#: nostr/ui/submissions_host.py:617
+#: nostr/ui/submissions_host.py:360
 msgid "Someone"
 msgstr ""
 
@@ -9228,7 +9231,7 @@ msgid "The server didn’t receive your submission: try again."
 msgstr ""
 
 #: nostr/standup/words.py:133
-#: nostr/ui/submission_detail.py:655
+#: nostr/ui/submission_detail.py:785
 msgid "Your list of submissions couldn’t be saved: check your internet connection and try again."
 msgstr ""
 
@@ -9314,7 +9317,7 @@ msgid "MyEditor couldn’t check whether you submitted this text before"
 msgstr ""
 
 #: nostr/standup/words.py:196
-#: nostr/ui/submission_detail.py:655
+#: nostr/ui/submission_detail.py:785
 msgid "The earlier try wasn’t discarded"
 msgstr ""
 
@@ -10482,98 +10485,98 @@ msgstr ""
 msgid "Removed on {date} unless you save it again"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:813
-#: nostr/ui/drafts_panel.py:823
+#: nostr/ui/drafts_panel.py:852
+#: nostr/ui/drafts_panel.py:862
 #: nostr/ui/imports_window.py:243
 msgid "Imports"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:814
+#: nostr/ui/drafts_panel.py:853
 msgid "Open the Imports window"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:957
-#: nostr/ui/drafts_panel.py:978
-#: nostr/ui/drafts_panel.py:979
+#: nostr/ui/drafts_panel.py:996
+#: nostr/ui/drafts_panel.py:1017
+#: nostr/ui/drafts_panel.py:1018
 #: nostr/ui/imports_activity.py:271
 #: nostr/ui/imports_activity.py:315
 #: nostr/ui/media_player.py:194
 msgid "Pause"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:978
+#: nostr/ui/drafts_panel.py:1017
 #: nostr/ui/imports_activity.py:321
 msgid "Resume"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:1117
+#: nostr/ui/drafts_panel.py:1156
 msgid "Search Drafts"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:1227
+#: nostr/ui/drafts_panel.py:1269
 #: nostr/ui/media_library_dialog.py:737
 msgid "Refresh"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:1251
+#: nostr/ui/drafts_panel.py:1293
 #: nostr/ui/media_library_dialog.py:386
 #: nostr/ui/media_library_dialog.py:387
 msgid "Actions"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:1263
+#: nostr/ui/drafts_panel.py:1305
 msgid "Select All Drafts"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:1265
-#: nostr/ui/drafts_panel.py:1287
-#: nostr/ui/drafts_panel.py:1831
-#: nostr/ui/drafts_panel.py:2450
+#: nostr/ui/drafts_panel.py:1307
+#: nostr/ui/drafts_panel.py:1334
+#: nostr/ui/drafts_panel.py:1911
+#: nostr/ui/drafts_panel.py:2530
 msgid "Delete Draft"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:1268
+#: nostr/ui/drafts_panel.py:1310
 msgid "Hide Drafts"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:1906
+#: nostr/ui/drafts_panel.py:1986
 #, python-brace-format
 msgid "{n} draft is locked until your signer app answers."
 msgid_plural "{n} drafts are locked until your signer app answers."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/drafts_panel.py:1928
+#: nostr/ui/drafts_panel.py:2008
 #, python-brace-format
 msgid "Decrypting {ready} of {total}"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:1982
+#: nostr/ui/drafts_panel.py:2062
 #, python-brace-format
 msgid "Press {shortcut} in any tab to save it as an encrypted draft. Your drafts appear here, on every computer you use with this account."
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:2399
+#: nostr/ui/drafts_panel.py:2479
 msgid "Show Preview"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:2419
-#: nostr/ui/drafts_panel.py:1828
+#: nostr/ui/drafts_panel.py:2499
+#: nostr/ui/drafts_panel.py:1908
 msgid "Continue Editing"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:2425
-#: nostr/ui/drafts_panel.py:1827
+#: nostr/ui/drafts_panel.py:2505
+#: nostr/ui/drafts_panel.py:1907
 msgid "Publish…"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:2431
-#: nostr/ui/drafts_panel.py:1830
+#: nostr/ui/drafts_panel.py:2511
+#: nostr/ui/drafts_panel.py:1910
 msgid "Copy Event ID"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:2447
-#: nostr/ui/drafts_panel.py:1286
+#: nostr/ui/drafts_panel.py:2527
+#: nostr/ui/drafts_panel.py:1333
 #, python-brace-format
 msgid "Delete {n} Draft"
 msgid_plural "Delete {n} Drafts"
@@ -10585,37 +10588,37 @@ msgstr[1] ""
 msgid "No additional text"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:1109
+#: nostr/ui/drafts_panel.py:1148
 msgid "Your saved private drafts"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:1924
+#: nostr/ui/drafts_panel.py:2004
 msgid "Some drafts can’t be shown: each says why in the list."
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:1959
+#: nostr/ui/drafts_panel.py:2039
 msgid "No Nostr account in use"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:1960
+#: nostr/ui/drafts_panel.py:2040
 msgid "Create an account, connect your signer app or restore an account from its backup, all in the Nostr menu."
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:1967
+#: nostr/ui/drafts_panel.py:2047
 msgid "Drafts are encrypted in a way this signer app can’t open. To use drafts, connect a signer app that can, such as Amber or nsec.app."
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:1986
+#: nostr/ui/drafts_panel.py:2066
 msgid "No Drafts"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:1997
+#: nostr/ui/drafts_panel.py:2077
 #: nostr/ui/published_view.py:617
-#: nostr/ui/submissions_view.py:344
+#: nostr/ui/submissions_view.py:378
 msgid "Check the spelling or try a new search."
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:2412
+#: nostr/ui/drafts_panel.py:2492
 msgid "Retry Decryption"
 msgstr ""
 
@@ -10634,31 +10637,31 @@ msgstr ""
 msgid "Saved {time}"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:819
+#: nostr/ui/drafts_panel.py:858
 #, python-brace-format
 msgid "{count} new"
 msgid_plural "{count} new"
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/drafts_panel.py:1926
+#: nostr/ui/drafts_panel.py:2006
 msgid "Refreshing drafts"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:1998
+#: nostr/ui/drafts_panel.py:2078
 msgid "Clear Search"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:822
+#: nostr/ui/drafts_panel.py:861
 #, python-brace-format
 msgid "Imports, {count} new post"
 msgid_plural "Imports, {count} new posts"
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/drafts_panel.py:1996
+#: nostr/ui/drafts_panel.py:2076
 #: nostr/ui/published_view.py:616
-#: nostr/ui/submissions_view.py:343
+#: nostr/ui/submissions_view.py:377
 #, python-brace-format
 msgid "No Results for “{query}”"
 msgstr ""
@@ -10668,7 +10671,7 @@ msgstr ""
 msgid "Imported from {host}"
 msgstr ""
 
-#: nostr/ui/drafts_panel.py:698
+#: nostr/ui/drafts_panel.py:736
 #, python-brace-format
 msgid "View: {title}"
 msgstr ""
@@ -12876,8 +12879,8 @@ msgstr ""
 #: nostr/ui/publish_note_dialog.py:304
 #: nostr/ui/publish_note_dialog.py:395
 #: nostr/ui/standup_correction_sheet.py:179
-#: nostr/ui/standup_publish_sheet.py:141
-#: nostr/ui/standup_publish_sheet.py:184
+#: nostr/ui/standup_publish_sheet.py:147
+#: nostr/ui/standup_publish_sheet.py:191
 msgid "Publish"
 msgstr ""
 
@@ -13063,7 +13066,7 @@ msgid "{count} · long note, consider Publish as Article instead"
 msgstr ""
 
 #: nostr/ui/publish_sheet.py:370
-#: nostr/ui/standup_publish_sheet.py:132
+#: nostr/ui/standup_publish_sheet.py:138
 #, python-brace-format
 msgid "Publishing as {name}"
 msgstr ""
@@ -13177,7 +13180,7 @@ msgid "First published {time}"
 msgstr ""
 
 #: nostr/ui/published_view.py:602
-#: nostr/ui/submissions_view.py:332
+#: nostr/ui/submissions_view.py:366
 msgid "No account in use"
 msgstr ""
 
@@ -13345,71 +13348,75 @@ msgid "New text is underlined, removed text is struck through."
 msgstr ""
 
 #: nostr/ui/standup_compare.py:148
-#: nostr/ui/standup_compare.py:237
+#: nostr/ui/standup_compare.py:250
 msgid "Changes"
 msgstr ""
 
-#: nostr/ui/standup_compare.py:173
+#: nostr/ui/standup_compare.py:185
 msgid "Before"
 msgstr ""
 
-#: nostr/ui/standup_compare.py:173
+#: nostr/ui/standup_compare.py:185
 msgid "After"
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:51
+#: nostr/ui/standup_confirm_sheet.py:52
 #, python-brace-format
 msgid "Your share goes to {address}."
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:53
-msgid "For your share, your Nostr profile needs a Lightning address."
-msgstr ""
-
-#: nostr/ui/standup_confirm_sheet.py:54
-msgid "Reading your profile …"
-msgstr ""
-
 #: nostr/ui/standup_confirm_sheet.py:55
-msgid "Your profile couldn’t be read, so it’s not known where your share goes."
-msgstr ""
-
-#: nostr/ui/standup_confirm_sheet.py:56
-msgid "My contribution is mine."
+msgid "Apps that support splits divide zaps this way."
 msgstr ""
 
 #: nostr/ui/standup_confirm_sheet.py:57
+msgid "For your share, your Nostr profile needs a Lightning address."
+msgstr ""
+
+#: nostr/ui/standup_confirm_sheet.py:58
+msgid "Reading your profile …"
+msgstr ""
+
+#: nostr/ui/standup_confirm_sheet.py:59
+msgid "Your profile couldn’t be read, so it’s not known where your share goes."
+msgstr ""
+
+#: nostr/ui/standup_confirm_sheet.py:60
+msgid "My contribution is mine."
+msgstr ""
+
+#: nostr/ui/standup_confirm_sheet.py:61
 #, python-brace-format
 msgid "My contribution ({part}) is mine."
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:58
+#: nostr/ui/standup_confirm_sheet.py:62
 #, python-brace-format
 msgid "I agree to the license {license}."
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:59
+#: nostr/ui/standup_confirm_sheet.py:63
 msgid "Not confirmed"
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:60
+#: nostr/ui/standup_confirm_sheet.py:64
 msgid "A short question about the split: "
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:101
-#: nostr/ui/standup_confirm_sheet.py:135
+#: nostr/ui/standup_confirm_sheet.py:105
+#: nostr/ui/standup_confirm_sheet.py:140
 msgid "Confirm Your Share"
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:170
+#: nostr/ui/standup_confirm_sheet.py:178
 msgid "Confirm Share"
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:249
+#: nostr/ui/standup_confirm_sheet.py:257
 msgid "Confirming …"
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:187
+#: nostr/ui/standup_confirm_sheet.py:195
 #, python-brace-format
 msgid "The split: {shares}"
 msgstr ""
@@ -13473,41 +13480,41 @@ msgid "Correction from {publication}"
 msgstr ""
 
 #: nostr/ui/standup_correction_sheet.py:178
-#: nostr/ui/standup_publish_sheet.py:53
+#: nostr/ui/standup_publish_sheet.py:57
 msgid "Sign with the Key on This Computer"
 msgstr ""
 
-#: nostr/ui/standup_handoff.py:298
+#: nostr/ui/standup_handoff.py:325
 #, python-brace-format
 msgid "Version {number} handed in."
 msgstr ""
 
-#: nostr/ui/standup_handoff.py:427
+#: nostr/ui/standup_handoff.py:454
 msgid "Continue in Background"
 msgstr ""
 
-#: nostr/ui/standup_handoff.py:434
+#: nostr/ui/standup_handoff.py:461
 msgid "View Submission"
 msgstr ""
 
-#: nostr/ui/standup_handoff.py:294
+#: nostr/ui/standup_handoff.py:321
 msgid "Editorial inbox"
 msgstr ""
 
-#: nostr/ui/standup_handoff.py:578
+#: nostr/ui/standup_handoff.py:605
 #: nostr/ui/standup_ways_out.py:68
-#: nostr/ui/submission_detail.py:508
+#: nostr/ui/submission_detail.py:626
 msgctxt "submissions list"
 msgid "Reload"
 msgstr ""
 
-#: nostr/ui/standup_handoff.py:291
+#: nostr/ui/standup_handoff.py:318
 msgid "In the inbox"
 msgstr ""
 
 #: nostr/ui/standup_privacy.py:28
 #: nostr/ui/standup_submit_sheet.py:250
-#: nostr/ui/submission_detail.py:585
+#: nostr/ui/submission_detail.py:706
 msgid "the publication"
 msgstr ""
 
@@ -13613,38 +13620,43 @@ msgstr ""
 msgid "Signing on this computer…"
 msgstr ""
 
-#: nostr/ui/standup_publish_sheet.py:44
+#: nostr/ui/standup_publish_sheet.py:45
 #, python-brace-format
 msgid "Accepted by {publication}, version {number}."
 msgstr ""
 
-#: nostr/ui/standup_publish_sheet.py:45
+#: nostr/ui/standup_publish_sheet.py:46
 #, python-brace-format
 msgid "It then gets its place in the section “{section}”."
 msgstr ""
 
-#: nostr/ui/standup_publish_sheet.py:46
+#: nostr/ui/standup_publish_sheet.py:47
 msgid "Text and pictures as handed in."
 msgstr ""
 
-#: nostr/ui/standup_publish_sheet.py:47
+#: nostr/ui/standup_publish_sheet.py:48
 msgid "Until now it’s private. Once published, everyone can read it, text and pictures unencrypted. It can’t be taken back."
 msgstr ""
 
-#: nostr/ui/standup_publish_sheet.py:49
+#: nostr/ui/standup_publish_sheet.py:50
 msgid "The accepted version is published. If you change anything afterwards, the editorial team sees “changed since acceptance”."
 msgstr ""
 
-#: nostr/ui/standup_publish_sheet.py:51
-msgid "Only you"
+#: nostr/ui/standup_publish_sheet.py:54
+msgid "By you"
 msgstr ""
 
-#: nostr/ui/standup_publish_sheet.py:52
+#: nostr/ui/standup_publish_sheet.py:55
+#, python-brace-format
+msgid "By you with {names}"
+msgstr ""
+
+#: nostr/ui/standup_publish_sheet.py:56
 msgid "A short question about publishing: "
 msgstr ""
 
-#: nostr/ui/standup_publish_sheet.py:69
-#: nostr/ui/standup_publish_sheet.py:94
+#: nostr/ui/standup_publish_sheet.py:74
+#: nostr/ui/standup_publish_sheet.py:99
 msgid "Publish as an Article"
 msgstr ""
 
@@ -13656,31 +13668,31 @@ msgstr ""
 msgid "The pictures go up to your media server, then it’s signed."
 msgstr ""
 
-#: nostr/ui/standup_publish_words.py:22
-msgid "A picture of the accepted version can’t be found on the media servers, so nothing was published."
-msgstr ""
-
 #: nostr/ui/standup_publish_words.py:24
-msgid "A picture couldn’t be put on your media server, so nothing was published. Check your media servers in Settings, then try again."
+msgid "A picture of the accepted version can’t be found on the media servers: try again, or ask the editorial team in the conversation."
 msgstr ""
 
 #: nostr/ui/standup_publish_words.py:26
+msgid "A picture couldn’t be put on your media server: check your media servers in Settings and try again."
+msgstr ""
+
+#: nostr/ui/standup_publish_words.py:28
 msgid "The submission changed in the meantime, so nothing was published."
 msgstr ""
 
-#: nostr/ui/standup_publish_words.py:29
+#: nostr/ui/standup_publish_words.py:31
 msgid "Whether a work already stands under this link name couldn’t be checked just now. Try again in a moment."
 msgstr ""
 
-#: nostr/ui/standup_publish_words.py:33
+#: nostr/ui/standup_publish_words.py:35
 msgid "Your signer app doesn’t sign texts this long. It works with the key on this computer."
 msgstr ""
 
-#: nostr/ui/standup_publish_words.py:37
+#: nostr/ui/standup_publish_words.py:39
 msgid "Your signer app asks once more in a moment: with it, MyEditor deletes the private copies of your article."
 msgstr ""
 
-#: nostr/ui/standup_publish_words.py:39
+#: nostr/ui/standup_publish_words.py:41
 msgid "This version can’t be published as it is. Ask the editorial team in the conversation."
 msgstr ""
 
@@ -13704,20 +13716,20 @@ msgid "Details changed"
 msgstr ""
 
 #: nostr/ui/standup_revise_sheet.py:178
-#: nostr/ui/submission_thread.py:444
+#: nostr/ui/submission_thread.py:569
 msgid "Show Changes"
 msgstr ""
 
-#: nostr/ui/standup_revise_sheet.py:189
-#: nostr/ui/standup_revise_sheet.py:193
+#: nostr/ui/standup_revise_sheet.py:192
+#: nostr/ui/standup_revise_sheet.py:196
 msgid "Note to the editorial team (optional)"
 msgstr ""
 
-#: nostr/ui/standup_revise_sheet.py:210
+#: nostr/ui/standup_revise_sheet.py:213
 msgid "Hand In"
 msgstr ""
 
-#: nostr/ui/standup_revise_sheet.py:224
+#: nostr/ui/standup_revise_sheet.py:227
 msgid "Back"
 msgstr ""
 
@@ -13725,7 +13737,7 @@ msgstr ""
 msgid "Hand In New Version"
 msgstr ""
 
-#: nostr/ui/standup_revise_sheet.py:192
+#: nostr/ui/standup_revise_sheet.py:195
 msgid "What changed?"
 msgstr ""
 
@@ -13734,7 +13746,7 @@ msgstr ""
 msgid "Version {number} to {publication}"
 msgstr ""
 
-#: nostr/ui/standup_revise_sheet.py:200
+#: nostr/ui/standup_revise_sheet.py:203
 #, python-brace-format
 msgid "End-to-end encrypted, like version {number}."
 msgstr ""
@@ -13761,7 +13773,7 @@ msgid "Submit"
 msgstr ""
 
 #: nostr/ui/standup_submit_sheet.py:228
-#: nostr/ui/submission_detail.py:588
+#: nostr/ui/submission_detail.py:709
 msgid "Publication"
 msgstr ""
 
@@ -13848,9 +13860,9 @@ msgid "An earlier try wasn’t sent: Submit sends it again."
 msgstr ""
 
 #: nostr/ui/standup_ways_out.py:51
-#: nostr/ui/submission_detail.py:231
-#: nostr/ui/submission_detail.py:521
-#: nostr/ui/submissions_view.py:412
+#: nostr/ui/submission_detail.py:261
+#: nostr/ui/submission_detail.py:639
+#: nostr/ui/submissions_view.py:475
 msgid "Discard"
 msgstr ""
 
@@ -13891,152 +13903,157 @@ msgstr ""
 msgid "Summary (optional)"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:71
+#: nostr/ui/submission_detail.py:85
 msgid "Send (↩)"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:72
+#: nostr/ui/submission_detail.py:86
 msgid "⇧↩ for a new line"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:73
+#: nostr/ui/submission_detail.py:87
 msgid "This version isn’t confirmed and is not opened."
 msgstr ""
 
-#: nostr/ui/submission_detail.py:74
+#: nostr/ui/submission_detail.py:88
 msgid "This submission couldn’t be loaded"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:75
+#: nostr/ui/submission_detail.py:89
 msgid "The submission wasn’t withdrawn"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:76
+#: nostr/ui/submission_detail.py:90
 #, python-brace-format
 msgid "It wasn’t withdrawn: {publication} decided on it in the meantime."
 msgstr ""
 
-#: nostr/ui/submission_detail.py:82
+#: nostr/ui/submission_detail.py:96
 #, python-brace-format
 msgid "Only you, the others taking part and the editorial team of {publication} can read it."
 msgstr ""
 
-#: nostr/ui/submission_detail.py:84
+#: nostr/ui/submission_detail.py:98
 msgid "The server sees the title, the status and who takes part, never the content."
 msgstr ""
 
-#: nostr/ui/submission_detail.py:85
+#: nostr/ui/submission_detail.py:99
 msgid "The pictures stay encrypted on your media server until the article is published."
 msgstr ""
 
-#: nostr/ui/submission_detail.py:86
+#: nostr/ui/submission_detail.py:100
 msgid "What you have read is kept in step across your devices, encrypted."
 msgstr ""
 
-#: nostr/ui/submission_detail.py:136
+#: nostr/ui/submission_detail.py:164
 msgid "Back to Submissions"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:142
-#: nostr/ui/submission_detail.py:143
+#: nostr/ui/submission_detail.py:170
+#: nostr/ui/submission_detail.py:171
 msgid "Info"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:152
-#: nostr/ui/submission_thread.py:440
-#: nostr/ui/submissions_view.py:407
+#: nostr/ui/submission_detail.py:180
+#: nostr/ui/submission_thread.py:565
+#: nostr/ui/submissions_view.py:455
 msgid "Open in Editor"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:154
+#: nostr/ui/submission_detail.py:182
 msgid "Withdraw …"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:276
+#: nostr/ui/submission_detail.py:323
 msgid "End-to-end encrypted"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:305
-#: nostr/ui/submission_detail.py:306
+#: nostr/ui/submission_detail.py:357
+#: nostr/ui/submission_detail.py:358
 msgid "Message to the editorial team"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:315
+#: nostr/ui/submission_detail.py:367
 msgid "Send"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:135
-#: nostr/ui/submissions_view.py:68
-#: nostr/ui/submissions_view.py:127
+#: nostr/ui/submission_detail.py:163
+#: nostr/ui/submissions_view.py:72
+#: nostr/ui/submissions_view.py:140
 msgid "Submissions"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:584
+#: nostr/ui/submission_detail.py:705
 msgid "you"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:588
+#: nostr/ui/submission_detail.py:709
 msgid "Published by"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:589
+#: nostr/ui/submission_detail.py:710
 msgid "Version"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:590
+#: nostr/ui/submission_detail.py:711
 msgid "Responsible"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:458
+#: nostr/ui/submission_detail.py:546
 #, python-brace-format
 msgid "{first}, {second} and {count} more"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:584
+#: nostr/ui/submission_detail.py:705
 msgid "the writer"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:594
+#: nostr/ui/submission_detail.py:715
 msgid "Taking part"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:720
+#: nostr/ui/submission_detail.py:859
 msgid "Withdraw this submission?"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:724
+#: nostr/ui/submission_detail.py:863
 msgid "Withdraw"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:496
-#: nostr/ui/submissions_view.py:349
+#: nostr/ui/submission_detail.py:552
+#, python-brace-format
+msgid "{first} and {count} more"
+msgstr ""
+
+#: nostr/ui/submission_detail.py:614
+#: nostr/ui/submissions_view.py:383
 msgid "Loading …"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:570
-#, python-brace-format
-msgid "{name} and the editorial team of {publication}"
-msgstr ""
-
-#: nostr/ui/submission_detail.py:572
-#, python-brace-format
-msgid "The editorial team of {publication}"
-msgstr ""
-
-#: nostr/ui/submission_detail.py:605
+#: nostr/ui/submission_detail.py:729
 msgid "Encryption"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:606
+#: nostr/ui/submission_detail.py:730
 msgid "History"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:545
+#: nostr/ui/submission_detail.py:663
 #, python-brace-format
 msgid "Remind {name}"
 msgstr ""
 
-#: nostr/ui/submission_detail.py:721
+#: nostr/ui/submission_detail.py:691
+#, python-brace-format
+msgid "{name} and the editorial team of {publication}"
+msgstr ""
+
+#: nostr/ui/submission_detail.py:693
+#, python-brace-format
+msgid "The editorial team of {publication}"
+msgstr ""
+
+#: nostr/ui/submission_detail.py:860
 #, python-brace-format
 msgid "{publication} no longer sees it in its inbox then. What the editorial team already has stays there."
 msgstr ""
@@ -14050,206 +14067,219 @@ msgstr ""
 msgid "Submission to {publication}: {status}"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:512
+#: nostr/ui/submission_thread.py:637
 msgid "More about this"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:56
+#: nostr/ui/submission_thread.py:70
 msgid "Heart"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:56
+#: nostr/ui/submission_thread.py:70
 msgid "Thumbs up"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:56
+#: nostr/ui/submission_thread.py:70
 msgid "Thumbs down"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:56
+#: nostr/ui/submission_thread.py:70
 msgid "Laughing"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:56
+#: nostr/ui/submission_thread.py:70
 msgid "Exclamation marks"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:57
+#: nostr/ui/submission_thread.py:71
 msgid "Question mark"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:85
+#: nostr/ui/submission_thread.py:150
 #, python-brace-format
 msgid "Reactions: {list}"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:161
+#: nostr/ui/submission_thread.py:240
 msgid "React to your message"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:229
-#: nostr/ui/submission_thread.py:162
+#: nostr/ui/submission_thread.py:347
+#: nostr/ui/submission_thread.py:241
 msgid "React"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:195
+#: nostr/ui/submission_thread.py:276
 msgid "edited"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:161
+#: nostr/ui/submission_thread.py:240
 #, python-brace-format
 msgid "React to the message from {name}"
 msgstr ""
 
-#: nostr/ui/submissions_host.py:64
+#: nostr/ui/submissions_host.py:65
 #, python-brace-format
 msgid "New message from {publication} about “{title}”."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:65
+#: nostr/ui/submissions_host.py:66
 #, python-brace-format
 msgid "New message from {name} about “{title}”."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:66
+#: nostr/ui/submissions_host.py:67
 #, python-brace-format
 msgid "New message from a contributor about “{title}”."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:67
+#: nostr/ui/submissions_host.py:68
 #, python-brace-format
 msgid "New message about “{title}”."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:76
+#: nostr/ui/submissions_host.py:77
 msgid "Open the article in the editor first."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:77
+#: nostr/ui/submissions_host.py:78
 msgid "MyEditor can’t find this article. Open it in the editor, then send it again."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:78
+#: nostr/ui/submissions_host.py:79
 msgid "The version you handed in couldn’t be loaded: try again in a moment."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:79
+#: nostr/ui/submissions_host.py:80
 msgid "The accepted version couldn’t be loaded yet: try again in a moment."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:80
+#: nostr/ui/submissions_host.py:81
 msgid "The published article couldn’t be found yet: try again in a moment."
-msgstr ""
-
-#: nostr/ui/submissions_host.py:82
-#, python-brace-format
-msgid "{name} was reminded."
 msgstr ""
 
 #: nostr/ui/submissions_host.py:83
 #, python-brace-format
-msgid "{name} was already reminded today."
+msgid "{name} was reminded."
 msgstr ""
 
 #: nostr/ui/submissions_host.py:84
 #, python-brace-format
+msgid "{name} was already reminded today."
+msgstr ""
+
+#: nostr/ui/submissions_host.py:85
+#, python-brace-format
 msgid "{name} wasn’t reminded."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:86
+#: nostr/ui/submissions_host.py:87
 #, python-brace-format
 msgid "{publication} still hasn’t learned of it."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:69
+#: nostr/ui/submissions_host.py:70
 #, python-brace-format
 msgid "{publication} asks for changes to “{title}”."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:70
+#: nostr/ui/submissions_host.py:71
 #, python-brace-format
 msgid "{publication} accepted “{title}”."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:71
+#: nostr/ui/submissions_host.py:72
 #, python-brace-format
 msgid "{publication} declined “{title}”."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:72
+#: nostr/ui/submissions_host.py:73
 #, python-brace-format
 msgid "“{title}” is published in {publication}."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:73
+#: nostr/ui/submissions_host.py:74
 #, python-brace-format
 msgid "{publication} suggests a correction to “{title}”."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:412
+#: nostr/ui/submissions_host.py:413
 #, python-brace-format
 msgid "{title} (version {number})"
 msgstr ""
 
-#: nostr/ui/submissions_host.py:690
+#: nostr/ui/submissions_host.py:693
 #, python-brace-format
 msgid "Version {before} and version {after}"
 msgstr ""
 
-#: nostr/ui/submissions_view.py:58
+#: nostr/ui/submissions_view.py:62
 msgid "Follow here what you submit to publications. Open an article and choose “Submit to a Publication…” in the Nostr menu."
 msgstr ""
 
-#: nostr/ui/submissions_view.py:68
+#: nostr/ui/submissions_view.py:72
 msgid "What you submitted to publications"
 msgstr ""
 
-#: nostr/ui/submissions_view.py:69
+#: nostr/ui/submissions_view.py:73
 msgid "Refresh Submissions"
 msgstr ""
 
-#: nostr/ui/submissions_view.py:70
+#: nostr/ui/submissions_view.py:74
 msgid "Search Submissions"
 msgstr ""
 
-#: nostr/ui/submissions_view.py:299
+#: nostr/ui/submissions_view.py:333
 msgid "Your Turn"
 msgstr ""
 
-#: nostr/ui/submissions_view.py:300
+#: nostr/ui/submissions_view.py:334
 msgid "In Progress"
 msgstr ""
 
-#: nostr/ui/submissions_view.py:333
+#: nostr/ui/submissions_view.py:367
 msgid "Choose an account in the Nostr menu to see what you submitted."
 msgstr ""
 
-#: nostr/ui/submissions_view.py:337
-#: nostr/ui/submissions_view.py:352
+#: nostr/ui/submissions_view.py:460
+msgid "Discard …"
+msgstr ""
+
+#: nostr/ui/submissions_view.py:371
+#: nostr/ui/submissions_view.py:386
 msgid "No Submissions Yet"
 msgstr ""
 
-#: nostr/ui/submissions_view.py:392
+#: nostr/ui/submissions_view.py:440
 msgid "Done, expanded"
 msgstr ""
 
-#: nostr/ui/submissions_view.py:393
+#: nostr/ui/submissions_view.py:441
 msgid "Done, collapsed"
 msgstr ""
 
-#: nostr/ui/submissions_view.py:325
+#: nostr/ui/submissions_view.py:359
 #, python-brace-format
 msgid "The current status couldn’t be loaded. {cause}"
 msgstr ""
 
-#: nostr/ui/submissions_view.py:339
-#: nostr/ui/submissions_view.py:346
+#: nostr/ui/submissions_view.py:373
+#: nostr/ui/submissions_view.py:380
 msgid "Your submissions couldn’t be loaded"
 msgstr ""
 
-#: nostr/ui/submissions_view.py:307
+#: nostr/ui/submissions_view.py:471
+msgid "Discard this attempt?"
+msgstr ""
+
+#: nostr/ui/submissions_view.py:341
 #, python-brace-format
 msgid "Done ({count})"
+msgstr ""
+
+#: nostr/ui/submissions_view.py:472
+#, python-brace-format
+msgid "This submission never reached {publication}. It leaves your list; your article stays as it is."
 msgstr ""
 
 #: nostr/ui/tag_field.py:127

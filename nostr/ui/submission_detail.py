@@ -10,7 +10,8 @@ prototype's screens 16, 20, 30).
     Anna möchte Änderungen.
     Was genau, steht unten im Gespräch.
     [ Im Editor überarbeiten ]
-    (A)(T) Anna und die Redaktion von …   🔒 Ende-zu-Ende verschlüsselt
+    (A) Anna und die Redaktion von Einundzwanzig Magazin
+        🔒 Ende-zu-Ende verschlüsselt
     … the conversation …
     ┌ Nachricht an die Redaktion ───────┐ (↑)
 
@@ -26,7 +27,10 @@ with Cancel as the default.
 The header, the sentence and the action stay where they are; only the
 conversation (with Info above it) scrolls (RG-M3-b 2). It opens at the
 newest message and stays at the end while it grows, after sending too,
-unless the person scrolled up to read.
+unless the person scrolled up to read. In a short panel the cover and
+the people's pills give way, so the sentence and every action stay in
+sight. The first line (‹ Einreichungen, Info, the menu) is a bar of its
+own, which the Drafts panel shows in the place of its search field.
 
 The composer stays at the bottom, one line that grows with the text
 (up to :data:`COMPOSER_LINES`): Return sends, Shift-Return starts a new
@@ -41,11 +45,11 @@ from __future__ import annotations
 from html import escape
 from typing import Callable, Iterable, Optional
 
-from PySide6.QtCore import QDateTime, QEvent, QLocale, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QIcon, QPixmap
+from PySide6.QtCore import QDateTime, QEvent, QLocale, QPoint, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPixmap
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QMenu, QPlainTextEdit, QPushButton, QScrollArea, QToolButton,
-    QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QLabel, QMenu, QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy,
+    QToolButton, QToolTip, QVBoxLayout, QWidget,
 )
 
 import announce
@@ -64,9 +68,19 @@ from .flow_layout import FlowLayout
 from .post_list import symbol_pixmap
 from .standup_publications import publication_logo
 from .submission_cover import cover_pixmap
-from .submission_thread import ThreadView, discard, face, more_about_button
+from .eliding_label import ElidingLabel
+from .submission_thread import ThreadView, breakable, discard, face, more_about_button
 
 _COVER = 64
+_FACE = 22                  # the picture of who reads
+# How far the top bar's buttons reach into the gutter at its leading and
+# its trailing end, so that their words and symbols, not the edges of
+# their focus rings, stand on it.
+BAR_INSET = (9, 4)
+# The height the conversation keeps before the cover and the people give
+# way to it (a short panel), and how much more it needs to give them back.
+_CONVERSATION_ROOM = 96
+_ROOM_AGAIN = 24
 COMPOSER_LINES = 5
 SEND_TIP = N_("Send (↩)")
 NEW_LINE_HINT = N_("⇧↩ for a new line")
@@ -119,7 +133,14 @@ class SubmissionDetail(QWidget):
         self._edited: Callable[[rules.Row], bool] = lambda _row: False
         self._said = ""
         self._line = ""                         # what an action said in place
+        self._reminding: set = set()            # whom a reminder is on its way to
         self._shown_row: tuple = ()             # the row and the publication's name shown
+        self._has_people = False                # the pills have someone to show
+        # The header is fitted again once what was shown anew is laid out.
+        self._fit_soon = QTimer(self)
+        self._fit_soon.setSingleShot(True)
+        self._fit_soon.setInterval(0)
+        self._fit_soon.timeout.connect(self._fit_header)
         self._build()
         self.apply_theme(is_dark)
 
@@ -129,9 +150,16 @@ class SubmissionDetail(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
-        top = QHBoxLayout()
-        top.setContentsMargins(LIST_GUTTER - 4, 6, LIST_GUTTER - 4, 4)
+        # ‹ Einreichungen, Info and the menu: a bar of its own, which the
+        # Drafts panel shows in the search field's place (set_view_bar), so
+        # the detail starts right under it.
+        self.top_bar = QWidget()
+        self.top_bar.setObjectName("submission_detail_bar")
+        top = QHBoxLayout(self.top_bar)
+        top.setContentsMargins(LIST_GUTTER - BAR_INSET[0], 6, LIST_GUTTER - BAR_INSET[1], 4)
         self.back = QToolButton()
+        self.back.setObjectName("submission_back")
+        self.back.installEventFilter(self)      # its focus ring, by how the focus came
         self.back.setText("‹ " + _("Submissions"))
         self.back.setAccessibleName(_("Back to Submissions"))
         self.back.setAutoRaise(True)
@@ -157,13 +185,13 @@ class SubmissionDetail(QWidget):
         top.addStretch(1)
         top.addWidget(self.info_button)
         top.addWidget(self.more_button)
-        root.addLayout(top)
+        root.addWidget(self.top_bar)
 
         # Pinned: the header, the sentence and the action.
         pinned = QWidget()
         pinned.setObjectName("submission_detail_content")
         column = QVBoxLayout(pinned)
-        column.setContentsMargins(LIST_GUTTER, 4, LIST_GUTTER, 6)
+        column.setContentsMargins(LIST_GUTTER, 10, LIST_GUTTER, 6)
         column.setSpacing(8)
         head = QHBoxLayout()
         head.setSpacing(10)
@@ -177,7 +205,9 @@ class SubmissionDetail(QWidget):
         self.title.setWordWrap(True)
         self.title.setTextFormat(Qt.TextFormat.PlainText)
         self.logo = QLabel()
-        self.publication = QLabel()
+        # One line, cut with an ellipsis (the whole name is its tooltip):
+        # a long name never widens the panel's content.
+        self.publication = ElidingLabel()
         self.publication.setTextFormat(Qt.TextFormat.PlainText)
         self.publication.setFont(secondary_font())
         named = QHBoxLayout()
@@ -245,6 +275,10 @@ class SubmissionDetail(QWidget):
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # It takes what the pinned part and the composer leave, down to
+        # nothing: in a short panel the action is never cut for it.
+        self._scroll.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Ignored)
+        self._compact = False                   # a short panel: no cover, no people
         self._stick = True                      # at the end, and kept there as it grows
         bar = self._scroll.verticalScrollBar()
         bar.valueChanged.connect(self._on_scrolled)
@@ -262,6 +296,10 @@ class SubmissionDetail(QWidget):
         self.info.hide()
         column.addWidget(self.info)
 
+        # Who reads, and how: one block. The picture stands on the first
+        # line of the names (which wrap in a narrow panel); the lock and
+        # "Ende-zu-Ende verschlüsselt" under them, as the web app and the
+        # submit sheet show it.
         who = QHBoxLayout()
         who.setSpacing(6)
         self.faces = QLabel()
@@ -270,13 +308,27 @@ class SubmissionDetail(QWidget):
         self.readers.setWordWrap(True)
         self.readers.setTextFormat(Qt.TextFormat.PlainText)
         self.readers.setFont(secondary_font())
-        who.addWidget(self.faces)
-        who.addWidget(self.readers, 1)
-        column.addLayout(who)
+        line = QFontMetrics(secondary_font()).height()
+        said = QVBoxLayout()
+        said.setContentsMargins(0, max(0, (_FACE - line) // 2), 0, 0)
+        said.setSpacing(2)
+        said.addWidget(self.readers)
+        self._secure = QWidget()
+        secure = QHBoxLayout(self._secure)
+        secure.setContentsMargins(0, 0, 0, 0)
+        secure.setSpacing(4)
+        self._lock = QLabel()
+        self._lock.setFixedSize(max(10, round(line * 0.8)), line)
+        self._lock.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.encrypted = QLabel(_("End-to-end encrypted"))
         self.encrypted.setObjectName("submission_more")
         self.encrypted.setFont(secondary_font())
-        column.addWidget(self.encrypted)
+        secure.addWidget(self._lock)            # decoration: the words say it
+        secure.addWidget(self.encrypted, 1)
+        said.addWidget(self._secure)
+        who.addWidget(self.faces, 0, Qt.AlignmentFlag.AlignTop)
+        who.addLayout(said, 1)
+        column.addLayout(who)
         self.conversation = ThreadView(name_of=self._name_of, avatar_of=self._avatar_of,
                                  is_dark=self._is_dark)
         self.conversation.reacted.connect(self._on_reacted)
@@ -342,7 +394,7 @@ class SubmissionDetail(QWidget):
     def sid(self) -> str:
         return self._sid
 
-    def show_submission(self, following, sid: str) -> None:
+    def show_submission(self, following, sid: str, *, keyboard: bool = False) -> None:
         self.clear()
         self._following, self._sid = following, sid
         following.detail_changed.connect(self._on_changed)
@@ -350,7 +402,11 @@ class SubmissionDetail(QWidget):
         following.open(sid)
         self._stick = True                      # it opens at the newest message
         self.refresh()
-        self.back.setFocus()
+        # The focus is on the way back. Its ring shows where the keyboard
+        # brought it (``keyboard``: Return on the row, then Tab), never
+        # after a click on a row, where it read as a pressed button.
+        self.back.setFocus(Qt.FocusReason.TabFocusReason if keyboard
+                           else Qt.FocusReason.OtherFocusReason)
         self._to_the_end()
 
     def clear(self) -> None:
@@ -363,6 +419,7 @@ class SubmissionDetail(QWidget):
         self._sid = ""
         self._said = ""
         self._line = ""
+        self._reminding.clear()
         self._shown_row = ()
         self.composer.clear()
         self.problem.hide()
@@ -372,7 +429,8 @@ class SubmissionDetail(QWidget):
         """One line in place, under the sentence (an action that could
         not go on says why there), until the next action."""
         self._line = text
-        self.note.setText(escape(text))
+        self._reminding.clear()                 # what was asked for is answered
+        self.note.setText(escape(breakable(text)))
         self.note.show()
         announce.announce(self.note, text)
 
@@ -403,7 +461,7 @@ class SubmissionDetail(QWidget):
             return
         row, r = detail.row, appearance.roles(self._is_dark)
         self._shown_row = (row, detail.publication)
-        self.title.setText(row.title)
+        self.title.setText(breakable(row.title))
         self.publication.setText(detail.publication)
         self.logo.setPixmap(self._logo(row.publication, detail.publication, 16))
         self.cover.setPixmap(cover_pixmap(self._following.cover(self._sid), row.kind, _COVER,
@@ -420,18 +478,47 @@ class SubmissionDetail(QWidget):
         self.more_button.setVisible(row.confirmed or row.open)
         self.faces.setVisible(row.confirmed)
         self.readers.setVisible(row.confirmed)
-        self.encrypted.setVisible(row.confirmed)
+        self._secure.setVisible(row.confirmed)
         self.conversation.publication_face = lambda size: self._logo(
             row.publication, detail.publication, size)
         self.conversation.show_thread(detail, self._following.me)
         self.composer_bar.setVisible(detail.can_write and row.confirmed)
         self._order_tabs()
+        self._fit_soon.start()                  # what is said now may be taller
+
+    def _fit_header(self) -> None:
+        """In a short panel the cover and the people give way (the title
+        and the publication stay), so that the sentence, its action and
+        some of the conversation are in sight; they come back once there
+        is room for them again."""
+        if not self.isVisible():
+            return                              # no height to go by: once it shows
+        room = self._scroll.height()
+        if self._compact:
+            people = self._pills.sizeHint().height() + 8 if self._has_people else 0
+            room -= _COVER + people + _ROOM_AGAIN
+        compact = room < _CONVERSATION_ROOM
+        if compact != self._compact:
+            self._compact = compact
+            self.cover.setVisible(not compact)
+            self._pills.setVisible(self._has_people and not compact)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802, Qt's name
+        super().resizeEvent(event)
+        self._fit_pills()
+        self._fit_header()
+
+    def showEvent(self, event) -> None:  # noqa: N802, Qt's name
+        super().showEvent(event)
+        self._fit_soon.start()                  # at the height it has now
 
     def _order_tabs(self) -> None:
         """Tab goes as the eye does, after every rebuild (RG-M3-b 11): the
         top, the action, the conversation, then the composer."""
         about = [self._more_about.itemAt(i).widget() for i in range(self._more_about.count())]
-        chain = [self.back, self.info_button, self.more_button, self.action,
+        pills = [self._pill_row.itemAt(i).widget() for i in range(self._pill_row.count())]
+        chain = [self.back, self.info_button, self.more_button,
+                 *(p for p in pills if p.focusPolicy() != Qt.FocusPolicy.NoFocus), self.action,
                  *self.reminder_buttons(), self.second] \
             + [w for w in about if w is not None] + self.conversation.focusables() \
             + [self.composer, self.send]
@@ -452,29 +539,60 @@ class SubmissionDetail(QWidget):
         if row.role != "writer" and row.writer:
             people.insert(0, row.writer)
         names = [self._name_of(p) or _("Someone") for p in people]
-        self._pills.setVisible(bool(people))
+        self._has_people = bool(people)
+        self._pills.setVisible(self._has_people and not self._compact)
         if len(people) >= 4:
             # From four people on, one pill (plan 10.1 D32).
             text = _("{first}, {second} and {count} more").format(
                 first=names[0], second=names[1], count=len(people) - 2)
-            self._pill_row.addWidget(self._pill(text, None, ", ".join(names)))
-            return
-        for pubkey, name in zip(people, names):
-            self._pill_row.addWidget(self._pill(
-                name, QIcon(face(pubkey, name, self._avatar_of(pubkey), 18)), name))
+            everyone = ", ".join(names)
+            pill = self._pill(text, None, everyone)
+            # Where the panel is too narrow for two names, one, and always
+            # how many more there are.
+            pill.setProperty("shorter", _("{first} and {count} more").format(
+                first=names[0], count=len(people) - 1))
+            # The one pill that holds more than it shows: a click, Space or
+            # Return says everyone (never on hover only, lesson 26).
+            pill.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+            pill.clicked.connect(lambda: QToolTip.showText(
+                pill.mapToGlobal(QPoint(0, pill.height())), plain_tip(everyone), pill))
+            self._pill_row.addWidget(pill)
+        else:
+            for pubkey, name in zip(people, names):
+                self._pill_row.addWidget(self._pill(
+                    name, QIcon(face(pubkey, name, self._avatar_of(pubkey), 18)), name))
+        self._fit_pills()
 
     @staticmethod
     def _pill(text: str, icon: Optional[QIcon], spoken: str) -> QToolButton:
         pill = QToolButton()
         pill.setObjectName("submission_pill")
         pill.setText(text)
+        pill.setProperty("words", text)
         pill.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         if icon is not None:
             pill.setIcon(icon)
             pill.setIconSize(QSize(18, 18))
+        # A person's pill does nothing: Tab passes it by.
+        pill.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         pill.setAccessibleName(spoken)
         pill.setToolTip(plain_tip(spoken))
         return pill
+
+    def _fit_pills(self) -> None:
+        """A pill's words never run out of the panel (a button's words do
+        not wrap): cut with an ellipsis at the width there is, whole in
+        its tooltip and to a screen reader."""
+        room = self.width() - 2 * LIST_GUTTER
+        for index in range(self._pill_row.count()):
+            pill = self._pill_row.itemAt(index).widget()
+            words, metrics = pill.property("words"), pill.fontMetrics()
+            chrome = pill.sizeHint().width() - metrics.horizontalAdvance(pill.text())
+            room_for_words = max(metrics.averageCharWidth() * 6, room - chrome)
+            shorter, mode = pill.property("shorter"), Qt.TextElideMode.ElideRight
+            if shorter and metrics.horizontalAdvance(words) > room_for_words:
+                words, mode = shorter, Qt.TextElideMode.ElideMiddle     # the count stays
+            pill.setText(metrics.elidedText(words, mode, room_for_words))
 
     def _show_status(self, detail, r) -> None:
         row = detail.row
@@ -482,8 +600,8 @@ class SubmissionDetail(QWidget):
                                  decision=detail.decision, complete=detail.complete,
                                  edited=self._edited(row), section=detail.section)
         self._status = status
-        self.sentence.setText(status.sentence)
-        self.more.setText(status.more)
+        self.sentence.setText(breakable(status.sentence))
+        self.more.setText(breakable(status.more))
         self.more.setVisible(bool(status.more))
         note = ""
         if detail.problem:
@@ -557,6 +675,9 @@ class SubmissionDetail(QWidget):
         return list(self._reminders)
 
     def _remind(self, pubkey: str) -> None:
+        if pubkey in self._reminding:
+            return                              # on its way: a second click is no second reminder
+        self._reminding.add(pubkey)
         if self._line:
             self._line = ""
             self.note.hide()
@@ -566,16 +687,16 @@ class SubmissionDetail(QWidget):
         view = detail.row.view
         editor = view.responsible if view is not None else None
         name = self._name_of(editor) if editor else ""
-        self.readers.setText(
+        self.readers.setText(breakable(
             _("{name} and the editorial team of {publication}").format(
                 name=name, publication=detail.publication) if name
             else _("The editorial team of {publication}").format(
-                publication=detail.publication))
+                publication=detail.publication)))
         if name:
-            self.faces.setPixmap(face(editor, name, self._avatar_of(editor), 22))
+            self.faces.setPixmap(face(editor, name, self._avatar_of(editor), _FACE))
         else:
             # Nobody named: the Redaktion has the publication's face.
-            self.faces.setPixmap(self._logo(detail.row.publication, detail.publication, 22))
+            self.faces.setPixmap(self._logo(detail.row.publication, detail.publication, _FACE))
 
     def _fill_info(self, detail) -> None:
         """Info: the facts, the privacy lines, the history (plan 10.4)."""
@@ -600,10 +721,13 @@ class SubmissionDetail(QWidget):
         history = "".join(
             f"<li>{escape(threads.caption_text(c, me=self._following.me, name_of=self._name_of))}"
             f" · {escape(_when(c.at, locale))}</li>" for c in detail.history)
+        # The lists stand on the gutter with their headings (a list's own
+        # indent is a third of a narrow panel).
+        ul = "<ul style='margin-left: 14px; margin-top: 2px; -qt-list-indent: 0;'>"
         self.info.setText(
             f"<table>{''.join(lines)}</table>"
-            f"<p><b>{escape(_('Encryption'))}</b></p><ul>{privacy}</ul>"
-            f"<p><b>{escape(_('History'))}</b></p><ul>{history}</ul>")
+            f"<p style='margin-bottom: 0;'><b>{escape(_('Encryption'))}</b></p>{ul}{privacy}</ul>"
+            f"<p style='margin-bottom: 0;'><b>{escape(_('History'))}</b></p>{ul}{history}</ul>")
 
     def _show_info(self, shown: bool) -> None:
         self.info.setVisible(shown)
@@ -652,12 +776,18 @@ class SubmissionDetail(QWidget):
         def done(stored: bool) -> None:
             self.second.setEnabled(True)
             if not stored and self._following is following:
-                self.note.setText(markup(_("The earlier try wasn’t discarded"), _(
-                    "Your list of submissions couldn’t be saved: check your internet "
-                    "connection and try again.")))
-                self.note.show()
+                self.say_not_discarded()
 
         following.discard(self._sid, done)
+
+    def say_not_discarded(self) -> None:
+        """Verwerfen did not go: said once, with its cause and what to do."""
+        title, sentence = _("The earlier try wasn’t discarded"), _(
+            "Your list of submissions couldn’t be saved: check your internet "
+            "connection and try again.")
+        self.note.setText(markup(title, sentence))
+        self.note.show()
+        announce.announce(self.note, failures.spoken(title, sentence))
 
     def _on_reacted(self, target: str, author: str, emoji: str) -> None:
         detail = self.detail()
@@ -702,10 +832,19 @@ class SubmissionDetail(QWidget):
         self._to_the_end()
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802, Qt's name
-        if watched is self.composer and event.type() in (QEvent.Type.FocusIn,
-                                                          QEvent.Type.FocusOut):
+        if watched is self.back and event.type() == QEvent.Type.FocusIn:
+            ring = event.reason() in (Qt.FocusReason.TabFocusReason,
+                                      Qt.FocusReason.BacktabFocusReason,
+                                      Qt.FocusReason.ShortcutFocusReason)
+            if bool(self.back.property("ring")) != ring:
+                self.back.setProperty("ring", ring)
+                self.back.style().unpolish(self.back)
+                self.back.style().polish(self.back)
+        if watched is not getattr(self, "composer", None):     # the back button, built first
+            return super().eventFilter(watched, event)
+        if event.type() in (QEvent.Type.FocusIn, QEvent.Type.FocusOut):
             self.hint.setVisible(event.type() == QEvent.Type.FocusIn)
-        if watched is self.composer and event.type() == QEvent.Type.KeyPress \
+        if event.type() == QEvent.Type.KeyPress \
                 and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) \
                 and not event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
             self._send()
@@ -749,6 +888,8 @@ class SubmissionDetail(QWidget):
         self.conversation.is_dark = self._is_dark
         r = appearance.roles(self._is_dark)
         self.info_button.setIcon(QIcon(symbol_pixmap("info", 16, QColor(r.icon))))
+        self._lock.setPixmap(symbol_pixmap("lock", self._lock.width(), QColor(r.muted),
+                                           self.devicePixelRatioF() or 2.0))
         self.more_button.setIcon(QIcon(symbol_pixmap("ellipsis", 16, QColor(r.icon))))
         title = QFont(self.font())
         title.setWeight(QFont.Weight.DemiBold)
@@ -761,6 +902,7 @@ class SubmissionDetail(QWidget):
             #submission_composer {{ border-top: 1px solid {r.line}; background: {r.panel}; }}
             #submission_pill {{ background: {r.control}; color: {r.text};
                 border: 1px solid {r.line}; border-radius: 10px; padding: 1px 8px 1px 4px; }}
+            #submission_pill:focus {{ border-color: {r.focus}; }}
             {appearance.accent_button_css('#submission_action', self._is_dark)}
             #submission_send {{ background: {r.button}; color: {r.on_accent};
                 border: none; border-radius: {MIN_CONTROL_PX // 2}px; font-weight: 700; }}
@@ -768,13 +910,21 @@ class SubmissionDetail(QWidget):
             #submission_send:focus {{ border: 2px solid {r.focus}; }}
             QToolButton::menu-indicator {{ image: none; }}
         """)
+        # The bar looks the same in the panel's band, outside this widget.
+        self.top_bar.setStyleSheet(
+            appearance.controls(self._is_dark) + f"""
+            QToolButton::menu-indicator {{ image: none; }}
+            QToolButton#submission_back:focus {{ border-color: transparent; }}
+            QToolButton#submission_back[ring="true"]:focus {{ border-color: {r.focus}; }}""")
         self._fit_composer()                        # the style's padding counts
         if self._sid:
             self.refresh()
 
 
 def _when(at: int, locale) -> str:
-    return locale.toString(QDateTime.fromSecsSinceEpoch(int(at)), QLocale.FormatType.ShortFormat)
+    """A day and a time, kept together on one line of the history."""
+    when = locale.toString(QDateTime.fromSecsSinceEpoch(int(at)), QLocale.FormatType.ShortFormat)
+    return when.replace(" ", "\u00a0")
 
 
 __all__ = ["NOT_LOADED", "NOT_OPENED", "NOT_WITHDRAWN", "PRIVACY", "SubmissionDetail"]

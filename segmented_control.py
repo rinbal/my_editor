@@ -45,6 +45,9 @@ LABEL_PAD = 12
 TRACK_RADIUS = 7.0
 THUMB_RADIUS = 5.0
 MIN_HEIGHT = 26
+# The dot of a marked segment (something new waits there), at the upper
+# end of its label, inside the label's padding.
+MARK_SIZE = 6.0
 
 
 class Colors(NamedTuple):
@@ -60,6 +63,7 @@ class Colors(NamedTuple):
     text: QColor           # the chosen segment's label
     muted: QColor          # the other labels
     focus: QColor
+    mark: QColor = QColor("#007AFF")    # a marked segment's dot: the system's blue
 
 
 def colors(dark: bool) -> Colors:
@@ -75,7 +79,7 @@ def colors(dark: bool) -> Colors:
             divider=QColor(255, 255, 255, 34), thumb=QColor("#505054"),
             thumb_line=QColor(255, 255, 255, 30), thumb_shadow=QColor(0, 0, 0, 90),
             text=QColor("#FFFFFF"), muted=QColor("#ABABAB"),
-            focus=QColor(theme.focus_ring_color(True)))
+            focus=QColor(theme.focus_ring_color(True)), mark=QColor("#0A84FF"))
     return Colors(
         track=QColor(0, 0, 0, 15), track_line=QColor(0, 0, 0, 14),
         divider=QColor(0, 0, 0, 38), thumb=QColor("#FFFFFF"),
@@ -98,6 +102,7 @@ class Segment(QAbstractButton):
         self.key = key
         self._action: Optional[QAction] = None
         self._keyboard_focus = False
+        self._marked = False
         self.setText(title)
         self.setCheckable(True)
         self.setAccessibleName(title)
@@ -110,6 +115,18 @@ class Segment(QAbstractButton):
 
     def bind(self, action: QAction) -> None:
         self._action = action
+
+    def set_marked(self, marked: bool, spoken: str = "") -> None:
+        """A dot at the label: something new waits in what the segment
+        shows. ``spoken`` is what a screen reader hears after the title
+        then (the dot is nothing to it)."""
+        self._marked = bool(marked)
+        self.setAccessibleName(f"{self.text()}, {spoken}" if marked and spoken
+                               else self.text())
+        self.update()
+
+    def is_marked(self) -> bool:
+        return self._marked
 
     def label_width(self) -> int:
         return self.fontMetrics().horizontalAdvance(self.text()) + 2 * LABEL_PAD
@@ -177,7 +194,16 @@ class Segment(QAbstractButton):
             label.setAlphaF(label.alphaF() * 0.45)
         painter.setPen(label)
         painter.setFont(self.font())
-        painter.drawText(self.rect(), int(Qt.AlignmentFlag.AlignCenter), self.painted_text())
+        text = self.painted_text()
+        painter.drawText(self.rect(), int(Qt.AlignmentFlag.AlignCenter), text)
+        if self._marked:
+            metrics = self.fontMetrics()
+            after = (self.width() + metrics.horizontalAdvance(text)) / 2.0 + 2.0
+            x = min(after, self.width() - MARK_SIZE - 1.0)
+            y = self.height() / 2.0 - metrics.capHeight() / 2.0 - MARK_SIZE / 2.0
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(palette.mark)
+            painter.drawEllipse(QRectF(x, max(1.0, y), MARK_SIZE, MARK_SIZE))
 
 
 class SegmentedControl(QWidget):
@@ -187,6 +213,7 @@ class SegmentedControl(QWidget):
       set_segments(items)        ``(key, title, hint)`` each, in order
       set_current(key) / current()
       set_segment_enabled(key, enabled)
+      set_segment_marked(key, marked, spoken)   a dot: something new waits there
       set_dark(dark)
       segments                   the Segment buttons, in order
     """
@@ -232,6 +259,12 @@ class SegmentedControl(QWidget):
         for segment in self.segments:
             if segment.key == key:
                 segment.setEnabled(enabled)
+
+    def set_segment_marked(self, key: str, marked: bool, spoken: str = "") -> None:
+        """A dot at the segment ``key`` (``Segment.set_marked``)."""
+        for segment in self.segments:
+            if segment.key == key:
+                segment.set_marked(marked, spoken)
 
     def set_dark(self, dark: bool) -> None:
         self._dark = bool(dark)

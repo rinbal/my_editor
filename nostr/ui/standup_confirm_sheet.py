@@ -7,6 +7,7 @@ the publication publishes (M-4 M14; editorial contract 9.4, 11.2 step
     Anteil bestätigen
     Von Einundzwanzig Magazin angenommen, Fassung 2.
     Jana 70 %  ·  Paul 30 %                        (a narrow no-break space)
+    Apps, die Aufteilungen unterstützen, teilen Zaps so auf.
     Dein Anteil geht an jana@getalby.com.
     [ ] Mein Beitrag (Fotos) gehört mir. Ich bin mit der
         Lizenz CC BY 4.0 einverstanden.            (contributors)
@@ -49,6 +50,9 @@ from .publish_sheet import (
 from .standup_publish_sheet import ACCEPTED_LINE
 
 SHARE_GOES_TO = N_("Your share goes to {address}.")
+# What the shares are shares of, in the web's words (its ``honest``): a
+# first reader of "70 %" cannot tell otherwise.
+SPLITS_ZAPS = N_("Apps that support splits divide zaps this way.")
 # The web's words (editorial-confirmation.js) for the same moments.
 NO_ADDRESS = N_("For your share, your Nostr profile needs a Lightning address.")
 PROFILE_READING = N_("Reading your profile …")
@@ -117,7 +121,8 @@ class ConfirmSheet(QDialog):
         if self._needs_address:
             self._read_address()
         self._refresh()
-        fit_to_window(self, QSize(520, min(460, max(300, self.sizeHint().height()))))
+        fit_to_window(self, QSize(520, min(460, max(self._least.height(),
+                                                    self.sizeHint().height()))))
 
     def _label(self, text: str, name: str = "help") -> QLabel:
         label = QLabel(text)
@@ -140,6 +145,9 @@ class ConfirmSheet(QDialog):
         self.split.setVisible(bool(shares))
         self.show_names()
         root.addWidget(self.split)
+        self.split_help = self._label(_(SPLITS_ZAPS))
+        self.split_help.setVisible(bool(shares))
+        root.addWidget(self.split_help)
         self.address = self._label("")
         self.address.setVisible(self._needs_address)
         root.addWidget(self.address)
@@ -292,4 +300,4 @@ class ConfirmSheet(QDialog):
 
 
 __all__ = ["ConfirmSheet", "NO_ADDRESS", "PROFILE_NOT_READ", "PROFILE_READING", "RIGHTS",
-           "SHARE_GOES_TO"]
+           "SHARE_GOES_TO", "SPLITS_ZAPS"]

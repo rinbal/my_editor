@@ -38,6 +38,7 @@ from PySide6.QtGui import QColor, QDesktopServices, QPixmap
 from i18n import N_, _
 
 from .. import web_readers
+from ..failures import spoken
 from ..bech32 import decode_naddr, encode_naddr
 from ..standup import following as rules
 from ..standup import formats, publishing
@@ -529,9 +530,11 @@ class SubmissionsHost(QObject):
                         and sheet.run is run
                         for sheet in (self._publish_sheet, self._correction_sheet))
         # A refusal stays in the detail's own words (RG-M4-c 7): not said twice.
-        if run.stage is Stage.CHANGED or not open_here and run.stage in (
-                Stage.FAILED, Stage.NOT_STORED, Stage.NOT_CHECKED):
+        if run.stage is Stage.CHANGED:
             self._say_in_place(run.sid, run.words)
+        elif not open_here and run.stage in (Stage.FAILED, Stage.NOT_STORED, Stage.NOT_CHECKED):
+            # What did not happen, then why: the sheet's title and sentence.
+            self._say_in_place(run.sid, spoken(run.title, run.words))
 
     def _hear(self, run) -> None:
         if run not in self._heard:

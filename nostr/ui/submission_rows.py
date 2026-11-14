@@ -104,10 +104,11 @@ class Rows(QAbstractListModel):
 
 def _title_lines(text: str, font: QFont, width: int) -> List[str]:
     """``text`` on at most two lines of ``width``, the second cut with an
-    ellipsis."""
+    ellipsis. A word wider than a line goes on in the next one (a German
+    compound, a link), never out of the row."""
     layout = QTextLayout(text, font)
     option = QTextOption()
-    option.setWrapMode(QTextOption.WrapMode.WordWrap)
+    option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
     layout.setTextOption(option)
     layout.beginLayout()
     lines = []
@@ -188,13 +189,33 @@ class RowDelegate(QStyledItemDelegate):
         metrics = QFontMetrics(font)
         painter.setFont(font)
         painter.setPen(muted)
-        text = item.title
-        if item.kind == "done":
-            text = ("⌄ " if item.open else "› ") + text
         box = QRect(rect.left() + LIST_GUTTER, rect.bottom() - metrics.height() - 2,
                     max(0, rect.width() - 2 * LIST_GUTTER), metrics.height())
+        if item.kind == "done":
+            # The disclosure's chevron, drawn: one shape, turned down when
+            # it is open (the letters › and ⌄ differ in size and height).
+            arm = metrics.capHeight() * 0.36
+            x, y = box.left() + arm + 1.0, box.center().y() + 1.0
+            chevron = QPainterPath()
+            if item.open:
+                chevron.moveTo(x - arm, y - arm / 2)
+                chevron.lineTo(x, y + arm / 2)
+                chevron.lineTo(x + arm, y - arm / 2)
+            else:
+                chevron.moveTo(x - arm / 2, y - arm)
+                chevron.lineTo(x + arm / 2, y)
+                chevron.lineTo(x - arm / 2, y + arm)
+            pen = QPen(muted, 1.6)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(chevron)
+            painter.setPen(muted)
+            box.setLeft(box.left() + round(2 * arm) + 7)
         painter.drawText(box, int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
-                         metrics.elidedText(text, Qt.TextElideMode.ElideRight, box.width()))
+                         metrics.elidedText(item.title, Qt.TextElideMode.ElideRight,
+                                            box.width()))
 
     def _paint_row(self, painter, rect: QRect, item: Item, strong: QColor, muted: QColor,
                    on_accent: bool) -> None:

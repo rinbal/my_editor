@@ -6,7 +6,7 @@ the writer publishes (M-4 M13; the prototype's publish sheet).
     Als Artikel veröffentlichen
     Von Einundzwanzig Magazin angenommen, Fassung 2.
     ┌ Ein Jahr mit Lightning im Café ───────────────────┐
-    │ Zusammenfassung · #bitcoin #lightning · Nur du    │
+    │ Zusammenfassung · #bitcoin #lightning · Von dir   │
     └───────────────────────────────────────────────────┘
     Text und Bild wie abgegeben.
     Bisher privat. Danach für alle lesbar, Text und Bilder
@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 from alerts import answer_return_as_the_system_does
 from i18n import N_, _
 
+from ..standup.situations import and_list
 from . import appearance
 from .publish_sheet import (
     StatusLine, fit_margins, fit_minimum, fit_to_window, make_sheet, sheet_stylesheet,
@@ -48,15 +49,19 @@ PUBLIC_AFTER = N_("Until now it’s private. Once published, everyone can read i
                   "pictures unencrypted. It can’t be taken back.")
 DIFFERS = N_("The accepted version is published. If you change anything afterwards, the "
              "editorial team sees “changed since acceptance”.")
-ONLY_YOU = N_("Only you")
+# Whom the article names as its authors, as a byline says it: the person
+# publishing it, and everyone else it credits.
+BY_YOU = N_("By you")
+BY_YOU_WITH = N_("By you with {names}")
 ASK_PREFIX = N_("A short question about publishing: ")
 SIGN_HERE = N_("Sign with the Key on This Computer")
 
 
 class PublishSheet(QDialog):
     """See the module docstring. ``people`` are the names of everyone
-    credited besides the writer; ``differs``: the editor's text is not
-    the accepted version's."""
+    credited besides the writer (the byline under the title says them
+    after "By you"); ``differs``: the editor's text is not the accepted
+    version's."""
 
     view_requested = Signal(str)             # naddr
     ask_requested = Signal(str)              # the question's first words
@@ -116,11 +121,12 @@ class PublishSheet(QDialog):
         self.show_people(people)
         card.setAccessibleName(str(work.get("title") or ""))
         root.addWidget(card)
+        self._differs = bool(differs)
         self.differs = self._label(_(DIFFERS))
-        self.differs.setVisible(bool(differs))
+        self.differs.setVisible(self._differs)
         root.addWidget(self.differs)
         self.hint = self._label(_(AS_HANDED_IN))
-        self.hint.setVisible(not differs)
+        self.hint.setVisible(not self._differs)
         root.addWidget(self.hint)
         self.privacy = self._label(_(PUBLIC_AFTER))
         root.addWidget(self.privacy)
@@ -145,9 +151,10 @@ class PublishSheet(QDialog):
         answer_return_as_the_system_does(self.findChildren(QPushButton))
 
     def show_people(self, people: Sequence[str]) -> None:
-        """The names of everyone credited besides the writer (again when
-        a profile's name came in late)."""
-        self.people.setText(", ".join(people) if people else _(ONLY_YOU))
+        """The byline: the writer, and the names of everyone else the
+        article credits (again when a profile's name came in late)."""
+        self.people.setText(_(BY_YOU_WITH).format(names=and_list(list(people))) if people
+                            else _(BY_YOU))
 
     def resizeEvent(self, event) -> None:  # noqa: N802, Qt's name
         super().resizeEvent(event)
@@ -185,6 +192,12 @@ class PublishSheet(QDialog):
         self.publish.setEnabled(not working)
         self.view.setVisible(public)
         self.privacy.setVisible(not public)          # no longer private
+        # Out: what was said for the step before it goes, and the result
+        # reads in the text's own ink, not as a quiet aside.
+        self.hint.setVisible(not public and not self._differs)
+        self.differs.setVisible(not public and self._differs)
+        self.signing_as.setVisible(not public and bool(self.signing_as.text()))
+        self._status_ink(public)
         self.cancel_button.setVisible(not done)
         # Once it works, Cancel only closes: the run goes on (it is the
         # account's), and the detail shows where it is.
@@ -198,6 +211,13 @@ class PublishSheet(QDialog):
             target = self.status if self.status.isVisibleTo(self) else self.publish
             target.setFocus()
         self._seen = stage
+
+    def _status_ink(self, result: bool) -> None:
+        """The status line's colour: the text's own for the result
+        ("Veröffentlicht."), the status line's otherwise."""
+        self._result = result
+        if result:
+            self.status.setStyleSheet(f"color: {appearance.roles(self._is_dark).text};")
 
     def _cancel(self) -> None:
         """Abbrechen; when the address could not be read, back at
@@ -244,6 +264,8 @@ class PublishSheet(QDialog):
         self._is_dark = bool(is_dark)
         self._style()
         self.status.set_dark(is_dark)
+        self._status_ink(getattr(self, "_result", False))
 
 
-__all__ = ["ACCEPTED_LINE", "DIFFERS", "PUBLIC_AFTER", "PublishSheet", "SIGN_HERE"]
+__all__ = ["ACCEPTED_LINE", "BY_YOU", "BY_YOU_WITH", "DIFFERS", "PUBLIC_AFTER", "PublishSheet",
+           "SIGN_HERE"]

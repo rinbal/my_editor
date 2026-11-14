@@ -121,7 +121,7 @@ TABLE = {
     Situation.NOT_HANDED_IN: Words(N_("Not submitted"), Section.TURN, N_("Not submitted."),
                                    words.NOT_HANDED_IN, Action.RESEND),
     Situation.PICTURES_MISSING: Words(N_("Picture missing"), Section.RUNNING,
-                                      N_("In the inbox of {publication}, a picture is missing."),
+                                      N_("In the inbox of {publication}. A picture is missing."),
                                       words.PICTURES_IN_THE_APP_THAT_SENT),
     Situation.UNKNOWN: Words("", Section.RUNNING, N_("The current status isn’t loaded yet.")),
     Situation.SUBMITTED: Words(N_("Submitted"), Section.RUNNING,
@@ -132,7 +132,7 @@ TABLE = {
                                unnamed_sentence=N_("The editorial team is reviewing.")),
     Situation.CHANGES_REQUESTED: Words(
         N_("Changes requested"), Section.TURN, N_("{name} asks for changes."),
-        N_("What exactly is in the conversation below."), Action.REVISE,
+        N_("The conversation below says what exactly."), Action.REVISE,
         unnamed_sentence=N_("The editorial team asks for changes."),
         decision="request_changes"),
     Situation.CHANGES_BY_WRITER: Words(
@@ -145,14 +145,18 @@ TABLE = {
                              N_("Please confirm your share."),
                              N_("The split is in the conversation below."), Action.CONFIRM,
                              decision="accept"),
+    # Others act next: nothing is asked of this person. Where the
+    # publication publishes, following.status_of says what happens then.
     Situation.ACCEPTED: Words(N_("Accepted"), Section.RUNNING, N_("Accepted."),
-                              N_("{publication} takes the next step."), decision="accept"),
+                              NOTHING_TO_DO, decision="accept"),
     Situation.PUBLISH: Words(N_("Accepted"), Section.TURN, N_("Accepted."),
                              N_("Publish it when you’re ready."), Action.PUBLISH,
                              decision="accept"),
+    # The web app's words for the same state; no promise of when.
     Situation.PUBLISHED_UNPLACED: Words(N_("Published, place to follow"), Section.RUNNING,
-                                        N_("Published."),
-                                        N_("{publication} gives it its place next."),
+                                        N_("Published, place to follow."),
+                                        N_("Its place on {publication} is still being "
+                                           "released. You don’t need to do anything."),
                                         Action.VIEW, decision="accept"),
     Situation.CORRECTION: Words(N_("Correction suggested"), Section.TURN,
                                 N_("{publication} suggests a correction."),

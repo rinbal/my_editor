@@ -156,9 +156,26 @@ def test_the_list_has_three_sections_one_word_a_row_and_done_closed_with_its_cou
     turn = window.view.items()[1]
     assert turn.unread and turn.turn and turn.rest == "Anna: Bitte kürzen."
     assert turn.spoken.endswith("New")                  # the dot, to a screen reader
-    done = window.view.list.model().index(4)
-    window.view.list.activated.emit(done)               # Return or a click opens Erledigt
+    # Return opens Erledigt (UX-M2: with the key itself; on a Mac the list
+    # never said "activated" for it), and Space closes it again.
+    window.view.list.setCurrentIndex(window.view.list.model().index(4))
+    QTest.keyClick(window.view.list, Qt.Key.Key_Return)
     assert window.rows()[-2:] == [("done", "Done (1)", ""), ("row", "Wallets", "Declined")]
+    QTest.keyClick(window.view.list, Qt.Key.Key_Space)
+    assert window.rows()[-1] == ("done", "Done (1)", "")
+
+
+def test_a_title_that_is_one_long_word_goes_on_in_the_second_line_and_ends_in_an_ellipsis():
+    # UX-M2: a compound wider than the row was cut mid-letter at its edge.
+    from PySide6.QtGui import QFontMetrics
+    from nostr.ui.drafts_common import title_font
+    from nostr.ui.submission_rows import _title_lines
+    font, word = title_font(), "Donaudampfschifffahrtsgesellschaftskapitänsmützenabzeichen"
+    width = QFontMetrics(font).horizontalAdvance(word) // 3
+    first, second = _title_lines(word, font, width)
+    assert word.startswith(first) and second.endswith("…")
+    assert all(QFontMetrics(font).horizontalAdvance(line) <= width for line in (first, second))
+    assert _title_lines("Ein Jahr", font, width * 3) == ["Ein Jahr"]
 
 
 def test_a_cover_is_decoded_once_and_one_too_large_shows_the_symbol(monkeypatch):
@@ -199,6 +216,17 @@ def test_an_empty_list_says_how_to_submit_and_offers_it(window):
     assert window.submits == ["the article in front"]
 
 
+def test_a_search_finds_whatever_the_case_and_says_the_words_back_as_they_were_typed(window):
+    # UX-M2: "No Results for …" quoted the words in lower case.
+    seeded(window, eins="Ein Jahr")
+    window.follow()
+    window.view.set_search_text("  ein JAHR ")
+    assert [item.title for item in window.view.items() if item.kind == "row"] == ["Ein Jahr"]
+    window.view.set_search_text("Steuern Auf Sats")
+    assert window.view.items() == []
+    assert window.view.empty_title.text() == "No Results for “Steuern Auf Sats”"
+
+
 def test_with_the_submissions_view_the_panel_opens_wide_enough_for_all_three_names(window):
     panel = DraftsPanel(is_dark=False)
     panel.add_view("published", "Published", "", QLabel())
@@ -231,6 +259,56 @@ def test_an_open_detail_has_no_search_field_and_no_second_menu_above_it(window):
     panel.hide()
 
 
+def test_the_details_back_line_stands_in_the_search_fields_band_and_the_switch_keeps_its_shape(
+        window):
+    # UX-M2: no empty band between the views' names and ‹ Submissions, and
+    # the names do not turn from a pop-up into segments on the way in.
+    _prepared, entries = seeded(window, text="Ein Jahr")
+    panel = DraftsPanel(is_dark=False)
+    panel.add_view("published", "Published", "", QLabel())
+    add_to_panel(panel, window.view, server=SERVER)
+    panel.show_view(PANEL_VIEW)
+    panel.setMinimumWidth(0)
+    panel.resize(panel._top_band.segments_room() - 2, 600)     # a pop-up beside the menu
+    panel.show()
+    window.follow()
+    QApplication.processEvents()
+    detail, switch = window.view.detail, panel._top_band._switch
+    assert switch.is_popup() and not detail.back.isVisible()
+    opened(window, entries["text"])
+    QApplication.processEvents()
+    assert panel._search_band.isAncestorOf(detail.back) and detail.back.isVisible()
+    assert detail.more_button.isVisible() and switch.is_popup()
+    detail.back.click()
+    QApplication.processEvents()
+    assert not detail.back.isVisible() and panel._search_edit.isVisible()
+    panel.hide()
+
+
+def test_a_dot_at_the_views_name_says_that_something_in_it_is_unread_until_it_is_read(window):
+    # UX-M2: with Drafts in front, nothing said that a message had come.
+    world = window.world
+    prepared, entries = seeded(window, text="Ein Jahr")
+    panel = DraftsPanel(is_dark=False)
+    add_to_panel(panel, window.view, server=SERVER)
+    window.follow()
+    switch = panel._view_switch
+    [segment] = [s for s in switch.segments if s.key == PANEL_VIEW]
+    assert not segment.is_marked() and segment.accessibleName() == "Submissions"
+    world.message(prepared["text"], "Noch da?")
+    window.following.refresh()
+    world.settle()
+    assert segment.is_marked() and segment.accessibleName() == "Submissions, New"
+    # Where the names are a pop-up, its menu marks the view too.
+    assert [a.text() for a in switch.popup.menu().actions()] == ["Drafts", "Submissions  •"]
+    opened(window, entries["text"])                     # read
+    assert not segment.is_marked() and segment.accessibleName() == "Submissions"
+    window.writer.stop()                                # the account goes: no dot stays
+    world.message(prepared["text"], "Und jetzt?")
+    world.settle()
+    assert not segment.is_marked()
+
+
 def test_without_a_server_nothing_is_read_and_the_panel_has_no_submissions_view(monkeypatch):
     window = Window(FollowWorld(), monkeypatch, server="")
     window.follow()
@@ -258,7 +336,8 @@ def test_a_row_opens_its_detail_and_back_returns_to_the_row(window):
     window.follow()
     index = window.view.list.model().index(2)
     assert index.data(Qt.ItemDataRole.DisplayRole).startswith("Steuern")
-    window.view.list.activated.emit(index)
+    window.view.list.setCurrentIndex(index)
+    QTest.keyClick(window.view.list, Qt.Key.Key_Return)     # the key itself (UX-M2)
     window.world.settle()
     detail = window.view.detail
     assert window.view.showing_detail() and detail.sid == entries["zwei"].sid
@@ -268,6 +347,49 @@ def test_a_row_opens_its_detail_and_back_returns_to_the_row(window):
     detail.back.click()
     assert not window.view.showing_detail()
     assert window.view.list.currentIndex().row() == 2   # the row it came from
+
+
+def test_a_click_counts_once_and_only_the_keyboard_draws_the_ring_on_the_way_back(window):
+    # UX-M2: where a style activates a row on a single click too (KDE), one
+    # click on Done opened and closed it at once; on a Mac, Return on a row
+    # did nothing. And the focus ring on ‹ Submissions is the keyboard's:
+    # after a click on a row it read as a pressed button.
+    from PySide6.QtWidgets import QProxyStyle, QStyle
+
+    class SingleClick(QProxyStyle):
+        def styleHint(self, hint, option=None, widget=None, data=None):
+            if hint == QStyle.StyleHint.SH_ItemView_ActivateItemOnSingleClick:
+                return 1
+            return super().styleHint(hint, option, widget, data)
+
+    world = window.world
+    prepared, entries = seeded(window, fertig="Wallets", offen="Steuern")
+    world.decide(prepared["fertig"], "decline")
+    window.follow()
+    view, style = window.view, SingleClick()
+    view.list.setStyle(style)
+    view.show()
+    view.activateWindow()
+    QApplication.processEvents()
+
+    def click(kind):
+        row = next(i for i, item in enumerate(view.items()) if item.kind == kind)
+        where = view.list.visualRect(view.list.model().index(row)).center()
+        QTest.mouseClick(view.list.viewport(), Qt.MouseButton.LeftButton, pos=where)
+        QApplication.processEvents()
+
+    click("done")
+    assert [item.kind for item in view.items()] == ["header", "row", "done", "row"]     # open
+    click("row")
+    assert view.showing_detail() and not view.detail.back.property("ring")
+    view.detail.back.click()
+    QApplication.processEvents()
+    assert view.list.hasFocus() and view.items()[view.list.currentIndex().row()].kind == "row"
+    QTest.keyClick(view.list, Qt.Key.Key_Return)
+    QApplication.processEvents()
+    assert view.showing_detail() and view.detail.back.hasFocus()
+    assert view.detail.back.property("ring") is True
+    view.hide()
 
 
 # -- the detail -----------------------------------------------------------------------
@@ -306,7 +428,7 @@ def test_the_detail_has_one_sentence_and_a_button_only_for_what_the_window_handl
     window.follow()
     detail = opened(window, entries["aendern"])
     assert detail.sentence.text() == "Anna asks for changes."
-    assert detail.more.text() == "What exactly is in the conversation below."
+    assert detail.more.text() == "The conversation below says what exactly."    # UX-M2
     assert detail.action.isVisibleTo(detail) and detail.action.text() == "Revise in the Editor"
     assert detail.conversation.captions == ["Submitted · Version 1", "Anna took it on",
                                       "Anna asked for changes"]
@@ -339,20 +461,39 @@ def test_publish_opens_the_accepted_version_and_says_when_the_editor_text_differ
     sheet.reject()
 
 
+def test_with_its_sheet_closed_a_publish_that_failed_says_what_did_not_happen_then_why(window):
+    # UX-M2: the sentence alone no longer repeats "nothing was published",
+    # so the detail says the sheet's title before it.
+    from nostr.ui.standup_publish import Stage
+    _prepared, entries = seeded(window, text="Ein Jahr")
+    window.follow()
+    detail = opened(window, entries["text"])
+    window.host._publish_said(SimpleNamespace(
+        stage=Stage.FAILED, sid=entries["text"].sid, title="Not published",
+        words="A picture couldn’t be put on your media server: check your media servers in "
+              "Settings and try again."))
+    assert detail.note.isVisibleTo(detail) and detail.note.text() == (
+        "Not published. A picture couldn’t be put on your media server: check your media "
+        "servers in Settings and try again.")
+
+
 def test_a_name_that_comes_in_late_shows_in_the_open_publish_sheet(window, monkeypatch):
     # A profile read after the sheet opened: the sheet says the name then.
     from nostr.standup import publishing
+    # UX-M2: the line is a byline ("By you …"), so it says what the names are.
     late = pk("recipient")
-    monkeypatch.setattr(publishing, "credited", lambda revision, writer: [writer, late])
+    monkeypatch.setattr(publishing, "credited", lambda revision, writer: [late])
     prepared, entries = seeded(window, annahme="Steuern")
     window.world.decide(prepared["annahme"], "accept")
     window.follow()
     opened(window, entries["annahme"]).action.click()
     sheet = window.host._publish_sheet
-    assert sheet.people.text() == "Jana, Someone"
+    assert sheet.people.text() == "By you with Someone"
     monkeypatch.setitem(NAMES, late, "Lena")
     window.host.names_learned()
-    assert sheet.people.text() == "Jana, Lena"
+    assert sheet.people.text() == "By you with Lena"
+    sheet.show_people([])                               # nobody else credited
+    assert sheet.people.text() == "By you"
     sheet.reject()
 
 
@@ -572,6 +713,9 @@ def test_confirming_names_the_accepted_split_and_where_the_share_goes_then_remin
     detail.action.click()
     sheet = window.host._confirm_sheet
     assert isinstance(sheet, ConfirmSheet) and sheet.split.text() == "You 70%  ·  Paul 30%"
+    # UX-M2: what the shares are shares of, in the web app's words.
+    assert sheet.split_help.isVisibleTo(sheet) and sheet.split_help.text() == (
+        "Apps that support splits divide zaps this way.")
     assert sheet.address.text() == "Your share goes to jana@getalby.com."
     assert not sheet.rights.isVisibleTo(sheet)               # the writer confirms the split
     sheet.confirm_button.click()
@@ -582,7 +726,12 @@ def test_confirming_names_the_accepted_split_and_where_the_share_goes_then_remin
     assert detail.sentence.text() == "Thanks. Paul still confirms."
     assert [b.text() for b in detail.reminder_buttons()] == ["Remind Paul"]
     assert not detail.action.isVisibleTo(detail)
-    detail.reminder_buttons()[0].click()
+    asked = []
+    window.view.remind_requested.connect(lambda sid, to: asked.append(to))
+    remind = detail.reminder_buttons()[0]
+    remind.click()
+    remind.click()                      # UX-M2: a double click is one reminder, not two
+    assert asked == [OTHER]
     world.settle()
     assert detail.note.text() == "Paul was reminded."
     assert detail.reminder_buttons() == []                  # RG-M4-b 11: reminded, it goes
@@ -673,6 +822,45 @@ def test_the_named_reminders_and_the_version_card_wrap_and_read_whole_in_a_narro
         holder.deleteLater()
     finally:
         i18n.install("en")
+
+
+def test_in_a_short_panel_the_cover_gives_way_and_every_action_stays_whole(window, monkeypatch):
+    # UX-M2: three people to remind in a low window. The cover and the
+    # people's pills go, the buttons stay in sight above the composer;
+    # with room again, the cover is back.
+    world, eva, tom = window.world, pk("recipient"), pk("member")
+    for key, name in ((eva, "Eva"), (tom, "Tom")):
+        monkeypatch.setitem(NAMES, key, name)
+    seed = world.account()
+    prepared, entry = world.submit(seed, d="drei", title="Drei", participants=(OTHER, eva, tom))
+    world.record(entry.sid).signer = "publication"
+    world.decide(prepared, "accept", split=[
+        {"pubkey": ME, "weight": 40, "role": "writer"},
+        *({"pubkey": key, "weight": 20, "role": "contributor"} for key in (OTHER, eva, tom))])
+    world.confirm(seed, prepared)
+    window.follow()
+    view = window.view
+    view.resize(300, 700)
+    view.show()
+    detail = opened(window, entry)
+
+    def settle():
+        for _ in range(4):
+            QApplication.processEvents()
+
+    settle()
+    assert detail.cover.isVisible() and len(detail.reminder_buttons()) == 3
+    view.resize(300, 700 - detail._scroll.height() + 30)        # 30 px left for the conversation
+    settle()
+    assert not detail.cover.isVisible() and not detail._pills.isVisible()
+    assert detail.title.isVisible() and detail.composer_bar.isVisible()
+    for button in detail.reminder_buttons():
+        bottom = button.mapTo(detail, button.rect().bottomLeft()).y()
+        assert button.isVisible() and bottom < detail.composer_bar.y(), button.text()
+    view.resize(300, 700)
+    settle()
+    assert detail.cover.isVisible() and detail._pills.isVisible()
+    view.hide()
 
 
 def _read_whole(buttons, pane, width):
@@ -770,6 +958,87 @@ def test_tab_reaches_the_conversation_before_the_composer_and_each_reaction_is_n
         widget = widget.nextInFocusChain()
         chain.append(widget)
     assert all(b.react_button in chain for b in detail.conversation.bubbles)
+
+
+def test_a_long_link_or_word_in_a_message_wraps_and_never_widens_the_conversation(window):
+    # UX-M2: a label breaks only between words, so one long word pushed
+    # every bubble out of the panel. A link breaks after its separators, a
+    # word without any between its letters; an emoji is never taken apart.
+    from nostr.ui.submission_thread import breakable
+    soft = "​"
+    assert breakable("Kurze Wörter bleiben, wie sie sind.") == "Kurze Wörter bleiben, wie sie sind."
+    assert breakable("https://example.com/ein-langer-pfad") == soft.join(
+        ("https://", "example.", "com/", "ein-", "langer-", "pfad"))
+    assert breakable("a" * 24) == soft.join("a" * 24)
+    family = "👨‍👩‍👧" * 8
+    assert breakable(family) == family
+    world = window.world
+    prepared, entries = seeded(window, lang="Ein Jahr")
+    world.message(prepared["lang"], "Siehe nostr:naddr1" + "q" * 120)
+    window.follow()
+    window.view.resize(260, 600)
+    window.view.show()
+    detail = opened(window, entries["lang"])
+    for _ in range(4):
+        QApplication.processEvents()
+    assert detail._scroll.widget().width() <= detail._scroll.viewport().width()
+    [bubble] = detail.conversation.bubbles
+    right = bubble.text.mapTo(detail, bubble.text.rect().topRight()).x()
+    assert right < detail.width() and bubble.message.bubble.text.endswith("q" * 120)
+    window.view.hide()
+
+
+def test_a_persons_pill_is_no_stop_for_tab_and_a_long_name_stays_in_the_panel(
+        window, monkeypatch):
+    # UX-M2: a pill does nothing, so Tab passes it; a button's words do not
+    # wrap, so a name longer than the panel is cut and whole in its tooltip.
+    # The lock stands with "End-to-end encrypted", under who reads.
+    name = "Paul-Maximilian von Hohenstaufen-Sigmaringen der Jüngere"
+    monkeypatch.setitem(NAMES, OTHER, name)
+    seed = window.world.account()
+    _prepared, entry = window.world.submit(seed, d="p", title="Kurz", participants=(OTHER,))
+    window.follow()
+    window.view.resize(260, 600)
+    window.view.show()
+    detail = opened(window, entry)
+    for _ in range(4):
+        QApplication.processEvents()
+    [pill] = [detail._pill_row.itemAt(i).widget() for i in range(detail._pill_row.count())]
+    assert pill.focusPolicy() == Qt.FocusPolicy.NoFocus
+    assert pill.text().endswith("…") and pill.accessibleName() == name and pill.toolTip()
+    assert pill.mapTo(detail, pill.rect().topRight()).x() < detail.width()
+    assert detail.encrypted.isVisible() and not detail._lock.pixmap().isNull()
+    assert detail._lock.geometry().center().y() == pytest.approx(
+        detail.encrypted.geometry().center().y(), abs=1)
+    window.view.hide()
+
+
+def test_react_shows_beside_a_message_under_the_pointer_or_with_the_keyboard_on_it(window):
+    # UX-M2, as the web app: no button beside every bubble at rest; it
+    # keeps its place, so nothing moves when it shows.
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QEnterEvent
+    world = window.world
+    prepared, entries = seeded(window, text="Ein Jahr")
+    world.message(prepared["text"], "Perfekt.")
+    window.follow()
+    window.view.show()
+    window.view.activateWindow()
+    detail = opened(window, entries["text"])
+    QApplication.processEvents()
+    [bubble] = detail.conversation.bubbles
+    react, place = bubble.react_button, bubble.react_button.geometry()
+    assert not bubble.react_shown() and react.icon().isNull()
+    point = QPointF(2, 2)
+    QApplication.sendEvent(bubble, QEnterEvent(point, point, point))
+    assert bubble.react_shown() and not react.icon().isNull()
+    QApplication.sendEvent(bubble, QEvent(QEvent.Type.Leave))
+    assert not bubble.react_shown() and react.icon().isNull()
+    react.setFocus(Qt.FocusReason.TabFocusReason)           # Tab reaches it: it shows
+    assert bubble.react_shown() and not react.icon().isNull()
+    detail.back.setFocus()
+    assert not bubble.react_shown() and react.icon().isNull() and react.geometry() == place
+    window.view.hide()
 
 
 def test_more_about_sits_on_the_sentence_and_a_narrow_unread_row_shows_the_message(window):
@@ -960,6 +1229,34 @@ def test_an_unsent_entry_offers_to_send_it_again_or_discard_it(window):
     detail.second.click()
     window.world.settle()
     assert not window.view.showing_detail() and window.view.items() == []
+
+
+def test_discard_in_a_rows_menu_asks_first_and_cancel_keeps_the_row(window, monkeypatch):
+    # UX-M2: the row's menu discarded at once; it does not say, as the
+    # detail does above its button, that the article stays.
+    from nostr.ui import submissions_view
+    seed = window.world.account()
+    window.world.submit(seed, d="nie", title="Nie gesendet", stored=False, send=False)
+    window.follow()
+    view = window.view
+    view.show()
+    asked = []
+    monkeypatch.setattr(submissions_view, "confirm_destructive",
+                        lambda *a, **k: asked.append((k["title"], k["message"])) and False)
+    row = next(i for i, item in enumerate(view.items()) if item.kind == "row")
+    view._on_menu(view.list.visualRect(view.list.model().index(row)).center())
+    assert [a.text() for a in view._menu.actions() if a.text()] == [
+        "Open", "Open in Editor", "Send Again", "Discard …"]
+    view._menu.actions()[-1].trigger()
+    assert asked == [("Discard this attempt?", "This submission never reached Einundzwanzig "
+                      "Magazin. It leaves your list; your article stays as it is.")]
+    assert [item.title for item in view.items() if item.kind == "row"] == ["Nie gesendet"]
+    monkeypatch.setattr(submissions_view, "confirm_destructive", lambda *a, **k: True)
+    view._menu.actions()[-1].trigger()
+    window.world.settle()
+    assert view.items() == []
+    view._menu.close()
+    view.hide()
 
 
 # -- the pill, the notice, the editor --------------------------------------------------

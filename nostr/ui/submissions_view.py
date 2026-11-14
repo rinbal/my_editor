@@ -19,8 +19,10 @@ one status word with the publication (the writer's name first on a work
 the person only takes part in; the newest message while it is unread),
 its age at the trailing edge and a blue dot when something is unread,
 "Neu" to a screen reader (drawn by :mod:`.submission_rows`). A row opens
-the detail in the same panel (:mod:`.submission_detail`); ‹ Einreichungen
-comes back to the row.
+the detail in the same panel (:mod:`.submission_detail`) on a click, on
+Return and on Enter; ‹ Einreichungen comes back to the row. While
+something is unread, the panel shows a dot at the view's name
+(``unread_changed``).
 
 Nothing here knows the protocol: the words come from the one table
 (``nostr/standup/following.py``). When the status could not be loaded
@@ -35,22 +37,24 @@ from __future__ import annotations
 import time
 from typing import Callable, Iterable, List, Optional
 
-from PySide6.QtCore import QModelIndex, Qt, Signal
+from PySide6.QtCore import QEvent, QModelIndex, Qt, Signal
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
-    QAbstractItemView, QFrame, QHBoxLayout, QLabel, QListView, QMenu, QPushButton,
-    QStackedLayout, QVBoxLayout, QWidget,
+    QAbstractItemView, QFrame, QLabel, QListView, QMenu, QPushButton, QStackedLayout,
+    QVBoxLayout, QWidget,
 )
 
 import announce
+from alerts import confirm_destructive
 from i18n import N_, _
 
 from ..standup import following as rules
 from ..standup import thread as threads
 from . import appearance, post_list
 from .drafts_common import LIST_GUTTER, MIN_CONTROL_PX, THEME_TOKENS, secondary_font
-from .submission_detail import SubmissionDetail
+from .submission_detail import BAR_INSET, SubmissionDetail
 from .submission_rows import ITEM_ROLE, Item, RowDelegate, Rows
+from .submission_thread import breakable
 
 PANEL_VIEW = "submissions"
 
@@ -68,7 +72,13 @@ def add_to_panel(panel, view: "SubmissionsView", *, server: str) -> bool:
     panel.add_view(PANEL_VIEW, _("Submissions"), _("What you submitted to publications"), view,
                    refresh=view.refresh, refresh_name=_("Refresh Submissions"),
                    search=view.set_search_text, search_name=_("Search Submissions"))
+    # The detail's ‹ Einreichungen line stands where the search field was.
+    panel.set_view_bar(PANEL_VIEW, view.detail.top_bar, inset=BAR_INSET)
     view.detail_shown.connect(lambda shown: panel.set_view_focused(PANEL_VIEW, shown))
+    # A dot at "Einreichungen" while something there is unread, whichever
+    # view the panel shows.
+    view.unread_changed.connect(lambda unread: panel.set_view_marked(PANEL_VIEW, unread))
+    panel.set_view_marked(PANEL_VIEW, view.has_unread())
     return True
 
 
@@ -83,6 +93,7 @@ class SubmissionsView(QWidget):
       compare_requested(str, int)     a sid and the version to compare with the one before
       remind_requested(str, str)      a sid and whom to remind
       submit_requested()              the empty list's button
+      unread_changed(bool)            something is unread now, or nothing any more
     """
 
     action_requested = Signal(str, object)
@@ -91,6 +102,7 @@ class SubmissionsView(QWidget):
     remind_requested = Signal(str, str)
     submit_requested = Signal()
     detail_shown = Signal(bool)             # a detail, or the list, is shown now
+    unread_changed = Signal(bool)
 
     def __init__(self, *, name_of: Callable[[str], str],
                  avatar_of: Callable[[str], Optional[QPixmap]], is_dark: bool = True,
@@ -105,8 +117,9 @@ class SubmissionsView(QWidget):
         self._signed_in = False
         self._server = True
         self._done_open = False
-        self._search = ""
+        self._search = self._searched = ""
         self._said = ""
+        self._unread = False
         self._rows = Rows(self)
         self._logo_of = logo_of
         self._build(avatar_of)
@@ -135,22 +148,31 @@ class SubmissionsView(QWidget):
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list.customContextMenuRequested.connect(self._on_menu)
-        self.list.activated.connect(self._on_activated)
+        # A click opens a row, and Return or Enter does (eventFilter). Not
+        # the list's own ``activated``: on a Mac Return never emits it, and
+        # where a style emits it for a single click too, one click counted
+        # twice (Erledigt opened and closed at once).
         self.list.clicked.connect(self._on_clicked)
+        self.list.installEventFilter(self)
         column.addWidget(self.list, 1)
         # One quiet line, in place, when the status could not be loaded.
+        # The sentence has the panel's whole width and its action stands
+        # under it: beside it, a narrow panel left the words a column of
+        # four short lines.
         self.problem_bar = QFrame()
         self.problem_bar.setObjectName("submissions_problem")
-        bar = QHBoxLayout(self.problem_bar)
-        bar.setContentsMargins(LIST_GUTTER, 6, LIST_GUTTER, 6)
+        bar = QVBoxLayout(self.problem_bar)
+        bar.setContentsMargins(LIST_GUTTER, 8, LIST_GUTTER, 8)
+        bar.setSpacing(6)
         self.problem = QLabel()
         self.problem.setWordWrap(True)
         self.problem.setFont(secondary_font())
         self.problem.setTextFormat(Qt.TextFormat.PlainText)
         self.try_again = QPushButton(_("Try Again"))
+        self.try_again.setFont(secondary_font())
         self.try_again.clicked.connect(self.refresh)
-        bar.addWidget(self.problem, 1)
-        bar.addWidget(self.try_again)
+        bar.addWidget(self.problem)
+        bar.addWidget(self.try_again, 0, Qt.AlignmentFlag.AlignLeft)
         self.problem_bar.hide()
         column.addWidget(self.problem_bar)
         self._stack.addWidget(page)
@@ -222,7 +244,9 @@ class SubmissionsView(QWidget):
         self.detail.set_edited(edited)
 
     def set_search_text(self, text: str) -> None:
-        self._search = text.strip().casefold()
+        # Compared without regard to case; said back as it was typed.
+        self._searched = text.strip()
+        self._search = self._searched.casefold()
         self._reload()
 
     def refresh(self) -> None:
@@ -241,10 +265,12 @@ class SubmissionsView(QWidget):
         if self._following is not None:
             self._following.view_opened()
 
-    def show_detail(self, sid: str) -> None:
+    def show_detail(self, sid: str, *, keyboard: bool = False) -> None:
+        """The detail of ``sid``; ``keyboard``: opened with Return, so the
+        focus it lands on shows its ring."""
         if self._following is None or self._following.row(sid) is None:
             return
-        self.detail.show_submission(self._following, sid)
+        self.detail.show_submission(self._following, sid, keyboard=keyboard)
         self._stack.setCurrentWidget(self.detail)
 
     def show_list(self) -> None:
@@ -260,6 +286,10 @@ class SubmissionsView(QWidget):
 
     def showing_detail(self) -> bool:
         return self._stack.currentWidget() is self.detail
+
+    def has_unread(self) -> bool:
+        """Whether any submission holds something not read yet."""
+        return self._unread
 
     def items(self) -> List[Item]:
         return list(self._rows.items)
@@ -287,11 +317,15 @@ class SubmissionsView(QWidget):
                                     rules.Situation.SENDING, rules.Situation.NOT_HANDED_IN))
 
     def _reload(self) -> None:
-        if self.showing_detail() and self._following is not None \
-                and self._following.row(self.detail.sid) is not None:
-            return                                  # the detail follows on its own
         following = self._following
         rows = following.rows() if following is not None else []
+        unread = any(row.unread for row in rows)
+        if unread != self._unread:
+            self._unread = unread
+            self.unread_changed.emit(unread)
+        if self.showing_detail() and following is not None \
+                and following.row(self.detail.sid) is not None:
+            return                                  # the detail follows on its own
         if self._search:
             rows = [row for row in rows if self._search in " ".join((
                 row.title, following.publication_name(row.publication))).casefold()]
@@ -340,7 +374,7 @@ class SubmissionsView(QWidget):
                                  following.list_problem, symbol="alert",
                                  action=(_("Try Again"), following.reload))
         elif self._search and not any_rows:
-            self._placeholder_of(_("No Results for “{query}”").format(query=self._search),
+            self._placeholder_of(_("No Results for “{query}”").format(query=self._searched),
                                  _("Check the spelling or try a new search."), symbol="search")
         elif not any_rows and problem:
             self._placeholder_of(_("Your submissions couldn’t be loaded"), problem,
@@ -358,7 +392,7 @@ class SubmissionsView(QWidget):
                         action: Optional[tuple] = None) -> None:
         self._symbol_name = symbol
         self._paint_symbol()
-        self.empty_title.setText(title)
+        self.empty_title.setText(breakable(title))      # a long search word wraps
         self.empty_body.setText(body)
         self.empty_action.setVisible(action is not None)
         if action is not None:
@@ -379,10 +413,24 @@ class SubmissionsView(QWidget):
 
     # -- what the person does ------------------------------------------------------
 
-    def _on_clicked(self, index: QModelIndex) -> None:
-        self._on_activated(index)
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802, Qt's name
+        if watched is self.list and event.type() == QEvent.Type.KeyPress:
+            index = self.list.currentIndex()
+            item = index.data(ITEM_ROLE) if index.isValid() else None
+            plain = not event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier
+            # Return and Enter open the row the keyboard is on; Space opens
+            # and closes Erledigt as well, as it presses a button.
+            if isinstance(item, Item) and plain and (
+                    event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+                    or event.key() == Qt.Key.Key_Space and item.kind == "done"):
+                self._choose(index, keyboard=True)
+                return True
+        return super().eventFilter(watched, event)
 
-    def _on_activated(self, index: QModelIndex) -> None:
+    def _on_clicked(self, index: QModelIndex) -> None:
+        self._choose(index, keyboard=False)
+
+    def _choose(self, index: QModelIndex, *, keyboard: bool) -> None:
         item = index.data(ITEM_ROLE)
         if not isinstance(item, Item):
             return
@@ -392,7 +440,7 @@ class SubmissionsView(QWidget):
             announce.announce(self.list, _("Done, expanded") if self._done_open
                               else _("Done, collapsed"))
         elif item.kind == "row":
-            self.show_detail(item.sid)
+            self.show_detail(item.sid, keyboard=keyboard)
 
     def _on_menu(self, pos) -> None:
         index = self.list.indexAt(pos)
@@ -409,10 +457,30 @@ class SubmissionsView(QWidget):
             menu.addSeparator()
             menu.addAction(_("Send Again"), lambda: self.action_requested.emit(
                 row.sid, rules.Action.RESEND))
-            menu.addAction(_("Discard"), lambda: self._following.discard(
-                row.sid, lambda _stored: None))
+            menu.addAction(_("Discard …"), lambda: self._ask_discard(row))
         self._menu = menu
         menu.popup(self.list.viewport().mapToGlobal(pos))
+
+    def _ask_discard(self, row: rules.Row) -> None:
+        """Verwerfen from a row's menu. Asked first, in the web app's
+        words: the menu does not say what the detail says above its
+        button, that the article stays. One that could not be discarded
+        says so in its detail."""
+        following = self._following
+        if following is None or not confirm_destructive(
+                self, title=_("Discard this attempt?"),
+                message=_("This submission never reached {publication}. It leaves your list; "
+                          "your article stays as it is.").format(
+                              publication=following.publication_name(row.publication)),
+                action=_("Discard"), is_dark=self._is_dark, nostr=True):
+            return
+
+        def done(stored: bool) -> None:
+            if not stored and self._following is following:
+                self.show_detail(row.sid)
+                self.detail.say_not_discarded()
+
+        following.discard(row.sid, done)
 
     def showEvent(self, event) -> None:  # noqa: N802, Qt's name
         super().showEvent(event)

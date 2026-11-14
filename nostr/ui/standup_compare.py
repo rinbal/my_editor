@@ -148,6 +148,18 @@ class CompareView(QWidget):
         self.text.setAccessibleName(_("Changes"))
         self.text.setTabChangesFocus(True)
         column.addWidget(self.text, 1)
+        self._style()
+
+    def _style(self) -> None:
+        """The text stands in a field as the sheet's other fields are (its
+        ground, its rounded edge, the focus ring), in either theme: left
+        to the application's palette it was a square box of another
+        ground in the sheet."""
+        r = appearance.roles(self._is_dark)
+        self.text.setStyleSheet(
+            f"QTextEdit {{ background: {r.field}; color: {r.text}; border: 1px solid {r.edge}; "
+            f"border-radius: 7px; padding: 4px 6px; selection-background-color: {r.selection}; "
+            f"selection-color: #FFFFFF; }} QTextEdit:focus {{ border-color: {r.focus}; }}")
 
     def show_pair(self, comparer: Comparer, old: str, new: str) -> None:
         """Compare ``old`` with ``new`` and show it; "Wird verglichen …"
@@ -214,6 +226,7 @@ class CompareView(QWidget):
 
     def set_dark(self, is_dark: bool) -> None:
         self._is_dark = bool(is_dark)
+        self._style()
         if self._shown is not None:
             self.show_comparison(self._shown)
 

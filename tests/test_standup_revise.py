@@ -111,6 +111,7 @@ def test_the_same_text_again_is_not_handed_in(window):
     assert not sheet.hand_in.isEnabled()
     assert sheet.blockers() == [
         "This text is the same as version 1. Change it to hand in a new one."]
+    assert sheet.show_changes.isHidden()        # UX-M2: nothing changed, nothing to show
     sheet.hand_in.click()
     assert sheet.run is None
 

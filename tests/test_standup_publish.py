@@ -675,6 +675,24 @@ def test_after_a_stage_change_the_focus_is_on_the_status_line_never_on_view(acce
     sheet.deleteLater()
 
 
+def test_once_public_the_sheet_says_the_result_and_no_more_of_the_step_before(accepted):
+    # UX-M2: "Publishing as …" and "Text and pictures as handed in." were
+    # still there under "Published."; the byline says whose article it is.
+    from nostr.ui.standup_publish_sheet import PublishSheet
+    run, _store, _jobs = _run(accepted)
+    sheet = PublishSheet(run=run, publication="Magazin", number=1, account_name="Jana",
+                         is_dark=False)
+    sheet.show()
+    assert sheet.people.text() == "By you"
+    assert sheet.hint.isVisible() and sheet.signing_as.isVisible() and sheet.privacy.isVisible()
+    run.start()
+    accepted.world.settle()
+    assert run.stage is Stage.DONE and sheet.status.shown == ("", "Published.")
+    assert not (sheet.hint.isVisible() or sheet.signing_as.isVisible()
+                or sheet.privacy.isVisible())
+    sheet.deleteLater()
+
+
 def test_the_confirm_and_publish_sheets_read_whole_at_their_minimum_size_in_german(accepted):
     # RG-M4-c 9: at its own minimum size, in German, no button clips and no
     # wrapping line is cut (Profil bearbeiten …, Erneut versuchen, Q1).

@@ -100,7 +100,7 @@ from __future__ import annotations
 import time
 from typing import Callable, List, Optional, Tuple
 
-from PySide6.QtCore import QEvent, QPointF, QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -136,7 +136,7 @@ from PySide6.QtWidgets import (
 
 from . import appearance
 from i18n import _, ngettext
-from segmented_control import Segment, SegmentedControl
+from segmented_control import MARK_SIZE, Segment, SegmentedControl
 
 from ..draft_store import DraftRecord, DraftState, DraftStore
 from ..imports.constants import IDENTIFIER_PREFIX
@@ -546,6 +546,14 @@ class _ViewPopup(QToolButton):
         self.setMinimumHeight(control_h)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.setMenu(QMenu(self))
+        self._marked = False
+        self._mark_color = QColor("#007AFF")
+
+    def set_marked(self, marked: bool, color: QColor) -> None:
+        """A dot in the button's corner: something new waits in a view
+        other than the one it names (its menu says which)."""
+        self._marked, self._mark_color = bool(marked), QColor(color)
+        self.update()
 
     def minimumSizeHint(self) -> QSize:
         hint = super().minimumSizeHint()
@@ -582,6 +590,11 @@ class _ViewPopup(QToolButton):
                               QPointF(x + half, y - gap)])
         painter.drawPolyline([QPointF(x - half, y + gap), QPointF(x, y + gap + rise),
                               QPointF(x + half, y + gap)])
+        if self._marked:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(self._mark_color)
+            painter.drawEllipse(QRectF(self.width() - MARK_SIZE - 3.0, 3.0,
+                                       MARK_SIZE, MARK_SIZE))
 
 
 class _ViewSwitch(QWidget):
@@ -601,6 +614,7 @@ class _ViewSwitch(QWidget):
         self._control_h = control_h
         self._views: List[Tuple[str, str, str]] = []
         self._current = ""
+        self._marked: set = set()                   # the views with something new
         self._segments = SegmentedControl()
         self._segments.chosen.connect(self.view_chosen)
         self.popup = _ViewPopup(control_h)
@@ -634,6 +648,29 @@ class _ViewSwitch(QWidget):
 
     def set_dark(self, dark: bool) -> None:
         self._segments.set_dark(dark)
+        self._show_marks()
+
+    def set_marked(self, key: str, marked: bool) -> None:
+        """Something new waits in the view ``key`` (or no longer): a dot
+        at its name, said as "New" to a screen reader."""
+        if marked == (key in self._marked):
+            return
+        (self._marked.add if marked else self._marked.discard)(key)
+        self._show_marks()
+
+    def is_marked(self, key: str) -> bool:
+        return key in self._marked
+
+    def _show_marks(self) -> None:
+        for index, (key, title, _hint) in enumerate(self._views):
+            marked = key in self._marked
+            self._segments.set_segment_marked(key, marked, _("New"))
+            actions = self.popup.menu().actions()
+            if index < len(actions):
+                actions[index].setText(f"{title}  •" if marked else title)
+        # The pop-up button names one view: its dot is for the others.
+        self.popup.set_marked(bool(self._marked - {self._current}),
+                              self._segments.palette_colors().mark)
 
     def has_choice(self) -> bool:
         return len(self._views) > 1
@@ -675,6 +712,7 @@ class _ViewSwitch(QWidget):
             action.setCheckable(True)
             action.setToolTip(hint)
             action.setData(key)
+        self._marked &= {key for key, _title, _hint in self._views}
         self.set_current(current)
 
     def _on_menu_action(self, action: QAction) -> None:
@@ -696,6 +734,7 @@ class _ViewSwitch(QWidget):
                 # The control is named for what it switches, and says
                 # which view is up, as a pop-up button reads.
                 self.popup.setAccessibleName(_("View: {title}").format(title=title))
+        self._show_marks()
         self.updateGeometry()
 
 
@@ -1117,8 +1156,11 @@ class DraftsPanel(QFrame):
         self._search_names: dict = {self.DRAFTS_VIEW: _("Search Drafts")}
         self._view_search: dict = {}
         self._view_search_text: dict = {}
-        # Views showing one item of their own, with their own top bar.
+        # Views showing one item of their own, with their own top bar
+        # (the bar and how far it reaches into the gutter at either end,
+        # set_view_bar).
         self._view_focused: dict = {}
+        self._view_bars: dict = {}
 
         self._status_timer = QTimer(self)
         self._status_timer.setSingleShot(True)
@@ -1268,6 +1310,11 @@ class DraftsPanel(QFrame):
         hide = menu.addAction(_("Hide Drafts"))
         hide.triggered.connect(self.hide_requested)
         self._actions_btn.setMenu(menu)
+        # Hidden while a view shows one item of its own (set_view_focused),
+        # it keeps its room: the view switch beside it stays as it is.
+        policy = self._actions_btn.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        self._actions_btn.setSizePolicy(policy)
         return self._actions_btn
 
     def _update_actions_menu(self) -> None:
@@ -1434,6 +1481,14 @@ class DraftsPanel(QFrame):
         self._actions_btn.setVisible(not focused)
         searchable = (key == self.DRAFTS_VIEW or key in self._view_search) and not focused
         self._search_edit.setVisible(searchable)
+        # The focused view's own bar takes the field's place, its buttons
+        # reaching into the gutter as far as it asked.
+        shown = self._view_bars.get(key) if focused else None
+        for bar, _inset in self._view_bars.values():
+            bar.setVisible(shown is not None and bar is shown[0])
+        leading, trailing = shown[1] if shown is not None else (0, 0)
+        self._search_band.layout().setContentsMargins(GUTTER - leading, 6,
+                                                      GUTTER - trailing, 7)
         if not searchable:
             return
         name = self._search_names.get(key, _("Search"))
@@ -1550,12 +1605,37 @@ class DraftsPanel(QFrame):
     def views(self) -> List[str]:
         return [key for key, _title, _hint in self._views]
 
+    def set_view_marked(self, key: str, marked: bool) -> None:
+        """Something new waits in the view ``key`` (an unread message in
+        Einreichungen): a dot at the view's name, whichever view is shown,
+        until it is read."""
+        self._view_switch.set_marked(key, marked)
+
+    def set_view_bar(self, key: str, bar: QWidget, *,
+                     inset: Tuple[int, int] = (0, 0)) -> None:
+        """``bar`` is what the view ``key`` shows in band 2 while it shows
+        one item of its own (``set_view_focused``): its back button and
+        its menu stand where the search field was, so no empty band is
+        left above the item and the line under the band stays where it
+        is. The bar's own margins go (the band has the panel's); its
+        buttons reach ``inset`` pixels into the gutter, at its leading and
+        at its trailing end."""
+        layout = bar.layout()
+        if layout is not None:
+            layout.setContentsMargins(0, 0, 0, 0)
+        self._view_bars[key] = (bar, inset)
+        self._search_band.layout().addWidget(bar, 1, Qt.AlignVCenter)
+        bar.hide()
+        self._show_search_of(self.current_view())
+
     def set_view_focused(self, key: str, focused: bool) -> None:
         """The view ``key`` shows one item of its own (a submission's
         detail, with its own back button and menu): while it does, no
         search field (typing there would do nothing) and no second action
         menu above it (RG-M3-b 8). The band itself stays, level with the
-        tabs."""
+        tabs, and holds the view's bar when it has one (``set_view_bar``).
+        The action menu's room is kept, so the view switch beside it does
+        not change its shape."""
         if self._view_focused.get(key, False) == focused:
             return
         self._view_focused[key] = focused
