@@ -47,9 +47,13 @@ def test_no_test_backs_up_into_the_persons_home():
 
 
 def _app_modules():
+    repo = os.path.normcase(str(REPO))
     for name, module in list(sys.modules.items()):
-        path = getattr(module, "__file__", None) or ""
-        if path.startswith(str(REPO)) and "/tests/" not in path and "/.venv/" not in path:
+        path = os.path.normcase(getattr(module, "__file__", None) or "")
+        if not path.startswith(repo + os.sep):
+            continue
+        top = os.path.relpath(path, repo).split(os.sep)[0]
+        if top not in ("tests", ".venv"):
             yield name, module
 
 
@@ -165,6 +169,10 @@ def test_the_guard_names_what_changed_and_never_opens_a_file(tmp_path, monkeypat
     (folder / "cache").mkdir(parents=True)
     (folder / "settings.json").write_text("{}", encoding="utf-8")
     (folder / "gone.json").write_text("{}", encoding="utf-8")
+    # A folder's time moves in the clock's steps (about 4 ms on Linux, 16 ms
+    # on Windows): set back an hour, the changes below always move it.
+    for made in (folder, folder / "cache", folder / "settings.json", folder / "gone.json"):
+        os.utime(made, (os.stat(made).st_atime - 3600, os.stat(made).st_mtime - 3600))
     before = home_guard.snapshot(str(folder))
     (folder / "settings.json").write_text('{"window_geometry": 1}', encoding="utf-8")
     (folder / "gone.json").unlink()

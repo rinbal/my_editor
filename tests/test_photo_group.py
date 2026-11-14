@@ -267,9 +267,16 @@ def test_what_an_edit_left_beside_a_groups_pictures_is_still_written(app):
 # --------------------------------------------------------------------------- #
 
 def _cpu(work) -> float:
-    start = time.process_time()
-    work()
-    return time.process_time() - start
+    """CPU time of one run of ``work``, run again until the clock has
+    moved a tenth of a second: Windows counts CPU time in steps of about
+    16 ms, so one short run can read as 0."""
+    runs, start = 0, time.process_time()
+    while True:
+        work()
+        runs += 1
+        spent = time.process_time() - start
+        if spent >= 0.1:
+            return spent / runs
 
 
 def test_a_group_of_500_pictures_is_one_paragraph_and_written_whole(app):

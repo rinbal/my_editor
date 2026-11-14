@@ -241,6 +241,7 @@ import photo_group  # noqa: E402
 import photo_group_drawing  # noqa: E402
 import photo_group_view  # noqa: E402
 from tests.photo_corners import SHAPES, image_of, shows_whole  # noqa: E402
+from tests.screen import unclamped  # noqa: E402
 
 STRIPPED = ("![a](landscape.png)\n\n![b](photo.png)\n\n![c](photo.png)\n\n![d](landscape.png)\n\n"
             "![e](portrait.png)\n\n*A caption under the portrait*\n\n![f](plan.png#wide)\n")
@@ -248,7 +249,8 @@ STRIPPED = ("![a](landscape.png)\n\n![b](photo.png)\n\n![c](photo.png)\n\n![d](l
 
 def _group_preview(width):
     from PySide6.QtWidgets import QApplication as App
-    view = pv.NostrPreview(images=lambda name: image_of(name) if name in SHAPES else None)
+    view = unclamped(pv.NostrPreview(
+        images=lambda name: image_of(name) if name in SHAPES else None))
     view.resize(width, 3200)
     view.show_markdown(STRIPPED)
     view.show()
@@ -290,7 +292,8 @@ def test_a_wide_picture_of_a_group_holds_the_pages_enlarge_place():
     caption wraps beside it. The editor holds none."""
     from PySide6.QtWidgets import QApplication as App
     import photo_group
-    view = pv.NostrPreview(images=lambda name: image_of(name) if name in SHAPES else None)
+    view = unclamped(pv.NostrPreview(
+        images=lambda name: image_of(name) if name in SHAPES else None))
     view.resize(1000, 3200)
     view.show_markdown("![a](landscape.png#wide)\n*Short*\n\n![b](photo.png)\n\n"
                        "![c](photo.png)\n")
@@ -325,7 +328,8 @@ def test_a_caption_on_its_pictures_line_stands_right_under_it():
     """No 60 % of the picture's height between them (an article's 160 %
     of a line as tall as the picture)."""
     from PySide6.QtWidgets import QApplication as App
-    view = pv.NostrPreview(images=lambda name: image_of(name) if name in SHAPES else None)
+    view = unclamped(pv.NostrPreview(
+        images=lambda name: image_of(name) if name in SHAPES else None))
     view.resize(1000, 2000)
     view.show_markdown("![plan](landscape.png)\n*The plan of the whole place*\n")
     view.show()
