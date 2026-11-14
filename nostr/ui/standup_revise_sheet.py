@@ -179,7 +179,10 @@ class ReviseSheet(QDialog):
         self.show_changes.setAutoDefault(False)
         self.show_changes.clicked.connect(self._show_changes)
         row.addWidget(self.show_changes, 0, Qt.AlignmentFlag.AlignVCenter)
-        self.show_changes.setVisible(self._previous is not None)
+        # Only where the text differs: with the same text (or only the
+        # title or the topics changed) it would open on "no changes".
+        self.show_changes.setVisible(self._previous is not None and comparable(
+            str(self._previous.work.get("content") or "")) != comparable(self._draft.content))
         column.addWidget(card)
         # Asked only when no earlier version of the writer could be read.
         self.rights = QCheckBox(_(RIGHTS))
