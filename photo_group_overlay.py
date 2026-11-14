@@ -312,9 +312,13 @@ def paint_bar(painter: QPainter, bar: Bar, label: str, hint: str, add_words: str
             faint.setAlphaF(0.8 if solid else 0.60 if dark else 0.70)
             painter.setPen(faint)
         room = bar.add.left() - 10 - left
-        painter.drawText(QRectF(left, box.top(), room, box.height()), flags,
-                         QFontMetricsF(painter.font()).elidedText(
-                             hint, Qt.TextElideMode.ElideRight, room))
+        measure = QFontMetricsF(painter.font())
+        # What letting go will do is said as far as there is room for it;
+        # the plain hint is said whole or not at all ("Drag to arr…" told
+        # nothing).
+        if hint_in_accent or measure.horizontalAdvance(hint) <= room:
+            painter.drawText(QRectF(left, box.top(), room, box.height()), flags,
+                             measure.elidedText(hint, Qt.TextElideMode.ElideRight, room))
     font.setWeight(QFont.Weight.DemiBold)
     painter.setFont(font)
     line = QColor(ink)
