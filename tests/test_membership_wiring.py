@@ -1013,7 +1013,7 @@ def test_while_it_waits_the_sign_out_says_so_and_then_clears_it():
     # RG-M2r2a 6: up to 5 seconds with nothing to say it is going on.
     window = SignOutStandIn()
     window._on_nostr_sign_out()
-    assert window.status.message == "Signing Out …"
+    assert window.status.message == "Signing Out…"
     window.written[0]()
     assert window.status.message == ""
 

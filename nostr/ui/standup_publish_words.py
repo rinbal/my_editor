@@ -14,7 +14,7 @@ from i18n import N_
 from ..standup.following import SOMEONE_ELSES_WORDS as SOMEONE_ELSES
 from ..standup.following import TOO_LONG_WORDS as TOO_LONG_ELSEWHERE
 
-BUSY = N_("Publishing …")
+BUSY = N_("Publishing…")
 BUSY_DETAIL = N_("The pictures go up to your media server, then it’s signed.")
 BUSY_SIGNING = N_("Waiting for your signer app.")
 DONE = N_("Published.")

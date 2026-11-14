@@ -204,7 +204,7 @@ def test_a_cover_is_decoded_once_and_one_too_large_shows_the_symbol(monkeypatch)
 def test_an_empty_list_says_how_to_submit_and_offers_it(window):
     window.host.follow()
     # Not read yet: not said to be empty.
-    assert window.view.empty_title.text() == "Loading …"
+    assert window.view.empty_title.text() == "Loading…"
     assert not window.view.empty_action.isVisibleTo(window.view)
     window.world.settle()
     assert window.view.empty_title.text() == "No Submissions Yet"
@@ -436,7 +436,7 @@ def test_the_detail_has_one_sentence_and_a_button_only_for_what_the_window_handl
     detail = opened(window, entries["annahme"])
     assert detail.sentence.text() == "Accepted."
     assert detail._status.action is Action.PUBLISH and detail.action.isVisibleTo(detail)
-    assert detail.action.text() == "Publish …"
+    assert detail.action.text() == "Publish…"
 
 
 def test_publish_opens_the_accepted_version_and_says_when_the_editor_text_differs(window):
@@ -591,7 +591,7 @@ def test_a_correction_is_compared_in_its_sheet_and_a_question_goes_to_the_compos
     world.correct(seed, entry.sid, "Korrigiert.")
     window.follow()
     detail = opened(window, entry)
-    assert detail.action.text() == "Compare …"
+    assert detail.action.text() == "Compare…"
     detail.action.click()
     world.settle()
     sheet = window.host._correction_sheet
@@ -706,7 +706,7 @@ def test_confirming_names_the_accepted_split_and_where_the_share_goes_then_remin
                                  zap_address=lambda pubkey, answer: answer("jana@getalby.com"))
     window.follow()
     detail = opened(window, entry)
-    assert detail.action.text() == "Confirm Share …"
+    assert detail.action.text() == "Confirm Share…"
     # Item 7: the proposal is in the conversation, marked as the one accepted.
     assert "Anna proposes a split: You 70%, Paul 30%. Accepted with this split." in \
         detail.conversation.captions
@@ -1246,7 +1246,7 @@ def test_discard_in_a_rows_menu_asks_first_and_cancel_keeps_the_row(window, monk
     row = next(i for i, item in enumerate(view.items()) if item.kind == "row")
     view._on_menu(view.list.visualRect(view.list.model().index(row)).center())
     assert [a.text() for a in view._menu.actions() if a.text()] == [
-        "Open", "Open in Editor", "Send Again", "Discard …"]
+        "Open", "Open in Editor", "Send Again", "Discard…"]
     view._menu.actions()[-1].trigger()
     assert asked == [("Discard this attempt?", "This submission never reached Einundzwanzig "
                       "Magazin. It leaves your list; your article stays as it is.")]
@@ -1352,7 +1352,7 @@ def test_the_action_turns_into_handing_in_once_the_text_in_the_editor_differs(wi
     assert detail.action.text() == "Revise in the Editor"      # still typing
     window.host._typing.timeout.emit()                          # the pause
     assert detail.sentence.text() == "Your changes are in the editor."
-    assert detail.action.text() == "Hand In New Version …" and detail.action.isVisibleTo(detail)
+    assert detail.action.text() == "Hand In New Version…" and detail.action.isVisibleTo(detail)
     # Another tab in front, then this one again: at once.
     window.tab("anders")
     window.host.article_changed()
@@ -1368,7 +1368,7 @@ def test_a_text_changed_during_review_is_said_with_a_plain_button(window):
     window.follow()
     detail = opened(window, entries["text"])
     assert detail.more.text() == "You’ve changed the text since."
-    assert detail.action.text() == "Hand In New Version …"
+    assert detail.action.text() == "Hand In New Version…"
     assert detail.action.objectName() == "submission_offered"     # not the accent
     tab.text = "# Ein Jahr\n\nText."
     window.host.article_changed()

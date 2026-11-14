@@ -1686,7 +1686,7 @@ msgstr "Deine aktuelle Liste ließ sich nicht lesen, daher wurde nichts geänder
 
 #: main_window.py:9670
 #: main_window.py:9663
-msgid "Signing Out …"
+msgid "Signing Out…"
 msgstr "Wird abgemeldet …"
 
 #: main_window.py:10036
@@ -4202,6 +4202,8 @@ msgstr "Dieses Audio- oder Videoformat kann auf diesem Computer nicht abgespielt
 #: nostr/ui/media_library_dialog.py:620
 #: nostr/ui/media_viewer.py:118
 #: nostr/ui/published_view.py:207
+#: nostr/ui/submission_detail.py:615
+#: nostr/ui/submissions_view.py:383
 msgid "Loading…"
 msgstr "Wird geladen …"
 
@@ -7373,6 +7375,7 @@ msgstr "Warten auf deine Signer-App. Bestätige die Anfrage dort …"
 #: nostr/publish_pipeline.py:214
 #: nostr/publish_pipeline.py:269
 #: nostr/ui/membership_window.py:1077
+#: nostr/ui/standup_publish_words.py:17
 msgid "Publishing…"
 msgstr "Wird veröffentlicht …"
 
@@ -8556,7 +8559,7 @@ msgstr "Deine Signer-App unterschreibt so lange Texte nicht. Melde dich mit eine
 
 #: nostr/standup/following.py:106
 #: nostr/standup/following.py:106
-msgid "Being published …"
+msgid "Being published…"
 msgstr "Wird veröffentlicht …"
 
 #: nostr/standup/following.py:107
@@ -8634,19 +8637,21 @@ msgid "Revise in the Editor"
 msgstr "Im Editor überarbeiten"
 
 #: nostr/standup/situations.py:49
-msgid "Hand In New Version …"
+msgid "Hand In New Version…"
 msgstr "Neue Fassung abgeben …"
 
 #: nostr/standup/situations.py:50
-msgid "Publish …"
+#: nostr/ui/drafts_panel.py:2505
+#: nostr/ui/drafts_panel.py:1907
+msgid "Publish…"
 msgstr "Veröffentlichen …"
 
 #: nostr/standup/situations.py:51
-msgid "Confirm Share …"
+msgid "Confirm Share…"
 msgstr "Anteil bestätigen …"
 
 #: nostr/standup/situations.py:52
-msgid "Compare …"
+msgid "Compare…"
 msgstr "Vergleichen …"
 
 #: nostr/standup/situations.py:53
@@ -8682,7 +8687,7 @@ msgstr "Rückfrage stellen"
 #: nostr/standup/situations.py:112
 #: nostr/standup/situations.py:112
 #: nostr/standup/words.py:51
-msgid "Submitting …"
+msgid "Submitting…"
 msgstr "Wird eingereicht …"
 
 #: nostr/standup/situations.py:113
@@ -9056,15 +9061,15 @@ msgid "The editorial team’s key is not confirmed. Submitting is not possible r
 msgstr "Der Schlüssel der Redaktion ist nicht bestätigt. Einreichen ist gerade nicht möglich."
 
 #: nostr/standup/words.py:26
-msgid "Encrypting …"
+msgid "Encrypting…"
 msgstr "Wird verschlüsselt …"
 
 #: nostr/standup/words.py:27
-msgid "Uploading picture …"
+msgid "Uploading picture…"
 msgstr "Bild wird hochgeladen …"
 
 #: nostr/standup/words.py:28
-msgid "Uploading pictures …"
+msgid "Uploading pictures…"
 msgstr "Bilder werden hochgeladen …"
 
 #: nostr/standup/words.py:29
@@ -9082,19 +9087,19 @@ msgstr "Bestätige dort die Anfrage."
 
 #: nostr/standup/words.py:32
 #, python-brace-format
-msgid "Sending to {publication} …"
+msgid "Sending to {publication}…"
 msgstr "Wird an {publication} gesendet …"
 
 #: nostr/standup/words.py:33
-msgid "Not confirmed yet. Checking …"
+msgid "Not confirmed yet. Checking…"
 msgstr "Noch nicht bestätigt. Wird geprüft …"
 
 #: nostr/standup/words.py:36
-msgid "The server has your submission. Sending it again with the picture …"
+msgid "The server has your submission. Sending it again with the picture…"
 msgstr "Der Server hat deine Einreichung. Sie wird mit dem Bild noch einmal gesendet …"
 
 #: nostr/standup/words.py:37
-msgid "The server has your submission. Checking the picture …"
+msgid "The server has your submission. Checking the picture…"
 msgstr "Der Server hat deine Einreichung. Das Bild wird geprüft …"
 
 #: nostr/standup/words.py:44
@@ -9110,7 +9115,7 @@ msgid "Its details are on this device now."
 msgstr "Die Angaben dazu sind jetzt auf diesem Gerät."
 
 #: nostr/standup/words.py:47
-msgid "Reading your list of submissions …"
+msgid "Reading your list of submissions…"
 msgstr "Deine Liste der Einreichungen wird gelesen …"
 
 #: nostr/standup/words.py:48
@@ -9171,7 +9176,7 @@ msgid "Waiting for your signer app: confirm your message there."
 msgstr "Warten auf deine Signer-App: Bestätige dort deine Nachricht."
 
 #: nostr/standup/words.py:78
-msgid "Sending your message …"
+msgid "Sending your message…"
 msgstr "Deine Nachricht wird gesendet …"
 
 #: nostr/standup/words.py:79
@@ -9234,7 +9239,7 @@ msgid "Its submission is made from its link name: another one would be another s
 msgstr "Seine Einreichung entsteht aus seinem Linknamen: Ein anderer wäre eine andere Einreichung."
 
 #: nostr/standup/words.py:109
-msgid "Checking whether this article was submitted …"
+msgid "Checking whether this article was submitted…"
 msgstr "Es wird geprüft, ob dieser Artikel eingereicht wurde …"
 
 #: nostr/standup/words.py:110
@@ -10617,11 +10622,6 @@ msgstr "Vorschau anzeigen"
 #: nostr/ui/drafts_panel.py:1908
 msgid "Continue Editing"
 msgstr "Weiter bearbeiten"
-
-#: nostr/ui/drafts_panel.py:2505
-#: nostr/ui/drafts_panel.py:1907
-msgid "Publish…"
-msgstr "Veröffentlichen …"
 
 #: nostr/ui/drafts_panel.py:2511
 #: nostr/ui/drafts_panel.py:1910
@@ -12871,6 +12871,7 @@ msgid "Edit Profile"
 msgstr "Profil bearbeiten"
 
 #: nostr/ui/profile_window.py:219
+#: nostr/ui/standup_confirm_sheet.py:58
 msgid "Reading your profile…"
 msgstr "Dein Profil wird gelesen …"
 
@@ -13389,7 +13390,7 @@ msgid "Confirm in your signer app"
 msgstr "Bestätige die Anfrage in deiner Signer-App"
 
 #: nostr/ui/standup_compare.py:43
-msgid "Comparing …"
+msgid "Comparing…"
 msgstr "Wird verglichen …"
 
 #: nostr/ui/standup_compare.py:44
@@ -13425,10 +13426,6 @@ msgstr "Apps, die Aufteilungen unterstützen, teilen Zaps so auf."
 #: nostr/ui/standup_confirm_sheet.py:57
 msgid "For your share, your Nostr profile needs a Lightning address."
 msgstr "Für deinen Anteil braucht dein Nostr-Profil eine Lightning-Adresse."
-
-#: nostr/ui/standup_confirm_sheet.py:58
-msgid "Reading your profile …"
-msgstr "Dein Profil wird gelesen …"
 
 #: nostr/ui/standup_confirm_sheet.py:59
 msgid "Your profile couldn’t be read, so it’s not known where your share goes."
@@ -13466,7 +13463,7 @@ msgid "Confirm Share"
 msgstr "Anteil bestätigen"
 
 #: nostr/ui/standup_confirm_sheet.py:257
-msgid "Confirming …"
+msgid "Confirming…"
 msgstr "Wird bestätigt …"
 
 #: nostr/ui/standup_confirm_sheet.py:195
@@ -13639,7 +13636,7 @@ msgid "No publication"
 msgstr "Keine Publikation"
 
 #: nostr/ui/standup_publications.py:216
-msgid "Loading publications …"
+msgid "Loading publications…"
 msgstr "Publikationen werden geladen …"
 
 #: nostr/ui/standup_publications.py:229
@@ -13659,7 +13656,7 @@ msgstr[0] "höchstens {count} offene Einreichung"
 msgstr[1] "höchstens {count} offene Einreichungen"
 
 #: nostr/ui/standup_publish.py:638
-msgid "Taking the correction …"
+msgid "Taking the correction…"
 msgstr "Wird übernommen …"
 
 #: nostr/ui/standup_publish.py:639
@@ -13713,10 +13710,6 @@ msgstr "Eine kurze Frage zum Veröffentlichen: "
 #: nostr/ui/standup_publish_sheet.py:99
 msgid "Publish as an Article"
 msgstr "Als Artikel veröffentlichen"
-
-#: nostr/ui/standup_publish_words.py:17
-msgid "Publishing …"
-msgstr "Wird veröffentlicht …"
 
 #: nostr/ui/standup_publish_words.py:18
 msgid "The pictures go up to your media server, then it’s signed."
@@ -13882,7 +13875,7 @@ msgid "At acceptance the editorial team proposes how zaps are split; you confirm
 msgstr "Die Redaktion schlägt bei der Annahme die Aufteilung der Zaps vor, du bestätigst sie."
 
 #: nostr/ui/standup_talk.py:45
-msgid "Sending …"
+msgid "Sending…"
 msgstr "Wird gesendet …"
 
 #: nostr/ui/standup_talk.py:46
@@ -14015,7 +14008,7 @@ msgid "Open in Editor"
 msgstr "Im Editor öffnen"
 
 #: nostr/ui/submission_detail.py:183
-msgid "Withdraw …"
+msgid "Withdraw…"
 msgstr "Zurückziehen …"
 
 #: nostr/ui/submission_detail.py:324
@@ -14078,11 +14071,6 @@ msgstr "Zurückziehen"
 #, python-brace-format
 msgid "{first} and {count} more"
 msgstr "{first} und {count} weitere"
-
-#: nostr/ui/submission_detail.py:615
-#: nostr/ui/submissions_view.py:383
-msgid "Loading …"
-msgstr "Wird geladen …"
 
 #: nostr/ui/submission_detail.py:730
 msgid "Encryption"
@@ -14296,7 +14284,7 @@ msgid "Choose an account in the Nostr menu to see what you submitted."
 msgstr "Wähle im Nostr-Menü ein Konto, um zu sehen, was du eingereicht hast."
 
 #: nostr/ui/submissions_view.py:460
-msgid "Discard …"
+msgid "Discard…"
 msgstr "Verwerfen …"
 
 #: nostr/ui/submissions_view.py:371

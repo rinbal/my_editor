@@ -1129,10 +1129,10 @@ def test_a_sheet_closed_twice_on_a_run_says_each_change_once_and_none_while_it_s
     writer.in_background(run)
     run.behind_the_sheet(None)                       # shown again
     run.changed.emit(Progress(Step.SENDING, sent=True))
-    assert said == ["Submitting …"]
+    assert said == ["Submitting…"]
     writer.in_background(run)
     run.changed.emit(Progress(Step.SUBMITTED, sent=True, receipt=object()))
-    assert said == ["Submitting …", "Submitting …",
+    assert said == ["Submitting…", "Submitting…",
                     "Submitted. In the inbox of Einundzwanzig Magazin."]
 
 

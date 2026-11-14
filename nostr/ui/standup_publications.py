@@ -213,7 +213,7 @@ def fill_picker(picker: QComboBox, destinations: Sequence[Destination], *, loadi
     picker.clear()
     model: QStandardItemModel = picker.model()
     if loading or not destinations:
-        picker.addItem(_("Loading publications …") if loading else _("No publication"))
+        picker.addItem(_("Loading publications…") if loading else _("No publication"))
         picker.setEnabled(False)
     else:
         for destination in destinations:

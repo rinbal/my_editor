@@ -42,7 +42,7 @@ from .standup_account import live
 
 NOT_SENT = N_("Not sent.")
 NOT_CONFIRMED = N_("Not confirmed yet.")
-SENDING = N_("Sending …")
+SENDING = N_("Sending…")
 REACTION_NOT_SENT = N_("Reaction not sent.")
 MESSAGE_EMPTY = N_("Write a message to send it.")
 MESSAGE_TOO_LONG = N_("This message is too long to send. Shorten it.")

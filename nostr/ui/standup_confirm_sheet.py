@@ -55,7 +55,7 @@ SHARE_GOES_TO = N_("Your share goes to {address}.")
 SPLITS_ZAPS = N_("Apps that support splits divide zaps this way.")
 # The web's words (editorial-confirmation.js) for the same moments.
 NO_ADDRESS = N_("For your share, your Nostr profile needs a Lightning address.")
-PROFILE_READING = N_("Reading your profile …")
+PROFILE_READING = N_("Reading your profile…")
 PROFILE_NOT_READ = N_("Your profile couldn’t be read, so it’s not known where your share goes.")
 RIGHTS = N_("My contribution is mine.")
 RIGHTS_PART = N_("My contribution ({part}) is mine.")
@@ -254,7 +254,7 @@ class ConfirmSheet(QDialog):
         confirms = ("split", "rights") if self._contributor else ("split",)
         self._confirming = True
         self._refresh()
-        self.status.say(_("Confirming …"), quietly=True)
+        self.status.say(_("Confirming…"), quietly=True)
         self._confirm(confirms, self._confirmed)
 
     def _confirmed(self, error) -> None:

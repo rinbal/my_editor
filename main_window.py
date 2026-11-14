@@ -9660,14 +9660,14 @@ class MainWindow(QMainWindow):
         else:
             # Up to 5 seconds: said, and a second Sign Out or a switch of
             # account waits for it (RG-M2r2a 6).
-            self.status.showMessage(_("Signing Out …"), 0, nostr=True)
+            self.status.showMessage(_("Signing Out…"), 0, nostr=True)
             writer.stop(on_written=lambda: self._finish_sign_out(active))
 
     def _finish_sign_out(self, active: Profile) -> None:
         self._signing_out = False
         waiting, self._switch_after_sign_out = getattr(self, "_switch_after_sign_out",
                                                        None), None
-        if self.status.currentMessage() == _("Signing Out …"):
+        if self.status.currentMessage() == _("Signing Out…"):
             self.status.clearMessage()
         # Only the account still in use is torn down here: one connected
         # meanwhile let the signed-out one go as it came in.

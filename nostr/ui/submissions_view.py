@@ -380,7 +380,7 @@ class SubmissionsView(QWidget):
             self._placeholder_of(_("Your submissions couldn’t be loaded"), problem,
                                  symbol="alert", action=(_("Try Again"), self.refresh))
         elif not any_rows and not following.listed:
-            self._placeholder_of(_("Loading …"), "", symbol="article")     # not empty yet
+            self._placeholder_of(_("Loading…"), "", symbol="article")     # not empty yet
         elif not any_rows:
             self._placeholder_of(
                 _("No Submissions Yet"), _(EMPTY_BODY), symbol="article",
@@ -457,7 +457,7 @@ class SubmissionsView(QWidget):
             menu.addSeparator()
             menu.addAction(_("Send Again"), lambda: self.action_requested.emit(
                 row.sid, rules.Action.RESEND))
-            menu.addAction(_("Discard …"), lambda: self._ask_discard(row))
+            menu.addAction(_("Discard…"), lambda: self._ask_discard(row))
         self._menu = menu
         menu.popup(self.list.viewport().mapToGlobal(pos))
 

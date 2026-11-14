@@ -180,7 +180,7 @@ class SubmissionDetail(QWidget):
         self.open_action = self.menu.addAction(
             _("Open in Editor"), lambda: self.open_in_editor.emit(self._sid, 0))
         self.menu.addSeparator()
-        self.withdraw_action = self.menu.addAction(_("Withdraw …"), self._ask_withdraw)
+        self.withdraw_action = self.menu.addAction(_("Withdraw…"), self._ask_withdraw)
         self.more_button.setMenu(self.menu)
         top.addWidget(self.back)
         top.addStretch(1)
@@ -612,7 +612,7 @@ class SubmissionDetail(QWidget):
         elif detail.not_confirmed:
             note = _(NOT_OPENED)
         elif detail.loading and not detail.thread:
-            note = _("Loading …")
+            note = _("Loading…")
         self.note.setText(note)
         self.note.setVisible(bool(note))
         while self._more_about.count():

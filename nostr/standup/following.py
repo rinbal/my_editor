@@ -103,7 +103,7 @@ TOO_LONG_WORDS = N_("Your signer app doesn’t sign texts this long. Sign in wit
 # By state: the row's word, the detail's sentence and quieter line, and
 # its one action.
 PUBLISHING_WORDS = {
-    PUBLISHING: (N_("Being published …"), N_("Being published …"), "", None),
+    PUBLISHING: (N_("Being published…"), N_("Being published…"), "", None),
     PUBLIC: (N_("Published"), N_("“{title}” is public. {publication} learns of it shortly."),
              "", None),
     UNREPORTED: (N_("Published"), N_("“{title}” is public."),

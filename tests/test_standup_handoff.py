@@ -206,7 +206,7 @@ def test_every_state_is_announced_once(view, monkeypatch):
     view.show_progress(Progress(Step.UPLOADING, pictures=1, uploaded=0.6))
     view.show_progress(Progress(Step.SIGNING))
     view.show_progress(Progress(Step.SUBMITTED))
-    assert said == ["Uploading picture … Encrypted, to your media server.",
+    assert said == ["Uploading picture… Encrypted, to your media server.",
                     "Waiting for your signer app. Confirm the request there.",
                     "Submitted. In the inbox of Einundzwanzig Magazin. "
                     "The server confirmed receipt."]

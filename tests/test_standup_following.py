@@ -517,7 +517,7 @@ def test_a_message_goes_out_shows_sending_and_is_a_bubble_once_it_has_its_seq():
     account.signer.held = []                            # the signer app is asked
     assert following.talk.send(entry.sid, "Mach ich, danke!") == ""
     [out] = following.talk.outgoing(entry.sid)
-    assert out.state is Sending.SIGNING and footer_words(out) == ("Sending …", "")
+    assert out.state is Sending.SIGNING and footer_words(out) == ("Sending…", "")
     account.signer.release()
     world.settle()
     detail = following.detail(entry.sid)

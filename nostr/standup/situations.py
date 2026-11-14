@@ -46,10 +46,10 @@ class Action(Enum):
 
 ACTION_LABELS = {
     Action.REVISE: N_("Revise in the Editor"),
-    Action.HAND_IN: N_("Hand In New Version …"),
-    Action.PUBLISH: N_("Publish …"),
-    Action.CONFIRM: N_("Confirm Share …"),
-    Action.COMPARE_CORRECTION: N_("Compare …"),
+    Action.HAND_IN: N_("Hand In New Version…"),
+    Action.PUBLISH: N_("Publish…"),
+    Action.CONFIRM: N_("Confirm Share…"),
+    Action.COMPARE_CORRECTION: N_("Compare…"),
     Action.RESEND: N_("Send Again"),
     Action.VIEW: N_("View"),
     Action.REMIND: N_("Send a Reminder"),
@@ -109,7 +109,7 @@ class Words:
 NOTHING_TO_DO = N_("You don’t need to do anything right now.")
 
 TABLE = {
-    Situation.SENDING: Words(N_("Submitting …"), Section.RUNNING, N_("Submitting …")),
+    Situation.SENDING: Words(N_("Submitting…"), Section.RUNNING, N_("Submitting…")),
     Situation.UNCONFIRMED: Words(N_("Not confirmed yet"), Section.RUNNING,
                                  N_("Not confirmed yet."), N_("MyEditor keeps checking.")),
     Situation.UNSENT: Words(N_("Not sent"), Section.TURN, N_("Not sent."),

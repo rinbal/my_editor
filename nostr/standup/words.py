@@ -23,18 +23,18 @@ from .errors import PASSING, Code, cause_words
 
 # -- the handoff, step by step (plan 10.3) -----------------------------------
 
-ENCRYPTING = N_("Encrypting …")
-UPLOADING_PICTURE = N_("Uploading picture …")
-UPLOADING_PICTURES = N_("Uploading pictures …")
+ENCRYPTING = N_("Encrypting…")
+UPLOADING_PICTURE = N_("Uploading picture…")
+UPLOADING_PICTURES = N_("Uploading pictures…")
 UPLOADING_DETAIL = N_("Encrypted, to your media server.")
 WAITING_FOR_SIGNER = N_("Waiting for your signer app.")
 WAITING_DETAIL = N_("Confirm the request there.")
-SENDING = N_("Sending to {publication} …")
-UNCONFIRMED = N_("Not confirmed yet. Checking …")
+SENDING = N_("Sending to {publication}…")
+UNCONFIRMED = N_("Not confirmed yet. Checking…")
 # The server has the submission (a receipt) while a picture is still
 # missing: the body sent again, then asked again (lesson 32).
-STORED_SENDING = N_("The server has your submission. Sending it again with the picture …")
-STORED_CHECKING = N_("The server has your submission. Checking the picture …")
+STORED_SENDING = N_("The server has your submission. Sending it again with the picture…")
+STORED_CHECKING = N_("The server has your submission. Checking the picture…")
 # Another device of this writer stored this round first (stale_revision
 # for a revision 1, contract 2 at 72d5ddc; the contract's German is
 # "Auf einem anderen Gerät eingereicht.", and the English stays as it is:
@@ -44,11 +44,11 @@ STORED_CHECKING = N_("The server has your submission. Checking the picture …")
 SUBMITTED_ELSEWHERE = N_("Submitted on another device.")
 ELSEWHERE_NOT_HERE_YET = N_("Its details aren’t on this device yet.")
 ELSEWHERE_HERE_NOW = N_("Its details are on this device now.")
-READING_LIST = N_("Reading your list of submissions …")
+READING_LIST = N_("Reading your list of submissions…")
 UNCONFIRMED_DETAIL = N_("You can close the window, MyEditor keeps checking.")
 SUBMITTED = N_("Submitted. In the inbox of {publication}.")
 SUBMITTED_DETAIL = N_("The server confirmed receipt.")
-IN_THE_BACKGROUND = N_("Submitting …")
+IN_THE_BACKGROUND = N_("Submitting…")
 # In the status bar while the sheet is closed: what a signer prompt is
 # for, and a first message that did not go (RG-M2b 11).
 MESSAGE_SIGNING_IN_THE_BACKGROUND = N_("Your submission to {publication} is in. Confirm your "
@@ -75,7 +75,7 @@ STOPPED_MESSAGE = N_("Your submission to {publication} is in, but your message m
 
 # The first message to the editorial team, after the receipt.
 MESSAGE_SIGNING = N_("Waiting for your signer app: confirm your message there.")
-MESSAGE_SENDING = N_("Sending your message …")
+MESSAGE_SENDING = N_("Sending your message…")
 MESSAGE_SENT = N_("Your message to the editorial team is sent.")
 # A first message that did not go (lessons 36): its title, by what is
 # known of it, and one sentence with the cause and what to do; the
@@ -106,7 +106,7 @@ LINK_NAME_KEPT_FOR_SENDING = N_("This article keeps its link name for sending it
                                 "publication.")
 LINK_NAME_KEPT_FOR_SENDING_WHY = N_("Its submission is made from its link name: another one "
                                     "would be another submission.")
-LINK_NAME_CHECKING = N_("Checking whether this article was submitted …")
+LINK_NAME_CHECKING = N_("Checking whether this article was submitted…")
 LINK_NAME_NOT_CHECKED = N_("MyEditor couldn’t check whether this article was submitted, so "
                            "it keeps its link name for now.")
 # With a signer app the list is read for the link name only on a tap.

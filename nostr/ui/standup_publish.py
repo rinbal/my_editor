@@ -635,7 +635,7 @@ class AcceptedPublish(QObject):
         self.changed.emit()
 
 
-TAKING = N_("Taking the correction …")
+TAKING = N_("Taking the correction…")
 TAKEN = N_("Correction taken.")
 NOT_TAKEN = N_("Correction not taken")
 

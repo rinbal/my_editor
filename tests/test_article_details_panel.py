@@ -256,7 +256,7 @@ def test_a_link_name_being_checked_is_read_only_and_says_so():
     panel.show_article(DETAILS, fixed_identifier=False,
                        link_name_lock=LinkNameLock(checking=True))
     assert panel.identifier_edit.isReadOnly() and panel.check_again.isHidden()
-    assert panel.identifier_note.text() == "Checking whether this article was submitted …"
+    assert panel.identifier_note.text() == "Checking whether this article was submitted…"
 
 
 def test_a_link_name_that_could_not_be_checked_offers_check_again():

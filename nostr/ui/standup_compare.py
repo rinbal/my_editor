@@ -40,7 +40,7 @@ from ..standup.compare import ADDED, REMOVED, Comparison
 from . import appearance
 from .publish_sheet import fit_to_window, make_sheet, sheet_stylesheet
 
-COMPARING = N_("Comparing …")
+COMPARING = N_("Comparing…")
 TOO_MANY = N_("Too many changes to mark")
 NO_CHANGES = N_("No changes to the text")
 LEGEND = N_("New text is underlined, removed text is struck through.")
