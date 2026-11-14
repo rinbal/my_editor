@@ -25,6 +25,7 @@ import photo_group_view
 import photo_layout
 from markdown_writer import _image_as_read, document_to_markdown, read_markdown
 from tests.app_process import run_window_script
+from tests.screen import unclamped
 from tests.photo_corners import SHAPES, corner_colours, image_of, shows_whole
 
 IMAGE = QTextDocument.ResourceType.ImageResource.value
@@ -51,7 +52,7 @@ def _markdown(*names, captions=None) -> str:
 
 def _shown(markdown: str, width: int, *, sizes=_sizes, pictures=SHAPES):
     """A view of ``markdown`` ``width`` wide, its pictures the fixtures."""
-    view = QTextEdit()
+    view = unclamped(QTextEdit())
     view.resize(width, 3000)
     doc = view.document()
     photo_group_view.install(doc, sizes)
@@ -235,7 +236,11 @@ def test_at_a_macs_72_dots_per_inch_three_portraits_stay_in_one_row(app, tmp_pat
     assert at_72["dpi"] == 72
     assert len(at_72["tops"]) == 3 and len(set(at_72["tops"])) == 1
     view = _shown(_markdown("portrait.png", "portrait.png", "portrait.png"), 760)
-    assert at_72["widths"] == [round(box.width()) for _p, _n, box in _boxes(view.document())]
+    # The same widths, give or take the pixel a desktop platform rounds
+    # differently from the offscreen one.
+    here = [round(box.width()) for _p, _n, box in _boxes(view.document())]
+    assert len(at_72["widths"]) == len(here)
+    assert all(abs(a - b) <= 1 for a, b in zip(at_72["widths"], here)), (at_72["widths"], here)
     view.close()
 
 
@@ -391,7 +396,7 @@ def test_a_picture_past_the_engines_limits_is_drawn_whole_not_stretched(app):
     blue = QColor("#0090FF")
     odd = QImage(*shape, QImage.Format.Format_RGB32)
     odd.fill(blue)
-    view = QTextEdit()
+    view = unclamped(QTextEdit())
     view.resize(760, 3000)
     doc = view.document()
     photo_group_view.install(doc, photo_group_view.resource_sizes(doc))
