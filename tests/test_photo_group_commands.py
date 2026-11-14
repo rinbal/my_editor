@@ -654,17 +654,22 @@ def test_move_up_hops_a_list_or_a_quote_whole(words):
     ed.close()
 
 
-def test_german_says_verschieben_and_alt_fehlt():
+def test_german_says_verschieben_and_alt_fehlt_and_names_a_group_bildgruppe():
     # Gate RG-PG2E-b 15: "bewegen" beside "verschieben", "Kein ALT", a fragment.
+    # A group is a "Bildgruppe" of "Bilder", as in STANDUP and in the rest of
+    # this app ("Bild einfügen"): it holds plans and drawings too.
     i18n.install("de")
     try:
         words = [_("Move Photo"), _("Move With Arrow Keys"), _("No ALT"),
                  _("Add photos to this group. Or drag them onto it.")]
+        named = [i18n.ngettext("Photo Group · {n} Photo", "Photo Group · {n} Photos",
+                               n).format(n=n) for n in (1, 3)]
     finally:
         i18n.install(i18n.ENGLISH)
-    assert words == ["Foto verschieben", "Mit Pfeiltasten verschieben", "ALT fehlt",
-                     "Fotos zu dieser Gruppe hinzufügen. Du kannst sie auch auf die Gruppe "
+    assert words == ["Bild verschieben", "Mit Pfeiltasten verschieben", "ALT fehlt",
+                     "Bilder zu dieser Gruppe hinzufügen. Du kannst sie auch auf die Gruppe "
                      "ziehen."]
+    assert named == ["Bildgruppe · 1 Bild", "Bildgruppe · 3 Bilder"]
 
 
 def _saved_reloaded_exported(ed) -> Tuple[str, List[Tuple[int, List[str]]], List[str]]:

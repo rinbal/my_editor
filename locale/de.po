@@ -1464,7 +1464,7 @@ msgstr "F&ormat"
 #: photo_group_pointer.py:590
 #: photo_group_pointer.py:588
 msgid "Photo"
-msgstr "Foto"
+msgstr "Bild"
 
 #: main_window.py:3150
 msgid "Sheet"
@@ -2359,7 +2359,7 @@ msgstr "Diktat"
 #: main_window.py:4403
 #: main_window.py:7930
 msgid "Add Photos"
-msgstr "Fotos hinzufügen"
+msgstr "Bilder hinzufügen"
 
 #: main_window.py:8046
 #: nostr/ui/connect_dialog.py:225
@@ -2914,7 +2914,7 @@ msgstr "Textgröße: {size} pt"
 
 #: main_window.py:7929
 msgid "Add Photo"
-msgstr "Foto hinzufügen"
+msgstr "Bild hinzufügen"
 
 #: main_window.py:7948
 msgid "This picture couldn’t be read. Check that its file is still there, and try again."
@@ -2922,11 +2922,11 @@ msgstr "Dieses Bild konnte nicht gelesen werden. Prüfe, ob seine Datei noch da 
 
 #: main_window.py:7954
 msgid "This picture is an SVG drawing, which can’t be cropped here. Crop it in a drawing app instead."
-msgstr "Dieses Foto ist eine SVG-Zeichnung und kann hier nicht zugeschnitten werden. Schneide es stattdessen in einem Zeichenprogramm zu."
+msgstr "Dieses Bild ist eine SVG-Zeichnung und kann hier nicht zugeschnitten werden. Schneide es stattdessen in einem Zeichenprogramm zu."
 
 #: main_window.py:7957
 msgid "This picture can’t be cropped: it is too large, or not a kind of picture MyEditor shows."
-msgstr "Dieses Foto kann nicht zugeschnitten werden: Es ist zu groß oder keine Art von Bild, die MyEditor zeigt."
+msgstr "Dieses Bild kann nicht zugeschnitten werden: Es ist zu groß oder keine Art von Bild, die MyEditor zeigt."
 
 #: main_window.py:7996
 msgid "The cropped picture couldn’t be kept. Free some space on your disk and try again."
@@ -3907,7 +3907,7 @@ msgstr "tabelle"
 
 #: main_window.py:2470
 msgid "Photo Group…"
-msgstr "Fotogruppe …"
+msgstr "Bildgruppe …"
 
 #: main_window.py:2477
 msgid "spreadsheet"
@@ -4477,7 +4477,7 @@ msgstr ""
 
 #: photo_group_editing.py:57
 msgid "Move Photo"
-msgstr "Foto verschieben"
+msgstr "Bild verschieben"
 
 #: photo_group_editing.py:59
 msgid "Join Groups"
@@ -4485,7 +4485,7 @@ msgstr "Gruppen verbinden"
 
 #: photo_group_editing.py:59
 msgid "Remove Photo"
-msgstr "Foto entfernen"
+msgstr "Bild entfernen"
 
 #: photo_group_editing.py:60
 msgid "Caption"
@@ -4497,7 +4497,7 @@ msgstr "Bildbeschreibung"
 
 #: photo_group_editing.py:60
 msgid "Crop Photo"
-msgstr "Foto zuschneiden"
+msgstr "Bild zuschneiden"
 
 #: photo_group_editing.py:58
 #: photo_group_menu.py:55
@@ -4547,7 +4547,7 @@ msgstr "{photo}, ans Ende verschoben"
 #: photo_group_view.py:373
 #, python-brace-format
 msgid "Photo {k} of {n}"
-msgstr "Foto {k} von {n}"
+msgstr "Bild {k} von {n}"
 
 #: photo_group_editing.py:325
 #: photo_group_pointer.py:336
@@ -4573,7 +4573,7 @@ msgstr "{photo}, nach rechts verschoben"
 
 #: photo_group_editing.py:398
 msgid "Already the whole width, it can’t get larger here. Readers can open any photo to see it large."
-msgstr "Schon über die ganze Breite, größer geht es hier nicht. Wer liest, kann jedes Foto groß öffnen."
+msgstr "Schon über die ganze Breite, größer geht es hier nicht. Wer liest, kann jedes Bild groß öffnen."
 
 #: photo_group_editing.py:409
 msgid "Shown large: across the whole width on large screens. Here it stands alone already."
@@ -4587,12 +4587,12 @@ msgstr "Wieder normal: auf großen Bildschirmen neben den anderen."
 #, python-brace-format
 msgid "{count} photo added"
 msgid_plural "{count} photos added"
-msgstr[0] "{count} Foto hinzugefügt"
-msgstr[1] "{count} Fotos hinzugefügt"
+msgstr[0] "{count} Bild hinzugefügt"
+msgstr[1] "{count} Bilder hinzugefügt"
 
 #: photo_group_editing.py:503
 msgid "Photo cropped, as a new file"
-msgstr "Foto zugeschnitten, als neue Datei"
+msgstr "Bild zugeschnitten, als neue Datei"
 
 #: photo_group_editing.py:340
 #, python-brace-format
@@ -4622,35 +4622,35 @@ msgstr "In die Gruppe gelegt, {photo}"
 
 #: photo_group_editing.py:395
 msgid "Photo wider than the text"
-msgstr "Foto breiter als der Text"
+msgstr "Bild breiter als der Text"
 
 #: photo_group_editing.py:395
 msgid "Photo as wide as the text"
-msgstr "Foto so breit wie der Text"
+msgstr "Bild so breit wie der Text"
 
 #: photo_group_editing.py:422
 #, python-brace-format
 msgid "The photos are one group now, {count} photos"
-msgstr "Die Fotos sind jetzt eine Gruppe, {count} Fotos"
+msgstr "Die Bilder sind jetzt eine Gruppe, {count} Bilder"
 
 #: photo_group_editing.py:446
 #, python-brace-format
 msgid "Photo removed, {count} photo remains. Undo with {keys}"
 msgid_plural "Photo removed, {count} photos remain. Undo with {keys}"
-msgstr[0] "Foto entfernt, {count} Foto bleibt. Widerrufen mit {keys}"
-msgstr[1] "Foto entfernt, {count} Fotos bleiben. Widerrufen mit {keys}"
+msgstr[0] "Bild entfernt, {count} Bild bleibt. Widerrufen mit {keys}"
+msgstr[1] "Bild entfernt, {count} Bilder bleiben. Widerrufen mit {keys}"
 
 #: photo_group_editing.py:450
 #, python-brace-format
 msgid "Photo removed. Undo with {keys}"
-msgstr "Foto entfernt. Widerrufen mit {keys}"
+msgstr "Bild entfernt. Widerrufen mit {keys}"
 
 #: photo_group_editing.py:491
 #, python-brace-format
 msgid "The group has {n} photo now"
 msgid_plural "The group has {n} photos now"
-msgstr[0] "Die Gruppe hat jetzt {n} Foto"
-msgstr[1] "Die Gruppe hat jetzt {n} Fotos"
+msgstr[0] "Die Gruppe hat jetzt {n} Bild"
+msgstr[1] "Die Gruppe hat jetzt {n} Bilder"
 
 #: photo_group_editing.py:566
 #, python-brace-format
@@ -4665,7 +4665,7 @@ msgstr "Widerrufen: {action}"
 #: photo_group_editing.py:381
 #, python-brace-format
 msgid "The photo stands alone now, under “{words}”"
-msgstr "Das Foto steht jetzt allein, unter „{words}“"
+msgstr "Das Bild steht jetzt allein, unter „{words}“"
 
 #: photo_group_editing.py:414
 #, python-brace-format
@@ -4680,7 +4680,7 @@ msgstr "{photo} wieder normal gezeigt"
 #: photo_group_editing.py:384
 #, python-brace-format
 msgid "The photo stands alone now, above “{words}”"
-msgstr "Das Foto steht jetzt allein, über „{words}“"
+msgstr "Das Bild steht jetzt allein, über „{words}“"
 
 #: photo_group_fields.py:57
 msgid "Caption, e.g. “The jetty · Photo: Anna Berg”"
@@ -4693,7 +4693,7 @@ msgstr "Bildbeschreibung"
 
 #: photo_group_fields.py:64
 msgid "Describe in one sentence what the photo shows. Whoever can’t see it hears this sentence read out."
-msgstr "Beschreib in einem Satz, was das Foto zeigt. Wer es nicht sehen kann, hört diesen Satz vorgelesen."
+msgstr "Beschreib in einem Satz, was das Bild zeigt. Wer es nicht sehen kann, hört diesen Satz vorgelesen."
 
 #: photo_group_fields.py:55
 #, python-brace-format
@@ -4702,11 +4702,11 @@ msgstr "Bildunterschrift von {photo}"
 
 #: photo_group_menu.py:128
 msgid "Write text between the photos"
-msgstr "Text zwischen die Fotos schreiben"
+msgstr "Text zwischen die Bilder schreiben"
 
 #: photo_group_menu.py:159
 msgid "Add photos to this group. Or drag them onto it."
-msgstr "Fotos zu dieser Gruppe hinzufügen. Du kannst sie auch auf die Gruppe ziehen."
+msgstr "Bilder zu dieser Gruppe hinzufügen. Du kannst sie auch auf die Gruppe ziehen."
 
 #: photo_group_menu.py:53
 msgid "Move Left"
@@ -4764,7 +4764,7 @@ msgstr "Zuschneiden …"
 
 #: photo_group_menu.py:59
 msgid "Add Photos…"
-msgstr "Fotos hinzufügen …"
+msgstr "Bilder hinzufügen …"
 
 #: photo_group_menu.py:60
 msgid "Move With Arrow Keys"
@@ -4805,11 +4805,11 @@ msgstr "In die Gruppe darüber"
 
 #: photo_group_menu.py:84
 msgid "Move Next to the Photo Below"
-msgstr "Neben das Foto darunter"
+msgstr "Neben das Bild darunter"
 
 #: photo_group_menu.py:84
 msgid "Move Next to the Photo Above"
-msgstr "Neben das Foto darüber"
+msgstr "Neben das Bild darüber"
 
 #: photo_group_menu.py:132
 #: photo_group_menu.py:156
@@ -4822,7 +4822,7 @@ msgstr "Eine eigene Zeile über die ganze Breite"
 
 #: photo_group_menu.py:150
 msgid "Description missing: for people who can’t see the photo"
-msgstr "Bildbeschreibung fehlt: für alle, die das Foto nicht sehen können"
+msgstr "Bildbeschreibung fehlt: für alle, die das Bild nicht sehen können"
 
 #: photo_group_menu.py:157
 msgid "Show normal again"
@@ -4834,11 +4834,11 @@ msgstr "Groß zeigen: eine eigene Zeile über die ganze Breite"
 
 #: photo_group_menu.py:122
 msgid "Join the Photo Above"
-msgstr "Mit dem Foto darüber verbinden"
+msgstr "Mit dem Bild darüber verbinden"
 
 #: photo_group_menu.py:123
 msgid "Join the Photo Below"
-msgstr "Mit dem Foto darunter verbinden"
+msgstr "Mit dem Bild darunter verbinden"
 
 #: photo_group_menu.py:146
 #, python-brace-format
@@ -4866,7 +4866,7 @@ msgstr "Hier allein zeigen"
 
 #: photo_group_pointer.py:269
 msgid "Together with this photo"
-msgstr "Zusammen mit diesem Foto"
+msgstr "Zusammen mit diesem Bild"
 
 #: photo_group_pointer.py:113
 msgid "No ALT"
@@ -4883,7 +4883,7 @@ msgstr "Groß"
 #: photo_group_pointer.py:396
 #: photo_group_pointer.py:413
 msgid "Cancelled, the photo is back in its place"
-msgstr "Abgebrochen, das Foto ist wieder an seinem Platz"
+msgstr "Abgebrochen, das Bild ist wieder an seinem Platz"
 
 #: photo_group_pointer.py:537
 msgid "Drag to arrange"
@@ -4901,7 +4901,7 @@ msgstr "{photo} aufgenommen. Mit den Pfeiltasten verschieben, Return legt ab, Es
 
 #: photo_group_pointer.py:569
 msgid "New Photo"
-msgstr "Neues Foto"
+msgstr "Neues Bild"
 
 #: photo_group_pointer.py:579
 msgid "Arrow keys move it, Return puts it down, Esc cancels"
@@ -4912,13 +4912,13 @@ msgstr "Pfeiltasten verschieben · Return legt ab · Esc bricht ab"
 #, python-brace-format
 msgid "Photo Group · {n} Photo"
 msgid_plural "Photo Group · {n} Photos"
-msgstr[0] "Fotogruppe · {n} Foto"
-msgstr[1] "Fotogruppe · {n} Fotos"
+msgstr[0] "Bildgruppe · {n} Bild"
+msgstr[1] "Bildgruppe · {n} Bilder"
 
 #: photo_group_pointer.py:581
 #, python-brace-format
 msgid "Release: here as photo {k} of {n} · Esc cancels"
-msgstr "Loslassen: hier als Foto {k} von {n} · Esc bricht ab"
+msgstr "Loslassen: hier als Bild {k} von {n} · Esc bricht ab"
 
 #: photo_group_split.py:30
 msgid "Split Group"
@@ -4926,7 +4926,7 @@ msgstr "Gruppe teilen"
 
 #: photo_group_split.py:58
 msgid "Group split. Write the text between the photos; if the line stays empty, they belong together again."
-msgstr "Gruppe geteilt. Schreib den Text zwischen die Fotos; bleibt die Zeile leer, gehören sie wieder zusammen."
+msgstr "Gruppe geteilt. Schreib den Text zwischen die Bilder; bleibt die Zeile leer, gehören sie wieder zusammen."
 
 #: photo_group_split.py:78
 msgid "Write something here, then the group is split"
@@ -4934,11 +4934,11 @@ msgstr "Schreib hier etwas, dann ist die Gruppe geteilt"
 
 #: photo_group_split.py:125
 msgid "The line stayed empty, the photos belong together again"
-msgstr "Die Zeile blieb leer, die Fotos gehören wieder zusammen"
+msgstr "Die Zeile blieb leer, die Bilder gehören wieder zusammen"
 
 #: photo_group_split.py:45
 msgid "The group already ends after the last photo"
-msgstr "Die Gruppe endet schon nach dem letzten Foto"
+msgstr "Die Gruppe endet schon nach dem letzten Bild"
 
 #: picture_crop.py:82
 msgid "Free"
