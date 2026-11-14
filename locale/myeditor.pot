@@ -13067,40 +13067,40 @@ msgstr[1] ""
 msgid "{count} · long note, consider Publish as Article instead"
 msgstr ""
 
-#: nostr/ui/publish_sheet.py:435
+#: nostr/ui/publish_sheet.py:445
 #: nostr/ui/standup_publish_sheet.py:132
 #, python-brace-format
 msgid "Publishing as {name}"
 msgstr ""
 
-#: nostr/ui/publish_sheet.py:303
+#: nostr/ui/publish_sheet.py:313
 msgid "mentioned"
 msgstr ""
 
-#: nostr/ui/publish_sheet.py:303
+#: nostr/ui/publish_sheet.py:313
 msgid "quoted"
 msgstr ""
 
-#: nostr/ui/publish_sheet.py:304
+#: nostr/ui/publish_sheet.py:314
 msgid "co-author"
 msgstr ""
 
-#: nostr/ui/publish_sheet.py:305
+#: nostr/ui/publish_sheet.py:315
 #, python-brace-format
 msgid "{name}, {role}"
 msgstr ""
 
-#: nostr/ui/publish_sheet.py:329
+#: nostr/ui/publish_sheet.py:339
 #: nostr/ui/tag_field.py:91
 #, python-brace-format
 msgid "Remove {name}"
 msgstr ""
 
-#: nostr/ui/publish_sheet.py:443
+#: nostr/ui/publish_sheet.py:453
 msgid "Publishing as"
 msgstr ""
 
-#: nostr/ui/publish_sheet.py:479
+#: nostr/ui/publish_sheet.py:489
 msgid "(no accounts)"
 msgstr ""
 
@@ -13566,36 +13566,37 @@ msgid_plural "{count} pictures are encrypted on your media server. It sees when 
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/standup_publications.py:114
+#: nostr/ui/standup_publications.py:116
 msgid "Not taking submissions right now"
 msgstr ""
 
-#: nostr/ui/standup_publications.py:116
+#: nostr/ui/standup_publications.py:118
 msgid "Takes audio only"
 msgstr ""
 
-#: nostr/ui/standup_publications.py:117
+#: nostr/ui/standup_publications.py:119
 msgid "Takes no articles"
 msgstr ""
 
-#: nostr/ui/standup_publications.py:208
-msgid "Loading publications …"
-msgstr ""
-
-#: nostr/ui/standup_publications.py:208
+#: nostr/ui/standup_publications.py:234
+#: nostr/ui/standup_publications.py:216
 msgid "No publication"
 msgstr ""
 
-#: nostr/ui/standup_publications.py:221
+#: nostr/ui/standup_publications.py:216
+msgid "Loading publications …"
+msgstr ""
+
+#: nostr/ui/standup_publications.py:229
 msgid "Recently used first"
 msgstr ""
 
-#: nostr/ui/standup_publications.py:122
+#: nostr/ui/standup_publications.py:124
 #, python-brace-format
 msgid "Asks for {items}"
 msgstr ""
 
-#: nostr/ui/standup_publications.py:125
+#: nostr/ui/standup_publications.py:127
 #, python-brace-format
 msgid "at most {count} open submission"
 msgid_plural "at most {count} open submissions"

@@ -13085,40 +13085,40 @@ msgstr[1] "{n} Zeichen"
 msgid "{count} · long note, consider Publish as Article instead"
 msgstr "{count} · lange Notiz, veröffentliche sie besser als Artikel"
 
-#: nostr/ui/publish_sheet.py:435
+#: nostr/ui/publish_sheet.py:445
 #: nostr/ui/standup_publish_sheet.py:132
 #, python-brace-format
 msgid "Publishing as {name}"
 msgstr "Veröffentlichen als {name}"
 
-#: nostr/ui/publish_sheet.py:303
+#: nostr/ui/publish_sheet.py:313
 msgid "mentioned"
 msgstr "erwähnt"
 
-#: nostr/ui/publish_sheet.py:303
+#: nostr/ui/publish_sheet.py:313
 msgid "quoted"
 msgstr "zitiert"
 
-#: nostr/ui/publish_sheet.py:304
+#: nostr/ui/publish_sheet.py:314
 msgid "co-author"
 msgstr "Mitautor"
 
-#: nostr/ui/publish_sheet.py:305
+#: nostr/ui/publish_sheet.py:315
 #, python-brace-format
 msgid "{name}, {role}"
 msgstr "{name}, {role}"
 
-#: nostr/ui/publish_sheet.py:329
+#: nostr/ui/publish_sheet.py:339
 #: nostr/ui/tag_field.py:91
 #, python-brace-format
 msgid "Remove {name}"
 msgstr "{name} entfernen"
 
-#: nostr/ui/publish_sheet.py:443
+#: nostr/ui/publish_sheet.py:453
 msgid "Publishing as"
 msgstr "Veröffentlichen als"
 
-#: nostr/ui/publish_sheet.py:479
+#: nostr/ui/publish_sheet.py:489
 msgid "(no accounts)"
 msgstr "(keine Konten)"
 
@@ -13584,36 +13584,37 @@ msgid_plural "{count} pictures are encrypted on your media server. It sees when 
 msgstr[0] "{count} Bild liegt verschlüsselt auf deinem Medienserver. Er sieht, wann es abgerufen wird, nie was darin ist."
 msgstr[1] "{count} Bilder liegen verschlüsselt auf deinem Medienserver. Er sieht, wann sie abgerufen werden, nie was darin ist."
 
-#: nostr/ui/standup_publications.py:114
+#: nostr/ui/standup_publications.py:116
 msgid "Not taking submissions right now"
 msgstr "Nimmt gerade keine Einreichungen"
 
-#: nostr/ui/standup_publications.py:116
+#: nostr/ui/standup_publications.py:118
 msgid "Takes audio only"
 msgstr "Nimmt nur Audio"
 
-#: nostr/ui/standup_publications.py:117
+#: nostr/ui/standup_publications.py:119
 msgid "Takes no articles"
 msgstr "Nimmt keine Artikel"
 
-#: nostr/ui/standup_publications.py:208
-msgid "Loading publications …"
-msgstr "Publikationen werden geladen …"
-
-#: nostr/ui/standup_publications.py:208
+#: nostr/ui/standup_publications.py:234
+#: nostr/ui/standup_publications.py:216
 msgid "No publication"
 msgstr "Keine Publikation"
 
-#: nostr/ui/standup_publications.py:221
+#: nostr/ui/standup_publications.py:216
+msgid "Loading publications …"
+msgstr "Publikationen werden geladen …"
+
+#: nostr/ui/standup_publications.py:229
 msgid "Recently used first"
 msgstr "Zuletzt verwendete zuerst"
 
-#: nostr/ui/standup_publications.py:122
+#: nostr/ui/standup_publications.py:124
 #, python-brace-format
 msgid "Asks for {items}"
 msgstr "Verlangt {items}"
 
-#: nostr/ui/standup_publications.py:125
+#: nostr/ui/standup_publications.py:127
 #, python-brace-format
 msgid "at most {count} open submission"
 msgid_plural "at most {count} open submissions"
