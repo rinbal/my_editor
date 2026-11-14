@@ -161,6 +161,19 @@ def test_the_list_has_three_sections_one_word_a_row_and_done_closed_with_its_cou
     assert window.rows()[-2:] == [("done", "Done (1)", ""), ("row", "Wallets", "Declined")]
 
 
+def test_a_title_that_is_one_long_word_goes_on_in_the_second_line_and_ends_in_an_ellipsis():
+    # UX-M2: a compound wider than the row was cut mid-letter at its edge.
+    from PySide6.QtGui import QFontMetrics
+    from nostr.ui.drafts_common import title_font
+    from nostr.ui.submission_rows import _title_lines
+    font, word = title_font(), "Donaudampfschifffahrtsgesellschaftskapitänsmützenabzeichen"
+    width = QFontMetrics(font).horizontalAdvance(word) // 3
+    first, second = _title_lines(word, font, width)
+    assert word.startswith(first) and second.endswith("…")
+    assert all(QFontMetrics(font).horizontalAdvance(line) <= width for line in (first, second))
+    assert _title_lines("Ein Jahr", font, width * 3) == ["Ein Jahr"]
+
+
 def test_a_cover_is_decoded_once_and_one_too_large_shows_the_symbol(monkeypatch):
     decoded = []
     real = submission_cover.decode_image_bytes
