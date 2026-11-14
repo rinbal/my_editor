@@ -52,8 +52,8 @@ import sys
 import time
 from typing import Callable, List, Optional, Sequence, Tuple
 
-from PySide6.QtCore import QDateTime, QSize, Qt, Signal
-from PySide6.QtGui import QFontMetrics, QPixmap
+from PySide6.QtCore import QDateTime, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QFontMetrics, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (
     QBoxLayout, QDialog, QDialogButtonBox, QFormLayout, QFrame, QLabel,
     QLineEdit, QPushButton, QToolButton, QVBoxLayout, QWidget,
@@ -112,6 +112,8 @@ class ArticleCard(QFrame):
 
     WIDTH = 220
     COVER_HEIGHT = 124
+    # The card's corners, and the cover's inside its one-point border.
+    RADIUS = 8
 
     def __init__(self, is_dark: bool, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -120,7 +122,9 @@ class ArticleCard(QFrame):
         self.setFixedWidth(self.WIDTH)
         self.set_dark(is_dark)
         column = QVBoxLayout(self)
-        column.setContentsMargins(1, 1, 1, 12)
+        # Inside the border, which the frame keeps free itself: a margin
+        # more pushed the cover over the border at the trailing edge.
+        column.setContentsMargins(0, 0, 0, 12)
         column.setSpacing(6)
         self.cover = QLabel()
         self.cover.setObjectName("card_cover")
@@ -141,9 +145,10 @@ class ArticleCard(QFrame):
                                  else (LIGHT_BORDER, LIGHT_BG, LIGHT_MUTED_FG))
         self.setStyleSheet(
             f"QFrame#article_card {{ background: {ground}; border: 1px solid {border};"
-            f" border-radius: 8px; }}"
+            f" border-radius: {self.RADIUS}px; }}"
             f"QLabel#card_cover {{ background: {border}; border: none;"
-            f" border-top-left-radius: 7px; border-top-right-radius: 7px; }}"
+            f" border-top-left-radius: {self.RADIUS - 1}px;"
+            f" border-top-right-radius: {self.RADIUS - 1}px; }}"
             f"QLabel#card_title {{ color: {self.palette().color(self.foregroundRole()).name()}; font-size: 15px; font-weight: 600; background: transparent; }}"
             f"QLabel#card_summary, QLabel#card_byline {{ color: {muted};"
             f" background: transparent; }}"
@@ -158,24 +163,43 @@ class ArticleCard(QFrame):
         label.setTextFormat(Qt.TextFormat.PlainText)
         return label
 
+    def _cover(self, picture: QPixmap) -> QPixmap:
+        """``picture`` filling the cover's place, with the card's rounded
+        corners at the top (a picture's own were square inside the
+        rounded card) and as sharp as the screen is (it was made at half
+        the pixels a Retina screen shows)."""
+        ratio = self.devicePixelRatioF()
+        size = self.cover.size() * ratio
+        filled = picture.scaled(size, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                Qt.TransformationMode.SmoothTransformation)
+        out = QPixmap(size)
+        out.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(out)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        radius = (self.RADIUS - 1) * ratio
+        corners = QPainterPath()
+        # Rounded at the top only: the lower corners lie under the cover.
+        corners.addRoundedRect(QRectF(0, 0, size.width(), size.height() + radius),
+                               radius, radius)
+        painter.setClipPath(corners)
+        painter.drawPixmap((size.width() - filled.width()) // 2,
+                           (size.height() - filled.height()) // 2, filled)
+        painter.end()
+        out.setDevicePixelRatio(ratio)
+        return out
+
     def show_article(self, title: str, summary: str, picture: QPixmap, byline: str) -> None:
         room = self.WIDTH - 26
         self.title.setProperty("untitled", "false" if title else "true")
         self.title.style().unpolish(self.title)
         self.title.style().polish(self.title)
-        self.title.setText(_elided(self.title, title or _("Untitled"), room, 3))
-        self.summary.setText(_elided(self.summary, summary, room, 3))
+        self.title.setText(cut_after_a_word(QFontMetrics(self.title.font()),
+                                            title or _("Untitled"), room, 3))
+        self.summary.setText(cut_after_a_word(QFontMetrics(self.summary.font()), summary,
+                                              room, 3))
         self.summary.setVisible(bool(summary))
         self.byline.setText(byline)
-        if picture.isNull():
-            self.cover.setPixmap(QPixmap())
-        else:
-            size = self.cover.size()
-            filled = picture.scaled(size, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                                    Qt.TransformationMode.SmoothTransformation)
-            self.cover.setPixmap(filled.copy((filled.width() - size.width()) // 2,
-                                             (filled.height() - size.height()) // 2,
-                                             size.width(), size.height()))
+        self.cover.setPixmap(QPixmap() if picture.isNull() else self._cover(picture))
         self.setAccessibleDescription(". ".join(part for part in (
             title or _("Untitled"), summary, byline) if part))
         # As tall as its words take at its own width: a layout would ask
@@ -184,25 +208,41 @@ class ArticleCard(QFrame):
         self.setFixedHeight(self.layout().totalHeightForWidth(self.WIDTH))
 
 
-def _elided(label: QLabel, text: str, width: int, lines: int) -> str:
+# Where a line may break inside a word longer than the line (a German
+# compound): after any of its letters, unseen.
+_BREAK = "\u200b"
+
+
+def cut_after_a_word(metrics: QFontMetrics, text: str, width: int, lines: int) -> str:
     """``text`` cut after a word, with "…", to fit ``lines`` lines of
-    ``width`` in ``label``'s font."""
-    metrics = QFontMetrics(label.font())
+    ``width`` in the font of ``metrics``: the one way a card says a text
+    that is too long, on the sheets and in the handoff. A word wider
+    than a line (a long compound) may break inside, where the line
+    ends, and is cut inside when it is the last that fits: it was drawn
+    past the card's edge, and the lines under it cut off."""
+    def wide(word: str) -> bool:
+        return metrics.horizontalAdvance(word) > width
+
+    def breakable(words: str) -> str:
+        return " ".join(_BREAK.join(word) if wide(word) else word
+                        for word in words.split(" "))
+
     room = metrics.lineSpacing() * lines
 
     def fits(words: str) -> bool:
-        return metrics.boundingRect(0, 0, width, 10_000, Qt.TextFlag.TextWordWrap,
-                                    words).height() <= room
+        return (metrics.boundingRect(0, 0, width, 10_000, Qt.TextFlag.TextWordWrap,
+                                     breakable(words)).height() <= room
+                and (lines > 1 or not wide(words)))
 
     if fits(text):
-        return text
+        return breakable(text)
     words = text.split(" ")
     while len(words) > 1 and not fits(" ".join(words) + "…"):
         words.pop()
     shown = " ".join(words)
     while shown and not fits(shown + "…"):
         shown = shown[:-1]
-    return shown.rstrip() + "…"
+    return breakable(shown.rstrip() + "…")
 
 
 # A form's labels as the platform sets them: on a Mac at the trailing edge
