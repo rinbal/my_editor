@@ -47,6 +47,7 @@ from constants import (
 from widgets import ElidedLabel, FindBar, LineNumberGutter, UpdateButton
 from document_notice import CAUTION, DocumentNotice
 import format_icons
+import segmented_control
 from format_toolbar import FormatToolbar, tooltip_for
 from selection_bar import SelectionBar
 from speech import Speech
@@ -3447,6 +3448,7 @@ class MainWindow(QMainWindow):
             is_dark=self.is_dark_theme, logo_of=self._publication_logos.get)
         add_submissions_view(self._drafts_panel, self._submissions_view,
                              server=configured_server())
+        self._submissions_view.unread_changed.connect(self._on_submissions_unread)
         self._submissions = SubmissionsHost(self._submission_ports(),
                                             view=self._submissions_view,
                                             pill=self.submission_pill,
@@ -3563,7 +3565,10 @@ class MainWindow(QMainWindow):
         theirs there). Each is checked while its pane is open and names
         its key in its tooltip; the menus and the keys do the same. Both
         panes are Nostr's, so the toggles are there only while a Nostr
-        account is in use."""
+        account is in use. While the Drafts panel is closed and a
+        submission holds something not read yet, its toggle carries the
+        dot the panel's Einreichungen tab shows."""
+        self._submissions_unread = False
         group = QWidget()
         row = QHBoxLayout(group)
         row.setContentsMargins(0, 0, 0, 0)
@@ -3600,7 +3605,18 @@ class MainWindow(QMainWindow):
             return
         ink = QColor(DARK_FG if self.is_dark_theme else LIGHT_FG)
         self.act_article_details.setIcon(format_icons.inspector(ink))
-        self._drafts_toggle.setIcon(format_icons.drafts(ink))
+        # Something unread waits in the closed panel: the tab's own dot.
+        marked = self._submissions_unread and not self._drafts_toggle.isChecked()
+        mark = segmented_control.colors(self.is_dark_theme).mark if marked else None
+        self._drafts_toggle.setIcon(format_icons.drafts(ink, mark))
+        # A screen reader hears what the dot says, as at the tab.
+        self._drafts_toggle.setAccessibleName(
+            f'{_("Drafts")}, {_("New")}' if marked else _("Drafts"))
+
+    def _on_submissions_unread(self, unread: bool) -> None:
+        """Something in Einreichungen is unread now, or nothing any more."""
+        self._submissions_unread = unread
+        self._paint_pane_toggles()
 
     def _on_drafts_toggle(self) -> None:
         """The toolbar's Drafts toggle: the panel away whichever view it
@@ -11363,6 +11379,7 @@ class MainWindow(QMainWindow):
         self._side_panels.open(DRAFTS_PANEL)
         self.act_nostr_drafts.setChecked(True)
         self._drafts_toggle.setChecked(True)
+        self._paint_pane_toggles()
         self._draft_sync.refresh()
         self._draft_deletions.refresh()
         self._follow_account_in_published()
@@ -11372,6 +11389,7 @@ class MainWindow(QMainWindow):
         """The Drafts panel folded away to make room, or back."""
         self.act_nostr_drafts.setChecked(not folded)
         self._drafts_toggle.setChecked(not folded)
+        self._paint_pane_toggles()
         self._update_refresh_command()
 
     # -- room for side panels (side_panels.py, panel_layout.py) ---------------
@@ -11437,6 +11455,7 @@ class MainWindow(QMainWindow):
         self._side_panels.close(DRAFTS_PANEL)
         self.act_nostr_drafts.setChecked(False)
         self._drafts_toggle.setChecked(False)
+        self._paint_pane_toggles()
         self._update_refresh_command()
 
     def _refresh_drafts_panel(self) -> None:

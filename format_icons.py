@@ -349,9 +349,11 @@ def page(color: QColor) -> QIcon:
     return _icon(draw, color)
 
 
-def drafts(color: QColor) -> QIcon:
+def drafts(color: QColor, mark: QColor | None = None) -> QIcon:
     """Two pages, one behind the other, the front one written on: the
-    drafts and what was published (the Drafts panel)."""
+    drafts and what was published (the Drafts panel). ``mark``: a dot in
+    that colour at the top corner, for something new that waits in the
+    panel while it is closed."""
     def draw(painter: QPainter, ink: QColor) -> None:
         painter.setPen(_pen(ink, 1.5))
         painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -370,6 +372,14 @@ def drafts(color: QColor) -> QIcon:
         painter.setPen(_pen(ink, 1.3))
         for y, end in ((8.6, 9.5), (11.2, 9.5), (13.6, 7.6)):
             painter.drawLine(QPointF(5, y), QPointF(end, y))
+        if mark is not None:
+            # The dot stands clear of the page's corner behind it.
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+            painter.drawEllipse(QRectF(10.5, 0.0, 7.5, 7.5))
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            painter.setBrush(QColor(mark))
+            painter.drawEllipse(QRectF(11.5, 1.0, 5.5, 5.5))
     return _icon(draw, color)
 
 
