@@ -491,6 +491,8 @@ class SubmissionDetail(QWidget):
         and the publication stay), so that the sentence, its action and
         some of the conversation are in sight; they come back once there
         is room for them again."""
+        if not self.isVisible():
+            return                              # no height to go by: once it shows
         room = self._scroll.height()
         if self._compact:
             people = self._pills.sizeHint().height() + 8 if self._has_people else 0
@@ -505,6 +507,10 @@ class SubmissionDetail(QWidget):
         super().resizeEvent(event)
         self._fit_pills()
         self._fit_header()
+
+    def showEvent(self, event) -> None:  # noqa: N802, Qt's name
+        super().showEvent(event)
+        self._fit_soon.start()                  # at the height it has now
 
     def _order_tabs(self) -> None:
         """Tab goes as the eye does, after every rebuild (RG-M3-b 11): the
