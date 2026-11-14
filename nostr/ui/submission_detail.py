@@ -759,12 +759,18 @@ class SubmissionDetail(QWidget):
         def done(stored: bool) -> None:
             self.second.setEnabled(True)
             if not stored and self._following is following:
-                self.note.setText(markup(_("The earlier try wasn’t discarded"), _(
-                    "Your list of submissions couldn’t be saved: check your internet "
-                    "connection and try again.")))
-                self.note.show()
+                self.say_not_discarded()
 
         following.discard(self._sid, done)
+
+    def say_not_discarded(self) -> None:
+        """Verwerfen did not go: said once, with its cause and what to do."""
+        title, sentence = _("The earlier try wasn’t discarded"), _(
+            "Your list of submissions couldn’t be saved: check your internet "
+            "connection and try again.")
+        self.note.setText(markup(title, sentence))
+        self.note.show()
+        announce.announce(self.note, failures.spoken(title, sentence))
 
     def _on_reacted(self, target: str, author: str, emoji: str) -> None:
         detail = self.detail()

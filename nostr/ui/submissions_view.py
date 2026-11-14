@@ -43,6 +43,7 @@ from PySide6.QtWidgets import (
 )
 
 import announce
+from alerts import confirm_destructive
 from i18n import N_, _
 
 from ..standup import following as rules
@@ -454,10 +455,30 @@ class SubmissionsView(QWidget):
             menu.addSeparator()
             menu.addAction(_("Send Again"), lambda: self.action_requested.emit(
                 row.sid, rules.Action.RESEND))
-            menu.addAction(_("Discard"), lambda: self._following.discard(
-                row.sid, lambda _stored: None))
+            menu.addAction(_("Discard …"), lambda: self._ask_discard(row))
         self._menu = menu
         menu.popup(self.list.viewport().mapToGlobal(pos))
+
+    def _ask_discard(self, row: rules.Row) -> None:
+        """Verwerfen from a row's menu. Asked first, in the web app's
+        words: the menu does not say what the detail says above its
+        button, that the article stays. One that could not be discarded
+        says so in its detail."""
+        following = self._following
+        if following is None or not confirm_destructive(
+                self, title=_("Discard this attempt?"),
+                message=_("This submission never reached {publication}. It leaves your list; "
+                          "your article stays as it is.").format(
+                              publication=following.publication_name(row.publication)),
+                action=_("Discard"), is_dark=self._is_dark, nostr=True):
+            return
+
+        def done(stored: bool) -> None:
+            if not stored and self._following is following:
+                self.show_detail(row.sid)
+                self.detail.say_not_discarded()
+
+        following.discard(row.sid, done)
 
     def showEvent(self, event) -> None:  # noqa: N802, Qt's name
         super().showEvent(event)
