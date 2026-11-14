@@ -71,7 +71,7 @@ class PictureField(QFrame):
         self.line.setAccessibleName(name)
         self.line.setAccessibleDescription(hint)
         self.line.installEventFilter(self)
-        column.addWidget(self.line)
+        column.addWidget(self.line, 0, Qt.AlignmentFlag.AlignTop)
         if hint:
             note = QLabel(hint)
             note.setWordWrap(True)
@@ -92,11 +92,13 @@ class PictureField(QFrame):
             f" selection-background-color: {accent.name()};"
             "}")
 
-    def place(self, box: QRect) -> None:
+    def place(self, box: QRect, *, cover: bool = False) -> None:
         """Show the field at ``box`` (the parent's coordinates), moved so
         that all of it is inside the parent, and write in it. The bare
         line's words start where ``box`` does, so a caption clicked stays
-        where it was drawn while it is written."""
+        where it was drawn while it is written. With ``cover`` the field
+        hides all of ``box`` under its one line: a caption that is text
+        of the document and runs over more lines than the field has."""
         room = self.parentWidget().rect()
         if self._card:
             # A card wider than its picture stands over the picture's
@@ -112,13 +114,18 @@ class PictureField(QFrame):
         if short and QFontMetricsF(self.line.font()).horizontalAdvance(long) > width - 2 * _INSET_X:
             self.line.setPlaceholderText(short)
         height = self.sizeHint().height()
+        if cover and not self._card:
+            height = max(height, box.height() + _INSET_Y)       # to the box's last line, no further
         left = max(8, min(left, room.right() - 8 - width))
         top = max(8, min(top, room.bottom() - 8 - height))
         self.setGeometry(left, top, width, height)
         self.show()
         self.raise_()
         self.line.setFocus(Qt.FocusReason.OtherFocusReason)
-        self.line.selectAll()
+        # All of it selected, from its end back to its start: words longer
+        # than the line show their beginning, not their end.
+        written = len(self.line.text())
+        self.line.setSelection(written, -written)
 
     def text(self) -> str:
         """What is written, on one line, without spaces around it."""

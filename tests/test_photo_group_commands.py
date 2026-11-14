@@ -250,6 +250,32 @@ def test_a_caption_being_written_stands_in_its_field_alone_and_its_picture_keeps
     ed.close()
 
 
+def test_the_caption_field_of_a_picture_alone_hides_its_caption_whole_under_the_picture():
+    """A picture alone has its caption as text under it: of two lines, the
+    second showed under the one line of the field. And under a picture
+    taller than the view the field was pushed up into the view, where it
+    lay over the picture: the view goes to the caption's line first."""
+    words = "A long caption that runs over more than one line of the text. " * 3
+    ed = _editor(_text("Before.", f"![one](portrait.png)\n\n*{words.strip()}*", "After."), 700)
+    ed.resize(700, 420)                                 # lower than the picture
+    QApplication.processEvents()
+    doc = ed.document()
+    picture = photo_group_actions.picture_at(doc, doc.findBlockByNumber(1).position())
+    ed.photos.select(picture.position)
+    ed.photos.run(CAPTION)
+    field = next(found for found in ed.viewport().findChildren(QWidget, "pictureField")
+                 if found.isVisible())
+    caption = doc.documentLayout().blockBoundingRect(doc.findBlock(picture.end))
+    lines = ed.photos.to_view(caption)
+    assert caption.height() > 1.5 * field.line.height()                 # two lines at least
+    assert field.geometry().top() <= lines.top() and field.geometry().bottom() >= lines.bottom() - 1
+    assert ed.viewport().rect().contains(field.geometry())
+    assert field.geometry().top() >= ed.photos.to_view(ed.photos.box_of(picture)).bottom() - 6
+    assert field.line.cursorPosition() == 0             # long words show their start
+    ed.photos.fields.close()
+    ed.close()
+
+
 def test_tab_in_a_field_writes_it_and_opens_the_next_pictures_field():
     """A group's descriptions are written one after another without the
     pointer: Tab takes the words and opens the same field on the next

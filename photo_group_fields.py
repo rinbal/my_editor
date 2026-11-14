@@ -50,9 +50,14 @@ class PhotoFields:
         font = doc.defaultFont()
         if kind == CAPTION:
             found = (photo_group_view.caption_box(doc, picture.position) if picture.grouped
-                     else None)
+                     else self._caption_alone(picture, box))
             spot = found if found is not None else QRectF(box.left(), box.bottom() + 4,
                                                           box.width(), 24)
+            # The caption's line in view first: under a picture taller than
+            # the view, or one at its foot, the field was pushed up into
+            # the view and lay over the picture.
+            ed.show_document_rect(QRectF(spot.left(), spot.top() - 8, spot.width(),
+                                         max(spot.height(), 28.0) + 16))
             font.setItalic(True)
             field = PictureField(
                 ed.viewport(), name=_("Caption of {photo}").format(
@@ -75,8 +80,26 @@ class PhotoFields:
         if kind == CAPTION and picture.grouped:
             # Written in the field, not drawn under it meanwhile.
             photo_group_view.set_caption_in_field(doc, picture.position)
-        field.place(photos.to_view(spot).toAlignedRect())
+        # A picture alone has its caption as text of the document, which
+        # the field hides whole while it is written.
+        field.place(photos.to_view(spot).toAlignedRect(),
+                    cover=kind == CAPTION and not picture.grouped)
         ed.viewport().update()
+
+    def _caption_alone(self, picture: Picture, box: QRectF) -> Optional[QRectF]:
+        """Where the caption of a picture that stands alone is written in
+        the text: the lines under the picture in its own paragraph, or the
+        italic paragraph that follows it; None for a picture without one."""
+        if not picture.unit.has_caption:
+            return None
+        doc = self._photos.editor.document()
+        own = doc.findBlock(picture.position)
+        last = doc.findBlock(picture.end)
+        lines = doc.documentLayout().blockBoundingRect(last)
+        top = box.bottom() if last == own else lines.top()
+        if lines.bottom() - top < 1:
+            return None
+        return QRectF(lines.left(), top, lines.width(), lines.bottom() - top)
 
     def is_open(self) -> bool:
         """Whether a field is open: its picture keeps the ring meanwhile,
