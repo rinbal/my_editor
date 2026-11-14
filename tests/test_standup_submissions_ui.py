@@ -212,6 +212,17 @@ def test_an_empty_list_says_how_to_submit_and_offers_it(window):
     assert window.submits == ["the article in front"]
 
 
+def test_a_search_finds_whatever_the_case_and_says_the_words_back_as_they_were_typed(window):
+    # UX-M2: "No Results for …" quoted the words in lower case.
+    seeded(window, eins="Ein Jahr")
+    window.follow()
+    window.view.set_search_text("  ein JAHR ")
+    assert [item.title for item in window.view.items() if item.kind == "row"] == ["Ein Jahr"]
+    window.view.set_search_text("Steuern Auf Sats")
+    assert window.view.items() == []
+    assert window.view.empty_title.text() == "No Results for “Steuern Auf Sats”"
+
+
 def test_with_the_submissions_view_the_panel_opens_wide_enough_for_all_three_names(window):
     panel = DraftsPanel(is_dark=False)
     panel.add_view("published", "Published", "", QLabel())

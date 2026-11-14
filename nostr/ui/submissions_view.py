@@ -51,6 +51,7 @@ from . import appearance, post_list
 from .drafts_common import LIST_GUTTER, MIN_CONTROL_PX, THEME_TOKENS, secondary_font
 from .submission_detail import BAR_INSET, SubmissionDetail
 from .submission_rows import ITEM_ROLE, Item, RowDelegate, Rows
+from .submission_thread import breakable
 
 PANEL_VIEW = "submissions"
 
@@ -107,7 +108,7 @@ class SubmissionsView(QWidget):
         self._signed_in = False
         self._server = True
         self._done_open = False
-        self._search = ""
+        self._search = self._searched = ""
         self._said = ""
         self._rows = Rows(self)
         self._logo_of = logo_of
@@ -141,18 +142,23 @@ class SubmissionsView(QWidget):
         self.list.clicked.connect(self._on_clicked)
         column.addWidget(self.list, 1)
         # One quiet line, in place, when the status could not be loaded.
+        # The sentence has the panel's whole width and its action stands
+        # under it: beside it, a narrow panel left the words a column of
+        # four short lines.
         self.problem_bar = QFrame()
         self.problem_bar.setObjectName("submissions_problem")
-        bar = QHBoxLayout(self.problem_bar)
-        bar.setContentsMargins(LIST_GUTTER, 6, LIST_GUTTER, 6)
+        bar = QVBoxLayout(self.problem_bar)
+        bar.setContentsMargins(LIST_GUTTER, 8, LIST_GUTTER, 8)
+        bar.setSpacing(6)
         self.problem = QLabel()
         self.problem.setWordWrap(True)
         self.problem.setFont(secondary_font())
         self.problem.setTextFormat(Qt.TextFormat.PlainText)
         self.try_again = QPushButton(_("Try Again"))
+        self.try_again.setFont(secondary_font())
         self.try_again.clicked.connect(self.refresh)
-        bar.addWidget(self.problem, 1)
-        bar.addWidget(self.try_again)
+        bar.addWidget(self.problem)
+        bar.addWidget(self.try_again, 0, Qt.AlignmentFlag.AlignLeft)
         self.problem_bar.hide()
         column.addWidget(self.problem_bar)
         self._stack.addWidget(page)
@@ -224,7 +230,9 @@ class SubmissionsView(QWidget):
         self.detail.set_edited(edited)
 
     def set_search_text(self, text: str) -> None:
-        self._search = text.strip().casefold()
+        # Compared without regard to case; said back as it was typed.
+        self._searched = text.strip()
+        self._search = self._searched.casefold()
         self._reload()
 
     def refresh(self) -> None:
@@ -342,7 +350,7 @@ class SubmissionsView(QWidget):
                                  following.list_problem, symbol="alert",
                                  action=(_("Try Again"), following.reload))
         elif self._search and not any_rows:
-            self._placeholder_of(_("No Results for “{query}”").format(query=self._search),
+            self._placeholder_of(_("No Results for “{query}”").format(query=self._searched),
                                  _("Check the spelling or try a new search."), symbol="search")
         elif not any_rows and problem:
             self._placeholder_of(_("Your submissions couldn’t be loaded"), problem,
@@ -360,7 +368,7 @@ class SubmissionsView(QWidget):
                         action: Optional[tuple] = None) -> None:
         self._symbol_name = symbol
         self._paint_symbol()
-        self.empty_title.setText(title)
+        self.empty_title.setText(breakable(title))      # a long search word wraps
         self.empty_body.setText(body)
         self.empty_action.setVisible(action is not None)
         if action is not None:
