@@ -155,7 +155,11 @@ def test_a_split_whose_line_stays_empty_is_taken_back(said):
     ed.photos.run(SPLIT)
     QTest.keyClick(ed, Qt.Key.Key_Up)
     assert _markdown(ed) == FOUR_PICTURES and not ed.document().isUndoAvailable()
-    assert said[-1] == "The line stayed empty, the photos belong together again"
+    # Said: what happened, then the picture the caret went to; not the
+    # group's last one, where taking the split back had put the caret.
+    assert said[-2:] == ["The line stayed empty, the photos belong together again",
+                         "Photo 2 of 4. two. Cap two"]
+    assert "Photo 4 of 4. four" not in said
     ed.close()
 
 
