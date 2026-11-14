@@ -19,8 +19,14 @@ while no answer has come, never closer to the inbox than a gap (a
 narrow sheet draws the whole track smaller, so the card never lies over
 the inbox); it settles into the publication's inbox only
 when the phase is DONE, which only a matching receipt reaches
-(submitting.py), and glides back when nothing was sent. Every state's
-words are the plan's, said to screen readers as they change.
+(submitting.py), and glides back when nothing was sent. Once it is in,
+the inbox stands in the middle, over the words that say so. The card
+and the inbox keep a little room at the track's ends, so the lifted card
+and its shadow show whole; in a low window the whole track is drawn
+smaller, and what is still left over scrolls (:meth:`HandoffView.scrolling`).
+Every state's words are the plan's, said to screen readers as they
+change; an account whose key is kept on this computer is never told to
+wait for a signer app.
 
 With Reduce Motion (motion.py) nothing travels or lifts: the card stays
 where it is, and settling is a 120 ms cross-fade. The words are the
@@ -28,10 +34,11 @@ same.
 
 :class:`HandoffView` is what the sheet shows: the track, the words and
 the buttons each state has (Abbrechen while it can still be taken back,
-dimmed once the request is on its way, and beside it Im Hintergrund
-fortsetzen; Abbrechen and Erneut versuchen after a failure, Schließen
-alone when trying again would not help; Schließen while it is being
-checked; Fertig once it is in, and beside it Einreichung ansehen, which
+dimmed once the request is on its way, and after it, at the trailing
+end, Im Hintergrund fortsetzen; Abbrechen and Erneut versuchen after a
+failure, Schließen alone when trying again would not help; Schließen
+while it is being checked; Fertig once it is in, and at the leading end
+Einreichung ansehen, which
 opens the submission's detail). It only shows the state and forwards the
 person's choice. After a refusal for a server's limit, Erneut versuchen
 (and Erneut senden for the first message) stays dimmed until the limit's
@@ -66,8 +73,7 @@ from ..failures import markup, spoken
 from ..standup import words
 from ..standup.submitting import HELD_WORDS, MessageStatus, Phase, Progress, Step
 from . import appearance, motion
-from .publish_article_dialog import cut_after_a_word
-from .publish_sheet import scroll_area
+from .publish_sheet import cut_after_a_word, scroll_area
 from .standup_waits import WaitTimer, wait_words
 
 _CARD_WIDTH = 200

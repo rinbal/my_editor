@@ -35,7 +35,7 @@ import sys
 from typing import Iterable, List, Optional, Tuple
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, Signal, Slot
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QFontMetrics, QIcon
 from PySide6.QtWidgets import (
     QApplication, QBoxLayout, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QMenu,
     QPlainTextEdit, QPushButton, QScrollArea, QStyle, QToolButton, QToolTip, QWidget,
@@ -184,6 +184,43 @@ def scroll_area(page: QWidget) -> QScrollArea:
     scroll.viewport().setAutoFillBackground(False)
     _FocusInView(scroll)
     return scroll
+
+
+# Where a line may break inside a word longer than the line (a German
+# compound): after any of its letters, unseen.
+_BREAK = "\u200b"
+
+
+def cut_after_a_word(metrics: QFontMetrics, text: str, width: int, lines: int) -> str:
+    """``text`` cut after a word, with "…", to fit ``lines`` lines of
+    ``width`` in the font of ``metrics``: the one way a card says a text
+    that is too long, on the sheets and in the handoff. A word wider
+    than a line (a long compound) may break inside, where the line
+    ends, and is cut inside when it is the last that fits: it was drawn
+    past the card's edge, and the lines under it cut off."""
+    def wide(word: str) -> bool:
+        return metrics.horizontalAdvance(word) > width
+
+    def breakable(words: str) -> str:
+        return " ".join(_BREAK.join(word) if wide(word) else word
+                        for word in words.split(" "))
+
+    room = metrics.lineSpacing() * lines
+
+    def fits(words: str) -> bool:
+        return (metrics.boundingRect(0, 0, width, 10_000, Qt.TextFlag.TextWordWrap,
+                                     breakable(words)).height() <= room
+                and (lines > 1 or not wide(words)))
+
+    if fits(text):
+        return breakable(text)
+    words = text.split(" ")
+    while len(words) > 1 and not fits(" ".join(words) + "…"):
+        words.pop()
+    shown = " ".join(words)
+    while shown and not fits(shown + "…"):
+        shown = shown[:-1]
+    return breakable(shown.rstrip() + "…")
 
 
 def grow_with_text(edit: QPlainTextEdit, *, least: int, most: int) -> None:

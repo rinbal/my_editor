@@ -93,8 +93,8 @@ from .cover_field import CoverImageField
 from .mention_picker import MentionPicker
 from . import appearance
 from .publish_sheet import (
-    AccountRow, BottomRow, PeopleRow, StatusLine, fit_margins, fit_to_window, make_sheet,
-    people_tagged, scroll_area, sheet_stylesheet,
+    AccountRow, BottomRow, PeopleRow, StatusLine, cut_after_a_word, fit_margins, fit_to_window,
+    make_sheet, people_tagged, scroll_area, sheet_stylesheet,
 )
 from .secret_key_check import publishable, slug_problem
 from .tag_field import TagField
@@ -206,43 +206,6 @@ class ArticleCard(QFrame):
         # its height at the width it offers (under the fields, the sheet's),
         # where the words take fewer lines, and the fields would lose the rest.
         self.setFixedHeight(self.layout().totalHeightForWidth(self.WIDTH))
-
-
-# Where a line may break inside a word longer than the line (a German
-# compound): after any of its letters, unseen.
-_BREAK = "\u200b"
-
-
-def cut_after_a_word(metrics: QFontMetrics, text: str, width: int, lines: int) -> str:
-    """``text`` cut after a word, with "…", to fit ``lines`` lines of
-    ``width`` in the font of ``metrics``: the one way a card says a text
-    that is too long, on the sheets and in the handoff. A word wider
-    than a line (a long compound) may break inside, where the line
-    ends, and is cut inside when it is the last that fits: it was drawn
-    past the card's edge, and the lines under it cut off."""
-    def wide(word: str) -> bool:
-        return metrics.horizontalAdvance(word) > width
-
-    def breakable(words: str) -> str:
-        return " ".join(_BREAK.join(word) if wide(word) else word
-                        for word in words.split(" "))
-
-    room = metrics.lineSpacing() * lines
-
-    def fits(words: str) -> bool:
-        return (metrics.boundingRect(0, 0, width, 10_000, Qt.TextFlag.TextWordWrap,
-                                     breakable(words)).height() <= room
-                and (lines > 1 or not wide(words)))
-
-    if fits(text):
-        return breakable(text)
-    words = text.split(" ")
-    while len(words) > 1 and not fits(" ".join(words) + "…"):
-        words.pop()
-    shown = " ".join(words)
-    while shown and not fits(shown + "…"):
-        shown = shown[:-1]
-    return breakable(shown.rstrip() + "…")
 
 
 # A form's labels as the platform sets them: on a Mac at the trailing edge

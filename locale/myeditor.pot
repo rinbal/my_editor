@@ -15,19 +15,19 @@ msgstr ""
 #: alerts.py:208
 #: nostr/ui/connect_dialog.py:389
 #: nostr/ui/connect_dialog.py:392
-#: nostr/ui/standup_handoff.py:476
-#: nostr/ui/standup_privacy.py:81
+#: nostr/ui/standup_handoff.py:482
+#: nostr/ui/standup_privacy.py:83
 msgid "Details"
 msgstr ""
 
 #: alerts.py:213
 #: alerts.py:220
-#: nostr/ui/publish_article_dialog.py:623
+#: nostr/ui/publish_article_dialog.py:586
 msgid "Show Details"
 msgstr ""
 
 #: alerts.py:220
-#: nostr/ui/publish_article_dialog.py:623
+#: nostr/ui/publish_article_dialog.py:586
 msgid "Hide Details"
 msgstr ""
 
@@ -2233,7 +2233,7 @@ msgstr ""
 #: nostr/ui/article_details_panel.py:213
 #: nostr/ui/article_header.py:258
 #: nostr/ui/article_header.py:306
-#: nostr/ui/publish_article_dialog.py:491
+#: nostr/ui/publish_article_dialog.py:454
 #: nostr/ui/stash_kind_dialog.py:319
 msgid "Title"
 msgstr ""
@@ -2241,7 +2241,7 @@ msgstr ""
 #: main_window.py:5669
 #: nostr/ui/article_details_panel.py:218
 #: nostr/ui/article_header.py:266
-#: nostr/ui/publish_article_dialog.py:498
+#: nostr/ui/publish_article_dialog.py:461
 msgid "Summary"
 msgstr ""
 
@@ -2255,13 +2255,13 @@ msgstr ""
 #: main_window.py:5670
 #: nostr/ui/article_details_panel.py:233
 #: nostr/ui/article_details_panel.py:235
-#: nostr/ui/publish_article_dialog.py:504
+#: nostr/ui/publish_article_dialog.py:467
 msgid "Hashtags"
 msgstr ""
 
 #: main_window.py:5670
 #: nostr/ui/article_details_panel.py:263
-#: nostr/ui/publish_article_dialog.py:549
+#: nostr/ui/publish_article_dialog.py:512
 #: nostr/ui/stash_kind_dialog.py:327
 msgid "Link name"
 msgstr ""
@@ -7299,7 +7299,7 @@ msgstr ""
 
 #: nostr/preview.py:525
 #: nostr/ui/drafts_preview.py:469
-#: nostr/ui/publish_article_dialog.py:683
+#: nostr/ui/publish_article_dialog.py:646
 #, python-brace-format
 msgid "{n} min read"
 msgid_plural "{n} min read"
@@ -8605,8 +8605,8 @@ msgstr ""
 
 #: nostr/standup/situations.py:53
 #: nostr/standup/situations.py:56
-#: nostr/ui/standup_handoff.py:496
-#: nostr/ui/standup_handoff.py:704
+#: nostr/ui/standup_handoff.py:502
+#: nostr/ui/standup_handoff.py:710
 #: nostr/ui/standup_revise_sheet.py:99
 #: nostr/ui/standup_talk.py:295
 #: nostr/ui/submissions_view.py:410
@@ -9795,7 +9795,7 @@ msgstr ""
 
 #: nostr/ui/article_details_panel.py:212
 #: nostr/ui/article_details_panel.py:506
-#: nostr/ui/publish_article_dialog.py:490
+#: nostr/ui/publish_article_dialog.py:453
 #: nostr/ui/stash_kind_dialog.py:316
 msgid "Article title"
 msgstr ""
@@ -9827,13 +9827,13 @@ msgid "Check Again"
 msgstr ""
 
 #: nostr/ui/article_details_panel.py:322
-#: nostr/ui/publish_article_dialog.py:808
+#: nostr/ui/publish_article_dialog.py:771
 #: nostr/ui/stash_kind_dialog.py:232
 msgid "Kept as written in the file."
 msgstr ""
 
 #: nostr/ui/article_details_panel.py:515
-#: nostr/ui/publish_article_dialog.py:584
+#: nostr/ui/publish_article_dialog.py:547
 msgid "Not published yet."
 msgstr ""
 
@@ -9846,13 +9846,13 @@ msgid "Check"
 msgstr ""
 
 #: nostr/ui/article_details_panel.py:567
-#: nostr/ui/publish_article_dialog.py:548
+#: nostr/ui/publish_article_dialog.py:511
 #: nostr/ui/stash_kind_dialog.py:323
 msgid "my-article"
 msgstr ""
 
 #: nostr/ui/article_details_panel.py:513
-#: nostr/ui/publish_article_dialog.py:582
+#: nostr/ui/publish_article_dialog.py:545
 #, python-brace-format
 msgid "First published {moment}"
 msgstr ""
@@ -9902,7 +9902,7 @@ msgid "Step {number}, failed"
 msgstr ""
 
 #: nostr/ui/authors_section.py:108
-#: nostr/ui/publish_article_dialog.py:531
+#: nostr/ui/publish_article_dialog.py:494
 msgid "Add Co-Author…"
 msgstr ""
 
@@ -12660,7 +12660,7 @@ msgid "This computer couldn’t write the file there: choose another place and t
 msgstr ""
 
 #: nostr/ui/mention_picker.py:227
-#: nostr/ui/publish_article_dialog.py:535
+#: nostr/ui/publish_article_dialog.py:498
 #: nostr/ui/publish_note_dialog.py:293
 msgid "People"
 msgstr ""
@@ -12871,13 +12871,13 @@ msgstr ""
 msgid "Your article wasn’t published"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:321
-#: nostr/ui/publish_article_dialog.py:438
+#: nostr/ui/publish_article_dialog.py:284
+#: nostr/ui/publish_article_dialog.py:401
 msgid "Publish as Article"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:461
-#: nostr/ui/publish_article_dialog.py:986
+#: nostr/ui/publish_article_dialog.py:424
+#: nostr/ui/publish_article_dialog.py:949
 #: nostr/ui/publish_note_dialog.py:304
 #: nostr/ui/publish_note_dialog.py:395
 #: nostr/ui/standup_correction_sheet.py:179
@@ -12886,74 +12886,74 @@ msgstr ""
 msgid "Publish"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:493
+#: nostr/ui/publish_article_dialog.py:456
 msgid "Title:"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:497
+#: nostr/ui/publish_article_dialog.py:460
 msgid "Short summary (one sentence)"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:500
+#: nostr/ui/publish_article_dialog.py:463
 msgid "Summary:"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:505
+#: nostr/ui/publish_article_dialog.py:468
 msgid "Hashtags:"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:529
+#: nostr/ui/publish_article_dialog.py:492
 msgid "Cover image:"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:537
+#: nostr/ui/publish_article_dialog.py:500
 #: nostr/ui/publish_note_dialog.py:289
 msgid "People:"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:568
+#: nostr/ui/publish_article_dialog.py:531
 msgid "A saved or published article keeps its link name; publishing it under another one makes another article."
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:575
+#: nostr/ui/publish_article_dialog.py:538
 msgid "Link name:"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:577
+#: nostr/ui/publish_article_dialog.py:540
 msgid "Cover image address"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:579
+#: nostr/ui/publish_article_dialog.py:542
 msgid "Cover image address:"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:866
+#: nostr/ui/publish_article_dialog.py:829
 msgid "Checking whether this article was published before…"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:935
+#: nostr/ui/publish_article_dialog.py:898
 msgid "If it went out before, publishing it as new gives it today’s date: try again, or publish it as new."
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:940
+#: nostr/ui/publish_article_dialog.py:903
 msgid "Couldn't check whether this article was published before"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:928
+#: nostr/ui/publish_article_dialog.py:891
 #, python-brace-format
 msgid "Earlier versions of MyEditor published this file as “{name}”, and another name makes a second article: try again, or choose the name to publish it under."
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:937
+#: nostr/ui/publish_article_dialog.py:900
 msgid "Publish as New"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:977
+#: nostr/ui/publish_article_dialog.py:940
 msgid "Something in Article Details can’t be used: check it and try again."
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:931
-#: nostr/ui/publish_article_dialog.py:933
+#: nostr/ui/publish_article_dialog.py:894
+#: nostr/ui/publish_article_dialog.py:896
 #, python-brace-format
 msgid "Publish as “{name}”"
 msgstr ""
@@ -13067,40 +13067,40 @@ msgstr[1] ""
 msgid "{count} · long note, consider Publish as Article instead"
 msgstr ""
 
-#: nostr/ui/publish_sheet.py:398
+#: nostr/ui/publish_sheet.py:435
 #: nostr/ui/standup_publish_sheet.py:132
 #, python-brace-format
 msgid "Publishing as {name}"
 msgstr ""
 
-#: nostr/ui/publish_sheet.py:266
+#: nostr/ui/publish_sheet.py:303
 msgid "mentioned"
 msgstr ""
 
-#: nostr/ui/publish_sheet.py:266
+#: nostr/ui/publish_sheet.py:303
 msgid "quoted"
 msgstr ""
 
-#: nostr/ui/publish_sheet.py:267
+#: nostr/ui/publish_sheet.py:304
 msgid "co-author"
 msgstr ""
 
-#: nostr/ui/publish_sheet.py:268
+#: nostr/ui/publish_sheet.py:305
 #, python-brace-format
 msgid "{name}, {role}"
 msgstr ""
 
-#: nostr/ui/publish_sheet.py:292
+#: nostr/ui/publish_sheet.py:329
 #: nostr/ui/tag_field.py:91
 #, python-brace-format
 msgid "Remove {name}"
 msgstr ""
 
-#: nostr/ui/publish_sheet.py:406
+#: nostr/ui/publish_sheet.py:443
 msgid "Publishing as"
 msgstr ""
 
-#: nostr/ui/publish_sheet.py:442
+#: nostr/ui/publish_sheet.py:479
 msgid "(no accounts)"
 msgstr ""
 
@@ -13482,84 +13482,84 @@ msgstr ""
 msgid "Sign with the Key on This Computer"
 msgstr ""
 
-#: nostr/ui/standup_handoff.py:366
+#: nostr/ui/standup_handoff.py:372
 #, python-brace-format
 msgid "Version {number} handed in."
 msgstr ""
 
-#: nostr/ui/standup_handoff.py:512
+#: nostr/ui/standup_handoff.py:518
 msgid "Continue in Background"
 msgstr ""
 
-#: nostr/ui/standup_handoff.py:519
+#: nostr/ui/standup_handoff.py:525
 msgid "View Submission"
 msgstr ""
 
-#: nostr/ui/standup_handoff.py:362
+#: nostr/ui/standup_handoff.py:368
 msgid "Editorial inbox"
 msgstr ""
 
-#: nostr/ui/standup_handoff.py:702
+#: nostr/ui/standup_handoff.py:708
 #: nostr/ui/standup_ways_out.py:68
 #: nostr/ui/submission_detail.py:508
 msgctxt "submissions list"
 msgid "Reload"
 msgstr ""
 
-#: nostr/ui/standup_handoff.py:359
+#: nostr/ui/standup_handoff.py:365
 msgid "In the inbox"
 msgstr ""
 
-#: nostr/ui/standup_privacy.py:28
-#: nostr/ui/standup_submit_sheet.py:292
+#: nostr/ui/standup_privacy.py:30
+#: nostr/ui/standup_submit_sheet.py:300
 #: nostr/ui/submission_detail.py:585
 msgid "the publication"
 msgstr ""
 
-#: nostr/ui/standup_privacy.py:31
+#: nostr/ui/standup_privacy.py:33
 msgid "The server sees the title, the publication and who takes part, never the content."
 msgstr ""
 
-#: nostr/ui/standup_privacy.py:52
+#: nostr/ui/standup_privacy.py:54
 msgid "Withdrawing deletes nothing the editorial team already has."
 msgstr ""
 
-#: nostr/ui/standup_privacy.py:34
+#: nostr/ui/standup_privacy.py:36
 msgid "The picture is encrypted on your media server. It sees when it is fetched, never what is in it."
 msgid_plural "The pictures are encrypted on your media server. It sees when they are fetched, never what is in them."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/standup_privacy.py:55
+#: nostr/ui/standup_privacy.py:57
 msgid "The server keeps the submission encrypted."
 msgstr ""
 
-#: nostr/ui/standup_privacy.py:75
+#: nostr/ui/standup_privacy.py:77
 msgid "Content end-to-end encrypted. The server sees the title."
 msgstr ""
 
-#: nostr/ui/standup_privacy.py:84
+#: nostr/ui/standup_privacy.py:86
 msgid "Privacy details"
 msgstr ""
 
-#: nostr/ui/standup_privacy.py:29
+#: nostr/ui/standup_privacy.py:31
 #, python-brace-format
 msgid "Only you and the editorial team of {publication} can read it."
 msgstr ""
 
-#: nostr/ui/standup_privacy.py:48
+#: nostr/ui/standup_privacy.py:50
 #, python-brace-format
 msgid "{count} picture was already public on the web and stays public."
 msgid_plural "{count} pictures were already public on the web and stay public."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/standup_privacy.py:53
+#: nostr/ui/standup_privacy.py:55
 #, python-brace-format
 msgid "The server of {operator} keeps the submission encrypted."
 msgstr ""
 
-#: nostr/ui/standup_privacy.py:42
+#: nostr/ui/standup_privacy.py:44
 #, python-brace-format
 msgid "{count} picture is encrypted on your media server. It sees when it is fetched, never what is in it."
 msgid_plural "{count} pictures are encrypted on your media server. It sees when they are fetched, never what is in them."
@@ -13700,7 +13700,7 @@ msgid "Will be sent again as version {number}."
 msgstr ""
 
 #: nostr/ui/standup_revise_sheet.py:62
-#: nostr/ui/standup_submit_sheet.py:311
+#: nostr/ui/standup_submit_sheet.py:319
 msgid "I have the rights to the text and the pictures."
 msgstr ""
 
@@ -13756,67 +13756,67 @@ msgid_plural "{count} other submissions stopped as well."
 msgstr[0] ""
 msgstr[1] ""
 
-#: nostr/ui/standup_submit_sheet.py:115
-#: nostr/ui/standup_submit_sheet.py:181
+#: nostr/ui/standup_submit_sheet.py:123
+#: nostr/ui/standup_submit_sheet.py:189
 msgid "Submit to a Publication"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:244
+#: nostr/ui/standup_submit_sheet.py:252
 msgid "Submit"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:269
+#: nostr/ui/standup_submit_sheet.py:277
 #: nostr/ui/submission_detail.py:588
 msgid "Publication"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:289
+#: nostr/ui/standup_submit_sheet.py:297
 msgid "To:"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:291
+#: nostr/ui/standup_submit_sheet.py:299
 msgid "me"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:309
+#: nostr/ui/standup_submit_sheet.py:317
 msgid "Published by:"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:313
+#: nostr/ui/standup_submit_sheet.py:321
 msgid "Rights:"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:319
 #: nostr/ui/standup_submit_sheet.py:327
+#: nostr/ui/standup_submit_sheet.py:335
 msgid "Message to the Editorial Team"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:326
+#: nostr/ui/standup_submit_sheet.py:334
 msgid "Optional. For example, why the text suits you."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:239
+#: nostr/ui/standup_submit_sheet.py:247
 msgid "Submitting as"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:239
+#: nostr/ui/standup_submit_sheet.py:247
 #, python-brace-format
 msgid "Submitting as {name}"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:467
+#: nostr/ui/standup_submit_sheet.py:475
 msgid "The server’s address comes from the association."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:490
+#: nostr/ui/standup_submit_sheet.py:498
 msgid "No publication takes submissions right now."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:576
+#: nostr/ui/standup_submit_sheet.py:584
 msgid "After acceptance you publish it with your key."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:577
+#: nostr/ui/standup_submit_sheet.py:585
 msgid "At acceptance the editorial team proposes how zaps are split; you confirm it."
 msgstr ""
 

@@ -961,6 +961,24 @@ def test_what_was_typed_and_not_sent_is_there_when_the_sheet_opens_again(tmp_pat
     assert not again.rights.isChecked()                         # confirmed anew each time
 
 
+def test_a_sheet_opened_again_on_a_run_keeps_what_the_run_takes_with_it(tmp_path):
+    # Opened again on a work on its way the sheet shows no form: closed
+    # again, it kept an empty publication over the one the run goes to.
+    writer = Writer(destinations=(MAGAZIN, BLOG))
+    sheet = _sheet(tmp_path, writer)
+    sheet.picker.setCurrentIndex(1)
+    sheet.rights.setChecked(True)
+    sheet.message_toggle.click()
+    sheet.message.setPlainText("Passt zu eurer Reihe.")
+    sheet.submit_button.click()
+    sheet.handoff.background_requested.emit()
+    again = _sheet(tmp_path, writer)                            # the handoff, no form
+    assert again._pages.currentIndex() == 1
+    again.handoff.background_requested.emit()
+    kept, = writer.typed.values()
+    assert (kept.note, kept.publication) == ("Passt zu eurer Reihe.", BLOG.address)
+
+
 def test_once_the_work_is_in_nothing_typed_is_kept(tmp_path):
     writer = Writer()
     sheet = _sheet(tmp_path, writer)

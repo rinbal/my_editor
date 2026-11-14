@@ -37,6 +37,14 @@ Hintergrund fortsetzen, or Escape once the request is on its way,
 closes the sheet and lets it go on in the background
 (StandupWriter.in_background).
 
+The sheet is as tall as what it shows needs, as much as its window has
+(it grows when the note or the privacy lines open), and in a narrow
+window the card goes under the fields, as in Publish as Article. The
+note grows with what is written; Return starts a new line in it and
+Command-Return submits. What was typed and not sent (a failure, a
+cancel) is there again when the sheet opens for the text
+(StandupWriter.typed).
+
 One dialog: its form, the round it asks, its blockers and the handoff
 share its state, so the module is a little longer than most.
 """
@@ -764,16 +772,19 @@ class SubmitSheet(QDialog):
         StandupWriter.typed): after a failure, a cancelled run or a
         cancelled sheet. Nothing once the work is in, and nothing where
         nothing was written or chosen."""
-        note = self.message.toPlainText()
-        destination = self.destination()
-        sent = self.run is not None and self.run.progress.phase is Phase.DONE
-        chose = self.run is not None or self._picked_by_hand
-        if sent or self._account_gone or not (note.strip() or chose):
+        run, destination = self.run, self.destination()
+        # A run's own, where there is one: a sheet opened again on a run
+        # shows no form, so its fields say nothing of what goes.
+        note = run.choice.message if run is not None else self.message.toPlainText()
+        publication = (run.choice.publication if run is not None
+                       else destination.address if destination is not None
+                       and self._picked_by_hand else "")
+        sent = run is not None and run.progress.phase is Phase.DONE
+        if sent or self._account_gone or not (note.strip() or publication):
             self._writer.typed.pop(self._typed_key(), None)
         else:
             self._writer.typed[self._typed_key()] = Typed(
-                note=note if note.strip() else "",
-                publication=destination.address if destination is not None and chose else "")
+                note=note if note.strip() else "", publication=publication)
 
     def keyPressEvent(self, event) -> None:  # noqa: N802, Qt's name
         """Command-Return (Control-Return on Windows and Linux) chooses the
