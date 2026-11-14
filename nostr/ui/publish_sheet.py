@@ -35,7 +35,7 @@ import sys
 from typing import Iterable, List, Optional, Tuple
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, Signal, Slot
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication, QBoxLayout, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QMenu,
     QPushButton, QScrollArea, QStyle, QToolButton, QToolTip, QWidget,
@@ -55,10 +55,7 @@ from ..known_people import KnownPeople
 from ..profiles import Profile, ProfileStore
 from ..publisher import extract_inline_mentions
 from .assistant import stylesheet as assistant_stylesheet
-from .avatar import (
-    AVATAR_SIZE, CHIP_TOTAL_WIDTH, compose_chip_icon, make_avatar_pixmap_from_image,
-    pixmap_for_profile,
-)
+from .avatar import make_avatar_pixmap_from_image, pixmap_for_profile
 from .flow_layout import FlowLayout
 
 # How a person is tagged.
@@ -67,6 +64,10 @@ QUOTED = "quoted"
 COAUTHOR = "co-author"
 
 _PERSON_AVATAR = 18
+# The account's picture in "Publishing as", and where its arrow ends from
+# the button's trailing edge.
+_ACCOUNT_AVATAR = 20
+_ACCOUNT_ARROW_END = 10
 # Room kept between a sheet and the edges of the window it hangs from.
 _WINDOW_MARGIN = 24
 
@@ -157,7 +158,10 @@ class _FocusInView(QObject):
 
     def _show(self, widget: Optional[QWidget]) -> None:
         page = self._scroll.widget()
-        if widget is not None and page is not None and page.isAncestorOf(widget):
+        # A field of the page: the page itself with the focus (the handoff)
+        # is not brought into view, it stays where it was scrolled to.
+        if widget is not None and page is not None and widget is not page \
+                and page.isAncestorOf(widget):
             # Margins no larger than the part has room for.
             room = self._scroll.viewport().height()
             self._scroll.ensureWidgetVisible(widget, 0, max(0, min(8, room // 4)))
@@ -195,9 +199,11 @@ def sheet_stylesheet(is_dark: bool) -> str:
         border-radius: 8px; padding: 0 4px;
     }}
     QToolButton#person_remove:focus {{ border-color: {ring}; }}
+    /* A pop-up button, as the Mac's: the account, then its arrow at the
+       trailing end (the arrow stood between the picture and the name). */
     QToolButton#profile_switch {{
-        background: {r.soft}; color: {r.ink}; border: 1px solid {r.edge}; border-radius: 12px;
-        padding: 3px 8px;
+        background: {r.soft}; color: {r.ink}; border: 1px solid {r.edge}; border-radius: 14px;
+        padding: 3px {_ACCOUNT_ARROW_END + 9}px 3px 5px;
     }}
     QToolButton#profile_switch:hover {{ background: {border}; }}
     QToolButton#profile_switch:focus {{ border-color: {ring}; }}
@@ -388,7 +394,7 @@ class AccountRow(QWidget):
         self.button.setObjectName("profile_switch")
         self.button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.button.setIconSize(QSize(CHIP_TOTAL_WIDTH, AVATAR_SIZE))
+        self.button.setIconSize(QSize(_ACCOUNT_AVATAR, _ACCOUNT_AVATAR))
         self.button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.menu = QMenu(self.button)
         self.button.setMenu(self.menu)
@@ -405,12 +411,15 @@ class AccountRow(QWidget):
 
     def _show(self) -> None:
         profile = self._profile
+        # Twice the points, for a screen that shows them (it was blurred).
         avatar = pixmap_for_profile(profile.display_name, profile.user_pubkey,
-                                    self._avatars.get(profile.user_pubkey), size=AVATAR_SIZE)
-        muted = DARK_MUTED_FG if self._is_dark else LIGHT_MUTED_FG
-        self.button.setIcon(compose_chip_icon(avatar, QColor(muted)))
+                                    self._avatars.get(profile.user_pubkey),
+                                    size=_ACCOUNT_AVATAR * 2)
+        avatar.setDevicePixelRatio(2.0)
+        self.button.setIcon(QIcon(avatar))
+        appearance.menu_arrow(self.button, self._is_dark, end=_ACCOUNT_ARROW_END)
         name = profile.display_name or profile.npub_short()
-        self.button.setText(f"  {name}")
+        self.button.setText(f" {name}")
         self.button.setToolTip(profile.npub_short())
         self.button.setAccessibleName(self._accessible.format(name=name))
         self.menu.clear()
