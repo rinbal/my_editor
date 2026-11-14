@@ -233,10 +233,11 @@ def cut_after_a_word(metrics: QFontMetrics, text: str, width: int, lines: int) -
     return breakable(shown.rstrip() + "…")
 
 
-def grow_with_text(edit: QPlainTextEdit, *, least: int, most: int) -> None:
+def grow_with_text(edit: QPlainTextEdit, *, least: int, most: int, floor: int = 0) -> None:
     """``edit`` as tall as its text, from ``least`` to ``most`` lines: a
     note of a few lines is read whole, and a scroll bar comes only once
-    the field stops growing. Called when its text or its width changed."""
+    the field stops growing. Never lower than ``floor`` pixels (a button
+    that stands beside it). Called when its text or its width changed."""
     # A plain text's layout counts its height in lines, wrapped ones too.
     counted = round(edit.document().size().height())
     lines = max(least, min(most, counted))
@@ -245,7 +246,7 @@ def grow_with_text(edit: QPlainTextEdit, *, least: int, most: int) -> None:
     # What the frame and the style take around the text, as drawn.
     margins = edit.contentsMargins()
     around = margins.top() + margins.bottom() + 2 * int(edit.document().documentMargin())
-    edit.setFixedHeight(lines * edit.fontMetrics().lineSpacing() + around + 2)
+    edit.setFixedHeight(max(floor, lines * edit.fontMetrics().lineSpacing() + around + 2))
 
 
 def sheet_stylesheet(is_dark: bool) -> str:

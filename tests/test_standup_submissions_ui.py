@@ -209,7 +209,7 @@ def test_an_empty_list_says_how_to_submit_and_offers_it(window):
     window.world.settle()
     assert window.view.empty_title.text() == "No Submissions Yet"
     assert window.view.empty_body.text() == (
-        "Follow here what you submit to publications. Open an article and choose "
+        "Follow here what you submit to publications. Open a text and choose "
         "“Submit to a Publication…” in the Nostr menu.")
     window.current = "the article in front"
     window.view.empty_action.click()

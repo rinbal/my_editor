@@ -66,6 +66,7 @@ from .drafts_common import (
 )
 from .flow_layout import FlowLayout
 from .post_list import symbol_pixmap
+from .publish_sheet import grow_with_text
 from .standup_publications import publication_logo
 from .submission_cover import cover_pixmap
 from .eliding_label import ElidingLabel
@@ -797,21 +798,9 @@ class SubmissionDetail(QWidget):
                 threads.own_reaction(detail.opened, target, self._following.me))
 
     def _fit_composer(self) -> None:
-        """One line, growing with the text up to COMPOSER_LINES."""
-        composer = self.composer
-        line = composer.fontMetrics().lineSpacing()
-        # A plain text's layout counts its height in lines, wrapped ones too.
-        counted = round(composer.document().size().height())
-        lines = max(1, min(COMPOSER_LINES, counted))
-        # A scroll bar only once it stops growing.
-        composer.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded if counted > COMPOSER_LINES
-            else Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        # What the frame and the style take around the text, as drawn.
-        margins = composer.contentsMargins()
-        chrome = margins.top() + margins.bottom()
-        margin = 2 * int(composer.document().documentMargin())
-        composer.setFixedHeight(max(MIN_CONTROL_PX, lines * line + margin + chrome + 2))
+        """One line, growing with the text up to COMPOSER_LINES, never
+        lower than the send button beside it."""
+        grow_with_text(self.composer, least=1, most=COMPOSER_LINES, floor=MIN_CONTROL_PX)
 
     def _on_typed(self) -> None:
         self.send.setEnabled(bool(self.composer.toPlainText().strip()))

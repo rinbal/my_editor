@@ -59,7 +59,7 @@ from .submission_thread import breakable
 PANEL_VIEW = "submissions"
 
 
-EMPTY_BODY = N_("Follow here what you submit to publications. Open an article and choose "
+EMPTY_BODY = N_("Follow here what you submit to publications. Open a text and choose "
                 "“Submit to a Publication…” in the Nostr menu.")
 
 

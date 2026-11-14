@@ -47,7 +47,7 @@ from PySide6.QtWidgets import (
 from alerts import answer_return_as_the_system_does
 from i18n import N_, _
 
-from ..signer_limits import signable
+from ..signer_limits import signable, through_signer_app
 from ..standup import compare, drafting
 from ..standup.drafting import ArticleDraft, Choice
 from ..standup.submitting import MessageStatus
@@ -144,7 +144,9 @@ class ReviseSheet(QDialog):
         handoff_page = QWidget()
         column = QVBoxLayout(handoff_page)
         column.setContentsMargins(0, 0, 0, 0)
-        column.addWidget(self.handoff, 1)
+        # As in the submit sheet: in a window too low for it the track is
+        # drawn smaller and what is left over scrolls.
+        column.addWidget(self.handoff.scrolling(), 1)
         column.addWidget(self.handoff.buttons)
         self._pages.addWidget(handoff_page)
         self._pages.addWidget(self._changes_page())
@@ -288,7 +290,8 @@ class ReviseSheet(QDialog):
         self.handoff.set_work(title=self._draft.title, summary=self._draft.summary,
                               byline=self._byline, cover=self._cover,
                               publication=self._publication, logo=self._logo,
-                              number=self._number)
+                              number=self._number,
+                              signer_app=through_signer_app(self._profile))
         run.behind_the_sheet(None)
         run.changed.connect(self.handoff.show_progress)
         self._pages.setCurrentIndex(1)
