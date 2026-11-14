@@ -523,6 +523,12 @@ def test_the_card_cuts_its_words_as_the_sheets_card_does(app):
     cut = standup_handoff.cut_after_a_word(metrics, text, 120, 1)
     assert cut.endswith("…") and not cut.endswith(" …") and metrics.horizontalAdvance(cut) <= 120
     assert text.startswith(cut[:-1])
+    # A long next word would leave the line mostly empty: as much of it as fits.
+    name = "Zeitschrift für Wirtschaftsinformatik und Kryptowährungsforschung"
+    width = metrics.horizontalAdvance("Zeitschrift für Wirtschaftsinfor")
+    cut = standup_handoff.cut_after_a_word(metrics, name, width, 1)
+    assert cut.startswith("Zeitschrift für Wirtsch") and cut.endswith("…")
+    assert metrics.horizontalAdvance(cut) <= width
 
 
 def test_an_account_whose_key_is_kept_here_is_never_told_to_wait_for_a_signer_app(german, view):

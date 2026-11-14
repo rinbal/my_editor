@@ -197,7 +197,9 @@ def cut_after_a_word(metrics: QFontMetrics, text: str, width: int, lines: int) -
     that is too long, on the sheets and in the handoff. A word wider
     than a line (a long compound) may break inside, where the line
     ends, and is cut inside when it is the last that fits: it was drawn
-    past the card's edge, and the lines under it cut off."""
+    past the card's edge, and the lines under it cut off. One line that
+    a long next word would leave mostly empty takes as much of that
+    word as fits."""
     def wide(word: str) -> bool:
         return metrics.horizontalAdvance(word) > width
 
@@ -214,12 +216,20 @@ def cut_after_a_word(metrics: QFontMetrics, text: str, width: int, lines: int) -
 
     if fits(text):
         return breakable(text)
-    words = text.split(" ")
+    every = text.split(" ")
+    words = list(every)
     while len(words) > 1 and not fits(" ".join(words) + "…"):
         words.pop()
     shown = " ".join(words)
     while shown and not fits(shown + "…"):
         shown = shown[:-1]
+    if lines == 1 and len(words) < len(every) \
+            and metrics.horizontalAdvance(shown + "…") < width * 2 / 3:
+        more = shown + " " + every[len(words)]
+        while more and not fits(more + "…"):
+            more = more[:-1]
+        if len(more) >= len(shown) + 4:             # three letters of it, at the least
+            shown = more
     return breakable(shown.rstrip() + "…")
 
 
