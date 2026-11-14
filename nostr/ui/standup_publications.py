@@ -21,7 +21,9 @@ import hashlib
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPixmap, QStandardItemModel
+from PySide6.QtGui import (
+    QColor, QPainter, QPainterPath, QPalette, QPixmap, QStandardItemModel,
+)
 from PySide6.QtWidgets import QComboBox, QStyle, QStyleOptionComboBox, QStylePainter
 
 from i18n import _, ngettext
@@ -187,6 +189,12 @@ class PublicationPicker(QComboBox):
         option = self._option()
         painter.drawComplexControl(QStyle.ComplexControl.CC_ComboBox, option)
         option.currentText = self.shown_text()
+        if self.currentIndex() < 0 and self.placeholderText():
+            # None of those listed can be chosen: said, in the quiet ink
+            # (the field stood empty).
+            option.palette.setBrush(QPalette.ColorRole.ButtonText,
+                                    option.palette.placeholderText())
+            option.currentText = self.placeholderText()
         painter.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, option)
 
 
@@ -221,6 +229,9 @@ def fill_picker(picker: QComboBox, destinations: Sequence[Destination], *, loadi
             picker.addItem(_("Recently used first"))
             model.item(picker.count() - 1).setEnabled(False)
         picker.setEnabled(True)
+        # With none that can be chosen the field says so; the list still
+        # opens, and says of each why not.
+        picker.setPlaceholderText(_("No publication"))
         picker.setCurrentIndex(next((i for i, d in enumerate(destinations) if can_choose(d)),
                                     -1))
     picker.blockSignals(False)

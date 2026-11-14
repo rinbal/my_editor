@@ -1040,3 +1040,12 @@ def test_each_privacy_line_stands_beside_its_own_bullet(tmp_path):
     sheet.picker.setCurrentIndex(sheet.picker.currentIndex())   # shown again: no line twice
     sheet.privacy.refresh()
     assert sheet.privacy.said() == sheet.privacy_words()
+
+
+def test_with_none_that_can_be_chosen_the_picker_says_so_and_still_lists_them(tmp_path):
+    # UX-M1: the field stood empty, with nothing in it.
+    sheet = _sheet(tmp_path, Writer(destinations=(PODCAST,)))
+    assert sheet.picker.currentIndex() == -1 and sheet.picker.isEnabled()
+    assert sheet.picker.placeholderText() == "Keine Publikation"
+    assert _entries(sheet) == [("Der Podcast · Nimmt nur Audio", False)]
+    assert not sheet.grab().isNull()
