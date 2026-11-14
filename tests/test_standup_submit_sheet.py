@@ -1008,3 +1008,17 @@ def test_the_handoff_knows_whether_the_account_signs_in_a_signer_app(tmp_path):
                         logos=PublicationLogos(lambda *_a: None), is_dark=False)
     local.submit_button.click()
     assert local.handoff.headline.text() == "Wird an Einundzwanzig Magazin gesendet …"
+
+
+def test_each_privacy_line_stands_beside_its_own_bullet(tmp_path):
+    # UX-M1: a line that wrapped went on under its bullet.
+    from PySide6.QtWidgets import QLabel
+    sheet = _sheet(tmp_path)
+    sheet.privacy_toggle.setChecked(True)
+    assert sheet.privacy.said() == sheet.privacy_words()
+    bullets = [label for label in sheet.privacy_lines.findChildren(QLabel)
+               if label.text() == "•" and not label.isHidden()]
+    assert len(bullets) == len(sheet.privacy_words())
+    sheet.picker.setCurrentIndex(sheet.picker.currentIndex())   # shown again: no line twice
+    sheet.privacy.refresh()
+    assert sheet.privacy.said() == sheet.privacy_words()
