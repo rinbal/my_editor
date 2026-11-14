@@ -865,6 +865,31 @@ def test_a_long_link_or_word_in_a_message_wraps_and_never_widens_the_conversatio
     window.view.hide()
 
 
+def test_a_persons_pill_is_no_stop_for_tab_and_a_long_name_stays_in_the_panel(
+        window, monkeypatch):
+    # UX-M2: a pill does nothing, so Tab passes it; a button's words do not
+    # wrap, so a name longer than the panel is cut and whole in its tooltip.
+    # The lock stands with "End-to-end encrypted", under who reads.
+    name = "Paul-Maximilian von Hohenstaufen-Sigmaringen der Jüngere"
+    monkeypatch.setitem(NAMES, OTHER, name)
+    seed = window.world.account()
+    _prepared, entry = window.world.submit(seed, d="p", title="Kurz", participants=(OTHER,))
+    window.follow()
+    window.view.resize(260, 600)
+    window.view.show()
+    detail = opened(window, entry)
+    for _ in range(4):
+        QApplication.processEvents()
+    [pill] = [detail._pill_row.itemAt(i).widget() for i in range(detail._pill_row.count())]
+    assert pill.focusPolicy() == Qt.FocusPolicy.NoFocus
+    assert pill.text().endswith("…") and pill.accessibleName() == name and pill.toolTip()
+    assert pill.mapTo(detail, pill.rect().topRight()).x() < detail.width()
+    assert detail.encrypted.isVisible() and not detail._lock.pixmap().isNull()
+    assert detail._lock.geometry().center().y() == pytest.approx(
+        detail.encrypted.geometry().center().y(), abs=1)
+    window.view.hide()
+
+
 def test_react_shows_beside_a_message_under_the_pointer_or_with_the_keyboard_on_it(window):
     # UX-M2, as the web app: no button beside every bubble at rest; it
     # keeps its place, so nothing moves when it shows.
