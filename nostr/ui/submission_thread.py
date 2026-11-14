@@ -160,6 +160,12 @@ class _ReactionBar(QWidget):
         for emoji in conversation.REACTIONS:
             button = QToolButton()
             button.setText(emoji)
+            # Each large enough to hit: the faces a size up, in a box no
+            # smaller than the app's other controls.
+            font = QFont(button.font())
+            font.setPointSizeF(font.pointSizeF() + 3)
+            button.setFont(font)
+            button.setMinimumSize(MIN_CONTROL_PX + 8, MIN_CONTROL_PX + 4)
             button.setCheckable(True)
             button.setChecked(emoji == mine)
             button.setAutoRaise(True)
