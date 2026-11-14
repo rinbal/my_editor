@@ -527,6 +527,21 @@ def test_move_mode_shows_its_keys_beside_the_picture_and_lets_a_click_or_a_key_o
     ed.close()
 
 
+def test_the_keys_hint_stands_on_the_moved_picture_not_on_its_caption():
+    """Under the picture it covered the picture's own caption, and the
+    neighbour's beside it. Only a picture too low to hold it has it under
+    itself; and it never leaves the view."""
+    room = QRectF(0, 0, 800, 600)
+    box = QRectF(300, 100, 120, 260)
+    left, middle = photo_group_overlay.hint_place(box, 300, room)
+    assert box.top() < middle - 10 and middle + 10 < box.bottom()       # on the picture
+    assert left + 150 == box.center().x()                                # over its middle
+    low = QRectF(300, 100, 400, 50)
+    assert photo_group_overlay.hint_place(low, 300, room)[1] > low.bottom()
+    edge = QRectF(700, 100, 90, 260)
+    assert photo_group_overlay.hint_place(edge, 300, room)[0] + 300 <= room.right()
+
+
 def test_a_command_says_only_what_it_did(said):
     # Gate RG-PG2E-b 6: "Photo 3 of 3. boats" came first.
     ed = _selected(_text("Before.", ONE, TWO, "![boats](portrait.png)", "After."), number=1)

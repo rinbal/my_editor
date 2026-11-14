@@ -364,17 +364,30 @@ def paint_line(painter: QPainter, left: float, right: float, y: float, words: st
     painter.restore()
 
 
+def hint_place(box: QRectF, wide: float, room: QRectF) -> Tuple[float, float]:
+    """Where a capsule ``wide`` pixels wide goes for the picture drawn in
+    ``box``: its left edge and the height of its middle. On the picture,
+    along its lower edge and over its middle, since under a picture
+    stands its caption (and beside it its neighbour's), which the capsule
+    covered; only a picture too low for it has it under itself (over it
+    where the view ends). Always inside the view ``room``."""
+    left = max(room.left() + 4, min(box.center().x() - wide / 2, room.right() - wide - 4))
+    if box.height() >= 2 * CHIP + 3 * INSET:        # the number's disc above it, room between
+        middle = box.bottom() - INSET - 10
+    else:
+        middle = box.bottom() + 16 if box.bottom() + 30 <= room.bottom() else box.top() - 16
+    return left, max(room.top() + 12, min(middle, room.bottom() - 12))
+
+
 def paint_hint(painter: QPainter, box: QRectF, words: str, *, accent: QColor,
                room: QRectF) -> None:
-    """``words`` on a capsule beside ``box`` (under it, over it where the
-    view ends), kept inside the view ``room``: what the keys do, where
-    the eyes are."""
+    """``words`` on a capsule on the picture drawn in ``box`` (hint_place):
+    what the keys do, where the eyes are."""
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     wide = QFontMetricsF(chip_font()).horizontalAdvance(words) + 2 * _PAD
-    left = max(room.left() + 4, min(box.left(), room.right() - wide - 4))
-    middle = box.bottom() + 16 if box.bottom() + 30 <= room.bottom() else box.top() - 16
-    _capsule(painter, left, max(room.top() + 12, min(middle, room.bottom() - 12)), words, accent)
+    left, middle = hint_place(box, wide, room)
+    _capsule(painter, left, middle, words, accent)
     painter.restore()
 
 
