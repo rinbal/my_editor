@@ -2843,7 +2843,7 @@ class MainWindow(QMainWindow):
                     "Ctrl+Shift+A", nostr=True, listed_as=_("Publish as article"), keywords=("long", "blog")),
             triggered=self._on_nostr_publish_article)
         # The article, end to end encrypted, to a STANDUP publication's
-        # editorial team: enabled for an article (see _update_submit_command).
+        # editorial team: enabled for a written text (see _update_submit_command).
         self.act_nostr_submit = add(
             Command("nostr.submit_publication", _("Submit to a Publication…"), NOSTR,
                     nostr=True, listed_as=_("Submit to a publication"),
@@ -9123,7 +9123,7 @@ class MainWindow(QMainWindow):
             if command.id in self._LOCAL_KEY_COMMANDS:
                 enabled = active and current is not None and current.is_local
             elif command.id == "nostr.submit_publication":
-                enabled = active and bool(self._wants_article_header(self.current_editor()))
+                enabled = active and bool(self._can_be_an_article(self.current_editor()))
             if dimmed and self._is_document_command(command.id):
                 kept[command.id] = enabled
             else:
@@ -9895,19 +9895,30 @@ class MainWindow(QMainWindow):
         account is in use, for a written document that is an article (an
         article's draft, a published article, details set in the tab, or
         Article Details open on it). A note never; code never."""
+        if not self._can_be_an_article(ed):
+            return False
+        if getattr(ed, "_draft_binding", None) is not None:
+            return True                             # an article's draft (a note's cannot be one)
+        if self._published_article_of(ed) is not None:
+            return True
+        own = tab_details.details_of(ed)
+        # Its link name too: a text submitted keeps it, and stays the
+        # article its submission is about once Article Details is closed.
+        if own is not None and (own.title or own.summary or own.image or own.identifier):
+            return True
+        return ed is self.current_editor() and self.act_article_details.isChecked()
+
+    def _can_be_an_article(self, ed) -> bool:
+        """Whether ``ed`` holds a text written here that is, or can become,
+        an article, while a Nostr account is in use: a written document
+        that is not a note's draft. Code never. Submit to a Publication is
+        offered for it."""
         if ed is None or not self.nostr_state.active:
             return False
         if not (self._editor_kind(ed) == "rich" or getattr(ed, "_markdown_source", False)):
             return False
         binding = getattr(ed, "_draft_binding", None)
-        if binding is not None:
-            return binding.inner_kind == INNER_KIND_LONG_FORM
-        if self._published_article_of(ed) is not None:
-            return True
-        own = tab_details.details_of(ed)
-        if own is not None and (own.title or own.summary or own.image):
-            return True
-        return ed is self.current_editor() and self.act_article_details.isChecked()
+        return binding is None or binding.inner_kind == INNER_KIND_LONG_FORM
 
     def _update_article_headers(self) -> None:
         """Every tab's article head, shown or taken away as it is wanted."""
@@ -10769,14 +10780,17 @@ class MainWindow(QMainWindow):
     # -- submitting to a STANDUP publication (plan 10.2) -----------------------
 
     def _update_submit_command(self, *_args) -> None:
-        """Submit to a Publication… is for an article (as its head on the
-        page), while an account is in use."""
+        """Submit to a Publication… is for a text written here, while an
+        account is in use: as Publish as Article is, so nobody finds it
+        dimmed for the text they just wrote with nothing saying why. One
+        that is not an article yet becomes one as it is chosen
+        (_on_nostr_submit_publication)."""
         action = getattr(self, "act_nostr_submit", None)
         state = getattr(self, "nostr_state", None)
         if action is not None and state is not None \
                 and not getattr(self, "_document_commands_dimmed", False):
             action.setEnabled(bool(state.active
-                                   and self._wants_article_header(self.current_editor())))
+                                   and self._can_be_an_article(self.current_editor())))
 
     def _standup(self) -> StandupWriter:
         writer = getattr(self, "_standup_writer", None)
@@ -10794,8 +10808,20 @@ class MainWindow(QMainWindow):
     def _on_nostr_submit_publication(self) -> None:
         active = self._profile_store.default()
         ed = self.current_editor()
-        if active is None or not self._wants_article_header(ed):
+        if active is None:
             return
+        if not self._can_be_an_article(ed):
+            # Asked for from Einreichungen with no text in front (the menu's
+            # command is dimmed then): said, never answered with nothing.
+            inform(self, title=_("Nothing to submit"),
+                   message=_("Open the text you want to submit, then choose Submit to a "
+                             "Publication again."), nostr=True)
+            return
+        if not self._wants_article_header(ed):
+            # Not an article yet: Article Details opens on it, which makes
+            # it one (its head shows on the page). What a publication asks
+            # for beyond the title is added there, as the sheet says.
+            self.act_article_details.setChecked(True)
         made = self._submission_for_sheet(ed, active)
         if made is None:
             return                              # said why

@@ -109,6 +109,7 @@ class Writer:
         self.reloaded = 0
         self.fail_destinations = False
         self.destinations_error = None      # what StandupApi gives: a StandupError
+        self.typed = {}                     # StandupWriter.typed
 
     def signer_bound(self, _profile, done) -> None:
         self.bound_asked += 1
@@ -796,3 +797,255 @@ def test_the_privacy_lines_are_said_without_a_sheet_before_a_publication_is_chos
     assert words[0] == "Lesen können nur du und die Redaktion von der Publikation."
     assert words[-1] == "Der Server bewahrt die Einreichung verschlüsselt auf."
     assert len(words) == 4                          # no pictures: no line about them
+
+
+# -- how the sheet fits its window and its words (UX-M1) ----------------------
+
+def _settle() -> None:
+    for _ in range(5):
+        QApplication.processEvents()
+
+
+def test_in_a_narrow_window_the_card_goes_under_the_fields_and_nothing_is_cut(tmp_path):
+    # A publication that asks for more shows more rows; in a small window
+    # the page was wider than the sheet and the focus scrolled it sideways.
+    from PySide6.QtWidgets import QBoxLayout
+    sheet = _sheet(tmp_path, Writer(destinations=(BLOG,)))
+    sheet.resize(560, 460)
+    sheet.show()
+    _settle()
+    page, view = sheet._scroll.widget(), sheet._scroll.viewport()
+    assert sheet._columns.direction() == QBoxLayout.Direction.BottomToTop
+    assert page.width() <= view.width()
+    sheet.picker.setFocus()
+    _settle()
+    assert sheet._scroll.horizontalScrollBar().value() == 0
+    assert sheet.card.mapTo(view, sheet.card.rect().topLeft()).x() >= 0
+    sheet.resize(780, 460)
+    _settle()
+    assert sheet._columns.direction() == QBoxLayout.Direction.LeftToRight
+    sheet.close()
+
+
+def test_a_long_publication_name_is_elided_and_never_widens_the_sheet(tmp_path):
+    long = _destination("long", "Zeitschrift für Wirtschaftsinformatik und "
+                        "Kryptowährungsforschung Mitteldeutschland")
+    sheet = _sheet(tmp_path, Writer(destinations=(long,)))
+    sheet.show()
+    _settle()
+    assert sheet._scroll.widget().width() <= sheet._scroll.viewport().width()
+    assert sheet.picker.shown_text().endswith("…")
+    assert sheet.picker.toolTip() == long.name      # whole where it is cut
+    short = _sheet(tmp_path)
+    short.show()
+    _settle()
+    assert short.picker.shown_text() == MAGAZIN.name and short.picker.toolTip() == ""
+    sheet.close()
+    short.close()
+
+
+def test_the_order_is_said_only_where_a_used_publication_leads(tmp_path):
+    # "Recently used first" under a list in the server's order was not true.
+    fresh = _sheet(tmp_path, Writer(destinations=(MAGAZIN, BLOG)))
+    assert _entries(fresh) == [("Einundzwanzig Magazin", True), ("Ein Blog", True)]
+    alone = _sheet(tmp_path, Writer(destinations=(BLOG,), used=(BLOG.address,)))
+    assert _entries(alone) == [("Ein Blog", True)]
+
+
+def test_the_sheet_grows_for_what_opens_and_the_note_keeps_its_gaps(tmp_path):
+    sheet = _sheet(tmp_path)
+    sheet.show()
+    _settle()
+    before = sheet.height()
+    sheet.privacy_toggle.setChecked(True)
+    sheet.message_toggle.setChecked(True)
+    _settle()
+    assert sheet.height() > before
+    assert sheet._scroll.verticalScrollBar().maximum() == 0     # nothing to scroll
+    # The fields keep their own height: the note sits right under its title.
+    gap = (sheet.message.mapTo(sheet, sheet.message.rect().topLeft()).y()
+           - sheet.message_toggle.mapTo(sheet, sheet.message_toggle.rect().bottomLeft()).y())
+    assert 0 < gap <= 8
+    sheet.close()
+
+
+def test_closing_the_note_leaves_the_focus_on_its_title(tmp_path):
+    sheet = _sheet(tmp_path)
+    sheet.show()
+    sheet.activateWindow()
+    _settle()
+    sheet.message_toggle.click()
+    assert QApplication.focusWidget() is sheet.message
+    sheet.message_toggle.click()
+    assert QApplication.focusWidget() is sheet.message_toggle
+    sheet.close()
+
+
+# -- the note (UX-M1) ----------------------------------------------------------
+
+def test_tab_leaves_the_note_and_command_return_submits_from_it(tmp_path):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    writer = Writer()
+    sheet = _sheet(tmp_path, writer)
+    sheet.show()
+    sheet.activateWindow()
+    _settle()
+    sheet.message_toggle.click()
+    QTest.keyClicks(sheet.message, "Hallo")
+    QTest.keyClick(sheet.message, Qt.Key.Key_Tab)
+    assert QApplication.focusWidget() is not sheet.message      # it stayed, as a tab in the text
+    assert sheet.message.toPlainText() == "Hallo"
+    sheet.message.setFocus()
+    QTest.keyClick(sheet.message, Qt.Key.Key_Return)
+    assert sheet.message.toPlainText() == "Hallo\n" and writer.submitted == []
+    QTest.keyClick(sheet.message, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    assert len(writer.submitted) == 1 and sheet._pages.currentIndex() == 1
+    sheet.close()
+
+
+def test_command_return_does_nothing_while_a_blocker_dims_submit(tmp_path):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    writer = Writer(destinations=(BLOG,))                       # the rights are not confirmed
+    sheet = _sheet(tmp_path, writer)
+    sheet.show()
+    sheet.activateWindow()
+    _settle()
+    sheet.message_toggle.click()
+    QTest.keyClick(sheet.message, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    assert writer.submitted == [] and sheet._pages.currentIndex() == 0
+    sheet.close()
+
+
+def test_the_note_grows_with_what_is_written_up_to_eight_lines(tmp_path):
+    sheet = _sheet(tmp_path)
+    sheet.show()
+    _settle()
+    sheet.message_toggle.click()
+    _settle()
+    three = sheet.message.height()
+    sheet.message.setPlainText("\n".join(["Eine Zeile"] * 6))
+    _settle()
+    six = sheet.message.height()
+    assert six > three and sheet.message.verticalScrollBar().maximum() == 0
+    sheet.message.setPlainText("\n".join(["Eine Zeile"] * 20))
+    _settle()
+    assert sheet.message.height() > six
+    assert sheet.message.height() - six == 2 * sheet.message.fontMetrics().lineSpacing()
+    sheet.close()
+
+
+def test_what_was_typed_and_not_sent_is_there_when_the_sheet_opens_again(tmp_path):
+    # After a failure the note was gone, and the first publication of the
+    # list was chosen again instead of the one the text was meant for.
+    from nostr.standup.submitting import Failure
+    writer = Writer(destinations=(MAGAZIN, BLOG))
+    sheet = _sheet(tmp_path, writer)
+    sheet.picker.setCurrentIndex(1)
+    sheet.picker.activated.emit(1)                              # chosen by hand
+    sheet.rights.setChecked(True)
+    sheet.message_toggle.click()
+    sheet.message.setPlainText("Passt zu eurer Reihe.")
+    sheet.submit_button.click()
+    run = sheet.run
+    run.progress = Progress(Step.FAILED, failure=Failure(
+        failures.CHECK_CONNECTION, Step.SIGNING, title=words.NOT_SUBMITTED))
+    run.changed.emit(run.progress)
+    sheet.handoff.close_requested.emit()                        # closed on the failure
+    writer.on_its_way = None                                    # that run has ended
+    again = _sheet(tmp_path, writer)
+    assert again.message.toPlainText() == "Passt zu eurer Reihe."
+    assert not again.message.isHidden()                         # shown: nothing is sent unseen
+    assert again.destination() is BLOG
+    assert not again.rights.isChecked()                         # confirmed anew each time
+
+
+def test_a_sheet_opened_again_on_a_run_keeps_what_the_run_takes_with_it(tmp_path):
+    # Opened again on a work on its way the sheet shows no form: closed
+    # again, it kept an empty publication over the one the run goes to.
+    writer = Writer(destinations=(MAGAZIN, BLOG))
+    sheet = _sheet(tmp_path, writer)
+    sheet.picker.setCurrentIndex(1)
+    sheet.rights.setChecked(True)
+    sheet.message_toggle.click()
+    sheet.message.setPlainText("Passt zu eurer Reihe.")
+    sheet.submit_button.click()
+    sheet.handoff.background_requested.emit()
+    again = _sheet(tmp_path, writer)                            # the handoff, no form
+    assert again._pages.currentIndex() == 1
+    again.handoff.background_requested.emit()
+    kept, = writer.typed.values()
+    assert (kept.note, kept.publication) == ("Passt zu eurer Reihe.", BLOG.address)
+
+
+def test_once_the_work_is_in_nothing_typed_is_kept(tmp_path):
+    writer = Writer()
+    sheet = _sheet(tmp_path, writer)
+    sheet.message_toggle.click()
+    sheet.message.setPlainText("Passt zu eurer Reihe.")
+    sheet.submit_button.click()
+    run = sheet.run
+    sheet.handoff.background_requested.emit()                   # goes on in the background
+    assert writer.typed                                         # kept while it may still fail
+    run.progress = Progress(Step.SUBMITTED)
+    run.changed.emit(run.progress)
+    assert writer.typed == {}
+
+
+def test_a_note_in_a_sheet_whose_account_is_let_go_is_not_kept(tmp_path):
+    writer = Writer()
+    sheet = _sheet(tmp_path, writer)
+    sheet.message_toggle.click()
+    sheet.message.setPlainText("Passt zu eurer Reihe.")
+    writer.stopped.emit(WRITER)                                 # sign-out: the sheet closes
+    assert writer.typed == {}
+
+
+def test_a_sheet_cancelled_with_nothing_written_keeps_nothing(tmp_path):
+    writer = Writer(destinations=(MAGAZIN, BLOG))
+    sheet = _sheet(tmp_path, writer)
+    sheet.reject()
+    assert writer.typed == {}
+    again = _sheet(tmp_path, writer)
+    assert again.message.isHidden() and again.destination() is MAGAZIN
+
+
+def test_the_handoff_knows_whether_the_account_signs_in_a_signer_app(tmp_path):
+    # UX-M1: with a key kept on this computer nothing waits for a signer app.
+    sheet = _sheet(tmp_path)                        # paired with a signer app
+    sheet.submit_button.click()
+    assert sheet.handoff.headline.text() == "Warten auf deine Signer-App."
+    (tmp_path / "local").mkdir()
+    store = ProfileStore(path=tmp_path / "local" / "profiles.json")
+    profile = Profile(user_pubkey=WRITER, bunker_pubkey="", display_name="Jana Roth",
+                      bunker_relays=[], local_secret_hex="", signer="local")
+    store.upsert(profile)
+    local = SubmitSheet(writer=Writer(), draft=DRAFT, cover=QPixmap(), byline="Jana Roth",
+                        private_names=(), profile=profile, store=store, avatars=AvatarStore(),
+                        logos=PublicationLogos(lambda *_a: None), is_dark=False)
+    local.submit_button.click()
+    assert local.handoff.headline.text() == "Wird an Einundzwanzig Magazin gesendet …"
+
+
+def test_each_privacy_line_stands_beside_its_own_bullet(tmp_path):
+    # UX-M1: a line that wrapped went on under its bullet.
+    from PySide6.QtWidgets import QLabel
+    sheet = _sheet(tmp_path)
+    sheet.privacy_toggle.setChecked(True)
+    assert sheet.privacy.said() == sheet.privacy_words()
+    bullets = [label for label in sheet.privacy_lines.findChildren(QLabel)
+               if label.text() == "•" and not label.isHidden()]
+    assert len(bullets) == len(sheet.privacy_words())
+    sheet.picker.setCurrentIndex(sheet.picker.currentIndex())   # shown again: no line twice
+    sheet.privacy.refresh()
+    assert sheet.privacy.said() == sheet.privacy_words()
+
+
+def test_with_none_that_can_be_chosen_the_picker_says_so_and_still_lists_them(tmp_path):
+    # UX-M1: the field stood empty, with nothing in it.
+    sheet = _sheet(tmp_path, Writer(destinations=(PODCAST,)))
+    assert sheet.picker.currentIndex() == -1 and sheet.picker.isEnabled()
+    assert sheet.picker.placeholderText() == "Keine Publikation"
+    assert _entries(sheet) == [("Der Podcast · Nimmt nur Audio", False)]
+    assert not sheet.grab().isNull()

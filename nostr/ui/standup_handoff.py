@@ -19,8 +19,14 @@ while no answer has come, never closer to the inbox than a gap (a
 narrow sheet draws the whole track smaller, so the card never lies over
 the inbox); it settles into the publication's inbox only
 when the phase is DONE, which only a matching receipt reaches
-(submitting.py), and glides back when nothing was sent. Every state's
-words are the plan's, said to screen readers as they change.
+(submitting.py), and glides back when nothing was sent. Once it is in,
+the inbox stands in the middle, over the words that say so. The card
+and the inbox keep a little room at the track's ends, so the lifted card
+and its shadow show whole; in a low window the whole track is drawn
+smaller, and what is still left over scrolls (:meth:`HandoffView.scrolling`).
+Every state's words are the plan's, said to screen readers as they
+change; an account whose key is kept on this computer is never told to
+wait for a signer app.
 
 With Reduce Motion (motion.py) nothing travels or lifts: the card stays
 where it is, and settling is a 120 ms cross-fade. The words are the
@@ -28,10 +34,11 @@ same.
 
 :class:`HandoffView` is what the sheet shows: the track, the words and
 the buttons each state has (Abbrechen while it can still be taken back,
-dimmed once the request is on its way, and beside it Im Hintergrund
-fortsetzen; Abbrechen and Erneut versuchen after a failure, Schließen
-alone when trying again would not help; Schließen while it is being
-checked; Fertig once it is in, and beside it Einreichung ansehen, which
+dimmed once the request is on its way, and after it, at the trailing
+end, Im Hintergrund fortsetzen; Abbrechen and Erneut versuchen after a
+failure, Schließen alone when trying again would not help; Schließen
+while it is being checked; Fertig once it is in, and at the leading end
+Einreichung ansehen, which
 opens the submission's detail). It only shows the state and forwards the
 person's choice. After a refusal for a server's limit, Erneut versuchen
 (and Erneut senden for the first message) stays dimmed until the limit's
@@ -51,12 +58,12 @@ import time
 from typing import Dict, Optional
 
 from PySide6.QtCore import (
-    Property, QEasingCurve, QPointF, QPropertyAnimation, QRectF, Qt, Signal,
+    Property, QEasingCurve, QEvent, QPointF, QPropertyAnimation, QRectF, Qt, Signal,
 )
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QDialogButtonBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QToolButton, QVBoxLayout,
-    QWidget,
+    QDialogButtonBox, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy, QToolButton,
+    QVBoxLayout, QWidget,
 )
 
 import announce
@@ -66,6 +73,7 @@ from ..failures import markup, spoken
 from ..standup import words
 from ..standup.submitting import HELD_WORDS, MessageStatus, Phase, Progress, Step
 from . import appearance, motion
+from .publish_sheet import cut_after_a_word, scroll_area
 from .standup_waits import WaitTimer, wait_words
 
 _CARD_WIDTH = 200
@@ -77,10 +85,19 @@ _LIFT = 0.03           # the card's scale when lifted (1.00 to 1.03)
 # At the least between the card held while sending and the inbox: room
 # for the lifted card's 3 % and its shadow.
 _GAP = 24
+# At each end of the track, the same room: the lifted card and its shadow
+# were cut off straight at the track's leading edge.
+_EDGE = 12
+# The track's height: the scene whole, and the least it is drawn at in a
+# low window (smaller, as a narrow one draws it), so the words under it
+# stay in view.
+_HEIGHT = _COVER_HEIGHT + 120
+_LEAST_HEIGHT = 140
 
 
 def _elide(painter: QPainter, text: str, width: float) -> str:
-    return painter.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, int(width))
+    """One line of the card, cut as the sheet's card cuts its words."""
+    return cut_after_a_word(painter.fontMetrics(), text, int(width), 1)
 
 
 class HandoffTrack(QWidget):
@@ -90,15 +107,21 @@ class HandoffTrack(QWidget):
     def __init__(self, is_dark: bool, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._is_dark = is_dark
-        self._values = {"lift": 0.0, "travel": 0.0, "settle": 0.0, "fade": 1.0, "glow": 0.0}
+        self._values = {"lift": 0.0, "travel": 0.0, "settle": 0.0, "fade": 1.0, "glow": 0.0,
+                        "centre": 0.0}
         self._animations: Dict[str, QPropertyAnimation] = {}
         self._bar: Optional[float] = None
         self._got = False
         self.title = self.summary = self.byline = self.publication = ""
         self.cover = QPixmap()
         self.logo = QPixmap()
-        self.setMinimumHeight(_COVER_HEIGHT + 120)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        # The cover at the card's size, made once for a picture and a
+        # screen (_cover_filled).
+        self._filled = QPixmap()
+        self._filled_for: tuple = ()
+        self.setMinimumHeight(_LEAST_HEIGHT)
+        # Its whole height where there is room, less in a low window.
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, False)
 
     # -- the animated values -------------------------------------------------
@@ -117,6 +140,8 @@ class HandoffTrack(QWidget):
                       lambda self, v: self._set("settle", v))
     fade = Property(float, lambda self: self._get("fade"), lambda self, v: self._set("fade", v))
     glow = Property(float, lambda self: self._get("glow"), lambda self, v: self._set("glow", v))
+    centre = Property(float, lambda self: self._get("centre"),
+                      lambda self, v: self._set("centre", v))
 
     def value(self, name: str) -> float:
         return self._values[name]
@@ -181,7 +206,7 @@ class HandoffTrack(QWidget):
 
     def sizeHint(self):  # noqa: N802, Qt's name
         hint = super().sizeHint()
-        hint.setHeight(self.minimumHeight())
+        hint.setHeight(_HEIGHT)
         return hint
 
     # -- painting ------------------------------------------------------------
@@ -189,12 +214,37 @@ class HandoffTrack(QWidget):
     def _card_height(self) -> float:
         return _COVER_HEIGHT + 74
 
+    def _cover_filled(self) -> QPixmap:
+        """The cover filling its place on the card, as sharp as the screen
+        is, made once: it was scaled anew for every frame of the motion,
+        and at half the pixels a Retina screen shows."""
+        ratio = self.devicePixelRatioF()
+        made_for = (self.cover.cacheKey(), ratio)
+        if self._filled_for != made_for:
+            width, height = round(_CARD_WIDTH * ratio), round(_COVER_HEIGHT * ratio)
+            filled = self.cover.scaled(width, height,
+                                       Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                       Qt.TransformationMode.SmoothTransformation)
+            self._filled = filled.copy((filled.width() - width) // 2,
+                                       (filled.height() - height) // 2, width, height)
+            self._filled_for = made_for
+        return self._filled
+
     def _scale(self) -> float:
         """1, or less where the track is narrower than the card and the
         inbox side by side with the gap between them (a sheet down to its
-        minimum width): the whole scene drawn smaller, never on top of
-        each other."""
-        return min(1.0, self.width() / (_CARD_WIDTH + _GAP + _INBOX_WIDTH))
+        minimum width), or lower than the scene (a low window): the whole
+        scene drawn smaller, never on top of each other or of the words."""
+        return min(1.0, self.width() / (_CARD_WIDTH + _GAP + _INBOX_WIDTH + 2 * _EDGE),
+                   self.height() / _HEIGHT)
+
+    def _inbox(self, width: float, top: float) -> QRectF:
+        """The inbox: at the trailing end, and in the middle once the work
+        is in (``centre``), where the card that travelled is no longer
+        beside it."""
+        end = width - _EDGE - _INBOX_WIDTH
+        x = end + ((width - _INBOX_WIDTH) / 2 - end) * self._values["centre"]
+        return QRectF(x, top + 24, _INBOX_WIDTH, self._card_height() - 48)
 
     def _card_x(self, inbox: QRectF) -> float:
         """Where the card stands on its way (``travel``): held (_HOLD) at
@@ -202,10 +252,11 @@ class HandoffTrack(QWidget):
         sheet never shows it over the inbox while sending; then on, centred
         on the inbox at the end. One even way in both parts."""
         end = inbox.center().x() - _CARD_WIDTH / 2
-        held = max(0.0, min(end * _HOLD, inbox.left() - _GAP - _CARD_WIDTH))
+        held = max(_EDGE, min(_EDGE + (end - _EDGE) * _HOLD,
+                              inbox.left() - _GAP - _CARD_WIDTH))
         travel = self._values["travel"]
         if travel <= _HOLD:
-            return held * travel / _HOLD
+            return _EDGE + (held - _EDGE) * travel / _HOLD
         return held + (end - held) * (travel - _HOLD) / (1 - _HOLD)
 
     def paintEvent(self, _event) -> None:  # noqa: N802, Qt's name
@@ -217,7 +268,7 @@ class HandoffTrack(QWidget):
         width, height = self.width() / zoom, self.height() / zoom
         card_h = self._card_height()
         top = (height - card_h) / 2
-        inbox = QRectF(width - _INBOX_WIDTH, top + 24, _INBOX_WIDTH, card_h - 48)
+        inbox = self._inbox(width, top)
         x = self._card_x(inbox)
         # The way still to go: from the card as it stands to the inbox, and
         # none once the work is in, never from where the card started.
@@ -258,13 +309,9 @@ class HandoffTrack(QWidget):
         if self.cover.isNull():
             painter.fillRect(cover, QColor(r.soft))
         else:
-            scaled = self.cover.scaled(int(cover.width()), int(cover.height()),
-                                       Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                                       Qt.TransformationMode.SmoothTransformation)
-            painter.drawPixmap(cover.topLeft(), scaled,
-                               QRectF((scaled.width() - cover.width()) / 2,
-                                      (scaled.height() - cover.height()) / 2,
-                                      cover.width(), cover.height()))
+            filled = self._cover_filled()
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            painter.drawPixmap(cover, filled, QRectF(filled.rect()))
         if self._bar is not None:
             track = QRectF(cover.left(), cover.bottom() - 3, cover.width(), 3)
             soft = QColor(r.selection)
@@ -326,8 +373,13 @@ HANDED_IN = N_("Version {number} handed in.")
 
 
 def phase_words(progress: Progress, publication: str, now: Optional[float] = None, *,
-                number: int = 1) -> tuple:
-    """The two lines a state says (translated), the plan's words. While
+                number: int = 1, signer_app: bool = True) -> tuple:
+    """The two lines a state says (translated), the plan's words.
+    ``signer_app``: the account signs in a signer app; one whose key is
+    kept on this computer has none to wait for, so while the request is
+    signed it says what happens, that the work is being sent (it said
+    "Waiting for your signer app. Confirm the request there." to a
+    person who has no such app). While
     the request is on its way and while it is checked, the words are
     what the server holds (HELD_WORDS, lesson 32): a run whose receipt
     came never says "Not confirmed yet" (RG-M2r2a 3). A failure: its
@@ -349,7 +401,8 @@ def phase_words(progress: Progress, publication: str, now: Optional[float] = Non
             Phase.ENCRYPT: (words.ENCRYPTING, ""),
             Phase.UPLOAD: (words.UPLOADING_PICTURE if progress.pictures == 1
                            else words.UPLOADING_PICTURES, words.UPLOADING_DETAIL),
-            Phase.SIGNER: (words.WAITING_FOR_SIGNER, words.WAITING_DETAIL),
+            Phase.SIGNER: ((words.WAITING_FOR_SIGNER, words.WAITING_DETAIL) if signer_app
+                           else (held.sending, "")),
             Phase.SEND: (held.sending, ""),
             Phase.UNCONFIRMED: (held.checking, words.UNCONFIRMED_DETAIL),
             Phase.DONE: (words.SUBMITTED if number < 2 else HANDED_IN, words.SUBMITTED_DETAIL),
@@ -367,11 +420,12 @@ _MESSAGE_WORDS = {MessageStatus.SIGNING: words.MESSAGE_SIGNING,
                   MessageStatus.SENT: words.MESSAGE_SENT}
 
 
-def message_words(progress: Progress, now: float) -> tuple:
+def message_words(progress: Progress, now: float, *, signer_app: bool = True) -> tuple:
     """The first message's line (translated), once the work is in: how it
     goes, or, when it did not go, its title and its one sentence, with
     when sending again helps while a limit's wait is not over (lessons
-    36). ``("", "")`` when there is nothing to say."""
+    36). ``("", "")`` when there is nothing to say. Without a
+    ``signer_app`` (a key kept here) its signing is part of its sending."""
     if progress.phase is not Phase.DONE:
         return "", ""
     failure = progress.message_failure
@@ -380,7 +434,10 @@ def message_words(progress: Progress, now: float) -> tuple:
                               words.MESSAGE_LIMIT_TOMORROW_AT,
                               words.MESSAGE_LIMIT_OVER) or _(failure.sentence)
         return _(failure.title), sentence
-    shown = _MESSAGE_WORDS.get(progress.message)
+    status = progress.message
+    if status is MessageStatus.SIGNING and not signer_app:
+        status = MessageStatus.SENDING
+    shown = _MESSAGE_WORDS.get(status)
     return (_(shown), "") if shown else ("", "")
 
 
@@ -399,11 +456,13 @@ class HandoffView(QWidget):
     def __init__(self, *, is_dark: bool, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.number = 1                         # the version handed in
+        self.signer_app = True                  # the account signs in a signer app
         self._is_dark = is_dark
         self._phase: Optional[Phase] = None
         self._said = ""
         self._progress: Optional[Progress] = None
         self._error = False                 # the headline in the error colour
+        self._scroll: Optional[QScrollArea] = None      # see scrolling()
         # Shows the state again once a limit's wait is over (RG-M2r 7).
         self._wait = WaitTimer(self._wait_over, self)
         column = QVBoxLayout(self)
@@ -419,11 +478,11 @@ class HandoffView(QWidget):
         self.message.setObjectName("muted")
         # What an upload's servers answered: behind Details (lessons 36).
         self.details_toggle = QToolButton()
+        self.details_toggle.setObjectName("disclosure")     # as the sheets' others
         self.details_toggle.setText(_("Details"))
         self.details_toggle.setCheckable(True)
         self.details_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.details_toggle.setArrowType(Qt.ArrowType.RightArrow)
-        self.details_toggle.setAutoRaise(True)
         self.details_toggle.toggled.connect(self._show_details)
         self.details_toggle.hide()
         self.details = QLabel()
@@ -450,8 +509,13 @@ class HandoffView(QWidget):
         column.addLayout(again)
         column.addStretch(1)
         self.buttons = QDialogButtonBox()
+        # At the trailing end, after Cancel, as the Mac puts the way on
+        # beside the way back (the box's place for a second accepting
+        # button would be before Cancel; Yes comes after it). Not the
+        # default: while it goes on, Return never closes the sheet by a
+        # key pressed once more than meant.
         self.background_button = self.buttons.addButton(
-            _("Continue in Background"), QDialogButtonBox.ButtonRole.ActionRole)
+            _("Continue in Background"), QDialogButtonBox.ButtonRole.YesRole)
         self.background_button.setAutoDefault(False)
         self.cancel_button = self.buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
         self.close_button = self.buttons.addButton(_("Close"),
@@ -471,10 +535,41 @@ class HandoffView(QWidget):
         self.done_button.clicked.connect(self.close_requested)
         self.set_dark(is_dark)
 
+    def scrolling(self) -> QScrollArea:
+        """The view for a sheet, in a part that scrolls (as a sheet's form
+        does): in a window too low for it, its words were painted over
+        the track. The track is drawn as tall as the room beside the
+        words allows, whole or smaller, and only what is still left over
+        scrolls; the buttons stay outside, always whole."""
+        if self._scroll is None:
+            self._scroll = scroll_area(self)
+            self._scroll.viewport().installEventFilter(self)
+        return self._scroll
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802, Qt's name
+        if event.type() == QEvent.Type.Resize and self._scroll is not None \
+                and watched is self._scroll.viewport():
+            self._fit_track()
+        return False
+
+    def _fit_track(self) -> None:
+        """The track's height for the room the sheet has (scrolling)."""
+        if self._scroll is None:
+            return
+        view = self._scroll.viewport()
+        track = min(_HEIGHT, self.track.maximumHeight())
+        self.layout().activate()
+        said = self.layout().totalHeightForWidth(view.width()) - track
+        self.track.setFixedHeight(max(_LEAST_HEIGHT, min(_HEIGHT, view.height() - said)))
+
     def set_work(self, *, title: str, summary: str, byline: str, cover: QPixmap,
-                 publication: str, logo: QPixmap, number: int = 1) -> None:
-        """``number``: the version handed in (1 for a first submission)."""
+                 publication: str, logo: QPixmap, number: int = 1,
+                 signer_app: bool = True) -> None:
+        """``number``: the version handed in (1 for a first submission).
+        ``signer_app``: whether the account signs in a signer app (False
+        for a key kept on this computer: phase_words)."""
         self.number = number
+        self.signer_app = signer_app
         track = self.track
         track.title, track.summary, track.byline = title, summary, byline
         track.cover, track.publication, track.logo = cover, publication, logo
@@ -492,8 +587,10 @@ class HandoffView(QWidget):
         self._progress = progress
         phase = progress.phase
         now = _now()
-        first, second = phase_words(progress, self.track.publication, now, number=self.number)
-        message_title, message_sentence = message_words(progress, now)
+        first, second = phase_words(progress, self.track.publication, now, number=self.number,
+                                    signer_app=self.signer_app)
+        message_title, message_sentence = message_words(progress, now,
+                                                        signer_app=self.signer_app)
         retry_at, message_at = self._waits(progress)
         self.send_again.setEnabled(not message_at or message_at <= now)
         self._wait.follow(retry_at, message_at, now=now)
@@ -524,6 +621,7 @@ class HandoffView(QWidget):
                 self._move(phase)
         self.track.set_bar(self._bar(progress))
         self._show_buttons(progress)
+        self._fit_track()                           # other words, other room
         said = spoken(first, second, message_title, message_sentence)
         if said != self._said:
             self._said = said
@@ -547,6 +645,7 @@ class HandoffView(QWidget):
         self.details_toggle.setArrowType(Qt.ArrowType.DownArrow if shown
                                          else Qt.ArrowType.RightArrow)
         self.details.setVisible(shown and bool(self.details.text()))
+        self._fit_track()
 
     @staticmethod
     def _bar(progress: Progress) -> Optional[float]:
@@ -562,6 +661,7 @@ class HandoffView(QWidget):
             return
         track.set_got(False)
         track.animate("settle", 0.0, 0)
+        track.animate("centre", 0.0, 0)
         track.animate("fade", 1.0, 300, cross_fade=True)
         holding = phase in (Phase.SEND, Phase.UNCONFIRMED)
         lifted = phase in (Phase.ENCRYPT, Phase.UPLOAD, Phase.SIGNER) or holding
@@ -581,6 +681,9 @@ class HandoffView(QWidget):
         if not motion.reduce_motion():
             track.animate("travel", 1.0, 450)
             track.animate("settle", 1.0, 450)
+        # The inbox, with the work in it, to the middle (at once with
+        # Reduce Motion: nothing glides).
+        track.animate("centre", 1.0, 450)
         track.animate("fade", 0.0, 450, cross_fade=True)
 
     def _show_buttons(self, progress: Progress) -> None:
@@ -611,8 +714,12 @@ class HandoffView(QWidget):
         self.retry_button.setEnabled(not waiting)
         self.done_button.setVisible(phase is Phase.DONE)
         self.view_button.setVisible(phase is Phase.DONE)
+        # The one thing to do answers Return: Done, Try Again once it may
+        # be tried, and Close where it stands alone.
         default = (self.done_button if phase is Phase.DONE
-                   else self.retry_button if retry and not waiting else None)
+                   else self.retry_button if retry and not waiting
+                   else self.close_button if phase in (Phase.FAILED, Phase.UNCONFIRMED)
+                   and not retry else None)
         for button in (self.cancel_button, self.close_button, self.retry_button,
                        self.done_button):
             button.setDefault(button is default)

@@ -656,6 +656,19 @@ def test_a_sign_out_hears_when_what_was_read_is_written():
     QApplication.processEvents()                    # the session's answer, while it lives
 
 
+def test_what_was_typed_in_the_sheet_is_forgotten_with_its_account():
+    # UX-M1: a note not sent stays for its text while the account is in
+    # use, in memory only; a sign-out forgets it, as it forgets the keys.
+    from nostr.ui.standup_submit import Typed
+    writer, profile = _wired_writer()
+    writer.account(profile)
+    writer.typed[(profile.user_pubkey, "ein-jahr")] = Typed(note="Hallo Redaktion")
+    writer.typed[("ee" * 32, "ein-jahr")] = Typed(note="Von einem anderen Konto")
+    writer.stop()
+    assert list(writer.typed) == [("ee" * 32, "ein-jahr")]
+    QApplication.processEvents()
+
+
 def test_the_clients_of_other_servers_are_made_once_and_let_go_with_their_account():
     # Lesson 31: a client of another server refuses once its account stopped.
     from nostr.standup.errors import Code
@@ -1100,7 +1113,7 @@ class Run(QObject):
         super().__init__()
         self.choice = SimpleNamespace(name="Einundzwanzig Magazin")
         self.finished = False
-        self.progress = Progress(Step.SIGNING)
+        self.progress = Progress(Step.ENCRYPTING)
         self._behind = None
 
     def behind_the_sheet(self, on_change) -> None:
@@ -1132,6 +1145,25 @@ def test_in_the_background_the_status_bar_says_submitted_only_once_it_is_in(germ
     assert said == ["Wird eingereicht …"]
     run.changed.emit(Progress(Step.SUBMITTED))
     assert said[-1] == "Eingereicht. Im Eingang von Einundzwanzig Magazin."
+
+
+def test_in_the_background_the_status_bar_says_that_the_signer_app_waits(german):
+    # UX-M1: closed while the signer app waited, the sheet's words were
+    # gone and the status bar said only "Wird eingereicht …".
+    writer, run, said = _writer(FakeList(), FakeApi()), Run(), []
+    writer.status.connect(said.append)
+    run.progress = Progress(Step.SIGNING)
+    writer.in_background(run)
+    assert said == ["Warten auf deine Signer-App. Bestätige dort die Anfrage."]
+    run.changed.emit(Progress(Step.SENDING, sent=True))
+    assert len(said) == 1                           # nothing new to say while it is sent
+    # A key kept on this computer has no signer app to wait for.
+    local, run, said = _writer(FakeList(), FakeApi()), Run(), []
+    local._account = SimpleNamespace(profile=SimpleNamespace(signer="local"))
+    local.status.connect(said.append)
+    run.progress = Progress(Step.SIGNING)
+    local.in_background(run)
+    assert said == ["Wird eingereicht …"]
 
 
 def test_in_the_background_the_first_message_says_why_the_signer_asks_and_when_it_failed():

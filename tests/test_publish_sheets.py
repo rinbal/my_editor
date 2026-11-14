@@ -1073,3 +1073,53 @@ def test_the_alert_claims_nothing_of_the_relays_that_may_be_untrue(
     # One sentence, with what to do, and no relay in it (lessons 26, 36).
     assert "answered" not in message and "relay" not in message
     assert message.count(".") == 1 and message.endswith(".") and "try again" in message
+
+
+# -- the card and the account, as a person sees them (UX-M1) --------------------
+
+def test_the_cards_cover_has_the_cards_corners_and_stays_inside_its_border():
+    """The picture's corners were square inside the rounded card, and it
+    lay two points over the border at the trailing edge."""
+    card = article_module.ArticleCard(False)
+    picture = QPixmap(1200, 630)
+    picture.fill(QColor("#F7931A"))
+    card.show_article("A title", "A summary", picture, "Jana Roth")
+    card.show()
+    QApplication.processEvents()
+    assert card.rect().adjusted(1, 1, -1, -1).contains(card.cover.geometry())
+    shown = card.cover.pixmap().toImage()
+    assert shown.pixelColor(0, 0).alpha() == 0                       # rounded away
+    assert shown.pixelColor(shown.width() // 2, 0).alpha() == 255
+    assert shown.pixelColor(0, shown.height() - 1).alpha() == 255    # square under the words
+    card.close()
+
+
+def test_a_word_longer_than_the_cards_line_breaks_inside_and_nothing_is_cut():
+    """A long compound in a title was drawn past the card's edge, and
+    the lines under it were cut off."""
+    from PySide6.QtGui import QFontMetrics
+    metrics = QFontMetrics(QApplication.font())
+    word = "Donaudampfschifffahrtsgesellschaftskapitän"
+    width = metrics.horizontalAdvance(word) // 2
+    shown = article_module.cut_after_a_word(metrics, word + " erklärt die Welt", width, 3)
+    assert metrics.boundingRect(0, 0, width, 10_000, Qt.TextFlag.TextWordWrap,
+                                shown).height() <= 3 * metrics.lineSpacing()
+    assert metrics.boundingRect(0, 0, width, 10_000, Qt.TextFlag.TextWordWrap,
+                                shown).width() <= width
+    assert shown.replace("​", "").startswith("Donaudampf")
+    # A text that fits is said as it is.
+    assert article_module.cut_after_a_word(metrics, "Short", 200, 3) == "Short"
+
+
+def test_the_accounts_arrow_stands_after_its_name_as_on_a_pop_up_button(tmp_path):
+    """The arrow stood between the picture and the name."""
+    args = common(tmp_path)
+    account = publish_sheet.AccountRow(args["active_profile"], args["store"], args["avatars"],
+                                       is_dark=False)
+    account.show()
+    QApplication.processEvents()
+    button = account.button
+    assert button.iconSize().width() == button.iconSize().height()      # the picture alone
+    arrow = button._night_violet_arrow
+    assert arrow.geometry().left() > button.width() - 24
+    account.close()

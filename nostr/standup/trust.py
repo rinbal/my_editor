@@ -40,7 +40,7 @@ from .servers import usable_server_url
 from .formats import FormatError
 
 KEY_NOT_CONFIRMED = N_(
-    "The editorial team's key is not confirmed. Submitting is not possible right now.")
+    "The editorial team’s key is not confirmed. Submitting is not possible right now.")
 
 # The settings key under which the highest epoch per publication is kept.
 SETTINGS_KEY = "standup_redaktion_epochs"

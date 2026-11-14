@@ -128,11 +128,13 @@ def stopped_words(runs: Sequence[SubmissionRun]) -> str:
     return said
 
 
-def background_message_words(progress: Progress, publication: str) -> str:
+def background_message_words(progress: Progress, publication: str, *,
+                             signer_app: bool = True) -> str:
     """With the sheet closed, what the status bar says of the first
-    message: why the signer app asks now, or that it did not go; ``""``
-    otherwise (it is sent, or there is none)."""
-    if progress.message is MessageStatus.SIGNING:
+    message: why the signer app asks now (never for an account without
+    a ``signer_app``, whose key is kept here), or that it did not go;
+    ``""`` otherwise (it is sent, or there is none)."""
+    if progress.message is MessageStatus.SIGNING and signer_app:
         return _(words.MESSAGE_SIGNING_IN_THE_BACKGROUND).format(publication=publication)
     if progress.message is MessageStatus.FAILED:
         # One the server may hold is never said not to be sent.

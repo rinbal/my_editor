@@ -34,14 +34,15 @@ is a few lines here, the rest lives in its own module.
 from __future__ import annotations
 
 import time
-from typing import Callable, List, Optional
+from dataclasses import dataclass
+from typing import Callable, Dict, List, Optional, Tuple
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from i18n import _
 
 from .. import failures
-from ..signer_limits import bound_known
+from ..signer_limits import bound_known, through_signer_app
 from ..later import answer_later
 from ..standup import trust, words
 from ..standup.drafting import ArticleDraft, Choice, Sealed
@@ -63,6 +64,16 @@ from .standup_handoff import phase_words
 from .standup_message import send_first_message
 from .standup_run import SubmissionRun, background_message_words, stopped_words
 from .standup_uploads import THUMB_SIDE, BlossomUploads, thumbnail
+
+
+@dataclass(frozen=True)
+class Typed:
+    """What a person chose and wrote in Submit to a Publication for a
+    text and did not send: the note to the editorial team, and the
+    publication (its address)."""
+
+    note: str = ""
+    publication: str = ""
 
 
 class StandupWriter(QObject):
@@ -104,6 +115,12 @@ class StandupWriter(QObject):
         # What this computer holds of the texts submitted, across restarts
         # (RG-M2r2a 1); the window's is kept in its file, a test's is not.
         self._marks = marks if marks is not None else SubmittedMarks(kept=False)
+        # What was typed in the sheet for a text and not sent (it closed
+        # after a failure, or was cancelled): there again when the sheet
+        # opens for that text, so nobody writes a note twice or submits to
+        # another publication by oversight. By account and link name, in
+        # memory only, and forgotten with the account (stop).
+        self.typed: Dict[Tuple[str, str], Typed] = {}
 
     @property
     def server(self) -> str:
@@ -466,11 +483,15 @@ class StandupWriter(QObject):
 
     def in_background(self, run: SubmissionRun) -> None:
         """The sheet closed: say in the status bar how ``run`` goes on,
-        each change once: submitting, in, why the signer app asks for the
-        first message, that it did not go, or a failure."""
+        each change once: submitting, that the signer app waits to be
+        confirmed (closed, the sheet no longer says it, and nothing goes
+        on until it is), in, why the signer app asks for the first
+        message, that it did not go, or a failure."""
         if run.finished:
             return
         name = run.choice.name
+        # A key kept here has no signer app that would ask for anything.
+        signer_app = through_signer_app(getattr(self._account, "profile", None))
         said = [""]
 
         def say(text: str) -> None:
@@ -480,10 +501,12 @@ class StandupWriter(QObject):
 
         def words_of(progress: Progress) -> str:
             if progress.phase is Phase.DONE:
-                return (background_message_words(progress, name)
+                return (background_message_words(progress, name, signer_app=signer_app)
                         or _(words.SUBMITTED).format(publication=name))
             if progress.phase is Phase.FAILED and progress.failure is not None:
                 # Its title and its one sentence, as the handoff says them.
+                return failures.spoken(*phase_words(progress, name))
+            if progress.phase is Phase.SIGNER and signer_app:
                 return failures.spoken(*phase_words(progress, name))
             return ""
 
@@ -509,6 +532,8 @@ class StandupWriter(QObject):
             return
         said = stopped_words(account.runs)
         account.stopped = True
+        for key in [key for key in self.typed if key[0] == account.writer]:
+            del self.typed[key]
         following, self._following = self._following, None
         self._cleanup = None                 # goes with its Following
         if following is not None:
@@ -650,5 +675,6 @@ def _later(ms: int, callback: Callable[[], None]) -> None:
 
 
 __all__ = [
-    "BlossomUploads", "RoundAnswer", "StandupWriter", "SubmissionRun", "THUMB_SIDE", "thumbnail",
+    "BlossomUploads", "RoundAnswer", "StandupWriter", "SubmissionRun", "THUMB_SIDE", "Typed",
+    "thumbnail",
 ]

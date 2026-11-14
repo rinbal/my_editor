@@ -12,7 +12,9 @@ from typing import Callable, List, Sequence
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QToolButton, QVBoxLayout
+from PySide6.QtWidgets import (
+    QFrame, QGridLayout, QHBoxLayout, QLabel, QToolButton, QVBoxLayout, QWidget,
+)
 
 from i18n import _, ngettext
 
@@ -85,10 +87,14 @@ class PrivacyBox(QFrame):
         self.toggle.toggled.connect(self.refresh)
         line.addWidget(self.toggle)
         column.addLayout(line)
-        self.lines = QLabel()
-        self.lines.setObjectName("muted")
-        self.lines.setWordWrap(True)
-        self.lines.setTextFormat(Qt.TextFormat.PlainText)
+        # Each line beside its own bullet: one that wraps goes on under its
+        # words, not under the bullet.
+        self.lines = QWidget()
+        self._rows = QGridLayout(self.lines)
+        self._rows.setContentsMargins(0, 0, 0, 0)
+        self._rows.setHorizontalSpacing(6)
+        self._rows.setVerticalSpacing(2)
+        self._rows.setColumnStretch(1, 1)
         self.lines.hide()
         column.addWidget(self.lines)
         self.set_dark(is_dark)
@@ -96,8 +102,25 @@ class PrivacyBox(QFrame):
     def refresh(self, *_args) -> None:
         shown = self.toggle.isChecked()
         self.toggle.setArrowType(Qt.ArrowType.DownArrow if shown else Qt.ArrowType.RightArrow)
-        self.lines.setText("\n".join(f"• {line}" for line in self._words()))
+        while self._rows.count():
+            said = self._rows.takeAt(0).widget()
+            said.hide()
+            said.deleteLater()
+        for row, line in enumerate(self._words()):
+            bullet, words = QLabel("•"), QLabel(line)
+            for label in (bullet, words):
+                label.setObjectName("muted")
+                label.setTextFormat(Qt.TextFormat.PlainText)
+            words.setWordWrap(True)
+            self._rows.addWidget(bullet, row, 0, Qt.AlignmentFlag.AlignTop)
+            self._rows.addWidget(words, row, 1)
         self.lines.setVisible(shown)
+
+    def said(self) -> list:
+        """The lines as they are shown now, in order."""
+        return [self._rows.itemAtPosition(row, 1).widget().text()
+                for row in range(self._rows.rowCount())
+                if self._rows.itemAtPosition(row, 1) is not None]
 
     def set_dark(self, is_dark: bool) -> None:
         self._is_dark = is_dark

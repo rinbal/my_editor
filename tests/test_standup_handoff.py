@@ -229,11 +229,12 @@ def _shown(view):
 @pytest.mark.parametrize("progress, shown, enabled_cancel, default", [
     (Progress(Step.SIGNING), {"background", "cancel"}, True, None),
     (Progress(Step.SENDING), {"background", "cancel"}, False, None),
-    (Progress(Step.CHECKING), {"close"}, None, None),
+    # UX-M1: Close standing alone answers Return, as a sheet's one button does.
+    (Progress(Step.CHECKING), {"close"}, None, "close"),
     (Progress(Step.FAILED, failure=NOT_SENT), {"close", "retry"}, None, "retry"),
     (Progress(Step.FAILED, failure=Failure(words.ANOTHER_VERSION, None,
                                            title=words.VERSION_NOT_SUBMITTED)),
-     {"close"}, None, None),
+     {"close"}, None, "close"),
     (Progress(Step.SUBMITTED), {"done"}, None, "done"),
 ])
 def test_each_state_has_its_buttons(view, progress, shown, enabled_cancel, default):
@@ -241,9 +242,29 @@ def test_each_state_has_its_buttons(view, progress, shown, enabled_cancel, defau
     assert _shown(view) == shown
     if enabled_cancel is not None:
         assert view.cancel_button.isEnabled() is enabled_cancel
-    defaults = {n for n in ("cancel", "close", "retry", "done")
+    defaults = {n for n in ("background", "cancel", "close", "retry", "done")
                 if getattr(view, f"{n}_button").isDefault()}
     assert defaults == ({default} if default else set())
+
+
+def test_while_it_goes_on_continue_in_background_stands_after_cancel_at_the_trailing_end(
+        app, view):
+    # UX-M1: it stood alone at the leading end, Cancel at the trailing one.
+    from PySide6.QtGui import QGuiApplication
+    import theme
+    before = app.style().name() or "Fusion"
+    app.setStyle(theme.AppStyle("Fusion"))          # the app's own: the Mac's order everywhere
+    try:
+        view.buttons.resize(700, 40)
+        view.buttons.show()
+        view.show_progress(Progress(Step.SIGNING))
+        QGuiApplication.processEvents()
+        cancel, background = view.cancel_button.geometry(), view.background_button.geometry()
+        assert cancel.right() < background.left() and background.right() > 600
+        assert background.left() - cancel.right() < 20     # side by side
+    finally:
+        view.buttons.hide()
+        app.setStyle(before)
 
 
 def test_a_message_that_was_not_sent_can_be_sent_again_from_the_handoff(view, monkeypatch):
@@ -408,8 +429,10 @@ def test_the_dotted_way_runs_only_from_the_card_to_the_inbox_and_is_gone_once_in
     track = standup_handoff.HandoffTrack(is_dark=False)
     track.resize(720, standup_handoff._COVER_HEIGHT + 120)
     y = round((track.height() - track._card_height()) / 2 + track._card_height() / 2)
-    start = standup_handoff._CARD_WIDTH + 14
-    inbox_left = track.width() - standup_handoff._INBOX_WIDTH - 14
+    # UX-M1: the card and the inbox stand _EDGE in from the track's ends.
+    edge = standup_handoff._EDGE
+    start = edge + standup_handoff._CARD_WIDTH + 14
+    inbox_left = track.width() - edge - standup_handoff._INBOX_WIDTH - 14
 
     def drawn(left, right) -> bool:
         image = track.grab().toImage()
@@ -419,8 +442,8 @@ def test_the_dotted_way_runs_only_from_the_card_to_the_inbox_and_is_gone_once_in
         return any(image.pixel(int(x * ratio), row) != blank for x in range(left, right))
 
     assert drawn(start, inbox_left)                    # the whole way, still to go
-    held = min(0.6 * (track.width() - standup_handoff._INBOX_WIDTH / 2
-                      - standup_handoff._CARD_WIDTH / 2),
+    end = track.width() - edge - standup_handoff._INBOX_WIDTH / 2 - standup_handoff._CARD_WIDTH / 2
+    held = min(edge + 0.6 * (end - edge),
                inbox_left + 14 - standup_handoff._GAP - standup_handoff._CARD_WIDTH)
     track._set("travel", 0.6)
     assert not drawn(start, int(held) - 2)             # behind the held card: nothing
@@ -449,3 +472,98 @@ def test_the_card_held_while_sending_never_lies_over_the_inbox(app, moving, widt
     inbox = [x for y in range(0, h, 2) if abs(y - mid) > 6 for x in range(w // 3, w)
              if inbox_only.pixel(x, y) != blank]
     assert card and inbox and max(card) < min(inbox)
+
+
+# -- what a person sees (UX-M1) -------------------------------------------------
+
+def test_the_lifted_card_and_its_shadow_are_whole_at_the_tracks_leading_edge(app, moving):
+    # The card stood at the track's very edge: lifted, its corners and its
+    # shadow were cut off straight there.
+    track = standup_handoff.HandoffTrack(is_dark=False)
+    track.resize(720, standup_handoff._COVER_HEIGHT + 120)
+    track._set("lift", 1.0)
+    image = track.grab().toImage()
+    blank = image.pixel(image.width() - 1, 0)
+    assert all(image.pixel(0, y) == blank for y in range(image.height()))
+
+
+@pytest.mark.parametrize("width", [720, 560, 380])     # 560: the revise sheet at 600
+@pytest.mark.parametrize("got", [False, True])
+def test_the_inbox_and_its_border_are_whole_at_the_tracks_trailing_edge(app, moving, width,
+                                                                        got):
+    # The inbox was drawn flush with the track's trailing edge: half of
+    # its border was cut off there (seen in the revise sheet).
+    track = standup_handoff.HandoffTrack(is_dark=False)
+    track.publication = "Einundzwanzig Magazin"
+    track.resize(width, standup_handoff._COVER_HEIGHT + 120)
+    track.set_got(got)                                  # its accent border, still at the end
+    track._set("fade", 0.0)                             # the card unseen: the inbox alone
+    image = track.grab().toImage()
+    blank, last = image.pixel(0, 0), image.width() - 1
+    assert all(image.pixel(last, y) == blank for y in range(image.height()))
+    assert any(image.pixel(x, image.height() // 2) != blank
+               for x in range(image.width() // 2, last))      # and it is there
+
+
+def test_once_it_is_in_the_inbox_stands_in_the_middle(app, view, moving, still):
+    # The card gone, the inbox stood alone at the trailing end.
+    track = view.track
+    track.resize(720, standup_handoff._COVER_HEIGHT + 120)
+    resting = track._inbox(720.0, 0.0)
+    assert resting.right() == 720 - standup_handoff._EDGE
+    view.show_progress(Progress(Step.SUBMITTED))
+    assert track.value("centre") == 1.0             # at once with Reduce Motion
+    assert track._inbox(720.0, 0.0).center().x() == 360
+    view.show_progress(Progress(Step.FAILED, failure=NOT_SENT))
+    assert track.value("centre") == 0.0
+
+
+def test_in_a_low_window_the_track_is_drawn_smaller_and_the_words_stay_under_it(view):
+    # The words were painted over the card and the inbox.
+    scroll = view.scrolling()
+    scroll.resize(400, 230)
+    scroll.show()
+    view.show_progress(Progress(Step.SIGNING))
+    QApplication.processEvents()
+    assert standup_handoff._LEAST_HEIGHT <= view.track.height() < standup_handoff._HEIGHT
+    assert view.track.geometry().bottom() < view.headline.geometry().top()
+    assert scroll.verticalScrollBar().maximum() == 0        # all of it in view
+    scroll.resize(400, 400)
+    QApplication.processEvents()
+    assert view.track.height() == standup_handoff._HEIGHT
+    scroll.hide()
+
+
+def test_the_card_cuts_its_words_as_the_sheets_card_does(app):
+    from PySide6.QtGui import QFontMetrics
+    metrics = QFontMetrics(app.font())
+    text = "Ein Jahr mit Lightning im Café in Leipzig und anderswo"
+    cut = standup_handoff.cut_after_a_word(metrics, text, 120, 1)
+    assert cut.endswith("…") and not cut.endswith(" …") and metrics.horizontalAdvance(cut) <= 120
+    assert text.startswith(cut[:-1])
+    # A long next word would leave the line mostly empty: as much of it as fits.
+    name = "Zeitschrift für Wirtschaftsinformatik und Kryptowährungsforschung"
+    width = metrics.horizontalAdvance("Zeitschrift für Wirtschaftsinfor")
+    cut = standup_handoff.cut_after_a_word(metrics, name, width, 1)
+    assert cut.startswith("Zeitschrift für Wirtsch") and cut.endswith("…")
+    assert metrics.horizontalAdvance(cut) <= width
+
+
+def test_an_account_whose_key_is_kept_here_is_never_told_to_wait_for_a_signer_app(german, view):
+    # The first account most people have is made in MyEditor, its key kept
+    # on this computer: it was told "Warten auf deine Signer-App.
+    # Bestätige dort die Anfrage." while its request was signed here.
+    assert phase_words(Progress(Step.SIGNING), PUBLICATION, signer_app=False) == (
+        "Wird an Einundzwanzig Magazin gesendet …", "")
+    assert phase_words(Progress(Step.RECORDING), PUBLICATION, signer_app=False) == (
+        "Wird an Einundzwanzig Magazin gesendet …", "")
+    signing = Progress(Step.SUBMITTED, message=MessageStatus.SIGNING)
+    assert standup_handoff.message_words(signing, 0.0, signer_app=False) == (
+        "Deine Nachricht wird gesendet …", "")
+    assert standup_handoff.message_words(signing, 0.0) == (
+        "Warten auf deine Signer-App: Bestätige dort deine Nachricht.", "")
+    view.set_work(title="T", summary="", byline="", cover=standup_handoff.QPixmap(),
+                  publication=PUBLICATION, logo=standup_handoff.QPixmap(), signer_app=False)
+    view.show_progress(Progress(Step.SIGNING))
+    assert view.headline.text() == "Wird an Einundzwanzig Magazin gesendet …"
+    assert view.detail.isHidden()
