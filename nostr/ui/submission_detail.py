@@ -10,7 +10,8 @@ prototype's screens 16, 20, 30).
     Anna möchte Änderungen.
     Was genau, steht unten im Gespräch.
     [ Im Editor überarbeiten ]
-    (A)(T) Anna und die Redaktion von …   🔒 Ende-zu-Ende verschlüsselt
+    (A) Anna und die Redaktion von Einundzwanzig Magazin
+        🔒 Ende-zu-Ende verschlüsselt
     … the conversation …
     ┌ Nachricht an die Redaktion ───────┐ (↑)
 
@@ -26,7 +27,10 @@ with Cancel as the default.
 The header, the sentence and the action stay where they are; only the
 conversation (with Info above it) scrolls (RG-M3-b 2). It opens at the
 newest message and stays at the end while it grows, after sending too,
-unless the person scrolled up to read.
+unless the person scrolled up to read. In a short panel the cover and
+the people's pills give way, so the sentence and every action stay in
+sight. The first line (‹ Einreichungen, Info, the menu) is a bar of its
+own, which the Drafts panel shows in the place of its search field.
 
 The composer stays at the bottom, one line that grows with the text
 (up to :data:`COMPOSER_LINES`): Return sends, Shift-Return starts a new

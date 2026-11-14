@@ -19,8 +19,10 @@ one status word with the publication (the writer's name first on a work
 the person only takes part in; the newest message while it is unread),
 its age at the trailing edge and a blue dot when something is unread,
 "Neu" to a screen reader (drawn by :mod:`.submission_rows`). A row opens
-the detail in the same panel (:mod:`.submission_detail`); ‹ Einreichungen
-comes back to the row.
+the detail in the same panel (:mod:`.submission_detail`) on a click, on
+Return and on Enter; ‹ Einreichungen comes back to the row. While
+something is unread, the panel shows a dot at the view's name
+(``unread_changed``).
 
 Nothing here knows the protocol: the words come from the one table
 (``nostr/standup/following.py``). When the status could not be loaded

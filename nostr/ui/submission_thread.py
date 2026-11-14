@@ -21,11 +21,14 @@ grouped by sender, the name on the first of a group and the picture on
 the last; decisions are quiet captions (one that carries no verified
 signature has "Mehr dazu" beside it, contract 10); a new version is a
 card. A reaction works like Tapback: a small button beside each bubble
-("Reagieren", in the tab order) and the context menu open six reactions
-and Kopieren, moved through with the arrow keys; the chip sits on the
-bubble's corner, tinted when it is one's own, dimmed until the server
-stored it, and says who reacted to a screen reader. Every text a
-stranger wrote is shown as plain text.
+("Reagieren", in the tab order; in sight while the pointer is on the
+message or the keyboard on the button, as in the web app) and the
+context menu open six reactions and Kopieren, moved through with the
+arrow keys; the chip sits on the bubble's corner, tinted when it is
+one's own, dimmed until the server stored it, and says who reacted to a
+screen reader. Every text a stranger wrote is shown as plain text, and
+a word wider than the panel (a link, a key) breaks inside its bubble
+(:func:`breakable`).
 """
 
 from __future__ import annotations
