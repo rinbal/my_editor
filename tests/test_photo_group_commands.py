@@ -600,6 +600,40 @@ def test_the_keys_hint_stands_on_the_moved_picture_not_on_its_caption():
     assert photo_group_overlay.hint_place(edge, 300, room)[0] + 300 <= room.right()
 
 
+def test_several_files_dragged_onto_a_group_say_how_many_they_are(monkeypatch):
+    """Files from another app stand as one slot in the group they are
+    dragged onto. Two of them said "New Photo", in a group counted one
+    picture too few, so the drop gave another group than the one shown."""
+    from PySide6.QtCore import QMimeData, QUrl
+    from PySide6.QtGui import QDragMoveEvent
+    bars = []
+    painted = photo_group_overlay.paint_bar
+    monkeypatch.setattr(photo_group_overlay, "paint_bar",
+                        lambda painter, bar, label, hint, *rest, **how: (
+                            bars.append((label, hint)),
+                            painted(painter, bar, label, hint, *rest, **how)))
+    ed = _editor()
+    pointer = ed.photos.pointer
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(PHOTOS / name)) for name in ("landscape.png", "plan.png")])
+    second = photo_group_actions.picture_at(ed.document(), _group(ed).start + 1)
+    over = ed.photos.to_view(ed.photos.box_of(second)).center().toPoint()
+    took = False
+    for _ in range(8):
+        took = pointer.drag_files(QDragMoveEvent(over, Qt.DropAction.CopyAction, mime,
+                                                 Qt.MouseButton.LeftButton,
+                                                 Qt.KeyboardModifier.NoModifier))
+        QTest.qWait(40)
+    assert took and pointer.new_words() == "2 New Photos"
+    ed.viewport().repaint()
+    label, hint = bars[-1]
+    assert label == "Photo Group · 6 Photos"                  # the four, and both files
+    assert hint.startswith("Release: here as photo ") and " of 6 " in hint
+    pointer.stop()
+    assert pointer.new_words() == "New Photo"
+    ed.close()
+
+
 def test_a_command_says_only_what_it_did(said):
     # Gate RG-PG2E-b 6: "Photo 3 of 3. boats" came first.
     ed = _selected(_text("Before.", ONE, TWO, "![boats](portrait.png)", "After."), number=1)

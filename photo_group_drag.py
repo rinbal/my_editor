@@ -186,11 +186,13 @@ class Preview:
         return best
 
     def paint(self, painter: QPainter, now: float, *, accent: QColor, surface: QColor,
-              words: str, lifted: bool = True) -> None:
+              words: str, lifted: bool = True, more: int = 0) -> None:
         """The group in the order shown, over where the document draws it:
         the picture that moves faint where it would land while it is
         ``lifted`` (it follows the pointer), else drawn there with a ring
-        (moved with the keys)."""
+        (moved with the keys). ``more``: how many pictures the moved one's
+        slot takes beyond one (several files dragged in): the pictures
+        after it are numbered past them."""
         painter.fillRect(self.area().adjusted(-2, -2, 2, 2), surface)
         boxes = self.boxes(now)
         settled = self.scale == 1.0 and not self.moving(now)
@@ -206,7 +208,8 @@ class Preview:
                 photo_group_view.draw_unit(painter, self.doc, unit, box, at)
                 if unit is self.moved:
                     overlay.paint_ring(painter, box, accent)
-            overlay.paint_number(painter, box, number + 1, accent=accent)
+            overlay.paint_number(painter, box, number + 1 + (more if number > self.index else 0),
+                                 accent=accent)
         overlay.paint_frame(painter, self.area().adjusted(-8, -8, 8, 8), accent)
 
 

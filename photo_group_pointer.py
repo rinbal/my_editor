@@ -82,6 +82,9 @@ class PhotoPointer(QObject):
         # A picture or files being moved, and how: "drag", "keys", "files".
         self._session: Optional[drag.Session] = None
         self._how = ""
+        # How many files are dragged in from another app (shown as one
+        # slot, which says how many it takes); 0 while none are.
+        self._incoming = 0
         self._point = QPointF()
         self._ghost: Optional[QPixmap] = None
         self._scroll = 0.0
@@ -413,6 +416,7 @@ class PhotoPointer(QObject):
             return
         picture = self._session.picture
         self._session, self._how, self._ghost, self._scroll = None, "", None, 0.0
+        self._incoming = 0
         if self._flash is None:
             self._frames.stop()
         self._editor.viewport().setCursor(Qt.CursorShape.IBeamCursor)
@@ -437,13 +441,15 @@ class PhotoPointer(QObject):
     def drag_files(self, event) -> bool:
         """Picture files dragged over the text: the slot they would take
         is shown. True when there is one (the drop is accepted)."""
-        if not self._editable() or not self._picture_files(event.mimeData()):
+        paths = self._picture_files(event.mimeData()) if self._editable() else []
+        if not paths:
             self.stop()
             return False
         if self._session is None or self._how != "files":
             self.stop()
             self._start(None, "files")
             self._frames.start()
+        self._incoming = len(paths)
         self._follow(event.position())
         if self._session.target is None:
             return False
@@ -552,10 +558,19 @@ class PhotoPointer(QObject):
             overlay.paint_chips(painter, chips, missing=not self._photos.described(shown.unit),
                                 big_on=big_on, hot=self._hot, accent=accent, solid=solid)
 
+    def new_words(self) -> str:
+        """What the slot of files dragged in says: how many it takes."""
+        if self._incoming < 2:
+            return _("New Photo")
+        return _("{n} New Photos").format(n=self._incoming)
+
     def _paint_moving(self, painter, accent: QColor, ink: QColor, surface: QColor,
                       solid: bool) -> None:
         session = self._session
         target = session.target
+        # Several files stand in one slot: the group they would make counts
+        # all of them, the first where the slot is.
+        more = max(0, self._incoming - 1)
         photos = self._photos
         now = _now()
         offset = QPointF(-self._editor.horizontalScrollBar().value(),
@@ -573,21 +588,22 @@ class PhotoPointer(QObject):
         painter.translate(offset)
         if session.preview is not None:
             session.preview.paint(painter, now, accent=accent, surface=surface,
-                                  words=_("New Photo"), lifted=self._how != "keys")
+                                  words=self.new_words(), lifted=self._how != "keys",
+                                  more=more)
         elif target is not None and target.line is not None:
             left, right, y = target.line
             overlay.paint_line(painter, left, right, y, target.words, accent=accent, solid=solid)
         painter.restore()
         label = ""
         if target is not None and target.units is not None:
-            label = _("Photo {k} of {n}").format(k=target.index + 1, n=len(target.units))
+            count = len(target.units) + more
+            label = _("Photo {k} of {n}").format(k=target.index + 1, n=count)
             area = session.preview.area().translated(offset) if session.preview else None
             if area is not None:
                 hint = (_("Arrow keys move it, Return puts it down, Esc cancels")
                         if self._how == "keys" else
                         _("Release: here as photo {k} of {n} · Esc cancels").format(
-                            k=target.index + 1, n=len(target.units)))
-                count = len(target.units)
+                            k=target.index + 1, n=count))
                 moving = session.preview.moved_box(now)
                 if self._how == "keys" and moving is not None:
                     overlay.paint_hint(painter, moving.translated(offset), hint, accent=accent,
