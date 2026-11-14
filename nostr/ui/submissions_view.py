@@ -35,7 +35,7 @@ from __future__ import annotations
 import time
 from typing import Callable, Iterable, List, Optional
 
-from PySide6.QtCore import QModelIndex, Qt, Signal
+from PySide6.QtCore import QEvent, QModelIndex, Qt, Signal
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QFrame, QHBoxLayout, QLabel, QListView, QMenu, QPushButton,
@@ -145,8 +145,12 @@ class SubmissionsView(QWidget):
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list.customContextMenuRequested.connect(self._on_menu)
-        self.list.activated.connect(self._on_activated)
+        # A click opens a row, and Return or Enter does (eventFilter). Not
+        # the list's own ``activated``: on a Mac Return never emits it, and
+        # where a style emits it for a single click too, one click counted
+        # twice (Erledigt opened and closed at once).
         self.list.clicked.connect(self._on_clicked)
+        self.list.installEventFilter(self)
         column.addWidget(self.list, 1)
         # One quiet line, in place, when the status could not be loaded.
         # The sentence has the panel's whole width and its action stands
@@ -258,10 +262,12 @@ class SubmissionsView(QWidget):
         if self._following is not None:
             self._following.view_opened()
 
-    def show_detail(self, sid: str) -> None:
+    def show_detail(self, sid: str, *, keyboard: bool = False) -> None:
+        """The detail of ``sid``; ``keyboard``: opened with Return, so the
+        focus it lands on shows its ring."""
         if self._following is None or self._following.row(sid) is None:
             return
-        self.detail.show_submission(self._following, sid)
+        self.detail.show_submission(self._following, sid, keyboard=keyboard)
         self._stack.setCurrentWidget(self.detail)
 
     def show_list(self) -> None:
@@ -404,10 +410,24 @@ class SubmissionsView(QWidget):
 
     # -- what the person does ------------------------------------------------------
 
-    def _on_clicked(self, index: QModelIndex) -> None:
-        self._on_activated(index)
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802, Qt's name
+        if watched is self.list and event.type() == QEvent.Type.KeyPress:
+            index = self.list.currentIndex()
+            item = index.data(ITEM_ROLE) if index.isValid() else None
+            plain = not event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier
+            # Return and Enter open the row the keyboard is on; Space opens
+            # and closes Erledigt as well, as it presses a button.
+            if isinstance(item, Item) and plain and (
+                    event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+                    or event.key() == Qt.Key.Key_Space and item.kind == "done"):
+                self._choose(index, keyboard=True)
+                return True
+        return super().eventFilter(watched, event)
 
-    def _on_activated(self, index: QModelIndex) -> None:
+    def _on_clicked(self, index: QModelIndex) -> None:
+        self._choose(index, keyboard=False)
+
+    def _choose(self, index: QModelIndex, *, keyboard: bool) -> None:
         item = index.data(ITEM_ROLE)
         if not isinstance(item, Item):
             return
@@ -417,7 +437,7 @@ class SubmissionsView(QWidget):
             announce.announce(self.list, _("Done, expanded") if self._done_open
                               else _("Done, collapsed"))
         elif item.kind == "row":
-            self.show_detail(item.sid)
+            self.show_detail(item.sid, keyboard=keyboard)
 
     def _on_menu(self, pos) -> None:
         index = self.list.indexAt(pos)

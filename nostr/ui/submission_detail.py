@@ -152,6 +152,8 @@ class SubmissionDetail(QWidget):
         top = QHBoxLayout(self.top_bar)
         top.setContentsMargins(LIST_GUTTER - BAR_INSET, 6, LIST_GUTTER - BAR_INSET, 4)
         self.back = QToolButton()
+        self.back.setObjectName("submission_back")
+        self.back.installEventFilter(self)      # its focus ring, by how the focus came
         self.back.setText("‹ " + _("Submissions"))
         self.back.setAccessibleName(_("Back to Submissions"))
         self.back.setAutoRaise(True)
@@ -386,7 +388,7 @@ class SubmissionDetail(QWidget):
     def sid(self) -> str:
         return self._sid
 
-    def show_submission(self, following, sid: str) -> None:
+    def show_submission(self, following, sid: str, *, keyboard: bool = False) -> None:
         self.clear()
         self._following, self._sid = following, sid
         following.detail_changed.connect(self._on_changed)
@@ -394,7 +396,11 @@ class SubmissionDetail(QWidget):
         following.open(sid)
         self._stick = True                      # it opens at the newest message
         self.refresh()
-        self.back.setFocus()
+        # The focus is on the way back. Its ring shows where the keyboard
+        # brought it (``keyboard``: Return on the row, then Tab), never
+        # after a click on a row, where it read as a pressed button.
+        self.back.setFocus(Qt.FocusReason.TabFocusReason if keyboard
+                           else Qt.FocusReason.OtherFocusReason)
         self._to_the_end()
 
     def clear(self) -> None:
@@ -803,10 +809,19 @@ class SubmissionDetail(QWidget):
         self._to_the_end()
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802, Qt's name
-        if watched is self.composer and event.type() in (QEvent.Type.FocusIn,
-                                                          QEvent.Type.FocusOut):
+        if watched is self.back and event.type() == QEvent.Type.FocusIn:
+            ring = event.reason() in (Qt.FocusReason.TabFocusReason,
+                                      Qt.FocusReason.BacktabFocusReason,
+                                      Qt.FocusReason.ShortcutFocusReason)
+            if bool(self.back.property("ring")) != ring:
+                self.back.setProperty("ring", ring)
+                self.back.style().unpolish(self.back)
+                self.back.style().polish(self.back)
+        if watched is not getattr(self, "composer", None):     # the back button, built first
+            return super().eventFilter(watched, event)
+        if event.type() in (QEvent.Type.FocusIn, QEvent.Type.FocusOut):
             self.hint.setVisible(event.type() == QEvent.Type.FocusIn)
-        if watched is self.composer and event.type() == QEvent.Type.KeyPress \
+        if event.type() == QEvent.Type.KeyPress \
                 and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) \
                 and not event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
             self._send()
@@ -873,8 +888,11 @@ class SubmissionDetail(QWidget):
             QToolButton::menu-indicator {{ image: none; }}
         """)
         # The bar looks the same in the panel's band, outside this widget.
-        self.top_bar.setStyleSheet(appearance.controls(self._is_dark)
-                                   + "QToolButton::menu-indicator { image: none; }")
+        self.top_bar.setStyleSheet(
+            appearance.controls(self._is_dark) + f"""
+            QToolButton::menu-indicator {{ image: none; }}
+            QToolButton#submission_back:focus {{ border-color: transparent; }}
+            QToolButton#submission_back[ring="true"]:focus {{ border-color: {r.focus}; }}""")
         self._fit_composer()                        # the style's padding counts
         if self._sid:
             self.refresh()

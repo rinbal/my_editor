@@ -156,9 +156,13 @@ def test_the_list_has_three_sections_one_word_a_row_and_done_closed_with_its_cou
     turn = window.view.items()[1]
     assert turn.unread and turn.turn and turn.rest == "Anna: Bitte kürzen."
     assert turn.spoken.endswith("New")                  # the dot, to a screen reader
-    done = window.view.list.model().index(4)
-    window.view.list.activated.emit(done)               # Return or a click opens Erledigt
+    # Return opens Erledigt (UX-M2: with the key itself; on a Mac the list
+    # never said "activated" for it), and Space closes it again.
+    window.view.list.setCurrentIndex(window.view.list.model().index(4))
+    QTest.keyClick(window.view.list, Qt.Key.Key_Return)
     assert window.rows()[-2:] == [("done", "Done (1)", ""), ("row", "Wallets", "Declined")]
+    QTest.keyClick(window.view.list, Qt.Key.Key_Space)
+    assert window.rows()[-1] == ("done", "Done (1)", "")
 
 
 def test_a_title_that_is_one_long_word_goes_on_in_the_second_line_and_ends_in_an_ellipsis():
@@ -332,7 +336,8 @@ def test_a_row_opens_its_detail_and_back_returns_to_the_row(window):
     window.follow()
     index = window.view.list.model().index(2)
     assert index.data(Qt.ItemDataRole.DisplayRole).startswith("Steuern")
-    window.view.list.activated.emit(index)
+    window.view.list.setCurrentIndex(index)
+    QTest.keyClick(window.view.list, Qt.Key.Key_Return)     # the key itself (UX-M2)
     window.world.settle()
     detail = window.view.detail
     assert window.view.showing_detail() and detail.sid == entries["zwei"].sid
@@ -342,6 +347,49 @@ def test_a_row_opens_its_detail_and_back_returns_to_the_row(window):
     detail.back.click()
     assert not window.view.showing_detail()
     assert window.view.list.currentIndex().row() == 2   # the row it came from
+
+
+def test_a_click_counts_once_and_only_the_keyboard_draws_the_ring_on_the_way_back(window):
+    # UX-M2: where a style activates a row on a single click too (KDE), one
+    # click on Done opened and closed it at once; on a Mac, Return on a row
+    # did nothing. And the focus ring on ‹ Submissions is the keyboard's:
+    # after a click on a row it read as a pressed button.
+    from PySide6.QtWidgets import QProxyStyle, QStyle
+
+    class SingleClick(QProxyStyle):
+        def styleHint(self, hint, option=None, widget=None, data=None):
+            if hint == QStyle.StyleHint.SH_ItemView_ActivateItemOnSingleClick:
+                return 1
+            return super().styleHint(hint, option, widget, data)
+
+    world = window.world
+    prepared, entries = seeded(window, fertig="Wallets", offen="Steuern")
+    world.decide(prepared["fertig"], "decline")
+    window.follow()
+    view, style = window.view, SingleClick()
+    view.list.setStyle(style)
+    view.show()
+    view.activateWindow()
+    QApplication.processEvents()
+
+    def click(kind):
+        row = next(i for i, item in enumerate(view.items()) if item.kind == kind)
+        where = view.list.visualRect(view.list.model().index(row)).center()
+        QTest.mouseClick(view.list.viewport(), Qt.MouseButton.LeftButton, pos=where)
+        QApplication.processEvents()
+
+    click("done")
+    assert [item.kind for item in view.items()] == ["header", "row", "done", "row"]     # open
+    click("row")
+    assert view.showing_detail() and not view.detail.back.property("ring")
+    view.detail.back.click()
+    QApplication.processEvents()
+    assert view.list.hasFocus() and view.items()[view.list.currentIndex().row()].kind == "row"
+    QTest.keyClick(view.list, Qt.Key.Key_Return)
+    QApplication.processEvents()
+    assert view.showing_detail() and view.detail.back.hasFocus()
+    assert view.detail.back.property("ring") is True
+    view.hide()
 
 
 # -- the detail -----------------------------------------------------------------------
