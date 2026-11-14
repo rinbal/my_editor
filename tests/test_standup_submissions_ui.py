@@ -837,6 +837,62 @@ def test_tab_reaches_the_conversation_before_the_composer_and_each_reaction_is_n
     assert all(b.react_button in chain for b in detail.conversation.bubbles)
 
 
+def test_a_long_link_or_word_in_a_message_wraps_and_never_widens_the_conversation(window):
+    # UX-M2: a label breaks only between words, so one long word pushed
+    # every bubble out of the panel. A link breaks after its separators, a
+    # word without any between its letters; an emoji is never taken apart.
+    from nostr.ui.submission_thread import breakable
+    soft = "​"
+    assert breakable("Kurze Wörter bleiben, wie sie sind.") == "Kurze Wörter bleiben, wie sie sind."
+    assert breakable("https://example.com/ein-langer-pfad") == soft.join(
+        ("https://", "example.", "com/", "ein-", "langer-", "pfad"))
+    assert breakable("a" * 24) == soft.join("a" * 24)
+    family = "👨‍👩‍👧" * 8
+    assert breakable(family) == family
+    world = window.world
+    prepared, entries = seeded(window, lang="Ein Jahr")
+    world.message(prepared["lang"], "Siehe nostr:naddr1" + "q" * 120)
+    window.follow()
+    window.view.resize(260, 600)
+    window.view.show()
+    detail = opened(window, entries["lang"])
+    for _ in range(4):
+        QApplication.processEvents()
+    assert detail._scroll.widget().width() <= detail._scroll.viewport().width()
+    [bubble] = detail.conversation.bubbles
+    right = bubble.text.mapTo(detail, bubble.text.rect().topRight()).x()
+    assert right < detail.width() and bubble.message.bubble.text.endswith("q" * 120)
+    window.view.hide()
+
+
+def test_react_shows_beside_a_message_under_the_pointer_or_with_the_keyboard_on_it(window):
+    # UX-M2, as the web app: no button beside every bubble at rest; it
+    # keeps its place, so nothing moves when it shows.
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QEnterEvent
+    world = window.world
+    prepared, entries = seeded(window, text="Ein Jahr")
+    world.message(prepared["text"], "Perfekt.")
+    window.follow()
+    window.view.show()
+    window.view.activateWindow()
+    detail = opened(window, entries["text"])
+    QApplication.processEvents()
+    [bubble] = detail.conversation.bubbles
+    react, place = bubble.react_button, bubble.react_button.geometry()
+    assert not bubble.react_shown() and react.icon().isNull()
+    point = QPointF(2, 2)
+    QApplication.sendEvent(bubble, QEnterEvent(point, point, point))
+    assert bubble.react_shown() and not react.icon().isNull()
+    QApplication.sendEvent(bubble, QEvent(QEvent.Type.Leave))
+    assert not bubble.react_shown() and react.icon().isNull()
+    react.setFocus(Qt.FocusReason.TabFocusReason)           # Tab reaches it: it shows
+    assert bubble.react_shown() and not react.icon().isNull()
+    detail.back.setFocus()
+    assert not bubble.react_shown() and react.icon().isNull() and react.geometry() == place
+    window.view.hide()
+
+
 def test_more_about_sits_on_the_sentence_and_a_narrow_unread_row_shows_the_message(window):
     world = window.world
     prepared, entries = seeded(window, text="Ein Jahr")

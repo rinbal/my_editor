@@ -31,11 +31,13 @@ stranger wrote is shown as plain text.
 from __future__ import annotations
 
 import datetime
+import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
-from PySide6.QtCore import QDate, QLocale, QPoint, Qt, Signal
-from PySide6.QtGui import QFont, QGuiApplication, QPixmap
+from PySide6.QtCore import QDate, QEvent, QLocale, QPoint, QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QGuiApplication, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractButton, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QMenu, QPushButton,
     QSizePolicy, QToolButton, QToolTip, QVBoxLayout, QWidget, QWidgetAction,
@@ -48,10 +50,18 @@ from . import appearance
 from .avatar import color_for_pubkey, initials_for, make_avatar_pixmap_from_image, \
     make_initials_pixmap
 from .drafts_common import MIN_CONTROL_PX, display_locale, plain_tip, secondary_font
+from .eliding_label import ElidingLabel
 from .flow_layout import FlowLayout
 from .standup_talk import Outgoing, Sending, footer_words, shown_reactions
 
 _AVATAR = 26
+# A run without a space this long (a link, a key, a compound) may break
+# anywhere: a label breaks only between words, and one word wider than
+# the panel would push the whole conversation out of it.
+_LONG_RUN = re.compile(r"\S{20,}")
+# Where a link or a path breaks first: after one of its own separators.
+_AFTER_SEPARATOR = re.compile(r"(?<=[/\\\-_.?&=#:;,+~%@|])(?=[^/\\\-_.?&=#:;,+~%@|])")
+_BREAK = "\u200b"
 REACTION_NAMES = dict(zip(conversation.REACTIONS, (
     N_("Heart"), N_("Thumbs up"), N_("Thumbs down"), N_("Laughing"), N_("Exclamation marks"),
     N_("Question mark"))))
@@ -62,6 +72,57 @@ def face(pubkey: str, name: str, picture: Optional[QPixmap], size: int = _AVATAR
     if picture is not None and not picture.isNull():
         return make_avatar_pixmap_from_image(picture, size)
     return make_initials_pixmap(initials_for(name or "?"), color_for_pubkey(pubkey), size)
+
+
+def _splits(char: str) -> bool:
+    """Whether a break may come beside ``char``: a letter, a digit, a
+    mark of punctuation or a plain symbol; never an emoji or a combining
+    mark, which a break would take apart."""
+    return unicodedata.category(char)[0] in "LNP" or char.isascii()
+
+
+def breakable(text: str) -> str:
+    """``text`` as a wrapping label shows it: its long runs (see
+    ``_LONG_RUN``) may break after their own separators (a link's
+    slashes and hyphens), and a stretch between two of them that is
+    still that long between any two of its characters. For what is shown
+    only, never for what is copied or sent."""
+    def anywhere(piece: str) -> str:
+        out = [piece[0]]
+        for before, char in zip(piece, piece[1:]):
+            # After a letter and its combining mark too, never before the mark.
+            after = _splits(before) or unicodedata.category(before)[0] == "M"
+            out.append(_BREAK + char if after and _splits(char) else char)
+        return "".join(out)
+
+    def run(match) -> str:
+        pieces = _AFTER_SEPARATOR.split(match.group(0))
+        return _BREAK.join(anywhere(piece) if _LONG_RUN.fullmatch(piece) else piece
+                           for piece in pieces if piece)
+    return _LONG_RUN.sub(run, text)
+
+
+def _face_icon(color: QColor, size: int = 16, dpr: float = 2.0) -> QIcon:
+    """A smiling face, drawn: the letter for it is a speck in most fonts.
+    Reagieren."""
+    pixmap = QPixmap(round(size * dpr), round(size * dpr))
+    pixmap.setDevicePixelRatio(dpr)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    unit = size / 16.0
+    pen = QPen(color, 1.4 * unit)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawEllipse(QRectF(1.5 * unit, 1.5 * unit, 13 * unit, 13 * unit))
+    painter.drawArc(QRectF(4.6 * unit, 4.4 * unit, 6.8 * unit, 7.4 * unit), 215 * 16, 110 * 16)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(color)
+    for x in (5.8, 10.2):
+        painter.drawEllipse(QPointF(x * unit, 6.6 * unit), 0.95 * unit, 0.95 * unit)
+    painter.end()
+    return QIcon(pixmap)
 
 
 def day_words(at: int, now: Optional[datetime.date] = None) -> str:
@@ -134,14 +195,16 @@ class _Bubble(QFrame):
         # Who the sender is decides what they are called (thread.role_of).
         label = threads.sender_label(message.role, name)
         if message.first and not message.mine and label:
-            sender = QLabel(label)
+            # One line, cut with an ellipsis: a long name never widens the
+            # conversation (the whole name is its tooltip then).
+            sender = ElidingLabel(label)
             sender.setFont(secondary_font())
             sender.setStyleSheet(f"color: {r.muted}; margin-left: {_AVATAR + 8}px;")
             sender.setTextFormat(Qt.TextFormat.PlainText)
             column.addWidget(sender)
         row = QHBoxLayout()
         row.setSpacing(6)
-        self.text = QLabel(bubble.text)
+        self.text = QLabel(breakable(bubble.text))
         self.text.setTextFormat(Qt.TextFormat.PlainText)
         self.text.setWordWrap(True)
         self.text.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
@@ -152,10 +215,16 @@ class _Bubble(QFrame):
         self.text.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.text.customContextMenuRequested.connect(
             lambda pos: self._open_menu(self.text.mapToGlobal(pos)))
+        # Reagieren keeps its place beside the bubble and shows while the
+        # pointer is on the message or the keyboard is on the button, as
+        # in the web app: a conversation is not a column of buttons.
         self.react_button = QToolButton()
-        self.react_button.setText("☺")
+        self._face = _face_icon(QColor(r.icon))
+        self._hovered = self._menu_open = False
+        self.react_button.setIconSize(QSize(16, 16))
         self.react_button.setAutoRaise(True)
         self.react_button.setFixedSize(MIN_CONTROL_PX, MIN_CONTROL_PX)
+        self.react_button.installEventFilter(self)
         # Named by whose message it is (RG-M3-b 11): a list of "React"
         # says nothing to a screen reader.
         spoken = _("React to your message") if message.mine else _(
@@ -165,8 +234,10 @@ class _Bubble(QFrame):
         self.react_button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.react_button.setProperty("bubble", bubble.id)
         self.react_button.setEnabled(view.can_react)
+        # With the keyboard on it (a click does not move the focus here).
         self.react_button.clicked.connect(lambda: self._open_menu(
-            self.react_button.mapToGlobal(QPoint(0, self.react_button.height()))))
+            self.react_button.mapToGlobal(QPoint(0, self.react_button.height())),
+            from_button=self.react_button.hasFocus()))
         picture = QLabel()
         picture.setFixedSize(_AVATAR, _AVATAR)
         if message.last and not message.mine:
@@ -223,7 +294,42 @@ class _Bubble(QFrame):
             chip.setGraphicsEffect(effect)
         return chip
 
-    def _open_menu(self, where: QPoint) -> None:
+    def react_shown(self) -> bool:
+        """Whether Reagieren is in sight: the pointer on the message, the
+        keyboard on the button, or its menu open; never while nobody can
+        react (a submission that is closed)."""
+        return self._view.can_react and (self._hovered or self._menu_open
+                                         or self.react_button.hasFocus())
+
+    def _show_react(self) -> None:
+        self.react_button.setIcon(self._face if self.react_shown() else QIcon())
+
+    def enterEvent(self, event) -> None:  # noqa: N802, Qt's name
+        super().enterEvent(event)
+        self._hovered = True
+        self._show_react()
+
+    def leaveEvent(self, event) -> None:  # noqa: N802, Qt's name
+        super().leaveEvent(event)
+        self._hovered = False
+        self._show_react()
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802, Qt's name
+        if watched is self.react_button and event.type() in (QEvent.Type.FocusIn,
+                                                              QEvent.Type.FocusOut):
+            # After the event: the button knows then whether it has the focus.
+            shown = self._view.can_react and (
+                event.type() == QEvent.Type.FocusIn or self._hovered or self._menu_open)
+            self.react_button.setIcon(self._face if shown else QIcon())
+        return super().eventFilter(watched, event)
+
+    def _menu_closed(self, to_button: bool) -> None:
+        self._menu_open = False
+        if to_button:
+            self.react_button.setFocus()                # focus returns (10.8)
+        self._show_react()
+
+    def _open_menu(self, where: QPoint, *, from_button: bool = False) -> None:
         view, bubble = self._view, self.message.bubble
         menu = QMenu(self)
         menu.setAccessibleName(_("React"))
@@ -240,7 +346,11 @@ class _Bubble(QFrame):
         view.menu = menu
         if bar is not None:
             bar.buttons[0].setFocus()
-        menu.aboutToHide.connect(self.react_button.setFocus)    # focus returns (10.8)
+        # Opened with the keyboard on the button, the focus returns to it;
+        # opened with the pointer, it stays where it was.
+        self._menu_open = True
+        self._show_react()
+        menu.aboutToHide.connect(lambda: self._menu_closed(from_button))
         menu.popup(where)
 
 
@@ -357,8 +467,9 @@ class ThreadView(QWidget):
             elif isinstance(item, threads.VersionCard):
                 shown.card = self._card(item, detail, r)
             elif isinstance(item, threads.SplitCard):
-                shown.caption = self._quiet(
-                    threads.split_text(item, me=self.me, name_of=self.name_of), r).text()
+                text = threads.split_text(item, me=self.me, name_of=self.name_of)
+                self._quiet(text, r)
+                shown.caption = text
             else:
                 shown.bubble = _Bubble(self, item, waiting.get(item.bubble.id))
                 self._column.addWidget(shown.bubble)
@@ -392,7 +503,7 @@ class ThreadView(QWidget):
                 None if out is None else (out.key, out.state, out.text, out.sentence))
 
     def _quiet(self, text: str, r, *, strong: bool = False) -> QLabel:
-        label = QLabel(text)
+        label = QLabel(breakable(text))
         label.setFont(secondary_font())
         label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         label.setWordWrap(True)
@@ -419,16 +530,18 @@ class ThreadView(QWidget):
         column = QVBoxLayout(frame)
         column.setContentsMargins(10, 8, 10, 8)
         column.setSpacing(4)
-        title = QLabel(threads.card_title(card, me=self.me, name_of=self.name_of))
+        words = threads.card_title(card, me=self.me, name_of=self.name_of)
+        title = QLabel(breakable(words))
         font = QFont(title.font())
         font.setWeight(QFont.Weight.DemiBold)
         title.setFont(font)
         title.setTextFormat(Qt.TextFormat.PlainText)
+        title.setWordWrap(True)                 # a long name wraps, never widens
         column.addWidget(title)
         version = detail.versions.get(card.revision)
         for text in (version.change_summary if version is not None else "", card.note):
             if text:
-                line = QLabel(text)
+                line = QLabel(breakable(text))
                 line.setWordWrap(True)
                 line.setTextFormat(Qt.TextFormat.PlainText)
                 line.setFont(secondary_font())
@@ -445,7 +558,7 @@ class ThreadView(QWidget):
             changes.clicked.connect(lambda: self.compare_version.emit(card.revision))
             buttons.addWidget(changes)
         column.addWidget(row)
-        frame.setAccessibleName(title.text())
+        frame.setAccessibleName(words)
         self._column.addWidget(frame)
         return frame
 
@@ -480,7 +593,7 @@ class ThreadView(QWidget):
         lighter, and what stands under it."""
         row = QHBoxLayout()
         row.addStretch(1)
-        text = QLabel(out.text)
+        text = QLabel(breakable(out.text))
         text.setTextFormat(Qt.TextFormat.PlainText)
         text.setWordWrap(True)
         text.setStyleSheet(f"background: {r.soft}; color: {r.text}; border: 1px dashed "
