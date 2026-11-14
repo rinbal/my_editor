@@ -347,7 +347,7 @@ _CAPTION_WORDS = {
     "withdrawn": ("", N_("Withdrawn")),
     "confirmed": (N_("{name} confirmed"), N_("Confirmed")),
     "published": ("", N_("Published")),
-    "placed": ("", N_("Placed")),
+    "placed": ("", N_("Placed on the site")),       # where: the web app's words
     "correction": ("", N_("Correction suggested")),
     "reminder": ("", N_("Reminder sent")),
     "reupload_requested": ("", N_("The editorial team asked for a picture again")),

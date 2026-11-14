@@ -8968,8 +8968,8 @@ msgid "Confirmed"
 msgstr "Bestätigt"
 
 #: nostr/standup/thread.py:350
-msgid "Placed"
-msgstr "Platziert"
+msgid "Placed on the site"
+msgstr "Auf der Site platziert"
 
 #: nostr/standup/thread.py:352
 msgid "Reminder sent"

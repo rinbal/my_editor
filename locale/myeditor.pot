@@ -8956,7 +8956,7 @@ msgid "Confirmed"
 msgstr ""
 
 #: nostr/standup/thread.py:350
-msgid "Placed"
+msgid "Placed on the site"
 msgstr ""
 
 #: nostr/standup/thread.py:352

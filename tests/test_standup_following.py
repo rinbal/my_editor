@@ -122,6 +122,9 @@ def test_what_others_do_next_is_said_in_the_web_apps_words_without_a_promise():
         "Its place on Magazin is still being released. You don’t need to do anything.")
     assert said(view_of("submitted", turn="redaktion"), ME, Situation.PICTURES_MISSING)[0] == (
         "In the inbox of Magazin. A picture is missing.")
+    # The conversation's line for a work that got its place says where.
+    placed = threads.Caption(seq=9, at=int(NOW), name="placed", actor=EDITOR)
+    assert threads.caption_text(placed, me=ME, name_of=names) == "Placed on the site"
 
 
 def test_the_table_has_a_row_for_every_situation_and_at_most_one_action():
