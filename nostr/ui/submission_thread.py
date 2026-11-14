@@ -39,6 +39,7 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
+import shiboken6
 from PySide6.QtCore import QDate, QEvent, QLocale, QPoint, QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
@@ -333,6 +334,8 @@ class _Bubble(QFrame):
         return super().eventFilter(watched, event)
 
     def _menu_closed(self, to_button: bool) -> None:
+        if not shiboken6.isValid(self.react_button):
+            return                              # drawn anew while its menu was open
         self._menu_open = False
         if to_button:
             self.react_button.setFocus()                # focus returns (10.8)

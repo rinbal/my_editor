@@ -40,8 +40,8 @@ from typing import Callable, Iterable, List, Optional
 from PySide6.QtCore import QEvent, QModelIndex, Qt, Signal
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
-    QAbstractItemView, QFrame, QHBoxLayout, QLabel, QListView, QMenu, QPushButton,
-    QStackedLayout, QVBoxLayout, QWidget,
+    QAbstractItemView, QFrame, QLabel, QListView, QMenu, QPushButton, QStackedLayout,
+    QVBoxLayout, QWidget,
 )
 
 import announce
