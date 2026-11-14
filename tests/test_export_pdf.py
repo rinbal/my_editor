@@ -122,6 +122,33 @@ def test_multipage_no_loss_no_dupes_with_footers(tmp_path):
         assert f"Page {p + 1} of {n}" in pdf.getAllText(p).text()
 
 
+def test_a_paragraph_over_two_pages_leaves_the_next_pages_margin_empty(tmp_path):
+    """A paragraph that begins at the foot of a page goes on at the head of
+    the next. Its last line of the page before stood there again, above
+    the text, in the page's top margin: Qt draws such a paragraph on both
+    pages and leaves out its lines above the page but the last of them.
+    (Seen as a page is: the line is still among the PDF's words, cut away,
+    as in every PDF Qt prints.)"""
+    doc = QTextDocument()
+    cur = QTextCursor(doc)
+    for n in range(40):
+        if n:
+            cur.insertBlock()
+        cur.insertText(f"Paragraph {n}: " + "we walked in from the station. " * 12,
+                       QTextCharFormat())
+    out = str(tmp_path / "paragraphs.pdf")
+    export_pdf_file(doc, out, title="T", page_setup=A4_SETUP)
+    pdf = _load(out)
+    assert pdf.pageCount() >= 3
+    margin = int(A4_SETUP["margins_mm"] / 25.4 * 72)            # in points, the shot's pixels
+    for page in range(pdf.pageCount()):
+        size = pdf.pagePointSize(page)
+        shot = pdf.render(page, QSize(int(size.width()), int(size.height())))
+        inked = [(x, y) for y in range(4, margin - 4) for x in range(0, shot.width(), 3)
+                 if shot.pixelColor(x, y).alpha() > 128 and shot.pixelColor(x, y).lightness() < 128]
+        assert not inked, (page, inked[:3])
+
+
 def test_single_page_has_no_footer(tmp_path):
     out = str(tmp_path / "single.pdf")
     export_pdf_file(_long_doc(3), out, title="T", page_setup=A4_SETUP)

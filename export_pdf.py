@@ -421,6 +421,12 @@ def paint_pages(painter: QPainter, device, paged: PagedDocument, page_numbers) -
         painter.translate(0, -page * content_h)
         ctx = QAbstractTextDocumentLayout.PaintContext()
         ctx.clip = QRectF(0, page * content_h, paged.page_width, content_h)
+        # The context's clip only says which paragraphs to draw: one that
+        # goes over two pages is drawn on both, and Qt leaves out its lines
+        # above the page but the last of them, which stood again in the
+        # page's top margin. The painter itself keeps to the page, as
+        # QTextDocument.print does.
+        painter.setClipRect(ctx.clip)
         # Unset-color text must not inherit the app palette: in dark
         # theme that would paint near-white on the white page.
         ctx.palette.setColor(QPalette.Text, Qt.black)
