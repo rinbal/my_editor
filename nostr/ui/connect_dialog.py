@@ -148,8 +148,6 @@ _EXTRA_CSS = """
 QLabel#qr {{ padding: 6px; }}
 QFrame#scan_card {{ background: {card}; border: 1px solid {line}; border-radius: 10px; }}
 QLabel#scan_caption {{ font-size: 15px; font-weight: 600; }}
-QToolButton#disclosure {{ border: 1px solid transparent; padding: 2px 0; }}
-QToolButton#disclosure:focus {{ border-color: {ring}; }}
 """
 
 
@@ -219,7 +217,8 @@ class ConnectDialog(QDialog):
         self._is_dark = is_dark
         r = appearance.roles(is_dark)
         self.setStyleSheet(stylesheet(is_dark) + help_button_stylesheet(r)
-                           + _EXTRA_CSS.format(card=r.field, line=r.line, ring=r.focus))
+                           + _EXTRA_CSS.format(card=r.field, line=r.line)
+                           + appearance.disclosure_stylesheet(r))
         appearance.surface(self, is_dark)
         self._fit_buttons()
 

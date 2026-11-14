@@ -346,6 +346,18 @@ class _Disclosure(Disclosure):
         return QColor(r.icon if self.parentWidget().isEnabled() else r.disabled)
 
 
+def disclosure_stylesheet(r: Roles) -> str:
+    """The look of a disclosure ("Details", "Message to the editorial
+    team") in every sheet and dialog: open, it turns its arrow and nothing
+    else, never a button held down."""
+    return f"""
+    QToolButton#disclosure {{ border: 1px solid transparent; padding: 2px 0; }}
+    QToolButton#disclosure:checked, QToolButton#disclosure:hover {{ background: transparent; }}
+    QToolButton#disclosure:pressed {{ background: {r.soft}; }}
+    QToolButton#disclosure:focus {{ border-color: {r.focus}; }}
+    """
+
+
 def menu_arrow(button: QWidget, dark: bool, *, end: int = 7) -> None:
     """The app's vector disclosure at the trailing end of ``button``, one
     that opens a list or a menu (a combo box, a sheet's account), in this

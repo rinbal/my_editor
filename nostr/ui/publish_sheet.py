@@ -273,14 +273,9 @@ def sheet_stylesheet(is_dark: bool) -> str:
     QLabel#article_cover_preview {{
         border: 1px solid {border}; border-radius: 4px; color: {muted}; font-size: 11px;
     }}
-    QToolButton#disclosure {{ border: 1px solid transparent; padding: 2px 0; }}
-    /* Open, it turns its arrow and nothing else: not a button held down. */
-    QToolButton#disclosure:checked, QToolButton#disclosure:hover {{ background: transparent; }}
-    QToolButton#disclosure:pressed {{ background: {r.soft}; }}
-    QToolButton#disclosure:focus {{ border-color: {ring}; }}
     /* The scrolling part's bar lies on the sheet, with no band of its own. */
     QScrollBar:vertical {{ background: transparent; }}
-    """
+    """ + appearance.disclosure_stylesheet(r)
 
 
 def people_tagged(event: dict, content: str, *, markdown: bool) -> List[Tuple[str, str]]:
