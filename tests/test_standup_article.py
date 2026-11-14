@@ -295,6 +295,7 @@ def test_the_submit_command_keeps_the_identifier_its_sheet_sent(tmp_path, monkey
     win._profile_store = types.SimpleNamespace(default=lambda: types.SimpleNamespace(
         user_pubkey="a" * 64, display_name="Anna"))
     win.current_editor = lambda: ed
+    win._can_be_an_article = lambda _ed: True
     win._wants_article_header = lambda _ed: True
     win._standup = lambda: None
     win._submissions = types.SimpleNamespace(open_detail=lambda _sid: None)
@@ -305,3 +306,62 @@ def test_the_submit_command_keeps_the_identifier_its_sheet_sent(tmp_path, monkey
     assert sheet.public == 0                       # the count reaches the sheet
     sheet.submitted.emit(sheet.draft.d)
     assert tab_details.details_of(ed).identifier == "ein-jahr"
+
+
+def _submit_window(tmp_path, monkeypatch, *, text=True, article=False):
+    """The window as Submit to a Publication's command sees it, with what
+    it opens and says kept."""
+    import main_window
+    opened, said, details_open = [], [], []
+
+    class Sheet:
+        submitted = view_submission = types.SimpleNamespace(connect=lambda _slot: None)
+
+        def __init__(self, **kw) -> None:
+            opened.append(kw["draft"])
+
+        def setAttribute(self, *_args) -> None:  # noqa: N802, Qt's name
+            pass
+
+        def open(self) -> None:
+            pass
+
+    monkeypatch.setattr(main_window, "SubmitSheet", Sheet)
+    monkeypatch.setattr(main_window, "inform", lambda _win, **kw: said.append(kw))
+    win = _Kept(tmp_path / "cache")
+    ed = _editor_with(text="# Ein Jahr mit Lightning\n\nJust words.")
+    win.open_tabs.append(ed)
+    win._profile_store = types.SimpleNamespace(default=lambda: types.SimpleNamespace(
+        user_pubkey="a" * 64, display_name="Anna"))
+    win.current_editor = lambda: ed if text else None
+    win._can_be_an_article = lambda candidate: candidate is not None
+    win._wants_article_header = lambda _ed: article or bool(details_open)
+    win.act_article_details = types.SimpleNamespace(setChecked=details_open.append)
+    win._standup = lambda: None
+    win._submissions = types.SimpleNamespace(open_detail=lambda _sid: None)
+    win._avatars = win._publication_logos = types.SimpleNamespace(request=None)
+    win.is_dark_theme = False
+    MainWindow._on_nostr_submit_publication(win)
+    return opened, said, details_open
+
+
+def test_a_text_that_is_not_an_article_yet_becomes_one_as_it_is_submitted(tmp_path, monkeypatch):
+    # UX-M1: the command was dimmed for the text a person just wrote, and
+    # the button in Einreichungen did nothing. Article Details opens on it
+    # (which makes it an article) and the sheet opens.
+    opened, said, details_open = _submit_window(tmp_path, monkeypatch)
+    assert details_open == [True] and len(opened) == 1 and said == []
+    assert opened[0].title == "Ein Jahr mit Lightning"         # its first heading
+
+
+def test_an_article_is_submitted_without_opening_article_details(tmp_path, monkeypatch):
+    opened, said, details_open = _submit_window(tmp_path, monkeypatch, article=True)
+    assert details_open == [] and len(opened) == 1 and said == []
+
+
+def test_submitting_with_no_text_in_front_says_what_to_do(tmp_path, monkeypatch):
+    # Asked for from Einreichungen: never answered with nothing.
+    opened, said, details_open = _submit_window(tmp_path, monkeypatch, text=False)
+    assert opened == [] and details_open == []
+    assert [alert["title"] for alert in said] == ["Nothing to submit"]
+    assert "Open the text you want to submit" in said[0]["message"]

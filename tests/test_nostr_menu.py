@@ -49,7 +49,8 @@ def qt_app():
 
 def window_with(account, *, article=True):
     """The window's commands and menus, for ``account`` (None: no account),
-    with an ``article`` in front or another document."""
+    with an ``article`` in front (a text written here, which is one or
+    can become one) or another document."""
     from main_window import MainWindow
     win = StandIn()
     MainWindow._build_actions(win)
@@ -61,7 +62,7 @@ def window_with(account, *, article=True):
     win.nostr_state = SimpleNamespace(active=account is not None)
     win._profile_store = SimpleNamespace(default=lambda: account)
     win.current_editor = lambda: None
-    win._wants_article_header = lambda _ed: article
+    win._can_be_an_article = lambda _ed: article
     MainWindow._update_nostr_commands(win)
     return win
 
@@ -96,9 +97,11 @@ def test_an_account_kept_here_has_every_command():
     assert all(enabled(win, c.id) for c in win.commands.commands() if c.nostr)
 
 
-def test_submitting_to_a_publication_is_for_an_article():
-    # Plan 10.2: under Publish as Article, and only for an article (the
-    # document shows its head on the page); never without an account.
+def test_submitting_to_a_publication_is_for_a_text_written_here():
+    # Plan 10.2: under Publish as Article, and for an article; never
+    # without an account. UX-M1: also for a written text that is not an
+    # article yet (it becomes one as the command is chosen), so it is not
+    # found dimmed with nothing saying why; another document never.
     account = SimpleNamespace(is_local=False, user_pubkey=PK)
     entries = nostr_menu(window_with(account))
     at = entries.index("nostr.publish_article")
