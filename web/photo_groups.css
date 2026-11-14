@@ -2,8 +2,8 @@
  * SPDX-License-Identifier: MIT
  *
  * Photo groups, pictures and their full view in the HTML export, as
- * STANDUP shows them: lines 181-187 (a picture is a block) and 476-993 of
- * STANDUP backend/htmlgen/article.css (commit bf7c1fb), as they are.
+ * STANDUP shows them: lines 181-187 (a picture is a block) and 476-1027 of
+ * STANDUP backend/htmlgen/article.css (commit 74d35b5), as they are.
  * export_html.py inlines this file in every page with a picture, and
  * photo_page.py gives .article-content the variables these rules read.
  */
@@ -71,9 +71,14 @@
 
 /* The picture is the way to its full view: a link to the original without
    script, the viewer with it (photo_viewer.js). */
+/* A picture that does not arrive shows its description on its plate: quiet
+   text, not a link's colour and underline. */
+.article-content .e21-figure img { color: var(--theme-text-muted); }
 .article-content .e21-pg-open {
   border-radius: 0.5em;
+  color: inherit;
   cursor: zoom-in;
+  text-decoration: none;
   -webkit-tap-highlight-color: transparent;
 }
 .article-content .e21-pg-open:focus-visible { outline: 2px solid var(--article-link); outline-offset: 3px; }
@@ -466,6 +471,11 @@
   will-change: transform;
 }
 .e21-pv-img[hidden] { display: none; }
+/* The picture's place shows faintly until it arrives. Then it stands on
+   white, as on the page its writer made it for: a drawing that lets its
+   ground show through would be dark lines on black. */
+.e21-pv-img { background: rgb(255 255 255 / 0.07); }
+.e21-pv-img.is-arrived { background: #fff; }
 .e21-pv-img.is-animated { transition: transform 0.26s cubic-bezier(0.2, 0.7, 0.2, 1); }
 .e21-pv-failed {
   position: absolute;
@@ -477,7 +487,18 @@
   text-align: center;
 }
 .e21-pv-failed[hidden] { display: none; }
-.e21-pv-side { position: absolute; top: 50%; transform: translateY(-50%); }
+/* The side buttons lie over the picture: a dark plate with a light rim keeps
+   them readable on a bright picture as on a dark one. */
+.e21-pv-side {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgb(0 0 0 / 0.5);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.28);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.e21-pv-side:hover { background: rgb(0 0 0 / 0.7); }
 .e21-pv-prev { left: 8px; }
 .e21-pv-next { right: 8px; }
 @media (hover: none) {
@@ -499,6 +520,18 @@
 }
 .e21-pv-caption:focus-visible { outline: 2px solid #fff; outline-offset: 4px; border-radius: 4px; }
 .e21-pv-caption:empty { display: none; }
+/* A caption longer than its room (photo_viewer.js makes it a stop for Tab):
+   its last lines in view fade out while more follows, and stand clear at
+   its end. */
+.e21-pv-caption[tabindex]::after {
+  content: "";
+  position: sticky;
+  inset-block-end: 0;
+  display: block;
+  block-size: 2.4em;
+  background: linear-gradient(to bottom, transparent, #000);
+  pointer-events: none;
+}
 /* The post a picture of a media wall belongs to, one step away. */
 .e21-pv-post {
   display: inline-flex;
@@ -525,6 +558,7 @@
 @media (forced-colors: active) {
   .e21-pv { background: Canvas; color: CanvasText; }
   .e21-pv-btn { border: 1px solid ButtonText; }
+  .e21-pv-caption[tabindex]::after { background: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .e21-pv, .e21-pv-img.is-animated { transition: none; }

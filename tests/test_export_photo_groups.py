@@ -133,7 +133,7 @@ def test_a_page_speaks_the_apps_language(app):
         i18n.install(i18n.ENGLISH)
     # The column says its language: the scripts take their words by it.
     assert '<div class="article-content" lang="de"><div class="e21-imagegroup' in page
-    assert 'aria-label="8 Fotos"' in page
+    assert 'aria-label="8 Bilder"' in page
     assert ('aria-label="Vergrößern: Plan"><svg class="e21-pg-zoom-icon"' in page
             and "</svg>Vergrößern</button>" in page)
 

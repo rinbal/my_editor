@@ -20,7 +20,7 @@
  *   cells. A picture that arrives later stays whole in its place; one that
  *   fails keeps its plate. Sizes that were right change nothing.
  * - A strip that really scrolls (a phone) says where the reader is: a dot
- *   per picture, or "3 von 14" past ten; "Foto 2 von 4" spoken politely when
+ *   per picture, or "3 von 14" past ten; "Bild 2 von 4" spoken politely when
  *   the reader moves; Left, Right, Home and End on the strip; an instant
  *   jump with Reduce Motion. The strip is a named group only while it scrolls.
  * - A picture opens in the viewer (photo_viewer.js), its group's pictures a
@@ -202,7 +202,9 @@
       }
       // Reads only. The current picture: the one whose leading edge is
       // nearest the snap line. At the end of the strip the last pictures
-      // cannot reach it: the one asked for counts once it is fully in view.
+      // cannot reach it: there the last one counts, so a reader who swiped
+      // to the end sees that it is the end, or the one asked for (a dot, a
+      // key) once it is fully in view.
       function nearest() {
         const line = snapLine();
         let best = 0;
@@ -211,11 +213,14 @@
           const d = Math.abs(edge(figure) - line);
           if (d < distance) { distance = d; best = k; }
         });
-        const atEnd = Math.abs(run.scrollLeft) >= run.scrollWidth - run.clientWidth - 1;
-        if (atEnd && target !== null) {
-          const box = figures[target].getBoundingClientRect();
-          const view = run.getBoundingClientRect();
-          if (box.left >= view.left - 1 && box.right <= view.right + 1) best = target;
+        const room = run.scrollWidth - run.clientWidth;
+        if (room > 1 && Math.abs(run.scrollLeft) >= room - 1) {
+          best = n - 1;
+          if (target !== null) {
+            const box = figures[target].getBoundingClientRect();
+            const view = run.getBoundingClientRect();
+            if (box.left >= view.left - 1 && box.right <= view.right + 1) best = target;
+          }
         }
         return best;
       }

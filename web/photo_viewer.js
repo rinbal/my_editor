@@ -109,6 +109,7 @@
   function onLoad() {
     const item = list[at];
     if (!item || !img.naturalWidth) return;
+    img.classList.add('is-arrived');
     if (item.w !== img.naturalWidth || item.h !== img.naturalHeight) {
       item.w = img.naturalWidth;
       item.h = img.naturalHeight;
@@ -179,6 +180,7 @@
     const item = list[at];
     img.hidden = false;
     failed.hidden = true;
+    img.classList.remove('is-arrived');
     img.removeAttribute('src');
     img.src = item.src;
     img.alt = item.alt;
@@ -189,8 +191,9 @@
     post.hidden = !item.post;
     if (item.post) post.href = item.post.href;
     else post.removeAttribute('href');
+    // Measured as a caption that fits: the fade of one that scrolls takes room.
+    caption.removeAttribute('tabindex');
     if (caption.scrollHeight > caption.clientHeight + 1) caption.tabIndex = 0;
-    else caption.removeAttribute('tabindex');
     z = 1; tx = 0; ty = 0;
     measure();
     apply(false);
@@ -214,10 +217,11 @@
   function label() {
     root.setAttribute('aria-label', words.viewer);
     root.setAttribute('lang', words.lang);
-    closeButton.setAttribute('aria-label', words.close);
-    original.setAttribute('aria-label', words.original);
-    prev.setAttribute('aria-label', words.previous);
-    next.setAttribute('aria-label', words.next);
+    // The buttons are icons: each says its name to a pointer that rests on it too.
+    for (const [button, name] of [[closeButton, words.close], [original, words.original], [prev, words.previous], [next, words.next]]) {
+      button.setAttribute('aria-label', name);
+      button.title = name;
+    }
     failed.textContent = words.failed;
     post.textContent = words.post || '';
   }
