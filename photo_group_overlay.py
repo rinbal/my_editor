@@ -340,14 +340,19 @@ def paint_bar(painter: QPainter, bar: Bar, label: str, hint: str, add_words: str
 
 def paint_ring(painter: QPainter, box: QRectF, accent: QColor, strength: float = 1.0) -> None:
     """The ring around the selected picture; ``strength`` above 1 while
-    it flashes (what Undo brought back)."""
+    it flashes (what Undo brought back). On the picture's own edge, on
+    whole pixels and with the picture's square corners: a rounded ring
+    left the picture's corners showing outside it, and one between two
+    pixels a pale line beside it."""
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     width = RING * max(1.0, strength)
     half = width / 2
-    painter.setPen(QPen(accent, width))
+    pen = QPen(accent, width)
+    pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+    painter.setPen(pen)
     painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.drawRoundedRect(box.adjusted(half, half, -half, -half), 3, 3)
+    painter.drawRect(QRectF(box.toAlignedRect()).adjusted(half, half, -half, -half))
     if strength > 1.0:
         veil = QColor(accent)
         veil.setAlphaF(min(0.35, 0.35 * (strength - 1.0)))
