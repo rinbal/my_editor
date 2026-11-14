@@ -43,7 +43,6 @@ from PySide6.QtWidgets import (
 
 import announce
 from . import appearance
-from constants import DARK_MUTED_FG, LIGHT_MUTED_FG
 from i18n import _
 from popup_placement import fitting_size
 
@@ -500,9 +499,11 @@ class StatusLine(QLabel):
         self._color()
 
     def _color(self) -> None:
-        color = (appearance.roles(self._is_dark).error if self._error
-                 else DARK_MUTED_FG if self._is_dark else LIGHT_MUTED_FG)
-        self.setStyleSheet(f"color: {color};")
+        # A reason in the sheet's own secondary ink, as its hints are: in
+        # the app's grey it was the dimmest text on a dark sheet, though it
+        # says why the default button is dimmed.
+        roles = appearance.roles(self._is_dark)
+        self.setStyleSheet(f"color: {roles.error if self._error else roles.muted};")
 
 
 class BottomRow(QWidget):
