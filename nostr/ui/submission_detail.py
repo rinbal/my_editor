@@ -133,6 +133,7 @@ class SubmissionDetail(QWidget):
         self._edited: Callable[[rules.Row], bool] = lambda _row: False
         self._said = ""
         self._line = ""                         # what an action said in place
+        self._reminding: set = set()            # whom a reminder is on its way to
         self._shown_row: tuple = ()             # the row and the publication's name shown
         self._has_people = False                # the pills have someone to show
         # The header is fitted again once what was shown anew is laid out.
@@ -418,6 +419,7 @@ class SubmissionDetail(QWidget):
         self._sid = ""
         self._said = ""
         self._line = ""
+        self._reminding.clear()
         self._shown_row = ()
         self.composer.clear()
         self.problem.hide()
@@ -427,7 +429,8 @@ class SubmissionDetail(QWidget):
         """One line in place, under the sentence (an action that could
         not go on says why there), until the next action."""
         self._line = text
-        self.note.setText(escape(text))
+        self._reminding.clear()                 # what was asked for is answered
+        self.note.setText(escape(breakable(text)))
         self.note.show()
         announce.announce(self.note, text)
 
@@ -666,6 +669,9 @@ class SubmissionDetail(QWidget):
         return list(self._reminders)
 
     def _remind(self, pubkey: str) -> None:
+        if pubkey in self._reminding:
+            return                              # on its way: a second click is no second reminder
+        self._reminding.add(pubkey)
         if self._line:
             self._line = ""
             self.note.hide()

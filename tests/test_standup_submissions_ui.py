@@ -726,7 +726,12 @@ def test_confirming_names_the_accepted_split_and_where_the_share_goes_then_remin
     assert detail.sentence.text() == "Thanks. Paul still confirms."
     assert [b.text() for b in detail.reminder_buttons()] == ["Remind Paul"]
     assert not detail.action.isVisibleTo(detail)
-    detail.reminder_buttons()[0].click()
+    asked = []
+    window.view.remind_requested.connect(lambda sid, to: asked.append(to))
+    remind = detail.reminder_buttons()[0]
+    remind.click()
+    remind.click()                      # UX-M2: a double click is one reminder, not two
+    assert asked == [OTHER]
     world.settle()
     assert detail.note.text() == "Paul was reminded."
     assert detail.reminder_buttons() == []                  # RG-M4-b 11: reminded, it goes
