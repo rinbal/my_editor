@@ -72,6 +72,10 @@ def add_to_panel(panel, view: "SubmissionsView", *, server: str) -> bool:
     # The detail's ‹ Einreichungen line stands where the search field was.
     panel.set_view_bar(PANEL_VIEW, view.detail.top_bar, inset=BAR_INSET)
     view.detail_shown.connect(lambda shown: panel.set_view_focused(PANEL_VIEW, shown))
+    # A dot at "Einreichungen" while something there is unread, whichever
+    # view the panel shows.
+    view.unread_changed.connect(lambda unread: panel.set_view_marked(PANEL_VIEW, unread))
+    panel.set_view_marked(PANEL_VIEW, view.has_unread())
     return True
 
 
@@ -86,6 +90,7 @@ class SubmissionsView(QWidget):
       compare_requested(str, int)     a sid and the version to compare with the one before
       remind_requested(str, str)      a sid and whom to remind
       submit_requested()              the empty list's button
+      unread_changed(bool)            something is unread now, or nothing any more
     """
 
     action_requested = Signal(str, object)
@@ -94,6 +99,7 @@ class SubmissionsView(QWidget):
     remind_requested = Signal(str, str)
     submit_requested = Signal()
     detail_shown = Signal(bool)             # a detail, or the list, is shown now
+    unread_changed = Signal(bool)
 
     def __init__(self, *, name_of: Callable[[str], str],
                  avatar_of: Callable[[str], Optional[QPixmap]], is_dark: bool = True,
@@ -110,6 +116,7 @@ class SubmissionsView(QWidget):
         self._done_open = False
         self._search = self._searched = ""
         self._said = ""
+        self._unread = False
         self._rows = Rows(self)
         self._logo_of = logo_of
         self._build(avatar_of)
@@ -271,6 +278,10 @@ class SubmissionsView(QWidget):
     def showing_detail(self) -> bool:
         return self._stack.currentWidget() is self.detail
 
+    def has_unread(self) -> bool:
+        """Whether any submission holds something not read yet."""
+        return self._unread
+
     def items(self) -> List[Item]:
         return list(self._rows.items)
 
@@ -297,11 +308,15 @@ class SubmissionsView(QWidget):
                                     rules.Situation.SENDING, rules.Situation.NOT_HANDED_IN))
 
     def _reload(self) -> None:
-        if self.showing_detail() and self._following is not None \
-                and self._following.row(self.detail.sid) is not None:
-            return                                  # the detail follows on its own
         following = self._following
         rows = following.rows() if following is not None else []
+        unread = any(row.unread for row in rows)
+        if unread != self._unread:
+            self._unread = unread
+            self.unread_changed.emit(unread)
+        if self.showing_detail() and following is not None \
+                and following.row(self.detail.sid) is not None:
+            return                                  # the detail follows on its own
         if self._search:
             rows = [row for row in rows if self._search in " ".join((
                 row.title, following.publication_name(row.publication))).casefold()]

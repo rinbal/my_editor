@@ -281,6 +281,30 @@ def test_the_details_back_line_stands_in_the_search_fields_band_and_the_switch_k
     panel.hide()
 
 
+def test_a_dot_at_the_views_name_says_that_something_in_it_is_unread_until_it_is_read(window):
+    # UX-M2: with Drafts in front, nothing said that a message had come.
+    world = window.world
+    prepared, entries = seeded(window, text="Ein Jahr")
+    panel = DraftsPanel(is_dark=False)
+    add_to_panel(panel, window.view, server=SERVER)
+    window.follow()
+    switch = panel._view_switch
+    [segment] = [s for s in switch.segments if s.key == PANEL_VIEW]
+    assert not segment.is_marked() and segment.accessibleName() == "Submissions"
+    world.message(prepared["text"], "Noch da?")
+    window.following.refresh()
+    world.settle()
+    assert segment.is_marked() and segment.accessibleName() == "Submissions, New"
+    # Where the names are a pop-up, its menu marks the view too.
+    assert [a.text() for a in switch.popup.menu().actions()] == ["Drafts", "Submissions  •"]
+    opened(window, entries["text"])                     # read
+    assert not segment.is_marked() and segment.accessibleName() == "Submissions"
+    window.writer.stop()                                # the account goes: no dot stays
+    world.message(prepared["text"], "Und jetzt?")
+    world.settle()
+    assert not segment.is_marked()
+
+
 def test_without_a_server_nothing_is_read_and_the_panel_has_no_submissions_view(monkeypatch):
     window = Window(FollowWorld(), monkeypatch, server="")
     window.follow()
