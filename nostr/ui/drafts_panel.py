@@ -1157,7 +1157,8 @@ class DraftsPanel(QFrame):
         self._view_search: dict = {}
         self._view_search_text: dict = {}
         # Views showing one item of their own, with their own top bar
-        # (the bar and how far it reaches into the gutter, set_view_bar).
+        # (the bar and how far it reaches into the gutter at either end,
+        # set_view_bar).
         self._view_focused: dict = {}
         self._view_bars: dict = {}
 
@@ -1485,8 +1486,9 @@ class DraftsPanel(QFrame):
         shown = self._view_bars.get(key) if focused else None
         for bar, _inset in self._view_bars.values():
             bar.setVisible(shown is not None and bar is shown[0])
-        inset = shown[1] if shown is not None else 0
-        self._search_band.layout().setContentsMargins(GUTTER - inset, 6, GUTTER - inset, 7)
+        leading, trailing = shown[1] if shown is not None else (0, 0)
+        self._search_band.layout().setContentsMargins(GUTTER - leading, 6,
+                                                      GUTTER - trailing, 7)
         if not searchable:
             return
         name = self._search_names.get(key, _("Search"))
@@ -1609,13 +1611,15 @@ class DraftsPanel(QFrame):
         until it is read."""
         self._view_switch.set_marked(key, marked)
 
-    def set_view_bar(self, key: str, bar: QWidget, *, inset: int = 0) -> None:
+    def set_view_bar(self, key: str, bar: QWidget, *,
+                     inset: Tuple[int, int] = (0, 0)) -> None:
         """``bar`` is what the view ``key`` shows in band 2 while it shows
         one item of its own (``set_view_focused``): its back button and
         its menu stand where the search field was, so no empty band is
         left above the item and the line under the band stays where it
         is. The bar's own margins go (the band has the panel's); its
-        buttons reach ``inset`` pixels into the gutter."""
+        buttons reach ``inset`` pixels into the gutter, at its leading and
+        at its trailing end."""
         layout = bar.layout()
         if layout is not None:
             layout.setContentsMargins(0, 0, 0, 0)

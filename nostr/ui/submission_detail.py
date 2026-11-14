@@ -69,9 +69,10 @@ from .submission_thread import ThreadView, breakable, discard, face, more_about_
 
 _COVER = 64
 _FACE = 22                  # the picture of who reads
-# How far the top bar's buttons reach into the gutter, so that their
-# words and symbols, not their focus rings, stand on it.
-BAR_INSET = 4
+# How far the top bar's buttons reach into the gutter at its leading and
+# its trailing end, so that their words and symbols, not the edges of
+# their focus rings, stand on it.
+BAR_INSET = (9, 4)
 # The height the conversation keeps before the cover and the people give
 # way to it (a short panel), and how much more it needs to give them back.
 _CONVERSATION_ROOM = 96
@@ -150,7 +151,7 @@ class SubmissionDetail(QWidget):
         self.top_bar = QWidget()
         self.top_bar.setObjectName("submission_detail_bar")
         top = QHBoxLayout(self.top_bar)
-        top.setContentsMargins(LIST_GUTTER - BAR_INSET, 6, LIST_GUTTER - BAR_INSET, 4)
+        top.setContentsMargins(LIST_GUTTER - BAR_INSET[0], 6, LIST_GUTTER - BAR_INSET[1], 4)
         self.back = QToolButton()
         self.back.setObjectName("submission_back")
         self.back.installEventFilter(self)      # its focus ring, by how the focus came
