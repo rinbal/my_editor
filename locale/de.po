@@ -2140,7 +2140,7 @@ msgstr "Schlüssel in Signer-App verschieben …"
 
 #: main_window.py:2962
 #: main_window.py:9046
-#: nostr/ui/standup_confirm_sheet.py:173
+#: nostr/ui/standup_confirm_sheet.py:181
 msgid "Edit Profile…"
 msgstr "Profil bearbeiten …"
 
@@ -8636,7 +8636,7 @@ msgid "Send a Reminder"
 msgstr "Erinnern"
 
 #: nostr/standup/situations.py:57
-#: nostr/ui/standup_confirm_sheet.py:164
+#: nostr/ui/standup_confirm_sheet.py:172
 #: nostr/ui/standup_correction_sheet.py:130
 #: nostr/ui/standup_correction_sheet.py:177
 #: nostr/ui/standup_publish_sheet.py:190
@@ -9000,13 +9000,13 @@ msgstr "Fassung {number} von {name}"
 
 #: nostr/standup/thread.py:171
 #: nostr/ui/authors_section.py:178
-#: nostr/ui/standup_confirm_sheet.py:184
+#: nostr/ui/standup_confirm_sheet.py:192
 #: nostr/ui/submission_thread.py:143
 msgid "You"
 msgstr "Du"
 
 #: nostr/standup/thread.py:171
-#: nostr/ui/standup_confirm_sheet.py:184
+#: nostr/ui/standup_confirm_sheet.py:192
 #: nostr/ui/submission_detail.py:521
 #: nostr/ui/submission_detail.py:689
 #: nostr/ui/submission_thread.py:143
@@ -13377,59 +13377,63 @@ msgstr "Vorher"
 msgid "After"
 msgstr "Nachher"
 
-#: nostr/ui/standup_confirm_sheet.py:51
+#: nostr/ui/standup_confirm_sheet.py:52
 #, python-brace-format
 msgid "Your share goes to {address}."
 msgstr "Dein Anteil geht an {address}."
 
-#: nostr/ui/standup_confirm_sheet.py:53
+#: nostr/ui/standup_confirm_sheet.py:55
+msgid "Apps that support splits divide zaps this way."
+msgstr "Apps, die Aufteilungen unterstützen, teilen Zaps so auf."
+
+#: nostr/ui/standup_confirm_sheet.py:57
 msgid "For your share, your Nostr profile needs a Lightning address."
 msgstr "Für deinen Anteil braucht dein Nostr-Profil eine Lightning-Adresse."
 
-#: nostr/ui/standup_confirm_sheet.py:54
+#: nostr/ui/standup_confirm_sheet.py:58
 msgid "Reading your profile …"
 msgstr "Dein Profil wird gelesen …"
 
-#: nostr/ui/standup_confirm_sheet.py:55
+#: nostr/ui/standup_confirm_sheet.py:59
 msgid "Your profile couldn’t be read, so it’s not known where your share goes."
 msgstr "Dein Profil ließ sich nicht lesen. Darum ist offen, wohin dein Anteil geht."
 
-#: nostr/ui/standup_confirm_sheet.py:56
+#: nostr/ui/standup_confirm_sheet.py:60
 msgid "My contribution is mine."
 msgstr "Mein Beitrag gehört mir."
 
-#: nostr/ui/standup_confirm_sheet.py:57
+#: nostr/ui/standup_confirm_sheet.py:61
 #, python-brace-format
 msgid "My contribution ({part}) is mine."
 msgstr "Mein Beitrag ({part}) gehört mir."
 
-#: nostr/ui/standup_confirm_sheet.py:58
+#: nostr/ui/standup_confirm_sheet.py:62
 #, python-brace-format
 msgid "I agree to the license {license}."
 msgstr "Ich bin mit der Lizenz {license} einverstanden."
 
-#: nostr/ui/standup_confirm_sheet.py:59
+#: nostr/ui/standup_confirm_sheet.py:63
 msgid "Not confirmed"
 msgstr "Nicht bestätigt"
 
-#: nostr/ui/standup_confirm_sheet.py:60
+#: nostr/ui/standup_confirm_sheet.py:64
 msgid "A short question about the split: "
 msgstr "Kurze Frage zur Aufteilung: "
 
-#: nostr/ui/standup_confirm_sheet.py:101
-#: nostr/ui/standup_confirm_sheet.py:135
+#: nostr/ui/standup_confirm_sheet.py:105
+#: nostr/ui/standup_confirm_sheet.py:140
 msgid "Confirm Your Share"
 msgstr "Anteil bestätigen"
 
-#: nostr/ui/standup_confirm_sheet.py:170
+#: nostr/ui/standup_confirm_sheet.py:178
 msgid "Confirm Share"
 msgstr "Anteil bestätigen"
 
-#: nostr/ui/standup_confirm_sheet.py:249
+#: nostr/ui/standup_confirm_sheet.py:257
 msgid "Confirming …"
 msgstr "Wird bestätigt …"
 
-#: nostr/ui/standup_confirm_sheet.py:187
+#: nostr/ui/standup_confirm_sheet.py:195
 #, python-brace-format
 msgid "The split: {shares}"
 msgstr "Die Aufteilung: {shares}"

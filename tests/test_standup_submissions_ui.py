@@ -630,6 +630,9 @@ def test_confirming_names_the_accepted_split_and_where_the_share_goes_then_remin
     detail.action.click()
     sheet = window.host._confirm_sheet
     assert isinstance(sheet, ConfirmSheet) and sheet.split.text() == "You 70%  ·  Paul 30%"
+    # UX-M2: what the shares are shares of, in the web app's words.
+    assert sheet.split_help.isVisibleTo(sheet) and sheet.split_help.text() == (
+        "Apps that support splits divide zaps this way.")
     assert sheet.address.text() == "Your share goes to jana@getalby.com."
     assert not sheet.rights.isVisibleTo(sheet)               # the writer confirms the split
     sheet.confirm_button.click()
