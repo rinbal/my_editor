@@ -1860,16 +1860,19 @@ class MainWindow(QMainWindow):
 
     def _show_word_count(self, ed) -> None:
         """"1,234 words · 6 min read", or "12 of 1,234 words" while words
-        are selected; nothing for an empty document or a PDF."""
+        are selected; nothing for an empty document or a PDF. A selection
+        that holds no word (a picture, a space) leaves the document's
+        count: "0 of 1,234 words" told nothing about a picture."""
         total = self._document_words
         if ed is None or total == 0:
             self._words_label.setText("")
             return
-        selected = ed.textCursor().selectedText() if ed.textCursor().hasSelection() else ""
+        selected = (count_words(ed.textCursor().selectedText())
+                    if ed.textCursor().hasSelection() else 0)
         if selected:
             self._words_label.setText(ngettext(
                 "{selected} of {count} word", "{selected} of {count} words", total).format(
-                selected=_number(count_words(selected)), count=_number(total)))
+                selected=_number(selected), count=_number(total)))
             return
         minutes = reading_minutes(total)
         self._words_label.setText(ngettext(

@@ -97,6 +97,24 @@ def test_a_selection_says_how_many_of_the_words(status):
     assert status._words_label.text() == "2 of 4 words"
 
 
+def test_a_selected_picture_leaves_the_documents_count(status):
+    """A selection without a word in it (a picture is one character that
+    is no word) said "0 of 4 words"."""
+    from PySide6.QtGui import QTextCursor, QTextImageFormat
+    ed = _editor("one two three four")
+    cursor = ed.textCursor()
+    cursor.movePosition(QTextCursor.MoveOperation.End)
+    picture = QTextImageFormat()
+    picture.setName("photo.png")
+    cursor.insertImage(picture)
+    status.current_editor = lambda: ed
+    status.update()
+    cursor.movePosition(QTextCursor.MoveOperation.Left, QTextCursor.MoveMode.KeepAnchor)
+    ed.setTextCursor(cursor)
+    status._show_word_count(ed)
+    assert status._words_label.text() == "4 words · 1 min read"
+
+
 def test_an_empty_document_or_a_pdf_says_nothing(status):
     ed = _editor("")
     status.current_editor = lambda: ed
