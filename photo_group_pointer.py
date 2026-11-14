@@ -28,9 +28,10 @@ from typing import List, Optional, Tuple
 
 from PySide6.QtCore import QObject, QPoint, QPointF, QRectF, Qt, QTimer, QUrl
 from PySide6.QtGui import (
-    QAbstractTextDocumentLayout, QColor, QImage, QPainter, QPixmap, QTextDocument,
+    QAbstractTextDocumentLayout, QColor, QImage, QPainter, QPalette, QPixmap, QTextCharFormat,
+    QTextCursor, QTextDocument, QTextFormat,
 )
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QStyle, QStyleOption
 
 import accessibility_display
 import file_paths
@@ -90,6 +91,11 @@ class PhotoPointer(QObject):
         self._scroll = 0.0
         self._flash: Optional[Tuple[int, float]] = None
         self._ring = None
+        # A selection that holds more than one picture, as last read: for
+        # which document and selection, its parts outside the groups and
+        # the group pictures in it (_selected_pictures).
+        self._selection: Tuple[Optional[tuple], Tuple[List[Tuple[int, int]], List[int]]] = (
+            None, ([], []))
         self._frames = QTimer(self)
         self._frames.setInterval(_FRAME_MS)
         self._frames.timeout.connect(self._frame)
@@ -487,15 +493,67 @@ class PhotoPointer(QObject):
             self._ring = ring
             self._editor.viewport().update()
 
+    def _selected_pictures(self) -> Tuple[List[Tuple[int, int]], List[int]]:
+        """Of a selection longer than one character that holds pictures of
+        a group: its parts outside the groups' paragraphs, as (start, end),
+        and where the group pictures in it are. Two empty lists for any
+        other selection. Read once for a selection, not at every paint."""
+        ed = self._editor
+        cursor = ed.textCursor()
+        start, end = cursor.selectionStart(), cursor.selectionEnd()
+        doc = ed.document()
+        key = (doc.revision(), start, end)
+        if self._selection[0] == key:
+            return self._selection[1]
+        outside: List[Tuple[int, int]] = []
+        pictures: List[int] = []
+        if end - start > 1 and ed._holds_structure():
+            block = doc.findBlock(start)
+            run = start
+            while block.isValid() and block.position() < end:
+                if photo_group.is_group_block(block):
+                    first = block.position()
+                    if run < first:
+                        outside.append((run, first))
+                    count = len(photo_group.block_units(block))
+                    pictures.extend(range(max(start, first), min(end, first + count)))
+                    run = first + block.length()
+                block = block.next()
+            if run < end:
+                outside.append((run, end))
+        found = (outside, pictures) if pictures else ([], [])
+        self._selection = (key, found)
+        return found
+
+    def _highlight(self) -> QTextCharFormat:
+        """The look of selected words, as the text view gives it to them."""
+        ed = self._editor
+        palette = ed.palette()
+        group = (QPalette.ColorGroup.Active if ed.hasFocus() else QPalette.ColorGroup.Inactive)
+        fmt = QTextCharFormat()
+        fmt.setBackground(palette.brush(group, QPalette.ColorRole.Highlight))
+        fmt.setForeground(palette.brush(group, QPalette.ColorRole.HighlightedText))
+        option = QStyleOption()
+        option.initFrom(ed)
+        if ed.style().styleHint(QStyle.StyleHint.SH_RichText_FullWidthSelection, option, ed):
+            fmt.setProperty(QTextFormat.Property.FullWidthSelection, True)
+        return fmt
+
     def paint_text(self, event) -> bool:
         """The text drawn while a picture is selected, of a group or alone:
         as Qt draws it, without its highlight, which would fill the group's
         whole line around the pictures and tint a picture alone (the ring
-        shows what is selected, and no caret blinks, as in Pages). False
+        shows what is selected, and no caret blinks, as in Pages). A
+        selection that holds several pictures of a group, alone or with
+        words around them, is drawn the same way: its words highlighted as
+        ever, its group pictures ringed, nothing filled around them. False
         otherwise: Qt draws it."""
         ed = self._editor
         cursor = ed.textCursor()
-        if cursor.selectionEnd() - cursor.selectionStart() != 1 or self._photos.current() is None:
+        single = (cursor.selectionEnd() - cursor.selectionStart() == 1
+                  and self._photos.current() is not None)
+        outside, pictures = ([], []) if single else self._selected_pictures()
+        if not single and not pictures:
             return False
         dx, dy = ed.horizontalScrollBar().value(), ed.verticalScrollBar().value()
         clip = QRectF(event.rect().translated(dx, dy))
@@ -506,6 +564,13 @@ class PhotoPointer(QObject):
         for extra in ed.extraSelections():          # spelling, found words
             selection = QAbstractTextDocumentLayout.Selection()
             selection.cursor, selection.format = extra.cursor, extra.format
+            selections.append(selection)
+        for start, end in outside:                  # the selected words around the groups
+            part = QTextCursor(ed.document())
+            part.setPosition(start)
+            part.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+            selection = QAbstractTextDocumentLayout.Selection()
+            selection.cursor, selection.format = part, self._highlight()
             selections.append(selection)
         context.selections = selections
         painter = QPainter(ed.viewport())
@@ -538,6 +603,15 @@ class PhotoPointer(QObject):
                 if self._flash is not None and self._flash[0] == current.position:
                     strength = 2.0 - (_now() - self._flash[1]) / _FLASH_S
                 overlay.paint_ring(painter, photos.to_view(box), accent, max(1.0, strength))
+        elif self._editor.hasFocus():
+            # Several pictures selected: a ring around each (paint_text).
+            doc = self._editor.document()
+            boxes: dict = {}
+            for position in self._selected_pictures()[1]:
+                if position not in boxes:
+                    boxes.update(photo_group_view.group_boxes(doc, position))
+                if position in boxes:
+                    overlay.paint_ring(painter, photos.to_view(boxes[position]), accent)
         shown = self._shown()
         if shown is None:
             return

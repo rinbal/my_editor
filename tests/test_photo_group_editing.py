@@ -143,6 +143,41 @@ def test_a_ring_shows_which_picture_the_caret_is_at_also_in_a_stack():
     ed.close()
 
 
+def test_several_selected_pictures_are_ringed_and_nothing_is_filled_around_them():
+    """The text view's own highlight filled the whole line of each selected
+    picture: a solid band over the row (the room kept for the group's bar),
+    the gaps and the captions, and it tinted the pictures. A selection that
+    holds group pictures rings each of them, as one selected picture is,
+    and highlights only its words."""
+    ed = _editor()
+    group = _group(ed)
+    cursor = ed.textCursor()
+    cursor.setPosition(group.start - 3)                 # "re." of "Before."
+    cursor.setPosition(group.start + 3, QTextCursor.MoveMode.KeepAnchor)
+    ed.setTextCursor(cursor)
+    QApplication.processEvents()
+    pointer = ed.photos.pointer
+    assert pointer._selected_pictures() == (
+        [(group.start - 3, group.start)], [group.start, group.start + 1, group.start + 2])
+    shot = ed.viewport().grab().toImage()
+    ratio = shot.devicePixelRatio() or 1.0
+    accent, _ink, surface = pointer.colors()
+
+    def near(point, colour) -> bool:
+        drawn = shot.pixelColor(int(point.x() * ratio), int(point.y() * ratio))
+        return abs(drawn.red() - colour.red()) + abs(drawn.green() - colour.green()) \
+            + abs(drawn.blue() - colour.blue()) < 60
+
+    boxes = dict(photo_group_view.group_boxes(ed.document(), group.start))
+    for position in (group.start, group.start + 1, group.start + 2):
+        box = ed.photos.to_view(boxes[position])
+        assert near(QPoint(int(box.left()) + 20, int(box.top()) + 1), accent), position
+        assert near(QPoint(int(box.left()) + 20, int(box.top()) - 10), surface), position
+    last = ed.photos.to_view(boxes[group.start + 3])     # not selected: no ring
+    assert not near(QPoint(int(last.left()) + 20, int(last.top()) + 1), accent)
+    ed.close()
+
+
 def test_a_click_on_a_picture_selects_it_and_backspace_takes_it_away():
     ed = _editor()
     box = next(box for _p, name, box in photo_group_view.picture_boxes(ed.document())
