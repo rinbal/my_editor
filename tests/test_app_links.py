@@ -52,6 +52,12 @@ def qt_app():
     yield QApplication.instance() or QApplication(sys.argv)
 
 
+# The stand-ins below are shell programs, which Windows cannot start:
+# the Mac and Linux ways through are tested on those systems.
+posix_stand_ins = pytest.mark.skipif(
+    os.name == "nt", reason="the stand-ins for open, xdg-open and xdg-mime are shell programs")
+
+
 @pytest.fixture
 def programs(tmp_path, monkeypatch):
     """Stand-ins for the system's programs, first on PATH: ``make(name,
@@ -161,6 +167,7 @@ def test_a_signer_apps_link_is_not_a_url_qt_takes():
 
 # -- macOS --------------------------------------------------------------------
 
+@posix_stand_ins
 @pytest.mark.parametrize("code, answer", [(0, app_links.OPENED), (1, app_links.NO_APP)])
 def test_macos_answers_by_opens_exit(programs, monkeypatch, code, answer):
     programs.make("open", f"exit {code}")
@@ -169,6 +176,7 @@ def test_macos_answers_by_opens_exit(programs, monkeypatch, code, answer):
     assert programs.args("open") == LINK
 
 
+@posix_stand_ins
 def test_macos_never_holds_the_window_while_open_runs(programs, monkeypatch):
     # RG-M2r3 8: only a wall-clock bound proved it, and an open run on the
     # window's next turn passed.
@@ -181,6 +189,7 @@ def test_macos_never_holds_the_window_while_open_runs(programs, monkeypatch):
     assert wait_for(lambda: got == [app_links.OPENED])
 
 
+@posix_stand_ins
 def test_an_opening_that_hangs_never_holds_the_window_and_cannot_tell(programs, monkeypatch):
     programs.make("open", "exec /bin/sleep 30")
     monkeypatch.setattr(app_links, "ANSWER_WAIT_MS", 300)
@@ -191,6 +200,7 @@ def test_an_opening_that_hangs_never_holds_the_window_and_cannot_tell(programs, 
 
 # -- Linux ----------------------------------------------------------------------
 
+@posix_stand_ins
 def test_linux_says_no_app_when_none_is_set_up_and_opens_nothing(programs, monkeypatch):
     programs.make("xdg-mime", "exit 0")                 # no default: nothing printed
     programs.make("xdg-open", "exit 0")                 # would hand it to a browser
@@ -200,6 +210,7 @@ def test_linux_says_no_app_when_none_is_set_up_and_opens_nothing(programs, monke
     assert programs.args("xdg-open") is None
 
 
+@posix_stand_ins
 def test_linux_starts_xdg_open_detached_when_an_app_is_set_up(programs, monkeypatch):
     # On a desktop xdg-open does not know (sway, i3), it runs the handler in
     # the foreground: never waited for.
@@ -215,6 +226,7 @@ def test_linux_starts_xdg_open_detached_when_an_app_is_set_up(programs, monkeypa
     programs.release()
 
 
+@posix_stand_ins
 @pytest.mark.parametrize("xdg_mime", [None, "exit 3"])
 def test_linux_says_it_cannot_tell_when_xdg_mime_cannot_answer(programs, monkeypatch,
                                                                xdg_mime):
@@ -226,6 +238,7 @@ def test_linux_says_it_cannot_tell_when_xdg_mime_cannot_answer(programs, monkeyp
     assert wait_for(lambda: programs.args("xdg-open") == LINK)
 
 
+@posix_stand_ins
 def test_linux_says_no_app_when_xdg_open_is_not_there(programs, monkeypatch):
     programs.make("xdg-mime", "echo amber.desktop")
     got = answer_of(LINK, "linux", monkeypatch)

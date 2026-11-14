@@ -275,15 +275,24 @@ def test_a_picture_is_named_on_at_most_ten_servers():
 def test_a_picture_goes_in_with_its_upright_size():
     # Contract 5 (audit F4): w and h are the size as shown, after the
     # EXIF orientation; a file whose size cannot be told has neither.
-    import io
-    from PIL import Image
-    exif = Image.Exif()
-    exif[0x0112] = 6                            # stored 400x300, shown turned
-    stored = io.BytesIO()
-    Image.new("RGB", (400, 300)).save(stored, "JPEG", exif=exif.tobytes())
+    # Stored 400x300 with orientation 6 (a quarter turn), made with Qt and
+    # an EXIF segment written in after the JPEG's start, as a camera does.
+    import struct
+    from PySide6.QtCore import QBuffer, QIODevice
+    from PySide6.QtGui import QImage
+    image = QImage(400, 300, QImage.Format.Format_RGB32)
+    image.fill(0x336699)
+    buffer = QBuffer()
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    assert image.save(buffer, "JPEG")
+    jpeg = bytes(buffer.data())
+    tiff = (b"MM\x00\x2a" + struct.pack(">I", 8) + struct.pack(">H", 1)
+            + struct.pack(">HHIHH", 0x0112, 3, 1, 6, 0) + struct.pack(">I", 0))
+    payload = b"Exif\x00\x00" + tiff
+    stored = jpeg[:2] + b"\xff\xe1" + struct.pack(">H", len(payload) + 2) + payload + jpeg[2:]
     turned, broken = drafting.encrypt_pictures([
         LocalPicture(key=asset_key("ab" * 32), name="boot.jpg", mime="image/jpeg",
-                     data=stored.getvalue()),
+                     data=stored),
         LocalPicture(key=asset_key("cd" * 32), name="a.png", mime="image/png", data=b"png")])
     entry = turned.entry(["https://m.example"])
     assert (entry["w"], entry["h"]) == (300, 400)

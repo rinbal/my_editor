@@ -110,6 +110,13 @@ def test_windows_without_user32_keeps_motion(monkeypatch):
 
 # -- GTK -----------------------------------------------------------------------
 
+# GTK reads XDG_CONFIG_DIRS as folders separated by ":" and writes its
+# paths with "/", as Linux does; a Windows folder (C:\...) cannot stand
+# in for the system's, so those tests run where GTK does.
+linux_paths = pytest.mark.skipif(
+    os.name == "nt", reason="GTK's settings folders are Linux paths, split at ':'")
+
+
 @pytest.fixture
 def gtk(monkeypatch, tmp_path):
     """A desktop with no gsettings and empty GTK config folders, unless a
@@ -273,6 +280,7 @@ def test_gtk_settings_ini_values_read_as_glib_reads_booleans(gtk, value, reduced
     assert na._read_reduce_motion("linux") is reduced
 
 
+@linux_paths
 def test_gtk_the_persons_own_file_wins_over_the_systems(gtk):
     _settings_ini(gtk.system, "gtk-3.0", "[Settings]\ngtk-enable-animations=false\n")
     assert na._read_reduce_motion("linux") is True
@@ -286,6 +294,7 @@ def test_gtk_4_settings_come_before_gtk_3(gtk):
     assert na._read_reduce_motion("linux") is True
 
 
+@linux_paths
 def test_gtk_a_file_without_the_setting_or_unreadable_is_passed_over(gtk):
     _settings_ini(gtk.home, "gtk-4.0", "[Settings]\ngtk-theme-name=Adwaita\n")
     _settings_ini(gtk.home, "gtk-3.0", "not a key file [[[\n")
@@ -299,6 +308,7 @@ def test_gtk_nothing_set_anywhere_keeps_motion(gtk):
     assert na._read_reduce_motion("linux") is False
 
 
+@linux_paths
 def test_gtk_settings_files_are_where_gtks_documentation_puts_them(monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", "/home/a/.config")
     monkeypatch.setenv("XDG_CONFIG_DIRS", "/etc/xdg:/usr/local/etc/xdg")
