@@ -8614,8 +8614,8 @@ msgstr ""
 #: nostr/standup/situations.py:54
 #: nostr/ui/draft_conflict_banner.py:48
 #: nostr/ui/drafts_panel.py:607
-#: nostr/ui/standup_publish_sheet.py:138
-#: nostr/ui/submissions_host.py:302
+#: nostr/ui/standup_publish_sheet.py:144
+#: nostr/ui/submissions_host.py:303
 msgid "View"
 msgstr ""
 
@@ -8627,7 +8627,7 @@ msgstr ""
 #: nostr/ui/standup_confirm_sheet.py:164
 #: nostr/ui/standup_correction_sheet.py:130
 #: nostr/ui/standup_correction_sheet.py:177
-#: nostr/ui/standup_publish_sheet.py:183
+#: nostr/ui/standup_publish_sheet.py:190
 msgid "Ask a Question"
 msgstr ""
 
@@ -8998,8 +8998,8 @@ msgstr ""
 #: nostr/ui/submission_detail.py:521
 #: nostr/ui/submission_detail.py:689
 #: nostr/ui/submission_thread.py:143
-#: nostr/ui/submissions_host.py:614
-#: nostr/ui/submissions_host.py:359
+#: nostr/ui/submissions_host.py:617
+#: nostr/ui/submissions_host.py:360
 msgid "Someone"
 msgstr ""
 
@@ -12878,8 +12878,8 @@ msgstr ""
 #: nostr/ui/publish_note_dialog.py:304
 #: nostr/ui/publish_note_dialog.py:395
 #: nostr/ui/standup_correction_sheet.py:179
-#: nostr/ui/standup_publish_sheet.py:141
-#: nostr/ui/standup_publish_sheet.py:184
+#: nostr/ui/standup_publish_sheet.py:147
+#: nostr/ui/standup_publish_sheet.py:191
 msgid "Publish"
 msgstr ""
 
@@ -13065,7 +13065,7 @@ msgid "{count} · long note, consider Publish as Article instead"
 msgstr ""
 
 #: nostr/ui/publish_sheet.py:370
-#: nostr/ui/standup_publish_sheet.py:132
+#: nostr/ui/standup_publish_sheet.py:138
 #, python-brace-format
 msgid "Publishing as {name}"
 msgstr ""
@@ -13475,7 +13475,7 @@ msgid "Correction from {publication}"
 msgstr ""
 
 #: nostr/ui/standup_correction_sheet.py:178
-#: nostr/ui/standup_publish_sheet.py:53
+#: nostr/ui/standup_publish_sheet.py:57
 msgid "Sign with the Key on This Computer"
 msgstr ""
 
@@ -13615,38 +13615,43 @@ msgstr ""
 msgid "Signing on this computer…"
 msgstr ""
 
-#: nostr/ui/standup_publish_sheet.py:44
+#: nostr/ui/standup_publish_sheet.py:45
 #, python-brace-format
 msgid "Accepted by {publication}, version {number}."
 msgstr ""
 
-#: nostr/ui/standup_publish_sheet.py:45
+#: nostr/ui/standup_publish_sheet.py:46
 #, python-brace-format
 msgid "It then gets its place in the section “{section}”."
 msgstr ""
 
-#: nostr/ui/standup_publish_sheet.py:46
+#: nostr/ui/standup_publish_sheet.py:47
 msgid "Text and pictures as handed in."
 msgstr ""
 
-#: nostr/ui/standup_publish_sheet.py:47
+#: nostr/ui/standup_publish_sheet.py:48
 msgid "Until now it’s private. Once published, everyone can read it, text and pictures unencrypted. It can’t be taken back."
 msgstr ""
 
-#: nostr/ui/standup_publish_sheet.py:49
+#: nostr/ui/standup_publish_sheet.py:50
 msgid "The accepted version is published. If you change anything afterwards, the editorial team sees “changed since acceptance”."
 msgstr ""
 
-#: nostr/ui/standup_publish_sheet.py:51
-msgid "Only you"
+#: nostr/ui/standup_publish_sheet.py:54
+msgid "By you"
 msgstr ""
 
-#: nostr/ui/standup_publish_sheet.py:52
+#: nostr/ui/standup_publish_sheet.py:55
+#, python-brace-format
+msgid "By you with {names}"
+msgstr ""
+
+#: nostr/ui/standup_publish_sheet.py:56
 msgid "A short question about publishing: "
 msgstr ""
 
-#: nostr/ui/standup_publish_sheet.py:69
-#: nostr/ui/standup_publish_sheet.py:94
+#: nostr/ui/standup_publish_sheet.py:74
+#: nostr/ui/standup_publish_sheet.py:99
 msgid "Publish as an Article"
 msgstr ""
 
@@ -13658,31 +13663,31 @@ msgstr ""
 msgid "The pictures go up to your media server, then it’s signed."
 msgstr ""
 
-#: nostr/ui/standup_publish_words.py:22
-msgid "A picture of the accepted version can’t be found on the media servers, so nothing was published."
-msgstr ""
-
 #: nostr/ui/standup_publish_words.py:24
-msgid "A picture couldn’t be put on your media server, so nothing was published. Check your media servers in Settings, then try again."
+msgid "A picture of the accepted version can’t be found on the media servers: try again, or ask the editorial team in the conversation."
 msgstr ""
 
 #: nostr/ui/standup_publish_words.py:26
+msgid "A picture couldn’t be put on your media server: check your media servers in Settings and try again."
+msgstr ""
+
+#: nostr/ui/standup_publish_words.py:28
 msgid "The submission changed in the meantime, so nothing was published."
 msgstr ""
 
-#: nostr/ui/standup_publish_words.py:29
+#: nostr/ui/standup_publish_words.py:31
 msgid "Whether a work already stands under this link name couldn’t be checked just now. Try again in a moment."
 msgstr ""
 
-#: nostr/ui/standup_publish_words.py:33
+#: nostr/ui/standup_publish_words.py:35
 msgid "Your signer app doesn’t sign texts this long. It works with the key on this computer."
 msgstr ""
 
-#: nostr/ui/standup_publish_words.py:37
+#: nostr/ui/standup_publish_words.py:39
 msgid "Your signer app asks once more in a moment: with it, MyEditor deletes the private copies of your article."
 msgstr ""
 
-#: nostr/ui/standup_publish_words.py:39
+#: nostr/ui/standup_publish_words.py:41
 msgid "This version can’t be published as it is. Ask the editorial team in the conversation."
 msgstr ""
 
@@ -14108,97 +14113,97 @@ msgstr ""
 msgid "React to the message from {name}"
 msgstr ""
 
-#: nostr/ui/submissions_host.py:64
+#: nostr/ui/submissions_host.py:65
 #, python-brace-format
 msgid "New message from {publication} about “{title}”."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:65
+#: nostr/ui/submissions_host.py:66
 #, python-brace-format
 msgid "New message from {name} about “{title}”."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:66
+#: nostr/ui/submissions_host.py:67
 #, python-brace-format
 msgid "New message from a contributor about “{title}”."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:67
+#: nostr/ui/submissions_host.py:68
 #, python-brace-format
 msgid "New message about “{title}”."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:76
+#: nostr/ui/submissions_host.py:77
 msgid "Open the article in the editor first."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:77
+#: nostr/ui/submissions_host.py:78
 msgid "MyEditor can’t find this article. Open it in the editor, then send it again."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:78
+#: nostr/ui/submissions_host.py:79
 msgid "The version you handed in couldn’t be loaded: try again in a moment."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:79
+#: nostr/ui/submissions_host.py:80
 msgid "The accepted version couldn’t be loaded yet: try again in a moment."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:80
+#: nostr/ui/submissions_host.py:81
 msgid "The published article couldn’t be found yet: try again in a moment."
-msgstr ""
-
-#: nostr/ui/submissions_host.py:82
-#, python-brace-format
-msgid "{name} was reminded."
 msgstr ""
 
 #: nostr/ui/submissions_host.py:83
 #, python-brace-format
-msgid "{name} was already reminded today."
+msgid "{name} was reminded."
 msgstr ""
 
 #: nostr/ui/submissions_host.py:84
 #, python-brace-format
+msgid "{name} was already reminded today."
+msgstr ""
+
+#: nostr/ui/submissions_host.py:85
+#, python-brace-format
 msgid "{name} wasn’t reminded."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:86
+#: nostr/ui/submissions_host.py:87
 #, python-brace-format
 msgid "{publication} still hasn’t learned of it."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:69
+#: nostr/ui/submissions_host.py:70
 #, python-brace-format
 msgid "{publication} asks for changes to “{title}”."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:70
+#: nostr/ui/submissions_host.py:71
 #, python-brace-format
 msgid "{publication} accepted “{title}”."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:71
+#: nostr/ui/submissions_host.py:72
 #, python-brace-format
 msgid "{publication} declined “{title}”."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:72
+#: nostr/ui/submissions_host.py:73
 #, python-brace-format
 msgid "“{title}” is published in {publication}."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:73
+#: nostr/ui/submissions_host.py:74
 #, python-brace-format
 msgid "{publication} suggests a correction to “{title}”."
 msgstr ""
 
-#: nostr/ui/submissions_host.py:412
+#: nostr/ui/submissions_host.py:413
 #, python-brace-format
 msgid "{title} (version {number})"
 msgstr ""
 
-#: nostr/ui/submissions_host.py:690
+#: nostr/ui/submissions_host.py:693
 #, python-brace-format
 msgid "Version {before} and version {after}"
 msgstr ""

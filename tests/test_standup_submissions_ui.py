@@ -378,20 +378,39 @@ def test_publish_opens_the_accepted_version_and_says_when_the_editor_text_differ
     sheet.reject()
 
 
+def test_with_its_sheet_closed_a_publish_that_failed_says_what_did_not_happen_then_why(window):
+    # UX-M2: the sentence alone no longer repeats "nothing was published",
+    # so the detail says the sheet's title before it.
+    from nostr.ui.standup_publish import Stage
+    _prepared, entries = seeded(window, text="Ein Jahr")
+    window.follow()
+    detail = opened(window, entries["text"])
+    window.host._publish_said(SimpleNamespace(
+        stage=Stage.FAILED, sid=entries["text"].sid, title="Not published",
+        words="A picture couldn’t be put on your media server: check your media servers in "
+              "Settings and try again."))
+    assert detail.note.isVisibleTo(detail) and detail.note.text() == (
+        "Not published. A picture couldn’t be put on your media server: check your media "
+        "servers in Settings and try again.")
+
+
 def test_a_name_that_comes_in_late_shows_in_the_open_publish_sheet(window, monkeypatch):
     # A profile read after the sheet opened: the sheet says the name then.
     from nostr.standup import publishing
+    # UX-M2: the line is a byline ("By you …"), so it says what the names are.
     late = pk("recipient")
-    monkeypatch.setattr(publishing, "credited", lambda revision, writer: [writer, late])
+    monkeypatch.setattr(publishing, "credited", lambda revision, writer: [late])
     prepared, entries = seeded(window, annahme="Steuern")
     window.world.decide(prepared["annahme"], "accept")
     window.follow()
     opened(window, entries["annahme"]).action.click()
     sheet = window.host._publish_sheet
-    assert sheet.people.text() == "Jana, Someone"
+    assert sheet.people.text() == "By you with Someone"
     monkeypatch.setitem(NAMES, late, "Lena")
     window.host.names_learned()
-    assert sheet.people.text() == "Jana, Lena"
+    assert sheet.people.text() == "By you with Lena"
+    sheet.show_people([])                               # nobody else credited
+    assert sheet.people.text() == "By you"
     sheet.reject()
 
 

@@ -19,10 +19,12 @@ BUSY_DETAIL = N_("The pictures go up to your media server, then it’s signed.")
 BUSY_SIGNING = N_("Waiting for your signer app.")
 DONE = N_("Published.")
 NOT_PUBLISHED = N_("Not published")
+# Under NOT_PUBLISHED, which says what did not happen: one sentence each,
+# the cause and what to do (lessons 36).
 PICTURE_NOT_FOUND = N_("A picture of the accepted version can’t be found on the media "
-                       "servers, so nothing was published.")
-PICTURE_NOT_UP = N_("A picture couldn’t be put on your media server, so nothing was "
-                    "published. Check your media servers in Settings, then try again.")
+                       "servers: try again, or ask the editorial team in the conversation.")
+PICTURE_NOT_UP = N_("A picture couldn’t be put on your media server: check your media "
+                    "servers in Settings and try again.")
 NOT_THE_SAME = N_("The submission changed in the meantime, so nothing was published.")
 # No relay answered the read of its address, or this server's read
 # failed (12.4, RG-B5-d): the words both apps say, under NOT_PUBLISHED.
