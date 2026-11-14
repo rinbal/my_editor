@@ -61,6 +61,10 @@ EDITED_MORE = N_("Hand them in as version {number} when you’re ready.")
 # quietly (RG-M3-b 10).
 EDITED_SINCE = N_("You’ve changed the text since.")
 VERSION_IN_REVIEW = N_("{name} is reviewing version {number}.")
+# Accepted, and the publication publishes it: what happens next, in the
+# web app's words (its ``publicationPublishes``).
+PUBLICATION_PUBLISHES = N_("It’s published after the release. You don’t need to do "
+                           "anything.")
 SECTION_PLACE = N_("Published in the section “{section}”.")
 # The writer confirmed; contributors still confirm (M-4 M14).
 STILL_CONFIRMS = N_("Thanks. {name} still confirms.")
@@ -495,6 +499,8 @@ def status_of(row: Row, *, publication: str, name_of: Callable[[str], str],
             sentence = VERSION_IN_REVIEW
     if row.situation is Situation.PUBLISHED and section:
         more, fields["section"] = SECTION_PLACE, section
+    if row.situation is Situation.ACCEPTED and view is not None and view.signer == "publication":
+        more = PUBLICATION_PUBLISHES
     if "{name}" in sentence and not fields["name"]:
         sentence = entry.unnamed_sentence
     if action in ON_A_DECISION and not rests:

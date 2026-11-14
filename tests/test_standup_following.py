@@ -99,6 +99,31 @@ def test_every_state_and_role_has_one_word_one_section_and_whose_turn():
         assert rules.pill_word(row, names) == ("Your turn" if row.turn else word)
 
 
+def test_what_others_do_next_is_said_in_the_web_apps_words_without_a_promise():
+    # Lead 2026-11-14 (UX-M2): accepted and the publication publishes, and
+    # published before its place is released, say what happens and that
+    # nothing is asked; a picture missing is two plain sentences.
+    def said(view, me, situation):
+        row = rules.Row(sid=view.submission_id, title=view.title, publication=ADDRESS,
+                        kind="article", role="writer" if me == ME else "contributor",
+                        writer=ME, d="", situation=situation, updated_at=int(NOW), view=view)
+        status = rules.status_of(row, publication="Magazin", name_of=names)
+        return status.sentence, status.more
+
+    released = view_of("accepted", step="ready_for_release", turn="releaser")
+    assert said(replace(released, signer="publication"), ME, Situation.ACCEPTED) == (
+        "Accepted.", "It’s published after the release. You don’t need to do anything.")
+    # The writer publishes: a contributor waits, and no publication is named for it.
+    theirs = view_of("accepted", step="writer_publishes", turn="writer")
+    assert said(theirs, OTHER, Situation.ACCEPTED) == (
+        "Accepted.", "You don’t need to do anything right now.")
+    assert said(view_of("published", turn="releaser"), ME, Situation.PUBLISHED_UNPLACED) == (
+        "Published, place to follow.",
+        "Its place on Magazin is still being released. You don’t need to do anything.")
+    assert said(view_of("submitted", turn="redaktion"), ME, Situation.PICTURES_MISSING)[0] == (
+        "In the inbox of Magazin. A picture is missing.")
+
+
 def test_the_table_has_a_row_for_every_situation_and_at_most_one_action():
     assert set(rules.TABLE) == set(Situation)
     assert {rules.TABLE[s].action for s in (Situation.PUBLISH, Situation.CONFIRM,
