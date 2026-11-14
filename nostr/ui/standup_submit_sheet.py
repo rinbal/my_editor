@@ -182,7 +182,10 @@ class SubmitSheet(QDialog):
         handoff_page = QWidget()
         column = QVBoxLayout(handoff_page)
         column.setContentsMargins(0, 0, 0, 0)
-        column.addWidget(self.handoff, 1)
+        # In a window too low for it the track is drawn smaller, and what
+        # is left over scrolls, as the form does: its words are never
+        # painted over the track, and the buttons always show whole.
+        column.addWidget(self.handoff.scrolling(), 1)
         column.addWidget(self.handoff.buttons)
         self._pages.addWidget(handoff_page)
         answer_return_as_the_system_does(self.findChildren(QPushButton))
