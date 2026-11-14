@@ -160,7 +160,10 @@ class _FocusInView(QObject):
         if widget is not None and page is not None and page.isAncestorOf(widget):
             # Margins no larger than the part has room for.
             room = self._scroll.viewport().height()
-            self._scroll.ensureWidgetVisible(widget, 8, max(0, min(8, room // 4)))
+            self._scroll.ensureWidgetVisible(widget, 0, max(0, min(8, room // 4)))
+            # Never sideways: a sheet has no bar to bring the page back with,
+            # so a page wider than its part would stay cut at the leading edge.
+            self._scroll.horizontalScrollBar().setValue(0)
 
 
 def scroll_area(page: QWidget) -> QScrollArea:
@@ -203,7 +206,12 @@ def sheet_stylesheet(is_dark: bool) -> str:
         border: 1px solid {border}; border-radius: 4px; color: {muted}; font-size: 11px;
     }}
     QToolButton#disclosure {{ border: 1px solid transparent; padding: 2px 0; }}
+    /* Open, it turns its arrow and nothing else: not a button held down. */
+    QToolButton#disclosure:checked, QToolButton#disclosure:hover {{ background: transparent; }}
+    QToolButton#disclosure:pressed {{ background: {r.soft}; }}
     QToolButton#disclosure:focus {{ border-color: {ring}; }}
+    /* The scrolling part's bar lies on the sheet, with no band of its own. */
+    QScrollBar:vertical {{ background: transparent; }}
     """
 
 
