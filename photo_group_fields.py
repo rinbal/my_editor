@@ -7,7 +7,10 @@ group) opens a line over the caption, in its italic, as wide as the
 picture; Description… (or the ALT chip) a small card on the picture with
 one sentence on what a description is for (EDITING.md 2.4 of the photo
 grid design). photo_field.PictureField is the field; what is written is
-one step of Undo (PhotoEditing.set_words).
+one step of Undo (PhotoEditing.set_words). Tab in a field of a group's
+picture writes it and opens the same field of the next picture (Shift-Tab:
+of the one before); from the group's last (first) picture it goes back to
+the text, as Return does.
 """
 
 from __future__ import annotations
@@ -68,6 +71,7 @@ class PhotoFields:
         self._field = field
         field.committed.connect(lambda words, f=field: self._done(f, kind, picture, words))
         field.cancelled.connect(lambda f=field: self._done(f, kind, picture, None))
+        field.stepped.connect(lambda words, by, f=field: self._step(f, kind, picture, words, by))
         if kind == CAPTION and picture.grouped:
             # Written in the field, not drawn under it meanwhile.
             photo_group_view.set_caption_in_field(doc, picture.position)
@@ -98,6 +102,21 @@ class PhotoFields:
         if back:
             # Return or Escape: back to the text, the picture selected.
             self._photos.editor.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _step(self, field: PictureField, kind: str, picture: Picture, words: str,
+              by: int) -> None:
+        """Tab in ``field``: its words written, then the same field of the
+        picture ``by`` places on in its group, when there is one."""
+        self._done(field, kind, picture, words)
+        if not shiboken6.isValid(self._photos):
+            return
+        doc = self._photos.editor.document()
+        found = actions.standing(doc, picture)
+        if found is None or not found.grouped or not 0 <= found.index + by < found.count:
+            return
+        other = actions.picture_at(doc, found.first + found.index + by)
+        if other is not None:
+            self.open(other, kind)
 
     def close(self) -> None:
         """The field open (if any) goes, with nothing written."""

@@ -10,7 +10,11 @@ is a small card on the picture, with one sentence on what it is for.
 
 Return takes what was written, and so does a click elsewhere, as renaming
 a file in the Finder does; Escape leaves everything as it was. Either way
-the field goes and the focus returns to where it came from.
+the field goes and the focus returns to where it came from. Tab takes
+what was written too and asks for the same field of the next picture
+(Shift-Tab: of the one before), as Tab goes from cell to cell of a table:
+a group's captions or descriptions are written one after another without
+the pointer.
 """
 
 from __future__ import annotations
@@ -39,6 +43,9 @@ class PictureField(QFrame):
 
     committed = Signal(str)
     cancelled = Signal()
+    # Tab (1) or Shift-Tab (-1), with what is written: taken, and on to
+    # the next picture's field.
+    stepped = Signal(str, int)
 
     def __init__(self, parent: QWidget, *, name: str, text: str, placeholder: str,
                  font: QFont, ink: QColor, surface: QColor, accent: QColor,
@@ -127,8 +134,22 @@ class PictureField(QFrame):
             self._done = True
             self.cancelled.emit()
 
+    def step(self, by: int) -> None:
+        if not self._done:
+            self._done = True
+            self.stepped.emit(self.text(), by)
+
     def eventFilter(self, watched, event) -> bool:
         if watched is self.line:
+            if event.type() == QEvent.Type.KeyPress and event.key() in (
+                    Qt.Key.Key_Tab, Qt.Key.Key_Backtab) and not event.modifiers() & (
+                    Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier
+                    | Qt.KeyboardModifier.MetaModifier):
+                # Taken here: the text under the field would get the key.
+                back = (event.key() == Qt.Key.Key_Backtab
+                        or bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier))
+                self.step(-1 if back else 1)
+                return True
             if event.type() == QEvent.Type.KeyPress and event.key() in (
                     Qt.Key.Key_Escape, Qt.Key.Key_Return, Qt.Key.Key_Enter):
                 # Taken here: a line edit passes Return on to the text

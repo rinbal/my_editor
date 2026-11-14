@@ -250,6 +250,34 @@ def test_a_caption_being_written_stands_in_its_field_alone_and_its_picture_keeps
     ed.close()
 
 
+def test_tab_in_a_field_writes_it_and_opens_the_next_pictures_field():
+    """A group's descriptions are written one after another without the
+    pointer: Tab takes the words and opens the same field on the next
+    picture, Shift-Tab on the one before; from the last picture Tab goes
+    back to the text, as Return does. (Tab did nothing in a field.)"""
+    ed = _selected(number=2)
+
+    def line():
+        return next(found for found in ed.viewport().findChildren(QWidget, "pictureField")
+                    if found.isVisible()).line
+
+    ed.photos.run(DESCRIPTION)
+    line().setText("A tower")
+    QTest.keyClick(line(), Qt.Key.Key_Tab)
+    QApplication.processEvents()
+    assert ed.photos.current().place == 4 and ed.photos.fields.is_open()
+    assert "![A tower](portrait.png)" in _markdown(ed)
+    QTest.keyClick(line(), Qt.Key.Key_Tab)             # the last picture: back to the text
+    QApplication.processEvents()
+    assert not ed.photos.fields.is_open() and ed.hasFocus() and ed.photos.current().place == 4
+    ed.photos.run(DESCRIPTION)
+    QTest.keyClick(line(), Qt.Key.Key_Backtab, Qt.KeyboardModifier.ShiftModifier)
+    QApplication.processEvents()
+    assert ed.photos.current().place == 3 and ed.photos.fields.is_open()
+    ed.photos.fields.close()
+    ed.close()
+
+
 def test_a_narrow_picture_without_a_description_still_says_so():
     """The words for a missing description have no room on a narrow
     picture (a portrait in a row of four): the chip went, and with it the
