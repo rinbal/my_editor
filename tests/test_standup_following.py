@@ -354,7 +354,7 @@ def test_the_sentence_names_the_editor_only_once_the_decision_verified():
     world.decide(prepared, "request_changes", text="Bitte einen Absatz mehr.")
     following = world.following(account)
     detail = opened(world, following, entry)
-    assert detail.decision == rules.Decision("request_changes", EDITOR, True)
+    assert detail.decision == rules.Decision("request_changes", EDITOR, True, with_message=True)
     status = rules.status_of(detail.row, publication=detail.publication, name_of=names,
                              decision=detail.decision)
     assert (status.sentence, status.action, status.unsigned) == (
@@ -432,6 +432,23 @@ def test_a_sentence_rests_on_the_newest_verified_decision_or_says_that_it_does_n
     said = rules.status_of(detail.row, publication="M", name_of=names,
                            decision=detail.decision, complete=detail.complete)
     assert said.sentence == "Declined." and said.unsigned
+
+
+def test_a_declined_writer_is_pointed_to_the_conversation_only_when_the_decline_has_a_message():
+    # The web app's words for the same moment: a reason is promised only
+    # when the verified decline carries a message of the Redaktion.
+    def hint(d, text):
+        world = FollowWorld()
+        account = world.account()
+        prepared, entry = world.submit(account, d=d)
+        world.decide(prepared, "decline", text=text)
+        detail = opened(world, world.following(account), entry)
+        assert detail.decision.verified is True
+        return rules.status_of(detail.row, publication="M", name_of=names,
+                               decision=detail.decision, complete=detail.complete).more
+
+    assert hint("mit", "Passt gerade nicht in unsere Reihe.") == "The reason is in the conversation below."
+    assert hint("ohne", "") == "You can submit the text again, or somewhere else."
 
 
 def test_internal_notes_and_forged_senders_are_never_shown():

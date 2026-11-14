@@ -66,6 +66,10 @@ VERSION_IN_REVIEW = N_("{name} is reviewing version {number}.")
 PUBLICATION_PUBLISHES = N_("It’s published after the release. You don’t need to do "
                            "anything.")
 SECTION_PLACE = N_("Published in the section “{section}”.")
+# Declined with a message of the Redaktion: where the reason is, in the web
+# app's words (its ``declinedHint``). A decline without one keeps the table's
+# sentence, which says what the writer can do next.
+DECLINED_REASON = N_("The reason is in the conversation below.")
 # The writer confirmed; contributors still confirm (M-4 M14).
 STILL_CONFIRMS = N_("Thanks. {name} still confirms.")
 STILL_CONFIRM_NAMED = N_("Thanks. {names} still confirm.")
@@ -346,11 +350,15 @@ def _row(sid: str, situation: Situation, view: Optional[views.SubmissionView],
 class Decision:
     """The newest decision of a timeline: ``verified`` is True when its
     stored signed action is a decider's (10), False when it is not, and
-    None while the member list is not known (nothing is said then)."""
+    None while the member list is not known (nothing is said then).
+    ``with_message``: that verified action carries a message of the
+    Redaktion (its ``message_wrap``), the member's signed word and never
+    the server's."""
 
     name: str
     actor: Optional[str]
     verified: Optional[bool]
+    with_message: bool = False
 
 
 def deciders_of(members: Iterable) -> Tuple[str, ...]:
@@ -424,7 +432,18 @@ def newest_decision(items: Sequence[views.TimelineItem], sid: str,
         return None
     event = max(decisions, key=lambda item: item.seq).event
     signers = None if deciders is None else tuple(deciders)
-    return Decision(event.name, event.actor, action_verified(event, sid, signers, checks, formers))
+    verified = action_verified(event, sid, signers, checks, formers)
+    return Decision(event.name, event.actor, verified,
+                    verified is True and _carries_message(event, sid, checks))
+
+
+def _carries_message(event: views.TimelineEvent, sid: str,
+                     checks: Optional[SignedChecks]) -> bool:
+    """Whether a decision's verified signed action carries a message
+    (``message_wrap``, 12.4)."""
+    body = (checks or SignedChecks()).body(event.signed, path=views.action_path(event.name, sid),
+                                           sid=sid)
+    return isinstance(body, Mapping) and isinstance(body.get("message_wrap"), Mapping)
 
 
 # --------------------------------------------------------------------------- #
@@ -501,6 +520,8 @@ def status_of(row: Row, *, publication: str, name_of: Callable[[str], str],
         more, fields["section"] = SECTION_PLACE, section
     if row.situation is Situation.ACCEPTED and view is not None and view.signer == "publication":
         more = PUBLICATION_PUBLISHES
+    if row.situation is Situation.DECLINED and rests and decision.with_message:
+        more = DECLINED_REASON
     if "{name}" in sentence and not fields["name"]:
         sentence = entry.unnamed_sentence
     if action in ON_A_DECISION and not rests:

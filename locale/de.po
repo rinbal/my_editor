@@ -2087,9 +2087,9 @@ msgid "Insert Audio or Video…"
 msgstr "Audio oder Video einfügen …"
 
 #: main_window.py:2907
-#: nostr/standup/following.py:103
-#: nostr/standup/following.py:105
 #: nostr/standup/following.py:107
+#: nostr/standup/following.py:109
+#: nostr/standup/following.py:111
 #: nostr/standup/situations.py:173
 #: nostr/standup/thread.py:349
 #: nostr/ui/published_view.py:442
@@ -8497,60 +8497,64 @@ msgstr "Wird nach der Freigabe veröffentlicht. Du musst nichts tun."
 msgid "Published in the section “{section}”."
 msgstr "Veröffentlicht in der Rubrik „{section}“."
 
-#: nostr/standup/following.py:70
+#: nostr/standup/following.py:72
+msgid "The reason is in the conversation below."
+msgstr "Die Begründung steht unten im Gespräch."
+
+#: nostr/standup/following.py:74
 #, python-brace-format
 msgid "Thanks. {name} still confirms."
 msgstr "Danke. {name} bestätigt noch."
 
-#: nostr/standup/following.py:71
+#: nostr/standup/following.py:75
 #, python-brace-format
 msgid "Thanks. {names} still confirm."
 msgstr "Danke. {names} bestätigen noch."
 
-#: nostr/standup/following.py:72
+#: nostr/standup/following.py:76
 msgid "Thanks. The others still confirm."
 msgstr "Danke. Die anderen bestätigen noch."
 
-#: nostr/standup/following.py:93
+#: nostr/standup/following.py:97
 msgid "Another person’s work already stands under this link name. So that it stays, nothing is published."
 msgstr "Unter diesem Linknamen steht schon ein Beitrag von jemand anderem. Damit er bleibt, wird nichts veröffentlicht."
 
-#: nostr/standup/following.py:97
+#: nostr/standup/following.py:101
 msgid "Your signer app doesn’t sign texts this long. Sign in with another signer app, or write to the editorial team."
 msgstr "Deine Signer-App unterschreibt so lange Texte nicht. Melde dich mit einer anderen Signer-App an, oder schreib der Redaktion."
 
-#: nostr/standup/following.py:102
-#: nostr/standup/following.py:102
+#: nostr/standup/following.py:106
+#: nostr/standup/following.py:106
 msgid "Being published …"
 msgstr "Wird veröffentlicht …"
 
-#: nostr/standup/following.py:103
+#: nostr/standup/following.py:107
 #, python-brace-format
 msgid "“{title}” is public. {publication} learns of it shortly."
 msgstr "„{title}“ ist öffentlich. {publication} erfährt es gleich."
 
-#: nostr/standup/following.py:105
+#: nostr/standup/following.py:109
 #, python-brace-format
 msgid "“{title}” is public."
 msgstr "„{title}“ ist öffentlich."
 
-#: nostr/standup/following.py:106
+#: nostr/standup/following.py:110
 #, python-brace-format
 msgid "{publication} hasn’t learned of it yet."
 msgstr "{publication} hat es noch nicht erfahren."
 
-#: nostr/standup/following.py:107
+#: nostr/standup/following.py:111
 #, python-brace-format
 msgid "“{title}” is public, but {publication} already lists another work under this link name."
 msgstr "„{title}“ ist öffentlich, aber {publication} führt unter diesem Linknamen schon einen anderen Beitrag."
 
-#: nostr/standup/following.py:109
-#: nostr/standup/following.py:110
+#: nostr/standup/following.py:113
+#: nostr/standup/following.py:114
 #: nostr/ui/standup_publish_words.py:21
 msgid "Not published"
 msgstr "Nicht veröffentlicht"
 
-#: nostr/standup/following.py:489
+#: nostr/standup/following.py:508
 msgid "The writer"
 msgstr "Die schreibende Person"
 
