@@ -132,7 +132,7 @@ TABLE = {
                                unnamed_sentence=N_("The editorial team is reviewing.")),
     Situation.CHANGES_REQUESTED: Words(
         N_("Changes requested"), Section.TURN, N_("{name} asks for changes."),
-        N_("What exactly is in the conversation below."), Action.REVISE,
+        N_("The conversation below says what exactly."), Action.REVISE,
         unnamed_sentence=N_("The editorial team asks for changes."),
         decision="request_changes"),
     Situation.CHANGES_BY_WRITER: Words(

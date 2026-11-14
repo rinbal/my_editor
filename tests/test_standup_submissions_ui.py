@@ -428,7 +428,7 @@ def test_the_detail_has_one_sentence_and_a_button_only_for_what_the_window_handl
     window.follow()
     detail = opened(window, entries["aendern"])
     assert detail.sentence.text() == "Anna asks for changes."
-    assert detail.more.text() == "What exactly is in the conversation below."
+    assert detail.more.text() == "The conversation below says what exactly."    # UX-M2
     assert detail.action.isVisibleTo(detail) and detail.action.text() == "Revise in the Editor"
     assert detail.conversation.captions == ["Submitted · Version 1", "Anna took it on",
                                       "Anna asked for changes"]
@@ -1224,6 +1224,34 @@ def test_an_unsent_entry_offers_to_send_it_again_or_discard_it(window):
     detail.second.click()
     window.world.settle()
     assert not window.view.showing_detail() and window.view.items() == []
+
+
+def test_discard_in_a_rows_menu_asks_first_and_cancel_keeps_the_row(window, monkeypatch):
+    # UX-M2: the row's menu discarded at once; it does not say, as the
+    # detail does above its button, that the article stays.
+    from nostr.ui import submissions_view
+    seed = window.world.account()
+    window.world.submit(seed, d="nie", title="Nie gesendet", stored=False, send=False)
+    window.follow()
+    view = window.view
+    view.show()
+    asked = []
+    monkeypatch.setattr(submissions_view, "confirm_destructive",
+                        lambda *a, **k: asked.append((k["title"], k["message"])) and False)
+    row = next(i for i, item in enumerate(view.items()) if item.kind == "row")
+    view._on_menu(view.list.visualRect(view.list.model().index(row)).center())
+    assert [a.text() for a in view._menu.actions() if a.text()] == [
+        "Open", "Open in Editor", "Send Again", "Discard …"]
+    view._menu.actions()[-1].trigger()
+    assert asked == [("Discard this attempt?", "This submission never reached Einundzwanzig "
+                      "Magazin. It leaves your list; your article stays as it is.")]
+    assert [item.title for item in view.items() if item.kind == "row"] == ["Nie gesendet"]
+    monkeypatch.setattr(submissions_view, "confirm_destructive", lambda *a, **k: True)
+    view._menu.actions()[-1].trigger()
+    window.world.settle()
+    assert view.items() == []
+    view._menu.close()
+    view.hide()
 
 
 # -- the pill, the notice, the editor --------------------------------------------------
