@@ -789,6 +789,31 @@ def test_no_page_of_a_pdf_breaks_through_a_picture(app):
     assert spread == 5                      # the tall group runs over pages, between its rows
 
 
+def test_a_group_moved_to_the_next_page_takes_no_paragraph_out_of_the_pdf(app):
+    """A long document is laid out piece by piece. The group that started
+    the next page did so while the paragraphs far below it had no lines
+    yet, and they never got any: the PDF (and the printed pages) ended
+    after the few paragraphs that had, pages short, with nothing said."""
+    words = "We walked in from the station and stopped at the harbour. " * 4
+    small = "![a](photo.png)\n\n![b](square.png)\n\n*A caption*\n"
+    after = "\n\n".join(f"After {n}: {words}" for n in range(40))
+    moved = 0
+    for lines in (5, 7, 9, 11):
+        before = "\n\n".join(f"Before {n}: {words}" for n in range(lines))
+        paged, _writer = _paged(f"{before}\n\n{small}\n{after}\n")
+        clone = paged.clone
+        layout = clone.documentLayout()
+        block = clone.begin()
+        while block.isValid():
+            assert block.layout().lineCount() > 0, (lines, block.text()[:12])
+            moved += (photo_group.is_group_block(block)
+                      and block.blockFormat().pageBreakPolicy() != 0)
+            block = block.next()
+        end = layout.blockBoundingRect(clone.lastBlock()).bottom()
+        assert paged.page_count == int((end - 0.5) // paged.content_height) + 1, lines
+    assert moved >= 1                       # one filler put the group across a page's end
+
+
 def test_no_page_of_a_letter_pdf_breaks_through_a_picture(app):
     from export_pdf import default_page_setup
     filler = "\n\n".join(f"Paragraph {n} of the walk in." for n in range(26))

@@ -332,8 +332,14 @@ def _keep_groups_on_pages(clone, content_h: float) -> None:
     group after the other: moving one moves the rest. A group taller than
     a page breaks between two of its rows: each row is a line of its
     paragraph, and Qt moves a line that would cross a page to the next
-    (photo_group_view), so no picture is cut."""
+    (photo_group_view), so no picture is cut.
+
+    The whole document is laid out before any group is moved: Qt lays a
+    long one out piece by piece, and takes a paragraph below a change for
+    laid out, only to be moved. One that had no lines yet when a group
+    started the next page never got any, and the pages ended before it."""
     layout = clone.documentLayout()
+    clone.pageCount()
     block = clone.begin()
     while block.isValid():
         if photo_group.is_group_block(block):
