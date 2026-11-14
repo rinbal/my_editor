@@ -367,8 +367,13 @@ HANDED_IN = N_("Version {number} handed in.")
 
 
 def phase_words(progress: Progress, publication: str, now: Optional[float] = None, *,
-                number: int = 1) -> tuple:
-    """The two lines a state says (translated), the plan's words. While
+                number: int = 1, signer_app: bool = True) -> tuple:
+    """The two lines a state says (translated), the plan's words.
+    ``signer_app``: the account signs in a signer app; one whose key is
+    kept on this computer has none to wait for, so while the request is
+    signed it says what happens, that the work is being sent (it said
+    "Waiting for your signer app. Confirm the request there." to a
+    person who has no such app). While
     the request is on its way and while it is checked, the words are
     what the server holds (HELD_WORDS, lesson 32): a run whose receipt
     came never says "Not confirmed yet" (RG-M2r2a 3). A failure: its
@@ -390,7 +395,8 @@ def phase_words(progress: Progress, publication: str, now: Optional[float] = Non
             Phase.ENCRYPT: (words.ENCRYPTING, ""),
             Phase.UPLOAD: (words.UPLOADING_PICTURE if progress.pictures == 1
                            else words.UPLOADING_PICTURES, words.UPLOADING_DETAIL),
-            Phase.SIGNER: (words.WAITING_FOR_SIGNER, words.WAITING_DETAIL),
+            Phase.SIGNER: ((words.WAITING_FOR_SIGNER, words.WAITING_DETAIL) if signer_app
+                           else (held.sending, "")),
             Phase.SEND: (held.sending, ""),
             Phase.UNCONFIRMED: (held.checking, words.UNCONFIRMED_DETAIL),
             Phase.DONE: (words.SUBMITTED if number < 2 else HANDED_IN, words.SUBMITTED_DETAIL),
@@ -408,11 +414,12 @@ _MESSAGE_WORDS = {MessageStatus.SIGNING: words.MESSAGE_SIGNING,
                   MessageStatus.SENT: words.MESSAGE_SENT}
 
 
-def message_words(progress: Progress, now: float) -> tuple:
+def message_words(progress: Progress, now: float, *, signer_app: bool = True) -> tuple:
     """The first message's line (translated), once the work is in: how it
     goes, or, when it did not go, its title and its one sentence, with
     when sending again helps while a limit's wait is not over (lessons
-    36). ``("", "")`` when there is nothing to say."""
+    36). ``("", "")`` when there is nothing to say. Without a
+    ``signer_app`` (a key kept here) its signing is part of its sending."""
     if progress.phase is not Phase.DONE:
         return "", ""
     failure = progress.message_failure
@@ -421,7 +428,10 @@ def message_words(progress: Progress, now: float) -> tuple:
                               words.MESSAGE_LIMIT_TOMORROW_AT,
                               words.MESSAGE_LIMIT_OVER) or _(failure.sentence)
         return _(failure.title), sentence
-    shown = _MESSAGE_WORDS.get(progress.message)
+    status = progress.message
+    if status is MessageStatus.SIGNING and not signer_app:
+        status = MessageStatus.SENDING
+    shown = _MESSAGE_WORDS.get(status)
     return (_(shown), "") if shown else ("", "")
 
 
@@ -440,6 +450,7 @@ class HandoffView(QWidget):
     def __init__(self, *, is_dark: bool, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.number = 1                         # the version handed in
+        self.signer_app = True                  # the account signs in a signer app
         self._is_dark = is_dark
         self._phase: Optional[Phase] = None
         self._said = ""
@@ -546,9 +557,13 @@ class HandoffView(QWidget):
         self.track.setFixedHeight(max(_LEAST_HEIGHT, min(_HEIGHT, view.height() - said)))
 
     def set_work(self, *, title: str, summary: str, byline: str, cover: QPixmap,
-                 publication: str, logo: QPixmap, number: int = 1) -> None:
-        """``number``: the version handed in (1 for a first submission)."""
+                 publication: str, logo: QPixmap, number: int = 1,
+                 signer_app: bool = True) -> None:
+        """``number``: the version handed in (1 for a first submission).
+        ``signer_app``: whether the account signs in a signer app (False
+        for a key kept on this computer: phase_words)."""
         self.number = number
+        self.signer_app = signer_app
         track = self.track
         track.title, track.summary, track.byline = title, summary, byline
         track.cover, track.publication, track.logo = cover, publication, logo
@@ -566,8 +581,10 @@ class HandoffView(QWidget):
         self._progress = progress
         phase = progress.phase
         now = _now()
-        first, second = phase_words(progress, self.track.publication, now, number=self.number)
-        message_title, message_sentence = message_words(progress, now)
+        first, second = phase_words(progress, self.track.publication, now, number=self.number,
+                                    signer_app=self.signer_app)
+        message_title, message_sentence = message_words(progress, now,
+                                                        signer_app=self.signer_app)
         retry_at, message_at = self._waits(progress)
         self.send_again.setEnabled(not message_at or message_at <= now)
         self._wait.follow(retry_at, message_at, now=now)

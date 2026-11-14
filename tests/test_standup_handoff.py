@@ -523,3 +523,23 @@ def test_the_card_cuts_its_words_as_the_sheets_card_does(app):
     cut = standup_handoff.cut_after_a_word(metrics, text, 120, 1)
     assert cut.endswith("…") and not cut.endswith(" …") and metrics.horizontalAdvance(cut) <= 120
     assert text.startswith(cut[:-1])
+
+
+def test_an_account_whose_key_is_kept_here_is_never_told_to_wait_for_a_signer_app(german, view):
+    # The first account most people have is made in MyEditor, its key kept
+    # on this computer: it was told "Warten auf deine Signer-App.
+    # Bestätige dort die Anfrage." while its request was signed here.
+    assert phase_words(Progress(Step.SIGNING), PUBLICATION, signer_app=False) == (
+        "Wird an Einundzwanzig Magazin gesendet …", "")
+    assert phase_words(Progress(Step.RECORDING), PUBLICATION, signer_app=False) == (
+        "Wird an Einundzwanzig Magazin gesendet …", "")
+    signing = Progress(Step.SUBMITTED, message=MessageStatus.SIGNING)
+    assert standup_handoff.message_words(signing, 0.0, signer_app=False) == (
+        "Deine Nachricht wird gesendet …", "")
+    assert standup_handoff.message_words(signing, 0.0) == (
+        "Warten auf deine Signer-App: Bestätige dort deine Nachricht.", "")
+    view.set_work(title="T", summary="", byline="", cover=standup_handoff.QPixmap(),
+                  publication=PUBLICATION, logo=standup_handoff.QPixmap(), signer_app=False)
+    view.show_progress(Progress(Step.SIGNING))
+    assert view.headline.text() == "Wird an Einundzwanzig Magazin gesendet …"
+    assert view.detail.isHidden()

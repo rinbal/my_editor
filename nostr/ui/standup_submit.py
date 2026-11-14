@@ -42,7 +42,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from i18n import _
 
 from .. import failures
-from ..signer_limits import bound_known
+from ..signer_limits import bound_known, through_signer_app
 from ..later import answer_later
 from ..standup import trust, words
 from ..standup.drafting import ArticleDraft, Choice, Sealed
@@ -488,6 +488,8 @@ class StandupWriter(QObject):
         if run.finished:
             return
         name = run.choice.name
+        # A key kept here has no signer app that would ask for anything.
+        signer_app = through_signer_app(getattr(self._account, "profile", None))
         said = [""]
 
         def say(text: str) -> None:
@@ -497,7 +499,7 @@ class StandupWriter(QObject):
 
         def words_of(progress: Progress) -> str:
             if progress.phase is Phase.DONE:
-                return (background_message_words(progress, name)
+                return (background_message_words(progress, name, signer_app=signer_app)
                         or _(words.SUBMITTED).format(publication=name))
             if progress.phase is Phase.FAILED and progress.failure is not None:
                 # Its title and its one sentence, as the handoff says them.

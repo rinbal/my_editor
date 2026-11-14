@@ -991,3 +991,20 @@ def test_a_sheet_cancelled_with_nothing_written_keeps_nothing(tmp_path):
     assert writer.typed == {}
     again = _sheet(tmp_path, writer)
     assert again.message.isHidden() and again.destination() is MAGAZIN
+
+
+def test_the_handoff_knows_whether_the_account_signs_in_a_signer_app(tmp_path):
+    # UX-M1: with a key kept on this computer nothing waits for a signer app.
+    sheet = _sheet(tmp_path)                        # paired with a signer app
+    sheet.submit_button.click()
+    assert sheet.handoff.headline.text() == "Warten auf deine Signer-App."
+    (tmp_path / "local").mkdir()
+    store = ProfileStore(path=tmp_path / "local" / "profiles.json")
+    profile = Profile(user_pubkey=WRITER, bunker_pubkey="", display_name="Jana Roth",
+                      bunker_relays=[], local_secret_hex="", signer="local")
+    store.upsert(profile)
+    local = SubmitSheet(writer=Writer(), draft=DRAFT, cover=QPixmap(), byline="Jana Roth",
+                        private_names=(), profile=profile, store=store, avatars=AvatarStore(),
+                        logos=PublicationLogos(lambda *_a: None), is_dark=False)
+    local.submit_button.click()
+    assert local.handoff.headline.text() == "Wird an Einundzwanzig Magazin gesendet …"

@@ -61,7 +61,7 @@ from i18n import _
 
 from ..avatar_store import AvatarStore
 from ..profiles import Profile, ProfileStore
-from ..signer_limits import signable
+from ..signer_limits import signable, through_signer_app
 from ..standup import drafting, formats, words
 from ..standup.drafting import ArticleDraft, Choice
 from ..standup.errors import Code, cause_words
@@ -378,7 +378,11 @@ class SubmitSheet(QDialog):
         content.layout().activate()
         self.layout().activate()
         margins = self.layout().contentsMargins()
-        inner = width - margins.left() - margins.right()
+        # At the width a scroll bar leaves: with one showing the words
+        # wrap sooner, and measured without it the sheet stayed a few
+        # points short and kept the bar.
+        inner = (width - margins.left() - margins.right()
+                 - self._scroll.verticalScrollBar().sizeHint().width())
         needed = (content.heightForWidth(inner) if content.hasHeightForWidth()
                   else content.sizeHint().height())
         form = self._pages.widget(0)
@@ -698,7 +702,8 @@ class SubmitSheet(QDialog):
         self.handoff.set_work(title=self._draft.title, summary=self._draft.summary,
                               byline=self._byline, cover=self._cover, publication=name,
                               logo=publication_logo(name, formats.parse_address(address)[0],
-                                                    self._logos.get(address), 40))
+                                                    self._logos.get(address), 40),
+                              signer_app=through_signer_app(self.account.profile()))
         run.behind_the_sheet(None)                  # the sheet says it now
         run.changed.connect(self.handoff.show_progress)
         self._pages.setCurrentIndex(1)
