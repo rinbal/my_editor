@@ -112,14 +112,17 @@ class SplitLine:
         went_to = photos.current()
         number = went_to.unit.number if went_to is not None and went_to.grouped else 0
         caret = QTextCursor(ed.textCursor())
-        with photos.writing():
+        # Quietly: taking the split back puts the caret where it never
+        # went (the group's last picture), which is not to be said.
+        with photos.quietly(), photos.writing():
             doc.undo()
             doc.clearUndoRedoStacks(QTextDocument.Stacks.RedoStack)
         photos.steps.drop(after)
+        photos.say(_("The line stayed empty, the photos belong together again"))
         found = actions.picture_numbered(doc, number)
         if found is not None:
-            photos.select(found.position)
+            # Then the picture the caret did go to is said, as at any stop.
+            photos.select(found.position, quiet=False)
         else:
             with photos.quietly():
                 ed.setTextCursor(caret)
-        photos.say(_("The line stayed empty, the photos belong together again"))

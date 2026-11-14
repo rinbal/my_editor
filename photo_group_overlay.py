@@ -80,6 +80,8 @@ class Chips:
 
     boxes: Dict[str, QRectF] = field(default_factory=dict)
     words: Dict[str, str] = field(default_factory=dict)
+    # The ALT chip says its short word, there being no room for the long.
+    alt_short: bool = False
 
     def at(self, point: QPointF) -> Optional[str]:
         for name, box in self.boxes.items():
@@ -88,10 +90,12 @@ class Chips:
         return None
 
 
-def chips_on(box: QRectF, more: str, alt: str, big: str) -> Chips:
+def chips_on(box: QRectF, more: str, alt: str, big: str, alt_short: str = "") -> Chips:
     """Where the chips go on a picture drawn in ``box``, with their words
     (``big`` empty: no such chip). A narrow picture shows glyphs without
-    words, a low one only the handle and More, a tiny one only More."""
+    words, a low one only the handle and More, a tiny one only More.
+    ``alt_short`` stands in for ``alt`` where that has no room ("No ALT"
+    on a narrow picture): a missing description is said there too."""
     metrics = QFontMetricsF(chip_font())
     chips = Chips()
 
@@ -111,6 +115,8 @@ def chips_on(box: QRectF, more: str, alt: str, big: str) -> Chips:
     if box.height() < SHORT or HANDLE not in chips.boxes:
         return chips
     alt_width = width(alt)
+    if alt_width > room and alt_short:
+        alt, alt_width, chips.alt_short = alt_short, width(alt_short), True
     if alt_width > room:
         return chips
     chips.boxes[ALT] = QRectF(box.left() + INSET, bottom, alt_width, CHIP)
@@ -157,6 +163,16 @@ def _check(painter: QPainter, r: QRectF) -> None:
     c = r.center()
     painter.drawPolyline([QPointF(c.x() - 4, c.y()), QPointF(c.x() - 1, c.y() + 3),
                           QPointF(c.x() + 4.5, c.y() - 3.5)])
+
+
+def _exclaim(painter: QPainter, r: QRectF) -> None:
+    """An exclamation mark: something is missing here."""
+    c = r.center()
+    painter.setPen(_pen(1.8))
+    painter.drawLine(QPointF(c.x(), c.y() - 4.5), QPointF(c.x(), c.y() + 0.8))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(_INK)
+    painter.drawEllipse(QPointF(c.x(), c.y() + 4.3), 1.15, 1.15)
 
 
 def _expand(painter: QPainter, r: QRectF) -> None:
@@ -218,7 +234,9 @@ def paint_chips(painter: QPainter, chips: Chips, *, missing: bool, big_on: bool,
         glyph_box = QRectF(box.left() + (_PAD if words else (box.width() - _ICON) / 2),
                            box.center().y() - _ICON / 2, _ICON, _ICON)
         text_left = glyph_box.right() + _GAP
-        if name == ALT and missing:
+        if name == ALT and missing and chips.alt_short:
+            _exclaim(painter, glyph_box)        # "ALT" alone would read as described
+        elif name == ALT and missing:
             text_left = box.left() + _PAD + (_ICON + _GAP) / 2      # words alone, centred
         elif name == ALT:
             _check(painter, glyph_box)
@@ -294,9 +312,13 @@ def paint_bar(painter: QPainter, bar: Bar, label: str, hint: str, add_words: str
             faint.setAlphaF(0.8 if solid else 0.60 if dark else 0.70)
             painter.setPen(faint)
         room = bar.add.left() - 10 - left
-        painter.drawText(QRectF(left, box.top(), room, box.height()), flags,
-                         QFontMetricsF(painter.font()).elidedText(
-                             hint, Qt.TextElideMode.ElideRight, room))
+        measure = QFontMetricsF(painter.font())
+        # What letting go will do is said as far as there is room for it;
+        # the plain hint is said whole or not at all ("Drag to arr…" told
+        # nothing).
+        if hint_in_accent or measure.horizontalAdvance(hint) <= room:
+            painter.drawText(QRectF(left, box.top(), room, box.height()), flags,
+                             measure.elidedText(hint, Qt.TextElideMode.ElideRight, room))
     font.setWeight(QFont.Weight.DemiBold)
     painter.setFont(font)
     line = QColor(ink)
@@ -318,14 +340,19 @@ def paint_bar(painter: QPainter, bar: Bar, label: str, hint: str, add_words: str
 
 def paint_ring(painter: QPainter, box: QRectF, accent: QColor, strength: float = 1.0) -> None:
     """The ring around the selected picture; ``strength`` above 1 while
-    it flashes (what Undo brought back)."""
+    it flashes (what Undo brought back). On the picture's own edge, on
+    whole pixels and with the picture's square corners: a rounded ring
+    left the picture's corners showing outside it, and one between two
+    pixels a pale line beside it."""
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     width = RING * max(1.0, strength)
     half = width / 2
-    painter.setPen(QPen(accent, width))
+    pen = QPen(accent, width)
+    pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+    painter.setPen(pen)
     painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.drawRoundedRect(box.adjusted(half, half, -half, -half), 3, 3)
+    painter.drawRect(QRectF(box.toAlignedRect()).adjusted(half, half, -half, -half))
     if strength > 1.0:
         veil = QColor(accent)
         veil.setAlphaF(min(0.35, 0.35 * (strength - 1.0)))
@@ -346,17 +373,30 @@ def paint_line(painter: QPainter, left: float, right: float, y: float, words: st
     painter.restore()
 
 
+def hint_place(box: QRectF, wide: float, room: QRectF) -> Tuple[float, float]:
+    """Where a capsule ``wide`` pixels wide goes for the picture drawn in
+    ``box``: its left edge and the height of its middle. On the picture,
+    along its lower edge and over its middle, since under a picture
+    stands its caption (and beside it its neighbour's), which the capsule
+    covered; only a picture too low for it has it under itself (over it
+    where the view ends). Always inside the view ``room``."""
+    left = max(room.left() + 4, min(box.center().x() - wide / 2, room.right() - wide - 4))
+    if box.height() >= 2 * CHIP + 3 * INSET:        # the number's disc above it, room between
+        middle = box.bottom() - INSET - 10
+    else:
+        middle = box.bottom() + 16 if box.bottom() + 30 <= room.bottom() else box.top() - 16
+    return left, max(room.top() + 12, min(middle, room.bottom() - 12))
+
+
 def paint_hint(painter: QPainter, box: QRectF, words: str, *, accent: QColor,
                room: QRectF) -> None:
-    """``words`` on a capsule beside ``box`` (under it, over it where the
-    view ends), kept inside the view ``room``: what the keys do, where
-    the eyes are."""
+    """``words`` on a capsule on the picture drawn in ``box`` (hint_place):
+    what the keys do, where the eyes are."""
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     wide = QFontMetricsF(chip_font()).horizontalAdvance(words) + 2 * _PAD
-    left = max(room.left() + 4, min(box.left(), room.right() - wide - 4))
-    middle = box.bottom() + 16 if box.bottom() + 30 <= room.bottom() else box.top() - 16
-    _capsule(painter, left, max(room.top() + 12, min(middle, room.bottom() - 12)), words, accent)
+    left, middle = hint_place(box, wide, room)
+    _capsule(painter, left, middle, words, accent)
     painter.restore()
 
 

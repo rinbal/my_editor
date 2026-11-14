@@ -332,8 +332,14 @@ def _keep_groups_on_pages(clone, content_h: float) -> None:
     group after the other: moving one moves the rest. A group taller than
     a page breaks between two of its rows: each row is a line of its
     paragraph, and Qt moves a line that would cross a page to the next
-    (photo_group_view), so no picture is cut."""
+    (photo_group_view), so no picture is cut.
+
+    The whole document is laid out before any group is moved: Qt lays a
+    long one out piece by piece, and takes a paragraph below a change for
+    laid out, only to be moved. One that had no lines yet when a group
+    started the next page never got any, and the pages ended before it."""
     layout = clone.documentLayout()
+    clone.pageCount()
     block = clone.begin()
     while block.isValid():
         if photo_group.is_group_block(block):
@@ -415,6 +421,12 @@ def paint_pages(painter: QPainter, device, paged: PagedDocument, page_numbers) -
         painter.translate(0, -page * content_h)
         ctx = QAbstractTextDocumentLayout.PaintContext()
         ctx.clip = QRectF(0, page * content_h, paged.page_width, content_h)
+        # The context's clip only says which paragraphs to draw: one that
+        # goes over two pages is drawn on both, and Qt leaves out its lines
+        # above the page but the last of them, which stood again in the
+        # page's top margin. The painter itself keeps to the page, as
+        # QTextDocument.print does.
+        painter.setClipRect(ctx.clip)
         # Unset-color text must not inherit the app palette: in dark
         # theme that would paint near-white on the white page.
         ctx.palette.setColor(QPalette.Text, Qt.black)

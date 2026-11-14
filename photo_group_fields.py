@@ -7,7 +7,10 @@ group) opens a line over the caption, in its italic, as wide as the
 picture; Description… (or the ALT chip) a small card on the picture with
 one sentence on what a description is for (EDITING.md 2.4 of the photo
 grid design). photo_field.PictureField is the field; what is written is
-one step of Undo (PhotoEditing.set_words).
+one step of Undo (PhotoEditing.set_words). Tab in a field of a group's
+picture writes it and opens the same field of the next picture (Shift-Tab:
+of the one before); from the group's last (first) picture it goes back to
+the text, as Return does.
 """
 
 from __future__ import annotations
@@ -47,17 +50,23 @@ class PhotoFields:
         font = doc.defaultFont()
         if kind == CAPTION:
             found = (photo_group_view.caption_box(doc, picture.position) if picture.grouped
-                     else None)
+                     else self._caption_alone(picture, box))
             spot = found if found is not None else QRectF(box.left(), box.bottom() + 4,
                                                           box.width(), 24)
+            # The caption's line in view first: under a picture taller than
+            # the view, or one at its foot, the field was pushed up into
+            # the view and lay over the picture.
+            ed.show_document_rect(QRectF(spot.left(), spot.top() - 8, spot.width(),
+                                         max(spot.height(), 28.0) + 16))
             font.setItalic(True)
             field = PictureField(
                 ed.viewport(), name=_("Caption of {photo}").format(
                     photo=photos.place_words(picture)), text=picture.unit.caption_line,
-                placeholder=_("Caption, e.g. “The jetty · Photo: Anna Berg”"), font=font,
-                **colors)
+                placeholder=_("Caption, e.g. “The jetty · Photo: Anna Berg”"),
+                short_placeholder=_("Caption"), font=font, **colors)
         else:
-            spot = QRectF(box.left() + 8, box.top() + 8, box.width(), 0)
+            # On the picture, the same distance from its left and right edge.
+            spot = QRectF(box.left() + 8, box.top() + 8, box.width() - 16, 0)
             field = PictureField(
                 ed.viewport(), name=_("Description"), text=picture.unit.alt, placeholder="",
                 font=font, title=_("Description"),
@@ -67,7 +76,35 @@ class PhotoFields:
         self._field = field
         field.committed.connect(lambda words, f=field: self._done(f, kind, picture, words))
         field.cancelled.connect(lambda f=field: self._done(f, kind, picture, None))
-        field.place(photos.to_view(spot).toAlignedRect())
+        field.stepped.connect(lambda words, by, f=field: self._step(f, kind, picture, words, by))
+        if kind == CAPTION and picture.grouped:
+            # Written in the field, not drawn under it meanwhile.
+            photo_group_view.set_caption_in_field(doc, picture.position)
+        # A picture alone has its caption as text of the document, which
+        # the field hides whole while it is written.
+        field.place(photos.to_view(spot).toAlignedRect(),
+                    cover=kind == CAPTION and not picture.grouped)
+        ed.viewport().update()
+
+    def _caption_alone(self, picture: Picture, box: QRectF) -> Optional[QRectF]:
+        """Where the caption of a picture that stands alone is written in
+        the text: the lines under the picture in its own paragraph, or the
+        italic paragraph that follows it; None for a picture without one."""
+        if not picture.unit.has_caption:
+            return None
+        doc = self._photos.editor.document()
+        own = doc.findBlock(picture.position)
+        last = doc.findBlock(picture.end)
+        lines = doc.documentLayout().blockBoundingRect(last)
+        top = box.bottom() if last == own else lines.top()
+        if lines.bottom() - top < 1:
+            return None
+        return QRectF(lines.left(), top, lines.width(), lines.bottom() - top)
+
+    def is_open(self) -> bool:
+        """Whether a field is open: its picture keeps the ring meanwhile,
+        though the words are written in the field, not in the text."""
+        return self._field is not None
 
     def _done(self, field: PictureField, kind: str, picture: Picture,
               words: Optional[str]) -> None:
@@ -76,6 +113,8 @@ class PhotoFields:
         back = field.line.hasFocus()
         if self._field is field:
             self._field = None
+            photo_group_view.set_caption_in_field(self._photos.editor.document(), None)
+            self._photos.editor.viewport().update()
         field.hide()
         field.deleteLater()
         # The picture by its number: a change of the document closes the
@@ -86,6 +125,21 @@ class PhotoFields:
         if back:
             # Return or Escape: back to the text, the picture selected.
             self._photos.editor.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _step(self, field: PictureField, kind: str, picture: Picture, words: str,
+              by: int) -> None:
+        """Tab in ``field``: its words written, then the same field of the
+        picture ``by`` places on in its group, when there is one."""
+        self._done(field, kind, picture, words)
+        if not shiboken6.isValid(self._photos):
+            return
+        doc = self._photos.editor.document()
+        found = actions.standing(doc, picture)
+        if found is None or not found.grouped or not 0 <= found.index + by < found.count:
+            return
+        other = actions.picture_at(doc, found.first + found.index + by)
+        if other is not None:
+            self.open(other, kind)
 
     def close(self) -> None:
         """The field open (if any) goes, with nothing written."""

@@ -39,6 +39,7 @@ import photo_layout
 import photo_page
 from export_html import document_to_html, open_page
 from markdown_writer import read_markdown
+from tests.app_process import run_window_script
 from tests.photo_corners import PHOTOS, SHAPES, gathered, shows_whole
 
 DOC = ("# Bothy weekend\n\nWe walked in from the station.\n\n![Steg](portrait.png)\n\n"
@@ -788,6 +789,31 @@ def test_no_page_of_a_pdf_breaks_through_a_picture(app):
     assert spread == 5                      # the tall group runs over pages, between its rows
 
 
+def test_a_group_moved_to_the_next_page_takes_no_paragraph_out_of_the_pdf(app):
+    """A long document is laid out piece by piece. The group that started
+    the next page did so while the paragraphs far below it had no lines
+    yet, and they never got any: the PDF (and the printed pages) ended
+    after the few paragraphs that had, pages short, with nothing said."""
+    words = "We walked in from the station and stopped at the harbour. " * 4
+    small = "![a](photo.png)\n\n![b](square.png)\n\n*A caption*\n"
+    after = "\n\n".join(f"After {n}: {words}" for n in range(40))
+    moved = 0
+    for lines in (5, 7, 9, 11):
+        before = "\n\n".join(f"Before {n}: {words}" for n in range(lines))
+        paged, _writer = _paged(f"{before}\n\n{small}\n{after}\n")
+        clone = paged.clone
+        layout = clone.documentLayout()
+        block = clone.begin()
+        while block.isValid():
+            assert block.layout().lineCount() > 0, (lines, block.text()[:12])
+            moved += (photo_group.is_group_block(block)
+                      and block.blockFormat().pageBreakPolicy() != 0)
+            block = block.next()
+        end = layout.blockBoundingRect(clone.lastBlock()).bottom()
+        assert paged.page_count == int((end - 0.5) // paged.content_height) + 1, lines
+    assert moved >= 1                       # one filler put the group across a page's end
+
+
 def test_no_page_of_a_letter_pdf_breaks_through_a_picture(app):
     from export_pdf import default_page_setup
     filler = "\n\n".join(f"Paragraph {n} of the walk in." for n in range(26))
@@ -848,6 +874,50 @@ def test_a_printed_page_shows_every_picture_whole(app, tmp_path):
     paged = paginate(_doc(), printer, printer.resolution(), image_roots=[str(PHOTOS)])
     _shows_every_picture_whole(tmp_path / "printed.pdf", paged, printer.resolution(),
                                printer.pageLayout())
+
+
+_ROWS_ON_PAPER = """
+import json, os, sys
+sys.path.insert(0, sys.argv[1])
+from PySide6.QtGui import QPdfWriter, QTextDocument
+from PySide6.QtWidgets import QApplication
+app = QApplication([])
+import photo_group
+from export_pdf import RESOLUTION, default_page_setup, make_page_layout, paginate
+from markdown_writer import read_markdown
+from tests.photo_corners import PHOTOS
+rows = {}
+for margin in (4, 14):
+    doc = QTextDocument()
+    read_markdown(doc, "Words.\\n\\n![a](photo.png)\\n\\n![b](square.png)\\n\\n"
+                       "![c](portrait.png)\\n\\n![d](landscape.png)\\n")
+    doc.setDocumentMargin(margin)
+    writer = QPdfWriter(os.devnull)
+    writer.setResolution(RESOLUTION)
+    writer.setPageLayout(make_page_layout(default_page_setup()))
+    clone = paginate(doc, writer, RESOLUTION, image_roots=[str(PHOTOS)]).clone
+    block = clone.begin()
+    while block.isValid():
+        if photo_group.is_group_block(block):
+            lines = block.layout()
+            rows[str(margin)] = [lines.lineAt(n).textLength() for n in range(lines.lineCount())]
+        block = block.next()
+print("RESULT", json.dumps({"dpi": app.primaryScreen().logicalDotsPerInchY(), "rows": rows}))
+"""
+
+
+def test_on_a_macs_paper_a_groups_rows_stay_whole_whatever_the_documents_margin(
+        app, tmp_path, monkeypatch):
+    """A page's margin is the document's turned into the paper's dots, and
+    Qt rounds it to a whole one. At a Mac's 72 dots per inch a margin of 4
+    is 66.67 dots on paper, 67 to Qt: the room taken for a row was two
+    thirds of a dot wider than Qt's line, which put the row's second
+    picture on a line of its own (two rows of two stood as 1, 2 and 1).
+    The editor's margin of 14 rounds the other way and hid it."""
+    monkeypatch.setenv("QT_FONT_DPI", "72")
+    at_72 = run_window_script(_ROWS_ON_PAPER, tmp_path)
+    assert at_72["dpi"] == 72
+    assert at_72["rows"] == {"4": [2, 2], "14": [2, 2]}
 
 
 def test_a_pdf_export_leaves_no_copy_of_the_document_behind(app):

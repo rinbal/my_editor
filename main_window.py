@@ -1903,16 +1903,19 @@ class MainWindow(QMainWindow):
 
     def _show_word_count(self, ed) -> None:
         """"1,234 words · 6 min read", or "12 of 1,234 words" while words
-        are selected; nothing for an empty document or a PDF."""
+        are selected; nothing for an empty document or a PDF. A selection
+        that holds no word (a picture, a space) leaves the document's
+        count: "0 of 1,234 words" told nothing about a picture."""
         total = self._document_words
         if ed is None or total == 0:
             self._words_label.setText("")
             return
-        selected = ed.textCursor().selectedText() if ed.textCursor().hasSelection() else ""
+        selected = (count_words(ed.textCursor().selectedText())
+                    if ed.textCursor().hasSelection() else 0)
         if selected:
             self._words_label.setText(ngettext(
                 "{selected} of {count} word", "{selected} of {count} words", total).format(
-                selected=_number(count_words(selected)), count=_number(total)))
+                selected=_number(selected), count=_number(total)))
             return
         minutes = reading_minutes(total)
         self._words_label.setText(ngettext(
@@ -2500,12 +2503,19 @@ class MainWindow(QMainWindow):
                                 (photo_group_menu.RIGHT, "Right"),
                                 (photo_group_menu.UP, "Up"), (photo_group_menu.DOWN, "Down"))}
         photo_titles = photo_group_menu.base_titles()
+        # In the Keyboard Shortcuts window the moves stand among the keys
+        # for text, away from their menu: there they say what they move.
+        photo_listed = {photo_group_menu.LEFT: _("Move photo left"),
+                        photo_group_menu.RIGHT: _("Move photo right"),
+                        photo_group_menu.UP: _("Move photo up"),
+                        photo_group_menu.DOWN: _("Move photo down")}
         self.act_photo = {}
         for name in photo_group_menu.COMMANDS:
             adding = name == photo_group_menu.ADD
             self.act_photo[name] = add(
                 Command(f"format.photo.{name}", photo_titles[name], FORMAT, photo_keys.get(name),
                         checkable=name == photo_group_menu.LARGE,
+                        listed_as=photo_listed.get(name, ""),
                         keywords=(_("photo"), _("picture"), _("image"), _("group"))
                         # Both spellings, in every language: "/foto" in English too.
                         + (("photo", "foto") if adding else ()),

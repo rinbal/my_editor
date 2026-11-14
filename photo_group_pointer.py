@@ -28,9 +28,10 @@ from typing import List, Optional, Tuple
 
 from PySide6.QtCore import QObject, QPoint, QPointF, QRectF, Qt, QTimer, QUrl
 from PySide6.QtGui import (
-    QAbstractTextDocumentLayout, QColor, QImage, QPainter, QPixmap, QTextDocument,
+    QAbstractTextDocumentLayout, QColor, QImage, QPainter, QPalette, QPixmap, QTextCharFormat,
+    QTextCursor, QTextDocument, QTextFormat,
 )
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QStyle, QStyleOption
 
 import accessibility_display
 import file_paths
@@ -82,11 +83,19 @@ class PhotoPointer(QObject):
         # A picture or files being moved, and how: "drag", "keys", "files".
         self._session: Optional[drag.Session] = None
         self._how = ""
+        # How many files are dragged in from another app (shown as one
+        # slot, which says how many it takes); 0 while none are.
+        self._incoming = 0
         self._point = QPointF()
         self._ghost: Optional[QPixmap] = None
         self._scroll = 0.0
         self._flash: Optional[Tuple[int, float]] = None
         self._ring = None
+        # A selection that holds more than one picture, as last read: for
+        # which document and selection, its parts outside the groups and
+        # the group pictures in it (_selected_pictures).
+        self._selection: Tuple[Optional[tuple], Tuple[List[Tuple[int, int]], List[int]]] = (
+            None, ([], []))
         self._frames = QTimer(self)
         self._frames.setInterval(_FRAME_MS)
         self._frames.timeout.connect(self._frame)
@@ -111,7 +120,8 @@ class PhotoPointer(QObject):
         missing = not self._photos.described(picture.unit)
         return overlay.chips_on(self._photos.to_view(box), _("More"),
                                 _("No ALT") if missing else _("ALT"),
-                                _("Large") if picture.grouped else _("Wide"))
+                                _("Large") if picture.grouped else _("Wide"),
+                                alt_short=_("ALT") if missing else "")
 
     def _bar(self, picture: Picture) -> Optional[overlay.Bar]:
         if not picture.grouped:
@@ -131,6 +141,12 @@ class PhotoPointer(QObject):
         if self._hover is not None:
             return self._hovered()
         return self._photos.current() if self._editor.hasFocus() else None
+
+    def _attended(self) -> bool:
+        """Whether the selected picture is being worked on: the editor has
+        the focus, or the field open on the picture has it (its caption or
+        its description is being written)."""
+        return self._editor.hasFocus() or self._photos.fields.is_open()
 
     def _hovered(self) -> Optional[Picture]:
         """The picture the pointer is over, as it stands now: a command
@@ -406,6 +422,7 @@ class PhotoPointer(QObject):
             return
         picture = self._session.picture
         self._session, self._how, self._ghost, self._scroll = None, "", None, 0.0
+        self._incoming = 0
         if self._flash is None:
             self._frames.stop()
         self._editor.viewport().setCursor(Qt.CursorShape.IBeamCursor)
@@ -430,13 +447,15 @@ class PhotoPointer(QObject):
     def drag_files(self, event) -> bool:
         """Picture files dragged over the text: the slot they would take
         is shown. True when there is one (the drop is accepted)."""
-        if not self._editable() or not self._picture_files(event.mimeData()):
+        paths = self._picture_files(event.mimeData()) if self._editable() else []
+        if not paths:
             self.stop()
             return False
         if self._session is None or self._how != "files":
             self.stop()
             self._start(None, "files")
             self._frames.start()
+        self._incoming = len(paths)
         self._follow(event.position())
         if self._session.target is None:
             return False
@@ -468,21 +487,73 @@ class PhotoPointer(QObject):
 
     def caret_moved(self) -> None:
         """The ring follows the picture at the caret."""
-        picture = self._photos.current() if self._editor.hasFocus() else None
+        picture = self._photos.current() if self._attended() else None
         ring = picture.position if picture is not None else None
         if ring != self._ring:
             self._ring = ring
             self._editor.viewport().update()
 
+    def _selected_pictures(self) -> Tuple[List[Tuple[int, int]], List[int]]:
+        """Of a selection longer than one character that holds pictures of
+        a group: its parts outside the groups' paragraphs, as (start, end),
+        and where the group pictures in it are. Two empty lists for any
+        other selection. Read once for a selection, not at every paint."""
+        ed = self._editor
+        cursor = ed.textCursor()
+        start, end = cursor.selectionStart(), cursor.selectionEnd()
+        doc = ed.document()
+        key = (doc.revision(), start, end)
+        if self._selection[0] == key:
+            return self._selection[1]
+        outside: List[Tuple[int, int]] = []
+        pictures: List[int] = []
+        if end - start > 1 and ed._holds_structure():
+            block = doc.findBlock(start)
+            run = start
+            while block.isValid() and block.position() < end:
+                if photo_group.is_group_block(block):
+                    first = block.position()
+                    if run < first:
+                        outside.append((run, first))
+                    count = len(photo_group.block_units(block))
+                    pictures.extend(range(max(start, first), min(end, first + count)))
+                    run = first + block.length()
+                block = block.next()
+            if run < end:
+                outside.append((run, end))
+        found = (outside, pictures) if pictures else ([], [])
+        self._selection = (key, found)
+        return found
+
+    def _highlight(self) -> QTextCharFormat:
+        """The look of selected words, as the text view gives it to them."""
+        ed = self._editor
+        palette = ed.palette()
+        group = (QPalette.ColorGroup.Active if ed.hasFocus() else QPalette.ColorGroup.Inactive)
+        fmt = QTextCharFormat()
+        fmt.setBackground(palette.brush(group, QPalette.ColorRole.Highlight))
+        fmt.setForeground(palette.brush(group, QPalette.ColorRole.HighlightedText))
+        option = QStyleOption()
+        option.initFrom(ed)
+        if ed.style().styleHint(QStyle.StyleHint.SH_RichText_FullWidthSelection, option, ed):
+            fmt.setProperty(QTextFormat.Property.FullWidthSelection, True)
+        return fmt
+
     def paint_text(self, event) -> bool:
         """The text drawn while a picture is selected, of a group or alone:
         as Qt draws it, without its highlight, which would fill the group's
         whole line around the pictures and tint a picture alone (the ring
-        shows what is selected, and no caret blinks, as in Pages). False
+        shows what is selected, and no caret blinks, as in Pages). A
+        selection that holds several pictures of a group, alone or with
+        words around them, is drawn the same way: its words highlighted as
+        ever, its group pictures ringed, nothing filled around them. False
         otherwise: Qt draws it."""
         ed = self._editor
         cursor = ed.textCursor()
-        if cursor.selectionEnd() - cursor.selectionStart() != 1 or self._photos.current() is None:
+        single = (cursor.selectionEnd() - cursor.selectionStart() == 1
+                  and self._photos.current() is not None)
+        outside, pictures = ([], []) if single else self._selected_pictures()
+        if not single and not pictures:
             return False
         dx, dy = ed.horizontalScrollBar().value(), ed.verticalScrollBar().value()
         clip = QRectF(event.rect().translated(dx, dy))
@@ -493,6 +564,13 @@ class PhotoPointer(QObject):
         for extra in ed.extraSelections():          # spelling, found words
             selection = QAbstractTextDocumentLayout.Selection()
             selection.cursor, selection.format = extra.cursor, extra.format
+            selections.append(selection)
+        for start, end in outside:                  # the selected words around the groups
+            part = QTextCursor(ed.document())
+            part.setPosition(start)
+            part.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+            selection = QAbstractTextDocumentLayout.Selection()
+            selection.cursor, selection.format = part, self._highlight()
             selections.append(selection)
         context.selections = selections
         painter = QPainter(ed.viewport())
@@ -517,7 +595,7 @@ class PhotoPointer(QObject):
         if self._session is not None:
             self._paint_moving(painter, accent, ink, surface, solid)
             return
-        current = photos.current() if self._editor.hasFocus() else None
+        current = photos.current() if self._attended() else None
         if current is not None:
             box = photos.box_of(current)
             if box is not None:
@@ -525,6 +603,15 @@ class PhotoPointer(QObject):
                 if self._flash is not None and self._flash[0] == current.position:
                     strength = 2.0 - (_now() - self._flash[1]) / _FLASH_S
                 overlay.paint_ring(painter, photos.to_view(box), accent, max(1.0, strength))
+        elif self._editor.hasFocus():
+            # Several pictures selected: a ring around each (paint_text).
+            doc = self._editor.document()
+            boxes: dict = {}
+            for position in self._selected_pictures()[1]:
+                if position not in boxes:
+                    boxes.update(photo_group_view.group_boxes(doc, position))
+                if position in boxes:
+                    overlay.paint_ring(painter, photos.to_view(boxes[position]), accent)
         shown = self._shown()
         if shown is None:
             return
@@ -545,10 +632,19 @@ class PhotoPointer(QObject):
             overlay.paint_chips(painter, chips, missing=not self._photos.described(shown.unit),
                                 big_on=big_on, hot=self._hot, accent=accent, solid=solid)
 
+    def new_words(self) -> str:
+        """What the slot of files dragged in says: how many it takes."""
+        if self._incoming < 2:
+            return _("New Photo")
+        return _("{n} New Photos").format(n=self._incoming)
+
     def _paint_moving(self, painter, accent: QColor, ink: QColor, surface: QColor,
                       solid: bool) -> None:
         session = self._session
         target = session.target
+        # Several files stand in one slot: the group they would make counts
+        # all of them, the first where the slot is.
+        more = max(0, self._incoming - 1)
         photos = self._photos
         now = _now()
         offset = QPointF(-self._editor.horizontalScrollBar().value(),
@@ -566,21 +662,22 @@ class PhotoPointer(QObject):
         painter.translate(offset)
         if session.preview is not None:
             session.preview.paint(painter, now, accent=accent, surface=surface,
-                                  words=_("New Photo"), lifted=self._how != "keys")
+                                  words=self.new_words(), lifted=self._how != "keys",
+                                  more=more)
         elif target is not None and target.line is not None:
             left, right, y = target.line
             overlay.paint_line(painter, left, right, y, target.words, accent=accent, solid=solid)
         painter.restore()
         label = ""
         if target is not None and target.units is not None:
-            label = _("Photo {k} of {n}").format(k=target.index + 1, n=len(target.units))
+            count = len(target.units) + more
+            label = _("Photo {k} of {n}").format(k=target.index + 1, n=count)
             area = session.preview.area().translated(offset) if session.preview else None
             if area is not None:
                 hint = (_("Arrow keys move it, Return puts it down, Esc cancels")
                         if self._how == "keys" else
                         _("Release: here as photo {k} of {n} · Esc cancels").format(
-                            k=target.index + 1, n=len(target.units)))
-                count = len(target.units)
+                            k=target.index + 1, n=count))
                 moving = session.preview.moved_box(now)
                 if self._how == "keys" and moving is not None:
                     overlay.paint_hint(painter, moving.translated(offset), hint, accent=accent,

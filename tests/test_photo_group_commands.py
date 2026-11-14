@@ -32,6 +32,7 @@ import photo_group_actions
 import photo_group_editing
 import photo_group_find
 import photo_group_overlay
+import photo_group_view
 import picture_crop
 import theme
 from editor import HtmlEditor
@@ -154,7 +155,11 @@ def test_a_split_whose_line_stays_empty_is_taken_back(said):
     ed.photos.run(SPLIT)
     QTest.keyClick(ed, Qt.Key.Key_Up)
     assert _markdown(ed) == FOUR_PICTURES and not ed.document().isUndoAvailable()
-    assert said[-1] == "The line stayed empty, the photos belong together again"
+    # Said: what happened, then the picture the caret went to; not the
+    # group's last one, where taking the split back had put the caret.
+    assert said[-2:] == ["The line stayed empty, the photos belong together again",
+                         "Photo 2 of 4. two. Cap two"]
+    assert "Photo 4 of 4. four" not in said
     ed.close()
 
 
@@ -226,6 +231,99 @@ def test_description_is_written_on_the_picture_and_saved_as_its_alt_text():
                                   "After.")
     assert _undone(ed)
     ed.close()
+
+
+def test_a_caption_being_written_stands_in_its_field_alone_and_its_picture_keeps_the_ring():
+    """The field lies over the caption as one line: a caption of two lines
+    showed its second one under the field, and the ring left the picture
+    while the field had the focus. A field too narrow for the example of
+    a caption says "Caption", whole."""
+    ed = _selected(number=1)                         # "Cap two" under a picture in a row of four
+    position = ed.textCursor().selectionStart()
+    handler = photo_group_view._handler(ed.document())
+    ed.photos.run(CAPTION)
+    field = next(found for found in ed.viewport().findChildren(QWidget, "pictureField")
+                 if found.isVisible())
+    assert handler.caption_in_field == position      # not drawn under the field
+    assert not ed.hasFocus() and ed.photos.pointer._attended()
+    field.line.clear()
+    assert field.line.placeholderText() == "Caption"
+    QTest.keyClick(field.line, Qt.Key.Key_Escape)
+    QApplication.processEvents()
+    assert handler.caption_in_field is None and _markdown(ed) == FOUR_PICTURES
+    ed.close()
+
+
+def test_the_caption_field_of_a_picture_alone_hides_its_caption_whole_under_the_picture():
+    """A picture alone has its caption as text under it: of two lines, the
+    second showed under the one line of the field. And under a picture
+    taller than the view the field was pushed up into the view, where it
+    lay over the picture: the view goes to the caption's line first."""
+    words = "A long caption that runs over more than one line of the text. " * 3
+    ed = _editor(_text("Before.", f"![one](portrait.png)\n\n*{words.strip()}*", "After."), 700)
+    ed.resize(700, 420)                                 # lower than the picture
+    QApplication.processEvents()
+    doc = ed.document()
+    picture = photo_group_actions.picture_at(doc, doc.findBlockByNumber(1).position())
+    ed.photos.select(picture.position)
+    ed.photos.run(CAPTION)
+    field = next(found for found in ed.viewport().findChildren(QWidget, "pictureField")
+                 if found.isVisible())
+    caption = doc.documentLayout().blockBoundingRect(doc.findBlock(picture.end))
+    lines = ed.photos.to_view(caption)
+    assert caption.height() > 1.5 * field.line.height()                 # two lines at least
+    assert field.geometry().top() <= lines.top() and field.geometry().bottom() >= lines.bottom() - 1
+    assert ed.viewport().rect().contains(field.geometry())
+    assert field.geometry().top() >= ed.photos.to_view(ed.photos.box_of(picture)).bottom() - 6
+    assert field.line.cursorPosition() == 0             # long words show their start
+    ed.photos.fields.close()
+    ed.close()
+
+
+def test_tab_in_a_field_writes_it_and_opens_the_next_pictures_field():
+    """A group's descriptions are written one after another without the
+    pointer: Tab takes the words and opens the same field on the next
+    picture, Shift-Tab on the one before; from the last picture Tab goes
+    back to the text, as Return does. (Tab did nothing in a field.)"""
+    ed = _selected(number=2)
+
+    def line():
+        return next(found for found in ed.viewport().findChildren(QWidget, "pictureField")
+                    if found.isVisible()).line
+
+    ed.photos.run(DESCRIPTION)
+    line().setText("A tower")
+    QTest.keyClick(line(), Qt.Key.Key_Tab)
+    QApplication.processEvents()
+    assert ed.photos.current().place == 4 and ed.photos.fields.is_open()
+    assert "![A tower](portrait.png)" in _markdown(ed)
+    QTest.keyClick(line(), Qt.Key.Key_Tab)             # the last picture: back to the text
+    QApplication.processEvents()
+    assert not ed.photos.fields.is_open() and ed.hasFocus() and ed.photos.current().place == 4
+    ed.photos.run(DESCRIPTION)
+    QTest.keyClick(line(), Qt.Key.Key_Backtab, Qt.KeyboardModifier.ShiftModifier)
+    QApplication.processEvents()
+    assert ed.photos.current().place == 3 and ed.photos.fields.is_open()
+    ed.photos.fields.close()
+    ed.close()
+
+
+def test_a_narrow_picture_without_a_description_still_says_so():
+    """The words for a missing description have no room on a narrow
+    picture (a portrait in a row of four): the chip went, and with it the
+    only sign on the picture that nothing describes it. It says the short
+    word there, and is marked as the short one (drawn with a mark of its
+    own, not as a picture that is described)."""
+    alt = photo_group_overlay.ALT
+    narrow = QRectF(0, 0, 90, 200)
+    without = photo_group_overlay.chips_on(narrow, "More", "Description missing", "Large")
+    assert alt not in without.boxes
+    chips = photo_group_overlay.chips_on(narrow, "More", "Description missing", "Large",
+                                         alt_short="ALT")
+    assert chips.words[alt] == "ALT" and chips.alt_short and narrow.contains(chips.boxes[alt])
+    wide = photo_group_overlay.chips_on(QRectF(0, 0, 400, 200), "More", "Description missing",
+                                        "Large", alt_short="ALT")
+    assert wide.words[alt] == "Description missing" and not wide.alt_short
 
 
 def _png(image: QImage) -> bytes:
@@ -487,6 +585,55 @@ def test_move_mode_shows_its_keys_beside_the_picture_and_lets_a_click_or_a_key_o
     ed.close()
 
 
+def test_the_keys_hint_stands_on_the_moved_picture_not_on_its_caption():
+    """Under the picture it covered the picture's own caption, and the
+    neighbour's beside it. Only a picture too low to hold it has it under
+    itself; and it never leaves the view."""
+    room = QRectF(0, 0, 800, 600)
+    box = QRectF(300, 100, 120, 260)
+    left, middle = photo_group_overlay.hint_place(box, 300, room)
+    assert box.top() < middle - 10 and middle + 10 < box.bottom()       # on the picture
+    assert left + 150 == box.center().x()                                # over its middle
+    low = QRectF(300, 100, 400, 50)
+    assert photo_group_overlay.hint_place(low, 300, room)[1] > low.bottom()
+    edge = QRectF(700, 100, 90, 260)
+    assert photo_group_overlay.hint_place(edge, 300, room)[0] + 300 <= room.right()
+
+
+def test_several_files_dragged_onto_a_group_say_how_many_they_are(monkeypatch):
+    """Files from another app stand as one slot in the group they are
+    dragged onto. Two of them said "New Photo", in a group counted one
+    picture too few, so the drop gave another group than the one shown."""
+    from PySide6.QtCore import QMimeData, QUrl
+    from PySide6.QtGui import QDragMoveEvent
+    bars = []
+    painted = photo_group_overlay.paint_bar
+    monkeypatch.setattr(photo_group_overlay, "paint_bar",
+                        lambda painter, bar, label, hint, *rest, **how: (
+                            bars.append((label, hint)),
+                            painted(painter, bar, label, hint, *rest, **how)))
+    ed = _editor()
+    pointer = ed.photos.pointer
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(PHOTOS / name)) for name in ("landscape.png", "plan.png")])
+    second = photo_group_actions.picture_at(ed.document(), _group(ed).start + 1)
+    over = ed.photos.to_view(ed.photos.box_of(second)).center().toPoint()
+    took = False
+    for _ in range(8):
+        took = pointer.drag_files(QDragMoveEvent(over, Qt.DropAction.CopyAction, mime,
+                                                 Qt.MouseButton.LeftButton,
+                                                 Qt.KeyboardModifier.NoModifier))
+        QTest.qWait(40)
+    assert took and pointer.new_words() == "2 New Photos"
+    ed.viewport().repaint()
+    label, hint = bars[-1]
+    assert label == "Photo Group · 6 Photos"                  # the four, and both files
+    assert hint.startswith("Release: here as photo ") and " of 6 " in hint
+    pointer.stop()
+    assert pointer.new_words() == "New Photo"
+    ed.close()
+
+
 def test_a_command_says_only_what_it_did(said):
     # Gate RG-PG2E-b 6: "Photo 3 of 3. boats" came first.
     ed = _selected(_text("Before.", ONE, TWO, "![boats](portrait.png)", "After."), number=1)
@@ -654,17 +801,22 @@ def test_move_up_hops_a_list_or_a_quote_whole(words):
     ed.close()
 
 
-def test_german_says_verschieben_and_alt_fehlt():
+def test_german_says_verschieben_and_alt_fehlt_and_names_a_group_bildgruppe():
     # Gate RG-PG2E-b 15: "bewegen" beside "verschieben", "Kein ALT", a fragment.
+    # A group is a "Bildgruppe" of "Bilder", as in STANDUP and in the rest of
+    # this app ("Bild einfügen"): it holds plans and drawings too.
     i18n.install("de")
     try:
         words = [_("Move Photo"), _("Move With Arrow Keys"), _("No ALT"),
                  _("Add photos to this group. Or drag them onto it.")]
+        named = [i18n.ngettext("Photo Group · {n} Photo", "Photo Group · {n} Photos",
+                               n).format(n=n) for n in (1, 3)]
     finally:
         i18n.install(i18n.ENGLISH)
-    assert words == ["Foto verschieben", "Mit Pfeiltasten verschieben", "ALT fehlt",
-                     "Fotos zu dieser Gruppe hinzufügen. Du kannst sie auch auf die Gruppe "
+    assert words == ["Bild verschieben", "Mit Pfeiltasten verschieben", "ALT fehlt",
+                     "Bilder zu dieser Gruppe hinzufügen. Du kannst sie auch auf die Gruppe "
                      "ziehen."]
+    assert named == ["Bildgruppe · 1 Bild", "Bildgruppe · 3 Bilder"]
 
 
 def _saved_reloaded_exported(ed) -> Tuple[str, List[Tuple[int, List[str]]], List[str]]:
