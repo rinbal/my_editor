@@ -56,23 +56,23 @@ VECTORS_SHA256 = "8be595763573c5659a03c619348e7f4b632428941396f916fa6ef8b508491d
 
 # The page parts (web/), each with where it is in STANDUP and its hash:
 # the scripts after their SPDX header, the stylesheet after its header of
-# ten lines (lines 181-187 and 476-993 of article.css).
+# ten lines (lines 181-187 and 476-1027 of article.css).
 WEB = ROOT / "web"
 JS_SPDX = (b"// SPDX-FileCopyrightText: 2026 DoktorShift\n"
            b"// SPDX-License-Identifier: MIT\n")
 CSS_HEADER_LINES = 10
-CSS_LINES = ((181, 187), (476, 993))
+CSS_LINES = ((181, 187), (476, 1027))
 WEB_FILES = {
     "photo_layout.js": ("backend/htmlgen/photo_layout.js",
                         "fe1c1f0668d4f92cfce4aa1afecc1b64572704179c694ea875649c3e95b51313"),
     "photo_viewer.js": ("backend/htmlgen/photo_viewer.js",
-                        "2e358ae10c2a93668e66506aaf29bc0855d5ebedd4625c8ee5e111fd6e4ec0e7"),
+                        "53f1182b447e9186d935d019675b907fbdbaa13d404990bc4fe6e11370c83d80"),
     "photo_groups.js": ("backend/htmlgen/photo_groups.js",
-                        "33039bf11a7d0ce75c575b32505aa12d5d33abc80c00fb15f602b79eac0edaac"),
+                        "c18434aa20ea17278786a8f2ba349fe07c2207ce6098b132e12bee65311bade8"),
     "photo-group-messages.json": ("shared/photo-group-messages.json",
-                                  "485a5727c3acb41985f220ecdeeee0a40b4bce82d61747907b469c05b1b2ddf7"),
+                                  "a0809cf06bd0610d17222bbd4ae3f2735c154e77287570e964accc0efbae350f"),
     "photo_groups.css": ("backend/htmlgen/article.css",
-                         "803c58d8c4b722229eeb168385add5ec43b28b241e4c779da71c37c54f29d4a6"),
+                         "eabaa74f8152535ebddc0fb0baadbfbe74fc9e70af78d2576ca813ddf5c1ee4a"),
 }
 
 
