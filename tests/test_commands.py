@@ -214,6 +214,16 @@ def test_the_shortcut_window_lists_every_command_shortcut(main_window_commands):
             assert any(keys == key_text(command.shortcut) for keys, _w in listed), command.id
 
 
+def test_the_shortcut_window_says_what_the_photo_keys_move(main_window_commands):
+    """Format > Photo > Move Left stood in the Keyboard Shortcuts window as
+    "Move Left", among the keys for text, without a word on what it moves."""
+    listed = [words for _group, rows in main_window_commands.commands.shortcut_groups()
+              for _keys, words in rows]
+    assert sorted(words for words in listed if words.startswith("Move photo")) == [
+        "Move photo down", "Move photo left", "Move photo right", "Move photo up"]
+    assert not {"Move Left", "Move Right", "Move Up", "Move Down"} & set(listed)
+
+
 def test_the_nostr_commands_that_need_an_account_are_marked(main_window_commands):
     win = main_window_commands
     marked = {c.id for c in win.commands.commands() if c.nostr}

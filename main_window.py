@@ -2460,12 +2460,19 @@ class MainWindow(QMainWindow):
                                 (photo_group_menu.RIGHT, "Right"),
                                 (photo_group_menu.UP, "Up"), (photo_group_menu.DOWN, "Down"))}
         photo_titles = photo_group_menu.base_titles()
+        # In the Keyboard Shortcuts window the moves stand among the keys
+        # for text, away from their menu: there they say what they move.
+        photo_listed = {photo_group_menu.LEFT: _("Move photo left"),
+                        photo_group_menu.RIGHT: _("Move photo right"),
+                        photo_group_menu.UP: _("Move photo up"),
+                        photo_group_menu.DOWN: _("Move photo down")}
         self.act_photo = {}
         for name in photo_group_menu.COMMANDS:
             adding = name == photo_group_menu.ADD
             self.act_photo[name] = add(
                 Command(f"format.photo.{name}", photo_titles[name], FORMAT, photo_keys.get(name),
                         checkable=name == photo_group_menu.LARGE,
+                        listed_as=photo_listed.get(name, ""),
                         keywords=(_("photo"), _("picture"), _("image"), _("group"))
                         # Both spellings, in every language: "/foto" in English too.
                         + (("photo", "foto") if adding else ()),
