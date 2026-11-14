@@ -80,6 +80,8 @@ class Chips:
 
     boxes: Dict[str, QRectF] = field(default_factory=dict)
     words: Dict[str, str] = field(default_factory=dict)
+    # The ALT chip says its short word, there being no room for the long.
+    alt_short: bool = False
 
     def at(self, point: QPointF) -> Optional[str]:
         for name, box in self.boxes.items():
@@ -88,10 +90,12 @@ class Chips:
         return None
 
 
-def chips_on(box: QRectF, more: str, alt: str, big: str) -> Chips:
+def chips_on(box: QRectF, more: str, alt: str, big: str, alt_short: str = "") -> Chips:
     """Where the chips go on a picture drawn in ``box``, with their words
     (``big`` empty: no such chip). A narrow picture shows glyphs without
-    words, a low one only the handle and More, a tiny one only More."""
+    words, a low one only the handle and More, a tiny one only More.
+    ``alt_short`` stands in for ``alt`` where that has no room ("No ALT"
+    on a narrow picture): a missing description is said there too."""
     metrics = QFontMetricsF(chip_font())
     chips = Chips()
 
@@ -111,6 +115,8 @@ def chips_on(box: QRectF, more: str, alt: str, big: str) -> Chips:
     if box.height() < SHORT or HANDLE not in chips.boxes:
         return chips
     alt_width = width(alt)
+    if alt_width > room and alt_short:
+        alt, alt_width, chips.alt_short = alt_short, width(alt_short), True
     if alt_width > room:
         return chips
     chips.boxes[ALT] = QRectF(box.left() + INSET, bottom, alt_width, CHIP)
@@ -157,6 +163,16 @@ def _check(painter: QPainter, r: QRectF) -> None:
     c = r.center()
     painter.drawPolyline([QPointF(c.x() - 4, c.y()), QPointF(c.x() - 1, c.y() + 3),
                           QPointF(c.x() + 4.5, c.y() - 3.5)])
+
+
+def _exclaim(painter: QPainter, r: QRectF) -> None:
+    """An exclamation mark: something is missing here."""
+    c = r.center()
+    painter.setPen(_pen(1.8))
+    painter.drawLine(QPointF(c.x(), c.y() - 4.5), QPointF(c.x(), c.y() + 0.8))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(_INK)
+    painter.drawEllipse(QPointF(c.x(), c.y() + 4.3), 1.15, 1.15)
 
 
 def _expand(painter: QPainter, r: QRectF) -> None:
@@ -218,7 +234,9 @@ def paint_chips(painter: QPainter, chips: Chips, *, missing: bool, big_on: bool,
         glyph_box = QRectF(box.left() + (_PAD if words else (box.width() - _ICON) / 2),
                            box.center().y() - _ICON / 2, _ICON, _ICON)
         text_left = glyph_box.right() + _GAP
-        if name == ALT and missing:
+        if name == ALT and missing and chips.alt_short:
+            _exclaim(painter, glyph_box)        # "ALT" alone would read as described
+        elif name == ALT and missing:
             text_left = box.left() + _PAD + (_ICON + _GAP) / 2      # words alone, centred
         elif name == ALT:
             _check(painter, glyph_box)

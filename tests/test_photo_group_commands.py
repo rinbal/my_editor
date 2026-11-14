@@ -250,6 +250,24 @@ def test_a_caption_being_written_stands_in_its_field_alone_and_its_picture_keeps
     ed.close()
 
 
+def test_a_narrow_picture_without_a_description_still_says_so():
+    """The words for a missing description have no room on a narrow
+    picture (a portrait in a row of four): the chip went, and with it the
+    only sign on the picture that nothing describes it. It says the short
+    word there, and is marked as the short one (drawn with a mark of its
+    own, not as a picture that is described)."""
+    alt = photo_group_overlay.ALT
+    narrow = QRectF(0, 0, 90, 200)
+    without = photo_group_overlay.chips_on(narrow, "More", "Description missing", "Large")
+    assert alt not in without.boxes
+    chips = photo_group_overlay.chips_on(narrow, "More", "Description missing", "Large",
+                                         alt_short="ALT")
+    assert chips.words[alt] == "ALT" and chips.alt_short and narrow.contains(chips.boxes[alt])
+    wide = photo_group_overlay.chips_on(QRectF(0, 0, 400, 200), "More", "Description missing",
+                                        "Large", alt_short="ALT")
+    assert wide.words[alt] == "Description missing" and not wide.alt_short
+
+
 def _png(image: QImage) -> bytes:
     out = QByteArray()
     buffer = QBuffer(out)

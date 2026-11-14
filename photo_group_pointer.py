@@ -111,7 +111,8 @@ class PhotoPointer(QObject):
         missing = not self._photos.described(picture.unit)
         return overlay.chips_on(self._photos.to_view(box), _("More"),
                                 _("No ALT") if missing else _("ALT"),
-                                _("Large") if picture.grouped else _("Wide"))
+                                _("Large") if picture.grouped else _("Wide"),
+                                alt_short=_("ALT") if missing else "")
 
     def _bar(self, picture: Picture) -> Optional[overlay.Bar]:
         if not picture.grouped:
