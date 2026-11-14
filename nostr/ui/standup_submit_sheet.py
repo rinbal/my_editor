@@ -65,14 +65,14 @@ from ..signer_limits import signable
 from ..standup import drafting, formats, words
 from ..standup.drafting import ArticleDraft, Choice
 from ..standup.errors import Code, cause_words
-from ..standup.submitting import MessageStatus
+from ..standup.submitting import MessageStatus, Phase
 from ..standup.trust import KEY_NOT_CONFIRMED, Destination
 from ..standup.words import LIST_NOT_SAVED, WAITING_FOR_SIGNER
 from . import appearance
 from .publish_article_dialog import LABEL_ALIGNMENT, ArticleCard, form_label, form_layout
 from .publish_sheet import (
-    AccountRow, BottomRow, StatusLine, fit_margins, fit_to_window, make_sheet, scroll_area,
-    sheet_stylesheet,
+    AccountRow, BottomRow, StatusLine, fit_margins, fit_to_window, grow_with_text, make_sheet,
+    scroll_area, sheet_stylesheet,
 )
 from .standup_handoff import HandoffView
 from .standup_waits import limit_words, server_limit_words
@@ -82,13 +82,15 @@ from .standup_publications import (
     PublicationLogos, PublicationPicker, can_choose, fill_picker, publication_logo, publish_by,
     recent_first, rules_words,
 )
-from .standup_submit import RoundAnswer, StandupWriter, SubmissionRun
+from .standup_submit import RoundAnswer, StandupWriter, SubmissionRun, Typed
 
 _WIDTH = 780
 # The sheet's least height while its window has it: the handoff's room,
 # so the sheet keeps its size when Submit turns it into the handoff.
 _HEIGHT = 460
 _LOGO = 20
+# The note: three lines to begin with, growing with what is written.
+_NOTE_LINES = (3, 8)
 
 
 def _now() -> float:
@@ -146,7 +148,17 @@ class SubmitSheet(QDialog):
         self._bound_known = False
         self._sized = False                     # its window gave it a size
         self.run: Optional[SubmissionRun] = None
+        # What was typed for this text and not sent, the last time the
+        # sheet was open for it (StandupWriter.typed): the note is there
+        # again, and its publication is chosen again once they are listed.
+        kept = writer.typed.get((profile.user_pubkey, draft.d), Typed())
+        self._kept_publication = kept.publication
+        self._picked_by_hand = False
+        self._account_gone = False                  # let go while the sheet was open
         self._build(profile)
+        if kept.note:
+            self.message.setPlainText(kept.note)
+            self.message_toggle.setChecked(True)    # shown: nothing is sent unseen
         logos.changed.connect(self._on_logo)
         writer.stopped.connect(self._on_account_stopped)
         running = writer.running(profile, draft.d)
@@ -257,6 +269,7 @@ class SubmitSheet(QDialog):
         self.picker.setAccessibleName(_("Publication"))
         self.picker.setIconSize(QSize(_LOGO, _LOGO))
         self.picker.currentIndexChanged.connect(self._on_picked)
+        self.picker.activated.connect(lambda _index: setattr(self, "_picked_by_hand", True))
         self.rules = self._hint()
         # Every answer that leaves the sheet waiting has its way out
         # (lesson 12), and an earlier try not sent its Discard.
@@ -306,10 +319,16 @@ class SubmitSheet(QDialog):
         self.message_toggle.setText(_("Message to the Editorial Team"))
         self.message_toggle.setArrowType(Qt.ArrowType.RightArrow)
         self.message_toggle.toggled.connect(self._show_message)
+        # Opened by hand, the note takes the focus: it is what was asked for.
+        self.message_toggle.clicked.connect(
+            lambda shown: self.message.setFocus() if shown else None)
         self.message = QPlainTextEdit()
         self.message.setPlaceholderText(_("Optional. For example, why the text suits you."))
         self.message.setAccessibleName(_("Message to the Editorial Team"))
-        self.message.setFixedHeight(72)
+        # Tab goes on to the next field, as in the app's other notes; it
+        # stayed in this one, as a tab in the text.
+        self.message.setTabChangesFocus(True)
+        self.message.textChanged.connect(self._fit_note)
         self.message.textChanged.connect(self._refresh)
         self.message.hide()
         message = QWidget()
@@ -396,6 +415,7 @@ class SubmitSheet(QDialog):
         self._sized = True
         fit_margins(self)
         self._arrange()
+        self._fit_note()                            # other width, other lines
 
     def _arrange(self) -> None:
         """The card beside the fields while the rows shown have their room
@@ -495,6 +515,15 @@ class SubmitSheet(QDialog):
         fill_picker(self.picker, destinations, loading=loading, logo_for=self._logo_for,
                     request_logo=lambda d: self._logos.request(d.server, d.address, d.avatar),
                     recent_first=recent)
+        # The one chosen for this text the last time, where it is still
+        # offered: never another by oversight after a failure. Once.
+        kept = next((i for i, d in enumerate(destinations)
+                     if d.address == self._kept_publication and can_choose(d)), -1)
+        if kept >= 0:
+            self._kept_publication = ""
+            self.picker.blockSignals(True)
+            self.picker.setCurrentIndex(kept)
+            self.picker.blockSignals(False)
         self._on_picked(self.picker.currentIndex())
 
     def _logo_for(self, destination: Destination, size: int = _LOGO) -> QPixmap:
@@ -549,11 +578,19 @@ class SubmitSheet(QDialog):
                                          else Qt.ArrowType.RightArrow)
         had_focus = self.message.hasFocus()
         self.message.setVisible(shown)
-        if shown:
-            self.message.setFocus()
-        elif had_focus:
+        if not shown and had_focus:
             self.message_toggle.setFocus()          # never left on the hidden field
+        self._fit_note()
         self._grow()
+
+    def _fit_note(self) -> None:
+        """The note as tall as what is written in it, and the sheet with it."""
+        if self.message.isHidden():
+            return
+        before = self.message.height()
+        grow_with_text(self.message, least=_NOTE_LINES[0], most=_NOTE_LINES[1])
+        if self.message.height() != before:
+            self._grow()
 
     def privacy_words(self) -> List[str]:
         """The lines behind the lock, for the chosen publication."""
@@ -646,6 +683,10 @@ class SubmitSheet(QDialog):
         if choice is None or self.round() is None or self.blockers():
             return
         run = self._writer.submit(self.account.profile(), self._draft, choice, self._round)
+        # Once it is in, what was typed for it is sent: nothing is kept.
+        typed, key = self._writer.typed, self._typed_key()
+        run.changed.connect(lambda progress: progress.phase is Phase.DONE
+                            and typed.pop(key, None))
         self.submitted.emit(run.draft.d)
         self._show_run(run)
         run.start()
@@ -707,10 +748,43 @@ class SubmitSheet(QDialog):
         if self.run is not None:
             self.run.changed.disconnect(self.handoff.show_progress)
             self.run = None                         # stopped, not in the background
+        self._account_gone = True                   # and nothing typed is kept for it
         self.reject()
+
+    def _typed_key(self) -> tuple:
+        return self.account.profile().user_pubkey, self._draft.d
+
+    def _remember(self) -> None:
+        """What was typed and not sent stays for this text (see
+        StandupWriter.typed): after a failure, a cancelled run or a
+        cancelled sheet. Nothing once the work is in, and nothing where
+        nothing was written or chosen."""
+        note = self.message.toPlainText()
+        destination = self.destination()
+        sent = self.run is not None and self.run.progress.phase is Phase.DONE
+        chose = self.run is not None or self._picked_by_hand
+        if sent or self._account_gone or not (note.strip() or chose):
+            self._writer.typed.pop(self._typed_key(), None)
+        else:
+            self._writer.typed[self._typed_key()] = Typed(
+                note=note if note.strip() else "",
+                publication=destination.address if destination is not None and chose else "")
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802, Qt's name
+        """Command-Return (Control-Return on Windows and Linux) chooses the
+        default button from the note too, where Return starts a new line."""
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) \
+                and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            default = next((button for button in self.findChildren(QPushButton)
+                            if button.isDefault() and button.isVisible()), None)
+            if default is not None and default.isEnabled():
+                default.click()
+            return
+        super().keyPressEvent(event)
 
     def done(self, result: int) -> None:  # noqa: N802, Qt's name
         self._generation += 1                       # no answer counts after this
+        self._remember()
         if self.run is not None:
             self.run.changed.disconnect(self.handoff.show_progress)
             if self.run.progress.message is MessageStatus.FAILED:

@@ -656,6 +656,19 @@ def test_a_sign_out_hears_when_what_was_read_is_written():
     QApplication.processEvents()                    # the session's answer, while it lives
 
 
+def test_what_was_typed_in_the_sheet_is_forgotten_with_its_account():
+    # UX-M1: a note not sent stays for its text while the account is in
+    # use, in memory only; a sign-out forgets it, as it forgets the keys.
+    from nostr.ui.standup_submit import Typed
+    writer, profile = _wired_writer()
+    writer.account(profile)
+    writer.typed[(profile.user_pubkey, "ein-jahr")] = Typed(note="Hallo Redaktion")
+    writer.typed[("ee" * 32, "ein-jahr")] = Typed(note="Von einem anderen Konto")
+    writer.stop()
+    assert list(writer.typed) == [("ee" * 32, "ein-jahr")]
+    QApplication.processEvents()
+
+
 def test_the_clients_of_other_servers_are_made_once_and_let_go_with_their_account():
     # Lesson 31: a client of another server refuses once its account stopped.
     from nostr.standup.errors import Code

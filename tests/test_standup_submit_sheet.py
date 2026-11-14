@@ -109,6 +109,7 @@ class Writer:
         self.reloaded = 0
         self.fail_destinations = False
         self.destinations_error = None      # what StandupApi gives: a StandupError
+        self.typed = {}                     # StandupWriter.typed
 
     def signer_bound(self, _profile, done) -> None:
         self.bound_asked += 1
@@ -873,8 +874,120 @@ def test_closing_the_note_leaves_the_focus_on_its_title(tmp_path):
     sheet.show()
     sheet.activateWindow()
     _settle()
-    sheet.message_toggle.setChecked(True)
+    sheet.message_toggle.click()
     assert QApplication.focusWidget() is sheet.message
-    sheet.message_toggle.setChecked(False)
+    sheet.message_toggle.click()
     assert QApplication.focusWidget() is sheet.message_toggle
     sheet.close()
+
+
+# -- the note (UX-M1) ----------------------------------------------------------
+
+def test_tab_leaves_the_note_and_command_return_submits_from_it(tmp_path):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    writer = Writer()
+    sheet = _sheet(tmp_path, writer)
+    sheet.show()
+    sheet.activateWindow()
+    _settle()
+    sheet.message_toggle.click()
+    QTest.keyClicks(sheet.message, "Hallo")
+    QTest.keyClick(sheet.message, Qt.Key.Key_Tab)
+    assert QApplication.focusWidget() is not sheet.message      # it stayed, as a tab in the text
+    assert sheet.message.toPlainText() == "Hallo"
+    sheet.message.setFocus()
+    QTest.keyClick(sheet.message, Qt.Key.Key_Return)
+    assert sheet.message.toPlainText() == "Hallo\n" and writer.submitted == []
+    QTest.keyClick(sheet.message, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    assert len(writer.submitted) == 1 and sheet._pages.currentIndex() == 1
+    sheet.close()
+
+
+def test_command_return_does_nothing_while_a_blocker_dims_submit(tmp_path):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    writer = Writer(destinations=(BLOG,))                       # the rights are not confirmed
+    sheet = _sheet(tmp_path, writer)
+    sheet.show()
+    sheet.activateWindow()
+    _settle()
+    sheet.message_toggle.click()
+    QTest.keyClick(sheet.message, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    assert writer.submitted == [] and sheet._pages.currentIndex() == 0
+    sheet.close()
+
+
+def test_the_note_grows_with_what_is_written_up_to_eight_lines(tmp_path):
+    sheet = _sheet(tmp_path)
+    sheet.show()
+    _settle()
+    sheet.message_toggle.click()
+    _settle()
+    three = sheet.message.height()
+    sheet.message.setPlainText("\n".join(["Eine Zeile"] * 6))
+    _settle()
+    six = sheet.message.height()
+    assert six > three and sheet.message.verticalScrollBar().maximum() == 0
+    sheet.message.setPlainText("\n".join(["Eine Zeile"] * 20))
+    _settle()
+    assert sheet.message.height() > six
+    assert sheet.message.height() - six == 2 * sheet.message.fontMetrics().lineSpacing()
+    sheet.close()
+
+
+def test_what_was_typed_and_not_sent_is_there_when_the_sheet_opens_again(tmp_path):
+    # After a failure the note was gone, and the first publication of the
+    # list was chosen again instead of the one the text was meant for.
+    from nostr.standup.submitting import Failure
+    writer = Writer(destinations=(MAGAZIN, BLOG))
+    sheet = _sheet(tmp_path, writer)
+    sheet.picker.setCurrentIndex(1)
+    sheet.picker.activated.emit(1)                              # chosen by hand
+    sheet.rights.setChecked(True)
+    sheet.message_toggle.click()
+    sheet.message.setPlainText("Passt zu eurer Reihe.")
+    sheet.submit_button.click()
+    run = sheet.run
+    run.progress = Progress(Step.FAILED, failure=Failure(
+        failures.CHECK_CONNECTION, Step.SIGNING, title=words.NOT_SUBMITTED))
+    run.changed.emit(run.progress)
+    sheet.handoff.close_requested.emit()                        # closed on the failure
+    writer.on_its_way = None                                    # that run has ended
+    again = _sheet(tmp_path, writer)
+    assert again.message.toPlainText() == "Passt zu eurer Reihe."
+    assert not again.message.isHidden()                         # shown: nothing is sent unseen
+    assert again.destination() is BLOG
+    assert not again.rights.isChecked()                         # confirmed anew each time
+
+
+def test_once_the_work_is_in_nothing_typed_is_kept(tmp_path):
+    writer = Writer()
+    sheet = _sheet(tmp_path, writer)
+    sheet.message_toggle.click()
+    sheet.message.setPlainText("Passt zu eurer Reihe.")
+    sheet.submit_button.click()
+    run = sheet.run
+    sheet.handoff.background_requested.emit()                   # goes on in the background
+    assert writer.typed                                         # kept while it may still fail
+    run.progress = Progress(Step.SUBMITTED)
+    run.changed.emit(run.progress)
+    assert writer.typed == {}
+
+
+def test_a_note_in_a_sheet_whose_account_is_let_go_is_not_kept(tmp_path):
+    writer = Writer()
+    sheet = _sheet(tmp_path, writer)
+    sheet.message_toggle.click()
+    sheet.message.setPlainText("Passt zu eurer Reihe.")
+    writer.stopped.emit(WRITER)                                 # sign-out: the sheet closes
+    assert writer.typed == {}
+
+
+def test_a_sheet_cancelled_with_nothing_written_keeps_nothing(tmp_path):
+    writer = Writer(destinations=(MAGAZIN, BLOG))
+    sheet = _sheet(tmp_path, writer)
+    sheet.reject()
+    assert writer.typed == {}
+    again = _sheet(tmp_path, writer)
+    assert again.message.isHidden() and again.destination() is MAGAZIN

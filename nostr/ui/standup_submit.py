@@ -34,7 +34,8 @@ is a few lines here, the rest lives in its own module.
 from __future__ import annotations
 
 import time
-from typing import Callable, List, Optional
+from dataclasses import dataclass
+from typing import Callable, Dict, List, Optional, Tuple
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
@@ -63,6 +64,16 @@ from .standup_handoff import phase_words
 from .standup_message import send_first_message
 from .standup_run import SubmissionRun, background_message_words, stopped_words
 from .standup_uploads import THUMB_SIDE, BlossomUploads, thumbnail
+
+
+@dataclass(frozen=True)
+class Typed:
+    """What a person chose and wrote in Submit to a Publication for a
+    text and did not send: the note to the editorial team, and the
+    publication (its address)."""
+
+    note: str = ""
+    publication: str = ""
 
 
 class StandupWriter(QObject):
@@ -104,6 +115,12 @@ class StandupWriter(QObject):
         # What this computer holds of the texts submitted, across restarts
         # (RG-M2r2a 1); the window's is kept in its file, a test's is not.
         self._marks = marks if marks is not None else SubmittedMarks(kept=False)
+        # What was typed in the sheet for a text and not sent (it closed
+        # after a failure, or was cancelled): there again when the sheet
+        # opens for that text, so nobody writes a note twice or submits to
+        # another publication by oversight. By account and link name, in
+        # memory only, and forgotten with the account (stop).
+        self.typed: Dict[Tuple[str, str], Typed] = {}
 
     @property
     def server(self) -> str:
@@ -509,6 +526,8 @@ class StandupWriter(QObject):
             return
         said = stopped_words(account.runs)
         account.stopped = True
+        for key in [key for key in self.typed if key[0] == account.writer]:
+            del self.typed[key]
         following, self._following = self._following, None
         self._cleanup = None                 # goes with its Following
         if following is not None:
@@ -650,5 +669,6 @@ def _later(ms: int, callback: Callable[[], None]) -> None:
 
 
 __all__ = [
-    "BlossomUploads", "RoundAnswer", "StandupWriter", "SubmissionRun", "THUMB_SIDE", "thumbnail",
+    "BlossomUploads", "RoundAnswer", "StandupWriter", "SubmissionRun", "THUMB_SIDE", "Typed",
+    "thumbnail",
 ]

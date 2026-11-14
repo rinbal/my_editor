@@ -38,7 +38,7 @@ from PySide6.QtCore import QEvent, QObject, QSize, Qt, Signal, Slot
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication, QBoxLayout, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QMenu,
-    QPushButton, QScrollArea, QStyle, QToolButton, QToolTip, QWidget,
+    QPlainTextEdit, QPushButton, QScrollArea, QStyle, QToolButton, QToolTip, QWidget,
 )
 
 import announce
@@ -185,6 +185,21 @@ def scroll_area(page: QWidget) -> QScrollArea:
     scroll.viewport().setAutoFillBackground(False)
     _FocusInView(scroll)
     return scroll
+
+
+def grow_with_text(edit: QPlainTextEdit, *, least: int, most: int) -> None:
+    """``edit`` as tall as its text, from ``least`` to ``most`` lines: a
+    note of a few lines is read whole, and a scroll bar comes only once
+    the field stops growing. Called when its text or its width changed."""
+    # A plain text's layout counts its height in lines, wrapped ones too.
+    counted = round(edit.document().size().height())
+    lines = max(least, min(most, counted))
+    edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded if counted > most
+                                    else Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    # What the frame and the style take around the text, as drawn.
+    margins = edit.contentsMargins()
+    around = margins.top() + margins.bottom() + 2 * int(edit.document().documentMargin())
+    edit.setFixedHeight(lines * edit.fontMetrics().lineSpacing() + around + 2)
 
 
 def sheet_stylesheet(is_dark: bool) -> str:
