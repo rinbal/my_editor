@@ -21,16 +21,22 @@ from typing import Dict, List, Optional, Tuple
 
 Entry = Tuple[Optional[int], int]          # size (None for a folder), mtime in ns
 _PREFIX = "myeditor-tests-home-"
+# Windows has no account database here: its home is USERPROFILE, which
+# isolate() points at the run's own folder. The person's is noted first.
+_home_before_isolate: Optional[str] = None
 
 
 def persons_home() -> str:
     """The person's own home folder, whatever HOME says now: from the
     account database where there is one, so a run started with HOME
-    pointed elsewhere still watches the right folder."""
+    pointed elsewhere still watches the right folder; on Windows, the
+    USERPROFILE from before :func:`isolate`."""
     try:
         import pwd
         return pwd.getpwuid(os.getuid()).pw_dir
     except (ImportError, KeyError, AttributeError):
+        if _home_before_isolate is not None:
+            return _home_before_isolate
         return os.environ.get("USERPROFILE") or os.path.expanduser("~")
 
 
@@ -43,6 +49,9 @@ def isolate() -> str:
     """Point HOME, USERPROFILE and the XDG folders at a new empty folder
     of the run's own, and return it. Call before any app module is
     imported; child processes the tests start inherit it."""
+    global _home_before_isolate
+    if _home_before_isolate is None:
+        _home_before_isolate = persons_home()
     home = tempfile.mkdtemp(prefix=_PREFIX)
     os.environ["HOME"] = home
     os.environ["USERPROFILE"] = home
