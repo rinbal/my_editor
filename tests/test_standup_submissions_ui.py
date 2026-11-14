@@ -701,6 +701,45 @@ def test_the_named_reminders_and_the_version_card_wrap_and_read_whole_in_a_narro
         i18n.install("en")
 
 
+def test_in_a_short_panel_the_cover_gives_way_and_every_action_stays_whole(window, monkeypatch):
+    # UX-M2: three people to remind in a low window. The cover and the
+    # people's pills go, the buttons stay in sight above the composer;
+    # with room again, the cover is back.
+    world, eva, tom = window.world, pk("recipient"), pk("member")
+    for key, name in ((eva, "Eva"), (tom, "Tom")):
+        monkeypatch.setitem(NAMES, key, name)
+    seed = world.account()
+    prepared, entry = world.submit(seed, d="drei", title="Drei", participants=(OTHER, eva, tom))
+    world.record(entry.sid).signer = "publication"
+    world.decide(prepared, "accept", split=[
+        {"pubkey": ME, "weight": 40, "role": "writer"},
+        *({"pubkey": key, "weight": 20, "role": "contributor"} for key in (OTHER, eva, tom))])
+    world.confirm(seed, prepared)
+    window.follow()
+    view = window.view
+    view.resize(300, 700)
+    view.show()
+    detail = opened(window, entry)
+
+    def settle():
+        for _ in range(4):
+            QApplication.processEvents()
+
+    settle()
+    assert detail.cover.isVisible() and len(detail.reminder_buttons()) == 3
+    view.resize(300, 700 - detail._scroll.height() + 30)        # 30 px left for the conversation
+    settle()
+    assert not detail.cover.isVisible() and not detail._pills.isVisible()
+    assert detail.title.isVisible() and detail.composer_bar.isVisible()
+    for button in detail.reminder_buttons():
+        bottom = button.mapTo(detail, button.rect().bottomLeft()).y()
+        assert button.isVisible() and bottom < detail.composer_bar.y(), button.text()
+    view.resize(300, 700)
+    settle()
+    assert detail.cover.isVisible() and detail._pills.isVisible()
+    view.hide()
+
+
 def _read_whole(buttons, pane, width):
     """Each of ``buttons`` as wide as its words need, inside ``pane``."""
     for button in buttons:

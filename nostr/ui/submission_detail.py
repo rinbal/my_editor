@@ -41,11 +41,11 @@ from __future__ import annotations
 from html import escape
 from typing import Callable, Iterable, Optional
 
-from PySide6.QtCore import QDateTime, QEvent, QLocale, QSize, Qt, Signal
+from PySide6.QtCore import QDateTime, QEvent, QLocale, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QMenu, QPlainTextEdit, QPushButton, QScrollArea, QToolButton,
-    QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QLabel, QMenu, QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy,
+    QToolButton, QVBoxLayout, QWidget,
 )
 
 import announce
@@ -70,6 +70,10 @@ _COVER = 64
 # How far the top bar's buttons reach into the gutter, so that their
 # words and symbols, not their focus rings, stand on it.
 BAR_INSET = 4
+# The height the conversation keeps before the cover and the people give
+# way to it (a short panel), and how much more it needs to give them back.
+_CONVERSATION_ROOM = 96
+_ROOM_AGAIN = 24
 COMPOSER_LINES = 5
 SEND_TIP = N_("Send (↩)")
 NEW_LINE_HINT = N_("⇧↩ for a new line")
@@ -123,6 +127,12 @@ class SubmissionDetail(QWidget):
         self._said = ""
         self._line = ""                         # what an action said in place
         self._shown_row: tuple = ()             # the row and the publication's name shown
+        self._has_people = False                # the pills have someone to show
+        # The header is fitted again once what was shown anew is laid out.
+        self._fit_soon = QTimer(self)
+        self._fit_soon.setSingleShot(True)
+        self._fit_soon.setInterval(0)
+        self._fit_soon.timeout.connect(self._fit_header)
         self._build()
         self.apply_theme(is_dark)
 
@@ -253,6 +263,10 @@ class SubmissionDetail(QWidget):
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # It takes what the pinned part and the composer leave, down to
+        # nothing: in a short panel the action is never cut for it.
+        self._scroll.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Ignored)
+        self._compact = False                   # a short panel: no cover, no people
         self._stick = True                      # at the end, and kept there as it grows
         bar = self._scroll.verticalScrollBar()
         bar.valueChanged.connect(self._on_scrolled)
@@ -434,6 +448,26 @@ class SubmissionDetail(QWidget):
         self.conversation.show_thread(detail, self._following.me)
         self.composer_bar.setVisible(detail.can_write and row.confirmed)
         self._order_tabs()
+        self._fit_soon.start()                  # what is said now may be taller
+
+    def _fit_header(self) -> None:
+        """In a short panel the cover and the people give way (the title
+        and the publication stay), so that the sentence, its action and
+        some of the conversation are in sight; they come back once there
+        is room for them again."""
+        room = self._scroll.height()
+        if self._compact:
+            people = self._pills.sizeHint().height() + 8 if self._has_people else 0
+            room -= _COVER + people + _ROOM_AGAIN
+        compact = room < _CONVERSATION_ROOM
+        if compact != self._compact:
+            self._compact = compact
+            self.cover.setVisible(not compact)
+            self._pills.setVisible(self._has_people and not compact)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802, Qt's name
+        super().resizeEvent(event)
+        self._fit_header()
 
     def _order_tabs(self) -> None:
         """Tab goes as the eye does, after every rebuild (RG-M3-b 11): the
@@ -460,7 +494,8 @@ class SubmissionDetail(QWidget):
         if row.role != "writer" and row.writer:
             people.insert(0, row.writer)
         names = [self._name_of(p) or _("Someone") for p in people]
-        self._pills.setVisible(bool(people))
+        self._has_people = bool(people)
+        self._pills.setVisible(self._has_people and not self._compact)
         if len(people) >= 4:
             # From four people on, one pill (plan 10.1 D32).
             text = _("{first}, {second} and {count} more").format(
