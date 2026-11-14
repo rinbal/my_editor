@@ -231,6 +231,32 @@ def test_an_open_detail_has_no_search_field_and_no_second_menu_above_it(window):
     panel.hide()
 
 
+def test_the_details_back_line_stands_in_the_search_fields_band_and_the_switch_keeps_its_shape(
+        window):
+    # UX-M2: no empty band between the views' names and ‹ Submissions, and
+    # the names do not turn from a pop-up into segments on the way in.
+    _prepared, entries = seeded(window, text="Ein Jahr")
+    panel = DraftsPanel(is_dark=False)
+    panel.add_view("published", "Published", "", QLabel())
+    add_to_panel(panel, window.view, server=SERVER)
+    panel.show_view(PANEL_VIEW)
+    panel.setMinimumWidth(0)
+    panel.resize(panel._top_band.segments_room() - 2, 600)     # a pop-up beside the menu
+    panel.show()
+    window.follow()
+    QApplication.processEvents()
+    detail, switch = window.view.detail, panel._top_band._switch
+    assert switch.is_popup() and not detail.back.isVisible()
+    opened(window, entries["text"])
+    QApplication.processEvents()
+    assert panel._search_band.isAncestorOf(detail.back) and detail.back.isVisible()
+    assert detail.more_button.isVisible() and switch.is_popup()
+    detail.back.click()
+    QApplication.processEvents()
+    assert not detail.back.isVisible() and panel._search_edit.isVisible()
+    panel.hide()
+
+
 def test_without_a_server_nothing_is_read_and_the_panel_has_no_submissions_view(monkeypatch):
     window = Window(FollowWorld(), monkeypatch, server="")
     window.follow()

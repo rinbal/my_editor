@@ -67,6 +67,9 @@ from .submission_cover import cover_pixmap
 from .submission_thread import ThreadView, discard, face, more_about_button
 
 _COVER = 64
+# How far the top bar's buttons reach into the gutter, so that their
+# words and symbols, not their focus rings, stand on it.
+BAR_INSET = 4
 COMPOSER_LINES = 5
 SEND_TIP = N_("Send (↩)")
 NEW_LINE_HINT = N_("⇧↩ for a new line")
@@ -129,8 +132,13 @@ class SubmissionDetail(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
-        top = QHBoxLayout()
-        top.setContentsMargins(LIST_GUTTER - 4, 6, LIST_GUTTER - 4, 4)
+        # ‹ Einreichungen, Info and the menu: a bar of its own, which the
+        # Drafts panel shows in the search field's place (set_view_bar), so
+        # the detail starts right under it.
+        self.top_bar = QWidget()
+        self.top_bar.setObjectName("submission_detail_bar")
+        top = QHBoxLayout(self.top_bar)
+        top.setContentsMargins(LIST_GUTTER - BAR_INSET, 6, LIST_GUTTER - BAR_INSET, 4)
         self.back = QToolButton()
         self.back.setText("‹ " + _("Submissions"))
         self.back.setAccessibleName(_("Back to Submissions"))
@@ -157,13 +165,13 @@ class SubmissionDetail(QWidget):
         top.addStretch(1)
         top.addWidget(self.info_button)
         top.addWidget(self.more_button)
-        root.addLayout(top)
+        root.addWidget(self.top_bar)
 
         # Pinned: the header, the sentence and the action.
         pinned = QWidget()
         pinned.setObjectName("submission_detail_content")
         column = QVBoxLayout(pinned)
-        column.setContentsMargins(LIST_GUTTER, 4, LIST_GUTTER, 6)
+        column.setContentsMargins(LIST_GUTTER, 10, LIST_GUTTER, 6)
         column.setSpacing(8)
         head = QHBoxLayout()
         head.setSpacing(10)
@@ -768,6 +776,9 @@ class SubmissionDetail(QWidget):
             #submission_send:focus {{ border: 2px solid {r.focus}; }}
             QToolButton::menu-indicator {{ image: none; }}
         """)
+        # The bar looks the same in the panel's band, outside this widget.
+        self.top_bar.setStyleSheet(appearance.controls(self._is_dark)
+                                   + "QToolButton::menu-indicator { image: none; }")
         self._fit_composer()                        # the style's padding counts
         if self._sid:
             self.refresh()

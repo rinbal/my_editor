@@ -49,7 +49,7 @@ from ..standup import following as rules
 from ..standup import thread as threads
 from . import appearance, post_list
 from .drafts_common import LIST_GUTTER, MIN_CONTROL_PX, THEME_TOKENS, secondary_font
-from .submission_detail import SubmissionDetail
+from .submission_detail import BAR_INSET, SubmissionDetail
 from .submission_rows import ITEM_ROLE, Item, RowDelegate, Rows
 
 PANEL_VIEW = "submissions"
@@ -68,6 +68,8 @@ def add_to_panel(panel, view: "SubmissionsView", *, server: str) -> bool:
     panel.add_view(PANEL_VIEW, _("Submissions"), _("What you submitted to publications"), view,
                    refresh=view.refresh, refresh_name=_("Refresh Submissions"),
                    search=view.set_search_text, search_name=_("Search Submissions"))
+    # The detail's ‹ Einreichungen line stands where the search field was.
+    panel.set_view_bar(PANEL_VIEW, view.detail.top_bar, inset=BAR_INSET)
     view.detail_shown.connect(lambda shown: panel.set_view_focused(PANEL_VIEW, shown))
     return True
 

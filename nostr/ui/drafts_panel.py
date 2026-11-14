@@ -1117,8 +1117,10 @@ class DraftsPanel(QFrame):
         self._search_names: dict = {self.DRAFTS_VIEW: _("Search Drafts")}
         self._view_search: dict = {}
         self._view_search_text: dict = {}
-        # Views showing one item of their own, with their own top bar.
+        # Views showing one item of their own, with their own top bar
+        # (the bar and how far it reaches into the gutter, set_view_bar).
         self._view_focused: dict = {}
+        self._view_bars: dict = {}
 
         self._status_timer = QTimer(self)
         self._status_timer.setSingleShot(True)
@@ -1268,6 +1270,11 @@ class DraftsPanel(QFrame):
         hide = menu.addAction(_("Hide Drafts"))
         hide.triggered.connect(self.hide_requested)
         self._actions_btn.setMenu(menu)
+        # Hidden while a view shows one item of its own (set_view_focused),
+        # it keeps its room: the view switch beside it stays as it is.
+        policy = self._actions_btn.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        self._actions_btn.setSizePolicy(policy)
         return self._actions_btn
 
     def _update_actions_menu(self) -> None:
@@ -1434,6 +1441,13 @@ class DraftsPanel(QFrame):
         self._actions_btn.setVisible(not focused)
         searchable = (key == self.DRAFTS_VIEW or key in self._view_search) and not focused
         self._search_edit.setVisible(searchable)
+        # The focused view's own bar takes the field's place, its buttons
+        # reaching into the gutter as far as it asked.
+        shown = self._view_bars.get(key) if focused else None
+        for bar, _inset in self._view_bars.values():
+            bar.setVisible(shown is not None and bar is shown[0])
+        inset = shown[1] if shown is not None else 0
+        self._search_band.layout().setContentsMargins(GUTTER - inset, 6, GUTTER - inset, 7)
         if not searchable:
             return
         name = self._search_names.get(key, _("Search"))
@@ -1550,12 +1564,29 @@ class DraftsPanel(QFrame):
     def views(self) -> List[str]:
         return [key for key, _title, _hint in self._views]
 
+    def set_view_bar(self, key: str, bar: QWidget, *, inset: int = 0) -> None:
+        """``bar`` is what the view ``key`` shows in band 2 while it shows
+        one item of its own (``set_view_focused``): its back button and
+        its menu stand where the search field was, so no empty band is
+        left above the item and the line under the band stays where it
+        is. The bar's own margins go (the band has the panel's); its
+        buttons reach ``inset`` pixels into the gutter."""
+        layout = bar.layout()
+        if layout is not None:
+            layout.setContentsMargins(0, 0, 0, 0)
+        self._view_bars[key] = (bar, inset)
+        self._search_band.layout().addWidget(bar, 1, Qt.AlignVCenter)
+        bar.hide()
+        self._show_search_of(self.current_view())
+
     def set_view_focused(self, key: str, focused: bool) -> None:
         """The view ``key`` shows one item of its own (a submission's
         detail, with its own back button and menu): while it does, no
         search field (typing there would do nothing) and no second action
         menu above it (RG-M3-b 8). The band itself stays, level with the
-        tabs."""
+        tabs, and holds the view's bar when it has one (``set_view_bar``).
+        The action menu's room is kept, so the view switch beside it does
+        not change its shape."""
         if self._view_focused.get(key, False) == focused:
             return
         self._view_focused[key] = focused
