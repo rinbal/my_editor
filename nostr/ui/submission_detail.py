@@ -698,10 +698,13 @@ class SubmissionDetail(QWidget):
         history = "".join(
             f"<li>{escape(threads.caption_text(c, me=self._following.me, name_of=self._name_of))}"
             f" · {escape(_when(c.at, locale))}</li>" for c in detail.history)
+        # The lists stand on the gutter with their headings (a list's own
+        # indent is a third of a narrow panel).
+        ul = "<ul style='margin-left: 14px; margin-top: 2px; -qt-list-indent: 0;'>"
         self.info.setText(
             f"<table>{''.join(lines)}</table>"
-            f"<p><b>{escape(_('Encryption'))}</b></p><ul>{privacy}</ul>"
-            f"<p><b>{escape(_('History'))}</b></p><ul>{history}</ul>")
+            f"<p style='margin-bottom: 0;'><b>{escape(_('Encryption'))}</b></p>{ul}{privacy}</ul>"
+            f"<p style='margin-bottom: 0;'><b>{escape(_('History'))}</b></p>{ul}{history}</ul>")
 
     def _show_info(self, shown: bool) -> None:
         self.info.setVisible(shown)
@@ -878,7 +881,9 @@ class SubmissionDetail(QWidget):
 
 
 def _when(at: int, locale) -> str:
-    return locale.toString(QDateTime.fromSecsSinceEpoch(int(at)), QLocale.FormatType.ShortFormat)
+    """A day and a time, kept together on one line of the history."""
+    when = locale.toString(QDateTime.fromSecsSinceEpoch(int(at)), QLocale.FormatType.ShortFormat)
+    return when.replace(" ", "\u00a0")
 
 
 __all__ = ["NOT_LOADED", "NOT_OPENED", "NOT_WITHDRAWN", "PRIVACY", "SubmissionDetail"]
