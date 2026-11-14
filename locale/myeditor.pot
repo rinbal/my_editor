@@ -367,7 +367,7 @@ msgstr ""
 #: update_dialog.py:194
 #: update_dialog.py:202
 #: nostr/ui/account_windows.py:216
-#: nostr/ui/submission_thread.py:354
+#: nostr/ui/submission_thread.py:357
 #: nostr/ui/tag_field.py:101
 msgid "Copy"
 msgstr ""
@@ -562,7 +562,7 @@ msgstr ""
 #: file_list.py:329
 #: nostr/imports/workspace.py:242
 #: nostr/ui/post_list.py:139
-#: nostr/ui/submission_thread.py:137
+#: nostr/ui/submission_thread.py:138
 msgid "Yesterday"
 msgstr ""
 
@@ -573,7 +573,7 @@ msgstr ""
 
 #: file_list.py:327
 #: nostr/ui/post_list.py:137
-#: nostr/ui/submission_thread.py:135
+#: nostr/ui/submission_thread.py:136
 msgid "Today"
 msgstr ""
 
@@ -8990,7 +8990,7 @@ msgstr ""
 #: nostr/standup/thread.py:171
 #: nostr/ui/authors_section.py:178
 #: nostr/ui/standup_confirm_sheet.py:192
-#: nostr/ui/submission_thread.py:146
+#: nostr/ui/submission_thread.py:147
 msgid "You"
 msgstr ""
 
@@ -8998,7 +8998,7 @@ msgstr ""
 #: nostr/ui/standup_confirm_sheet.py:192
 #: nostr/ui/submission_detail.py:535
 #: nostr/ui/submission_detail.py:706
-#: nostr/ui/submission_thread.py:146
+#: nostr/ui/submission_thread.py:147
 #: nostr/ui/submissions_host.py:617
 #: nostr/ui/submissions_host.py:360
 msgid "Someone"
@@ -13716,7 +13716,7 @@ msgid "Details changed"
 msgstr ""
 
 #: nostr/ui/standup_revise_sheet.py:178
-#: nostr/ui/submission_thread.py:566
+#: nostr/ui/submission_thread.py:569
 msgid "Show Changes"
 msgstr ""
 
@@ -13955,7 +13955,7 @@ msgid "Info"
 msgstr ""
 
 #: nostr/ui/submission_detail.py:180
-#: nostr/ui/submission_thread.py:562
+#: nostr/ui/submission_thread.py:565
 #: nostr/ui/submissions_view.py:455
 msgid "Open in Editor"
 msgstr ""
@@ -14067,53 +14067,53 @@ msgstr ""
 msgid "Submission to {publication}: {status}"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:634
+#: nostr/ui/submission_thread.py:637
 msgid "More about this"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:69
+#: nostr/ui/submission_thread.py:70
 msgid "Heart"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:69
+#: nostr/ui/submission_thread.py:70
 msgid "Thumbs up"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:69
+#: nostr/ui/submission_thread.py:70
 msgid "Thumbs down"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:69
+#: nostr/ui/submission_thread.py:70
 msgid "Laughing"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:69
+#: nostr/ui/submission_thread.py:70
 msgid "Exclamation marks"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:70
+#: nostr/ui/submission_thread.py:71
 msgid "Question mark"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:149
+#: nostr/ui/submission_thread.py:150
 #, python-brace-format
 msgid "Reactions: {list}"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:239
+#: nostr/ui/submission_thread.py:240
 msgid "React to your message"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:344
-#: nostr/ui/submission_thread.py:240
+#: nostr/ui/submission_thread.py:347
+#: nostr/ui/submission_thread.py:241
 msgid "React"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:275
+#: nostr/ui/submission_thread.py:276
 msgid "edited"
 msgstr ""
 
-#: nostr/ui/submission_thread.py:239
+#: nostr/ui/submission_thread.py:240
 #, python-brace-format
 msgid "React to the message from {name}"
 msgstr ""
