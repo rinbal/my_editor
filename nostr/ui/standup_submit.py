@@ -483,8 +483,10 @@ class StandupWriter(QObject):
 
     def in_background(self, run: SubmissionRun) -> None:
         """The sheet closed: say in the status bar how ``run`` goes on,
-        each change once: submitting, in, why the signer app asks for the
-        first message, that it did not go, or a failure."""
+        each change once: submitting, that the signer app waits to be
+        confirmed (closed, the sheet no longer says it, and nothing goes
+        on until it is), in, why the signer app asks for the first
+        message, that it did not go, or a failure."""
         if run.finished:
             return
         name = run.choice.name
@@ -503,6 +505,8 @@ class StandupWriter(QObject):
                         or _(words.SUBMITTED).format(publication=name))
             if progress.phase is Phase.FAILED and progress.failure is not None:
                 # Its title and its one sentence, as the handoff says them.
+                return failures.spoken(*phase_words(progress, name))
+            if progress.phase is Phase.SIGNER and signer_app:
                 return failures.spoken(*phase_words(progress, name))
             return ""
 

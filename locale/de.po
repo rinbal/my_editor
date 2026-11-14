@@ -13353,7 +13353,7 @@ msgstr "Durch öffentlichen Schlüssel ersetzen"
 
 #: nostr/ui/signer_approval.py:28
 msgid "Confirm in your signer app"
-msgstr "In deiner Signer-App bestätigen"
+msgstr "Bestätige die Anfrage in deiner Signer-App"
 
 #: nostr/ui/standup_compare.py:43
 msgid "Comparing …"

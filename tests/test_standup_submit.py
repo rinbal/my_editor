@@ -1113,7 +1113,7 @@ class Run(QObject):
         super().__init__()
         self.choice = SimpleNamespace(name="Einundzwanzig Magazin")
         self.finished = False
-        self.progress = Progress(Step.SIGNING)
+        self.progress = Progress(Step.ENCRYPTING)
         self._behind = None
 
     def behind_the_sheet(self, on_change) -> None:
@@ -1145,6 +1145,25 @@ def test_in_the_background_the_status_bar_says_submitted_only_once_it_is_in(germ
     assert said == ["Wird eingereicht …"]
     run.changed.emit(Progress(Step.SUBMITTED))
     assert said[-1] == "Eingereicht. Im Eingang von Einundzwanzig Magazin."
+
+
+def test_in_the_background_the_status_bar_says_that_the_signer_app_waits(german):
+    # UX-M1: closed while the signer app waited, the sheet's words were
+    # gone and the status bar said only "Wird eingereicht …".
+    writer, run, said = _writer(FakeList(), FakeApi()), Run(), []
+    writer.status.connect(said.append)
+    run.progress = Progress(Step.SIGNING)
+    writer.in_background(run)
+    assert said == ["Warten auf deine Signer-App. Bestätige dort die Anfrage."]
+    run.changed.emit(Progress(Step.SENDING, sent=True))
+    assert len(said) == 1                           # nothing new to say while it is sent
+    # A key kept on this computer has no signer app to wait for.
+    local, run, said = _writer(FakeList(), FakeApi()), Run(), []
+    local._account = SimpleNamespace(profile=SimpleNamespace(signer="local"))
+    local.status.connect(said.append)
+    run.progress = Progress(Step.SIGNING)
+    local.in_background(run)
+    assert said == ["Wird eingereicht …"]
 
 
 def test_in_the_background_the_first_message_says_why_the_signer_asks_and_when_it_failed():
