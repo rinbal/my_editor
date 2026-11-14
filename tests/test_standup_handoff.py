@@ -487,6 +487,24 @@ def test_the_lifted_card_and_its_shadow_are_whole_at_the_tracks_leading_edge(app
     assert all(image.pixel(0, y) == blank for y in range(image.height()))
 
 
+@pytest.mark.parametrize("width", [720, 560, 380])     # 560: the revise sheet at 600
+@pytest.mark.parametrize("got", [False, True])
+def test_the_inbox_and_its_border_are_whole_at_the_tracks_trailing_edge(app, moving, width,
+                                                                        got):
+    # The inbox was drawn flush with the track's trailing edge: half of
+    # its border was cut off there (seen in the revise sheet).
+    track = standup_handoff.HandoffTrack(is_dark=False)
+    track.publication = "Einundzwanzig Magazin"
+    track.resize(width, standup_handoff._COVER_HEIGHT + 120)
+    track.set_got(got)                                  # its accent border, still at the end
+    track._set("fade", 0.0)                             # the card unseen: the inbox alone
+    image = track.grab().toImage()
+    blank, last = image.pixel(0, 0), image.width() - 1
+    assert all(image.pixel(last, y) == blank for y in range(image.height()))
+    assert any(image.pixel(x, image.height() // 2) != blank
+               for x in range(image.width() // 2, last))      # and it is there
+
+
 def test_once_it_is_in_the_inbox_stands_in_the_middle(app, view, moving, still):
     # The card gone, the inbox stood alone at the trailing end.
     track = view.track
