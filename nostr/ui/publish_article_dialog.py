@@ -209,7 +209,7 @@ def _elided(label: QLabel, text: str, width: int, lines: int) -> str:
 # of their column, beside their fields (Fusion, which the app uses
 # everywhere, would put them at the leading edge); elsewhere at the leading
 # edge. Beside the field's first line either way.
-_LABEL_ALIGNMENT = ((Qt.AlignmentFlag.AlignRight if sys.platform == "darwin"
+LABEL_ALIGNMENT = ((Qt.AlignmentFlag.AlignRight if sys.platform == "darwin"
                      else Qt.AlignmentFlag.AlignLeft) | Qt.AlignmentFlag.AlignTop)
 
 
@@ -217,7 +217,7 @@ def form_layout() -> QFormLayout:
     form = QFormLayout()
     form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
     form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
-    form.setLabelAlignment(_LABEL_ALIGNMENT)
+    form.setLabelAlignment(LABEL_ALIGNMENT)
     form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
     form.setHorizontalSpacing(10)
     form.setVerticalSpacing(10)
@@ -229,7 +229,7 @@ def form_label(text: str, buddy: QWidget) -> QLabel:
     line."""
     label = QLabel(text)
     label.setBuddy(buddy)
-    label.setAlignment(_LABEL_ALIGNMENT)
+    label.setAlignment(LABEL_ALIGNMENT)
     label.setContentsMargins(0, 4, 0, 0)
     return label
 
@@ -625,7 +625,7 @@ class PublishArticleDialog(QDialog):
                                     else QFormLayout.RowWrapPolicy.DontWrapRows)
         for label in self._labels:
             label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop if wrap
-                               else _LABEL_ALIGNMENT)
+                               else LABEL_ALIGNMENT)
 
     def showEvent(self, event) -> None:  # noqa: N802, Qt's name
         super().showEvent(event)

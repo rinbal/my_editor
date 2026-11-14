@@ -796,3 +796,85 @@ def test_the_privacy_lines_are_said_without_a_sheet_before_a_publication_is_chos
     assert words[0] == "Lesen können nur du und die Redaktion von der Publikation."
     assert words[-1] == "Der Server bewahrt die Einreichung verschlüsselt auf."
     assert len(words) == 4                          # no pictures: no line about them
+
+
+# -- how the sheet fits its window and its words (UX-M1) ----------------------
+
+def _settle() -> None:
+    for _ in range(5):
+        QApplication.processEvents()
+
+
+def test_in_a_narrow_window_the_card_goes_under_the_fields_and_nothing_is_cut(tmp_path):
+    # A publication that asks for more shows more rows; in a small window
+    # the page was wider than the sheet and the focus scrolled it sideways.
+    from PySide6.QtWidgets import QBoxLayout
+    sheet = _sheet(tmp_path, Writer(destinations=(BLOG,)))
+    sheet.resize(560, 460)
+    sheet.show()
+    _settle()
+    page, view = sheet._scroll.widget(), sheet._scroll.viewport()
+    assert sheet._columns.direction() == QBoxLayout.Direction.BottomToTop
+    assert page.width() <= view.width()
+    sheet.picker.setFocus()
+    _settle()
+    assert sheet._scroll.horizontalScrollBar().value() == 0
+    assert sheet.card.mapTo(view, sheet.card.rect().topLeft()).x() >= 0
+    sheet.resize(780, 460)
+    _settle()
+    assert sheet._columns.direction() == QBoxLayout.Direction.LeftToRight
+    sheet.close()
+
+
+def test_a_long_publication_name_is_elided_and_never_widens_the_sheet(tmp_path):
+    long = _destination("long", "Zeitschrift für Wirtschaftsinformatik und "
+                        "Kryptowährungsforschung Mitteldeutschland")
+    sheet = _sheet(tmp_path, Writer(destinations=(long,)))
+    sheet.show()
+    _settle()
+    assert sheet._scroll.widget().width() <= sheet._scroll.viewport().width()
+    assert sheet.picker.shown_text().endswith("…")
+    assert sheet.picker.toolTip() == long.name      # whole where it is cut
+    short = _sheet(tmp_path)
+    short.show()
+    _settle()
+    assert short.picker.shown_text() == MAGAZIN.name and short.picker.toolTip() == ""
+    sheet.close()
+    short.close()
+
+
+def test_the_order_is_said_only_where_a_used_publication_leads(tmp_path):
+    # "Recently used first" under a list in the server's order was not true.
+    fresh = _sheet(tmp_path, Writer(destinations=(MAGAZIN, BLOG)))
+    assert _entries(fresh) == [("Einundzwanzig Magazin", True), ("Ein Blog", True)]
+    alone = _sheet(tmp_path, Writer(destinations=(BLOG,), used=(BLOG.address,)))
+    assert _entries(alone) == [("Ein Blog", True)]
+
+
+def test_the_sheet_grows_for_what_opens_and_the_note_keeps_its_gaps(tmp_path):
+    sheet = _sheet(tmp_path)
+    sheet.show()
+    _settle()
+    before = sheet.height()
+    sheet.privacy_toggle.setChecked(True)
+    sheet.message_toggle.setChecked(True)
+    _settle()
+    assert sheet.height() > before
+    assert sheet._scroll.verticalScrollBar().maximum() == 0     # nothing to scroll
+    # The fields keep their own height: the note sits right under its title.
+    gap = (sheet.message.mapTo(sheet, sheet.message.rect().topLeft()).y()
+           - sheet.message_toggle.mapTo(sheet, sheet.message_toggle.rect().bottomLeft()).y())
+    assert 0 < gap <= 8
+    sheet.close()
+
+
+def test_closing_the_note_leaves_the_focus_on_its_title(tmp_path):
+    sheet = _sheet(tmp_path)
+    sheet.show()
+    sheet.activateWindow()
+    _settle()
+    sheet.message_toggle.setChecked(True)
+    assert QApplication.focusWidget() is sheet.message
+    sheet.message_toggle.setChecked(False)
+    assert QApplication.focusWidget() is sheet.message_toggle
+    sheet.close()

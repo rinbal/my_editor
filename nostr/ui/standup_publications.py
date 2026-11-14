@@ -22,7 +22,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPixmap, QStandardItemModel
-from PySide6.QtWidgets import QComboBox
+from PySide6.QtWidgets import QComboBox, QStyle, QStyleOptionComboBox, QStylePainter
 
 from i18n import _, ngettext
 
@@ -147,13 +147,60 @@ def publish_by(destination: Destination) -> str:
     return value if value in ("writer", "publication", "both") else "writer"
 
 
+class PublicationPicker(QComboBox):
+    """The picker of Submit to a Publication. It is as wide as the sheet
+    gives it, never as its longest name asks (one long name made the
+    whole form wider than the sheet), and says the chosen name elided to
+    its room, whole in its tooltip then. The open list says every name
+    whole."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.setMinimumContentsLength(14)
+        self.currentTextChanged.connect(lambda _text: self._tip())
+
+    def _option(self) -> QStyleOptionComboBox:
+        option = QStyleOptionComboBox()
+        self.initStyleOption(option)
+        return option
+
+    def shown_text(self) -> str:
+        """The chosen name as it is painted: elided to the room it has."""
+        option = self._option()
+        field = self.style().subControlRect(QStyle.ComplexControl.CC_ComboBox, option,
+                                            QStyle.SubControl.SC_ComboBoxEditField, self)
+        logo = 0 if option.currentIcon.isNull() else option.iconSize.width() + 4
+        return self.fontMetrics().elidedText(option.currentText, Qt.TextElideMode.ElideRight,
+                                             max(0, field.width() - logo - 4))
+
+    def _tip(self) -> None:
+        self.setToolTip(self.currentText() if self.shown_text() != self.currentText() else "")
+
+    def resizeEvent(self, event) -> None:  # noqa: N802, Qt's name
+        super().resizeEvent(event)
+        self._tip()
+
+    def paintEvent(self, _event) -> None:  # noqa: N802, Qt's name
+        painter = QStylePainter(self)
+        option = self._option()
+        painter.drawComplexControl(QStyle.ComplexControl.CC_ComboBox, option)
+        option.currentText = self.shown_text()
+        painter.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, option)
+
+
 def fill_picker(picker: QComboBox, destinations: Sequence[Destination], *, loading: bool,
                 logo_for: Callable[[Destination], QPixmap],
-                request_logo: Callable[[Destination], None]) -> None:
+                request_logo: Callable[[Destination], None],
+                recent_first: bool = False) -> None:
     """The publications in Submit to a Publication's picker, each with its
     logo (asked for when its listing names one), one that cannot be chosen
     dimmed with why, and the first that can chosen; while loading, or
-    with none, one dimmed line (the reason is said once, by the sheet)."""
+    with none, one dimmed line (the reason is said once, by the sheet).
+    ``recent_first``: one submitted to before leads the list, which a last
+    dimmed line then says; without one the order is the server's and
+    nothing is said about it."""
     picker.blockSignals(True)
     picker.clear()
     model: QStandardItemModel = picker.model()
@@ -169,9 +216,10 @@ def fill_picker(picker: QComboBox, destinations: Sequence[Destination], *, loadi
                 label = f"{destination.name} · {rules_words(destination.key.rules)}"
             picker.addItem(logo_for(destination), label)
             model.item(picker.count() - 1).setEnabled(can_choose(destination))
-        picker.insertSeparator(picker.count())
-        picker.addItem(_("Recently used first"))
-        model.item(picker.count() - 1).setEnabled(False)
+        if recent_first and len(destinations) > 1:
+            picker.insertSeparator(picker.count())
+            picker.addItem(_("Recently used first"))
+            model.item(picker.count() - 1).setEnabled(False)
         picker.setEnabled(True)
         picker.setCurrentIndex(next((i for i, d in enumerate(destinations) if can_choose(d)),
                                     -1))
@@ -185,5 +233,6 @@ def recent_first(destinations: Sequence[Destination], used: Sequence[str]) -> Li
     return sorted(destinations, key=lambda d: rank.get(d.address, len(rank)))
 
 
-__all__ = ["PublicationLogos", "RETRY_MS", "can_choose", "fill_picker", "publication_logo",
+__all__ = ["PublicationLogos", "PublicationPicker", "RETRY_MS", "can_choose", "fill_picker",
+           "publication_logo",
            "publish_by", "recent_first", "rules_words", "takes_articles"]

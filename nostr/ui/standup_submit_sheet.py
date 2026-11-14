@@ -48,12 +48,12 @@ from dataclasses import replace
 from typing import Callable, List, Optional, Sequence
 
 import shiboken6
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, QSize, Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel,
-    QPlainTextEdit, QPushButton, QRadioButton, QStackedWidget, QToolButton, QVBoxLayout,
-    QWidget,
+    QBoxLayout, QButtonGroup, QCheckBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
+    QLabel, QPlainTextEdit, QPushButton, QRadioButton, QStackedWidget, QToolButton,
+    QVBoxLayout, QWidget,
 )
 
 from alerts import answer_return_as_the_system_does
@@ -69,7 +69,7 @@ from ..standup.submitting import MessageStatus
 from ..standup.trust import KEY_NOT_CONFIRMED, Destination
 from ..standup.words import LIST_NOT_SAVED, WAITING_FOR_SIGNER
 from . import appearance
-from .publish_article_dialog import ArticleCard, form_label, form_layout
+from .publish_article_dialog import LABEL_ALIGNMENT, ArticleCard, form_label, form_layout
 from .publish_sheet import (
     AccountRow, BottomRow, StatusLine, fit_margins, fit_to_window, make_sheet, scroll_area,
     sheet_stylesheet,
@@ -79,12 +79,15 @@ from .standup_waits import limit_words, server_limit_words
 from .standup_ways_out import WaysOut
 from .standup_privacy import PrivacyBox, privacy_words
 from .standup_publications import (
-    PublicationLogos, can_choose, fill_picker, publication_logo, publish_by, recent_first,
-    rules_words,
+    PublicationLogos, PublicationPicker, can_choose, fill_picker, publication_logo, publish_by,
+    recent_first, rules_words,
 )
 from .standup_submit import RoundAnswer, StandupWriter, SubmissionRun
 
 _WIDTH = 780
+# The sheet's least height while its window has it: the handoff's room,
+# so the sheet keeps its size when Submit turns it into the handoff.
+_HEIGHT = 460
 _LOGO = 20
 
 
@@ -141,6 +144,7 @@ class SubmitSheet(QDialog):
         # What the account's signer connection carries is known (or could
         # not be learned): the message's seal is measured by it.
         self._bound_known = False
+        self._sized = False                     # its window gave it a size
         self.run: Optional[SubmissionRun] = None
         self._build(profile)
         logos.changed.connect(self._on_logo)
@@ -151,7 +155,7 @@ class SubmitSheet(QDialog):
             self._show_run(running)
         else:
             self._load()
-        fit_to_window(self, QSize(_WIDTH, self._wanted_height()))
+        self._fit()
 
     # -- the sheet -----------------------------------------------------------
 
@@ -192,16 +196,24 @@ class SubmitSheet(QDialog):
         inner = QVBoxLayout(content)
         inner.setContentsMargins(0, 0, 4, 0)
         inner.setSpacing(12)
-        columns = QHBoxLayout()
+        # The card beside the fields, or under them in a narrow window
+        # (_arrange), as in Publish as Article.
+        columns = self._columns = QBoxLayout(QBoxLayout.Direction.LeftToRight)
         columns.setSpacing(20)
         self.card = ArticleCard(self._is_dark)
         self.card.show_article(self._draft.title, self._draft.summary, self._cover,
                                self._byline)
         columns.addWidget(self.card, 0, Qt.AlignmentFlag.AlignTop)
-        columns.addLayout(self._build_form(), 1)
+        # The fields keep their own height: room the card leaves beside it
+        # stays under them, never between them.
+        fields = QVBoxLayout()
+        fields.addLayout(self._build_form())
+        fields.addStretch(1)
+        columns.addLayout(fields, 1)
         inner.addLayout(columns)
         self.privacy = PrivacyBox(self.privacy_words, is_dark=self._is_dark)
         self.privacy_toggle, self.privacy_lines = self.privacy.toggle, self.privacy.lines
+        self.privacy_toggle.toggled.connect(lambda _shown: self._grow())
         inner.addWidget(self.privacy)
         inner.addStretch(1)
         self._scroll = scroll_area(content)
@@ -224,7 +236,21 @@ class SubmitSheet(QDialog):
 
     def _build_form(self):
         form = form_layout()
-        self.picker = QComboBox()
+        self._labels: List[QLabel] = []
+        self._fields: List[QWidget] = []
+
+        def row(label: str, buddy: Optional[QWidget], field: QWidget) -> int:
+            # Kept here: the form's own items are never wrapped (Python
+            # would hold items the form deletes).
+            if label:
+                self._labels.append(form_label(label, buddy))
+                form.addRow(self._labels[-1], field)
+            else:
+                form.addRow("", field)
+            self._fields.append(field)
+            return form.rowCount() - 1
+
+        self.picker = PublicationPicker()
         self.picker.setAccessibleName(_("Publication"))
         self.picker.setIconSize(QSize(_LOGO, _LOGO))
         self.picker.currentIndexChanged.connect(self._on_picked)
@@ -244,7 +270,7 @@ class SubmitSheet(QDialog):
         to_column.addWidget(self.picker)
         to_column.addWidget(self.rules)
         to_column.addWidget(self.ways_out)
-        form.addRow(form_label(_("To:"), self.picker), to)
+        row(_("To:"), self.picker, to)
 
         self.by_me = QRadioButton(_("me"))
         self.by_publication = QRadioButton(_("the publication"))
@@ -264,14 +290,11 @@ class SubmitSheet(QDialog):
         radios.addStretch(1)
         by_column.addLayout(radios)
         by_column.addWidget(self.by_hint)
-        self._by_label = form_label(_("Published by:"), self.by_me)
-        form.addRow(self._by_label, by)
-        self._by_row = form.rowCount() - 1
+        self._by_row = row(_("Published by:"), self.by_me, by)
 
         self.rights = QCheckBox(_("I have the rights to the text and the pictures."))
         self.rights.toggled.connect(self._refresh)
-        form.addRow(form_label(_("Rights:"), self.rights), self.rights)
-        self._rights_row = form.rowCount() - 1
+        self._rights_row = row(_("Rights:"), self.rights, self.rights)
 
         self.message_toggle = QToolButton()
         self.message_toggle.setObjectName("disclosure")
@@ -292,7 +315,7 @@ class SubmitSheet(QDialog):
         message_column.setSpacing(6)
         message_column.addWidget(self.message_toggle, 0, Qt.AlignmentFlag.AlignLeft)
         message_column.addWidget(self.message)
-        form.addRow("", message)
+        row("", None, message)
         self._form = form
         return form
 
@@ -322,12 +345,78 @@ class SubmitSheet(QDialog):
         label.setTextFormat(Qt.TextFormat.PlainText)
         return label
 
-    def _wanted_height(self) -> int:
-        return min(640, max(460, self.sizeHint().height()))
+    def _wanted_height(self, width: int) -> int:
+        """The sheet's height at ``width`` with everything shown that is
+        shown now (the note, the privacy lines, a blocker's words)."""
+        # A part that just showed inside a box of its own (the privacy
+        # lines, the note) tells the page by a posted request: taken now,
+        # so it counts.
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.LayoutRequest.value)
+        content = self._scroll.widget()
+        content.layout().activate()
+        self.layout().activate()
+        margins = self.layout().contentsMargins()
+        inner = width - margins.left() - margins.right()
+        needed = (content.heightForWidth(inner) if content.hasHeightForWidth()
+                  else content.sizeHint().height())
+        form = self._pages.widget(0)
+        around = (self.sizeHint().height() - self._pages.sizeHint().height()
+                  + form.sizeHint().height() - self._scroll.sizeHint().height())
+        return max(_HEIGHT, around + needed + 8)
+
+    def _fit(self) -> None:
+        """As tall as what it shows needs, as much as its window has (it
+        scrolls only in a window too low for it): grown when the note or
+        the privacy lines open, never made smaller under the pointer. As
+        Publish as Article does it."""
+        shown = self.isVisible()
+        width = self._width()
+        fit_to_window(self, QSize(width, max(self.height() if shown else 0,
+                                             self._wanted_height(width))))
+
+    def _width(self) -> int:
+        """The sheet's width: the one it asks for until its window gave
+        it one."""
+        return self.width() if self._sized else _WIDTH
+
+    def _grow(self) -> None:
+        """Room for what just showed, once the sheet is open."""
+        if self.isVisible():
+            self._fit()
+
+    def showEvent(self, event) -> None:  # noqa: N802, Qt's name
+        super().showEvent(event)
+        self._fit()                                 # at the width its window gave it
 
     def resizeEvent(self, event) -> None:  # noqa: N802, Qt's name
         super().resizeEvent(event)
+        self._sized = True
         fit_margins(self)
+        self._arrange()
+
+    def _arrange(self) -> None:
+        """The card beside the fields while the rows shown have their room
+        (a publication that asks for more shows more), else under them;
+        narrower still, each label above its field. As Publish as Article
+        does it: nothing is ever wider than the sheet."""
+        margins = self.layout().contentsMargins()
+        room = (self._width() - margins.left() - margins.right()
+                - self._scroll.verticalScrollBar().sizeHint().width()
+                - self._scroll.widget().layout().contentsMargins().right())
+        shown = [field for field in self._fields if not field.isHidden()]
+        fields = max((field.minimumSizeHint().width() for field in shown), default=0)
+        labels = max((label.sizeHint().width() for label in self._labels
+                      if not label.isHidden()), default=0)
+        form = labels + self._form.horizontalSpacing() + fields
+        beside = room >= self.card.width() + self._columns.spacing() + form
+        self._columns.setDirection(QBoxLayout.Direction.LeftToRight if beside
+                                   else QBoxLayout.Direction.BottomToTop)
+        wrap = room < form
+        self._form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows if wrap
+                                    else QFormLayout.RowWrapPolicy.DontWrapRows)
+        for label in self._labels:
+            label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop if wrap
+                               else LABEL_ALIGNMENT)
 
     # -- the publications ----------------------------------------------------
 
@@ -369,8 +458,10 @@ class SubmitSheet(QDialog):
     def _on_destinations(self, destinations: List[Destination], used: Sequence[str]) -> None:
         # Those that cannot be chosen are still listed, dimmed with why.
         none = not any(can_choose(d) for d in destinations)
+        listed = {d.address for d in destinations}
         self._show_destinations(recent_first(destinations, used),
-                                _("No publication takes submissions right now.") if none else "")
+                                _("No publication takes submissions right now.") if none else "",
+                                recent=any(address in listed for address in used))
 
     def _on_load_failed(self, error) -> None:
         # A limit: asked again at once, it meets the same one (contract 15).
@@ -395,11 +486,12 @@ class SubmitSheet(QDialog):
         self._on_picked(self.picker.currentIndex())
 
     def _show_destinations(self, destinations: List[Destination], problem: str, *,
-                           loading: bool = False) -> None:
+                           loading: bool = False, recent: bool = False) -> None:
         self._destinations = destinations
         self._load_problem = problem
         fill_picker(self.picker, destinations, loading=loading, logo_for=self._logo_for,
-                    request_logo=lambda d: self._logos.request(d.server, d.address, d.avatar))
+                    request_logo=lambda d: self._logos.request(d.server, d.address, d.avatar),
+                    recent_first=recent)
         self._on_picked(self.picker.currentIndex())
 
     def _logo_for(self, destination: Destination, size: int = _LOGO) -> QPixmap:
@@ -424,6 +516,8 @@ class SubmitSheet(QDialog):
         self._form.setRowVisible(self._by_row, destination is not None
                                  and publish_by(destination) == "both")
         self._form.setRowVisible(self._rights_row, bool(rules.get("rights_required")))
+        self._arrange()                             # other rows, other room
+        self._grow()
         self._show_by_hint()
         self.privacy.refresh()
         self._round = None
@@ -450,9 +544,13 @@ class SubmitSheet(QDialog):
     def _show_message(self, shown: bool) -> None:
         self.message_toggle.setArrowType(Qt.ArrowType.DownArrow if shown
                                          else Qt.ArrowType.RightArrow)
+        had_focus = self.message.hasFocus()
         self.message.setVisible(shown)
         if shown:
             self.message.setFocus()
+        elif had_focus:
+            self.message_toggle.setFocus()          # never left on the hidden field
+        self._grow()
 
     def privacy_words(self) -> List[str]:
         """The lines behind the lock, for the chosen publication."""
@@ -531,9 +629,12 @@ class SubmitSheet(QDialog):
         first = next(iter(blockers), "")
         first = first if isinstance(first, drafting.Blocker) else drafting.Blocker(first)
         # A total failure (with a title) in the error color, details in the tooltip (36, 27).
+        said = self.status.shown
         self.status.say(first, title=first.title, error=first.error, detail=first.detail,
                         quietly=quietly)
         self.status.setAccessibleDescription(first.detail)
+        if self.status.shown != said:
+            self._grow()                            # its lines, above the buttons
 
     # -- submitting ----------------------------------------------------------
 
