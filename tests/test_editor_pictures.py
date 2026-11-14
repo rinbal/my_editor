@@ -126,6 +126,7 @@ import photo_group_view  # noqa: E402
 import rich_text  # noqa: E402
 from markdown_writer import _image_as_read, document_to_markdown, read_markdown  # noqa: E402
 from tests.photo_corners import SHAPES, image_of, shows_whole  # noqa: E402
+from tests.screen import unclamped  # noqa: E402
 
 BOTHY = ("# Bothy weekend\n\nWe walked in from the station.\n\n![Steg](portrait.png)\n\n"
          "*The jetty at dusk*\n\n![Loch](landscape.png)\n\n![Hut](square.png)\n\n"
@@ -141,7 +142,7 @@ def _group_editor(width, markdown=BOTHY, *, missing=()):
         asked.append(name)
         return None if name in missing else image_of(name)
     ed.set_local_image_resolver(local)
-    ed.resize(width, 2000)
+    unclamped(ed).resize(width, 2000)
     read_markdown(ed.document(), markdown)
     ed.document().clearUndoRedoStacks()
     ed.document().setModified(False)
