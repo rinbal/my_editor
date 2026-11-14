@@ -113,6 +113,15 @@ def set_marks(doc: QTextDocument, marks: Sequence[CaptionMark]) -> None:
         found.marks = tuple(marks)
 
 
+def set_caption_in_field(doc: QTextDocument, position: Optional[int]) -> None:
+    """The caption of the group picture at ``position`` is being written
+    in a field over it and is not drawn meanwhile (None: every caption is
+    drawn again). Its room stays, so nothing moves (the caller repaints)."""
+    found = _handler(doc)
+    if found is not None:
+        found.caption_in_field = position
+
+
 def set_zoom_place(doc: QTextDocument, width: float) -> None:
     """Hold a reader's "Enlarge" place, ``width`` CSS pixels with its gap,
     beside the caption of every #wide picture of ``doc``'s groups

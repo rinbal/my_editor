@@ -16,25 +16,37 @@ the field goes and the focus returns to where it came from.
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QRect, Qt, Signal
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor, QFont, QFontMetricsF
 from PySide6.QtWidgets import QFrame, QLabel, QLineEdit, QVBoxLayout, QWidget
 
 import photo_caption
 
+# The line's frame and the room inside it (its style sheet below), and the
+# margin a line edit keeps around its words by itself: together, how far
+# inside the field its words start.
+_BORDER = 2
+_PAD_X, _PAD_Y = 5, 2
+_LINE_MARGIN_X, _LINE_MARGIN_Y = 2, 1
+_INSET_X = _BORDER + _PAD_X + _LINE_MARGIN_X
+_INSET_Y = _BORDER + _PAD_Y + _LINE_MARGIN_Y
+
 
 class PictureField(QFrame):
     """One line over the text. ``title`` and ``hint`` make it a card (a
-    picture's description); without them it is the bare line (a caption)."""
+    picture's description); without them it is the bare line (a caption).
+    ``short_placeholder`` stands in an empty line too narrow for
+    ``placeholder``, which would be cut off there."""
 
     committed = Signal(str)
     cancelled = Signal()
 
     def __init__(self, parent: QWidget, *, name: str, text: str, placeholder: str,
                  font: QFont, ink: QColor, surface: QColor, accent: QColor,
-                 title: str = "", hint: str = "") -> None:
+                 title: str = "", hint: str = "", short_placeholder: str = "") -> None:
         super().__init__(parent)
         self._done = False
         self._card = bool(title)
+        self._placeholders = (placeholder, short_placeholder)
         self.setObjectName("pictureField")
         column = QVBoxLayout(self)
         column.setContentsMargins(*((12, 10, 12, 10) if self._card else (0, 0, 0, 0)))
@@ -68,20 +80,33 @@ class PictureField(QFrame):
             + "}"
             "#pictureFieldLine {"
             f" background: {surface.name()}; color: {ink.name()};"
-            f" border: 2px solid {accent.name()}; border-radius: 5px; padding: 2px 5px;"
+            f" border: {_BORDER}px solid {accent.name()}; border-radius: 5px;"
+            f" padding: {_PAD_Y}px {_PAD_X}px;"
             f" selection-background-color: {accent.name()};"
             "}")
 
     def place(self, box: QRect) -> None:
         """Show the field at ``box`` (the parent's coordinates), moved so
-        that all of it is inside the parent, and write in it."""
+        that all of it is inside the parent, and write in it. The bare
+        line's words start where ``box`` does, so a caption clicked stays
+        where it was drawn while it is written."""
         room = self.parentWidget().rect()
-        width = max(box.width(), 240 if not self._card else 300)
+        if self._card:
+            # A card wider than its picture stands over the picture's
+            # middle, not off its right edge.
+            width = max(box.width(), 300)
+            left, top = box.center().x() - width // 2, box.top()
+        else:
+            left, top = box.left() - _INSET_X, box.top() - _INSET_Y
+            width = max(box.width() + 2 * _INSET_X, 240)
         width = min(width, room.width() - 16)
         self.setFixedWidth(width)
+        long, short = self._placeholders
+        if short and QFontMetricsF(self.line.font()).horizontalAdvance(long) > width - 2 * _INSET_X:
+            self.line.setPlaceholderText(short)
         height = self.sizeHint().height()
-        left = max(8, min(box.left(), room.right() - 8 - width))
-        top = max(8, min(box.top(), room.bottom() - 8 - height))
+        left = max(8, min(left, room.right() - 8 - width))
+        top = max(8, min(top, room.bottom() - 8 - height))
         self.setGeometry(left, top, width, height)
         self.show()
         self.raise_()

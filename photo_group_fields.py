@@ -54,10 +54,11 @@ class PhotoFields:
             field = PictureField(
                 ed.viewport(), name=_("Caption of {photo}").format(
                     photo=photos.place_words(picture)), text=picture.unit.caption_line,
-                placeholder=_("Caption, e.g. “The jetty · Photo: Anna Berg”"), font=font,
-                **colors)
+                placeholder=_("Caption, e.g. “The jetty · Photo: Anna Berg”"),
+                short_placeholder=_("Caption"), font=font, **colors)
         else:
-            spot = QRectF(box.left() + 8, box.top() + 8, box.width(), 0)
+            # On the picture, the same distance from its left and right edge.
+            spot = QRectF(box.left() + 8, box.top() + 8, box.width() - 16, 0)
             field = PictureField(
                 ed.viewport(), name=_("Description"), text=picture.unit.alt, placeholder="",
                 font=font, title=_("Description"),
@@ -67,7 +68,16 @@ class PhotoFields:
         self._field = field
         field.committed.connect(lambda words, f=field: self._done(f, kind, picture, words))
         field.cancelled.connect(lambda f=field: self._done(f, kind, picture, None))
+        if kind == CAPTION and picture.grouped:
+            # Written in the field, not drawn under it meanwhile.
+            photo_group_view.set_caption_in_field(doc, picture.position)
         field.place(photos.to_view(spot).toAlignedRect())
+        ed.viewport().update()
+
+    def is_open(self) -> bool:
+        """Whether a field is open: its picture keeps the ring meanwhile,
+        though the words are written in the field, not in the text."""
+        return self._field is not None
 
     def _done(self, field: PictureField, kind: str, picture: Picture,
               words: Optional[str]) -> None:
@@ -76,6 +86,8 @@ class PhotoFields:
         back = field.line.hasFocus()
         if self._field is field:
             self._field = None
+            photo_group_view.set_caption_in_field(self._photos.editor.document(), None)
+            self._photos.editor.viewport().update()
         field.hide()
         field.deleteLater()
         # The picture by its number: a change of the document closes the

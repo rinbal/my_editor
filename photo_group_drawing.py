@@ -182,6 +182,10 @@ class Handler(QPyTextObject):
         self._captions: Dict[tuple, Tuple[QTextLayout, float]] = {}
         # The words painted over in captions (set_marks).
         self.marks: Sequence[CaptionMark] = ()
+        # The picture whose caption is being written in a field over it
+        # (its place): the caption is not drawn, or a second line of it
+        # would show under the one line of the field.
+        self.caption_in_field: Optional[int] = None
         self._caption_font: Optional[tuple] = None
         # Room a view keeps free above every group, in the layout's pixels
         # (the editor's bar over a group floats there): at least this much.
@@ -219,7 +223,7 @@ class Handler(QPyTextObject):
             unit = laid.units[member]
             target = QRectF(rect.x() + dx, rect.y() + dy, tile.width, tile.height)
             self._draw_picture(painter, target, doc, unit)
-            if unit.has_caption:
+            if unit.has_caption and laid.positions[member] != self.caption_in_field:
                 layout, _height = self._caption(doc, unit, tile.figure_width)
                 layout.draw(painter, QPointF(rect.x() + dx - (tile.x - tile.figure_x),
                                              target.bottom() + self._caption_gap(doc)),

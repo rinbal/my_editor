@@ -32,6 +32,7 @@ import photo_group_actions
 import photo_group_editing
 import photo_group_find
 import photo_group_overlay
+import photo_group_view
 import picture_crop
 import theme
 from editor import HtmlEditor
@@ -225,6 +226,27 @@ def test_description_is_written_on_the_picture_and_saved_as_its_alt_text():
     assert _markdown(ed) == _text("Before.", "![A wooden jetty](photo.png)", TWO, THREE, FOUR,
                                   "After.")
     assert _undone(ed)
+    ed.close()
+
+
+def test_a_caption_being_written_stands_in_its_field_alone_and_its_picture_keeps_the_ring():
+    """The field lies over the caption as one line: a caption of two lines
+    showed its second one under the field, and the ring left the picture
+    while the field had the focus. A field too narrow for the example of
+    a caption says "Caption", whole."""
+    ed = _selected(number=1)                         # "Cap two" under a picture in a row of four
+    position = ed.textCursor().selectionStart()
+    handler = photo_group_view._handler(ed.document())
+    ed.photos.run(CAPTION)
+    field = next(found for found in ed.viewport().findChildren(QWidget, "pictureField")
+                 if found.isVisible())
+    assert handler.caption_in_field == position      # not drawn under the field
+    assert not ed.hasFocus() and ed.photos.pointer._attended()
+    field.line.clear()
+    assert field.line.placeholderText() == "Caption"
+    QTest.keyClick(field.line, Qt.Key.Key_Escape)
+    QApplication.processEvents()
+    assert handler.caption_in_field is None and _markdown(ed) == FOUR_PICTURES
     ed.close()
 
 

@@ -132,6 +132,12 @@ class PhotoPointer(QObject):
             return self._hovered()
         return self._photos.current() if self._editor.hasFocus() else None
 
+    def _attended(self) -> bool:
+        """Whether the selected picture is being worked on: the editor has
+        the focus, or the field open on the picture has it (its caption or
+        its description is being written)."""
+        return self._editor.hasFocus() or self._photos.fields.is_open()
+
     def _hovered(self) -> Optional[Picture]:
         """The picture the pointer is over, as it stands now: a command
         (Large, from its chip) may have changed it since the pointer came."""
@@ -468,7 +474,7 @@ class PhotoPointer(QObject):
 
     def caret_moved(self) -> None:
         """The ring follows the picture at the caret."""
-        picture = self._photos.current() if self._editor.hasFocus() else None
+        picture = self._photos.current() if self._attended() else None
         ring = picture.position if picture is not None else None
         if ring != self._ring:
             self._ring = ring
@@ -517,7 +523,7 @@ class PhotoPointer(QObject):
         if self._session is not None:
             self._paint_moving(painter, accent, ink, surface, solid)
             return
-        current = photos.current() if self._editor.hasFocus() else None
+        current = photos.current() if self._attended() else None
         if current is not None:
             box = photos.box_of(current)
             if box is not None:
