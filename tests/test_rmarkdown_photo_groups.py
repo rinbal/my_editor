@@ -212,6 +212,7 @@ def test_in_a_browser_the_knitted_group_shows_every_picture_whole(tmp_path):
 
 
 def test_the_help_says_how_a_group_knits():
-    usage = (Path(__file__).resolve().parent.parent / "docs" / "usage.md").read_text(encoding="utf-8")
+    page = Path(__file__).resolve().parent.parent / "docs" / "use" / "save-export-print.md"
+    usage = page.read_text(encoding="utf-8")
     knitting = usage[usage.index("## R Markdown knitting"):]
     assert "one under another" in knitting.split("\n## ")[0]
