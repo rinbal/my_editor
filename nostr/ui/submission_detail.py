@@ -457,6 +457,27 @@ class SubmissionDetail(QWidget):
     def _on_changed(self, sid: str) -> None:
         if sid == self._sid:
             self.refresh()
+            self._read_in_sight()
+
+    def _in_sight(self) -> bool:
+        """Whether the person has the conversation's newest message before
+        them: the panel shows this detail, in the window they work in, and
+        the conversation stands at its end (scrolled up to read, a new
+        message comes in below what they see)."""
+        return self._stick and self.isVisible() and self.window().isActiveWindow()
+
+    def _read_in_sight(self) -> None:
+        """What arrives while the conversation is in sight is read: no dot
+        at its row, the tab or the toolbar for it. Out of sight (the list,
+        another view, the panel closed, another app in front, scrolled up)
+        it waits, and is read once it comes in sight."""
+        if self._following is not None and self._sid and self._in_sight():
+            self._following.mark_read(self._sid)
+
+    def changeEvent(self, event) -> None:  # noqa: N802, Qt's name
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.ActivationChange:
+            self._read_in_sight()               # back in the window: what came meanwhile
 
     def _on_rows_changed(self) -> None:
         """Another submission's news is not this detail's: it is drawn
@@ -531,6 +552,7 @@ class SubmissionDetail(QWidget):
     def showEvent(self, event) -> None:  # noqa: N802, Qt's name
         super().showEvent(event)
         self._fit_soon.start()                  # at the height it has now
+        self._read_in_sight()                   # shown again: what came meanwhile
 
     def _order_tabs(self) -> None:
         """Tab goes as the eye does, after every rebuild (RG-M3-b 11): the
@@ -759,7 +781,10 @@ class SubmissionDetail(QWidget):
     def _on_scrolled(self, value: int) -> None:
         """Scrolled up to read: it stays there; back at the end: it
         follows the end again."""
-        self._stick = value >= self._scroll.verticalScrollBar().maximum() - 4
+        at_the_end = value >= self._scroll.verticalScrollBar().maximum() - 4
+        back, self._stick = at_the_end and not self._stick, at_the_end
+        if back:
+            self._read_in_sight()               # scrolled down to what came meanwhile
 
     def _on_range(self, _minimum: int, maximum: int) -> None:
         # The conversation grew or got its height: still at the end.

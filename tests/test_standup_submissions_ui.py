@@ -309,6 +309,29 @@ def test_a_dot_at_the_views_name_says_that_something_in_it_is_unread_until_it_is
     assert not segment.is_marked()
 
 
+def test_a_message_that_arrives_in_the_detail_in_sight_is_read(window):
+    # ME-5: what arrives while the open conversation is before the person
+    # (the panel shows it, in the active window, at its end) is read: no
+    # dot at its row or the tab. With the list shown it waits.
+    world = window.world
+    prepared, entries = seeded(window, text="Ein Jahr")
+    sid = entries["text"].sid
+    window.follow()
+    window.view.show()
+    window.view.activateWindow()
+    QApplication.processEvents()
+    detail = opened(window, entries["text"])
+    world.message(prepared["text"], "Noch da?")
+    window.following.refresh()
+    world.settle()
+    assert not window.following.row(sid).unread and not window.view.has_unread()
+    detail.back.click()                                 # the list: the detail is out of sight
+    world.message(prepared["text"], "Und jetzt?")
+    window.following.refresh()
+    world.settle()
+    assert window.following.row(sid).unread and window.view.has_unread()
+
+
 def test_without_a_server_nothing_is_read_and_the_panel_has_no_submissions_view(monkeypatch):
     window = Window(FollowWorld(), monkeypatch, server="")
     window.follow()
