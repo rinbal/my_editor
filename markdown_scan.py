@@ -106,6 +106,8 @@ _ITEM = re.compile(r"( *)([-*+]|\d{1,9}[.)])(?=[ \t]|$)[ \t]*(.*)")
 _TASK_BOX = re.compile(r"\[[ xX]\][ \t]*")
 # A line that may be such an item with nothing in it (empty_items).
 _MAYBE_EMPTY_ITEM = re.compile(r"^[ >]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]+\[[ xX]\])?[ \t]*$", re.M)
+# A line that may start a list item, after the quote marks.
+_ANY_ITEM = re.compile(r"^[ >]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)", re.M)
 # A line no paragraph goes on past, after its indent: an ATX heading, or a
 # thematic break ("---" under a paragraph is its heading's underline,
 # which ends it all the same).
@@ -159,7 +161,7 @@ def empty_items(markdown: str) -> Tuple[List[int], bool]:
         return [], False
     lines = markdown.split("\n")
     code = code_lines(lines)
-    starts = _item_starts(lines, code)
+    starts = _item_starts(lines, code)[0]
     places: List[int] = []
     unsafe = False
     start = 0
@@ -189,7 +191,17 @@ def empty_items(markdown: str) -> Tuple[List[int], bool]:
     return places, unsafe
 
 
-def _item_starts(lines: List[str], code: List[bool]) -> List[Optional[bool]]:
+def heading_in_item(markdown: str) -> bool:
+    """Whether a heading or a thematic break stands in a list item ("- # a",
+    "- a\\n  ---", "- a\\n\\n  # b"), outside code: Qt's reader takes it out
+    of its list, or makes it the item's words in bold."""
+    if _ANY_ITEM.search(markdown) is None:
+        return False
+    lines = markdown.split("\n")
+    return _item_starts(lines, code_lines(lines))[1]
+
+
+def _item_starts(lines: List[str], code: List[bool]) -> Tuple[List[Optional[bool]], bool]:
     """For each line, whether a list item starts on it, by the lines above
     it as CommonMark reads them: False for a line that is no item, or the
     words of the paragraph going on above it ("Text\\n-" is a heading,
@@ -197,7 +209,8 @@ def _item_starts(lines: List[str], code: List[bool]) -> List[Optional[bool]]:
     where this cannot tell. An item with nothing in it, or numbered other
     than 1, does not interrupt a paragraph in its place: in its quote, at
     the words of the paragraph's item or right of them ("- a\\nb\\n-" is
-    two items, "> a\\n-" a quote and an item)."""
+    two items, "> a\\n-" a quote and an item). And whether a heading or a
+    thematic break stands in an item (heading_in_item)."""
     starts: List[Optional[bool]] = []
     # The paragraph going on: its quote depth and the column of the words
     # of the item it is in (0: in none; None: not known), its first line,
@@ -205,14 +218,23 @@ def _item_starts(lines: List[str], code: List[bool]) -> List[Optional[bool]]:
     paragraph: Optional[Tuple[int, Optional[int]]] = None
     first, count = "", 0
     table: Optional[int] = None
+    # The columns of the words of the items open, outermost first, in the
+    # quote the line before stands in (an item ends with its quote).
+    items: List[int] = []
+    items_depth = 0
+    inner = False
     for number, line in enumerate(lines):
         starts.append(False)
         depth = _quote_depth(line)
         rest = _inside_quotes(line, depth)
+        if depth != items_depth:
+            items, items_depth = [], depth
+        indent = _indent(rest)
         if code[number] or not rest.strip():
             paragraph = table = None
+            if code[number] and indent is not None:
+                _close_items(items, indent)
             continue
-        indent = _indent(rest)
         item = _ITEM.fullmatch(rest)
         if indent is None:              # a tab in the indent: its column is not known
             starts[number] = None if item else False
@@ -222,22 +244,39 @@ def _item_starts(lines: List[str], code: List[bool]) -> List[Optional[bool]]:
         column = paragraph[1] if in_place else None
         if column is not None and _UNDERLINE.fullmatch(rest.lstrip(" ")) \
                 and column <= indent < column + 4:
-            paragraph, table = None, None   # the paragraph's heading (a "-" is no item)
+            # The paragraph's heading (a "-" under its words is no item);
+            # in an item when the paragraph's words are.
+            inner = inner or column > 0
+            paragraph, table = None, None
             continue
-        if _HEADING_OR_BREAK.fullmatch(rest):
+        heading = _HEADING_OR_BREAK.fullmatch(rest) is not None
+        if not (in_place and item is None and not heading):
+            _close_items(items, indent)     # (words going on keep the items open)
+        if heading:
+            inner = inner or bool(items) and indent - items[-1] < 4
             # (Indented 4 or more it may be code, or words going on.)
             paragraph, table = (None if indent < 4 else (depth, None)), None
             continue
         if item is not None:
             start = _item_start(item, paragraph if in_place else None, indent)
             starts[number] = start
-            if start:
-                paragraph, table = _item_paragraph(rest, item, depth), None
-                first, count = item.group(3), 1
-            elif start is None:
-                paragraph, table = (depth, None), None
-            else:
+            if start is False:
                 count += 1              # the paragraph's words
+                continue
+            columns, words = _item_words(rest, item)
+            items += columns
+            table = None
+            if start is None:
+                paragraph = (depth, None)
+            elif not words.strip() or _HEADING_OR_BREAK.fullmatch(words):
+                # Nothing in it, or one in it inside ("- -", a heading, a break).
+                inner = inner or bool(words.strip())
+                paragraph = None
+            else:
+                # The column of its words, not known when they open a quote,
+                # code or HTML.
+                paragraph = (depth, None) if words[:1] in ">`~<" else (depth, columns[-1])
+                first, count = words, 1
             continue
         if table == depth:
             continue                    # a row of the table
@@ -258,7 +297,13 @@ def _item_starts(lines: List[str], code: List[bool]) -> List[Optional[bool]]:
             count += 1                  # words of a quote's paragraph, its marks left out
             continue
         paragraph, first, count = (depth, 0 if indent == 0 else None), rest, 1
-    return starts
+    return starts, inner
+
+
+def _close_items(items: List[int], indent: int) -> None:
+    """End the items a line ``indent`` spaces in stands left of the words of."""
+    while items and indent < items[-1]:
+        items.pop()
 
 
 def _item_start(item: re.Match, paragraph: Optional[Tuple[int, Optional[int]]],
@@ -279,23 +324,20 @@ def _item_start(item: re.Match, paragraph: Optional[Tuple[int, Optional[int]]],
     return indent < column or (interrupts and indent - column < 4)
 
 
-def _item_paragraph(rest: str, item: re.Match,
-                    depth: int) -> Optional[Tuple[int, Optional[int]]]:
-    """The paragraph the line ``rest`` (in ``depth`` quotes) that starts
-    the item matched leaves going on, as _item_starts holds it: None when
-    there is none (nothing in the item, or one in it inside: "- -", a
-    heading, a break); the column of its words unknown when they open a
-    quote, code or HTML."""
-    column = item.start(3)
+def _item_words(rest: str, item: re.Match) -> Tuple[List[int], str]:
+    """The columns of the words of the item matched on the line ``rest``
+    and of each item it starts with ("- - a": two), and the words after
+    their markers (an item's with nothing in it: right of its marker)."""
+    columns: List[int] = []
     while True:
-        words = rest[column:]
+        words = item.group(3)
+        columns.append(item.start(3) if words.strip() else item.end(2) + 1)
         if not words.strip() or _HEADING_OR_BREAK.fullmatch(words):
-            return None
-        inner = _ITEM.fullmatch(rest, column)
+            return columns, words
+        inner = _ITEM.fullmatch(rest, item.start(3))
         if inner is None:
-            break
-        column = inner.start(3)
-    return (depth, None) if words[:1] in ">`~<" else (depth, column)
+            return columns, words
+        item = inner
 
 
 def _cells(row: str) -> List[str]:

@@ -287,6 +287,13 @@ def test_an_empty_item_after_a_headings_underline_is_kept():
     assert document_to_markdown(doc, _image_as_read) == "## Text\n\n-\n- a\n"
 
 
+@pytest.mark.parametrize("source", ["- a\n  ---\n-\n", "- a\n  -\n-\n", "- # a\n- b\n",
+                                    "- a\n\n  # b\n- c\n", "- ***\n- b\n"])
+def test_a_heading_in_a_list_item_opens_as_text(source):
+    # Qt's reader takes it out of its list: saved, the item was gone.
+    assert not holds_faithfully(source)
+
+
 def test_a_quote_with_two_paragraphs_stays_one_quote():
     out = document_to_markdown(from_markdown("> one\n>\n> two\n"))
     assert out == "> one\n>\n> two\n"
