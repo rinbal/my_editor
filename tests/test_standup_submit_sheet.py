@@ -256,7 +256,8 @@ def test_published_by_and_the_rights_show_only_where_they_are_asked_for(tmp_path
     assert sheet.choice().signer == "writer"
     sheet.picker.setCurrentIndex(1)
     assert sheet.by_me.isVisible() and sheet.rights.isVisible()
-    assert sheet.by_hint.text() == "Nach der Annahme veröffentlichst du mit deinem Schlüssel."
+    assert sheet.by_hint.text() == ("Nach der Annahme veröffentlichst du selbst, von deinem "
+                                    "Konto aus.")
     sheet.by_publication.setChecked(True)
     assert sheet.by_hint.text() == ("Die Redaktion schlägt bei der Annahme die Aufteilung der "
                                     "Zaps vor, du bestätigst sie.")

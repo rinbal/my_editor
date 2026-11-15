@@ -582,7 +582,8 @@ class SubmitSheet(QDialog):
 
     def _show_by_hint(self, *_args) -> None:
         self.by_hint.setText(
-            _("After acceptance you publish it with your key.") if self.by_me.isChecked()
+            _("After acceptance you publish it yourself, from your account.")
+            if self.by_me.isChecked()
             else _("At acceptance the editorial team proposes how zaps are split; "
                    "you confirm it."))
 
