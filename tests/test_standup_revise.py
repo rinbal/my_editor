@@ -83,7 +83,8 @@ def test_a_new_version_is_handed_in_with_its_note_and_counts_with_its_receipt(wi
     sheet.hand_in.click()
     world.settle()
     assert sheet.run.progress.phase is Phase.DONE
-    assert sheet.handoff.headline.text() == "Version 2 handed in."      # as the prototype says
+    assert sheet.handoff.headline.text() == "Version 2 handed in"
+    assert sheet.heading.isHidden()                 # the headline is the title of this moment
     # The handoff knows how the account signs, as the submit sheet's does:
     # a key kept here is never told to wait for a signer app.
     assert sheet.handoff.signer_app is through_signer_app(window.profile)

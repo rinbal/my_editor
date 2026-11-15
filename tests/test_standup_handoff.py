@@ -1,14 +1,18 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The handoff in motion (nostr/ui/standup_handoff.py, plan 10.3).
+"""The delivery of a submission in motion (nostr/ui/standup_handoff.py,
+plan 10.3; the owner's choice "Einwurf").
 
 Pinned here: each state's words, the plan's German exactly; that the
-card settles into the publication's inbox only in the DONE phase (which
-only a matching receipt reaches, test_standup_submitting.py), holds at
-60 percent while the request is on its way or unconfirmed, and glides
-back when nothing was sent; that with Reduce Motion nothing travels and
-settling is a 120 ms cross-fade; that every state is announced once;
-and the buttons each state has."""
+article stays above the publication's inbox, hovering right over it
+while the request is on its way or unconfirmed, and drops in only in
+the DONE phase (which only a matching receipt reaches,
+test_standup_submitting.py), where the inbox becomes the receipt that
+holds publication and article; that it is back in its place when
+nothing was sent; that with Reduce Motion nothing travels and the
+states cross-fade in 120 ms; the facts on the article and on the
+receipt; that every state is announced once; and the buttons each
+state has."""
 
 from __future__ import annotations
 
@@ -25,6 +29,7 @@ from nostr.ui import motion, standup_handoff
 from nostr.ui.standup_handoff import HandoffView, phase_words
 
 PUBLICATION = "Einundzwanzig Magazin"
+TITLE = "Ein Jahr mit Lightning im Café"
 
 
 @pytest.fixture
@@ -42,9 +47,8 @@ def german():
 @pytest.fixture
 def view(app):
     view = HandoffView(is_dark=False)
-    view.set_work(title="Ein Jahr mit Lightning im Café", summary="Wie ein Café …",
-                  byline="Jana Roth · Artikel · 1 Bild", cover=standup_handoff.QPixmap(),
-                  publication=PUBLICATION, logo=standup_handoff.QPixmap())
+    view.set_work(title=TITLE, cover=standup_handoff.QPixmap(), publication=PUBLICATION,
+                  logo=standup_handoff.QPixmap(), pictures=1)
     view.resize(720, 380)
     return view
 
@@ -74,8 +78,8 @@ NOT_SENT = Failure(failures.CHECK_CONNECTION, Step.SIGNING, title=words.NOT_SUBM
     (Progress(Step.SENDING), ("Wird an Einundzwanzig Magazin gesendet …", "")),
     (Progress(Step.CHECKING), ("Noch nicht bestätigt. Wird geprüft …",
                                "Du kannst das Fenster schließen, MyEditor prüft weiter.")),
-    (Progress(Step.SUBMITTED), ("Eingereicht. Im Eingang von Einundzwanzig Magazin.",
-                                "Der Server hat den Empfang bestätigt.")),
+    (Progress(Step.SUBMITTED), ("Eingereicht",
+                                "Antworten der Redaktion siehst du unter Einreichungen.")),
     (Progress(Step.FAILED, failure=NOT_SENT),
      ("Dein Artikel wurde nicht eingereicht",
       "Prüfe deine Internetverbindung und versuche es erneut.")),
@@ -155,43 +159,64 @@ def test_a_list_that_could_not_be_read_says_it_in_its_own_words(german):
         "Dein Artikel wurde nicht eingereicht", "Deine Liste …")
 
 
+def _settled(stage):
+    """The stage where its motion ends."""
+    for name in ("hover", "settle", "accent", "steps"):
+        stage._set(name, stage.target(name))
+
+
 @pytest.mark.parametrize("step", [s for s in Step if s is not Step.SUBMITTED])
-def test_the_card_settles_only_once_it_is_in(view, moving, step):
+def test_the_article_stays_above_the_inbox_until_the_server_confirmed_it(view, moving, step):
     view.show_progress(Progress(step, failure=NOT_SENT if step is Step.FAILED else None))
-    assert not view.track.animating("settle") and view.track.value("settle") == 0
-    assert not view.track._got
+    stage = view.stage
+    assert not stage.received and stage.target("settle") == 0
+    _settled(stage)
+    assert stage.row_rect().bottom() < stage.inbox_rect().top()     # never on it
+    assert "In the inbox" not in stage.accessibleName()
 
 
-def test_a_receipt_settles_the_card_into_the_inbox(view, moving):
+def test_a_receipt_drops_the_article_in_and_the_inbox_is_the_receipt_of_both(view, moving):
+    stage = view.stage
     view.show_progress(Progress(Step.SENDING))
+    waiting = stage.full_height()
     view.show_progress(Progress(Step.SUBMITTED))
-    assert view.track.animating("settle") and view.track.animating("fade")
-    assert view.track.target("settle") == 1.0 and view.track.target("travel") == 1.0
-    assert view.track._got
+    assert stage.received and stage.animating("settle") and stage.target("settle") == 1.0
+    _settled(stage)
+    # The article and the way closed up; what is left is the receipt,
+    # which holds the publication, the check and the article.
+    assert stage.full_height() == waiting - 52 and view.stage.height() == stage.full_height()
+    assert stage.inbox_rect().height() == 118
+    for said in (PUBLICATION, TITLE, "Article · Version 1 · 1 picture", "In the inbox"):
+        assert said in stage.accessibleName()
+    assert not view.grab().isNull()
 
 
-def test_on_its_way_the_card_holds_at_sixty_percent_and_glides_back_when_not_sent(view, moving):
+def test_on_its_way_the_article_hovers_over_the_inbox_and_goes_back_when_not_sent(view, moving):
+    stage = view.stage
     view.show_progress(Progress(Step.SIGNING))
-    assert view.track.target("lift") == 1.0
+    assert stage.target("hover") == 0.0 and stage.target("steps") == 2.0
+    assert stage.animating("breath")                    # the step that waits breathes
     view.show_progress(Progress(Step.SENDING))
-    assert view.track.target("travel") == pytest.approx(0.6)
-    assert view.track.animating("glow")                  # it holds, breathing
+    assert stage.target("hover") == 1.0 and stage.target("accent") == 1.0
+    assert not stage.animating("breath")
     view.show_progress(Progress(Step.CHECKING))
-    assert view.track.target("travel") == pytest.approx(0.6)
+    assert stage.target("hover") == 1.0 and stage.target("steps") == 3.0     # sent
     view.show_progress(Progress(Step.FAILED, failure=NOT_SENT))
-    assert view.track.target("travel") == 0.0 and view.track.target("lift") == 0.0
-    assert not view.track.animating("glow")
+    assert (stage.target("hover"), stage.target("steps"), stage.target("accent")) == (0, 0, 0)
 
 
-def test_with_reduce_motion_nothing_travels_and_settling_cross_fades(view, still):
+def test_with_reduce_motion_nothing_travels_and_the_states_cross_fade(view, still):
+    stage = view.stage
+    view.show()
     for step in (Step.ENCRYPTING, Step.SIGNING, Step.SENDING, Step.CHECKING):
         view.show_progress(Progress(step))
-        assert view.track.value("travel") == 0 and view.track.value("lift") == 0
-        assert not view.track.animating("travel") and not view.track.animating("glow")
+        assert stage.value("hover") == 0 and not stage.animating("hover")
+        assert not stage.animating("breath")
     view.show_progress(Progress(Step.SUBMITTED))
-    assert view.track.value("travel") == 0 and view.track.value("settle") == 0
-    fade = view.track._animations["fade"]
-    assert fade.duration() == motion.CROSS_FADE_MS and fade.endValue() == 0.0
+    assert stage.value("settle") == 1.0 and not stage.animating("settle")    # at once
+    fade = stage._animations["mix"]
+    assert fade.duration() == motion.CROSS_FADE_MS and fade.endValue() == 1.0
+    view.hide()
 
 
 def test_the_words_stay_the_same_with_reduce_motion(german, view, still):
@@ -208,17 +233,43 @@ def test_every_state_is_announced_once(view, monkeypatch):
     view.show_progress(Progress(Step.SUBMITTED))
     assert said == ["Uploading picture… Encrypted, to your media server.",
                     "Waiting for your signer app. Confirm the request there.",
-                    "Submitted. In the inbox of Einundzwanzig Magazin. "
-                    "The server confirmed receipt."]
+                    "Submitted. The server confirmed receipt. "
+                    "You see the editorial team’s answers under Submissions."]
 
 
-def test_the_bar_shows_the_upload_and_stays_full_after_it(view):
+def test_the_bar_shows_only_while_pictures_upload(view):
     view.show_progress(Progress(Step.UPLOADING, pictures=1, uploaded=0.4))
-    assert view.track._bar == 0.4
+    assert view.stage._bar_shown and view.stage.target("bar") == 0.4
     view.show_progress(Progress(Step.SENDING, pictures=1))
-    assert view.track._bar == 1.0
-    view.show_progress(Progress(Step.SENDING, pictures=0))
-    assert view.track._bar is None
+    assert not view.stage._bar_shown
+    view.show_progress(Progress(Step.UPLOADING, pictures=0))
+    assert not view.stage._bar_shown
+
+
+class _Receipt:
+    received_at = 0
+
+
+def test_the_facts_say_what_goes_and_once_it_is_in_when_and_how(german, view, monkeypatch):
+    assert standup_handoff.work_facts(1, 3) == "Artikel · Fassung 1 · 3 Bilder"
+    assert standup_handoff.work_facts(2) == "Artikel · Fassung 2"       # no pictures: not said
+    assert view.stage.facts == "Artikel · Fassung 1 · 1 Bild"
+    view.show_progress(Progress(Step.SENDING))
+    assert view.facts.isHidden()
+    receipt = _Receipt()
+    receipt.received_at = int(_at(3, 21))
+    monkeypatch.setattr(standup_handoff, "_now", lambda: _at(3, 22))
+    view.show_progress(Progress(Step.SUBMITTED, receipt=receipt))
+    assert not view.facts.isHidden()
+    assert view.facts.text() == "Heute, 03:21 · Ende-zu-Ende verschlüsselt"
+    # A message that went with it is one of the facts, with no line of its own.
+    view.show_progress(Progress(Step.SUBMITTED, receipt=receipt, message=MessageStatus.SENT))
+    assert view.facts.text() == ("Heute, 03:21 · Ende-zu-Ende verschlüsselt · "
+                                 "mit deiner Nachricht")
+    assert view.message.isHidden()
+    # A time that is not known is left out.
+    view.show_progress(Progress(Step.SUBMITTED))
+    assert view.facts.text() == "Ende-zu-Ende verschlüsselt"
 
 
 def _shown(view):
@@ -247,9 +298,9 @@ def test_each_state_has_its_buttons(view, progress, shown, enabled_cancel, defau
     assert defaults == ({default} if default else set())
 
 
-def test_while_it_goes_on_continue_in_background_stands_after_cancel_at_the_trailing_end(
-        app, view):
-    # UX-M1: it stood alone at the leading end, Cancel at the trailing one.
+def test_the_buttons_stand_together_at_the_trailing_end_the_default_one_last(app, view):
+    # UX-M1: Continue in Background stood alone at the leading end, Cancel at
+    # the trailing one; View Submission and Done in opposite corners.
     from PySide6.QtGui import QGuiApplication
     import theme
     before = app.style().name() or "Fusion"
@@ -262,6 +313,11 @@ def test_while_it_goes_on_continue_in_background_stands_after_cancel_at_the_trai
         cancel, background = view.cancel_button.geometry(), view.background_button.geometry()
         assert cancel.right() < background.left() and background.right() > 600
         assert background.left() - cancel.right() < 20     # side by side
+        view.show_progress(Progress(Step.SUBMITTED))
+        QGuiApplication.processEvents()
+        see, done = view.view_button.geometry(), view.done_button.geometry()
+        assert see.right() < done.left() and done.right() > 600
+        assert done.left() - see.right() < 20 and view.done_button.isDefault()
     finally:
         view.buttons.hide()
         app.setStyle(before)
@@ -282,7 +338,7 @@ def test_a_message_that_was_not_sent_can_be_sent_again_from_the_handoff(view, mo
     assert not view.send_again.isHidden()
     # RG-M2r3 7: its title, and one sentence with the cause and what to do,
     # shown and said.
-    assert view.message.text() == failures.markup(words.MESSAGE_NOT_SENT,
+    assert view.message.text() == failures.spoken(words.MESSAGE_NOT_SENT,
                                                   failures.CHECK_CONNECTION)
     assert said[-1].endswith(failures.spoken(words.MESSAGE_NOT_SENT, failures.CHECK_CONNECTION))
     view.send_again.click()
@@ -362,7 +418,7 @@ def test_send_again_waits_for_the_limit_of_messages(view, monkeypatch):
                                                         retry_at=_at(9, 1))))
     assert not view.send_again.isHidden() and not view.send_again.isEnabled()
     clock = standup_handoff.wait_words(_at(9, 1), now["at"], "{time}", "{time}")
-    assert view.message.text() == failures.markup(
+    assert view.message.text() == failures.spoken(
         words.MESSAGE_NOT_SENT, "The server takes no more messages from you right now: send it "
         f"again at {clock}.")
     view.send_again.click()
@@ -372,7 +428,7 @@ def test_send_again_waits_for_the_limit_of_messages(view, monkeypatch):
     now["at"] = _at(9, 1)
     view._wait.timeout.emit()
     assert view.send_again.isEnabled()
-    assert view.message.text() == failures.markup(
+    assert view.message.text() == failures.spoken(
         words.MESSAGE_NOT_SENT, "The wait for the server is over: you can send your message again "
         "now.")
     assert said == []                               # shown, not announced (RG-M2r3 14)
@@ -423,115 +479,44 @@ def test_a_failure_is_announced_once_however_often_it_is_shown(view, monkeypatch
     assert len(said) == 1
 
 
-def test_the_dotted_way_runs_only_from_the_card_to_the_inbox_and_is_gone_once_in(app, moving):
-    # PR pictures: once in, the dotted line was still drawn from where
-    # the card started. It is the way still to go, from the card.
-    track = standup_handoff.HandoffTrack(is_dark=False)
-    track.resize(720, standup_handoff._COVER_HEIGHT + 120)
-    y = round((track.height() - track._card_height()) / 2 + track._card_height() / 2)
-    # UX-M1: the card and the inbox stand _EDGE in from the track's ends.
-    edge = standup_handoff._EDGE
-    start = edge + standup_handoff._CARD_WIDTH + 14
-    inbox_left = track.width() - edge - standup_handoff._INBOX_WIDTH - 14
-
-    def drawn(left, right) -> bool:
-        image = track.grab().toImage()
-        ratio = image.devicePixelRatio()
-        row = int(y * ratio)
-        blank = image.pixel(int(2 * ratio), row)
-        return any(image.pixel(int(x * ratio), row) != blank for x in range(left, right))
-
-    assert drawn(start, inbox_left)                    # the whole way, still to go
-    end = track.width() - edge - standup_handoff._INBOX_WIDTH / 2 - standup_handoff._CARD_WIDTH / 2
-    held = min(edge + 0.6 * (end - edge),
-               inbox_left + 14 - standup_handoff._GAP - standup_handoff._CARD_WIDTH)
-    track._set("travel", 0.6)
-    assert not drawn(start, int(held) - 2)             # behind the held card: nothing
-    for name, value in (("travel", 1.0), ("settle", 1.0), ("fade", 0.0)):
-        track._set(name, value)
-    track.set_got(True)
-    assert not drawn(start, inbox_left)                # in: nothing stale
-
-
-@pytest.mark.parametrize("width", [720, 560, 380])     # 380: a sheet at its minimum, 420
-def test_the_card_held_while_sending_never_lies_over_the_inbox(app, moving, width):
-    # F6 pictures: below about 720 of sheet width, the card held at 60 %
-    # of its way lay over the inbox while the request was on its way.
-    track = standup_handoff.HandoffTrack(is_dark=False)
-    track.publication = "Einundzwanzig Magazin"
-    track.resize(width, standup_handoff._COVER_HEIGHT + 120)
-    track._set("travel", standup_handoff._HOLD)
-    track._set("lift", 1.0)
-    with_card = track.grab().toImage()
-    track._set("fade", 0.0)                             # the same, the card unseen
-    inbox_only = track.grab().toImage()
-    w, h = with_card.width(), with_card.height()
-    blank, mid = inbox_only.pixel(0, 0), h // 2
-    card = [x for y in range(0, h, 2) for x in range(w)
-            if with_card.pixel(x, y) != inbox_only.pixel(x, y)]
-    inbox = [x for y in range(0, h, 2) if abs(y - mid) > 6 for x in range(w // 3, w)
-             if inbox_only.pixel(x, y) != blank]
-    assert card and inbox and max(card) < min(inbox)
-
-
-# -- what a person sees (UX-M1) -------------------------------------------------
-
-def test_the_lifted_card_and_its_shadow_are_whole_at_the_tracks_leading_edge(app, moving):
-    # The card stood at the track's very edge: lifted, its corners and its
-    # shadow were cut off straight there.
-    track = standup_handoff.HandoffTrack(is_dark=False)
-    track.resize(720, standup_handoff._COVER_HEIGHT + 120)
-    track._set("lift", 1.0)
-    image = track.grab().toImage()
-    blank = image.pixel(image.width() - 1, 0)
-    assert all(image.pixel(0, y) == blank for y in range(image.height()))
-
-
-@pytest.mark.parametrize("width", [720, 560, 380])     # 560: the revise sheet at 600
-@pytest.mark.parametrize("got", [False, True])
-def test_the_inbox_and_its_border_are_whole_at_the_tracks_trailing_edge(app, moving, width,
-                                                                        got):
-    # The inbox was drawn flush with the track's trailing edge: half of
-    # its border was cut off there (seen in the revise sheet).
-    track = standup_handoff.HandoffTrack(is_dark=False)
-    track.publication = "Einundzwanzig Magazin"
-    track.resize(width, standup_handoff._COVER_HEIGHT + 120)
-    track.set_got(got)                                  # its accent border, still at the end
-    track._set("fade", 0.0)                             # the card unseen: the inbox alone
-    image = track.grab().toImage()
-    blank, last = image.pixel(0, 0), image.width() - 1
-    assert all(image.pixel(last, y) == blank for y in range(image.height()))
-    assert any(image.pixel(x, image.height() // 2) != blank
-               for x in range(image.width() // 2, last))      # and it is there
-
-
-def test_once_it_is_in_the_inbox_stands_in_the_middle(app, view, moving, still):
-    # The card gone, the inbox stood alone at the trailing end.
-    track = view.track
-    track.resize(720, standup_handoff._COVER_HEIGHT + 120)
-    resting = track._inbox(720.0, 0.0)
-    assert resting.right() == 720 - standup_handoff._EDGE
-    view.show_progress(Progress(Step.SUBMITTED))
-    assert track.value("centre") == 1.0             # at once with Reduce Motion
-    assert track._inbox(720.0, 0.0).center().x() == 360
-    view.show_progress(Progress(Step.FAILED, failure=NOT_SENT))
-    assert track.value("centre") == 0.0
-
-
-def test_in_a_low_window_the_track_is_drawn_smaller_and_the_words_stay_under_it(view):
+def test_in_a_low_window_the_column_is_drawn_smaller_and_the_words_stay_under_it(view):
     # The words were painted over the card and the inbox.
     scroll = view.scrolling()
     scroll.resize(400, 230)
     scroll.show()
     view.show_progress(Progress(Step.SIGNING))
     QApplication.processEvents()
-    assert standup_handoff._LEAST_HEIGHT <= view.track.height() < standup_handoff._HEIGHT
-    assert view.track.geometry().bottom() < view.headline.geometry().top()
+    stage = view.stage
+    assert standup_handoff._LEAST_ZOOM <= stage.zoom() < 1
+    assert stage.inbox_rect().bottom() <= stage.height()
+    assert stage.geometry().bottom() < view.headline.mapTo(view, view.headline.rect().topLeft()).y()
     assert scroll.verticalScrollBar().maximum() == 0        # all of it in view
-    scroll.resize(400, 400)
+    scroll.resize(400, 420)
     QApplication.processEvents()
-    assert view.track.height() == standup_handoff._HEIGHT
+    assert stage.zoom() == 1 and stage.height() == stage.full_height()
     scroll.hide()
+
+
+def test_a_title_and_a_name_too_long_are_cut_and_whole_in_a_tooltip(app, view):
+    title = "Ein Jahr mit Lightning im Café in Leipzig, und was ich dabei über Geld gelernt habe"
+    name = "Zeitschrift für Wirtschaftsinformatik und Kryptowährungsforschung Leipzig"
+    stage = view.stage
+    view.resize(420, 380)
+    view.set_work(title=title, cover=standup_handoff.QPixmap(), publication=name,
+                  logo=standup_handoff.QPixmap())
+    view.show_progress(Progress(Step.SIGNING))
+    assert not view.grab().isNull()
+    assert stage.tip_at(stage.row_rect().center()) == title
+    assert stage.tip_at(stage.inbox_rect().center()) == name
+    view.set_work(title=TITLE, cover=standup_handoff.QPixmap(), publication=PUBLICATION,
+                  logo=standup_handoff.QPixmap())
+    view.grab()
+    assert stage.tip_at(stage.row_rect().center()) == ""       # whole: nothing to add
+    view.show_progress(Progress(Step.SUBMITTED))
+    _settled(stage)
+    view.grab()
+    # The check stands for what the words no longer say.
+    assert stage.tip_at(stage._zoomed(stage._badge).center()) == words.SUBMITTED_DETAIL
 
 
 def test_the_card_cuts_its_words_as_the_sheets_card_does(app):
@@ -562,8 +547,8 @@ def test_an_account_whose_key_is_kept_here_is_never_told_to_wait_for_a_signer_ap
         "Deine Nachricht wird gesendet …", "")
     assert standup_handoff.message_words(signing, 0.0) == (
         "Warten auf deine Signer-App: Bestätige dort deine Nachricht.", "")
-    view.set_work(title="T", summary="", byline="", cover=standup_handoff.QPixmap(),
-                  publication=PUBLICATION, logo=standup_handoff.QPixmap(), signer_app=False)
+    view.set_work(title="T", cover=standup_handoff.QPixmap(), publication=PUBLICATION,
+                  logo=standup_handoff.QPixmap(), signer_app=False)
     view.show_progress(Progress(Step.SIGNING))
     assert view.headline.text() == "Wird an Einundzwanzig Magazin gesendet …"
-    assert view.detail.isHidden()
+    assert view.detail.isHidden() and not view.stage.animating("breath")
