@@ -54,6 +54,9 @@ class Roles:
     success: str = "#26783D"
     payment_pressed: str = "#DD7A0A"
     glow: str = "#8C5CFF"
+    # A card's soft shadow on the surface (the delivery of a submission).
+    shadow: str = "#462882"
+    shadow_alpha: int = 51
 
 
 _LIGHT = Roles(
@@ -70,7 +73,8 @@ _DARK = Roles(
     tab="#261E33", icon="#B89CFF", ink="#CDB9FF", selection="#6A43D8",
     button="#6E40E2", highlight="#8050DC", pressed="#5830BB", soft="#3D2E57",
     focus="#B89CFF", on_accent="#FFFFFF", disabled="#85798F", glow_alpha=66,
-    amount="#FFB561", error="#FF8C82", success="#58C777")
+    amount="#FFB561", error="#FF8C82", success="#58C777",
+    shadow="#000000", shadow_alpha=128)
 
 
 def roles(dark: bool, *, increased_contrast: bool | None = None,

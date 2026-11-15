@@ -10835,9 +10835,10 @@ class MainWindow(QMainWindow):
         made = self._submission_for_sheet(ed, active)
         if made is None:
             return                              # said why
-        draft, cover, byline, private, public = made
+        draft, cover, byline, private, public, pictures = made
         sheet = SubmitSheet(writer=self._standup(), draft=draft, cover=cover, byline=byline,
-                            private_names=private, public_pictures=public, profile=active,
+                            private_names=private, public_pictures=public, pictures=pictures,
+                            profile=active,
                             store=self._profile_store,
                             avatars=self._avatars, logos=self._publication_logos,
                             is_dark=self.is_dark_theme, parent=self)
@@ -10852,9 +10853,9 @@ class MainWindow(QMainWindow):
         sheet.open()
 
     def _submission_for_sheet(self, ed, active) -> Optional[tuple]:
-        """``(draft, cover, byline, private, public)`` of the article in
-        ``ed`` for a sheet that submits it (_submission_of), or None when
-        it cannot be submitted as it is, said why."""
+        """``(draft, cover, byline, private, public, pictures)`` of the
+        article in ``ed`` for a sheet that submits it (_submission_of), or
+        None when it cannot be submitted as it is, said why."""
         local = self._uploads_needed(ed)
         if local is None:
             return None                         # a picture is gone: said why
@@ -10874,7 +10875,7 @@ class MainWindow(QMainWindow):
         byline = " · ".join([name, _("Article")] + ([ngettext(
             "{count} picture", "{count} pictures", pictures).format(count=pictures)]
             if pictures else []))
-        return draft, cover, byline, private, public
+        return draft, cover, byline, private, public, pictures
 
     # -- following the submissions (plan 10.4) -----------------------------------
 
@@ -10912,7 +10913,7 @@ class MainWindow(QMainWindow):
     def _submission_ports(self) -> SubmissionPorts:
         def made(ed, profile):
             found = self._submission_for_sheet(ed, profile)
-            return None if found is None else found[:4]
+            return None if found is None else (*found[:4], found[5])
 
         def focus(ed) -> None:
             self.tabs.setCurrentIndex(self._editor_widget_index(ed))
