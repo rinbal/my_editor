@@ -52,6 +52,12 @@ If {VERSION} was not given, ask for it. Never guess. The tag will be v{VERSION}.
   dump. Merge related commits into one bullet. Bold a short feature name, then one
   plain-language line. Most impactful first.
 
+## Writing
+
+- Optional, for a large release: the rest of the user-facing changes, grouped
+  under short plain headings like this one, in the same one-line style. Nostr
+  comes last, under "Nostr, if you use it".
+
 ## Technical updates & fixes
 
 - Under-the-hood changes: refactors, bug fixes, dependency bumps, platform fixes,
@@ -78,7 +84,9 @@ Thanks to everyone who shipped this release:
 
 The Community and Download sections are always exactly those links, verbatim.
 Style: valuable and concise. No filler, no padding. This is a GitHub release
-message, not documentation.
+message, not documentation: link to the user guide for details, with full
+`https://github.com/rinbal/my_editor/blob/main/...` addresses, because the
+release page does not resolve relative links.
 
 5. In `docs/releases/README.md`, give v{VERSION} today's date in the Released
    column (and add its row, newest first, if it is not there yet).
