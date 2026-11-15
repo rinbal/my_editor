@@ -52,6 +52,7 @@ points (a Blossom URL, a sidecar file); this module never does.
 from __future__ import annotations
 
 import hashlib
+import html.entities
 import re
 import uuid
 from dataclasses import dataclass, field, replace
@@ -80,8 +81,8 @@ from doc_walk import (
 import photo_group
 import photo_group_find
 from markdown_scan import (DELIMITER_ROW, EMPTY_ITEM_LINE, ESCAPABLE, FENCE_LINE, LIST_LINE,
-                           bracketed, descriptions, emphasized_code, empty_items, escapes,
-                           lossy_definition, pictures, titled_link)
+                           bracketed, descriptions, emphasized_code, empty_items, entities,
+                           escapes, lossy_definition, pictures, titled_link)
 from rich_text import normalize_after_markdown_load
 
 ImageTarget = Callable[[object], Optional[str]]
@@ -1251,7 +1252,8 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
                    groups: bool = True) -> bool:
     """read_markdown, saying whether the editor holds all the reading
     marked: every soft line break the Markdown has that the editor holds
-    read as one, and all Qt's reader would leave out kept (_marked_keeps).
+    read as one, all Qt's reader would leave out kept (_marked_keeps), and
+    each entity a character in its line (_keep_entities).
     The editor's reading (READ_FEATURES) keeps soft line breaks; a preview
     or a paste reads them as Markdown readers do, as spaces. ``groups``:
     pictures that follow each other are folded into their group, as the
@@ -1262,15 +1264,29 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
     marked, soft_mark = 0, None
     if features == READ_FEATURES:
         markdown, soft_mark, marked = _marked_soft_breaks(markdown)
-    escaped, mark = _marked_escapes(markdown)
-    joined, kept = _read_once(doc, escaped, features, alts, (soft_mark, marked))
-    if mark and not _keep_escaped(doc, mark, escaped.count(mark)):
-        # A mark Qt's reader put outside the text (a link's address, a
-        # picture's file, a title), where nothing takes it out: read
-        # without marks, the escapes then are saved as the writer writes
-        # text, and holds_faithfully opens the file as its text when
-        # that would change it.
-        joined, kept = _read_once(doc, markdown, features, alts, (soft_mark, marked))
+
+    def read(text: str) -> Tuple[int, bool]:
+        escaped, mark = _marked_escapes(text)
+        result = _read_once(doc, escaped, features, alts, (soft_mark, marked))
+        if mark and not _keep_escaped(doc, mark, escaped.count(mark)):
+            # A mark Qt's reader put outside the text (a link's address, a
+            # picture's file, a title), where nothing takes it out: read
+            # without marks, the escapes then are saved as the writer writes
+            # text, and holds_faithfully opens the file as its text when
+            # that would change it.
+            result = _read_once(doc, text, features, alts, (soft_mark, marked))
+        return result
+
+    held, entity_mark, spelled = _marked_entities(markdown)
+    joined, kept = read(held)
+    if entity_mark is not None:
+        placed, faithful = _keep_entities(doc, entity_mark, spelled)
+        if placed:
+            kept = kept and faithful
+        else:
+            # The same: read with the entities, the words after one as Qt's
+            # reader formats them.
+            joined, kept = read(markdown)
     normalize_after_markdown_load(doc)
     if groups:
         # Pictures that follow each other show as one group (photo_group).
@@ -1384,6 +1400,83 @@ def _keep_escaped(doc: QTextDocument, mark: str, placed: int) -> bool:
             cursor.setPosition(position + 1, QTextCursor.MoveMode.KeepAnchor)
             cursor.mergeCharFormat(text)
     return len(taken) == placed and not _in_formats(doc, mark)
+
+
+# --------------------------------------------------------------------------- #
+# An entity, read in the format of the words around it                         #
+# --------------------------------------------------------------------------- #
+#
+# Qt's reader reads an entity ("&amp;") as its character, but inserts it as
+# HTML, which sets the format back: the words after it, to where their
+# emphasis or link ends, lose it ("[x &amp; y](u)" was the link "x " and
+# the words "& y", saved so), and a space it makes is dropped ("a&#32;b"
+# was "ab"). For the time Qt reads the Markdown, a mark stands in each
+# entity's place (markdown_scan.entities): a Po character, punctuation as
+# the "&" is, so the emphasis beside it reads as before; once read, the
+# mark becomes what CommonMark reads the entity as (_entity_text), in the
+# format the mark had, and a punctuation mark so made is marked escaped,
+# as the file did not write it bare ("&lt;" stays words). A file is read
+# with the first mark it holds nowhere (_free_mark).
+_ENTITY_MARKS = ("\u2e35", "\u2e36", "\u2e37", "\u2e38")
+# What an entity can make that the editor holds as a new paragraph or a
+# line break, not as a character in the line ("&#10;").
+_LINE_ENDS = ("\n", "\r", "\u2028", "\u2029")
+
+
+def _marked_entities(markdown: str) -> Tuple[str, Optional[str], List[str]]:
+    """The Markdown with a mark (_ENTITY_MARKS) in place of each entity
+    (in a reference definition's label too, which must match its links'),
+    the mark, and the entities shown, in their order; as it was, None and
+    none when it has no entity or no mark can be used."""
+    if "&" not in markdown:
+        return markdown, None, []
+    found = entities(markdown)
+    mark = _free_mark(markdown, _ENTITY_MARKS) if found else None
+    if mark is None:
+        return markdown, None, []
+    pieces, last = [], 0
+    for start, end, _shown in found:
+        pieces += [markdown[last:start], mark]
+        last = end
+    pieces.append(markdown[last:])
+    return ("".join(pieces), mark,
+            [markdown[start:end] for start, end, shown in found if shown])
+
+
+def _entity_text(entity: str) -> str:
+    """What CommonMark reads ``entity`` (as markdown_scan.entities finds
+    one) as: a name HTML5 has its character(s), one it has not the words
+    as written; a number its character, and U+FFFD for 0 or a number that
+    is no character."""
+    if entity[1] != "#":
+        return html.entities.html5.get(entity[1:], entity)
+    code = int(entity[3:-1], 16) if entity[2] in "xX" else int(entity[2:-1])
+    if code == 0 or 0xD800 <= code <= 0xDFFF or code > 0x10FFFF:
+        return "\ufffd"
+    return chr(code)
+
+
+def _keep_entities(doc: QTextDocument, mark: str, spelled: Sequence[str]) -> Tuple[bool, bool]:
+    """Each ``mark`` _marked_entities set made what its entity says
+    (``spelled``, in their order), in the mark's format: whether the marks
+    stood where expected (False when they are not as many in the text, or
+    a format holds one, as for _keep_escaped), and whether each is a
+    character in its line (_LINE_ENDS: one that is not is a space)."""
+    taken = _take_marks(doc, mark)
+    if len(taken) != len(spelled) or _in_formats(doc, mark):
+        return False, False
+    in_line = True
+    for (position, fmt), entity in zip(reversed(taken), reversed(spelled)):
+        text = _entity_text(entity)
+        if any(end in text for end in _LINE_ENDS):
+            in_line, text = False, " "
+        character = QTextCharFormat(fmt)
+        if text in ESCAPABLE:
+            character.setProperty(ESCAPED_TEXT_PROPERTY, True)
+        cursor = QTextCursor(doc)
+        cursor.setPosition(position)
+        cursor.insertText(text, character)
+    return True, in_line
 
 
 # --------------------------------------------------------------------------- #

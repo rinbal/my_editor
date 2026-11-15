@@ -769,15 +769,48 @@ def escapes(markdown: str) -> List[int]:
     for the character after it (``\\*`` for a star that is no emphasis):
     outside code, an autolink or a tag, a picture's description and a
     link's address (a reference definition's too)."""
+    return _escapes_and_entities(markdown, False)[0]
+
+
+def entities(markdown: str) -> List[Tuple[int, int, bool]]:
+    """Where each entity of ``markdown`` is (start, end) that a reader
+    takes for its character ("&amp;" for "&"), where escapes are
+    (escapes), but in a word that may be a web or an email address (Qt's
+    reader links none with an entity in it); and whether it is shown,
+    not in a reference definition's label, which the reader takes away."""
+    labels = _Blocked([(definition.start(), definition.start(1))
+                       for definition in _DEFINITION.finditer(markdown)])
+    addresses = _Blocked([word.span() for word in _WORD.finditer(markdown)
+                          if any(part in word.group(0).lower() for part in ("://", "www.", "@"))])
+    return [(start, end, labels.end(start) is None)
+            for start, end in _escapes_and_entities(markdown, True)[1]
+            if addresses.end(start) is None]
+
+
+# An entity as Qt's reader takes one (md4c's md_is_entity_str): "&", then a
+# name of 2 to 48 letters and digits, the first a letter, or "#" and 1 to
+# 7 digits, or "#x" and 1 to 6 hexadecimal ones; then ";".
+_ENTITY = re.compile(r"&(?:[A-Za-z][A-Za-z0-9]{1,47}|#[0-9]{1,7}|#[xX][0-9A-Fa-f]{1,6});")
+_STARTS_ESCAPE_OR_ENTITY = re.compile(r"[\\`<&]|!\[|\]\(")
+# A word, which may be a web or an email address (holding "://", "www."
+# or "@").
+_WORD = re.compile(r"[^ \t\n]+")
+
+
+def _escapes_and_entities(markdown: str, entities_too: bool) -> Tuple[List[int],
+                                                                       List[Tuple[int, int]]]:
+    """escapes, and the entities where they are (entities)."""
     blocked = _Blocked(_code_ranges(markdown)
                        + [definition.span(1) for definition in _DEFINITION.finditer(markdown)])
     found: List[int] = []
+    found_entities: List[Tuple[int, int]] = []
+    starts = _STARTS_ESCAPE_OR_ENTITY if entities_too else _STARTS_ESCAPE
     scanned = Found()
     index = 0
     while True:
-        nearest = _STARTS_ESCAPE.search(markdown, index)
+        nearest = starts.search(markdown, index)
         if nearest is None:
-            return found
+            return found, found_entities
         index = nearest.start()
         end = blocked.end(index)
         if end is not None:
@@ -788,8 +821,14 @@ def escapes(markdown: str) -> List[int]:
         elif markdown.startswith("](", index):
             close = destination_end(markdown, index + 1, scanned)
             index = index + 2 if close is None else close + 1
+        elif markdown[index] == "&":
+            entity = _ENTITY.match(markdown, index)
+            if entity is not None:
+                found_entities.append(entity.span())
+            index = index + 1 if entity is None else entity.end()
         else:
             skipped = skip_inline(markdown, index, scanned)
             if skipped == index + 2 and markdown[index] == "\\":
                 found.append(index)
             index = index + 1 if skipped is None else skipped
+

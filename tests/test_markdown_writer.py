@@ -215,6 +215,26 @@ def test_a_tag_out_of_its_link_is_written_as_words():
     assert document_to_markdown(doc) == "Go x \\<y> now.\n"
 
 
+@pytest.mark.parametrize("source, written", [
+    ("[x &amp; y](u)\n", "[x \\& y](u)\n"),
+    ("*Fish &amp; Chips* z\n", "*Fish \\& Chips* z\n"),
+    ("[x &amp; y][]\n\n[x &amp; y]: /u\n", "[x \\& y](/u)\n"),
+    ("a&#32;b\n", "a b\n"),
+])
+def test_an_entity_keeps_the_format_of_its_words(source, written):
+    # Qt's reader set the format back after an entity: "[x &amp; y](u)"
+    # was the link "x " and the words "& y", saved as "[x ](u)& y"; and
+    # it dropped a space an entity made.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == written
+
+
+def test_an_entity_that_makes_a_line_break_opens_as_text():
+    assert not holds_faithfully("a&#10;b\n")
+
+
 def test_a_dash_under_words_stays_a_heading():
     doc = QTextDocument()
     read_markdown(doc, "Text\n-\n")
