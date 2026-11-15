@@ -333,6 +333,20 @@ class PagedDocument:
     page_count: int
 
 
+def _room_left_at_page_ends(block) -> float:
+    """The room Qt left between two lines of ``block`` where it moved the
+    second to the next page. Lines follow each other without a gap (a
+    pixel's overlap from rounding), so a gap of more is a page's end."""
+    lines = block.layout()
+    room = 0.0
+    for n in range(1, lines.lineCount()):
+        before, line = lines.lineAt(n - 1), lines.lineAt(n)
+        gap = line.y() - (before.y() + before.height())
+        if gap > 1.0:
+            room += gap
+    return room
+
+
 def _keep_groups_on_pages(clone, content_h: float) -> None:
     """A photo group that would run over the end of a page, and fits on
     one, starts the next page (as print CSS keeps a figure whole). One
@@ -344,14 +358,18 @@ def _keep_groups_on_pages(clone, content_h: float) -> None:
     The whole document is laid out before any group is moved: Qt lays a
     long one out piece by piece, and takes a paragraph below a change for
     laid out, only to be moved. One that had no lines yet when a group
-    started the next page never got any, and the pages ended before it."""
+    started the next page never got any, and the pages ended before it.
+
+    Whether a group fits is measured without the room Qt left above a row
+    it moved to the next page: with it, a group that fits on a page
+    measured taller than one, and was split between its rows."""
     layout = clone.documentLayout()
     clone.pageCount()
     block = clone.begin()
     while block.isValid():
         if photo_group.is_group_block(block):
             box = layout.blockBoundingRect(block)
-            if 0 < box.height() < content_h:
+            if 0 < box.height() - _room_left_at_page_ends(block) < content_h:
                 first = int(box.top() // content_h)
                 last = int((box.bottom() - 0.5) // content_h)
                 if first != last:
