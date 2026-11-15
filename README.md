@@ -6,7 +6,7 @@
 
 <p align="center">
   A calm app for writing notes and reading PDFs, with your files in your own folders.<br>
-  For people who write and read, on Mac, Windows and Linux, in English and German.
+  For lecture notes, drafts and long-form writing, on Mac, Windows and Linux, in English and German.
 </p>
 
 <p align="center">

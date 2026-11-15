@@ -6,7 +6,7 @@
 
 <p align="center">
   Eine ruhige App zum Schreiben von Notizen und Lesen von PDFs, mit deinen Dateien in deinen eigenen Ordnern.<br>
-  Für alle, die schreiben und lesen, auf Mac, Windows und Linux, auf Deutsch und Englisch.
+  Für Mitschriften, Entwürfe und lange Texte, auf Mac, Windows und Linux, auf Deutsch und Englisch.
 </p>
 
 <p align="center">
