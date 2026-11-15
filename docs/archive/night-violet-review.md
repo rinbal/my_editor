@@ -1,5 +1,7 @@
 # Night Violet visual reference and baseline
 
+> Archived 2026-11-15. Current: [decision 1, Night Violet](../decisions/0001-night-violet.md) and [Look and theme](../develop/architecture.md#look-and-theme).
+
 The intended result is the **Night Violet** direction in the supplied HTML. The images below are labeled by origin: current upstream Qt rendering or HTML design reference. None is a screenshot of an implemented Night Violet application.
 
 The [implementation plan](night-violet-plan.md) defines the work and acceptance criteria. The [surface checklist](night-violet-surfaces.md) tracks all 64 original entries and shared integration points.

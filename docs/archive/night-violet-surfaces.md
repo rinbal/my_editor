@@ -1,5 +1,7 @@
 # Night Violet affected surfaces
 
+> Archived 2026-11-15. Current: [decision 1, Night Violet](../decisions/0001-night-violet.md) and [Look and theme](../develop/architecture.md#look-and-theme).
+
 This checklist reconciles the original 64-entry design inventory with upstream `dev` at `57a023e5aa660749ef842e4fd8c277e33045c217`. IDs preserve the original inventory order. Some entries are shared helpers or data sources, not independent screens; they need a verified preservation decision rather than a cosmetic edit.
 
 All rows are **planned, not implemented**. File paths are relative to the repository root. Pair this checklist with the [implementation plan](night-violet-plan.md) and its common appearance, keyboard, accessibility and lifecycle requirements.

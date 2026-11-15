@@ -1,5 +1,7 @@
 # Night Violet implementation and acceptance record
 
+> Archived 2026-11-15. Current: [decision 1, Night Violet](../decisions/0001-night-violet.md) and [Look and theme](../develop/architecture.md#look-and-theme).
+
 This implements the full presentation rollout from [PR #59](https://github.com/rinbal/my_editor/pull/59), against `rinbal/dev` at `57a023e5aa660749ef842e4fd8c277e33045c217`. PR #59 was still open and unmerged when reconciled; it contains planning documents, not application code. The three adjacent planning documents preserve that historical record. This file is the implementation disposition and acceptance record.
 
 The unchanged HTML remains the visual source: SHA-256 `6df3f2759381666459b32fa701e2a73812bbfff4673671aabb1938d3f070cebc`. Its [Light/Dark reference captures](night-violet-review.md#night-violet-targets-from-the-html) are explicitly HTML, not application evidence.
