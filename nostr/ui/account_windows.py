@@ -55,7 +55,7 @@ from PySide6.QtWidgets import (
 
 from alerts import DEFAULT as ALERT_DEFAULT, DESTRUCTIVE, Button, answer_return_as_the_system_does, ask
 from i18n import _
-from nostr import bech32, crypto, nip49
+from nostr import bech32, crypto, failures, nip49
 from nostr.outbox.defaults import STARTER_LIST
 from nostr.account_backup import (
     BackupError, FoundKey, backup_text, find_key, password_problem, suggested_file_name,
@@ -750,19 +750,30 @@ class CreateAccountWindow(_AmberSteps, AssistantWindow):
         self.account_ready.emit(profile, self.name, report)
 
     def _show_working(self) -> None:
+        self._setup_note.setTextFormat(Qt.PlainText)
         self._setup_note.setText(CLOSE_ANY_TIME)
+        self._setup_note.setAccessibleName("")
         self.show_page(SETUP, [("close", _("Close"), NORMAL, self.accept)])
 
     def _on_setup_finished(self, ok: bool, message: str) -> None:
         if ok:
             self._show_done()
             return
-        first = message or _("Your account is saved, but it isn’t published yet.")
-        self._setup_note.setText(f"{first} {FINISH_LATER}")
+        # Said once, under the steps (lessons 36): what did not happen, the
+        # one sentence why and what to do; what finishing later does is
+        # the Finish Later button's tooltip.
+        title = (_("Your name isn’t published yet")
+                 if self._steps.state(STEP_PROFILE) == "error"
+                 else _("Your account isn’t published yet"))
+        sentence = message or _(failures.CHECK_CONNECTION)
+        self._setup_note.setTextFormat(Qt.RichText)
+        self._setup_note.setText(failures.markup(title, sentence))
+        self._setup_note.setAccessibleName(failures.spoken(title, sentence))
         buttons = [("later", _("Finish Later"), NORMAL, self.accept)]
         if self._report is not None and self._report.retry is not None:
             buttons.append(("retry", _("Try Again"), DEFAULT, self._retry_setup))
         self.show_page(SETUP, buttons)
+        self.buttons["later"].setToolTip(FINISH_LATER)
 
     def _retry_setup(self) -> None:
         self._steps.set_state(STEP_RELAYS, "active")

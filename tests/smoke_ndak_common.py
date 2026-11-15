@@ -918,9 +918,9 @@ class Report:
         # Said as checks, so they print the lines the runners count.
         self.check("nothing contacted a host off this computer", not VIOLATIONS,
                    "; ".join(VIOLATIONS[:10]) if VIOLATIONS else "guard saw no attempt")
-        if SLOT_ERRORS:
-            self.check("no exception escaped into Qt", False,
-                       " | ".join(e.strip().splitlines()[-1] for e in SLOT_ERRORS[:5]))
+        self.check("no exception escaped into Qt", not SLOT_ERRORS,
+                   " | ".join(e.strip().splitlines()[-1] for e in SLOT_ERRORS[:5])
+                   if SLOT_ERRORS else "no slot raised")
         failed = [c for c in self.checks if c["status"] == FAIL]
         remote = audit_remote_names()
         data = {"name": self.name, "seconds": round(time.time() - self.started, 1),

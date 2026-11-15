@@ -14,6 +14,11 @@ nearby inspectors"):
   closes its pane. The Drafts toggle closes the panel whichever view it
   shows. Neither panel has a close button of its own any more; the
   Drafts panel's action menu has Hide Drafts.
+
+  While the Drafts panel is closed and a submission holds something not
+  read yet, the Drafts toggle carries the dot the Einreichungen tab
+  shows, and a screen reader hears "Drafts, New". With the panel open
+  the tab says it, so the toggle does not.
 """
 
 from tests.app_process import run_window_script
@@ -67,6 +72,19 @@ hide = [a for a in panel._actions_menu.actions() if a.text() == "Hide Drafts"]
 r["hide_in_menu"] = len(hide)
 hide[0].trigger(); app.processEvents()
 r["hidden_by_menu"] = [panel.isVisible(), drafts.isChecked()]
+def dot():
+    # The icon's top corner, where only the dot is drawn.
+    return drafts.icon().pixmap(18, 18).toImage().pixelColor(14, 3).alpha() > 200
+unread = w._submissions_view.unread_changed
+r["mark"] = [[drafts.accessibleName(), dot()]]
+unread.emit(True); app.processEvents()
+r["mark"].append([drafts.accessibleName(), dot()])
+drafts.click(); app.processEvents()                      # the panel open: its tab says it
+r["mark"].append([drafts.accessibleName(), dot()])
+drafts.click(); app.processEvents()
+r["mark"].append([drafts.accessibleName(), dot()])
+unread.emit(False); app.processEvents()
+r["mark"].append([drafts.accessibleName(), dot()])
 w.nostr_state._active = False
 w.nostr_state.changed.emit(False)
 w._update_nostr_commands()
@@ -93,4 +111,35 @@ def test_the_toolbar_toggles_show_and_hide_the_side_panels(tmp_path):
     assert r["close_buttons"] == []
     assert r["hide_in_menu"] == 1
     assert r["hidden_by_menu"] == [False, False]
+    assert r["mark"] == [["Drafts", False], ["Drafts, New", True], ["Drafts", False],
+                         ["Drafts, New", True], ["Drafts", False]]
     assert r["account_gone"] == [False, False, False]
+
+
+def test_the_toggle_that_carries_the_dot_opens_the_panel_where_the_news_is():
+    # ME-7: the dot says something new waits in Einreichungen, but the click
+    # opened the view the panel showed last ("No drafts"). With the dot it
+    # opens at Einreichungen; without it, where it was; open, it closes.
+    from types import SimpleNamespace
+    import main_window
+    from nostr.ui.submissions_view import PANEL_VIEW as SUBMISSIONS
+
+    class Panel:
+        visible, view = False, "drafts"
+
+        def isVisible(self):  # noqa: N802, Qt's name
+            return self.visible
+
+        def show_view(self, key):
+            self.view = key
+
+    panel = Panel()
+    win = SimpleNamespace(_drafts_panel=panel, _submissions_unread=False,
+                          _show_drafts_panel=lambda: setattr(panel, "visible", True),
+                          _hide_drafts_panel=lambda: setattr(panel, "visible", False))
+    main_window.MainWindow._on_drafts_toggle(win)
+    assert (panel.visible, panel.view) == (True, "drafts")
+    main_window.MainWindow._on_drafts_toggle(win)
+    win._submissions_unread = True                  # a message came: the button has the dot
+    main_window.MainWindow._on_drafts_toggle(win)
+    assert (panel.visible, panel.view) == (True, SUBMISSIONS)

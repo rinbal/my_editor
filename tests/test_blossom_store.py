@@ -147,6 +147,22 @@ def test_a_server_holding_the_blob_by_hearsay_still_gets_the_upload(tmp_path):
     assert ctx.finished and ctx.finished[0][1].hash == SHA
 
 
+def test_whether_a_server_holds_a_file_is_asked_of_the_servers_not_the_library(tmp_path):
+    """F5 H4: the library is empty until a fetch ran, so a publish that
+    takes down only what it put up new asks each server (HEAD, unsigned)."""
+    mirror = FakeBlossomServer(MIRROR, blobs=[descriptor(server=MIRROR)])
+    servers = {SERVER: FakeBlossomServer(SERVER), MIRROR: mirror}
+    ctx = make_store(tmp_path, servers=(SERVER, MIRROR),
+                     responder=lambda verb, request, body: servers[
+                         request.url().toString().rsplit("/", 1)[0]](verb, request, body))
+    answers = []
+    ctx.store.held_on_servers(SHA, answers.append)
+    ctx.store.held_on_servers(OTHER_SHA, answers.append)
+    ctx.settle()
+    assert answers == [True, False] and ctx.pool.calls == 0
+    assert ctx.store.files == {}                     # never fetched
+
+
 def test_upload_without_a_profile_never_touches_the_network(tmp_path):
     ctx = make_store(tmp_path, profile=False)
     ctx.store.upload_bytes(BODY, name="a.png")
@@ -201,6 +217,21 @@ def test_delete_targets_every_server_the_blob_lives_on(tmp_path):
     ctx.settle()
     assert deleted == [SHA]
     assert SHA not in ctx.store.files
+
+
+def test_a_refused_delete_signature_ends_the_batches_and_a_sign_out_asks_nothing(tmp_path):
+    # RG-M4-c 5: 33 files are two tokens; the first refused, the second is
+    # never asked for; once ``going()`` is false nothing is asked at all.
+    pairs = [(f"{n:064x}", SERVER) for n in range(33)]
+    ctx = make_store(tmp_path, signer=FakeSigner(failure="declined"))
+    answers, refused = [], []
+    ctx.store.delete_on_servers(pairs, answers.append, on_not_signed=lambda: refused.append(1))
+    ctx.settle()
+    assert len(ctx.tokens()) == 1 and refused == [1] and answers == [[]]
+    ctx = make_store(tmp_path)
+    ctx.store.delete_on_servers(pairs, answers.append, going=lambda: False)
+    ctx.settle()
+    assert ctx.tokens() == [] and answers[-1] == []
 
 
 def test_delete_auth_carries_the_hash_and_the_bare_domain(tmp_path):

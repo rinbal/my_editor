@@ -212,6 +212,9 @@ class _Panel:
     def show_view(self, key):
         self.view = key
 
+    def views(self):
+        return ["drafts", "published", "submissions"]
+
 
 def test_published_and_drafts_each_show_their_view_or_put_the_panel_away():
     from main_window import MainWindow
@@ -221,6 +224,7 @@ def test_published_and_drafts_each_show_their_view_or_put_the_panel_away():
     win._drafts_panel = panel = _Panel()
     win._show_drafts_panel = lambda: setattr(panel, "visible", True)
     win._hide_drafts_panel = lambda: setattr(panel, "visible", False)
+    win._show_or_hide_panel_view = types.MethodType(MainWindow._show_or_hide_panel_view, win)
     MainWindow._on_show_published(win)
     assert panel.visible and panel.view == PUBLISHED
     MainWindow._on_toggle_drafts_panel(win)          # the other view: shown, not hidden
@@ -230,3 +234,18 @@ def test_published_and_drafts_each_show_their_view_or_put_the_panel_away():
     MainWindow._on_show_published(win)
     MainWindow._on_show_published(win)
     assert not panel.visible
+    # ME-7: Einreichungen has its command too, beside the two others.
+    MainWindow._on_show_submissions(win)
+    assert panel.visible and panel.view == "submissions"
+    MainWindow._on_show_published(win)               # another view: shown, not hidden
+    assert panel.visible and panel.view == PUBLISHED
+    MainWindow._on_show_submissions(win)
+    MainWindow._on_show_submissions(win)
+    assert not panel.visible
+
+
+@pytest.mark.parametrize("platform", PLATFORMS)
+def test_submissions_has_a_command_with_a_key_of_its_own_on_every_system(monkeypatch, platform):
+    # ME-7: nothing but the small dot at the tab led to Einreichungen.
+    win = window_on(platform, monkeypatch)               # refuses two commands on one key
+    assert bound(win.commands.action("nostr.submissions")) == {"Ctrl+Shift+Y"}

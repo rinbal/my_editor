@@ -82,7 +82,8 @@ from nostr.outbox.writer import (
     CAUSE_SIGNER, FAILED, REFUSED, UNCHANGED, BaseChanged, ReplaceableWriter, WriteOutcome,
 )
 from nostr.bunker import is_signer_answer
-from nostr.publish_pipeline import kept_by_relay, refused_by_relay
+from nostr.failures import refused_by_relay
+from nostr.publish_pipeline import kept_by_relay
 from nostr.queries import Fetched, fetch_events, full_pages
 
 KIND_PRIVATE_RELAYS = 10013

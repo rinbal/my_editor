@@ -52,8 +52,8 @@ import sys
 import time
 from typing import Callable, List, Optional, Sequence, Tuple
 
-from PySide6.QtCore import QDateTime, QSize, Qt, Signal
-from PySide6.QtGui import QFontMetrics, QPixmap
+from PySide6.QtCore import QDateTime, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QFontMetrics, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (
     QBoxLayout, QDialog, QDialogButtonBox, QFormLayout, QFrame, QLabel,
     QLineEdit, QPushButton, QToolButton, QVBoxLayout, QWidget,
@@ -64,13 +64,13 @@ from alerts import CANCEL, DEFAULT, NORMAL, Button, ask, answer_return_as_the_sy
 from constants import (
     DARK_BORDER, DARK_MENU_BG, DARK_MUTED_FG, LIGHT_BG, LIGHT_BORDER, LIGHT_MUTED_FG,
 )
-from i18n import _, format_moment, ngettext
+from i18n import N_, _, format_moment, ngettext
 
 from ..article_details import ArticleDetails
 from ..avatar_store import AvatarStore
 from ..bech32 import encode_naddr
 from ..blossom.store import MediaStore
-from ..bunker import BunkerSessionPool, humanize_failure
+from ..bunker import BunkerSessionPool, signer_failure_words
 from ..first_publications import FirstPublications
 from ..known_people import KnownPeople
 from ..media.media_visibility import MediaVisibility
@@ -81,6 +81,7 @@ from ..nip05_check import Nip05Check
 from ..outbox import RelayDirectory, relays_from
 from ..preview import reading_minutes
 from ..profiles import Profile, ProfileStore
+from ..publish_pipeline import answers_detail, not_taken_words, same_event
 from ..publisher import (
     FOUND, NEVER, FirstPublication, PublishedMedia, PublishJob, PublishResult, build_article,
     file_link_names, find_first_publication, link_name, slugify,
@@ -92,22 +93,27 @@ from .cover_field import CoverImageField
 from .mention_picker import MentionPicker
 from . import appearance
 from .publish_sheet import (
-    AccountRow, BottomRow, PeopleRow, StatusLine, fit_margins, fit_to_window, make_sheet,
-    people_tagged, scroll_area, sheet_stylesheet,
+    AccountRow, BottomRow, PeopleRow, StatusLine, cut_after_a_word, fit_margins, fit_to_window,
+    make_sheet, people_tagged, scroll_area, sheet_stylesheet,
 )
 from .secret_key_check import publishable, slug_problem
 from .tag_field import TagField
+
+# What did not happen, the title of a total failure (lessons 36).
+ARTICLE_NOT_PUBLISHED = N_("Your article wasn’t published")
 
 # The sheet's width, as the window has room for it.
 _WIDTH = 760
 
 
-class _ArticleCard(QFrame):
+class ArticleCard(QFrame):
     """The article as readers see it in a list: cover, title, summary, and
     the author with the reading time."""
 
     WIDTH = 220
     COVER_HEIGHT = 124
+    # The card's corners, and the cover's inside its one-point border.
+    RADIUS = 8
 
     def __init__(self, is_dark: bool, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -116,7 +122,9 @@ class _ArticleCard(QFrame):
         self.setFixedWidth(self.WIDTH)
         self.set_dark(is_dark)
         column = QVBoxLayout(self)
-        column.setContentsMargins(1, 1, 1, 12)
+        # Inside the border, which the frame keeps free itself: a margin
+        # more pushed the cover over the border at the trailing edge.
+        column.setContentsMargins(0, 0, 0, 12)
         column.setSpacing(6)
         self.cover = QLabel()
         self.cover.setObjectName("card_cover")
@@ -137,9 +145,10 @@ class _ArticleCard(QFrame):
                                  else (LIGHT_BORDER, LIGHT_BG, LIGHT_MUTED_FG))
         self.setStyleSheet(
             f"QFrame#article_card {{ background: {ground}; border: 1px solid {border};"
-            f" border-radius: 8px; }}"
+            f" border-radius: {self.RADIUS}px; }}"
             f"QLabel#card_cover {{ background: {border}; border: none;"
-            f" border-top-left-radius: 7px; border-top-right-radius: 7px; }}"
+            f" border-top-left-radius: {self.RADIUS - 1}px;"
+            f" border-top-right-radius: {self.RADIUS - 1}px; }}"
             f"QLabel#card_title {{ color: {self.palette().color(self.foregroundRole()).name()}; font-size: 15px; font-weight: 600; background: transparent; }}"
             f"QLabel#card_summary, QLabel#card_byline {{ color: {muted};"
             f" background: transparent; }}"
@@ -154,24 +163,43 @@ class _ArticleCard(QFrame):
         label.setTextFormat(Qt.TextFormat.PlainText)
         return label
 
+    def _cover(self, picture: QPixmap) -> QPixmap:
+        """``picture`` filling the cover's place, with the card's rounded
+        corners at the top (a picture's own were square inside the
+        rounded card) and as sharp as the screen is (it was made at half
+        the pixels a Retina screen shows)."""
+        ratio = self.devicePixelRatioF()
+        size = self.cover.size() * ratio
+        filled = picture.scaled(size, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                Qt.TransformationMode.SmoothTransformation)
+        out = QPixmap(size)
+        out.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(out)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        radius = (self.RADIUS - 1) * ratio
+        corners = QPainterPath()
+        # Rounded at the top only: the lower corners lie under the cover.
+        corners.addRoundedRect(QRectF(0, 0, size.width(), size.height() + radius),
+                               radius, radius)
+        painter.setClipPath(corners)
+        painter.drawPixmap((size.width() - filled.width()) // 2,
+                           (size.height() - filled.height()) // 2, filled)
+        painter.end()
+        out.setDevicePixelRatio(ratio)
+        return out
+
     def show_article(self, title: str, summary: str, picture: QPixmap, byline: str) -> None:
         room = self.WIDTH - 26
         self.title.setProperty("untitled", "false" if title else "true")
         self.title.style().unpolish(self.title)
         self.title.style().polish(self.title)
-        self.title.setText(_elided(self.title, title or _("Untitled"), room, 3))
-        self.summary.setText(_elided(self.summary, summary, room, 3))
+        self.title.setText(cut_after_a_word(QFontMetrics(self.title.font()),
+                                            title or _("Untitled"), room, 3))
+        self.summary.setText(cut_after_a_word(QFontMetrics(self.summary.font()), summary,
+                                              room, 3))
         self.summary.setVisible(bool(summary))
         self.byline.setText(byline)
-        if picture.isNull():
-            self.cover.setPixmap(QPixmap())
-        else:
-            size = self.cover.size()
-            filled = picture.scaled(size, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                                    Qt.TransformationMode.SmoothTransformation)
-            self.cover.setPixmap(filled.copy((filled.width() - size.width()) // 2,
-                                             (filled.height() - size.height()) // 2,
-                                             size.width(), size.height()))
+        self.cover.setPixmap(QPixmap() if picture.isNull() else self._cover(picture))
         self.setAccessibleDescription(". ".join(part for part in (
             title or _("Untitled"), summary, byline) if part))
         # As tall as its words take at its own width: a layout would ask
@@ -180,52 +208,31 @@ class _ArticleCard(QFrame):
         self.setFixedHeight(self.layout().totalHeightForWidth(self.WIDTH))
 
 
-def _elided(label: QLabel, text: str, width: int, lines: int) -> str:
-    """``text`` cut after a word, with "…", to fit ``lines`` lines of
-    ``width`` in ``label``'s font."""
-    metrics = QFontMetrics(label.font())
-    room = metrics.lineSpacing() * lines
-
-    def fits(words: str) -> bool:
-        return metrics.boundingRect(0, 0, width, 10_000, Qt.TextFlag.TextWordWrap,
-                                    words).height() <= room
-
-    if fits(text):
-        return text
-    words = text.split(" ")
-    while len(words) > 1 and not fits(" ".join(words) + "…"):
-        words.pop()
-    shown = " ".join(words)
-    while shown and not fits(shown + "…"):
-        shown = shown[:-1]
-    return shown.rstrip() + "…"
-
-
 # A form's labels as the platform sets them: on a Mac at the trailing edge
 # of their column, beside their fields (Fusion, which the app uses
 # everywhere, would put them at the leading edge); elsewhere at the leading
 # edge. Beside the field's first line either way.
-_LABEL_ALIGNMENT = ((Qt.AlignmentFlag.AlignRight if sys.platform == "darwin"
+LABEL_ALIGNMENT = ((Qt.AlignmentFlag.AlignRight if sys.platform == "darwin"
                      else Qt.AlignmentFlag.AlignLeft) | Qt.AlignmentFlag.AlignTop)
 
 
-def _form() -> QFormLayout:
+def form_layout() -> QFormLayout:
     form = QFormLayout()
     form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
     form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
-    form.setLabelAlignment(_LABEL_ALIGNMENT)
+    form.setLabelAlignment(LABEL_ALIGNMENT)
     form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
     form.setHorizontalSpacing(10)
     form.setVerticalSpacing(10)
     return form
 
 
-def _label(text: str, buddy: QWidget) -> QLabel:
+def form_label(text: str, buddy: QWidget) -> QLabel:
     """A field's label: its words with a colon, beside the field's first
     line."""
     label = QLabel(text)
     label.setBuddy(buddy)
-    label.setAlignment(_LABEL_ALIGNMENT)
+    label.setAlignment(LABEL_ALIGNMENT)
     label.setContentsMargins(0, 4, 0, 0)
     return label
 
@@ -306,6 +313,8 @@ class PublishArticleDialog(QDialog):
         self._media_saver = media_saver
         self._is_dark = is_dark
         self._job: Optional[PublishJob] = None
+        # The last publish no relay took: Try Again sends its signed article.
+        self._not_taken: Optional[PublishJob] = None
         self._signed_event_id: Optional[str] = None
         # NIP-23: ``published_at`` is when the article first went out, and
         # an edit keeps it. Known when the tab came from a draft that
@@ -396,7 +405,7 @@ class PublishArticleDialog(QDialog):
         page.addLayout(self._columns, 1)
         self._columns.setContentsMargins(0, 0, 4, 0)
         self._columns.setSpacing(20)
-        self._card = _ArticleCard(self._is_dark)
+        self._card = ArticleCard(self._is_dark)
         self._columns.addWidget(self._card, 0, Qt.AlignmentFlag.AlignTop)
         # Made before the form, which names its account (the cover's
         # uploads are this account's), but placed after it in the sheet.
@@ -428,7 +437,7 @@ class PublishArticleDialog(QDialog):
         The labels and fields are kept here, so the form's own items are
         never wrapped (Python would hold items the form deletes)."""
         if label:
-            words = _label(label, buddy)
+            words = form_label(label, buddy)
             self._labels.append(words)
             self._form.addRow(words, field)
         else:
@@ -436,7 +445,7 @@ class PublishArticleDialog(QDialog):
         self._fields.append(field)
 
     def _build_form(self, default_title: str, default_slug: str) -> QFormLayout:
-        form = self._form = _form()
+        form = self._form = form_layout()
         self._labels: List[QLabel] = []
         self._fields: List[QWidget] = []
 
@@ -619,7 +628,7 @@ class PublishArticleDialog(QDialog):
                                     else QFormLayout.RowWrapPolicy.DontWrapRows)
         for label in self._labels:
             label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop if wrap
-                               else _LABEL_ALIGNMENT)
+                               else LABEL_ALIGNMENT)
 
     def showEvent(self, event) -> None:  # noqa: N802, Qt's name
         super().showEvent(event)
@@ -879,17 +888,15 @@ class PublishArticleDialog(QDialog):
         would be written in one form, another name for a Mac's file), and
         the made one."""
         if file_names:
-            message = _("The relays gave no clear answer. Earlier versions of "
-                        "MyEditor published this file under its own name, “{name}”, so the "
-                        "article may be out already under that name. Publishing it under "
-                        "another name makes a second article.").format(name=file_names[0])
+            message = _("Earlier versions of MyEditor published this file as “{name}”, and "
+                        "another name makes a second article: try again, or choose the name "
+                        "to publish it under.").format(name=file_names[0])
             choices = (Button(_("Publish as “{name}”").format(name=file_names[0]), "file",
                               NORMAL),
                        Button(_("Publish as “{name}”").format(name=slug), "new", NORMAL))
         else:
-            message = _("The relays gave no clear answer. If the article went "
-                        "out before, publishing it as new gives it today's date, and "
-                        "readers see it as a new article.")
+            message = _("If it went out before, publishing it as new gives it today’s "
+                        "date: try again, or publish it as new.")
             choices = (Button(_("Publish as New"), "new", NORMAL),)
         choice = ask(
             self,
@@ -930,7 +937,8 @@ class PublishArticleDialog(QDialog):
             )
         except ValueError as exc:
             self._show_details(True)
-            self._set_status(_("Cannot build article: {reason}").format(reason=exc), error=True)
+            self._say_not_published(_("Something in Article Details can’t be used: check it "
+                                      "and try again."), str(exc))
             return
         unsigned = publishable(self, unsigned, is_dark=self._is_dark)
         if unsigned is None:
@@ -938,7 +946,14 @@ class PublishArticleDialog(QDialog):
 
         self._set_busy(True)
         self._set_status("")
+        self._publish_btn.setText(_("Publish"))
         self._publishing = (slug, published_at)
+        kept, self._not_taken = self._not_taken, None
+        if kept is not None and same_event(kept.unsigned_event, unsigned) and kept.send_again():
+            # Try Again after no relay took it: the same signed article
+            # once more, without asking the signer app again.
+            self._job = kept
+            return
 
         self._job = PublishJob(
             relay_pool=self._relay_pool,
@@ -959,14 +974,11 @@ class PublishArticleDialog(QDialog):
         self._signed_event_id = event_id_hex
 
     def _on_completed(self, results: List[PublishResult]) -> None:
-        self._job = None
+        job, self._job = self._job, None
         accepted = sum(1 for _url, ok, _message in results if ok)
         if accepted == 0:
-            self._set_status(
-                _("The article was not published: no relay took it. Check your internet "
-                  "connection and try again."), error=True
-            )
-            self._set_busy(False)
+            self._not_taken = job
+            self._say_not_published(not_taken_words(results), answers_detail(results))
             return
         author = self._account.profile().user_pubkey
         # What it went out as: the document's record of it (details()).
@@ -986,9 +998,16 @@ class PublishArticleDialog(QDialog):
         self.accept()
 
     def _on_failed(self, reason: str) -> None:
-        self._job = None
-        self._set_status(_("Publish failed: {reason}").format(reason=humanize_failure(reason)),
-                         error=True)
+        job, self._job = self._job, None
+        self._say_not_published(job.failure_words if job is not None else "", reason)
+
+    def _say_not_published(self, sentence: str, detail: str) -> None:
+        """A total failure, said once: what did not happen, why and what
+        to do in one sentence, Try Again beside Cancel; what each relay or
+        the signer app answered only in the tooltip (lessons 36)."""
+        self._status.say(sentence or signer_failure_words(detail),
+                         title=_(ARTICLE_NOT_PUBLISHED), error=True, detail=detail)
+        self._publish_btn.setText(_("Try Again"))
         self._set_busy(False)
 
     def _on_cancel(self) -> None:

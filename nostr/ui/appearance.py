@@ -54,6 +54,9 @@ class Roles:
     success: str = "#26783D"
     payment_pressed: str = "#DD7A0A"
     glow: str = "#8C5CFF"
+    # A card's soft shadow on the surface (the delivery of a submission).
+    shadow: str = "#462882"
+    shadow_alpha: int = 51
 
 
 _LIGHT = Roles(
@@ -70,7 +73,8 @@ _DARK = Roles(
     tab="#261E33", icon="#B89CFF", ink="#CDB9FF", selection="#6A43D8",
     button="#6E40E2", highlight="#8050DC", pressed="#5830BB", soft="#3D2E57",
     focus="#B89CFF", on_accent="#FFFFFF", disabled="#85798F", glow_alpha=66,
-    amount="#FFB561", error="#FF8C82", success="#58C777")
+    amount="#FFB561", error="#FF8C82", success="#58C777",
+    shadow="#000000", shadow_alpha=128)
 
 
 def roles(dark: bool, *, increased_contrast: bool | None = None,
@@ -346,12 +350,32 @@ class _Disclosure(Disclosure):
         return QColor(r.icon if self.parentWidget().isEnabled() else r.disabled)
 
 
+def disclosure_stylesheet(r: Roles) -> str:
+    """The look of a disclosure ("Details", "Message to the editorial
+    team") in every sheet and dialog: open, it turns its arrow and nothing
+    else, never a button held down."""
+    return f"""
+    QToolButton#disclosure {{ border: 1px solid transparent; padding: 2px 0; }}
+    QToolButton#disclosure:checked, QToolButton#disclosure:hover {{ background: transparent; }}
+    QToolButton#disclosure:pressed {{ background: {r.soft}; }}
+    QToolButton#disclosure:focus {{ border-color: {r.focus}; }}
+    """
+
+
+def menu_arrow(button: QWidget, dark: bool, *, end: int = 7) -> None:
+    """The app's vector disclosure at the trailing end of ``button``, one
+    that opens a list or a menu (a combo box, a sheet's account), in this
+    surface's ink: made once, recoloured after. Clicks still reach the
+    button."""
+    arrow = getattr(button, "_night_violet_arrow", None)
+    if arrow is None:
+        arrow = button._night_violet_arrow = _Disclosure(button, end=end, dark=dark)
+    arrow.set_dark(dark)
+    arrow.raise_()
+
+
 def _decorate_controls(widget: QWidget, dark: bool) -> None:
     # Reuse the app's vector disclosure; Qt's stylesheet arrow is a dot on
     # Cocoa and a beveled block on Fusion. Clicks still reach the real combo.
     for combo in widget.findChildren(QComboBox):
-        arrow = getattr(combo, "_night_violet_arrow", None)
-        if arrow is None:
-            arrow = combo._night_violet_arrow = _Disclosure(combo, end=7, dark=dark)
-        arrow.set_dark(dark)
-        arrow.raise_()
+        menu_arrow(combo, dark)

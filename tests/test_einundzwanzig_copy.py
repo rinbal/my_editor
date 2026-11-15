@@ -30,8 +30,9 @@ from nostr.einundzwanzig_api import (
     bolt11_amount_sats,
     email_problem,
     field_message,
+    failure_details,
+    failure_sentence,
     handle_field_message,
-    humanize,
     nip05_handle_problem,
 )
 
@@ -63,39 +64,46 @@ def every_error():
 # --------------------------------------------------------------------- #
 
 @pytest.mark.parametrize("error", list(every_error()), ids=repr)
-def test_every_error_has_a_short_title_and_a_next_step(error):
-    title, message = humanize(error)
-    assert title and message
-    assert len(title) <= 50
-    assert not title.endswith(".")
-    assert message.endswith(".")
+def test_every_error_is_one_sentence_with_its_cause_and_what_to_do(error):
+    # Lessons 36: the screen that asked says what did not happen (its
+    # title); this is the one sentence under it.
+    from i18n import _
+    from nostr import failures
+    sentence = failure_sentence(error)
+    assert sentence.endswith(".") and sentence.count(". ") == 0
+    # The cause, then what to do; the connection's own words say both.
+    assert ": " in sentence or sentence == _(failures.CHECK_CONNECTION), sentence
 
 
 @pytest.mark.parametrize("error", list(every_error()), ids=repr)
 def test_the_copy_has_no_jargon(error):
-    for text in humanize(error):
-        assert not JARGON.search(text), text
+    assert not JARGON.search(failure_sentence(error)), failure_sentence(error)
 
 
 @pytest.mark.parametrize("error", list(every_error()), ids=repr)
 def test_the_copy_never_uses_we_or_an_em_dash(error):
-    for text in humanize(error):
-        assert EM_DASH not in text
-        assert not re.search(r"\bwe\b|\bour\b", text, re.IGNORECASE)
+    text = failure_sentence(error)
+    assert EM_DASH not in text
+    assert not re.search(r"\bwe\b|\bour\b", text, re.IGNORECASE)
 
 
-def test_the_server_message_is_never_shown():
+def test_the_server_message_is_only_in_the_details():
     error = ApiError(ErrorCode.SERVER, status=500, message="SQLSTATE[HY000] connection refused")
-    assert "SQLSTATE" not in " ".join(humanize(error))
+    assert "SQLSTATE" not in failure_sentence(error)
+    assert failure_details(error) == "server (500): SQLSTATE[HY000] connection refused"
+    long = ApiError(ErrorCode.SERVER, message="x" * 5000 + "\n\n y")
+    assert len(failure_details(long)) <= len("server: ") + 300     # it comes from elsewhere
 
 
-def test_each_code_has_its_own_title():
-    titles = [humanize(ApiError(code))[0] for code in sorted(ERROR_CODES)]
-    assert len(set(titles)) == len(titles)
+def test_each_code_has_its_own_sentence():
+    sentences = [failure_sentence(ApiError(code)) for code in sorted(ERROR_CODES)
+                 if code != ErrorCode.RATE_LIMITED]
+    assert len(set(sentences)) == len(sentences)
 
 
 def test_an_unknown_code_falls_back_to_something_honest():
-    assert humanize(ApiError("no_such_code")) == humanize(ApiError(ErrorCode.BAD_RESPONSE))
+    assert failure_sentence(ApiError("no_such_code")) == failure_sentence(
+        ApiError(ErrorCode.BAD_RESPONSE))
 
 
 @pytest.mark.parametrize("seconds, phrase", [
@@ -109,27 +117,43 @@ def test_an_unknown_code_falls_back_to_something_honest():
     (86400, "tomorrow"),
 ])
 def test_a_quota_says_how_long_to_wait(seconds, phrase):
-    title, message = humanize(ApiError(ErrorCode.RATE_LIMITED, retry_after=seconds))
-    assert title == "Too many attempts"
-    assert phrase in message
+    sentence = failure_sentence(ApiError(ErrorCode.RATE_LIMITED, retry_after=seconds))
+    assert sentence.startswith("EINUNDZWANZIG takes no more requests from you right now: ")
+    assert phrase in sentence
 
 
-def test_a_silent_signer_points_at_the_signer_app():
-    title, message = humanize(ApiError(ErrorCode.SIGNER_UNREACHABLE))
-    assert "signer" in title.lower() and "signer app" in message
+def test_a_signer_that_did_not_answer_or_declined_points_at_the_signer_app():
+    from i18n import _
+    from nostr import failures
+    assert failure_sentence(ApiError(ErrorCode.SIGNER_UNREACHABLE)) == _(failures.SIGNER_SILENT)
+    assert failure_sentence(ApiError(ErrorCode.SIGNER_DECLINED)) == _(failures.SIGNER_DECLINED)
+    assert failure_sentence(ApiError(ErrorCode.OFFLINE)) == _(failures.CHECK_CONNECTION)
 
 
 def test_unavailable_joining_points_at_the_website():
-    assert humanize(ApiError(ErrorCode.UNAVAILABLE)) == (
-        "Joining in the app isn't available right now",
-        "You can join on the EINUNDZWANZIG website instead.",
-    )
+    assert failure_sentence(ApiError(ErrorCode.UNAVAILABLE)) == (
+        "Joining in the app isn’t available right now: you can join on the EINUNDZWANZIG "
+        "website instead.")
+
+
+def test_the_sentences_are_translated_when_they_are_said():
+    # Looked up when said, not when the module was imported.
+    import i18n
+    i18n.install("de")
+    try:
+        assert failure_sentence(ApiError(ErrorCode.SERVER)) == (
+            "EINUNDZWANZIG hatte gerade ein Problem: Versuche es in ein paar Minuten erneut.")
+        assert failure_sentence(ApiError(ErrorCode.RATE_LIMITED, retry_after=120)) == (
+            "EINUNDZWANZIG nimmt gerade keine Anfragen mehr von dir an: Warte etwa 2 Minuten "
+            "und versuche es dann erneut.")
+    finally:
+        i18n.install("en")
 
 
 def test_a_refused_credential_suggests_the_clock():
     # The likeliest cause a user can fix is a computer clock outside the
     # server's one-minute window.
-    assert "time" in humanize(ApiError(ErrorCode.UNAUTHORIZED))[1]
+    assert "time" in failure_sentence(ApiError(ErrorCode.UNAUTHORIZED))
 
 
 # --------------------------------------------------------------------- #

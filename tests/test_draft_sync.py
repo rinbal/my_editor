@@ -314,6 +314,44 @@ def test_per_call_failure_does_not_latch():
     sync._on_decrypt_failure(sync._generation, "x", "e", "user rejected the request")
     assert sync._bunker_unsupported is False
     assert sync._store.get("x").state is DraftState.FAILED
+    # Lessons 36: the row's words, never the signer's own.
+    assert sync._store.get("x").failure_reason == "Your signer app declined to open it"
+
+
+def test_a_signer_error_on_one_draft_is_said_plainly_and_kept_for_the_log(caplog):
+    import logging
+    sync = _make_sync()
+    sync._profile = _make_profile(PK)
+    sync._store.bind_profile(PK)
+    sync._bunker = MagicMock()
+    sync._store.upsert_skeleton(_wrap(ident="x", event_id="e", ct="ct"))
+    with caplog.at_level(logging.INFO, logger="nostr.draft_sync"):
+        sync._on_decrypt_failure(sync._generation, "x", "e", "invalid padding at byte 12")
+    assert sync._store.get("x").failure_reason == "Your signer app couldn’t open it"
+    assert any("invalid padding at byte 12" in line for line in caplog.messages)
+
+
+def test_a_signer_app_that_answered_with_an_error_is_said_once_by_its_cause():
+    sync = _make_sync()
+    sync._profile = _make_profile(PK)
+    said = []
+    sync.status_changed.connect(said.append)
+    sync._read_relays = ["wss://r/"]
+    sync._subscription = MagicMock()
+    sync._on_bunker_unavailable(sync._generation, "user rejected the connection")
+    assert said == ["Your drafts can’t be opened yet. Your signer app declined the request: "
+                    "allow it there and try again."]
+
+
+def test_drafts_that_cannot_be_read_from_anywhere_say_so_once():
+    sync = _make_sync()
+    sync._profile = _make_profile(PK)
+    said = []
+    sync.status_changed.connect(said.append)
+    sync._read_relays = []
+    sync._open_subscription()
+    assert said == ["Your drafts couldn’t be read. Check your internet connection and try "
+                    "again."]
 
 
 # --------------------------------------------------------------------------- #

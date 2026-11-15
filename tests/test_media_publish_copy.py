@@ -754,6 +754,21 @@ def test_an_upload_failure_stops_the_file_and_records_nothing(tmp_path):
     assert_original_intact(env, blob, before)
 
 
+@pytest.mark.parametrize("reason, said", [
+    ("Your media server is busy: try again later.",
+     "This image wasn’t shared. Your media server is busy: try again later."),
+    ("", "This image wasn’t shared: try again."),
+])
+def test_an_upload_failure_says_what_did_not_happen_then_the_store_s_sentence(
+        tmp_path, reason, said):
+    # Lessons 36: a title, then one sentence with the cause and the remedy.
+    blob = private()
+    env = build(tmp_path, records=[record_for(blob)])
+    env.uploader.fail_with = reason
+    result = env.copy_one(blob)
+    assert result.reason == said
+
+
 def test_an_answer_for_another_job_is_ignored(tmp_path):
     env = build(tmp_path, auto=False)
     blob = private()

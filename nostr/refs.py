@@ -50,6 +50,15 @@ _REFERENCE = re.compile(r"nostr:((?:npub|nprofile|note|nevent|naddr)1[02-9ac-hj-
 # italics, "backup_nsec1...").
 SECRET_KEY = re.compile(r"(?<![0-9A-Za-z])(?:nsec|ncryptsec)1[02-9ac-hj-np-z]{20,}",
                         re.IGNORECASE)
+# A secret key written as 64 hex digits (no other hex digit around them),
+# and the words that say one is: "nsec", "private" (and the German
+# "privat"), within ``_HEX_KEY_REACH`` characters on the same line. A
+# public key or an event id is 64 hex digits too, so hex alone says
+# nothing; next to these words it is what STANDUP's editorial contract
+# (section 5) asks apps to refuse before encrypting.
+HEX_KEY = re.compile(r"(?<![0-9A-Fa-f])[0-9A-Fa-f]{64}(?![0-9A-Fa-f])")
+_HEX_KEY_WORD = re.compile(r"nsec|privat", re.IGNORECASE)
+_HEX_KEY_REACH = 40
 
 
 @dataclass(frozen=True)
@@ -299,6 +308,25 @@ def secret_keys_in(text: str) -> List[str]:
     for match in SECRET_KEY.finditer(text or ""):
         key = match.group(0)
         if key not in found:
+            found.append(key)
+    return found
+
+
+def hex_secret_keys_in(text: str) -> List[str]:
+    """The 64-hex-digit strings in ``text`` that a word next to them
+    calls a secret key ("nsec", "private", "privat"; see ``HEX_KEY``),
+    each once, in order. Not part of ``secret_keys_in``: what every
+    signer refuses stays as it was; text sent to a publication's editors
+    is checked with both."""
+    found: List[str] = []
+    text = text or ""
+    for match in HEX_KEY.finditer(text):
+        start = max(text.rfind("\n", 0, match.start()) + 1, match.start() - _HEX_KEY_REACH)
+        line_end = text.find("\n", match.end())
+        end = min(line_end if line_end >= 0 else len(text), match.end() + _HEX_KEY_REACH)
+        around = text[start:match.start()] + " " + text[match.end():end]
+        key = match.group(0)
+        if _HEX_KEY_WORD.search(around) and key not in found:
             found.append(key)
     return found
 

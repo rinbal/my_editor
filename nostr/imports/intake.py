@@ -25,6 +25,7 @@ the same in every sheet and tested on their own:
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -34,12 +35,14 @@ from urllib.parse import urlsplit
 from i18n import _
 
 from ..rss.parser import FeedItem
-from .errors import ERROR_CODES, SourceError, friendly_message
+from .errors import ERROR_CODES, SourceError, failure_words
 from .registry import ResolveInput, detect_resolver
 from .sources.archive import ArchiveError, extract_archive, looks_like_zip
 from .sources.mdx import mdx_to_markdown
 from .sources.nostr import extract_nostr_entity
 from .sources.opml import OpmlDocument, is_opml, parse_opml
+
+_log = logging.getLogger(__name__)
 
 FEED, AUTHOR, COLLECTION, SINGLE = "feed", "author", "collection", "single"
 FOLLOWABLE = (FEED, AUTHOR, COLLECTION)
@@ -154,14 +157,16 @@ def read_export(path: str) -> Export:
         with open(path, "rb") as handle:
             data = handle.read(MAX_FILE_BYTES + 1)
     except OSError as exc:
-        raise ValueError(_("Couldn't read that file: {error}").format(error=exc)) from exc
+        _log.info("an export file could not be read: %s", str(exc)[:200])
+        raise ValueError(_("That file couldn't be read: check that it is still there and try "
+                           "again.")) from exc
     if len(data) > MAX_FILE_BYTES:
         raise ValueError(TOO_LARGE.format(size=MAX_FILE_BYTES // (1024 * 1024)))
     if looks_like_zip(data):
         try:
             result = extract_archive(data)
         except ArchiveError as exc:
-            raise ValueError(friendly_message(SourceError(
+            raise ValueError(failure_words(SourceError(
                 str(exc), ERROR_CODES.ARCHIVE_UNREADABLE))) from exc
         if result.platform is None or not result.items:
             raise ValueError(NOT_AN_EXPORT)

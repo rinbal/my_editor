@@ -364,6 +364,17 @@ def inform(parent, *, title: str, message: str = "", caution: bool = False,
         details=details, is_dark=is_dark, nostr=nostr)
 
 
+def ask_try_again(parent, *, title: str, message: str, details: str = "",
+                  is_dark: bool = None, nostr: bool = False) -> bool:
+    """A total failure, said once (lessons 36): ``title`` says what did not
+    happen, ``message`` is one sentence with its likely cause and what to
+    do, technical ``details`` only behind Details; Try Again (the default)
+    and Cancel. Whether Try Again was chosen."""
+    return ask(parent, title=title, message=message, details=details, is_dark=is_dark,
+               nostr=nostr, buttons=(Button(_("Cancel"), False, CANCEL),
+                                     Button(_("Try Again"), True, DEFAULT))) is True
+
+
 def confirm_destructive(parent, *, title: str, message: str = "", action: str,
                         caution: bool = False, details: str = "",
                         is_dark: bool = None, nostr: bool = False) -> bool:

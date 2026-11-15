@@ -24,9 +24,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from nostr.outbox.policy import LookupState, RelayList  # noqa: E402
-from nostr.publish_pipeline import (  # noqa: E402
-    kept_by_relay, mentioned_pubkeys, refused_by_relay,
-)
+from nostr.failures import refused_by_relay  # noqa: E402
+from nostr.publish_pipeline import kept_by_relay, mentioned_pubkeys  # noqa: E402
 from nostr.publisher import PublishJob  # noqa: E402
 from tests.outbox_fakes import (  # noqa: E402
     PK, FakeClient, FakePool, FakeRelayDirectory, FakeSessionPool, Profile, settle,

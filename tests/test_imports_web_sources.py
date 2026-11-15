@@ -460,8 +460,12 @@ class TestMdxResolver(unittest.TestCase):
             "https://api.github.com/repos/o/r/contents/docs?ref=main":
                 ("ok", json.dumps({"message": "API rate limit exceeded"})),
         })
-        sink = run("https://github.com/o/r/tree/main/docs", fetcher)
-        self.assertIn("API rate limit exceeded", sink.error.message)
+        with self.assertLogs("nostr.imports.resolvers.mdx", level="INFO") as logged:
+            sink = run("https://github.com/o/r/tree/main/docs", fetcher)
+        # Lessons 36: GitHub's own words in the log, what to do on screen.
+        self.assertEqual(sink.error.message,
+                         "GitHub didn't list that folder: check its address and try again.")
+        self.assertIn("API rate limit exceeded", "\n".join(logged.output))
 
 
 # --------------------------------------------------------------------------- #

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -27,6 +27,18 @@ AVATAR_SIZE: int = 26   # matches the existing 26x26 B/I/U header buttons
 CHEVRON_SIZE: int = 10
 CHIP_GAP: int = 4
 CHIP_TOTAL_WIDTH: int = AVATAR_SIZE + CHIP_GAP + CHEVRON_SIZE
+# Every picture here is made with two pixels a point, as the publications'
+# logos are (standup_publications.publication_logo): made at one, a face
+# and its initials were blurred on a Retina screen. Sizes stay in points.
+_SCALE: float = 2.0
+
+
+def _canvas(width: int, height: int) -> QPixmap:
+    """An empty picture of ``width`` by ``height`` points."""
+    pix = QPixmap(round(width * _SCALE), round(height * _SCALE))
+    pix.setDevicePixelRatio(_SCALE)
+    pix.fill(Qt.transparent)
+    return pix
 
 
 # --------------------------------------------------------------------------- #
@@ -60,8 +72,7 @@ def color_for_pubkey(pubkey_hex: str) -> QColor:
 # --------------------------------------------------------------------------- #
 
 def make_initials_pixmap(initials: str, color: QColor, size: int = AVATAR_SIZE) -> QPixmap:
-    pix = QPixmap(size, size)
-    pix.fill(Qt.transparent)
+    pix = _canvas(size, size)
     p = QPainter(pix)
     p.setRenderHint(QPainter.Antialiasing)
     p.setBrush(color)
@@ -72,34 +83,34 @@ def make_initials_pixmap(initials: str, color: QColor, size: int = AVATAR_SIZE) 
     font.setBold(True)
     font.setPointSize(max(8, int(size * 0.42)))
     p.setFont(font)
-    p.drawText(pix.rect(), Qt.AlignCenter, initials)
+    p.drawText(QRectF(0, 0, size, size), Qt.AlignCenter, initials)
     p.end()
     return pix
 
 
 def make_avatar_pixmap_from_image(source: QPixmap, size: int = AVATAR_SIZE) -> QPixmap:
-    """Crop ``source`` to a centered circle of ``size`` pixels."""
+    """Crop ``source`` to a centered circle of ``size`` points."""
+    pixels = round(size * _SCALE)
     scaled = source.scaled(
-        size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation
+        pixels, pixels, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation
     )
-    out = QPixmap(size, size)
-    out.fill(Qt.transparent)
+    scaled.setDevicePixelRatio(_SCALE)
+    out = _canvas(size, size)
     p = QPainter(out)
     p.setRenderHint(QPainter.Antialiasing)
     path = QPainterPath()
     path.addEllipse(0, 0, size, size)
     p.setClipPath(path)
-    dx = (size - scaled.width()) // 2
-    dy = (size - scaled.height()) // 2
-    p.drawPixmap(dx, dy, scaled)
+    dx = (size - scaled.width() / _SCALE) / 2
+    dy = (size - scaled.height() / _SCALE) / 2
+    p.drawPixmap(QPointF(dx, dy), scaled)
     p.end()
     return out
 
 
 def make_disconnected_pixmap(is_dark: bool, size: int = AVATAR_SIZE) -> QPixmap:
     """Grey circle with a centered '+' for the not-connected state."""
-    pix = QPixmap(size, size)
-    pix.fill(Qt.transparent)
+    pix = _canvas(size, size)
     p = QPainter(pix)
     p.setRenderHint(QPainter.Antialiasing)
     bg = QColor("#2D2D30") if is_dark else QColor("#ECECEC")
@@ -113,15 +124,14 @@ def make_disconnected_pixmap(is_dark: bool, size: int = AVATAR_SIZE) -> QPixmap:
     font.setBold(True)
     font.setPointSize(max(10, int(size * 0.55)))
     p.setFont(font)
-    p.drawText(pix.rect(), Qt.AlignCenter, "+")
+    p.drawText(QRectF(0, 0, size, size), Qt.AlignCenter, "+")
     p.end()
     return pix
 
 
 def make_chevron_pixmap(color: QColor, size: int = CHEVRON_SIZE) -> QPixmap:
     """A small downward caret, painted with rounded line joins."""
-    pix = QPixmap(size, size)
-    pix.fill(Qt.transparent)
+    pix = _canvas(size, size)
     p = QPainter(pix)
     p.setRenderHint(QPainter.Antialiasing)
     pen = QPen(color, 1.6)
@@ -142,13 +152,13 @@ def make_chevron_pixmap(color: QColor, size: int = CHEVRON_SIZE) -> QPixmap:
 def compose_chip_icon(avatar: QPixmap, chevron_color: QColor) -> QIcon:
     """Compose avatar + gap + chevron into one icon (platform-consistent)."""
     chevron = make_chevron_pixmap(chevron_color)
-    out = QPixmap(CHIP_TOTAL_WIDTH, AVATAR_SIZE)
-    out.fill(Qt.transparent)
+    out = _canvas(CHIP_TOTAL_WIDTH, AVATAR_SIZE)
     p = QPainter(out)
     p.setRenderHint(QPainter.Antialiasing)
-    p.drawPixmap(0, 0, avatar)
-    chev_y = (AVATAR_SIZE - chevron.height()) // 2
-    p.drawPixmap(AVATAR_SIZE + CHIP_GAP, chev_y, chevron)
+    p.setRenderHint(QPainter.SmoothPixmapTransform)
+    p.drawPixmap(QPointF(0, 0), avatar)
+    chev_y = (AVATAR_SIZE - CHEVRON_SIZE) / 2
+    p.drawPixmap(QPointF(AVATAR_SIZE + CHIP_GAP, chev_y), chevron)
     p.end()
     return QIcon(out)
 

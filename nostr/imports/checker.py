@@ -46,7 +46,7 @@ from i18n import _
 from ..rss.discovery import looks_like_html
 from ..rss.parser import RssError, parse_feed, with_whole_links
 from . import workers
-from .errors import ERROR_CODES, SourceError, friendly_message
+from .errors import ERROR_CODES, SourceError, failure_words
 from .inbox_store import CHECK_INTERVAL, InboxStore, SourceRow
 from .registry import ResolveInput, detect_resolver, resolve_source
 from .sources.podcast import enrich_feed_with_podcast
@@ -62,8 +62,9 @@ CHECKS_PER_HOUR = 200
 SOURCES_PER_INTERVAL = 50
 FEED_FORMATS = ("rss", "atom", "jsonfeed")
 
-TOO_LARGE = _("This feed is too large.")
-CHECK_FAILED = _("Couldn't check this feed. MyEditor will try again automatically.")
+# A source's one quiet line after a check that did not work (lessons 36).
+TOO_LARGE = _("This feed is too large to check: import its posts from an export file instead.")
+CHECK_FAILED = _("This feed couldn't be checked: MyEditor tries again on its own.")
 
 
 def checks_automatically(url: str) -> bool:
@@ -87,7 +88,7 @@ def error_text(error: SourceError) -> str:
         return TOO_LARGE
     if error.code in (ERROR_CODES.LOCAL_NETWORK, ERROR_CODES.NOT_A_FEED,
                       ERROR_CODES.NO_FEED_FOUND, ERROR_CODES.FETCH_ERROR):
-        return friendly_message(error)
+        return failure_words(error)
     return CHECK_FAILED
 
 

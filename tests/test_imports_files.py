@@ -413,6 +413,17 @@ class TestGhost(unittest.TestCase):
         self.assertIsNone(sink.error)
         self.assertEqual(sink.result.feed.format, "ghost")
 
+    def test_an_export_that_cannot_be_read_says_what_to_do(self):
+        # Lessons 36: what went wrong is the log's, never in the sentence.
+        from unittest import mock
+        from nostr.imports.errors import ERROR_CODES, failure_words
+        with mock.patch("nostr.imports.resolvers.ghost.parse_ghost_export",
+                        side_effect=RuntimeError("bad byte 0x9c")):
+            sink = run_paste(GHOST)
+        self.assertEqual(sink.error.code, ERROR_CODES.ARCHIVE_UNREADABLE)
+        self.assertEqual(failure_words(sink.error), "Couldn't read that archive: export it "
+                                                    "again from the platform and try again.")
+
     def test_plain_feed_paste_still_goes_to_rss(self):
         from tests.imports_fakes import TWO_ITEM_FEED
         self.assertEqual(

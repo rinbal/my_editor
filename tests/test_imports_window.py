@@ -633,6 +633,49 @@ def test_the_list_of_sources_says_when_a_change_is_not_shared(tmp_path):
     settle()
 
 
+def test_a_list_of_sources_not_read_offers_try_again_which_reads_it(tmp_path):
+    # Lessons 36: one quiet line in place, read again quietly meanwhile,
+    # and Try Again to read it now.
+    from nostr.imports.subscriptions import NOT_READ
+    from tests.test_imports_subscriptions import Offline
+    relay, scheduler = Offline(), FakeScheduler()
+    controller = controller_for(tmp_path, relay=relay, scheduler=scheduler)
+    win = ImportsWindow(controller, load_settings=lambda: {},
+                        save_settings=lambda value: None)
+    win.show()
+    settle()
+    assert win.notice.text() == NOT_READ
+    assert win.notice_retry.isVisible() and win.notice_retry.text() == "Try Again"
+    relay.online = True
+    win.notice_retry.click()
+    settle()
+    assert win.notice.isHidden() and not win.notice_retry.isVisible()
+    assert not win.notice_row.isVisible()
+    win.close()
+    controller.account_changed(None)
+    settle()
+
+
+def test_a_change_not_shared_offers_no_try_again(tmp_path):
+    # Tried again on its own; nothing for the person to do.
+    from tests.test_imports_subscriptions import Offline
+    relay, scheduler = Offline(), FakeScheduler()
+    relay.online = True
+    controller = controller_for(tmp_path, relay=relay, scheduler=scheduler)
+    win = ImportsWindow(controller, load_settings=lambda: {},
+                        save_settings=lambda value: None)
+    win.show()
+    settle()
+    relay.online = False
+    controller.subscriptions.add_feed(JOURNAL, "A journal")
+    scheduler.fire()
+    settle()
+    assert win.notice.isVisible() and not win.notice_retry.isVisible()
+    win.close()
+    controller.account_changed(None)
+    settle()
+
+
 def test_show_sidebar_is_reachable_with_the_keyboard(window):
     """CP2 review N9: on Windows and Linux this window has no menu bar of
     its own, and the toolbar's sidebar button took no focus, so a folded

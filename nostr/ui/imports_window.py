@@ -153,7 +153,7 @@ QSplitter#imports_splitter::handle { background: palette(mid); }
 QWidget#imports_rule { background: palette(mid); }
 QLabel#imports_list_subtitle, QLabel#imports_placeholder,
 QLabel#imports_article_origin { color: palette(placeholder-text); }
-QLabel#imports_notice { background: palette(alternate-base); }
+QFrame#imports_notice_row, QLabel#imports_notice { background: palette(alternate-base); }
 QFrame#imports_banner { background: palette(alternate-base); border: none;
     border-bottom: 1px solid palette(mid); }
 QToolButton#imports_banner_close { border: none; padding: 2px; }
@@ -425,12 +425,26 @@ class ImportsWindow(QMainWindow):
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(0)
         column.addWidget(self._build_list_header())
+        # The quiet line, and Try Again while the list of sources could
+        # not be read (lessons 36: read again quietly meanwhile).
+        self.notice_row = QFrame()
+        self.notice_row.setObjectName("imports_notice_row")
+        notice_row = QHBoxLayout(self.notice_row)
+        notice_row.setContentsMargins(0, 0, 16, 0)
+        notice_row.setSpacing(8)
         self.notice = QLabel()
         self.notice.setObjectName("imports_notice")
         self.notice.setWordWrap(True)
-        self.notice.setContentsMargins(16, 6, 16, 6)
+        self.notice.setContentsMargins(16, 6, 0, 6)
         self.notice.setTextFormat(Qt.TextFormat.PlainText)
-        column.addWidget(self.notice)
+        notice_row.addWidget(self.notice, 1)
+        self.notice_retry = QPushButton(_("Try Again"))
+        self.notice_retry.setObjectName("imports_notice_retry")
+        self.notice_retry.setAccessibleDescription(_("Reads your list of sources again"))
+        self.notice_retry.clicked.connect(self._controller.read_sources_again)
+        self.notice_retry.hide()
+        notice_row.addWidget(self.notice_retry, 0, Qt.AlignmentFlag.AlignVCenter)
+        column.addWidget(self.notice_row)
         self._update_notice()
         self._controller.sync_changed.connect(self._update_notice)
         self.banner = _Banner()
@@ -1349,6 +1363,9 @@ class ImportsWindow(QMainWindow):
                  controller.sync_message]
         self.notice.setText("\n".join(part for part in parts if part))
         self.notice.setVisible(bool(self.notice.text()))
+        self.notice_retry.setVisible(bool(controller.sync_message)
+                                     and controller.can_read_sources_again)
+        self.notice_row.setVisible(bool(self.notice.text()))
 
     def _show_source(self, key: str) -> None:
         """A source just followed, or followed already: where its posts are.

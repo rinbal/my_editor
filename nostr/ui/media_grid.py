@@ -112,6 +112,12 @@ class Tile:
     pixmap: Optional[QPixmap] = None
     # A picture that cannot be drawn here (HEIC on most systems).
     no_picture: bool = False
+    # A submission's encrypted file: shown apart, never inserted.
+    submission: bool = False
+    # Whether it is one is not told yet (its first bytes are being read
+    # from its server, or could not be): neither inserted nor deleted as
+    # a plain file until it is (RG-M2r 5).
+    unsure: bool = False
     mime: str = ""
 
     @property
@@ -170,6 +176,36 @@ class MediaModel(QAbstractListModel):
 
     def row_of(self, key: str) -> int:
         return self._rows.get(key, -1)
+
+    def replace(self, tile: Tile) -> bool:
+        """``tile`` in place of the one of its key, where it stands; False
+        when no tile has that key."""
+        row = self._rows.get(tile.key)
+        if row is None:
+            return False
+        self._tiles[row] = tile
+        self.changed(tile.key)
+        return True
+
+    def remove(self, key: str) -> bool:
+        """The tile of ``key`` taken out where it stands, the others kept
+        (no reset: selection and scroll stay); False when none has it."""
+        row = self._rows.get(key)
+        if row is None:
+            return False
+        self.beginRemoveRows(QModelIndex(), row, row)
+        del self._tiles[row]
+        self._rows = {tile.key: at for at, tile in enumerate(self._tiles)}
+        self.endRemoveRows()
+        return True
+
+    def insert(self, row: int, tile: Tile) -> None:
+        """``tile`` put in at ``row`` (0 to the number of tiles), the
+        others kept."""
+        self.beginInsertRows(QModelIndex(), row, row)
+        self._tiles.insert(row, tile)
+        self._rows = {each.key: at for at, each in enumerate(self._tiles)}
+        self.endInsertRows()
 
     def changed(self, key: str) -> None:
         row = self._rows.get(key)

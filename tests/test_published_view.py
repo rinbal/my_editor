@@ -94,13 +94,14 @@ def article(d, title, *, at=NOW - 2000):
     return signed(30023, [["d", d], ["title", title]], "Body", created_at=at)
 
 
-def make(*stored, refuse_publish=(), down=()):
+def make(*stored, refuse_publish=(), down=(), client=None):
     relays = Relays(refuse_publish=refuse_publish)
     relays.keep(R1, *stored)
     relays.down = set(down)
     model = PublishedList(relay_pool=relays,
                           relay_directory=FakeRelayDirectory({PK: [R1, R2]}),
-                          session_pool=FakeSessionPool(FakeClient()), clock=lambda: NOW)
+                          session_pool=FakeSessionPool(client or FakeClient()),
+                          clock=lambda: NOW)
     view = PublishedView(model, is_dark=False)
     view.resize(320, 480)
     said = []
@@ -148,7 +149,7 @@ def test_could_not_be_read_offers_try_again():
     view.set_account(Profile())
     relays.run()
     assert shown(view) == ("Couldn’t load what you published",
-                           "Check your internet connection, then try again.", False, True)
+                           "Check your internet connection and try again.", False, True)
     assert unnamed_controls(view) == []
     relays.down = set()
     view._empty_action.click()
@@ -215,6 +216,16 @@ def test_load_more_is_the_last_row_and_return_on_it_loads_more():
     assert shown(view) == [f"note {n}" for n in range(PAGE_SIZE + 3)]
 
 
+def test_some_relays_not_answering_is_said_by_nobody():
+    """Lessons 36: what one relay answered is shown; that another did not
+    answer is counted for logic, never said."""
+    view, model, relays, said, _edited = make(note("hello"), down=(R2,))
+    view.set_account(Profile())
+    relays.run()
+    assert model.partial and shown(view) == ["hello"]
+    assert [line for line in said if line] == []
+
+
 def test_load_more_that_failed_says_so_and_stays_the_way_to_try_again():
     notes = [note(f"note {n}", at=NOW - 10 * n) for n in range(PAGE_SIZE + 1)]
     view, model, relays, said, _edited = make(*notes)
@@ -229,8 +240,8 @@ def test_load_more_that_failed_says_so_and_stays_the_way_to_try_again():
     assert rows.data(last, pv.PROBLEM_ROLE) == "Couldn’t load."
     assert rows.data(last, Qt.ItemDataRole.AccessibleTextRole).endswith(
         "Press Return to try again.")
-    assert said[-1] == ("Couldn’t load more notes. Check your internet connection, "
-                        "then try again.")
+    # Said once, in place: nothing in the status line (lessons 36).
+    assert not any("load" in line.lower() for line in said[-2:])
     relays.down = set()
     view._list.setCurrentIndex(last)
     QTest.keyClick(view._list, Qt.Key.Key_Return)
@@ -419,7 +430,7 @@ def test_confirming_deletes_and_the_row_goes(answered_alerts):
     assert view._rows.data(view._rows.index(1), ROW_ROLE).detail == "Deleting…"
     relays.run()
     assert shown(view) == ["kept"]
-    assert said[-1] == "2 of 2 relays accepted the request to delete “Essay”."
+    assert said[-1] == "The request to delete “Essay” was sent."       # never a count
     assert view._list.currentIndex().row() == 0          # the keyboard stays in the list
 
 
@@ -438,7 +449,7 @@ def test_a_deletion_no_relay_took_offers_try_again(answered_alerts):
     relays.run()
     failure = answered_alerts.asked[1]
     assert failure["title"] == "Couldn’t delete “hello”"
-    assert failure["message"].startswith("No relay accepted the request.")
+    assert failure["message"] == "Check your internet connection and try again."
     assert [(b.label, b.role) for b in failure["buttons"]] == [
         ("Cancel", alerts.CANCEL), ("Try Again", alerts.DEFAULT)]
     assert R1 in failure["details"]
@@ -459,8 +470,30 @@ def test_relays_that_refused_are_not_blamed_on_the_connection(answered_alerts):
     QTest.keyClick(view._list, Qt.Key.Key_Delete)
     relays.run()
     failure = answered_alerts.asked[1]
-    assert failure["message"].startswith("The relays turned the request down.")
+    assert failure["message"] == ("The servers your posts go to turned it down: try again "
+                                  "later.")
     assert "rate-limited: slow down" in failure["details"]
+
+
+@pytest.mark.parametrize("client, words", [
+    (FakeClient(fail="user rejected"),
+     "Your signer app declined the request: allow it there and try again."),
+    (FakeClient(tamper=lambda event: dict(event, content="something else")),
+     "Your signer app signed something other than what was asked: nothing was sent, so try "
+     "again."),
+])
+def test_a_deletion_the_signer_did_not_sign_is_one_plain_sentence(answered_alerts, client,
+                                                                 words):
+    view, _model, relays, _said, _edited = make(note("hello"), client=client)
+    view.set_account(Profile())
+    relays.run()
+    select(view, 0)
+    answered_alerts.answers = [True, False]         # Delete, then Cancel
+    QTest.keyClick(view._list, Qt.Key.Key_Delete)
+    relays.run()
+    failure = answered_alerts.asked[1]
+    assert failure["title"] == "Couldn’t delete “hello”" and failure["message"] == words
+    assert failure["details"] and failure["details"] not in words
 
 
 def test_keys_act_on_the_selected_row_only(answered_alerts, opened):

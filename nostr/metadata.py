@@ -67,13 +67,38 @@ _MAX_AVATAR_REDIRECTS: int = 4
 # --------------------------------------------------------------------------- #
 
 def can_receive_zaps(pool: RelayPool, directory: RelayDirectory, pubkey: str, hint: str,
-                     answer, *, parent: Optional[QObject] = None,
-                     query=fetch_replaceable, timeout_ms: int = 8_000,
-                     first_wait_ms: int = RECONNECT_FIRST_MS,
-                     longest_wait_ms: int = RECONNECT_LONGEST_MS) -> None:
+                     answer, **more) -> None:
     """``answer(True)`` when ``pubkey``'s profile names a lightning address
     (lud16, or lud06: where a zap to them is paid, NIP-57), ``answer(False)``
-    when it names none or the relays have no profile of theirs. Read where
+    when it names none or the relays have no profile of theirs,
+    ``answer(None)`` when that couldn't be found out (:func:`zap_address`)."""
+    zap_address(pool, directory, pubkey, hint,
+                lambda address: answer(None if address is None else bool(address)), **more)
+
+
+def zap_address(pool: RelayPool, directory: RelayDirectory, pubkey: str, hint: str,
+                answer, **more) -> None:
+    """``answer(address)`` with the lightning address ``pubkey``'s profile
+    names (lud16, else lud06: where a zap to them is paid, NIP-57), ``""``
+    when it names none or the relays have no profile of theirs, None when
+    that couldn't be found out (:func:`profile_fields`)."""
+    def read(fields) -> None:
+        if fields is None:
+            answer(None)
+            return
+        answer(next((fields[key].strip() for key in ("lud16", "lud06")
+                     if isinstance(fields.get(key), str) and fields[key].strip()), ""))
+
+    profile_fields(pool, directory, pubkey, hint, read, **more)
+
+
+def profile_fields(pool: RelayPool, directory: RelayDirectory, pubkey: str, hint: str,
+                   answer, *, parent: Optional[QObject] = None,
+                   query=fetch_replaceable, timeout_ms: int = 8_000,
+                   first_wait_ms: int = RECONNECT_FIRST_MS,
+                   longest_wait_ms: int = RECONNECT_LONGEST_MS) -> None:
+    """``answer(fields)`` with what ``pubkey``'s profile (kind 0) says, a
+    dict (``{}`` when the relays have no profile of theirs). Read where
     their profile is (the relay hint, their write relays, the indexers).
 
     No relay answering is no answer: the lookup is asked again, waiting
@@ -100,10 +125,7 @@ def can_receive_zaps(pool: RelayPool, directory: RelayDirectory, pubkey: str, hi
             fields = json.loads((event or {}).get("content", "") or "{}")
         except json.JSONDecodeError:
             fields = {}
-        if not isinstance(fields, dict):
-            fields = {}
-        answer(any(isinstance(fields.get(key), str) and fields[key].strip()
-                   for key in ("lud16", "lud06")))
+        answer(fields if isinstance(fields, dict) else {})
 
     ask(first_wait_ms)
 

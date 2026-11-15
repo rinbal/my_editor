@@ -51,8 +51,12 @@ Save Anyway (in place of Use My Usual Relays) changes the setting all
 the same, leaving the drafts kept only on the relays it named behind:
 for a relay that is gone for good. Any other relay being left must still
 answer. When one being left stops answering only after the list went
-out, the setting is saved, and a last page says that drafts saved there
-meanwhile are looked for there and moved once it answers (Done closes).
+out, the setting is saved and the sheet closes as on any save: drafts
+saved there meanwhile are looked for there quietly and moved once it
+answers (lessons 36), and the sheet lists that relay when opened again.
+A save that did not work says what did not happen and one sentence of
+its cause; which relays, and what they or the signer said, is the
+tooltip.
 
 Relays no longer in the setting that may still hold drafts (a list
 changed on another device, or a relay that went quiet during a change)
@@ -81,30 +85,36 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+import logging
+
 from alerts import answer_return_as_the_system_does, confirm_destructive
-from i18n import _, ngettext
+from i18n import N_, _, ngettext
+from nostr import failures
 
 from ..draft_relays import (
     MOVING_DRAFTS, READING_DRAFTS, SAVING_LIST, UNDECRYPTED, PrivateDraftRelays, SaveOutcome,
     draft_relay_address,
 )
 from ..outbox import defaults
-from ..outbox.writer import CAUSE_CHANGED, CAUSE_CLOCK, CAUSE_RELAYS, CAUSE_SIGNER, UNKNOWN_BASE
+from ..outbox.writer import CAUSE_CHANGED, failure_detail, failure_words
 from .assistant import DEFAULT, LEADING, NORMAL, AssistantWindow, busy_bar, page, text_label
 
 MAIN = "main"
-LEFT_BEHIND = "left_behind"
 
 # What the sheet is doing.
 READING = "reading"
 READ_FAILED = "read_failed"
 EDITING = "editing"
 SAVING = "saving"
-SAVED = "saved"              # saved, with a note on drafts left behind
 
 # Marks a usual relay shown in the list while no draft relays are chosen.
 _USUAL = Qt.ItemDataRole.UserRole + 1
 
+
+_log = logging.getLogger(__name__)
+
+# What did not happen when the setting was not saved (lessons 36).
+NOT_SAVED = N_("The setting wasn’t saved")
 
 class DraftRelaysSheet(AssistantWindow):
     """Choose the relays drafts are kept on (see the module's text)."""
@@ -239,13 +249,6 @@ class DraftRelaysSheet(AssistantWindow):
         column.addWidget(self._busy)
         column.addStretch(1)
         self.add_page(MAIN, widget)
-
-        widget, column = page(10)
-        column.addWidget(text_label(_("The setting is saved."), "title"))
-        self._left_note = text_label("", "muted")
-        column.addWidget(self._left_note)
-        column.addStretch(1)
-        self.add_page(LEFT_BEHIND, widget)
         self.show_page(MAIN, [])
 
     # -- reading ---------------------------------------------------------------
@@ -261,20 +264,19 @@ class DraftRelaysSheet(AssistantWindow):
         if generation != self._generation:
             return
         if relays is None:
-            if self._relays.last_failure == UNDECRYPTED:
-                message = _("Couldn’t decrypt where your drafts are kept. Make sure your "
-                            "signer app is running, then try again.")
-            else:
-                message = _("Couldn’t read where your drafts are kept. Check your internet "
-                            "connection, then try again.")
-            self._set_state(READ_FAILED, error=message)
+            # Said once: what did not happen, its cause (lessons 36).
+            message = (_("Your signer app didn’t decrypt it: open it and try again.")
+                       if self._relays.last_failure == UNDECRYPTED
+                       else _(failures.CHECK_CONNECTION))
+            self._set_state(READ_FAILED, error=message,
+                            title=_("Where your drafts are kept couldn’t be read"))
             return
         self._read = list(relays)
         self._left_unread = None
         self._list.clear()
         self._list.addItems(self._read)
         self._show_relays_left_behind()
-        self._set_state(EDITING, error=then_say)
+        self._set_state(EDITING, error=then_say, title=_(NOT_SAVED) if then_say else "")
         self._show_usual_relays()
         # The list to work on when there is one, otherwise the field to
         # start one.
@@ -451,16 +453,18 @@ class DraftRelaysSheet(AssistantWindow):
         if outcome.ok:
             self.saved.emit(list(chosen))
             if outcome.left_behind:
-                self._show_left_behind(outcome.left_behind)
-            else:
-                self._state = EDITING
-                self.accept()
+                # A relay being left did not answer the last pass: what was
+                # saved there meanwhile is read on and moved once it does,
+                # quietly (lessons 36); the sheet lists it when opened.
+                _log.info("drafts may still be on %s", ", ".join(outcome.left_behind))
+            self._state = EDITING
+            self.accept()
             return
         if outcome.write is not None and outcome.write.cause == CAUSE_CHANGED:
             # Not written over: show the setting as it is now, to decide again.
             self._read_list(then_say=_(
-                "The setting was changed on another device while this was open, so nothing "
-                "was changed here. This is the setting as it is now."))
+                "It was changed on another device while this was open: this is the setting "
+                "as it is now."))
             return
         # Relays being left whose drafts can't all be read (not answering,
         # or sending only their newest): Save Anyway may leave them behind.
@@ -468,101 +472,65 @@ class DraftRelaysSheet(AssistantWindow):
         agreed = self._unread if self._left_unread == chosen else []
         self._left_unread = list(chosen) if stuck else None
         self._unread = list(dict.fromkeys([*agreed, *stuck])) if stuck else []
-        self._set_state(EDITING, error=self._why_not_saved(outcome))
-
-    def _show_left_behind(self, relays) -> None:
-        """Saved, but a relay being left did not answer the last pass:
-        drafts saved there meanwhile are read on and moved once it does."""
-        self._left_note.setText(ngettext(
-            "Drafts saved during the change may still be only on {relays}, which didn’t "
-            "answer. MyEditor keeps looking for them there and moves them once it answers.",
-            "Drafts saved during the change may still be only on {relays}, which didn’t "
-            "answer. MyEditor keeps looking for them there and moves them once they answer.",
-            len(relays)).format(relays=", ".join(relays)))
-        self._state = SAVED
-        specs = self._buttons()
-        self._shown_buttons = [spec[:3] for spec in specs]
-        self.show_page(LEFT_BEHIND, [spec[:4] for spec in specs])
-        # The page's one button takes the focus from the list just hidden
-        # (a button laid out now is shown only later: show it first).
-        self.buttons["done"].show()
-        self.buttons["done"].setFocus()
+        sentence, detail = self._why_not_saved(outcome)
+        self._set_state(EDITING, error=sentence, title=_(NOT_SAVED), detail=detail)
 
     @staticmethod
-    def _why_not_saved(outcome: SaveOutcome) -> str:
+    def _why_not_saved(outcome: SaveOutcome) -> tuple:
+        """``(sentence, detail)``: why the setting was not saved and what
+        to do, in one sentence (lessons 36), and for the tooltip which
+        relays and what they or the signer said; never a relay's name
+        or a count in the sentence."""
         move, write = outcome.move, outcome.write
         if move.unread:
-            return ngettext(
-                "Couldn’t read the drafts on {relays}, so nothing was changed. Check your "
-                "internet connection, then try again. If that relay is gone for good, choose "
-                "Save Anyway: the drafts kept only there won’t be shown any more.",
-                "Couldn’t read the drafts on {relays}, so nothing was changed. Check your "
-                "internet connection, then try again. If those relays are gone for good, "
-                "choose Save Anyway: the drafts kept only there won’t be shown any more.",
-                len(move.unread)).format(relays=", ".join(move.unread))
+            return (_("Some relays being left didn’t answer: check your internet connection "
+                      "and try again, or choose Save Anyway to leave the drafts kept only "
+                      "there behind."), ", ".join(move.unread))
         if move.unpaged:
-            return ngettext(
-                "{relays} sends only its newest drafts, whichever part MyEditor asks for, so "
-                "the older ones there can’t be moved, and nothing was changed. If you can do "
-                "without the drafts kept only there, choose Save Anyway: they won’t be shown "
-                "any more.",
-                "{relays} send only their newest drafts, whichever part MyEditor asks for, so "
-                "the older ones there can’t be moved, and nothing was changed. If you can do "
-                "without the drafts kept only there, choose Save Anyway: they won’t be shown "
-                "any more.",
-                len(move.unpaged)).format(relays=", ".join(move.unpaged))
+            return (_("Some relays being left send only their newest drafts: choose Save "
+                      "Anyway to leave the older ones kept only there behind."),
+                    ", ".join(move.unpaged))
         if move.unreadable:
-            return ngettext(
-                "{relays} didn’t give your drafts back when MyEditor asked, so nothing was "
-                "changed. If your signer app asked you to approve signing in to it, approve "
-                "that, then try again. Otherwise choose another relay.",
-                "{relays} didn’t give your drafts back when MyEditor asked, so nothing was "
-                "changed. If your signer app asked you to approve signing in to them, "
-                "approve that, then try again. Otherwise choose other relays.",
-                len(move.unreadable)).format(relays=", ".join(move.unreadable))
+            return (_("Some relays being left didn’t give your drafts back: approve signing "
+                      "in to them if your signer app asks, then try again, or choose other "
+                      "relays."), ", ".join(move.unreadable))
         if move.not_moved and move.refused:
-            return _("The relays your drafts would move to turned some of them down, so "
-                     "nothing was changed. Choose other relays, then try again.")
+            return (_("The relays your drafts would move to turned some of them down: choose "
+                      "other relays and try again."), "")
         if move.not_moved:
-            return _("Some drafts couldn’t be moved, so nothing was changed. Check your "
-                     "internet connection, then try again.")
-        if write is not None and write.status == UNKNOWN_BASE:
-            return _("Couldn’t read the current setting, so nothing was changed. Check "
-                     "your internet connection, then try again.")
-        cause = write.cause if write is not None else ""
-        if cause == CAUSE_CLOCK:
-            return _("The current setting is dated ahead of this computer’s clock, so "
-                     "nothing was changed. Check the date and time on this computer, then "
-                     "try again.")
-        if cause == CAUSE_RELAYS:
-            return _("Too few relays took the change. Check your internet connection, "
-                     "then try again.")
-        if cause == CAUSE_SIGNER:
-            return _("Your signer app didn’t approve the change. Try again, and approve "
-                     "it when your signer app asks.")
-        return _("Couldn’t save the change. Try again.")
+            return (_("Some drafts couldn’t be moved: check your internet connection and try "
+                      "again."), "")
+        if write is not None:
+            return failure_words(write), failure_detail(write)
+        return _(failures.CHECK_CONNECTION), ""
 
     def _changed(self) -> bool:
         return self.chosen() != self._read
 
     # -- state and buttons -------------------------------------------------------
 
-    def _set_state(self, state: str, *, busy: str = "", error: str = "") -> None:
+    def _set_state(self, state: str, *, busy: str = "", error: str = "", title: str = "",
+                   detail: str = "") -> None:
         self._state = state
         self._busy_label.setText(busy)
         self._progress.setRange(0, 0)       # a wait of unknown length, until counted
         self._busy.setVisible(bool(busy))
         if error:
-            self._say(error)
+            self._say(error, title=title, detail=detail)
         else:
             self._error.hide()
         self._update()
 
-    def _say(self, text: str) -> None:
-        self._error.setText(text)
+    def _say(self, text: str, *, title: str = "", detail: str = "") -> None:
+        """``text`` under the field; with a ``title``, a total failure:
+        the title in bold above its one sentence, ``detail`` the tooltip
+        (lessons 36)."""
+        self._error.setTextFormat(Qt.RichText if title else Qt.PlainText)
+        self._error.setText(failures.markup(title, text) if title else text)
+        self._error.setToolTip(detail)
         self._error.show()
         # Read with the field it is about, by a screen reader too.
-        self._field.setAccessibleDescription(text)
+        self._field.setAccessibleDescription(failures.spoken(title, text))
 
     def _offers_save_anyway(self) -> bool:
         return (self._state == EDITING and self._left_unread is not None
@@ -611,8 +579,6 @@ class DraftRelaysSheet(AssistantWindow):
         if self._state == READ_FAILED:
             return [("cancel", _("Cancel"), NORMAL, self.reject, True),
                     ("retry", _("Try Again"), DEFAULT, self._read_list, True)]
-        if self._state == SAVED:
-            return [("done", _("Done"), DEFAULT, self.accept, True)]
         editing = self._state == EDITING
         if self._offers_save_anyway():
             leading = ("anyway", _("Save Anyway"), LEADING, self._save_anyway, True)

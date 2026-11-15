@@ -104,6 +104,7 @@ class FakeStore(QObject):
     listings_changed = Signal()
     file_deleted = Signal(str)
     delete_failed = Signal(str, str)
+    submission_checked = Signal(str)
 
     def __init__(self, records=(), *, names=None, quota=None, used=0, listing_ok=True):
         super().__init__()
@@ -116,6 +117,18 @@ class FakeStore(QObject):
 
     def target_servers(self):
         return [SERVER, MEMBERS]
+
+    def is_submission_file(self, sha):
+        return False        # the real store's answer: test_submission_files_*
+
+    def submission_state(self, sha):
+        return False
+
+    def submission_check_failed(self, sha):
+        return False
+
+    def check_submission_file(self, sha, *, again=False):
+        self.calls.append(("check", sha))
 
     def server_listings(self):
         return {s: ServerListing(origin=s, ok=self.listing_ok,
@@ -156,6 +169,9 @@ class FakeStore(QObject):
 
     def added_uploads(self):
         return list(getattr(self, "added", []))
+
+    def refusal_detail(self, name):
+        return getattr(self, "refused", {}).get(name, "")
 
     def can_retry(self, name):
         return True
@@ -420,7 +436,7 @@ def test_a_library_that_could_not_be_listed_says_why_and_offers_try_again(tmp_pa
     world = build(tmp_path, monkeypatch)
     world.store.fetch_error.emit("NETWORK_UNAVAILABLE")
     assert world.dialog._empty_text.text() == (
-        "Couldn’t reach your media servers. Check your internet connection.")
+        "Couldn’t reach your media servers: check your internet connection and try again.")
     assert world.dialog._empty_button.text() == "Try Again"
     world.dialog._empty_button.click()
     assert ("fetch", True) in world.store.calls
@@ -475,7 +491,7 @@ def test_a_failed_upload_says_why_on_the_tile_and_can_be_retried(tmp_path, monke
     path.write_bytes(PNG_BYTES)
     world = build(tmp_path, monkeypatch)
     world.dialog._add_paths([str(path)])
-    reason = "Couldn’t reach your media server. Check your internet connection."
+    reason = "Couldn’t reach your media server: check your internet connection and try again."
     world.store.upload_failed.emit("Scan.png", reason)
     tile = world.model.tile("Scan.png")
     assert (tile.state, tile.detail) == (FAILED, reason)
@@ -483,6 +499,22 @@ def test_a_failed_upload_says_why_on_the_tile_and_can_be_retried(tmp_path, monke
     world.grid.retry_requested.emit("Scan.png")
     assert ("retry", "Scan.png") in world.store.calls
     assert tile.state == WAITING
+
+
+def test_the_servers_that_refused_a_file_are_the_line_s_tooltip_never_its_words(
+        tmp_path, monkeypatch):
+    # Contract 7 names them; lessons 36 keeps them behind a tooltip.
+    path = tmp_path / "Scan.png"
+    path.write_bytes(PNG_BYTES)
+    world = build(tmp_path, monkeypatch)
+    world.dialog._add_paths([str(path)])
+    world.store.refused = {"Scan.png": "good.example: too large\nmirror.example: too large"}
+    reason = "No media server took the file: add another one in Media Servers."
+    world.store.upload_failed.emit("Scan.png", reason)
+    assert world.dialog._status.text() == f"“Scan.png” wasn’t added. {reason}"
+    assert world.dialog._status.toolTip() == "good.example: too large\nmirror.example: too large"
+    world.dialog._say("Something else.")
+    assert world.dialog._status.toolTip() == ""     # the next line takes it away
 
 
 def test_a_refusal_before_the_upload_starts_reaches_the_tile(tmp_path, monkeypatch):
@@ -514,20 +546,36 @@ def test_a_file_that_is_no_media_is_not_added_and_it_says_so(tmp_path, monkeypat
     world.dialog._add_paths([str(path)])
     assert world.store.calls == [("fetch", False)]
     assert world.dialog._status.text() == (
-        "“program.exe” wasn’t added. Choose a supported image, video, audio or document file.")
+        "“program.exe” wasn’t added. Only images, videos, audio and documents can be added: "
+        "choose one of those.")
 
 
-def test_a_server_that_did_not_keep_a_copy_is_said_once_when_the_file_lands(
-        tmp_path, monkeypatch):
+def test_files_that_are_no_media_are_said_once_never_counted(tmp_path, monkeypatch):
+    # Lessons 36: what did not happen, never how many; which is the tooltip.
+    paths = []
+    for name in ("program.exe", "setup.dmg", "notes.xyz"):
+        (tmp_path / name).write_text("hello", encoding="utf-8")
+        paths.append(str(tmp_path / name))
+    world = build(tmp_path, monkeypatch)
+    world.dialog._add_paths(paths)
+    assert world.dialog._status.text() == (
+        "Some files weren’t added. Only images, videos, audio and documents can be added: "
+        "choose one of those.")
+    assert world.dialog._status.toolTip() == "program.exe\nsetup.dmg\nnotes.xyz"
+
+
+@pytest.mark.parametrize("missed", ["mirror_failed", "server_skipped"])
+def test_a_server_that_did_not_keep_a_copy_says_nothing_as_the_file_landed(
+        tmp_path, monkeypatch, missed):
+    # Lessons 36: the file is on the others, so the upload worked.
     path = tmp_path / "Garden.png"
     path.write_bytes(PNG_BYTES)
     world = build(tmp_path, monkeypatch)
     world.dialog._add_paths([str(path)])
-    world.store.mirror_failed.emit("Garden.png", "members.example", "NETWORK_UNAVAILABLE")
-    assert world.dialog._status.text() == "Anyone with the link can see the files you add here."
+    getattr(world.store, missed).emit("Garden.png", "members.example", "NETWORK_UNAVAILABLE")
     world.store.upload_finished.emit("Garden.png", media(3))
-    assert world.dialog._status.text() == (
-        "“Garden.png” is added, but one of your media servers didn’t keep a copy.")
+    assert world.dialog._status.text() == "Anyone with the link can see the files you add here."
+    assert world.dialog._status.toolTip() == ""
 
 
 # --------------------------------------------------------------------------- #
@@ -563,8 +611,8 @@ def test_a_file_a_server_still_has_is_never_called_gone(tmp_path, monkeypatch):
     world = build(tmp_path, monkeypatch, FakeStore([one], names={one.hash: "Garden.jpg"}))
     world.store.delete_failed.emit(one.hash, "NETWORK_UNAVAILABLE")
     assert world.dialog._status.text() == (
-        "“Garden.jpg” wasn’t deleted. Couldn’t reach your media server. Check your "
-        "internet connection.")
+        "“Garden.jpg” wasn’t deleted. Couldn’t reach your media server: check your "
+        "internet connection and try again.")
 
 
 def test_copy_link_copies_every_selected_address(tmp_path, monkeypatch):
@@ -613,15 +661,17 @@ def test_save_as_tries_the_next_server_and_then_gives_the_real_reason(tmp_path, 
     assert world.loader.downloads[1].url.startswith(MEMBERS)
     world.loader.downloads[1].finished.emit("too_large")
     assert world.dialog._status.text() == (
-        "“Talk.mp4” wasn’t saved: a media server sent more than the file.")
+        "“Talk.mp4” wasn’t saved, as a media server sent more than the file: try again later.")
 
 
 @pytest.mark.parametrize("why, said", [
-    ("network", "“Talk.mp4” couldn’t be downloaded. Check your internet connection and try again."),
+    ("network", "“Talk.mp4” couldn’t be downloaded: check your internet connection and try again."),
     ("missing", "“Talk.mp4” isn’t on your media servers anymore, so it couldn’t be saved."),
-    ("server", "“Talk.mp4” couldn’t be downloaded: your media server didn’t send it. Try again later."),
-    ("wrong_file", "“Talk.mp4” wasn’t saved: a media server returned the wrong file."),
-    ("write", "“Talk.mp4” couldn’t be saved there. Choose another folder."),
+    ("server", "“Talk.mp4” couldn’t be downloaded, as your media server didn’t send it: try "
+               "again later."),
+    ("wrong_file", "“Talk.mp4” wasn’t saved, as a media server returned the wrong file: try "
+                   "again later."),
+    ("write", "“Talk.mp4” couldn’t be saved there: choose another folder."),
 ])
 def test_save_as_failures_say_their_own_reason(tmp_path, monkeypatch, why, said):
     world, _video, _target = _save_video(tmp_path, monkeypatch)
@@ -915,8 +965,8 @@ def test_a_copy_a_server_still_has_is_still_shared_and_it_says_so(tmp_path, monk
     assert ledger.get(copy_sha) is not None
     assert not tiles(world)[0].private
     assert world.dialog._status.text() == (
-        "“Beach.png” is still shared. Couldn’t reach your media server. Check your "
-        "internet connection.")
+        "“Beach.png” is still shared. Couldn’t reach your media server: check your "
+        "internet connection and try again.")
 
 
 @pytest.mark.parametrize("unsharing", [True, False])
@@ -931,9 +981,9 @@ def test_a_server_that_refuses_the_account_is_not_a_reason_to_choose_another(
     world.store.delete_failed.emit(copy_sha if unsharing else original.hash, "AUTH_REJECTED")
     assert world.dialog._status.text() == (
         "“Beach.png” is still shared. A media server it’s on didn’t let your account "
-        "delete it." if unsharing else
+        "delete it: try again with the account that added it." if unsharing else
         "“Beach.png” wasn’t deleted. A media server it’s on didn’t let your account "
-        "delete it.")
+        "delete it: try again with the account that added it.")
 
 
 def test_deleting_a_shared_original_deletes_its_copy_too(tmp_path, monkeypatch):
@@ -1016,7 +1066,7 @@ def test_a_library_opened_later_shows_the_files_still_being_added(tmp_path, monk
     path = tmp_path / "Holiday.png"
     path.write_bytes(PNG_BYTES)
     store = FakeStore()
-    reason = "Couldn’t reach your media server. Check your internet connection."
+    reason = "Couldn’t reach your media server: check your internet connection and try again."
     store.added = [AddedUpload(name="Holiday.png", mime="image/png", state="failed",
                                error=reason, path=str(path)),
                    AddedUpload(name="Clip.mp4", mime="video/mp4", state="sending")]
@@ -1079,7 +1129,7 @@ def test_a_listing_that_may_be_incomplete_is_said_quietly(tmp_path, monkeypatch)
     store.truncated = True
     store.fetch_finished.emit()
     assert world.dialog._status.text() == (
-        "Your media servers may not have listed every file. Refresh to look again.")
+        "Your media servers may not have listed every file: choose Refresh to look again.")
     assert world.dialog._status.property("tone") == ""
 
 
@@ -1273,3 +1323,421 @@ class _ResizeWatcher(QObject):
         if event.type() == QEvent.Type.Resize:
             self._seen.append(event.size().width())
         return False
+
+
+# --------------------------------------------------------------------------- #
+# A submission's encrypted files, with the real store (RG-M2b 6)
+# --------------------------------------------------------------------------- #
+
+def _real_store(tmp_path, cache_dir):
+    from nostr.blossom.client import BlossomClient
+    from nostr.blossom.settings import BlossomSettings
+    from nostr.blossom.store import MediaStore
+    from nostr.ui.thumbnail_loader import ThumbnailLoader
+    from tests.blossom_fakes import (SERVER as BLOSSOM, FakeBlossomServer, FakeNam,
+                                     FakeProfile, FakeSessionPool, FakeSigner)
+    settings = BlossomSettings(tmp_path / "servers.json")
+    settings.set_custom_servers([BLOSSOM])
+    server = FakeBlossomServer(BLOSSOM)
+    nam = FakeNam(None, responder=server)
+    store = MediaStore(session_pool=FakeSessionPool(FakeSigner()), profile_provider=FakeProfile,
+                       settings=settings, client=BlossomClient(nam=nam),
+                       blob_cache=ThumbnailLoader(cache_dir=cache_dir, nam=FakeNam()))
+    return store, server, nam
+
+
+def _sealed_file():
+    from nostr.standup.drafting import LocalPicture, encrypt_pictures
+    picture, = encrypt_pictures([LocalPicture(key="k", name="cafe.jpg", mime="image/jpeg",
+                                              data=PNG_BYTES)])
+    return picture.cipher
+
+
+def test_submission_files_are_apart_never_offered_and_deleting_one_warns(tmp_path,
+                                                                          monkeypatch):
+    store, _server, nam = _real_store(tmp_path, tmp_path / "blobs")
+    sealed = _sealed_file()
+    store.upload_bytes(PNG_BYTES, name="garden.png", mime_type="image/png")
+    store.upload_bytes(sealed, name="a.smf1", force=True, submission=True)
+    nam.settle()
+    sealed_sha, picture_sha = sha_of(sealed), sha_of(PNG_BYTES)
+    assert set(store.files) == {sealed_sha, picture_sha}
+    world = build(tmp_path, monkeypatch, store)
+    assert [tile.key for tile in tiles(world)] == [picture_sha]        # not among All Items
+    combo = world.dialog._filter_combo
+    combo.setCurrentIndex(combo.findData("submission"))
+    assert [(tile.key, tile.name) for tile in tiles(world)] == [
+        (sealed_sha, "Encrypted file of a submission")]
+    select(world, sealed_sha)
+    assert not world.dialog._can_insert() and world.dialog._link_of(tiles(world)[0]) == ""
+    alert, shown = fake_alert(click="Cancel")
+    monkeypatch.setattr(alerts, "Alert", alert)
+    world.dialog._delete()
+    assert shown[0].message == ("The editorial team can no longer open this file of your "
+                                "submission. You can’t undo this action.")
+    picker = build(tmp_path, monkeypatch, store, pick=True)
+    assert picker.dialog._filter_combo.findData("submission") == -1
+    assert [tile.key for tile in tiles(picker)] == [picture_sha]      # never insertable
+
+
+def test_after_a_restart_a_submission_file_is_known_by_its_first_bytes(tmp_path):
+    first, _server, nam = _real_store(tmp_path, tmp_path / "blobs")
+    sealed = _sealed_file()
+    first.upload_bytes(sealed, name="a.smf1", force=True, submission=True)
+    nam.settle()
+    again, _server, _nam = _real_store(tmp_path, tmp_path / "blobs")   # a new session
+    assert again.is_submission_file(sha_of(sealed))
+    assert not again.is_submission_file(sha_of(PNG_BYTES))
+    first._blob_cache = None                         # no cache: only what it sent itself
+    assert first.is_submission_file(sha_of(sealed))
+    first.clear()                                    # another account: nothing it sent
+    assert not first.is_submission_file(sha_of(sealed))
+
+
+# --------------------------------------------------------------------------- #
+# On another computer: told by its first bytes, read from its server (RG-M2r 5)
+# --------------------------------------------------------------------------- #
+
+def _listed_from_elsewhere(tmp_path, body, *, mime="application/octet-stream", **server):
+    """A file another computer uploaded: on the server, listed here, its
+    bytes never cached here."""
+    from tests.blossom_fakes import SERVER as BLOSSOM, descriptor
+    store, fake, nam = _real_store(tmp_path, tmp_path / "blobs")
+    for name, value in server.items():
+        setattr(fake, name, value)
+    sha = sha_of(body)
+    fake.contents[sha] = body
+    fake.blobs[sha] = descriptor(sha, server=BLOSSOM, size=len(body), mime=mime,
+                                 url=f"{BLOSSOM}/{sha}")
+    store.fetch(force=True)
+    nam.settle()
+    assert sha in store.files
+    return store, fake, nam, sha
+
+
+def test_on_another_computer_a_submission_file_is_told_before_it_is_offered(tmp_path,
+                                                                            monkeypatch):
+    store, server, nam, sha = _listed_from_elsewhere(tmp_path, _sealed_file())
+    assert store.submission_state(sha) is None
+    world = build(tmp_path, monkeypatch, store)
+    [tile] = tiles(world)
+    # Until its first bytes are read: neither inserted nor deleted plainly.
+    assert tile.unsure and not tile.submission
+    select(world, sha)
+    assert not world.dialog._can_insert() and world.dialog._link_of(tile) == ""
+    alert, shown = fake_alert(click="Cancel")
+    monkeypatch.setattr(alerts, "Alert", alert)
+    world.dialog._delete()
+    assert shown[-1].message == ("If this is a file of one of your submissions, the editorial "
+                                 "team can no longer open it. You can’t undo this action.")
+    nam.settle()
+    QApplication.processEvents()                     # laid out again on the next turn
+    # Eight bytes asked for, by range, once: then it is in its own group.
+    assert server.reads == [(sha, "bytes=0-7")]
+    assert store.is_submission_file(sha) and tiles(world) == []
+    combo = world.dialog._filter_combo
+    combo.setCurrentIndex(combo.findData("submission"))
+    assert [(t.key, t.name) for t in tiles(world)] == [(sha, "Encrypted file of a submission")]
+
+
+def test_on_another_computer_a_plain_byte_stream_is_offered_once_told(tmp_path, monkeypatch):
+    store, server, nam, sha = _listed_from_elsewhere(tmp_path, b"PK\x03\x04 a zip of notes")
+    world = build(tmp_path, monkeypatch, store)
+    nam.settle()
+    [tile] = tiles(world)
+    assert store.submission_state(sha) is False and not tile.unsure
+    select(world, sha)
+    assert world.dialog._can_insert() and world.dialog._link_of(tile) == tile.media.url
+    alert, shown = fake_alert(click="Cancel")
+    monkeypatch.setattr(alerts, "Alert", alert)
+    world.dialog._delete()
+    assert shown[-1].message.startswith("Anything you published with it")
+
+
+def test_a_file_of_a_kind_is_never_read_to_be_told(tmp_path, monkeypatch):
+    store, server, nam, sha = _listed_from_elsewhere(tmp_path, PNG_BYTES, mime="image/png")
+    world = build(tmp_path, monkeypatch, store)
+    nam.settle()
+    assert store.submission_state(sha) is False and server.reads == []
+    assert not tiles(world)[0].unsure
+
+
+def test_a_server_that_sends_the_whole_file_is_stopped_after_the_first_bytes(tmp_path):
+    from nostr.standup import crypto as scrypto
+    sealed = _sealed_file() + bytes(4096)
+    store, server, nam, sha = _listed_from_elsewhere(tmp_path, sealed, ignore_range=True)
+    store.check_submission_file(sha)
+    nam.settle()
+    [reply] = [r for r in nam.issued if r.request().url().path() == f"/{sha}"]
+    assert reply.aborted and reply._read == scrypto.MEDIA_HEADER_BYTES
+    assert store.is_submission_file(sha)
+
+
+def test_when_no_server_gives_the_first_bytes_the_picker_says_so_and_asks_again(tmp_path,
+                                                                              monkeypatch):
+    store, server, nam, sha = _listed_from_elsewhere(tmp_path, _sealed_file())
+    body = server.contents.pop(sha)                  # the server answers 404
+    picker = build(tmp_path, monkeypatch, store, pick=True)
+    nam.settle()
+    assert store.submission_check_failed(sha) and store.submission_state(sha) is None
+    assert len(server.reads) == 1                    # not asked again by itself
+    select(picker, sha)
+    picker.dialog._refresh_pick_notice()
+    assert picker.dialog._pick_notice_text.text() == (
+        "This file can’t be used until its server answers.")
+    assert not picker.dialog._pick_notice_button.isHidden()
+    assert not picker.dialog._insert_button.isEnabled()
+    server.contents[sha] = body
+    picker.dialog._pick_notice_button.click()
+    nam.settle()
+    QApplication.processEvents()                     # laid out again on the next turn
+    assert store.is_submission_file(sha)
+    assert [t.key for t in tiles(picker)] == []      # never offered to insert
+
+
+def test_an_answer_for_the_account_left_tells_nothing(tmp_path):
+    store, server, nam, sha = _listed_from_elsewhere(tmp_path, _sealed_file())
+    store.check_submission_file(sha)
+    store.clear()
+    nam.settle()
+    assert store.submission_state(sha) is False      # not listed for this account
+    assert sha not in store._sealed_known
+
+
+# -- many files listed from another computer (RG-M2r2a 4) ----------------------------
+
+def _many_from_elsewhere(tmp_path, count):
+    """``count`` plain byte streams another computer uploaded: each must
+    be read before it is offered."""
+    from tests.blossom_fakes import SERVER as BLOSSOM, descriptor
+    store, server, nam = _real_store(tmp_path, tmp_path / "blobs")
+    shas = []
+    for n in range(count):
+        body = b"PK\x03\x04 notes " + bytes([n])
+        sha = sha_of(body)
+        server.contents[sha] = body
+        server.blobs[sha] = descriptor(sha, server=BLOSSOM, size=len(body),
+                                       mime="application/octet-stream", url=f"{BLOSSOM}/{sha}")
+        shas.append(sha)
+    store.fetch(force=True)
+    nam.settle()
+    return store, server, nam, shas
+
+
+def _heads_issued(nam, shas):
+    return [r for r in nam.issued if r.request().url().path().lstrip("/") in shas]
+
+
+def test_only_a_few_files_are_read_at_once(tmp_path):
+    from nostr.blossom.store import MAX_HEADS_AT_ONCE
+    store, server, nam, shas = _many_from_elsewhere(tmp_path, 10)
+    for sha in shas:
+        store.check_submission_file(sha)
+    assert len(_heads_issued(nam, shas)) == MAX_HEADS_AT_ONCE
+    nam.settle()
+    assert len(_heads_issued(nam, shas)) == 10
+    assert all(store.submission_state(sha) is False for sha in shas)
+
+
+def test_a_new_listing_reads_again_what_was_on_its_way(tmp_path):
+    store, server, nam, shas = _many_from_elsewhere(tmp_path, 6)
+    for sha in shas:
+        store.check_submission_file(sha)
+    store.fetch(force=True)                         # the answers are for the old listing
+    nam.settle()
+    assert all(store.submission_state(sha) is None for sha in shas)
+    read = len(_heads_issued(nam, shas))
+    for sha in shas:
+        store.check_submission_file(sha)            # never stuck as being asked
+    nam.settle()
+    assert all(store.submission_state(sha) is False for sha in shas)
+    # Each read once for the new listing: what waited for the old is gone.
+    assert len(_heads_issued(nam, shas)) - read == len(shas)
+
+
+def test_a_new_listing_stops_the_reads_on_their_way(tmp_path):
+    # RG-M2r3 10: the reads of the old listing ran on, unaborted, for up
+    # to 45 s, so each Refresh opened MAX_HEADS_AT_ONCE more sockets.
+    from nostr.blossom.store import MAX_HEADS_AT_ONCE
+    store, server, nam, shas = _many_from_elsewhere(tmp_path, 10)
+    for sha in shas:
+        store.check_submission_file(sha)
+    first = _heads_issued(nam, shas)
+    assert len(first) == MAX_HEADS_AT_ONCE and not any(reply.aborted for reply in first)
+    for _refresh in range(3):
+        store.fetch(force=True)
+        assert all(reply.aborted for reply in _heads_issued(nam, shas))
+        for _turn in range(20):                      # the new listing comes
+            listing = [r for r in nam.issued if not r.settled
+                       and r.request().url().path().startswith("/list")]
+            if not listing:
+                break
+            listing[0].finish()
+        for sha in shas:
+            store.check_submission_file(sha)
+        running = [r for r in _heads_issued(nam, shas) if not r.aborted]
+        assert len(running) == MAX_HEADS_AT_ONCE        # never more open at once
+    nam.settle()
+    assert all(store.submission_state(sha) is False for sha in shas)
+    assert store._heads_reading == {}               # nothing kept for a read that ended
+
+
+def test_another_account_stops_the_reads_on_their_way(tmp_path):
+    store, server, nam, shas = _many_from_elsewhere(tmp_path, 6)
+    for sha in shas:
+        store.check_submission_file(sha)
+    store.clear()                                   # sign-out, another account
+    assert all(reply.aborted for reply in _heads_issued(nam, shas))
+
+
+def test_a_tile_made_again_in_place_is_drawn_again(tmp_path, monkeypatch):
+    from dataclasses import replace
+    world = build(tmp_path, monkeypatch, FakeStore([media(1), media(2)]))
+    drawn = []
+    world.model.dataChanged.connect(lambda top, _bottom, _roles=(): drawn.append(top.row()))
+    second = tiles(world)[1]
+    assert world.model.replace(replace(second, detail="told")) is True
+    assert drawn == [1] and tiles(world)[1].detail == "told"
+    assert world.model.replace(replace(second, key="ff" * 32)) is False and drawn == [1]
+
+
+def test_the_grid_is_not_laid_out_again_for_each_file_told(tmp_path, monkeypatch):
+    store, server, nam, shas = _many_from_elsewhere(tmp_path, 12)
+    world = build(tmp_path, monkeypatch, store)
+    resets = []
+    world.model.modelReset.connect(lambda: resets.append(True))
+    nam.settle()
+    QApplication.processEvents()
+    assert resets == []                             # each tile made again in place
+    assert len(tiles(world)) == 12 and all(not tile.unsure for tile in tiles(world))
+
+
+def test_a_file_told_that_leaves_the_filter_is_taken_out_where_it_stands(tmp_path,
+                                                                        monkeypatch):
+    store, server, nam, shas = _many_from_elsewhere(tmp_path, 3)
+    picker = build(tmp_path, monkeypatch, store, pick=True)
+    assert len(tiles(picker)) == 3
+    calls, resets, removed = [], [], []
+    original = picker.dialog._rebuild
+    monkeypatch.setattr(picker.dialog, "_rebuild", lambda *a: (calls.append(1), original())[1])
+    picker.model.modelReset.connect(lambda: resets.append(True))
+    picker.model.rowsRemoved.connect(lambda _parent, first, _last: removed.append(first))
+    # Three told to be submissions' files: never offered to insert, so
+    # each leaves the grid at once, the others staying where they are.
+    order = [t.key for t in tiles(picker)]
+    store._sealed_known.update({sha: True for sha in shas})
+    picker.dialog._on_submission_checked(shas[1])
+    assert [t.key for t in tiles(picker)] == [key for key in order if key != shas[1]]
+    for sha in (shas[0], shas[2]):
+        picker.dialog._on_submission_checked(sha)
+    QApplication.processEvents()
+    assert calls == [] and resets == [] and len(removed) == 3 and tiles(picker) == []
+
+
+def _many_sealed_and_plain(tmp_path, count):
+    """``count`` files another computer uploaded, every other one a
+    submission's: each read before it is offered."""
+    from tests.blossom_fakes import SERVER as BLOSSOM, descriptor
+    store, server, nam = _real_store(tmp_path, tmp_path / "blobs")
+    shas = []
+    for n in range(count):
+        body = (_sealed_file() + bytes([n]) if n % 2 else b"PK\x03\x04 notes " + bytes([n]))
+        sha = sha_of(body)
+        server.contents[sha] = body
+        server.blobs[sha] = descriptor(sha, server=BLOSSOM, size=len(body), uploaded=1000 + n,
+                                       mime="application/octet-stream", url=f"{BLOSSOM}/{sha}")
+        shas.append(sha)
+    store.fetch(force=True)
+    nam.settle()
+    return store, server, nam, shas
+
+
+@pytest.mark.parametrize("kind", ["all", "file", "submission"])
+@pytest.mark.parametrize("sort", ["newest", "name"])
+def test_files_told_one_per_turn_each_move_one_tile_and_end_as_a_layout_would(
+        tmp_path, monkeypatch, kind, sort):
+    # RG-M2r3 2: real replies come one per turn of the event loop. Each
+    # answer makes its one tile again; the grid is never laid out again,
+    # and in the end it is what a layout of it gives.
+    from nostr.ui.media_library_dialog import MediaLibraryDialog
+    store, server, nam, shas = _many_sealed_and_plain(tmp_path, 12)
+    built = []
+    real_tile = MediaLibraryDialog._file_tile
+    monkeypatch.setattr(MediaLibraryDialog, "_file_tile",
+                        lambda self, media: (built.append(media.hash), real_tile(self, media))[1])
+    world = build(tmp_path, monkeypatch, store)
+    for combo, value in ((world.dialog._filter_combo, kind), (world.dialog._sort_combo, sort)):
+        combo.setCurrentIndex(combo.findData(value))
+    QApplication.processEvents()
+    resets = []
+    world.model.modelReset.connect(lambda: resets.append(True))
+    before = len(built)
+    turns = 0
+    while nam.settle_one(missing_ok=True):          # one reply per turn, as Qt has them
+        QApplication.processEvents()
+        turns += 1
+        assert turns < 10 * len(shas)
+    QApplication.processEvents()
+    assert all(store.submission_state(sha) is not None for sha in shas)
+    assert resets == [] and len(built) - before == len(shas)    # one tile per answer
+    shown = [(t.key, t.name, t.submission, t.unsure) for t in tiles(world)]
+    world.dialog._rebuild()
+    assert shown == [(t.key, t.name, t.submission, t.unsure) for t in tiles(world)]
+    assert len(shown) == {"all": 6, "file": 6, "submission": 6}[kind]
+
+
+def _told(world, sha, monkeypatch, **changes):
+    """``sha`` answered, its tile made again with ``changes``."""
+    from dataclasses import replace
+    real = MediaLibraryDialog._file_tile
+    monkeypatch.setattr(MediaLibraryDialog, "_file_tile", lambda self, m: replace(
+        real(self, m), **changes) if m.hash == sha else real(self, m))
+    world.dialog._on_submission_checked(sha)
+
+
+def _laid_out(world):
+    shown = [(t.key, t.name) for t in tiles(world)]
+    world.dialog._rebuild()
+    return shown == [(t.key, t.name) for t in tiles(world)]
+
+
+def test_a_file_told_whose_name_sorts_it_elsewhere_moves_after_the_uploads(tmp_path,
+                                                                          monkeypatch):
+    # RG-M2r3 2: by name, a tile named again goes where a layout puts it,
+    # after the uploads on their way, whatever their names.
+    from nostr.ui.media_grid import Tile
+    world = build(tmp_path, monkeypatch, FakeStore([media(1), media(2), media(3)]))
+    combo = world.dialog._sort_combo
+    combo.setCurrentIndex(combo.findData("name"))
+    world.dialog._jobs["zz.png"] = Tile(key="zz.png", name="zz.png", detail="", kind="image",
+                                        state=SENDING)
+    world.dialog._rebuild()
+    resets = []
+    world.model.modelReset.connect(lambda: resets.append(True))
+    last = tiles(world)[-1]
+    _told(world, last.key, monkeypatch, name="AAA first")
+    assert resets == [] and [t.name for t in tiles(world)][:2] == ["zz.png", "AAA first"]
+    assert _laid_out(world)
+
+
+def test_the_last_file_told_away_leaves_the_plain_sentence(tmp_path, monkeypatch):
+    store, server, nam, shas = _many_from_elsewhere(tmp_path, 2)
+    picker = build(tmp_path, monkeypatch, store, pick=True)
+    store._sealed_known.update({sha: True for sha in shas})
+    for sha in shas:
+        picker.dialog._on_submission_checked(sha)
+    assert tiles(picker) == [] and picker.dialog._stack.currentWidget() is picker.dialog._empty
+
+
+def test_a_hidden_copy_told_stays_out_of_the_grid(tmp_path, monkeypatch):
+    envelope = sealed()
+    original = MediaFile(hash=sha_of(envelope), url=f"{SERVER}/{sha_of(envelope)}", size=10,
+                         uploaded_at_ms=2)
+    copy = media(7)
+    blob = PrivateBlob(sha256=original.hash, key_hex=KEY, mime="image/png", name="Beach.png")
+    ledger = PublicLedger(path=tmp_path / "public.json")
+    ledger.record(PublicBlob(sha256=copy.hash, url=copy.url, source_hash=original.hash))
+    visibility = MediaVisibility(library=FakeLibrary([blob]), ledger=ledger)
+    world = build(tmp_path, monkeypatch, FakeStore([original, copy]), visibility=visibility)
+    world.dialog._on_submission_checked(copy.hash)
+    assert names(world) == ["Beach.png"]

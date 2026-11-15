@@ -19,11 +19,12 @@ Each document is converted by ``mdx_to_markdown`` on a worker thread
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Callable, List, Optional
 from urllib.parse import quote, urlparse
 
-from i18n import _
+from i18n import N_, _
 
 from ...rss.parser import Feed, FeedItem
 from ..errors import ERROR_CODES, SourceError
@@ -33,6 +34,11 @@ from ..sources.mdx import mdx_to_markdown
 
 # Files pulled from one folder: high enough to be "all of it" for real
 # content sections, a guard against pointing at a pathological megafolder.
+_log = logging.getLogger(__name__)
+
+# GitHub answered, but not with the folder's files.
+_NOT_LISTED = N_("GitHub didn't list that folder: check its address and try again.")
+
 MDX_FOLDER_MAX = 100
 # Parallel document fetches: quick without hammering the raw host.
 MDX_FETCH_CONCURRENCY = 6
@@ -208,9 +214,9 @@ def _resolve_single(url: str, ctx: ResolveContext) -> None:
                 body, fallback_name=_basename(url), link=url, guid=url,
                 base=fetch_url),
             lambda item: _deliver(item),
+            # What went wrong is the log's (errors.failure_words).
             lambda exc: ctx.on_failure(SourceError(
-                _("Could not read that document: {error}").format(error=exc),
-                ERROR_CODES.UNKNOWN)),
+                f"the document could not be read: {exc}", ERROR_CODES.UNKNOWN)),
         )
 
     def _deliver(item: FeedItem) -> None:
@@ -240,18 +246,18 @@ def _resolve_folder(url: str, tree, ctx: ResolveContext) -> None:
         try:
             entries = json.loads(body)
         except (ValueError, TypeError):
-            ctx.on_failure(SourceError(
-                _("GitHub returned an unexpected folder listing"),
-                ERROR_CODES.SOURCE_ERROR,
-            ))
+            ctx.on_failure(SourceError(_(_NOT_LISTED), ERROR_CODES.SOURCE_ERROR))
             return
         if not isinstance(entries, list):
-            message = (
-                _("GitHub: {message}").format(message=entries.get("message"))
-                if isinstance(entries, dict) and entries.get("message")
-                else _("That GitHub path is not a folder")
-            )
-            ctx.on_failure(SourceError(message, ERROR_CODES.SOURCE_ERROR))
+            # GitHub's own words (a rate limit, "Not Found") are for the
+            # log; the person reads what to do (lessons 36).
+            said = entries.get("message") if isinstance(entries, dict) else None
+            if said:
+                _log.info("GitHub did not list the folder: %s", str(said)[:200])
+            ctx.on_failure(SourceError(
+                _(_NOT_LISTED) if said else _("That GitHub address isn't a folder: paste the "
+                                               "address of a folder of .md files."),
+                ERROR_CODES.SOURCE_ERROR))
             return
 
         files = [
@@ -262,7 +268,7 @@ def _resolve_folder(url: str, tree, ctx: ResolveContext) -> None:
         files.sort(key=lambda e: _numeric_sort_key(str(e.get("name") or "")))
         if not files:
             ctx.on_failure(SourceError(
-                _("No .md or .mdx files in that folder"),
+                _("That folder has no .md or .mdx files: choose a folder that has some."),
                 ERROR_CODES.SOURCE_ERROR,
             ))
             return
@@ -305,8 +311,7 @@ def _resolve_folder(url: str, tree, ctx: ResolveContext) -> None:
             _build,
             lambda items: _deliver(items, total),
             lambda exc: ctx.on_failure(SourceError(
-                _("Could not convert that folder: {error}").format(error=exc),
-                ERROR_CODES.UNKNOWN)),
+                f"the folder could not be converted: {exc}", ERROR_CODES.UNKNOWN)),
         )
 
     def _deliver(items: List[FeedItem], total: int) -> None:

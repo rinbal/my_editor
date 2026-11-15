@@ -20,8 +20,9 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from PySide6.QtCore import QDateTime, QLocale
+from PySide6.QtCore import QDateTime, QLocale, Qt
 from PySide6.QtGui import QFont, QFontInfo
+from PySide6.QtGui import Qt as QtText
 from PySide6.QtWidgets import QApplication
 
 import i18n
@@ -232,3 +233,14 @@ def format_short_date(ts: int) -> str:
     ("Jan 6, 2027", "6. Jan. 2027")."""
     moment = _moment(ts)
     return i18n.format_day(moment, short_month=True) if moment is not None else ""
+
+
+# --------------------------------------------------------------------------- #
+# Words other people chose                                                    #
+# --------------------------------------------------------------------------- #
+
+def plain_tip(text: str) -> str:
+    """``text`` as a tooltip that shows it as written: Qt reads a tooltip
+    that looks like HTML as rich text, and a name or a publication's
+    title is chosen by someone else (RG-M3-a 11)."""
+    return QtText.convertFromPlainText(text, Qt.WhiteSpaceMode.WhiteSpaceNormal) if text else ""

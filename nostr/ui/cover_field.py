@@ -62,6 +62,7 @@ import media_files
 from . import appearance
 from i18n import _
 
+from .. import failures
 from ..blossom.hashes import hash_from_url
 from ..blossom.store import MediaFile, MediaStore
 from ..media.media_visibility import MediaVisibility
@@ -624,7 +625,8 @@ class CoverImageField(QWidget):
         self._uploading = ""
         self._on_url_changed(self.url_edit.text(), quiet=True)
         self.uploading_changed.emit(False)
-        self.problem.emit(_("The picture was not uploaded: {reason}").format(reason=reason))
+        # What did not happen, then the store's one sentence (lessons 36).
+        self.problem.emit(failures.spoken(_("The picture wasn’t uploaded"), reason))
 
     # -- the well -------------------------------------------------------------
 

@@ -158,8 +158,12 @@ rep.check("a note draft's d tag is a private random id, an article's is its slug
 
 big = build_inner_event(kind=1, content="x" * 70_000, pubkey_hex=pk)
 res = save(A, big, new_note_identifier())
+# Said by its cause, never by counts (lesson 36, bf8752b): too long to be
+# encrypted, with what to do instead.
+refused = res.get("failed", "")
 rep.check("a draft over the NIP-44 plaintext limit is refused before the signer is asked",
-          "failed" in res and "too large" in res["failed"], res.get("failed", ""))
+          "too long to be encrypted" in refused and not any(c.isdigit() for c in refused),
+          refused)
 
 # --------------------------------------------------------------------------- #
 rep.section("Device B (same account, its own files) finds and decrypts them")

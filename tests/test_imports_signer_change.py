@@ -129,16 +129,32 @@ def test_one_relay_that_accepts_is_enough(tmp_path):
         session_pool=RecordingPool(), relay_pool=pool, relay_directory=FakeRelayDirectory(),
         cache_dir=tmp_path / "cache", scheduler=FakeScheduler(), clock=lambda: 1)
     answers = []
-    store._default_publisher(["wss://a", "wss://b"], {"id": "x"},
-                             on_done=lambda accepted, total: answers.append((accepted, total)))
+    store._default_publisher(["wss://a", "wss://b"], {"id": "x"}, on_done=answers.append)
     job.first_accept.emit("wss://a")
     # Answered at once, not when the last relay times out.
-    assert answers == [(1, 2)]
+    assert answers == [{"wss://a"}]
     job.all_done.emit([("wss://a", True, ""), ("wss://b", False, "timed out")])
-    assert answers == [(1, 2)]
+    assert answers == [{"wss://a"}]
     silent = Job()
     pool.publish = lambda relays, signed: silent
-    store._default_publisher(["wss://a"], {"id": "y"},
-                             on_done=lambda accepted, total: answers.append((accepted, total)))
+    store._default_publisher(["wss://a"], {"id": "y"}, on_done=answers.append)
     silent.all_done.emit([("wss://a", False, "blocked")])
-    assert answers[-1] == (0, 1)
+    assert answers[-1] == set()
+
+
+def test_a_later_page_waits_for_every_relay(tmp_path):
+    """A list's later pages count only on the relays that took all of
+    them (contract 13): the answer waits for every relay."""
+    job = Job()
+    pool = SimpleNamespace(publish=lambda relays, signed: job)
+    store = FeedSubscriptionStore(
+        session_pool=RecordingPool(), relay_pool=pool, relay_directory=FakeRelayDirectory(),
+        cache_dir=tmp_path / "cache", scheduler=FakeScheduler(), clock=lambda: 1)
+    answers = []
+    store._default_publisher(["wss://a", "wss://b", "wss://c"], {"id": "x"},
+                             on_done=answers.append, every_relay=True)
+    job.first_accept.emit("wss://a")
+    assert answers == []
+    job.all_done.emit([("wss://a", True, ""), ("wss://b", False, "timed out"),
+                       ("wss://c", True, "")])
+    assert answers == [{"wss://a", "wss://c"}]

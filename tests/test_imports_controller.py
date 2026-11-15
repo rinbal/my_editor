@@ -597,3 +597,82 @@ class TestTheSecondProcess:
             settle()
         finally:
             next(cleanup, None)
+
+
+# -- a failure is said in one sentence, never its own words (lessons 36) --------
+
+def _said_plainly(words: str) -> bool:
+    from nostr.imports.errors import _FRIENDLY, GENERIC
+    from nostr.imports_controller import NOTHING_FOUND
+    return words in {*_FRIENDLY.values(), GENERIC, NOTHING_FOUND} and "HTTP" not in words
+
+
+class FailingAfter:
+    """Answers the first ``answered`` fetches of each address, then fails
+    with the transport's own words."""
+
+    def __init__(self, responses, answered=1):
+        self.responses, self.answered, self.asked = dict(responses), answered, {}
+
+    def fetch(self, url, *, on_success, on_failure):
+        from nostr.imports.errors import ERROR_CODES, SourceError
+        self.asked[url] = self.asked.get(url, 0) + 1
+        if url in self.responses and self.asked[url] <= self.answered:
+            on_success(self.responses[url])
+        else:
+            on_failure(SourceError("HTTP 503 Service Unavailable", ERROR_CODES.FETCH_ERROR))
+
+
+def test_a_source_that_cannot_be_read_says_one_sentence(tmp_path):
+    harness = Harness(tmp_path, fetcher=FakeFetcher({}))
+    harness.controller.account_changed(profile())
+    settle()
+    assert _said_plainly(harness.controller.read_source("https://missing.example/feed").error)
+    said = []
+    harness.controller.look_up("https://missing.example/feed",
+                               on_done=lambda result, error: said.append(error))
+    harness.controller.read_list("https://missing.example/list.opml",
+                                 on_done=lambda document, error: said.append(error))
+    settle()
+    assert len(said) == 2 and all(_said_plainly(words) for words in said), said
+    harness.controller.account_changed(None)
+    settle()
+
+
+def test_an_article_page_that_cannot_be_read_says_one_sentence(tmp_path):
+    page = ('<html><head><link rel="alternate" type="application/rss+xml" '
+            'href="https://example.com/feed"></head><body></body></html>')
+    fetcher = FailingAfter({"https://example.com/c": page,
+                            "https://example.com/feed": TWO_ITEM_FEED}, answered=1)
+    harness = Harness(tmp_path, fetcher=fetcher)
+    harness.controller.account_changed(profile())
+    settle()
+    said = []
+    harness.controller.open_link("https://example.com/c",
+                                 on_done=lambda collection, error: said.append(error))
+    settle()
+    assert fetcher.asked.get("https://example.com/c", 0) >= 2     # the page, read again
+    assert said and _said_plainly(said[-1]), said
+    harness.controller.account_changed(None)
+    settle()
+
+
+def test_a_file_that_failed_to_read_says_its_own_words_or_one_sentence(tmp_path, monkeypatch):
+    from nostr import imports_controller
+    from nostr.imports.errors import GENERIC
+    harness = Harness(tmp_path)
+    harness.controller.account_changed(profile())
+    settle()
+    said = []
+    for raised, words in ((ValueError("That ZIP is not an export: choose another."),
+                           "That ZIP is not an export: choose another."),
+                          (RuntimeError("zlib error -3"), GENERIC)):
+        def fail(_path, _raised=raised):
+            raise _raised
+        monkeypatch.setattr(imports_controller, "read_export", fail)
+        harness.controller.read_file(str(tmp_path / "x.zip"),
+                                     on_done=lambda c, d, error: said.append(error))
+        settle()
+        assert said[-1] == words
+    harness.controller.account_changed(None)
+    settle()

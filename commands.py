@@ -152,6 +152,8 @@ NO_SHORTCUT: Tuple[Tuple[str, str, str], ...] = (
      "counterpart; a one-off."),
     ("nostr.insert_mention", "all",
      "Typing @ at the start of a word does it, as in every app that mentions people."),
+    ("nostr.submit_publication", "all",
+     "Once per finished text, and never by accident: a sheet asks where to first."),
     ("nostr.draft_relays", "all", "A one-off account setup."),
     ("nostr.imports_badge", "all", "A preference, set once."),
     ("nostr.membership", "all", "A one-off."),
@@ -471,7 +473,10 @@ class CommandRegistry(QObject):
         for entry in self._entries.values():
             command = entry.command
             keys = key_text(command.shortcut)
-            if not keys or entry.hidden_from_list or (command.nostr and not nostr):
+            # Nor a command the window does not offer at all (a feature
+            # that is not set up): its key does nothing.
+            if not keys or entry.hidden_from_list or (command.nostr and not nostr) \
+                    or not entry.action.isVisible():
                 continue
             words = command.listed_as or command.title.rstrip("…").rstrip(".").rstrip()
             rows.setdefault(command.group, []).append((keys, words))

@@ -776,6 +776,60 @@ def test_a_failed_audio_upload_does_not_speak_of_an_image(tmp_path):
         assert said and "image" not in said.lower()
 
 
+FAILED_MANY_SCRIPT = r"""
+import hashlib, json, os, sys
+sys.path.insert(0, sys.argv[1])
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+from PySide6.QtWidgets import QApplication
+app = QApplication(sys.argv[:1])
+import main_window
+
+w = main_window.MainWindow()
+w.show()
+sent = []
+w._media_store.upload_bytes = lambda body, name, mime_type: sent.append(name)
+w.nostr_state._active = True
+w._update_nostr_commands()
+w._upload_limit = lambda: 10**9
+ed = w.new_tab()
+paths = sys.argv[2:]
+for path in paths:
+    w._add_media_file(ed, path)
+shas = [hashlib.sha256(open(p, "rb").read()).hexdigest() for p in paths]
+r = {}
+# As a publish's wait does: the first goes, the others queue behind it.
+for sha in shas[:int(os.environ["FAILING"])]:
+    w._asset_manager.request_upload(sha)
+app.processEvents()
+w._media_store.upload_failed_code.emit(sent[0], "NETWORK_UNAVAILABLE")
+app.processEvents()
+r["said"] = w.status.currentMessage()
+ed.document().setModified(False)
+w._media_not_uploaded = lambda doc: []
+w.close()
+print("RESULT " + json.dumps(r))
+"""
+
+
+@pytest.mark.parametrize("failing, said", [
+    (1, "Your file wasn’t uploaded. Couldn’t reach your media server: check your internet "
+        "connection and try again."),
+    (3, "Some files weren’t uploaded. Couldn’t reach your media server: check your internet "
+        "connection and try again."),
+])
+def test_a_failed_upload_says_what_did_not_happen_never_how_many_wait(
+        tmp_path, monkeypatch, failing, said):
+    # Lessons 36: the stopped queue is counted for logic, never in words.
+    paths = []
+    for i in range(3):
+        song = tmp_path / f"song{i}.mp3"
+        song.write_bytes(BODY + bytes([i]) * 16)
+        paths.append(str(song))
+    monkeypatch.setenv("FAILING", str(failing))
+    r = run_window_script(FAILED_MANY_SCRIPT, tmp_path, *paths)
+    assert r["said"] == said
+
+
 PREVIEW_SCRIPT = r"""
 import json, os, sys
 sys.path.insert(0, sys.argv[1])

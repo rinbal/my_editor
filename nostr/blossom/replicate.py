@@ -67,6 +67,7 @@ def upload_to_server(
     sha256: str = "",
     on_success: Callable[[UploadResult], None],
     on_failure: Callable[[BlossomError], None],
+    live: Callable[[], bool] = lambda: True,
 ) -> None:
     """Sign one token and ``PUT /upload`` ``body`` to ``server``.
 
@@ -74,11 +75,15 @@ def upload_to_server(
     caller does not already hold it, so the ``x`` tag, the ``X-SHA-256``
     header and the bytes on the wire can never disagree. The descriptor
     the server returns is checked against it before ``on_success``.
+    ``live()`` is asked once the token is signed: False (the account was
+    left meanwhile) sends nothing and answers nothing.
     """
     sha = (sha256 or hashlib.sha256(body).hexdigest()).lower()
     origin = server_origin(server)
 
     def _send(signed: dict) -> None:
+        if not live():
+            return
         client.upload(
             origin,
             body,
@@ -109,8 +114,10 @@ def mirror_to_server(
     sha256: str,
     on_success: Callable[[UploadResult], None],
     on_failure: Callable[[BlossomError], None],
+    live: Callable[[], bool] = lambda: True,
 ) -> None:
     """Sign one token and ask ``server`` to copy the blob at ``source_url``.
+    ``live`` as for :func:`upload_to_server`.
 
     ``sha256`` is the hash of the blob being copied. BUD-11's endpoint
     table makes it REQUIRED as an ``x`` tag on ``PUT /mirror``, with
@@ -131,6 +138,8 @@ def mirror_to_server(
     origin = server_origin(server)
 
     def _send(signed: dict) -> None:
+        if not live():
+            return
         client.mirror(
             origin,
             source_url,

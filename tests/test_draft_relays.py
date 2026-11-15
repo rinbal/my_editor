@@ -741,8 +741,8 @@ def test_drafts_go_to_the_usual_relays_while_every_draft_relay_asks_for_a_sign_i
 
     read_drafts()
     assert LOCKED not in writing() and set(writing()) >= {U1, U2}
-    assert said[-1].startswith("Your draft relays ask you to sign in before they show your "
-                               "drafts, and signing in didn’t work.")
+    assert said[-1] == ("Drafts kept where you chose stay hidden until signing in there works: "
+                        "new drafts are saved with your posts meanwhile.")
     relays.write_only = set()                              # it shows drafts now
     read_drafts()
     assert writing() == [LOCKED]

@@ -47,8 +47,10 @@ def qt_app():
     yield app
 
 
-def window_with(account):
-    """The window's commands and menus, for ``account`` (None: no account)."""
+def window_with(account, *, article=True):
+    """The window's commands and menus, for ``account`` (None: no account),
+    with an ``article`` in front (a text written here, which is one or
+    can become one) or another document."""
     from main_window import MainWindow
     win = StandIn()
     MainWindow._build_actions(win)
@@ -59,6 +61,8 @@ def window_with(account):
     win._document_commands_dimmed = False      # no other window in front
     win.nostr_state = SimpleNamespace(active=account is not None)
     win._profile_store = SimpleNamespace(default=lambda: account)
+    win.current_editor = lambda: None
+    win._can_be_an_article = lambda _ed: article
     MainWindow._update_nostr_commands(win)
     return win
 
@@ -91,6 +95,37 @@ def test_an_account_in_a_signer_app_has_everything_but_the_key_commands():
 def test_an_account_kept_here_has_every_command():
     win = window_with(SimpleNamespace(is_local=True, user_pubkey=PK))
     assert all(enabled(win, c.id) for c in win.commands.commands() if c.nostr)
+
+
+def test_without_a_servers_address_handing_in_is_not_in_the_menu():
+    # ME-10: the build ships without an address. The command was offered
+    # all the same and ended in a sheet that could do nothing, while the
+    # Einreichungen view is left out in that state. The commands follow
+    # the view: not offered (hidden, not dimmed).
+    from main_window import MainWindow
+    win = window_with(SimpleNamespace(is_local=False, user_pubkey=PK))
+    ours = [win.commands.action(name) for name in ("nostr.submit_publication",
+                                                   "nostr.submissions")]
+    MainWindow._offer_submitting(win, False)
+    assert not any(action.isVisible() or action.isEnabled() for action in ours)
+    MainWindow._offer_submitting(win, True)
+    assert all(action.isVisible() and action.isEnabled() for action in ours)
+
+
+def test_submitting_to_a_publication_is_for_a_text_written_here():
+    # Plan 10.2: under Publish as Article, and for an article; never
+    # without an account. UX-M1: also for a written text that is not an
+    # article yet (it becomes one as the command is chosen), so it is not
+    # found dimmed with nothing saying why; another document never.
+    account = SimpleNamespace(is_local=False, user_pubkey=PK)
+    entries = nostr_menu(window_with(account))
+    at = entries.index("nostr.publish_article")
+    assert entries[at + 1] == "nostr.submit_publication"
+    assert enabled(window_with(account), "nostr.submit_publication")
+    assert not enabled(window_with(account, article=False), "nostr.submit_publication")
+    assert not enabled(window_with(None), "nostr.submit_publication")
+    title = {c.id: c.title for c in window_with(None).commands.commands()}
+    assert title["nostr.submit_publication"] == "Submit to a Publication…"
 
 
 def test_a_command_dimmed_for_the_imports_window_gets_the_account_state_later():
@@ -174,8 +209,8 @@ def test_the_drafts_panel_goes_when_no_account_is_in_use():
 
 def test_publishing_is_said_in_words_without_an_event_id():
     """The status bar said "Published to Nostr: 3/5 relays · note1qy2…";
-    it now says the note or article is published, and how many relays
-    took it only when not all did."""
+    it now says the note or article is published, and never how many
+    relays took it (lessons 36)."""
     from main_window import MainWindow
     said = []
     win = SimpleNamespace(status=SimpleNamespace(showMessage=lambda text, ms=0, **context: said.append(text)))
@@ -185,6 +220,5 @@ def test_publishing_is_said_in_words_without_an_event_id():
     some = [("wss://a", True, ""), ("wss://b", False, "blocked")]
     MainWindow._on_nostr_note_published(win, "ab" * 32, every)
     MainWindow._on_nostr_article_published(win, "naddr1xyz", some)
-    assert said == ["Your note is published.",
-                    "Your article is published; 1 of 2 relays took it."]
+    assert said == ["Your note is published.", "Your article is published."]
     assert not any("note1" in text or "naddr" in text for text in said)

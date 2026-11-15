@@ -380,15 +380,31 @@ def test_a_failed_setup_can_be_tried_again_or_finished_later(tmp_path):
     report = ready[0][2]
     retried = []
     report.retry = lambda: retried.append(True)
-    report.finished.emit(False, "")
+    report.step.emit(STEP_RELAYS, "error", "")
+    report.finished.emit(False, "The servers your posts go to turned it down: try again later.")
     assert set(win.buttons) == {"later", "retry"}
-    assert "next time you open" in win._setup_note.text()
+    # Lessons 36: what did not happen, the one sentence, said once; what
+    # finishing later does is behind the button's tooltip.
+    assert win._setup_note.text() == ("<b>Your account isn’t published yet</b><br>The servers "
+                                      "your posts go to turned it down: try again later.")
+    assert win._setup_note.accessibleName() == (
+        "Your account isn’t published yet. The servers your posts go to turned it down: try "
+        "again later.")
+    assert "next time you open" in win.buttons["later"].toolTip()
+    assert win.buttons["retry"].isDefault()
     win.buttons["retry"].click()
     assert retried == [True] and set(win.buttons) == {"close"}
     assert win._steps.state(STEP_RELAYS) == "active"
+    assert win._setup_note.text() == "You can close this window. MyEditor keeps going in the " \
+                                     "background."
+    assert win._setup_note.textFormat() == Qt.PlainText and not win._setup_note.accessibleName()
     report.retry = None
+    report.step.emit(STEP_RELAYS, "done", "")
+    report.step.emit(STEP_PROFILE, "error", "")
     report.finished.emit(False, "")
     assert set(win.buttons) == {"later"}
+    assert win._setup_note.text() == ("<b>Your name isn’t published yet</b><br>Check your "
+                                      "internet connection and try again.")
 
 
 def test_the_amber_path_never_keeps_the_key_here(tmp_path, monkeypatch):

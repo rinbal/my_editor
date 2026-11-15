@@ -84,6 +84,7 @@ class _Window:
     _local_image_bytes = staticmethod(MainWindow._local_image_bytes)
     _local_objects = MainWindow._local_objects
     _uploads_needed = MainWindow._uploads_needed
+    _say_pictures_missing = MainWindow._say_pictures_missing
     _after_uploads = MainWindow._after_uploads
     _agree_to_upload = MainWindow._agree_to_upload
     _file_label = staticmethod(MainWindow._file_label)
@@ -648,6 +649,26 @@ def test_a_picture_beside_the_document_is_published_by_its_address(tmp_path, mon
     assert f"](https://cdn.example/{sha}.png)" in win._publish_text(ed, "markdown")
     assert list(iter_image_names(ed.document())) == ["Trip_media/sea.png"], (
         "the document names it as its file does: saving writes it back as it was")
+
+
+def test_a_wide_picture_beside_the_document_or_of_the_app_goes_out_and_stays_wide(tmp_path):
+    # F3 M-2: "plan.png#wide" was looked for as a file of that name, so a
+    # wide picture on this computer could be neither submitted nor
+    # published ("not on this computer any more").
+    win = _Window(tmp_path / "cache")
+    (tmp_path / "plan.png").write_bytes(PNG_BYTES)
+    own = win.local_asset()
+    ed = HtmlEditor()
+    ed._file_path = str(tmp_path / "Text.md")
+    cursor = ed.textCursor()
+    cursor.insertImage(_fmt("plan.png#wide", "Plan"))
+    cursor.insertImage(_fmt(own.key + "#wide", "Own"))
+    assets, missing = win._local_objects(ed)
+    assert missing == [] and len(assets) == 2
+    plan = win._asset_manager.get(hashlib.sha256(PNG_BYTES).hexdigest())
+    text, _media = win._publish_payload(ed, "markdown", keep_local=True)
+    assert f"]({plan.key}#wide)" in text and f"]({own.key}#wide)" in text
+    assert list(iter_image_names(ed.document())) == ["plan.png#wide", own.key + "#wide"]
 
 
 def _two_local(win):

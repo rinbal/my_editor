@@ -73,7 +73,8 @@ try:
     uri = uri.split("&secret=")[0] + f"&secret={secret}" if "secret=" in uri else uri + f"&secret={secret}"
     dialog = ConnectDialog(stack.pool, stack.store, is_dark=False)
     connected = nd.Catch(dialog.profile_connected)
-    dialog._paste_edit.setPlainText(uri)
+    dialog.details_toggle.setChecked(True)          # the connection address is in Details
+    dialog._paste_edit.setText(uri)
     dialog._paste_btn.click()
     connected.wait(60_000)
     dana = connected.last[0] if connected.fired else None

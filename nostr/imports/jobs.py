@@ -63,7 +63,8 @@ STAGE_FULL_TEXT = "full_text"
 STAGE_IMAGES = "images"
 STAGE_SAVING = "saving"
 
-NO_RELAY = _("The draft couldn't be saved yet. Try again to send it.")
+# A post's one sentence when no relay kept its draft (lessons 36).
+NO_RELAY = _("Its draft wasn't saved online: check your internet connection and try again.")
 # A kept draft this close to its end date is made anew instead of sent:
 # relays refuse an expired one, and the post would fail for good (L5).
 CHECKPOINT_MARGIN = 24 * 3600
@@ -391,7 +392,10 @@ class ImportRunner(QObject):
                 self._end_row(row, ROW_FAILED, NO_RELAY)
 
         job.completed.connect(completed)
-        job.failed.connect(lambda reason: live() and self._end_row(row, ROW_FAILED, reason))
+        # Its one sentence (DraftPublishJob.words), the signer's own
+        # reason only where none was given (lessons 36).
+        job.failed.connect(lambda reason: live() and self._end_row(
+            row, ROW_FAILED, getattr(job, "words", "") or reason))
         job.completed.connect(lambda *_a: _release(job))
         job.failed.connect(lambda *_a: _release(job))
         try:

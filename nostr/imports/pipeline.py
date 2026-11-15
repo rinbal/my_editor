@@ -69,12 +69,13 @@ timers.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from i18n import _, ngettext
+from i18n import N_, _
 
 from ..blossom import hashes
 from ..drafts import DEFAULT_EXPIRATION_SECONDS
@@ -107,6 +108,12 @@ from .images import MirrorOutcome, MirrorProgress, blossom_rehost, rehost_images
 from .page_text import page_wanted, what_the_page_adds
 from .sources.podcast import build_podcast_markdown, fetch_podcast_chapters
 
+
+_log = logging.getLogger(__name__)
+
+# A post that could not be made a draft at all: what to do instead.
+NOT_A_DRAFT = N_("MyEditor couldn't turn this post into a draft: import it from its link "
+                 "instead.")
 
 class ImportItemsJob(QObject):
     """Sequential import of selected feed items as encrypted drafts.
@@ -316,7 +323,9 @@ class ImportItemsJob(QObject):
     def _on_template_failed(self, exc: BaseException) -> None:
         if self._cancelled:
             return
-        self._record_failure(_("Could not normalise item: {error}").format(error=exc))
+        _log.info("an imported post could not be read: %s", str(exc)[:200])
+        self._record_failure(_("MyEditor couldn't read this post: import it from its link "
+                               "instead."))
 
     def _on_template_ready(
         self,
@@ -544,8 +553,8 @@ class ImportItemsJob(QObject):
         would be cut or empty and the post done for good, so it fails and
         can be tried again (CP3 review L2)."""
         if item.partial:
-            self._record_failure(_("Couldn't read this post's page, and its full text "
-                                   "isn't kept here."))
+            self._record_failure(_("This post's page couldn't be read, and its full text "
+                                   "isn't kept here: try again when the page is back."))
         else:
             self._publish_template_as_draft(template)
 
@@ -605,17 +614,10 @@ class ImportItemsJob(QObject):
             if self._cancelled:
                 return
             if outcome.failed:
-                total = outcome.mirrored + len(outcome.failed)
-                # "image(s)" in English for any count; other languages
-                # get the form their grammar needs.
-                text = ngettext(
-                    "{failed} of {total} image(s) couldn't be mirrored; "
-                    "originals kept.",
-                    "{failed} of {total} image(s) couldn't be mirrored; "
-                    "originals kept.",
-                    total,
-                )
-                self._emit_status(text.format(failed=len(outcome.failed), total=total))
+                # The draft keeps those at their own addresses: a partial
+                # outcome, for the log, never for words (lessons 36).
+                _log.info("%d of %d images of an imported post were not copied",
+                          len(outcome.failed), outcome.mirrored + len(outcome.failed))
             # The cover is rehosted with the body's images (it is in the
             # review dialog's list too, so the user can keep it at its
             # original address); otherwise the draft would still depend
@@ -675,7 +677,8 @@ class ImportItemsJob(QObject):
                 media=media,
             )
         except ValueError as exc:
-            self._record_failure(_("Could not build article: {error}").format(error=exc))
+            _log.info("an imported post could not be made a draft: %s", str(exc)[:200])
+            self._record_failure(_(NOT_A_DRAFT))
             return
 
         try:
@@ -693,7 +696,8 @@ class ImportItemsJob(QObject):
                 parent=self,
             )
         except ValueError as exc:
-            self._record_failure(_("Could not start draft job: {error}").format(error=exc))
+            _log.info("an imported post's draft could not be started: %s", str(exc)[:200])
+            self._record_failure(_(NOT_A_DRAFT))
             return
 
         self._current_job = job
@@ -746,7 +750,9 @@ class ImportItemsJob(QObject):
     def _on_draft_failed(self, reason: str) -> None:
         if self._cancelled:
             return
-        self._record_failure(reason)
+        # The draft job's one sentence (DraftPublishJob.words), its
+        # signer's own reason only where it has none (lessons 36).
+        self._record_failure(getattr(self._current_job, "words", "") or reason)
 
     def _already_imported(self, identifier: str) -> bool:
         """Report an item that already exists, and move on. Defensive: a

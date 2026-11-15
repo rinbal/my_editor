@@ -74,6 +74,7 @@ from PySide6.QtCore import QObject, Signal
 import url_safety
 from i18n import _
 
+from .. import failures
 from ..blossom.hashes import blob_url, url_agrees_with_hash
 from .filecrypto import FileCryptoError, decrypt_file
 from .scrub import ScrubError, scrub_for_publication
@@ -356,7 +357,8 @@ class PublicCopyMaker(QObject):
             # Two copies at once would race for the ledger and the
             # signer. Refusing is honest; queueing behind an operation
             # the caller cannot see is not.
-            self._refuse(blob, on_done, _("Another image is being shared right now. Try again in a moment."))
+            self._refuse(blob, on_done,
+                         _("Another image is being shared right now: try again in a moment."))
             return
 
         existing = self.existing_copy(blob)
@@ -456,7 +458,7 @@ class PublicCopyMaker(QObject):
                 blobs=None,
                 failures=[CopyResult(
                     source_hash="",
-                    reason=_("Another image is being shared right now. Try again in a moment."),
+                    reason=_("Another image is being shared right now: try again in a moment."),
                 )],
             ))
             return
@@ -615,7 +617,8 @@ class PublicCopyMaker(QObject):
         if not copy.urls:
             # Why the last server failed is a diagnostic, not news for
             # the person: what they can act on is that none had it.
-            self._fail(copy, _("This image couldn’t be downloaded from your media servers."))
+            self._fail(copy, _("This image couldn’t be downloaded from your media servers: "
+                               "check your internet connection and try again."))
             return
         url = copy.urls.pop(0)
         self.copy_progress.emit(copy.blob.sha256, CopyStage.FETCHING)
@@ -689,7 +692,7 @@ class PublicCopyMaker(QObject):
             self._fail(
                 copy,
                 _("Your media server didn’t answer as expected, so the image "
-                  "wasn’t shared."),
+                  "wasn’t shared: try again."),
             )
             return
 
@@ -703,7 +706,7 @@ class PublicCopyMaker(QObject):
             self._fail(
                 copy,
                 _("MyEditor couldn’t save its list of shared images, so the image "
-                  "wasn’t shared. It may be on your media server already."),
+                  "wasn’t shared: try again."),
             )
             return
 
@@ -713,10 +716,11 @@ class PublicCopyMaker(QObject):
         copy = self._active
         if copy is None or name != copy.job:
             return
-        # ``reason`` is already a plain sentence (the store's).
+        # ``reason`` is already the store's one sentence: what did not
+        # happen, then it (lessons 36).
         detail = _short(reason)
-        self._fail(copy, _("This image couldn’t be shared. {reason}").format(reason=detail)
-                   if detail else _("This image couldn’t be shared."))
+        self._fail(copy, failures.spoken(_("This image wasn’t shared"), detail)
+                   if detail else _("This image wasn’t shared: try again."))
 
     # -- step 7: the pointer, which is only ever a hint ---------------------
 

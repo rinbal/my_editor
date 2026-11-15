@@ -243,7 +243,7 @@ def test_no_room_anywhere_fails_plainly(tmp_path):
     store.upload_failed.connect(lambda n, r: failed.append(r))
     store.upload_failed_code.connect(lambda n, c: codes.append(c))
     store.upload_bytes(BODY, name="photo.png", mime_type="image/png")
-    assert failed and "enough space" in failed[0]
+    assert failed and "are full" in failed[0]
     assert codes == ["QUOTA_FULL"]
     assert len(nam.calls) == calls               # nothing left the machine
 

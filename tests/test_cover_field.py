@@ -126,8 +126,11 @@ def test_what_cannot_be_a_cover_is_said_and_changes_nothing(field, tmp_path):
     made.drop(str(notes))
     assert problems == ["Only a picture can be a cover."] and store.uploads == []
     made.drop(str(picture_file(tmp_path)))
-    store.upload_failed.emit(store.uploads[0][1], "No media server is set up.")
-    assert problems[-1] == "The picture was not uploaded: No media server is set up."
+    store.upload_failed.emit(store.uploads[0][1],
+                             "No media server is set up: add one in Media Servers.")
+    # Lessons 36: what did not happen, then the store's one sentence.
+    assert problems[-1] == ("The picture wasn’t uploaded. No media server is set up: add one "
+                            "in Media Servers.")
     assert made.text() == LIBRARY_URL and made.preview.text() != "Uploading…"
     alone = cover_field.CoverImageField()
     said = []

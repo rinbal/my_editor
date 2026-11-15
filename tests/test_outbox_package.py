@@ -59,6 +59,8 @@ NAMED_ELSEWHERE = {
     ("nostr", "bunker.py"): {"NIP46_RELAYS"},
     ("nostr", "einundzwanzig.py"): {"MEMBER_RELAY"},
     ("nostr", "imports", "constants.py"): {"NOSTRHUB_RELAYS"},
+    # The relay whose content cap STANDUP's contract names (12.5).
+    ("nostr", "signer_limits.py"): {"NAMED_CAPS"},
 }
 _RELAY_NAME = re.compile(r"wss?://([a-z0-9-]+(?:\.[a-z0-9-]+)+)", re.IGNORECASE)
 
@@ -106,7 +108,9 @@ def test_the_curated_lists_are_clean():
         assert all(policy.normalize_relay_url(u) == u for u in group)
     assert {u for u, _m in defaults.STARTER_LIST} <= set(defaults.FALLBACK_RELAYS)
     assert 2 <= len(defaults.STARTER_LIST) <= 4          # NIP-65 asks for a small list
-    # Found unreachable or paid when last qualified.
+    # When last qualified, nostr.oxtr.dev and relay.nostr.band did not
+    # connect, and theforest.nostr1.com's NIP-11 document says
+    # payment_required and lists fees (fetched again 2026-11-10).
     for gone in ("nostr.oxtr.dev", "relay.nostr.band", "theforest.nostr1.com"):
         assert all(gone not in u for u in defaults.FALLBACK_RELAYS + defaults.INDEXER_RELAYS
                    + defaults.SEARCH_RELAYS)
@@ -126,10 +130,13 @@ def test_people_are_searched_on_relays_that_offer_search():
 
 def test_pairing_relays_are_separate_from_home_relays():
     assert "wss://nostr.oxtr.dev" not in bunker.NIP46_RELAYS
+    # A relay that asks for payment meets no signer app either.
+    assert not any("theforest.nostr1.com" in url for url in bunker.NIP46_RELAYS)
     assert "sign_event:0" in bunker.DEFAULT_PERMS and "sign_event:10002" in bunker.DEFAULT_PERMS
     # Every kind the app signs is asked for when pairing, so a signer that
-    # enforces the list neither prompts nor refuses for media or feed sync.
-    for kind in (1, 30023, 31234, 27235, 24242, 10063, 30078, 10013):
+    # enforces the list neither prompts nor refuses for media or feed sync,
+    # nor for the seal of a message to a publication (NIP-59, kind 13).
+    for kind in (1, 30023, 31234, 27235, 24242, 10063, 30078, 10013, 13):
         assert f"sign_event:{kind}" in bunker.DEFAULT_PERMS
 
 
@@ -448,11 +455,15 @@ def test_one_accepting_relay_is_not_enough_and_the_refusals_are_named():
     base = signed(10002, [["r", "wss://a.com"]])
     everyone_but_a = set(defaults.INDEXER_RELAYS) | {"wss://m.com"}
     outcome = run(writer.add_relay(url="wss://m.com", **deps(
-        FakeQuery({10002: found(base)}), pool=FakePool(refuse=everyone_but_a))))
+        FakeQuery({10002: found(base)}),
+        pool=FakePool(refuse=everyone_but_a, reason="blocked: members only"))))
     assert outcome.status == writer.FAILED and outcome.cause == writer.CAUSE_RELAYS
     assert outcome.accepted == ("wss://a.com",)
-    assert ("wss://m.com", "blocked") in outcome.refused
-    assert "wss://m.com: blocked" in outcome.reason
+    assert ("wss://m.com", "blocked: members only") in outcome.refused
+    assert "wss://m.com: blocked: members only" in writer.failure_detail(outcome)   # Details
+    # The relays answered and turned it down: said as that, never by name.
+    assert writer.failure_words(outcome) == ("The servers your posts go to turned it down: "
+                                             "try again later.")
 
 
 def test_a_write_is_done_once_enough_relays_accept_it():
@@ -584,23 +595,74 @@ def test_a_retry_skips_the_steps_already_done():
 
 def test_a_retry_resends_the_same_signed_events():
     pool = FakePool(refuse=set(policy.dedupe_relays(
-        [u for u, _m in defaults.STARTER_LIST], defaults.INDEXER_RELAYS)))
+        [u for u, _m in defaults.STARTER_LIST], defaults.INDEXER_RELAYS)),
+        reason="rate-limited: slow down")
     client = FakeClient()
     setup = writer.AccountSetup(name="", deps={
         "pool": pool, "directory": directory(FakeQuery()),
         "session_pool": FakeSessionPool(client), "profile": Profile(),
         "query": FakeQuery(), "clock": lambda: NOW})
-    results = []
-    setup.finished.connect(lambda ok, msg: results.append(ok))
+    results, steps = [], []
+    setup.finished.connect(lambda ok, msg: results.append((ok, msg)))
+    setup.step.connect(lambda k, s, d: steps.append((k, s, d)))
     setup.start()
     settle(20)
-    assert results == [False]
+    # Lessons 36: said once, by its cause (the relays turned it down), with
+    # no relay named or counted, in the step or under it.
+    assert results == [(False, "The servers your posts go to turned it down: try again "
+                               "later.")]
+    assert ("relays", "error", "") in steps
     pool.refuse = set()
+    steps.clear()
     setup.start()
     settle(20)
-    assert results == [False, True]
+    assert [ok for ok, _msg in results] == [False, True]
     assert len(client.requests) == 1             # signed once, sent twice
+    assert ("relays", "done", "") in steps       # never how many took it
     assert pool.published[0][1]["id"] == pool.published[1][1]["id"]
+
+
+def test_a_profile_the_signer_did_not_sign_is_said_by_the_signer_sentence():
+    setup = writer.AccountSetup(name="Satoshi", deps={
+        "pool": FakePool(), "directory": directory(FakeQuery()),
+        "session_pool": FakeSessionPool(ProfileShyClient()), "profile": Profile(),
+        "query": FakeQuery(), "clock": lambda: NOW})
+    results, steps = [], []
+    setup.finished.connect(lambda ok, msg: results.append((ok, msg)))
+    setup.step.connect(lambda k, s, d: steps.append((k, s, d)))
+    setup.start()
+    settle(20)
+    assert results == [(False, "Your signer app ran into a problem: open it and try again.")]
+    assert ("profile", "error", "") in steps
+
+
+@pytest.mark.parametrize("outcome, words", [
+    (writer.WriteOutcome(writer.UNKNOWN_BASE, cause=writer.CAUSE_RELAYS),
+     "Check your internet connection and try again."),
+    (writer.WriteOutcome(writer.FAILED, cause=writer.CAUSE_RELAYS,
+                         refused=(("wss://a.com", "no answer"),)),
+     "Check your internet connection and try again."),
+    (writer.WriteOutcome(writer.FAILED, cause=writer.CAUSE_RELAYS,
+                         refused=(("wss://a.com", "no answer"), ("wss://b.com", "blocked: no"))),
+     "The servers your posts go to turned it down: try again later."),
+    (writer.WriteOutcome(writer.FAILED, cause=writer.CAUSE_SIGNER, reason="user rejected"),
+     "Your signer app declined the request: allow it there and try again."),
+    (writer.WriteOutcome(writer.FAILED, cause=writer.CAUSE_SIGNER,
+                         reason="timed out waiting for signer"),
+     "Your signer app didn’t answer: open it and try again."),
+    (writer.WriteOutcome(writer.FAILED, cause=writer.CAUSE_CLOCK),
+     "The version on the network is dated ahead of this computer’s clock: let this computer "
+     "set its date and time automatically, then try again."),
+    (writer.WriteOutcome(writer.FAILED, cause=writer.CAUSE_CHANGED),
+     "It was changed on another device in the meantime: try again to start from that "
+     "version."),
+    (writer.WriteOutcome(writer.FAILED, cause=writer.CAUSE_INVALID),
+     "MyEditor can’t make this change to the version on the network: make it in the app "
+     "you set it up with."),
+])
+def test_a_change_not_made_is_one_sentence_by_its_cause(outcome, words):
+    assert writer.failure_words(outcome) == words
+    assert "wss://" not in words
 
 
 def finish_later(query, client, pool=None):

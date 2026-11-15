@@ -377,8 +377,9 @@ class MembershipController(QObject):
 
         def finished(outcome: str) -> None:
             if window is self.window:
-                window.set_relay_result(outcome_message(outcome), done=outcome in DONE,
-                                        offer_list=outcome == NO_LIST)
+                window.set_relay_result(outcome_message(outcome, job.write,
+                                                        not_done=job.NOT_DONE),
+                                        done=outcome in DONE, offer_list=outcome == NO_LIST)
             job.deleteLater()
 
         job.finished.connect(finished)
@@ -396,8 +397,7 @@ class MembershipController(QObject):
         if profile is None or _key(profile.user_pubkey) != _key(window.pubkey):
             # The window speaks for an account no longer active: nothing is
             # written, and the window says so instead of waiting.
-            window.set_profile_address_result(
-                profile_address.outcome_message(profile_address.FAILED))
+            window.set_profile_address_result(profile_address.inactive_message())
             return
         pubkey = profile.user_pubkey
         job = self._profile_address_job(profile, address)
@@ -405,7 +405,7 @@ class MembershipController(QObject):
         def finished(outcome: str) -> None:
             if window is self.window and _key(window.pubkey) == _key(pubkey):
                 window.set_profile_address_result(
-                    profile_address.outcome_message(outcome),
+                    profile_address.outcome_message(outcome, job.write),
                     done=outcome in profile_address.DONE)
             if outcome == profile_address.SHOWN:
                 self.profile_published.emit(pubkey)

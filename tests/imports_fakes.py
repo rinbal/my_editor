@@ -168,14 +168,17 @@ class FakePublishJob(QObject):
         self.kwargs = kwargs
         self.cancelled = False
         self._outcome = outcome
+        self.words = ""
 
     def start(self):
-        kind, payload = self._outcome
+        kind, payload, *words = self._outcome
         if kind == "ok":
             self.signed.emit({"id": "ev-" + self.identifier, "kind": 31234})
             self.stashed.emit(self.identifier, "ev-" + self.identifier, 1234)
             self.completed.emit(payload)
         elif kind == "fail":
+            # ("fail", reason, words): DraftPublishJob's one sentence too.
+            self.words = words[0] if words else ""
             self.failed.emit(payload)
         # "pending": never settles; used by cancellation tests.
 

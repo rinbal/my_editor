@@ -238,15 +238,17 @@ class PublishedList(QObject):
       deletion_not_taken(object, list)
                                       no relay took it; ``try_again`` sends
                                       it again, ``dismiss`` lets it be
-      deletion_refused(object, str)   the signer did not sign (the item,
-                                      why); ``try_again`` asks again
+      deletion_refused(object, str, str)
+                                      the signer did not sign (the item,
+                                      the sentence to show, the reason for
+                                      Details); ``try_again`` asks again
     """
 
     changed = Signal()
     deletion_status = Signal(object, str)
     deletion_done = Signal(object, list)
     deletion_not_taken = Signal(object, list)
-    deletion_refused = Signal(object, str)
+    deletion_refused = Signal(object, str, str)
 
     def __init__(self, *, relay_pool, relay_directory, session_pool,
                  entitled_relays: Optional[Callable[[], Sequence[str]]] = None,
@@ -693,7 +695,7 @@ class PublishedList(QObject):
         self._drop_job(event_id)
         self._deleting[event_id] = NOT_DELETED
         self.changed.emit()
-        self.deletion_refused.emit(item, reason)
+        self.deletion_refused.emit(item, job.failure_words, reason)
 
     def _drop_job(self, event_id: str) -> None:
         job = self._jobs.pop(event_id, None)

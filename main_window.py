@@ -21,14 +21,14 @@ from send2trash import send2trash
 import shiboken6
 from PySide6.QtCore import (
     QBuffer, QByteArray, QDateTime, QEvent, QIODevice, QObject, Qt, QLocale,
-    QMarginsF, QSize,
+    QSize,
     QTimer,
     QUrl, QFileSystemWatcher, QMimeData,
 )
 from PySide6.QtNetwork import QLocalServer
 from PySide6.QtGui import (
     QAction, QActionGroup, QKeySequence, QTextCursor, QTextDocument, QTextCharFormat, QColor,
-    QImage, QPageLayout, QPageSize, QPixmap, QGuiApplication, QDesktopServices, QFontMetrics,
+    QImage, QPixmap, QGuiApplication, QDesktopServices, QFontMetrics,
     QTextImageFormat
 )
 from PySide6.QtPrintSupport import QPrintDialog, QPrintPreviewDialog
@@ -47,6 +47,7 @@ from constants import (
 from widgets import ElidedLabel, FindBar, LineNumberGutter, UpdateButton
 from document_notice import CAUTION, DocumentNotice
 import format_icons
+import segmented_control
 from format_toolbar import FormatToolbar, tooltip_for
 from selection_bar import SelectionBar
 from speech import Speech
@@ -130,7 +131,7 @@ from updater import (
     sweep_stale_downloads,
 )
 from alerts import (
-    CANCEL, DEFAULT, DESTRUCTIVE, NORMAL, Button, ask,
+    CANCEL, DEFAULT, DESTRUCTIVE, NORMAL, Button, ask, ask_try_again,
     confirm_destructive, inform,
 )
 from update_dialog import UpdateDialog, WhatsNewDialog
@@ -238,6 +239,7 @@ from nostr.ui.reference_popover import ReferencePopover
 from nostr.ui.article_details_panel import ArticleDetailsPanel, DEFAULT_WIDTH as ARTICLE_DETAILS_WIDTH
 from nostr.ui.article_headers import ArticleHeaders
 from nostr import refs
+from nostr.failures import CHECK_CONNECTION, spoken as failure_spoken
 from nostr.blossom.errors import friendly_message
 from nostr.blossom.names import MediaNames
 from nostr.blossom.hashes import hash_from_url
@@ -246,7 +248,7 @@ from nostr.media_server_list import publish_server_list, server_list_tags
 from nostr.outbox import writer as outbox_writer
 from nostr.profile_editing import ProfileEditing
 from nostr.relay import NOT_CHOSEN
-from nostr.relay_auth import DECLINED, AccountSignIn
+from nostr.relay_auth import AccountSignIn
 from nostr.state import NostrState
 from nostr.ui.cover_field import MediaServices
 from nostr.ui.profile_window import ProfileWindow
@@ -255,6 +257,7 @@ from nostr.blossom.plan import get_effective_max_file
 from nostr.blossom.server_list import UserServerList
 from nostr.blossom.store import MediaFile, MediaStore
 from nostr.bunker import BunkerSessionPool
+from nostr.relay_caps import RelayCapsReader
 from nostr.contacts import ContactListFetcher
 from nostr.draft_store import DraftState, DraftStore
 from nostr.draft_deletions import DraftDeletions
@@ -274,10 +277,11 @@ from nostr.imports.constants import SOURCE_TAG as IMPORT_SOURCE_TAG
 from nostr.article_details import (
     ArticleDetails, default_title, front_matter_with)
 from nostr.first_publications import FirstPublications
+from nostr.standup.link_names import LinkNameLock, SubmittedMarks
+from nostr.standup.servers import configured_server
 from nostr.drafts import (
     INNER_KIND_LONG_FORM,
     INNER_KIND_SHORT_NOTE,
-    MAX_INNER_PAYLOAD_BYTES,
     SUPPORTED_INNER_KINDS,
     build_inner_event,
     serialize_inner_event,
@@ -286,28 +290,33 @@ from nostr.known_people import KnownPeople, Person
 from nostr.media.assets import ASSET_SCHEME, AssetState, asset_key, parse_asset_key
 from nostr.imports.sources.nostr import RelayQueryAdapter
 from nostr.media.manager import MAX_MEDIA_BYTES, AssetManager
-from nostr.media.media_visibility import MediaVisibility
+from nostr.media.media_visibility import PRIVATE, MediaVisibility
 from nostr.media.private_library import PrivateLibrary
 from nostr.media.upload_wait import UploadWait
 from nostr.media.publish_copy import PublicCopyMaker
 from nostr.media.visibility import PublicLedger
-from nostr.metadata import AvatarLoader, ProfileMetadataFetcher, can_receive_zaps
+from nostr.metadata import AvatarLoader, ProfileMetadataFetcher, can_receive_zaps, zap_address
+from nostr.ui.standup_names import ProfileNames
 from nostr.outbox.directory import RelayDirectory
 from nostr.profiles import Profile, ProfileStore, short_npub
+from nostr.publish_pipeline import answers_detail, kept_by_relay, not_taken_words
 from nostr.publisher import (
+    DRAFT_NOT_SAVED,
     DraftBulkDeleteJob,
     DraftPublishJob,
     PublishedMedia,
+    draft_size_problem,
     file_link_names,
     library_audio_video_in,
     slugify,
 )
 from nostr.relay import RelayPool
 from nostr.search import Nip50SearchClient
+from nostr.signer_limits import size_detail
 from nostr.ui.connect_dialog import ConnectDialog
 from nostr.ui.profile_chip import ProfileChip
 from nostr.ui.draft_conflict_banner import DraftConflictBanner
-from nostr.ui.drafts_panel import DEFAULT_PANEL_WIDTH, DraftsPanel
+from nostr.ui.drafts_panel import DraftsPanel
 from nostr.draft_relays import PrivateDraftRelays
 from nostr.published import PublishedList
 from nostr.ui.draft_relays_sheet import DraftRelaysSheet
@@ -320,6 +329,15 @@ from nostr.ui.media_library_dialog import MediaLibraryDialog, format_size
 from nostr.ui.media_saver import MediaSaver, save_failure, saves_failure
 from nostr.ui.media_servers_dialog import MediaServersDialog
 from nostr.ui.publish_article_dialog import PublishArticleDialog
+from nostr.standup import drafting
+from nostr.ui.standup_submit import StandupWriter, thumbnail
+from nostr.ui.signer_approval import SignerApprovals
+from nostr.ui.standup_publications import PublicationLogos
+from nostr.ui.standup_submit_sheet import SubmitSheet
+from nostr.ui.submission_pill import SubmissionPill
+from nostr.ui.submissions_host import Ports as SubmissionPorts, SubmissionsHost
+from nostr.ui.submissions_view import PANEL_VIEW as SUBMISSIONS_VIEW
+from nostr.ui.submissions_view import SubmissionsView, add_to_panel as add_submissions_view
 from nostr.ui.publish_copy_dialog import resolve_pick
 from nostr.ui.publish_note_dialog import PublishNoteDialog
 from nostr.ui.save_destination_dialog import SaveDestination, SaveDestinationDialog
@@ -550,10 +568,14 @@ class MainWindow(QMainWindow):
         # over the documents, and in sight whatever the tab or the toolbar.
         self.update_button = UpdateButton()
         self.update_button.update_theme(self.is_dark_theme)
+        # The status of the article in front, where it is submitted by the
+        # account in use (plan 10.4): beside the tabs, and only then.
+        self.submission_pill = SubmissionPill(is_dark=self.is_dark_theme)
         corner = QWidget()
         corner_row = QHBoxLayout(corner)
         corner_row.setContentsMargins(0, 0, 4, 0)
         corner_row.setSpacing(6)
+        corner_row.addWidget(self.submission_pill)
         corner_row.addWidget(self.update_button)
         corner_row.addWidget(self.plus_btn)
         corner_row.addWidget(self.profile_chip)
@@ -671,15 +693,25 @@ class MainWindow(QMainWindow):
         # Keys kept on this computer, for accounts that chose that over a
         # signer app (Create Account, Restore Account).
         self._key_vault = KeyVault()
+        # What a signer connection's relays carry is read as it reattaches
+        # (contract 12.5), so no request is longer than they take.
         self._session_pool = BunkerSessionPool(self._relay_pool, parent=self,
-                                               vault=self._key_vault)
+                                               vault=self._key_vault,
+                                               relay_caps=RelayCapsReader(parent=self))
+        # An approval a paired signer app asks for in a browser: opened
+        # once when it is safe, and said once in the status bar (audit F8).
+        self._signer_approvals = SignerApprovals(
+            lambda text: self.status.showMessage(text, 8000, nostr=True), parent=self)
+        self._session_pool.auth_challenge.connect(self._signer_approvals.asked)
         # A relay of the account's own that asks for a sign-in (NIP-42)
         # gets one, signed by the account's signer; no other relay does.
         self._relay_pool.sign_in = AccountSignIn(
             profile=lambda: self._profile_store.default(),
             session_pool=self._session_pool, directory=self._relay_directory,
             entitled=self._entitled_relays)
-        self._relay_pool.signing_in.connect(self._on_relay_signing_in)
+        # A sign-in to one relay that did not work is a partial failure,
+        # said nowhere (lessons 36): what it kept from working says so
+        # itself, once, if nothing else could do it.
         self._relay_pool.sign_in_failed.connect(self._on_relay_sign_in_failed)
         # Creating, restoring, backing up and signing out of accounts, and
         # telling the network about a new one (nostr/account_controller.py).
@@ -707,6 +739,10 @@ class MainWindow(QMainWindow):
         # The own-profile chip refresh is still triggered explicitly so we can
         # also flip the menu if the active profile's avatar landed.
         self._avatars.avatar_added.connect(self._on_avatar_added)
+        # Publications' logos, by address, only from the STANDUP server's
+        # /api/avatars (contract 12.9): a loader of their own, so a logo
+        # never lands among the people's avatars (F5 M5).
+        self._publication_logos = PublicationLogos(AvatarLoader(parent=self).fetch, parent=self)
 
         # Mentions infrastructure: cached known people, NIP-50 search,
         # background contact-list fetcher. All process-wide singletons.
@@ -732,6 +768,9 @@ class MainWindow(QMainWindow):
         # When the articles published from here first went out, for when
         # the relays cannot tell (an edit keeps that date).
         self._first_publications = FirstPublications()
+        # The texts submitted from here, per account: their link names
+        # stay after a restart too (RG-M2r2a 1).
+        self._submitted_marks = SubmittedMarks()
         self._draft_sync = DraftSync(
             relay_pool=self._relay_pool,
             relay_directory=self._relay_directory,
@@ -952,6 +991,9 @@ class MainWindow(QMainWindow):
             # warm so opening the panel later is instant.
             self._draft_sync.start_for(active)
             self._draft_deletions.start_for(active)
+            # Its submissions are followed from the start (plan 10.4), once
+            # the window is up: the list read, the lookup without a signer.
+            QTimer.singleShot(0, self._follow_submissions)
             # An account created here whose setup was left for later is
             # finished now, once the window is up.
             QTimer.singleShot(0, lambda: self._accounts.profile_activated(
@@ -1812,6 +1854,8 @@ class MainWindow(QMainWindow):
         self._update_knit_actions()
         self._update_print_actions()
         self._update_zoom_commands()
+        self._update_submit_command()
+        self._update_submission_pill()
         # The note a file viewer's Insert into Note goes to: the one in
         # front last.
         front = self.current_editor()
@@ -2809,6 +2853,13 @@ class MainWindow(QMainWindow):
             Command("nostr.publish_article", _("Publish as Article…"), NOSTR,
                     "Ctrl+Shift+A", nostr=True, listed_as=_("Publish as article"), keywords=("long", "blog")),
             triggered=self._on_nostr_publish_article)
+        # The article, end to end encrypted, to a STANDUP publication's
+        # editorial team: enabled for a written text (see _update_submit_command).
+        self.act_nostr_submit = add(
+            Command("nostr.submit_publication", _("Submit to a Publication…"), NOSTR,
+                    nostr=True, listed_as=_("Submit to a publication"),
+                    keywords=("standup", "editorial", "redaktion")),
+            triggered=self._on_nostr_submit_publication)
         # Media (Blossom) - browse the user's uploaded blobs, upload new
         # ones, or insert one into the current document at the cursor.
         self.act_nostr_media = add(
@@ -2869,6 +2920,15 @@ class MainWindow(QMainWindow):
                     listed_as=_("Show what you published"),
                     keywords=(_("notes"), _("articles"), _("published"))),
             triggered=self._on_show_published)
+        # Its third view: what the account handed in to publications, and
+        # their answers. Offered only where the view is (a server's address
+        # is set, _offer_submitting). Y: no other letter of its name is
+        # free with Shift-Command on a Mac and Ctrl+Shift elsewhere.
+        self.act_nostr_submissions = add(
+            Command("nostr.submissions", _("Submissions"), NOSTR, "Ctrl+Shift+Y", nostr=True,
+                    listed_as=_("Show what you submitted"),
+                    keywords=("standup", "editorial", "redaktion")),
+            triggered=self._on_show_submissions)
         # The Drafts panel's view reads again (its title follows the view
         # shown). In the menu bar, where every command of the app is listed,
         # and in the panel's action menu; each platform's own key for it.
@@ -3216,6 +3276,8 @@ class MainWindow(QMainWindow):
         m_nostr = self.menuBar().addMenu("&Nostr")
         m_nostr.addAction(self.act_nostr_publish_note)
         m_nostr.addAction(self.act_nostr_publish_article)
+        m_nostr.addAction(self.act_nostr_submit)
+        m_nostr.aboutToShow.connect(self._update_submit_command)
         m_nostr.addSeparator()
         m_nostr.addAction(self.act_nostr_media)
         m_nostr.addAction(self.act_nostr_insert_image)
@@ -3226,6 +3288,7 @@ class MainWindow(QMainWindow):
         m_nostr.addSeparator()
         m_nostr.addAction(self.act_nostr_drafts)
         m_nostr.addAction(self.act_nostr_published)
+        m_nostr.addAction(self.act_nostr_submissions)
         m_nostr.addAction(self.act_refresh_drafts)
         m_nostr.addAction(self.act_draft_relays)
         m_nostr.addAction(self.act_nostr_imports)
@@ -3395,6 +3458,24 @@ class MainWindow(QMainWindow):
         self._published_view.set_preview_image_loader(self._media_image_loader)
         self._published_view.set_preview_pictures(self._text_picture, self._web_images.ready)
         add_published_view(self._drafts_panel, self._published_view)
+        # Einreichungen, the third view: what the account in use submitted
+        # to publications, and each one's detail (plan 10.4).
+        # The editors and the people taking part by their profiles' names
+        # (M-4), read once each, after the ones this window knows.
+        self._profile_names = ProfileNames.on_relays(
+            self._relay_pool, self._relay_directory, known=self._known_name, parent=self)
+        self._submissions_view = SubmissionsView(
+            name_of=self._profile_names.name, avatar_of=self._avatars.get,
+            is_dark=self.is_dark_theme, logo_of=self._publication_logos.get)
+        self._offer_submitting(add_submissions_view(
+            self._drafts_panel, self._submissions_view, server=configured_server()))
+        self._submissions_view.unread_changed.connect(self._on_submissions_unread)
+        self._submissions = SubmissionsHost(self._submission_ports(),
+                                            view=self._submissions_view,
+                                            pill=self.submission_pill,
+                                            name_of=self._profile_names.name, parent=self)
+        self._publication_logos.changed.connect(self._submissions.logo_arrived)
+        self._profile_names.learned.connect(self._submissions.names_learned)
         self._drafts_panel.view_changed.connect(self._follow_account_in_published)
         self._drafts_panel.view_changed.connect(self._update_refresh_command)
         self._published_view.open_requested.connect(self._on_published_open)
@@ -3430,6 +3511,7 @@ class MainWindow(QMainWindow):
         self._article_details_panel.changed.connect(
             lambda details: self._set_article_details(self.current_editor(), details))
         self._article_details_panel.cover_uploaded.connect(self._cover_uploaded_for)
+        self._article_details_panel.check_link_name.connect(self._check_link_name)
         # An article's cover, title and summary on its page (decision 1 of
         # the Article Details review), for the tabs that are articles.
         self._article_headers = ArticleHeaders(
@@ -3454,7 +3536,7 @@ class MainWindow(QMainWindow):
             default_width=ARTICLE_DETAILS_WIDTH, on_fold=self._article_details_folded)
         self._side_panels.register(
             DRAFTS_PANEL, self._drafts_panel, side=RIGHT, collapse_rank=1,
-            default_width=DEFAULT_PANEL_WIDTH, on_fold=self._drafts_folded)
+            default_width=self._drafts_panel.default_width(), on_fold=self._drafts_folded)
 
         self.setCentralWidget(self._central_splitter)
         # The panels' headers line up with the toolbar and the tab row,
@@ -3504,7 +3586,10 @@ class MainWindow(QMainWindow):
         theirs there). Each is checked while its pane is open and names
         its key in its tooltip; the menus and the keys do the same. Both
         panes are Nostr's, so the toggles are there only while a Nostr
-        account is in use."""
+        account is in use. While the Drafts panel is closed and a
+        submission holds something not read yet, its toggle carries the
+        dot the panel's Einreichungen tab shows."""
+        self._submissions_unread = False
         group = QWidget()
         row = QHBoxLayout(group)
         row.setContentsMargins(0, 0, 0, 0)
@@ -3541,7 +3626,18 @@ class MainWindow(QMainWindow):
             return
         ink = QColor(DARK_FG if self.is_dark_theme else LIGHT_FG)
         self.act_article_details.setIcon(format_icons.inspector(ink))
-        self._drafts_toggle.setIcon(format_icons.drafts(ink))
+        # Something unread waits in the closed panel: the tab's own dot.
+        marked = self._submissions_unread and not self._drafts_toggle.isChecked()
+        mark = segmented_control.colors(self.is_dark_theme).mark if marked else None
+        self._drafts_toggle.setIcon(format_icons.drafts(ink, mark))
+        # A screen reader hears what the dot says, as at the tab.
+        self._drafts_toggle.setAccessibleName(
+            f'{_("Drafts")}, {_("New")}' if marked else _("Drafts"))
+
+    def _on_submissions_unread(self, unread: bool) -> None:
+        """Something in Einreichungen is unread now, or nothing any more."""
+        self._submissions_unread = unread
+        self._paint_pane_toggles()
 
     def _on_drafts_toggle(self) -> None:
         """The toolbar's Drafts toggle: the panel away whichever view it
@@ -3549,6 +3645,10 @@ class MainWindow(QMainWindow):
         if self._drafts_panel.isVisible():
             self._hide_drafts_panel()
         else:
+            if self._submissions_unread:
+                # Its dot says something new waits in Einreichungen: the
+                # panel opens there, not at the view it showed last.
+                self._drafts_panel.show_view(SUBMISSIONS_VIEW)
             self._show_drafts_panel()
 
 
@@ -4968,13 +5068,16 @@ class MainWindow(QMainWindow):
         why) when a picture of it cannot be found."""
         assets, missing = self._local_objects(ed)
         if missing:
-            inform(self, title=ngettext("A picture can’t be found",
-                                        "{count} pictures can’t be found",
-                                        len(missing)).format(count=len(missing)),
-                   message=_("“{name}” is not on this computer any more. Insert it again, "
-                             "or delete it, to go on.").format(name=missing[0]), nostr=True)
+            self._say_pictures_missing(missing)
             return None
         return assets
+
+    def _say_pictures_missing(self, missing) -> None:
+        inform(self, title=ngettext("A picture can’t be found",
+                                    "{count} pictures can’t be found",
+                                    len(missing)).format(count=len(missing)),
+               message=_("“{name}” is not on this computer any more. Insert it again, "
+                         "or delete it, to go on.").format(name=missing[0]), nostr=True)
 
     def _agree_to_upload(self, assets, *, draft: bool) -> bool:
         count = len(assets)
@@ -5066,7 +5169,7 @@ class MainWindow(QMainWindow):
         if waits:
             self.status.clearMessage()
 
-    def _publish_payload(self, ed, flavor: str) -> tuple[str, list]:
+    def _publish_payload(self, ed, flavor: str, *, keep_local: bool = False) -> tuple[str, list]:
         """Document text for a signed event, plus what its media is.
 
         toPlainText() emits U+FFFC for every image, so a published note
@@ -5086,7 +5189,9 @@ class MainWindow(QMainWindow):
         rewritten either way; the only effect is whether the image gets
         described. A picture beside the document's file goes out at the
         address publishing uploaded it to (_asset_named), its name in the
-        document unchanged.
+        document unchanged. With ``keep_local`` a file on this computer only
+        is written as its asset key (a submission encrypts and uploads it
+        itself, drafting.py) instead of being left out.
         """
         records: dict = {}
 
@@ -5119,9 +5224,13 @@ class MainWindow(QMainWindow):
                 if asset is not None:
                     remember(asset, name, fmt)
                 return name
-            if asset is None or not asset.is_uploaded:
+            if asset is None:
                 return None
-            url = _published_address(asset)
+            # The #wide stays in the text, as it does on a web address.
+            wide = photo_group.WIDE_SUFFIX if photo_group.is_wide(name) else ""
+            if not asset.is_uploaded:
+                return asset.key + wide if keep_local else None
+            url = _published_address(asset) + wide
             remember(asset, url, fmt)
             return url
 
@@ -5716,6 +5825,9 @@ class MainWindow(QMainWindow):
 
     def _on_notice_action(self, ed, key: str) -> None:
         """An action of the notice over ``ed`` (document_notice.py)."""
+        host = getattr(self, "_submissions", None)
+        if host is not None and host.notice_acted(ed, key):
+            return                              # Ansehen: the submission's detail
         if key == "revert":
             self._revert_to_disk(ed)
         elif key == "save_as":
@@ -7269,7 +7381,8 @@ class MainWindow(QMainWindow):
         "view.line_numbers", "view.syntax_highlighting", "view.paper_mode", "view.toolbar",
         "view.highlight_line", "view.write", "view.preview", "view.split",
         "edit.footnote_jump", "nostr.publish_note", "nostr.publish_article",
-        "nostr.insert_image", "nostr.insert_mention", "nostr.insert_reference",
+        "nostr.submit_publication", "nostr.insert_image", "nostr.insert_mention",
+        "nostr.insert_reference",
         "nostr.insert_audio_video"})
     _DOCUMENT_PREFIXES = ("format.", "insert.")
 
@@ -8182,6 +8295,8 @@ class MainWindow(QMainWindow):
         if getattr(self, "_drafts_panel", None) is not None:
             self._drafts_panel.apply_theme(self.is_dark_theme)
             self._published_view.apply_theme(self.is_dark_theme)
+            if getattr(self, "_submissions", None) is not None:
+                self._submissions.apply_theme(self.is_dark_theme)
         if getattr(self, "_article_details_panel", None) is not None:
             self._article_details_panel.set_dark(self.is_dark_theme)
             self._article_headers.set_dark(self.is_dark_theme, self._all_editors())
@@ -8842,6 +8957,11 @@ class MainWindow(QMainWindow):
         # file goes; nothing still on its way goes into a document, nor a
         # phrase still being dictated.
         self._media_saver.cancel()
+        # What was read of the submissions is written when leaving (13).
+        following = self._standup_writer.followed(self._profile_store.default()) \
+            if getattr(self, "_standup_writer", None) is not None else None
+        if following is not None:
+            following.leaving()
         dictating = getattr(self, "_dictating", None)
         if dictating is not None:
             dictating[0].shutdown()
@@ -9031,6 +9151,8 @@ class MainWindow(QMainWindow):
             enabled = active
             if command.id in self._LOCAL_KEY_COMMANDS:
                 enabled = active and current is not None and current.is_local
+            elif command.id == "nostr.submit_publication":
+                enabled = active and bool(self._can_be_an_article(self.current_editor()))
             if dimmed and self._is_document_command(command.id):
                 kept[command.id] = enabled
             else:
@@ -9156,19 +9278,13 @@ class MainWindow(QMainWindow):
 
     # -- relays that ask for a sign-in (NIP-42) -------------------------------
 
-    def _on_relay_signing_in(self, relay: str) -> None:
-        self.status.showMessage(_("Signing in to {relay}…").format(relay=relay), 5000, nostr=True)
-
     def _on_relay_sign_in_failed(self, relay: str, reason: str, answered: bool) -> None:
-        if reason == NOT_CHOSEN:
-            return
-        if answered:
-            text = _("{relay} didn’t accept your sign-in.")
-        elif reason == DECLINED:
-            text = _("{relay} asks you to sign in, and your signer app declined.")
-        else:
-            text = _("Couldn’t sign in to {relay}.")
-        self.status.showMessage(text.format(relay=relay), 8000, nostr=True, error=True)
+        """Counted for the log, never for words (lessons 36): which relay,
+        and why, is no business of the person writing."""
+        if reason != NOT_CHOSEN:
+            logging.getLogger(__name__).info(
+                "sign-in to %s did not work (%s, %s)", relay, reason[:200],
+                "refused" if answered else "not done")
 
     # -- association membership --------------------------------------------
 
@@ -9502,8 +9618,21 @@ class MainWindow(QMainWindow):
         # The membership window speaks for one identity; never show one
         # account's membership, invoice or name to another.
         self._membership.close_window()
+        # Submissions on their way stop answering; the media keys and the
+        # list of submissions go, what was read is written first (13).
+        if getattr(self, "_standup_writer", None) is not None:
+            self._standup_writer.stop()
+        # And nothing of its submissions stays on screen: the list, the
+        # pill, a notice, a compare (criterion 19).
+        if getattr(self, "_submissions", None) is not None:
+            self._submissions.account_stopped()
 
     def _on_nostr_select_profile(self, profile: Profile):
+        if getattr(self, "_signing_out", False):
+            # The account being left is let go first (its read state is
+            # written with its signer): the switch waits for that.
+            self._switch_after_sign_out = profile
+            return
         previous = self._profile_store.default()
         leaving = previous is not None and (
             previous.user_pubkey.lower() != profile.user_pubkey.lower()
@@ -9533,18 +9662,55 @@ class MainWindow(QMainWindow):
 
     def _on_nostr_sign_out(self):
         active = self._profile_store.default()
-        # The controller asks, then forgets every key kept for the account,
-        # its signer and its profile.
-        if active is None or not self._accounts.sign_out(active):
+        # The controller asks first; nothing is let go before the person
+        # agrees, and a second Sign Out while one waits asks nothing.
+        if active is None or getattr(self, "_signing_out", False) \
+                or not self._accounts.confirm_sign_out(active):
+            return
+        # What the account read of its submissions is written with its
+        # signer (13), so the submission writer stops first and the
+        # account is forgotten once that is written, or its 5 seconds
+        # passed (RG-M2r 8).
+        self._signing_out = True
+        self._switch_after_sign_out = None
+        writer = getattr(self, "_standup_writer", None)
+        if writer is None:
+            self._finish_sign_out(active)
+        else:
+            # Up to 5 seconds: said, and a second Sign Out or a switch of
+            # account waits for it (RG-M2r2a 6).
+            self.status.showMessage(_("Signing Out…"), 0, nostr=True)
+            writer.stop(on_written=lambda: self._finish_sign_out(active))
+
+    def _finish_sign_out(self, active: Profile) -> None:
+        self._signing_out = False
+        waiting, self._switch_after_sign_out = getattr(self, "_switch_after_sign_out",
+                                                       None), None
+        if self.status.currentMessage() == _("Signing Out…"):
+            self.status.clearMessage()
+        # Only the account still in use is torn down here: one connected
+        # meanwhile let the signed-out one go as it came in.
+        current = self._profile_store.default()
+        still = current is not None and current.user_pubkey.lower() == \
+            active.user_pubkey.lower()
+        # Every key kept for the account, its signer and its profile.
+        if not self._accounts.forget_account(active):
             return
         self._avatars.pop(active.user_pubkey, None)
         self._update_profile_chip()
         self._refresh_profile_chip_menu()
+        if not still:
+            return
         # Tear down everything scoped to the account just removed. If
         # another profile remains, the caller (or chip menu) can re-bind
         # to it; otherwise the panel falls back to its "Connect a Nostr
         # profile" empty state.
         self._release_identity_state()
+        chosen = self._profile_store.get(waiting.user_pubkey) if waiting is not None else None
+        if chosen is not None:
+            # The switch asked for while it waited binds everything to it.
+            self._on_nostr_select_profile(chosen)
+            return
         remaining = self._profile_store.default()
         if self._drafts_panel is not None:
             self._drafts_panel.set_active_profile(remaining)
@@ -9710,8 +9876,26 @@ class MainWindow(QMainWindow):
             made = (self._link_name_for_file(self.current_path(), profile.user_pubkey)
                     if not details.identifier and profile is not None else "")
             panel.show_article(details, fixed_identifier=fixed, kept_in_file=details.kept,
-                               document=ed, made_identifier=made)
+                               document=ed, made_identifier=made,
+                               link_name_lock=self._link_name_lock(profile, details.identifier))
             panel.set_derived_title(self._derived_title_of(ed))
+
+    def _link_name_lock(self, profile, d: str) -> LinkNameLock:
+        """Whether the text ``d`` keeps its link name for its submissions:
+        held by a run, the list or this computer's mark; while an account
+        is in use and none tells, the list is read and the name stays
+        read-only until it answers (RG-M2r2a 1)."""
+        if profile is None or not d:
+            return LinkNameLock()
+        # The default account is the one in use (NostrState).
+        state = getattr(self, "nostr_state", None)
+        in_use = bool(state is not None and state.active)
+        return self._standup().link_name(profile, d, in_use=in_use)
+
+    def _check_link_name(self) -> None:
+        profile = self._profile_store.default()
+        if profile is not None:
+            self._standup().check_link_name(profile)
 
     def _derived_title_of(self, ed) -> str:
         """The title ``ed``'s article publishes with while none is set: its
@@ -9719,6 +9903,8 @@ class MainWindow(QMainWindow):
         return default_title(self._publish_payload(ed, "markdown")[0], self._preview_name)
 
     def _on_document_changed_for_article(self, ed) -> None:
+        if ed is self.current_editor():
+            self._update_submission_pill(typing=True)
         panel = self._article_details_panel
         shown = (panel.isVisible() and panel.shows_article()
                  or self._article_headers.header_of(ed) is not None)
@@ -9738,19 +9924,30 @@ class MainWindow(QMainWindow):
         account is in use, for a written document that is an article (an
         article's draft, a published article, details set in the tab, or
         Article Details open on it). A note never; code never."""
+        if not self._can_be_an_article(ed):
+            return False
+        if getattr(ed, "_draft_binding", None) is not None:
+            return True                             # an article's draft (a note's cannot be one)
+        if self._published_article_of(ed) is not None:
+            return True
+        own = tab_details.details_of(ed)
+        # Its link name too: a text submitted keeps it, and stays the
+        # article its submission is about once Article Details is closed.
+        if own is not None and (own.title or own.summary or own.image or own.identifier):
+            return True
+        return ed is self.current_editor() and self.act_article_details.isChecked()
+
+    def _can_be_an_article(self, ed) -> bool:
+        """Whether ``ed`` holds a text written here that is, or can become,
+        an article, while a Nostr account is in use: a written document
+        that is not a note's draft. Code never. Submit to a Publication is
+        offered for it."""
         if ed is None or not self.nostr_state.active:
             return False
         if not (self._editor_kind(ed) == "rich" or getattr(ed, "_markdown_source", False)):
             return False
         binding = getattr(ed, "_draft_binding", None)
-        if binding is not None:
-            return binding.inner_kind == INNER_KIND_LONG_FORM
-        if self._published_article_of(ed) is not None:
-            return True
-        own = tab_details.details_of(ed)
-        if own is not None and (own.title or own.summary or own.image):
-            return True
-        return ed is self.current_editor() and self.act_article_details.isChecked()
+        return binding is None or binding.inner_kind == INNER_KIND_LONG_FORM
 
     def _update_article_headers(self) -> None:
         """Every tab's article head, shown or taken away as it is wanted."""
@@ -10105,7 +10302,9 @@ class MainWindow(QMainWindow):
         in as an asset only when ``adopt`` asks (to upload it), read again
         then (it may have been changed on disk), and its name stays as the
         file has it: the document is not edited, and saving writes it back
-        as it was. None for anything else."""
+        as it was. None for anything else. A picture's #wide (photo_group)
+        is how it is laid out, not which file it is (F3 M-2)."""
+        name = photo_group.without_wide(name)
         sha = parse_asset_key(name)
         if sha is not None:
             return self._asset_manager.get(sha)
@@ -10447,15 +10646,16 @@ class MainWindow(QMainWindow):
         self._show_library_failures()
 
     def _show_library_failures(self) -> None:
-        failures = self._library_failures
-        text = ngettext("“{name}” wasn’t added to your Media Library.",
-                        "{count} files weren’t added to your Media Library.",
-                        len(failures)).format(name=next(iter(failures), ""),
-                                              count=len(failures)) if failures else ""
+        waiting = self._library_failures
+        # Never how many (lessons 36); each file and its sentence is the
+        # tooltip.
+        text = "" if not waiting else (
+            _("“{name}” wasn’t added to your Media Library.").format(name=next(iter(waiting)))
+            if len(waiting) == 1 else _("Some files weren’t added to your Media Library."))
         self._library_problem.setText(text)
         self._library_problem.setToolTip("\n".join(
             _("“{name}” wasn’t added to your Media Library. {reason}").format(
-                name=name, reason=reason) for name, reason in failures.items()))
+                name=name, reason=reason) for name, reason in waiting.items()))
         self._library_problem.setStyleSheet(
             f"color: {theme.error_text_color(self.is_dark_theme)}; padding-right: 4px;")
         link = theme.dialog_link_color(self.is_dark_theme)
@@ -10606,6 +10806,297 @@ class MainWindow(QMainWindow):
         self._publish_sheet = dialog
         dialog.open()
 
+    # -- submitting to a STANDUP publication (plan 10.2) -----------------------
+
+    def _offer_submitting(self, offered: bool) -> None:
+        """Handing in to a publication is offered where a server's address
+        is set. Without one the Einreichungen view is left out
+        (submissions_view.add_to_panel), and so are the commands: not in
+        the menu at all, as everything of a feature that is not set up
+        (dimmed, nothing would say why; chosen, the sheet could only say
+        that nothing can be handed in)."""
+        for action in (self.act_nostr_submit, self.act_nostr_submissions):
+            action.setVisible(offered)
+
+    def _update_submit_command(self, *_args) -> None:
+        """Submit to a Publication… is for a text written here, while an
+        account is in use: as Publish as Article is, so nobody finds it
+        dimmed for the text they just wrote with nothing saying why. One
+        that is not an article yet becomes one as it is chosen
+        (_on_nostr_submit_publication)."""
+        action = getattr(self, "act_nostr_submit", None)
+        state = getattr(self, "nostr_state", None)
+        if action is not None and state is not None \
+                and not getattr(self, "_document_commands_dimmed", False):
+            action.setEnabled(bool(state.active
+                                   and self._can_be_an_article(self.current_editor())))
+
+    def _standup(self) -> StandupWriter:
+        writer = getattr(self, "_standup_writer", None)
+        if writer is None:
+            writer = self._standup_writer = StandupWriter(
+                session_pool=self._session_pool, relay_pool=self._relay_pool,
+                relay_directory=self._relay_directory, media_store=self._media_store,
+                entitled_relays=self._entitled_relays,
+                marks=getattr(self, "_submitted_marks", None), parent=self)
+            writer.status.connect(lambda text: self.statusBar().showMessage(text, 8000))
+            # A text submitted before keeps its link name (RG-M2r 10).
+            writer.listed.connect(lambda _writer: self._fill_article_details_panel())
+        return writer
+
+    def _on_nostr_submit_publication(self) -> None:
+        active = self._profile_store.default()
+        ed = self.current_editor()
+        if active is None:
+            return
+        if not self._can_be_an_article(ed):
+            # Asked for from Einreichungen with no text in front (the menu's
+            # command is dimmed then): said, never answered with nothing.
+            inform(self, title=_("Nothing to submit"),
+                   message=_("Open the text you want to submit, then choose Submit to a "
+                             "Publication again."), nostr=True)
+            return
+        made = self._submission_for_sheet(ed, active)
+        if made is None:
+            return                              # said why, and nothing opened for it
+        draft, cover, byline, private, public, pictures = made
+        becomes_article = not self._wants_article_header(ed)
+        if becomes_article:
+            # Not an article yet: Article Details opens on it, which makes
+            # it one (its head shows on the page). What a publication asks
+            # for beyond the title is added there, as the sheet says.
+            self.act_article_details.setChecked(True)
+        sheet = SubmitSheet(writer=self._standup(), draft=draft, cover=cover, byline=byline,
+                            private_names=private, public_pictures=public, pictures=pictures,
+                            profile=active,
+                            store=self._profile_store,
+                            avatars=self._avatars, logos=self._publication_logos,
+                            is_dark=self.is_dark_theme, parent=self)
+        sheet.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        sheet.submitted.connect(lambda d, ed=ed: self._keep_submitted_identifier(ed, d))
+        sheet.view_submission.connect(self._submissions.open_detail)
+        if becomes_article:
+            sheet.finished.connect(lambda _result: self._submit_sheet_closed(sheet, ed))
+        if cover.isNull() and draft.image.startswith(("https://", "http://")):
+            # A cover that is only a web address: fetched for the card and
+            # the small cover; a monogram until then, and when it does not come.
+            self._submissions.cover_for_sheet(sheet, draft.image, draft.title)
+        self._publish_sheet = sheet                 # follows the appearance while open
+        sheet.open()
+
+    def _submit_sheet_closed(self, sheet, ed) -> None:
+        """The sheet that opened Article Details on a plain text closed.
+        Cancelled before anything went on its way (it holds no run), the
+        text is what it was: Article Details closes again, the article's
+        head leaves the page and the window has its frame back. Handed in
+        or on its way, it stays the article its submission is about."""
+        if sheet.run is None and self.current_editor() is ed \
+                and self.act_article_details.isChecked():
+            self.act_article_details.setChecked(False)
+
+    def _submission_for_sheet(self, ed, active) -> Optional[tuple]:
+        """``(draft, cover, byline, private, public, pictures)`` of the
+        article in ``ed`` for a sheet that submits it (_submission_of), or
+        None when it cannot be submitted as it is, said why."""
+        local = self._uploads_needed(ed)
+        if local is None:
+            return None                         # a picture is gone: said why
+        draft, cover, pictures, private, public = self._submission_of(ed, active, local)
+        unreadable = [p.name for p in draft.pictures if not p.data]
+        if draft.image and parse_asset_key(draft.image) is None \
+                and not image_safety.is_portable_image_source(draft.image):
+            unreadable.append(draft.image)      # a cover beside the document that is gone
+        if unreadable:
+            self._say_pictures_missing(unreadable)
+            return None
+        if not draft.content.strip():
+            inform(self, title=_("Nothing to submit"),
+                   message=_("The current document is empty."), nostr=True)
+            return None
+        name = active.display_name or active.npub_short()
+        byline = " · ".join([name, _("Article")] + ([ngettext(
+            "{count} picture", "{count} pictures", pictures).format(count=pictures)]
+            if pictures else []))
+        return draft, cover, byline, private, public, pictures
+
+    # -- following the submissions (plan 10.4) -----------------------------------
+
+    def _known_name(self, pubkey: str) -> str:
+        """A person's name where it is known (one's own accounts, the
+        people known), else ``""``: the words then say "the editorial
+        team", never an address (lesson 26)."""
+        profile = self._profile_store.get(pubkey) if pubkey else None
+        if profile is not None and profile.display_name:
+            return profile.display_name
+        person = self._known_people.get(pubkey) if pubkey else None
+        return person.display_name if person is not None and person.display_name else ""
+
+    def _editor_of_article(self, d: str):
+        """The tab that holds the article ``d``, or None."""
+        for ed in self._all_editors():
+            if self._wants_article_header(ed) and self._article_details_of(ed).identifier == d:
+                return ed
+        return None
+
+    def _open_submission_text(self, title: str, content: str, d: str, summary: str,
+                              tags: tuple) -> None:
+        """A version of a submission in a new tab: with ``d``, the article
+        itself to go on with; without, a copy to read."""
+        self.new_tab()
+        ed = self.current_editor()
+        if ed is None:
+            return
+        self._load_markdown(ed, content)
+        ed.document().setModified(False)
+        self._set_article_details(ed, ArticleDetails(identifier=d, title=title, summary=summary,
+                                                     hashtags=tuple(tags)))
+        self._update_tab_title()
+
+    def _submission_ports(self) -> SubmissionPorts:
+        def made(ed, profile):
+            found = self._submission_for_sheet(ed, profile)
+            return None if found is None else (*found[:4], found[5])
+
+        def focus(ed) -> None:
+            self.tabs.setCurrentIndex(self._editor_widget_index(ed))
+            ed.setFocus()
+
+        def show_view(key: str) -> None:
+            self._drafts_panel.show_view(key)
+            self._show_drafts_panel()
+
+        return SubmissionPorts(
+            standup=self._standup, profile=self._profile_store.default,
+            current_editor=self.current_editor, editor_of=self._editor_of_article,
+            identifier=lambda ed: self._article_details_of(ed).identifier
+            if self._wants_article_header(ed) else "",
+            text_of=lambda ed: self._publish_payload(ed, "markdown", keep_local=True)[0],
+            focus=focus, open_text=self._open_submission_text, submission_of=made,
+            show_view=show_view, submit=self._on_nostr_submit_publication,
+            notice_of=self._notice_of,
+            say=lambda text: self.status.showMessage(text, 8000, nostr=True),
+            keep=lambda sheet: setattr(self, "_publish_sheet", sheet),
+            avatar_of=self._avatars.get, request_logo=self._publication_logos.request,
+            logo_of=self._publication_logos.get,
+            is_dark=lambda: self.is_dark_theme, window=lambda: self,
+            open_article=self._open_article_named,
+            zap_address=lambda pubkey, answer: zap_address(
+                self._relay_pool, self._relay_directory, pubkey, "", answer, parent=self),
+            edit_profile=self._on_edit_profile)
+
+    def _open_article_named(self, d: str):
+        """The tab that holds the article ``d`` (its link name), opened when
+        no tab does (RG-M3-b 3): from the drafts kept on Nostr under that
+        name, then from the recent files whose link name it is. None when
+        this computer keeps it nowhere it knows of."""
+        ed = self._editor_of_article(d) if d else None
+        if ed is not None or not d:
+            return ed
+        active = self._profile_store.default()
+        author = active.user_pubkey if active else ""
+        store = getattr(self, "_draft_store", None)
+        record = store.get(d) if store is not None else None
+        if record is not None and record.state is DraftState.READY \
+                and record.inner_kind == INNER_KIND_LONG_FORM:
+            self._on_panel_open_draft(d)
+            return self._bound_to(self.current_editor(), d)
+        for path in load_recent():
+            if os.path.exists(path) and self._link_name_for_file(path, author) == d:
+                self.open_path(path)
+                return self._bound_to(self.current_editor(), d)
+        return None
+
+    def _bound_to(self, ed, d: str):
+        """``ed``, just opened for the article ``d``, keeps ``d`` as its
+        identifier (another title makes no other submission)."""
+        if ed is None or not self._wants_article_header(ed):
+            return None
+        self._keep_submitted_identifier(ed, d)
+        return ed
+
+    def _follow_submissions(self) -> None:
+        """The submissions of the account in use are followed, from launch
+        and whenever the account changes."""
+        host = getattr(self, "_submissions", None)
+        if host is not None:
+            host.follow()
+
+    def _update_submission_pill(self, *, typing: bool = False) -> None:
+        """The pill and the submission's detail follow the article in
+        front: at once, or once the typing pauses (RG-M3-b 1)."""
+        host = getattr(self, "_submissions", None)
+        if host is not None:
+            host.article_changed(typing=typing)
+
+    def _keep_submitted_identifier(self, ed, d: str) -> None:
+        """The work in ``ed`` went to a publication under ``d``: the tab
+        keeps it as its identifier, so a later title or file name makes no
+        other work, and publishing it once accepted names this one."""
+        if ed is None or not shiboken6.isValid(ed) or self._editor_widget_index(ed) < 0:
+            return
+        details = self._article_details_of(ed)
+        if details.identifier != d:
+            self._set_article_details(ed, details.with_changes(identifier=d))
+        elif ed is self.current_editor():
+            self._fill_article_details_panel()      # its link name is fixed from now on
+
+    def _submission_of(self, ed, profile, local) -> tuple:
+        """``(draft, cover, pictures, private, public)``: the article of
+        ``ed`` as drafting.ArticleDraft (its files on this computer only
+        kept by their asset keys, to be encrypted with it), its cover as a
+        picture for the card, how many pictures it shows, the names of
+        those of the private library, which the editorial team could not
+        open, and how many of its pictures (the cover too) are public links
+        already and stay so: they are never called encrypted (contract 7,
+        feat/redaktion ee3e5d7)."""
+        content, _media = self._publish_payload(ed, "markdown", keep_local=True)
+        details = self._article_details_of(ed)
+        title = details.title or default_title(content, self._preview_name)
+        d = (details.identifier
+             or self._link_name_for_file(getattr(ed, "_file_path", None), profile.user_pubkey)
+             or slugify(title) or hashlib.sha256(title.encode()).hexdigest()[:16])
+        names = list(dict.fromkeys(iter_image_names(ed.document())))
+        # A cover named as a file beside the document (front matter
+        # "image: cover.png") is taken in as its body pictures are
+        # (_local_objects), so it goes with the work (F3 M-5).
+        cover_asset = (self._asset_named(ed, details.image, adopt=True)
+                       if details.image else None)
+        private, public = [], 0
+        for name in list(dict.fromkeys(names + ([details.image] if details.image else []))):
+            asset = self._asset_named(ed, name)
+            if asset is not None and asset.is_uploaded \
+                    and self._media_visibility.state_of(asset.sha256) == PRIVATE:
+                private.append(self._file_label(asset))
+            elif asset is None or asset.is_uploaded:
+                public += 1             # a web address, or a file of the media servers
+        if cover_asset is not None and not cover_asset.is_uploaded \
+                and cover_asset not in local:
+            local = [*local, cover_asset]
+        pictures = tuple(drafting.LocalPicture(
+            key=asset.key, name=os.path.basename(asset.local_path) or self._file_label(asset),
+            mime=asset.mime, alt=asset.alt, data=self._asset_manager.resolve_bytes(asset.key)
+            or b"") for asset in local)
+        cover_bytes = (self._asset_manager.resolve_bytes(cover_asset.key)
+                       if cover_asset is not None else None) or b""
+        cover = QPixmap()
+        cover.loadFromData(cover_bytes)
+        if cover_asset is not None and not cover_asset.is_uploaded:
+            image = cover_asset.key
+        elif cover_asset is not None and parse_asset_key(details.image) is None \
+                and not image_safety.is_portable_image_source(details.image):
+            # A file beside the document already on the media servers:
+            # by its address, as a body picture of it goes (_publish_payload).
+            image = _published_address(cover_asset)
+        else:
+            image = details.image
+        draft = drafting.ArticleDraft(
+            d=d, title=title, summary=details.summary, content=content.rstrip(),
+            tags=tuple(details.hashtags), image=image, authors=tuple(details.coauthors),
+            pictures=pictures, thumb=thumbnail(cover_bytes) if cover_bytes else None,
+            lang=details.language, published_at=details.published_at,
+            zaps=tuple(tuple(tag) for tag in details.zaps))
+        return draft, cover, len(names), list(dict.fromkeys(private)), public
+
     @staticmethod
     def _file_name(path: str) -> str:
         """A file's name without its extension ("My Post" for My Post.md)."""
@@ -10638,22 +11129,11 @@ class MainWindow(QMainWindow):
         self._say_published(results, article=True)
 
     def _say_published(self, results, *, article: bool) -> None:
-        """That it went out, in the status bar, and how many relays took it
-        when not every one did. No event id, which the person has nothing
-        to do with: the Published list and the dialog itself say more."""
-        accepted = sum(1 for _relay, ok, _message in results if ok)
-        total = len(results)
-        if accepted >= total:
-            message = (_("Your article is published.") if article
-                       else _("Your note is published."))
-        elif article:
-            message = ngettext("Your article is published; {accepted} of {total} relay took it.",
-                               "Your article is published; {accepted} of {total} relays took "
-                               "it.", total).format(accepted=accepted, total=total)
-        else:
-            message = ngettext("Your note is published; {accepted} of {total} relay took it.",
-                               "Your note is published; {accepted} of {total} relays took it.",
-                               total).format(accepted=accepted, total=total)
+        """That it went out, in the status bar: never how many relays took
+        it (lessons 36: a relay that did not is said by nobody). No event
+        id, which the person has nothing to do with: the Published list
+        and the dialog itself say more."""
+        message = _("Your article is published.") if article else _("Your note is published.")
         self.status.showMessage(message, 8000, nostr=True)
 
     # -- media (Blossom) --------------------------------------------------
@@ -10891,11 +11371,11 @@ class MainWindow(QMainWindow):
                 pane.schedule()
 
     def _on_asset_upload_failed(self, sha: str, code: str) -> None:
-        waiting = len(self._asset_manager.failed_assets())
-        message = friendly_message(code)
-        if waiting > 1:
-            message += " " + ngettext("{count} file is waiting.", "{count} files are waiting.",
-                                      waiting).format(count=waiting)
+        # What did not happen and its one sentence, never how many wait
+        # (lessons 36): publishing uploads what waits again.
+        message = failure_spoken(
+            _("Your file wasn’t uploaded") if len(self._asset_manager.failed_assets()) <= 1
+            else _("Some files weren’t uploaded"), friendly_message(code))
         self.status.showMessage(message, 8000, nostr=True, error=True)
 
     # -- Blossom: paste image from clipboard ------------------------------
@@ -10950,26 +11430,32 @@ class MainWindow(QMainWindow):
         preserve the user's resize. The QSplitter naturally clamps the
         panel between its min and max widths.
         """
-        if self._drafts_panel is None:
-            return
+        if self._drafts_panel is not None:
+            self._show_or_hide_panel_view(self._drafts_panel.DRAFTS_VIEW)
+
+    def _show_or_hide_panel_view(self, view: str) -> None:
+        """The panel on ``view``, or the panel put away when that is the
+        view it shows: what each of the panel's commands does."""
         panel = self._drafts_panel
-        if panel.isVisible() and panel.current_view() == panel.DRAFTS_VIEW:
+        if panel.isVisible() and panel.current_view() == view:
             self._hide_drafts_panel()
         else:
-            panel.show_view(panel.DRAFTS_VIEW)
+            panel.show_view(view)
             self._show_drafts_panel()
 
     def _on_show_published(self) -> None:
         """Nostr > Published: the panel on its Published view, or the
         panel put away when that is what it shows."""
+        if self._drafts_panel is not None:
+            self._show_or_hide_panel_view(PUBLISHED_VIEW)
+
+    def _on_show_submissions(self) -> None:
+        """Nostr > Submissions: the panel on its Einreichungen view, or the
+        panel put away when that is what it shows. Only where the view
+        is (a server's address is set)."""
         panel = self._drafts_panel
-        if panel is None:
-            return
-        if panel.isVisible() and panel.current_view() == PUBLISHED_VIEW:
-            self._hide_drafts_panel()
-        else:
-            panel.show_view(PUBLISHED_VIEW)
-            self._show_drafts_panel()
+        if panel is not None and SUBMISSIONS_VIEW in panel.views():
+            self._show_or_hide_panel_view(SUBMISSIONS_VIEW)
 
     def _show_drafts_panel(self) -> None:
         if self._drafts_panel is None:
@@ -10978,6 +11464,7 @@ class MainWindow(QMainWindow):
         self._side_panels.open(DRAFTS_PANEL)
         self.act_nostr_drafts.setChecked(True)
         self._drafts_toggle.setChecked(True)
+        self._paint_pane_toggles()
         self._draft_sync.refresh()
         self._draft_deletions.refresh()
         self._follow_account_in_published()
@@ -10987,6 +11474,7 @@ class MainWindow(QMainWindow):
         """The Drafts panel folded away to make room, or back."""
         self.act_nostr_drafts.setChecked(not folded)
         self._drafts_toggle.setChecked(not folded)
+        self._paint_pane_toggles()
         self._update_refresh_command()
 
     # -- room for side panels (side_panels.py, panel_layout.py) ---------------
@@ -11052,6 +11540,7 @@ class MainWindow(QMainWindow):
         self._side_panels.close(DRAFTS_PANEL)
         self.act_nostr_drafts.setChecked(False)
         self._drafts_toggle.setChecked(False)
+        self._paint_pane_toggles()
         self._update_refresh_command()
 
     def _refresh_drafts_panel(self) -> None:
@@ -11078,6 +11567,7 @@ class MainWindow(QMainWindow):
         relays only while it is shown: shown, it gets the account now;
         hidden, it lets go of another account's items at once and reads
         when it is shown next."""
+        self._follow_submissions()
         view = getattr(self, "_published_view", None)
         if view is None:
             return
@@ -11125,10 +11615,10 @@ class MainWindow(QMainWindow):
                 # nothing to open as the draft.
                 choice = ask(
                     self, title=_("This article has a draft that can’t be shown yet."),
-                    message=_("The draft couldn’t be decrypted. Double-click it in the Drafts "
+                    message=_("Its draft couldn’t be decrypted: double-click it in the Drafts "
                               "panel to try again, or open the version that is published now.")
                     if draft.state is DraftState.FAILED else
-                    _("The draft is still being decrypted. Choose Edit again once its title "
+                    _("Its draft is still being decrypted: choose Edit again once its title "
                       "shows in the Drafts panel, or open the version that is published now."),
                     buttons=(Button(_("Open Published Version"), "published", NORMAL),
                              Button(_("Cancel"), None, DEFAULT)), nostr=True)
@@ -11437,9 +11927,10 @@ class MainWindow(QMainWindow):
                 parent=self,
             )
         except ValueError as exc:
-            inform(self, title=_("Couldn't start the deletion"),
-                   message=_("These drafts can't be removed from here.\n\n{error}").format(
-                       error=exc), nostr=True)
+            # Trying again meets the same refusal: OK only, why in Details.
+            inform(self, title=self._drafts_not_deleted(len(deletable), 0),
+                   message=_("These drafts can’t be deleted from here: delete them in the app "
+                             "that made them."), details=str(exc), nostr=True)
             return
 
         total = job.total
@@ -11468,10 +11959,17 @@ class MainWindow(QMainWindow):
         job.tombstoned.connect(self._on_draft_tombstoned)
         job.finished.connect(
             lambda deleted, failures: self._on_draft_deletion_finished(
-                deleted, failures, total, progress,
+                deleted, failures, total, progress, job, profile, deletable,
             )
         )
         job.start()
+
+    @staticmethod
+    def _drafts_not_deleted(total: int, deleted: int) -> str:
+        """What did not happen, never how many (lessons 36)."""
+        if total == 1:
+            return _("Your draft wasn’t deleted")
+        return _("Some drafts weren’t deleted") if deleted else _("Your drafts weren’t deleted")
 
     def _on_draft_tombstoned(self, identifier: str, event_id: str) -> None:
         """A draft deleted here: remembered as deleted, as a request from
@@ -11511,7 +12009,8 @@ class MainWindow(QMainWindow):
         return found
 
     def _on_draft_deletion_finished(
-        self, deleted: int, failures: list, total: int, progress,
+        self, deleted: int, failures: list, total: int, progress, job, profile,
+        deletable: List[Tuple[str, int]],
     ) -> None:
         if progress is not None:
             progress.close()
@@ -11523,24 +12022,18 @@ class MainWindow(QMainWindow):
             return
 
         # A partial result reported as a whole one is how a user comes to
-        # believe a draft is gone when it is not, so the count that did
-        # not go is the headline and the reasons are one click away.
-        if deleted:
-            title = ngettext("{deleted} of {total} draft deleted",
-                             "{deleted} of {total} drafts deleted",
-                             total).format(deleted=deleted, total=total)
-        else:
-            title = _("No drafts were deleted")
-        inform(
-            self,
-            title=title,
-            message=ngettext("{count} could not be removed and is still on your relays. "
-                             "You can try again.",
-                             "{count} could not be removed and are still on your relays. "
-                             "You can try again.", len(failures)).format(count=len(failures)),
-            caution=True,
-            details="\n".join(
-                f"{identifier[:16]}: {reason}" for identifier, reason in failures), nostr=True)
+        # believe a draft is gone when it is not: the drafts that did not
+        # go are said, once, by what did not happen and why, with what
+        # each relay or the signer said behind Details, and Try Again asks
+        # for those again (lessons 36).
+        words = job.words or _(CHECK_CONNECTION)
+        if ask_try_again(
+                self, title=self._drafts_not_deleted(total, deleted), message=words,
+                details="\n".join(f"{identifier[:16]}: {reason}"
+                                  for identifier, reason in failures), nostr=True):
+            left = {identifier for identifier, _reason in failures}
+            self._run_draft_deletion(profile, [(identifier, kind) for identifier, kind
+                                               in deletable if identifier in left])
 
     def _on_draft_sync_status(self, text: str) -> None:
         if self._drafts_panel is not None:
@@ -11797,18 +12290,33 @@ class MainWindow(QMainWindow):
         # than letting the publish job fail mid-pipeline. The job also
         # checks, but doing it here means no signer round-trip wasted.
         try:
-            payload_bytes = len(serialize_inner_event(inner).encode("utf-8"))
+            too_large = draft_size_problem(
+                inner, profile, key_here=lambda: self._key_vault.has(profile.user_pubkey))
         except (KeyError, TypeError, ValueError):
             inform(self, title=_("Couldn't prepare the draft"),
                    message=_("Its contents could not be prepared for encryption."), nostr=True)
             return
-        if payload_bytes > MAX_INNER_PAYLOAD_BYTES:
-            inform(self, title=_("This draft is too large"),
-                   message=_("It has {size} bytes, and encryption allows {limit}. "
-                             "Split it into smaller drafts or publish it directly.").format(
-                       size=_number(payload_bytes), limit=_number(MAX_INNER_PAYLOAD_BYTES)), nostr=True)
+        if too_large:
+            # Saving it again would meet the same limit: OK only, the
+            # numbers in Details (lessons 26, 36).
+            inform(self, title=_(DRAFT_NOT_SAVED), message=too_large,
+                   details=size_detail(profile, draft=serialize_inner_event(inner)), nostr=True)
             return
 
+        job = self._draft_job(ed, profile, choice, inner)
+        job.start()
+
+    def _draft_job(self, ed, profile: Profile, choice: StashChoice, inner: dict,
+                   signed: Optional[dict] = None) -> DraftPublishJob:
+        """A job that saves ``inner`` as the tab's draft, watched.
+
+        The draft is saved once a relay keeps it, never before (lessons
+        9, 17): only then is the tab bound to it, the store updated and
+        the tab no longer modified. A draft no relay kept, or one never
+        sent, is said once: what did not happen, its cause in one
+        sentence, what was said behind Details, and Try Again, which
+        sends a draft signed before as it is (lessons 36). ``signed``:
+        the wrap signed for it before, for a job that sends it again."""
         job = DraftPublishJob(
             relay_pool=self._relay_pool,
             relay_directory=self._relay_directory,
@@ -11819,20 +12327,36 @@ class MainWindow(QMainWindow):
             identifier=choice.identifier,
             parent=self,
         )
-        # Pass the editor + inner through the closure so the stashed
-        # handler can bind the tab and update the store optimistically.
-        job.status_changed.connect(lambda s: self.status.showMessage(s, 5000, nostr=True))
-        job.stashed.connect(
-            lambda ident, eid, ts, _ed=ed, _inner=inner, _choice=choice:
-            self._on_draft_stashed(_ed, _choice, eid, ts, _inner)
-        )
-        job.failed.connect(
-            lambda reason: inform(self, title=_("Couldn't save the draft"), message=reason, nostr=True)
-        )
-        # Register before starting so a synchronous failure path can't
+        # Registered first, so it is released before what follows asks
+        # again; and before starting, so a synchronous failure path can't
         # leave the tab thinking nothing is in flight.
         self._attach_active_stash(ed, job)
-        job.start()
+        sent = {"signed": signed}
+        job.status_changed.connect(lambda s: self.status.showMessage(s, 5000, nostr=True))
+        job.signed.connect(lambda event: sent.update(signed=event))
+        job.stashed.connect(lambda _ident, eid, ts: sent.update(eid=eid, ts=ts))
+
+        def completed(results) -> None:
+            if any(kept_by_relay(ok, message) for _url, ok, message in results):
+                self._on_draft_stashed(ed, choice, sent["eid"], sent["ts"], inner)
+                self.status.showMessage(_("Draft saved."), 5000, nostr=True)
+                return
+            if ask_try_again(self, title=_(DRAFT_NOT_SAVED), message=not_taken_words(results),
+                             details=answers_detail(results), nostr=True):
+                again = self._draft_job(ed, profile, choice, inner, sent["signed"])
+                again.send_signed(sent["signed"])
+
+        def failed(reason: str) -> None:
+            if not job.can_retry:
+                inform(self, title=_(DRAFT_NOT_SAVED), message=job.words, details=reason,
+                       nostr=True)
+            elif ask_try_again(self, title=_(DRAFT_NOT_SAVED), message=job.words,
+                               details=reason, nostr=True):
+                self._fire_draft_publish_job(ed, profile, choice, inner)
+
+        job.completed.connect(completed)
+        job.failed.connect(failed)
+        return job
 
     def _published_article_of(self, ed) -> Optional[ArticleDetails]:
         """The published article a tab edits (from the Published view),
@@ -11919,6 +12443,7 @@ class MainWindow(QMainWindow):
         self._article_headers.update(ed)
         if ed is self.current_editor():
             self._fill_article_details_panel()
+            self._update_submission_pill()
 
     def _stash_defaults_for(
         self,
@@ -12009,10 +12534,9 @@ class MainWindow(QMainWindow):
         created_at: int,
         inner: dict,
     ) -> None:
-        """Job has signed the wrap. Bind the tab + update the store
-        optimistically so the panel reflects the new state immediately
-        rather than waiting for the relay echo to round-trip back
-        through ``DraftSync``."""
+        """A relay kept the signed wrap. Bind the tab + update the store
+        now, so the panel reflects the new state without waiting for the
+        relay echo to round-trip back through ``DraftSync``."""
         # The editor may have been closed mid-flight - bail gracefully.
         if ed is None or self._editor_widget_index(ed) < 0:
             return
@@ -12025,8 +12549,8 @@ class MainWindow(QMainWindow):
             title=choice.title or (choice.identifier if choice.kind is StashKind.NOTE else ""),
             profile_pubkey=active.user_pubkey.lower() if active else "",
         )
-        # Optimistic store update - by the time the relay echo arrives
-        # via DraftSync, the panel already shows the row. First, so that
+        # Store update - by the time the relay echo arrives via
+        # DraftSync, the panel already shows the row. First, so that
         # nothing read after this point finds the draft as it was.
         self._draft_store.upsert_from_inner(
             identifier=choice.identifier,

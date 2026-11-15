@@ -61,6 +61,7 @@ from nostr.blossom.store import MediaFile  # noqa: E402
 from nostr.known_people import KnownPeople, Person  # noqa: E402
 from nostr.ui import publish_article_dialog as article_module  # noqa: E402
 from nostr.ui import publish_note_dialog as note_module  # noqa: E402
+from nostr.ui import publish_sheet  # noqa: E402
 from tests.accessibility import unnamed_controls  # noqa: E402
 from tests.outbox_fakes import (  # noqa: E402
     PK, FakeClient, FakePool, FakeRelayDirectory, FakeSessionPool, HandPool,
@@ -83,14 +84,23 @@ class Captured:
     """Stands in for PublishJob: keeps the event it was given."""
 
     made = []
+    jobs = []
 
     def __init__(self, **kwargs):
         Captured.made.append(kwargs["unsigned_event"])
+        Captured.jobs.append(self)
+        self.unsigned_event = kwargs["unsigned_event"]
+        self.failure_words = ""
+        self.sent_again = 0
         for name in ("status_changed", "signed", "completed", "failed"):
             setattr(self, name, types.SimpleNamespace(connect=lambda *_a: None))
 
     def start(self):
         pass
+
+    def send_again(self):
+        self.sent_again += 1
+        return True
 
     def cancel(self):
         pass
@@ -99,6 +109,7 @@ class Captured:
 @pytest.fixture
 def captured(monkeypatch):
     Captured.made = []
+    Captured.jobs = []
     monkeypatch.setattr(article_module, "PublishJob", Captured)
     monkeypatch.setattr(note_module, "PublishJob", Captured)
     return Captured.made
@@ -262,9 +273,10 @@ def test_people_are_everyone_tagged_by_name_never_by_key(tmp_path, captured):
     sheet = article(tmp_path, body=body, default_title="T",
                     details=ArticleDetails(coauthors=((CAROL, ""),)))
     names = [name for _pubkey, name in sheet._people.people()]
-    stranger = "@" not in names[1] and names[1].startswith("npub1") and "…" in names[1]
-    assert names[0] == "Bob Writer, mentioned" and stranger and names[1].endswith(", quoted")
-    assert names[2] == "Carol, co-author"
+    # The authors first, as the event tags them (RG-M4-c 2), then the text's people.
+    stranger = "@" not in names[2] and names[2].startswith("npub1") and "…" in names[2]
+    assert names[0] == "Carol, co-author" and names[1] == "Bob Writer, mentioned"
+    assert stranger and names[2].endswith(", quoted")
     assert not any(BOB_NPUB in label.text() or BOB in label.text()
                    for label in sheet._people.findChildren(QLabel))
     sheet._publish("t", sheet._body, 1_800_000_000)
@@ -281,7 +293,7 @@ def test_co_authors_are_added_and_removed_as_in_article_details(tmp_path, captur
     picker.picked.emit(Person(pubkey=CAROL))                   # twice: nothing
     picker.picked.emit(Person(pubkey=PK))                      # the author: nothing
     assert sheet.details().coauthors == ((CAROL, RELAY),) and sheet.details_changed()
-    assert [name for _p, name in sheet._people.people()][-1] == "Carol, co-author"
+    assert [name for _p, name in sheet._people.people()][0] == "Carol, co-author"   # authors first
     sheet._publish("t", sheet._body, 1_800_000_000)
     assert ["p", CAROL, RELAY, AUTHOR_MARKER] in p_tags(captured[0])
     sheet._on_failed("relay down")                            # to try again
@@ -298,9 +310,101 @@ def test_a_failure_is_said_in_red_and_publish_can_be_tried_again(tmp_path, captu
     assert not sheet._hashtags.entry.isHidden() and not sheet._account.isEnabled()
     sheet._on_completed([("wss://a.example", False, "blocked")])
     assert sheet._hashtags.isEnabled() and sheet._account.isEnabled()
-    assert not sheet._status.isHidden() and "no relay took it" in sheet._status.text()
+    assert not sheet._status.isHidden()
+    assert sheet._status.shown == ("Your article wasn’t published",
+                                   "Check your internet connection and try again.")
     assert roles(False).error in sheet._status.styleSheet()
-    assert sheet._publish_btn.isEnabled()
+    assert sheet._publish_btn.isEnabled() and sheet._publish_btn.text() == "Try Again"
+
+
+def _start(sheet):
+    """Press Publish on either sheet; the article's date is known."""
+    if isinstance(sheet, article_module.PublishArticleDialog):
+        sheet._publish("t", sheet._body, 1_800_000_000)
+    else:
+        sheet._on_publish()
+
+
+@pytest.mark.parametrize("make", [article, note])
+@pytest.mark.parametrize("results, sentence", [
+    # Never reached: the connection is the likely cause.
+    ([("wss://a.example", False, "publish timeout"),
+      ("wss://b.example", False, "relay disconnected before ack")],
+     "Check your internet connection and try again."),
+    # Answered and turned it down (NIP-01): not the connection.
+    ([("wss://a.example", False, "blocked: not on the list"),
+      ("wss://b.example", False, "publish timeout")],
+     "The servers your posts go to turned it down: try again later."),
+])
+def test_no_relay_taking_it_is_one_title_one_sentence_and_try_again(tmp_path, captured,
+                                                                     monkeypatch, make,
+                                                                     results, sentence):
+    """Lessons 36 and 26: no relay's name, no count and no relay's answer
+    in what is shown; those are in the tooltip. Said once."""
+    said = []
+    monkeypatch.setattr(publish_sheet.announce, "announce", lambda _w, text: said.append(text))
+    sheet = make(tmp_path, default_title="T") if make is article else make(tmp_path)
+    _start(sheet)
+    sheet._on_completed(results)
+    what = "Your article wasn’t published" if make is article else "Your note wasn’t published"
+    assert sheet._status.shown == (what, sentence)
+    assert "relay" not in sheet._status.text() and "example" not in sheet._status.text()
+    assert all(url in sheet._status.toolTip() for url, _ok, _m in results)
+    assert sheet._publish_btn.text() == "Try Again" and sheet._publish_btn.isEnabled()
+    assert said == [f"{what}. {sentence}"]
+
+
+@pytest.mark.parametrize("make", [article, note])
+def test_try_again_sends_the_signed_event_again_when_nothing_changed(tmp_path, captured, make,
+                                                                     monkeypatch):
+    import nostr.events
+    sheet = make(tmp_path)
+    _start(sheet)
+    sheet._on_completed([("wss://a.example", False, "publish timeout")])
+    first = Captured.jobs[-1]
+    later = nostr.events.time.time() + 90            # a minute and more later
+    monkeypatch.setattr(nostr.events.time, "time", lambda: later)
+    _start(sheet)                                   # Try Again
+    assert len(Captured.jobs) == 1 and first.sent_again == 1
+    assert sheet._publish_btn.text() == "Publish" and not sheet._publish_btn.isEnabled()
+    assert sheet._status.shown == ("", "")
+
+
+def test_try_again_after_an_edit_signs_the_new_text(tmp_path, captured):
+    sheet = note(tmp_path)
+    _start(sheet)
+    sheet._on_completed([("wss://a.example", False, "publish timeout")])
+    first = Captured.jobs[-1]
+    sheet._text_edit.setPlainText("Another text.")
+    _start(sheet)
+    assert len(Captured.jobs) == 2 and first.sent_again == 0
+    assert Captured.made[-1]["content"] == "Another text."
+
+
+@pytest.mark.parametrize("make", [article, note])
+@pytest.mark.parametrize("reason, words, sentence", [
+    ("timed out waiting for signer", "", "Your signer app didn’t answer: open it and try again."),
+    ("user rejected the request", "",
+     "Your signer app declined the request: allow it there and try again."),
+    ("invalid event: bad tags", "",
+     "Your signer app ran into a problem: open it and try again."),
+    ("signed event does not match the request", "Your signer app signed something other than "
+     "what was asked: nothing was sent, so try again.",
+     "Your signer app signed something other than what was asked: nothing was sent, so try "
+     "again."),
+])
+def test_a_publish_the_signer_did_not_sign_is_said_plainly(tmp_path, captured, make, reason,
+                                                          words, sentence):
+    sheet = make(tmp_path)
+    _start(sheet)
+    Captured.jobs[-1].failure_words = words
+    sheet._on_failed(reason)
+    title, shown = sheet._status.shown
+    assert title.endswith("wasn’t published") and shown == sentence
+    assert reason not in sheet._status.text() and sheet._status.toolTip() == reason
+    assert sheet._publish_btn.text() == "Try Again"
+    _start(sheet)                                   # a new signature, never the old job
+    assert len(Captured.jobs) == 2
 
 
 def test_every_control_is_named_and_tab_goes_top_to_bottom(tmp_path):
@@ -901,6 +1005,34 @@ def _caret_in_view(sheet, widget):
                                           caret.size()))
 
 
+def test_a_one_line_field_in_a_part_barely_taller_than_a_line_shows_its_caret_whole():
+    """The fork's Linux run: the Title's caret was cut in the smallest
+    window. Before a line edit is drawn for the first time Qt says its
+    caret stands at the field's top, so a part with little room was
+    scrolled to the wrong place; the sizes here come from the field's own
+    font, so they hold on every system."""
+    from PySide6.QtWidgets import QLineEdit, QScrollArea, QVBoxLayout, QWidget
+    from nostr.ui.publish_sheet import scroll_area
+    page = QWidget()
+    column = QVBoxLayout(page)
+    field = QLineEdit()
+    line = field.fontMetrics().height()
+    field.setMinimumHeight(line + 30)               # a field with room around its line
+    column.addSpacing(300)
+    column.addWidget(field)
+    column.addSpacing(300)
+    holder = QWidget()
+    QVBoxLayout(holder).addWidget(scroll_area(page))
+    holder.findChild(QScrollArea).setFixedHeight(line + 10)
+    holder.show()
+    holder.activateWindow()
+    field.setFocus()
+    QApplication.processEvents()
+    assert QApplication.focusWidget() is field
+    assert _caret_in_view(holder, field)
+    holder.close()
+
+
 @pytest.mark.parametrize("make", [article, note])
 def test_the_field_being_typed_in_is_always_in_view(tmp_path, make):
     """Review round 3, low 4: in the smallest window the note box had the
@@ -966,4 +1098,56 @@ def test_the_alert_claims_nothing_of_the_relays_that_may_be_untrue(
     sheet._on_publish()
     asked[-1][3](FirstPublication(UNKNOWN))
     message = alerts[0]["message"]
-    assert message.startswith("The relays gave no clear answer.") and "answered" not in message
+    # One sentence, with what to do, and no relay in it (lessons 26, 36).
+    assert "answered" not in message and "relay" not in message
+    assert message.count(".") == 1 and message.endswith(".") and "try again" in message
+
+
+# -- the card and the account, as a person sees them (UX-M1) --------------------
+
+def test_the_cards_cover_has_the_cards_corners_and_stays_inside_its_border():
+    """The picture's corners were square inside the rounded card, and it
+    lay two points over the border at the trailing edge."""
+    card = article_module.ArticleCard(False)
+    picture = QPixmap(1200, 630)
+    picture.fill(QColor("#F7931A"))
+    card.show_article("A title", "A summary", picture, "Jana Roth")
+    card.show()
+    QApplication.processEvents()
+    assert card.rect().adjusted(1, 1, -1, -1).contains(card.cover.geometry())
+    shown = card.cover.pixmap().toImage()
+    assert shown.pixelColor(0, 0).alpha() == 0                       # rounded away
+    assert shown.pixelColor(shown.width() // 2, 0).alpha() == 255
+    assert shown.pixelColor(0, shown.height() - 1).alpha() == 255    # square under the words
+    card.close()
+
+
+def test_a_word_longer_than_the_cards_line_breaks_inside_and_nothing_is_cut():
+    """A long compound in a title was drawn past the card's edge, and
+    the lines under it were cut off."""
+    from PySide6.QtGui import QFontMetrics
+    metrics = QFontMetrics(QApplication.font())
+    word = "Donaudampfschifffahrtsgesellschaftskapitän"
+    width = metrics.horizontalAdvance(word) // 2
+    shown = article_module.cut_after_a_word(metrics, word + " erklärt die Welt", width, 3)
+    assert metrics.boundingRect(0, 0, width, 10_000, Qt.TextFlag.TextWordWrap,
+                                shown).height() <= 3 * metrics.lineSpacing()
+    assert metrics.boundingRect(0, 0, width, 10_000, Qt.TextFlag.TextWordWrap,
+                                shown).width() <= width
+    assert shown.replace("​", "").startswith("Donaudampf")
+    # A text that fits is said as it is.
+    assert article_module.cut_after_a_word(metrics, "Short", 200, 3) == "Short"
+
+
+def test_the_accounts_arrow_stands_after_its_name_as_on_a_pop_up_button(tmp_path):
+    """The arrow stood between the picture and the name."""
+    args = common(tmp_path)
+    account = publish_sheet.AccountRow(args["active_profile"], args["store"], args["avatars"],
+                                       is_dark=False)
+    account.show()
+    QApplication.processEvents()
+    button = account.button
+    assert button.iconSize().width() == button.iconSize().height()      # the picture alone
+    arrow = button._night_violet_arrow
+    assert arrow.geometry().left() > button.width() - 24
+    account.close()

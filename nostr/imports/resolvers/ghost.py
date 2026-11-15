@@ -52,9 +52,7 @@ def _resolve(input_: ResolveInput, ctx: ResolveContext) -> None:
         lambda: parse_ghost_export(input_.pasted_body or "", site_url=url),
         _deliver,
         lambda exc: ctx.on_failure(SourceError(
-            _("Could not read that Ghost export: {error}").format(error=exc),
-            ERROR_CODES.UNKNOWN,
-        )),
+            f"the Ghost export could not be read: {exc}", ERROR_CODES.ARCHIVE_UNREADABLE)),
     )
 
 

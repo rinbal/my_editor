@@ -1,0 +1,157 @@
+# SPDX-FileCopyrightText: 2026 rinbal
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""People who left (editorial contract 10; M-4 item 2): their actions
+verify from what the owner and the publication key signed, as the vector
+``former_member`` and ``formerStanding`` in the contract's
+docs/editorial-fixtures/crosscheck.reference.mjs have it."""
+
+from __future__ import annotations
+
+import json
+
+from nostr import crypto, events, nip98
+from nostr.standup import answers, views
+from nostr.standup import following as rules
+from nostr.standup.former import Formers, parse_formers, standing
+from tests.standup_vectors import SID, VECTORS, fixture_secret
+
+FM = VECTORS["former_member"]
+
+
+def _standing(former: dict, person: str, epoch, at):
+    found = standing(parse_formers([former])[0], person, epoch, at, address=FM["publication"])
+    return {"member": found.member, "decides": found.decides}
+
+
+def test_the_standing_of_people_who_left_is_the_vectors():
+    # Contract 569b3f8: membership by epoch, the role by time, an owner key
+    # event's too (it counts as redaktion from when it was signed).
+    acted = FM["acted_at"]
+    assert _standing(FM["taken"], FM["stranger"], 3, acted) == {"member": True, "decides": True}
+    for name, former in FM["must_fail"].items():
+        assert _standing(former, FM["stranger"], None, acted) == {"member": False,
+                                                                   "decides": False}, name
+    for case in FM["cases"]:
+        former = FM["former"][case["former"]]
+        assert _standing(former, former["pubkey"], case["epoch"], case["at"]) == {
+            "member": case["member"], "decides": case["decides"]}, case["name"]
+    for case in FM["served_cases"]:
+        former = case["former"]
+        assert _standing(former, former["pubkey"], case["epoch"], case["at"]) == {
+            "member": case["member"], "decides": case["decides"]}, case["name"]
+
+
+def _decision(label: str, revision: int, at: int) -> views.TimelineEvent:
+    body = {"submission_id": SID, "outcome": "accept", "expected_revision": revision,
+            "message_wrap": None, "split_wrap": None, "split_rumor_id": None, "section": None}
+    text = json.dumps(body, separators=(",", ":"))
+    unsigned = nip98.build_unsigned_auth_event(
+        f"https://standup.example/api/submissions/{SID}/decision", "POST", text.encode(),
+        now=at)
+    signer = fixture_secret(label)
+    return views.TimelineEvent(
+        name="accept", actor=crypto.get_public_key(signer).hex(), revision=revision, to=None,
+        signed=views.SignedRecord(event=events.sign_event(unsigned, signer), body=text))
+
+
+def test_a_decision_by_someone_who_left_goes_by_the_role_they_held_when_they_signed():
+    # Contract 53ff043: checked at the current revision's epoch first; only
+    # when that fails is its own revision read (once) and checked at its
+    # epoch. The role is the one of the invitation signed last before it.
+    asked = []
+    formers = Formers(FM["publication"], asked.append)
+    formers.join(answers.parse_formers([FM["former"]["left"], FM["former"]["curator"]]))
+    checks = rules.SignedChecks()
+    left = _decision("former", 2, 1762673400)
+    assert left.actor == FM["former"]["left"]["pubkey"]
+    formers.saw(3, 3)                   # the current revision, at epoch 3
+    assert rules.action_verified(left, SID, (), checks, formers) is True and asked == []
+    formers.epochs.clear()
+    formers.saw(3, 4)                   # they left before epoch 4
+    assert rules.action_verified(left, SID, (), checks, formers) is False
+    assert rules.action_verified(left, SID, (), checks, formers) is False and asked == [2]
+    formers.saw(2, 3)                   # revision 2 read: its own epoch
+    assert rules.action_verified(left, SID, (), checks, formers) is True
+    # Invited again as a curator before deciding: decides nothing, at any epoch.
+    curator = _decision("curator", 2, 1762673200)
+    assert rules.action_verified(curator, SID, (), checks, formers) is False
+    assert rules.action_verified(_decision("curator", 2, 1762671200), SID, (), checks,
+                                 formers) is True           # before, as redaktion
+    assert rules.action_verified(left, SID, (), checks) is False      # the server's word alone
+
+
+def test_a_member_who_left_verifies_taking_a_submission_but_never_a_report():
+    # B5 client step 6: taking and handing over need a member (epoch 1);
+    # published and placed reports never take this path.
+    formers = Formers(FM["publication"])
+    formers.join(parse_formers([FM["former"]["curator"]]))
+    curator, at = FM["former"]["curator"]["pubkey"], FM["acted_at"]
+    assert formers.decides(curator, "taken", {}, decisions=rules.DECISIONS, at=at)
+    assert not formers.decides(curator, "published", {}, decisions=rules.DECISIONS, at=at)
+    assert not formers.decides(curator, "correction", {"epoch": 3}, decisions=rules.DECISIONS,
+                               at=at)
+
+
+def test_what_someone_who_left_wrote_stays_in_the_conversation():
+    # RG-M4-a 7, RG-M4-b 5: an editor asks for changes and leaves. Their
+    # served Former proves they were of the Redaktion, so their message
+    # and their split proposal stay, though the member list lost them.
+    from nostr.standup import conversation as conv
+    from nostr.standup import thread as threads
+    formers = Formers(FM["publication"])
+    formers.join(parse_formers([FM["former"]["left"]]))
+    left, writer = FM["former"]["left"]["pubkey"], FM["stranger"]
+    room = FM["publication"].split(":")[1]
+    said = conv.message_rumor(room=room, submission_id=SID, text="Bitte kürzen.", sender=left,
+                              created_at=FM["acted_at"])
+    split = conv.structured_rumor(
+        room=room, submission_id=SID, kind="split-proposal", sender=left,
+        created_at=FM["acted_at"], content=conv.split_proposal_content(
+            "ef" * 32, [{"pubkey": writer, "weight": 100, "role": "writer"}]))
+    opened = [conv.Opened(rumor=r, sender=left, wrap_id=str(n), seq=n)
+              for n, r in enumerate((said, split), 1)]
+    taken = [views.TimelineItem(seq=n, at=FM["acted_at"], type="message", wrap=None,
+                                event=None) for n in (1, 2)]       # when the server took them
+    shown = threads.build_thread(taken, opened, sid=SID, me=writer, writer=writer, deciders=(),
+                                 members=(), formers=formers)
+    assert [type(item).__name__ for item in shown if not isinstance(item, threads.Day)] == [
+        "Message", "SplitCard"]
+    assert threads.build_thread((), opened, sid=SID, me=writer, writer=writer, deciders=(),
+                                members=()) == []
+
+
+def test_a_split_card_goes_by_the_role_its_proposer_held_when_they_proposed_it():
+    # RG-M4-c 6 (probe p9): accepted as the Redaktion, invited again as a
+    # curator later: the split card proposed then stays; one proposed after
+    # the curator invitation is not a decider's.
+    from nostr.standup import conversation as conv
+    from nostr.standup import thread as threads
+    then = next(c for c in FM["cases"]
+                if c["name"] == "invited_again_as_curator_decided_before_as_redaktion")
+    after = next(c for c in FM["cases"]
+                 if c["name"] == "invited_again_as_curator_decides_nothing_after")
+    former = FM["former"][then["former"]]
+    formers = Formers(FM["publication"])
+    formers.join(parse_formers([former]))
+    assert formers.decided_then(former["pubkey"], then["at"]) is True
+    assert formers.decided_then(former["pubkey"], after["at"]) is False
+    writer, room = FM["stranger"], FM["publication"].split(":")[1]
+
+    def proposed(written, taken):
+        """What a split proposal written at ``written`` (the sender's word)
+        and taken by the server at ``taken`` shows as."""
+        split = conv.structured_rumor(
+            room=room, submission_id=SID, kind="split-proposal", sender=former["pubkey"],
+            created_at=written, content=conv.split_proposal_content(
+                "ef" * 32, [{"pubkey": writer, "weight": 100, "role": "writer"}]))
+        opened = [conv.Opened(rumor=split, sender=former["pubkey"], wrap_id="1", seq=1)]
+        items = [views.TimelineItem(seq=1, at=taken, type="message", wrap=None, event=None)]
+        shown = threads.build_thread(items, opened, sid=SID, me=writer, writer=writer,
+                                     deciders=(), members=(), formers=formers)
+        return [type(item).__name__ for item in shown if not isinstance(item, threads.Day)]
+
+    assert proposed(then["at"], then["at"]) == ["SplitCard"]
+    assert proposed(after["at"], after["at"]) == []
+    # Dated back to a Redaktion time, but taken after the curator invitation:
+    # judged by the server's time, so no split card (an ordinary message at most).
+    assert "SplitCard" not in proposed(then["at"], after["at"])

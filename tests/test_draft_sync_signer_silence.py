@@ -27,7 +27,7 @@ from unittest.mock import MagicMock
 import pytest
 from PySide6.QtCore import QCoreApplication
 
-from nostr.bunker import BunkerClient, humanize_failure, is_signer_silent
+from nostr.bunker import BunkerClient, is_signer_silent, signer_failure_words
 from nostr.draft_store import DraftState, DraftStore
 from nostr.draft_sync import SIGNER_RECHECK_MS, DraftSync
 from nostr.drafts import DraftWrapMeta, build_inner_event, serialize_inner_event
@@ -453,13 +453,14 @@ def test_the_publish_error_says_where_the_problem_is():
     # say that the phone in the user's hand is the thing to fix.
     assert is_signer_silent(SILENT) and is_signer_silent(UNDELIVERED)
     for reason in (SILENT, UNDELIVERED):
-        message = humanize_failure(reason)
+        message = signer_failure_words(reason)
         assert "signer" in message.lower()
         assert "try again" in message.lower()
 
 
-def test_a_failure_we_have_no_better_words_for_is_passed_through():
-    assert humanize_failure("signer returned malformed user pubkey") == (
-        "signer returned malformed user pubkey"
-    )
+def test_a_failure_we_have_no_better_words_for_is_said_plainly_never_passed_through():
+    # Lessons 26 and 36: the reason is for Details and the log, never the
+    # sentence shown.
+    message = signer_failure_words("signer returned malformed user pubkey")
+    assert message == "Your signer app ran into a problem: open it and try again."
     assert not is_signer_silent("user rejected the request")

@@ -52,10 +52,10 @@ from nostr.einundzwanzig_api import (
     parse_invoice,
     parse_membership,
     parse_payments,
-    parse_retry_after,
     service_url,
     session_signer,
 )
+from nostr.http_answers import parse_retry_after
 from tests.membership_fakes import (
     PREFIX,
     SERVICE,
@@ -99,9 +99,11 @@ def make(*, script=None, signer=None, service=SERVICE, clock=None, server=True):
 
 
 def run(env, method, *args, **kwargs):
-    """Call ``method``, settle the transport, return (successes, failures)."""
+    """Call ``method``, settle the transport, return (successes, failures).
+    A call refused before sending answers on the next turn (signed_api)."""
     ok, failed = [], []
     getattr(env.api, method)(*args, ok.append, failed.append, **kwargs)
+    QCoreApplication.processEvents()
     env.nam.settle()
     return ok, failed
 

@@ -49,9 +49,9 @@ from PySide6.QtWidgets import (
 
 import announce
 from i18n import N_, _, ngettext
-from nostr import refs
+from nostr import failures, refs
 from nostr.outbox.policy import LookupState
-from nostr.outbox.writer import UNCHANGED, UNKNOWN_BASE, WRITTEN
+from nostr.outbox.writer import UNCHANGED, WRITTEN, failure_detail, failure_words
 from nostr.ui.assistant import (
     DEFAULT, NORMAL, AssistantWindow, busy_bar, page, text_label,
 )
@@ -230,11 +230,10 @@ class ProfileWindow(AssistantWindow):
         if self._closed:
             return
         if result.state is LookupState.UNKNOWN:
+            # Why it is not edited unread is the tooltip (lessons 36).
             self._show_problem(
-                _("MyEditor Couldn’t Read Your Profile"),
-                _("Your profile couldn’t be read from the network just now. Editing "
-                  "it without reading it first could replace it, so try again in a "
-                  "moment."), retry=True)
+                _("Your Profile Couldn’t Be Read"), _(failures.CHECK_CONNECTION), retry=True,
+                detail=_("Editing your profile without reading it first could replace it."))
             return
         try:
             self._loaded = profile_fields(result.event)
@@ -242,8 +241,8 @@ class ProfileWindow(AssistantWindow):
         except ValueError:
             self._show_problem(
                 _("This Profile Can’t Be Edited Here"),
-                _("Your profile is stored in a form MyEditor doesn’t understand, so "
-                  "it is left as it is. Edit it in the app that created it."),
+                _("Your profile is stored in a form MyEditor doesn’t understand: edit it in "
+                  "the app that created it."),
                 retry=False)
             return
         self._new_profile = result.state is LookupState.ABSENT
@@ -404,16 +403,30 @@ class ProfileWindow(AssistantWindow):
                   "from your profile."))
         self._show_form_page()
 
-    def _show_form_page(self) -> None:
-        self.show_page(FORM, [("cancel", _("Cancel"), NORMAL, self.reject),
-                              ("save", _("Save"), DEFAULT, self._save_changes)])
+    def _show_form_page(self, *, again: bool = False, save: bool = True) -> None:
+        """The form; after a save that did not work, its Save reads Try
+        Again (``again``), or is not offered when no try here can help."""
+        buttons = [("cancel", _("Cancel"), NORMAL if save else DEFAULT, self.reject)]
+        if save:
+            buttons.append(("save", _("Try Again") if again else _("Save"), DEFAULT,
+                            self._save_changes))
+        self.show_page(FORM, buttons)
         self._on_edited()
 
-    def _set_form_note(self, text: str, *, problem: bool = False) -> None:
+    def _set_form_note(self, text: str, *, problem: bool = False, title: str = "",
+                       detail: str = "") -> None:
+        """The note above the form; a ``problem`` with a ``title`` is a
+        total failure: the title in bold above its one sentence, what the
+        relays and the signer said in the tooltip (lessons 36)."""
         self._form_note.setObjectName("error" if problem else "muted")
         self._form_note.style().unpolish(self._form_note)
         self._form_note.style().polish(self._form_note)
-        self._form_note.setText(text)
+        self._form_note.setTextFormat(Qt.RichText if title else Qt.PlainText)
+        self._form_note.setText(failures.markup(title, text) if title else text)
+        self._form_note.setAccessibleName(failures.spoken(title, text) if title else "")
+        self._form_note.setToolTip(detail)
+        if title:
+            announce.announce(self._form_note, failures.spoken(title, text))
 
     def changes(self) -> Dict[str, str]:
         """The fields that differ from the profile as it was read, and the
@@ -463,21 +476,22 @@ class ProfileWindow(AssistantWindow):
             self.saved.emit()
             self.accept()
             return
-        # Back to the form, with what was typed, and what went wrong above it.
-        if outcome.status == UNKNOWN_BASE:
-            note = _("Your profile wasn’t saved: it couldn’t be read again just before "
-                     "saving, so nothing was changed. Try again in a moment.")
-        elif outcome.reason == _(refs.SECRET_KEY_REFUSED):
+        # Back to the form, with what was typed, and what did not happen
+        # above it, said once with its cause (lessons 36).
+        title = _("Your profile wasn’t saved")
+        if outcome.reason == _(refs.SECRET_KEY_REFUSED):
             # A key arrived since it was read, in a part this window doesn't
             # show (its own fields are checked): no retry here helps.
-            note = _("Your profile wasn’t saved: since it was read, a secret key was added "
-                     "to a part of it this window doesn’t show. Close this window and open "
-                     "Edit Profile again; it will offer to leave that part out.")
-        else:
-            note = _("Your profile wasn’t saved: your signer app didn’t sign it, or too "
-                     "few servers took it. Nothing was changed. Try again in a moment.")
-        self._set_form_note(note, problem=True)
-        self._show_form_page()
+            self._set_form_note(
+                _("Since it was read, a secret key was added to a part this window doesn’t "
+                  "show: close this window and open Edit Profile again to leave that part "
+                  "out."),
+                problem=True, title=title)
+            self._show_form_page(save=False)
+            return
+        self._set_form_note(failure_words(outcome), problem=True, title=title,
+                            detail=failure_detail(outcome))
+        self._show_form_page(again=True)
 
     # -- problems ------------------------------------------------------------
 
@@ -490,9 +504,10 @@ class ProfileWindow(AssistantWindow):
         col.addStretch(1)
         self.add_page(PROBLEM, body)
 
-    def _show_problem(self, title: str, text: str, *, retry: bool) -> None:
+    def _show_problem(self, title: str, text: str, *, retry: bool, detail: str = "") -> None:
         self._problem_title.setText(title)
         self._problem_text.setText(text)
+        self._problem_text.setToolTip(detail)
         if retry:
             buttons = [("close", _("Close"), NORMAL, self.reject),
                        ("retry", _("Try Again"), DEFAULT, self.start_reading)]

@@ -35,16 +35,17 @@ import rich_text
 from doc_walk import text_index
 from alerts import answer_return_as_the_system_does
 from highlighter import RichTextLook
-from i18n import _, ngettext
+from i18n import N_, _, ngettext
 
 from .. import refs
 from ..avatar_store import AvatarStore
 from ..bech32 import encode_nprofile, encode_npub
-from ..bunker import BunkerSessionPool, humanize_failure
+from ..bunker import BunkerSessionPool, signer_failure_words
 from ..known_people import KnownPeople
 from ..nip05_check import Nip05Check
 from ..outbox import RelayDirectory, relays_from
 from ..profiles import Profile, ProfileStore
+from ..publish_pipeline import answers_detail, not_taken_words, same_event
 from ..publisher import PublishedMedia, PublishJob, PublishResult, build_note
 from ..relay import RelayPool
 from ..search import Nip50SearchClient
@@ -56,6 +57,9 @@ from .publish_sheet import (
 )
 from .secret_key_check import publishable
 
+
+# What did not happen, the title of a total failure (lessons 36).
+NOTE_NOT_PUBLISHED = N_("Your note wasn’t published")
 
 # Length above which we softly suggest using long-form (kind 30023) instead.
 _LONGFORM_HINT_CHARS = 1_000
@@ -221,6 +225,8 @@ class PublishNoteDialog(QDialog):
         self._address_check = address_check
         self._is_dark = is_dark
         self._job: Optional[PublishJob] = None
+        # The last publish no relay took: Try Again sends its signed note.
+        self._not_taken: Optional[PublishJob] = None
         self._signed_event_id: Optional[str] = None
         self._picker: Optional[MentionPicker] = None
         self._mention_at = -1
@@ -386,6 +392,13 @@ class PublishNoteDialog(QDialog):
             return
         self._set_busy(True)
         self._set_status("")
+        self._publish_btn.setText(_("Publish"))
+        kept, self._not_taken = self._not_taken, None
+        if kept is not None and same_event(kept.unsigned_event, unsigned) and kept.send_again():
+            # Try Again after no relay took it: the same signed note once
+            # more, without asking the signer app again.
+            self._job = kept
+            return
         self._job = PublishJob(
             relay_pool=self._relay_pool,
             relay_directory=self._relay_directory,
@@ -405,20 +418,26 @@ class PublishNoteDialog(QDialog):
         self._signed_event_id = event_id_hex
 
     def _on_completed(self, results: List[PublishResult]) -> None:
-        self._job = None
+        job, self._job = self._job, None
         accepted = sum(1 for _url, ok, _message in results if ok)
         if accepted == 0:
-            self._set_status(_("The note was not published: no relay took it. Check your "
-                               "internet connection and try again."), error=True)
-            self._set_busy(False)
+            self._not_taken = job
+            self._say_not_published(not_taken_words(results), answers_detail(results))
             return
         self.published.emit(self._signed_event_id or "", results)
         self.accept()
 
     def _on_failed(self, reason: str) -> None:
-        self._job = None
-        self._set_status(_("Publish failed: {reason}").format(reason=humanize_failure(reason)),
-                         error=True)
+        job, self._job = self._job, None
+        self._say_not_published(job.failure_words if job is not None else "", reason)
+
+    def _say_not_published(self, sentence: str, detail: str) -> None:
+        """A total failure, said once: what did not happen, why and what
+        to do in one sentence, Try Again beside Cancel; what each relay or
+        the signer app answered only in the tooltip (lessons 36)."""
+        self._status.say(sentence or signer_failure_words(detail),
+                         title=_(NOTE_NOT_PUBLISHED), error=True, detail=detail)
+        self._publish_btn.setText(_("Try Again"))
         self._set_busy(False)
 
     def _on_cancel(self) -> None:

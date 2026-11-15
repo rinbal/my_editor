@@ -340,3 +340,110 @@ def test_server_origin_keeps_ipv6_brackets():
     assert server_origin("https://Blossom.Band/") == "https://blossom.band"
     with pytest.raises(ValueError):
         server_origin("not a url")
+
+
+# -- the first bytes of a blob (RG-M2r 5) ----------------------------------------
+
+@pytest.mark.parametrize("url, count", [
+    ("http://media.example/" + SHA, 8),          # http off loopback
+    ("file:///etc/passwd", 8),
+    ("https://user@media.example/" + SHA, 8),
+    (f"{SERVER}/{SHA}", 0),
+    (f"{SERVER}/{SHA}", 65),                     # more than a head
+])
+def test_a_head_is_read_only_from_a_media_address_and_only_a_few_bytes(url, count):
+    client, nam = _client()
+    got, failed = [], []
+    client.read_head(url, count, got.append, failed.append)
+    assert nam.calls == [] and got == [] and len(failed) == 1
+
+
+def test_a_head_is_asked_for_by_range_and_never_follows_a_redirect():
+    client, nam = _client([redirect_reply(), FakeReply(status=206, body=b"SMF1abcdXYZ")])
+    got, failed = [], []
+    client.read_head(f"{SERVER}/{SHA}", 8, got.append, failed.append)
+    nam.settle()
+    assert bytes(nam.calls[0][1].rawHeader("Range")) == b"bytes=0-7"
+    assert got == [] and len(failed) == 1 and len(nam.calls) == 1
+    client.read_head(f"{SERVER}/{SHA}", 8, got.append, failed.append)
+    nam.settle()
+    assert got == [b"SMF1abcd"]                   # never more than asked
+
+
+@pytest.mark.parametrize("status", [404, 416, 500])
+def test_a_head_the_server_refuses_is_a_failure(status):
+    client, nam = _client([FakeReply(status=status, body=b"SMF1abcd")])
+    got, failed = [], []
+    client.read_head(f"{SERVER}/{SHA}", 8, got.append, failed.append)
+    nam.settle()
+    assert got == [] and len(failed) == 1
+
+
+def test_a_head_read_stopped_on_its_way_is_aborted_and_answers_nothing():
+    # RG-M2r3 10: a new listing stops the reads of the old one; Qt ends an
+    # aborted reply with finished, which must answer nobody.
+    reply = FakeReply(status=206, body=b"SMF1abcd")
+    client, nam = _client([reply])
+    got, failed = [], []
+    stop = client.read_head(f"{SERVER}/{SHA}", 8, got.append, failed.append)
+    stop()
+    assert reply.aborted and client._inflight == {}
+    reply.finish()                                  # as Qt ends an aborted reply
+    assert got == [] and failed == []
+    stop()                                          # once is enough
+    assert client.read_head("file:///etc/passwd", 8, got.append, failed.append) is None
+
+
+# -- a head read is bounded whatever the server does (RG-M2r2a 4) -------------------
+
+def _head(reply):
+    client, nam = _client([reply])
+    got, failed = [], []
+    client.read_head(f"{SERVER}/{SHA}", 8, got.append, failed.append)
+    return reply, got, failed
+
+
+def test_a_head_read_buffers_no_more_than_it_asks_for():
+    reply, got, _failed = _head(FakeReply(status=200, body=b"SMF1abcd" + b"x" * 4096))
+    assert reply.read_buffer_size == 8
+    reply.finish()
+    assert got == [b"SMF1abcd"] and reply.aborted
+
+
+@pytest.mark.parametrize("status", [404, 500, 503])
+def test_a_refusal_is_stopped_at_its_headers_and_its_body_never_read(status):
+    reply, got, failed = _head(FakeReply(status=status, body=b"e" * 100_000))
+    reply.finish()
+    assert reply.aborted and reply._read == 0
+    assert got == [] and len(failed) == 1 and failed[0].status == status
+
+
+def test_a_server_that_keeps_sending_is_stopped_at_the_bound():
+    from nostr.blossom import client as module
+    reply, got, failed = _head(FakeReply(status=200, body=b"SMF1abcd"))
+    reply.progress(module._HEAD_RECEIVED_MAX + 1)
+    assert reply.aborted
+    reply.finish()
+    assert got == [] and len(failed) == 1 and "larger" in str(failed[0])
+
+
+def test_a_whole_blob_announced_by_a_server_that_ignores_the_range_is_still_read():
+    # Its first bytes are what is asked for: the announced length is no bound.
+    reply, got, failed = _head(FakeReply(status=200, body=b"SMF1abcd" + b"x" * 64))
+    reply.progress(16, 512 * 1024 * 1024)
+    assert not reply.aborted
+    reply.finish()
+    assert got == [b"SMF1abcd"] and failed == []
+
+
+def test_a_head_read_ends_at_its_deadline_however_slowly_bytes_come():
+    # The deadline's timer fires as Qt would fire it (lesson 34).
+    from PySide6.QtCore import QTimer
+    from nostr.blossom import client as module
+    reply, got, failed = _head(FakeReply(status=200, body=b"SMF"))
+    deadline = reply.findChild(QTimer)
+    assert deadline.isActive() and deadline.interval() == module._HEAD_DEADLINE_MS
+    deadline.timeout.emit()
+    assert reply.aborted
+    reply.finish()
+    assert got == [] and len(failed) == 1 and "too long" in str(failed[0])
