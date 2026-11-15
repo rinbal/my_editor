@@ -17,6 +17,8 @@ from typing import Dict, List, Optional, Tuple
 
 FENCE_LINE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 LIST_LINE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
+# A list item with nothing in it, not even a task's box.
+EMPTY_ITEM_LINE = re.compile(r"^ *(?:[-*+]|\d{1,9}[.)])[ \t]*$")
 ESCAPABLE = set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
 _AUTOLINK_OR_TAG = re.compile(
     r"<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*|[^\s<>@]+@[^\s<>]+"
@@ -89,6 +91,150 @@ def code_lines(lines: List[str]) -> List[bool]:
         out.append(code)
         previous_blank = blank or code
     return out
+
+
+# A quote's mark at a line's start, and a list item's start after the
+# quote marks: its indent, its marker and the words after it.
+_QUOTE_MARK = re.compile(r" {0,3}> ?")
+_ITEM = re.compile(r"( *)([-*+]|\d{1,9}[.)])(?=[ \t]|$)[ \t]*(.*)")
+_TASK_BOX = re.compile(r"\[[ xX]\][ \t]*")
+# A line that may be such an item with nothing in it (empty_items).
+_MAYBE_EMPTY_ITEM = re.compile(r"^[ >]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]+\[[ xX]\])?[ \t]*$", re.M)
+
+
+def _inside_quotes(line: str, depth: int) -> Optional[str]:
+    """``line`` without the marks of ``depth`` quotes; None when it has
+    fewer."""
+    at = 0
+    for _quote in range(depth):
+        found = _QUOTE_MARK.match(line, at)
+        if found is None:
+            return None
+        at = found.end()
+    return line[at:]
+
+
+def _quote_depth(line: str) -> int:
+    """How many quotes ``line`` stands in, by the marks it starts with."""
+    depth, at = 0, 0
+    while True:
+        found = _QUOTE_MARK.match(line, at)
+        if found is None:
+            return depth
+        depth, at = depth + 1, found.end()
+
+
+def _indent(text: str) -> Optional[int]:
+    """How many spaces ``text`` starts with; None for a tab among them,
+    whose width depends on the column."""
+    spaces = len(text) - len(text.lstrip(" "))
+    return None if text[spaces:spaces + 1] == "\t" else spaces
+
+
+def empty_items(markdown: str) -> Tuple[List[int], bool]:
+    """Where each list item with nothing in it ("-", "2.", "- [ ]") ends
+    its marker, outside code, when words written there leave the lists
+    as they are (_empty_item_alone); and whether such an item stands
+    where words would change them.
+
+    Qt's reader leaves an item with nothing in it out (md4c gives it no
+    text), and keeps one with a word in it."""
+    if _MAYBE_EMPTY_ITEM.search(markdown) is None:
+        return [], False
+    lines = markdown.split("\n")
+    code = code_lines(lines)
+    places: List[int] = []
+    unsafe = False
+    start = 0
+    for number, line in enumerate(lines):
+        line_start, start = start, start + len(line) + 1
+        if code[number]:
+            continue
+        depth = _quote_depth(line)
+        rest = _inside_quotes(line, depth)
+        item = _ITEM.fullmatch(rest)
+        if item is None:
+            continue
+        words = item.group(3)
+        box = _TASK_BOX.fullmatch(words)
+        if (words.strip() and box is None) \
+                or not _starts_an_item(lines, code, number, depth, len(item.group(1))):
+            continue
+        before = line_start + len(line) - len(rest)
+        if box is None:
+            alone = _empty_item_alone(lines, code, number, depth,
+                                      len(item.group(1)) + len(item.group(2)) + 1)
+            if alone:
+                places.append(before + item.end(2))
+            elif alone is not None:
+                unsafe = True
+        elif _empty_item_alone(lines, code, number, depth, item.start(3)):
+            # (A task's box is a paragraph already: a line that would join
+            # the words joins the box, and the task is not empty.)
+            places.append(before + item.start(3) + len(words.rstrip()))
+    return places, unsafe
+
+
+def _starts_an_item(lines: List[str], code: List[bool], number: int, depth: int,
+                    indent: int) -> bool:
+    """Whether the item on line ``number`` with nothing in it (in ``depth``
+    quotes, ``indent`` spaces in) is one: no paragraph's words stand right
+    above it in its place, which an empty item cannot follow ("Text\\n-"
+    is a heading, "- a\\n    -" one in the item). Above it: nothing, a
+    blank line, a code fence, or an item it is not inside of."""
+    if number == 0 or code[number - 1] or not lines[number - 1].strip():
+        return True
+    above = _inside_quotes(lines[number - 1], depth)
+    if above is not None and not above.strip():
+        return True
+    item = None if above is None else _ITEM.fullmatch(above)
+    if item is None:
+        return False                    # words of a paragraph, or what this does not tell
+    return not item.group(3).strip() or indent < item.start(3)
+
+
+def _empty_item_alone(lines: List[str], code: List[bool], number: int, depth: int,
+                      column: int) -> Optional[bool]:
+    """Whether words written in the empty item on line ``number`` (in
+    ``depth`` quotes, its words' column ``column``) stay alone: True when
+    the text ends after it, a blank line ends them, or an item follows
+    (one inside it numbered 1 or bulleted, as an item must be to follow a
+    paragraph); False when a line would join them (one left of the
+    column, as a paragraph's lazy line, or a second paragraph, which an
+    item that starts empty cannot have); None when the next line holds
+    the item's words (it is not empty)."""
+    following = number + 1
+    if following == len(lines):
+        return True
+    if code[following]:
+        return False
+    rest = _inside_quotes(lines[following], depth)
+    if rest is None and lines[following].strip():
+        # Out of the quote: an item there starts a list of its own; other
+        # words are a lazy line of the quote's paragraph.
+        own = _inside_quotes(lines[following], _quote_depth(lines[following]))
+        return _ITEM.fullmatch(own or "") is not None
+    if rest is None or not rest.strip():
+        # A blank line ends the words; the first line after it with words
+        # is the item's second paragraph when it stands in the column.
+        for later in lines[following + 1:]:
+            inside = _inside_quotes(later, depth)
+            if inside is None:
+                return True             # the quote ended
+            if inside.strip():
+                indent = _indent(inside)
+                return indent is not None and indent < column
+        return True
+    indent = _indent(rest)
+    if indent is None:
+        return False
+    item = _ITEM.fullmatch(rest)
+    if item is None:
+        return None if indent >= column else False
+    if indent < column:
+        return True                     # an item of this list or one around it
+    marker = item.group(2)
+    return indent < column + 4 and (marker[-1] not in ".)" or int(marker[:-1]) == 1)
 
 
 def code_span_end(text: str, start: int, found: Optional[Found] = None) -> int:

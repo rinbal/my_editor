@@ -78,8 +78,9 @@ from doc_walk import (
 )
 import photo_group
 import photo_group_find
-from markdown_scan import (ESCAPABLE, FENCE_LINE, LIST_LINE, descriptions, emphasized_code,
-                           escapes, lossy_definition, pictures, titled_link)
+from markdown_scan import (EMPTY_ITEM_LINE, ESCAPABLE, FENCE_LINE, LIST_LINE, descriptions,
+                           emphasized_code, empty_items, escapes, lossy_definition, pictures,
+                           titled_link)
 from rich_text import normalize_after_markdown_load
 
 ImageTarget = Callable[[object], Optional[str]]
@@ -872,6 +873,11 @@ def _new_list(previous: _Block, block: _Block) -> bool:
     return previous.group != block.group and previous.level == block.level
 
 
+def _says_nothing(item: _Block) -> bool:
+    """Whether a list item has nothing in it, not even a task's box."""
+    return item.task is None and not _inline_markdown(item.spans)
+
+
 def _quote_depth(block: _Block) -> int:
     return block.level if block.kind == "quote" else block.quote
 
@@ -882,7 +888,14 @@ def _separator(previous: _Block, block: _Block) -> str:
         return "\n\n"
     if previous.kind == "item" and block.kind == "item":
         # A different list at the same depth is a list of its own.
-        return "\n\n" if _new_list(previous, block) else "\n"
+        if _new_list(previous, block):
+            return "\n\n"
+        if block.level > previous.level and _says_nothing(block) and not _says_nothing(previous):
+            # An empty item cannot follow words of a paragraph: right under
+            # them it would join them ("- a\n    -" is a heading "a"). A
+            # blank line ends them first, in the quote the items are in.
+            return "\n" + ("> " * block.quote).rstrip() + "\n"
+        return "\n"
     depth = min(_quote_depth(previous), _quote_depth(block))
     if depth:
         # Two parts of one quote stay in it.
@@ -1051,7 +1064,10 @@ def _soft_breaks(markdown: str) -> Tuple[bool, List[int]]:
                 return True, []
             found.append(index - 1)
         if (line.startswith(("  ", "\t")) and line.strip() and not before.strip()
-                and index >= 2 and LIST_LINE.match(lines[index - 2])):
+                and index >= 2 and LIST_LINE.match(lines[index - 2])
+                and not EMPTY_ITEM_LINE.match(line)):
+            # (Not an empty item: the writer puts that blank line before
+            # one right under an item's words, which it would join.)
             return True, []
     if found and _free_mark(markdown, _SOFT_MARKS) is None:
         return True, []
@@ -1173,44 +1189,54 @@ def read_markdown(doc: QTextDocument, markdown: str, features=READ_FEATURES) -> 
 
 
 def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
-                   groups: bool = True) -> Tuple[int, int]:
-    """read_markdown, saying how many soft line breaks the Markdown has
-    that the editor holds, and how many it holds. The editor's reading
-    (READ_FEATURES) keeps them; a preview or a paste reads them as
-    Markdown readers do, as spaces. ``groups``: pictures that follow each
-    other are folded into their group, as the editor shows them; without,
-    they stay the paragraphs they are in the Markdown."""
+                   groups: bool = True) -> bool:
+    """read_markdown, saying whether the editor holds all the reading
+    marked: every soft line break the Markdown has that the editor holds
+    read as one, and all Qt's reader would leave out kept (_marked_keeps).
+    The editor's reading (READ_FEATURES) keeps soft line breaks; a preview
+    or a paste reads them as Markdown readers do, as spaces. ``groups``:
+    pictures that follow each other are folded into their group, as the
+    editor shows them; without, they stay the paragraphs they are in the
+    Markdown."""
     markdown = _breaks_between_pictures(markdown)
     markdown, alts = _whole_descriptions(markdown, features)
     marked, soft_mark = 0, None
     if features == READ_FEATURES:
         markdown, soft_mark, marked = _marked_soft_breaks(markdown)
     escaped, mark = _marked_escapes(markdown)
-    joined = _read_once(doc, escaped, features, alts, (soft_mark, marked))
+    joined, kept = _read_once(doc, escaped, features, alts, (soft_mark, marked))
     if mark and not _keep_escaped(doc, mark, escaped.count(mark)):
         # A mark Qt's reader put outside the text (a link's address, a
         # picture's file, a title), where nothing takes it out: read
         # without marks, the escapes then are saved as the writer writes
         # text, and holds_faithfully opens the file as its text when
         # that would change it.
-        joined = _read_once(doc, markdown, features, alts, (soft_mark, marked))
+        joined, kept = _read_once(doc, markdown, features, alts, (soft_mark, marked))
     normalize_after_markdown_load(doc)
     if groups:
         # Pictures that follow each other show as one group (photo_group).
         photo_group_find.fold(doc)
-    return marked, joined
+    return joined == marked and kept
 
 
 def _read_once(doc: QTextDocument, markdown: str, features, alts: dict,
-               soft: Tuple[Optional[str], int]) -> int:
-    """Qt's reading of the marked ``markdown`` into ``doc``, the pictures
-    given their descriptions (``alts``) and the ``soft`` breaks (their
-    mark, how many) joined; how many were joined."""
-    doc.setMarkdown(literal_footnotes(markdown), features)
+               soft: Tuple[Optional[str], int]) -> Tuple[int, bool]:
+    """Qt's reading of the marked ``markdown`` into ``doc``, what it would
+    leave out kept (_marked_keeps), the pictures given their descriptions
+    (``alts``) and the ``soft`` breaks (their mark, how many) joined; how
+    many were joined, and whether all was kept."""
+    markdown = literal_footnotes(markdown)
+    keeping, keep_mark, lost = _marked_keeps(markdown)
+    doc.setMarkdown(keeping, features)
+    if keep_mark is not None and not _kept_by_marks(doc, keep_mark, keeping.count(keep_mark)):
+        # Read otherwise than the marks expected: read without them, and
+        # what they kept is left out.
+        doc.setMarkdown(markdown, features)
+        lost = True
     if alts:
         _restore_descriptions(doc, alts)
     soft_mark, marked = soft
-    return _join_soft_breaks(doc, soft_mark) if marked else 0
+    return (_join_soft_breaks(doc, soft_mark) if marked else 0), not lost
 
 
 # --------------------------------------------------------------------------- #
@@ -1255,13 +1281,32 @@ def _marked_escapes(markdown: str) -> Tuple[str, Optional[str]]:
     mark = _free_mark(markdown, _ESCAPE_MARKS) if found else None
     if mark is None:
         return markdown, None
+    return _with_marks(markdown, [(at, "", "") for at in found], mark), mark
+
+
+def _with_marks(text: str, places: Sequence[Tuple[int, str, str]], mark: str) -> str:
+    """``text`` with ``mark`` at each of ``places``, as (where, what goes
+    before the mark, what goes after it), in rising order."""
     pieces, last = [], 0
-    for at in found:
-        pieces.append(markdown[last:at])
-        pieces.append(mark)
+    for at, before, after in places:
+        pieces += [text[last:at], before, mark, after]
         last = at
-    pieces.append(markdown[last:])
-    return "".join(pieces), mark
+    pieces.append(text[last:])
+    return "".join(pieces)
+
+
+def _take_marks(doc: QTextDocument, mark: str) -> List[Tuple[int, QTextCharFormat]]:
+    """Each ``mark`` in ``doc``'s text taken out, first to last, as where
+    it stood (once all are out) and the format it had."""
+    taken: List[Tuple[int, QTextCharFormat]] = []
+    position = 0
+    while True:
+        cursor = doc.find(mark, position)
+        if cursor.isNull():
+            return taken
+        position = cursor.selectionStart()
+        taken.append((position, QTextCharFormat(cursor.charFormat())))
+        cursor.removeSelectedText()
 
 
 def _keep_escaped(doc: QTextDocument, mark: str, placed: int) -> bool:
@@ -1270,20 +1315,57 @@ def _keep_escaped(doc: QTextDocument, mark: str, placed: int) -> bool:
     ``placed`` marks were in the text, or a format holds one (a link's
     address, a picture's file or description, a title): it is then in
     what is saved, copied, exported and published."""
-    position, removed = 0, 0
     text = QTextCharFormat()
     text.setProperty(ESCAPED_TEXT_PROPERTY, True)
-    while True:
-        cursor = doc.find(mark, position)
-        if cursor.isNull():
-            break
-        position = cursor.selectionStart()
-        cursor.removeSelectedText()
-        removed += 1
+    taken = _take_marks(doc, mark)
+    for position, _fmt in taken:
         if doc.characterAt(position) in ESCAPABLE:
+            cursor = QTextCursor(doc)
+            cursor.setPosition(position)
             cursor.setPosition(position + 1, QTextCursor.MoveMode.KeepAnchor)
             cursor.mergeCharFormat(text)
-    return removed == placed and not _in_formats(doc, mark)
+    return len(taken) == placed and not _in_formats(doc, mark)
+
+
+# --------------------------------------------------------------------------- #
+# What Qt's reader leaves out, kept by a mark                                  #
+# --------------------------------------------------------------------------- #
+#
+# Qt's reader leaves a list item with nothing in it out ("- One\n-\n" was
+# one item, and saved so). For the time it reads the Markdown, a mark
+# stands in each such item (markdown_scan.empty_items), and once read the
+# item is emptied again. The mark is a Po character no HTML entity names,
+# none of _ESCAPE_MARKS; a file is read with the first one it holds
+# nowhere (_free_mark).
+_KEEP_MARKS = ("\u2e31", "\u2e33", "\u2e34", "\u2e32")
+
+
+def _marked_keeps(markdown: str) -> Tuple[str, Optional[str], bool]:
+    """The Markdown with a mark (_KEEP_MARKS) where Qt's reader would
+    leave out what the editor holds, the mark (None for none), and
+    whether something is left out all the same: an empty list item where
+    a word would change the lists, or no free mark."""
+    items, lost = empty_items(markdown)
+    places = [(at, " ", "") for at in items]
+    mark = _free_mark(markdown, _KEEP_MARKS) if places else None
+    if mark is None:
+        return markdown, None, lost or bool(places)
+    return _with_marks(markdown, places, mark), mark, lost
+
+
+def _kept_by_marks(doc: QTextDocument, mark: str, placed: int) -> bool:
+    """Each ``mark`` _marked_keeps set taken out again, and what it kept
+    in its place: an empty list item. False when fewer than the
+    ``placed`` marks were in the text, a format holds one, or one stood
+    anywhere else (the lists were not read as the marks expected)."""
+    taken = _take_marks(doc, mark)
+    if len(taken) != placed or _in_formats(doc, mark):
+        return False
+    for position, _fmt in taken:
+        block = doc.findBlock(position)
+        if block.textList() is None or block.length() != 1:
+            return False
+    return True
 
 
 # Where Qt's reader puts words of the Markdown that are not its text.
@@ -1453,9 +1535,8 @@ def holds_faithfully(markdown: str) -> bool:
     # as much again (10,000 groups: seconds of processor time and hundreds
     # of megabytes).
     first = QTextDocument()
-    marked, joined = _read_counting(first, markdown, groups=False)
-    if joined != marked:
-        return False            # a soft break Qt did not read as marked
+    if not _read_counting(first, markdown, groups=False):
+        return False            # a soft break or an empty item not read as marked
     shown = _fingerprint(first)
     written = document_to_markdown(first, _image_as_read)
     del first                   # freed before the next read

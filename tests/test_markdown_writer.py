@@ -38,6 +38,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 from doc_walk import iter_block_runs  # noqa: E402
 from markdown_writer import (  # noqa: E402
     READ_FEATURES, document_to, document_to_markdown, document_to_note_text, holds_faithfully,
+    read_markdown,
 )
 
 
@@ -109,6 +110,46 @@ def test_a_markdown_file_comes_back_the_same(source):
     assert once == source
     # And it is stable: writing what was written changes nothing.
     assert document_to_markdown(from_markdown(once)) == once
+
+
+EMPTY_ITEMS = [
+    "- One\n-\n",
+    "- One\n-\n- Three\n",
+    "1. One\n2.\n3. Three\n",
+    "- [x] done\n- [ ]\n",
+    "> - quoted\n> -\n",
+    "-\n    - nested in an empty item\n",
+]
+
+
+@pytest.mark.parametrize("source", EMPTY_ITEMS)
+def test_an_empty_list_item_comes_back_the_same(source):
+    # Qt's reader leaves an item with nothing in it out.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc) == source
+
+
+def test_an_empty_item_under_an_items_words_reads_back_as_an_item():
+    # Right under them it would be a heading: "- a\n    -" is "## a".
+    doc = from_markdown("- a\n    - b\n")
+    cursor = QTextCursor(doc.findBlockByNumber(1))
+    cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+    cursor.removeSelectedText()
+    written = document_to_markdown(doc)
+    assert written == "- a\n\n    -\n" and holds_faithfully(written)
+    again = QTextDocument()
+    read_markdown(again, written)
+    assert [(block.text(), block.textList().format().indent())
+            for block in (again.findBlockByNumber(0), again.findBlockByNumber(1))] == [
+        ("a", 1), ("", 2)]
+
+
+def test_a_dash_under_words_stays_a_heading():
+    doc = QTextDocument()
+    read_markdown(doc, "Text\n-\n")
+    assert doc.begin().blockFormat().headingLevel() == 2
 
 
 def test_a_quote_with_two_paragraphs_stays_one_quote():
