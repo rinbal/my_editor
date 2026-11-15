@@ -57,7 +57,7 @@ from i18n import N_, _
 from .. import bech32
 from ..publish_pipeline import not_taken_words
 from ..publisher import published_at_of
-from ..signer_limits import size_problem
+from ..signer_limits import size_problem, through_signer_app
 from ..standup import formats, opening, publishing
 from ..standup.errors import Code, cause_words
 from ..standup import following as rules
@@ -469,8 +469,15 @@ class AcceptedPublish(QObject):
         if not self._here and self._too_long(unsigned):
             self._take_down()
             return
-        self._say(Stage.WORKING, _(BUSY), _(BUSY_SIGNING))
+        self._say(Stage.WORKING, _(BUSY), self._signer_words(self._here))
         self._guard(None, unsigned, lambda relays: self._sign_now(unsigned, relays))
+
+    def _signer_words(self, here: bool) -> str:
+        """That the signer app is waited for, for an account that signs
+        through one; nothing where the key kept on this computer signs
+        (the account's own, or ``here``: this one article's signature),
+        which has no app to wait for."""
+        return _(BUSY_SIGNING) if through_signer_app(self._profile) and not here else ""
 
     def _sign_now(self, unsigned: dict, relays) -> None:
         job = self._job = self._ports.job(self._profile, unsigned, self._here, list(relays))
@@ -689,7 +696,8 @@ class CorrectionPublish(AcceptedPublish):
         if self._taken or self.stage is Stage.WORKING:
             super().start(here=here)
             return
-        self._say(Stage.WORKING, _(TAKING), _(BUSY_SIGNING))
+        # The confirmation is the account's own request, whoever signs the article.
+        self._say(Stage.WORKING, _(TAKING), self._signer_words(False))
 
         def confirmed(error) -> None:
             if self._stopped:

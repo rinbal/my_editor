@@ -1029,6 +1029,22 @@ def test_a_picture_the_servers_refuse_publishes_nothing(accepted):
     assert (run.title, run.words) == ("Not published", REFUSED)
 
 
+def test_only_an_account_with_a_signer_app_is_told_to_wait_for_it(accepted):
+    # With the key kept on this computer there is no app to wait for: the
+    # sheet said "Waiting for your signer app." all the while it published.
+    local = SimpleNamespace(user_pubkey=pk("writer"), signer="local", bunker_relays=[])
+    run, _store, _jobs = _run(accepted, profile=local)
+    said = []
+    run.changed.connect(lambda: said.append(run.words))
+    run.start()
+    accepted.world.settle()
+    assert run.stage is Stage.DONE and "Waiting for your signer app." not in said
+    remote = SimpleNamespace(user_pubkey=pk("writer"), signer="remote", bunker_relays=[])
+    run, _store, _jobs = _run(accepted, profile=remote)
+    assert run._signer_words(False) == "Waiting for your signer app."
+    assert run._signer_words(True) == ""            # this one article, signed with the key here
+
+
 def test_too_long_for_the_signer_app_with_the_key_here_offers_it_once(accepted, monkeypatch):
     # Q1: explicit and for this article only; never without a key here.
     # RG-M4-b 4: the web's words, never "shorten it"; without a key, a
