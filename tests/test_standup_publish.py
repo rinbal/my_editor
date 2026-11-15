@@ -680,6 +680,21 @@ def test_after_a_stage_change_the_focus_is_on_the_status_line_never_on_view(acce
     sheet.deleteLater()
 
 
+def test_the_sheet_speaks_of_pictures_only_for_a_version_that_has_some(accepted):
+    from nostr.ui.standup_publish_sheet import PublishSheet
+    run, _store, _jobs = _run(accepted)
+    assert [e["mime"] for e in run.revision["media"]] == ["image/png"]
+    pictured = PublishSheet(run=run, publication="Magazin", number=1, is_dark=False)
+    assert pictured.hint.text() == "Text and pictures as handed in."
+    assert "text and pictures unencrypted" in pictured.privacy.text()
+    pictured.deleteLater()
+    run.revision["media"] = []
+    plain = PublishSheet(run=run, publication="Magazin", number=1, is_dark=False)
+    assert plain.hint.text() == "Text as handed in."
+    assert "picture" not in plain.privacy.text()
+    plain.deleteLater()
+
+
 def test_once_public_the_sheet_says_the_result_and_no_more_of_the_step_before(accepted):
     # UX-M2: "Publishing as …" and "Text and pictures as handed in." were
     # still there under "Published."; the byline says whose article it is.

@@ -47,6 +47,10 @@ PLACE_LINE = N_("It then gets its place in the section “{section}”.")
 AS_HANDED_IN = N_("Text and pictures as handed in.")
 PUBLIC_AFTER = N_("Until now it’s private. Once published, everyone can read it, text and "
                   "pictures unencrypted. It can’t be taken back.")
+# A version without pictures: the same, without speaking of pictures.
+TEXT_AS_HANDED_IN = N_("Text as handed in.")
+TEXT_PUBLIC_AFTER = N_("Until now it’s private. Once published, everyone can read it, "
+                       "unencrypted. It can’t be taken back.")
 DIFFERS = N_("The accepted version is published. If you change anything afterwards, the "
              "editorial team sees “changed since acceptance”.")
 # Whom the article names as its authors, as a byline says it: the person
@@ -127,10 +131,13 @@ class PublishSheet(QDialog):
         self.differs = self._label(_(DIFFERS))
         self.differs.setVisible(self._differs)
         root.addWidget(self.differs)
-        self.hint = self._label(_(AS_HANDED_IN))
+        pictures = bool(work.get("image")) or any(
+            str(entry.get("mime") or "").startswith("image/")
+            for entry in self.run.revision.get("media") or () if isinstance(entry, dict))
+        self.hint = self._label(_(AS_HANDED_IN if pictures else TEXT_AS_HANDED_IN))
         self.hint.setVisible(not self._differs)
         root.addWidget(self.hint)
-        self.privacy = self._label(_(PUBLIC_AFTER))
+        self.privacy = self._label(_(PUBLIC_AFTER if pictures else TEXT_PUBLIC_AFTER))
         root.addWidget(self.privacy)
         root.addStretch(1)
         self.status = StatusLine(self._is_dark)
@@ -270,4 +277,4 @@ class PublishSheet(QDialog):
 
 
 __all__ = ["ACCEPTED_LINE", "BY_YOU", "BY_YOU_WITH", "DIFFERS", "PUBLIC_AFTER", "PublishSheet",
-           "SIGN_HERE"]
+           "SIGN_HERE", "TEXT_PUBLIC_AFTER"]
