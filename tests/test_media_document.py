@@ -92,6 +92,7 @@ class _Window:
     _media_not_uploaded = MainWindow._media_not_uploaded
     _has_images = MainWindow._has_images
     _loses_content_on_save = MainWindow._loses_content_on_save
+    _saves_rmd_source = MainWindow._saves_rmd_source
     _has_formatting = MainWindow._has_formatting
     _resolve_local_image = MainWindow._resolve_local_image
 

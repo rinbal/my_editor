@@ -5290,7 +5290,9 @@ class MainWindow(QMainWindow):
             # only underline and colors stay behind.
             return has_local_only_formatting(ed.document())
         if lowered.endswith('.rmd'):
-            return self._has_formatting(ed)
+            # Converted, the formatting goes into the R Markdown; only a tab
+            # saved as its source text leaves it out (_to_rmd_content).
+            return self._saves_rmd_source(ed) and self._has_formatting(ed)
         return self._has_formatting(ed) or self._has_images(ed)
 
     def _ask_before_losing(self, ed, path: str) -> str:
@@ -5328,6 +5330,15 @@ class MainWindow(QMainWindow):
             message = _("RTF can’t keep pictures. Text, formatting and colors stay.")
             anyway = Button(_("Save as {ext} Anyway").format(ext=ext_label), "anyway",
                             DESTRUCTIVE, _("Pictures will be left out of the saved file."))
+        elif lowered == ".rmd":
+            # Only a tab saved as its source text asks (_loses_content_on_save):
+            # the formatting made in it goes, its pictures stay.
+            title = _("Save as {ext} without formatting?").format(ext=ext_label)
+            message = _("R Markdown is saved as its source text, so bold, italic, colors "
+                        "and other formatting made here are left out. Pictures stay.")
+            anyway = Button(_("Save as {ext} Anyway").format(ext=ext_label), "anyway",
+                            DESTRUCTIVE, _("Formatting and colors will be left out of the "
+                                           "saved file."))
         else:
             title = _("Save as {ext} without formatting?").format(ext=ext_label)
             message = _("This document has colors, text formatting or images "
@@ -6281,15 +6292,9 @@ class MainWindow(QMainWindow):
         return bytes(buf.data())
 
     def _to_rmd_content(self, ed, path: str) -> str:
-        """Content for a .Rmd save: source passthrough or rich conversion.
-
-        A tab that came from an .Rmd file (including one restored by crash
-        recovery, which loses the flag but keeps the path) is already
-        source. A plain tab whose text already starts with a YAML fence is
-        treated as source too, so raw Rmd typed into a new tab is not
-        double-wrapped. Everything else is converted with frontmatter.
-        """
-        origin = (getattr(ed, "_file_path", "") or "").lower()
+        """Content for a .Rmd save: the tab's text when it is R Markdown
+        source (_saves_rmd_source), else the document converted, with
+        front matter."""
         # R Markdown is markdown, so a pasted image serializes to real
         # ![alt](sidecar) syntax here. Reading the source out as plain text
         # would drop it, leaving a bare U+FFFC for pandoc to choke on.
@@ -6303,14 +6308,23 @@ class MainWindow(QMainWindow):
             link = self._media_file_link(media, path)
             return link.markdown() if link is not None else None
 
-        source = serialize_plain_with_images(ed.document(), reference)
-        if getattr(ed, "_loaded_as_rmd_source", False) or origin.endswith(".rmd"):
-            return source
-        if source.lstrip().startswith("---") and not self._has_formatting(ed):
-            return source
+        if self._saves_rmd_source(ed):
+            return serialize_plain_with_images(ed.document(), reference)
         title = derive_title(ed.document(), self._export_title_for(path))
         return document_to_rmd(ed.document(), title,
                                copy_image=self._make_rmd_image_copier(ed, path))
+
+    def _saves_rmd_source(self, ed) -> bool:
+        """Whether ``ed`` is saved to .Rmd as its text, not converted
+        (_to_rmd_content): a tab that came from an .Rmd file is source
+        (one restored by crash recovery too, which loses the flag but
+        keeps the path), and so is a plain tab whose text starts with a
+        YAML fence, so raw Rmd typed into a new tab is not wrapped twice."""
+        origin = (getattr(ed, "_file_path", "") or "").lower()
+        if getattr(ed, "_loaded_as_rmd_source", False) or origin.endswith(".rmd"):
+            return True
+        return (ed.document().toPlainText().lstrip().startswith("---")
+                and not self._has_formatting(ed))
 
     def _make_rmd_image_copier(self, ed, rmd_path: str):
         """Copy images into the .Rmd's sidecar media folder.

@@ -147,6 +147,26 @@ def test_saving_markdown_without_colors_takes_them_off_the_document(win, tmp_pat
 
 
 # --------------------------------------------------------------------- #
+# R Markdown asks only when its source text leaves formatting out        #
+# --------------------------------------------------------------------- #
+
+def test_a_document_converted_to_rmd_is_saved_without_a_question(win):
+    # The conversion keeps bold, italic and colors (rmarkdown.document_to_rmd).
+    assert win._loses_content_on_save(_colored(), "paper.Rmd") is False
+
+
+def test_the_rmd_source_question_names_what_is_lost(win, monkeypatch):
+    import main_window
+    seen = {}
+    monkeypatch.setattr(main_window, "ask", lambda parent, **kw: seen.update(kw) or "cancel")
+    ed = _colored()
+    ed._loaded_as_rmd_source = True
+    assert win._ask_before_losing(ed, "paper.Rmd") == "cancel"
+    assert seen["message"] == ("R Markdown is saved as its source text, so bold, italic, colors "
+                               "and other formatting made here are left out. Pictures stay.")
+
+
+# --------------------------------------------------------------------- #
 # R Markdown keeps its images                                            #
 # --------------------------------------------------------------------- #
 
