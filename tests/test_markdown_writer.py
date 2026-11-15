@@ -231,6 +231,21 @@ def test_an_entity_keeps_the_format_of_its_words(source, written):
     assert document_to_markdown(doc, _image_as_read) == written
 
 
+@pytest.mark.parametrize("source, written", [
+    ("- a\n* b\n", "- a\n* b\n"),
+    ("> - a\n> * b\n", "> - a\n> * b\n"),
+    ("1. a\n\n2) b\n", "1. a\n2) b\n"),
+    ("- a\n\n+ b\n", "- a\n* b\n"),
+])
+def test_a_list_right_after_another_stays_a_list_of_its_own(source, written):
+    # Both were written with "-" (or "."): one list, and in a quote two
+    # quotes.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == written
+
+
 def test_an_entity_that_makes_a_line_break_opens_as_text():
     assert not holds_faithfully("a&#10;b\n")
 

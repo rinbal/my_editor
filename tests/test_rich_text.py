@@ -54,7 +54,8 @@ def test_no_checklist_mark_is_left_after_a_checklist():
 def test_a_list_started_after_a_checklist_is_a_plain_list():
     doc = from_markdown("- [x] done\n\nAfter\n")
     QTextCursor(block_named(doc, "After")).createList(QTextListFormat.Style.ListDisc)
-    assert document_to_markdown(doc) == "- [x] done\n\n- After\n"
+    # (A list of its own, by its other marker.)
+    assert document_to_markdown(doc) == "- [x] done\n* After\n"
 
 
 def test_a_checklist_comes_back_the_same():

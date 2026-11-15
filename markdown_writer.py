@@ -201,6 +201,7 @@ class _Block:
     rows: List[List[List[_Span]]] = field(default_factory=list)
     bullet_text: str = ""      # a typed bullet line, exactly as typed
     group: int = -1            # which list an item belongs to
+    other_marker: bool = False  # an item written with "*" or ")" (_set_list_markers)
     quote: int = 0             # how deep in block quotes it sits
     literal: bool = False      # text to be read back as text (see literal_text)
 
@@ -838,7 +839,10 @@ def _block_markdown(block: _Block) -> str:
         return "\n".join(prefix + line if line else prefix.rstrip()
                          for line in body.split("\n"))
     if block.kind == "item":
-        marker = f"{block.number}." if block.ordered else "-"
+        if block.ordered:
+            marker = f"{block.number}{')' if block.other_marker else '.'}"
+        else:
+            marker = "*" if block.other_marker else "-"
         if block.task is not None:
             marker += " [x]" if block.task else " [ ]"
         pad = " " * (LIST_INDENT * (block.level - 1))
@@ -864,6 +868,7 @@ def document_to_markdown(doc, image_target: Optional[ImageTarget] = None, *,
     blocks = document_blocks(doc, image_target)
     if literal:
         _make_literal(blocks)
+    _set_list_markers(blocks)
     out: List[str] = []
     previous: Optional[_Block] = None
     for block in blocks:
@@ -893,6 +898,25 @@ def _new_list(previous: _Block, block: _Block) -> bool:
     return previous.group != block.group and previous.level == block.level
 
 
+def _set_list_markers(blocks: List[_Block]) -> None:
+    """Give a list that follows another of its kind at its depth, with only
+    empty lines between, the other marker ("*" for "-", ")" for "."): with
+    the same one a reader takes the two for one list ("- a\n\n- b")."""
+    last_at: dict = {}                      # depth: the last item written at it
+    for block in blocks:
+        if block.kind == "empty":
+            continue
+        if block.kind != "item":
+            last_at.clear()                 # (a paragraph, a heading, ... ends a list)
+            continue
+        for level in [level for level in last_at if level > block.level]:
+            del last_at[level]
+        last = last_at.get(block.level)
+        if last is not None and last.ordered == block.ordered and last.quote == block.quote:
+            block.other_marker = last.other_marker != (last.group != block.group)
+        last_at[block.level] = block
+
+
 def _says_nothing(item: _Block) -> bool:
     """Whether a list item has nothing in it, not even a task's box."""
     return item.task is None and not _inline_markdown(item.spans)
@@ -907,9 +931,11 @@ def _separator(previous: _Block, block: _Block) -> str:
     if previous.kind == "empty":
         return "\n\n"
     if previous.kind == "item" and block.kind == "item":
-        # A different list at the same depth is a list of its own.
+        # A different list at the same depth is a list of its own, by its
+        # other marker (_set_list_markers): a blank line would end a quote
+        # around both, and spread out the item around both.
         if _new_list(previous, block):
-            return "\n\n"
+            return "\n" if previous.quote == block.quote else "\n\n"
         if block.level > previous.level and _says_nothing(block) and not _says_nothing(previous):
             # An empty item cannot follow words of a paragraph: right under
             # them it would join them ("- a\n    -" is a heading "a"). A
