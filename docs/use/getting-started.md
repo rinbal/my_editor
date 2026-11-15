@@ -35,7 +35,7 @@ Choose **File > Save** (**⌘S** / **Ctrl+S**), give the note a name and choose 
 
 Pictures you added are copied into a folder beside the note, named after it (`Mountain lake_media`), so the note and its pictures stay together wherever you move them.
 
-From now on **⌘S** / **Ctrl+S** saves without asking. What you type is also backed up as you go, so a crash never costs you your words.
+From now on **⌘S** / **Ctrl+S** saves without asking. What you type is also [backed up as you go](privacy.md#backups-while-you-type), so a crash never costs you your words.
 
 ## 5. Keep your notes in a folder
 
