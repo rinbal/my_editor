@@ -8,12 +8,12 @@ Choose the format in the Save As window, by its file type.
 
 | Format | What it keeps |
 |---|---|
-| Markdown (`.md`) | Headings, bold, italic, strikethrough, code, links, lists, checklists, quotes, code blocks, tables, footnotes and photo groups. Underline and colors have no Markdown, so MyEditor asks first when a document has them. Pictures go into a folder beside the file. This is the same Markdown an article publishes. |
+| Markdown (`.md`) | Headings, bold, italic, strikethrough, code, links, lists, checklists, quotes, code blocks, tables, footnotes and photo groups. Underline and colors have no Markdown, so MyEditor asks first when a document has them: save as HTML or RTF to keep them, or **Save Without Colors**, which also takes them out of the document (**Undo** brings them back). Pictures go into a folder beside the file. This is the same Markdown an article publishes. |
 | HTML (`.html`) | Everything, in one file you can send: pictures are inside it, photo groups keep their mosaic, and the page follows the reader's light or dark appearance. |
 | PDF (`.pdf`) | Pages as **File > Page Setup…** sets them: paper size (A4 or Letter, from your region), orientation and margins, pictures scaled to the page, and a page number in the footer. |
 | Rich Text (`.rtf`) | Formatted text for word processors, colors and underline too. |
 | Plain text (`.txt`) | The words only, without formatting. |
-| R Markdown (`.Rmd`) | Markdown with a YAML header for R. Colors and underline are kept as Pandoc spans; pictures go into a folder beside the file. |
+| R Markdown (`.Rmd`) | Markdown with a YAML header for R. Colors, highlights and underline are kept as Pandoc spans; pictures go into a folder beside the file. |
 
 Files MyEditor saves are written safely: a crash while saving never leaves half a file, and a file keeps its permissions, Finder tags and line endings.
 

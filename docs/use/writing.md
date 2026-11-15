@@ -84,4 +84,4 @@ Dictation on this computer works offline. The first time, MyEditor offers to dow
 
 ## Write, Preview and Split
 
-**View > Write**, **Preview** and **Split** (**⌃⌘1** to **⌃⌘3** / **Ctrl+Shift+1** to **Ctrl+Shift+3**), or the switch at the right end of the toolbar, show a document as you write it, as it reads, or both side by side. The preview follows your typing. In a narrow window, Split shows one side and the switch flips between them.
+**View > Write**, **Preview** and **Split** (**⌃⌘1** to **⌃⌘3** / **Ctrl+Shift+1** to **Ctrl+Shift+3**), or the switch at the right end of the toolbar, show a document as you write it, as it reads, or both side by side. The preview follows your typing and shows what the Markdown holds, so it leaves colors, highlights and underlines out and says so in a quiet line above the text. In a narrow window, Split shows one side and the switch flips between them.

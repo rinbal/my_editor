@@ -33,8 +33,8 @@ You can also type a page number in the box on the toolbar. **Contents** on the t
 | To | Mac | Windows and Linux |
 |---|---|---|
 | Zoom in or out | **⌘+** / **⌘−**, or **+** / **−** | **Ctrl+=** / **Ctrl+−**, or **+** / **−** |
-| Fit the page's width | **⌘0**, or **Fit Width** | **Ctrl+0**, or **Fit Width** |
-| Actual size | **⌥⌘1** | **Ctrl+1** |
+| Fit the page's width | **⌥⌘0**, or **Fit Width** | **Ctrl+0**, or **Fit Width** |
+| Actual size | **⌘0**, as in Preview, or **⌥⌘1** | **Ctrl+1** |
 | Fit the whole page | **⌥⌘2**, or **Fit Page** | **Ctrl+2**, or **Fit Page** |
 
 Hold **⌘** / **Ctrl** and turn the mouse wheel to zoom too.
