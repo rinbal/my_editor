@@ -332,6 +332,30 @@ def test_a_message_that_arrives_in_the_detail_in_sight_is_read(window):
     assert window.following.row(sid).unread and window.view.has_unread()
 
 
+def test_a_hand_in_that_fails_in_the_background_shows_as_not_sent_at_once(window):
+    # ME-12: the status bar said it for eight seconds; the row, the pill and
+    # the detail said "Not confirmed yet. MyEditor keeps checking." until the
+    # next look, a quarter of an hour later. The server is asked at once
+    # when a run ends failed: it holds nothing, so the row is the person's
+    # turn, with Send Again and Discard.
+    from nostr.standup.drafting import ArticleDraft, Choice
+    from nostr.standup.submitting import Phase
+    from nostr.ui.standup_submit import RoundAnswer
+    world = window.world
+    window.follow()                                     # the list is read: its rows show
+    world.server.inject("submit", DROP_BEFORE)          # the connection fails before it arrives
+    run = window.writer.submit(
+        window.profile,
+        ArticleDraft(d="im-hintergrund", title="Im Hintergrund", summary="", content="Text."),
+        Choice(publication=ADDRESS, name="Magazin", signer="writer", rights=True, message=""),
+        RoundAnswer(1))
+    window.writer.in_background(run)
+    run.start()
+    world.settle()
+    assert run.progress.phase is Phase.FAILED
+    assert window.rows() == [("header", "Your Turn", ""), ("row", "Im Hintergrund", "Not sent")]
+
+
 def test_without_a_server_nothing_is_read_and_the_panel_has_no_submissions_view(monkeypatch):
     window = Window(FollowWorld(), monkeypatch, server="")
     window.follow()
