@@ -114,3 +114,32 @@ def test_the_toolbar_toggles_show_and_hide_the_side_panels(tmp_path):
     assert r["mark"] == [["Drafts", False], ["Drafts, New", True], ["Drafts", False],
                          ["Drafts, New", True], ["Drafts", False]]
     assert r["account_gone"] == [False, False, False]
+
+
+def test_the_toggle_that_carries_the_dot_opens_the_panel_where_the_news_is():
+    # ME-7: the dot says something new waits in Einreichungen, but the click
+    # opened the view the panel showed last ("No drafts"). With the dot it
+    # opens at Einreichungen; without it, where it was; open, it closes.
+    from types import SimpleNamespace
+    import main_window
+    from nostr.ui.submissions_view import PANEL_VIEW as SUBMISSIONS
+
+    class Panel:
+        visible, view = False, "drafts"
+
+        def isVisible(self):  # noqa: N802, Qt's name
+            return self.visible
+
+        def show_view(self, key):
+            self.view = key
+
+    panel = Panel()
+    win = SimpleNamespace(_drafts_panel=panel, _submissions_unread=False,
+                          _show_drafts_panel=lambda: setattr(panel, "visible", True),
+                          _hide_drafts_panel=lambda: setattr(panel, "visible", False))
+    main_window.MainWindow._on_drafts_toggle(win)
+    assert (panel.visible, panel.view) == (True, "drafts")
+    main_window.MainWindow._on_drafts_toggle(win)
+    win._submissions_unread = True                  # a message came: the button has the dot
+    main_window.MainWindow._on_drafts_toggle(win)
+    assert (panel.visible, panel.view) == (True, SUBMISSIONS)

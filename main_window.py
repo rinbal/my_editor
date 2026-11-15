@@ -336,6 +336,7 @@ from nostr.ui.standup_publications import PublicationLogos
 from nostr.ui.standup_submit_sheet import SubmitSheet
 from nostr.ui.submission_pill import SubmissionPill
 from nostr.ui.submissions_host import Ports as SubmissionPorts, SubmissionsHost
+from nostr.ui.submissions_view import PANEL_VIEW as SUBMISSIONS_VIEW
 from nostr.ui.submissions_view import SubmissionsView, add_to_panel as add_submissions_view
 from nostr.ui.publish_copy_dialog import resolve_pick
 from nostr.ui.publish_note_dialog import PublishNoteDialog
@@ -2919,6 +2920,15 @@ class MainWindow(QMainWindow):
                     listed_as=_("Show what you published"),
                     keywords=(_("notes"), _("articles"), _("published"))),
             triggered=self._on_show_published)
+        # Its third view: what the account handed in to publications, and
+        # their answers. Offered only where the view is (a server's address
+        # is set, _build_drafts_views). Y: no other letter of its name is
+        # free with Shift-Command on a Mac and Ctrl+Shift elsewhere.
+        self.act_nostr_submissions = add(
+            Command("nostr.submissions", _("Submissions"), NOSTR, "Ctrl+Shift+Y", nostr=True,
+                    listed_as=_("Show what you submitted"),
+                    keywords=("standup", "editorial", "redaktion")),
+            triggered=self._on_show_submissions)
         # The Drafts panel's view reads again (its title follows the view
         # shown). In the menu bar, where every command of the app is listed,
         # and in the panel's action menu; each platform's own key for it.
@@ -3278,6 +3288,7 @@ class MainWindow(QMainWindow):
         m_nostr.addSeparator()
         m_nostr.addAction(self.act_nostr_drafts)
         m_nostr.addAction(self.act_nostr_published)
+        m_nostr.addAction(self.act_nostr_submissions)
         m_nostr.addAction(self.act_refresh_drafts)
         m_nostr.addAction(self.act_draft_relays)
         m_nostr.addAction(self.act_nostr_imports)
@@ -3456,8 +3467,10 @@ class MainWindow(QMainWindow):
         self._submissions_view = SubmissionsView(
             name_of=self._profile_names.name, avatar_of=self._avatars.get,
             is_dark=self.is_dark_theme, logo_of=self._publication_logos.get)
-        add_submissions_view(self._drafts_panel, self._submissions_view,
-                             server=configured_server())
+        offered = add_submissions_view(self._drafts_panel, self._submissions_view,
+                                       server=configured_server())
+        # No view, no command for it (nor its key).
+        self.act_nostr_submissions.setVisible(offered)
         self._submissions_view.unread_changed.connect(self._on_submissions_unread)
         self._submissions = SubmissionsHost(self._submission_ports(),
                                             view=self._submissions_view,
@@ -3634,6 +3647,10 @@ class MainWindow(QMainWindow):
         if self._drafts_panel.isVisible():
             self._hide_drafts_panel()
         else:
+            if self._submissions_unread:
+                # Its dot says something new waits in Einreichungen: the
+                # panel opens there, not at the view it showed last.
+                self._drafts_panel.show_view(SUBMISSIONS_VIEW)
             self._show_drafts_panel()
 
 
@@ -11387,26 +11404,32 @@ class MainWindow(QMainWindow):
         preserve the user's resize. The QSplitter naturally clamps the
         panel between its min and max widths.
         """
-        if self._drafts_panel is None:
-            return
+        if self._drafts_panel is not None:
+            self._show_or_hide_panel_view(self._drafts_panel.DRAFTS_VIEW)
+
+    def _show_or_hide_panel_view(self, view: str) -> None:
+        """The panel on ``view``, or the panel put away when that is the
+        view it shows: what each of the panel's commands does."""
         panel = self._drafts_panel
-        if panel.isVisible() and panel.current_view() == panel.DRAFTS_VIEW:
+        if panel.isVisible() and panel.current_view() == view:
             self._hide_drafts_panel()
         else:
-            panel.show_view(panel.DRAFTS_VIEW)
+            panel.show_view(view)
             self._show_drafts_panel()
 
     def _on_show_published(self) -> None:
         """Nostr > Published: the panel on its Published view, or the
         panel put away when that is what it shows."""
+        if self._drafts_panel is not None:
+            self._show_or_hide_panel_view(PUBLISHED_VIEW)
+
+    def _on_show_submissions(self) -> None:
+        """Nostr > Submissions: the panel on its Einreichungen view, or the
+        panel put away when that is what it shows. Only where the view
+        is (a server's address is set)."""
         panel = self._drafts_panel
-        if panel is None:
-            return
-        if panel.isVisible() and panel.current_view() == PUBLISHED_VIEW:
-            self._hide_drafts_panel()
-        else:
-            panel.show_view(PUBLISHED_VIEW)
-            self._show_drafts_panel()
+        if panel is not None and SUBMISSIONS_VIEW in panel.views():
+            self._show_or_hide_panel_view(SUBMISSIONS_VIEW)
 
     def _show_drafts_panel(self) -> None:
         if self._drafts_panel is None:
