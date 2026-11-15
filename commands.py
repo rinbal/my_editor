@@ -473,7 +473,10 @@ class CommandRegistry(QObject):
         for entry in self._entries.values():
             command = entry.command
             keys = key_text(command.shortcut)
-            if not keys or entry.hidden_from_list or (command.nostr and not nostr):
+            # Nor a command the window does not offer at all (a feature
+            # that is not set up): its key does nothing.
+            if not keys or entry.hidden_from_list or (command.nostr and not nostr) \
+                    or not entry.action.isVisible():
                 continue
             words = command.listed_as or command.title.rstrip("…").rstrip(".").rstrip()
             rows.setdefault(command.group, []).append((keys, words))

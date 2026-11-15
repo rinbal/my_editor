@@ -39,7 +39,10 @@ class Ports:
     - ``confirm_key(on_key, on_refused)``: trust.confirm_key for the
       receiving server.
     - ``upload(pictures, on_progress(fraction), on_done({sha256: servers}),
-      on_failure(words))`` returns a callable that stops it.
+      on_failure(words, details))`` returns a callable that stops it;
+      ``words`` is the media library's one sentence for the failure
+      (translated: the cause and what to do), ``details`` the servers
+      that refused the file (or ""), shown behind Details only.
     - ``held(sid)``: SubmissionsList.entry, the list's entry for a sid,
       whose secrets a new revision 1 of it keeps (contract 2).
     - ``record(entry, on_done(RecordResult))``: SubmissionsList.record.
@@ -73,7 +76,7 @@ class Ports:
     confirm_key: Callable[[Callable[[RedaktionKey], None],
                            Callable[[KeyNotConfirmed], None]], None]
     upload: Callable[[Sequence[EncryptedPicture], Callable[[float], None], UploadDone,
-                      Callable[[str], None]], Callable[[], None]]
+                      Callable[[str, str], None]], Callable[[], None]]
     held: Callable[[str], Optional[Any]]
     record: Callable[[Any, Callable[[RecordResult], None]], None]
     mark_stored: Callable[[Any], None]

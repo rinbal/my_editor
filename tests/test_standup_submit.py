@@ -130,7 +130,7 @@ def _pictures(count: int):
 def _upload(store, pictures):
     seen = {"progress": [], "done": [], "failed": []}
     stop = BlossomUploads(store)(pictures, seen["progress"].append, seen["done"].append,
-                                 seen["failed"].append)
+                                 lambda said, details: seen["failed"].append((said, details)))
     return seen, stop
 
 
@@ -162,15 +162,15 @@ def test_a_file_the_server_names_by_another_hash_fails_and_the_others_stop():
 
 def test_a_refused_picture_names_the_servers_in_its_details_never_its_sentence():
     # Contract 7: when no server takes it, the servers and the reasons are
-    # named; lessons 36: behind Details, after the store's one sentence.
+    # named; lessons 36: behind Details, apart from the store's one sentence.
     store, pictures = Store(), _pictures(1)
     seen, _stop = _upload(store, pictures)
     (name, *_rest), = store.sent
     store.refused[name] = "good.example: too large\nmirror.example: too large"
     store.upload_failed.emit(name, "No media server took the file: add another one in "
                                    "Media Servers.")
-    assert seen["failed"] == ["No media server took the file: add another one in Media "
-                              "Servers.\ngood.example: too large\nmirror.example: too large"]
+    assert seen["failed"] == [("No media server took the file: add another one in Media "
+                               "Servers.", "good.example: too large\nmirror.example: too large")]
 
 
 def test_a_picture_that_failed_otherwise_has_only_the_store_s_sentence():
@@ -178,7 +178,7 @@ def test_a_picture_that_failed_otherwise_has_only_the_store_s_sentence():
     seen, _stop = _upload(store, pictures)
     (name, *_rest), = store.sent
     store.upload_failed.emit(name, "Your media server is busy: try again later.")
-    assert seen["failed"] == ["Your media server is busy: try again later."]
+    assert seen["failed"] == [("Your media server is busy: try again later.", "")]
 
 
 def test_a_file_the_server_misses_goes_up_again_through_the_real_library(tmp_path):
@@ -202,6 +202,37 @@ def test_a_file_the_server_misses_goes_up_again_through_the_real_library(tmp_pat
         assert seen["done"] == [{pictures[0].sha256: (SERVER,)}]
     assert server.uploads == [pictures[0].cipher] * 2
     assert all(body[:4] == b"SMF1" for body in server.uploads)     # never the plaintext
+
+
+def test_a_picture_a_media_server_refuses_is_said_with_its_reason_not_the_connection(tmp_path):
+    # Through the real library and a real run: a server that answers 413
+    # is not the connection's fault. The handoff's one sentence is the
+    # library's, the cause and what to do; the server's name is behind
+    # Details only (lessons 36).
+    from nostr.blossom.client import BlossomClient
+    from nostr.blossom.errors import ERROR_CODES, friendly_message
+    from nostr.blossom.settings import BlossomSettings
+    from nostr.blossom.store import MediaStore
+    from nostr.ui.standup_handoff import phase_words
+    from tests.blossom_fakes import (SERVER, FakeBlossomServer, FakeNam, FakeProfile,
+                                     FakeSessionPool, FakeSigner)
+    from tests.test_standup_submitting import World as SubmittingWorld
+    settings = BlossomSettings(tmp_path / "servers.json")
+    settings.set_custom_servers([SERVER])
+    nam = FakeNam(None, responder=FakeBlossomServer(SERVER, fail_with=413))
+    store = MediaStore(session_pool=FakeSessionPool(FakeSigner()), profile_provider=FakeProfile,
+                       settings=settings, client=BlossomClient(nam=nam))
+    world = SubmittingWorld()
+    run = world.submitting
+    run._ports = replace(run._ports, upload=BlossomUploads(store))
+    run.start()
+    world.settle()
+    nam.settle()
+    failure = run.progress.failure
+    assert run.progress.step is Step.FAILED and failure.retry is Step.UPLOADING
+    assert phase_words(run.progress, "Magazin")[1] == friendly_message(
+        ERROR_CODES.SERVER_TOO_LARGE)
+    assert failure.details == "good.example: too large"
 
 
 def test_a_mirror_that_refuses_a_picture_says_nothing_and_the_first_server_counts(tmp_path):

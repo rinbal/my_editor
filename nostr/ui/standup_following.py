@@ -47,6 +47,7 @@ from PySide6.QtCore import QObject, Signal
 
 from .. import failures
 from ..later import answer_later
+from ..signer_limits import through_signer_app
 from ..standup import conversation, formats, views
 from ..standup import following as rules
 from ..standup import thread as threads
@@ -198,6 +199,13 @@ class Following(QObject):
     def me(self) -> str:
         """The account's pubkey."""
         return self._account.writer
+
+    @property
+    def signer_app(self) -> bool:
+        """Whether the account signs through a signer app, where a request
+        of the person's may wait to be confirmed (never with the key kept
+        on this computer)."""
+        return through_signer_app(self._account.profile)
 
     def view_opened(self) -> None:
         """The Einreichungen view opened: look now, and read the works

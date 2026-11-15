@@ -256,7 +256,8 @@ def test_published_by_and_the_rights_show_only_where_they_are_asked_for(tmp_path
     assert sheet.choice().signer == "writer"
     sheet.picker.setCurrentIndex(1)
     assert sheet.by_me.isVisible() and sheet.rights.isVisible()
-    assert sheet.by_hint.text() == "Nach der Annahme veröffentlichst du mit deinem Schlüssel."
+    assert sheet.by_hint.text() == ("Nach der Annahme veröffentlichst du selbst, von deinem "
+                                    "Konto aus.")
     sheet.by_publication.setChecked(True)
     assert sheet.by_hint.text() == ("Die Redaktion schlägt bei der Annahme die Aufteilung der "
                                     "Zaps vor, du bestätigst sie.")
@@ -901,6 +902,29 @@ def test_tab_leaves_the_note_and_command_return_submits_from_it(tmp_path):
     assert sheet.message.toPlainText() == "Hallo\n" and writer.submitted == []
     QTest.keyClick(sheet.message, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
     assert len(writer.submitted) == 1 and sheet._pages.currentIndex() == 1
+    sheet.close()
+
+
+def test_command_return_in_the_note_is_the_sheets_own_whatever_else_has_that_key(tmp_path):
+    # The fork's Linux run: Command-Return from the note did not submit.
+    # On Windows and Linux Mark as Checked is Control-Return too; the note
+    # takes its key itself, before any command on the same key can.
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QAction, QKeySequence
+    from PySide6.QtTest import QTest
+    writer = Writer()
+    sheet = _sheet(tmp_path, writer)
+    other, chosen = QAction(sheet), []
+    other.setShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Return))
+    other.triggered.connect(lambda: chosen.append(True))
+    sheet.addAction(other)
+    sheet.show()
+    sheet.activateWindow()
+    _settle()
+    sheet.message_toggle.click()
+    sheet.message.setFocus()
+    QTest.keyClick(sheet.message, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    assert len(writer.submitted) == 1 and chosen == []
     sheet.close()
 
 

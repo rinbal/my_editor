@@ -97,6 +97,21 @@ def test_an_account_kept_here_has_every_command():
     assert all(enabled(win, c.id) for c in win.commands.commands() if c.nostr)
 
 
+def test_without_a_servers_address_handing_in_is_not_in_the_menu():
+    # ME-10: the build ships without an address. The command was offered
+    # all the same and ended in a sheet that could do nothing, while the
+    # Einreichungen view is left out in that state. The commands follow
+    # the view: not offered (hidden, not dimmed).
+    from main_window import MainWindow
+    win = window_with(SimpleNamespace(is_local=False, user_pubkey=PK))
+    ours = [win.commands.action(name) for name in ("nostr.submit_publication",
+                                                   "nostr.submissions")]
+    MainWindow._offer_submitting(win, False)
+    assert not any(action.isVisible() or action.isEnabled() for action in ours)
+    MainWindow._offer_submitting(win, True)
+    assert all(action.isVisible() and action.isEnabled() for action in ours)
+
+
 def test_submitting_to_a_publication_is_for_a_text_written_here():
     # Plan 10.2: under Publish as Article, and for an article; never
     # without an account. UX-M1: also for a written text that is not an

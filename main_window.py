@@ -336,6 +336,7 @@ from nostr.ui.standup_publications import PublicationLogos
 from nostr.ui.standup_submit_sheet import SubmitSheet
 from nostr.ui.submission_pill import SubmissionPill
 from nostr.ui.submissions_host import Ports as SubmissionPorts, SubmissionsHost
+from nostr.ui.submissions_view import PANEL_VIEW as SUBMISSIONS_VIEW
 from nostr.ui.submissions_view import SubmissionsView, add_to_panel as add_submissions_view
 from nostr.ui.publish_copy_dialog import resolve_pick
 from nostr.ui.publish_note_dialog import PublishNoteDialog
@@ -2919,6 +2920,15 @@ class MainWindow(QMainWindow):
                     listed_as=_("Show what you published"),
                     keywords=(_("notes"), _("articles"), _("published"))),
             triggered=self._on_show_published)
+        # Its third view: what the account handed in to publications, and
+        # their answers. Offered only where the view is (a server's address
+        # is set, _offer_submitting). Y: no other letter of its name is
+        # free with Shift-Command on a Mac and Ctrl+Shift elsewhere.
+        self.act_nostr_submissions = add(
+            Command("nostr.submissions", _("Submissions"), NOSTR, "Ctrl+Shift+Y", nostr=True,
+                    listed_as=_("Show what you submitted"),
+                    keywords=("standup", "editorial", "redaktion")),
+            triggered=self._on_show_submissions)
         # The Drafts panel's view reads again (its title follows the view
         # shown). In the menu bar, where every command of the app is listed,
         # and in the panel's action menu; each platform's own key for it.
@@ -3278,6 +3288,7 @@ class MainWindow(QMainWindow):
         m_nostr.addSeparator()
         m_nostr.addAction(self.act_nostr_drafts)
         m_nostr.addAction(self.act_nostr_published)
+        m_nostr.addAction(self.act_nostr_submissions)
         m_nostr.addAction(self.act_refresh_drafts)
         m_nostr.addAction(self.act_draft_relays)
         m_nostr.addAction(self.act_nostr_imports)
@@ -3456,8 +3467,8 @@ class MainWindow(QMainWindow):
         self._submissions_view = SubmissionsView(
             name_of=self._profile_names.name, avatar_of=self._avatars.get,
             is_dark=self.is_dark_theme, logo_of=self._publication_logos.get)
-        add_submissions_view(self._drafts_panel, self._submissions_view,
-                             server=configured_server())
+        self._offer_submitting(add_submissions_view(
+            self._drafts_panel, self._submissions_view, server=configured_server()))
         self._submissions_view.unread_changed.connect(self._on_submissions_unread)
         self._submissions = SubmissionsHost(self._submission_ports(),
                                             view=self._submissions_view,
@@ -3634,6 +3645,10 @@ class MainWindow(QMainWindow):
         if self._drafts_panel.isVisible():
             self._hide_drafts_panel()
         else:
+            if self._submissions_unread:
+                # Its dot says something new waits in Einreichungen: the
+                # panel opens there, not at the view it showed last.
+                self._drafts_panel.show_view(SUBMISSIONS_VIEW)
             self._show_drafts_panel()
 
 
@@ -10789,6 +10804,16 @@ class MainWindow(QMainWindow):
 
     # -- submitting to a STANDUP publication (plan 10.2) -----------------------
 
+    def _offer_submitting(self, offered: bool) -> None:
+        """Handing in to a publication is offered where a server's address
+        is set. Without one the Einreichungen view is left out
+        (submissions_view.add_to_panel), and so are the commands: not in
+        the menu at all, as everything of a feature that is not set up
+        (dimmed, nothing would say why; chosen, the sheet could only say
+        that nothing can be handed in)."""
+        for action in (self.act_nostr_submit, self.act_nostr_submissions):
+            action.setVisible(offered)
+
     def _update_submit_command(self, *_args) -> None:
         """Submit to a Publication… is for a text written here, while an
         account is in use: as Publish as Article is, so nobody finds it
@@ -10827,15 +10852,16 @@ class MainWindow(QMainWindow):
                    message=_("Open the text you want to submit, then choose Submit to a "
                              "Publication again."), nostr=True)
             return
-        if not self._wants_article_header(ed):
+        made = self._submission_for_sheet(ed, active)
+        if made is None:
+            return                              # said why, and nothing opened for it
+        draft, cover, byline, private, public = made
+        becomes_article = not self._wants_article_header(ed)
+        if becomes_article:
             # Not an article yet: Article Details opens on it, which makes
             # it one (its head shows on the page). What a publication asks
             # for beyond the title is added there, as the sheet says.
             self.act_article_details.setChecked(True)
-        made = self._submission_for_sheet(ed, active)
-        if made is None:
-            return                              # said why
-        draft, cover, byline, private, public = made
         sheet = SubmitSheet(writer=self._standup(), draft=draft, cover=cover, byline=byline,
                             private_names=private, public_pictures=public, profile=active,
                             store=self._profile_store,
@@ -10844,12 +10870,24 @@ class MainWindow(QMainWindow):
         sheet.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         sheet.submitted.connect(lambda d, ed=ed: self._keep_submitted_identifier(ed, d))
         sheet.view_submission.connect(self._submissions.open_detail)
+        if becomes_article:
+            sheet.finished.connect(lambda _result: self._submit_sheet_closed(sheet, ed))
         if cover.isNull() and draft.image.startswith(("https://", "http://")):
             # A cover that is only a web address: fetched for the card and
             # the small cover; a monogram until then, and when it does not come.
             self._submissions.cover_for_sheet(sheet, draft.image, draft.title)
         self._publish_sheet = sheet                 # follows the appearance while open
         sheet.open()
+
+    def _submit_sheet_closed(self, sheet, ed) -> None:
+        """The sheet that opened Article Details on a plain text closed.
+        Cancelled before anything went on its way (it holds no run), the
+        text is what it was: Article Details closes again, the article's
+        head leaves the page and the window has its frame back. Handed in
+        or on its way, it stays the article its submission is about."""
+        if sheet.run is None and self.current_editor() is ed \
+                and self.act_article_details.isChecked():
+            self.act_article_details.setChecked(False)
 
     def _submission_for_sheet(self, ed, active) -> Optional[tuple]:
         """``(draft, cover, byline, private, public)`` of the article in
@@ -11387,26 +11425,32 @@ class MainWindow(QMainWindow):
         preserve the user's resize. The QSplitter naturally clamps the
         panel between its min and max widths.
         """
-        if self._drafts_panel is None:
-            return
+        if self._drafts_panel is not None:
+            self._show_or_hide_panel_view(self._drafts_panel.DRAFTS_VIEW)
+
+    def _show_or_hide_panel_view(self, view: str) -> None:
+        """The panel on ``view``, or the panel put away when that is the
+        view it shows: what each of the panel's commands does."""
         panel = self._drafts_panel
-        if panel.isVisible() and panel.current_view() == panel.DRAFTS_VIEW:
+        if panel.isVisible() and panel.current_view() == view:
             self._hide_drafts_panel()
         else:
-            panel.show_view(panel.DRAFTS_VIEW)
+            panel.show_view(view)
             self._show_drafts_panel()
 
     def _on_show_published(self) -> None:
         """Nostr > Published: the panel on its Published view, or the
         panel put away when that is what it shows."""
+        if self._drafts_panel is not None:
+            self._show_or_hide_panel_view(PUBLISHED_VIEW)
+
+    def _on_show_submissions(self) -> None:
+        """Nostr > Submissions: the panel on its Einreichungen view, or the
+        panel put away when that is what it shows. Only where the view
+        is (a server's address is set)."""
         panel = self._drafts_panel
-        if panel is None:
-            return
-        if panel.isVisible() and panel.current_view() == PUBLISHED_VIEW:
-            self._hide_drafts_panel()
-        else:
-            panel.show_view(PUBLISHED_VIEW)
-            self._show_drafts_panel()
+        if panel is not None and SUBMISSIONS_VIEW in panel.views():
+            self._show_or_hide_panel_view(SUBMISSIONS_VIEW)
 
     def _show_drafts_panel(self) -> None:
         if self._drafts_panel is None:

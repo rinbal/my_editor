@@ -47,6 +47,7 @@ from . import appearance
 from .publish_sheet import StatusLine, fit_margins, fit_to_window, make_sheet, sheet_stylesheet
 from .standup_compare import CompareView, Comparer
 from .standup_publish import CorrectionPublish, Stage
+from .standup_publish_sheet import SIGN_HERE
 
 REPLACES = N_("If you take it, the correction replaces the article at the same address. "
               "The date of publication stays.")
@@ -175,7 +176,7 @@ class CorrectionSheet(QDialog):
         self.replaces.setVisible(not done and not run.taken)
         self.ask.setVisible(not done and not ask)
         self.take.setText(_("Done") if done else _("Ask a Question") if ask else _(
-            "Try Again") if failed else _("Sign with the Key on This Computer")
+            "Try Again") if failed else _(SIGN_HERE)
             if stage is Stage.OFFER_HERE else _("Publish") if run.taken
             else _("Take the Correction"))
         self.take.setEnabled(not working)

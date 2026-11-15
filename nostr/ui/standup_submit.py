@@ -466,17 +466,28 @@ class StandupWriter(QObject):
 
     def _keep_run(self, account: Account, run: SubmissionRun) -> None:
         """``run`` joins the account's runs, and the list of submissions
-        follows it: on its way, then a look at the server once it is in."""
+        follows it: on its way, then a look at the server once it is in,
+        and at once when it failed. Only the server's answer says whether
+        a try that failed was not sent or may have arrived, so the row,
+        the pill and the detail say "not confirmed yet" until it is asked:
+        asked only every 15 minutes, a failure in the background stood
+        there as something MyEditor keeps checking, with no way on."""
         account.runs = [r for r in account.runs if not r.finished] + [run]
-        was_in = [False]
+        was_in, had_failed = [False], [False]
 
         def changed(progress: Progress) -> None:
             following = self._following
             if account.stopped or account is not self._account or following is None:
                 return
             following.changed.emit()
+            failed, before = progress.phase is Phase.FAILED, had_failed[0]
+            had_failed[0] = failed
             if progress.phase is Phase.DONE and not was_in[0]:
                 was_in[0] = True
+                following.refresh()
+            elif failed and not before and following.listed:
+                # Its list is read (the rows are shown): the lookup asks by
+                # the status key, never the signer app.
                 following.refresh()
 
         run.changed.connect(changed)

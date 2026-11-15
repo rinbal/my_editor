@@ -54,7 +54,9 @@ DIFFERS = N_("The accepted version is published. If you change anything afterwar
 BY_YOU = N_("By you")
 BY_YOU_WITH = N_("By you with {names}")
 ASK_PREFIX = N_("A short question about publishing: ")
-SIGN_HERE = N_("Sign with the Key on This Computer")
+# Offered under TOO_LONG_HERE, which says how: with the key kept on this
+# computer. The button says what the person gets, in plain words.
+SIGN_HERE = N_("Publish Without the Signer App")
 
 
 class PublishSheet(QDialog):

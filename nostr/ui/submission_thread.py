@@ -279,7 +279,9 @@ class _Bubble(QFrame):
             column.addWidget(edited, 0, Qt.AlignmentFlag.AlignRight if message.mine
                              else Qt.AlignmentFlag.AlignLeft)
         self.footer = None
-        if waiting is not None and waiting.state in (Sending.FAILED, Sending.UNCONFIRMED):
+        # A reaction that did not go, or that waits in the signer app.
+        if waiting is not None and (waiting.state in (Sending.FAILED, Sending.UNCONFIRMED)
+                                    or waiting.asks_to_confirm):
             self.footer = view.footer(waiting, mine=message.mine)
             column.addWidget(self.footer)
 
@@ -512,7 +514,8 @@ class ThreadView(QWidget):
                     version.change_summary if version is not None else "")
         out = waiting.get(item.bubble.id)
         return ("message", item, self.name_of(item.bubble.author),
-                None if out is None else (out.key, out.state, out.text, out.sentence))
+                None if out is None else (out.key, out.state, out.text, out.sentence,
+                                          out.signer_waits))
 
     def _quiet(self, text: str, r, *, strong: bool = False) -> QLabel:
         label = QLabel(breakable(text))

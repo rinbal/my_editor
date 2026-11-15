@@ -53,7 +53,7 @@ def thumbnail(data: bytes) -> Optional[dict]:
 class _Upload:
     on_progress: Callable[[float], None]
     on_done: Callable[[Dict[str, Tuple[str, ...]]], None]
-    on_failure: Callable[[str], None]
+    on_failure: Callable[[str, str], None]
     expected: Dict[str, str]                        # name -> cipher sha256
     sizes: Dict[str, int]
     sent: Dict[str, int] = field(default_factory=dict)
@@ -64,7 +64,9 @@ class _Upload:
 class BlossomUploads(QObject):
     """The ``upload`` port: each SMF1 file as a plain Blossom upload
     through ``store`` (MediaStore), the first server, then the mirrors.
-    Answers the servers that hold each file, by its hash."""
+    Answers the servers that hold each file, by its hash; a failure, with
+    the library's own sentence for it and, apart, the servers that
+    refused the file."""
 
     def __init__(self, store, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -126,10 +128,11 @@ class BlossomUploads(QObject):
         job = self._jobs.get(name)
         if job is not None:
             self._stop(job)
-            # Details name the servers that refused it, and why
-            # (contract 7); the sentence never does (lessons 36).
-            refused = self._store.refusal_detail(name) if reason else ""
-            job.on_failure("\n".join(part for part in (reason, refused) if part))
+            # The library's one sentence says why and what to do, as it
+            # does for any upload (a server's refusal is never blamed on
+            # the connection). The servers that refused it, and why, are
+            # for Details only (contract 7, lessons 36).
+            job.on_failure(reason, self._store.refusal_detail(name) if reason else "")
 
 
 __all__ = ["BlossomUploads", "THUMB_SIDE", "thumbnail"]

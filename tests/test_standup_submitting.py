@@ -751,9 +751,9 @@ def test_an_answer_to_an_earlier_request_is_ignored():
     world = World()
     world.uploads.fail = "The server is full."
     world.go()
-    # What the servers answered: behind Details only (lessons 36).
+    # The media library's own sentence for it, in the sentence's place.
     failure = world.submitting.progress.failure
-    assert (failure.details, failure.said) == ("The server is full.", "")
+    assert (failure.said, failure.details) == ("The server is full.", "")
     first = world.uploads.calls[0]
     world.uploads.fail, world.uploads.hold = "", True
     world.submitting.retry()

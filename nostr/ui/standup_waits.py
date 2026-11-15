@@ -6,7 +6,11 @@ of when trying again helps (:func:`wait_words`, :func:`limit_words`, one
 sentence with the limit, lessons 36), and a timer that shows the state
 again once the wait is over (:class:`WaitTimer`), so a dimmed Try Again
 comes back by itself, with words that say it works now, shown and not
-announced (RG-M2r3 14): the person who waited for it sees it there."""
+announced (RG-M2r3 14): the person who waited for it sees it there.
+
+And the wait for the person's signer app (:func:`signer_wait_words`): the
+one line every screen says while a request of theirs waits to be
+confirmed there, in the handoff's words."""
 
 from __future__ import annotations
 
@@ -55,6 +59,14 @@ def server_limit_words(until: Optional[float], now: float) -> str:
                       words.SERVER_LIMIT_OVER) or _(words.SERVER_LIMIT_LATER)
 
 
+def signer_wait_words() -> str:
+    """What a screen says in one line while a request of the person waits
+    in their signer app (translated): the handoff's two sentences. Only
+    for an account that signs through one (signer_limits.through_signer_app):
+    with the key kept on this computer there is nothing to confirm."""
+    return f"{_(words.WAITING_FOR_SIGNER)} {_(words.WAITING_DETAIL)}"
+
+
 class WaitTimer(QTimer):
     """Calls ``over`` once the soonest of the waits followed is over."""
 
@@ -74,4 +86,5 @@ class WaitTimer(QTimer):
         return bool(ahead)
 
 
-__all__ = ["WaitTimer", "limit_words", "server_limit_words", "wait_words"]
+__all__ = ["WaitTimer", "limit_words", "server_limit_words", "signer_wait_words",
+           "wait_words"]

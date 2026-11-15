@@ -48,6 +48,7 @@ from .publish_sheet import (
     StatusLine, fit_margins, fit_minimum, fit_to_window, make_sheet, sheet_stylesheet,
 )
 from .standup_publish_sheet import ACCEPTED_LINE
+from .standup_waits import signer_wait_words
 
 SHARE_GOES_TO = N_("Your share goes to {address}.")
 # What the shares are shares of, in the web's words (its ``honest``): a
@@ -91,7 +92,9 @@ class ConfirmSheet(QDialog):
     """See the module docstring. ``shares`` are ``(pubkey, weight, role)``
     of the accepted split, or None for an accept that names none;
     ``confirm(confirms, on_done)`` sends the confirmation;
-    ``zap_address(pubkey, answer)`` reads a profile's lightning address."""
+    ``zap_address(pubkey, answer)`` reads a profile's lightning address;
+    ``signer_app``: the account signs through a signer app, so while the
+    confirmation waits there the sheet says to confirm it there."""
 
     ask_requested = Signal(str)              # the question's first words
     edit_profile_requested = Signal()
@@ -100,13 +103,14 @@ class ConfirmSheet(QDialog):
                  shares: Optional[Sequence[Tuple[str, int, str]]], me: str,
                  name_of: Callable[[str], str], zap_address: Callable,
                  confirm: Callable, is_dark: bool, part: str = "", license: str = "",
-                 parent: Optional[QWidget] = None) -> None:
+                 signer_app: bool = False, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(_("Confirm Your Share"))
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         make_sheet(self)
         self._least = QSize(400, 260)                # grows to what its words need
         self._is_dark, self._confirm = bool(is_dark), confirm
+        self._signer_app = bool(signer_app)
         self._contributor = role != "writer"
         # A share of this person's can reach them only at an address their
         # profile names: Confirm waits for a read that names one (RG-M4-a 3).
@@ -254,7 +258,8 @@ class ConfirmSheet(QDialog):
         confirms = ("split", "rights") if self._contributor else ("split",)
         self._confirming = True
         self._refresh()
-        self.status.say(_("Confirming…"), quietly=True)
+        self.status.say(signer_wait_words() if self._signer_app else _("Confirming…"),
+                        quietly=True)
         self._confirm(confirms, self._confirmed)
 
     def _confirmed(self, error) -> None:
