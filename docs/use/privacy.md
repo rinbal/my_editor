@@ -6,6 +6,11 @@ MyEditor is a local app. Your notes are files on your computer, there is no acco
 
 **File > Set Password…** locks the document with a password, as Pages does. It is encrypted in place, keeps its name and type, and asks for its password when it opens. Saving it again asks for nothing. **File > Change Password…** changes the password or removes it.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../images/password-dark.png">
+  <img src="../images/password-light.png" alt="The Set Password alert for a note: a warning that a forgotten password cannot be recovered, and the password typed twice" width="300">
+</picture>
+
 - The file uses the open [age](https://age-encryption.org) format, so `age -d` opens it without MyEditor.
 - A forgotten password cannot be recovered, by MyEditor or by anyone else. Keep it somewhere safe.
 - A locked document is not saved as PDF or RTF, which cannot be locked, and is not knit with R Markdown, because R reads the file itself.

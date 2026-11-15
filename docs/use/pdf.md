@@ -2,6 +2,11 @@
 
 MyEditor opens PDFs in a reader made for reading and nothing else: a slim toolbar with the contents, the page number and the zoom, and the pages. It does not edit PDFs.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../images/pdf-dark.png">
+  <img src="../images/pdf-light.png" alt="A trail guide PDF open in the reader, with its table of contents expanded on the left" width="720">
+</picture>
+
 ## Open a PDF
 
 Open a PDF with **File > Open…**, by dragging it onto the window, by double-clicking it in the Finder or Explorer, from **File > Recent Files**, or by clicking it in the [file list](folders-and-files.md). A PDF with a password asks for it.

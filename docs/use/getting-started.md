@@ -29,6 +29,13 @@ Choose **Insert > Image…** and pick a picture, or drag one from the Finder or 
 
 Add two more right below it. Pictures that follow each other, with nothing but empty lines between them, become a **photo group**: a calm mosaic in which every picture keeps its shape. Point at a picture to see its small buttons: **ALT** for a description that screen readers read aloud, **Large** to give it a row of its own, and **More** for everything else. [Pictures and photo groups](pictures.md) has the details.
 
+Your note now looks something like this:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../images/firstnote-dark.png">
+  <img src="../images/firstnote-light.png" alt="A note titled Two days at the mountain lake, with a short text, a packing checklist with two items ticked, and a photo group below" width="720">
+</picture>
+
 ## 4. Save it
 
 Choose **File > Save** (**⌘S** / **Ctrl+S**), give the note a name and choose where it goes. Notes are saved as Markdown (`.md`), plain text that every other app can open.

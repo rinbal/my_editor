@@ -18,7 +18,12 @@ The status bar says how long the document is: its words and how long it takes to
 
 The **toolbar** above the document holds the controls used most: Undo and Redo, the paragraph style (Body, Heading 1 to 3), Bold, Italic, Strikethrough, a link, the lists and Quote, and the **+** button, which opens the Insert menu. Hold the pointer over Undo to see what it takes back. The arrow beside Undo and Redo lists the last steps, so you can go back several at once. **View > Show Toolbar** hides it.
 
-**The format bar.** Select words with the pointer and a small bar shows above them, as on an iPad: the paragraph style, Bold, Italic, Strikethrough, Code and Link. It stays while you apply several, and closes when you type or press **Escape**. A selection made with the keyboard shows no bar.
+**The format bar.** Select words with the pointer and a small bar shows above them, as on an iPad: the paragraph style, Bigger and Smaller, Quote, Bold, Italic, Strikethrough, Code, Link and Clear Formatting. It stays while you apply several, and closes when you type or press **Escape**. A selection made with the keyboard shows no bar.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../images/formatbar-dark.png">
+  <img src="../images/formatbar-light.png" alt="Four words selected in a note about a kite festival, with the format bar above them: the style pop-up, Bold pressed, Italic, Link" width="720">
+</picture>
 
 The **Format** menu has everything:
 

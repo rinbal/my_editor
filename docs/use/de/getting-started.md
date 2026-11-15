@@ -29,6 +29,13 @@ Wähle **Einfügen > Bild …** und such dir ein Bild aus, oder zieh eines aus d
 
 Füge direkt darunter zwei weitere hinzu. Bilder, die aufeinander folgen und nur durch Leerzeilen getrennt sind, werden zur **Bildgruppe**: einem ruhigen Mosaik, in dem jedes Bild seine Form behält. Zeigst du mit der Maus auf ein Bild, erscheinen kleine Knöpfe: **ALT** für eine Bildbeschreibung, die Bildschirmleser vorlesen, **Groß** für eine eigene Zeile über die ganze Breite und **Mehr** für alles andere. Alle Befehle stehen auch unter **Format > Bild**.
 
+Deine Notiz sieht jetzt etwa so aus:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../images/de/firstnote-dark.png">
+  <img src="../../images/de/firstnote-light.png" alt="Eine Notiz mit dem Titel Zwei Tage am Bergsee, einem kurzen Text, einer Packliste mit zwei abgehakten Punkten und einer Bildgruppe" width="720">
+</picture>
+
 ## 4. Speichern
 
 Wähle **Datei > Speichern** (**⌘S** / **Strg+S**), gib der Notiz einen Namen und wähle, wohin sie soll. Notizen werden als Markdown gespeichert (`.md`), als reiner Text, den jede andere App öffnen kann.

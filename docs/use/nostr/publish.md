@@ -17,6 +17,11 @@ Choose **Nostr > Publish as Article…** (**⇧⌘A** / **Ctrl+Shift+A**). The s
 - **People**: everyone the article tags, by name: people mentioned in the text, authors it quotes, and co-authors.
 - **Show Details**: the article's **Link name**, the last part of its web address. It is made from the title until you type one.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../images/publish-dark.png">
+  <img src="../../images/publish-light.png" alt="The Publish as Article sheet: a preview card with a kite picture, then the title, summary, three hashtags and the cover image" width="720">
+</picture>
+
 The article's text is your document exactly as written: headings, bold, italic, links, lists, quotes, code, tables, footnotes and photo groups. Underline and colors have no Markdown and stay in your local file.
 
 **Publishing again updates the article.** An article keeps its link name once it is out, so publishing it again replaces the old version at the same address, and readers keep the date it first went out.
