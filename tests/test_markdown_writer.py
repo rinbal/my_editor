@@ -166,6 +166,7 @@ LINKED_PICTURES = [
     "See [![a](p.png)](https://u.example) here.\n",
     "[see ![a](p.png) this](https://u.example)\n",
     "[![a](p.png)](https://a.example)\n*Caption*\n\n![b](q.png)\n",   # in a photo group
+    "[![a](p.png) ![b](q.png)](u)\n",                                 # two in one link
 ]
 
 

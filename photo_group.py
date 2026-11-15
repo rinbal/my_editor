@@ -71,6 +71,9 @@ UNIT = _USER + 0x6A3
 # How a soft line break is kept in a join (markdown_writer carries soft
 # breaks the same way between reading and writing).
 SOFT = "\ue0b1"
+# A join's first character when it stood in the link around the pictures
+# beside it ("[![a](a.png) ![b](b.png)](u)": one link, the space in it).
+LINKED = "\ue0b2"
 
 # A picture's address ending in this asks for a picture as wide as the page.
 WIDE_SUFFIX = "#wide"
@@ -328,16 +331,30 @@ def is_plain_paragraph(block, fmt: Optional[QTextBlockFormat] = None) -> bool:
     return not fmt.hasProperty(QTextFormat.Property.BlockTrailingHorizontalRulerWidth)
 
 
-def join_runs(join: str) -> List[Tuple[str, QTextCharFormat]]:
-    """A join as the (text, format) pieces a paragraph holds it in."""
+def join_runs(join: str, link: str = "") -> List[Tuple[str, QTextCharFormat]]:
+    """A join as the (text, format) pieces a paragraph holds it in: in the
+    ``link`` of the pictures beside it (link_between) when it stood in it
+    (LINKED)."""
+    linked = join.startswith(LINKED)
     out = []
-    for char in join:
+    for char in join[1:] if linked else join:
         fmt = QTextCharFormat()
         if char == SOFT:
             fmt.setProperty(SOFT_BREAK_PROPERTY, True)
             char = LINE_SEPARATOR
+        if linked and link:
+            fmt.setAnchor(True)
+            fmt.setAnchorHref(link)
         out.append((char, fmt))
     return out
+
+
+def link_between(previous: Unit, unit: Unit) -> str:
+    """The address of the link both pictures are in; "" for none."""
+    first, second = previous.image, unit.image
+    if first.isAnchor() and second.isAnchor() and first.anchorHref() == second.anchorHref():
+        return first.anchorHref()
+    return ""
 
 
 # --------------------------------------------------------------------------- #
@@ -374,7 +391,7 @@ def write_paragraphs(cursor: QTextCursor, units: Sequence[Unit], own: QTextBlock
     previous: Optional[Unit] = None
     for unit in units:
         if joins_previous(previous, unit):
-            for text, fmt in join_runs(unit.join):
+            for text, fmt in join_runs(unit.join, link_between(previous, unit)):
                 cursor.insertText(text, fmt)
         elif previous is not None:
             cursor.insertBlock(own, QTextCharFormat())

@@ -325,7 +325,8 @@ def _unit_paragraphs(units, fmt) -> List[list]:
     previous = None
     for unit in units:
         if photo_group.joins_previous(previous, unit):
-            paragraphs[-1].extend(photo_group.join_runs(unit.join))
+            paragraphs[-1].extend(photo_group.join_runs(
+                unit.join, photo_group.link_between(previous, unit)))
         else:
             paragraphs.append([])
         previous = unit

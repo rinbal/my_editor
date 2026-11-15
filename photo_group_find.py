@@ -31,6 +31,7 @@ from doc_walk import (BARE_TEXT_PROPERTY, ESCAPED_TEXT_PROPERTY, LINE_SEPARATOR,
                       picture_pieces)
 from photo_group import (
     GROUP,
+    LINKED,
     SOFT,
     CaptionRun,
     Unit,
@@ -74,15 +75,19 @@ def is_picture(text: str, fmt: QTextCharFormat) -> bool:
 
 def _join_text(pieces) -> Optional[str]:
     """The text of pieces that join two parts of a paragraph (spaces and
-    line breaks only), soft breaks as SOFT; None for anything else."""
+    line breaks only), soft breaks as SOFT, starting with LINKED when all
+    of it is in one link; None for anything else."""
     out = []
+    links = set()
     for _position, text, fmt in pieces:
         if text.strip(" \t" + LINE_SEPARATOR):
             return None
         if fmt.boolProperty(SOFT_BREAK_PROPERTY):
             text = text.replace(LINE_SEPARATOR, SOFT)
         out.append(text)
-    return "".join(out)
+        links.add(fmt.anchorHref() if fmt.isAnchor() else "")
+    linked = len(links) == 1 and "" not in links
+    return (LINKED if linked else "") + "".join(out)
 
 
 def _is_caption_pieces(pieces) -> bool:
