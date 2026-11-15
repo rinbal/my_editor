@@ -198,7 +198,7 @@ def _sheet(tmp_path, writer=None, *, draft=DRAFT, dark=False, private=(),
                        byline="Jana Roth · Artikel · 1 Bild", private_names=private,
                        profile=profile, store=store, avatars=avatars or AvatarStore(),
                        logos=logos or PublicationLogos(lambda *_a: None), is_dark=dark,
-                       public_pictures=public)
+                       public_pictures=public, pictures=1)
 
 
 def _entries(sheet) -> List[tuple]:
@@ -1033,6 +1033,17 @@ def test_a_sheet_cancelled_with_nothing_written_keeps_nothing(tmp_path):
     assert writer.typed == {}
     again = _sheet(tmp_path, writer)
     assert again.message.isHidden() and again.destination() is MAGAZIN
+
+
+def test_while_it_is_delivered_the_heading_leaves_and_the_article_says_its_facts(tmp_path):
+    # The headline under the column is the title of the moment, and the
+    # article goes with its kind, its version and its pictures.
+    sheet = _sheet(tmp_path)
+    assert not sheet.heading.isHidden()
+    sheet.submit_button.click()
+    assert sheet.heading.isHidden()
+    assert sheet.handoff.stage.title == DRAFT.title
+    assert sheet.handoff.stage.facts == "Artikel · Fassung 1 · 1 Bild"
 
 
 def test_the_handoff_knows_whether_the_account_signs_in_a_signer_app(tmp_path):

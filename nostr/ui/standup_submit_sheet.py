@@ -118,7 +118,8 @@ class SubmitSheet(QDialog):
                  byline: str, private_names: Sequence[str], profile: Profile,
                  store: ProfileStore, avatars: AvatarStore,
                  logos: PublicationLogos, is_dark: bool,
-                 public_pictures: int = 0, parent: Optional[QWidget] = None) -> None:
+                 public_pictures: int = 0, pictures: int = 0,
+                 parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(_("Submit to a Publication"))
         make_sheet(self)
@@ -130,6 +131,9 @@ class SubmitSheet(QDialog):
         self._private_names = list(private_names)
         # Pictures that are public links already: they stay public.
         self._public_pictures = max(0, int(public_pictures))
+        # How many pictures the article shows: one of its facts while it
+        # is delivered (0: not said).
+        self._pictures = max(0, int(pictures))
         self._store = store
         self._avatars = avatars             # the people's (the account row)
         self._logos = logos                 # the publications', by address (12.9)
@@ -186,10 +190,13 @@ class SubmitSheet(QDialog):
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 18, 20, 14)
         root.setSpacing(10)
-        heading = QLabel(_("Submit to a Publication"))
-        heading.setObjectName("title")
-        root.addWidget(heading)
+        self.heading = QLabel(_("Submit to a Publication"))
+        self.heading.setObjectName("title")
+        root.addWidget(self.heading)
         self._pages = QStackedWidget()
+        # While the article is delivered, the headline under the column is
+        # the title of the moment: the form's heading leaves.
+        self._pages.currentChanged.connect(lambda page: self.heading.setVisible(page != 1))
         root.addWidget(self._pages, 1)
         self._pages.addWidget(self._form_page(profile))
         self.handoff = HandoffView(is_dark=self._is_dark)
@@ -202,9 +209,9 @@ class SubmitSheet(QDialog):
         handoff_page = QWidget()
         column = QVBoxLayout(handoff_page)
         column.setContentsMargins(0, 0, 0, 0)
-        # In a window too low for it the track is drawn smaller, and what
+        # In a window too low for it the column is drawn smaller, and what
         # is left over scrolls, as the form does: its words are never
-        # painted over the track, and the buttons always show whole.
+        # painted over the column, and the buttons always show whole.
         column.addWidget(self.handoff.scrolling(), 1)
         column.addWidget(self.handoff.buttons)
         self._pages.addWidget(handoff_page)
@@ -709,10 +716,10 @@ class SubmitSheet(QDialog):
         """The handoff of ``run``, from where it is now."""
         self.run = run
         name, address = run.choice.name, run.choice.publication
-        self.handoff.set_work(title=self._draft.title, summary=self._draft.summary,
-                              byline=self._byline, cover=self._cover, publication=name,
+        self.handoff.set_work(title=self._draft.title, cover=self._cover, publication=name,
                               logo=publication_logo(name, formats.parse_address(address)[0],
                                                     self._logos.get(address), 40),
+                              pictures=self._pictures,
                               signer_app=through_signer_app(self.account.profile()))
         run.behind_the_sheet(None)                  # the sheet says it now
         run.changed.connect(self.handoff.show_progress)
@@ -740,8 +747,7 @@ class SubmitSheet(QDialog):
         if self.run is None:
             self._draft = replace(self._draft, thumb=thumb)
         else:
-            self.handoff.track.cover = cover
-            self.handoff.track.update()
+            self.handoff.set_cover(cover)
 
     def reject(self) -> None:  # noqa: N802, Qt's name
         """Cancel and Escape, which is Cancel (HIG): a run that may still

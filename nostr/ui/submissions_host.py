@@ -99,8 +99,9 @@ class Ports:
     - ``focus(ed)``: bring its tab forward.
     - ``open_text(title, content, d, summary, tags)``: a new tab with a
       version's text (``d`` is ``""`` for a copy to read).
-    - ``submission_of(ed, profile)``: ``(draft, cover, byline, private)``
-      of the article in a tab, as Submit to a Publication builds them.
+    - ``submission_of(ed, profile)``: ``(draft, cover, byline, private,
+      pictures)`` of the article in a tab, as Submit to a Publication
+      builds them.
     - ``show_view(key)``: the Drafts panel, showing that view.
     - ``submit()``: Submit to a Publication for the current tab.
     - ``notice_of(ed)``: the tab's DocumentNotice.
@@ -468,7 +469,7 @@ class SubmissionsHost(QObject):
             made = ports.submission_of(ed, profile)
             if made is None:
                 return
-            draft, cover, byline, private = made
+            draft, cover, byline, private, pictures = made
             # The sheet needs the submission, not its secrets: the run
             # takes them from the list.
             sheet = self._sheet = ReviseSheet(
@@ -477,7 +478,7 @@ class SubmissionsHost(QObject):
                 publication=following.publication_name(row.publication),
                 logo=self._logo(row.publication, 40), previous=previous,
                 comparer=self.comparer, private_names=private, is_dark=ports.is_dark(),
-                again=again, parent=ports.window())
+                again=again, pictures=pictures, parent=ports.window())
             sheet.view_submission.connect(self.open_detail)
             ports.keep(sheet)
             sheet.open()

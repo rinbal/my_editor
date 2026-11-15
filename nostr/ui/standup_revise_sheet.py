@@ -93,7 +93,8 @@ class ReviseSheet(QDialog):
     def __init__(self, *, writer: StandupWriter, profile, draft: ArticleDraft, cover: QPixmap,
                  byline: str, row, publication: str, logo: QPixmap, previous,
                  comparer: Comparer, private_names: Sequence[str] = (), is_dark: bool,
-                 again: bool = False, parent: Optional[QWidget] = None) -> None:
+                 again: bool = False, pictures: int = 0,
+                 parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._again = bool(again)
         self.setWindowTitle(_("Send Again") if again else _("Hand In New Version"))
@@ -107,6 +108,8 @@ class ReviseSheet(QDialog):
         self._comparer, self._private = comparer, list(private_names)
         self._is_dark = bool(is_dark)
         self._number = row.view.revision + 1
+        # How many pictures the article shows, for the delivery (0: not said).
+        self._pictures = max(0, int(pictures))
         self._summary = change_line(draft, previous.work) if previous is not None else ""
         self.run: Optional[SubmissionRun] = None
         self._build()
@@ -131,6 +134,9 @@ class ReviseSheet(QDialog):
         self.heading.setWordWrap(True)
         root.addWidget(self.heading)
         self._pages = QStackedWidget()
+        # While the version is delivered, the headline under the column is
+        # the title of the moment: the heading leaves.
+        self._pages.currentChanged.connect(lambda page: self.heading.setVisible(page != 1))
         root.addWidget(self._pages, 1)
         self._pages.addWidget(self._form_page())
         self.handoff = HandoffView(is_dark=self._is_dark)
@@ -144,7 +150,7 @@ class ReviseSheet(QDialog):
         handoff_page = QWidget()
         column = QVBoxLayout(handoff_page)
         column.setContentsMargins(0, 0, 0, 0)
-        # As in the submit sheet: in a window too low for it the track is
+        # As in the submit sheet: in a window too low for it the column is
         # drawn smaller and what is left over scrolls.
         column.addWidget(self.handoff.scrolling(), 1)
         column.addWidget(self.handoff.buttons)
@@ -287,10 +293,9 @@ class ReviseSheet(QDialog):
 
     def _show_run(self, run: SubmissionRun) -> None:
         self.run = run
-        self.handoff.set_work(title=self._draft.title, summary=self._draft.summary,
-                              byline=self._byline, cover=self._cover,
+        self.handoff.set_work(title=self._draft.title, cover=self._cover,
                               publication=self._publication, logo=self._logo,
-                              number=self._number,
+                              number=self._number, pictures=self._pictures,
                               signer_app=through_signer_app(self._profile))
         run.behind_the_sheet(None)
         run.changed.connect(self.handoff.show_progress)

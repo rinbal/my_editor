@@ -48,6 +48,11 @@ READING_LIST = N_("Reading your list of submissions…")
 UNCONFIRMED_DETAIL = N_("You can close the window, MyEditor keeps checking.")
 SUBMITTED = N_("Submitted. In the inbox of {publication}.")
 SUBMITTED_DETAIL = N_("The server confirmed receipt.")
+# The delivery screen once the work is in: its headline, where the answers
+# show, and, among the receipt's facts, that the first message went with it.
+SUBMITTED_HEADLINE = N_("Submitted")
+SUBMITTED_NEXT = N_("You see the editorial team’s answers under Submissions.")
+WITH_YOUR_MESSAGE = N_("with your message")
 IN_THE_BACKGROUND = N_("Submitting…")
 # In the status bar while the sheet is closed: what a signer prompt is
 # for, and a first message that did not go (RG-M2b 11).
@@ -243,8 +248,9 @@ __all__ = [
     "SERVER_LIMIT_LATER", "SERVER_LIMIT_OVER", "SERVER_LIMIT_TOMORROW_AT",
     "SERVER_TROUBLE", "STOPPED_MESSAGE", "STOPPED_NOTHING_SENT", "STOPPED_OTHER_VERSION",
     "STOPPED_PICTURES", "STOPPED_UNCONFIRMED", "STORED_CHECKING",
-    "STORED_SENDING", "SUBMITTED", "SUBMITTED_DETAIL", "SUBMITTED_ELSEWHERE", "TOO_LARGE",
+    "STORED_SENDING", "SUBMITTED", "SUBMITTED_DETAIL", "SUBMITTED_ELSEWHERE",
+    "SUBMITTED_HEADLINE", "SUBMITTED_NEXT", "TOO_LARGE",
     "UNCONFIRMED", "UNCONFIRMED_DETAIL", "UPLOADING_DETAIL", "UPLOADING_PICTURE",
     "UPLOADING_PICTURES", "UPLOAD_FAILED", "VERSION_NOT_SUBMITTED", "WAITING_DETAIL",
-    "WAITING_FOR_SIGNER", "message_failure_words", "refusal",
+    "WAITING_FOR_SIGNER", "WITH_YOUR_MESSAGE", "message_failure_words", "refusal",
 ]
