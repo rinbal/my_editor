@@ -2922,7 +2922,7 @@ class MainWindow(QMainWindow):
             triggered=self._on_show_published)
         # Its third view: what the account handed in to publications, and
         # their answers. Offered only where the view is (a server's address
-        # is set, _build_drafts_views). Y: no other letter of its name is
+        # is set, _offer_submitting). Y: no other letter of its name is
         # free with Shift-Command on a Mac and Ctrl+Shift elsewhere.
         self.act_nostr_submissions = add(
             Command("nostr.submissions", _("Submissions"), NOSTR, "Ctrl+Shift+Y", nostr=True,
@@ -3467,10 +3467,8 @@ class MainWindow(QMainWindow):
         self._submissions_view = SubmissionsView(
             name_of=self._profile_names.name, avatar_of=self._avatars.get,
             is_dark=self.is_dark_theme, logo_of=self._publication_logos.get)
-        offered = add_submissions_view(self._drafts_panel, self._submissions_view,
-                                       server=configured_server())
-        # No view, no command for it (nor its key).
-        self.act_nostr_submissions.setVisible(offered)
+        self._offer_submitting(add_submissions_view(
+            self._drafts_panel, self._submissions_view, server=configured_server()))
         self._submissions_view.unread_changed.connect(self._on_submissions_unread)
         self._submissions = SubmissionsHost(self._submission_ports(),
                                             view=self._submissions_view,
@@ -10805,6 +10803,16 @@ class MainWindow(QMainWindow):
         dialog.open()
 
     # -- submitting to a STANDUP publication (plan 10.2) -----------------------
+
+    def _offer_submitting(self, offered: bool) -> None:
+        """Handing in to a publication is offered where a server's address
+        is set. Without one the Einreichungen view is left out
+        (submissions_view.add_to_panel), and so are the commands: not in
+        the menu at all, as everything of a feature that is not set up
+        (dimmed, nothing would say why; chosen, the sheet could only say
+        that nothing can be handed in)."""
+        for action in (self.act_nostr_submit, self.act_nostr_submissions):
+            action.setVisible(offered)
 
     def _update_submit_command(self, *_args) -> None:
         """Submit to a Publication… is for a text written here, while an
