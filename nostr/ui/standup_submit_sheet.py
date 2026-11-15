@@ -338,6 +338,7 @@ class SubmitSheet(QDialog):
         self.message.setTabChangesFocus(True)
         self.message.textChanged.connect(self._fit_note)
         self.message.textChanged.connect(self._refresh)
+        self.message.installEventFilter(self)       # Command-Return submits from it
         self.message.hide()
         message = QWidget()
         message_column = QVBoxLayout(message)
@@ -786,11 +787,32 @@ class SubmitSheet(QDialog):
             self._writer.typed[self._typed_key()] = Typed(
                 note=note if note.strip() else "", publication=publication)
 
+    @staticmethod
+    def _is_command_return(event) -> bool:
+        """Command-Return on a Mac, Control-Return on Windows and Linux
+        (Qt names both ControlModifier)."""
+        return event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) \
+            and bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802, Qt's name
+        """In the note, Command-Return is the sheet's own key: it submits,
+        where Return starts a new line. Taken here, at the note, so that
+        neither another command on the same key (Mark as Checked is
+        Control-Return on Windows and Linux) nor a widget between the note
+        and the sheet can take it first."""
+        if watched is self.message and event.type() in (QEvent.Type.ShortcutOverride,
+                                                        QEvent.Type.KeyPress) \
+                and self._is_command_return(event):
+            if event.type() == QEvent.Type.KeyPress and self.submit_button.isEnabled():
+                self.submit_button.click()
+            event.accept()
+            return True
+        return super().eventFilter(watched, event)
+
     def keyPressEvent(self, event) -> None:  # noqa: N802, Qt's name
         """Command-Return (Control-Return on Windows and Linux) chooses the
-        default button from the note too, where Return starts a new line."""
-        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) \
-                and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+        default button wherever else the focus is."""
+        if self._is_command_return(event):
             default = next((button for button in self.findChildren(QPushButton)
                             if button.isDefault() and button.isVisible()), None)
             if default is not None and default.isEnabled():

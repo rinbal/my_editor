@@ -904,6 +904,29 @@ def test_tab_leaves_the_note_and_command_return_submits_from_it(tmp_path):
     sheet.close()
 
 
+def test_command_return_in_the_note_is_the_sheets_own_whatever_else_has_that_key(tmp_path):
+    # The fork's Linux run: Command-Return from the note did not submit.
+    # On Windows and Linux Mark as Checked is Control-Return too; the note
+    # takes its key itself, before any command on the same key can.
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QAction, QKeySequence
+    from PySide6.QtTest import QTest
+    writer = Writer()
+    sheet = _sheet(tmp_path, writer)
+    other, chosen = QAction(sheet), []
+    other.setShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Return))
+    other.triggered.connect(lambda: chosen.append(True))
+    sheet.addAction(other)
+    sheet.show()
+    sheet.activateWindow()
+    _settle()
+    sheet.message_toggle.click()
+    sheet.message.setFocus()
+    QTest.keyClick(sheet.message, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    assert len(writer.submitted) == 1 and chosen == []
+    sheet.close()
+
+
 def test_command_return_does_nothing_while_a_blocker_dims_submit(tmp_path):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
