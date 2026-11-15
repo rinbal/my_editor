@@ -308,17 +308,21 @@ def test_the_submit_command_keeps_the_identifier_its_sheet_sent(tmp_path, monkey
     assert tab_details.details_of(ed).identifier == "ein-jahr"
 
 
-def _submit_window(tmp_path, monkeypatch, *, text=True, article=False):
+def _submit_window(tmp_path, monkeypatch, *, text=True, article=False, finished=None):
     """The window as Submit to a Publication's command sees it, with what
-    it opens and says kept."""
+    it opens and says kept; ``finished`` collects what hears the sheet
+    close."""
     import main_window
     opened, said, details_open = [], [], []
 
     class Sheet:
         submitted = view_submission = types.SimpleNamespace(connect=lambda _slot: None)
+        run = None                                  # nothing on its way: cancelled
 
         def __init__(self, **kw) -> None:
             opened.append(kw["draft"])
+            self.finished = types.SimpleNamespace(
+                connect=finished.append if finished is not None else lambda _slot: None)
 
         def setAttribute(self, *_args) -> None:  # noqa: N802, Qt's name
             pass
@@ -336,7 +340,9 @@ def _submit_window(tmp_path, monkeypatch, *, text=True, article=False):
     win.current_editor = lambda: ed if text else None
     win._can_be_an_article = lambda candidate: candidate is not None
     win._wants_article_header = lambda _ed: article or bool(details_open)
-    win.act_article_details = types.SimpleNamespace(setChecked=details_open.append)
+    win.act_article_details = types.SimpleNamespace(
+        setChecked=details_open.append, isChecked=lambda: bool(details_open and details_open[-1]))
+    win._submit_sheet_closed = types.MethodType(MainWindow._submit_sheet_closed, win)
     win._standup = lambda: None
     win._submissions = types.SimpleNamespace(open_detail=lambda _sid: None)
     win._avatars = win._publication_logos = types.SimpleNamespace(request=None)
@@ -352,6 +358,23 @@ def test_a_text_that_is_not_an_article_yet_becomes_one_as_it_is_submitted(tmp_pa
     opened, said, details_open = _submit_window(tmp_path, monkeypatch)
     assert details_open == [True] and len(opened) == 1 and said == []
     assert opened[0].title == "Ein Jahr mit Lightning"         # its first heading
+
+
+def test_cancelling_the_sheet_leaves_the_plain_text_as_it_was(tmp_path, monkeypatch):
+    # ME-8: Escape left Article Details open, the article's head on the
+    # page and the window moved and widened. Cancelled, Article Details
+    # (opened for the sheet) closes again, which gives the window its
+    # frame back; and where an alert says there is nothing to submit,
+    # nothing is opened at all.
+    closed = []
+    _opened, _said, details_open = _submit_window(tmp_path, monkeypatch, finished=closed)
+    assert details_open == [True]
+    closed[0](0)                                    # Escape
+    assert details_open == [True, False]
+    monkeypatch.setattr(_Kept, "_submission_for_sheet",
+                        lambda self, ed, active: None)      # "The current document is empty."
+    opened, _said, details_open = _submit_window(tmp_path, monkeypatch)
+    assert opened == [] and details_open == []
 
 
 def test_an_article_is_submitted_without_opening_article_details(tmp_path, monkeypatch):

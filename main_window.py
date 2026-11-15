@@ -10852,15 +10852,16 @@ class MainWindow(QMainWindow):
                    message=_("Open the text you want to submit, then choose Submit to a "
                              "Publication again."), nostr=True)
             return
-        if not self._wants_article_header(ed):
+        made = self._submission_for_sheet(ed, active)
+        if made is None:
+            return                              # said why, and nothing opened for it
+        draft, cover, byline, private, public = made
+        becomes_article = not self._wants_article_header(ed)
+        if becomes_article:
             # Not an article yet: Article Details opens on it, which makes
             # it one (its head shows on the page). What a publication asks
             # for beyond the title is added there, as the sheet says.
             self.act_article_details.setChecked(True)
-        made = self._submission_for_sheet(ed, active)
-        if made is None:
-            return                              # said why
-        draft, cover, byline, private, public = made
         sheet = SubmitSheet(writer=self._standup(), draft=draft, cover=cover, byline=byline,
                             private_names=private, public_pictures=public, profile=active,
                             store=self._profile_store,
@@ -10869,12 +10870,24 @@ class MainWindow(QMainWindow):
         sheet.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         sheet.submitted.connect(lambda d, ed=ed: self._keep_submitted_identifier(ed, d))
         sheet.view_submission.connect(self._submissions.open_detail)
+        if becomes_article:
+            sheet.finished.connect(lambda _result: self._submit_sheet_closed(sheet, ed))
         if cover.isNull() and draft.image.startswith(("https://", "http://")):
             # A cover that is only a web address: fetched for the card and
             # the small cover; a monogram until then, and when it does not come.
             self._submissions.cover_for_sheet(sheet, draft.image, draft.title)
         self._publish_sheet = sheet                 # follows the appearance while open
         sheet.open()
+
+    def _submit_sheet_closed(self, sheet, ed) -> None:
+        """The sheet that opened Article Details on a plain text closed.
+        Cancelled before anything went on its way (it holds no run), the
+        text is what it was: Article Details closes again, the article's
+        head leaves the page and the window has its frame back. Handed in
+        or on its way, it stays the article its submission is about."""
+        if sheet.run is None and self.current_editor() is ed \
+                and self.act_article_details.isChecked():
+            self.act_article_details.setChecked(False)
 
     def _submission_for_sheet(self, ed, active) -> Optional[tuple]:
         """``(draft, cover, byline, private, public)`` of the article in
