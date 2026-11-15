@@ -117,6 +117,16 @@ def test_inline_spans():
     assert '[**x**]{style="color:#e53935"}' in out
 
 
+def test_a_highlight_is_kept_as_a_span():
+    # A converted .Rmd left highlights out, without a word.
+    doc = QTextDocument()
+    doc.setHtml('<p>a <span style="background-color:#fff59d">mark</span> '
+                '<span style="color:#e53935; background-color:#fff59d">both</span></p>')
+    out = document_to_rmd(doc, "T")
+    assert '[mark]{style="background-color:#fff59d"}' in out
+    assert '[both]{style="color:#e53935; background-color:#fff59d"}' in out
+
+
 def test_bullets_nest_and_get_blank_line_before():
     doc = _doc(["intro", "    • one", "        • two", "after"])
     out = document_to_rmd(doc, "T")

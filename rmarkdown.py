@@ -7,8 +7,10 @@ Export model (mirrors how RStudio treats documents):
 - A rich-text tab saved as .Rmd is converted: YAML frontmatter plus a
   Pandoc-markdown body. Bold, italic, strikethrough, inline code, links,
   headings and lists (bulleted, numbered, checklists) map natively;
-  underline and colors use Pandoc bracketed spans ([x]{.underline},
-  [x]{style="color:#hex"}) which rmarkdown renders in HTML output.
+  underline, colors and highlights use Pandoc bracketed spans
+  ([x]{.underline}, [x]{style="color:#hex"},
+  [x]{style="background-color:#hex"}) which rmarkdown renders in HTML
+  output.
 - Images are NOT embedded as data URIs (unreadable to edit, and they
   break LaTeX PDF knitting). Instead the caller provides copy_image()
   which copies each image into a sidecar media folder next to the .Rmd
@@ -107,6 +109,7 @@ def _render_text_run_md(text: str, fmt, heading: bool = False) -> str:
     underline = fmt.fontUnderline()
     # A link's own color is how links look, not a color of the text.
     colored = fmt.hasProperty(QTextCharFormat.ForegroundBrush) and not fmt.isAnchor()
+    highlighted = fmt.hasProperty(QTextCharFormat.BackgroundBrush) and not fmt.isAnchor()
     underline = underline and not fmt.isAnchor()
 
     # Emphasis markers must hug non-space text; move edge whitespace out.
@@ -124,9 +127,13 @@ def _render_text_run_md(text: str, fmt, heading: bool = False) -> str:
     attrs = []
     if underline:
         attrs.append(".underline")
+    styles = []
     if colored:
-        color = fmt.foreground().color().name()
-        attrs.append(f'style="color:{color}"')
+        styles.append(f"color:{fmt.foreground().color().name()}")
+    if highlighted:
+        styles.append(f"background-color:{fmt.background().color().name()}")
+    if styles:
+        attrs.append(f'style="{"; ".join(styles)}"')
     if attrs:
         core = f"[{core}]{{{' '.join(attrs)}}}"
     return lead + core + trail
