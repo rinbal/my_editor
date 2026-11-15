@@ -491,6 +491,10 @@ class TestWhatThePersonIsDoingStays:
 
     def test_a_new_source_elsewhere_changes_nothing_here(self, window):
         window.search.setText("s")
+        # The search is shown now, so its typing's own show, 150 ms on, is
+        # not: on a slow runner it fired in the middle and showed the list
+        # anew, without the checks made since.
+        window._search_timer.stop()
         window._show_list()
         model = window.posts.model_
         assert model.rowCount() >= 2
