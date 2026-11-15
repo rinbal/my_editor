@@ -19,7 +19,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/de/hero-dark.png">
-  <img src="docs/images/de/hero-light.png" alt="MyEditor mit einer Notiz über zwei Tage am Bergsee, drei Fotos als Mosaik mit Bildunterschriften">
+  <img src="docs/images/de/hero-light.png" alt="MyEditor mit einer Notiz über ein Drachenfest: nach „/“ eine Liste der Stile und Listen, drei bunte Bilder, eine Tabelle und eine Checkliste">
 </picture>
 
 ## Was du damit machen kannst

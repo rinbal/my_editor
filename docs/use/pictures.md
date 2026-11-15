@@ -7,8 +7,8 @@ Put a picture in with **Insert > Image…** (**⇧⌘V** / **Ctrl+Shift+E**), by
 Pictures that follow each other, with nothing but empty lines between them, form a **photo group**. MyEditor lays a group out as a calm mosaic in rows, in which every picture keeps its shape and nothing is cut off. Make the window wider or narrower and the rows rearrange themselves.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../images/hero-dark.png">
-  <img src="../images/hero-light.png" alt="A note about a mountain lake with a photo group of three pictures laid out as a mosaic, each with a caption" width="720">
+  <source media="(prefers-color-scheme: dark)" srcset="../images/photo-group-dark.png">
+  <img src="../images/photo-group-light.png" alt="A note about a mountain lake with a photo group of three pictures laid out as a mosaic, each with a caption" width="720">
 </picture>
 
 The Markdown stays plain: one picture after another, each with its caption under it. Apps that do not know photo groups show the pictures one under another, in your order, so nothing is lost anywhere.

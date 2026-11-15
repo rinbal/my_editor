@@ -19,7 +19,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.png">
-  <img src="docs/images/hero-light.png" alt="MyEditor with a note about two days at a mountain lake, its three photos laid out as a mosaic with captions">
+  <img src="docs/images/hero-light.png" alt="MyEditor with a note about a kite festival: the slash menu open, three bright pictures, a table with coloured words and a checklist">
 </picture>
 
 ## What you can do
