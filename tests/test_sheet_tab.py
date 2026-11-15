@@ -1066,14 +1066,17 @@ def test_large_changes_keep_the_window_responsive(tmp_path):
     # A shared runner now and then takes the whole process away for half a
     # second (the macOS runner did in three runs of four): that is the
     # machine's stall, not the sheet's. A change made on the window's thread
-    # stalls in every run, so the best of three still tells the two apart.
+    # stalls in every run, so the best of three still tells the two apart:
+    # each change's best, as the machine's stalls fall on other changes in
+    # other runs (rinbal's macOS runner: insert in one run, copy in another).
     runs = []
     try:
         for _run in range(3):
             runs.append(measure())
-            if all(stall < 0.5 for stall in runs[-1].values()):
+            best = {change: min(run[change] for run in runs) for change in runs[0]}
+            if all(stall < 0.5 for stall in best.values()):
                 break
-        assert all(stall < 0.5 for stall in runs[-1].values()), runs
+        assert all(stall < 0.5 for stall in best.values()), runs
     finally:
         gc.unfreeze()
 
