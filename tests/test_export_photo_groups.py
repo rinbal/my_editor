@@ -789,6 +789,35 @@ def test_no_page_of_a_pdf_breaks_through_a_picture(app):
     assert spread == 5                      # the tall group runs over pages, between its rows
 
 
+def test_a_group_of_several_rows_that_fits_on_a_page_is_on_one_page(app):
+    """Qt moves a row that would cross a page's end to the next page, and
+    the group's box then holds the room left above it: a group that fits
+    on a page measured taller than one and was split between its rows."""
+    group = "\n\n".join(f"![p{n}]({name})" for n, name in enumerate(
+        ["portrait.png", "square.png", "portrait.png", "landscape.png", "photo.png",
+         "landscape.png"])) + "\n"
+    alone, _writer = _paged(group)
+    block = next(b for b in _blocks(alone.clone) if photo_group.is_group_block(b))
+    height = alone.clone.documentLayout().blockBoundingRect(block).height()
+    # Three rows, close to a page high: a row moved down by more than the
+    # little room left made the box taller than a page.
+    assert block.layout().lineCount() == 3
+    assert 0.8 * alone.content_height < height < alone.content_height
+    for lines in range(2, 48):
+        filler = "\n\n".join(f"Paragraph {n} of the walk in." for n in range(lines))
+        paged, _writer = _paged(f"{filler}\n\n{group}\nAfter.\n")
+        pages = {_pages_of(box, paged) for _p, _n, box in
+                 photo_group_view.picture_boxes(paged.clone)}
+        assert len({page for pair in pages for page in pair}) == 1, lines
+
+
+def _blocks(doc):
+    block = doc.begin()
+    while block.isValid():
+        yield block
+        block = block.next()
+
+
 def test_a_group_moved_to_the_next_page_takes_no_paragraph_out_of_the_pdf(app):
     """A long document is laid out piece by piece. The group that started
     the next page did so while the paragraphs far below it had no lines

@@ -8550,15 +8550,19 @@ class MainWindow(QMainWindow):
          SPLIT: self.act_view_split}[shown].setChecked(True)
 
     def _width_changed(self, ed) -> None:
-        """A tab got wider or narrower: Split may fit now, or not any more.
-        Looked at once the layout has settled, never in the middle of it."""
-        if ed is self.current_editor() and self.view_mode == SPLIT:
+        """A tab got wider or narrower: Split may fit now, or not any more,
+        in Write and Preview too, where its button says so. Looked at once
+        the layout has settled, never in the middle of it."""
+        if ed is self.current_editor():
             # Tied to the editor: dropped if its tab is closed meanwhile.
             QTimer.singleShot(0, ed, lambda e=ed: self._width_settled(e))
 
     def _width_settled(self, ed) -> None:
-        if (shiboken6.isValid(ed) and ed is self.current_editor() and self.view_mode == SPLIT
-                and ed._split_fits is not None and ed._split_fits != self._split_fits(ed)):
+        if not (shiboken6.isValid(ed) and ed is self.current_editor()):
+            return
+        if self.view_mode != SPLIT:
+            self._sync_view_switch(ed, self._shown_view(ed))
+        elif ed._split_fits is not None and ed._split_fits != self._split_fits(ed):
             self._apply_view(ed)
 
     def _remember_split(self, splitter) -> None:

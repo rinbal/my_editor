@@ -237,6 +237,50 @@ print("RESULT " + json.dumps(r))
 """
 
 
+WIDENED = r"""
+import json, os, sys
+sys.path.insert(0, sys.argv[1])
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication
+app = QApplication(sys.argv[:1])
+import main_window
+
+w = main_window.MainWindow()
+w.resize(900, 800)
+w.show()
+ed = w.new_tab()
+w.act_view_write.trigger()
+QTest.qWait(50)
+
+
+def split():
+    return [w.act_view_split.isEnabled(), w.act_view_split.toolTip()]
+
+
+r = {"narrow": split()}
+w.resize(1500, 800)
+QTest.qWait(50)
+r["wide"] = split()
+w.resize(900, 800)
+QTest.qWait(50)
+r["narrow_again"] = split()
+ed.document().setModified(False)
+w.close()
+print("RESULT " + json.dumps(r))
+"""
+
+
+def test_split_is_offered_once_the_window_is_wide_enough_in_write(tmp_path):
+    """Only Split itself looked at the width: in Write, a window made wide
+    enough kept Split dimmed, asking to be made wider."""
+    r = run_window_script(WIDENED, tmp_path)
+    wider = "Make the window wider to show both"
+    assert r["narrow"] == [False, wider]
+    assert r["wide"] == [True, "Split"]        # a cleared tip falls back to the name
+    assert r["narrow_again"] == [False, wider]
+
+
 def test_write_preview_and_split_in_the_window(tmp_path):
     r = run_window_script(SCRIPT, tmp_path)
     assert r["start"] == {"text": True, "preview": False, "checked": [True, False, False],
