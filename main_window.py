@@ -8608,6 +8608,11 @@ class MainWindow(QMainWindow):
         while a Nostr account is in use, what will be published (as an
         ARTICLE or a NOTE) and what of it readers will not see."""
         names = self._preview_name
+        # Colors, highlights and underlines, which Markdown cannot carry,
+        # are not in the preview: said, so their words drawn plain do not
+        # read as broken Markdown.
+        colors = (not getattr(ed, "_markdown_source", False)
+                  and has_local_only_formatting(ed.document()))
         if not self.nostr_state.active:
             def pictures(fmt):
                 media = _media_asset(self._asset_manager, fmt.name())
@@ -8622,7 +8627,9 @@ class MainWindow(QMainWindow):
                 markdown = serialize_plain_with_images(ed.document(), pictures)
             else:
                 markdown = document_to_markdown(ed.document(), pictures)
-            return PreviewContent(DOCUMENT, markdown.rstrip("\n"), names=names)
+            checks = (_("Colors, highlights and underlines aren’t part of Markdown, so the "
+                        "preview leaves them out."),) if colors else ()
+            return PreviewContent(DOCUMENT, markdown.rstrip("\n"), names=names, checks=checks)
         profile = self._profile_store.default()
         author = (profile.display_name or profile.npub_short()) if profile is not None else ""
         checks = []
@@ -8633,6 +8640,8 @@ class MainWindow(QMainWindow):
                 "has uploaded it.",
                 "{count} files are not on your media servers yet: they show here once "
                 "publishing has uploaded them.", local).format(count=local))
+        if colors:
+            checks.append(_("Colors, highlights and underlines don’t reach readers."))
         if kind == NOTE:
             text = self._publish_payload(ed, "note")[0]
             return PreviewContent(NOTE, text, author=author, names=names, checks=tuple(checks))
