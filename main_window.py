@@ -5298,19 +5298,15 @@ class MainWindow(QMainWindow):
     def _ask_before_losing(self, ed, path: str) -> str:
         """Ask before saving ``ed`` to ``path`` drops what the file cannot
         hold (_loses_content_on_save): "save" (nothing is lost, or it is
-        saved without it), "html", "rtf" or "cancel". A Markdown file saved
-        without its colors, highlights and underlines takes them off the
-        document too, as one step of Undo: the window shows what the file
-        holds, and the next save asks nothing."""
+        saved without it), "without colors" (a Markdown file saved without
+        its colors, highlights and underlines: _save_to takes them off the
+        document too once the file is written), "html", "rtf" or "cancel"."""
         if not self._loses_content_on_save(ed, path):
             return "save"
         result = self._warn_formatting_loss(os.path.splitext(path)[1])
         if result != "anyway":
             return result
-        if path.lower().endswith(".md"):
-            with ed.undo_step(N_("Remove Colors")):
-                remove_local_only_formatting(ed.document())
-        return "save"
+        return "without colors" if path.lower().endswith(".md") else "save"
 
     def _warn_formatting_loss(self, ext_label: str) -> str:
         """Ask before saving to a format that drops content, saying what it
@@ -5413,7 +5409,7 @@ class MainWindow(QMainWindow):
             return self.save_as(self._suggest_path(path, '.html'), ".html (*.html)")
         elif result == 'rtf':
             return self.save_as(self._suggest_path(path, '.rtf'), ".rtf (*.rtf)")
-        return self._save_to(path)
+        return self._save_to(path, without_colors=result == "without colors")
 
     def _suggest_path(self, current_path: str, new_ext: str) -> str:
         """Return current_path with its extension replaced by new_ext."""
@@ -5458,7 +5454,7 @@ class MainWindow(QMainWindow):
             # was saved from, while it is still the one in front.
             if ed is None or self.current_editor() is ed:
                 self._saved_as(path, old_path)
-        ok = self._save_to(path, then=saved)
+        ok = self._save_to(path, then=saved, without_colors=result == "without colors")
         if ok:
             self._saved_as(path, old_path)
         return ok
@@ -5479,12 +5475,17 @@ class MainWindow(QMainWindow):
         self._populate_recent_menu()
         self._update_knit_actions()
 
-    def _save_to(self, path: str, *, asked: bool = False, then=None) -> bool:
+    def _save_to(self, path: str, *, asked: bool = False, then=None,
+                 without_colors: bool = False) -> bool:
         """Write the current document to ``path``; True once it is written.
         ``asked``: the caller asked already about writing over a file that
         another app changed (_confirm_save_over_changes). A page or a PDF
         whose web pictures are still to come is written once they are
-        (_with_web_pictures): False now, and ``then()`` once it is."""
+        (_with_web_pictures): False now, and ``then()`` once it is.
+        ``without_colors``: a Markdown file saved without its colors,
+        highlights and underlines (_ask_before_losing); once it is written
+        they are taken off the document too, as one step of Undo, so the
+        window shows what the file holds and the next save asks nothing."""
         ed = self.current_editor()
         if not ed:
             return False
@@ -5558,6 +5559,9 @@ class MainWindow(QMainWindow):
                 ed._front_matter = front
                 ed._details_not_saved = front.refused if front is not None else frozenset()
                 tab_details.file_changed(ed)
+                if without_colors:
+                    with ed.undo_step(N_("Remove Colors")):
+                        remove_local_only_formatting(ed.document())
             ed._recovered_title = ""
             self._resolve_disk_change(ed)
             ed.document().setModified(False)

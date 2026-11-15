@@ -150,10 +150,21 @@ def test_saving_markdown_without_colors_takes_them_off_the_document(win, tmp_pat
     monkeypatch.setattr(main_window, "ask", lambda parent, **kw: asked.append(kw) or "anyway")
     win._ed = ed = _colored()
     path = str(tmp_path / "note.md")
-    assert win._ask_before_losing(ed, path) == "save" and win._save_to(path)
-    assert not has_local_only_formatting(ed.document())
+    assert win._ask_before_losing(ed, path) == "without colors"
+    assert win._save_to(path, without_colors=True)
+    assert not has_local_only_formatting(ed.document()) and not ed.document().isModified()
     assert win._ask_before_losing(ed, path) == "save" and len(asked) == 1
     ed.undo()                                   # one step brings them back
+    assert has_local_only_formatting(ed.document())
+
+
+def test_a_markdown_save_that_fails_keeps_the_colors(win, tmp_path, monkeypatch):
+    import main_window
+    from markdown_writer import has_local_only_formatting
+    monkeypatch.setattr(main_window, "inform", lambda *args, **kwargs: None)
+    win._ed = ed = _colored()
+    (tmp_path / "a file").write_text("", encoding="utf-8")
+    assert not win._save_to(str(tmp_path / "a file" / "note.md"), without_colors=True)
     assert has_local_only_formatting(ed.document())
 
 
