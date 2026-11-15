@@ -131,6 +131,21 @@ def test_an_empty_list_item_comes_back_the_same(source):
     assert document_to_markdown(doc) == source
 
 
+@pytest.mark.parametrize("source", ["-\t\n", "- a\n-\t\n", "- [ ]\t\n"])
+def test_an_empty_item_with_a_tab_after_its_marker_is_kept(source):
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert doc.lastBlock().textList() is not None and doc.lastBlock().text() == ""
+
+
+def test_indented_code_that_looks_like_a_list_opens_as_code():
+    assert holds_faithfully("    - One\n    -\n")
+    doc = QTextDocument()
+    read_markdown(doc, "    - One\n    -\n")
+    assert doc.toPlainText() == "- One\n-" and doc.begin().textList() is None
+
+
 def test_an_empty_item_under_an_items_words_reads_back_as_an_item():
     # Right under them it would be a heading: "- a\n    -" is "## a".
     doc = from_markdown("- a\n    - b\n")

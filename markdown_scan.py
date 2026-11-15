@@ -89,11 +89,11 @@ def code_lines(lines: List[str]) -> List[bool]:
             out.append(True)
             continue
         blank = not line.strip()
-        if LIST_LINE.match(line):
+        code = bool(_CODE_INDENT.match(line)) and previous_blank and not in_list
+        if LIST_LINE.match(line) and not code:      # ("    - a" there is code)
             in_list = True
         elif not blank and not line[:1].isspace():
             in_list = False
-        code = bool(_CODE_INDENT.match(line)) and previous_blank and not in_list
         out.append(code)
         previous_blank = blank or code
     return out
@@ -147,8 +147,8 @@ def _indent(text: str) -> Optional[int]:
 
 
 def empty_items(markdown: str) -> Tuple[List[int], bool]:
-    """Where each list item with nothing in it ("-", "2.", "- [ ]") ends
-    its marker, outside code, when words written there leave the lists
+    """Where the line of each list item with nothing in it ("-", "2.",
+    "- [ ]") ends, outside code, when words written there leave the lists
     as they are (_empty_item_alone); and whether such an item stands
     where words would change them, or where it is not known whether it
     is one (_item_starts).
@@ -168,9 +168,7 @@ def empty_items(markdown: str) -> Tuple[List[int], bool]:
         if starts[number] is False:
             continue                    # no item, or a paragraph's words
         depth = _quote_depth(line)
-        rest = _inside_quotes(line, depth)
-        item = _ITEM.fullmatch(rest)
-        before = line_start + len(line) - len(rest)
+        item = _ITEM.fullmatch(_inside_quotes(line, depth))
         words = item.group(3)
         box = _TASK_BOX.fullmatch(words)
         if words.strip() and box is None:
@@ -181,13 +179,13 @@ def empty_items(markdown: str) -> Tuple[List[int], bool]:
             alone = _empty_item_alone(lines, code, number, depth,
                                       len(item.group(1)) + len(item.group(2)) + 1)
             if alone:
-                places.append(before + item.end(2))
+                places.append(line_start + len(line))
             elif alone is not None:
                 unsafe = True
         elif _empty_item_alone(lines, code, number, depth, item.start(3)):
             # (A task's box is a paragraph already: a line that would join
             # the words joins the box, and the task is not empty.)
-            places.append(before + item.start(3) + len(words.rstrip()))
+            places.append(line_start + len(line))
     return places, unsafe
 
 

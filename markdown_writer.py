@@ -1419,7 +1419,9 @@ def _marked_keeps(markdown: str, features) -> Tuple[str, Optional[str], bool]:
     empty list item where a word would change the lists, raw HTML but
     the tags kept, or no free mark."""
     items, lost = empty_items(markdown)
-    places = [(at, " ", "") for at in items]
+    # (After the line's spaces and tabs: Qt's reader keeps a tab after
+    # the words of an item.)
+    places = [(at, "" if markdown[at - 1] in " \t" else " ", "") for at in items]
     pictured, tags = bracketed(markdown)
     places += [(at, "", "") for at in pictured]
     html = _reads_html(features)
