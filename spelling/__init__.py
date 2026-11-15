@@ -10,7 +10,7 @@
   Linux, or none) behind one interface that never raises; ``words``
   finds the words of Markdown text that are checked.
 
-See docs/spelling.md for how the editor uses them.
+See docs/develop/spelling.md for how the editor uses them.
 """
 
 from .backends import (

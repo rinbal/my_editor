@@ -17,7 +17,7 @@ Translations live in ``locale/<language>.po``, the standard gettext
 format that Poedit, Weblate and every translation tool reads, and are
 read straight from there: there is no compile step to forget.
 ``locale/myeditor.pot`` lists every text to translate; scripts/i18n.py
-updates it and the .po files from the code. docs/translating.md says how
+updates it and the .po files from the code. docs/develop/translating.md says how
 to add a language.
 
 The language is chosen once, before any window is built, because many

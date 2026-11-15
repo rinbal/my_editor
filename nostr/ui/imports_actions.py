@@ -59,7 +59,7 @@ def create_label(count: int) -> str:
 def signer_note(prompts: int) -> str:
     if prompts <= 0:
         return ""
-    # The glossary's words (docs/translating.md): a signer app.
+    # The glossary's words (docs/develop/translating.md): a signer app.
     return ngettext("Your signer app may ask once. Keep it open until this finishes.",
                     "Your signer app may ask up to {count} times, twice for each draft and "
                     "once for each image. Keep it open until this finishes.",

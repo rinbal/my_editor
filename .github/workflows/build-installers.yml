@@ -88,7 +88,7 @@ jobs:
       # The bundle is ad-hoc signed (unsigned by a developer, but sealed). An
       # intact seal is what gives users macOS's recoverable "Open Anyway" path;
       # a broken one shows "damaged and can't be opened" with no button at all.
-      # docs/install-guide.md walks users through that path, so guard it here.
+      # docs/develop/install-guide.md walks users through that path, so guard it here.
       - name: Check the app bundle's signature
         if: runner.os == 'macOS'
         run: codesign --verify --deep --strict --verbose=2 dist/*.app

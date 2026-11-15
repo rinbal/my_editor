@@ -268,7 +268,7 @@ def test_a_mac_names_the_settings_command_settings(tmp_path, language, word, qui
     assert r["quit"] == quit_word           # every other text is left to Qt's own
 
 
-# The glossary (docs/translating.md): an account is an account (its profile
+# The glossary (docs/develop/translating.md): an account is an account (its profile
 # is the name and picture people see), a signer app is a signer app, and no
 # text names a protocol, in English and in German. Review L7: the publishing
 # flow still said "your signer", "this profile" and "NIP-44"; review N3:
@@ -348,7 +348,7 @@ def test_the_german_texts_speak_the_glossarys_words_too():
             said = f"{where.get(entry['msgid'], '?')}: {entry['msgid']} -> {german}"
             if german and _off_glossary(german, "de"):
                 off.append(said)
-            # One form of address: du, in the full imperative (docs/translating.md).
+            # One form of address: du, in the full imperative (docs/develop/translating.md).
             if re.search(r"\b[Vv]ersuch es\b", german):
                 imperative.append(said)
     assert off == []

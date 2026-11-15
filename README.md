@@ -118,8 +118,8 @@ as text.
 - [Install guide](https://rinbal.github.io/my_editor/install/) ([as text](docs/install.md)) - downloads, security prompts, troubleshooting
 - [Nostr publishing, drafts, media, and RSS import](docs/nostr.md)
 - [Keyboard shortcuts, menus, and save formats](docs/usage.md)
-- [Release process](docs/release-process.md) - for maintainers
-- [Maintaining the install guide](docs/install-guide.md) - for maintainers
+- [Release process](docs/develop/release-process.md) - for maintainers
+- [Maintaining the install guide](docs/develop/install-guide.md) - for maintainers
 
 ---
 
