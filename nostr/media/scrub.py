@@ -103,6 +103,9 @@ def scrub_for_publication(data: bytes, declared_mime: str = "") -> ScrubResult:
         # Publishing it unscrubbed would defeat the point of this module.
         raise ScrubError(f"{mime} cannot be prepared for publication")
 
+    # Decoded upright: the camera's orientation (EXIF) goes with the rest
+    # of what is not pixels, so the copy is turned the way it said first,
+    # or a phone's portrait photo would be published on its side.
     image = image_safety.decode_image_bytes(bytes(data))
     if image is None or image.isNull():
         raise ScrubError("this image could not be read")

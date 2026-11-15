@@ -495,7 +495,8 @@ def test_many_files_list_without_reading_them(tmp_path, libraries, pane, monkeyp
     pane.grab()
     assert wait_until(lambda: not pane.reader.busy())
     assert len(pane.model_.entries()) == 2000
-    assert 0 < len(read) < 50
+    assert wait_until(lambda: len(read) > 0)  # the visible rows, when the list has drawn them
+    assert len(read) < 50
 
 
 # -- the red team's second round -----------------------------------------------------

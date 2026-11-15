@@ -35,11 +35,14 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Iterator, List, Optional
 
+import user_dirs
 from atomic_file import write_text
 
 
-PROFILES_DIR = Path.home() / ".config" / "my_editor"
-PROFILES_FILE = PROFILES_DIR / "nostr_profiles.json"
+def profiles_file() -> Path:
+    """nostr_profiles.json in the person's config folder, found each time
+    (user_dirs)."""
+    return user_dirs.config_dir() / "nostr_profiles.json"
 
 
 @dataclass
@@ -93,8 +96,8 @@ class ProfileStore:
     an in-memory copy populated on construction.
     """
 
-    def __init__(self, path: Path = PROFILES_FILE) -> None:
-        self._path = path
+    def __init__(self, path: Optional[Path] = None) -> None:
+        self._path = Path(path) if path is not None else profiles_file()
         self._profiles: dict[str, Profile] = {}
         self._default_pubkey: Optional[str] = None
         self._load()

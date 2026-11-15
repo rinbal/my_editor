@@ -102,19 +102,9 @@ def _decode_as(data: bytes, fmt: str, at_least: Optional[QSize]) -> Optional[QIm
     if reader is None:
         return None
     try:
-        reader.setAutoTransform(True)
-        size = reader.size()
-        if not size.isValid() or size.width() <= 0 or size.height() <= 0:
-            return None
-        if size.width() * size.height() > image_safety.MAX_DECODE_PIXELS:
-            return None
-        scaled = image_safety._scaled_to_cover(size, at_least)
-        if scaled is not None:
-            reader.setScaledSize(scaled)
-        image = reader.read()
+        return image_safety.read_upright(reader, at_least)
     finally:
         buffer.close()
-    return None if image.isNull() else image
 
 
 def _raster_format(data: bytes, ext: str) -> Optional[str]:
@@ -336,8 +326,8 @@ def picture_size(path: str) -> Optional[QSize]:
     if reader is None:
         return None
     try:
-        reader.setAutoTransform(True)
-        size = reader.size()
+        # Upright, as the Finder says it: a phone's portrait photo, stored
+        # on its side, is taller than wide.
+        return image_safety.upright_size(reader)
     finally:
         buffer.close()
-    return size if size.isValid() and size.width() > 0 and size.height() > 0 else None

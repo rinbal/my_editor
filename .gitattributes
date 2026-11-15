@@ -1,0 +1,10 @@
+# Byte-for-byte copies of STANDUP's files: tests/test_photo_layout.py
+# compares their hashes with STANDUP's, so every checkout keeps their
+# line endings, also on Windows (where Git writes CRLF by default).
+photo_layout.py text eol=lf
+tests/fixtures/photo_layout_vectors.json text eol=lf
+web/photo_layout.js text eol=lf
+web/photo_viewer.js text eol=lf
+web/photo_groups.js text eol=lf
+web/photo-group-messages.json text eol=lf
+web/photo_groups.css text eol=lf

@@ -54,6 +54,7 @@ import shiboken6
 from PySide6.QtCore import QLockFile, QObject, QTimer, Signal
 
 import url_safety
+import user_dirs
 from i18n import _
 
 from .imports import snapshots, workers
@@ -101,8 +102,6 @@ from .publisher import DraftPublishJob
 from .rss.normalize import item_to_article
 
 _log = logging.getLogger(__name__)
-
-CONFIG_DIR = Path.home() / ".config" / "my_editor"
 
 ACCOUNT_CHANGED = _("The account changed. Resume when you're signed in to that account "
                     "again.")
@@ -188,7 +187,7 @@ class ImportsController(QObject):
         self._draft_store = draft_store
         self._entitled_relays = entitled_relays
         self._blossom_primary = blossom_primary
-        self._config_dir = Path(config_dir) if config_dir else CONFIG_DIR
+        self._config_dir = Path(config_dir) if config_dir else user_dirs.config_dir()
         self._fetcher = fetcher if fetcher is not None else SourceFetcher(self)
         # What the pages of posts opened in the article view added (page_text),
         # so a post opened again is not read again.

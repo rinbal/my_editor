@@ -11,6 +11,7 @@ sidecar/.env
 !site/**/*.html
 *.txt
 !requirements.txt
+!LICENSES/*.txt
 .claude
 plugin_plan.md
 IMPORTS_V2_PLAN.md

@@ -16,13 +16,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Optional
 
+import user_dirs
 from atomic_file import read_json, write_json
 
 FILE_NAME = "article_first_published.json"
 
 
 def default_path() -> Path:
-    return Path.home() / ".config" / "my_editor" / FILE_NAME
+    return user_dirs.config_dir() / FILE_NAME
 
 
 class FirstPublications:

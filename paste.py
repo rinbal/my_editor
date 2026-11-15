@@ -56,7 +56,7 @@ from typing import List, NamedTuple, Optional, Tuple
 
 from PySide6.QtCore import QMimeData
 from PySide6.QtGui import (
-    QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument,
+    QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument, QTextDocumentFragment,
     QTextImageFormat,
 )
 
@@ -470,15 +470,17 @@ def from_mime(source: QMimeData) -> Optional[Pasted]:
     return None
 
 
-def selection_markdown(cursor: QTextCursor, *, literal: bool = False,
-                       outside=None) -> str:
+def selection_markdown(cursor: QTextCursor, selected: Optional[QTextDocumentFragment] = None,
+                       *, literal: bool = False, outside=None) -> str:
     """The selection as Markdown, for the clipboard: pictures keep their
     names, so they are found again when pasted into this document.
-    ``literal``: its text written to read back as the same text.
-    ``outside(name)``: for Markdown other apps read, the Outside of one of
-    the app's own objects (None for any other picture, kept as it is)."""
+    ``selected``: what of it goes there (photo_group_cut.clipped), by
+    default all of it. ``literal``: its text written to read back as the
+    same text. ``outside(name)``: for Markdown other apps read, the
+    Outside of one of the app's own objects (None for any other picture,
+    kept as it is)."""
     doc = QTextDocument()
-    QTextCursor(doc).insertFragment(cursor.selection())
+    QTextCursor(doc).insertFragment(selected if selected is not None else cursor.selection())
     started_in = cursor.document().findBlock(cursor.selectionStart())
     if started_in.blockFormat().headingLevel() and not doc.begin().blockFormat().headingLevel():
         # Words from inside a heading: its size and weight are the

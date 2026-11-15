@@ -29,9 +29,12 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Optional
 
+import user_dirs
 from atomic_file import write_json
 
-WORKSPACE_FILE = os.path.join(os.path.expanduser("~"), ".cache", "my_editor", "workspace.json")
+def workspace_file() -> str:
+    """workspace.json in the person's cache folder, found each time (user_dirs)."""
+    return str(user_dirs.cache_dir() / "workspace.json")
 
 # Readers skip a record with a higher version instead of guessing at it.
 WORKSPACE_VERSION = 1
@@ -95,16 +98,16 @@ class Workspace:
         return {os.path.abspath(t.backup_file) for t in self.tabs if t.backup_file}
 
 
-def write_workspace(workspace: Workspace, path: str = WORKSPACE_FILE) -> bool:
+def write_workspace(workspace: Workspace, path: Optional[str] = None) -> bool:
     """Write the record atomically. False when it could not be written, in
     which case the caller must not count on the next launch restoring it."""
     record = asdict(workspace)
     record["version"] = WORKSPACE_VERSION
     record["tabs"] = [asdict(t) for t in workspace.tabs]
-    return write_json(path, record, ensure_ascii=False)
+    return write_json(path or workspace_file(), record, ensure_ascii=False)
 
 
-def take_workspace(path: str = WORKSPACE_FILE) -> Optional[Workspace]:
+def take_workspace(path: Optional[str] = None) -> Optional[Workspace]:
     """Read the record and delete it, so it is restored at most once.
 
     A record from a newer build is not read, and not deleted here: this
@@ -114,6 +117,7 @@ def take_workspace(path: str = WORKSPACE_FILE) -> Optional[Workspace]:
     from starting, and the backups it pointed at are still found by the
     crash-recovery sweep.
     """
+    path = path or workspace_file()
     if not os.path.isfile(path):
         return None
     try:
@@ -134,9 +138,9 @@ def take_workspace(path: str = WORKSPACE_FILE) -> Optional[Workspace]:
     return _parse(data)
 
 
-def discard_workspace(path: str = WORKSPACE_FILE) -> None:
+def discard_workspace(path: Optional[str] = None) -> None:
     """Forget a record written for a restart that is not going to happen."""
-    _remove(path)
+    _remove(path or workspace_file())
 
 
 # -- parsing -------------------------------------------------------------------

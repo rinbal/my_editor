@@ -8,7 +8,9 @@ What must hold:
   picture in at the caret exactly as dropping that file there does: the
   same path (MainWindow._handle_dropped_images), one step of Undo (called
   "Image"), and, while a Nostr account is in use, kept on this computer
-  without a question, as a drop is. Cancelling the dialog changes nothing.
+  without a question, as a drop is. Several files chosen at once are a
+  photo group of their own (one step, "Add Photos"). Cancelling the
+  dialog changes nothing.
 
   It is offered where a document can keep a picture as Markdown or HTML
   does (Markdown and HTML documents, new documents), not in plain text,
@@ -34,11 +36,13 @@ SCRIPT = r"""
 import json, os, sys, types
 sys.path.insert(0, sys.argv[1])
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
-from PySide6.QtGui import QColor, QImage, QTextCursor
+from PySide6.QtGui import QColor, QImage, QTextCursor, QTextFormat
+from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QFileDialog
 app = QApplication(sys.argv[:1])
 import main_window
+import photo_group
 asked, dialogs = [], []
 main_window.ask = lambda parent, **kw: (asked.append(kw.get("title")), False)[1]
 home = os.environ["HOME"]
@@ -46,11 +50,11 @@ picture = os.path.join(home, "holiday.png")
 image = QImage(4, 4, QImage.Format.Format_RGB32)
 image.fill(QColor("red"))
 image.save(picture)
-answer = [picture]
+answer = [[picture]]
 def chosen(parent, caption, directory, filters):
     dialogs.append([caption, filters])
     return answer[0], ""
-QFileDialog.getOpenFileName = staticmethod(chosen)
+QFileDialog.getOpenFileNames = staticmethod(chosen)
 w = main_window.MainWindow()
 w.show()
 r = {}
@@ -70,15 +74,24 @@ r["enabled_new"] = w.act_insert_image.isEnabled()
 w.act_insert_image.trigger()
 app.processEvents()
 r["inserted"] = ["￼" in ed.toPlainText(), ed.undo_name(), asked[:], dialogs[-1][0]]
+it = ed.document().findBlock(len("Look: ")).begin()
+while not it.fragment().charFormat().isImageFormat():
+    it += 1
+r["alt"] = it.fragment().charFormat().stringProperty(QTextFormat.Property.ImageAltText)
+# Described by the name its asset keeps, as an earlier version did: none.
+named = it.fragment().charFormat().toImageFormat()
+named.setProperty(QTextFormat.Property.ImageAltText, "holiday")
+unit = photo_group.unit_of_picture(named)
+r["described"] = [ed.photos.stored_name(unit.name), ed.photos.described(unit)]
 r["filters"] = dialogs[-1][1]
 ed.undo()
 r["undone"] = ed.toPlainText()
-answer[0] = ""
+answer[0] = []
 w.act_insert_image.trigger()
 r["cancelled"] = [ed.toPlainText(), ed.undo_name()]
 
 # With an account in use: no question, as a drop asks none.
-answer[0] = picture
+answer[0] = [picture]
 w.nostr_state._active = True
 w._update_nostr_commands()
 w._profile_store.default = lambda: types.SimpleNamespace(
@@ -87,6 +100,31 @@ w.act_insert_image.trigger()
 r["account"] = asked[:]
 r["account_inserted"] = ed.toPlainText().count("\ufffc")
 r["menu_account"] = titles()
+
+# Several at once: a photo group of their own under the words.
+second = os.path.join(home, "harbour.png")
+image.save(second)
+answer[0] = [picture, second]
+ed = w.new_tab()
+ed.setFocus()
+QTest.keyClicks(ed, "Look:")
+QTest.keyClick(ed, Qt.Key.Key_Return)
+w.act_insert_image.trigger()
+app.processEvents()
+group = photo_group.group_at(ed.document(), ed.document().findBlockByNumber(1).position())
+r["several"] = [len(group.units) if group is not None else 0, ed.undo_name()]
+
+# Saved and opened again: the pictures and their group, not the file's
+# Markdown text (gate RG-PG2E-c 1: "![](...)" read as lossy).
+holiday = os.path.join(home, "Holiday.md")
+w._save_to(holiday)
+saved = open(holiday, encoding="utf-8").read()
+w.close_tab(w.tabs.currentIndex())
+again = w.open_path(holiday)
+app.processEvents()
+group = photo_group.group_at(again.document(), again.document().findBlockByNumber(1).position())
+r["reopened"] = [saved.count("![]("), again._markdown_source,
+                 len(group.units) if group is not None else 0]
 
 # Where a picture cannot be kept, it is dimmed.
 for name, body in (("doc.md", "# Doc\n"), ("doc.html", "<p>doc</p>"), ("doc.txt", "doc\n"),
@@ -118,10 +156,16 @@ def r(tmp_path_factory):
 def test_insert_image_is_a_drop_of_the_chosen_file(r):
     assert r["enabled_new"]
     assert r["inserted"] == [True, "Image", [], "Insert Image"]
+    # Gate RG-PG2E-b 5: no description, never the file's name.
+    assert r["alt"] == ""
+    assert r["described"] == ["holiday", ""]
     assert "*.png" in r["filters"] and "*.jpg" in r["filters"]
     assert r["undone"] == "Look: "
     assert r["cancelled"] == ["Look: ", "Typing"]
     assert r["account"] == [] and r["account_inserted"] == 1
+    # Gate RG-PG2E-b 14: one file is one picture, several are a group.
+    assert r["several"] == [2, "Add Photos"]
+    assert r["reopened"] == [2, False, 2]
 
 
 def test_one_image_item_in_the_insert_menu(r):

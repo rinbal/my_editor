@@ -46,16 +46,25 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QTextCursor, QTextDocument, QTextFormat
 
 import front_matter
+import user_dirs
 import tab_details
 import rich_text
 from atomic_file import write_text
 from doc_walk import iter_blocks, iter_image_names
 from export_html import normalize_after_set_html
+import photo_group
+import photo_group_find
 from markdown_writer import holds_faithfully, read_markdown
 from nostr.media.assets import ASSET_SCHEME
 
 
-BACKUP_DIR = os.path.join(os.path.expanduser("~"), ".cache", "my_editor", "backups")
+# A folder of its own (a test's); None: backups in the person's cache folder,
+# found each time (user_dirs).
+BACKUP_DIR: str | None = None
+
+
+def backup_dir() -> str:
+    return BACKUP_DIR or str(user_dirs.cache_dir() / "backups")
 
 # How a document's backup stands (EditorBackup.problem): kept, or why not.
 KEPT = ""
@@ -90,7 +99,7 @@ _ASSET_KEY_RE = re.compile(re.escape(ASSET_SCHEME) + r":[0-9a-f]{64}")
 
 
 def _ensure_backup_dir() -> None:
-    os.makedirs(BACKUP_DIR, exist_ok=True)
+    os.makedirs(backup_dir(), exist_ok=True)
 
 
 def _backup_id_for(file_path: str | None) -> str:
@@ -101,7 +110,7 @@ def _backup_id_for(file_path: str | None) -> str:
 
 
 def _backup_path_for(backup_id: str) -> str:
-    return os.path.join(BACKUP_DIR, f"{backup_id}.autosave")
+    return os.path.join(backup_dir(), f"{backup_id}.autosave")
 
 
 def _source_mtime_ns(file_path: str | None) -> int | None:
@@ -205,6 +214,10 @@ def load_backup_content(editor, record: dict, *, modified: bool = True) -> None:
             apply_structure(editor.document(), structure)
         elif isinstance(markdown, str) and markdown:
             _restore_older_markdown(editor.document(), markdown)
+        if record.get("photo_groups") is True:
+            # Kept as their paragraphs (HTML has no place for a group):
+            # shown as the groups they were.
+            photo_group_find.fold(editor.document())
     if record.get("markdown_source"):
         # Opened as its Markdown text: it is still saved as written.
         editor._markdown_source = True
@@ -308,7 +321,8 @@ def _restore_older_markdown(doc, markdown: str) -> None:
         return
     candidate = QTextDocument()
     read_markdown(candidate, markdown)
-    if candidate.toPlainText() == doc.toPlainText():
+    # (The HTML holds a photo group as its paragraphs.)
+    if photo_group.unfolded(candidate).toPlainText() == doc.toPlainText():
         read_markdown(doc, markdown)
 
 
@@ -466,13 +480,14 @@ class EditorBackup:
         """The document's lock when it is locked with a password, else None."""
         return getattr(self._editor, "_lock", None)
 
-    def _snapshot(self) -> str:
-        """The HTML to persist, with big inline images externalized.
+    def _snapshot(self, doc) -> str:
+        """The HTML to persist of ``doc``, with big inline images
+        externalized.
 
         Only the snapshot string is rewritten; the live document keeps
         whatever spelling it had, so nothing the user can see changes.
         """
-        content = self._editor.document().toHtml()
+        content = doc.toHtml()
         # A locked document's pictures stay inside its sealed record.
         if self._externalize is None or self._lock() is not None:
             return content
@@ -502,8 +517,11 @@ class EditorBackup:
         if (revision, identity, locked) == self._written_revision and os.path.exists(self.path):
             return True
 
-        content = self._snapshot()
-        structure = structure_of(doc)
+        # A photo group is kept as its paragraphs, which HTML holds, and
+        # folded again on restore (photo_groups).
+        plain = photo_group.unfolded(doc)
+        content = self._snapshot(plain)
+        structure = structure_of(plain)
         # The fingerprint covers the structure and the tab's identity too:
         # a change only they show (a paragraph turned into a quote, a draft
         # saved under another identifier) is still written.
@@ -536,6 +554,8 @@ class EditorBackup:
         }
         if structure is not None:
             record["structure"] = structure
+        if plain is not doc:
+            record["photo_groups"] = True
         if getattr(self._editor, "_markdown_source", False):
             record["markdown_source"] = True
         record.update(identity)
@@ -581,13 +601,14 @@ def read_backup(path: str) -> dict | None:
 
 def find_all_backups() -> list[dict]:
     """Return every valid backup record found on disk."""
-    if not os.path.isdir(BACKUP_DIR):
+    folder = backup_dir()
+    if not os.path.isdir(folder):
         return []
     results = []
-    for name in os.listdir(BACKUP_DIR):
+    for name in os.listdir(folder):
         if not name.endswith(".autosave"):
             continue
-        path = os.path.join(BACKUP_DIR, name)
+        path = os.path.join(folder, name)
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)

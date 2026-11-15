@@ -248,3 +248,45 @@ def test_a_data_uri_still_faces_the_decode_allowlist():
     # more trusted for it.
     svg = base64.b64encode(SVG_BYTES).decode("ascii")
     assert decode_image_bytes(data_uri_bytes(f"data:image/svg+xml;base64,{svg}")) is None
+
+
+def test_a_phone_photo_stands_upright_in_its_size_its_public_copy_and_the_editor(tmp_path):
+    # NIP audit F3: stored 400x300 with EXIF orientation 6, a phone's
+    # portrait photo, which every browser shows 300x400.
+    from PySide6.QtCore import QByteArray, QUrl
+    from PySide6.QtGui import QTextDocument
+
+    from editor import HtmlEditor
+    from nostr.media.assets import ASSET_SCHEME, AssetIndex
+    from nostr.media.manager import AssetManager
+    from nostr.media.scrub import scrub_for_publication
+    from nostr.publisher import PublishedMedia, build_imeta_tags
+    from tests.media_fakes import FakeBlobStore, FakeUploader
+    from tests.photo_corners import jpeg_turned
+
+    photo = jpeg_turned(400, 300, 6)
+    index = AssetIndex(path=tmp_path / "media_assets.json")
+    manager = AssetManager(blob_store=FakeBlobStore(tmp_path / "cache"), uploader=FakeUploader(),
+                           profile_provider=object, decoder=decode_image_bytes, index=index)
+    asset = manager.adopt_bytes(photo)
+    url = f"https://blossom.example/{asset.sha256}.jpg"
+    record = PublishedMedia(url=url, sha256=asset.sha256, mime=asset.mime,
+                            width=asset.width, height=asset.height)
+    assert "dim 300x400" in build_imeta_tags([record], f"![Boot]({url})")[0]
+
+    public = scrub_for_publication(photo, "image/jpeg").data
+    assert b"Exif" not in public
+    assert QImage.fromData(public).size().toTuple() == (300, 400)
+
+    editor = HtmlEditor()
+    editor.add_picture_resource(asset.key, QByteArray(photo))
+    shown = editor.document().resource(QTextDocument.ImageResource, QUrl(asset.key))
+    assert shown.size().toTuple() == (300, 400)
+
+    # An asset measured on its side before is measured again once shown.
+    asset.width, asset.height = 400, 300
+    index.put(asset)
+    editor.set_resource_resolver(manager.resolve_image, ASSET_SCHEME)
+    shown = editor.loadResource(QTextDocument.ImageResource, QUrl(asset.key))
+    assert shown.size().toTuple() == (300, 400)
+    assert (manager.get(asset.sha256).width, manager.get(asset.sha256).height) == (300, 400)

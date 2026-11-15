@@ -35,6 +35,7 @@ from PySide6.QtGui import (  # noqa: E402
 )
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
+from doc_walk import iter_block_runs  # noqa: E402
 from markdown_writer import (  # noqa: E402
     READ_FEATURES, document_to, document_to_markdown, document_to_note_text, holds_faithfully,
 )
@@ -467,6 +468,16 @@ from markdown_writer import holds_faithfully  # noqa: E402
     # the picture in its place, not as its Markdown text.
     "Before\n\n![Sunset](https://blossom.example/" + "a" * 64 + ".png)\n\nAfter\n",
     "A picture ![Map](pictures/map.png) in a line.\n",
+    # A picture without a description, as the app writes one added in it.
+    "An image ![](https://x.example/a.png) without alt text.\n",
+    # A reference definition without a title, and words that only look
+    # like one in a list item.
+    "[a][r] und mehr.\n\n[r]: /u\n",
+    "- [Note]: some text here\n",
+    "Mit `*` und `_` schreibt man *Betonung*, \\*`code`\\* ist kein Stern.\n",
+    # What would be lost outside code, shown in code (a README's example).
+    "So steht ein Verweis im Zitat:\n\n```\n> [r]: /u\n[s]: /w \"Titel\"\n*`code`*\n```\n\nUnd *weiter*.\n",
+    "Eingerückt:\n\n    > [r]: /u\n    [s]: /w 'Titel'\n\nUnd *weiter*.\n",
 ])
 def test_markdown_the_editor_can_hold(source):
     assert holds_faithfully(source)
@@ -475,7 +486,6 @@ def test_markdown_the_editor_can_hold(source):
 @pytest.mark.parametrize("source", [
     "Footnote[^1].\n\n[^1]: The note,\n\n    and its second paragraph.\n",
     "<div>raw</div>\n",
-    "An image ![](https://x.example/a.png) without alt text.\n",
     'A [link](https://x.example "with a title").\n',
     "[![badge](https://x.example/b.png)](https://x.example)\n",
     "> # a heading in a quote\n",
@@ -491,6 +501,24 @@ def test_markdown_the_editor_can_hold(source):
     "| **a** | b |\n| --- | --- |\n| 1 | 2 |\n",                 # emphasis in a header
     "1. Run this:\n\n   ```sh\n   make\n   ```\n",            # code in a list item
     "Escaped \\[^1\\] stays literal.\n\n[^1]: A note.\n",    # an escaped mark (L3)
+    # Gate RG-PG2E-d 4: a reference definition in a quote or a list item
+    # (the quote goes, the items become one with the paragraph after
+    # them), or with a title (it goes).
+    "> [r]: /u\n\nSee [r] and \\*a\\*.\n",
+    "- [r]: /u\\*v\n- [s]: /w\\_x\n\n[r] [s] \\*a\\*\n",
+    "1. [r]:\n   /u\n\n[r]\n",
+    '[a][r] und \\*b\\*.\n\n[r]: /u "t"\n',
+    "[a][r]\n\n[r]: /u\n  'Titel'\n",
+    # Emphasis around nothing but code: Qt's reader gives code no emphasis.
+    "Ein *`code`*\nweiter.\n",
+    "Ein **`code`** und ~~`alt`~~.\n",
+    # Re-check 9b111af, 2: a label on two lines of its quote or list item,
+    # a star after an escaped backslash, links and pictures without words.
+    "> [a\n> b]: /u\n\n[a b] und c.\n",
+    "- [a\n  b]: /u\n\n[a b] und c.\n",
+    "Ein \\\\*`code`* hier.\n",
+    "Ein *[`code`](u)* hier.\n",
+    "Ein *`c`![a](p.png)* hier.\n",
 ])
 def test_markdown_the_editor_would_lose(source):
     assert not holds_faithfully(source)
@@ -501,7 +529,7 @@ def test_a_draft_the_editor_cannot_hold_opens_as_its_text_and_comes_back_unchang
     from main_window import MainWindow
     from nostr.drafts import INNER_KIND_LONG_FORM
 
-    source = "Footnote[^1] and ![](https://x.example/a.png)\n\n[^1]: The note.\n"
+    source = 'Footnote[^1] and a [link](https://x.example "with a title")\n\n[^1]: The note.\n'
     ed = HtmlEditor()
     MainWindow._load_draft_content(ed, draft(INNER_KIND_LONG_FORM, source))
     assert ed._markdown_source
@@ -579,3 +607,298 @@ def test_a_preview_reads_a_soft_break_as_readers_do():
     doc = QTextDocument()
     read_markdown(doc, "Line one\nline two\n", MARKDOWN_FEATURES)
     assert "\u2028" not in doc.toPlainText() and "\n" not in doc.toPlainText()
+
+
+# -- photo groups --------------------------------------------------------------------------
+
+import photo_group  # noqa: E402
+import photo_group_find  # noqa: E402
+import photo_group_edit  # noqa: E402
+from PySide6.QtCore import QEvent, Qt  # noqa: E402
+from PySide6.QtGui import QKeyEvent  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from editor import HtmlEditor  # noqa: E402
+
+GROUP_CORPUS = [
+    "![a](a.png)\n\n![b](b.png)\n",
+    "Intro\n\n![a](a.png)\n\n*Cap one*\n\n![b](b.png)\n\n*Cap two*\n\n![c](c.png)\n\nOutro text.\n",
+    "![a](a.png)\n*Under a*\n\n![b](b.png)\n*Under b*\n",
+    "![a](a.png) *beside a*\n\n![b](b.png)\n",
+    "![a](a.png) ![b](b.png)\n",
+    "![a](a.png)\n![b](b.png)\n![c](c.png)\n![d](d.png)\n![e](e.png)\n",
+    # #wide in a group: at the start, in the middle, at the end, two in a row.
+    "![a](plan.png#wide)\n\n![b](b.png)\n\n![c](c.png)\n",
+    "![a](a.png)\n\n![b](plan.png#wide)\n\n![c](c.png)\n",
+    "![a](a.png)\n\n![b](b.png)\n\n![c](plan.png#wide)\n\n*The plan*\n",
+    "![a](a.png)\n\n![b](one.png#wide)\n\n![c](two.png#wide)\n\n![d](d.png)\n",
+    "# Title\n\n- list\n- items\n\n![a](a.png)\n\n![b](b.png)\n\n> quote\n\n"
+    "![c](c.png)\n\n![d](d.png)\n\n![e](e.png)\n",
+    "![Sunset over the bay](https://blossom.example/" + "a" * 64 + ".png)\n\n"
+    "*Evening, Kiel*\n\n![Harbour](https://blossom.example/" + "b" * 64 + ".jpg)\n",
+    # Not groups: one picture, words between, a picture in a quote.
+    "![only](one.png)\n\nText\n",
+    "![a](a.png)\n\nWords\n\n![b](b.png)\n",
+    "> ![a](a.png)\n\n![b](b.png)\n",
+    # Past the engine's limit: every picture a row of its own.
+    "\n\n".join(f"![p{n}](p{n}.png)" for n in range(61)) + "\n",
+]
+
+
+# Short ids: a test's name must fit where Windows keeps it (test_portability).
+GROUP_IDS = [f"document {n}" for n in range(len(GROUP_CORPUS))]
+
+
+def _read_folded(source: str) -> QTextDocument:
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    return doc
+
+
+def test_a_picture_with_its_caption_on_the_next_line_is_written_once():
+    """The soft break after a picture is not a second copy of it."""
+    source = "![a](a.png)\n*The caption*\n\nText\n"
+    doc = _read_folded(source)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_pictures_that_follow_each_other_open_as_a_group():
+    assert photo_group.has_groups(_read_folded("![a](a.png)\n\n![b](b.png)\n"))
+    assert not photo_group.has_groups(_read_folded("![a](a.png)\n\nWords\n\n![b](b.png)\n"))
+
+
+@pytest.mark.parametrize("source", GROUP_CORPUS, ids=GROUP_IDS)
+def test_a_document_with_groups_comes_back_byte_for_byte(source):
+    assert holds_faithfully(source)
+    assert document_to_markdown(_read_folded(source), _image_as_read) == source
+
+
+@pytest.mark.parametrize("source", GROUP_CORPUS, ids=GROUP_IDS)
+def test_groups_are_written_as_if_they_were_not_there(source, monkeypatch):
+    """Markdown and a note's text alike: what the paragraphs give."""
+    folded = _read_folded(source)
+    monkeypatch.setattr(photo_group_find, "fold", lambda *a, **k: 0)
+    plain = _read_folded(source)
+    assert not photo_group.has_groups(plain)
+    assert document_to_markdown(folded, _image_as_read) == document_to_markdown(plain, _image_as_read)
+    assert document_to_note_text(folded, _image_as_read) == document_to_note_text(plain, _image_as_read)
+
+
+def test_captions_stay_with_their_pictures_through_fold_and_unfold():
+    source = GROUP_CORPUS[1]
+    doc = _read_folded(source)
+    pairs = [(unit.name, unit.caption_text) for group in photo_group.groups_in(doc)
+             for unit in group.units]
+    assert pairs == [("a.png", "Cap one"), ("b.png", "Cap two"), ("c.png", "")]
+    photo_group.unfold(doc)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_a_caption_changed_in_a_group_is_written_in_its_place():
+    doc = _read_folded("![a](a.png)\n\n*Old words*\n\n![b](b.png)\n")
+    group = photo_group.groups_in(doc)[0]
+    photo_group_edit.set_unit(QTextCursor(doc), group.start,
+                              group.units[0].captioned("New words"))
+    assert document_to_markdown(doc, _image_as_read) == "![a](a.png)\n\n*New words*\n\n![b](b.png)\n"
+
+
+def test_a_caption_in_bold_and_with_a_link_is_written_as_one_italic_stretch():
+    """Written "*The* ***old*** *jetty*", the spaces between would be upright
+    and the line no caption, for STANDUP and when read again."""
+    source = "![a](a.png)\n\n*The **old** jetty at [Loch Ossian](https://e.org/loch)*\n"
+    assert document_to_markdown(_read_folded(source), _image_as_read) == source
+
+
+def test_a_break_tag_between_two_pictures_is_read_as_a_break():
+    """Gate 17: pictures pasted from a page come as "![a](a.png)<br>![b]
+    (b.png)". Read as a break, each picture keeps its description, and
+    the two are a group; a tag elsewhere, or in code, stays what it was."""
+    from markdown_writer import PASTE_FEATURES
+    for features in (PASTE_FEATURES, READ_FEATURES):
+        doc = QTextDocument()
+        read_markdown(doc, "![a](a.png)<br>![b](b.png) <BR />\n![c](c.png)\n", features)
+        assert document_to_markdown(doc, _image_as_read) == (
+            "![a](a.png)\n\n![b](b.png)\n\n![c](c.png)\n")
+        assert [unit.alt for unit in photo_group.groups_in(doc)[0].units] == ["a", "b", "c"]
+    for source in ("In HTML, <br> breaks a line.\n", "`![a](a.png)<br>![b](b.png)`\n"):
+        doc = QTextDocument()
+        read_markdown(doc, source, PASTE_FEATURES)
+        assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_what_a_file_escaped_is_saved_escaped():
+    # Qt's reader read "\*Stern\*" as the text "*Stern*", saved as emphasis.
+    source = ("Ein \\*Stern\\* hier.\n\n![a](a.png)\n\n*Ein \\*Stern\\* hier*\n\n"
+              "![b](b.png)\n")
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert doc.firstBlock().text() == "Ein *Stern* hier."
+    assert [unit.caption_line for unit in photo_group.groups_in(doc)[0].units] == [
+        "Ein *Stern* hier", ""]
+    assert document_to_markdown(doc, _image_as_read) == source
+    assert holds_faithfully(source)
+
+
+def test_words_typed_over_escaped_text_are_saved_as_typed():
+    # Gate RG-PG2E-d 5: typed over a selection, the words took the escaped
+    # star's mark and were saved "x \\*neu\\* y". Undo brings back what was.
+    ed = HtmlEditor()
+    ed.show()
+    read_markdown(ed.document(), "Ein \\*Stern\\* hier.\n")
+    cursor = ed.textCursor()
+    cursor.setPosition(len("Ein "))
+    cursor.setPosition(len("Ein *Stern*"), QTextCursor.MoveMode.KeepAnchor)
+    ed.setTextCursor(cursor)
+    QTest.keyClicks(ed, "x *neu* y")
+    assert document_to_markdown(ed.document(), _image_as_read) == "Ein x *neu* y hier.\n"
+    ed.document().undo()
+    assert document_to_markdown(ed.document(), _image_as_read) == "Ein \\*Stern\\* hier.\n"
+    ed.close()
+
+
+def test_command_c_and_command_x_over_a_selection_copy_and_cut_it():
+    # On a Mac, Command-C and Command-X reach the editor as Control with
+    # their letter; typing over the selection took it away first, so Copy
+    # put nothing on the clipboard and Cut deleted the words.
+    ed = HtmlEditor()
+    ed.show()
+    ed.setPlainText("Title")
+    clipboard = QApplication.clipboard()
+    for key, letter, left in ((Qt.Key.Key_C, "c", "Title"), (Qt.Key.Key_X, "x", "")):
+        clipboard.setText("before")
+        ed.selectAll()
+        QApplication.sendEvent(ed, QKeyEvent(QEvent.Type.KeyPress, key,
+                                             Qt.KeyboardModifier.ControlModifier, letter))
+        assert (clipboard.text(), ed.toPlainText()) == ("Title", left), letter
+    ed.close()
+
+
+def test_an_escape_saved_bare_would_change_the_text_so_it_is_kept():
+    # Saved bare, "1\." and "1\)" at a line's start made a list, "\!"
+    # before a link a picture, "\|" in a table cell a column. Text the file
+    # did not escape stays bare.
+    source = ("1\\. Platz geht an Anna.\n\n1\\) Punkt eins\n\nWow\\![Link](https://ex.com/)\n\n"
+              "| a | b |\n| --- | --- |\n| x \\| y | z |\n\n"
+              "Wow! Version 2.0 und a|b bleiben, wie sie sind.\n")
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_a_file_that_holds_the_escape_mark_is_read_as_it_is():
+    # U+2E2C stood before each escape while Qt read a file: a file that held
+    # it lost its escapes on save, and "&#x2E2C;" was taken for a mark.
+    source = "Vier Punkte ⸬ und ein \\*Stern\\*.\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
+    doc = QTextDocument()
+    read_markdown(doc, "Vier Punkte &#x2E2C; und ein \\*Stern\\*.\n")
+    assert doc.firstBlock().text() == "Vier Punkte ⸬ und ein *Stern*."
+    assert document_to_markdown(doc, _image_as_read).endswith("\\*Stern\\*.\n")
+
+
+def test_emphasis_that_ends_a_wrapped_line_is_closed_on_it():
+    # The soft break took the italic of the word before it, and the star
+    # closing it went to the next line: "*Wort\n*weiter", no emphasis.
+    for source in ("Ein *Wort*\nweiter.\n", "*eine lange\nZeile*\n"):
+        doc = QTextDocument()
+        read_markdown(doc, source)
+        assert document_to_markdown(doc, _image_as_read) == source
+
+
+@pytest.mark.parametrize("source, saved", [
+    ("…unter https://example.org/docs\nund im Handbuch.\n", None),
+    ("Die Anleitung liegt auf www.example.org\nund ist kurz.\n", None),
+    ("Fragen gern an hallo@example.org\noder im Forum.\n", None),
+    ("Siehe www.example.org.\nweiter\n", None),
+    ("A claim[^1] and another[^2].\n[^1]: https://example.com/source\n[^2]: Ibid.\n", None),
+    ("*a*\n*b*\n", None),
+    ("Ein *[Link](u)*\nweiter.\n", "Ein [*Link*](u)\nweiter.\n"),
+    ("Ein `code`\nweiter.\n", None),
+])
+def test_what_ends_a_wrapped_line_keeps_its_format_to_itself(source, saved):
+    # Gate RG-PG2E-d 2: the break took the format of the word before it, a
+    # link, code or emphasis, and joined it to the next line: the file
+    # opened as text, or saved "[*Link*\n](u)weiter" and "*a\nb*".
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == (saved or source)
+
+
+def test_a_soft_wrapped_line_ends_as_a_line_end_does():
+    # A word joiner marked a soft break while Qt read the file: no space,
+    # so "*(Wort)*" ending a wrapped line showed its stars, and a word
+    # joiner the file held was deleted.
+    source = "Ein *(Wort)*\nweiter mit Wort\u2060joiner.\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert doc.firstBlock().text() == "Ein (Wort)\u2028weiter mit Wort\u2060joiner."
+    assert [text for text, fmt in iter_block_runs(doc.firstBlock())
+            if fmt.fontItalic() and text.strip()] == ["(Wort)"]
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_the_escape_mark_stays_out_of_addresses_and_file_names():
+    # Gate RG-PG2E-c 2: a definition in a quote or a list got the mark in
+    # its address ("notes/a⸬*b.md", "plan⸬_1.png"), and with it the save,
+    # the copy, the export and the publish payload. One the scan does not
+    # know (its label on two lines) is read without marks.
+    cases = [
+        ("> Siehe [Notiz][r] und \\*Stern\\*.\n>\n> [r]: notes/a\\*b.md\n", "notes/a*b.md"),
+        ("- ![Plan][p]\n- [p]: plan\\_1.png\n", "plan_1.png"),
+        ("Siehe [Notiz][r x].\n\n[r\nx]: notes/a\\*b.md\n\nUnd \\*Stern\\*.\n", "notes/a*b.md"),
+    ]
+    for source, address in cases:
+        doc = _read_folded(source)
+        held = [fmt.anchorHref() or fmt.toImageFormat().name()
+                for text, fmt in _runs(doc) if fmt.isAnchor() or fmt.isImageFormat()]
+        assert held == [address]
+        assert "⸬" not in document_to_markdown(doc, _image_as_read) + doc.toHtml()
+    assert "\\*Stern\\*" in document_to_markdown(_read_folded(cases[0][0]), _image_as_read)
+    # Read without marks, the stars would be saved as emphasis.
+    assert not holds_faithfully(cases[2][0])
+
+
+def test_an_escape_in_a_web_address_is_saved_escaped():
+    # A web address that holds an escape is text to Qt's reader, so its
+    # escapes are the text's (the scan stepped over it, and "\*" in it
+    # was saved bare).
+    source = "Siehe www.x.com/\\*y\\* und https://x.com/a\\_b\\_c.\n"
+    assert document_to_markdown(_read_folded(source), _image_as_read) == source
+    assert holds_faithfully(source)
+
+
+class _Counted(str):
+    """A text that counts how often a scan reads a character of it, one
+    by one or by looking for something in it."""
+    reads = 0
+
+    def __getitem__(self, key):
+        _Counted.reads += 1
+        return super().__getitem__(key)
+
+    def find(self, sub, start=0, end=None):
+        found = super().find(sub, start, len(self) if end is None else end)
+        _Counted.reads += (len(self) if found < 0 else found) - start
+        return found
+
+
+@pytest.mark.parametrize("run", ["](a (b ", "![a ", "](x", "![a](x", "a `b` c "])
+def test_the_escape_scan_reads_a_text_once_however_many_openers_it_holds(run):
+    # Gate RG-PG2E-c 5 and RG-PG2E-d 3: each opener nothing closed was
+    # followed to the end of the text, or of its address, and each code
+    # span looked for the end of its paragraph: twice the text, four times
+    # the reading. Re-check 9b111af, 3: a link's title was looked for so
+    # too (by a pattern: 8 seconds for 50 KB of "](x").
+    import markdown_scan
+    reads = []
+    for size in (25_000, 50_000):
+        _Counted.reads = 0
+        text = _Counted("\\* " + run * (size // len(run)))
+        markdown_scan.escapes(text)
+        markdown_scan.pictures(text)
+        markdown_scan.titled_link(text)
+        markdown_scan.emphasized_code(text)
+        reads.append(_Counted.reads)
+    assert reads[1] < 2.5 * reads[0]

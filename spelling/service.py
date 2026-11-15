@@ -331,6 +331,9 @@ class DocumentSpelling(QObject):
         self._breaks: Dict[int, Optional[State]] = {}
         self._visible = (0, -1)
         self._sweep = 0
+        # The misspellings of short texts shown with the document but not
+        # in its text (misspellings_of), by text.
+        self._shown_texts: Dict[str, Tuple[Misspelling, ...]] = {}
         # The word being typed: where the last edit ended, while the
         # editor's cursor is there and typing has not paused.
         self._cursor: Optional[int] = None
@@ -394,6 +397,22 @@ class DocumentSpelling(QObject):
         if not self._alive() or not 0 <= number < len(self._found) or self._stale(number, block):
             return ()
         return self._without_typing(block, self._found[number])
+
+    def misspellings_of(self, text: str) -> Tuple[Misspelling, ...]:
+        """The misspelled words of a short text the document shows but
+        does not hold (a photo group's caption, drawn under its picture),
+        in the document's language; offsets count UTF-16 units from the
+        start of ``text``. Checked once, again after a word is learned or
+        the language changes (``misspellingsChanged`` names every block)."""
+        if not self._alive() or not self._checker.is_available():
+            return ()
+        found = self._shown_texts.get(text)
+        if found is None:
+            if len(self._shown_texts) >= 1024:
+                self._shown_texts.clear()
+            found = self._shown_texts[text] = tuple(
+                self._checker.find_misspellings(text, self.language()))
+        return found
 
     def misspelling_at(self, position: int) -> Optional[Misspelling]:
         """The misspelled word at a document position (for the context
@@ -620,7 +639,14 @@ class DocumentSpelling(QObject):
 
     def _mark_all(self) -> None:
         self._dirty = bytearray(b"\x01") * len(self._found)
+        self._forget_shown_texts()
         self._schedule()
+
+    def _forget_shown_texts(self) -> None:
+        """The texts of misspellings_of are checked again when asked."""
+        if self._shown_texts:
+            self._shown_texts.clear()
+            self.misspellingsChanged.emit(0, max(0, len(self._found) - 1))
 
     def _availability_changed(self, available: bool) -> None:
         if available:
@@ -628,6 +654,7 @@ class DocumentSpelling(QObject):
             return
         self._timer.stop()
         self._found = [()] * len(self._found)
+        self._forget_shown_texts()
         if any(self._shown):
             self._shown = [()] * len(self._found)
             self.misspellingsChanged.emit(0, len(self._found) - 1)
@@ -643,6 +670,7 @@ class DocumentSpelling(QObject):
                 self._dirty[number] = 1
             block = block.next()
             number += 1
+        self._forget_shown_texts()
         self._schedule()
 
     def _word_accepted(self, word: str) -> None:
@@ -650,6 +678,7 @@ class DocumentSpelling(QObject):
         for number, found in enumerate(self._found):
             if any(_for_checker(m.word).casefold() == accepted for m in found):
                 self._dirty[number] = 1
+        self._forget_shown_texts()
         self._schedule()
 
     # -- checking -----------------------------------------------------------

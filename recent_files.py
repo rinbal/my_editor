@@ -2,12 +2,15 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-import os
+from typing import Optional
 
+import user_dirs
 from atomic_file import read_json, write_json
 from file_paths import normalize, same_file
 
-_RECENT_FILE = os.path.expanduser("~/.cache/my_editor/recent_files.json")
+# A file of its own (a test's); None: recent_files.json in the person's
+# cache folder, found each time (user_dirs).
+_RECENT_FILE: Optional[str] = None
 _MAX_ENTRIES = 10
 
 
@@ -16,7 +19,7 @@ def load_recent() -> list[str]:
     included, each in the app's one spelling (an older version may have
     written another) and each once."""
     entries: list[str] = []
-    for path in read_json(_RECENT_FILE, list):
+    for path in read_json(_recent_file(), list):
         if isinstance(path, str) and path:
             path = normalize(path)
             if path not in entries:
@@ -37,5 +40,9 @@ def clear_recent() -> None:
     _save([])
 
 
+def _recent_file() -> str:
+    return _RECENT_FILE or str(user_dirs.cache_dir() / "recent_files.json")
+
+
 def _save(entries: list[str]) -> None:
-    write_json(_RECENT_FILE, entries, indent=2)
+    write_json(_recent_file(), entries, indent=2)

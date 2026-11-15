@@ -16,6 +16,12 @@ semantic, fully self-contained HTML:
   inline is the only representation that survives reopening the file),
 - images are embedded as base64 data URIs so a shared file carries its
   media with it; the original upload URL rides along in data-source-url,
+- a photo group (photo_group) and a picture alone are written as
+  STANDUP writes them (photo_page): the vendored engine's markup, the
+  pictures as data: URIs (web pictures too, when the caller fetched
+  them), and STANDUP's stylesheet and scripts (web/) inside the page; on
+  a phone a group's runs swipe, and a picture opens in STANDUP's full
+  view,
 - audio and video become the browser's own players (<audio>, <video>),
   their bytes embedded the same way up to MEDIA_EMBED_LIMIT and played
   from the media server beyond it; inside each, a link to the file, which
@@ -34,6 +40,9 @@ lists: the editor edits them as such.
 
 import base64
 import html
+import itertools
+import re
+from typing import List, Tuple
 
 from PySide6.QtGui import (
     QTextBlockFormat,
@@ -44,7 +53,12 @@ from PySide6.QtGui import (
     QTextListFormat,
 )
 
+import export_pictures
 import media_files
+import photo_group
+import photo_group_find
+import photo_layout
+import photo_page
 import rich_text
 from constants import DARK_BG, DARK_FG, LIGHT_BG, LIGHT_FG, MONO_FONT
 from fonts import names_monospace
@@ -62,7 +76,9 @@ from doc_walk import (
 # boundary needs them too, and main_window plus the tests import them
 # from here.
 from image_safety import (  # noqa: F401
+    DECODABLE_MIMES,
     ImageRootPolicy,
+    declared_size,
     is_portable_image_source,
     sniff_image_ext,
     sniff_image_mime,
@@ -136,52 +152,80 @@ def _head_css() -> str:
     code {{ font-family: {_font_stack()}; }}"""
 
 
-def _render_image(img_fmt, source_url_for, policy, asset_resolver) -> str:
-    """One <img>, resolving bytes through the resolver then the policy.
+def _render_image(img_fmt, source_url_for, policy, asset_resolver,
+                  remote_pictures=None) -> str:
+    """One <img>, its bytes read as every export reads a picture
+    (export_pictures.picture_bytes): the resolver, a web picture the
+    caller gathered, then the policy.
 
     Order matters: an app-created asset is named by a key only the
     resolver understands, a legacy or foreign image is named by a path
     only the policy may read, and an image whose name is itself an
-    address (a data: URI or a third-party URL) is its own answer.
+    address (a data: URI or a third-party URL) is its own answer when
+    its bytes are not at hand.
     """
     name = img_fmt.name()
+    # A picture's #wide (photo_group) is how it is laid out, not where
+    # it is: it is read without it.
+    plain = photo_group.without_wide(name)
     alt = str(img_fmt.property(QTextImageFormat.ImageAltText) or "")
     attrs = f' alt="{html.escape(alt, quote=True)}"'
     for prop, value in (("width", img_fmt.width()), ("height", img_fmt.height())):
         if value and value > 0:
             attrs += f' {prop}="{int(value)}"'
 
-    source_url = source_url_for(name) if source_url_for else None
-    data = None
-    resolved = asset_resolver(name) if asset_resolver else None
-    if media_files.kind_of(str(getattr(resolved, "mime", "") or "")) is not None:
+    resolved = asset_resolver(plain) if asset_resolver else None
+    if _is_media_asset(resolved):
         return _render_media(alt, resolved)
 
-    if resolved is not None and getattr(resolved, "data", b""):
-        data = resolved.data
-        remote_url = str(getattr(resolved, "remote_url", "") or "")
-        if remote_url:
-            source_url = remote_url
+    src, _size, source_url = _picture_source(plain, policy, resolved, remote_pictures,
+                                             source_url_for)
     if source_url:
         attrs += f' data-source-url="{html.escape(source_url, quote=True)}"'
-    if data is None:
-        data = policy.read(name)
+    if src is None:
+        return f"<em>{html.escape(_('[image unavailable]'))}</em>"
+    return f'<img src="{html.escape(src, quote=True)}"{attrs}>'
 
-    uri = image_data_uri(data) if data else None
-    if uri is not None:
-        return f'<img src="{uri}"{attrs}>'
-    if is_portable_image_source(name):
-        # The name is the picture's address: a data: URI already carries
-        # the bytes, and a foreign URL is media this app did not create.
-        # Both must come out exactly as the document holds them, and a
-        # document reopened from HTML names every embedded image this
-        # way, so anything else would erase the user's own picture.
-        return f'<img src="{html.escape(name, quote=True)}"{attrs}>'
-    if source_url:
-        # Bytes are gone from the cache; the original URL is better than
-        # nothing even though it breaks strict self-containment.
-        return f'<img src="{html.escape(source_url, quote=True)}"{attrs}>'
-    return f"<em>{html.escape(_('[image unavailable]'))}</em>"
+
+def _is_media_asset(resolved) -> bool:
+    """Whether an asset the resolver gave is audio or video (its card is
+    a picture in the document, its page a player)."""
+    return media_files.kind_of(str(getattr(resolved, "mime", "") or "")) is not None
+
+
+def _picture_source(plain: str, policy, resolved, remote_pictures, source_url_for):
+    """What a page shows for the picture ``plain`` (its name without
+    #wide): ``(src, (w, h) or None, source address)``. The one way every
+    picture of an export is read, alone or in a photo group.
+
+    - Its bytes inside the page, as a data: URI, read as every export
+      reads a picture (export_pictures.picture_bytes: the app's own
+      pictures through ``resolved``, a web picture the caller gathered, a
+      file ``policy`` may read; never larger than MAX_PICTURE_BYTES), with
+      the pixel size their header declares. Never bytes the decode policy
+      refuses for their size (a decompression bomb).
+    - Else the name itself when it is an address (a data: URI the app
+      does not read, a foreign URL): media this app did not create comes
+      out as the document holds it.
+    - Else the address the picture was uploaded to: the bytes are gone
+      from the cache, and the original is better than nothing even though
+      it breaks strict self-containment.
+    - Else nothing: the page says the picture is unavailable.
+    """
+    data, came_from = export_pictures.picture_bytes(
+        plain, policy, asset_resolver=lambda _name: resolved, remote_pictures=remote_pictures)
+    source = came_from or (source_url_for(plain) if source_url_for else None)
+    mime = sniff_image_mime(data) if data else None
+    if mime in DECODABLE_MIMES:
+        size = declared_size(data)
+        if size is None:
+            return None, None, source
+        return image_data_uri(data), photo_layout.picture_size(size.width(), size.height()), source
+    if mime is not None:
+        return image_data_uri(data), None, source          # a kind only a browser shows (SVG)
+    if is_portable_image_source(plain):
+        return plain, None, source
+    return source, None, source
 
 
 def _render_media(alt: str, resolved) -> str:
@@ -230,11 +274,30 @@ def _render_text_run(text: str, fmt: QTextCharFormat, heading: bool = False) -> 
     return out
 
 
+# A link's scheme, as a browser reads it (WHATWG URL): letters, digits,
+# "+", "-" and "." after a letter, before the first ":".
+_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*:")
+_LINK_SCHEMES = ("http:", "https:", "mailto:")
+
+
+def safe_href(href: str) -> str:
+    """``href`` when a page may link to it: a web address, an email
+    address (mailto:) or one relative to the page; else "" (javascript:,
+    data:, file: and every other scheme), and the words stay as text. Read
+    as a browser reads it: without the spaces and control characters
+    around it, and without the tabs and line breaks inside it."""
+    plain = re.sub(r"[\t\n\r]", "", href).strip("".join(map(chr, range(0x21))))
+    scheme = _SCHEME.match(plain)
+    if scheme is None or scheme.group(0).lower() in _LINK_SCHEMES:
+        return href
+    return ""
+
+
 def _render_runs(runs, render_image, heading: bool = False) -> str:
     parts = []
     link = ""            # the address of the <a> open in parts, if any
     for text, fmt in runs:
-        href = fmt.anchorHref() if fmt.isAnchor() else ""
+        href = safe_href(fmt.anchorHref()) if fmt.isAnchor() else ""
         if href != link:
             if link:
                 parts.append("</a>")
@@ -272,8 +335,49 @@ def _needs_pre_wrap(text: str) -> bool:
     return text.startswith(" ") or "  " in text
 
 
+def _caption_html(unit, render_image) -> str:
+    """A unit's caption as the readers write it: the words of its
+    emphasis, not in italic (the figure shows it as a caption)."""
+    runs = []
+    for text, fmt in unit.caption_runs():
+        fmt.setFontItalic(False)
+        runs.append((text, fmt))
+    return _render_runs(runs, render_image)
+
+
+def _figure_of(unit, picture_of, render_image, place: int) -> photo_page.Figure:
+    """A picture of the document (a unit of photo_group) as a page shows
+    it, the ``place``-th of the page's."""
+    src, size, source = picture_of(unit.name)
+    caption = _caption_html(unit, render_image) if unit.caption_text.strip() else ""
+    href = safe_href(unit.image.anchorHref()) if unit.image.isAnchor() else ""
+    return photo_page.Figure(src, size, source, unit.alt, caption, unit.caption_text, unit.wide,
+                             href, place)
+
+
+def _photo_units(doc, is_media) -> List[Tuple[int, int, list, bool]]:
+    """The photo groups of ``doc`` and its pictures alone, in order, each
+    as ``(first position, last position, units, whether a group)``. A
+    picture alone is a picture paragraph at the top of the document with
+    its caption (photo_group_find, as md.py reads one), shown at no size
+    of its own (a picture an HTML file gave a size keeps it, as before)
+    and not audio or video (``is_media``, by its name)."""
+    groups = [(group.start, group.end, group.units, True)
+              for group in photo_group.groups_in(doc)]
+    alone = [(run.first, run.end, run.units, False)
+             for run in photo_group_find.find_runs(doc)
+             if len(run.units) == 1 and not run.groups and _at_own_size(run.units[0])
+             and not is_media(run.units[0].name)]
+    return sorted(groups + alone, key=lambda unit: unit[0])
+
+
+def _at_own_size(unit) -> bool:
+    image = unit.image.toImageFormat()
+    return image.width() <= 0 and image.height() <= 0
+
+
 def document_to_html(doc, title: str = "", source_url_for=None, *,
-                     image_roots=(), asset_resolver=None) -> str:
+                     image_roots=(), asset_resolver=None, remote_pictures=None) -> str:
     """Serialize a QTextDocument to a self-contained semantic HTML5 page.
 
     source_url_for: optional callback mapping a local image path to its
@@ -286,11 +390,33 @@ def document_to_html(doc, title: str = "", source_url_for=None, *,
     asset_resolver: optional callback mapping an image name to an object
     exposing ``data`` / ``remote_url``, used for images this app created
     and holds in its own cache.
+
+    remote_pictures: the bytes of the document's web pictures, by address
+    (export_pictures.gather), carried in the page as the rest.
     """
     policy = ImageRootPolicy(image_roots)
 
     def render_image(img_fmt) -> str:
-        return _render_image(img_fmt, source_url_for, policy, asset_resolver)
+        return _render_image(img_fmt, source_url_for, policy, asset_resolver, remote_pictures)
+
+    def resolved(name: str):
+        return asset_resolver(photo_group.without_wide(name)) if asset_resolver else None
+
+    def picture_of(name: str):
+        return _picture_source(photo_group.without_wide(name), policy, resolved(name),
+                               remote_pictures, source_url_for)
+
+    def is_media(name: str) -> bool:
+        return _is_media_asset(resolved(name))
+
+    # Photo groups and pictures alone: written whole where their first
+    # paragraph is; every paragraph they take up is theirs (a group's
+    # tables, a picture's caption).
+    photos = _photo_units(doc, is_media)
+    pending = list(photos)
+    photos_end = -1
+    places = itertools.count(1)
+    groups = sum(1 for _first, _end, _units, grouped in photos if grouped)
 
     body: list[str] = []
     # List markup is emitted compactly (no newlines): whitespace text nodes
@@ -368,6 +494,17 @@ def document_to_html(doc, title: str = "", source_url_for=None, *,
             quotes += 1
 
     for block in iter_blocks(doc):
+        if pending and block.position() >= pending[0][0]:
+            _first, photos_end, units, grouped = pending.pop(0)
+            quote_to(0)
+            close_to(0)
+            close_real(0)
+            figures = [_figure_of(unit, picture_of, render_image, next(places)) for unit in units]
+            body.append(photo_page.group_figures_html(figures, groups) if grouped
+                        else photo_page.figure_alone_html(figures[0]))
+            continue
+        if block.position() <= photos_end:
+            continue
         text = block.text()
         text_list = block.textList()
         quote_to(rich_text.quote_depth(block))
@@ -426,6 +563,8 @@ def document_to_html(doc, title: str = "", source_url_for=None, *,
 
     page_title = html.escape(title or _("Untitled"))
     body_html = "\n".join(body)
+    head_css = _head_css() + (photo_page.group_head() if photos else "")
+    scripts = photo_page.group_scripts() if photos else ""
     return f"""<!doctype html>
 <html>
 <head>
@@ -434,11 +573,12 @@ def document_to_html(doc, title: str = "", source_url_for=None, *,
   <meta name="generator" content="{GENERATOR}">
   <title>{page_title}</title>
   <style>
-{_head_css()}
+{head_css}
   </style>
 </head>
 <body>
-{body_html}</body>
+{body_html}
+{scripts}</body>
 </html>
 """
 
@@ -518,6 +658,16 @@ def _drop_page_fonts(doc) -> None:
         cursor.setPosition(position)
         cursor.setPosition(position + length, QTextCursor.MoveMode.KeepAnchor)
         cursor.setCharFormat(fmt)
+
+
+def open_page(editor, page: str) -> None:
+    """Show the HTML file ``page`` in ``editor`` (a QTextEdit) as the text
+    it holds: the figures of a page this app wrote are the paragraphs they
+    were written from (photo_page), its groups are groups again, and what
+    Qt's reader leaves behind is tidied (normalize_after_set_html)."""
+    editor.setHtml(photo_page.page_as_paragraphs(page))
+    normalize_after_set_html(editor.document())
+    photo_group_find.fold(editor.document())
 
 
 def normalize_after_set_html(doc) -> None:

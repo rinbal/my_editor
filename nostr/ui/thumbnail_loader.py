@@ -30,14 +30,13 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
 import url_safety
+import user_dirs
 from atomic_file import free_path, new_document_file, place_document, save_document, write_bytes
 from i18n import _
 from image_safety import decode_image_bytes
 
 from ..blossom.hashes import hash_from_url
 
-
-CACHE_DIR = Path.home() / ".config" / "my_editor" / "blossom_cache"
 
 # Hard upper bound on thumbnail downloads. The library is restricted to
 # files the user uploaded themselves, so they can't accidentally pull a
@@ -87,7 +86,7 @@ class ThumbnailLoader(QObject):
         super().__init__(parent)
         # Both seams exist for tests: no test may write to the real
         # ~/.config, and none may touch a network.
-        self._cache_dir = Path(cache_dir) if cache_dir else CACHE_DIR
+        self._cache_dir = Path(cache_dir) if cache_dir else user_dirs.config_dir() / "blossom_cache"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         _chmod(self._cache_dir, 0o700)
         self._nam = nam or QNetworkAccessManager(self)

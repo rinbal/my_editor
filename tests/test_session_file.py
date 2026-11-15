@@ -40,6 +40,7 @@ class Window:
 
     _save_session = MainWindow._save_session
     _restore_session = MainWindow._restore_session
+    _session_file = MainWindow._session_file
 
     def __init__(self, session_file, open_paths=()):
         self._SESSION_FILE = str(session_file)

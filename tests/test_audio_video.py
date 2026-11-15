@@ -147,7 +147,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 app = QApplication(sys.argv[:1])
 import main_window, recovery
-from doc_walk import serialize_plain_with_images
+from plain_writer import serialize_plain_with_images
 from markdown_writer import document_to_markdown
 from export_html import document_to_html
 from nostr.blossom.store import MediaFile

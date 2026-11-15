@@ -36,11 +36,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
+import user_dirs
 from atomic_file import write_text
-from . import assets as _assets
 
 
-LEDGER_FILE = _assets.INDEX_DIR / "media_public.json"
+def ledger_file() -> Path:
+    """media_public.json in the person's config folder, found each time
+    (user_dirs)."""
+    return user_dirs.config_dir() / "media_public.json"
 CURRENT_LEDGER_VERSION = 1
 
 _HEX64_LEN = 64
@@ -163,8 +166,8 @@ class PublicLedger:
     copies must never leave a blob public and unlisted.
     """
 
-    def __init__(self, path: Path = LEDGER_FILE) -> None:
-        self._path = Path(path)
+    def __init__(self, path: Optional[Path] = None) -> None:
+        self._path = Path(path) if path is not None else ledger_file()
         self._blobs: Dict[str, PublicBlob] = {}
         self._degraded = False
         self._read_only = False

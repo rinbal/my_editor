@@ -19,13 +19,17 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Iterable, List, Optional
 
+import user_dirs
 from atomic_file import write_text
 
 from . import refs
 from .bech32 import encode_npub
 
 
-KNOWN_PEOPLE_FILE = Path.home() / ".config" / "my_editor" / "known_people.json"
+def known_people_file() -> Path:
+    """known_people.json in the person's config folder, found each time
+    (user_dirs)."""
+    return user_dirs.config_dir() / "known_people.json"
 
 
 @dataclass
@@ -58,8 +62,8 @@ class KnownPeople:
     contacts a user will accumulate.
     """
 
-    def __init__(self, path: Path = KNOWN_PEOPLE_FILE) -> None:
-        self._path = path
+    def __init__(self, path: Optional[Path] = None) -> None:
+        self._path = Path(path) if path is not None else known_people_file()
         self._people: dict[str, Person] = {}
         self._load()
 

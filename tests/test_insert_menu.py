@@ -214,6 +214,6 @@ def test_the_insert_menu_says_what_it_inserts_without_insert(tmp_path):
     assert r["after"] == ["Add Link…", "Insert Mention…", "Insert from Media Library…"]
     assert r["nostr"] == ["Insert from Media Library…", "Insert Mention…",
                           "Insert Note or Article…", "Insert Audio or Video…"]
-    assert r["slash"] == ["Link…", "Footnote", "Image…", "From Media Library…",
+    assert r["slash"] == ["Link…", "Footnote", "Image…", "Photo Group…", "From Media Library…",
                           "Mention…", "Note or Article…", "Audio or Video…"]
     assert not any(title.startswith("Insert") for title in r["context"])

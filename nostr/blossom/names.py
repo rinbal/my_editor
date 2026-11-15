@@ -14,13 +14,16 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
+import user_dirs
 from atomic_file import write_text
 
-from .settings import SETTINGS_DIR
 
-NAMES_FILE = SETTINGS_DIR / "media_names.json"
+def names_file() -> Path:
+    """media_names.json in the person's config folder, found each time
+    (user_dirs)."""
+    return user_dirs.config_dir() / "media_names.json"
 
 # Long enough for any real file name, short enough that a hand-edited
 # file cannot fill a tile with a novel.
@@ -30,8 +33,8 @@ _MAX_NAME = 200
 class MediaNames:
     """Hash to file name, read once and written on every change."""
 
-    def __init__(self, path: Path = NAMES_FILE) -> None:
-        self._path = Path(path)
+    def __init__(self, path: Optional[Path] = None) -> None:
+        self._path = Path(path) if path is not None else names_file()
         self._names: Dict[str, str] = {}
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))

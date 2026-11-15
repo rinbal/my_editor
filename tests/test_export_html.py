@@ -105,6 +105,32 @@ def test_escaping():
     assert "<title>&lt;Esc&gt; &amp; Co</title>" in out
 
 
+def test_a_link_is_written_only_to_the_web_an_email_address_or_the_page_itself():
+    """A page links to http, https, mailto and relative addresses; any
+    other scheme (javascript:, data:, file:, spelled as a browser would
+    still read it) leaves its words as text."""
+    import re as _re
+    kept = ["https://example.org/a", "HTTP://example.org/b", "mailto:ich@example.org",
+            "notes/next.html", "#part-2", "/about", "?page=2"]
+    refused = ["javascript:alert(1)", " JavaScript:alert(2)", "java\tscript:alert(3)",
+               "\x01javascript:alert(4)", "data:text/html,<b>5</b>", "file:///etc/passwd",
+               "vbscript:msgbox(6)"]
+    doc = QTextDocument()
+    cursor = QTextCursor(doc)
+    for number, href in enumerate(kept + refused):
+        fmt = QTextCharFormat()
+        fmt.setAnchor(True)
+        fmt.setAnchorHref(href)
+        cursor.insertText(f"link{number}", fmt)
+        cursor.insertText(" ", QTextCharFormat())
+    out = document_to_html(doc, "Links")
+    hrefs = _re.findall(r'<a href="([^"]*)">', out)
+    import html as _html
+    assert [_html.unescape(h) for h in hrefs] == kept
+    for number in range(len(kept + refused)):
+        assert f"link{number}" in out
+
+
 def test_bullets_nest_by_indent():
     doc = _doc([
         "    • one",
@@ -202,7 +228,7 @@ def test_image_outside_the_roots_is_never_read(tmp_path):
     QTextCursor(doc).insertImage(secret)
     out = document_to_html(doc, "T", image_roots=(str(root),))
     assert "[image unavailable]" in out
-    assert "base64," not in out
+    assert 'src="data:' not in out
     payload = base64.b64encode(open(secret, "rb").read()).decode("ascii")
     assert payload not in out
 
@@ -220,7 +246,7 @@ def test_symlink_out_of_the_root_is_refused(tmp_path):
     QTextCursor(doc).insertImage(str(link))
     out = document_to_html(doc, "T", image_roots=(str(root),))
     assert "[image unavailable]" in out
-    assert "base64," not in out
+    assert 'src="data:' not in out
 
 
 def test_asset_resolver_supplies_bytes_alt_and_provenance(tmp_path):

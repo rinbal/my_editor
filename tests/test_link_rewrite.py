@@ -451,7 +451,9 @@ def test_a_note_of_any_shape_is_read_in_time_proportional_to_its_length():
         for math in (False, True):
             started = time.perf_counter()
             link_rewrite._links(text, math)
-            assert time.perf_counter() - started < 0.2, name
+            # Linear time takes a few ms; quadratic time takes many seconds
+            # for 200,000 characters. 1 s leaves room for a busy CI runner.
+            assert time.perf_counter() - started < 1.0, name
 
 
 # -- names that would change what a link means ---------------------------------

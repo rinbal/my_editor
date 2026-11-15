@@ -33,13 +33,16 @@ from typing import List, Optional
 from PySide6.QtCore import QUrl
 
 import url_safety
+import user_dirs
 from atomic_file import write_text
 
 from .servers import DEFAULT_BLOSSOM_SERVERS
 
 
-SETTINGS_DIR = Path.home() / ".config" / "my_editor"
-SETTINGS_FILE = SETTINGS_DIR / "blossom_servers.json"
+def settings_file() -> Path:
+    """blossom_servers.json in the person's config folder, found each time
+    (user_dirs)."""
+    return user_dirs.config_dir() / "blossom_servers.json"
 
 # Who decided the list currently in force. "user" is an explicit choice,
 # "bud03" is a list adopted from the profile's published kind 10063, and
@@ -102,8 +105,8 @@ def _clean(servers) -> List[str]:
 class BlossomSettings:
     """In-memory view over ``blossom_servers.json`` with explicit save."""
 
-    def __init__(self, path: Path = SETTINGS_FILE) -> None:
-        self._path = path
+    def __init__(self, path: Optional[Path] = None) -> None:
+        self._path = Path(path) if path is not None else settings_file()
         self._custom: List[str] = []
         self._discovered: List[str] = []
         self._discovered_pubkey: str = ""

@@ -45,10 +45,6 @@ def sandbox(tmp_path, monkeypatch):
     """Point every toolchain path at a temp dir."""
     root = tmp_path / "toolchain"
     monkeypatch.setattr(rmd_toolchain, "TOOLCHAIN_DIR", str(root))
-    monkeypatch.setattr(rmd_toolchain, "_STATE_PATH", str(root / "state.json"))
-    monkeypatch.setattr(rmd_toolchain, "_LIBRARY_DIR", str(root / "library"))
-    monkeypatch.setattr(rmd_toolchain, "_PANDOC_DIR", str(root / "pandoc"))
-    monkeypatch.setattr(rmd_toolchain, "_DOWNLOADS_DIR", str(root / "downloads"))
     return root
 
 
@@ -332,6 +328,6 @@ def test_state_roundtrip(sandbox):
     assert rmd_toolchain._load_state() == {"pandoc": {"version": "3.5",
                                                      "bin": "/x"}}
     # Corrupt state degrades to empty, not an exception.
-    with open(rmd_toolchain._STATE_PATH, "w", encoding="utf-8") as f:
+    with open(rmd_toolchain._state_path(), "w", encoding="utf-8") as f:
         f.write("{broken")
     assert rmd_toolchain._load_state() == {}

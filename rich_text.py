@@ -28,6 +28,7 @@ from PySide6.QtGui import (
     QTextTable, QTextTableFormat,
 )
 
+import photo_group
 from doc_walk import doc_length, doc_offset, iter_blocks, text_index
 
 # Inline styles, by name. Underline has no Markdown; it stays in local
@@ -1824,7 +1825,9 @@ def _take_style(target, first) -> None:
 
 def _one_line(source):
     """``source`` as one line of text, its paragraphs joined by spaces:
-    what a table cell can hold."""
+    what a table cell can hold. A photo group in it, as its pictures and
+    captions."""
+    source = photo_group.unfolded(source)
     line = QTextDocument()
     out = QTextCursor(line)
     for block in iter_blocks(source):

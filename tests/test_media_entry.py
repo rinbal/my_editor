@@ -299,6 +299,7 @@ class _EntryWindow:
     _upload_added = MainWindow._upload_added
     _upload_choice = MainWindow._upload_choice
     _insert_asset = MainWindow._insert_asset
+    _asset_image = MainWindow._asset_image
 
     def __init__(self, cache_dir, *, profile=None):
         cache_dir = Path(cache_dir)

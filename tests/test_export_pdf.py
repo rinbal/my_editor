@@ -31,6 +31,7 @@ from PySide6.QtCore import QSize, QLocale
 from PySide6.QtGui import (
     QColor,
     QImage,
+    QPainter,
     QTextCharFormat,
     QTextCursor,
     QTextDocument,
@@ -122,6 +123,33 @@ def test_multipage_no_loss_no_dupes_with_footers(tmp_path):
         assert f"Page {p + 1} of {n}" in pdf.getAllText(p).text()
 
 
+def test_a_paragraph_over_two_pages_leaves_the_next_pages_margin_empty(tmp_path):
+    """A paragraph that begins at the foot of a page goes on at the head of
+    the next. Its last line of the page before stood there again, above
+    the text, in the page's top margin: Qt draws such a paragraph on both
+    pages and leaves out its lines above the page but the last of them.
+    (Seen as a page is: the line is still among the PDF's words, cut away,
+    as in every PDF Qt prints.)"""
+    doc = QTextDocument()
+    cur = QTextCursor(doc)
+    for n in range(40):
+        if n:
+            cur.insertBlock()
+        cur.insertText(f"Paragraph {n}: " + "we walked in from the station. " * 12,
+                       QTextCharFormat())
+    out = str(tmp_path / "paragraphs.pdf")
+    export_pdf_file(doc, out, title="T", page_setup=A4_SETUP)
+    pdf = _load(out)
+    assert pdf.pageCount() >= 3
+    margin = int(A4_SETUP["margins_mm"] / 25.4 * 72)            # in points, the shot's pixels
+    for page in range(pdf.pageCount()):
+        size = pdf.pagePointSize(page)
+        shot = pdf.render(page, QSize(int(size.width()), int(size.height())))
+        inked = [(x, y) for y in range(4, margin - 4) for x in range(0, shot.width(), 3)
+                 if shot.pixelColor(x, y).alpha() > 128 and shot.pixelColor(x, y).lightness() < 128]
+        assert not inked, (page, inked[:3])
+
+
 def test_single_page_has_no_footer(tmp_path):
     out = str(tmp_path / "single.pdf")
     export_pdf_file(_long_doc(3), out, title="T", page_setup=A4_SETUP)
@@ -165,6 +193,54 @@ def test_oversized_image_capped_to_printable_width(tmp_path):
     assert width_pt <= printable_pt + 3  # rasterization tolerance
 
 
+def test_a_picture_alone_is_whole_in_the_text_column_and_on_one_page(tmp_path):
+    """The editor's document brings its own margin along. A picture capped
+    to the page's whole width started at that margin and was cut at the
+    page's right edge; a tall one, as wide as the page, at the page's end.
+    Each picture ends in a green band, a twentieth of it: all of it shows."""
+    from editor import HtmlEditor
+    wide = QImage(3000, 1000, QImage.Format_RGB32)
+    wide.fill(QColor("red"))
+    tall = QImage(900, 2000, QImage.Format_RGB32)
+    tall.fill(QColor("blue"))
+    for image, band in ((wide, (2850, 0, 150, 1000)), (tall, (0, 1900, 900, 100))):
+        painter = QPainter(image)
+        painter.fillRect(*band, QColor(0, 200, 0))
+        painter.end()
+    wide.save(str(tmp_path / "wide.png"), "PNG")
+    tall.save(str(tmp_path / "tall.png"), "PNG")
+    ed = HtmlEditor()
+    cursor = ed.textCursor()
+    cursor.insertText("Before.")
+    for name in ("wide.png", "tall.png"):
+        cursor.insertBlock()
+        cursor.insertImage(str(tmp_path / name))
+    out = str(tmp_path / "alone.pdf")
+    export_pdf_file(ed.document(), out, title="T", page_setup=A4_SETUP,
+                    image_roots=(str(tmp_path),))
+    pdf = _load(out)
+    pages = [pdf.render(n, QSize(595, 842)) for n in range(pdf.pageCount())]
+
+    def red(c): return c.red() > 200 and c.green() < 80 and c.blue() < 80
+    def blue(c): return c.blue() > 200 and c.red() < 80 and c.green() < 80
+    def green(c): return c.green() > 150 and c.red() < 80 and c.blue() < 80
+
+    def band_share(body, along_x):
+        """On the one page that shows ``body``: the green band's share of
+        the picture's length, along a line through it."""
+        found = [(n, x, y) for n, page in enumerate(pages) for y in range(0, 842, 4)
+                 for x in range(0, 595, 4) if body(page.pixelColor(x, y))]
+        assert found and len({n for n, _x, _y in found}) == 1    # on one page
+        n, x, y = found[0]
+        line = [pages[n].pixelColor(k, y) if along_x else pages[n].pixelColor(x, k)
+                for k in range(595 if along_x else 842)]
+        return sum(map(green, line)) / (sum(map(body, line)) + sum(map(green, line)))
+
+    assert 0.04 < band_share(red, True) < 0.06       # its right end, not cut
+    assert 0.04 < band_share(blue, False) < 0.06     # its lower end, on the same page
+    ed.close()
+
+
 def _count_pixels(pdf, predicate):
     im = pdf.render(0, QSize(595, 842))
     return sum(1 for y in range(0, 842, 4) for x in range(0, 595, 4)
@@ -188,10 +264,11 @@ def test_image_outside_the_roots_renders_a_placeholder(tmp_path):
                     image_roots=(str(root),))
     pdf = _load(out)
     red = _count_pixels(pdf, lambda c: c.red() > 200 and c.green() < 80)
-    grey = _count_pixels(
-        pdf, lambda c: 180 < c.red() < 220 and abs(c.red() - c.blue()) < 12)
+    # The quiet stand-in: a plate in the page's quiet grey (#f1f0ec).
+    plate = _count_pixels(
+        pdf, lambda c: 234 < c.red() < 248 and 0 < c.red() - c.blue() < 12)
     assert red == 0
-    assert grey > 0
+    assert plate > 0
 
 
 def test_cold_document_renders_images_from_the_asset_resolver(tmp_path):

@@ -95,9 +95,12 @@ class _AssetManagerStub:
 
 
 def _fake_window(data=b""):
-    return types.SimpleNamespace(
+    window = types.SimpleNamespace(
         status=_StatusStub(), _asset_manager=_AssetManagerStub(data)
     )
+    # _insert_asset makes its picture with the window's own _asset_image.
+    window._asset_image = types.MethodType(MainWindow._asset_image, window)
+    return window
 
 
 def _image_formats(doc):

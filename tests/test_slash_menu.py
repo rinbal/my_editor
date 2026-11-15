@@ -364,3 +364,13 @@ def test_the_window_offers_its_own_commands(tmp_path):
     assert r["markdown"] == "## Title\n"
     assert r["plain_menu"] is False
     assert r["link_popover"]                    # Add Link's panel keeps the focus it took
+
+
+def test_photo_and_foto_offer_the_photo_group_first(tmp_path, monkeypatch):
+    from tests.window_fixture import close_window, make_window
+    window = make_window(tmp_path, monkeypatch)
+    window.new_tab()
+    for typed in ("photo", "foto"):
+        found = window.commands.rank(typed, nostr=False)
+        assert found[0].insert_title == "Photo Group…", typed
+    close_window(window)

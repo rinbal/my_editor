@@ -24,6 +24,7 @@ import os
 from dataclasses import dataclass
 from typing import Callable, Dict, Iterator, Optional, Tuple
 
+import user_dirs
 import verified_download
 
 STANDARD, ACCURATE = "standard", "accurate"
@@ -87,7 +88,7 @@ VOICE_DETECTOR = ModelFile(
 
 
 def folder() -> str:
-    return os.path.expanduser("~/.config/my_editor/dictation")
+    return str(user_dirs.config_dir() / "dictation")
 
 
 def path_of(file: ModelFile) -> str:

@@ -43,13 +43,16 @@ from PySide6.QtWidgets import (
 )
 
 import theme
+import user_dirs
 from atomic_file import read_json, write_json
 from i18n import _, ngettext
 from url_safety import is_safe_external_url
 from commands import platform_keys, standard_and
 from widgets import FindBar
 
-_POSITIONS_PATH = os.path.expanduser("~/.config/my_editor/pdf_positions.json")
+# A file of its own (a test's); None: pdf_positions.json in the person's
+# config folder, found each time it is read or written (user_dirs).
+_POSITIONS_PATH: str | None = None
 
 # Reading positions kept for this many distinct files before the oldest
 # entry is evicted. Generous for a personal library, tiny on disk.
@@ -64,8 +67,12 @@ _MAX_ZOOM = 8.0
 # Reading-position store                                                      #
 # --------------------------------------------------------------------------- #
 
+def _positions_path() -> str:
+    return _POSITIONS_PATH or str(user_dirs.config_dir() / "pdf_positions.json")
+
+
 def _load_positions() -> dict:
-    return read_json(_POSITIONS_PATH, dict)
+    return read_json(_positions_path(), dict)
 
 
 def load_view_state(path: str) -> dict | None:
@@ -85,7 +92,7 @@ def save_view_state(path: str, state: dict) -> None:
         oldest_first = sorted(positions.items(),
                               key=lambda kv: kv[1].get("ts", 0) if isinstance(kv[1], dict) else 0)
         positions = dict(oldest_first[len(positions) - _MAX_POSITIONS:])
-    write_json(_POSITIONS_PATH, positions)
+    write_json(_positions_path(), positions)
 
 
 # --------------------------------------------------------------------------- #

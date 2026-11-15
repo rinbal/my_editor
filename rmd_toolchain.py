@@ -45,16 +45,36 @@ import tempfile
 import urllib.request
 import zipfile
 from dataclasses import dataclass
+from typing import Optional
 
+import user_dirs
 import verified_download
 from atomic_file import read_json, write_json
 from i18n import _
 
-TOOLCHAIN_DIR = os.path.expanduser("~/.config/my_editor/rmd_toolchain")
-_STATE_PATH = os.path.join(TOOLCHAIN_DIR, "state.json")
-_LIBRARY_DIR = os.path.join(TOOLCHAIN_DIR, "library")
-_PANDOC_DIR = os.path.join(TOOLCHAIN_DIR, "pandoc")
-_DOWNLOADS_DIR = os.path.join(TOOLCHAIN_DIR, "downloads")
+# A folder of its own (a test's); None: rmd_toolchain in the person's config
+# folder, found each time (user_dirs). Everything below is inside it.
+TOOLCHAIN_DIR: Optional[str] = None
+
+
+def _toolchain_dir() -> str:
+    return TOOLCHAIN_DIR or str(user_dirs.config_dir() / "rmd_toolchain")
+
+
+def _state_path() -> str:
+    return os.path.join(_toolchain_dir(), "state.json")
+
+
+def _library_dir() -> str:
+    return os.path.join(_toolchain_dir(), "library")
+
+
+def _pandoc_dir() -> str:
+    return os.path.join(_toolchain_dir(), "pandoc")
+
+
+def _downloads_dir() -> str:
+    return os.path.join(_toolchain_dir(), "downloads")
 
 CRAN = "https://cran.r-project.org"
 CRAN_PKG_REPO = "https://cloud.r-project.org"
@@ -108,11 +128,11 @@ class ComponentStatus:
 # --------------------------------------------------------------------------- #
 
 def _load_state() -> dict:
-    return read_json(_STATE_PATH, dict)
+    return read_json(_state_path(), dict)
 
 
 def _save_state(state: dict) -> None:
-    write_json(_STATE_PATH, state, indent=2)
+    write_json(_state_path(), state, indent=2)
 
 
 # --------------------------------------------------------------------------- #
@@ -192,7 +212,7 @@ def r_environment() -> dict[str, str]:
     """R's environment: the person's own (program_environment), with the
     app's private library, where rmarkdown and tinytex are installed."""
     env = program_environment()
-    env["R_LIBS_USER"] = _LIBRARY_DIR
+    env["R_LIBS_USER"] = _library_dir()
     return env
 
 
@@ -248,7 +268,7 @@ def status(check_r_packages: bool = True) -> dict[str, ComponentStatus]:
         has_rmd = _r_package_present(rscript, "rmarkdown")
         result["rmarkdown"] = ComponentStatus(
             has_rmd, "managed" if has_rmd else "missing",
-            _LIBRARY_DIR if has_rmd else "")
+            _library_dir() if has_rmd else "")
     else:
         result["rmarkdown"] = ComponentStatus(False, "missing", "")
 
@@ -274,7 +294,7 @@ def knit_environment() -> dict[str, str]:
     if pandoc_dir:
         env["RSTUDIO_PANDOC"] = pandoc_dir
         env["PATH"] = pandoc_dir + os.pathsep + env.get("PATH", "")
-    os.makedirs(_LIBRARY_DIR, exist_ok=True)
+    os.makedirs(_library_dir(), exist_ok=True)
     return env
 
 
@@ -380,7 +400,7 @@ def install_r(progress=None, log=None, cancel=None) -> str:
     version = discover_r_version()
     url = r_installer_url(version)
     log(_("Downloading R {version} from CRAN").format(version=version) + f"\n  {url}")
-    dest = os.path.join(_DOWNLOADS_DIR, os.path.basename(url))
+    dest = os.path.join(_downloads_dir(), os.path.basename(url))
     _download(url, dest, progress=progress, cancel=cancel,
               sha256=PINNED_SHA256.get(url))
 
@@ -483,11 +503,11 @@ def install_pandoc(progress=None, log=None, cancel=None) -> str:
     version = discover_pandoc_version()
     url = pandoc_archive_url(version)
     log(_("Downloading pandoc {version}").format(version=version) + f"\n  {url}")
-    archive = os.path.join(_DOWNLOADS_DIR, os.path.basename(url))
+    archive = os.path.join(_downloads_dir(), os.path.basename(url))
     _download(url, archive, progress=progress, cancel=cancel,
               sha256=PINNED_SHA256.get(url))
 
-    target = os.path.join(_PANDOC_DIR, version)
+    target = os.path.join(_pandoc_dir(), version)
     if os.path.isdir(target):
         shutil.rmtree(target)
     os.makedirs(target, exist_ok=True)
@@ -534,8 +554,8 @@ def install_rmarkdown(log=None, cancel=None) -> None:
     rscript = find_rscript()
     if not rscript:
         raise ToolchainError(_("R must be installed first."))
-    os.makedirs(_LIBRARY_DIR, exist_ok=True)
-    lib = _LIBRARY_DIR.replace("\\", "/")
+    os.makedirs(_library_dir(), exist_ok=True)
+    lib = _library_dir().replace("\\", "/")
     expr = (f"install.packages('rmarkdown', repos='{CRAN_PKG_REPO}', "
             f"lib='{lib}')")
     log(_("Installing rmarkdown from {repository} into the app library...").format(
@@ -555,8 +575,8 @@ def install_tinytex(log=None, cancel=None) -> None:
     rscript = find_rscript()
     if not rscript:
         raise ToolchainError(_("R must be installed first."))
-    os.makedirs(_LIBRARY_DIR, exist_ok=True)
-    lib = _LIBRARY_DIR.replace("\\", "/")
+    os.makedirs(_library_dir(), exist_ok=True)
+    lib = _library_dir().replace("\\", "/")
     log(_("Installing TinyTeX (this downloads roughly 100 MB)..."))
     expr = (f"if (!nzchar(system.file(package='tinytex'))) "
             f"install.packages('tinytex', repos='{CRAN_PKG_REPO}', lib='{lib}'); "

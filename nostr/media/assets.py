@@ -32,6 +32,7 @@ from urllib.parse import urlsplit
 
 from PySide6.QtCore import QObject, QTimer
 
+import user_dirs
 from atomic_file import write_text
 
 
@@ -146,6 +147,11 @@ class DocumentAsset:
     # from a file, a paste or the library's picker: nothing has checked
     # whether it is one of the account's private files.
     from_address: bool = False
+    # Its alt came from a Media Library pick: what the person typed in its
+    # Alt Text field, a description (True); the name of the file it was
+    # added from (False); None for a record saved before this was kept,
+    # whose alt may be either while it is on the servers (stored_name).
+    from_library: Optional[bool] = None
     # Derived from the blob store on demand, never persisted: a machine
     # local path must not travel between installs or into a document.
     local_path: str = ""
@@ -166,6 +172,21 @@ class DocumentAsset:
             self.upload_state in (AssetState.MIRRORED, AssetState.COMPLETE)
             and bool(self.remote_url)
         )
+
+    @property
+    def stored_name(self) -> str:
+        """``alt`` when it is the name of the file this picture was added
+        from (from disk, beside a document, a crop); "" when it came from
+        a Media Library pick and is a description, and for a record on the
+        servers that does not say (from_library None): a description typed
+        in the library is never dropped, and an alt that is the name of the
+        picture's own file is none anyway (photo_group.description_of). A
+        record that does not say and is not on the servers is no pick (a
+        pick always is): its alt is a file's name."""
+        if self.is_media or self.from_library or (self.from_library is None
+                                                  and self.is_uploaded):
+            return ""
+        return self.alt
 
     @property
     def can_retry(self) -> bool:
@@ -190,6 +211,7 @@ class DocumentAsset:
             "failure_code": self.failure_code,
             "failure_reason": self.failure_reason,
             "from_address": self.from_address,
+            "from_library": self.from_library,
         }
 
 
@@ -237,6 +259,11 @@ def _acceptable_remote_url(url: str, sha256: str) -> bool:
 
 def _clean_str(value: object, default: str = "") -> str:
     return value if isinstance(value, str) else default
+
+
+def _clean_flag(value: object) -> Optional[bool]:
+    """A saved true or false, or None when the record holds neither."""
+    return value if isinstance(value, bool) else None
 
 
 def _clean_int(value: object, default: int = 0) -> int:
@@ -295,6 +322,7 @@ def asset_from_record(data: object) -> Optional[DocumentAsset]:
         failure_code=_clean_str(data.get("failure_code")),
         failure_reason=_clean_str(data.get("failure_reason")),
         from_address=data.get("from_address") is True,
+        from_library=_clean_flag(data.get("from_library")),
     )
 
 
@@ -302,8 +330,10 @@ def asset_from_record(data: object) -> Optional[DocumentAsset]:
 # The persisted index
 # ---------------------------------------------------------------------------
 
-INDEX_DIR = Path.home() / ".config" / "my_editor"
-INDEX_FILE = INDEX_DIR / "media_assets.json"
+def index_file() -> Path:
+    """media_assets.json in the person's config folder, found each time
+    (user_dirs)."""
+    return user_dirs.config_dir() / "media_assets.json"
 
 CURRENT_INDEX_VERSION = 1
 
@@ -330,9 +360,9 @@ class AssetIndex(QObject):
     is set (both mean this process does not know the whole picture).
     """
 
-    def __init__(self, path: Path = INDEX_FILE, parent: Optional[QObject] = None) -> None:
+    def __init__(self, path: Optional[Path] = None, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
-        self._path = Path(path)
+        self._path = Path(path) if path is not None else index_file()
         self._assets: Dict[str, DocumentAsset] = {}
         self._degraded = False
         self._read_only = False

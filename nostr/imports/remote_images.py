@@ -124,6 +124,11 @@ class RemoteImages(QObject):
             self._images.move_to_end(key)
         return image
 
+    def raw(self, url: str) -> Optional[bytes]:
+        """The bytes of the image at ``url`` as they came, while they are
+        kept here (for an export that carries its pictures)."""
+        return self._raw.get(_key(url)) if url else None
+
     def request(self, url: str, size: Optional[QSize] = None, *,
                 urgent: bool = False) -> None:
         """Fetch ``url`` (decoded to cover ``size``) unless it is here at

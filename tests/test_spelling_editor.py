@@ -74,6 +74,16 @@ def test_misspelled_words_on_screen_are_underlined():
     ed.hide()
 
 
+def test_misspelled_words_in_a_photo_caption_are_underlined():
+    ed, _spelling, _checker = checked_editor(
+        "![a](a.png)\n\n*The mistaek in a **wrod***\n\n![b](b.png)\n")
+    marks = ed.caption_highlights("spelling")
+    caption = "The mistaek in a wrod"
+    assert [caption[m.start:m.end] for m in marks] == ["mistaek", "wrod"]
+    assert all(m.cursor.position() == 0 for m in marks)       # under the first picture
+    ed.hide()
+
+
 def test_the_word_being_typed_waits_until_it_is_finished(monkeypatch):
     # The pause that also finishes a word cannot run out while this test
     # looks: no real short timer races the keys typed here.

@@ -725,7 +725,7 @@ def test_an_idle_tab_is_not_written_again(monkeypatch):
     assert backup.write_now()
     built = []
     original = backup._snapshot
-    monkeypatch.setattr(backup, "_snapshot", lambda: built.append(1) or original())
+    monkeypatch.setattr(backup, "_snapshot", lambda doc: built.append(1) or original(doc))
     assert backup.write_now()
     assert built == []
     backup._editor.textCursor().insertText("more")
@@ -856,3 +856,34 @@ def test_locking_a_document_seals_its_backup_at_once():
     ed._lock = Lock("correct horse")
     assert backup.write_now()                       # no word changed
     assert _record_of(backup)["format"] == recovery.SEALED
+
+
+# -- photo groups --------------------------------------------------------------------------
+
+GROUPED = ("Before\n\n![a](a.png)\n\n*Under a*\n\n![b](b.png) ![c](c.png)\n\n"
+           "![d](plan.png#wide)\n\nAfter, with `code`.\n")
+
+
+def test_photo_groups_survive_backup_and_restore(tmp_path):
+    """Kept as their paragraphs (HTML has no place for a group), back as
+    the groups they were, and the Markdown as it was read."""
+    import photo_group
+    from markdown_writer import _image_as_read, document_to_markdown
+    ed = _markdown_editor(GROUPED)
+    assert photo_group.has_groups(ed.document())
+    backup = recovery.EditorBackup(ed, str(tmp_path / "trip.md"))
+    ed.document().setModified(True)
+    assert backup.write_now()
+    record = _record_of(backup)
+    assert record["photo_groups"] is True and "<table" not in record["content"]
+    restored = _restored(backup)
+    assert photo_group.has_groups(restored.document())
+    assert document_to_markdown(restored.document(), _image_as_read) == GROUPED
+
+
+def test_a_backup_without_groups_says_nothing_of_them(tmp_path):
+    ed = _markdown_editor("![a](a.png)\n\nWords\n")
+    ed.document().setModified(True)
+    backup = recovery.EditorBackup(ed, str(tmp_path / "one.md"))
+    assert backup.write_now()
+    assert "photo_groups" not in _record_of(backup)

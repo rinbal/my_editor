@@ -20,7 +20,6 @@ twice is one asset with one upload.
 from .assets import (  # noqa: F401
     ASSET_SCHEME,
     CURRENT_INDEX_VERSION,
-    INDEX_FILE,
     LEGAL_TRANSITIONS,
     AssetIndex,
     AssetState,
@@ -40,7 +39,6 @@ from .manager import (  # noqa: F401
 __all__ = [
     "ASSET_SCHEME",
     "CURRENT_INDEX_VERSION",
-    "INDEX_FILE",
     "LEGAL_TRANSITIONS",
     "MAX_ASSET_BYTES",
     "AssetErrorCodes",
