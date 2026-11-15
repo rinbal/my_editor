@@ -35,33 +35,22 @@
 
 ## Genauer hingeschaut
 
-<details>
-<summary>Drei weitere Bildschirmfotos</summary>
+<p>
+  <a href="docs/use/folders-and-files.md"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/de/folders-dark.png">
+    <img src="docs/images/de/folders-light.png" width="32%" alt="Die Seitenleiste mit dem Ordner Bergtour, in der Dateiliste Notizen, ein PDF und eine Tabelle, rechts die geöffnete Notiz">
+  </picture></a>
+  <a href="docs/use/pdf.md"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/de/pdf-dark.png">
+    <img src="docs/images/de/pdf-light.png" width="32%" alt="Ein Wanderführer als PDF im Leser, links das aufgeklappte Inhaltsverzeichnis">
+  </picture></a>
+  <a href="docs/use/spreadsheets.md"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/de/sheet-dark.png">
+    <img src="docs/images/de/sheet-light.png" width="32%" alt="Die Reisekasse als Arbeitsmappe in MyEditor, die Summe ausgewählt, in der Formelzeile =SUMME(C2:C6)">
+  </picture></a>
+</p>
 
-<br>
-
-**Deine Ordner neben deinem Text.** Die Seitenleiste zeigt die Ordner, die du hinzufügst, die Dateiliste ihren Inhalt, das Neueste zuerst.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/de/folders-dark.png">
-  <img src="docs/images/de/folders-light.png" alt="Die Seitenleiste mit dem Ordner Bergtour, in der Dateiliste Notizen, ein PDF und eine Tabelle, rechts die geöffnete Notiz">
-</picture>
-
-**Ein PDF-Leser zum Lesen.** Die Seiten, ihr Inhaltsverzeichnis und sonst nichts.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/de/pdf-dark.png">
-  <img src="docs/images/de/pdf-light.png" alt="Ein Wanderführer als PDF im Leser, links das aufgeklappte Inhaltsverzeichnis">
-</picture>
-
-**Tabellen, direkt bearbeitet.** Formeln schreibst du auf Deutsch, und beim Speichern bleibt die Formatierung der Datei erhalten.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/de/sheet-dark.png">
-  <img src="docs/images/de/sheet-light.png" alt="Die Reisekasse als Arbeitsmappe in MyEditor, die Summe ausgewählt, in der Formelzeile =SUMME(C2:C6)">
-</picture>
-
-</details>
+Von links: [deine Ordner neben deinem Text](docs/use/folders-and-files.md), [ein PDF-Leser zum Lesen](docs/use/pdf.md) und [Tabellen, direkt bearbeitet](docs/use/spreadsheets.md), mit Formeln auf Deutsch. Die verlinkten Seiten der Anleitung sind auf Englisch.
 
 ## Installieren
 

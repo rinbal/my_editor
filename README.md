@@ -35,33 +35,22 @@
 
 ## A closer look
 
-<details>
-<summary>Three more screenshots</summary>
+<p>
+  <a href="docs/use/folders-and-files.md"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/folders-dark.png">
+    <img src="docs/images/folders-light.png" width="32%" alt="The sidebar with a trip folder, its notes, PDF and spreadsheet in the file list, and the selected note open on the right">
+  </picture></a>
+  <a href="docs/use/pdf.md"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/pdf-dark.png">
+    <img src="docs/images/pdf-light.png" width="32%" alt="A trail guide PDF open in the reader, with its table of contents expanded on the left">
+  </picture></a>
+  <a href="docs/use/spreadsheets.md"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/sheet-dark.png">
+    <img src="docs/images/sheet-light.png" width="32%" alt="A trip budget workbook open in MyEditor, the total's cell selected and its SUM formula in the formula bar">
+  </picture></a>
+</p>
 
-<br>
-
-**Your folders, beside your writing.** The sidebar holds the folders you add; the file list shows what is in them, newest first.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/folders-dark.png">
-  <img src="docs/images/folders-light.png" alt="The sidebar with a trip folder, its notes, PDF and spreadsheet in the file list, and the selected note open on the right">
-</picture>
-
-**A PDF reader for reading.** The pages, their contents and nothing else.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/pdf-dark.png">
-  <img src="docs/images/pdf-light.png" alt="A trail guide PDF open in the reader, with its table of contents expanded on the left">
-</picture>
-
-**Spreadsheets, edited in place.** Formulas work in your language, and saving keeps the file's formatting.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/sheet-dark.png">
-  <img src="docs/images/sheet-light.png" alt="A trip budget workbook open in MyEditor, the total's cell selected and its SUM formula in the formula bar">
-</picture>
-
-</details>
+From left: [your folders beside your writing](docs/use/folders-and-files.md), [a PDF reader made for reading](docs/use/pdf.md), and [spreadsheets edited in place](docs/use/spreadsheets.md), with formulas in your language.
 
 ## Install
 
