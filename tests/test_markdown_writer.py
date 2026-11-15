@@ -171,6 +171,34 @@ def test_a_linked_picture_shows_with_its_link_and_description():
             picture.anchorHref()) == ("https://x.example/b.png", "badge", "https://x.example")
 
 
+TAGS_IN_LINK_WORDS = [
+    "[x <y>](u)\n",
+    "See [a </b> c](https://u.example) here.\n",
+    "![a](p.png)\n[*x <y>*](u)\n\n![b](q.png)\n",                # in a photo group's caption
+]
+
+
+@pytest.mark.parametrize("source", TAGS_IN_LINK_WORDS)
+def test_a_tag_in_a_links_words_stays_its_words(source):
+    # Qt's reader takes the tag for HTML and drops it.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_a_tag_out_of_its_link_is_written_as_words():
+    doc = QTextDocument()
+    read_markdown(doc, "Go [x <y>](u) now.\n")
+    unlinked = QTextCharFormat()
+    unlinked.setAnchor(False)
+    unlinked.setAnchorHref("")
+    cursor = QTextCursor(doc)
+    cursor.select(QTextCursor.SelectionType.Document)
+    cursor.mergeCharFormat(unlinked)
+    assert document_to_markdown(doc) == "Go x \\<y> now.\n"
+
+
 def test_a_dash_under_words_stays_a_heading():
     doc = QTextDocument()
     read_markdown(doc, "Text\n-\n")
@@ -552,6 +580,7 @@ def test_markdown_the_editor_can_hold(source):
 @pytest.mark.parametrize("source", [
     "Footnote[^1].\n\n[^1]: The note,\n\n    and its second paragraph.\n",
     "<div>raw</div>\n",
+    "[x <y>] in brackets that are no link\n",
     'A [link](https://x.example "with a title").\n',
     "> # a heading in a quote\n",
     "- item\n\n  second paragraph of the item\n- two\n",
@@ -617,7 +646,7 @@ def test_undo_right_after_opening_a_draft_keeps_it():
 
 # -- soft line breaks: lines of one paragraph, kept as lines ------------------------------
 
-from markdown_writer import SOFT_BREAK_PROPERTY, _image_as_read, read_markdown  # noqa: E402
+from markdown_writer import SOFT_BREAK_PROPERTY  # noqa: E402
 
 SOFT_WRAPPED = [
     "Line one\nLine two of the same paragraph\n",

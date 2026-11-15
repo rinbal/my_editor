@@ -58,8 +58,16 @@ TYPED_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B3
 # after one.
 ESCAPED_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B4
 
+# A "<" a file wrote bare in a link's words where it opens a tag
+# ("[x <y>](u)"): Qt's reader takes the tag for HTML and drops it, the
+# editor holds it as the words it is, and it is written bare again, as
+# the file had it (markdown_writer's _marked_keeps).
+# photo_caption.CaptionRun.bare carries it in a caption.
+BARE_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B5
+
 # The marks above belong to the characters that carry them alone.
-READ_MARKS = (SOFT_BREAK_PROPERTY, ESCAPED_TEXT_PROPERTY, TYPED_TEXT_PROPERTY)
+READ_MARKS = (SOFT_BREAK_PROPERTY, ESCAPED_TEXT_PROPERTY, TYPED_TEXT_PROPERTY,
+              BARE_TEXT_PROPERTY)
 
 
 def without_read_marks(fmt: QTextCharFormat) -> QTextCharFormat:

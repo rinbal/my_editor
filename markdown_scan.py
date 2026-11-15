@@ -20,14 +20,20 @@ LIST_LINE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
 # A list item with nothing in it, not even a task's box.
 EMPTY_ITEM_LINE = re.compile(r"^ *(?:[-*+]|\d{1,9}[.)])[ \t]*$")
 ESCAPABLE = set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
+_AUTOLINK_PATTERN = r"<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*|[^\s<>@]+@[^\s<>]+)>"
+_AUTOLINK = re.compile(_AUTOLINK_PATTERN)
 _AUTOLINK_OR_TAG = re.compile(
-    r"<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*|[^\s<>@]+@[^\s<>]+"
-    r"|/?[A-Za-z][\w-]*(?:\s[^<>]*)?/?|!--.*?--)>", re.S)
+    _AUTOLINK_PATTERN + r"|<(?:/?[A-Za-z][\w-]*(?:\s[^<>]*)?/?|!--.*?--)>", re.S)
 _CODE_INDENT = re.compile(r"^(?: {4}|\t)")
 # Where an escape, a code span, an autolink or tag, or a picture may start.
 _STARTS_INLINE = re.compile(r"[\\`<]|!\[")
 # The same, and where a link may start.
 _STARTS_INLINE_OR_LINK = re.compile(r"[\\`<\[]|!\[")
+# The same, where brackets close, and where a paragraph ends.
+_STARTS_INLINE_BRACKET_OR_BLANK = re.compile(r"[\\`<\[\]]|!\[|\n[ \t]*\n")
+# A bracket that may open no picture: one without a "!" before it, or
+# after an escaped one ("\\![a](u)" is a link).
+_OWN_BRACKET = re.compile(r"(?<!!)\[|\\!\[")
 _BACKTICKS = re.compile(r"`+")
 _EMPHASIS_MARKS = ("*", "_", "~")
 # Where an escape, or something an escape inside is no escape of, may
@@ -511,20 +517,24 @@ def pictures(markdown: str) -> List[Tuple[int, int, int]]:
     return found
 
 
-def bracketed_pictures(markdown: str) -> List[int]:
-    """Where each picture of ``markdown`` that stands inside brackets
-    starts (its "!"), outside code: one the words of a link may hold
-    ("[![a](p.png)](u)", "[see ![a](p.png)](u)")."""
-    if markdown.count("[") == markdown.count("!["):
-        return []                       # no bracket but the pictures' own
+def bracketed(markdown: str) -> Tuple[List[int], List[Tuple[int, int]]]:
+    """What of ``markdown`` stands inside brackets, outside code, where the
+    words of a link may hold it: each picture, by where it starts (its
+    "!"; "[![a](p.png)](u)", "[see ![a](p.png)](u)"), and each tag on
+    one line ("[x <y>](u)"), by where it starts and ends. A tag in a
+    picture's description is the description's."""
+    if _OWN_BRACKET.search(markdown) is None:
+        return [], []                   # no bracket but the pictures' own
     found = pictures(markdown)
-    openers = {start - 1 for start, _end, _after in found}
+    after = {start - 2: end for start, _end, end in found}
     blocked = _Blocked(_code_ranges(markdown))
     scanned = Found()
-    closes: List[Tuple[int, int]] = []
+    pairs: List[Tuple[int, int]] = []
+    tags: List[Tuple[int, int]] = []
+    opened: List[int] = []
     index = 0
     while True:
-        nearest = _STARTS_INLINE_OR_LINK.search(markdown, index)
+        nearest = _STARTS_INLINE_BRACKET_OR_BLANK.search(markdown, index)
         if nearest is None:
             break
         index = nearest.start()
@@ -532,24 +542,45 @@ def bracketed_pictures(markdown: str) -> List[int]:
         if end is not None:
             index = end + 1
             continue
-        if markdown[index] == "[" and index not in openers:
-            close = label_end(markdown, index, scanned)
-            if close is not None:
-                closes.append((index, close))
+        char = markdown[index]
+        if index in after:
+            # A picture is passed whole, as a reader takes it first: its
+            # description's brackets and its address's are its own.
+            index = after[index]
+        elif char == "\n":
+            opened.clear()              # a paragraph ends
+            index = nearest.end()
+        elif char == "[":
+            opened.append(index)
             index += 1
-            continue
-        skipped = skip_inline(markdown, index, scanned)
-        index = index + 1 if skipped is None else skipped
-    # Brackets nest: a pair that opens before a picture and closes after
-    # it holds it.
+        elif char == "]":
+            if opened:
+                pairs.append((opened.pop(), index))
+            index += 1
+        else:
+            skipped = skip_inline(markdown, index, scanned)
+            if (skipped is not None and char == "<" and _AUTOLINK.match(markdown, index) is None
+                    and "\n" not in markdown[index:skipped]):
+                tags.append((index, skipped))
+            index = index + 1 if skipped is None else skipped
+    pairs.sort()
+    held = set(_held(tags, pairs))
+    return (_held([(start - 2, end) for start, _end, end in found], pairs),
+            [(start, end) for start, end in tags if start in held])
+
+
+def _held(spans: List[Tuple[int, int]], pairs: List[Tuple[int, int]]) -> List[int]:
+    """The start of each of ``spans`` (start, end; rising, none holding a
+    bracket) that a pair of brackets of ``pairs`` (by opener; nested or
+    apart) opens before and closes after."""
     out: List[int] = []
     furthest, at = -1, 0
-    for start, end, _after in found:
-        while at < len(closes) and closes[at][0] < start:
-            furthest = max(furthest, closes[at][1])
+    for start, end in spans:
+        while at < len(pairs) and pairs[at][0] < start:
+            furthest = max(furthest, pairs[at][1])
             at += 1
-        if furthest > end:
-            out.append(start - 2)
+        if furthest >= end:
+            out.append(start)
     return out
 
 

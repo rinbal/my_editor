@@ -26,8 +26,9 @@ from PySide6.QtGui import QFont, QTextBlockFormat, QTextCharFormat, QTextCursor,
 
 import media_files
 import photo_caption
-from doc_walk import (ESCAPED_TEXT_PROPERTY, LINE_SEPARATOR, OBJECT_REPLACEMENT,
-                      SOFT_BREAK_PROPERTY, TYPED_TEXT_PROPERTY, doc_length, picture_pieces)
+from doc_walk import (BARE_TEXT_PROPERTY, ESCAPED_TEXT_PROPERTY, LINE_SEPARATOR,
+                      OBJECT_REPLACEMENT, SOFT_BREAK_PROPERTY, TYPED_TEXT_PROPERTY, doc_length,
+                      picture_pieces)
 from photo_group import (
     GROUP,
     SOFT,
@@ -130,7 +131,8 @@ def _caption_of(pieces) -> Tuple[CaptionRun, ...]:
                    fmt.fontStrikeOut(), bool(fmt.fontFixedPitch()),
                    (fmt.anchorHref() if fmt.isAnchor() else "") or "",
                    fmt.boolProperty(SOFT_BREAK_PROPERTY), fmt.boolProperty(TYPED_TEXT_PROPERTY),
-                   fmt.boolProperty(ESCAPED_TEXT_PROPERTY))
+                   fmt.boolProperty(ESCAPED_TEXT_PROPERTY),
+                   fmt.boolProperty(BARE_TEXT_PROPERTY))
         for _position, text, fmt in pieces))
 
 
