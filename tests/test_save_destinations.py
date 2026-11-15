@@ -49,6 +49,8 @@ class SaveWindow(_Window):
     _say_saved = MainWindow._say_saved
     _confirm_save_over_changes = MainWindow._confirm_save_over_changes
     _resolve_disk_change = MainWindow._resolve_disk_change
+    _ask_before_losing = MainWindow._ask_before_losing
+    _warn_formatting_loss = MainWindow._warn_formatting_loss
 
     def __init__(self, cache_dir):
         super().__init__(cache_dir)
@@ -100,6 +102,48 @@ def test_markdown_destinations_do_not_warn_about_images(win):
 def test_rtf_still_warns_only_about_images(win):
     ed = _editor_with(win.local_asset())
     assert win._loses_content_on_save(ed, "note.rtf") is True
+
+
+# --------------------------------------------------------------------- #
+# Markdown: the question names what goes, and it goes from the document   #
+# --------------------------------------------------------------------- #
+
+def _colored(text="A red word"):
+    from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
+    ed = _editor_with(text=text)
+    word = QTextCursor(ed.document())
+    word.setPosition(2)
+    word.setPosition(5, QTextCursor.MoveMode.KeepAnchor)
+    red = QTextCharFormat()
+    red.setForeground(QColor("red"))
+    word.mergeCharFormat(red)
+    return ed
+
+
+def test_the_markdown_save_question_names_only_what_is_lost(win, monkeypatch):
+    import main_window
+    seen = {}
+    monkeypatch.setattr(main_window, "ask", lambda parent, **kw: seen.update(kw) or "cancel")
+    win._ask_before_losing(_colored(), "note.md")
+    assert seen["message"] == ("Markdown can’t keep colors, highlights and underlines. "
+                               "Bold, italic, links and pictures stay.")
+    assert [button.label for button in seen["buttons"]] == [
+        "Save Without Colors", "Save as .html", "Save as .rtf", "Cancel"]
+
+
+def test_saving_markdown_without_colors_takes_them_off_the_document(win, tmp_path,
+                                                                    monkeypatch):
+    import main_window
+    from markdown_writer import has_local_only_formatting
+    asked = []
+    monkeypatch.setattr(main_window, "ask", lambda parent, **kw: asked.append(kw) or "anyway")
+    win._ed = ed = _colored()
+    path = str(tmp_path / "note.md")
+    assert win._ask_before_losing(ed, path) == "save" and win._save_to(path)
+    assert not has_local_only_formatting(ed.document())
+    assert win._ask_before_losing(ed, path) == "save" and len(asked) == 1
+    ed.undo()                                   # one step brings them back
+    assert has_local_only_formatting(ed.document())
 
 
 # --------------------------------------------------------------------- #

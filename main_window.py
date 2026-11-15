@@ -96,7 +96,7 @@ from doc_walk import image_positions, iter_block_runs, iter_blocks, iter_image_n
 from plain_writer import serialize_plain_with_images
 from markdown_writer import (
     document_to, document_to_markdown, has_local_only_formatting, holds_faithfully,
-    image_markdown, read_markdown,
+    image_markdown, read_markdown, remove_local_only_formatting,
 )
 from editor import CARET_STYLES, DEFAULT_CARET_STYLE, PROSE_INSET, HtmlEditor
 import panel_layout
@@ -5293,29 +5293,62 @@ class MainWindow(QMainWindow):
             return self._has_formatting(ed)
         return self._has_formatting(ed) or self._has_images(ed)
 
+    def _ask_before_losing(self, ed, path: str) -> str:
+        """Ask before saving ``ed`` to ``path`` drops what the file cannot
+        hold (_loses_content_on_save): "save" (nothing is lost, or it is
+        saved without it), "html", "rtf" or "cancel". A Markdown file saved
+        without its colors, highlights and underlines takes them off the
+        document too, as one step of Undo: the window shows what the file
+        holds, and the next save asks nothing."""
+        if not self._loses_content_on_save(ed, path):
+            return "save"
+        result = self._warn_formatting_loss(os.path.splitext(path)[1])
+        if result != "anyway":
+            return result
+        if path.lower().endswith(".md"):
+            with ed.undo_step(N_("Remove Colors")):
+                remove_local_only_formatting(ed.document())
+        return "save"
+
     def _warn_formatting_loss(self, ext_label: str) -> str:
-        """Ask before saving to a format that drops content.
-        Returns 'anyway', 'html', 'rtf', or 'cancel'."""
+        """Ask before saving to a format that drops content, saying what it
+        drops (_loses_content_on_save). Returns 'anyway', 'html', 'rtf', or
+        'cancel'."""
+        lowered = ext_label.lower()
+        if lowered == ".md":
+            # Only what Markdown cannot carry goes.
+            title = _("Save as {ext} without colors?").format(ext=ext_label)
+            message = _("Markdown can’t keep colors, highlights and underlines. "
+                        "Bold, italic, links and pictures stay.")
+            anyway = Button(_("Save Without Colors"), "anyway", DESTRUCTIVE,
+                            _("Removes them from this document too. You can undo this."))
+        elif lowered == ".rtf":
+            # RTF keeps the formatting and the colors; only pictures go.
+            title = _("Save as {ext} without pictures?").format(ext=ext_label)
+            message = _("RTF can’t keep pictures. Text, formatting and colors stay.")
+            anyway = Button(_("Save as {ext} Anyway").format(ext=ext_label), "anyway",
+                            DESTRUCTIVE, _("Pictures will be left out of the saved file."))
+        else:
+            title = _("Save as {ext} without formatting?").format(ext=ext_label)
+            message = _("This document has colors, text formatting or images "
+                        "that {ext} can't store.").format(ext=ext_label)
+            anyway = Button(_("Save as {ext} Anyway").format(ext=ext_label), "anyway",
+                            DESTRUCTIVE, _("Formatting, colors and images will be permanently "
+                                           "removed from the saved file."))
         buttons = [
-            Button(_("Save as {ext} Anyway").format(ext=ext_label), "anyway", DESTRUCTIVE,
-                   _("Formatting, colors and images will be permanently removed "
-                     "from the saved file.")),
+            anyway,
             Button(_("Save as {ext}").format(ext=".html"), "html", NORMAL,
                    _("Saves all colors, bold, italic and formatting.\n"
                      "Best choice for editing in this editor.")),
         ]
         # Offering .rtf as the escape from an .rtf save would be a loop.
-        if ext_label.lower() != ".rtf":
+        if lowered != ".rtf":
             buttons.append(Button(
                 _("Save as {ext}").format(ext=".rtf"), "rtf", NORMAL,
                 _("Saves all colors, bold, italic and formatting.\n"
                   "Compatible with Word, LibreOffice and other apps.")))
         buttons.append(Button(_("Cancel"), "cancel", DEFAULT))
-        return ask(
-            self, title=_("Save as {ext} without formatting?").format(ext=ext_label),
-            message=_("This document has colors, text formatting or images "
-                      "that {ext} can't store.").format(ext=ext_label),
-            buttons=buttons, caution=True)
+        return ask(self, title=title, message=message, buttons=buttons, caution=True)
 
     def save(self) -> bool:
         if self.current_pdf_viewer() is not None:
@@ -5362,14 +5395,13 @@ class MainWindow(QMainWindow):
                 return True
             return self.save_as()
         ed = self.current_editor()
-        if ed and self._loses_content_on_save(ed, path):
-            result = self._warn_formatting_loss(os.path.splitext(path)[1])
-            if result == 'cancel':
-                return False
-            elif result == 'html':
-                return self.save_as(self._suggest_path(path, '.html'), ".html (*.html)")
-            elif result == 'rtf':
-                return self.save_as(self._suggest_path(path, '.rtf'), ".rtf (*.rtf)")
+        result = self._ask_before_losing(ed, path) if ed else "save"
+        if result == 'cancel':
+            return False
+        elif result == 'html':
+            return self.save_as(self._suggest_path(path, '.html'), ".html (*.html)")
+        elif result == 'rtf':
+            return self.save_as(self._suggest_path(path, '.rtf'), ".rtf (*.rtf)")
         return self._save_to(path)
 
     def _suggest_path(self, current_path: str, new_ext: str) -> str:
@@ -5400,14 +5432,13 @@ class MainWindow(QMainWindow):
 
         # Warn if saving to a format that loses formatting
         ed = self.current_editor()
-        if ed and self._loses_content_on_save(ed, path):
-            result = self._warn_formatting_loss(os.path.splitext(path)[1])
-            if result == 'cancel':
-                return False
-            elif result == 'html':
-                return self.save_as(self._suggest_path(path, '.html'), ".html (*.html)")
-            elif result == 'rtf':
-                return self.save_as(self._suggest_path(path, '.rtf'), ".rtf (*.rtf)")
+        result = self._ask_before_losing(ed, path) if ed else "save"
+        if result == 'cancel':
+            return False
+        elif result == 'html':
+            return self.save_as(self._suggest_path(path, '.html'), ".html (*.html)")
+        elif result == 'rtf':
+            return self.save_as(self._suggest_path(path, '.rtf'), ".rtf (*.rtf)")
 
         old_path = self.current_path()
 
@@ -6748,9 +6779,8 @@ class MainWindow(QMainWindow):
             # Auto-save before knitting, RStudio-style. It goes through the
             # same guard as an explicit save, so an automatic step can never
             # discard more than a deliberate one would.
-            if self._loses_content_on_save(ed, path):
-                if self._warn_formatting_loss(os.path.splitext(path)[1]) == 'cancel':
-                    return
+            if self._ask_before_losing(ed, path) == 'cancel':
+                return
             if not self._save_to(path):
                 return
         runner = self._ensure_knit_runner()

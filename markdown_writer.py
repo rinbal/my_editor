@@ -1004,15 +1004,43 @@ def has_local_only_formatting(doc) -> bool:
     """Whether the document holds what Markdown cannot carry: underline,
     text color or highlight. A link's own color and underline are how it
     looks, not formatting, so links do not count."""
+    return any(_local_only(fmt) for block in iter_blocks(doc)
+               for _text, fmt in iter_block_runs(block))
+
+
+def remove_local_only_formatting(doc) -> None:
+    """Take what has_local_only_formatting finds off ``doc``: a document
+    saved as Markdown without it then shows what the file holds."""
+    found = []
     for block in iter_blocks(doc):
-        for _text, fmt in iter_block_runs(block):
-            if fmt.isImageFormat() or fmt.isAnchor():
-                continue
-            if (fmt.fontUnderline()
-                    or fmt.hasProperty(QTextCharFormat.Property.ForegroundBrush)
-                    or fmt.hasProperty(QTextCharFormat.Property.BackgroundBrush)):
-                return True
-    return False
+        it = block.begin()
+        while not it.atEnd():
+            fragment = it.fragment()
+            if fragment.isValid() and _local_only(fragment.charFormat()):
+                found.append((fragment.position(), fragment.length(), fragment.charFormat()))
+            it += 1
+    cursor = QTextCursor(doc)
+    for position, length, fmt in found:
+        plain = QTextCharFormat(fmt)
+        for words in _LOCAL_ONLY:
+            plain.clearProperty(words)
+        cursor.setPosition(position)
+        cursor.setPosition(position + length, QTextCursor.MoveMode.KeepAnchor)
+        cursor.setCharFormat(plain)
+
+
+# What of a format Markdown cannot carry (has_local_only_formatting).
+_LOCAL_ONLY = (QTextFormat.Property.FontUnderline, QTextFormat.Property.TextUnderlineStyle,
+               QTextFormat.Property.ForegroundBrush, QTextFormat.Property.BackgroundBrush)
+
+
+def _local_only(fmt) -> bool:
+    """Whether a piece in ``fmt`` holds what Markdown cannot carry
+    (has_local_only_formatting); a picture and a link never."""
+    if fmt.isImageFormat() or fmt.isAnchor():
+        return False
+    return (fmt.fontUnderline() or fmt.hasProperty(QTextFormat.Property.ForegroundBrush)
+            or fmt.hasProperty(QTextFormat.Property.BackgroundBrush))
 
 
 # Markdown the editor's document cannot hold, so reading it in would lose
@@ -1703,5 +1731,5 @@ __all__: Tuple[str, ...] = (
     "MARKDOWN", "NOTE", "document_blocks", "document_to", "document_to_markdown",
     "document_to_note_text", "has_local_only_formatting", "holds_faithfully",
     "image_markdown", "link_markdown", "literal_footnotes", "literal_text", "read_markdown", "READ_FEATURES",
-    "PASTE_FEATURES",
+    "PASTE_FEATURES", "remove_local_only_formatting",
 )
