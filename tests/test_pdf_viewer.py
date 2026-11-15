@@ -532,7 +532,8 @@ def test_the_tooltips_name_the_keys_the_platform_way(sample_pdf, qt_app):
     zoom_in = QKeySequence(QKeySequence.StandardKey.ZoomIn).toString(
         QKeySequence.SequenceFormat.NativeText)
     assert tab._zoom_in_btn.toolTip() == f"Zoom in ({zoom_in})"
-    fit = QKeySequence("Ctrl+0").toString(QKeySequence.SequenceFormat.NativeText)
+    fit = QKeySequence("Ctrl+Alt+0" if sys.platform == "darwin" else "Ctrl+0").toString(
+        QKeySequence.SequenceFormat.NativeText)
     assert tab._fit_width_btn.toolTip() == f"Fit page width ({fit})"
     if sys.platform == "darwin":
         assert "Ctrl" not in tab._fit_width_btn.toolTip()

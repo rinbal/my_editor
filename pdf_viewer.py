@@ -13,8 +13,9 @@ Design brief:
     scroll by line, n / p step pages, g focuses the go-to-page box,
     Home / End jump to the first / last page, Ctrl+Plus / Ctrl+Minus
     and Ctrl+wheel zoom, Ctrl+0 fits width, Ctrl+1 is actual size,
-    Ctrl+2 fits the whole page, F12 toggles the contents outline,
-    Ctrl+F finds.
+    Ctrl+2 fits the whole page (on a Mac Option-Command-0, 1 and 2, and
+    Command-0 is actual size, as in Preview), F12 toggles the contents
+    outline, Ctrl+F finds.
   - The last reading position (page + zoom) is remembered per file in
     ``pdf_positions.json`` so reopening a book drops you where you left
     off. The store is LRU-capped so it never grows unbounded.
@@ -192,7 +193,7 @@ def _with_keys(words: str, keys: QKeySequence) -> str:
 # field too; bare keys (a space, a letter, Home) only on the page, so the
 # find field and the page box still type them. J, K, N, P and G are
 # SumatraPDF's; Ctrl+0, 1 and 2 SumatraPDF's zoom keys, as in MyEditor 3.3
-# (Option-Command-1 and 2 on a Mac, see below).
+# (Option-Command-0, 1 and 2 on a Mac, see below).
 # Find (Ctrl+F) and Copy (Ctrl+C) are the window's Edit commands, which
 # act on the reader in a PDF tab; they are listed, not bound, here.
 MOVE, ZOOM, FIND = "Move Around", "Zoom", "Find and Copy"
@@ -217,10 +218,13 @@ def reader_keys():
          standard_and(QKeySequence.StandardKey.ZoomIn, "Ctrl+="), ("+",)),
         (ZOOM, _("Zoom out"), lambda tab: tab.zoom_out(),
          standard_and(QKeySequence.StandardKey.ZoomOut), ("-",)),
-        (ZOOM, _("Fit page width"), lambda tab: tab.fit_width(), ("Ctrl+0",), ()),
-        # Option-Command-1 and 2 on a Mac, where Command-1 to 9 go to tabs.
+        # Option-Command-0, 1 and 2 on a Mac, where Command-1 to 9 go to
+        # tabs, and Command-0 is Actual Size, as in Preview and as View >
+        # Actual Size is in a text tab.
+        (ZOOM, _("Fit page width"), lambda tab: tab.fit_width(),
+         (platform_keys("Ctrl+Alt+0", "Ctrl+0"),), ()),
         (ZOOM, _("Actual size"), lambda tab: tab.actual_size(),
-         (platform_keys("Ctrl+Alt+1", "Ctrl+1"),), ()),
+         platform_keys(("Ctrl+0", "Ctrl+Alt+1"), ("Ctrl+1",)), ()),
         (ZOOM, _("Fit whole page"), lambda tab: tab.fit_page(),
          (platform_keys("Ctrl+Alt+2", "Ctrl+2"),), ()),
         (FIND, _("Find in PDF"), None, ("Ctrl+F",), ()),
@@ -229,12 +233,18 @@ def reader_keys():
     )
 
 
-def _reader_key(words: str) -> QKeySequence:
-    """The first key of the reader's command ``words``, for its tooltip."""
+def reader_key_text(words: str) -> str:
+    """The first key of the reader's command ``words`` (reader_keys), as
+    the command list writes keys ("Ctrl+0"); "" for none."""
     for _section, name, _act, tab_keys, view_keys in reader_keys():
         if name == words:
-            return QKeySequence((tab_keys + view_keys)[0])
-    return QKeySequence()
+            return (tab_keys + view_keys)[0]
+    return ""
+
+
+def _reader_key(words: str) -> QKeySequence:
+    """The first key of the reader's command ``words``, for its tooltip."""
+    return QKeySequence(reader_key_text(words))
 
 
 # Painted over selected text. Pages always render white (see module

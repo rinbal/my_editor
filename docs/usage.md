@@ -317,9 +317,9 @@ Navigation follows the muscle memory of readers like SumatraPDF:
 | `PageDown` / `PageUp` | Scroll page-wise |
 | `Home` / `End` | First / last page |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+wheel` | Zoom in / out |
-| `Ctrl+0` | Fit page width |
-| `Ctrl+1` | Actual size |
-| `Ctrl+2` | Fit whole page |
+| `Ctrl+0` (`Option+Cmd+0` on macOS) | Fit page width |
+| `Ctrl+1` (`Cmd+0` or `Option+Cmd+1` on macOS, as in Preview) | Actual size |
+| `Ctrl+2` (`Option+Cmd+2` on macOS) | Fit whole page |
 | `F12` | Toggle the table of contents |
 | `F11` | Full screen (whole window; `Ctrl+Cmd+F` on macOS) |
 

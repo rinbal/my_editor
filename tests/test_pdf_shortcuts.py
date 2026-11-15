@@ -14,11 +14,17 @@ ambiguous to Qt, and then neither fires. What must hold:
 
   In a text tab, the same keys reach the editing commands.
 
+On a Mac the reader's zoom keys are Option-Command-0, 1 and 2, the
+styles' keys there, and Command-0 is Actual Size: the reader's in a PDF
+tab, View > Actual Size in a text tab.
+
 Run in a child process with a home folder of its own, as every test
 that builds the whole window is (tests/app_process.py), so the real
-settings are never touched; the window's keys are those of Windows and
-Linux there, where the keys collide.
+settings are never touched; the window's keys are those of the platform
+the test names (Windows and Linux, or a Mac), whatever runs it.
 """
+
+import pytest
 
 from tests.app_process import run_window_script
 
@@ -33,8 +39,12 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 app = QApplication(sys.argv[:1])
 import commands
-# The keys of Windows and Linux, where Heading 1 is Ctrl+1.
-commands.sys = types.SimpleNamespace(platform="linux")
+# The keys of the platform named: Heading 1 is Ctrl+1 on Windows and
+# Linux, Option-Command-1 on a Mac.
+commands.sys = types.SimpleNamespace(platform=sys.argv[2])
+mac = sys.argv[2] == "darwin"
+CTRL = Qt.KeyboardModifier.ControlModifier
+STYLE = CTRL | Qt.KeyboardModifier.AltModifier if mac else CTRL
 import main_window
 from export_pdf import export_pdf
 
@@ -51,7 +61,7 @@ w.activateWindow()
 QTest.qWaitForWindowExposed(w)
 ran = []
 for action in (w.commands.action("format.style.h1"), w.commands.action("format.style.h2"),
-               w.commands.action("format.style.body")):
+               w.commands.action("format.style.body"), w.commands.action("view.actual_size")):
     action.triggered.connect(lambda _c=False, n=action.objectName(): ran.append(n))
 result = {}
 
@@ -61,13 +71,16 @@ view = viewer.view
 view.setFocus()
 app.processEvents()
 result["pdf_focus"] = app.focusWidget() is view
-QTest.keyClick(view, Qt.Key.Key_2, Qt.KeyboardModifier.ControlModifier)
+def actual_size():
+    return view.zoomMode() == QPdfView.ZoomMode.Custom and abs(view.zoomFactor() - 1.0) < 1e-6
+QTest.keyClick(view, Qt.Key.Key_2, STYLE)
 result["ctrl2_fit_page"] = view.zoomMode() == QPdfView.ZoomMode.FitInView
-QTest.keyClick(view, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier)
-result["ctrl1_actual_size"] = (view.zoomMode() == QPdfView.ZoomMode.Custom
-                               and abs(view.zoomFactor() - 1.0) < 1e-6)
-QTest.keyClick(view, Qt.Key.Key_0, Qt.KeyboardModifier.ControlModifier)
+QTest.keyClick(view, Qt.Key.Key_1, STYLE)
+result["ctrl1_actual_size"] = actual_size()
+QTest.keyClick(view, Qt.Key.Key_0, STYLE)
 result["ctrl0_fit_width"] = view.zoomMode() == QPdfView.ZoomMode.FitToWidth
+QTest.keyClick(view, Qt.Key.Key_0, CTRL)
+result["cmd0_actual_size"] = actual_size() if mac else None
 view._selections = [(0, viewer.document.getSelectionAtIndex(0, 0, 6))]
 app.clipboard().setText("before")
 QTest.keyClick(view, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
@@ -78,10 +91,15 @@ ed = w.new_tab()
 app.processEvents()
 ed.setFocus()
 QTest.keyClicks(ed, "Title")
-QTest.keyClick(ed, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier)
+QTest.keyClick(ed, Qt.Key.Key_1, STYLE)
 result["ctrl1_heading"] = ed.textCursor().block().blockFormat().headingLevel()
-QTest.keyClick(ed, Qt.Key.Key_0, Qt.KeyboardModifier.ControlModifier)
+QTest.keyClick(ed, Qt.Key.Key_0, STYLE)
 result["ctrl0_body"] = ed.textCursor().block().blockFormat().headingLevel()
+if mac:
+    # Bigger text first: Actual Size is off while the text is at it.
+    w.act_zoom_in.trigger()
+    app.processEvents()
+    QTest.keyClick(ed, Qt.Key.Key_0, CTRL)
 ed.selectAll()
 QTest.keyClick(ed, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
 result["ctrl_c_text"] = app.clipboard().text()
@@ -96,12 +114,16 @@ print("RESULT " + json.dumps(result))
 """
 
 
-def test_pdf_keys_reach_the_reader_and_text_keys_the_editor(tmp_path):
-    r = run_window_script(SCRIPT, tmp_path)
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+def test_pdf_keys_reach_the_reader_and_text_keys_the_editor(tmp_path, platform):
+    r = run_window_script(SCRIPT, tmp_path, platform)
+    mac = platform == "darwin"
     assert r["pdf_focus"]
     assert r["ctrl2_fit_page"] and r["ctrl1_actual_size"] and r["ctrl0_fit_width"]
+    assert r["cmd0_actual_size"] is (True if mac else None)
     assert r["ctrl_c_pdf"] == "needle"
     assert r["commands_in_pdf"] == []
     assert r["ctrl1_heading"] == 1 and r["ctrl0_body"] == 0
-    assert r["commands_in_text"] == ["format.style.h1", "format.style.body"]
+    assert r["commands_in_text"] == ["format.style.h1", "format.style.body",
+                                     *(["view.actual_size"] if mac else [])]
     assert r["ctrl_c_text"] == "Title"
