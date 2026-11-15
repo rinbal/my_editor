@@ -126,10 +126,11 @@ class Failure:
     not happen, from what the server holds, :data:`HELD_WORDS`) and
     ``sentence`` (the likely cause and what to do), untranslated, with
     ``{publication}`` filled in where they name it; ``said``, the list's
-    own words in the sentence's place (already translated: one sentence
-    with their own cause and what to do, lists.py), or "";
-    ``details``, what an upload answered (server names, codes), only
-    behind Details; where trying again goes on (``retry``; None when it
+    or the media library's own words in the sentence's place (already
+    translated: one sentence with their own cause and what to do,
+    lists.py, blossom/errors.py), or "";
+    ``details``, the servers that refused an upload, only behind
+    Details; where trying again goes on (``retry``; None when it
     would not help). ``retry_at``: the clock time before which trying
     again only meets the same limit (a 429's Retry-After, contract 15);
     None when it may at once. ``error``: False for an end that is no

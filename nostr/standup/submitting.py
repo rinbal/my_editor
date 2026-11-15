@@ -85,7 +85,11 @@ class _Uploaded:
 
 @dataclass(frozen=True)
 class _UploadFailed:
+    """``said``: the media library's own sentence for it (translated),
+    or ""; ``details``: the servers that refused the file, or ""."""
+
     said: str
+    details: str = ""
 
 
 @dataclass(frozen=True)
@@ -423,7 +427,7 @@ class Submitting:
         self._stop = self._ports.upload(
             pictures, lambda fraction: self._uploading(token, fraction),
             lambda servers: answer(_Uploaded(dict(servers))),
-            lambda said: answer(_UploadFailed(said)))
+            lambda said, details="": answer(_UploadFailed(said, details)))
 
     def _uploading(self, token: int, fraction: float) -> None:
         if token == self._token and self._progress.step in (Step.UPLOADING, Step.REUPLOADING):
@@ -437,12 +441,14 @@ class Submitting:
             return
         self._seal_and_record()
 
-    def _upload_failed(self, event: _UploadFailed) -> None:
-        # What the servers answered names them: behind Details only.
-        self._fail(words.UPLOAD_FAILED, Step.UPLOADING, details=event.said)
+    def _upload_failed(self, event: _UploadFailed, retry: Step = Step.UPLOADING) -> None:
+        # The media library says why in its own sentence (a server that
+        # refused the picture is not the connection's fault); the servers
+        # it names are behind Details only.
+        self._fail(words.UPLOAD_FAILED, retry, said=event.said, details=event.details)
 
     def _reupload_failed(self, event: _UploadFailed) -> None:
-        self._fail(words.UPLOAD_FAILED, Step.REUPLOADING, details=event.said)
+        self._upload_failed(event, Step.REUPLOADING)
 
     # -- 3. and 4. the revision, and the entry on the list -------------------
 
