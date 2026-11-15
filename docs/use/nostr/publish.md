@@ -43,11 +43,11 @@ Pictures you put into a document stay on this computer until you publish, then g
 
 ## What you published
 
-Choose **Nostr > Published** (**⇧⌘B** / **Ctrl+Shift+B**) to see your notes and articles, newest first, in the Drafts panel's **Published** view. **Load More Notes** at the end brings older notes. **Nostr > Refresh Drafts** (**⌘R** / **F5**) reads the list again. Right-click a row, or press the Menu key, for:
+Choose **Nostr > Published** (**⇧⌘B** / **Ctrl+Shift+B**) to see your notes and articles, newest first, in the Drafts panel's **Published** view. **Load More Notes** at the end brings older notes. **Nostr > Refresh Drafts** (**⌘R** / **F5**), which is named for the view shown, reads the list again. Right-click a row, or press the Menu key, for:
 
 - **Edit Article**: opens it in a tab. Publishing it again replaces it and keeps its address and first date.
-- **Open in Browser**: shows it on njump.me, a page any browser can open.
-- **Copy Link**: copies that address, to share.
+- **Open in Standup Discover** (**Open in njump** for a note), or in the reader you chose under **Settings > Open posts on the web in**: shows it on the web. **Open With** offers the other readers, such as njump, YakiHonne, Primal and noStrudel.
+- **Copy Link**: copies its web address, to share.
 - **Delete from Nostr…**: asks first, then asks the relays to remove it. People and apps that already saved a copy may still have it.
 
 ## If something goes wrong
