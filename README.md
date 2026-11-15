@@ -108,14 +108,14 @@ picture. In short, download the file for your system from the
 
 The app is unsigned, so the first launch shows a one-time security prompt. The
 [install guide](https://rinbal.github.io/my_editor/install/) walks through every
-prompt step by step, and [docs/install.md](docs/install.md) has the same steps
+prompt step by step, and [docs/use/install.md](docs/use/install.md) has the same steps
 as text.
 
 ---
 
 ## Documentation
 
-- [Install guide](https://rinbal.github.io/my_editor/install/) ([as text](docs/install.md)) - downloads, security prompts, troubleshooting
+- [Install guide](https://rinbal.github.io/my_editor/install/) ([as text](docs/use/install.md)) - downloads, security prompts, troubleshooting
 - [Nostr publishing, drafts, media, and RSS import](docs/nostr.md)
 - [Keyboard shortcuts, menus, and save formats](docs/usage.md)
 - [Release process](docs/develop/release-process.md) - for maintainers

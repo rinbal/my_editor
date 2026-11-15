@@ -1,7 +1,7 @@
 # Packaging
 
 One-click installers for MyEditor, built with PyInstaller plus a
-per-OS wrapper. End users get instructions in [`docs/install.md`](../docs/install.md).
+per-OS wrapper. End users get instructions in [`docs/use/install.md`](../docs/use/install.md).
 
 ```
 packaging/
