@@ -34,11 +34,11 @@ from __future__ import annotations
 import sys
 from typing import Iterable, List, Optional, Tuple
 
-from PySide6.QtCore import QEvent, QObject, QSize, Qt, Signal, Slot
+from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, Signal, Slot
 from PySide6.QtGui import QFontMetrics, QIcon
 from PySide6.QtWidgets import (
-    QApplication, QBoxLayout, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QMenu,
-    QPlainTextEdit, QPushButton, QScrollArea, QStyle, QToolButton, QToolTip, QWidget,
+    QApplication, QBoxLayout, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QLineEdit,
+    QMenu, QPlainTextEdit, QPushButton, QScrollArea, QStyle, QToolButton, QToolTip, QWidget,
 )
 
 import announce
@@ -138,7 +138,9 @@ class _FocusInView(QObject):
     when the part is resized under it. QScrollArea scrolls by itself only
     for Tab pressed inside it, so Tab going round from the buttons, and
     the first focus, left the field out of sight in a small window. Of a
-    field taller than the part (the note), its caret is shown."""
+    field taller than the part (the note), its caret is shown; a one-line
+    field goes by its own place, never by its caret, which Qt places in
+    the field only once the field was drawn."""
 
     def __init__(self, scroll: QScrollArea) -> None:
         super().__init__(scroll)
@@ -163,7 +165,19 @@ class _FocusInView(QObject):
                 and page.isAncestorOf(widget):
             # Margins no larger than the part has room for.
             room = self._scroll.viewport().height()
-            self._scroll.ensureWidgetVisible(widget, 0, max(0, min(8, room // 4)))
+            margin = max(0, min(8, room // 4))
+            if isinstance(widget, QLineEdit):
+                # Its caret stands in its middle, but before the field is
+                # drawn for the first time Qt says it stands at its top: in
+                # a part barely taller than a line the caret was then cut.
+                top = widget.mapTo(page, QPoint(0, 0)).y()
+                if widget.height() + 2 * margin > room:     # no room for it whole: its middle
+                    self._scroll.ensureVisible(0, top + widget.height() // 2, 0, room // 2)
+                else:
+                    self._scroll.ensureVisible(0, top + widget.height(), 0, margin)
+                    self._scroll.ensureVisible(0, top, 0, margin)
+            else:
+                self._scroll.ensureWidgetVisible(widget, 0, margin)
             # Never sideways: a sheet has no bar to bring the page back with,
             # so a page wider than its part would stay cut at the leading edge.
             self._scroll.horizontalScrollBar().setValue(0)

@@ -1005,6 +1005,34 @@ def _caret_in_view(sheet, widget):
                                           caret.size()))
 
 
+def test_a_one_line_field_in_a_part_barely_taller_than_a_line_shows_its_caret_whole():
+    """The fork's Linux run: the Title's caret was cut in the smallest
+    window. Before a line edit is drawn for the first time Qt says its
+    caret stands at the field's top, so a part with little room was
+    scrolled to the wrong place; the sizes here come from the field's own
+    font, so they hold on every system."""
+    from PySide6.QtWidgets import QLineEdit, QScrollArea, QVBoxLayout, QWidget
+    from nostr.ui.publish_sheet import scroll_area
+    page = QWidget()
+    column = QVBoxLayout(page)
+    field = QLineEdit()
+    line = field.fontMetrics().height()
+    field.setMinimumHeight(line + 30)               # a field with room around its line
+    column.addSpacing(300)
+    column.addWidget(field)
+    column.addSpacing(300)
+    holder = QWidget()
+    QVBoxLayout(holder).addWidget(scroll_area(page))
+    holder.findChild(QScrollArea).setFixedHeight(line + 10)
+    holder.show()
+    holder.activateWindow()
+    field.setFocus()
+    QApplication.processEvents()
+    assert QApplication.focusWidget() is field
+    assert _caret_in_view(holder, field)
+    holder.close()
+
+
 @pytest.mark.parametrize("make", [article, note])
 def test_the_field_being_typed_in_is_always_in_view(tmp_path, make):
     """Review round 3, low 4: in the smallest window the note box had the
