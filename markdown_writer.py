@@ -54,6 +54,7 @@ from __future__ import annotations
 import hashlib
 import html.entities
 import re
+import unicodedata
 import uuid
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
@@ -67,6 +68,7 @@ from PySide6.QtGui import (
 from doc_walk import (
     BARE_TEXT_PROPERTY,
     BULLET_MARKER,
+    ENTITY_TEXT_PROPERTY,
     ESCAPED_TEXT_PROPERTY,
     LINE_SEPARATOR,
     OBJECT_REPLACEMENT,
@@ -183,6 +185,7 @@ class _Span:
     literal: bool = False      # text to be read back as text (see literal_text)
     escaped: bool = False      # escaped in the file: written escaped again
     bare: bool = False         # a "<" bare in the file's link words: written bare again
+    spelled: str = ""          # the entity the file wrote for it (ENTITY_TEXT_PROPERTY)
 
 
 @dataclass
@@ -239,7 +242,8 @@ def _spans_of(runs, image_target: Optional[ImageTarget]) -> List[_Span]:
                            strike=fmt.fontStrikeOut(), code=_is_code(fmt),
                            href=href or "", literal=fmt.boolProperty(TYPED_TEXT_PROPERTY),
                            escaped=fmt.boolProperty(ESCAPED_TEXT_PROPERTY),
-                           bare=fmt.boolProperty(BARE_TEXT_PROPERTY)))
+                           bare=fmt.boolProperty(BARE_TEXT_PROPERTY),
+                           spelled=str(fmt.property(ENTITY_TEXT_PROPERTY) or "")))
     return _merged(spans)
 
 
@@ -269,9 +273,9 @@ def _merged(spans: List[_Span]) -> List[_Span]:
     for span in spans:
         if (out and not span.raw and not out[-1].raw
                 and (out[-1].bold, out[-1].italic, out[-1].strike, out[-1].code, out[-1].href,
-                     out[-1].literal, out[-1].escaped, out[-1].bare)
+                     out[-1].literal, out[-1].escaped, out[-1].bare, out[-1].spelled)
                 == (span.bold, span.italic, span.strike, span.code, span.href, span.literal,
-                    span.escaped, span.bare)):
+                    span.escaped, span.bare, span.spelled)):
             out[-1].text += span.text
         else:
             out.append(span)
@@ -757,7 +761,13 @@ def _words(span: _Span, label: bool) -> str:
     and, in a link's label, a bracket or a "<" (read as HTML) escaped,
     which would end or change the link when the file is read again; a
     "<" the file wrote bare there bare again (BARE_TEXT_PROPERTY: it is
-    read as the words it is), elsewhere escaped."""
+    read as the words it is), elsewhere escaped; characters nobody sees
+    as the entity the file wrote for them, while they are what it says."""
+    if span.spelled:
+        made = _entity_text(span.spelled)
+        times = len(span.text) // len(made)
+        if span.text == made * times:
+            return span.spelled * times
     if span.bare:
         return span.text if label else span.text.replace("<", "\\<")
     if span.escaped:
@@ -1442,8 +1452,9 @@ def _keep_escaped(doc: QTextDocument, mark: str, placed: int) -> bool:
 # the "&" is, so the emphasis beside it reads as before; once read, the
 # mark becomes what CommonMark reads the entity as (_entity_text), in the
 # format the mark had, and a punctuation mark so made is marked escaped,
-# as the file did not write it bare ("&lt;" stays words). A file is read
-# with the first mark it holds nowhere (_free_mark).
+# as the file did not write it bare ("&lt;" stays words), characters
+# nobody sees with the entity (doc_walk.ENTITY_TEXT_PROPERTY). A file is
+# read with the first mark it holds nowhere (_free_mark).
 _ENTITY_MARKS = ("\u2e35", "\u2e36", "\u2e37", "\u2e38")
 # What an entity can make that the editor holds as a new paragraph or a
 # line break, not as a character in the line ("&#10;").
@@ -1483,6 +1494,14 @@ def _entity_text(entity: str) -> str:
     return chr(code)
 
 
+def _unseen(text: str) -> bool:
+    """Whether ``text`` (what an entity makes) is only characters nobody
+    sees: spaces of any width, a tab, a zero-width space, a soft hyphen,
+    a direction mark. A reader may drop them where a line starts, and in
+    the file they would not be seen."""
+    return all(char.isspace() or unicodedata.category(char) in ("Cc", "Cf") for char in text)
+
+
 def _keep_entities(doc: QTextDocument, mark: str, spelled: Sequence[str]) -> Tuple[bool, bool]:
     """Each ``mark`` _marked_entities set made what its entity says
     (``spelled``, in their order), in the mark's format: whether the marks
@@ -1495,9 +1514,11 @@ def _keep_entities(doc: QTextDocument, mark: str, spelled: Sequence[str]) -> Tup
     in_line = True
     for (position, fmt), entity in zip(reversed(taken), reversed(spelled)):
         text = _entity_text(entity)
+        character = QTextCharFormat(fmt)
         if any(end in text for end in _LINE_ENDS):
             in_line, text = False, " "
-        character = QTextCharFormat(fmt)
+        elif _unseen(text):
+            character.setProperty(ENTITY_TEXT_PROPERTY, entity)
         if text in ESCAPABLE:
             character.setProperty(ESCAPED_TEXT_PROPERTY, True)
         cursor = QTextCursor(doc)

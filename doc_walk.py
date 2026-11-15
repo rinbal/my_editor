@@ -65,9 +65,15 @@ ESCAPED_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B4
 # photo_caption.CaptionRun.bare carries it in a caption.
 BARE_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B5
 
+# The entity a file wrote for characters nobody sees ("&nbsp;", "&#9;",
+# "&ThickSpace;", "&ZeroWidthSpace;"): while the characters are still what
+# it says, it is written as the file had it, not as characters a reader
+# may drop (markdown_writer's _keep_entities).
+ENTITY_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B6
+
 # The marks above belong to the characters that carry them alone.
 READ_MARKS = (SOFT_BREAK_PROPERTY, ESCAPED_TEXT_PROPERTY, TYPED_TEXT_PROPERTY,
-              BARE_TEXT_PROPERTY)
+              BARE_TEXT_PROPERTY, ENTITY_TEXT_PROPERTY)
 
 
 def without_read_marks(fmt: QTextCharFormat) -> QTextCharFormat:

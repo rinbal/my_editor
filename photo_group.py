@@ -198,10 +198,11 @@ class Unit:
             # text json.dumps writes, without asking it.
             fmt.setProperty(UNIT, f"[{self.number},null,null,[]]")
             return fmt
+        # (A run's entity, when it has one, after its address.)
         runs = [[run.text, (_BOLD * run.bold | _ITALIC * run.italic | _STRIKE * run.strike
                             | _CODE * run.code | _SOFT_RUN * run.soft | _TYPED * run.typed
                             | _ESCAPED * run.escaped | _BARE * run.bare),
-                 run.href]
+                 run.href] + ([run.spelled] if run.spelled else [])
                 for run in self.caption]
         fmt.setProperty(UNIT, json.dumps([self.number, self.join, self.caption_join, runs],
                                          ensure_ascii=False, separators=(",", ":")))
@@ -230,8 +231,9 @@ def _unit_of_mark(fmt: QTextCharFormat) -> Unit:
         caption = tuple(CaptionRun(text, bool(flags & _BOLD), bool(flags & _ITALIC),
                                    bool(flags & _STRIKE), bool(flags & _CODE), href,
                                    bool(flags & _SOFT_RUN), bool(flags & _TYPED),
-                                   bool(flags & _ESCAPED), bool(flags & _BARE))
-                        for text, flags, href in runs)
+                                   bool(flags & _ESCAPED), bool(flags & _BARE),
+                                   spelled[0] if spelled else "")
+                        for text, flags, href, *spelled in runs)
         if len(_parsed) >= _PARSED_KEPT:
             _parsed.clear()
         found = _parsed[raw] = (number, join, caption_join, caption)

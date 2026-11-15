@@ -219,7 +219,7 @@ def test_a_tag_out_of_its_link_is_written_as_words():
     ("[x &amp; y](u)\n", "[x \\& y](u)\n"),
     ("*Fish &amp; Chips* z\n", "*Fish \\& Chips* z\n"),
     ("[x &amp; y][]\n\n[x &amp; y]: /u\n", "[x \\& y](/u)\n"),
-    ("a&#32;b\n", "a b\n"),
+    ("a&#32;b\n", "a&#32;b\n"),
 ])
 def test_an_entity_keeps_the_format_of_its_words(source, written):
     # Qt's reader set the format back after an entity: "[x &amp; y](u)"
@@ -229,6 +229,16 @@ def test_an_entity_keeps_the_format_of_its_words(source, written):
     doc = QTextDocument()
     read_markdown(doc, source)
     assert document_to_markdown(doc, _image_as_read) == written
+
+
+@pytest.mark.parametrize("source", ["&ThickSpace;x\n", "a&nbsp;&nbsp;b\n",
+                                    "![a](p.png)\n*x&nbsp;y*\n\n![b](q.png)\n"])
+def test_an_entity_for_characters_nobody_sees_is_written_as_it_was(source):
+    # Written as its characters, a reader dropped them where a line starts,
+    # and nobody saw them in the file.
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
 
 
 @pytest.mark.parametrize("source, written", [
