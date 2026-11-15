@@ -44,6 +44,7 @@ import media_badge
 import media_files
 import paste
 import photo_group
+import photo_group_actions
 import photo_group_cut
 import photo_group_drawing
 import photo_group_edit
@@ -1011,9 +1012,10 @@ class HtmlEditor(QTextEdit):
         """Keep the marks of what was read from the file on it, off what
         is typed at the caret after it (doc_walk.READ_MARKS): a soft line
         break's, an escaped character's, a caption's typed words' once the
-        caption is text of its own. Over a selection, which a format set
-        here would change, the typing takes them off (_clear_to_type)."""
-        if (any(fmt.hasProperty(mark) for mark in READ_MARKS)
+        caption is text of its own; and a picture's own format, which is
+        the picture. Over a selection, which a format set here would
+        change, the typing takes them off (_clear_to_type)."""
+        if ((fmt.isImageFormat() or any(fmt.hasProperty(mark) for mark in READ_MARKS))
                 and not self.textCursor().hasSelection()):
             self.setCurrentCharFormat(without_read_marks(fmt))
 
@@ -1927,6 +1929,27 @@ class HtmlEditor(QTextEdit):
             return True
         return False
 
+    def _keep_picture_alone(self, e) -> None:
+        """A picture that stands alone in its paragraph stays alone, and
+        with it its caption, its chips and its commands
+        (photo_group_actions.alone), as a photo group and audio or video
+        do: what is typed with the caret beside it goes into a new
+        paragraph under it, above it with the caret before it, as one run
+        of typing with the words. (The character is typed there.)"""
+        cursor = self.textCursor()
+        block = cursor.block()
+        if (cursor.hasSelection() or block.text() != "\ufffc" or not e.text().isprintable()
+                or e.modifiers() & (Qt.KeyboardModifier.ControlModifier
+                                    | Qt.KeyboardModifier.MetaModifier)
+                or not self._holds_structure()
+                or photo_group_actions.alone(self.document(), block) is None):
+            return
+        with self._typing(TYPED, cursor):
+            if cursor.atBlockStart():
+                _open_paragraph_above(cursor)
+            else:
+                cursor.insertBlock(QTextBlockFormat(), QTextCharFormat())
+
     def _keep_groups_whole(self, e) -> bool:
         """A photo group holds pictures and nothing else. What is typed
         with the caret among its pictures (or Return there) goes into a
@@ -2602,6 +2625,7 @@ class HtmlEditor(QTextEdit):
         if self._keep_media_apart(e) or self._keep_groups_whole(e):
             self.ensureCursorVisible()
             return
+        self._keep_picture_alone(e)
 
         if e.text() and e.text().isprintable():
             self._step_out_of_mention()

@@ -27,7 +27,7 @@ from PySide6.QtGui import QFont, QTextBlockFormat, QTextCharFormat, QTextCursor,
 import media_files
 import photo_caption
 from doc_walk import (ESCAPED_TEXT_PROPERTY, LINE_SEPARATOR, OBJECT_REPLACEMENT,
-                      SOFT_BREAK_PROPERTY, TYPED_TEXT_PROPERTY, doc_length)
+                      SOFT_BREAK_PROPERTY, TYPED_TEXT_PROPERTY, doc_length, picture_pieces)
 from photo_group import (
     GROUP,
     SOFT,
@@ -55,8 +55,9 @@ def _pieces(block) -> List[Tuple[int, str, QTextCharFormat]]:
         if not fragment.isValid():
             continue
         text, fmt, position = fragment.text(), fragment.charFormat(), fragment.position()
-        if len(text) > 1 and OBJECT_REPLACEMENT in text and fmt.isObjectFormat():
-            out.extend((position + offset, char, fmt) for offset, char in enumerate(text))
+        if len(text) > 1 and OBJECT_REPLACEMENT in text and fmt.isImageFormat():
+            out.extend((position + offset, piece, piece_format)
+                       for offset, piece, piece_format in picture_pieces(text, fmt))
         else:
             out.append((position, text, fmt))
     return out
