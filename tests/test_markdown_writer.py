@@ -31,14 +31,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtGui import (  # noqa: E402
-    QFont, QTextCharFormat, QTextCursor, QTextDocument, QTextImageFormat,
+    QFont, QTextCharFormat, QTextCursor, QTextDocument, QTextFormat, QTextImageFormat,
 )
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from doc_walk import iter_block_runs  # noqa: E402
 from markdown_writer import (  # noqa: E402
-    READ_FEATURES, document_to, document_to_markdown, document_to_note_text, holds_faithfully,
-    read_markdown,
+    READ_FEATURES, _image_as_read, document_to, document_to_markdown, document_to_note_text,
+    holds_faithfully, read_markdown,
 )
 
 
@@ -144,6 +144,31 @@ def test_an_empty_item_under_an_items_words_reads_back_as_an_item():
     assert [(block.text(), block.textList().format().indent())
             for block in (again.findBlockByNumber(0), again.findBlockByNumber(1))] == [
         ("a", 1), ("", 2)]
+
+
+LINKED_PICTURES = [
+    "[![badge](https://x.example/b.png)](https://x.example)\n",
+    "See [![a](p.png)](https://u.example) here.\n",
+    "[see ![a](p.png) this](https://u.example)\n",
+    "[![a](p.png)](https://a.example)\n*Caption*\n\n![b](q.png)\n",   # in a photo group
+]
+
+
+@pytest.mark.parametrize("source", LINKED_PICTURES)
+def test_a_linked_picture_comes_back_the_same(source):
+    # Qt's reader leaves the link around a picture out.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_a_linked_picture_shows_with_its_link_and_description():
+    doc = QTextDocument()
+    read_markdown(doc, "[![badge](https://x.example/b.png)](https://x.example)\n")
+    picture = doc.begin().begin().fragment().charFormat().toImageFormat()
+    assert (picture.name(), picture.property(QTextFormat.Property.ImageAltText),
+            picture.anchorHref()) == ("https://x.example/b.png", "badge", "https://x.example")
 
 
 def test_a_dash_under_words_stays_a_heading():
@@ -528,7 +553,6 @@ def test_markdown_the_editor_can_hold(source):
     "Footnote[^1].\n\n[^1]: The note,\n\n    and its second paragraph.\n",
     "<div>raw</div>\n",
     'A [link](https://x.example "with a title").\n',
-    "[![badge](https://x.example/b.png)](https://x.example)\n",
     "> # a heading in a quote\n",
     "- item\n\n  second paragraph of the item\n- two\n",
     # Soft line breaks the editor cannot hold as lines: in an indented

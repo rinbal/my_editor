@@ -511,6 +511,48 @@ def pictures(markdown: str) -> List[Tuple[int, int, int]]:
     return found
 
 
+def bracketed_pictures(markdown: str) -> List[int]:
+    """Where each picture of ``markdown`` that stands inside brackets
+    starts (its "!"), outside code: one the words of a link may hold
+    ("[![a](p.png)](u)", "[see ![a](p.png)](u)")."""
+    if markdown.count("[") == markdown.count("!["):
+        return []                       # no bracket but the pictures' own
+    found = pictures(markdown)
+    openers = {start - 1 for start, _end, _after in found}
+    blocked = _Blocked(_code_ranges(markdown))
+    scanned = Found()
+    closes: List[Tuple[int, int]] = []
+    index = 0
+    while True:
+        nearest = _STARTS_INLINE_OR_LINK.search(markdown, index)
+        if nearest is None:
+            break
+        index = nearest.start()
+        end = blocked.end(index)
+        if end is not None:
+            index = end + 1
+            continue
+        if markdown[index] == "[" and index not in openers:
+            close = label_end(markdown, index, scanned)
+            if close is not None:
+                closes.append((index, close))
+            index += 1
+            continue
+        skipped = skip_inline(markdown, index, scanned)
+        index = index + 1 if skipped is None else skipped
+    # Brackets nest: a pair that opens before a picture and closes after
+    # it holds it.
+    out: List[int] = []
+    furthest, at = -1, 0
+    for start, end, _after in found:
+        while at < len(closes) and closes[at][0] < start:
+            furthest = max(furthest, closes[at][1])
+            at += 1
+        if furthest > end:
+            out.append(start - 2)
+    return out
+
+
 def lossy_definition(markdown: str) -> bool:
     """Whether a link reference definition Qt's reader does not keep as
     written stands in ``markdown``, outside code: one shown in a fence or

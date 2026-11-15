@@ -78,9 +78,9 @@ from doc_walk import (
 )
 import photo_group
 import photo_group_find
-from markdown_scan import (EMPTY_ITEM_LINE, ESCAPABLE, FENCE_LINE, LIST_LINE, descriptions,
-                           emphasized_code, empty_items, escapes, lossy_definition, pictures,
-                           titled_link)
+from markdown_scan import (EMPTY_ITEM_LINE, ESCAPABLE, FENCE_LINE, LIST_LINE,
+                           bracketed_pictures, descriptions, emphasized_code, empty_items,
+                           escapes, lossy_definition, pictures, titled_link)
 from rich_text import normalize_after_markdown_load
 
 ImageTarget = Callable[[object], Optional[str]]
@@ -218,7 +218,12 @@ def _spans_of(runs, image_target: Optional[ImageTarget]) -> List[_Span]:
                 continue
             target = image_target(fmt.toImageFormat())
             if target:
-                spans.append(_Span(text=_as_spelled(fmt, target), raw=True))
+                # A picture keeps the link on it ("[![a](p.png)](u)"); an
+                # address standing bare (audio, video, a note's picture)
+                # is the reader's to show, and stays bare.
+                linked = fmt.isAnchor() and target.startswith("![")
+                spans.append(_Span(text=_as_spelled(fmt, target), raw=True,
+                                   href=fmt.anchorHref() if linked else ""))
             continue
         text = text.replace(OBJECT_REPLACEMENT, "")
         if not text:
@@ -632,19 +637,21 @@ def _inline_markdown(spans: List[_Span], hard_break: str = "  \n",
     i = 0
     while i < len(spans):
         span = spans[i]
-        if span.raw:
+        if span.raw and not span.href:
             out.append(span.text)
             i += 1
             continue
         if span.href:
-            # One link around every neighbour that points at the same place.
+            # One link around every neighbour that points at the same
+            # place, a picture among them too.
             first = i
             group = []
-            while i < len(spans) and spans[i].href == span.href and not spans[i].raw:
+            while i < len(spans) and spans[i].href == span.href:
                 group.append(spans[i])
                 i += 1
             following = spans[i] if i < len(spans) else None
-            if _is_nostr_reference(span.href) and not span.literal:
+            pictured = any(s.raw for s in group)
+            if _is_nostr_reference(span.href) and not span.literal and not pictured:
                 # Bare, for readers, in the styles all its words have; a
                 # copy keeps the words it shows.
                 bare = _styled([_Span(text=span.href, bold=all(s.bold for s in group),
@@ -654,7 +661,7 @@ def _inline_markdown(spans: List[_Span], hard_break: str = "  \n",
                 continue
             words = "".join(s.text for s in group).replace(LINE_SEPARATOR, " ").replace(
                 _SOFT, " ")
-            address = _own_address(words.strip(), span.href)
+            address = "" if pictured else _own_address(words.strip(), span.href)
             if address and not any(s.bold or s.italic or s.strike for s in group):
                 written = _autolink(address, span.href, "".join(out), following)
                 if seen is not None:
@@ -726,10 +733,12 @@ def _style(span: _Span) -> Tuple[bool, bool, bool, bool]:
 
 
 def _style_runs(spans: List[_Span]) -> List[List[_Span]]:
-    """``spans`` cut where the style changes (_style)."""
+    """``spans`` cut where the style changes (_style), a picture a run of
+    its own."""
     runs: List[List[_Span]] = []
     for span in spans:
-        if runs and _style(runs[-1][0]) == _style(span):
+        if runs and not span.raw and not runs[-1][0].raw \
+                and _style(runs[-1][0]) == _style(span):
             runs[-1].append(span)
         else:
             runs.append([span])
@@ -754,6 +763,8 @@ def _words(span: _Span, label: bool) -> str:
 def _styled(spans: List[_Span], label: bool = False) -> str:
     """Neighbouring ``spans`` in one style as Markdown (_style_runs)."""
     first = spans[0]
+    if first.raw:
+        return "".join(span.text for span in spans)
     if first.code:
         parts = "".join(span.text for span in spans).split(LINE_SEPARATOR)
         return LINE_SEPARATOR.join(_code_span(p) for p in parts if p)
@@ -915,7 +926,7 @@ def _inline_note(spans: List[_Span]) -> str:
     i = 0
     while i < len(spans):
         span = spans[i]
-        if span.href:
+        if span.href and not span.raw:
             group = []
             while i < len(spans) and spans[i].href == span.href and not spans[i].raw:
                 group.append(spans[i].text)
@@ -1002,10 +1013,10 @@ def has_local_only_formatting(doc) -> bool:
 # editor keeps footnotes as their text, one paragraph each), a tab where a
 # line starts (lists and code are indented with spaces), code inside a
 # list item (it moves out of the item), an escaped footnote mark, raw
-# HTML, a link around an image, a heading inside a quote, a paragraph
-# continued inside a list item, and lines that wrap inside a paragraph (a
-# draft saved as plain text by an earlier version). Also (below): a tab
-# inside fenced code, a column's alignment, emphasis in a table's header
+# HTML, a heading inside a quote, a paragraph continued inside a list
+# item, and lines that wrap inside a paragraph (a draft saved as plain
+# text by an earlier version). Also (below): a tab inside fenced code, a
+# column's alignment, emphasis in a table's header
 # row, a link title (markdown_scan.titled_link), a link reference
 # definition in a quote or a list item or with a title
 # (markdown_scan.lossy_definition), emphasis around nothing but code
@@ -1020,7 +1031,6 @@ _LOSSY = [
     # (one with a space); a "<" that opens no such address is HTML
     re.compile(r"(?<!\\)(?<!\]\()<(?:[A-Za-z][\w-]*[\s/>]|/[A-Za-z]|!--)"),
     re.compile(r"\]\(<(?![^<>\n]*>\))"),
-    re.compile(r"\[!\["),                                  # image inside a link
     re.compile(r"^\s*>\s*#", re.MULTILINE),               # heading in a quote
 ]
 _BLOCK_START = re.compile(r"^\s*(?:[-*+]\s|\d+[.)]\s|>|#|\||```|~~~|    |\t)")
@@ -1331,12 +1341,20 @@ def _keep_escaped(doc: QTextDocument, mark: str, placed: int) -> bool:
 # What Qt's reader leaves out, kept by a mark                                  #
 # --------------------------------------------------------------------------- #
 #
-# Qt's reader leaves a list item with nothing in it out ("- One\n-\n" was
-# one item, and saved so). For the time it reads the Markdown, a mark
-# stands in each such item (markdown_scan.empty_items), and once read the
-# item is emptied again. The mark is a Po character no HTML entity names,
-# none of _ESCAPE_MARKS; a file is read with the first one it holds
-# nowhere (_free_mark).
+# Qt's reader leaves out:
+#
+# - A list item with nothing in it ("- One\n-\n" was one item, and saved
+#   so). A mark stands in each such item (markdown_scan.empty_items), and
+#   once read the item is emptied again.
+# - The link around a picture ("[![a](p.png)](u)": the picture, without
+#   the link). A mark stands before each picture in brackets
+#   (markdown_scan.bracketed_pictures): it is text, so it gets the link
+#   the words around it get, and once read the picture gets it.
+#
+# For the time Qt reads the Markdown the mark is in it: a Po character no
+# HTML entity names, none of _ESCAPE_MARKS, punctuation as the "!" of the
+# picture is, so emphasis beside it reads as before. A file is read with
+# the first one it holds nowhere (_free_mark).
 _KEEP_MARKS = ("\u2e31", "\u2e33", "\u2e34", "\u2e32")
 
 
@@ -1346,7 +1364,8 @@ def _marked_keeps(markdown: str) -> Tuple[str, Optional[str], bool]:
     whether something is left out all the same: an empty list item where
     a word would change the lists, or no free mark."""
     items, lost = empty_items(markdown)
-    places = [(at, " ", "") for at in items]
+    places = sorted([(at, " ", "") for at in items]
+                    + [(at, "", "") for at in bracketed_pictures(markdown)])
     mark = _free_mark(markdown, _KEEP_MARKS) if places else None
     if mark is None:
         return markdown, None, lost or bool(places)
@@ -1355,13 +1374,25 @@ def _marked_keeps(markdown: str) -> Tuple[str, Optional[str], bool]:
 
 def _kept_by_marks(doc: QTextDocument, mark: str, placed: int) -> bool:
     """Each ``mark`` _marked_keeps set taken out again, and what it kept
-    in its place: an empty list item. False when fewer than the
-    ``placed`` marks were in the text, a format holds one, or one stood
-    anywhere else (the lists were not read as the marks expected)."""
+    given to its place: to the picture after it, the link the mark was
+    in; else an empty list item. False when fewer than the ``placed``
+    marks were in the text, a format holds one, or one stood anywhere
+    else (the Markdown was not read as the marks expected)."""
     taken = _take_marks(doc, mark)
     if len(taken) != placed or _in_formats(doc, mark):
         return False
-    for position, _fmt in taken:
+    for position, fmt in taken:
+        if doc.characterAt(position) == OBJECT_REPLACEMENT:
+            picture = QTextCursor(doc)
+            picture.setPosition(position)
+            picture.setPosition(position + 1, QTextCursor.MoveMode.KeepAnchor)
+            if picture.charFormat().isImageFormat():
+                if fmt.isAnchor() and fmt.anchorHref():
+                    link = QTextCharFormat()
+                    link.setAnchor(True)
+                    link.setAnchorHref(fmt.anchorHref())
+                    picture.mergeCharFormat(link)
+                continue
         block = doc.findBlock(position)
         if block.textList() is None or block.length() != 1:
             return False
