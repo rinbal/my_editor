@@ -339,6 +339,21 @@ def test_composed_text_among_the_pictures_goes_under_the_group():
     ed.close()
 
 
+def test_escape_types_nothing_in_the_words_or_on_a_selected_picture():
+    """The Escape key's event carries the character U+001B: it is no text.
+    It replaced a selected picture and was saved in the words."""
+    lone = _text("Before.", ONE, "After.")
+    for markdown, selected in ((FOUR_PICTURES, 8 + 1), (lone, 8)):
+        ed = _editor(markdown)
+        ed.photos.select(selected)
+        QTest.keyClick(ed, Qt.Key.Key_Escape)
+        assert ed.photos.current() is not None     # the picture, still selected
+        _caret(ed, 3)                              # in "Before."
+        QTest.keyClick(ed, Qt.Key.Key_Escape)
+        assert _markdown(ed) == markdown and not ed.document().isModified()
+        ed.close()
+
+
 def test_typing_over_a_selection_that_ends_in_a_group_keeps_the_rest_a_group():
     ed = _editor()
     group = _group(ed)

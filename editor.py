@@ -10,6 +10,7 @@ import re
 import sys
 import functools
 import time
+import unicodedata
 from contextlib import contextmanager
 import dataclasses
 from dataclasses import dataclass
@@ -219,6 +220,18 @@ def _qt_types(e) -> bool:
     return e.modifiers() not in (Qt.KeyboardModifier.ControlModifier,
                                  Qt.KeyboardModifier.ControlModifier
                                  | Qt.KeyboardModifier.ShiftModifier)
+
+
+def _typed(e) -> str:
+    """The text the key ``e`` types; "" for a key that types nothing. A
+    key's event carries a character for keys that type none: Escape
+    U+001B on every platform, Shift-Tab U+0019 on a Mac (QKeyEvent.text).
+    As in Qt's own text field (QInputControl::isAcceptableInput), no
+    control character is text, but a Tab."""
+    text = e.text()
+    if text and text != "\t" and unicodedata.category(text[0]) == "Cc":
+        return ""
+    return text
 
 
 # Cut, Copy and Paste by their keys with Command (Control off a Mac), and
@@ -2729,10 +2742,11 @@ class HtmlEditor(QTextEdit):
 
         # A typed character: in the run of typing going on, one step of
         # Undo with it (_typing).
-        if e.text() and not e.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier):
+        typed = _typed(e)
+        if typed and not e.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier):
             with self._typing(TYPED) as cursor:
-                cursor.insertText(e.text(), self._clear_to_type(cursor))
-            self._after_typed(e.text())
+                cursor.insertText(typed, self._clear_to_type(cursor))
+            self._after_typed(typed)
             self.ensureCursorVisible()
             return
 
