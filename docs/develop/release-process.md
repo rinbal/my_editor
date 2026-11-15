@@ -80,9 +80,12 @@ The Community and Download sections are always exactly those links, verbatim.
 Style: valuable and concise. No filler, no padding. This is a GitHub release
 message, not documentation.
 
+5. In `docs/releases/README.md`, give v{VERSION} today's date in the Released
+   column (and add its row, newest first, if it is not there yet).
+
 ### Step 3. Commit everything
 Review git status. Commit all code intended for this release with clear messages,
-leaving out build junk and scratch files. Then commit `docs/releases/v{VERSION}.md`.
+leaving out build junk and scratch files. Then commit `docs/releases/v{VERSION}.md` and `docs/releases/README.md`.
 The working tree must be clean before the next step. Do not bump APP_VERSION by
 hand, the release script does that.
 
