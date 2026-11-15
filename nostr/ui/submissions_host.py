@@ -565,7 +565,7 @@ class SubmissionsHost(QObject):
             confirm=lambda confirms, done: following.confirm(
                 sid, confirms=confirms, revision_hash=version.revision_hash,
                 split_rumor_id=accepted.split_rumor_id, on_done=done),
-            is_dark=ports.is_dark(), parent=ports.window())
+            signer_app=following.signer_app, is_dark=ports.is_dark(), parent=ports.window())
         sheet.ask_requested.connect(lambda words: self.ask(sid, words))
         sheet.edit_profile_requested.connect(ports.edit_profile)
         ports.keep(sheet)

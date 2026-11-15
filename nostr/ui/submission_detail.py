@@ -68,6 +68,7 @@ from .flow_layout import FlowLayout
 from .post_list import symbol_pixmap
 from .publish_sheet import grow_with_text
 from .standup_publications import publication_logo
+from .standup_waits import signer_wait_words
 from .submission_cover import cover_pixmap
 from .eliding_label import ElidingLabel
 from .submission_thread import ThreadView, breakable, discard, face, more_about_button
@@ -429,11 +430,29 @@ class SubmissionDetail(QWidget):
     def say(self, text: str) -> None:
         """One line in place, under the sentence (an action that could
         not go on says why there), until the next action."""
-        self._line = text
         self._reminding.clear()                 # what was asked for is answered
+        self._show_line(text)
+
+    def _show_line(self, text: str) -> None:
+        self._line = text
         self.note.setText(escape(breakable(text)))
         self.note.show()
         announce.announce(self.note, text)
+
+    def _signer_asked(self) -> None:
+        """An action of the person's goes to their signer app now (a
+        reminder, withdrawing, discarding): the one line in place says to
+        confirm it there, until the action's answer takes its place. With
+        the key kept on this computer there is nothing to confirm."""
+        if self._following is not None and self._following.signer_app:
+            self._show_line(signer_wait_words())
+
+    def _signer_answered(self) -> None:
+        """The action is answered: the line that said to confirm it goes
+        (an answer with words of its own has replaced it already)."""
+        if self._line and self._line == signer_wait_words():
+            self._line = ""
+            self.refresh()
 
     def _on_changed(self, sid: str) -> None:
         if sid == self._sid:
@@ -682,6 +701,7 @@ class SubmissionDetail(QWidget):
         if self._line:
             self._line = ""
             self.note.hide()
+        self._signer_asked()                    # before it is asked: its answer comes after
         self.remind_requested.emit(self._sid, pubkey)
 
     def _show_readers(self, detail) -> None:
@@ -776,9 +796,13 @@ class SubmissionDetail(QWidget):
 
         def done(stored: bool) -> None:
             self.second.setEnabled(True)
-            if not stored and self._following is following:
+            if self._following is not following:
+                return
+            self._signer_answered()
+            if not stored:
                 self.say_not_discarded()
 
+        self._signer_asked()
         following.discard(self._sid, done)
 
     def say_not_discarded(self) -> None:
@@ -853,8 +877,15 @@ class SubmissionDetail(QWidget):
             self.more_button.setFocus()
             return
 
+        def withdraw() -> None:
+            self._signer_asked()
+            following.withdraw(sid, answered)
+
         def answered(error) -> None:
-            if error is None or self._following is not following:
+            if self._following is not following:
+                return
+            self._signer_answered()
+            if error is None:
                 return
             if error.code in (Code.INVALID_TRANSITION, Code.CONFLICT):
                 # The Redaktion decided meanwhile: where it stands now is
@@ -866,9 +897,9 @@ class SubmissionDetail(QWidget):
             cause = _WITHDRAW_CAUSES.get(error.code) or cause_words(error.code)
             if ask_try_again(self, title=_(NOT_WITHDRAWN), message=_(cause),
                              is_dark=self._is_dark, nostr=True):
-                following.withdraw(sid, answered)
+                withdraw()
 
-        following.withdraw(sid, answered)
+        withdraw()
 
     # -- appearance ------------------------------------------------------------------
 

@@ -772,6 +772,50 @@ def test_each_person_still_to_confirm_has_their_own_reminder_until_reminded_toda
     assert [b.text() for b in detail.reminder_buttons()] == ["Remind Paul"]
 
 
+def test_an_action_that_waits_in_the_signer_app_says_so_in_place_until_it_is_answered(
+        window, monkeypatch):
+    # A reminder goes to the signer app first: the one line in place says
+    # to confirm it there, and the answer takes its place. With the key
+    # kept on this computer nothing is said of a signer app. The sheet
+    # for one's share says the same while its confirmation waits there.
+    from nostr.ui.standup_confirm_sheet import ConfirmSheet
+    world, eva = window.world, pk("recipient")
+    monkeypatch.setitem(NAMES, eva, "Eva")
+    seed = world.account()
+    prepared, entry = world.submit(seed, d="warten", title="Warten", participants=(OTHER, eva))
+    world.record(entry.sid).signer = "publication"
+    world.decide(prepared, "accept", split=[
+        {"pubkey": ME, "weight": 50, "role": "writer"},
+        {"pubkey": OTHER, "weight": 25, "role": "contributor"},
+        {"pubkey": eva, "weight": 25, "role": "contributor"}])
+    world.confirm(seed, prepared)
+    window.follow()
+    detail = opened(window, entry)
+    waiting = "Waiting for your signer app. Confirm the request there."
+    profile = window.accounts[ME].profile
+    profile.signer = "remote"
+    detail.reminder_buttons()[0].click()
+    assert detail.note.text() == waiting
+    world.settle()
+    assert detail.note.text() == "Paul was reminded."
+    profile.signer = "local"
+    detail.reminder_buttons()[0].click()
+    assert detail.note.isHidden()
+    world.settle()
+    assert detail.note.text() == "Eva was reminded."
+    said = []
+    for signer_app in (True, False):
+        sheet = ConfirmSheet(
+            role="writer", publication="Magazin", number=1,
+            shares=((ME, 70, "writer"), (OTHER, 30, "contributor")), me=ME,
+            name_of=lambda p: NAMES.get(p, ""),
+            zap_address=lambda _pubkey, answer: answer("jana@getalby.com"),
+            confirm=lambda confirms, done: None, signer_app=signer_app, is_dark=False)
+        sheet.confirm_button.click()
+        said.append(sheet.status.text())
+    assert said == [waiting, "Confirming…"]
+
+
 def test_the_named_reminders_and_the_version_card_wrap_and_read_whole_in_a_narrow_pane(
         window, monkeypatch):
     # RG-M4-c 4: three people still to confirm, in German, at 260, 320 and
