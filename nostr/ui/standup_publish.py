@@ -426,8 +426,10 @@ class AcceptedPublish(QObject):
         if self._stopped:
             return
         name = f"{entry['plain_sha256']}.{publishing.EXTENSIONS[entry['mime']]}"
-        self._waiting[name] = (lambda media: self._up(entry, media, new=new), lambda: self._fail(
-            _(PICTURE_NOT_UP)))
+        # Not up: the media library's own sentence says why and what to do
+        # (its server's refusal, the signer app, the connection).
+        self._waiting[name] = (lambda media: self._up(entry, media, new=new),
+                               lambda why: self._fail(why or _(PICTURE_NOT_UP)))
         self._ports.store.upload_bytes(plain, name=name, mime_type=entry["mime"])
 
     def _uploaded(self, name: str, media) -> None:
@@ -435,10 +437,10 @@ class AcceptedPublish(QObject):
         if waiting is not None and not self._stopped:
             waiting[0](media)
 
-    def _not_uploaded(self, name: str, _reason: str) -> None:
+    def _not_uploaded(self, name: str, reason: str) -> None:
         waiting = self._waiting.pop(name, None)
         if waiting is not None and not self._stopped:
-            waiting[1]()
+            waiting[1](reason)
 
     def _up(self, entry: Mapping, media, *, new: bool) -> None:
         servers = tuple(u.get("server", "") for u in getattr(media, "urls", ()) if u.get("server"))

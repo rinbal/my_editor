@@ -133,6 +133,11 @@ def test_a_picture_the_correction_adds_gets_its_tag_and_one_it_removes_loses_it(
     assert change_words([("title", "T"), ("pictures", "")]) == "Also changed: title, pictures."
 
 
+# What the media library says of an upload its server refused (one of
+# its own sentences, blossom/errors.py).
+REFUSED = "Your media server asks for payment: choose another one in Media Servers."
+
+
 class FakeStore(QObject):
     upload_finished = Signal(str, object)
     upload_failed = Signal(str, str)
@@ -155,7 +160,7 @@ class FakeStore(QObject):
         self.uploaded.append((body, name, mime_type))
         sha = hashlib.sha256(body).hexdigest()
         if self.refuse:
-            self.upload_failed.emit(name, "refused")
+            self.upload_failed.emit(name, REFUSED)
             return
         url = f"{SERVER}/{name}"
         self.upload_finished.emit(name, SimpleNamespace(
@@ -1020,6 +1025,8 @@ def test_a_picture_the_servers_refuse_publishes_nothing(accepted):
     run.start()
     accepted.world.settle()
     assert run.stage is Stage.FAILED and jobs == []
+    # Said with the media library's own reason, never a guess at it.
+    assert (run.title, run.words) == ("Not published", REFUSED)
 
 
 def test_too_long_for_the_signer_app_with_the_key_here_offers_it_once(accepted, monkeypatch):
