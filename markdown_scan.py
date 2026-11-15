@@ -106,6 +106,15 @@ _ITEM = re.compile(r"( *)([-*+]|\d{1,9}[.)])(?=[ \t]|$)[ \t]*(.*)")
 _TASK_BOX = re.compile(r"\[[ xX]\][ \t]*")
 # A line that may be such an item with nothing in it (empty_items).
 _MAYBE_EMPTY_ITEM = re.compile(r"^[ >]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]+\[[ xX]\])?[ \t]*$", re.M)
+# A line no paragraph goes on past, after its indent: an ATX heading, or a
+# thematic break ("---" under a paragraph is its heading's underline,
+# which ends it all the same).
+_HEADING_OR_BREAK = re.compile(r" *(?:#{1,6}(?:[ \t].*)?|([-*_])(?:[ \t]*\1){2,}[ \t]*)")
+# A setext heading's underline after its indent ("---" is a break too).
+_UNDERLINE = re.compile(r"(?:=+|-+)[ \t]*")
+# A table's delimiter row ("| --- | :-: |"), and a pipe between cells.
+DELIMITER_ROW = re.compile(r"^[ \t]*\|?(?:[ \t]*:?-+:?[ \t]*\|)+[ \t]*(?::?-+:?)?[ \t]*$")
+_CELL_PIPE = re.compile(r"(?<!\\)\|")
 
 
 def _inside_quotes(line: str, depth: int) -> Optional[str]:
@@ -141,7 +150,8 @@ def empty_items(markdown: str) -> Tuple[List[int], bool]:
     """Where each list item with nothing in it ("-", "2.", "- [ ]") ends
     its marker, outside code, when words written there leave the lists
     as they are (_empty_item_alone); and whether such an item stands
-    where words would change them.
+    where words would change them, or where it is not known whether it
+    is one (_item_starts).
 
     Qt's reader leaves an item with nothing in it out (md4c gives it no
     text), and keeps one with a word in it."""
@@ -149,25 +159,25 @@ def empty_items(markdown: str) -> Tuple[List[int], bool]:
         return [], False
     lines = markdown.split("\n")
     code = code_lines(lines)
+    starts = _item_starts(lines, code)
     places: List[int] = []
     unsafe = False
     start = 0
     for number, line in enumerate(lines):
         line_start, start = start, start + len(line) + 1
-        if code[number]:
-            continue
+        if starts[number] is False:
+            continue                    # no item, or a paragraph's words
         depth = _quote_depth(line)
         rest = _inside_quotes(line, depth)
         item = _ITEM.fullmatch(rest)
-        if item is None:
-            continue
+        before = line_start + len(line) - len(rest)
         words = item.group(3)
         box = _TASK_BOX.fullmatch(words)
-        if (words.strip() and box is None) \
-                or not _starts_an_item(lines, code, number, depth, len(item.group(1))):
+        if words.strip() and box is None:
             continue
-        before = line_start + len(line) - len(rest)
-        if box is None:
+        if starts[number] is None:
+            unsafe = True
+        elif box is None:
             alone = _empty_item_alone(lines, code, number, depth,
                                       len(item.group(1)) + len(item.group(2)) + 1)
             if alone:
@@ -181,22 +191,122 @@ def empty_items(markdown: str) -> Tuple[List[int], bool]:
     return places, unsafe
 
 
-def _starts_an_item(lines: List[str], code: List[bool], number: int, depth: int,
-                    indent: int) -> bool:
-    """Whether the item on line ``number`` with nothing in it (in ``depth``
-    quotes, ``indent`` spaces in) is one: no paragraph's words stand right
-    above it in its place, which an empty item cannot follow ("Text\\n-"
-    is a heading, "- a\\n    -" one in the item). Above it: nothing, a
-    blank line, a code fence, or an item it is not inside of."""
-    if number == 0 or code[number - 1] or not lines[number - 1].strip():
+def _item_starts(lines: List[str], code: List[bool]) -> List[Optional[bool]]:
+    """For each line, whether a list item starts on it, by the lines above
+    it as CommonMark reads them: False for a line that is no item, or the
+    words of the paragraph going on above it ("Text\\n-" is a heading,
+    "Text\\n*" one paragraph, "- a\\n  -" a heading in the item); None
+    where this cannot tell. An item with nothing in it, or numbered other
+    than 1, does not interrupt a paragraph in its place: in its quote, at
+    the words of the paragraph's item or right of them ("- a\\nb\\n-" is
+    two items, "> a\\n-" a quote and an item)."""
+    starts: List[Optional[bool]] = []
+    # The paragraph going on: its quote depth and the column of the words
+    # of the item it is in (0: in none; None: not known), its first line,
+    # and how many lines it has; the quote depth of a table going on.
+    paragraph: Optional[Tuple[int, Optional[int]]] = None
+    first, count = "", 0
+    table: Optional[int] = None
+    for number, line in enumerate(lines):
+        starts.append(False)
+        depth = _quote_depth(line)
+        rest = _inside_quotes(line, depth)
+        if code[number] or not rest.strip():
+            paragraph = table = None
+            continue
+        indent = _indent(rest)
+        item = _ITEM.fullmatch(rest)
+        if indent is None:              # a tab in the indent: its column is not known
+            starts[number] = None if item else False
+            paragraph, table = (depth, None), None
+            continue
+        if _HEADING_OR_BREAK.fullmatch(rest):
+            # (Indented 4 or more it may be code, or words going on.)
+            paragraph, table = (None if indent < 4 else (depth, None)), None
+            continue
+        in_place = paragraph is not None and paragraph[0] == depth
+        if item is not None:
+            start = _item_start(item, paragraph if in_place else None, indent)
+            starts[number] = start
+            if start:
+                paragraph, table = _item_paragraph(rest, item, depth), None
+                first, count = item.group(3), 1
+            elif start is None:
+                paragraph, table = (depth, None), None
+            else:
+                count += 1              # the paragraph's words
+            continue
+        if table == depth:
+            continue                    # a row of the table
+        table = None
+        if in_place:
+            column = paragraph[1]
+            if column is not None and _UNDERLINE.fullmatch(rest.lstrip(" ")) \
+                    and column <= indent < column + 4:
+                paragraph = None        # the paragraph's heading
+            elif DELIMITER_ROW.match(rest):
+                # A table when the line above is its header alone, as
+                # readers agree; else what this does not tell.
+                header = count == 1 and "|" in first
+                if header and len(_cells(first)) == len(_cells(rest)):
+                    paragraph, table = None, depth
+                else:
+                    paragraph = (depth, None)
+            else:
+                count += 1              # words going on
+            continue
+        if paragraph is not None and paragraph[0] > depth:
+            count += 1                  # words of a quote's paragraph, its marks left out
+            continue
+        paragraph, first, count = (depth, 0 if indent == 0 else None), rest, 1
+    return starts
+
+
+def _item_start(item: re.Match, paragraph: Optional[Tuple[int, Optional[int]]],
+                indent: int) -> Optional[bool]:
+    """Whether the item matched (``indent`` spaces in) starts one, by the
+    ``paragraph`` going on in its quote (None for none): it does when it
+    stands left of the words of the paragraph's item, or interrupts the
+    paragraph (has words, is bulleted or numbered 1, and stands less than
+    4 columns right of them); None when the paragraph's item is not known
+    and it may not interrupt."""
+    if paragraph is None:
         return True
-    above = _inside_quotes(lines[number - 1], depth)
-    if above is not None and not above.strip():
-        return True
-    item = None if above is None else _ITEM.fullmatch(above)
-    if item is None:
-        return False                    # words of a paragraph, or what this does not tell
-    return not item.group(3).strip() or indent < item.start(3)
+    marker, words = item.group(2), item.group(3)
+    interrupts = bool(words.strip()) and (marker[-1] not in ".)" or int(marker[:-1]) == 1)
+    column = paragraph[1]
+    if column is None:
+        return True if interrupts and indent < 4 else None
+    return indent < column or (interrupts and indent - column < 4)
+
+
+def _item_paragraph(rest: str, item: re.Match,
+                    depth: int) -> Optional[Tuple[int, Optional[int]]]:
+    """The paragraph the line ``rest`` (in ``depth`` quotes) that starts
+    the item matched leaves going on, as _item_starts holds it: None when
+    there is none (nothing in the item, or one in it inside: "- -", a
+    heading, a break); the column of its words unknown when they open a
+    quote, code or HTML."""
+    column = item.start(3)
+    while True:
+        words = rest[column:]
+        if not words.strip() or _HEADING_OR_BREAK.fullmatch(words):
+            return None
+        inner = _ITEM.fullmatch(rest, column)
+        if inner is None:
+            break
+        column = inner.start(3)
+    return (depth, None) if words[:1] in ">`~<" else (depth, column)
+
+
+def _cells(row: str) -> List[str]:
+    """The cells of a table's row, its outer pipes left out."""
+    row = row.strip()
+    if row.startswith("|"):
+        row = row[1:]
+    if row.endswith("|") and not row.endswith("\\|"):
+        row = row[:-1]
+    return _CELL_PIPE.split(row)
 
 
 def _empty_item_alone(lines: List[str], code: List[bool], number: int, depth: int,

@@ -79,8 +79,8 @@ from doc_walk import (
 )
 import photo_group
 import photo_group_find
-from markdown_scan import (EMPTY_ITEM_LINE, ESCAPABLE, FENCE_LINE, LIST_LINE, bracketed,
-                           descriptions, emphasized_code, empty_items, escapes,
+from markdown_scan import (DELIMITER_ROW, EMPTY_ITEM_LINE, ESCAPABLE, FENCE_LINE, LIST_LINE,
+                           bracketed, descriptions, emphasized_code, empty_items, escapes,
                            lossy_definition, pictures, titled_link)
 from rich_text import normalize_after_markdown_load
 
@@ -1635,7 +1635,6 @@ def _tab_in_fence(markdown: str) -> bool:
     return False
 
 
-_DELIMITER_ROW = re.compile(r"^[ \t]*\|?(?:[ \t]*:?-+:?[ \t]*\|)+[ \t]*(?::?-+:?)?[ \t]*$")
 _HEADER_EMPHASIS = re.compile(r"\*|~~|(?<![\w\\])_|_(?!\w)")
 
 
@@ -1645,7 +1644,7 @@ def _table_loses(markdown: str) -> bool:
     by its own format there)."""
     lines = markdown.split("\n")
     for index in range(1, len(lines)):
-        if _DELIMITER_ROW.match(lines[index]) and "|" in lines[index - 1]:
+        if DELIMITER_ROW.match(lines[index]) and "|" in lines[index - 1]:
             if ":" in lines[index] or _HEADER_EMPHASIS.search(lines[index - 1]):
                 return True
     return False

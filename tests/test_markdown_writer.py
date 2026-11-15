@@ -205,6 +205,27 @@ def test_a_dash_under_words_stays_a_heading():
     assert doc.begin().blockFormat().headingLevel() == 2
 
 
+@pytest.mark.parametrize("source", ["Text\n*\n-\n", "Notes:\n1.\n-\n", "- a\n  *\n  -\n",
+                                    "Text\n2. a\n-\n"])
+def test_a_marker_in_a_paragraphs_words_stays_its_words(source):
+    # An item with nothing in it, or numbered other than 1, does not
+    # interrupt a paragraph: one heading, its words all the lines above.
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert doc.blockCount() == 1 and doc.begin().blockFormat().headingLevel() == 2
+
+
+@pytest.mark.parametrize("source", ["- a\nb\n-\n", "> a\n-\n", "# H\n-\n",
+                                    "| a |\n| - |\n| b |\n-\n"])
+def test_an_empty_item_after_a_paragraph_out_of_its_place_is_kept(source):
+    # Left of the words of the paragraph's item, out of its quote, or after
+    # what is no paragraph, it is an item.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert doc.lastBlock().textList() is not None and doc.lastBlock().text() == ""
+
+
 def test_a_quote_with_two_paragraphs_stays_one_quote():
     out = document_to_markdown(from_markdown("> one\n>\n> two\n"))
     assert out == "> one\n>\n> two\n"
