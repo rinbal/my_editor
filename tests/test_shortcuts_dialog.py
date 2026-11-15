@@ -63,6 +63,15 @@ def test_the_list_and_link_keys_are_listed():
     assert {"Tab", "Shift+Tab", "Enter", "Shift+Enter", "Ctrl+Click"} <= set(keys)
 
 
+def test_the_pdf_zoom_keys_listed_are_this_computers():
+    # On a Mac Option-Command-0 and 2, and Command-0 is Actual Size, as in
+    # Preview; elsewhere SumatraPDF's Ctrl+0, 1 and 2.
+    listed = {words: keys for keys, words in dict(OTHER_KEYS)["PDF Reading"]}
+    mac = sys.platform == "darwin"
+    assert [listed["Fit page width"], listed["Actual size"], listed["Fit whole page"]] == (
+        ["Ctrl+Alt+0", "Ctrl+0", "Ctrl+Alt+2"] if mac else ["Ctrl+0", "Ctrl+1", "Ctrl+2"])
+
+
 def test_filtering_finds_keys_written_either_way(monkeypatch):
     monkeypatch.setattr(shortcuts_dialog, "IS_MAC", True)
     group = ShortcutGroup(title="File", items=(Shortcut("Ctrl+S", "Save"),

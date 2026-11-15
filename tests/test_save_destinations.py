@@ -131,6 +131,17 @@ def test_the_markdown_save_question_names_only_what_is_lost(win, monkeypatch):
         "Save Without Colors", "Save as .html", "Save as .rtf", "Cancel"]
 
 
+def test_the_rtf_save_question_names_only_what_is_lost(win, monkeypatch):
+    import main_window
+    seen = {}
+    monkeypatch.setattr(main_window, "ask", lambda parent, **kw: seen.update(kw) or "cancel")
+    win._ask_before_losing(_editor_with(win.local_asset()), "note.rtf")
+    assert (seen["title"], seen["message"]) == (
+        "Save as .rtf without pictures?", "RTF can’t keep pictures. Text, formatting and colors stay.")
+    assert [button.label for button in seen["buttons"]] == [
+        "Save as .rtf Anyway", "Save as .html", "Cancel"]
+
+
 def test_saving_markdown_without_colors_takes_them_off_the_document(win, tmp_path,
                                                                     monkeypatch):
     import main_window

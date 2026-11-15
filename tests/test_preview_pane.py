@@ -345,6 +345,7 @@ r["plain"] = [pane._checks.isVisible(), pane._checks.text()]
 word.mergeCharFormat(red)
 w.nostr_state._active = True
 r["article"] = list(w._preview_content(ed, "article").checks)
+r["note"] = list(w._preview_content(ed, "note").checks)
 w.nostr_state._active = False
 ed.document().setModified(False)
 w.close()
@@ -358,3 +359,4 @@ def test_the_preview_says_it_leaves_colors_out(tmp_path):
                                   "so the preview leaves them out."]
     assert r["plain"] == [False, ""]
     assert "Colors, highlights and underlines don’t reach readers." in r["article"]
+    assert "Colors, highlights and underlines don’t reach readers." in r["note"]

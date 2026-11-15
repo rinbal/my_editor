@@ -118,7 +118,7 @@ EMPTY_ITEMS = [
     "1. One\n2.\n3. Three\n",
     "- [x] done\n- [ ]\n",
     "> - quoted\n> -\n",
-    "-\n    - nested in an empty item\n",
+    "-\n-\n-\n",
 ]
 
 

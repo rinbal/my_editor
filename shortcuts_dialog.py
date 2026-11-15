@@ -100,9 +100,9 @@ OTHER_KEYS: Tuple[Tuple[str, Tuple[Tuple[str, str], ...]], ...] = (
         ("Ctrl+=", _("Zoom in (also Ctrl+wheel)")),
         ("Ctrl+-", _("Zoom out (also Ctrl+wheel)")),
         # The reader's zoom keys differ on a Mac (pdf_viewer.reader_keys).
-        (reader_key_text(_("Fit page width")), _("Fit page width")),
-        (reader_key_text(_("Actual size")), _("Actual size")),
-        (reader_key_text(_("Fit whole page")), _("Fit whole page")),
+        (reader_key_text("fit width"), _("Fit page width")),
+        (reader_key_text("actual size"), _("Actual size")),
+        (reader_key_text("fit page"), _("Fit whole page")),
         ("F12", _("Toggle table of contents")),
     )),
 )

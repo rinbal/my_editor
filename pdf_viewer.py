@@ -199,52 +199,61 @@ def _with_keys(words: str, keys: QKeySequence) -> str:
 MOVE, ZOOM, FIND = "Move Around", "Zoom", "Find and Copy"
 
 
-def reader_keys():
-    """The table above, its words in the reader's language."""
-    return (
-        (MOVE, _("Next screenful"), lambda tab: tab._scroll_page(+1), (), ("Space",)),
-        (MOVE, _("Previous screenful"), lambda tab: tab._scroll_page(-1), (), ("Shift+Space",)),
-        (MOVE, _("Next page"), lambda tab: tab.next_page(), (), ("N",)),
-        (MOVE, _("Previous page"), lambda tab: tab.prev_page(), (), ("P",)),
-        (MOVE, _("Scroll down"), lambda tab: tab._scroll_lines(+1), (), ("J",)),
-        (MOVE, _("Scroll up"), lambda tab: tab._scroll_lines(-1), (), ("K",)),
-        (MOVE, _("First page"), lambda tab: tab.jump_to_page(0), (), ("Home",)),
-        (MOVE, _("Last page"),
-         lambda tab: tab.jump_to_page(tab.document.pageCount() - 1), (), ("End",)),
-        (MOVE, _("Go to page"), lambda tab: tab._focus_page_box(), (), ("G",)),
-        (MOVE, _("Show or hide the table of contents"), lambda tab: tab.toggle_outline(),
-         ("F12",), ()),
-        (ZOOM, _("Zoom in"), lambda tab: tab.zoom_in(),
-         standard_and(QKeySequence.StandardKey.ZoomIn, "Ctrl+="), ("+",)),
-        (ZOOM, _("Zoom out"), lambda tab: tab.zoom_out(),
-         standard_and(QKeySequence.StandardKey.ZoomOut), ("-",)),
+def _reader_commands():
+    """The table above by command ("fit width"), its words in the reader's
+    language."""
+    return {
+        "next screenful": (MOVE, _("Next screenful"), lambda tab: tab._scroll_page(+1), (),
+                           ("Space",)),
+        "previous screenful": (MOVE, _("Previous screenful"),
+                               lambda tab: tab._scroll_page(-1), (), ("Shift+Space",)),
+        "next page": (MOVE, _("Next page"), lambda tab: tab.next_page(), (), ("N",)),
+        "previous page": (MOVE, _("Previous page"), lambda tab: tab.prev_page(), (), ("P",)),
+        "scroll down": (MOVE, _("Scroll down"), lambda tab: tab._scroll_lines(+1), (), ("J",)),
+        "scroll up": (MOVE, _("Scroll up"), lambda tab: tab._scroll_lines(-1), (), ("K",)),
+        "first page": (MOVE, _("First page"), lambda tab: tab.jump_to_page(0), (), ("Home",)),
+        "last page": (MOVE, _("Last page"),
+                      lambda tab: tab.jump_to_page(tab.document.pageCount() - 1), (), ("End",)),
+        "go to page": (MOVE, _("Go to page"), lambda tab: tab._focus_page_box(), (), ("G",)),
+        "contents": (MOVE, _("Show or hide the table of contents"),
+                     lambda tab: tab.toggle_outline(), ("F12",), ()),
+        "zoom in": (ZOOM, _("Zoom in"), lambda tab: tab.zoom_in(),
+                    standard_and(QKeySequence.StandardKey.ZoomIn, "Ctrl+="), ("+",)),
+        "zoom out": (ZOOM, _("Zoom out"), lambda tab: tab.zoom_out(),
+                     standard_and(QKeySequence.StandardKey.ZoomOut), ("-",)),
         # Option-Command-0, 1 and 2 on a Mac, where Command-1 to 9 go to
         # tabs, and Command-0 is Actual Size, as in Preview and as View >
         # Actual Size is in a text tab.
-        (ZOOM, _("Fit page width"), lambda tab: tab.fit_width(),
-         (platform_keys("Ctrl+Alt+0", "Ctrl+0"),), ()),
-        (ZOOM, _("Actual size"), lambda tab: tab.actual_size(),
-         platform_keys(("Ctrl+0", "Ctrl+Alt+1"), ("Ctrl+1",)), ()),
-        (ZOOM, _("Fit whole page"), lambda tab: tab.fit_page(),
-         (platform_keys("Ctrl+Alt+2", "Ctrl+2"),), ()),
-        (FIND, _("Find in PDF"), None, ("Ctrl+F",), ()),
-        (FIND, _("Copy selected text"), None, standard_and(QKeySequence.StandardKey.Copy), ()),
-        (FIND, _("Clear selection"), lambda tab: tab.view.clear_selection(), (), ("Esc",)),
-    )
+        "fit width": (ZOOM, _("Fit page width"), lambda tab: tab.fit_width(),
+                      (platform_keys("Ctrl+Alt+0", "Ctrl+0"),), ()),
+        "actual size": (ZOOM, _("Actual size"), lambda tab: tab.actual_size(),
+                        platform_keys(("Ctrl+0", "Ctrl+Alt+1"), ("Ctrl+1",)), ()),
+        "fit page": (ZOOM, _("Fit whole page"), lambda tab: tab.fit_page(),
+                     (platform_keys("Ctrl+Alt+2", "Ctrl+2"),), ()),
+        "find": (FIND, _("Find in PDF"), None, ("Ctrl+F",), ()),
+        "copy": (FIND, _("Copy selected text"), None,
+                 standard_and(QKeySequence.StandardKey.Copy), ()),
+        "clear selection": (FIND, _("Clear selection"), lambda tab: tab.view.clear_selection(),
+                            (), ("Esc",)),
+    }
 
 
-def reader_key_text(words: str) -> str:
-    """The first key of the reader's command ``words`` (reader_keys), as
-    the command list writes keys ("Ctrl+0"); "" for none."""
-    for _section, name, _act, tab_keys, view_keys in reader_keys():
-        if name == words:
-            return (tab_keys + view_keys)[0]
-    return ""
+def reader_keys():
+    """The table above, its words in the reader's language."""
+    return tuple(_reader_commands().values())
 
 
-def _reader_key(words: str) -> QKeySequence:
-    """The first key of the reader's command ``words``, for its tooltip."""
-    return QKeySequence(reader_key_text(words))
+def reader_key_text(command: str) -> str:
+    """The first key of the reader's ``command`` (by its name in
+    _reader_commands, "fit width"), as the command list writes keys
+    ("Ctrl+0")."""
+    _section, _words, _act, tab_keys, view_keys = _reader_commands()[command]
+    return (tab_keys + view_keys)[0]
+
+
+def _reader_key(command: str) -> QKeySequence:
+    """The first key of the reader's ``command``, for its tooltip."""
+    return QKeySequence(reader_key_text(command))
 
 
 # Painted over selected text. Pages always render white (see module
@@ -671,7 +680,7 @@ class PdfViewerTab(QWidget):
         self._outline_btn = QToolButton()
         self._outline_btn.setText(_("Contents"))
         self._outline_btn.setToolTip(_with_keys(
-            _("Table of contents"), _reader_key(_("Show or hide the table of contents"))))
+            _("Table of contents"), _reader_key("contents")))
         self._outline_btn.setCheckable(True)
         self._outline_btn.setEnabled(False)
         self._outline_btn.clicked.connect(self.toggle_outline)
@@ -722,7 +731,7 @@ class PdfViewerTab(QWidget):
         self._fit_width_btn = QToolButton()
         self._fit_width_btn.setText(_("Fit Width"))
         self._fit_width_btn.setToolTip(_with_keys(_("Fit page width"),
-                                                  _reader_key(_("Fit page width"))))
+                                                  _reader_key("fit width")))
         self._fit_width_btn.setCheckable(True)
         self._fit_width_btn.setChecked(True)
         self._fit_width_btn.clicked.connect(self.fit_width)
@@ -731,7 +740,7 @@ class PdfViewerTab(QWidget):
         self._fit_page_btn = QToolButton()
         self._fit_page_btn.setText(_("Fit Page"))
         self._fit_page_btn.setToolTip(_with_keys(_("Fit whole page"),
-                                                 _reader_key(_("Fit whole page"))))
+                                                 _reader_key("fit page")))
         self._fit_page_btn.setCheckable(True)
         self._fit_page_btn.clicked.connect(self.fit_page)
         bar.addWidget(self._fit_page_btn)
