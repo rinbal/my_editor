@@ -277,6 +277,16 @@ def test_an_empty_item_after_a_paragraph_out_of_its_place_is_kept(source):
     assert doc.lastBlock().textList() is not None and doc.lastBlock().text() == ""
 
 
+def test_an_empty_item_after_a_headings_underline_is_kept():
+    # The "-" right under the words is their heading's underline, the
+    # next one an item: it was taken for the words and the item lost.
+    source = "Text\n-\n-\n- a\n"
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == "## Text\n\n-\n- a\n"
+
+
 def test_a_quote_with_two_paragraphs_stays_one_quote():
     out = document_to_markdown(from_markdown("> one\n>\n> two\n"))
     assert out == "> one\n>\n> two\n"

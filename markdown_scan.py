@@ -218,11 +218,16 @@ def _item_starts(lines: List[str], code: List[bool]) -> List[Optional[bool]]:
             starts[number] = None if item else False
             paragraph, table = (depth, None), None
             continue
+        in_place = paragraph is not None and paragraph[0] == depth
+        column = paragraph[1] if in_place else None
+        if column is not None and _UNDERLINE.fullmatch(rest.lstrip(" ")) \
+                and column <= indent < column + 4:
+            paragraph, table = None, None   # the paragraph's heading (a "-" is no item)
+            continue
         if _HEADING_OR_BREAK.fullmatch(rest):
             # (Indented 4 or more it may be code, or words going on.)
             paragraph, table = (None if indent < 4 else (depth, None)), None
             continue
-        in_place = paragraph is not None and paragraph[0] == depth
         if item is not None:
             start = _item_start(item, paragraph if in_place else None, indent)
             starts[number] = start
@@ -238,11 +243,7 @@ def _item_starts(lines: List[str], code: List[bool]) -> List[Optional[bool]]:
             continue                    # a row of the table
         table = None
         if in_place:
-            column = paragraph[1]
-            if column is not None and _UNDERLINE.fullmatch(rest.lstrip(" ")) \
-                    and column <= indent < column + 4:
-                paragraph = None        # the paragraph's heading
-            elif DELIMITER_ROW.match(rest):
+            if DELIMITER_ROW.match(rest):
                 # A table when the line above is its header alone, as
                 # readers agree; else what this does not tell.
                 header = count == 1 and "|" in first
