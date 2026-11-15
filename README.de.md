@@ -6,7 +6,7 @@
 
 <p align="center">
   Eine ruhige App zum Schreiben von Notizen und Lesen von PDFs, mit deinen Dateien in deinen eigenen Ordnern.<br>
-  Für Mac, Windows und Linux, auf Deutsch und Englisch.
+  Für alle, die schreiben und lesen, auf Mac, Windows und Linux, auf Deutsch und Englisch.
 </p>
 
 <p align="center">
@@ -29,7 +29,7 @@
 - **PDFs lesen.** Ein stiller Leser, der sich deine Seite merkt, mit den Tasten von SumatraPDF, Suche und Inhaltsverzeichnis.
 - **Alle Dateien in deinen Ordnern.** Füge Ordner zur Seitenleiste hinzu und sieh Notizen, Bilder, Filme, PDFs und Office-Dokumente, mit der Übersicht auf der **Leertaste**. Benennst du eine Datei um oder verschiebst du sie, ziehen die Links in deinen Notizen mit.
 - **Tabellen bearbeiten.** Excel-, OpenDocument- und CSV-Dateien öffnen sich als Tabellen, die du bearbeiten kannst, mit Formeln auf Deutsch: `=SUMME(C2:C6)`.
-- **Eine Notiz mit Passwort schützen.** Sie wird an Ort und Stelle verschlüsselt, im offenen Format age.
+- **Eine Notiz mit Passwort schützen.** Sie wird an Ort und Stelle verschlüsselt, in einem offenen Format, das sich auch ohne MyEditor öffnen lässt.
 - **Speichern, drucken und exportieren** als HTML, PDF, RTF und R Markdown. HTML- und PDF-Dateien tragen ihre Bilder in sich.
 - **Auf Nostr veröffentlichen, wenn du willst.** Schick eine Notiz oder einen Artikel ins offene Nostr-Netz, behalte verschlüsselte Entwürfe auf all deinen Geräten und verwalte deine Medien. Bis du es wählst, bleibt das alles unsichtbar.
 

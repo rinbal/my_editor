@@ -6,7 +6,7 @@
 
 <p align="center">
   A calm app for writing notes and reading PDFs, with your files in your own folders.<br>
-  For Mac, Windows and Linux, in English and German.
+  For people who write and read, on Mac, Windows and Linux, in English and German.
 </p>
 
 <p align="center">
@@ -29,7 +29,7 @@
 - **Read PDFs.** A quiet reader that remembers your page, with the keys of SumatraPDF, search, and its table of contents.
 - **Keep every file in your folders.** Add folders to the sidebar and see notes, pictures, films, PDFs and office documents, with Quick Look on **Space**. Rename or move a file, and the links in your notes follow.
 - **Edit spreadsheets.** Excel, OpenDocument and CSV files open as tables you can edit, with formulas in your language.
-- **Lock a note with a password.** It is encrypted in place, in the open age format.
+- **Lock a note with a password.** It is encrypted in place, in an open format that opens without MyEditor too.
 - **Save, print and export** to HTML, PDF, RTF and R Markdown. HTML and PDF files carry their pictures inside.
 - **Publish to Nostr, if you like.** Send a note or an article to the open Nostr network, keep encrypted drafts across devices, and manage your media. It stays out of sight until you choose it.
 
@@ -78,7 +78,12 @@ MyEditor updates itself: it offers each new version in the app.
 
 ## Run from source
 
-For development, or on a system without an installer. You need Python 3.11 or later (CI tests 3.12):
+For development, or on a system without an installer.
+
+<details>
+<summary>Steps for developers</summary>
+
+You need Python 3.11 or later (CI tests 3.12):
 
 ```sh
 git clone https://github.com/rinbal/my_editor.git
@@ -89,12 +94,19 @@ pip install -r requirements.txt
 python main.py                   # or: python main.py path/to/file.md
 ```
 
+</details>
+
 ## Help, contributing and licence
 
 - **Help:** start with [Getting started](docs/use/getting-started.md) and the [user guide](docs/README.md). Questions are welcome in the [community chat][chat]; problems go to the [issues](https://github.com/rinbal/my_editor/issues).
 - **Contributing:** reports, tests and translations help as much as code. [CONTRIBUTING.md](CONTRIBUTING.md) says how, and [Translating](docs/develop/translating.md) how to add a language. Security problems: [SECURITY.md](SECURITY.md).
-- **Licence:** MyEditor is free software under the [GNU Affero General Public License v3.0 or later](LICENSE) (AGPL-3.0-or-later). Copyright (C) 2026 rinbal.
+- **Licence:** MyEditor is free software under the [GNU Affero General Public License v3.0 or later](LICENSE) (AGPL-3.0-or-later). Copyright (C) 2026 rinbal. A few photo group files from STANDUP keep STANDUP's MIT licence:
+
+  <details>
+  <summary>Files under STANDUP's MIT licence</summary>
 
   The photo group engine and page parts taken over from STANDUP keep STANDUP's MIT licence, Copyright (c) 2026 DoktorShift ([LICENSES/MIT-STANDUP.txt](LICENSES/MIT-STANDUP.txt)): `photo_layout.py`, `web/photo_layout.js`, `web/photo_viewer.js`, `web/photo_groups.js`, `web/photo_groups.css` and `web/photo-group-messages.json`, and the test data `tests/fixtures/photo_layout_vectors.json`, `tests/fixtures/photo_markup_cases.json` and `tests/fixtures/standup_editorial_fixtures.json` (a copy of STANDUP's `docs/editorial-fixtures.json`).
+
+  </details>
 
 [chat]: https://nostr-ecosystem.netlify.app/join/g/groups.0xchat.com/my-editor-public-talk?n=My+Editor+-+Public+Talk&a=A+community+for+users%2C+contributors%2C+and+anyone+interested+in+a+clean%2C+distraction-free+note-taking+editor+built+with+Python+and+PySide6.%0A%0AS&p=https%3A%2F%2Fblossom.primal.net%2F6173a8dc06038a1d67d6149755166fb48d74d92d41ef6af8b6cd863489eb3095

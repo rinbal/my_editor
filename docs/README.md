@@ -49,4 +49,4 @@ Why MyEditor is the way it is, one short record each:
 
 ## Archive
 
-Plans and reviews that are done. They are kept for their history, and each says where the current truth lives: [Night Violet plan](archive/night-violet-plan.md), [surfaces](archive/night-violet-surfaces.md), [review](archive/night-violet-review.md), [implementation](archive/night-violet-implementation.md).
+[Finished plans and reviews](archive/), kept for their history. Each says where the current truth lives.
