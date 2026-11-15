@@ -527,6 +527,29 @@ def test_a_message_goes_out_shows_sending_and_is_a_bubble_once_it_has_its_seq():
     assert not following.rows()[0].unread               # one's own message is read
 
 
+def test_a_message_that_waits_in_the_signer_app_says_to_confirm_it_there():
+    # The handoff's words, under the message, once the signer app has not
+    # answered for a moment: never at once (one that answers by itself
+    # never shows them), and never with the key kept on this computer.
+    world = FollowWorld()
+    account = world.account()
+    _prepared, entry = world.submit(account, d="signer")
+    following = world.following(account)
+    opened(world, following, entry)
+    for signer, waiting in (("remote", "Waiting for your signer app. Confirm the request "
+                                       "there."), ("local", "Sending…")):
+        account.profile.signer = signer
+        account.signer.held = []                        # asked, and no answer yet
+        following.talk.send(entry.sid, "Mach ich, danke!")
+        [out] = following.talk.outgoing(entry.sid)
+        assert footer_words(out) == ("Sending…", "")
+        world.later.run()                               # the moment is over
+        assert footer_words(out) == (waiting, "")
+        account.signer.release()
+        world.settle()
+        assert following.detail(entry.sid).outgoing == ()
+
+
 def test_a_message_that_did_not_go_keeps_its_text_and_goes_with_one_retry():
     world = FollowWorld()
     account = world.account()

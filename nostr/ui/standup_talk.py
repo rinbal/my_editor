@@ -8,7 +8,11 @@
 server stored it, whatever screen is open. It is sealed by the account
 (the one signer prompt), wrapped to the submission's room and posted
 with the session; only the server's ``seq`` says it is there (plan
-10.7: "Wird gesendet …" until then).
+10.7: "Wird gesendet …" until then). An account that signs through a
+signer app is told to confirm it there once that app has not answered
+for a moment (:data:`SIGNER_GRACE_MS`), in the handoff's words; one that
+answers by itself never shows the line, and an account whose key is kept
+on this computer is never told of a signer app.
 
 - The connection, or the server's own trouble, before anything
   arrived: sent again quietly, the same wrap, with backoff (lessons 36,
@@ -36,9 +40,11 @@ from i18n import N_, _
 
 from ..failures import SIGNER_DECLINED, SIGNER_SILENT, retry_quietly
 from ..signed_api import signer_failure_code
+from ..signer_limits import through_signer_app
 from ..standup import conversation, formats
 from ..standup.errors import PASSING, Code, StandupError, cause_words
 from .standup_account import live
+from .standup_waits import signer_wait_words
 
 NOT_SENT = N_("Not sent.")
 NOT_CONFIRMED = N_("Not confirmed yet.")
@@ -50,6 +56,12 @@ MESSAGE_LIMIT = N_("The server takes no more messages from you right now: send i
                    "later.")
 MESSAGE_REFUSED = N_("The server didn’t take it: try again later.")
 NOT_BUILT = N_("MyEditor couldn’t put it together.")
+
+# How long a signer app may take to seal a message before the line under
+# it says to confirm it there. One that answers by itself does so sooner
+# (a request and its answer through a relay), so writing and reacting stay
+# calm; a person who has to confirm is told while they still wonder.
+SIGNER_GRACE_MS = 3_000
 
 _SENTENCES = {Code.SIGNER_DECLINED: SIGNER_DECLINED, Code.SIGNER_UNREACHABLE: SIGNER_SILENT,
               Code.RATE_LIMITED: MESSAGE_LIMIT, Code.REFUSED: NOT_BUILT,
@@ -76,10 +88,18 @@ class Outgoing:
     wrap: Optional[dict] = field(default=None, repr=False)
     state: Sending = Sending.SIGNING
     sentence: str = ""              # why it did not go (untranslated)
+    signer_waits: bool = False      # the signer app was asked a while ago and has not answered
 
     @property
     def on_its_way(self) -> bool:
         return self.state is not Sending.FAILED
+
+    @property
+    def asks_to_confirm(self) -> bool:
+        """Whether it waits for the person to confirm it in their signer
+        app, as far as this app can tell: asked, and no answer for a
+        moment."""
+        return self.state is Sending.SIGNING and self.signer_waits
 
     @property
     def is_message(self) -> bool:
@@ -209,8 +229,11 @@ class Talk:
         if room is None:
             self._show(out, Sending.FAILED, NOT_BUILT)
             return
+        out.signer_waits = False
         self._show(out, Sending.SIGNING)
         account = self._account
+        if through_signer_app(account.profile):
+            self._later(SIGNER_GRACE_MS, live(account, lambda: self._still_signing(out)))
 
         def wrapped(wrap: dict) -> None:
             if self._outgoing.get(out.key) is out:
@@ -225,6 +248,14 @@ class Talk:
             account.signer, out.rumor, room[0], room[1], on_success=live(account, wrapped),
             on_failure=live(account, lambda why: unsealed(signer_failure_code(why))),
             on_refused=live(account, lambda _why: unsealed(Code.REFUSED)), clock=self._clock)
+
+    def _still_signing(self, out: Outgoing) -> None:
+        """The signer app has not sealed ``out`` yet: the line under it
+        says to confirm it there."""
+        if self._outgoing.get(out.key) is out and out.state is Sending.SIGNING \
+                and not out.signer_waits:
+            out.signer_waits = True
+            self._changed(out.sid)
 
     def _post(self, out: Outgoing) -> None:
         self._show(out, Sending.SENDING)
@@ -296,6 +327,8 @@ def footer_words(out: Outgoing) -> Tuple[str, str]:
         return (f"{title} {sentence}".strip(), action)
     if out.state is Sending.UNCONFIRMED:
         return _(NOT_CONFIRMED), _("Check Again")
+    if out.asks_to_confirm:
+        return signer_wait_words(), ""
     return _(SENDING), ""
 
 
