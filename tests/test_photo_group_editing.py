@@ -375,6 +375,24 @@ def test_words_typed_beside_a_picture_alone_are_paragraphs_of_their_own_and_save
     ed.close()
 
 
+@pytest.mark.parametrize("on_an_empty_line", [True, False])
+def test_after_several_pictures_are_put_in_from_the_words_writing_goes_on(on_an_empty_line):
+    """Insert > Image… with several files left the first of them selected,
+    and a selected picture takes no letters: what was typed next was lost."""
+    ed = _editor(_text("Before.", "After."))
+    _caret(ed, len("Before."))
+    if on_an_empty_line:
+        QTest.keyClick(ed, Qt.Key.Key_Return)
+    pictures = []
+    for name in ("photo.png", "square.png", "portrait.png"):
+        pictures.append(QTextImageFormat())
+        pictures[-1].setName(name)
+    ed.photos.insert(ed.photos.free_place(), pictures, "Add Photos")
+    QTest.keyClicks(ed, "Words")
+    assert _paragraphs(ed) == ["Before.", "G3", "Words", "After."]
+    ed.close()
+
+
 def test_words_typed_after_a_picture_in_a_line_of_words_are_saved():
     """What is typed after a picture is never in the picture's format."""
     ed = _editor(_text("Look: ![one](photo.png)", "After."))
