@@ -339,6 +339,78 @@ def test_composed_text_among_the_pictures_goes_under_the_group():
     ed.close()
 
 
+def test_escape_types_nothing_in_the_words_or_on_a_selected_picture():
+    """The Escape key's event carries the character U+001B: it is no text.
+    It replaced a selected picture and was saved in the words."""
+    lone = _text("Before.", ONE, "After.")
+    for markdown, selected in ((FOUR_PICTURES, 8 + 1), (lone, 8)):
+        ed = _editor(markdown)
+        ed.photos.select(selected)
+        QTest.keyClick(ed, Qt.Key.Key_Escape)
+        assert ed.photos.current() is not None     # the picture, still selected
+        _caret(ed, 3)                              # in "Before."
+        QTest.keyClick(ed, Qt.Key.Key_Escape)
+        assert _markdown(ed) == markdown and not ed.document().isModified()
+        ed.close()
+
+
+def test_words_typed_beside_a_picture_alone_are_paragraphs_of_their_own_and_saved():
+    """A picture put in on an empty line, then the next sentence: its
+    letters took the picture's format and were saved as that picture (so
+    they were lost), every key raised, and the picture had no commands."""
+    ed = _editor(_text("Before.", "After."))
+    _caret(ed, len("Before."))
+    QTest.keyClick(ed, Qt.Key.Key_Return)
+    picture = QTextImageFormat()
+    picture.setName("photo.png")
+    with ed.undo_step("Image"):
+        ed.textCursor().insertImage(picture)       # as Insert > Image… puts it in
+    QTest.keyClicks(ed, "Under")
+    assert _paragraphs(ed) == ["Before.", "￼", "Under", "After."]
+    _caret(ed, len("Before.") + 1)                 # before the picture
+    QTest.keyClicks(ed, "Above")
+    assert _markdown(ed) == _text("Before.", "Above", "![](photo.png)", "Under", "After.")
+    ed.photos.select(ed.document().findBlockByNumber(2).position())
+    assert ed.photos.current() is not None         # a picture alone, with its commands
+    ed.close()
+
+
+@pytest.mark.parametrize("on_an_empty_line", [True, False])
+def test_after_several_pictures_are_put_in_from_the_words_writing_goes_on(on_an_empty_line):
+    """Insert > Image… with several files left the first of them selected,
+    and a selected picture takes no letters: what was typed next was lost."""
+    ed = _editor(_text("Before.", "After."))
+    _caret(ed, len("Before."))
+    if on_an_empty_line:
+        QTest.keyClick(ed, Qt.Key.Key_Return)
+    pictures = []
+    for name in ("photo.png", "square.png", "portrait.png"):
+        pictures.append(QTextImageFormat())
+        pictures[-1].setName(name)
+    ed.photos.insert(ed.photos.free_place(), pictures, "Add Photos")
+    QTest.keyClicks(ed, "Words")
+    assert _paragraphs(ed) == ["Before.", "G3", "Words", "After."]
+    ed.close()
+
+
+def test_words_typed_after_a_picture_in_a_line_of_words_are_saved():
+    """What is typed after a picture is never in the picture's format."""
+    ed = _editor(_text("Look: ![one](photo.png)", "After."))
+    _caret(ed, len("Look: ￼"))
+    QTest.keyClicks(ed, " there")
+    assert _markdown(ed) == _text("Look: ![one](photo.png) there", "After.")
+    ed.close()
+
+
+def test_the_same_picture_twice_in_a_row_is_written_twice():
+    """Two pictures with one format are one piece of the document: a
+    writer wrote one of them."""
+    twice = _text("Look: ![one](photo.png)![one](photo.png) twice.")
+    ed = _editor(twice)
+    assert _markdown(ed) == twice
+    ed.close()
+
+
 def test_typing_over_a_selection_that_ends_in_a_group_keeps_the_rest_a_group():
     ed = _editor()
     group = _group(ed)

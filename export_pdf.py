@@ -52,6 +52,7 @@ import export_pictures
 import media_files
 import photo_group
 import photo_group_drawing
+import photo_group_geometry
 import photo_group_view
 import user_dirs
 from atomic_file import read_json, write_json
@@ -267,8 +268,10 @@ def _iter_image_names(doc):
         yield name
 
 
-def _cap_image_widths(doc, available_css_px: float, images: dict) -> None:
-    """Shrink images wider than the printable area, keeping aspect ratio.
+def _cap_image_sizes(doc, available_width: float, available_height: float,
+                     images: dict) -> None:
+    """Shrink images wider than the text column or taller than a page
+    holds, keeping aspect ratio: a picture is whole on one page.
 
     Sizes are in the document's own pixels, text_dpi of them to the inch
     (photo_group_drawing: 96, on a Mac 72). Images with no explicit size are
@@ -290,16 +293,20 @@ def _cap_image_widths(doc, available_css_px: float, images: dict) -> None:
                 imf = fmt.toImageFormat()
                 width = imf.width()
                 height = imf.height()
-                if width <= 0:
+                if width <= 0 or height <= 0:
                     image = images.get(imf.name())
                     intrinsic = image.size() if image is not None else None
                     if intrinsic is not None and intrinsic.isValid():
-                        width = float(intrinsic.width())
-                        if height <= 0:
-                            height = float(intrinsic.height())
-                if width > available_css_px:
-                    scale = available_css_px / width
-                    imf.setWidth(available_css_px)
+                        if width <= 0:
+                            width = float(intrinsic.width())
+                            if height <= 0:
+                                height = float(intrinsic.height())
+                        else:
+                            height = width * intrinsic.height() / intrinsic.width()
+                scale = min(available_width / width if width > 0 else 1.0,
+                            available_height / height if height > 0 else 1.0)
+                if scale < 1.0:
+                    imf.setWidth(width * scale)
                     if height > 0:
                         imf.setHeight(height * scale)
                     cursor = QTextCursor(doc)
@@ -390,10 +397,21 @@ def paginate(doc, device, resolution: int, *, image_roots=(), asset_resolver=Non
     frame_fmt.setBackground(QColor("white"))
     clone.rootFrame().setFrameFormat(frame_fmt)
 
-    paint_width_pt = page_w * 72.0 / resolution
     # In the document's own pixels, which Qt turns into the page's by its
-    # text dpi: 96 an inch, on a Mac 72 (photo_group_drawing.text_dpi).
-    _cap_image_widths(clone, paint_width_pt * photo_group_drawing.text_dpi() / 72.0, images)
+    # text dpi: 96 an inch, on a Mac 72 (photo_group_drawing.text_dpi). A
+    # picture alone fits the text column, which is the page without the
+    # document's own margins (the editor's document brings them along).
+    # It is as tall as a picture alone in a row of a photo group may be on
+    # this page (the engine's wideCap), and never taller than a page
+    # holds beside a line of words: Qt moves a line that fits a page to
+    # the next one, and cuts one that does not at the page's end.
+    own = photo_group_drawing.text_dpi() / resolution
+    margins = clone.rootFrame().frameFormat()
+    line = QFontMetricsF(clone.defaultFont(), device).lineSpacing()
+    tallest = photo_group_geometry.metrics_at(page_w, resolution / 96.0, content_h, line).wide_cap
+    _cap_image_sizes(clone, page_w * own - margins.leftMargin() - margins.rightMargin(),
+                     min(tallest * own, (content_h - line) * own
+                         - margins.topMargin() - margins.bottomMargin()), images)
 
     if groups:
         photo_group_view.set_screen_height(clone, content_h)

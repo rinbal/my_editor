@@ -478,13 +478,28 @@ class PhotoEditing(QObject):
 
     def insert(self, place: Place, pictures: Sequence, step: str) -> None:
         """Put new ``pictures`` (image formats) at ``place`` as one step
-        called ``step``, the first of them selected."""
-        doc = self._editor.document()
+        called ``step``, the first of them selected. Put in from the words
+        (at free_place: Insert > Image…, Add Photos… with no picture
+        chosen), writing goes on instead: the caret stays in the empty
+        paragraph it was in, under them, else it stands after them, where
+        the next letter opens a paragraph (a selected picture takes no
+        letters, so what was typed next was lost)."""
+        ed = self._editor
+        doc = ed.document()
         if not pictures:
             return
+        caret = ed.textCursor()                 # it moves with what is put in
+        writing = self.current() is None and place == self.free_place()
+        empty = caret.block().length() == 1
         added = self._act(step, -1, lambda cursor: actions.insert(cursor, doc, place, pictures))
         if added is None:
             return
+        if writing:
+            caret.setPosition(caret.position() if empty else added.position + len(pictures))
+            with self.quietly():
+                ed.setTextCursor(caret)
+            self._caret_moved()
+            ed.ensureCursorVisible()
         count = len(pictures)
         words = ngettext("{count} photo added", "{count} photos added", count).format(count=count)
         if added.grouped:

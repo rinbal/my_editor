@@ -31,6 +31,7 @@ from PySide6.QtCore import QSize, QLocale
 from PySide6.QtGui import (
     QColor,
     QImage,
+    QPainter,
     QTextCharFormat,
     QTextCursor,
     QTextDocument,
@@ -190,6 +191,54 @@ def test_oversized_image_capped_to_printable_width(tmp_path):
     width_pt = max(xs) - min(xs) + 1
     printable_pt = 595 - 2 * (20 / 25.4 * 72)  # A4 minus 20mm margins
     assert width_pt <= printable_pt + 3  # rasterization tolerance
+
+
+def test_a_picture_alone_is_whole_in_the_text_column_and_on_one_page(tmp_path):
+    """The editor's document brings its own margin along. A picture capped
+    to the page's whole width started at that margin and was cut at the
+    page's right edge; a tall one, as wide as the page, at the page's end.
+    Each picture ends in a green band, a twentieth of it: all of it shows."""
+    from editor import HtmlEditor
+    wide = QImage(3000, 1000, QImage.Format_RGB32)
+    wide.fill(QColor("red"))
+    tall = QImage(900, 2000, QImage.Format_RGB32)
+    tall.fill(QColor("blue"))
+    for image, band in ((wide, (2850, 0, 150, 1000)), (tall, (0, 1900, 900, 100))):
+        painter = QPainter(image)
+        painter.fillRect(*band, QColor(0, 200, 0))
+        painter.end()
+    wide.save(str(tmp_path / "wide.png"), "PNG")
+    tall.save(str(tmp_path / "tall.png"), "PNG")
+    ed = HtmlEditor()
+    cursor = ed.textCursor()
+    cursor.insertText("Before.")
+    for name in ("wide.png", "tall.png"):
+        cursor.insertBlock()
+        cursor.insertImage(str(tmp_path / name))
+    out = str(tmp_path / "alone.pdf")
+    export_pdf_file(ed.document(), out, title="T", page_setup=A4_SETUP,
+                    image_roots=(str(tmp_path),))
+    pdf = _load(out)
+    pages = [pdf.render(n, QSize(595, 842)) for n in range(pdf.pageCount())]
+
+    def red(c): return c.red() > 200 and c.green() < 80 and c.blue() < 80
+    def blue(c): return c.blue() > 200 and c.red() < 80 and c.green() < 80
+    def green(c): return c.green() > 150 and c.red() < 80 and c.blue() < 80
+
+    def band_share(body, along_x):
+        """On the one page that shows ``body``: the green band's share of
+        the picture's length, along a line through it."""
+        found = [(n, x, y) for n, page in enumerate(pages) for y in range(0, 842, 4)
+                 for x in range(0, 595, 4) if body(page.pixelColor(x, y))]
+        assert found and len({n for n, _x, _y in found}) == 1    # on one page
+        n, x, y = found[0]
+        line = [pages[n].pixelColor(k, y) if along_x else pages[n].pixelColor(x, k)
+                for k in range(595 if along_x else 842)]
+        return sum(map(green, line)) / (sum(map(body, line)) + sum(map(green, line)))
+
+    assert 0.04 < band_share(red, True) < 0.06       # its right end, not cut
+    assert 0.04 < band_share(blue, False) < 0.06     # its lower end, on the same page
+    ed.close()
 
 
 def _count_pixels(pdf, predicate):

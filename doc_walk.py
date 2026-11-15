@@ -14,6 +14,7 @@ and a char format where isImageFormat() is true; exporters decide how to
 serialize them.
 """
 
+import itertools
 import re
 
 from PySide6.QtGui import QTextCharFormat, QTextFormat
@@ -63,7 +64,11 @@ READ_MARKS = (SOFT_BREAK_PROPERTY, ESCAPED_TEXT_PROPERTY, TYPED_TEXT_PROPERTY)
 
 def without_read_marks(fmt: QTextCharFormat) -> QTextCharFormat:
     """``fmt`` for new text written in it (typed, or a replacement): without
-    READ_MARKS, so it is Markdown as typed, whatever stood there."""
+    READ_MARKS, so it is Markdown as typed, whatever stood there. After a
+    picture, or in its place, that is plain text's: letters written in a
+    picture's own format were saved as that picture, and so were lost."""
+    if fmt.isImageFormat():
+        return QTextCharFormat()
     plain = QTextCharFormat(fmt)
     for mark in READ_MARKS:
         plain.clearProperty(mark)
@@ -128,13 +133,38 @@ def iter_blocks(doc):
         block = block.next()
 
 
+def picture_pieces(text: str, fmt: QTextCharFormat):
+    """``(offset, text, format)`` for each piece of a fragment in a
+    picture's format that holds more than the one picture: every picture a
+    piece of its own (the same picture twice in a row is one fragment of
+    the document), anything else as the text it is."""
+    offset = 0
+    words = without_read_marks(fmt)
+    for is_picture, chars in itertools.groupby(text, lambda char: char == OBJECT_REPLACEMENT):
+        if is_picture:
+            for char in chars:
+                yield offset, char, fmt
+                offset += 1
+        else:
+            piece = "".join(chars)
+            yield offset, piece, words
+            offset += doc_length(piece)
+
+
 def iter_block_runs(block):
-    """Yield (text, QTextCharFormat) for each fragment of a block, in order."""
+    """Yield (text, QTextCharFormat) for each fragment of a block, in
+    order, a picture always a run of its own (picture_pieces): a writer
+    writes one picture for each run in a picture's format."""
     it = block.begin()
     while not it.atEnd():
         frag = it.fragment()
         if frag.isValid():
-            yield frag.text(), frag.charFormat()
+            text, fmt = frag.text(), frag.charFormat()
+            if len(text) > 1 and OBJECT_REPLACEMENT in text and fmt.isImageFormat():
+                for _offset, piece, piece_format in picture_pieces(text, fmt):
+                    yield piece, piece_format
+            else:
+                yield text, fmt
         it += 1
 
 
