@@ -188,7 +188,7 @@ def test_a_linked_picture_shows_with_its_link_and_description():
 
 TAGS_IN_LINK_WORDS = [
     "[x <y>](u)\n",
-    "See [a </b> c](https://u.example) here.\n",
+    "See [a </y> c](https://u.example) here.\n",
     "![a](p.png)\n[*x <y>*](u)\n\n![b](q.png)\n",                # in a photo group's caption
 ]
 
@@ -617,6 +617,12 @@ def test_markdown_the_editor_can_hold(source):
     "Footnote[^1].\n\n[^1]: The note,\n\n    and its second paragraph.\n",
     "<div>raw</div>\n",
     "[x <y>] in brackets that are no link\n",
+    # HTML in a link's words, not words in angle brackets.
+    '[<img src="logo.png" width="100">](u)\n',
+    "[x<sup>2</sup>](u)\n",
+    "[Line<br>break](u)\n",
+    "[x <!-- c -->](u)\n",
+    "[x <my-card>](u)\n",
     'A [link](https://x.example "with a title").\n',
     "> # a heading in a quote\n",
     "- item\n\n  second paragraph of the item\n- two\n",

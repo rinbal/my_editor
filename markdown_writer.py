@@ -1403,7 +1403,8 @@ def _keep_escaped(doc: QTextDocument, mark: str, placed: int) -> bool:
 #   the words it is, and once read the "<" is marked as written bare
 #   (BARE_TEXT_PROPERTY), so it is written bare again. Only where Qt's
 #   reader reads HTML (not for a preview or a paste), and only a tag that
-#   then reads as itself (_tag_is_its_text).
+#   is no HTML element's and then reads as itself (_tag_is_its_text):
+#   real HTML ("[x<sup>2</sup>](u)") opens the file as its text.
 #
 # For the time Qt reads the Markdown the mark is in it: a Po character no
 # HTML entity names, none of _ESCAPE_MARKS, punctuation as the "!" of the
@@ -1450,11 +1451,35 @@ def _label_tags(markdown: str) -> List[Tuple[int, int]]:
             if _tag_is_its_text(markdown[start:end])]
 
 
+# The names of HTML's elements: the WHATWG HTML standard's index of the
+# elements (MathML's and SVG's roots among them) and the elements it
+# lists as obsolete, and "image", which its parser reads as "img".
+_HTML_ELEMENTS = frozenset("""
+    a abbr address area article aside audio b base bdi bdo blockquote body br button canvas
+    caption cite code col colgroup data datalist dd del details dfn dialog div dl dt em embed
+    fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 head header hgroup hr html i
+    iframe img input ins kbd label legend li link main map mark math menu meta meter nav
+    noscript object ol optgroup option output p picture pre progress q rp rt ruby s samp script
+    search section select selectedcontent slot small source span strong style sub summary sup
+    svg table tbody td template textarea tfoot th thead time title tr track u ul var video wbr
+    applet acronym bgsound dir frame frameset noframes isindex keygen listing menuitem nextid
+    noembed param plaintext rb rtc strike xmp basefont big blink center font marquee multicol
+    nobr spacer tt image
+""".split())
+_TAG_NAME = re.compile(r"</?([A-Za-z][\w-]*)")
+
+
 @lru_cache(maxsize=1024)
 def _tag_is_its_text(tag: str) -> bool:
-    """Whether ``tag`` in a link's words, its "<" escaped, reads as the
-    words it is, in the link's format alone: nothing in it a reader takes
-    for emphasis, code, an entity or an escape."""
+    """Whether ``tag`` in a link's words is words in angle brackets, not
+    HTML a writer meant ("<y>", not "<sup>", "<br>", "<my-card>" or a
+    comment): its name no element's (_HTML_ELEMENTS) and no custom
+    element's (one with a hyphen); and whether, its "<" escaped, it reads
+    as the words it is, in the link's format alone: nothing in it a reader
+    takes for emphasis, code, an entity or an escape."""
+    name = _TAG_NAME.match(tag)
+    if name is None or "-" in name.group(1) or name.group(1).lower() in _HTML_ELEMENTS:
+        return False
     doc = QTextDocument()
     doc.setMarkdown(f"[\\{tag}](u)", READ_FEATURES)
     runs = list(iter_block_runs(doc.begin()))
