@@ -13,7 +13,9 @@ Choose the format in the Save As window, by its file type.
 | PDF (`.pdf`) | Pages as **File > Page Setup…** sets them: paper size (A4 or Letter, from your region), orientation and margins, pictures scaled to the page, and a page number in the footer. |
 | Rich Text (`.rtf`) | Formatted text for word processors, colors and underline too. |
 | Plain text (`.txt`) | The words only, without formatting. |
-| R Markdown (`.Rmd`) | Markdown with a YAML header for R. Colors, highlights and underline are kept as Pandoc spans; pictures go into a folder beside the file. |
+| R Markdown (`.Rmd`) | Markdown with a YAML header for R: headings, lists, tables, code blocks, links and pictures. Colors, highlights and underline are kept as Pandoc spans; pictures go into a folder beside the file. |
+
+**Saving a note as R Markdown.** A formatted note saved as `.Rmd` becomes R Markdown text, the way R and RStudio read it. MyEditor asks first, because **Undo** can't bring the formatted view back; the original file stays as it was, and the question names any picture that can't come along. From then on the tab shows the file's text, so what you type, R code too, is saved as you type it. An `.Rmd` file you open is always shown as its text.
 
 Files MyEditor saves are written safely: a crash while saving never leaves half a file, and a file keeps its permissions, Finder tags and line endings.
 
