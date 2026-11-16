@@ -661,8 +661,9 @@ def code_span_end(text: str, start: int, found: Optional[Found] = None) -> int:
     while start + run < len(text) and text[start + run] == "`":
         run += 1
     at = start + run
-    # A code span ends with its paragraph: at a blank line, or where a
-    # list item starts (a lone backtick in each of two items is no code).
+    # A code span ends with its paragraph: at a blank line, where a list
+    # item starts or a table's row (a lone backtick in each of two items
+    # or rows is no code).
     limit = _paragraph_end(text, at, found)
     ticks = "`" * run
     while True:
@@ -764,7 +765,7 @@ def _next_of(text: str, char: str, start: int, found: Optional[Found]) -> int:
     return index
 
 
-_PARAGRAPH_END = re.compile(r"\n(?=[ \t]*\n|[ \t>]*(?:[-*+]|\d{1,9}[.)])[ \t])")
+_PARAGRAPH_END = re.compile(r"\n(?=[ \t]*\n|[ \t>]*(?:[-*+]|\d{1,9}[.)])[ \t]|[ \t>]*\|)")
 
 
 def _paragraph_end(text: str, start: int, found: Optional[Found]) -> int:

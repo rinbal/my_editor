@@ -391,6 +391,15 @@ def test_an_item_that_would_read_as_a_divider_is_written_as_an_item():
         assert doc.firstBlock().textList() is not None and doc.firstBlock().text() == words
 
 
+def test_a_lone_backtick_in_a_tables_row_makes_no_code_of_the_next():
+    # Code ends with its row: the address was taken for code that ran
+    # from the first row to the last, and lost its angle brackets.
+    source = "| ` | b |\n| --- | --- |\n| c | <https://a.example> |\n| `x` | d |\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
 def test_a_table_with_code_in_a_cell_that_spans_columns_opens():
     # Qt's reader lets a cell before empty ones span them. The escaped pipe
     # in its code was taken out once for each column, the table fell
