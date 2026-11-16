@@ -72,9 +72,16 @@ BARE_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B5
 # may drop (markdown_writer's _keep_entities).
 ENTITY_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B6
 
+# An address a file wrote in angle brackets ("<https://a.example>"). It
+# reads as a link that shows its address, as a bare one does, which the
+# writer writes bare where readers find it; this one it writes in its
+# brackets again, while its words are its address (markdown_writer's
+# _marked_keeps).
+ANGLED_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B8
+
 # The marks above belong to the characters that carry them alone.
 READ_MARKS = (SOFT_BREAK_PROPERTY, ESCAPED_TEXT_PROPERTY, TYPED_TEXT_PROPERTY,
-              BARE_TEXT_PROPERTY, ENTITY_TEXT_PROPERTY)
+              BARE_TEXT_PROPERTY, ENTITY_TEXT_PROPERTY, ANGLED_TEXT_PROPERTY)
 
 
 # A block the file set apart from the block before it in a way the

@@ -291,6 +291,24 @@ def test_a_hard_line_break_stays_a_line_break(source):
     assert document_to_markdown(doc, _image_as_read) == source
 
 
+@pytest.mark.parametrize("source", ["<https://a.example>\n", "See <a@b.example>.\n",
+                                    "text\nhttps://a.example\n"])
+def test_an_address_is_written_as_the_file_wrote_it(source):
+    # One in angle brackets was written bare, and a bare one that starts
+    # a line in angle brackets.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
+@pytest.mark.parametrize("source", ["a [](u) b\n", "[x <https://a.example>](u)\n"])
+def test_a_link_the_editor_cannot_hold_opens_as_text(source):
+    # Qt's reader drops a link with no words, and takes an address in a
+    # link's words out of the link.
+    assert not holds_faithfully(source)
+
+
 def test_a_line_broken_off_a_block_set_apart_stays_with_it():
     # Return gives the new line its block's format: it is no third block.
     doc = QTextDocument()

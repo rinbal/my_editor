@@ -66,6 +66,7 @@ from PySide6.QtGui import (
 )
 
 from doc_walk import (
+    ANGLED_TEXT_PROPERTY,
     APART_PROPERTY,
     BARE_TEXT_PROPERTY,
     BULLET_MARKER,
@@ -86,9 +87,9 @@ from doc_walk import (
 import photo_group
 import photo_group_find
 from markdown_scan import (DELIMITER_ROW, EMPTY_ITEM_LINE, ESCAPABLE, FENCE_LINE, LIST_LINE,
-                           bracketed, descriptions, emphasized_code, empty_items, entities,
-                           escapes, hard_breaks, heading_in_item, lossy_definition, pictures,
-                           set_apart, titled_link)
+                           autolinks, bracketed, descriptions, emphasized_code, empty_items,
+                           entities, escapes, hard_breaks, heading_in_item, lossy_definition,
+                           pictures, set_apart, titled_link)
 from rich_text import normalize_after_markdown_load, same_code_block
 
 ImageTarget = Callable[[object], Optional[str]]
@@ -190,6 +191,7 @@ class _Span:
     escaped: bool = False      # escaped in the file: written escaped again
     bare: bool = False         # a "<" bare in the file's link words: written bare again
     spelled: str = ""          # the entity the file wrote for it (ENTITY_TEXT_PROPERTY)
+    angled: bool = False       # an address the file wrote in angle brackets: so again
 
 
 @dataclass
@@ -247,7 +249,8 @@ def _spans_of(runs, image_target: Optional[ImageTarget]) -> List[_Span]:
                            href=href or "", literal=fmt.boolProperty(TYPED_TEXT_PROPERTY),
                            escaped=fmt.boolProperty(ESCAPED_TEXT_PROPERTY),
                            bare=fmt.boolProperty(BARE_TEXT_PROPERTY),
-                           spelled=str(fmt.property(ENTITY_TEXT_PROPERTY) or "")))
+                           spelled=str(fmt.property(ENTITY_TEXT_PROPERTY) or ""),
+                           angled=fmt.boolProperty(ANGLED_TEXT_PROPERTY)))
     return _merged(spans)
 
 
@@ -277,9 +280,10 @@ def _merged(spans: List[_Span]) -> List[_Span]:
     for span in spans:
         if (out and not span.raw and not out[-1].raw
                 and (out[-1].bold, out[-1].italic, out[-1].strike, out[-1].code, out[-1].href,
-                     out[-1].literal, out[-1].escaped, out[-1].bare, out[-1].spelled)
+                     out[-1].literal, out[-1].escaped, out[-1].bare, out[-1].spelled,
+                     out[-1].angled)
                 == (span.bold, span.italic, span.strike, span.code, span.href, span.literal,
-                    span.escaped, span.bare, span.spelled)):
+                    span.escaped, span.bare, span.spelled, span.angled)):
             out[-1].text += span.text
         else:
             out.append(span)
@@ -573,20 +577,22 @@ def _reads_back_whole(address: str, href: str) -> bool:
             and all(fmt.isAnchor() and fmt.anchorHref() == href for _text, fmt in runs))
 
 
-def _autolink(address: str, href: str, before: str, following: Optional[_Span]) -> str:
+def _autolink(address: str, href: str, before: str, following: Optional[_Span],
+              angled: bool = False) -> str:
     """A link that shows its own address, written so every reader links it.
 
     Bare, the way it was typed, where a reader finds it by itself: a web
-    address or an email between spaces, with no character a reader would
-    take for emphasis, and only one that Qt's reader takes back whole.
-    Readers that look for a bare address (a picture or a video alone on
-    its line becomes a player) find it there. Anywhere else it is written
-    ``<address>``, which every reader keeps whole.
+    address or an email between spaces or at a line's start, with no
+    character a reader would take for emphasis, and only one that Qt's
+    reader takes back whole. Readers that look for a bare address (a
+    picture or a video alone on its line becomes a player) find it there.
+    Anywhere else it is written ``<address>``, which every reader keeps
+    whole; and where the file wrote it so (``angled``).
     """
     is_email = "@" in address and "://" not in address
     findable = (address.lower().startswith(("https://", "http://", "www.")) or is_email)
-    if (findable and not any(ch in _MARKUP_IN_ADDRESS for ch in address)
-            and (not before or before[-1].isspace() or before[-1] == "(")
+    if (not angled and findable and not any(ch in _MARKUP_IN_ADDRESS for ch in address)
+            and (not before or before[-1].isspace() or before[-1] in ("(", _SOFT))
             and _ends_a_bare_address(address, following)
             and _reads_back_whole(address, href)):
         return address
@@ -670,7 +676,8 @@ def _inline_markdown(spans: List[_Span], hard_break: str = "  \n",
                 _SOFT, " ")
             address = "" if pictured else _own_address(words.strip(), span.href)
             if address and not any(s.bold or s.italic or s.strike for s in group):
-                written = _autolink(address, span.href, "".join(out), following)
+                written = _autolink(address, span.href, "".join(out), following,
+                                    all(s.angled for s in group))
                 if seen is not None:
                     seen.append((first, i, written == address))
                 out.append(written)
@@ -1426,12 +1433,11 @@ def _read_once(doc: QTextDocument, markdown: str, features, alts: dict,
     (``alts``) and the ``soft`` breaks (their mark, how many) joined; how
     many were joined, and whether all was kept."""
     markdown = literal_footnotes(markdown)
-    keeping, keep_mark, lost = _marked_keeps(markdown, features)
+    keeping, keep_mark, kinds, lost = _marked_keeps(markdown, features)
     keeping, apart_mark_, quotes, runs_on = _marked_apart(keeping)
     doc.setMarkdown(keeping, features)
     if not ((apart_mark_ is None or _set_apart(doc, apart_mark_, quotes))
-            and (keep_mark is None
-                 or _kept_by_marks(doc, keep_mark, keeping.count(keep_mark)))):
+            and (keep_mark is None or _kept_by_marks(doc, keep_mark, kinds))):
         # Read otherwise than the marks expected: read without them, and
         # what they kept is left out.
         doc.setMarkdown(markdown, features)
@@ -1692,6 +1698,16 @@ def _set_apart(doc: QTextDocument, mark: str, quotes: Sequence[int]) -> bool:
 #   is no HTML element's and then reads as itself (_tag_is_its_text):
 #   real HTML ("[x<sup>2</sup>](u)") opens the file as its text.
 #
+# - The angle brackets of an address ("<https://a.example>"), which
+#   reads as a link that shows its address, as a bare one does. A mark
+#   stands before each (markdown_scan.autolinks), and once read the link
+#   after it is marked as written so (ANGLED_TEXT_PROPERTY): the writer
+#   writes such a link bare where readers find it, and this one in its
+#   brackets again. In a link's words the address would be a link in a
+#   link, which the editor cannot hold: the file opens as its text. So
+#   does one with a link that has no words ("[](u)"), which Qt's reader
+#   drops.
+#
 # For the time Qt reads the Markdown the mark is in it: a Po character no
 # HTML entity names, none of _ESCAPE_MARKS, punctuation as the "!" of the
 # picture is, so emphasis beside it reads as before. A file is read with
@@ -1699,28 +1715,40 @@ def _set_apart(doc: QTextDocument, mark: str, quotes: Sequence[int]) -> bool:
 _KEEP_MARKS = ("\u2e31", "\u2e33", "\u2e34", "\u2e32")
 
 
-def _marked_keeps(markdown: str, features) -> Tuple[str, Optional[str], bool]:
+# What a mark of _marked_keeps keeps: an empty item, the link around a
+# picture, a tag in a link's words, an address's angle brackets.
+_ITEM, _PICTURE, _TAG, _ADDRESS = "item", "picture", "tag", "address"
+
+
+def _marked_keeps(markdown: str, features) -> Tuple[str, Optional[str], List[str], bool]:
     """The Markdown with a mark (_KEEP_MARKS) where Qt's reader, reading
     with ``features``, would leave out what the editor holds, the mark
-    (None for none), and whether something is left out all the same: an
-    empty list item where a word would change the lists, raw HTML but
-    the tags kept, or no free mark."""
+    (None for none), what each mark keeps (_ITEM, _PICTURE, _TAG,
+    _ADDRESS, in their order), and whether something is left out all the
+    same: an empty list item where a word would change the lists, a link
+    with no words, raw HTML but the tags kept, or no free mark."""
     items, lost = empty_items(markdown)
     # (After the line's spaces and tabs: Qt's reader keeps a tab after
     # the words of an item.)
-    places = [(at, "" if markdown[at - 1] in " \t" else " ", "") for at in items]
+    places = [(at, "" if markdown[at - 1] in " \t" else " ", "", _ITEM) for at in items]
     pictured, tags = bracketed(markdown)
-    places += [(at, "", "") for at in pictured]
+    places += [(at, "", "", _PICTURE) for at in pictured]
     html = _reads_html(features)
     if html:
-        places += [(start, "", "\\") for start, end in tags
+        places += [(start, "", "\\", _TAG) for start, end in tags
                    if _tag_is_its_text(markdown[start:end])]
+    addresses, wordless = autolinks(markdown) if "<" in markdown or "[" in markdown else ([], False)
+    places += [(at, "", "", _ADDRESS) for at in addresses]
     places.sort()
     mark = _free_mark(markdown, _KEEP_MARKS) if places else None
-    marked = markdown if mark is None else _with_marks(markdown, places, mark)
+    if mark is None:
+        marked, kinds = markdown, []
+    else:
+        marked = _with_marks(markdown, [place[:3] for place in places], mark)
+        kinds = [place[3] for place in places]
     # (The tags kept are escaped now: raw HTML left is dropped.)
-    return marked, mark, (lost or (bool(places) and mark is None)
-                          or (html and _RAW_HTML.search(marked) is not None))
+    return marked, mark, kinds, (lost or wordless or (bool(places) and mark is None)
+                                 or (html and _RAW_HTML.search(marked) is not None))
 
 
 def _reads_html(features) -> bool:
@@ -1775,42 +1803,71 @@ def _tag_is_its_text(tag: str) -> bool:
             and not _is_code(runs[0][1]))
 
 
-def _kept_by_marks(doc: QTextDocument, mark: str, placed: int) -> bool:
+def _kept_by_marks(doc: QTextDocument, mark: str, kinds: Sequence[str]) -> bool:
     """Each ``mark`` _marked_keeps set taken out again, and what it kept
-    given to its place: to the picture after it, the link the mark was
-    in; to the "<" after it, that it was written bare in a link's words;
-    else an empty list item. False when fewer than the ``placed`` marks
-    were in the text, a format holds one, or one stood anywhere else (the
-    Markdown was not read as the marks expected)."""
+    (``kinds``, in the marks' order) given to its place: to the picture
+    after it, the link the mark was in; to the "<" after it, that it was
+    written bare in a link's words; to the link after it, that its
+    address was written in angle brackets; else an empty list item. False
+    when the marks in the text are not as many, a format holds one, one
+    stood where its kind does not (the Markdown was not read as the marks
+    expected), or an address in angle brackets stood in a link's words."""
     taken = _take_marks(doc, mark)
-    if len(taken) != placed or _in_formats(doc, mark):
+    if len(taken) != len(kinds) or _in_formats(doc, mark):
         return False
     bare = QTextCharFormat()
     bare.setProperty(BARE_TEXT_PROPERTY, True)
-    for position, fmt in taken:
-        if doc.characterAt(position) == "<":
-            if not (fmt.isAnchor() and fmt.anchorHref()):
-                return False            # brackets that were no link
-            tag = QTextCursor(doc)
-            tag.setPosition(position)
-            tag.setPosition(position + 1, QTextCursor.MoveMode.KeepAnchor)
-            tag.mergeCharFormat(bare)
+    angled = QTextCharFormat()
+    angled.setProperty(ANGLED_TEXT_PROPERTY, True)
+    for (position, fmt), kind in zip(taken, kinds):
+        if kind == _ITEM:
+            block = doc.findBlock(position)
+            if block.textList() is None or block.length() != 1:
+                return False
             continue
-        if doc.characterAt(position) == OBJECT_REPLACEMENT:
-            picture = QTextCursor(doc)
-            picture.setPosition(position)
-            picture.setPosition(position + 1, QTextCursor.MoveMode.KeepAnchor)
-            if picture.charFormat().isImageFormat():
-                if fmt.isAnchor() and fmt.anchorHref():
-                    link = QTextCharFormat()
-                    link.setAnchor(True)
-                    link.setAnchorHref(fmt.anchorHref())
-                    picture.mergeCharFormat(link)
-                continue
-        block = doc.findBlock(position)
-        if block.textList() is None or block.length() != 1:
-            return False
+        linked = fmt.isAnchor() and bool(fmt.anchorHref())
+        after = QTextCursor(doc)
+        after.setPosition(position)
+        after.movePosition(QTextCursor.MoveOperation.NextCharacter,
+                           QTextCursor.MoveMode.KeepAnchor)
+        if kind == _TAG:
+            if doc.characterAt(position) != "<" or not linked:
+                return False            # brackets that were no link
+            after.mergeCharFormat(bare)
+        elif kind == _PICTURE:
+            if doc.characterAt(position) != OBJECT_REPLACEMENT \
+                    or not after.charFormat().isImageFormat():
+                return False
+            if linked:
+                link = QTextCharFormat()
+                link.setAnchor(True)
+                link.setAnchorHref(fmt.anchorHref())
+                after.mergeCharFormat(link)
+        else:
+            if linked:
+                return False            # a link in a link's words
+            address = after.charFormat()
+            if address.isAnchor() and address.anchorHref():
+                after.setPosition(_link_end(doc, position, address.anchorHref()),
+                                  QTextCursor.MoveMode.KeepAnchor)
+                after.mergeCharFormat(angled)
     return True
+
+
+def _link_end(doc: QTextDocument, position: int, href: str) -> int:
+    """Where the link to ``href`` that starts at ``position`` ends, in its
+    block."""
+    block = doc.findBlock(position)
+    last = block.position() + block.length() - 1
+    cursor = QTextCursor(doc)
+    end = position
+    while end < last:
+        cursor.setPosition(end + 1)
+        fmt = cursor.charFormat()       # (of the character before the cursor)
+        if not (fmt.isAnchor() and fmt.anchorHref() == href):
+            break
+        end += 1
+    return end
 
 
 # Where Qt's reader puts words of the Markdown that are not its text.

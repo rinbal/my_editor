@@ -973,7 +973,15 @@ def escapes(markdown: str) -> List[int]:
     for the character after it (``\\*`` for a star that is no emphasis):
     outside code, an autolink or a tag, a picture's description and a
     link's address (a reference definition's too)."""
-    return _escapes_and_entities(markdown, False)[0]
+    return _inline(markdown, False).escapes
+
+
+def autolinks(markdown: str) -> Tuple[List[int], bool]:
+    """Where each autolink of ``markdown`` starts ("<https://a.example>",
+    "<a@b.example>": its "<"), where escapes are (escapes); and whether a
+    link has no words ("[](u)"), which Qt's reader leaves out."""
+    found = _inline(markdown, False)
+    return found.autolinks, found.wordless
 
 
 def entities(markdown: str) -> List[Tuple[int, int, bool]]:
@@ -987,7 +995,7 @@ def entities(markdown: str) -> List[Tuple[int, int, bool]]:
     addresses = _Blocked([word.span() for word in _WORD.finditer(markdown)
                           if any(part in word.group(0).lower() for part in ("://", "www.", "@"))])
     return [(start, end, labels.end(start) is None)
-            for start, end in _escapes_and_entities(markdown, True)[1]
+            for start, end in _inline(markdown, True).entities
             if addresses.end(start) is None]
 
 
@@ -1001,20 +1009,37 @@ _STARTS_ESCAPE_OR_ENTITY = re.compile(r"[\\`<&]|!\[|\]\(")
 _WORD = re.compile(r"[^ \t\n]+")
 
 
-def _escapes_and_entities(markdown: str, entities_too: bool) -> Tuple[List[int],
-                                                                       List[Tuple[int, int]]]:
-    """escapes, and the entities where they are (entities)."""
+def _wordless(text: str, close: int) -> bool:
+    """Whether the brackets that end at ``close`` hold no words ("[]",
+    "[ ]"), and are no picture's nor escaped."""
+    at = close - 1
+    while at >= 0 and text[at] in " \t":
+        at -= 1
+    return at >= 0 and text[at] == "[" and text[at - 1:at] not in ("!", "\\")
+
+
+class _Inline(NamedTuple):
+    """What _inline finds between the code, the descriptions and the
+    addresses of a text."""
+
+    escapes: List[int]                  # where each escape is (escapes)
+    entities: List[Tuple[int, int]]     # each entity, when asked for (entities)
+    autolinks: List[int]                # where each autolink starts (autolinks)
+    wordless: bool                      # whether a link has no words
+
+
+def _inline(markdown: str, entities_too: bool) -> _Inline:
+    """One walk for escapes, entities and autolinks."""
     blocked = _Blocked(_code_ranges(markdown)
                        + [definition.span(1) for definition in _DEFINITION.finditer(markdown)])
-    found: List[int] = []
-    found_entities: List[Tuple[int, int]] = []
+    found = _Inline([], [], [], False)
     starts = _STARTS_ESCAPE_OR_ENTITY if entities_too else _STARTS_ESCAPE
     scanned = Found()
     index = 0
     while True:
         nearest = starts.search(markdown, index)
         if nearest is None:
-            return found, found_entities
+            return found
         index = nearest.start()
         end = blocked.end(index)
         if end is not None:
@@ -1024,15 +1049,19 @@ def _escapes_and_entities(markdown: str, entities_too: bool) -> Tuple[List[int],
             index = index + 2 if close is None else close
         elif markdown.startswith("](", index):
             close = destination_end(markdown, index + 1, scanned)
+            if close is not None and _wordless(markdown, index):
+                found = found._replace(wordless=True)
             index = index + 2 if close is None else close + 1
         elif markdown[index] == "&":
             entity = _ENTITY.match(markdown, index)
             if entity is not None:
-                found_entities.append(entity.span())
+                found.entities.append(entity.span())
             index = index + 1 if entity is None else entity.end()
         else:
             skipped = skip_inline(markdown, index, scanned)
             if skipped == index + 2 and markdown[index] == "\\":
-                found.append(index)
+                found.escapes.append(index)
+            elif skipped is not None and _AUTOLINK.match(markdown, index):
+                found.autolinks.append(index)
             index = index + 1 if skipped is None else skipped
 
