@@ -700,6 +700,15 @@ def test_a_tab_in_code_that_qts_reader_keeps_opens_the_file():
     assert holds_faithfully(source) and "\n\tx\n" in document_to_markdown(doc)
 
 
+def test_a_quote_mark_in_a_fence_is_code():
+    # A ">" alone on a line of code was taken for an empty quote, and the
+    # file opened as text.
+    for source in ("```\n>\n```\n", "> ```\n> >\n> ```\n"):
+        doc = QTextDocument()
+        read_markdown(doc, source)
+        assert holds_faithfully(source) and document_to_markdown(doc) == source
+
+
 def test_a_fence_is_judged_by_the_lines_it_holds():
     # A longer fence holds a shorter one's line as code, and one set in
     # where its quote opens loses nothing while no line of it is set in:

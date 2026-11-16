@@ -455,7 +455,8 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
     misread = False
     for number, line in enumerate(lines):
         starts.append(False)
-        depth = _quote_depth(line)
+        # (A line in a fence stands in the fence's quotes: a ">" in it is code.)
+        depth = quoted if code[number] == _FENCED else _quote_depth(line)
         rest = _inside_quotes(line, depth)
         item = None if code[number] else _ITEM.fullmatch(rest)
         heading = not code[number] and _HEADING_OR_BREAK.fullmatch(rest) is not None
