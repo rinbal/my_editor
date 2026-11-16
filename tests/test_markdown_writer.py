@@ -609,6 +609,9 @@ def test_a_heading_or_a_divider_in_a_quote_opens_as_text():
     "    a\n\n>\n\n    b\n",                              # an empty quote between code
     "> a\n> >\n",                                       # an empty quote in a quote
     "- ```\n- b\n",                                      # an item that opens a fence
+    "1. Install.\n\n   > Note\n",                          # a quote in an item
+    "- a\n\n\n  > q\n",                                   # after two blank lines
+    "> - a\n>\n>   > q\n",                                 # in an item in a quote
     "a\u2028b\n",                                  # the document's own line break
 ])
 def test_blocks_qts_reader_reads_otherwise_open_as_text(source):

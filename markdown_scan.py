@@ -248,7 +248,7 @@ def misread_blocks(markdown: str) -> bool:
     bold. A quote with nothing in it (">"). An item that opens with
     another list's item, a quote or a fence ("- ```", "- - a",
     "- > a"), what goes on in an item after a blank line ("- a\\n\\n  b":
-    it takes that out of the list), and a marker alone, with spaces after
+    it takes that out of the list), a quote in an item ("- a\\n  > q"), and a marker alone, with spaces after
     it, under words ("a\\n* "). A heading with no words, a fence with nothing in it or
     one that starts the text with a blank line, which it leaves out. A
     table in a quote, under words ("Text\\n| a |\\n| - |") or with fewer
@@ -461,6 +461,12 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
         if held and (lazy or rest.strip()):
             held[-1] = True
         if not lazy:
+            if depth > quoted and items and items_depth == quoted and not code[number]:
+                # A quote that opens in an item (its mark at the item's
+                # words or right of them): Qt's reader takes it out of the
+                # list.
+                at = _indent(_inside_quotes(line, quoted) or "")
+                misread = misread or at is None or at >= items[0]
             quoted = depth
             if depth != items_depth:
                 items, items_depth, shifted, gap = [], depth, None, False
