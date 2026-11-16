@@ -682,6 +682,18 @@ def test_a_github_alert_keeps_its_first_line(kind):
     assert holds_faithfully(source) and document_to_markdown(doc) == source
 
 
+def test_lines_of_a_quote_or_an_item_stay_lines():
+    # A hard-wrapped quote or item was saved as one line: a word changed,
+    # every wrapped item of the file was rewritten. An item's second
+    # paragraph opens the file as its text.
+    for source in ("> a\n> b\n", "- a\n  b\n", "> - a\n>   b\n",
+                   "> [!TIP]\n> Keep it short.\n> Really.\n", "- a\n    - b\n      c\n"):
+        doc = QTextDocument()
+        read_markdown(doc, source)
+        assert holds_faithfully(source) and document_to_markdown(doc) == source, source
+    assert not holds_faithfully("- a\n\n  b\n  c\n")
+
+
 def test_a_block_under_a_github_alert_stays_a_block():
     # The line under "> [!NOTE]" was joined to it as words even where it
     # starts a block: a list's first item, a fence. A list, code or a quote

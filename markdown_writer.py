@@ -94,7 +94,7 @@ from doc_walk import (
 import photo_group
 import photo_group_find
 from markdown_scan import (DELIMITER_ROW, ESCAPABLE, FENCE_LINE,
-                           autolinks, bracketed, code_tabs, descriptions, emphasized_code, empty_items,
+                           autolinks, bracketed, code_lines, code_tabs, descriptions, emphasized_code, empty_items,
                            ends_in_break, entities, escapes, fence_words, hard_breaks,
                            lossy_definition, misread_blocks, pictures, set_apart, titled_link)
 from rich_text import code_info, normalize_after_markdown_load, same_code_block
@@ -1230,8 +1230,9 @@ _BLOCK_START = re.compile(r"^\s*(?:[-*+]\s|\d+[.)]\s|>|#|\||```|~~~|    |\t)")
 def _soft_breaks(markdown: str) -> Tuple[bool, List[int]]:
     """Where lines of one paragraph follow each other (soft line breaks):
     ``(lossy, lines)``, ``lines`` the numbers of the lines a soft break
-    ends. ``lossy`` when a break is one the editor cannot hold: inside an
-    indented paragraph or a list item, or where a line may be a table's.
+    ends, in a quote and a list item too. ``lossy`` when a break is one the
+    editor cannot hold: inside an indented paragraph, or where a line may
+    be a table's.
     (A list item continued after a blank line: markdown_scan.misread_blocks.)"""
     lines = markdown.split("\n")
     # Lines in fenced code, the fences among them: code keeps its lines.
@@ -1249,10 +1250,35 @@ def _soft_breaks(markdown: str) -> Tuple[bool, List[int]]:
             fence = found_fence.group(1)
         else:
             coded.append(False)
+    # (In a quote or a list item too: code_lines knows its fences.)
+    kinds = code_lines(lines)
     found: List[int] = []
+    # The column the words of the item the paragraph is in start at, in
+    # its quote (None: in no item).
+    column: Optional[int] = None
+    column_depth = 0
     for index in range(1, len(lines)):
         line, before = lines[index], lines[index - 1]
-        if coded[index] or coded[index - 1]:
+        if not before.strip() or kinds[index - 1] or _quote_marks(before) != column_depth:
+            column = None
+        item = _ITEM_WORDS.match(before[len(_QUOTE_MARKS.match(before).group(0)):])
+        if item is not None:
+            column, column_depth = len(item.group(0)), _quote_marks(before)
+        if coded[index] or coded[index - 1] or kinds[index] or kinds[index - 1]:
+            continue
+        depth = _quote_marks(before)
+        if depth or column is not None:
+            # A paragraph in a quote or a list item, the line under it
+            # set in to its words, in the same quote: what goes on with
+            # the words is a soft break, as in a paragraph of its own.
+            words = before[len(_QUOTE_MARKS.match(before).group(0)):]
+            under = line[len(_QUOTE_MARKS.match(line).group(0)):]
+            at = column or 0
+            if (_quote_marks(line) == depth and not ends_in_break(before)
+                    and _goes_on(words[at:] if item is not None else words.lstrip(" "))
+                    and under[:at] == " " * at and _goes_on(under[at:])
+                    and "|" not in line and "|" not in before):
+                found.append(index - 1)
             continue
         if (line.strip() and before.strip() and not _BLOCK_START.match(line)
                 and not _BLOCK_START.match(before) and not ends_in_break(before)
@@ -1265,20 +1291,13 @@ def _soft_breaks(markdown: str) -> Tuple[bool, List[int]]:
                     or "|" in line or "|" in before):
                 return True, []
             found.append(index - 1)
-        elif _ALERT_LINE.match(before) and _quote_marks(line) == _quote_marks(before) \
-                and _goes_on(line[len(_QUOTE_MARKS.match(line).group(0)):]):
-            # A quote that opens with GitHub's alert ("> [!NOTE]") is a
-            # box only while the words start on the next line; a block
-            # that starts there (a list, code, a heading) is apart already.
-            found.append(index - 1)
     if found and _free_mark(markdown, _SOFT_MARKS) is None:
         return True, []
     return False, found
 
 
-# The first line of a quote that GitHub shows as an alert box.
-_ALERT_LINE = re.compile(r"^ {0,3}(?:> ?)+\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*$",
-                         re.IGNORECASE)
+# An item's marker, and the spaces after it up to its words.
+_ITEM_WORDS = re.compile(r" *(?:[-*+]|\d{1,9}[.)]) {1,4}(?=\S)")
 _QUOTE_MARKS = re.compile(r"^(?: {0,3}> ?)*")
 
 
