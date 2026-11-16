@@ -201,6 +201,35 @@ def test_a_document_saved_as_rmd_is_r_markdown_source_from_then_on(win, tmp_path
     assert open(path, encoding="utf-8").read() == first + "The mean is `r mean(x)`.\n"
 
 
+def test_a_document_made_r_markdown_is_text_in_no_format(win, tmp_path):
+    # With the caret after a bold word, every character of the R Markdown
+    # was bold (each save then asked to leave the formatting out), and the
+    # caret stood before the front matter, where typing breaks it.
+    from PySide6.QtGui import QFont, QTextCharFormat
+    from doc_walk import iter_blocks
+    ed = _editor_with(text="A ")
+    bold = QTextCharFormat()
+    bold.setFontWeight(QFont.Weight.Bold)
+    cursor = ed.textCursor()
+    cursor.insertText("bold", bold)
+    ed.setTextCursor(cursor)
+    win._ed = ed
+    assert win._save_to(str(tmp_path / "paper.Rmd")) is True
+    text = ed.toPlainText()
+    assert text.startswith("---\n")
+    assert not any(fragment.charFormat().fontWeight() > QFont.Weight.Normal
+                   for block in iter_blocks(ed.document()) for fragment in _fragments(block))
+    assert ed.textCursor().position() == text.index("A **bold**")
+    assert not win._has_formatting(ed)
+
+
+def _fragments(block):
+    it = block.begin()
+    while not it.atEnd():
+        yield it.fragment()
+        it += 1
+
+
 def test_r_markdown_saved_as_md_is_written_as_it_is(win, tmp_path):
     # Each line of the text was written as a paragraph of its own: a blank
     # line after every line, in the code chunks too.

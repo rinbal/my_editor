@@ -479,6 +479,13 @@ class HtmlEditor(QTextEdit):
         self._top_inset = 0
         self.viewport().setAutoFillBackground(False)
 
+    def setPlainText(self, text: str) -> None:
+        """A whole new text, in no format. QTextEdit gives it the caret's
+        character format: after a bold word, or in a link, every character
+        of the text would be bold, or the link."""
+        self.setCurrentCharFormat(QTextCharFormat())
+        super().setPlainText(text)
+
     def undo(self):
         self.end_typing_run()
         count = self.document().availableUndoSteps()

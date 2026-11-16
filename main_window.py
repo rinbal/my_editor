@@ -6384,6 +6384,12 @@ class MainWindow(QMainWindow):
         a document's words are, while its file's name left it without a
         document's commands."""
         self._set_editor_content(ed, path, content)
+        # The caret where the writing starts, under the front matter: what
+        # is typed before it breaks the header R reads first.
+        cursor = ed.textCursor()
+        text = ed.toPlainText()
+        cursor.setPosition(len(text) - len(front_matter.split(text)[1]))
+        ed.setTextCursor(cursor)
         self._attach_highlighter(ed, path)
         self._update_editor_commands()
 
