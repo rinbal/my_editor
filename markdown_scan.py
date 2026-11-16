@@ -125,6 +125,19 @@ def code_lines(lines: List[str]) -> List[str]:
     return out
 
 
+def tab_in_code_indent(markdown: str) -> bool:
+    """Whether a line of code, fenced or indented, in a quote too, holds a
+    tab in its indent: Qt's reader makes it spaces (a Makefile stops
+    working). A tab after the code's first character it keeps."""
+    lines = markdown.split("\n")
+    for line, kind in zip(lines, code_lines(lines)):
+        if kind in (_FENCED, _INDENTED):
+            rest = _inside_quotes(line, _quote_depth(line)) or ""
+            if "\t" in rest[:len(rest) - len(rest.lstrip(" \t"))]:
+                return True
+    return False
+
+
 def fence_words(lines: List[str]) -> List[Tuple[int, str]]:
     """What each fence says where it opens ("js title=x" of "```js
     title=x"), with its line's number."""

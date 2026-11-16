@@ -96,7 +96,8 @@ import photo_group_find
 from markdown_scan import (DELIMITER_ROW, EMPTY_ITEM_LINE, ESCAPABLE, FENCE_LINE, LIST_LINE,
                            autolinks, bracketed, descriptions, emphasized_code, empty_items,
                            ends_in_break, entities, escapes, fence_words, hard_breaks,
-                           lossy_definition, misread_blocks, pictures, set_apart, titled_link)
+                           lossy_definition, misread_blocks, pictures, set_apart, tab_in_code_indent,
+                           titled_link)
 from rich_text import code_info, normalize_after_markdown_load, same_code_block
 
 log = logging.getLogger(__name__)
@@ -2241,23 +2242,6 @@ def _restore_descriptions(doc: QTextDocument, alts: dict) -> None:
             cursor.insertText(alts[word][1], fmt)
 
 
-def _tab_in_fence(markdown: str) -> bool:
-    """Whether a fenced code block holds a tab (Qt's reader makes it spaces,
-    and a Makefile stops working)."""
-    fence = ""
-    for line in markdown.split("\n"):
-        found = FENCE_LINE.match(line)
-        if fence:
-            if found and found.group(1)[0] == fence[0] and len(found.group(1)) >= len(fence) \
-                    and not found.group(2).strip():
-                fence = ""
-            elif "\t" in line:
-                return True
-        elif found:
-            fence = found.group(1)
-    return False
-
-
 _HEADER_EMPHASIS = re.compile(r"\*|~~|(?<![\w\\])_|_(?!\w)")
 
 
@@ -2287,7 +2271,7 @@ def holds_faithfully(markdown: str) -> bool:
 
 def _holds(markdown: str) -> bool:
     if (any(pattern.search(markdown) for pattern in _LOSSY) or _raw_html(markdown)
-            or _soft_wrapped(markdown) or _tab_in_fence(markdown) or _table_loses(markdown)
+            or _soft_wrapped(markdown) or tab_in_code_indent(markdown) or _table_loses(markdown)
             or titled_link(markdown) or lossy_definition(markdown) or emphasized_code(markdown)
             or misread_blocks(markdown)):
         return False

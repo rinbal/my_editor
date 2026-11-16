@@ -630,6 +630,15 @@ def test_a_space_a_file_writes_by_name_is_no_mark():
     assert document_to_markdown(doc) == source
 
 
+def test_a_tab_after_the_start_of_a_code_line_is_kept():
+    # Qt's reader makes a tab in a code line's indent spaces, and only
+    # there: a code block with a tab between its words opens as it is.
+    source = "```\na\tb\n```\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert holds_faithfully(source) and document_to_markdown(doc) == source
+
+
 def test_a_fence_is_judged_by_the_lines_it_holds():
     # A longer fence holds a shorter one's line as code, and one set in
     # where its quote opens loses nothing while no line of it is set in:
@@ -1046,6 +1055,8 @@ def test_markdown_the_editor_can_hold(source):
     "a | b\nc | d\n",
     # Review M6 (CP3): what the editor's own reader changes.
     "```make\nall:\n\tcc main.c\n```\n",                      # a tab in code
+    "all:\n\n    all:\n    \techo hi\n",                      # in indented code
+    "> ```\n> \tx\n> ```\n",                                  # in a fence in a quote
     "| a | b |\n| :--- | ---: |\n| 1 | 2 |\n",                    # alignment
     "| **a** | b |\n| --- | --- |\n| 1 | 2 |\n",                 # emphasis in a header
     "1. Run this:\n\n   ```sh\n   make\n   ```\n",            # code in a list item
