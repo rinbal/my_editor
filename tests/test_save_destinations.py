@@ -269,7 +269,7 @@ def test_a_document_is_made_r_markdown_only_once_asked(win, tmp_path, monkeypatc
     assert win._ask_before_losing(ed, str(shared / "note.Rmd")) == "cancel"
     assert asked[0]["title"] == "Save as R Markdown?"
     assert [button.label for button in asked[0]["buttons"]] == ["Cancel", "Save as R Markdown"]
-    assert asked[0]["message"].endswith("can’t come along and is left out: far.png")
+    assert asked[0]["message"].endswith("This picture isn’t taken along: far.png")
     assert not (shared / "note_media").exists()
     text = _editor_with(text="# Notes")
     text._loaded_as_rmd_source = True

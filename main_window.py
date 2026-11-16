@@ -5317,15 +5317,17 @@ class MainWindow(QMainWindow):
         along. "save" or "cancel"."""
         left_out = self._rmd_pictures_left_out(ed, path)
         message = (_("This document becomes R Markdown text, which R and RStudio read. Bold, "
-                     "links, lists and pictures are written as Markdown, and the original "
+                     "links, lists and pictures are written as Markdown. The tab then shows "
+                     "that text, and Undo can’t bring the formatted view back. The original "
                      "file stays as it is.")
                    if getattr(ed, "_file_path", None) else
                    _("This document becomes R Markdown text, which R and RStudio read. Bold, "
-                     "links, lists and pictures are written as Markdown."))
+                     "links, lists and pictures are written as Markdown. The tab then shows "
+                     "that text, and Undo can’t bring the formatted view back."))
         if left_out:
             message += "\n\n" + ngettext(
-                "This picture can’t come along and is left out: {names}",
-                "These pictures can’t come along and are left out: {names}",
+                "This picture isn’t taken along: {names}",
+                "These pictures aren’t taken along: {names}",
                 len(left_out)).format(names=", ".join(left_out))
         return ask(self, title=_("Save as R Markdown?"), message=message, buttons=[
             Button(_("Cancel"), "cancel", CANCEL),
