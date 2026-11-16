@@ -876,6 +876,8 @@ _DIVIDER = re.compile(r"([-*_])(?:[ \t]*\1){2,}[ \t]*")
 # closer of an item's number.
 _OPENS_BLOCK = re.compile(r"(#{1,6})(?:[ \t]|$)|(>)|(`{3,})(?=[^`]*$)|(~{3,})|([-*+])(?:[ \t]|$)"
                           r"|\d{1,9}([.)])(?:[ \t]|$)")
+# What makes an item a task where its words start (GFM 5.3): a box.
+_TASK_BOX = re.compile(r"\[[ xX]\](?:[ \t]|$)")
 
 
 def _block_markdown(block: _Block) -> str:
@@ -903,7 +905,7 @@ def _block_markdown(block: _Block) -> str:
         body = _inline_markdown(block.spans)
         cont = " " * (len(pad) + len(marker) + 1)
         lines = body.split("\n")
-        lines[0] = _item_words(lines[0], marker)
+        lines[0] = _item_words(lines[0], marker, block.task is None)
         # (Nothing after the marker of an item with nothing in it; the
         # two spaces of a line break stay.)
         return "\n".join([f"{pad}{marker} {lines[0]}" if lines[0] else pad + marker]
@@ -917,16 +919,18 @@ def _block_markdown(block: _Block) -> str:
     return indent + _inline_markdown(block.spans)
 
 
-def _item_words(words: str, marker: str) -> str:
+def _item_words(words: str, marker: str, plain: bool) -> str:
     """The first line of an item's words, after its ``marker``, written so
     a reader reads them as its words: "- --" is a divider to a reader,
     "- #" a heading, "- >" a quote, "- ```" code, "- +" or "- 1." a list
-    in the item, "-     x" code, and spaces and a tab before the words it
-    drops. The first character that would make a block escaped, and
-    those spaces and that tab written as characters."""
+    in the item, "- [ ] a" a task (``plain``: the item is none), "-     x"
+    code, and spaces and a tab before the words it drops. The first
+    character that would make a block escaped, and those spaces and that
+    tab written as characters."""
     lead = words[:len(words) - len(words.lstrip(" \t"))]
     rest = words[len(lead):]
-    if _DIVIDER.fullmatch(rest) or _DIVIDER.fullmatch(f"{marker} {rest}"):
+    if (_DIVIDER.fullmatch(rest) or _DIVIDER.fullmatch(f"{marker} {rest}")
+            or plain and _TASK_BOX.match(rest)):
         rest = "\\" + rest
     else:
         found = _OPENS_BLOCK.match(rest)

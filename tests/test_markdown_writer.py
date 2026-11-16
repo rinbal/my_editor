@@ -31,8 +31,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtGui import (  # noqa: E402
-    QFont, QTextCharFormat, QTextCursor, QTextDocument, QTextFormat, QTextImageFormat,
-    QTextListFormat,
+    QFont, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument, QTextFormat,
+    QTextImageFormat, QTextListFormat,
 )
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -393,19 +393,23 @@ def test_what_stands_beside_a_links_words_does_not_change_them(source, written):
     ("#", "- \\#\n"), (">", "- \\>\n"), ("```", "- \\```\n"), ("~~~", "- \\~~~\n"),
     ("+", "- \\+\n"), ("* a", "- \\* a\n"), ("1.", "- 1\\.\n"), ("2) b", "- 2\\) b\n"),
     ("    x", "- &#32;&#32;&#32;&#32;x\n"), ("\tx", "- &#9;x\n"), ("#a", "- #a\n"),
+    ("[ ] a", "- \\[ ] a\n"), ("[x] a", "- \\[x] a\n"), ("[X]", "- \\[X]\n"), ("[y] a", "- [y] a\n"),
 ])
 def test_an_item_whose_words_would_open_a_block_keeps_them(words, written):
     # "- #" is a heading to a reader, "- >" a quote, "- ```" code, "- +"
     # a list in the item, and spaces before the words it drops (four of
-    # them are code): each was saved as that.
-    doc = QTextDocument()
-    cursor = QTextCursor(doc)
-    cursor.insertList(QTextListFormat.Style.ListDisc)
-    cursor.insertText(words)
-    assert document_to_markdown(doc) == written
-    read_markdown(doc, written)
-    assert doc.blockCount() == 1 and doc.firstBlock().textList() is not None
-    assert doc.firstBlock().text() == words
+    # them are code), "- [ ] a" a task: each was saved as that.
+    for style, marker in ((QTextListFormat.Style.ListDisc, "-"),
+                          (QTextListFormat.Style.ListDecimal, "1.")):
+        doc = QTextDocument()
+        cursor = QTextCursor(doc)
+        cursor.insertList(style)
+        cursor.insertText(words)
+        assert document_to_markdown(doc) == marker + written[1:]
+        read_markdown(doc, marker + written[1:])
+        assert doc.blockCount() == 1 and doc.firstBlock().textList() is not None
+        assert doc.firstBlock().text() == words
+        assert doc.firstBlock().blockFormat().marker() == QTextBlockFormat.MarkerType.NoMarker
 
 
 def test_an_item_that_would_read_as_a_divider_is_written_as_an_item():
