@@ -218,6 +218,40 @@ def heading_in_item(markdown: str) -> bool:
     return _item_starts(lines, code_lines(lines)).inner
 
 
+def hard_breaks(markdown: str) -> List[int]:
+    """The number of each line that ends as a hard line break does, in two
+    spaces or more, after words a paragraph may hold, with a line of words
+    under it. Whether the paragraph goes on there, and the line's end
+    breaks it, is the reader's to say. None where the line's end is no
+    paragraph's: in code, a heading, a divider or an underline, a table's
+    row, a reference definition, an item with nothing in it."""
+    if "  \n" not in markdown:
+        return []
+    lines = markdown.split("\n")
+    code = code_lines(lines)
+    defined = _Blocked([definition.span() for definition in _DEFINITION.finditer(markdown)])
+    found: List[int] = []
+    start = 0
+    for number, line in enumerate(lines[:-1]):
+        start += len(line) + 1
+        if not line.endswith("  ") or code[number] or defined.end(start - 2) is not None:
+            continue
+        rest = _inside_quotes(line, _quote_depth(line))
+        under = lines[number + 1]
+        if not _inside_quotes(under, _quote_depth(under)).strip():
+            continue
+        words = rest
+        item = _ITEM.fullmatch(rest)
+        if item is not None:
+            words = _item_words(rest, item)[1]
+            words = words[_TASK_BOX.match(words).end():] if _TASK_BOX.match(words) else words
+        if not (not words.strip() or _HEADING_OR_BREAK.fullmatch(words)
+                or _UNDERLINE.fullmatch(words.strip()) or DELIMITER_ROW.match(rest)
+                or words.rstrip().endswith("|")):
+            found.append(number)
+    return found
+
+
 class _Line(NamedTuple):
     """What set_apart keeps of the last line with something on it."""
 

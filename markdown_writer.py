@@ -87,8 +87,8 @@ import photo_group
 import photo_group_find
 from markdown_scan import (DELIMITER_ROW, EMPTY_ITEM_LINE, ESCAPABLE, FENCE_LINE, LIST_LINE,
                            bracketed, descriptions, emphasized_code, empty_items, entities,
-                           escapes, heading_in_item, lossy_definition, pictures, set_apart,
-                           titled_link)
+                           escapes, hard_breaks, heading_in_item, lossy_definition, pictures,
+                           set_apart, titled_link)
 from rich_text import normalize_after_markdown_load, same_code_block
 
 ImageTarget = Callable[[object], Optional[str]]
@@ -856,7 +856,9 @@ def _block_markdown(block: _Block) -> str:
         body = _inline_markdown(block.spans)
         cont = " " * (len(pad) + len(marker) + 1)
         lines = body.split("\n")
-        return "\n".join([f"{pad}{marker} {lines[0]}".rstrip()]
+        # (Nothing after the marker of an item with nothing in it; the
+        # two spaces of a line break stay.)
+        return "\n".join([f"{pad}{marker} {lines[0]}" if lines[0] else pad + marker]
                          + [cont + line for line in lines[1:]])
     # paragraph, as typed
     indent = block.indent
@@ -1245,6 +1247,59 @@ def _join_soft_breaks(doc: QTextDocument, mark: str) -> int:
         position = start + 1
 
 
+# What marks a hard line break (two spaces or more at a line's end) while
+# Qt reads the Markdown. Its reader makes the line after one a paragraph
+# of its own, and "first  \nsecond", which the writer writes for a line
+# break typed here, came back as two paragraphs. With a mark after its
+# spaces the line ends in a soft break, which Qt's reader reads as a
+# space where the paragraph goes on and not at all where it ends; once
+# read, the spaces, the mark and that space become the line break
+# (_keep_hard_breaks). A space (Unicode's Zs), as _SOFT_MARKS are; a file
+# is read with the first one it holds nowhere.
+_HARD_MARKS = ("\u2003", "\u2001", "\u2000", "\u205f")
+
+
+def _marked_hard_breaks(markdown: str, breaks: Sequence[int]) -> Tuple[str, Optional[str]]:
+    """The Markdown with a mark (_HARD_MARKS) at the end of each of the
+    lines ``breaks`` (markdown_scan.hard_breaks), and the mark; as it is
+    and None when there is none, or no mark can be used."""
+    mark = _free_mark(markdown, _HARD_MARKS) if breaks else None
+    if mark is None:
+        return markdown, None
+    lines = markdown.split("\n")
+    for number in breaks:
+        lines[number] += mark
+    return "\n".join(lines), mark
+
+
+def _keep_hard_breaks(doc: QTextDocument, mark: str, placed: int) -> bool:
+    """Each ``mark`` _marked_hard_breaks set taken out again, with the
+    spaces before it: where the paragraph goes on after it (Qt's reader
+    put a space there), the line break the file has, in the mark's format;
+    in code, the spaces stay the code's. False when the marks in the text
+    are not as many as ``placed``, or a format holds one."""
+    taken = _take_marks(doc, mark)
+    if len(taken) != placed or _in_formats(doc, mark):
+        return False
+    for position, fmt in reversed(taken):
+        block = doc.findBlock(position)
+        if _is_code(fmt) or block.blockFormat().hasProperty(
+                QTextFormat.Property.BlockCodeLanguage):
+            continue
+        start = position
+        while start > block.position() and doc.characterAt(start - 1) == " ":
+            start -= 1
+        goes_on = start > block.position() and doc.characterAt(position) == " "
+        cursor = QTextCursor(doc)
+        cursor.setPosition(start)
+        cursor.setPosition(position + goes_on, QTextCursor.MoveMode.KeepAnchor)
+        if goes_on:
+            cursor.insertText(LINE_SEPARATOR, QTextCharFormat() if fmt.isImageFormat() else fmt)
+        else:
+            cursor.removeSelectedText()
+    return True
+
+
 def _fingerprint(doc) -> bytes:
     """What a document shows: each block's kind and text, and each piece's
     formatting, so two renderings can be compared; as a digest, so a long
@@ -1320,6 +1375,7 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
     Markdown."""
     markdown = _breaks_between_pictures(markdown)
     markdown, alts = _whole_descriptions(markdown, features)
+    breaks = hard_breaks(markdown)
     marked, soft_mark = 0, None
     if features == READ_FEATURES:
         markdown, soft_mark, marked = _marked_soft_breaks(markdown)
@@ -1336,16 +1392,26 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
             result = _read_once(doc, text, features, alts, (soft_mark, marked))
         return result
 
-    held, entity_mark, spelled = _marked_entities(markdown)
-    joined, kept = read(held)
-    if entity_mark is not None:
-        placed, faithful = _keep_entities(doc, entity_mark, spelled)
-        if placed:
-            kept = kept and faithful
-        else:
-            # The same: read with the entities, the words after one as Qt's
-            # reader formats them.
-            joined, kept = read(markdown)
+    def read_entities(text: str) -> Tuple[int, bool]:
+        held, entity_mark, spelled = _marked_entities(text)
+        joined, kept = read(held)
+        if entity_mark is not None:
+            placed, faithful = _keep_entities(doc, entity_mark, spelled)
+            if placed:
+                kept = kept and faithful
+            else:
+                # The same: read with the entities, the words after one as
+                # Qt's reader formats them.
+                joined, kept = read(text)
+        return joined, kept
+
+    broken, hard_mark = _marked_hard_breaks(markdown, breaks)
+    joined, kept = read_entities(broken)
+    if hard_mark is not None and not _keep_hard_breaks(doc, hard_mark, len(breaks)):
+        # The same: read with the hard breaks as Qt's reader takes them,
+        # the line after each a paragraph of its own.
+        joined, _kept = read_entities(markdown)
+        kept = False
     normalize_after_markdown_load(doc)
     if groups:
         # Pictures that follow each other show as one group (photo_group).

@@ -280,6 +280,17 @@ def test_code_blocks_a_file_sets_apart_are_two_in_the_editor_too():
     assert (first.text(), last.text()) == ("a", "b")
 
 
+@pytest.mark.parametrize("source", ["first  \nsecond\n", "[see](u)  \nnext\n",
+                                    "- a  \n  b\n- c\n", "> a  \n> b\n"])
+def test_a_hard_line_break_stays_a_line_break(source):
+    # Qt's reader made the line after one a paragraph of its own: a line
+    # break typed here (Shift+Return) came back as two paragraphs.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
 def test_a_line_broken_off_a_block_set_apart_stays_with_it():
     # Return gives the new line its block's format: it is no third block.
     doc = QTextDocument()
@@ -951,7 +962,7 @@ def test_a_break_tag_between_two_pictures_is_read_as_a_break():
         doc = QTextDocument()
         read_markdown(doc, "![a](a.png)<br>![b](b.png) <BR />\n![c](c.png)\n", features)
         assert document_to_markdown(doc, _image_as_read) == (
-            "![a](a.png)\n\n![b](b.png)\n\n![c](c.png)\n")
+            "![a](a.png)  \n![b](b.png)  \n![c](c.png)\n")
         assert [unit.alt for unit in photo_group.groups_in(doc)[0].units] == ["a", "b", "c"]
     for source in ("In HTML, <br> breaks a line.\n", "`![a](a.png)<br>![b](b.png)`\n"):
         doc = QTextDocument()
