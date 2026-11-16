@@ -337,6 +337,19 @@ def test_a_file_the_check_fails_on_opens_as_its_text(monkeypatch):
     assert holds_faithfully("Text\n") is False
 
 
+def test_the_marks_of_a_paragraph_are_taken_out_as_one_change():
+    # A change for each mark costs the length of its paragraph each time:
+    # one paragraph of 5,000 line breaks, or of 5,000 addresses in angle
+    # brackets, opened in 40 seconds.
+    doc = QTextDocument()
+    changes = []
+    doc.contentsChanged.connect(lambda: changes.append(1))
+    read_markdown(doc, "".join(f"line {n}  \n" for n in range(300))
+                  + "".join(f"<https://a.example/{n}> " for n in range(300))
+                  + "soft\nbreak \\* &amp;\n")
+    assert len(changes) < 20
+
+
 def test_a_line_broken_off_a_block_set_apart_stays_with_it():
     # Return gives the new line its block's format: it is no third block.
     doc = QTextDocument()

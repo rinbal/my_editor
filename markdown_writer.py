@@ -57,6 +57,7 @@ import logging
 import re
 import unicodedata
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from typing import Callable, List, Optional, Sequence, Tuple
@@ -80,6 +81,7 @@ from doc_walk import (
     apart,
     apart_mark,
     bullet_depth,
+    doc_length,
     iter_block_runs,
     iter_blocks,
     iter_frame,
@@ -1239,31 +1241,31 @@ def _join_soft_breaks(doc: QTextDocument, mark: str) -> int:
     one line of the paragraph again: the mark and the block's end become
     a line separator carrying SOFT_BREAK_PROPERTY. How many were joined."""
     joined = 0
-    position = 0
-    while True:
-        cursor = doc.find(mark, position)
-        if cursor.isNull():
-            return joined
-        start = cursor.selectionStart()
-        block = doc.findBlock(start)
-        if start + 1 == block.position() + block.length() - 1 and block.next().isValid():
-            # The mark and the paragraph's end, in the next block's place,
-            # in the mark's own format: the words before it may be a link
-            # (an address that ends the line), code or emphasis, which the
-            # break would join to the next line's; after a picture (a
-            # caption on the line under it), in none: the format of the
-            # picture would make the break a second copy of it.
-            fmt = QTextCharFormat(cursor.charFormat())
-            if fmt.isImageFormat():
-                fmt = QTextCharFormat()
-            cursor.setPosition(start)
-            cursor.setPosition(start + 2, QTextCursor.MoveMode.KeepAnchor)
-            fmt.setProperty(SOFT_BREAK_PROPERTY, True)
-            cursor.insertText(LINE_SEPARATOR, fmt)
-            joined += 1
-        else:
-            cursor.removeSelectedText()
-        position = start + 1
+    with _one_step(doc) as cursor:
+        # (Last first: a place before a change stays where it is.)
+        for start in reversed(_mark_places(doc, mark)):
+            block = doc.findBlock(start)
+            cursor.setPosition(start + 1)
+            if start + 1 == block.position() + block.length() - 1 and block.next().isValid():
+                # The mark and the paragraph's end, in the next block's
+                # place, in the mark's own format: the words before it may
+                # be a link (an address that ends the line), code or
+                # emphasis, which the break would join to the next line's;
+                # after a picture (a caption on the line under it), in
+                # none: the format of the picture would make the break a
+                # second copy of it.
+                fmt = QTextCharFormat(cursor.charFormat())
+                if fmt.isImageFormat():
+                    fmt = QTextCharFormat()
+                cursor.setPosition(start)
+                cursor.setPosition(start + 2, QTextCursor.MoveMode.KeepAnchor)
+                fmt.setProperty(SOFT_BREAK_PROPERTY, True)
+                cursor.insertText(LINE_SEPARATOR, fmt)
+                joined += 1
+            else:
+                cursor.setPosition(start, QTextCursor.MoveMode.KeepAnchor)
+                cursor.removeSelectedText()
+    return joined
 
 
 # What marks a hard line break (two spaces or more at a line's end) while
@@ -1300,22 +1302,23 @@ def _keep_hard_breaks(doc: QTextDocument, mark: str, placed: int) -> bool:
     taken = _take_marks(doc, mark)
     if len(taken) != placed or _in_formats(doc, mark):
         return False
-    for position, fmt in reversed(taken):
-        block = doc.findBlock(position)
-        if _is_code(fmt) or block.blockFormat().hasProperty(
-                QTextFormat.Property.BlockCodeLanguage):
-            continue
-        start = position
-        while start > block.position() and doc.characterAt(start - 1) == " ":
-            start -= 1
-        goes_on = start > block.position() and doc.characterAt(position) == " "
-        cursor = QTextCursor(doc)
-        cursor.setPosition(start)
-        cursor.setPosition(position + goes_on, QTextCursor.MoveMode.KeepAnchor)
-        if goes_on:
-            cursor.insertText(LINE_SEPARATOR, QTextCharFormat() if fmt.isImageFormat() else fmt)
-        else:
-            cursor.removeSelectedText()
+    with _one_step(doc) as cursor:
+        for position, fmt in reversed(taken):
+            block = doc.findBlock(position)
+            if _is_code(fmt) or block.blockFormat().hasProperty(
+                    QTextFormat.Property.BlockCodeLanguage):
+                continue
+            start = position
+            while start > block.position() and doc.characterAt(start - 1) == " ":
+                start -= 1
+            goes_on = start > block.position() and doc.characterAt(position) == " "
+            cursor.setPosition(start)
+            cursor.setPosition(position + goes_on, QTextCursor.MoveMode.KeepAnchor)
+            if goes_on:
+                cursor.insertText(LINE_SEPARATOR,
+                                  QTextCharFormat() if fmt.isImageFormat() else fmt)
+            else:
+                cursor.removeSelectedText()
     return True
 
 
@@ -1517,18 +1520,49 @@ def _with_marks(text: str, places: Sequence[Tuple[int, str, str]], mark: str) ->
     return "".join(pieces)
 
 
+@contextmanager
+def _one_step(doc: QTextDocument):
+    """What is changed in ``doc`` meanwhile, as one change (the cursor to
+    make it with). A change by itself costs as much as its paragraph is
+    long, and a mark for each of a long paragraph's thousand line breaks
+    took the square of it: a file of 130 KB opened in 40 seconds."""
+    cursor = QTextCursor(doc)
+    cursor.beginEditBlock()
+    try:
+        yield cursor
+    finally:
+        cursor.endEditBlock()
+
+
+def _mark_places(doc: QTextDocument, mark: str) -> List[int]:
+    """Where each ``mark`` stands in ``doc``'s text, first to last; read
+    off each paragraph's text once."""
+    places: List[int] = []
+    for block in iter_blocks(doc):
+        text = block.text()
+        at, last, units = text.find(mark), 0, block.position()
+        while at >= 0:
+            units += doc_length(text[last:at])
+            places.append(units)
+            at, last = text.find(mark, at + 1), at
+    return places
+
+
 def _take_marks(doc: QTextDocument, mark: str) -> List[Tuple[int, QTextCharFormat]]:
     """Each ``mark`` in ``doc``'s text taken out, first to last, as where
     it stood (once all are out) and the format it had."""
-    taken: List[Tuple[int, QTextCharFormat]] = []
-    position = 0
-    while True:
-        cursor = doc.find(mark, position)
-        if cursor.isNull():
-            return taken
-        position = cursor.selectionStart()
-        taken.append((position, QTextCharFormat(cursor.charFormat())))
-        cursor.removeSelectedText()
+    places = _mark_places(doc, mark)
+    formats = []
+    with _one_step(doc) as cursor:
+        for position in places:
+            cursor.setPosition(position + 1)
+            formats.append(QTextCharFormat(cursor.charFormat()))
+        for position in reversed(places):
+            cursor.setPosition(position)
+            cursor.setPosition(position + 1, QTextCursor.MoveMode.KeepAnchor)
+            cursor.removeSelectedText()
+    return [(position - before, fmt)
+            for before, (position, fmt) in enumerate(zip(places, formats))]
 
 
 def _keep_escaped(doc: QTextDocument, mark: str, placed: int) -> bool:
@@ -1540,12 +1574,12 @@ def _keep_escaped(doc: QTextDocument, mark: str, placed: int) -> bool:
     text = QTextCharFormat()
     text.setProperty(ESCAPED_TEXT_PROPERTY, True)
     taken = _take_marks(doc, mark)
-    for position, _fmt in taken:
-        if doc.characterAt(position) in ESCAPABLE:
-            cursor = QTextCursor(doc)
-            cursor.setPosition(position)
-            cursor.setPosition(position + 1, QTextCursor.MoveMode.KeepAnchor)
-            cursor.mergeCharFormat(text)
+    with _one_step(doc) as cursor:
+        for position, _fmt in taken:
+            if doc.characterAt(position) in ESCAPABLE:
+                cursor.setPosition(position)
+                cursor.setPosition(position + 1, QTextCursor.MoveMode.KeepAnchor)
+                cursor.mergeCharFormat(text)
     return len(taken) == placed and not _in_formats(doc, mark)
 
 
@@ -1622,18 +1656,18 @@ def _keep_entities(doc: QTextDocument, mark: str, spelled: Sequence[str]) -> Tup
     if len(taken) != len(spelled) or _in_formats(doc, mark):
         return False, False
     in_line = True
-    for (position, fmt), entity in zip(reversed(taken), reversed(spelled)):
-        text = _entity_text(entity)
-        character = QTextCharFormat(fmt)
-        if any(end in text for end in _LINE_ENDS):
-            in_line, text = False, " "
-        elif _unseen(text):
-            character.setProperty(ENTITY_TEXT_PROPERTY, entity)
-        if text in ESCAPABLE:
-            character.setProperty(ESCAPED_TEXT_PROPERTY, True)
-        cursor = QTextCursor(doc)
-        cursor.setPosition(position)
-        cursor.insertText(text, character)
+    with _one_step(doc) as cursor:
+        for (position, fmt), entity in zip(reversed(taken), reversed(spelled)):
+            text = _entity_text(entity)
+            character = QTextCharFormat(fmt)
+            if any(end in text for end in _LINE_ENDS):
+                in_line, text = False, " "
+            elif _unseen(text):
+                character.setProperty(ENTITY_TEXT_PROPERTY, entity)
+            if text in ESCAPABLE:
+                character.setProperty(ESCAPED_TEXT_PROPERTY, True)
+            cursor.setPosition(position)
+            cursor.insertText(text, character)
     return True, in_line
 
 
@@ -1677,15 +1711,15 @@ def _set_apart(doc: QTextDocument, mark: str, quotes: Sequence[int]) -> bool:
     taken = _take_marks(doc, mark)
     if len(taken) != len(quotes) or _in_formats(doc, mark):
         return False
-    cursor = QTextCursor(doc)
-    for number, ((position, _fmt), kept) in enumerate(zip(taken, quotes), 1):
-        block = doc.findBlock(position)
-        if position != block.position():
-            return False
-        fmt = block.blockFormat()
-        fmt.setProperty(APART_PROPERTY, apart_mark(number, kept))
-        cursor.setPosition(position)
-        cursor.setBlockFormat(fmt)
+    with _one_step(doc) as cursor:
+        for number, ((position, _fmt), kept) in enumerate(zip(taken, quotes), 1):
+            block = doc.findBlock(position)
+            if position != block.position():
+                return False
+            fmt = block.blockFormat()
+            fmt.setProperty(APART_PROPERTY, apart_mark(number, kept))
+            cursor.setPosition(position)
+            cursor.setBlockFormat(fmt)
     return True
 
 
@@ -1831,38 +1865,39 @@ def _kept_by_marks(doc: QTextDocument, mark: str, kinds: Sequence[str]) -> bool:
     bare.setProperty(BARE_TEXT_PROPERTY, True)
     angled = QTextCharFormat()
     angled.setProperty(ANGLED_TEXT_PROPERTY, True)
-    for (position, fmt), kind in zip(taken, kinds):
-        if kind == _ITEM:
-            block = doc.findBlock(position)
-            if block.textList() is None or block.length() != 1:
-                return False
-            continue
-        linked = fmt.isAnchor() and bool(fmt.anchorHref())
-        after = QTextCursor(doc)
-        after.setPosition(position)
-        after.movePosition(QTextCursor.MoveOperation.NextCharacter,
-                           QTextCursor.MoveMode.KeepAnchor)
-        if kind == _TAG:
-            if doc.characterAt(position) != "<" or not linked:
-                return False            # brackets that were no link
-            after.mergeCharFormat(bare)
-        elif kind == _PICTURE:
-            if doc.characterAt(position) != OBJECT_REPLACEMENT \
-                    or not after.charFormat().isImageFormat():
-                return False
-            if linked:
-                link = QTextCharFormat()
-                link.setAnchor(True)
-                link.setAnchorHref(fmt.anchorHref())
-                after.mergeCharFormat(link)
-        else:
-            if linked:
-                return False            # a link in a link's words
-            address = after.charFormat()
-            if address.isAnchor() and address.anchorHref():
-                after.setPosition(_link_end(doc, position, address.anchorHref()),
-                                  QTextCursor.MoveMode.KeepAnchor)
-                after.mergeCharFormat(angled)
+    with _one_step(doc) as after:
+        for (position, fmt), kind in zip(taken, kinds):
+            if kind == _ITEM:
+                block = doc.findBlock(position)
+                if block.textList() is None or block.length() != 1:
+                    return False
+                continue
+            linked = fmt.isAnchor() and bool(fmt.anchorHref())
+            after.setPosition(position)
+            after.setPosition(min(position + 1, doc.characterCount() - 1),
+                              QTextCursor.MoveMode.KeepAnchor)
+            if kind == _TAG:
+                if doc.characterAt(position) != "<" or not linked:
+                    return False            # brackets that were no link
+                after.mergeCharFormat(bare)
+            elif kind == _PICTURE:
+                if doc.characterAt(position) != OBJECT_REPLACEMENT \
+                        or not after.charFormat().isImageFormat():
+                    return False
+                if linked:
+                    link = QTextCharFormat()
+                    link.setAnchor(True)
+                    link.setAnchorHref(fmt.anchorHref())
+                    after.mergeCharFormat(link)
+            else:
+                if linked:
+                    return False            # a link in a link's words
+                address = after.charFormat()
+                if address.isAnchor() and address.anchorHref():
+                    after.setPosition(_link_end(doc, position, address.anchorHref()),
+                                      QTextCursor.MoveMode.KeepAnchor)
+                    after.mergeCharFormat(angled)
+
     return True
 
 
@@ -1872,12 +1907,23 @@ def _link_end(doc: QTextDocument, position: int, href: str) -> int:
     block = doc.findBlock(position)
     last = block.position() + block.length() - 1
     cursor = QTextCursor(doc)
+
+    def linked(at: int) -> bool:
+        """Whether the character before ``at`` is the link's."""
+        if not position < at <= last:
+            return False
+        cursor.setPosition(at)
+        fmt = cursor.charFormat()
+        return fmt.isAnchor() and fmt.anchorHref() == href
+
+    # An address shows itself, an email address without its "mailto:":
+    # looked for there first, not character by character.
+    for shown in (href, href.partition("mailto:")[2]):
+        end = position + doc_length(shown)
+        if shown and linked(end) and not linked(end + 1):
+            return end
     end = position
-    while end < last:
-        cursor.setPosition(end + 1)
-        fmt = cursor.charFormat()       # (of the character before the cursor)
-        if not (fmt.isAnchor() and fmt.anchorHref() == href):
-            break
+    while linked(end + 1):
         end += 1
     return end
 
@@ -1987,17 +2033,17 @@ def _restore_descriptions(doc: QTextDocument, alts: dict) -> None:
                 if word in alts:
                     found.append((fragment.position(), fragment.length(), *alts[word]))
             it += 1
-    for position, length, alt, spelling in found:
-        cursor = QTextCursor(doc)
-        cursor.setPosition(position)
-        cursor.setPosition(position + length, QTextCursor.MoveMode.KeepAnchor)
-        fmt = QTextImageFormat(cursor.charFormat().toImageFormat()) if length == 1 else None
-        if fmt is None:
-            fmt = cursor.charFormat()
-        fmt.setProperty(QTextFormat.Property.ImageAltText, alt)
-        if spelling != _description_markdown(alt):
-            fmt.setProperty(ALT_SPELLING_PROPERTY, spelling)
-        cursor.setCharFormat(fmt)
+    with _one_step(doc) as cursor:
+        for position, length, alt, spelling in found:
+            cursor.setPosition(position)
+            cursor.setPosition(position + length, QTextCursor.MoveMode.KeepAnchor)
+            fmt = QTextImageFormat(cursor.charFormat().toImageFormat()) if length == 1 else None
+            if fmt is None:
+                fmt = cursor.charFormat()
+            fmt.setProperty(QTextFormat.Property.ImageAltText, alt)
+            if spelling != _description_markdown(alt):
+                fmt.setProperty(ALT_SPELLING_PROPERTY, spelling)
+            cursor.setCharFormat(fmt)
 
 
 def _tab_in_fence(markdown: str) -> bool:
