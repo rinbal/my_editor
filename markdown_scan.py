@@ -230,15 +230,17 @@ def misread_blocks(markdown: str) -> bool:
     or a quote ("- # a", "- a\\n  ---", "- a\\n\\n  # b", "> ---"): it
     takes it out of its list or quote, or makes it the item's words in
     bold. An item that opens with another list's item or a quote ("- - a",
-    "- > a"). A heading with no words, a fence with nothing in it or one
-    that starts the text with a blank line, which it leaves out. A table in a quote, under words
-    ("Text\\n| a |\\n| - |") or with fewer columns than its header has,
-    and a heading or a fence right under a table's rows. And a
-    list or a fence on the
-    line that opens a quote, set in from the quote's mark (">   - a"): it
-    reads that line as not set in (md4c takes the spaces for the mark's),
-    so an item under it ("\\n>   - b") is one inside it, and the fence's
-    code keeps the spaces."""
+    "- > a"), and a marker alone, with spaces after it, under words
+    ("a\\n* "). A heading with no words, a fence with nothing in it or
+    one that starts the text with a blank line, which it leaves out. A
+    table in a quote, under words ("Text\\n| a |\\n| - |") or with fewer
+    columns than its header has, a pipe in a row's code ("| `a|b` |":
+    code to it, the cell's end to others), and a heading or a fence right
+    under a table's rows. And a list or a fence on the line that opens a
+    quote, set in from the quote's mark (">   - a"): it reads that line
+    as not set in (md4c takes the spaces for the mark's), so an item
+    under it ("\\n>   - b") is one inside it, and the fence's code keeps
+    the spaces it is set in with."""
     lines = markdown.split("\n")
     return _item_starts(lines, code_lines(lines)).misread
 
@@ -477,6 +479,11 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
             start = _item_start(item, paragraph if in_place else None, indent)
             starts[number] = start
             if start is False:
+                # A marker alone with spaces after it: Qt's reader makes the
+                # words above an item ("a\\n* "), or ends the paragraph at
+                # the line break ("a\\n2.  ").
+                spaces = 0 if item.group(3).strip() else len(rest) - item.end(2)
+                misread = misread or spaces > (0 if _may_interrupt(item.group(2)) else 1)
                 count, latest = count + 1, rest     # the paragraph's words
                 continue
             columns, words = _item_words(rest, item)
@@ -573,12 +580,17 @@ def _item_start(item: re.Match, paragraph: Optional[Tuple[int, Optional[int]]],
     and it may not interrupt."""
     if paragraph is None:
         return True
-    marker, words = item.group(2), item.group(3)
-    interrupts = bool(words.strip()) and (marker[-1] not in ".)" or int(marker[:-1]) == 1)
+    interrupts = bool(item.group(3).strip()) and _may_interrupt(item.group(2))
     column = paragraph[1]
     if column is None:
         return True if interrupts and indent < 4 else None
     return indent < column or (interrupts and indent - column < 4)
+
+
+def _may_interrupt(marker: str) -> bool:
+    """Whether an item with this marker may interrupt a paragraph: a
+    bulleted one, or one numbered 1."""
+    return marker[-1] not in ".)" or int(marker[:-1]) == 1
 
 
 def _item_words(rest: str, item: re.Match) -> Tuple[List[int], str]:
@@ -661,8 +673,7 @@ def _empty_item_alone(lines: List[str], code: List[str], number: int, depth: int
         return None if indent >= column else False
     if indent < column:
         return True                     # an item of this list or one around it
-    marker = item.group(2)
-    return indent < column + 4 and (marker[-1] not in ".)" or int(marker[:-1]) == 1)
+    return indent < column + 4 and _may_interrupt(item.group(2))
 
 
 def code_span_end(text: str, start: int, found: Optional[Found] = None) -> int:

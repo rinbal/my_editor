@@ -557,6 +557,8 @@ def test_a_heading_or_a_divider_in_a_quote_opens_as_text():
     "| a |\n| --- |\n| b |\n# H\n",                # a heading right under a table
     "> | a |\n> | --- |\n> | b |\n",               # a table in a quote
     "| a | b |\n| --- | --- |\n| `a|b` | c |\n",   # a pipe in a row's code
+    "a\n*  \nb\n",                                # a marker alone, spaces after it, under words
+    "a\n2.  \nb\n",
     "a\u2028b\n",                                  # the document's own line break
 ])
 def test_blocks_qts_reader_reads_otherwise_open_as_text(source):
