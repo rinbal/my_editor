@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import hashlib
 import html.entities
+import logging
 import re
 import unicodedata
 import uuid
@@ -93,6 +94,8 @@ from markdown_scan import (DELIMITER_ROW, EMPTY_ITEM_LINE, ESCAPABLE, FENCE_LINE
                            entities, escapes, hard_breaks, lossy_definition, misread_blocks,
                            pictures, set_apart, titled_link)
 from rich_text import normalize_after_markdown_load, same_code_block
+
+log = logging.getLogger(__name__)
 
 ImageTarget = Callable[[object], Optional[str]]
 
@@ -2031,7 +2034,17 @@ def _table_loses(markdown: str) -> bool:
 
 def holds_faithfully(markdown: str) -> bool:
     """Whether the editor can hold this Markdown and write it back without
-    losing anything. When it cannot, open it as its Markdown text."""
+    losing anything. When it cannot, open it as its Markdown text; when
+    finding out fails too, so that no file is one that cannot be opened
+    (as its text, every file can)."""
+    try:
+        return _holds(markdown)
+    except Exception:
+        log.exception("Reading Markdown to see whether the editor holds it failed")
+        return False
+
+
+def _holds(markdown: str) -> bool:
     if (any(pattern.search(markdown) for pattern in _LOSSY) or _raw_html(markdown)
             or _soft_wrapped(markdown) or _tab_in_fence(markdown) or _table_loses(markdown)
             or titled_link(markdown) or lossy_definition(markdown) or emphasized_code(markdown)

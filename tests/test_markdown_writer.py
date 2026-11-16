@@ -323,6 +323,20 @@ def test_an_item_that_would_read_as_a_divider_is_written_as_an_item():
     assert doc.firstBlock().textList() is not None and doc.firstBlock().text() == "--"
 
 
+def test_a_table_with_code_in_a_cell_that_spans_columns_opens():
+    # Qt's reader lets a cell before empty ones span them. The escaped pipe
+    # in its code was taken out once for each column, the table fell
+    # apart, and no tab opened.
+    assert not holds_faithfully(
+        "| x | y | z |\n| --- | --- | --- |\n| `a\\|b` |  |  |\n|  |  | c |\n")
+
+
+def test_a_file_the_check_fails_on_opens_as_its_text(monkeypatch):
+    import markdown_writer
+    monkeypatch.setattr(markdown_writer, "_holds", lambda markdown: 1 / 0)
+    assert holds_faithfully("Text\n") is False
+
+
 def test_a_line_broken_off_a_block_set_apart_stays_with_it():
     # Return gives the new line its block's format: it is no third block.
     doc = QTextDocument()

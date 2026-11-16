@@ -1454,7 +1454,9 @@ def unescape_cell_code(doc) -> None:
     """A pipe in code in a table cell, as Qt's reader leaves it: with the
     backslash GFM asks for there (the writer writes `a\\|b`), which GFM
     readers drop. Dropped here too, so the code reads as written."""
-    edits = []
+    # By where it stands: a cell that spans columns is its table's cell at
+    # each of them, and its code edited once for each took the table apart.
+    edits = {}
     for table in tables_of(doc):
         for row in range(table.rows()):
             for column in range(table.columns()):
@@ -1468,12 +1470,12 @@ def unescape_cell_code(doc) -> None:
                             fragment = frag.fragment()
                             if (fragment.isValid() and fragment.charFormat().fontFixedPitch()
                                     and "\\|" in fragment.text()):
-                                edits.append((fragment.position(), fragment.length(),
-                                              fragment.text().replace("\\|", "|"),
-                                              QTextCharFormat(fragment.charFormat())))
+                                edits[fragment.position()] = (
+                                    fragment.length(), fragment.text().replace("\\|", "|"),
+                                    QTextCharFormat(fragment.charFormat()))
                             frag += 1
                     it += 1
-    for position, length, text, fmt in reversed(edits):
+    for position, (length, text, fmt) in sorted(edits.items(), reverse=True):
         cursor = QTextCursor(doc)
         cursor.setPosition(position)
         cursor.setPosition(position + length, QTextCursor.MoveMode.KeepAnchor)
