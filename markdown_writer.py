@@ -200,6 +200,7 @@ class _Span:
     bare: bool = False         # a "<" bare in the file's link words: written bare again
     spelled: str = ""          # the entity the file wrote for it (ENTITY_TEXT_PROPERTY)
     angled: bool = False       # an address the file wrote in angle brackets: so again
+    around: str = ""           # the link around a picture that is written as its address
 
 
 @dataclass
@@ -244,7 +245,9 @@ def _spans_of(runs, image_target: Optional[ImageTarget]) -> List[_Span]:
                 # is the reader's to show, and stays bare.
                 linked = fmt.isAnchor() and target.startswith("![")
                 spans.append(_Span(text=_as_spelled(fmt, target), raw=True,
-                                   href=fmt.anchorHref() if linked else ""))
+                                   href=fmt.anchorHref() if linked else "",
+                                   around=fmt.anchorHref() if fmt.isAnchor() and not linked
+                                   else ""))
             continue
         text = text.replace(OBJECT_REPLACEMENT, "")
         if not text:
@@ -1043,7 +1046,13 @@ def _inline_note(spans: List[_Span]) -> str:
             else:
                 out.append(f"{label} ({href})")
             continue
-        out.append(span.text)
+        address = span.text.rstrip()
+        if span.around and span.around != address.strip():
+            # A linked picture: its link beside its address, as a linked
+            # word's is beside the word (it was left out, without a word).
+            out.append(f"{address} ({span.around}){span.text[len(address):]}")
+        else:
+            out.append(span.text)
         i += 1
     return "".join(out).replace(LINE_SEPARATOR, "\n").replace(_SOFT, "\n")
 

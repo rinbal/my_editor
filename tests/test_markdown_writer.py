@@ -856,6 +856,15 @@ def test_a_note_keeps_list_markers_and_link_addresses():
         "Heading\n\n• one\n• two\n\n1. first\n\nA site (https://x.example).")
 
 
+def test_a_note_keeps_the_link_around_a_picture():
+    # A note names a picture by its address; the link around it went out
+    # with the brackets, and nothing said so.
+    doc = QTextDocument()
+    read_markdown(doc, "Words [![alt](https://p.example/p.png)](https://u.example/page) more.\n")
+    text = document_to_note_text(doc, lambda fmt: fmt.name())
+    assert text == "Words https://p.example/p.png (https://u.example/page) more."
+
+
 def test_a_note_keeps_typed_bullets_exactly():
     doc = typed("List:\n    • a\n        • b")
     assert document_to_note_text(doc) == "List:\n    • a\n        • b"
