@@ -835,6 +835,11 @@ def _markdown_lines(block: _Block) -> str:
     return "\n".join(prefix + line if line else prefix.rstrip() for line in text.split("\n"))
 
 
+# A line a reader takes for a divider (a thematic break): three or more of
+# one of its characters, and spaces.
+_DIVIDER = re.compile(r"([-*_])(?:[ \t]*\1){2,}[ \t]*")
+
+
 def _block_markdown(block: _Block) -> str:
     if block.kind == "heading":
         return "#" * min(6, block.level) + " " + _inline_markdown(block.spans, " ").strip()
@@ -863,6 +868,10 @@ def _block_markdown(block: _Block) -> str:
         body = _inline_markdown(block.spans)
         cont = " " * (len(pad) + len(marker) + 1)
         lines = body.split("\n")
+        if _DIVIDER.fullmatch(f"{marker} {lines[0]}"):
+            # "- --" is a divider to a reader, not an item that says "--":
+            # its first character escaped, it is the item's words.
+            lines[0] = re.sub(r"\S", lambda first: "\\" + first.group(0), lines[0], count=1)
         # (Nothing after the marker of an item with nothing in it; the
         # two spaces of a line break stay.)
         return "\n".join([f"{pad}{marker} {lines[0]}" if lines[0] else pad + marker]

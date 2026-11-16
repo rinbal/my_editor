@@ -32,6 +32,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtGui import (  # noqa: E402
     QFont, QTextCharFormat, QTextCursor, QTextDocument, QTextFormat, QTextImageFormat,
+    QTextListFormat,
 )
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -307,6 +308,19 @@ def test_a_link_the_editor_cannot_hold_opens_as_text(source):
     # Qt's reader drops a link with no words, and takes an address in a
     # link's words out of the link.
     assert not holds_faithfully(source)
+
+
+def test_an_item_that_would_read_as_a_divider_is_written_as_an_item():
+    # "- --" is a divider to a reader: an item that says "--" was saved
+    # as one, and gone from its list.
+    doc = QTextDocument()
+    cursor = QTextCursor(doc)
+    cursor.insertList(QTextListFormat.Style.ListDisc)
+    cursor.insertText("--")
+    written = document_to_markdown(doc)
+    assert written == "- \\--\n"
+    read_markdown(doc, written)
+    assert doc.firstBlock().textList() is not None and doc.firstBlock().text() == "--"
 
 
 def test_a_line_broken_off_a_block_set_apart_stays_with_it():
