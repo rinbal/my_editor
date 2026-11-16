@@ -84,6 +84,12 @@ READ_MARKS = (SOFT_BREAK_PROPERTY, ESCAPED_TEXT_PROPERTY, TYPED_TEXT_PROPERTY,
               BARE_TEXT_PROPERTY, ENTITY_TEXT_PROPERTY, ANGLED_TEXT_PROPERTY)
 
 
+# What a fence says after its language ("```js title=x", "```{r setup,
+# echo=FALSE}"), on each line of its code block. Qt's reader keeps a
+# fence's first word alone, as the block's language; the rest was gone
+# with the first save (markdown_writer's _whole_infos).
+CODE_INFO_PROPERTY = QTextFormat.Property.UserProperty + 0x5B9
+
 # A block the file set apart from the block before it in a way the
 # document does not show: a code block right after another, a quote after
 # another's end, a list item after a blank line (a loose list's). The

@@ -455,6 +455,17 @@ def test_a_line_break_that_starts_an_item_is_not_written():
     assert document_to_markdown(doc) == "- a\n- b\n- c\n"
 
 
+@pytest.mark.parametrize("source", ["```{r setup, include=FALSE}\nsummary(cars)\n```\n",
+                                    "> ```python title=\"app.py\"\n> a\n> ```\n"])
+def test_a_fence_keeps_what_it_says_after_its_language(source):
+    # Qt's reader keeps the first word: "```{r setup, include=FALSE}" was
+    # saved as "```{r".
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
 def test_a_line_broken_off_a_block_set_apart_stays_with_it():
     # Return gives the new line its block's format: it is no third block.
     doc = QTextDocument()

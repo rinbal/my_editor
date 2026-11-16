@@ -225,7 +225,7 @@ def _code_rmd(blocks) -> list[str]:
     """A code block (``blocks``: its lines) as a fenced one, in the quote
     it stands in."""
     code = fenced_code("\n".join(block.text() for block in blocks),
-                       rich_text.code_language(blocks[0]))
+                       rich_text.code_info(blocks[0]))
     prefix = "> " * rich_text.quote_depth(blocks[0])
     return [(prefix + line).rstrip() if prefix else line for line in code.split("\n")]
 

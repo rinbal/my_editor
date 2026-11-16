@@ -29,7 +29,8 @@ from PySide6.QtGui import (
 )
 
 import photo_group
-from doc_walk import APART_PROPERTY, apart, doc_length, doc_offset, iter_blocks, text_index
+from doc_walk import (APART_PROPERTY, CODE_INFO_PROPERTY, apart, doc_length, doc_offset,
+                      iter_blocks, text_index)
 
 # Inline styles, by name. Underline has no Markdown; it stays in local
 # files only (markdown_writer.has_local_only_formatting).
@@ -1629,6 +1630,13 @@ def code_language(block) -> Optional[str]:
     return str(block.blockFormat().property(QTextFormat.Property.BlockCodeLanguage) or "")
 
 
+def code_info(block) -> str:
+    """What the fence of a code line's block says: its language, and what
+    its file wrote after it (doc_walk.CODE_INFO_PROPERTY)."""
+    rest = str(block.blockFormat().property(CODE_INFO_PROPERTY) or "")
+    return (code_language(block) or "") + (" " + rest if rest else "")
+
+
 def _code_key(block):
     """What makes lines one code block to the Markdown writer: the same
     fence, language and quote; None for a paragraph that is no code."""
@@ -1774,6 +1782,7 @@ def leave_code(block) -> None:
     fmt.clearProperty(QTextFormat.Property.BlockCodeFence)
     fmt.clearProperty(QTextFormat.Property.BlockCodeLanguage)
     fmt.clearProperty(APART_PROPERTY)       # (a code block set apart in its file)
+    fmt.clearProperty(CODE_INFO_PROPERTY)
     fmt.setNonBreakableLines(False)
     QTextCursor(block).setBlockFormat(fmt)
     _restyle_runs(block, QTextCharFormat())

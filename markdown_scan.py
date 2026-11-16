@@ -122,6 +122,18 @@ def code_lines(lines: List[str]) -> List[str]:
     return out
 
 
+def fence_words(lines: List[str]) -> List[Tuple[int, str]]:
+    """What each fence says where it opens ("js title=x" of "```js
+    title=x"), with its line's number."""
+    found = []
+    for number, kind in enumerate(code_lines(lines)):
+        if kind == _OPENS:
+            line = lines[number]
+            fence = FENCE_LINE.match(_inside_quotes(line, _quote_depth(line)))
+            found.append((number, fence.group(2).strip()))
+    return found
+
+
 # A quote's mark at a line's start, and a list item's start after the
 # quote marks: its indent, its marker and the words after it.
 _QUOTE_MARK = re.compile(r" {0,3}> ?")

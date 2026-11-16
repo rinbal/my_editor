@@ -70,6 +70,7 @@ from PySide6.QtGui import (
 from doc_walk import (
     ANGLED_TEXT_PROPERTY,
     APART_PROPERTY,
+    CODE_INFO_PROPERTY,
     BARE_TEXT_PROPERTY,
     BULLET_MARKER,
     ENTITY_TEXT_PROPERTY,
@@ -93,10 +94,9 @@ import photo_group
 import photo_group_find
 from markdown_scan import (DELIMITER_ROW, EMPTY_ITEM_LINE, ESCAPABLE, FENCE_LINE, LIST_LINE,
                            autolinks, bracketed, descriptions, emphasized_code, empty_items,
-                           ends_in_break, entities, escapes, hard_breaks, lossy_definition,
-                           misread_blocks,
-                           pictures, set_apart, titled_link)
-from rich_text import normalize_after_markdown_load, same_code_block
+                           ends_in_break, entities, escapes, fence_words, hard_breaks,
+                           lossy_definition, misread_blocks, pictures, set_apart, titled_link)
+from rich_text import code_info, normalize_after_markdown_load, same_code_block
 
 log = logging.getLogger(__name__)
 
@@ -212,7 +212,7 @@ class _Block:
     task: Optional[bool] = None
     spaced: bool = False       # carries paragraph spacing (came from Markdown)
     indent: str = ""           # leading spaces typed before the text
-    language: str = ""
+    language: str = ""         # what a code block's fence says (rich_text.code_info)
     code_text: str = ""
     rows: List[List[List[_Span]]] = field(default_factory=list)
     bullet_text: str = ""      # a typed bullet line, exactly as typed
@@ -452,8 +452,8 @@ def _block_kind(block, image_target) -> _Block:
     fence = fmt.property(QTextFormat.Property.BlockCodeFence)
     # Indented code carries a language property (empty) and no fence.
     if fence or fmt.hasProperty(QTextFormat.Property.BlockCodeLanguage):
-        language = fmt.property(QTextFormat.Property.BlockCodeLanguage) or ""
-        return _Block("code", language=str(language), code_text=_code_text(block), spaced=True)
+        return _Block("code", language=code_info(block), code_text=_code_text(block),
+                      spaced=True)
     text_list = block.textList()
     if text_list is not None:
         return _list_block(block, text_list, image_target)
@@ -1477,14 +1477,17 @@ def _read_once(doc: QTextDocument, markdown: str, features, alts: dict,
     markdown = literal_footnotes(markdown)
     keeping, keep_mark, kinds, lost = _marked_keeps(markdown, features)
     keeping, apart_mark_, ended, runs_on = _marked_apart(keeping)
+    keeping, info_mark, cut = _whole_infos(keeping)
     doc.setMarkdown(keeping, features)
+    if info_mark is not None:
+        _split_infos(doc, info_mark)
     if not ((apart_mark_ is None or _set_apart(doc, apart_mark_, ended))
             and (keep_mark is None or _kept_by_marks(doc, keep_mark, kinds))):
         # Read otherwise than the marks expected: read without them, and
         # what they kept is left out.
         doc.setMarkdown(markdown, features)
         lost = True
-    lost = lost or runs_on
+    lost = lost or runs_on or cut
     if alts:
         _restore_descriptions(doc, alts)
     soft_mark, marked = soft
@@ -1697,6 +1700,56 @@ def _keep_entities(doc: QTextDocument, mark: str, spelled: Sequence[str]) -> Tup
             cursor.setPosition(position)
             cursor.insertText(text, character)
     return True, in_line
+
+
+# --------------------------------------------------------------------------- #
+# A fence's words, kept whole                                                  #
+# --------------------------------------------------------------------------- #
+#
+# Qt's reader keeps the first word of what a fence says as the code
+# block's language, and drops the rest: "```{r setup, include=FALSE}" was
+# saved as "```{r", "```js title=x" as "```js". For the time it reads the
+# Markdown, a mark stands in each space of such a fence's words, so they
+# are one word; once read, the first of them is the block's language
+# again and the rest is kept beside it (doc_walk.CODE_INFO_PROPERTY). The
+# mark is one of ASCII's separators: Qt's reader takes a fence's words
+# for Latin-1, and gives any other character back as two or three.
+_INFO_MARKS = ("\x1f", "\x1e", "\x1d", "\x1c")
+_SPACED_INFO = re.compile(r"^[ >]*(?:`{3,}|~{3,})[ \t]*\S+[ \t]+\S", re.MULTILINE)
+
+
+def _whole_infos(markdown: str) -> Tuple[str, Optional[str], bool]:
+    """The Markdown with a mark (_INFO_MARKS) in each space of a fence's
+    words, where it says more than its language, and the mark; and
+    whether such words are cut all the same: no mark is free, or a tab
+    parts them."""
+    if _SPACED_INFO.search(markdown) is None:
+        return markdown, None, False
+    lines = markdown.split("\n")
+    spaced = [(number, words) for number, words in fence_words(lines) if len(words.split()) > 1]
+    mark = _free_mark(markdown, _INFO_MARKS) if spaced else None
+    if mark is None:
+        return markdown, None, bool(spaced)
+    for number, words in spaced:
+        lines[number] = lines[number][:len(lines[number].rstrip()) - len(words)] \
+            + words.replace(" ", mark)
+    return "\n".join(lines), mark, any("\t" in words for _number, words in spaced)
+
+
+def _split_infos(doc: QTextDocument, mark: str) -> None:
+    """Each code block's language that holds ``mark`` (_whole_infos) made
+    its language and the words after it again."""
+    language = QTextFormat.Property.BlockCodeLanguage
+    with _one_step(doc) as cursor:
+        for block in iter_blocks(doc):
+            fmt = block.blockFormat()
+            words = fmt.stringProperty(language)
+            if mark in words:
+                first, _mark, rest = words.partition(mark)
+                fmt.setProperty(language, first)
+                fmt.setProperty(CODE_INFO_PROPERTY, rest.replace(mark, " "))
+                cursor.setPosition(block.position())
+                cursor.setBlockFormat(fmt)
 
 
 # --------------------------------------------------------------------------- #
