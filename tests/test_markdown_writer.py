@@ -370,6 +370,8 @@ def test_a_link_the_editor_cannot_hold_opens_as_text(source):
     ("**<https://a.example>**\n", "**<https://a.example>**\n"),
     ("1. Press `\n2. See [![a](p.png)](u)\n3. Press ` again\n",
      "1. Press `\n2. See [![a](p.png)](u)\n3. Press ` again\n"),
+    ("> Press `\n>\n> [![a](p.png)](u) `\n", "> Press `\n>\n> [![a](p.png)](u) `\n"),
+    ("# Press `\n[![a](p.png)](u) `\n", "# Press `\n\n[![a](p.png)](u) `\n"),
     ("Look ![the *new* logo][logo] and tell me.\n", "Look ![the *new* logo][logo] and tell me.\n"),
     ("![a *b*][]\n\n[a *b*]: x.png\n", "![a *b*](x.png)\n"),
 ])

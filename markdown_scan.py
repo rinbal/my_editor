@@ -737,9 +737,8 @@ def code_span_end(text: str, start: int, found: Optional[Found] = None) -> int:
     while start + run < len(text) and text[start + run] == "`":
         run += 1
     at = start + run
-    # A code span ends with its paragraph: at a blank line, where a list
-    # item starts or a table's row (a lone backtick in each of two items
-    # or rows is no code).
+    # A code span ends with its paragraph (_PARAGRAPH_END: a lone backtick
+    # in each of two items, rows or blocks of a quote is no code).
     limit = _paragraph_end(text, at, found)
     ticks = "`" * run
     while True:
@@ -841,7 +840,13 @@ def _next_of(text: str, char: str, start: int, found: Optional[Found]) -> int:
     return index
 
 
-_PARAGRAPH_END = re.compile(r"\n(?=[ \t]*\n|[ \t>]*(?:[-*+]|\d{1,9}[.)])[ \t]|[ \t>]*\|)")
+# Where a paragraph ends: at a line that is blank (in its quote too), or
+# starts a list item, a table's row, a heading or a fence, or is a
+# heading's underline or a divider.
+_PARAGRAPH_END = re.compile(
+    r"\n(?=[ \t>]*(?:\n|$)|[ \t>]*(?:[-*+]|\d{1,9}[.)])[ \t]|[ \t>]*\||[ \t>]*#{1,6}(?:[ \t\n]|$)"
+    r"|[ \t>]*(?:`{3,}|~{3,})|[ \t>]*(?:=+|-+|(?:[*_][ \t]*){3,})[ \t]*(?:\n|$))")
+_HEADING_LINE = re.compile(r"[ \t>]*#{1,6}(?:[ \t]|$)", re.MULTILINE)
 
 
 def _paragraph_end(text: str, start: int, found: Optional[Found]) -> int:
@@ -850,8 +855,13 @@ def _paragraph_end(text: str, start: int, found: Optional[Found]) -> int:
     known = found.next_of.get("paragraph") if found is not None else None
     if known is not None and known[0] <= start <= known[1]:
         return known[1]
-    end = _PARAGRAPH_END.search(text, start)
-    index = len(text) if end is None else end.start()
+    line_start = text.rfind("\n", 0, start) + 1
+    if _HEADING_LINE.match(text, line_start):
+        end = text.find("\n", start)               # a heading is its line
+        index = len(text) if end < 0 else end
+    else:
+        end = _PARAGRAPH_END.search(text, start)
+        index = len(text) if end is None else end.start()
     if found is not None:
         found.next_of["paragraph"] = (start, index)
     return index
