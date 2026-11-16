@@ -734,8 +734,8 @@ def test_indented_code_stays_code():
 
 
 def test_a_link_that_shows_its_address_is_an_autolink():
-    doc = typed(("https://x.example/a_b", {"href": "https://x.example/a_b"}))
-    assert document_to_markdown(doc) == "<https://x.example/a_b>\n"
+    doc = typed(("https://x.example/_a_", {"href": "https://x.example/_a_"}))
+    assert document_to_markdown(doc) == "<https://x.example/_a_>\n"
 
 
 @pytest.mark.parametrize("words, href, written", [
@@ -743,6 +743,10 @@ def test_a_link_that_shows_its_address_is_an_autolink():
      "https://example.com/photo.jpg"),
     ("www.example.com", "http://www.example.com", "www.example.com"),
     ("ada@example.com", "mailto:ada@example.com", "ada@example.com"),
+    # (An underscore between letters is no emphasis to any reader: it got
+    # angle brackets, in a file that had it bare too.)
+    ("https://github.com/rinbal/my_editor", "https://github.com/rinbal/my_editor",
+     "https://github.com/rinbal/my_editor"),
 ])
 def test_a_link_that_shows_its_own_address_is_written_bare(words, href, written):
     doc = typed(("see ", {}), (words, {"href": href}), (". Next", {}))

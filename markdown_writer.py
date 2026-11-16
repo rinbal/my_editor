@@ -177,9 +177,10 @@ def _apart(reference: str, before: str, following: Optional["_Span"]) -> str:
 
 
 # A bare web address, and the characters that make a Markdown reader see
-# emphasis or code inside one.
+# emphasis or code inside one (an underscore between letters or digits
+# makes none: "my_editor").
 _WEB_ADDRESS = re.compile(r"(?<![<(\w])(?:https?|wss?)://[^\s<>]+", re.IGNORECASE)
-_MARKUP_IN_ADDRESS = set("_*~`")
+_MARKUP_IN_ADDRESS = re.compile(r"[*~`]|(?<![^\W_])_|_(?![^\W_])")
 
 
 # --------------------------------------------------------------------------- #
@@ -482,7 +483,7 @@ def _protected(text: str) -> list:
     """The web addresses in ``text`` holding a character a Markdown reader
     would take for emphasis or code (matches of _WEB_ADDRESS)."""
     return [match for match in _WEB_ADDRESS.finditer(text)
-            if any(ch in _MARKUP_IN_ADDRESS for ch in match.group(0))]
+            if _MARKUP_IN_ADDRESS.search(match.group(0))]
 
 
 def _protect_addresses(text: str) -> str:
@@ -591,7 +592,7 @@ def _autolink(address: str, href: str, before: str, following: Optional[_Span],
     """
     is_email = "@" in address and "://" not in address
     findable = (address.lower().startswith(("https://", "http://", "www.")) or is_email)
-    if (not angled and findable and not any(ch in _MARKUP_IN_ADDRESS for ch in address)
+    if (not angled and findable and not _MARKUP_IN_ADDRESS.search(address)
             and (not before or before[-1].isspace() or before[-1] in ("(", _SOFT))
             and _ends_a_bare_address(address, following)
             and _reads_back_whole(address, href)):
