@@ -672,6 +672,16 @@ def test_a_space_a_file_writes_by_name_is_no_mark():
     assert document_to_markdown(doc) == source
 
 
+@pytest.mark.parametrize("kind", ["NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION"])
+def test_a_github_alert_keeps_its_first_line(kind):
+    # GitHub shows "> [!NOTE]" as a box only while the words start on the
+    # next line: the two lines were saved as one, and the box was gone.
+    source = f"> [!{kind}]\n> Read this first.\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert holds_faithfully(source) and document_to_markdown(doc) == source
+
+
 def test_a_tab_after_the_start_of_a_code_line_is_kept():
     # Qt's reader makes a tab in a code line's indent spaces, and only
     # there: a code block with a tab between its words opens as it is.

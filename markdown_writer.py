@@ -1266,9 +1266,25 @@ def _soft_breaks(markdown: str) -> Tuple[bool, List[int]]:
                     or "|" in line or "|" in before):
                 return True, []
             found.append(index - 1)
+        elif _ALERT_LINE.match(before) and _quote_marks(line) == _quote_marks(before) \
+                and line[len(_QUOTE_MARKS.match(line).group(0)):].strip():
+            # A quote that opens with GitHub's alert ("> [!NOTE]") is a
+            # box only while the words start on the next line.
+            found.append(index - 1)
     if found and _free_mark(markdown, _SOFT_MARKS) is None:
         return True, []
     return False, found
+
+
+# The first line of a quote that GitHub shows as an alert box.
+_ALERT_LINE = re.compile(r"^ {0,3}(?:> ?)+\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*$",
+                         re.IGNORECASE)
+_QUOTE_MARKS = re.compile(r"^(?: {0,3}> ?)*")
+
+
+def _quote_marks(line: str) -> int:
+    """How many quotes a line stands in, by its marks."""
+    return _QUOTE_MARKS.match(line).group(0).count(">")
 
 
 def _soft_wrapped(markdown: str) -> bool:
