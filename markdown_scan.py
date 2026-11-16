@@ -276,9 +276,10 @@ def hard_breaks(markdown: str) -> List[int]:
         if item is not None:
             words = _item_words(rest, item)[1]
             words = words[_TASK_BOX.match(words).end():] if _TASK_BOX.match(words) else words
-        if not (not words.strip() or _HEADING_OR_BREAK.fullmatch(words)
-                or _UNDERLINE.fullmatch(words.strip()) or DELIMITER_ROW.match(rest)
-                or words.rstrip().endswith("|")):
+        underline = (_UNDERLINE.fullmatch(words.strip()) is not None and number > 0
+                     and bool(lines[number - 1].strip()))
+        if not (not words.strip() or _HEADING_OR_BREAK.fullmatch(words) or underline
+                or DELIMITER_ROW.match(rest) or words.rstrip().endswith("|")):
             found.append(number)
     return found
 

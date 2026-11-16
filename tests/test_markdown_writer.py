@@ -565,6 +565,15 @@ def test_a_list_set_in_where_its_quote_opens_opens_as_text():
     assert holds_faithfully("> x\n>\n>   - a\n>   - b\n")
 
 
+def test_dashes_alone_on_a_line_keep_the_line_break_after_them():
+    # Under a line of words they are a heading's underline; alone they
+    # are words, and were taken for one: the break after them was lost.
+    source = "a\n\n--  \nb\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc) == source
+
+
 def test_a_fence_is_judged_by_the_lines_it_holds():
     # A longer fence holds a shorter one's line as code, and one set in
     # where its quote opens loses nothing while no line of it is set in:
