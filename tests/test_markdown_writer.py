@@ -389,6 +389,25 @@ def test_what_stands_beside_a_links_words_does_not_change_them(source, written):
     assert document_to_markdown(doc, _image_as_read) == written
 
 
+@pytest.mark.parametrize("words, written", [
+    ("#", "- \\#\n"), (">", "- \\>\n"), ("```", "- \\```\n"), ("~~~", "- \\~~~\n"),
+    ("+", "- \\+\n"), ("* a", "- \\* a\n"), ("1.", "- 1\\.\n"), ("2) b", "- 2\\) b\n"),
+    ("    x", "- &#32;&#32;&#32;&#32;x\n"), ("\tx", "- &#9;x\n"), ("#a", "- #a\n"),
+])
+def test_an_item_whose_words_would_open_a_block_keeps_them(words, written):
+    # "- #" is a heading to a reader, "- >" a quote, "- ```" code, "- +"
+    # a list in the item, and spaces before the words it drops (four of
+    # them are code): each was saved as that.
+    doc = QTextDocument()
+    cursor = QTextCursor(doc)
+    cursor.insertList(QTextListFormat.Style.ListDisc)
+    cursor.insertText(words)
+    assert document_to_markdown(doc) == written
+    read_markdown(doc, written)
+    assert doc.blockCount() == 1 and doc.firstBlock().textList() is not None
+    assert doc.firstBlock().text() == words
+
+
 def test_an_item_that_would_read_as_a_divider_is_written_as_an_item():
     # "- --" is a divider to a reader: an item that says "--" was saved
     # as one, and gone from its list.

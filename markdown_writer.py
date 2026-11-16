@@ -869,6 +869,13 @@ def _markdown_lines(block: _Block) -> str:
 # A line a reader takes for a divider (a thematic break): three or more of
 # one of its characters, and spaces.
 _DIVIDER = re.compile(r"([-*_])(?:[ \t]*\1){2,}[ \t]*")
+# Words that open a block of their own where an item's words start
+# (CommonMark 4.2, 4.5, 5.1 and 5.2): a heading, a quote, a code fence (one
+# of backticks says nothing with a backtick in it), another list's item.
+# Group 1 is the character a backslash makes words again, or group 2 the
+# closer of an item's number.
+_OPENS_BLOCK = re.compile(r"(#{1,6})(?:[ \t]|$)|(>)|(`{3,})(?=[^`]*$)|(~{3,})|([-*+])(?:[ \t]|$)"
+                          r"|\d{1,9}([.)])(?:[ \t]|$)")
 
 
 def _block_markdown(block: _Block) -> str:
@@ -896,11 +903,7 @@ def _block_markdown(block: _Block) -> str:
         body = _inline_markdown(block.spans)
         cont = " " * (len(pad) + len(marker) + 1)
         lines = body.split("\n")
-        if _DIVIDER.fullmatch(lines[0]) or _DIVIDER.fullmatch(f"{marker} {lines[0]}"):
-            # "- --" is a divider to a reader, not an item that says "--",
-            # and "1. ***" an item that holds one: their first character
-            # escaped, they are the item's words.
-            lines[0] = re.sub(r"\S", lambda first: "\\" + first.group(0), lines[0], count=1)
+        lines[0] = _item_words(lines[0], marker)
         # (Nothing after the marker of an item with nothing in it; the
         # two spaces of a line break stay.)
         return "\n".join([f"{pad}{marker} {lines[0]}" if lines[0] else pad + marker]
@@ -912,6 +915,26 @@ def _block_markdown(block: _Block) -> str:
         # do not break. (Qt's reader drops a "&#32;".)
         indent = "&nbsp;" * len(indent)
     return indent + _inline_markdown(block.spans)
+
+
+def _item_words(words: str, marker: str) -> str:
+    """The first line of an item's words, after its ``marker``, written so
+    a reader reads them as its words: "- --" is a divider to a reader,
+    "- #" a heading, "- >" a quote, "- ```" code, "- +" or "- 1." a list
+    in the item, "-     x" code, and spaces and a tab before the words it
+    drops. The first character that would make a block escaped, and
+    those spaces and that tab written as characters."""
+    lead = words[:len(words) - len(words.lstrip(" \t"))]
+    rest = words[len(lead):]
+    if _DIVIDER.fullmatch(rest) or _DIVIDER.fullmatch(f"{marker} {rest}"):
+        rest = "\\" + rest
+    else:
+        found = _OPENS_BLOCK.match(rest)
+        if found is not None:
+            at = next(found.start(group) for group in range(1, 7)
+                      if found.group(group) is not None)
+            rest = rest[:at] + "\\" + rest[at:]
+    return lead.replace(" ", "&#32;").replace("\t", "&#9;") + rest
 
 
 def document_to_markdown(doc, image_target: Optional[ImageTarget] = None, *,
