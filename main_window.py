@@ -5497,6 +5497,7 @@ class MainWindow(QMainWindow):
         head = ""                   # a Markdown file's front matter, as written
         left_out = []               # audio or video a Markdown file could not hold
         as_read = None              # a Markdown file opened and not changed, as read
+        converted = False           # a document made R Markdown by this save
         try:
             if ext.endswith(('.pdf', '.rtf')) and getattr(ed, "_lock", None) is not None:
                 inform(self, title=_("A locked document can’t be saved as PDF or RTF"),
@@ -5514,6 +5515,7 @@ class MainWindow(QMainWindow):
                     ed, lambda doc, pictures, revision: self._save_html(
                         ed, path, doc, pictures, revision), then=then)
             elif ext.endswith('.rmd'):
+                converted = not self._saves_rmd_source(ed)
                 content = self._to_rmd_content(ed, path)
             elif ext.endswith('.md') and MainWindow._untouched(ed, path):
                 # Nothing changed since it was opened: the file stays as it
@@ -5562,11 +5564,16 @@ class MainWindow(QMainWindow):
                 if without_colors:
                     with ed.undo_step(N_("Remove Colors")):
                         remove_local_only_formatting(ed.document())
+            if converted:
+                self._becomes_rmd_source(ed, path, content)
             ed._recovered_title = ""
             self._resolve_disk_change(ed)
             ed.document().setModified(False)
             self._update_tab_title()
             self._say_saved(ed, path, left_out)
+            if converted:
+                self.status.showMessage(
+                    _("Saved as R Markdown. The tab now shows the file’s source."), 8000)
             return True
 
         except Exception as e:
@@ -6320,15 +6327,27 @@ class MainWindow(QMainWindow):
 
     def _saves_rmd_source(self, ed) -> bool:
         """Whether ``ed`` is saved to .Rmd as its text, not converted
-        (_to_rmd_content): a tab that came from an .Rmd file is source
-        (one restored by crash recovery too, which loses the flag but
-        keeps the path), and so is a plain tab whose text starts with a
-        YAML fence, so raw Rmd typed into a new tab is not wrapped twice."""
-        origin = (getattr(ed, "_file_path", "") or "").lower()
-        if getattr(ed, "_loaded_as_rmd_source", False) or origin.endswith(".rmd"):
+        (_to_rmd_content): a tab that holds its file's text is (R
+        Markdown, Markdown open as its text, plain text, code:
+        _editor_kind), and so is a plain tab whose text starts with a
+        YAML fence, so raw Rmd typed into a new tab is not wrapped twice.
+        A document is converted, once: its tab is R Markdown source from
+        then on (_becomes_rmd_source)."""
+        if self._editor_kind(ed) == "source":
             return True
         return (ed.document().toPlainText().lstrip().startswith("---")
                 and not self._has_formatting(ed))
+
+    def _becomes_rmd_source(self, ed, path: str, content: str) -> None:
+        """A document saved as .Rmd is R Markdown from then on: its tab
+        holds the source its file holds, as it will when the file is
+        opened again. Kept a document, each save would convert it anew,
+        and what was typed into it since, R code too, would be escaped as
+        a document's words are, while its file's name left it without a
+        document's commands."""
+        self._set_editor_content(ed, path, content)
+        self._attach_highlighter(ed, path)
+        self._update_editor_commands()
 
     def _make_rmd_image_copier(self, ed, rmd_path: str):
         """Copy images into the .Rmd's sidecar media folder.

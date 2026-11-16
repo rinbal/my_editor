@@ -93,6 +93,7 @@ class _Window:
     _has_images = MainWindow._has_images
     _loses_content_on_save = MainWindow._loses_content_on_save
     _saves_rmd_source = MainWindow._saves_rmd_source
+    _editor_kind = MainWindow._editor_kind
     _has_formatting = MainWindow._has_formatting
     _resolve_local_image = MainWindow._resolve_local_image
 

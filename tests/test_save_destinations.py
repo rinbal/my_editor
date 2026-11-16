@@ -51,6 +51,14 @@ class SaveWindow(_Window):
     _resolve_disk_change = MainWindow._resolve_disk_change
     _ask_before_losing = MainWindow._ask_before_losing
     _warn_formatting_loss = MainWindow._warn_formatting_loss
+    _becomes_rmd_source = MainWindow._becomes_rmd_source
+    _set_editor_content = MainWindow._set_editor_content
+
+    def _attach_highlighter(self, ed, path):
+        pass
+
+    def _update_editor_commands(self):
+        pass
 
     def __init__(self, cache_dir):
         super().__init__(cache_dir)
@@ -175,6 +183,31 @@ def test_a_markdown_save_that_fails_keeps_the_colors(win, tmp_path, monkeypatch)
 def test_a_document_converted_to_rmd_is_saved_without_a_question(win):
     # The conversion keeps bold, italic and colors (rmarkdown.document_to_rmd).
     assert win._loses_content_on_save(_colored(), "paper.Rmd") is False
+
+
+def test_a_document_saved_as_rmd_is_r_markdown_source_from_then_on(win, tmp_path):
+    # It stayed a document that each save converted anew (or, before that,
+    # one whose next save wrote its plain text): what was typed into it
+    # since, R code too, reached the file escaped.
+    ed = _colored()
+    win._ed = ed
+    path = str(tmp_path / "paper.Rmd")
+    assert win._save_to(path) is True
+    first = open(path, encoding="utf-8").read()
+    assert ed.toPlainText() == first and win._editor_kind(ed) == "source"
+    ed.setPlainText(first + "The mean is `r mean(x)`.\n")
+    ed._file_path = path
+    assert win._save_to(path) is True
+    assert open(path, encoding="utf-8").read() == first + "The mean is `r mean(x)`.\n"
+
+
+def test_markdown_open_as_its_text_is_saved_as_rmd_as_it_is(win, tmp_path):
+    ed = _editor_with(text="# Title\n\n- # Heading in an item\n")
+    ed._markdown_source = True
+    win._ed = ed
+    path = str(tmp_path / "notes.Rmd")
+    assert win._save_to(path) is True
+    assert open(path, encoding="utf-8").read() == "# Title\n\n- # Heading in an item\n"
 
 
 def test_the_rmd_source_question_names_what_is_lost(win, monkeypatch):

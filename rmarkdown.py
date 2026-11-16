@@ -4,8 +4,9 @@
 
 Export model (mirrors how RStudio treats documents):
 - A tab opened from an .Rmd file is SOURCE and saves as plain text.
-- A rich-text tab saved as .Rmd is converted: YAML frontmatter plus a
-  Pandoc-markdown body. Bold, italic, strikethrough, inline code, links,
+- A rich-text tab saved as .Rmd is converted, once, and is that source
+  from then on (main_window's _becomes_rmd_source): YAML frontmatter
+  plus a Pandoc-markdown body. Bold, italic, strikethrough, inline code, links,
   headings and lists (bulleted, numbered, checklists) map natively;
   underline, colors and highlights use Pandoc bracketed spans
   ([x]{.underline}, [x]{style="color:#hex"},
@@ -59,8 +60,9 @@ from doc_walk import (
     skip_prefix,
     table_rows,
 )
+from export_html import safe_href
 from image_safety import MAX_PICTURE_BYTES, data_uri_bytes, declared_size
-from markdown_writer import fenced_code, link_markdown, pipe_table
+from markdown_writer import code_span, code_text, fenced_code, link_markdown, pipe_table
 import rich_text
 import rmd_toolchain
 from i18n import _
@@ -109,8 +111,7 @@ def derive_title(doc, fallback: str) -> str:
 
 def _render_text_run_md(text: str, fmt, heading: bool = False) -> str:
     if fmt.fontFixedPitch():
-        ticks = "``" if "`" in text else "`"
-        return f"{ticks}{text.replace(_LINE_SEP, ' ')}{ticks}"
+        return code_span(text.replace(_LINE_SEP, " "))
     out = _escape_md(text).replace(_LINE_SEP, "\\\n")
     bold = fmt.fontWeight() > 400 and not heading
     strike = fmt.fontStrikeOut()
@@ -224,7 +225,7 @@ def _table_rmd(table: QTextTable, copy_image) -> list[str]:
 def _code_rmd(blocks) -> list[str]:
     """A code block (``blocks``: its lines) as a fenced one, in the quote
     it stands in."""
-    code = fenced_code("\n".join(block.text() for block in blocks),
+    code = fenced_code("\n".join(code_text(block) for block in blocks),
                        rich_text.code_info(blocks[0]))
     prefix = "> " * rich_text.quote_depth(blocks[0])
     return [(prefix + line).rstrip() if prefix else line for line in code.split("\n")]
@@ -272,7 +273,10 @@ def _group_rmd(group, copy_image) -> list[str]:
     for unit in group.units:
         target = copy_image(photo_group.without_wide(unit.name)) if copy_image else None
         if isinstance(target, str) and target:
-            lines.append(f"![{_escape_md(unit.alt)}]({target})" + ("{.wide}" if unit.wide else ""))
+            picture = f"![{_escape_md(unit.alt)}]({target})" + ("{.wide}" if unit.wide else "")
+            # (In the link around it, when it has one.)
+            lines.append(f"[{picture}]({unit.image.anchorHref()})" if unit.image.isAnchor()
+                         and unit.image.anchorHref() else picture)
         else:
             lines.append(_UNAVAILABLE_MD)
         if not unit.has_caption or not unit.caption_text.strip():
@@ -463,7 +467,7 @@ def _media_link(block, copy_image):
 _GROUP_PARAGRAPH = re.compile(
     r'<div class="' + GROUP_CLASS + r'">\s*<p>(.*?)</p>\s*</div>', re.S)
 _LINE_BREAK = re.compile(r"<br\s*/?>")
-_PICTURE_LINE = re.compile(r"(<img\s[^>]*>)", re.S)
+_PICTURE_LINE = re.compile(r'(?:<a\s[^>]*?href="([^"]*)"[^>]*>)?(<img\s[^>]*>)(?:</a>)?', re.S)
 _UNAVAILABLE_HTML = "<em>[image unavailable]</em>"
 _TAG = re.compile(r"<[^>]*>")
 # A caption is shown as the export shows it: in its words, not in italic.
@@ -484,7 +488,7 @@ class _ImgAttributes(HTMLParser):
     handle_startendtag = handle_starttag
 
 
-def _knitted_figure(tag: str):
+def _knitted_figure(tag: str, href: str = ""):
     attributes = _ImgAttributes(tag).attributes
     src = attributes.get("src") or None
     size = None
@@ -496,7 +500,8 @@ def _knitted_figure(tag: str):
     # pandoc may break a long line where a description has a space.
     alt = " ".join(attributes.get("alt", "").split())
     return photo_page.Figure(src, size, None, alt,
-                                   wide="wide" in attributes.get("class", "").split())
+                             wide="wide" in attributes.get("class", "").split(),
+                             href=safe_href(html.unescape(href)))
 
 
 def _knitted_figures(paragraph: str):
@@ -519,8 +524,8 @@ def _knitted_figures(paragraph: str):
         picture = _PICTURE_LINE.fullmatch(line)
         if picture is not None or line == _UNAVAILABLE_HTML:
             close_caption()
-            figures.append(_knitted_figure(picture.group(1)) if picture is not None
-                           else photo_page.Figure(None, None, None, ""))
+            figures.append(_knitted_figure(picture.group(2), picture.group(1) or "")
+                           if picture is not None else photo_page.Figure(None, None, None, ""))
         elif figures and "<img" not in line:
             captions.append(line)
         else:

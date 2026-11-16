@@ -333,6 +333,12 @@ w._media_store.upload_finished.emit(f"myeditor-asset:{sha}", MediaFile(
     hash=sha, url=url, mime_type="audio/mpeg", size=1,
     urls=[{"server": "https://cdn.example", "url": url}]))
 app.processEvents()
+# (The first tab is R Markdown source since its save: another document.)
+ed = w.new_tab()
+ed.setFocus()
+QTest.keyClicks(ed, "Before.")
+w._add_media_file(ed, song)
+QTest.keyClicks(ed, "After.")
 w._save_to(os.path.join(folder, "after.rmd"))
 r["after"] = open(os.path.join(folder, "after.rmd"), encoding="utf-8").read()
 ed.document().setModified(False)

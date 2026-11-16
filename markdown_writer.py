@@ -429,7 +429,7 @@ def _blocks_of_frame(frame, image_target) -> List[_Block]:
             blocks.extend(_group_blocks(block, segments, image_target))
         elif blocks and blocks[-1].kind == "code" and same_code_block(block.previous(), block):
             # Qt keeps each line of a code block as a block of its own.
-            blocks[-1].code_text += "\n" + _code_text(block)
+            blocks[-1].code_text += "\n" + code_text(block)
         else:
             blocks.append(_one_block(block, image_target))
     return blocks
@@ -452,7 +452,7 @@ def _block_kind(block, image_target) -> _Block:
     fence = fmt.property(QTextFormat.Property.BlockCodeFence)
     # Indented code carries a language property (empty) and no fence.
     if fence or fmt.hasProperty(QTextFormat.Property.BlockCodeLanguage):
-        return _Block("code", language=code_info(block), code_text=_code_text(block),
+        return _Block("code", language=code_info(block), code_text=code_text(block),
                       spaced=True)
     text_list = block.textList()
     if text_list is not None:
@@ -460,7 +460,9 @@ def _block_kind(block, image_target) -> _Block:
     return _paragraph_block(block, image_target)
 
 
-def _code_text(block) -> str:
+def code_text(block) -> str:
+    """A line of a code block as it is written: a line break in it a new
+    line, a picture not at all."""
     return block.text().replace(LINE_SEPARATOR, "\n").replace(OBJECT_REPLACEMENT, "")
 
 
@@ -520,7 +522,9 @@ def _destination(href: str) -> str:
     return href
 
 
-def _code_span(text: str) -> str:
+def code_span(text: str) -> str:
+    """``text`` as inline code: in more backticks than it holds in a row,
+    and apart from them where it starts or ends with one."""
     longest = max((len(m) for m in re.findall(r"`+", text)), default=0)
     ticks = "`" * (longest + 1)
     pad = " " if text.startswith("`") or text.endswith("`") or (
@@ -792,7 +796,7 @@ def _styled(spans: List[_Span], label: bool = False) -> str:
         return "".join(span.text for span in spans)
     if first.code:
         parts = "".join(span.text for span in spans).split(LINE_SEPARATOR)
-        return LINE_SEPARATOR.join(_code_span(p) for p in parts if p)
+        return LINE_SEPARATOR.join(code_span(p) for p in parts if p)
     pieces = []
     for text in "".join(_words(span, label) for span in spans).split(LINE_SEPARATOR):
         if first.strike:
