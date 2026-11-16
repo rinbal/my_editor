@@ -246,7 +246,7 @@ def misread_blocks(markdown: str) -> bool:
     or a quote ("- # a", "- a\\n  ---", "- a\\n\\n  # b", "> ---"): it
     takes it out of its list or quote, or makes it the item's words in
     bold. A quote with nothing in it (">"). An item that opens with
-    another list's item or a quote ("- - a",
+    another list's item, a quote or a fence ("- ```", "- - a",
     "- > a"), what goes on in an item after a blank line ("- a\\n\\n  b":
     it takes that out of the list), and a marker alone, with spaces after
     it, under words ("a\\n* "). A heading with no words, a fence with nothing in it or
@@ -529,10 +529,12 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
                 # (Read as not set in: its words ``indent`` columns left.)
                 shifted = (columns[0] - indent, columns[0])
             # A heading or a break in it; and an item that opens with another
-            # list's item or with a quote ("- - a", "- > a"): Qt's reader
-            # hangs that list under the item before, takes the quote out.
+            # list's item, a quote or code ("- - a", "- > a", "- ```"): Qt's
+            # reader hangs that list under the item before, takes the quote
+            # or the code out, leaves an empty block out with its item.
             inside = _HEADING_OR_BREAK.fullmatch(words) is not None
-            misread = misread or inside or len(columns) > 1 or words.startswith(">")
+            misread = (misread or inside or len(columns) > 1 or words.startswith(">")
+                       or FENCE_LINE.match(words) is not None)
             if start is None:
                 paragraph = (depth, None)
             elif not words.strip() or inside:
