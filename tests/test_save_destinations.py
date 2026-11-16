@@ -222,6 +222,32 @@ def test_markdown_open_as_its_text_is_saved_as_rmd_as_it_is(win, tmp_path):
     assert open(path, encoding="utf-8").read() == "# Title\n\n- # Heading in an item\n"
 
 
+def test_a_document_is_made_r_markdown_only_once_asked(win, tmp_path, monkeypatch):
+    # It becomes the R Markdown text it is saved as, which Undo can't take
+    # back; a picture the file can't take along went from the tab with no
+    # word. Text is saved as .Rmd as it is, and nothing is asked.
+    import main_window
+    from PySide6.QtGui import QTextCursor
+    from tests.test_media_document import _fmt, _png
+    asked = []
+    monkeypatch.setattr(main_window, "ask", lambda parent, **kw: asked.append(kw) or "cancel")
+    outside, shared = tmp_path / "private", tmp_path / "shared"
+    outside.mkdir()
+    shared.mkdir()
+    ed = _editor_with(text="A **note**")
+    ed._file_path = str(shared / "note.md")
+    QTextCursor(ed.document()).insertImage(_fmt(_png(outside / "far.png"), "far"))
+    assert win._ask_before_losing(ed, str(shared / "note.Rmd")) == "cancel"
+    assert asked[0]["title"] == "Save as R Markdown?"
+    assert [button.label for button in asked[0]["buttons"]] == ["Cancel", "Save as R Markdown"]
+    assert asked[0]["message"].endswith("can’t come along and is left out: far.png")
+    assert not (shared / "note_media").exists()
+    text = _editor_with(text="# Notes")
+    text._loaded_as_rmd_source = True
+    assert win._ask_before_losing(text, str(tmp_path / "notes.Rmd")) == "save"
+    assert len(asked) == 1
+
+
 def test_the_rmd_source_question_names_what_is_lost(win, monkeypatch):
     import main_window
     seen = {}

@@ -77,6 +77,8 @@ class _Window:
     _foreign_image_target = MainWindow._foreign_image_target
     _encode_document_image = MainWindow._encode_document_image
     _make_rmd_image_copier = MainWindow._make_rmd_image_copier
+    _ask_to_convert = MainWindow._ask_to_convert
+    _rmd_pictures_left_out = MainWindow._rmd_pictures_left_out
     _markdown_reference_for = MainWindow._markdown_reference_for
     _publish_payload = MainWindow._publish_payload
     _publish_text = MainWindow._publish_text

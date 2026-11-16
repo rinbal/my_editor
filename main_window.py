@@ -5301,12 +5301,50 @@ class MainWindow(QMainWindow):
         saved without it), "without colors" (a Markdown file saved without
         its colors, highlights and underlines: _save_to takes them off the
         document too once the file is written), "html", "rtf" or "cancel"."""
+        if path.lower().endswith(".rmd") and not self._saves_rmd_source(ed):
+            return self._ask_to_convert(ed, path)
         if not self._loses_content_on_save(ed, path):
             return "save"
         result = self._warn_formatting_loss(os.path.splitext(path)[1])
         if result != "anyway":
             return result
         return "without colors" if path.lower().endswith(".md") else "save"
+
+    def _ask_to_convert(self, ed, path: str) -> str:
+        """Ask before a document is saved as R Markdown: it becomes the R
+        Markdown text it is saved as, which Undo can't take back
+        (_becomes_rmd_source). Names the pictures the file can't take
+        along. "save" or "cancel"."""
+        left_out = self._rmd_pictures_left_out(ed, path)
+        message = (_("This document becomes R Markdown text, which R and RStudio read. Bold, "
+                     "links, lists and pictures are written as Markdown, and the original "
+                     "file stays as it is.")
+                   if getattr(ed, "_file_path", None) else
+                   _("This document becomes R Markdown text, which R and RStudio read. Bold, "
+                     "links, lists and pictures are written as Markdown."))
+        if left_out:
+            message += "\n\n" + ngettext(
+                "This picture can’t come along and is left out: {names}",
+                "These pictures can’t come along and are left out: {names}",
+                len(left_out)).format(names=", ".join(left_out))
+        return ask(self, title=_("Save as R Markdown?"), message=message, buttons=[
+            Button(_("Cancel"), "cancel", CANCEL),
+            Button(_("Save as R Markdown"), "save", DEFAULT)])
+
+    def _rmd_pictures_left_out(self, ed, path: str) -> List[str]:
+        """The pictures of ``ed`` a save to the .Rmd ``path`` can't take
+        along (_make_rmd_image_copier finds none it may read), by name."""
+        names: List[str] = []
+        reach = self._make_rmd_image_copier(ed, path, write=False)
+
+        def probe(name: str):
+            found = reach(name)
+            if found is None:
+                names.append(_("a pasted picture") if parse_asset_key(name) is not None
+                             else os.path.basename(name) or name)
+            return found
+        document_to_rmd(ed.document(), "", copy_image=probe)
+        return list(dict.fromkeys(names))
 
     def _warn_formatting_loss(self, ext_label: str) -> str:
         """Ask before saving to a format that drops content, saying what it
@@ -5574,9 +5612,6 @@ class MainWindow(QMainWindow):
             ed.document().setModified(False)
             self._update_tab_title()
             self._say_saved(ed, path, left_out)
-            if converted:
-                self.status.showMessage(
-                    _("Saved as R Markdown. The tab now shows the file’s source."), 8000)
             return True
 
         except Exception as e:
@@ -6334,8 +6369,8 @@ class MainWindow(QMainWindow):
         Markdown, Markdown open as its text, plain text, code:
         _editor_kind), and so is a plain tab whose text starts with a
         YAML fence, so raw Rmd typed into a new tab is not wrapped twice.
-        A document is converted, once: its tab is R Markdown source from
-        then on (_becomes_rmd_source)."""
+        A document is converted, once and after asking (_ask_to_convert):
+        its tab is R Markdown source from then on (_becomes_rmd_source)."""
         if self._editor_kind(ed) == "source":
             return True
         return (ed.document().toPlainText().lstrip().startswith("---")
@@ -6352,13 +6387,15 @@ class MainWindow(QMainWindow):
         self._attach_highlighter(ed, path)
         self._update_editor_commands()
 
-    def _make_rmd_image_copier(self, ed, rmd_path: str):
+    def _make_rmd_image_copier(self, ed, rmd_path: str, *, write: bool = True):
         """Copy images into the .Rmd's sidecar media folder.
 
         Returns a callback mapping a local cache path to a relative
         markdown reference like "notes_media/<sha>.png". rmarkdown's
         html_document embeds these into the knitted output, so the
-        rendered artifact stays a single shareable file.
+        rendered artifact stays a single shareable file. Without
+        ``write``, it copies nothing and answers as it would: None for
+        a picture it can't take along.
         """
         media_dir = media_dir_for(rmd_path)
         policy = image_safety.ImageRootPolicy(self._image_roots_for(ed))
@@ -6394,6 +6431,8 @@ class MainWindow(QMainWindow):
             if ext is None:
                 return None
             filename = base + ext
+            if not write:
+                return f"{os.path.basename(media_dir)}/{filename}"
             os.makedirs(media_dir, exist_ok=True)
             target = os.path.join(media_dir, filename)
             try:
