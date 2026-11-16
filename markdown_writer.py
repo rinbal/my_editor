@@ -1150,6 +1150,9 @@ _LOSSY = [
     re.compile(r"\\\[\^"),                                 # an escaped footnote mark
     # raw HTML (also _raw_html): a "<" after "](" that opens no whole address
     re.compile(r"\]\(<(?![^<>\n]*>\))"),
+    # The line and the paragraph separator, which the document holds as
+    # its own line break and paragraph end.
+    re.compile("[\u2028\u2029]"),
 ]
 # Raw HTML: a "<" that opens a tag or a comment, not an escaped "\<", nor
 # a link's whole address in <…> (one with a space).

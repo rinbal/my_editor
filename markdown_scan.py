@@ -111,12 +111,14 @@ def code_lines(lines: List[str]) -> List[str]:
             # A list ends with its quote; code may be the first of one.
             in_list, previous_blank = False, previous_blank or depth > previous_depth
         code = bool(_CODE_INDENT.match(rest)) and previous_blank and not in_list
-        if LIST_LINE.match(rest) and not code and not _HEADING_OR_BREAK.fullmatch(rest):
+        closed = _HEADING_OR_BREAK.fullmatch(rest) is not None
+        if LIST_LINE.match(rest) and not code and not closed:
             in_list = True                          # ("    - a" there is code, "- - -" a divider)
         elif not blank and not rest[:1].isspace():
             in_list = False
         out.append(_INDENTED if code else "")
-        previous_blank, previous_depth = blank or code, depth
+        # (Indented code may follow a heading or a divider right away.)
+        previous_blank, previous_depth = blank or code or closed, depth
     return out
 
 
@@ -127,8 +129,6 @@ _ITEM = re.compile(r"( *)([-*+]|\d{1,9}[.)])(?=[ \t]|$)[ \t]*(.*)")
 _TASK_BOX = re.compile(r"\[[ xX]\][ \t]*")
 # A line that may be such an item with nothing in it (empty_items).
 _MAYBE_EMPTY_ITEM = re.compile(r"^[ >]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]+\[[ xX]\])?[ \t]*$", re.M)
-# A line that may start a list item, after the quote marks.
-_ANY_ITEM = re.compile(r"^[ >]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)", re.M)
 # A line no paragraph goes on past, after its indent: an ATX heading, or a
 # thematic break ("---" under a paragraph is its heading's underline,
 # which ends it all the same).
@@ -217,13 +217,16 @@ def misread_blocks(markdown: str) -> bool:
     they are, outside code. A heading or a thematic break in a list item
     or a quote ("- # a", "- a\\n  ---", "- a\\n\\n  # b", "> ---"): it
     takes it out of its list or quote, or makes it the item's words in
-    bold. And a list or a fence on the
+    bold. An item that opens with another list's item or a quote ("- - a",
+    "- > a"). A heading with no words, a fence with nothing in it or one
+    that starts the text with a blank line, which it leaves out. A table in a quote, under words
+    ("Text\\n| a |\\n| - |") or with fewer columns than its header has,
+    and a heading or a fence right under a table's rows. And a
+    list or a fence on the
     line that opens a quote, set in from the quote's mark (">   - a"): it
     reads that line as not set in (md4c takes the spaces for the mark's),
     so an item under it ("\\n>   - b") is one inside it, and the fence's
     code keeps the spaces."""
-    if _ANY_ITEM.search(markdown) is None and ">" not in markdown:
-        return False
     lines = markdown.split("\n")
     return _item_starts(lines, code_lines(lines)).misread
 
@@ -381,10 +384,11 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
     starts: List[Optional[bool]] = []
     listed: List[bool] = []
     # The paragraph going on: its quote depth and the column of the words
-    # of the item it is in (0: in none; None: not known), its first line,
-    # and how many lines it has; the quote depth of a table going on.
+    # of the item it is in (0: in none; None: not known), its first and
+    # its latest line, and how many it has; the quote depth of a table
+    # going on.
     paragraph: Optional[Tuple[int, Optional[int]]] = None
-    first, count = "", 0
+    first, latest, count = "", "", 0
     table: Optional[int] = None
     # The columns of the words of the items open, outermost first, in the
     # quote the line before stands in (an item ends with its quote).
@@ -413,10 +417,13 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
         listed.append(bool(items))
         indent = _indent(rest)
         if code[number] or not rest.strip():
+            if code[number] == _OPENS:
+                # A fence right under a table is a row of it to Qt's reader.
+                misread = (misread or table is not None or (opens and bool(indent))
+                           or _fence_loses(lines, code, number))
             paragraph = table = None
             if code[number] and indent is not None:
                 _close_items(items, indent)
-                misread = misread or (opens and indent > 0 and code[number] == _OPENS)
             continue
         if indent is None:              # a tab in the indent: its column is not known
             starts[number] = None if item else False
@@ -437,8 +444,11 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
                 shifted = None
         if shifted is not None and item is not None and shifted[0] <= indent < shifted[1]:
             misread = True
+        if table == depth and heading and rest.lstrip(" ").startswith("#"):
+            misread = True              # (a row of the table above it, to Qt's reader)
         if heading:
-            misread = misread or depth > 0 or bool(items) and indent - items[-1] < 4
+            misread = (misread or depth > 0 or bool(items) and indent - items[-1] < 4
+                       or _EMPTY_HEADING.fullmatch(rest) is not None)
             # (Indented 4 or more it may be code, or words going on.)
             paragraph, table = (None if indent < 4 else (depth, None)), None
             continue
@@ -446,7 +456,7 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
             start = _item_start(item, paragraph if in_place else None, indent)
             starts[number] = start
             if start is False:
-                count += 1              # the paragraph's words
+                count, latest = count + 1, rest     # the paragraph's words
                 continue
             columns, words = _item_words(rest, item)
             items += columns
@@ -454,17 +464,22 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
             if opens and indent > 0:
                 # (Read as not set in: its words ``indent`` columns left.)
                 shifted = (columns[0] - indent, columns[0])
+            # A heading or a break in it; and an item that opens with another
+            # list's item or with a quote ("- - a", "- > a"): Qt's reader
+            # hangs that list under the item before, takes the quote out.
+            inside = _HEADING_OR_BREAK.fullmatch(words) is not None
+            misread = misread or inside or len(columns) > 1 or words.startswith(">")
             if start is None:
                 paragraph = (depth, None)
-            elif not words.strip() or _HEADING_OR_BREAK.fullmatch(words):
-                # Nothing in it, or one in it inside ("- -", a heading, a break).
-                misread = misread or bool(words.strip())
-                paragraph = None
+            elif not words.strip() or inside:
+                paragraph = None            # nothing in it, or no paragraph
             else:
                 # The column of its words, not known when they open a quote,
-                # code or HTML.
-                paragraph = (depth, None) if words[:1] in ">`~<" else (depth, columns[-1])
-                first, count = words, 1
+                # a fence or HTML.
+                opened = (words.startswith(">") or FENCE_LINE.match(words) is not None
+                          or (words.startswith("<") and _AUTOLINK.match(words) is None))
+                paragraph = (depth, None if opened else columns[-1])
+                first, latest, count = words, words, 1
             continue
         if table == depth:
             continue                    # a row of the table
@@ -472,20 +487,45 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
         if in_place:
             if DELIMITER_ROW.match(rest):
                 # A table when the line above is its header alone, as
-                # readers agree; else what this does not tell.
+                # readers agree (Qt's takes it out of a quote). Else none to
+                # Qt's reader where others see one (a header under words),
+                # or one that loses the cells its header has more.
                 header = count == 1 and "|" in first
                 if header and len(_cells(first)) == len(_cells(rest)):
                     paragraph, table = None, depth
+                    misread = misread or depth > 0
                 else:
                     paragraph = (depth, None)
+                    misread = misread or "|" in latest
             else:
-                count += 1              # words going on
+                count, latest = count + 1, rest     # words going on
             continue
         if paragraph is not None and paragraph[0] > depth:
-            count += 1                  # words of a quote's paragraph, its marks left out
+            count, latest = count + 1, rest     # words of a quote's paragraph, its marks left out
             continue
-        paragraph, first, count = (depth, 0 if indent == 0 else None), rest, 1
+        paragraph, first, latest, count = (depth, 0 if indent == 0 else None), rest, rest, 1
     return _Lists(starts, listed, misread)
+
+
+# A heading with no words ("#", "## ##").
+_EMPTY_HEADING = re.compile(r" *#{1,6}[ \t]*(?:#+[ \t]*)?")
+
+
+def _fence_loses(lines: List[str], code: List[str], number: int) -> bool:
+    """Whether Qt's reader leaves out what the fence opened on line
+    ``number`` holds: all of it when no line is in it; its first line
+    when that is blank and nothing stands before the fence (the
+    document's first, empty paragraph is taken for it). One blank line
+    alone it keeps there where the text ends with the fence."""
+    last = number + 1
+    while last < len(lines) and code[last] == _FENCED:
+        last += 1
+    inside = lines[number + 1:last]
+    if not inside:
+        return True
+    if inside[0].strip("> \t") or any(line.strip() for line in lines[:number]):
+        return False
+    return not (len(inside) == 1 and not any(line.strip() for line in lines[last + 1:]))
 
 
 def _close_items(items: List[int], indent: int) -> None:

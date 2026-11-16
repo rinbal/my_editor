@@ -454,6 +454,29 @@ def test_a_heading_or_a_divider_in_a_quote_opens_as_text():
     assert holds_faithfully("> #nostr is a word\n")
 
 
+@pytest.mark.parametrize("source", [
+    "- Added\n- - support unix\n- path\n",        # an item that opens with a list
+    "- > q\n",                                     # an item that opens with a quote
+    "1. `a`\n2. # h\n",                            # a heading in an item after code
+    "- a\n\n    - b\n- - c\n",                     # another list's item after a nested list
+    "1. a\n\n   1. x\n2. - -\n",                   # an item that is a divider
+    "- w\n\n   1. <me@b.example>\n   2. # h\n",     # a heading in a nested item
+    "#\ntext\n",                                   # a heading with no words
+    "```\n\na\n```\n",                            # a blank first line in a fence, first of all
+    "x\n\n```\n```\n",                            # a fence with nothing in it
+    "Options:\n| a | b |\n| --- | --- |\n| c | d |\n",    # a table under words
+    "| a | b |\n| --- |\n| c | d |\n",             # fewer columns than the header has
+    "| a |\n| --- |\n| b |\n# H\n",                # a heading right under a table
+    "> | a |\n> | --- |\n> | b |\n",               # a table in a quote
+    "a\u2028b\n",                                  # the document's own line break
+])
+def test_blocks_qts_reader_reads_otherwise_open_as_text(source):
+    # Each was saved as what Qt's reader made of it: a list under the
+    # wrong item, a quote or a table out of its place, a table as one
+    # line of text, a row more, a line less.
+    assert not holds_faithfully(source)
+
+
 def test_a_list_set_in_where_its_quote_opens_opens_as_text():
     # Qt's reader takes the second item for one inside the first, and it
     # was saved so; set in less, or after the quote's first line, it is
