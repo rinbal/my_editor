@@ -1123,7 +1123,7 @@ def _local_only(fmt) -> bool:
 # editor keeps footnotes as their text, one paragraph each), a tab where a
 # line starts (lists and code are indented with spaces), code inside a
 # list item (it moves out of the item), an escaped footnote mark, raw
-# HTML, a heading inside a quote, a paragraph continued inside a list
+# HTML, a paragraph continued inside a list
 # item, and lines that wrap inside a paragraph (a draft saved as plain
 # text by an earlier version). Also (below): a tab inside fenced code, a
 # column's alignment, emphasis in a table's header
@@ -1132,8 +1132,8 @@ def _local_only(fmt) -> bool:
 # (markdown_scan.lossy_definition), emphasis around nothing but code
 # (markdown_scan.emphasized_code), blocks Qt's reader reads otherwise
 # than they are (markdown_scan.misread_blocks: a heading or a divider
-# inside a list item, a list set in on the line that opens a quote);
-# these four outside code.
+# inside a list item or a quote, a list set in on the line that opens a
+# quote); these four outside code.
 _LOSSY = [
     re.compile(r"^ {0,3}\[\^[^\]]+\]:.*\n(?:[ \t]*\n)+(?: {4}|\t)\S",
                re.MULTILINE),                              # a note of two paragraphs
@@ -1142,7 +1142,6 @@ _LOSSY = [
     re.compile(r"\\\[\^"),                                 # an escaped footnote mark
     # raw HTML (also _raw_html): a "<" after "](" that opens no whole address
     re.compile(r"\]\(<(?![^<>\n]*>\))"),
-    re.compile(r"^\s*>\s*#", re.MULTILINE),               # heading in a quote
 ]
 # Raw HTML: a "<" that opens a tag or a comment, not an escaped "\<", nor
 # a link's whole address in <…> (one with a space).

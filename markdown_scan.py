@@ -215,8 +215,9 @@ def empty_items(markdown: str) -> Tuple[List[int], bool]:
 def misread_blocks(markdown: str) -> bool:
     """Whether ``markdown`` holds blocks Qt's reader reads otherwise than
     they are, outside code. A heading or a thematic break in a list item
-    ("- # a", "- a\\n  ---", "- a\\n\\n  # b"): it takes it out of its list,
-    or makes it the item's words in bold. And a list or a fence on the
+    or a quote ("- # a", "- a\\n  ---", "- a\\n\\n  # b", "> ---"): it
+    takes it out of its list or quote, or makes it the item's words in
+    bold. And a list or a fence on the
     line that opens a quote, set in from the quote's mark (">   - a"): it
     reads that line as not set in (md4c takes the spaces for the mark's),
     so an item under it ("\\n>   - b") is one inside it, and the fence's
@@ -426,7 +427,7 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
                 and column <= indent < column + 4:
             # The paragraph's heading (a "-" under its words is no item);
             # in an item when the paragraph's words are.
-            misread = misread or column > 0
+            misread = misread or column > 0 or depth > 0
             paragraph, table = None, None
             continue
         if not (lazy or (in_place and item is None and not heading)):
@@ -436,7 +437,7 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
         if shifted is not None and item is not None and shifted[0] <= indent < shifted[1]:
             misread = True
         if heading:
-            misread = misread or bool(items) and indent - items[-1] < 4
+            misread = misread or depth > 0 or bool(items) and indent - items[-1] < 4
             # (Indented 4 or more it may be code, or words going on.)
             paragraph, table = (None if indent < 4 else (depth, None)), None
             continue

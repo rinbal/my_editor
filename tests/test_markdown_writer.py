@@ -382,6 +382,14 @@ def test_a_heading_in_a_list_item_opens_as_text(source):
     assert not holds_faithfully(source)
 
 
+def test_a_heading_or_a_divider_in_a_quote_opens_as_text():
+    # Qt's reader takes it out of its quote: saved, the quote was two, or
+    # none. Words that start with "#" are no heading.
+    for source in ("> a\n>\n> ---\n>\n> b\n", "> a\n> ---\n", "> # H\n"):
+        assert not holds_faithfully(source)
+    assert holds_faithfully("> #nostr is a word\n")
+
+
 def test_a_list_set_in_where_its_quote_opens_opens_as_text():
     # Qt's reader takes the second item for one inside the first, and it
     # was saved so; set in less, or after the quote's first line, it is
