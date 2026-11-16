@@ -52,6 +52,7 @@ points (a Blossom URL, a sidecar file); this module never does.
 from __future__ import annotations
 
 import hashlib
+import html
 import html.entities
 import logging
 import re
@@ -1433,27 +1434,35 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
     pictures that follow each other are folded into their group, as the
     editor shows them; without, they stay the paragraphs they are in the
     Markdown."""
+    given = markdown
     markdown = _breaks_between_pictures(markdown)
     markdown, alts = _whole_descriptions(markdown, features)
     breaks = hard_breaks(markdown)
     marked, soft_mark = 0, None
     if features == READ_FEATURES:
         markdown, soft_mark, marked = _marked_soft_breaks(markdown)
+    # The marks this reading puts in, and the words a picture's description
+    # stands as: none may be left in the document once it is read (but one
+    # the file makes itself, where a step chose it after the file's
+    # entities were taken out).
+    carriers: List[str] = [soft_mark, *alts]
 
     def read(text: str) -> Tuple[int, bool]:
         escaped, mark = _marked_escapes(text)
-        result = _read_once(doc, escaped, features, alts, (soft_mark, marked))
+        carriers.append(mark)
+        result = _read_once(doc, escaped, features, alts, (soft_mark, marked), carriers)
         if mark and not _keep_escaped(doc, mark, escaped.count(mark)):
             # A mark Qt's reader put outside the text (a link's address, a
             # picture's file, a title), where nothing takes it out: read
             # without marks, the escapes then are saved as the writer writes
             # text, and holds_faithfully opens the file as its text when
             # that would change it.
-            result = _read_once(doc, text, features, alts, (soft_mark, marked))
+            result = _read_once(doc, text, features, alts, (soft_mark, marked), carriers)
         return result
 
     def read_entities(text: str) -> Tuple[int, bool]:
         held, entity_mark, spelled = _marked_entities(text)
+        carriers.append(entity_mark)
         joined, kept = read(held)
         if entity_mark is not None:
             placed, faithful = _keep_entities(doc, entity_mark, spelled)
@@ -1467,6 +1476,7 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
         return joined, kept and (entity_mark is not None or not spelled)
 
     broken, hard_mark = _marked_hard_breaks(markdown, breaks)
+    carriers.append(hard_mark)
     joined, kept = read_entities(broken)
     if breaks and (hard_mark is None or not _keep_hard_breaks(doc, hard_mark, len(breaks))):
         # The same, and where no mark is free: read with the hard breaks as
@@ -1475,6 +1485,14 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
         if hard_mark is not None:
             joined, _kept = read_entities(markdown)
         kept = False
+    if _carries(doc, [carrier for carrier in carriers
+                      if carrier and _free_mark(given, (carrier,)) is not None]):
+        # A mark read otherwise than it was put in for, left in the text, a
+        # link or a picture: Qt's own reading, with nothing of this one in
+        # it, and not held (holds_faithfully opens the file as its text).
+        log.warning("A mark of the Markdown reading was left in the document")
+        doc.setMarkdown(given, features)
+        joined, kept = -1, False
     normalize_after_markdown_load(doc)
     if groups:
         # Pictures that follow each other show as one group (photo_group).
@@ -1483,15 +1501,17 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
 
 
 def _read_once(doc: QTextDocument, markdown: str, features, alts: dict,
-               soft: Tuple[Optional[str], int]) -> Tuple[int, bool]:
+               soft: Tuple[Optional[str], int], carriers: List[str]) -> Tuple[int, bool]:
     """Qt's reading of the marked ``markdown`` into ``doc``, what it would
     leave out kept (_marked_keeps), the pictures given their descriptions
     (``alts``) and the ``soft`` breaks (their mark, how many) joined; how
-    many were joined, and whether all was kept."""
+    many were joined, and whether all was kept. The marks it puts in go to
+    ``carriers``."""
     markdown = literal_footnotes(markdown)
     keeping, keep_mark, kinds, lost = _marked_keeps(markdown, features)
     keeping, apart_mark_, ended, runs_on = _marked_apart(keeping)
     keeping, info_mark, cut = _whole_infos(keeping)
+    carriers += (keep_mark, apart_mark_, info_mark)
     doc.setMarkdown(keeping, features)
     if info_mark is not None:
         _split_infos(doc, info_mark)
@@ -1506,6 +1526,32 @@ def _read_once(doc: QTextDocument, markdown: str, features, alts: dict,
         _restore_descriptions(doc, alts)
     soft_mark, marked = soft
     return (_join_soft_breaks(doc, soft_mark) if marked else 0), not lost
+
+
+def _carries(doc: QTextDocument, carriers: Sequence[str]) -> bool:
+    """Whether any of ``carriers`` is in ``doc``: in its text, a link's
+    address, a picture's file or description, a code block's words."""
+    if not carriers:
+        return False
+    found = re.compile("|".join(map(re.escape, carriers)))
+    if found.search(doc.toRawText()):
+        return True
+    language = QTextFormat.Property.BlockCodeLanguage
+    for block in iter_blocks(doc):
+        fmt = block.blockFormat()
+        if found.search(fmt.stringProperty(language) + fmt.stringProperty(CODE_INFO_PROPERTY)):
+            return True
+        it = block.begin()
+        while not it.atEnd():
+            char = it.fragment().charFormat()
+            said = char.anchorHref() if char.isAnchor() else ""
+            if char.isImageFormat():
+                said += char.toImageFormat().name() + str(
+                    char.property(QTextFormat.Property.ImageAltText) or "")
+            if said and found.search(said):
+                return True
+            it += 1
+    return False
 
 
 # --------------------------------------------------------------------------- #
@@ -1528,16 +1574,20 @@ def _read_once(doc: QTextDocument, markdown: str, features, alts: dict,
 # marks when it holds all of them.
 _ESCAPE_MARKS = ("\u2e2c", "\u2e2d", "\u2e2b", "\u2e2e", "\u2e30")
 _NUMERIC_REFERENCE = re.compile(r"&#(?:[xX]([0-9a-fA-F]{1,6})|([0-9]{1,7}));")
+_NAMED_REFERENCE = re.compile(r"&[A-Za-z][A-Za-z0-9]{1,31};")
 
 
 def _free_mark(markdown: str, marks: Sequence[str]) -> Optional[str]:
     """The first of ``marks`` ``markdown`` holds nowhere, as a character or
-    as a numeric reference, or None: a mark of this reading that Qt's
-    reader could also make of the file would be taken for one."""
-    held = ({int(hexadecimal, 16) if hexadecimal else int(decimal)
-             for hexadecimal, decimal in _NUMERIC_REFERENCE.findall(markdown)}
-            if "&#" in markdown else set())
-    return next((mark for mark in marks if mark not in markdown and ord(mark) not in held), None)
+    as a reference to one, or None: a mark of this reading that Qt's reader
+    could also make of the file would be taken for one."""
+    held = set()
+    if "&" in markdown:
+        held = {chr(int(hexadecimal, 16) if hexadecimal else int(decimal))
+                for hexadecimal, decimal in _NUMERIC_REFERENCE.findall(markdown)
+                if int(hexadecimal or "0", 16) < 0x110000 and int(decimal or "0") < 0x110000}
+        held.update(html.unescape(name) for name in set(_NAMED_REFERENCE.findall(markdown)))
+    return next((mark for mark in marks if mark not in markdown and mark not in held), None)
 
 
 def _marked_escapes(markdown: str) -> Tuple[str, Optional[str]]:

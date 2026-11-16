@@ -597,6 +597,28 @@ def test_three_backticks_around_words_in_a_line_are_code_in_the_line():
     assert document_to_markdown(doc) == "To build it:\n\n`npm run build`\n\nThen ship.\n"
 
 
+def test_no_mark_of_the_reading_is_left_in_what_it_read(monkeypatch):
+    # However a mark is misread, the document never holds one: it is read
+    # as Qt reads the file, and the file opens as its text.
+    import markdown_writer
+    monkeypatch.setattr(markdown_writer, "_split_infos", lambda doc, mark: None)
+    source = "```js title=x\na\n```\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert "\x1f" not in doc.firstBlock().blockFormat().stringProperty(
+        QTextFormat.Property.BlockCodeLanguage)
+    assert not holds_faithfully(source)
+
+
+def test_a_space_a_file_writes_by_name_is_no_mark():
+    # A block set apart is marked with a thin space; "&thinsp;" in the
+    # file makes one too, and was taken for the mark.
+    source = "- a\n\n- b &thinsp; c\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc) == source
+
+
 def test_a_fence_is_judged_by_the_lines_it_holds():
     # A longer fence holds a shorter one's line as code, and one set in
     # where its quote opens loses nothing while no line of it is set in:
