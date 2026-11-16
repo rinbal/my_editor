@@ -201,6 +201,18 @@ def test_a_document_saved_as_rmd_is_r_markdown_source_from_then_on(win, tmp_path
     assert open(path, encoding="utf-8").read() == first + "The mean is `r mean(x)`.\n"
 
 
+def test_r_markdown_saved_as_md_is_written_as_it_is(win, tmp_path):
+    # Each line of the text was written as a paragraph of its own: a blank
+    # line after every line, in the code chunks too.
+    source = "---\ntitle: x\n---\n\n- one\n- two\n\n```{r}\nx <- 1\ny <- 2\n```\n"
+    ed = _editor_with(text=source)
+    ed._loaded_as_rmd_source = True
+    win._ed = ed
+    path = str(tmp_path / "notes.md")
+    assert win._save_to(path) is True
+    assert open(path, encoding="utf-8").read() == source
+
+
 def test_markdown_open_as_its_text_is_saved_as_rmd_as_it_is(win, tmp_path):
     ed = _editor_with(text="# Title\n\n- # Heading in an item\n")
     ed._markdown_source = True

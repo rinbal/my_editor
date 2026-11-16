@@ -5528,7 +5528,10 @@ class MainWindow(QMainWindow):
                 target = self._image_target_for_file_save(ed.document(), path)
                 left_out = target.left_out
                 reference = self._markdown_reference_for(target)
-                if getattr(ed, "_markdown_source", False):
+                if self._editor_kind(ed) == "source":
+                    # A tab that holds text (Markdown open as its text, R
+                    # Markdown, plain text) is written as it is: made a
+                    # document, each of its lines was a paragraph.
                     content = serialize_plain_with_images(ed.document(), reference)
                 else:
                     content = document_to_markdown(ed.document(), reference)
