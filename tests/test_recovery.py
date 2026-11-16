@@ -764,6 +764,24 @@ def test_a_document_opened_as_markdown_text_stays_that_way(tmp_path):
     assert restored.toPlainText() == "A claim[^1].\n\n[^1]: The source."
 
 
+def test_a_restored_markdown_tab_is_saved_as_its_file_has_it():
+    # The reading of a file leaves marks on its document that say how it
+    # is written. A backup held none, so a restored tab was saved with its
+    # code blocks and quotes run together, its escapes gone and
+    # "&lt;div&gt;" as a tag.
+    from markdown_writer import _image_as_read, document_to_markdown, read_markdown
+    source = ("Use the &lt;div&gt; tag, 1\\. really.\n\n```js title=x\na\n```\n\n```js\nb\n```\n\n"
+              "> q\n\n> r\n\n- one\n\n- two\n\n<https://a.example> a&nbsp;b  \nlast\nline\n")
+    ed = HtmlEditor()
+    read_markdown(ed.document(), source)
+    written = document_to_markdown(ed.document(), _image_as_read)
+    assert written == source.replace("&lt;div&gt;", "\\<div\\>")
+    backup = recovery.EditorBackup(ed, None)
+    assert backup.write_now()
+    restored = _restored(backup)
+    assert document_to_markdown(restored.document(), _image_as_read) == written
+
+
 def test_backups_follow_the_typing_closely():
     assert recovery._DEBOUNCE_MS == 2_000
     assert recovery._MAX_INTERVAL_MS == 15_000
