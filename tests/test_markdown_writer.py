@@ -304,6 +304,16 @@ def test_a_backslash_at_a_lines_end_breaks_the_line_too(source, written):
     assert document_to_markdown(doc, _image_as_read) == written
 
 
+def test_a_line_that_holds_only_a_backslash_keeps_both_line_breaks():
+    # The empty line of a poem: the line break before it took the space
+    # that stood for the one after it, which was lost, and its backslash
+    # showed.
+    for source in ("Roses are red\\\n\\\nViolets are blue\n", "a  \n\\\nb\n"):
+        doc = QTextDocument()
+        read_markdown(doc, source)
+        assert doc.firstBlock().text().count("\u2028") == 2 and "\\" not in doc.toPlainText()
+
+
 def test_a_line_break_after_an_empty_link_is_kept_in_its_place():
     # The search for the break started past the link's mark, set a
     # cursor out of the document, and Qt said so in the log.

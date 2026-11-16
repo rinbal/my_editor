@@ -1341,8 +1341,9 @@ def _keep_hard_breaks(doc: QTextDocument, mark: str, placed: int) -> bool:
             if _is_code(fmt) or block.blockFormat().hasProperty(
                     QTextFormat.Property.BlockCodeLanguage):
                 continue
-            # (Up to the paragraph's start, or the mark before this one.)
-            first = max(block.position(), taken[number - 1][0] if number else 0)
+            # (Up to the paragraph's start, or the space Qt's reader put
+            # after the mark before this one: that is the line break before.)
+            first = max(block.position(), taken[number - 1][0] + 1 if number else 0)
             start = position
             while start > first and doc.characterAt(start - 1) == " ":
                 start -= 1
