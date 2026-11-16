@@ -682,6 +682,22 @@ def test_a_github_alert_keeps_its_first_line(kind):
     assert holds_faithfully(source) and document_to_markdown(doc) == source
 
 
+def test_a_block_under_a_github_alert_stays_a_block():
+    # The line under "> [!NOTE]" was joined to it as words even where it
+    # starts a block: a list's first item, a fence. A list, code or a quote
+    # is saved as one (with the quote's blank line before it); a heading or
+    # a table there opens the file as text, as before.
+    for body in ("- Run it twice.\n> - Then restart.", "1. One\n> 2. Two", "```\n> x\n> ```",
+                 "> Inner"):
+        source = f"> [!NOTE]\n> {body}\n"
+        doc = QTextDocument()
+        read_markdown(doc, source)
+        assert holds_faithfully(source)
+        assert document_to_markdown(doc) == f"> [!NOTE]\n>\n> {body}\n", body
+    for body in ("# Head", "| a |\n> | - |\n> | 1 |"):
+        assert not holds_faithfully(f"> [!NOTE]\n> {body}\n"), body
+
+
 def test_a_tab_after_the_start_of_a_code_line_is_kept():
     # Qt's reader makes a tab in a code line's indent spaces, and only
     # there: a code block with a tab between its words opens as it is.

@@ -1266,9 +1266,10 @@ def _soft_breaks(markdown: str) -> Tuple[bool, List[int]]:
                 return True, []
             found.append(index - 1)
         elif _ALERT_LINE.match(before) and _quote_marks(line) == _quote_marks(before) \
-                and line[len(_QUOTE_MARKS.match(line).group(0)):].strip():
+                and _goes_on(line[len(_QUOTE_MARKS.match(line).group(0)):]):
             # A quote that opens with GitHub's alert ("> [!NOTE]") is a
-            # box only while the words start on the next line.
+            # box only while the words start on the next line; a block
+            # that starts there (a list, code, a heading) is apart already.
             found.append(index - 1)
     if found and _free_mark(markdown, _SOFT_MARKS) is None:
         return True, []
@@ -1279,6 +1280,16 @@ def _soft_breaks(markdown: str) -> Tuple[bool, List[int]]:
 _ALERT_LINE = re.compile(r"^ {0,3}(?:> ?)+\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*$",
                          re.IGNORECASE)
 _QUOTE_MARKS = re.compile(r"^(?: {0,3}> ?)*")
+
+
+def _goes_on(words: str) -> bool:
+    """Whether a line of ``words`` under a paragraph's goes on with it: it
+    starts no block (the block-start rules an item's words are written by,
+    _OPENS_BLOCK and _DIVIDER, and a table's row, code, a heading's
+    underline)."""
+    return bool(words.strip()) and not (
+        _BLOCK_START.match(words) or _OPENS_BLOCK.match(words.lstrip(" "))
+        or _DIVIDER.fullmatch(words.strip()) or set(words.strip()) <= set("=-"))
 
 
 def _quote_marks(line: str) -> int:
