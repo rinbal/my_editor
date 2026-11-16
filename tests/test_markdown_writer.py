@@ -379,14 +379,16 @@ def test_what_stands_beside_a_links_words_does_not_change_them(source, written):
 def test_an_item_that_would_read_as_a_divider_is_written_as_an_item():
     # "- --" is a divider to a reader: an item that says "--" was saved
     # as one, and gone from its list.
-    doc = QTextDocument()
-    cursor = QTextCursor(doc)
-    cursor.insertList(QTextListFormat.Style.ListDisc)
-    cursor.insertText("--")
-    written = document_to_markdown(doc)
-    assert written == "- \\--\n"
-    read_markdown(doc, written)
-    assert doc.firstBlock().textList() is not None and doc.firstBlock().text() == "--"
+    for style, words, expected in ((QTextListFormat.Style.ListDisc, "--", "- \\--\n"),
+                                   (QTextListFormat.Style.ListDecimal, "* * *", "1. \\* * *\n")):
+        doc = QTextDocument()
+        cursor = QTextCursor(doc)
+        cursor.insertList(style)
+        cursor.insertText(words)
+        written = document_to_markdown(doc)
+        assert written == expected
+        read_markdown(doc, written)
+        assert doc.firstBlock().textList() is not None and doc.firstBlock().text() == words
 
 
 def test_a_table_with_code_in_a_cell_that_spans_columns_opens():

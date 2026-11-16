@@ -881,9 +881,10 @@ def _block_markdown(block: _Block) -> str:
         body = _inline_markdown(block.spans)
         cont = " " * (len(pad) + len(marker) + 1)
         lines = body.split("\n")
-        if _DIVIDER.fullmatch(f"{marker} {lines[0]}"):
-            # "- --" is a divider to a reader, not an item that says "--":
-            # its first character escaped, it is the item's words.
+        if _DIVIDER.fullmatch(lines[0]) or _DIVIDER.fullmatch(f"{marker} {lines[0]}"):
+            # "- --" is a divider to a reader, not an item that says "--",
+            # and "1. ***" an item that holds one: their first character
+            # escaped, they are the item's words.
             lines[0] = re.sub(r"\S", lambda first: "\\" + first.group(0), lines[0], count=1)
         # (Nothing after the marker of an item with nothing in it; the
         # two spaces of a line break stay.)
