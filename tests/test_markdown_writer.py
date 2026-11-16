@@ -565,6 +565,18 @@ def test_a_list_set_in_where_its_quote_opens_opens_as_text():
     assert holds_faithfully("> x\n>\n>   - a\n>   - b\n")
 
 
+def test_a_fence_is_judged_by_the_lines_it_holds():
+    # A longer fence holds a shorter one's line as code, and one set in
+    # where its quote opens loses nothing while no line of it is set in:
+    # both opened as text. One never closed, with nothing under it, was
+    # left out of the file.
+    assert document_to_markdown(from_markdown("````\n```\n````\n")) == "````\n```\n````\n"
+    assert holds_faithfully("````\n```\n````\n")
+    assert holds_faithfully(">  ```\n> a\n>  ```\n")
+    assert not holds_faithfully(">  ```\n>   a\n>  ```\n")
+    assert not holds_faithfully("~~~ words\n")
+
+
 def test_a_quote_with_two_paragraphs_stays_one_quote():
     out = document_to_markdown(from_markdown("> one\n>\n> two\n"))
     assert out == "> one\n>\n> two\n"

@@ -331,7 +331,8 @@ def set_apart(markdown: str) -> Tuple[List[Tuple[int, int]], bool]:
                     and lists.listed[number]:
                 kept = min(gap, shared)
         if kept is not None:
-            at = _apart_place(lines, number, depth, rest, kind)
+            at = _apart_place(lines, number, depth, rest, kind,
+                              number + 1 < len(lines) and code[number + 1] == _FENCED)
             if at is None:
                 unsafe = True
             else:
@@ -344,18 +345,19 @@ def set_apart(markdown: str) -> Tuple[List[Tuple[int, int]], bool]:
 
 
 def _apart_place(lines: List[str], number: int, depth: int, rest: str,
-                 kind: str) -> Optional[int]:
+                 kind: str, holds: bool) -> Optional[int]:
     """Where, counted from the start of line ``number`` (in ``depth``
     quotes, ``rest`` after their marks, ``kind`` of code), the words or
     the code of the block start that starts on it; for a fence, in its
-    first line. None when there are none (_words_start)."""
+    first line (``holds``: it has one). None when there are none
+    (_words_start)."""
     line = lines[number]
     if kind == _INDENTED:
         return len(line) - len(rest) + _CODE_INDENT.match(rest).end()
     if kind == _OPENS:
-        first = _inside_quotes(lines[number + 1], depth) if number + 1 < len(lines) else None
-        if first is None or FENCE_LINE.match(first):
-            return None                 # (nothing in the fence; a longer fence is code)
+        first = _inside_quotes(lines[number + 1], depth) if holds else None
+        if first is None:
+            return None                 # (nothing in the fence)
         # (A fence set in takes as many spaces off its lines.)
         return (len(line) + 1 + len(lines[number + 1]) - len(first)
                 + min(_indent(rest) or 0, _indent(first) or 0))
@@ -437,8 +439,8 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
         if code[number] or not rest.strip():
             if code[number] == _OPENS:
                 # A fence right under a table is a row of it to Qt's reader.
-                misread = (misread or table is not None or (opens and bool(indent))
-                           or _fence_loses(lines, code, number))
+                misread = (misread or table is not None
+                           or _fence_loses(lines, code, number, opens and bool(indent)))
             paragraph = table = None
             if code[number] and indent is not None:
                 _close_items(items, indent)
@@ -529,17 +531,24 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
 _EMPTY_HEADING = re.compile(r" *#{1,6}[ \t]*(?:#+[ \t]*)?")
 
 
-def _fence_loses(lines: List[str], code: List[str], number: int) -> bool:
+def _fence_loses(lines: List[str], code: List[str], number: int, shifted: bool) -> bool:
     """Whether Qt's reader leaves out what the fence opened on line
     ``number`` holds: all of it when no line is in it; its first line
     when that is blank and nothing stands before the fence (the
     document's first, empty paragraph is taken for it). One blank line
-    alone it keeps there where the text ends with the fence."""
+    alone it keeps there where the text ends with the fence. Or adds to
+    it: ``shifted``, set in on the line that opens its quote, it is read
+    as not set in, and its lines keep the spaces they are set in with."""
     last = number + 1
     while last < len(lines) and code[last] == _FENCED:
         last += 1
     inside = lines[number + 1:last]
+    if last == len(lines) and inside[-1:] == [""]:
+        inside.pop()                    # (what stands after the text's last line end)
     if not inside:
+        return True
+    depth = _quote_depth(lines[number])
+    if shifted and any((_inside_quotes(line, depth) or "").startswith(" ") for line in inside):
         return True
     if inside[0].strip("> \t") or any(line.strip() for line in lines[:number]):
         return False
