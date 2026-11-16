@@ -345,11 +345,35 @@ def test_an_address_is_written_as_the_file_wrote_it(source):
     assert document_to_markdown(doc, _image_as_read) == source
 
 
-@pytest.mark.parametrize("source", ["a [](u) b\n", "[x <https://a.example>](u)\n"])
+@pytest.mark.parametrize("source", ["a [](u) b\n", "[x <https://a.example>](u)\n",
+                                    "[a https://a.example b](u)\n", "[x]()\n"])
 def test_a_link_the_editor_cannot_hold_opens_as_text(source):
-    # Qt's reader drops a link with no words, and takes an address in a
-    # link's words out of the link.
+    # Qt's reader drops a link with no words and the link of one with no
+    # address, and takes an address in a link's words out of the link, in
+    # angle brackets or bare.
     assert not holds_faithfully(source)
+
+
+@pytest.mark.parametrize("source, written", [
+    ("See [AT&amp;T](https://att.example) now.\n", "See [AT\\&T](https://att.example) now.\n"),
+    ("**<https://a.example>**\n", "**<https://a.example>**\n"),
+    ("1. Press `\n2. See [![a](p.png)](u)\n3. Press ` again\n",
+     "1. Press `\n2. See [![a](p.png)](u)\n3. Press ` again\n"),
+    ("Look ![the *new* logo][logo] and tell me.\n", "Look ![the *new* logo][logo] and tell me.\n"),
+    ("![a *b*][]\n\n[a *b*]: x.png\n", "![a *b*](x.png)\n"),
+])
+def test_what_stands_beside_a_links_words_does_not_change_them(source, written):
+    # An entity right before the link's address lost the link its words
+    # after it (the address counted as the entity's word). An address in
+    # angle brackets and in bold was written as a link with words. A
+    # backtick alone in each of two list items hid the picture's link
+    # between them as code. A picture whose reference nothing defines was
+    # saved with the reading's own word for its description, and one whose
+    # description is its reference twice.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == written
 
 
 def test_an_item_that_would_read_as_a_divider_is_written_as_an_item():

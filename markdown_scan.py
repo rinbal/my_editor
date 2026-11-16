@@ -639,8 +639,9 @@ def code_span_end(text: str, start: int, found: Optional[Found] = None) -> int:
     while start + run < len(text) and text[start + run] == "`":
         run += 1
     at = start + run
-    # A code span ends with its paragraph.
-    limit = _next_of(text, "\n\n", at, found)
+    # A code span ends with its paragraph: at a blank line, or where a
+    # list item starts (a lone backtick in each of two items is no code).
+    limit = _paragraph_end(text, at, found)
     ticks = "`" * run
     while True:
         close = _next_of(text, ticks, at, found)
@@ -741,6 +742,22 @@ def _next_of(text: str, char: str, start: int, found: Optional[Found]) -> int:
     return index
 
 
+_PARAGRAPH_END = re.compile(r"\n(?=[ \t]*\n|[ \t>]*(?:[-*+]|\d{1,9}[.)])[ \t])")
+
+
+def _paragraph_end(text: str, start: int, found: Optional[Found]) -> int:
+    """Where the paragraph ``start`` stands in ends (the text's length:
+    with the text), kept as _next_of keeps what it found."""
+    known = found.next_of.get("paragraph") if found is not None else None
+    if known is not None and known[0] <= start <= known[1]:
+        return known[1]
+    end = _PARAGRAPH_END.search(text, start)
+    index = len(text) if end is None else end.start()
+    if found is not None:
+        found.next_of["paragraph"] = (start, index)
+    return index
+
+
 def _bare_address_end(text: str, start: int, found: Optional[Found]) -> int:
     """Where an address not in <...> that starts at ``start`` ends: at a
     space, the text's end, or the first ``)`` that closes more than it
@@ -834,8 +851,8 @@ def _destination(text: str, at: int, found: Optional[Found]) -> Optional[Tuple[i
 
 def descriptions(markdown: str) -> List[Tuple[int, int]]:
     """Where each picture's description is (start, end) in ``markdown``:
-    an inline picture ``![...](...)`` or one with a full reference
-    ``![...][label]``, outside code."""
+    an inline picture ``![...](...)`` or one with a reference
+    (``![...][label]``, ``![...][]``), outside code."""
     return [(start, end) for start, end, _after in pictures(markdown)]
 
 
@@ -893,8 +910,8 @@ def pictures(markdown: str) -> List[Tuple[int, int, int]]:
                 after = markdown[end + 1:end + 2]
                 close = destination_end(markdown, end + 1, scanned) if after == "(" else None
                 if close is None and after == "[":
-                    label = label_end(markdown, end + 1, scanned)
-                    close = label if label is not None and label > end + 2 else None
+                    # (With its label, or with "[]": its description is it.)
+                    close = label_end(markdown, end + 1, scanned)
                 if close is not None:
                     found.append((index + 2, end, close + 1))
                     index = close + 1
@@ -905,14 +922,18 @@ def pictures(markdown: str) -> List[Tuple[int, int, int]]:
     return found
 
 
-def bracketed(markdown: str) -> Tuple[List[int], List[Tuple[int, int]]]:
+def bracketed(markdown: str) -> Tuple[List[int], List[Tuple[int, int]], List[Tuple[int, int]]]:
     """What of ``markdown`` stands inside brackets, outside code, where the
     words of a link may hold it: each picture, by where it starts (its
     "!"; "[![a](p.png)](u)", "[see ![a](p.png)](u)"), and each tag on
     one line ("[x <y>](u)"), by where it starts and ends. A tag in a
-    picture's description is the description's."""
+    picture's description is the description's. And the brackets, by
+    where their words start and end, that an address or a second bracket
+    follows and whose words hold what may be a web or an email address
+    ("[see https://a.example](u)"): Qt's reader links such a one by
+    itself, in the link's words too."""
     if _OWN_BRACKET.search(markdown) is None:
-        return [], []                   # no bracket but the pictures' own
+        return [], [], []               # no bracket but the pictures' own
     found = pictures(markdown)
     after = {start - 2: end for start, _end, end in found}
     blocked = _Blocked(_code_ranges(markdown))
@@ -954,7 +975,10 @@ def bracketed(markdown: str) -> Tuple[List[int], List[Tuple[int, int]]]:
     pairs.sort()
     held = set(_held(tags, pairs))
     return (_held([(start - 2, end) for start, _end, end in found], pairs),
-            [(start, end) for start, end in tags if start in held])
+            [(start, end) for start, end in tags if start in held],
+            [(opener + 1, closer) for opener, closer in pairs
+             if markdown[closer + 1:closer + 2] in ("(", "[")
+             and _ADDRESS.search(markdown, opener + 1, closer)])
 
 
 def _held(spans: List[Tuple[int, int]], pairs: List[Tuple[int, int]]) -> List[int]:
@@ -1055,7 +1079,8 @@ def escapes(markdown: str) -> List[int]:
 def autolinks(markdown: str) -> Tuple[List[int], bool]:
     """Where each autolink of ``markdown`` starts ("<https://a.example>",
     "<a@b.example>": its "<"), where escapes are (escapes); and whether a
-    link has no words ("[](u)"), which Qt's reader leaves out."""
+    link has no words or no address ("[](u)", "[x]()"): Qt's reader
+    leaves the one out, and the other's link."""
     found = _inline(markdown, False)
     return found.autolinks, found.wordless
 
@@ -1064,12 +1089,13 @@ def entities(markdown: str) -> List[Tuple[int, int, bool]]:
     """Where each entity of ``markdown`` is (start, end) that a reader
     takes for its character ("&amp;" for "&"), where escapes are
     (escapes), but in a word that may be a web or an email address (Qt's
-    reader links none with an entity in it); and whether it is shown,
+    reader links none with an entity in it: _ADDRESS); and whether it is
+    shown,
     not in a reference definition's label, which the reader takes away."""
     labels = _Blocked([(definition.start(), definition.start(1))
                        for definition in _DEFINITION.finditer(markdown)])
     addresses = _Blocked([word.span() for word in _WORD.finditer(markdown)
-                          if any(part in word.group(0).lower() for part in ("://", "www.", "@"))])
+                          if _ADDRESS.search(word.group(0))])
     return [(start, end, labels.end(start) is None)
             for start, end in _inline(markdown, True).entities
             if addresses.end(start) is None]
@@ -1080,9 +1106,11 @@ def entities(markdown: str) -> List[Tuple[int, int, bool]]:
 # 7 digits, or "#x" and 1 to 6 hexadecimal ones; then ";".
 _ENTITY = re.compile(r"&(?:[A-Za-z][A-Za-z0-9]{1,47}|#[0-9]{1,7}|#[xX][0-9A-Fa-f]{1,6});")
 _STARTS_ESCAPE_OR_ENTITY = re.compile(r"[\\`<&]|!\[|\]\(")
-# A word, which may be a web or an email address (holding "://", "www."
-# or "@").
-_WORD = re.compile(r"[^ \t\n]+")
+# A word, up to a space or a bracket (a link's address after its words
+# is no part of them), and what makes it a web or an email address that
+# Qt's reader may link by itself.
+_WORD = re.compile(r"[^ \t\n\[\]()<>]+")
+_ADDRESS = re.compile(r"://|www\.|@[^@]*\.", re.IGNORECASE)
 
 
 def _wordless(text: str, close: int) -> bool:
@@ -1101,7 +1129,7 @@ class _Inline(NamedTuple):
     escapes: List[int]                  # where each escape is (escapes)
     entities: List[Tuple[int, int]]     # each entity, when asked for (entities)
     autolinks: List[int]                # where each autolink starts (autolinks)
-    wordless: bool                      # whether a link has no words
+    wordless: bool                      # whether a link has no words, or no address
 
 
 def _inline(markdown: str, entities_too: bool) -> _Inline:
@@ -1125,7 +1153,8 @@ def _inline(markdown: str, entities_too: bool) -> _Inline:
             index = index + 2 if close is None else close
         elif markdown.startswith("](", index):
             close = destination_end(markdown, index + 1, scanned)
-            if close is not None and _wordless(markdown, index):
+            if close is not None and (_wordless(markdown, index)
+                                      or not markdown[index + 2:close].strip(" \t\n<>")):
                 found = found._replace(wordless=True)
             index = index + 2 if close is None else close + 1
         elif markdown[index] == "&":

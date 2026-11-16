@@ -668,9 +668,15 @@ def _inline_markdown(spans: List[_Span], hard_break: str = "  \n",
             words = "".join(s.text for s in group).replace(LINE_SEPARATOR, " ").replace(
                 _SOFT, " ")
             address = "" if pictured else _own_address(words.strip(), span.href)
+            angled = bool(address) and all(s.angled for s in group)
+            if angled and not span.code and len({_style(s) for s in group}) == 1:
+                # In its angle brackets, as the file had it, in its emphasis.
+                out.append(_styled([_Span(
+                    text=_autolink(address, span.href, "", None, True),
+                    bold=span.bold, italic=span.italic, strike=span.strike)]))
+                continue
             if address and not any(s.bold or s.italic or s.strike for s in group):
-                written = _autolink(address, span.href, "".join(out), following,
-                                    all(s.angled for s in group))
+                written = _autolink(address, span.href, "".join(out), following, angled)
                 if seen is not None:
                     seen.append((first, i, written == address))
                 out.append(written)
@@ -1772,8 +1778,10 @@ def _set_apart(doc: QTextDocument, mark: str, ended: Sequence[int]) -> bool:
 #   writes such a link bare where readers find it, and this one in its
 #   brackets again. In a link's words the address would be a link in a
 #   link, which the editor cannot hold: the file opens as its text. So
-#   does one with a link that has no words ("[](u)"), which Qt's reader
-#   drops.
+#   does one with a bare address there that Qt's reader links by itself
+#   ("[see https://a.example](u)": a mark at each end of such words
+#   tells), and one with a link that has no words or no address
+#   ("[](u)", "[x]()"), which Qt's reader drops.
 #
 # For the time Qt reads the Markdown the mark is in it: a Po character no
 # HTML entity names, none of _ESCAPE_MARKS, punctuation as the "!" of the
@@ -1783,23 +1791,28 @@ _KEEP_MARKS = ("\u2e31", "\u2e33", "\u2e34", "\u2e32")
 
 
 # What a mark of _marked_keeps keeps: an empty item, the link around a
-# picture, a tag in a link's words, an address's angle brackets.
-_ITEM, _PICTURE, _TAG, _ADDRESS = "item", "picture", "tag", "address"
+# picture, a tag in a link's words, an address's angle brackets; and what
+# two of them tell: where a link's words start and end.
+_ITEM, _PICTURE, _TAG, _ADDRESS, _WORDS, _WORDS_END = (
+    "item", "picture", "tag", "address", "words", "words end")
 
 
 def _marked_keeps(markdown: str, features) -> Tuple[str, Optional[str], List[str], bool]:
     """The Markdown with a mark (_KEEP_MARKS) where Qt's reader, reading
     with ``features``, would leave out what the editor holds, the mark
-    (None for none), what each mark keeps (_ITEM, _PICTURE, _TAG,
-    _ADDRESS, in their order), and whether something is left out all the
-    same: an empty list item where a word would change the lists, a link
-    with no words, raw HTML but the tags kept, or no free mark."""
+    (None for none), what each mark keeps or tells (_ITEM, _PICTURE,
+    _TAG, _ADDRESS, _WORDS, _WORDS_END, in their order), and whether
+    something is left out all the same: an empty list item where a word
+    would change the lists, a link with no words or no address, raw HTML
+    but the tags kept, or no free mark."""
     items, lost = empty_items(markdown)
     # (After the line's spaces and tabs: Qt's reader keeps a tab after
     # the words of an item.)
     places = [(at, "" if markdown[at - 1] in " \t" else " ", "", _ITEM) for at in items]
-    pictured, tags = bracketed(markdown)
+    pictured, tags, addressed = bracketed(markdown)
     places += [(at, "", "", _PICTURE) for at in pictured]
+    for start, end in addressed:
+        places += [(start, "", "", _WORDS), (end, "", "", _WORDS_END)]
     html = _reads_html(features)
     if html:
         places += [(start, "", "\\", _TAG) for start, end in tags
@@ -1878,7 +1891,8 @@ def _kept_by_marks(doc: QTextDocument, mark: str, kinds: Sequence[str]) -> bool:
     address was written in angle brackets; else an empty list item. False
     when the marks in the text are not as many, a format holds one, one
     stood where its kind does not (the Markdown was not read as the marks
-    expected), or an address in angle brackets stood in a link's words."""
+    expected), or an address, in angle brackets or bare, is a link of its
+    own in a link's words."""
     taken = _take_marks(doc, mark)
     if len(taken) != len(kinds) or _in_formats(doc, mark):
         return False
@@ -1886,6 +1900,7 @@ def _kept_by_marks(doc: QTextDocument, mark: str, kinds: Sequence[str]) -> bool:
     bare.setProperty(BARE_TEXT_PROPERTY, True)
     angled = QTextCharFormat()
     angled.setProperty(ANGLED_TEXT_PROPERTY, True)
+    opened: List[Tuple[int, str]] = []      # where a link's words start, and its address
     with _one_step(doc) as after:
         for (position, fmt), kind in zip(taken, kinds):
             if kind == _ITEM:
@@ -1894,6 +1909,14 @@ def _kept_by_marks(doc: QTextDocument, mark: str, kinds: Sequence[str]) -> bool:
                     return False
                 continue
             linked = fmt.isAnchor() and bool(fmt.anchorHref())
+            if kind == _WORDS:
+                opened.append((position, fmt.anchorHref() if linked else ""))
+                continue
+            if kind == _WORDS_END:
+                start, href = opened.pop() if opened else (position, "")
+                if href and not _one_link(doc, start, position, href):
+                    return False            # a link in a link's words
+                continue
             after.setPosition(position)
             after.setPosition(min(position + 1, doc.characterCount() - 1),
                               QTextCursor.MoveMode.KeepAnchor)
@@ -1919,6 +1942,17 @@ def _kept_by_marks(doc: QTextDocument, mark: str, kinds: Sequence[str]) -> bool:
                                       QTextCursor.MoveMode.KeepAnchor)
                     after.mergeCharFormat(angled)
 
+    return True
+
+
+def _one_link(doc: QTextDocument, start: int, end: int, href: str) -> bool:
+    """Whether every link from ``start`` to ``end`` is the one to ``href``."""
+    cursor = QTextCursor(doc)
+    for at in range(start + 1, end + 1):
+        cursor.setPosition(at)
+        fmt = cursor.charFormat()
+        if fmt.isAnchor() and fmt.anchorHref() not in ("", href):
+            return False
     return True
 
 
@@ -2036,14 +2070,22 @@ def _whole_descriptions(markdown: str, features) -> Tuple[str, dict]:
         pieces.append(markdown[last:start])
         pieces.append(word)
         last = end
+        if markdown.startswith("][]", end):
+            # Its description is its reference too ("![a *b*][]"): written
+            # out, so the word in its place still finds the definition.
+            pieces.append(f"][{markdown[start:end]}]")
+            last = end + 3
     pieces.append(markdown[last:])
     return "".join(pieces), alts
 
 
 def _restore_descriptions(doc: QTextDocument, alts: dict) -> None:
     """Give each picture read with a plain word its description, and how
-    the file spelled it where the writer would spell it otherwise."""
+    the file spelled it where the writer would spell it otherwise. A word
+    Qt's reader made no picture of (a reference nothing defines) is the
+    words it stood for again."""
     found = []
+    pictured = set()
     for block in iter_blocks(doc):
         it = block.begin()
         while not it.atEnd():
@@ -2053,7 +2095,10 @@ def _restore_descriptions(doc: QTextDocument, alts: dict) -> None:
                 word = str(fmt.property(QTextFormat.Property.ImageAltText) or "")
                 if word in alts:
                     found.append((fragment.position(), fragment.length(), *alts[word]))
+                    pictured.add(word)
             it += 1
+    unread = sorted(((position, word) for word in alts if word not in pictured
+                     for position in _mark_places(doc, word)), reverse=True)
     with _one_step(doc) as cursor:
         for position, length, alt, spelling in found:
             cursor.setPosition(position)
@@ -2065,6 +2110,11 @@ def _restore_descriptions(doc: QTextDocument, alts: dict) -> None:
             if spelling != _description_markdown(alt):
                 fmt.setProperty(ALT_SPELLING_PROPERTY, spelling)
             cursor.setCharFormat(fmt)
+        for position, word in unread:
+            cursor.setPosition(position + len(word))
+            fmt = cursor.charFormat()
+            cursor.setPosition(position, QTextCursor.MoveMode.KeepAnchor)
+            cursor.insertText(alts[word][1], fmt)
 
 
 def _tab_in_fence(markdown: str) -> bool:
