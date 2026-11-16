@@ -88,7 +88,7 @@ import photo_group
 import photo_group_find
 from markdown_scan import (DELIMITER_ROW, EMPTY_ITEM_LINE, ESCAPABLE, FENCE_LINE, LIST_LINE,
                            autolinks, bracketed, descriptions, emphasized_code, empty_items,
-                           entities, escapes, hard_breaks, heading_in_item, lossy_definition,
+                           entities, escapes, hard_breaks, lossy_definition, misread_blocks,
                            pictures, set_apart, titled_link)
 from rich_text import normalize_after_markdown_load, same_code_block
 
@@ -1131,8 +1131,10 @@ def _local_only(fmt) -> bool:
 # row, a link title (markdown_scan.titled_link), a link reference
 # definition in a quote or a list item or with a title
 # (markdown_scan.lossy_definition), emphasis around nothing but code
-# (markdown_scan.emphasized_code), a heading or a divider inside a list
-# item (markdown_scan.heading_in_item); these four outside code.
+# (markdown_scan.emphasized_code), blocks Qt's reader reads otherwise
+# than they are (markdown_scan.misread_blocks: a heading or a divider
+# inside a list item, a list set in on the line that opens a quote);
+# these four outside code.
 _LOSSY = [
     re.compile(r"^ {0,3}\[\^[^\]]+\]:.*\n(?:[ \t]*\n)+(?: {4}|\t)\S",
                re.MULTILINE),                              # a note of two paragraphs
@@ -2035,7 +2037,7 @@ def holds_faithfully(markdown: str) -> bool:
     if (any(pattern.search(markdown) for pattern in _LOSSY) or _raw_html(markdown)
             or _soft_wrapped(markdown) or _tab_in_fence(markdown) or _table_loses(markdown)
             or titled_link(markdown) or lossy_definition(markdown) or emphasized_code(markdown)
-            or heading_in_item(markdown)):
+            or misread_blocks(markdown)):
         return False
     # Read as the editor reads it (footnotes as their text, code in cells
     # without the escape of its pipes), but with its pictures as the

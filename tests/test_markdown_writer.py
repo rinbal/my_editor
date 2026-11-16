@@ -382,6 +382,15 @@ def test_a_heading_in_a_list_item_opens_as_text(source):
     assert not holds_faithfully(source)
 
 
+def test_a_list_set_in_where_its_quote_opens_opens_as_text():
+    # Qt's reader takes the second item for one inside the first, and it
+    # was saved so; set in less, or after the quote's first line, it is
+    # read as it is.
+    assert not holds_faithfully(">   - a\n>   - b\n")
+    assert holds_faithfully(">  - a\n>  - b\n")
+    assert holds_faithfully("> x\n>\n>   - a\n>   - b\n")
+
+
 def test_a_quote_with_two_paragraphs_stays_one_quote():
     out = document_to_markdown(from_markdown("> one\n>\n> two\n"))
     assert out == "> one\n>\n> two\n"

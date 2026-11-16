@@ -102,10 +102,14 @@ def code_lines(lines: List[str]) -> List[str]:
             out.append(_OPENS)
             in_list, previous_depth = in_list and rest[:1].isspace(), depth
             continue
+        blank = not rest.strip()
+        if depth < previous_depth and not previous_blank and not blank \
+                and not LIST_LINE.match(rest) and not _HEADING_OR_BREAK.fullmatch(rest):
+            out.append("")              # the words of the quote's paragraph go on
+            continue
         if depth != previous_depth:
             # A list ends with its quote; code may be the first of one.
             in_list, previous_blank = False, previous_blank or depth > previous_depth
-        blank = not rest.strip()
         code = bool(_CODE_INDENT.match(rest)) and previous_blank and not in_list
         if LIST_LINE.match(rest) and not code and not _HEADING_OR_BREAK.fullmatch(rest):
             in_list = True                          # ("    - a" there is code, "- - -" a divider)
@@ -208,14 +212,19 @@ def empty_items(markdown: str) -> Tuple[List[int], bool]:
     return places, unsafe
 
 
-def heading_in_item(markdown: str) -> bool:
-    """Whether a heading or a thematic break stands in a list item ("- # a",
-    "- a\\n  ---", "- a\\n\\n  # b"), outside code: Qt's reader takes it out
-    of its list, or makes it the item's words in bold."""
-    if _ANY_ITEM.search(markdown) is None:
+def misread_blocks(markdown: str) -> bool:
+    """Whether ``markdown`` holds blocks Qt's reader reads otherwise than
+    they are, outside code. A heading or a thematic break in a list item
+    ("- # a", "- a\\n  ---", "- a\\n\\n  # b"): it takes it out of its list,
+    or makes it the item's words in bold. And a list or a fence on the
+    line that opens a quote, set in from the quote's mark (">   - a"): it
+    reads that line as not set in (md4c takes the spaces for the mark's),
+    so an item under it ("\\n>   - b") is one inside it, and the fence's
+    code keeps the spaces."""
+    if _ANY_ITEM.search(markdown) is None and ">" not in markdown:
         return False
     lines = markdown.split("\n")
-    return _item_starts(lines, code_lines(lines)).inner
+    return _item_starts(lines, code_lines(lines)).misread
 
 
 def hard_breaks(markdown: str) -> List[int]:
@@ -354,7 +363,7 @@ class _Lists(NamedTuple):
 
     starts: List[Optional[bool]]    # whether an item starts on the line (None: not known)
     listed: List[bool]              # whether an item is open, in its quote, where the line comes
-    inner: bool                     # whether a heading or a divider stands in an item
+    misread: bool                   # whether Qt's reader reads a block otherwise (misread_blocks)
 
 
 def _item_starts(lines: List[str], code: List[str]) -> _Lists:
@@ -365,8 +374,8 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
     where this cannot tell. An item with nothing in it, or numbered other
     than 1, does not interrupt a paragraph in its place: in its quote, at
     the words of the paragraph's item or right of them ("- a\\nb\\n-" is
-    two items, "> a\\n-" a quote and an item). And whether a heading or a
-    thematic break stands in an item (heading_in_item)."""
+    two items, "> a\\n-" a quote and an item). And whether Qt's reader
+    reads a block otherwise than it is (misread_blocks)."""
     starts: List[Optional[bool]] = []
     listed: List[bool] = []
     # The paragraph going on: its quote depth and the column of the words
@@ -379,21 +388,34 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
     # quote the line before stands in (an item ends with its quote).
     items: List[int] = []
     items_depth = 0
-    inner = False
+    # How many quotes the line before stands in, and the columns an item
+    # stands in that Qt's reader takes for one inside the quote's first.
+    quoted = 0
+    shifted: Optional[Tuple[int, int]] = None
+    misread = False
     for number, line in enumerate(lines):
         starts.append(False)
         depth = _quote_depth(line)
         rest = _inside_quotes(line, depth)
-        if depth != items_depth:
-            items, items_depth = [], depth
+        item = None if code[number] else _ITEM.fullmatch(rest)
+        heading = not code[number] and _HEADING_OR_BREAK.fullmatch(rest) is not None
+        # The words of a quote's paragraph go on in a line without its
+        # marks: the quote and its items stay open.
+        lazy = (paragraph is not None and paragraph[0] > depth and bool(rest.strip())
+                and not code[number] and item is None and not heading)
+        opens = depth > quoted
+        if not lazy:
+            quoted = depth
+            if depth != items_depth:
+                items, items_depth, shifted = [], depth, None
         listed.append(bool(items))
         indent = _indent(rest)
         if code[number] or not rest.strip():
             paragraph = table = None
             if code[number] and indent is not None:
                 _close_items(items, indent)
+                misread = misread or (opens and indent > 0 and code[number] == _OPENS)
             continue
-        item = _ITEM.fullmatch(rest)
         if indent is None:              # a tab in the indent: its column is not known
             starts[number] = None if item else False
             paragraph, table = (depth, None), None
@@ -404,14 +426,17 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
                 and column <= indent < column + 4:
             # The paragraph's heading (a "-" under its words is no item);
             # in an item when the paragraph's words are.
-            inner = inner or column > 0
+            misread = misread or column > 0
             paragraph, table = None, None
             continue
-        heading = _HEADING_OR_BREAK.fullmatch(rest) is not None
-        if not (in_place and item is None and not heading):
+        if not (lazy or (in_place and item is None and not heading)):
             _close_items(items, indent)     # (words going on keep the items open)
+            if shifted is not None and indent < shifted[0]:
+                shifted = None
+        if shifted is not None and item is not None and shifted[0] <= indent < shifted[1]:
+            misread = True
         if heading:
-            inner = inner or bool(items) and indent - items[-1] < 4
+            misread = misread or bool(items) and indent - items[-1] < 4
             # (Indented 4 or more it may be code, or words going on.)
             paragraph, table = (None if indent < 4 else (depth, None)), None
             continue
@@ -424,11 +449,14 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
             columns, words = _item_words(rest, item)
             items += columns
             table = None
+            if opens and indent > 0:
+                # (Read as not set in: its words ``indent`` columns left.)
+                shifted = (columns[0] - indent, columns[0])
             if start is None:
                 paragraph = (depth, None)
             elif not words.strip() or _HEADING_OR_BREAK.fullmatch(words):
                 # Nothing in it, or one in it inside ("- -", a heading, a break).
-                inner = inner or bool(words.strip())
+                misread = misread or bool(words.strip())
                 paragraph = None
             else:
                 # The column of its words, not known when they open a quote,
@@ -455,7 +483,7 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
             count += 1                  # words of a quote's paragraph, its marks left out
             continue
         paragraph, first, count = (depth, 0 if indent == 0 else None), rest, 1
-    return _Lists(starts, listed, inner)
+    return _Lists(starts, listed, misread)
 
 
 def _close_items(items: List[int], indent: int) -> None:
