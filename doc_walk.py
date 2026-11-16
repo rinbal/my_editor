@@ -18,7 +18,7 @@ import itertools
 import re
 from typing import Optional
 
-from PySide6.QtGui import QTextCharFormat, QTextFormat
+from PySide6.QtGui import QTextCharFormat, QTextFormat, QTextTable
 
 BULLET_MARKER = "• "
 
@@ -180,6 +180,41 @@ def iter_blocks(doc):
     while block.isValid():
         yield block
         block = block.next()
+
+
+def iter_frame(frame):
+    """What ``frame`` holds, in order: each of its blocks, and each table
+    as the one thing it is (table_rows); of a frame in it that is no
+    table, what that holds. The walk of the writers that write a table as
+    a table: iter_blocks gives a table's cells as so many paragraphs."""
+    it = frame.begin()
+    while not it.atEnd():
+        child = it.currentFrame()
+        block = it.currentBlock()
+        if isinstance(child, QTextTable):
+            yield child
+        elif child is not None:
+            yield from iter_frame(child)
+        elif block.isValid():
+            yield block
+        it += 1
+
+
+def table_rows(table: QTextTable) -> list:
+    """The blocks of each cell of ``table``, row by row."""
+    rows = []
+    for row in range(table.rows()):
+        cells = []
+        for column in range(table.columns()):
+            blocks = []
+            it = table.cellAt(row, column).begin()
+            while not it.atEnd():
+                if it.currentBlock().isValid():
+                    blocks.append(it.currentBlock())
+                it += 1
+            cells.append(blocks)
+        rows.append(cells)
+    return rows
 
 
 def picture_pieces(text: str, fmt: QTextCharFormat):

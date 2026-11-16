@@ -374,7 +374,7 @@ macOS shows a preview inside its print dialog. On Windows and Linux,
 | `.pdf` | Native PDF export: document metadata, locale-aware page size (A4/Letter), page-number footer, images scaled to the printable width; configure via `File > Page Setup…` |
 | `.md` | Markdown: bold, italic, strikethrough, inline code, links, headings, lists, quotes, code blocks, tables, task lists and footnotes are kept; underline, colors and highlights are not (MyEditor asks first when the document has them; Save Without Colors takes them off the document too, one step of Undo, so the window shows what the file holds). It is the same Markdown an article publishes. |
 | `.rtf` | Rich Text Format: formatting and colors are kept, pictures are not (MyEditor asks first) |
-| `.Rmd` | R Markdown: YAML frontmatter plus Pandoc markdown with headings, lists, links, strikethrough and inline code; colors, highlights and underline use Pandoc spans, images go into a `<name>_media/` folder next to the file. A tab opened from an `.Rmd` file is its source and is saved as its text: formatting made in it is not kept (MyEditor asks first; its pictures stay) |
+| `.Rmd` | R Markdown: YAML frontmatter plus Pandoc markdown with headings, lists, tables, code blocks, links, strikethrough and inline code; colors, highlights and underline use Pandoc spans, images go into a `<name>_media/` folder next to the file. A tab opened from an `.Rmd` file is its source and is saved as its text: formatting made in it is not kept (MyEditor asks first; its pictures stay) |
 
 ## Locked documents
 

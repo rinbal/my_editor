@@ -70,10 +70,10 @@ def test_a_group_is_a_div_of_one_paragraph_and_the_rest_reads_as_before():
     body = rmd.split("---\n", 2)[2]
     assert body == ("\n# Bothy weekend\n\nWe walked in from the station.\n\n" + GROUP_RMD
                     + "\n\nThe next morning it rained.\n")
-    # A picture on its own is written as it was.
+    # A picture on its own is no group.
     lone = document_to_rmd(_doc("Text\n\n![Hut](square.png)\n\nMore\n"), "x",
                            copy_image=lambda name: "m/" + name)
-    assert "photo-group" not in lone and "![](m/square.png)" in lone
+    assert "photo-group" not in lone and "![Hut](m/square.png)" in lone
 
 
 def test_a_picture_that_cannot_be_had_keeps_its_place_in_the_group():

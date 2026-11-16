@@ -81,8 +81,10 @@ from doc_walk import (
     bullet_depth,
     iter_block_runs,
     iter_blocks,
+    iter_frame,
     parse_bullet_line,
     skip_prefix,
+    table_rows,
 )
 import photo_group
 import photo_group_find
@@ -392,22 +394,15 @@ def _list_block(block, text_list, image_target) -> _Block:
 
 def _table_block(table: QTextTable, image_target) -> _Block:
     rows = []
-    for r in range(table.rows()):
+    for number, cells in enumerate(table_rows(table)):
         row = []
-        for c in range(table.columns()):
-            cell = table.cellAt(r, c)
+        for blocks in cells:
             spans: List[_Span] = []
-            it = cell.begin()
-            first = True
-            while not it.atEnd():
-                block = it.currentBlock()
-                if block.isValid():
-                    if not first:
-                        spans.append(_Span(text=" "))
-                    spans.extend(_spans_of(_block_runs(block), image_target))
-                    first = False
-                it += 1
-            if r == 0:
+            for block in blocks:
+                if spans:
+                    spans.append(_Span(text=" "))
+                spans.extend(_spans_of(_block_runs(block), image_target))
+            if number == 0:
                 # The header row is bold by its own format.
                 spans = [_plain_weight(span) for span in spans]
             row.append(_merged(spans))
@@ -417,28 +412,20 @@ def _table_block(table: QTextTable, image_target) -> _Block:
 
 def _blocks_of_frame(frame, image_target) -> List[_Block]:
     blocks: List[_Block] = []
-    it = frame.begin()
-    while not it.atEnd():
-        child = it.currentFrame()
-        block = it.currentBlock()
-        if child is not None:
-            if isinstance(child, QTextTable):
-                blocks.append(_table_block(child, image_target))
-            else:
-                blocks.extend(_blocks_of_frame(child, image_target))
-        elif block.isValid():
-            # A photo group is written as the paragraphs it was read from:
-            # its pictures, each with its caption (photo_group).
-            segments = photo_group.block_segments(block)
-            if segments is not None:
-                blocks.extend(_group_blocks(block, segments, image_target))
-            elif blocks and blocks[-1].kind == "code" and same_code_block(block.previous(),
-                                                                         block):
-                # Qt keeps each line of a code block as a block of its own.
-                blocks[-1].code_text += "\n" + _code_text(block)
-            else:
-                blocks.append(_one_block(block, image_target))
-        it += 1
+    for block in iter_frame(frame):
+        if isinstance(block, QTextTable):
+            blocks.append(_table_block(block, image_target))
+            continue
+        # A photo group is written as the paragraphs it was read from:
+        # its pictures, each with its caption (photo_group).
+        segments = photo_group.block_segments(block)
+        if segments is not None:
+            blocks.extend(_group_blocks(block, segments, image_target))
+        elif blocks and blocks[-1].kind == "code" and same_code_block(block.previous(), block):
+            # Qt keeps each line of a code block as a block of its own.
+            blocks[-1].code_text += "\n" + _code_text(block)
+        else:
+            blocks.append(_one_block(block, image_target))
     return blocks
 
 
@@ -809,22 +796,37 @@ _BARE_PIPE = re.compile(r"(?<!\\)((?:\\\\)*)\|")
 
 
 def _table_markdown(block: _Block) -> str:
-    if not block.rows:
-        return ""
-    width = max(len(row) for row in block.rows)
+    return pipe_table([[_inline_markdown(spans, hard_break=" ") for spans in row]
+                       for row in block.rows])
 
-    def cell(spans):
-        text = _inline_markdown(spans, hard_break=" ")
+
+def pipe_table(rows: Sequence[Sequence[str]]) -> str:
+    """A table as Markdown (a pipe table), its first row the header:
+    ``rows`` of cells, each a cell's words as Markdown on one line."""
+    if not rows:
+        return ""
+    width = max(len(row) for row in rows)
+
+    def cell(text: str) -> str:
         # Every pipe escaped that is not yet (one a file escaped is).
         return _BARE_PIPE.sub(r"\1\\|", text).replace("\n", " ").strip() or " "
 
     lines = []
-    for index, row in enumerate(block.rows):
-        cells = [cell(spans) for spans in row] + [" "] * (width - len(row))
+    for index, row in enumerate(rows):
+        cells = [cell(text) for text in row] + [" "] * (width - len(row))
         lines.append("| " + " | ".join(cells) + " |")
         if index == 0:
             lines.append("|" + "|".join([" --- "] * width) + "|")
     return "\n".join(lines)
+
+
+def fenced_code(text: str, language: str = "") -> str:
+    """``text`` as a fenced code block, its fence longer than any run of
+    backticks in it."""
+    fence = "```"
+    while fence in text:
+        fence += "`"
+    return f"{fence}{language}\n{text}\n{fence}"
 
 
 def _markdown_lines(block: _Block) -> str:
@@ -846,10 +848,7 @@ def _block_markdown(block: _Block) -> str:
     if block.kind == "rule":
         return "---"
     if block.kind == "code":
-        fence = "```"
-        while fence in block.code_text:
-            fence += "`"
-        return f"{fence}{block.language}\n{block.code_text}\n{fence}"
+        return fenced_code(block.code_text, block.language)
     if block.kind == "table":
         return _table_markdown(block)
     if block.kind == "quote":
