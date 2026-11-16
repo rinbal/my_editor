@@ -27,7 +27,8 @@ typed <br> would cut the document there. An older build ignores the list
 and restores the HTML; a record from a build that kept Markdown instead
 is restored from that only when it gives back exactly the HTML's text.
 
-The record also keeps what the tab is besides its text (tab_identity):
+The record also keeps what kind of tab it is (a document, or text such
+as R Markdown), and what the tab is besides its text (tab_identity):
 the Nostr draft it is bound to and the published article it edits, so a
 recovered tab saves that draft again and publishes that article again,
 rather than starting a new one under another identifier.
@@ -225,6 +226,9 @@ def load_backup_content(editor, record: dict, *, modified: bool = True) -> None:
     if record.get("markdown_source"):
         # Opened as its Markdown text: it is still saved as written.
         editor._markdown_source = True
+    if record.get("kind") in ("rich", "source"):
+        # What the tab was, where no path says it (MainWindow._editor_kind).
+        editor._backup_kind = record["kind"]
     doc = editor.document()
     doc.clearUndoRedoStacks()
     # Set from the other state, so it holds: Qt remembers the undo step that
@@ -400,13 +404,16 @@ def classify_backup(record: dict) -> str:
 class EditorBackup:
     """Manages the backup lifecycle for a single editor instance."""
 
-    def __init__(self, editor, file_path: str | None, *, externalize=None):
+    def __init__(self, editor, file_path: str | None, *, externalize=None, kind=None):
         self._editor = editor
         self._file_path = file_path
         self._backup_id = _backup_id_for(file_path)
         # Maps a data: URI to a resolvable asset key. Injected so this
         # module stays testable without the asset layer running.
         self._externalize = externalize
+        # What the tab is, "rich" or "source" (MainWindow._editor_kind):
+        # a copy restored without its file's path still is that.
+        self._kind = kind
         self._last_hash = ""
         self._written_revision = None
         self._oversize_until = 0.0
@@ -606,6 +613,8 @@ class EditorBackup:
             record["photo_groups"] = True
         if getattr(self._editor, "_markdown_source", False):
             record["markdown_source"] = True
+        if self._kind is not None:
+            record["kind"] = self._kind(self._editor)
         record.update(identity)
         lock = self._lock()
         payload = json.dumps(_sealed(record, lock) if lock is not None else record,

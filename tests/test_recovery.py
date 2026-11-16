@@ -782,6 +782,25 @@ def test_a_restored_markdown_tab_is_saved_as_its_file_has_it():
     assert document_to_markdown(restored.document(), _image_as_read) == written
 
 
+def test_a_copy_restored_without_its_path_is_the_kind_of_tab_it_was(tmp_path):
+    # A stale backup comes back with no path, and the path was all that
+    # said an R Markdown tab is text: it came back a document, and saving
+    # it escaped the whole file.
+    source = tmp_path / "paper.Rmd"
+    source.write_text("# Notes\n", encoding="utf-8")
+    ed = _editor("# Notes\n\nMore `r 1 + 1`.")
+    ed._file_path = str(source)
+    kind = lambda editor: MainWindow._editor_kind(None, editor)
+    backup = recovery.EditorBackup(ed, str(source), kind=kind)
+    assert backup.write_now()
+    record = recovery.find_all_backups()[0]
+    record["source_mtime_ns"] = 0           # the file on disk has moved on
+    stub = _window_stub()
+    restored = MainWindow._restore_one_backup(stub, record)
+    assert restored._file_path is None
+    assert kind(restored) == "source"
+
+
 def test_backups_follow_the_typing_closely():
     assert recovery._DEBOUNCE_MS == 2_000
     assert recovery._MAX_INTERVAL_MS == 15_000

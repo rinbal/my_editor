@@ -7988,6 +7988,9 @@ class MainWindow(QMainWindow):
         path = getattr(ed, "_file_path", None)
         if path:
             return "rich" if path.lower().endswith(_RICH_DOC_EXTS) else "source"
+        if getattr(ed, "_backup_kind", None):
+            # A copy restored without its file's path: what its tab was.
+            return ed._backup_kind
         language = getattr(ed, "_language", None)
         return "rich" if language in (None, "markdown", "html") else "source"
 
@@ -8434,7 +8437,8 @@ class MainWindow(QMainWindow):
     def _new_backup(self, ed, path) -> EditorBackup:
         """The document's crash backup, which reports here when it cannot
         be kept."""
-        backup = EditorBackup(ed, path, externalize=self._asset_manager.adopt_data_uri)
+        backup = EditorBackup(ed, path, externalize=self._asset_manager.adopt_data_uri,
+                              kind=self._editor_kind)
         backup.set_status_listener(lambda _problem, e=ed: self._on_backup_status(e))
         return backup
 
