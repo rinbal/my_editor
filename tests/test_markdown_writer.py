@@ -244,8 +244,8 @@ def test_an_entity_for_characters_nobody_sees_is_written_as_it_was(source):
 @pytest.mark.parametrize("source, written", [
     ("- a\n* b\n", "- a\n* b\n"),
     ("> - a\n> * b\n", "> - a\n> * b\n"),
-    ("1. a\n\n2) b\n", "1. a\n2) b\n"),
-    ("- a\n\n+ b\n", "- a\n* b\n"),
+    ("1. a\n\n2) b\n", "1. a\n\n2) b\n"),
+    ("- a\n\n+ b\n", "- a\n\n* b\n"),
 ])
 def test_a_list_right_after_another_stays_a_list_of_its_own(source, written):
     # Both were written with "-" (or "."): one list, and in a quote two
@@ -254,6 +254,41 @@ def test_a_list_right_after_another_stays_a_list_of_its_own(source, written):
     doc = QTextDocument()
     read_markdown(doc, source)
     assert document_to_markdown(doc, _image_as_read) == written
+
+
+@pytest.mark.parametrize("source", [
+    "```\na\n```\n\n```\nb\n```\n",
+    "> a\n\n> b\n",
+    "- a\n\n- b\n- c\n",
+    "> - a\n\n> - b\n",
+])
+def test_blocks_a_file_sets_apart_stay_apart(source):
+    # Qt's reader ran them together: one code block, one quote, a list
+    # with its items close, and the file was saved so.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_code_blocks_a_file_sets_apart_are_two_in_the_editor_too():
+    # Its highlighting and its look go by the rule the writer goes by.
+    import rich_text
+    doc = QTextDocument()
+    read_markdown(doc, "```\na\nb\n```\n\n```\nc\n```\n")
+    first, last = rich_text.code_run(doc.firstBlock())
+    assert (first.text(), last.text()) == ("a", "b")
+
+
+def test_a_line_broken_off_a_block_set_apart_stays_with_it():
+    # Return gives the new line its block's format: it is no third block.
+    doc = QTextDocument()
+    read_markdown(doc, "```\na\n```\n\n```\nb\n```\n")
+    cursor = QTextCursor(doc)
+    cursor.movePosition(QTextCursor.MoveOperation.End)
+    cursor.insertBlock()
+    cursor.insertText("c")
+    assert document_to_markdown(doc) == "```\na\n```\n\n```\nb\nc\n```\n"
 
 
 def test_an_entity_that_makes_a_line_break_opens_as_text():

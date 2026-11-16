@@ -29,7 +29,7 @@ from PySide6.QtGui import (
 )
 
 import photo_group
-from doc_walk import doc_length, doc_offset, iter_blocks, text_index
+from doc_walk import apart, doc_length, doc_offset, iter_blocks, text_index
 
 # Inline styles, by name. Underline has no Markdown; it stays in local
 # files only (markdown_writer.has_local_only_formatting).
@@ -1637,21 +1637,21 @@ def _code_key(block):
 
 
 def same_code_block(one, other) -> bool:
-    """Whether two lines are lines of one code block (given they are next
-    to each other)."""
+    """Whether two lines are lines of one code block, given ``other`` is
+    the line after ``one``: the same fence, language and quote, and the
+    second not the start of a code block the file set apart from the one
+    before it (doc_walk.apart)."""
     key = _code_key(one)
-    return key is not None and key == _code_key(other)
+    return key is not None and key == _code_key(other) and apart(other) is None
 
 
 def code_run(block):
-    """The first and last line of the code block ``block`` is a line of:
-    the lines next to it with the same fence, language and quote, which
-    Markdown writes as one fenced block."""
-    key = _code_key(block)
+    """The first and last line of the code block ``block`` is a line of
+    (same_code_block), which Markdown writes as one fenced block."""
     first = last = block
-    while first.previous().isValid() and _code_key(first.previous()) == key:
+    while same_code_block(first.previous(), first):
         first = first.previous()
-    while last.next().isValid() and _code_key(last.next()) == key:
+    while same_code_block(last, last.next()):
         last = last.next()
     return first, last
 

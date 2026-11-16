@@ -13,7 +13,7 @@ backslash. This module finds those places in the Markdown text alone.
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple
 
 FENCE_LINE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 LIST_LINE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
@@ -69,33 +69,50 @@ _LOSSY_DEFINITION = re.compile(
     rf"|{_CONTAINERS}[ \t]*{_LABEL}{_ADDRESS_AFTER_LABEL}{_TITLE_AFTER_ADDRESS})[ \t]*$", re.M)
 
 
-def code_lines(lines: List[str]) -> List[bool]:
-    """For each line, whether it is code: in a fence, or indented code
-    (after a blank line, outside a list)."""
-    out: List[bool] = []
-    fence = ""
+# What a line of code is (code_lines): the line that opens a fence or the
+# one that closes it, a line in a fence, a line of indented code.
+_OPENS, _CLOSES, _FENCED, _INDENTED = "opens", "closes", "fenced", "indented"
+
+
+def code_lines(lines: List[str]) -> List[str]:
+    """For each line, what of a code block it is (_OPENS, _CLOSES, _FENCED,
+    _INDENTED: after a blank line, outside a list), "" for none; in a
+    quote too, after its marks (a fence ends with the quote it is in)."""
+    out: List[str] = []
+    fence, fence_depth = "", 0
     in_list = False
-    previous_blank = True
+    previous_blank, previous_depth = True, 0
     for line in lines:
-        found = FENCE_LINE.match(line)
         if fence:
-            out.append(True)
-            if found and found.group(1)[0] == fence[0] and len(found.group(1)) >= len(fence) \
-                    and not found.group(2).strip():
-                fence = ""
-            continue
+            inner = _inside_quotes(line, fence_depth)
+            if inner is not None:
+                found = FENCE_LINE.match(inner)
+                if found and found.group(1)[0] == fence[0] and len(found.group(1)) >= len(fence) \
+                        and not found.group(2).strip():
+                    fence = ""
+                out.append(_FENCED if fence else _CLOSES)
+                previous_blank = True       # (indented code may follow a fence)
+                continue
+            fence = ""
+        depth = _quote_depth(line)
+        rest = _inside_quotes(line, depth)
+        found = FENCE_LINE.match(rest)
         if found:
-            fence = found.group(1)
-            out.append(True)
+            fence, fence_depth = found.group(1), depth
+            out.append(_OPENS)
+            in_list, previous_depth = in_list and rest[:1].isspace(), depth
             continue
-        blank = not line.strip()
-        code = bool(_CODE_INDENT.match(line)) and previous_blank and not in_list
-        if LIST_LINE.match(line) and not code:      # ("    - a" there is code)
-            in_list = True
-        elif not blank and not line[:1].isspace():
+        if depth != previous_depth:
+            # A list ends with its quote; code may be the first of one.
+            in_list, previous_blank = False, previous_blank or depth > previous_depth
+        blank = not rest.strip()
+        code = bool(_CODE_INDENT.match(rest)) and previous_blank and not in_list
+        if LIST_LINE.match(rest) and not code and not _HEADING_OR_BREAK.fullmatch(rest):
+            in_list = True                          # ("    - a" there is code, "- - -" a divider)
+        elif not blank and not rest[:1].isspace():
             in_list = False
-        out.append(code)
-        previous_blank = blank or code
+        out.append(_INDENTED if code else "")
+        previous_blank, previous_depth = blank or code, depth
     return out
 
 
@@ -161,7 +178,7 @@ def empty_items(markdown: str) -> Tuple[List[int], bool]:
         return [], False
     lines = markdown.split("\n")
     code = code_lines(lines)
-    starts = _item_starts(lines, code)[0]
+    starts = _item_starts(lines, code).starts
     places: List[int] = []
     unsafe = False
     start = 0
@@ -184,7 +201,7 @@ def empty_items(markdown: str) -> Tuple[List[int], bool]:
                 places.append(line_start + len(line))
             elif alone is not None:
                 unsafe = True
-        elif _empty_item_alone(lines, code, number, depth, item.start(3)):
+        elif _empty_item_alone(lines, code, number, depth, item.start(3), boxed=True):
             # (A task's box is a paragraph already: a line that would join
             # the words joins the box, and the task is not empty.)
             places.append(line_start + len(line))
@@ -198,10 +215,115 @@ def heading_in_item(markdown: str) -> bool:
     if _ANY_ITEM.search(markdown) is None:
         return False
     lines = markdown.split("\n")
-    return _item_starts(lines, code_lines(lines))[1]
+    return _item_starts(lines, code_lines(lines)).inner
 
 
-def _item_starts(lines: List[str], code: List[bool]) -> Tuple[List[Optional[bool]], bool]:
+class _Line(NamedTuple):
+    """What set_apart keeps of the last line with something on it."""
+
+    depth: int                      # how many quotes it stands in
+    code: str                       # what of a code block it is (code_lines)
+
+
+def set_apart(markdown: str) -> Tuple[List[Tuple[int, int]], bool]:
+    """Where the words, or the code, start of each block that Qt's reader
+    runs into the block before it: a code block right after another, a
+    quote after another's end, a list item after a blank line (a loose
+    list's). With each, how many quotes the two stay in together (those
+    the blank line between them stands in). And whether such a block has
+    no words to stand before: a fence with no line in it, an item with
+    nothing in it, or one that starts with a heading, a divider, a
+    table's row or a quote."""
+    lines = markdown.split("\n")
+    code = code_lines(lines)
+    lists = _item_starts(lines, code)
+    places: List[Tuple[int, int]] = []
+    unsafe = False
+    before: Optional[_Line] = None
+    gap: Optional[int] = None           # the fewest quotes a blank line since stands in
+    start = 0
+    for number, line in enumerate(lines):
+        line_start, start = start, start + len(line) + 1
+        kind = code[number]
+        if kind in (_FENCED, _CLOSES):
+            before = _Line(before.depth, kind)      # (in the quotes of its fence)
+            continue
+        depth = _quote_depth(line)
+        rest = _inside_quotes(line, depth)
+        if not kind and not rest.strip():
+            gap = depth if gap is None else min(gap, depth)
+            continue
+        kept: Optional[int] = None
+        if before is not None:
+            shared = min(before.depth, depth)
+            if kind and before.code in (_CLOSES, _INDENTED) \
+                    and not kind == before.code == _INDENTED:   # (not indented code going on)
+                kept = shared if gap is None else min(gap, shared)
+            elif gap is not None and gap < shared:
+                kept = gap
+            elif gap is not None and not kind and lists.starts[number] is not False \
+                    and lists.listed[number]:
+                kept = min(gap, shared)
+        if kept is not None:
+            at = _apart_place(lines, number, depth, rest, kind)
+            if at is None:
+                unsafe = True
+            else:
+                places.append((line_start + at, kept))
+        if gap is None and before is not None and not kind and lists.starts[number] is False \
+                and _HEADING_OR_BREAK.fullmatch(rest) is None:
+            depth = max(depth, before.depth)    # (the words of a quote's paragraph go on)
+        before, gap = _Line(depth, kind), None
+    return places, unsafe
+
+
+def _apart_place(lines: List[str], number: int, depth: int, rest: str,
+                 kind: str) -> Optional[int]:
+    """Where, counted from the start of line ``number`` (in ``depth``
+    quotes, ``rest`` after their marks, ``kind`` of code), the words or
+    the code of the block start that starts on it; for a fence, in its
+    first line. None when there are none (_words_start)."""
+    line = lines[number]
+    if kind == _INDENTED:
+        return len(line) - len(rest) + _CODE_INDENT.match(rest).end()
+    if kind == _OPENS:
+        first = _inside_quotes(lines[number + 1], depth) if number + 1 < len(lines) else None
+        if first is None or FENCE_LINE.match(first):
+            return None                 # (nothing in the fence; a longer fence is code)
+        # (A fence set in takes as many spaces off its lines.)
+        return (len(line) + 1 + len(lines[number + 1]) - len(first)
+                + min(_indent(rest) or 0, _indent(first) or 0))
+    words = _words_start(rest)
+    return None if words is None else len(line) - len(rest) + words
+
+
+def _words_start(rest: str) -> Optional[int]:
+    """Where in ``rest`` (a line after its quote marks) the words of the
+    block start that starts on it: after the markers of the items it
+    starts and a task's box. None when no words start it: nothing, a
+    heading, a divider, a table's row, a quote or a fence."""
+    words = rest.lstrip(" \t")
+    item = _ITEM.fullmatch(rest)
+    if item is not None:
+        words = _item_words(rest, item)[1]
+        box = _TASK_BOX.match(words)
+        if box is not None:
+            words = words[box.end():]
+    if (not words.strip() or _HEADING_OR_BREAK.fullmatch(words)
+            or words.startswith((">", "|")) or FENCE_LINE.match(words)):
+        return None
+    return len(rest) - len(words)
+
+
+class _Lists(NamedTuple):
+    """What _item_starts tells of a text's lines."""
+
+    starts: List[Optional[bool]]    # whether an item starts on the line (None: not known)
+    listed: List[bool]              # whether an item is open, in its quote, where the line comes
+    inner: bool                     # whether a heading or a divider stands in an item
+
+
+def _item_starts(lines: List[str], code: List[str]) -> _Lists:
     """For each line, whether a list item starts on it, by the lines above
     it as CommonMark reads them: False for a line that is no item, or the
     words of the paragraph going on above it ("Text\\n-" is a heading,
@@ -212,6 +334,7 @@ def _item_starts(lines: List[str], code: List[bool]) -> Tuple[List[Optional[bool
     two items, "> a\\n-" a quote and an item). And whether a heading or a
     thematic break stands in an item (heading_in_item)."""
     starts: List[Optional[bool]] = []
+    listed: List[bool] = []
     # The paragraph going on: its quote depth and the column of the words
     # of the item it is in (0: in none; None: not known), its first line,
     # and how many lines it has; the quote depth of a table going on.
@@ -229,6 +352,7 @@ def _item_starts(lines: List[str], code: List[bool]) -> Tuple[List[Optional[bool
         rest = _inside_quotes(line, depth)
         if depth != items_depth:
             items, items_depth = [], depth
+        listed.append(bool(items))
         indent = _indent(rest)
         if code[number] or not rest.strip():
             paragraph = table = None
@@ -297,7 +421,7 @@ def _item_starts(lines: List[str], code: List[bool]) -> Tuple[List[Optional[bool
             count += 1                  # words of a quote's paragraph, its marks left out
             continue
         paragraph, first, count = (depth, 0 if indent == 0 else None), rest, 1
-    return starts, inner
+    return _Lists(starts, listed, inner)
 
 
 def _close_items(items: List[int], indent: int) -> None:
@@ -350,16 +474,17 @@ def _cells(row: str) -> List[str]:
     return _CELL_PIPE.split(row)
 
 
-def _empty_item_alone(lines: List[str], code: List[bool], number: int, depth: int,
-                      column: int) -> Optional[bool]:
+def _empty_item_alone(lines: List[str], code: List[str], number: int, depth: int,
+                      column: int, boxed: bool = False) -> Optional[bool]:
     """Whether words written in the empty item on line ``number`` (in
     ``depth`` quotes, its words' column ``column``) stay alone: True when
     the text ends after it, a blank line ends them, or an item follows
     (one inside it numbered 1 or bulleted, as an item must be to follow a
     paragraph); False when a line would join them (one left of the
     column, as a paragraph's lazy line, or a second paragraph, which an
-    item that starts empty cannot have); None when the next line holds
-    the item's words (it is not empty)."""
+    item that starts empty cannot have, but one ``boxed`` can: a task's
+    box is its first); None when the next line holds the item's words
+    (it is not empty)."""
     following = number + 1
     if following == len(lines):
         return True
@@ -374,6 +499,8 @@ def _empty_item_alone(lines: List[str], code: List[bool], number: int, depth: in
     if rest is None or not rest.strip():
         # A blank line ends the words; the first line after it with words
         # is the item's second paragraph when it stands in the column.
+        if boxed:
+            return True
         for later in lines[following + 1:]:
             inside = _inside_quotes(later, depth)
             if inside is None:

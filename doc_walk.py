@@ -16,6 +16,7 @@ serialize them.
 
 import itertools
 import re
+from typing import Optional
 
 from PySide6.QtGui import QTextCharFormat, QTextFormat
 
@@ -74,6 +75,33 @@ ENTITY_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B6
 # The marks above belong to the characters that carry them alone.
 READ_MARKS = (SOFT_BREAK_PROPERTY, ESCAPED_TEXT_PROPERTY, TYPED_TEXT_PROPERTY,
               BARE_TEXT_PROPERTY, ENTITY_TEXT_PROPERTY)
+
+
+# A block the file set apart from the block before it in a way the
+# document does not show: a code block right after another, a quote after
+# another's end, a list item after a blank line (a loose list's). The
+# writer writes the blank line again, and so keeps the two apart
+# (markdown_writer's _set_apart). The value: how many quotes the two
+# stand in together, and the block's number among the file's (apart): a
+# line broken off the block by Return takes its format, and is no second
+# block set apart.
+APART_PROPERTY = QTextFormat.Property.UserProperty + 0x5B7
+_APART_QUOTES = 256
+
+
+def apart_mark(number: int, quotes: int) -> int:
+    """APART_PROPERTY's value for the ``number``-th block set apart (from
+    1), which stays in ``quotes`` quotes with the block before it."""
+    return number * _APART_QUOTES + min(quotes, _APART_QUOTES - 1)
+
+
+def apart(block) -> Optional[int]:
+    """How many quotes ``block`` stays in with the block before it, when
+    the file set it apart from that one (APART_PROPERTY); else None."""
+    mark = block.blockFormat().property(APART_PROPERTY)
+    if not mark or mark == block.previous().blockFormat().property(APART_PROPERTY):
+        return None
+    return int(mark) % _APART_QUOTES
 
 
 def without_read_marks(fmt: QTextCharFormat) -> QTextCharFormat:

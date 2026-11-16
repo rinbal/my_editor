@@ -66,6 +66,7 @@ from PySide6.QtGui import (
 )
 
 from doc_walk import (
+    APART_PROPERTY,
     BARE_TEXT_PROPERTY,
     BULLET_MARKER,
     ENTITY_TEXT_PROPERTY,
@@ -74,6 +75,8 @@ from doc_walk import (
     OBJECT_REPLACEMENT,
     SOFT_BREAK_PROPERTY,
     TYPED_TEXT_PROPERTY,
+    apart,
+    apart_mark,
     bullet_depth,
     iter_block_runs,
     iter_blocks,
@@ -84,8 +87,9 @@ import photo_group
 import photo_group_find
 from markdown_scan import (DELIMITER_ROW, EMPTY_ITEM_LINE, ESCAPABLE, FENCE_LINE, LIST_LINE,
                            bracketed, descriptions, emphasized_code, empty_items, entities,
-                           escapes, heading_in_item, lossy_definition, pictures, titled_link)
-from rich_text import normalize_after_markdown_load
+                           escapes, heading_in_item, lossy_definition, pictures, set_apart,
+                           titled_link)
+from rich_text import normalize_after_markdown_load, same_code_block
 
 ImageTarget = Callable[[object], Optional[str]]
 
@@ -198,7 +202,6 @@ class _Block:
     task: Optional[bool] = None
     spaced: bool = False       # carries paragraph spacing (came from Markdown)
     indent: str = ""           # leading spaces typed before the text
-    fence: str = ""
     language: str = ""
     code_text: str = ""
     rows: List[List[List[_Span]]] = field(default_factory=list)
@@ -206,6 +209,7 @@ class _Block:
     group: int = -1            # which list an item belongs to
     other_marker: bool = False  # an item written with "*" or ")" (_set_list_markers)
     quote: int = 0             # how deep in block quotes it sits
+    apart: Optional[int] = None  # set apart from the block before, in so many quotes (apart)
     literal: bool = False      # text to be read back as text (see literal_text)
 
 
@@ -424,14 +428,19 @@ def _blocks_of_frame(frame, image_target) -> List[_Block]:
             segments = photo_group.block_segments(block)
             if segments is not None:
                 blocks.extend(_group_blocks(block, segments, image_target))
+            elif blocks and blocks[-1].kind == "code" and same_code_block(block.previous(),
+                                                                         block):
+                # Qt keeps each line of a code block as a block of its own.
+                blocks[-1].code_text += "\n" + _code_text(block)
             else:
                 blocks.append(_one_block(block, image_target))
         it += 1
-    return _joined_code(blocks)
+    return blocks
 
 
 def _one_block(block, image_target) -> _Block:
     written = _block_kind(block, image_target)
+    written.apart = apart(block)
     quote = block.blockFormat().property(QTextFormat.Property.BlockQuoteLevel)
     if isinstance(quote, int) and quote > 0 and written.kind != "quote":
         # A list, heading or code block inside a quote stays in it.
@@ -447,27 +456,15 @@ def _block_kind(block, image_target) -> _Block:
     # Indented code carries a language property (empty) and no fence.
     if fence or fmt.hasProperty(QTextFormat.Property.BlockCodeLanguage):
         language = fmt.property(QTextFormat.Property.BlockCodeLanguage) or ""
-        text = block.text().replace(LINE_SEPARATOR, "\n").replace(OBJECT_REPLACEMENT, "")
-        return _Block("code", fence=str(fence or "`"), language=str(language),
-                      code_text=text, spaced=True)
+        return _Block("code", language=str(language), code_text=_code_text(block), spaced=True)
     text_list = block.textList()
     if text_list is not None:
         return _list_block(block, text_list, image_target)
     return _paragraph_block(block, image_target)
 
 
-def _joined_code(blocks: List[_Block]) -> List[_Block]:
-    """Qt keeps each line of a fenced block as a block of its own."""
-    out: List[_Block] = []
-    for block in blocks:
-        previous = out[-1] if out else None
-        if (block.kind == "code" and previous is not None and previous.kind == "code"
-                and previous.fence == block.fence and previous.language == block.language
-                and previous.quote == block.quote):
-            previous.code_text += "\n" + block.code_text
-        else:
-            out.append(block)
-    return out
+def _code_text(block) -> str:
+    return block.text().replace(LINE_SEPARATOR, "\n").replace(OBJECT_REPLACEMENT, "")
 
 
 def document_blocks(doc, image_target: Optional[ImageTarget] = None) -> List[_Block]:
@@ -878,19 +875,36 @@ def document_to_markdown(doc, image_target: Optional[ImageTarget] = None, *,
     blocks = document_blocks(doc, image_target)
     if literal:
         _make_literal(blocks)
+    return _written(_laid_out(blocks))
+
+
+def _laid_out(blocks: List[_Block]) -> List[Tuple[str, _Block]]:
+    """The blocks that are written (all but empty lines), each with what
+    goes between it and the one before (nothing before the first), the
+    lists given their markers."""
     _set_list_markers(blocks)
-    out: List[str] = []
+    out: List[Tuple[str, _Block]] = []
     previous: Optional[_Block] = None
     for block in blocks:
-        if block.kind == "empty":
-            previous = block
-            continue
-        text = _markdown_lines(block)
-        if previous is not None and out:
-            out.append(_separator(previous, block))
-        out.append(text)
+        if block.kind != "empty":
+            out.append((_separator(previous, block) if out else "", block))
         previous = block
-    return "".join(out).rstrip("\n") + ("\n" if out else "")
+    return out
+
+
+def _written(laid_out: List[Tuple[str, _Block]]) -> str:
+    text = "".join(between + _markdown_lines(block) for between, block in laid_out)
+    return text.rstrip("\n") + ("\n" if laid_out else "")
+
+
+def _shape(laid_out: List[Tuple[str, _Block]]) -> list:
+    """What of its blocks the writer goes by besides their words: what
+    each is, how it is marked and what parts it from the one before. Two
+    readings the writer would write differently differ in it, though they
+    show the same (holds_faithfully)."""
+    return [(between, block.kind, block.level, block.ordered, block.number, block.task,
+             block.other_marker, block.language, block.quote)
+            for between, block in laid_out]
 
 
 def _make_literal(blocks: List[_Block]) -> None:
@@ -916,8 +930,9 @@ def _set_list_markers(blocks: List[_Block]) -> None:
     for block in blocks:
         if block.kind == "empty":
             continue
+        if block.kind != "item" or (block.apart is not None and block.apart < block.quote):
+            last_at.clear()                 # (a paragraph, a heading, a quote's end ends a list)
         if block.kind != "item":
-            last_at.clear()                 # (a paragraph, a heading, ... ends a list)
             continue
         for level in [level for level in last_at if level > block.level]:
             del last_at[level]
@@ -940,6 +955,11 @@ def _separator(previous: _Block, block: _Block) -> str:
     """What goes between two written blocks: a line break, or a blank line."""
     if previous.kind == "empty":
         return "\n\n"
+    if block.apart is not None:
+        # The blank line the file had there, in the quotes the two stay in:
+        # it ends a code block or a quote, or sets a list's items apart.
+        depth = min(block.apart, _quote_depth(previous), _quote_depth(block))
+        return "\n" + ("> " * depth).rstrip() + "\n"
     if previous.kind == "item" and block.kind == "item":
         # A different list at the same depth is a list of its own, by its
         # other marker (_set_list_markers): a blank line would end a quote
@@ -1162,9 +1182,11 @@ def _soft_breaks(markdown: str) -> Tuple[bool, List[int]]:
             found.append(index - 1)
         if (line.startswith(("  ", "\t")) and line.strip() and not before.strip()
                 and index >= 2 and LIST_LINE.match(lines[index - 2])
-                and not EMPTY_ITEM_LINE.match(line)):
-            # (Not an empty item: the writer puts that blank line before
-            # one right under an item's words, which it would join.)
+                and not LIST_LINE.match(line) and not EMPTY_ITEM_LINE.match(line)):
+            # (Not an item of a list inside it, which a blank line sets
+            # apart, with nothing in it either: the writer puts that
+            # blank line before one right under an item's words, which it
+            # would join.)
             return True, []
     if found and _free_mark(markdown, _SOFT_MARKS) is None:
         return True, []
@@ -1339,12 +1361,16 @@ def _read_once(doc: QTextDocument, markdown: str, features, alts: dict,
     many were joined, and whether all was kept."""
     markdown = literal_footnotes(markdown)
     keeping, keep_mark, lost = _marked_keeps(markdown, features)
+    keeping, apart_mark_, quotes, runs_on = _marked_apart(keeping)
     doc.setMarkdown(keeping, features)
-    if keep_mark is not None and not _kept_by_marks(doc, keep_mark, keeping.count(keep_mark)):
+    if not ((apart_mark_ is None or _set_apart(doc, apart_mark_, quotes))
+            and (keep_mark is None
+                 or _kept_by_marks(doc, keep_mark, keeping.count(keep_mark)))):
         # Read otherwise than the marks expected: read without them, and
         # what they kept is left out.
         doc.setMarkdown(markdown, features)
         lost = True
+    lost = lost or runs_on
     if alts:
         _restore_descriptions(doc, alts)
     soft_mark, marked = soft
@@ -1525,6 +1551,58 @@ def _keep_entities(doc: QTextDocument, mark: str, spelled: Sequence[str]) -> Tup
         cursor.setPosition(position)
         cursor.insertText(text, character)
     return True, in_line
+
+
+# --------------------------------------------------------------------------- #
+# Blocks the file set apart, kept apart                                        #
+# --------------------------------------------------------------------------- #
+#
+# Qt's reader runs a block into the one before it where the document has
+# nothing to tell the two by: two code blocks become one, a quote after
+# another's end goes on in it, and a list whose items stand apart by
+# blank lines (a loose one) reads as one whose items do not. For the time
+# Qt reads the Markdown, a mark stands where the words or the code of each
+# such block start (markdown_scan.set_apart); once read, its block says
+# that it stands apart (doc_walk.APART_PROPERTY), and the writer writes
+# the blank line between the two again. The mark is a space (Unicode's
+# Zs), so what follows it reads as at a line's start (an address is a
+# link still); a file is read with the first one it holds nowhere.
+_APART_MARKS = ("\u2009", "\u200a", "\u2007", "\u2002")
+
+
+def _marked_apart(markdown: str) -> Tuple[str, Optional[str], List[int], bool]:
+    """The Markdown with a mark (_APART_MARKS) at the start of each block
+    Qt's reader would run into the one before it, the mark (None for
+    none), for each how many quotes it stays in with that one, and
+    whether a block runs on all the same: one with no words to mark, or
+    no free mark."""
+    places, runs_on = set_apart(markdown)
+    mark = _free_mark(markdown, _APART_MARKS) if places else None
+    if mark is None:
+        return markdown, None, [], runs_on or bool(places)
+    marked = _with_marks(markdown, [(at, "", "") for at, _quotes in places], mark)
+    return marked, mark, [quotes for _at, quotes in places], runs_on
+
+
+def _set_apart(doc: QTextDocument, mark: str, quotes: Sequence[int]) -> bool:
+    """Each ``mark`` _marked_apart set taken out again, and its block set
+    apart from the one before it (``quotes``: in how many quotes the two
+    stay, in the marks' order). False when the marks in the text are not
+    as many, a format holds one, or one stood anywhere but at a block's
+    start (the Markdown was not read as the marks expected)."""
+    taken = _take_marks(doc, mark)
+    if len(taken) != len(quotes) or _in_formats(doc, mark):
+        return False
+    cursor = QTextCursor(doc)
+    for number, ((position, _fmt), kept) in enumerate(zip(taken, quotes), 1):
+        block = doc.findBlock(position)
+        if position != block.position():
+            return False
+        fmt = block.blockFormat()
+        fmt.setProperty(APART_PROPERTY, apart_mark(number, kept))
+        cursor.setPosition(position)
+        cursor.setBlockFormat(fmt)
+    return True
 
 
 # --------------------------------------------------------------------------- #
@@ -1838,12 +1916,17 @@ def holds_faithfully(markdown: str) -> bool:
     first = QTextDocument()
     if not _read_counting(first, markdown, groups=False):
         return False            # a soft break or an empty item not read as marked
-    shown = _fingerprint(first)
-    written = document_to_markdown(first, _image_as_read)
-    del first                   # freed before the next read
+    laid_out = _laid_out(document_blocks(first, _image_as_read))
+    shown = _fingerprint(first), _shape(laid_out)
+    written = _written(laid_out)
+    del first, laid_out         # freed before the next read
     second = QTextDocument()
     _read_counting(second, written, groups=False)
-    return shown == _fingerprint(second)
+    # What the writer goes by is compared too: where two blocks would be
+    # written as one, or a list's items closer than they stood, the file
+    # would be saved otherwise than it is.
+    return shown == (_fingerprint(second),
+                     _shape(_laid_out(document_blocks(second, _image_as_read))))
 
 
 def _image_as_read(fmt) -> str:
