@@ -93,7 +93,7 @@ from doc_walk import (
 )
 import photo_group
 import photo_group_find
-from markdown_scan import (DELIMITER_ROW, EMPTY_ITEM_LINE, ESCAPABLE, FENCE_LINE, LIST_LINE,
+from markdown_scan import (DELIMITER_ROW, ESCAPABLE, FENCE_LINE,
                            autolinks, bracketed, descriptions, emphasized_code, empty_items,
                            ends_in_break, entities, escapes, fence_words, hard_breaks,
                            lossy_definition, misread_blocks, pictures, set_apart, tab_in_code_indent,
@@ -1205,9 +1205,8 @@ def _soft_breaks(markdown: str) -> Tuple[bool, List[int]]:
     """Where lines of one paragraph follow each other (soft line breaks):
     ``(lossy, lines)``, ``lines`` the numbers of the lines a soft break
     ends. ``lossy`` when a break is one the editor cannot hold: inside an
-    indented paragraph or a list item, or a list
-    item continued after a blank line (Qt joins the first and moves the
-    second out of the list), or where a line may be a table's."""
+    indented paragraph or a list item, or where a line may be a table's.
+    (A list item continued after a blank line: markdown_scan.misread_blocks.)"""
     lines = markdown.split("\n")
     # Lines in fenced code, the fences among them: code keeps its lines.
     coded, fence = [], ""
@@ -1240,14 +1239,6 @@ def _soft_breaks(markdown: str) -> Tuple[bool, List[int]]:
                     or "|" in line or "|" in before):
                 return True, []
             found.append(index - 1)
-        if (line.startswith(("  ", "\t")) and line.strip() and not before.strip()
-                and index >= 2 and LIST_LINE.match(lines[index - 2])
-                and not LIST_LINE.match(line) and not EMPTY_ITEM_LINE.match(line)):
-            # (Not an item of a list inside it, which a blank line sets
-            # apart, with nothing in it either: the writer puts that
-            # blank line before one right under an item's words, which it
-            # would join.)
-            return True, []
     if found and _free_mark(markdown, _SOFT_MARKS) is None:
         return True, []
     return False, found

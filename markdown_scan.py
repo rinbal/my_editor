@@ -246,8 +246,9 @@ def misread_blocks(markdown: str) -> bool:
     or a quote ("- # a", "- a\\n  ---", "- a\\n\\n  # b", "> ---"): it
     takes it out of its list or quote, or makes it the item's words in
     bold. An item that opens with another list's item or a quote ("- - a",
-    "- > a"), and a marker alone, with spaces after it, under words
-    ("a\\n* "). A heading with no words, a fence with nothing in it or
+    "- > a"), what goes on in an item after a blank line ("- a\\n\\n  b":
+    it takes that out of the list), and a marker alone, with spaces after
+    it, under words ("a\\n* "). A heading with no words, a fence with nothing in it or
     one that starts the text with a blank line, which it leaves out. A
     table in a quote, under words ("Text\\n| a |\\n| - |") or with fewer
     columns than its header has, a pipe in a row's code ("| `a|b` |":
@@ -437,6 +438,8 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
     # stands in that Qt's reader takes for one inside the quote's first.
     quoted = 0
     shifted: Optional[Tuple[int, int]] = None
+    # Whether a blank line, in the quote, came since the last line of words.
+    gap = False
     misread = False
     for number, line in enumerate(lines):
         starts.append(False)
@@ -452,9 +455,18 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
         if not lazy:
             quoted = depth
             if depth != items_depth:
-                items, items_depth, shifted = [], depth, None
+                items, items_depth, shifted, gap = [], depth, None, False
         listed.append(bool(items))
         indent = _indent(rest)
+        if gap and items and item is None and rest.strip() and (indent is None or indent >= items[0]):
+            # What goes on in an item after a blank line (its second
+            # paragraph, a quote or code in it): Qt's reader takes it out
+            # of the list.
+            misread = True
+        if rest.strip():
+            gap = False
+        elif not code[number]:
+            gap = True
         if code[number] or not rest.strip():
             if code[number] == _OPENS:
                 # A fence right under a table is a row of it to Qt's reader.
