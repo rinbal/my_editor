@@ -292,6 +292,48 @@ def test_a_hard_line_break_stays_a_line_break(source):
     assert document_to_markdown(doc, _image_as_read) == source
 
 
+@pytest.mark.parametrize("source, written", [("> a\\\n> b\n", "> a  \n> b\n"),
+                                             ("- a \\\n  b\n", "- a  \n  b\n"),
+                                             ("a\\\n\nb\n", "a\\\n\nb\n")])
+def test_a_backslash_at_a_lines_end_breaks_the_line_too(source, written):
+    # In a quote it made two paragraphs, in a list two items. Where the
+    # paragraph ends with it, it is its last word.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == written
+
+
+def test_a_line_break_after_an_empty_link_is_kept_in_its_place():
+    # The search for the break started past the link's mark, set a
+    # cursor out of the document, and Qt said so in the log.
+    from PySide6.QtCore import qInstallMessageHandler
+    warned = []
+    previous = qInstallMessageHandler(lambda kind, context, message: warned.append(message))
+    try:
+        read_markdown(QTextDocument(), "  \n`c`\n\nline   \n  [](u)  \n#\n\n")
+    finally:
+        qInstallMessageHandler(previous)
+    assert not [message for message in warned if "out of range" in message]
+
+
+def test_a_file_that_holds_every_mark_of_a_kind_opens_as_text():
+    # With no mark free for its line breaks or its entities, they were
+    # read as Qt's reader reads them, and nothing said so.
+    assert not holds_faithfully("x\u2003\u2001\u2000\u205f\n\na  \nb\n")
+    assert not holds_faithfully("x\u2e35\u2e36\u2e37\u2e38\n\n[a &amp; b](u)\n")
+
+
+def test_text_right_under_an_underlined_heading_is_no_part_of_it():
+    # The underline was taken for a line of the paragraph under it, and
+    # the heading became that paragraph's first words.
+    source = "Why?\n----\nText under it.\n"
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == "## Why?\n\nText under it.\n"
+
+
 @pytest.mark.parametrize("source", ["<https://a.example>\n", "See <a@b.example>.\n",
                                     "text\nhttps://a.example\n"])
 def test_an_address_is_written_as_the_file_wrote_it(source):
@@ -874,7 +916,6 @@ def test_markdown_the_editor_can_hold(source):
     # Soft line breaks the editor cannot hold as lines: in an indented
     # paragraph, after a backslash break, where a line may be a table's.
     "  Indented line one\n  line two\n",
-    "Line one\\\nline two\n",
     "a | b\nc | d\n",
     # Review M6 (CP3): what the editor's own reader changes.
     "```make\nall:\n\tcc main.c\n```\n",                      # a tab in code

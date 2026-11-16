@@ -93,7 +93,8 @@ import photo_group
 import photo_group_find
 from markdown_scan import (DELIMITER_ROW, EMPTY_ITEM_LINE, ESCAPABLE, FENCE_LINE, LIST_LINE,
                            autolinks, bracketed, descriptions, emphasized_code, empty_items,
-                           entities, escapes, hard_breaks, lossy_definition, misread_blocks,
+                           ends_in_break, entities, escapes, hard_breaks, lossy_definition,
+                           misread_blocks,
                            pictures, set_apart, titled_link)
 from rich_text import normalize_after_markdown_load, same_code_block
 
@@ -1176,7 +1177,7 @@ def _soft_breaks(markdown: str) -> Tuple[bool, List[int]]:
     """Where lines of one paragraph follow each other (soft line breaks):
     ``(lossy, lines)``, ``lines`` the numbers of the lines a soft break
     ends. ``lossy`` when a break is one the editor cannot hold: inside an
-    indented paragraph or a list item, after a backslash break, or a list
+    indented paragraph or a list item, or a list
     item continued after a blank line (Qt joins the first and moves the
     second out of the list), or where a line may be a table's."""
     lines = markdown.split("\n")
@@ -1201,11 +1202,13 @@ def _soft_breaks(markdown: str) -> Tuple[bool, List[int]]:
         if coded[index] or coded[index - 1]:
             continue
         if (line.strip() and before.strip() and not _BLOCK_START.match(line)
-                and not _BLOCK_START.match(before) and not before.endswith("  ")
-                and not set(line.strip()) <= set("=-")):
-            # (A pipe may be a table without its outer pipes.)
+                and not _BLOCK_START.match(before) and not ends_in_break(before)
+                and not set(line.strip()) <= set("=-")
+                and not (set(before.strip()) <= set("=-") and index >= 2
+                         and lines[index - 2].strip())):
+            # (No paragraph goes on under a heading's underline: one with
+            # words above it. A pipe may be a table without its outer pipes.)
             if (line[:1] in (" ", "\t") or before[:1] in (" ", "\t")
-                    or before.endswith("\\")
                     or "|" in line or "|" in before):
                 return True, []
             found.append(index - 1)
@@ -1274,14 +1277,14 @@ def _join_soft_breaks(doc: QTextDocument, mark: str) -> int:
     return joined
 
 
-# What marks a hard line break (two spaces or more at a line's end) while
-# Qt reads the Markdown. Its reader makes the line after one a paragraph
+# What marks a hard line break (two spaces or more at a line's end, or a
+# backslash) while Qt reads the Markdown. Its reader makes the line after one a paragraph
 # of its own, and "first  \nsecond", which the writer writes for a line
 # break typed here, came back as two paragraphs. With a mark after its
 # spaces the line ends in a soft break, which Qt's reader reads as a
 # space where the paragraph goes on and not at all where it ends; once
-# read, the spaces, the mark and that space become the line break
-# (_keep_hard_breaks). A space (Unicode's Zs), as _SOFT_MARKS are; a file
+# read, the spaces (or the backslash), the mark and that space become the
+# line break (_keep_hard_breaks). A space (Unicode's Zs), as _SOFT_MARKS are; a file
 # is read with the first one it holds nowhere.
 _HARD_MARKS = ("\u2003", "\u2001", "\u2000", "\u205f")
 
@@ -1302,22 +1305,30 @@ def _marked_hard_breaks(markdown: str, breaks: Sequence[int]) -> Tuple[str, Opti
 def _keep_hard_breaks(doc: QTextDocument, mark: str, placed: int) -> bool:
     """Each ``mark`` _marked_hard_breaks set taken out again, with the
     spaces before it: where the paragraph goes on after it (Qt's reader
-    put a space there), the line break the file has, in the mark's format;
-    in code, the spaces stay the code's. False when the marks in the text
+    put a space there), the line break the file has, in the mark's format,
+    in place of a backslash too (which is the paragraph's last word
+    where it ends); in code, the spaces stay the code's. False when the marks in the text
     are not as many as ``placed``, or a format holds one."""
     taken = _take_marks(doc, mark)
     if len(taken) != placed or _in_formats(doc, mark):
         return False
     with _one_step(doc) as cursor:
-        for position, fmt in reversed(taken):
+        for number in reversed(range(len(taken))):
+            position, fmt = taken[number]
             block = doc.findBlock(position)
             if _is_code(fmt) or block.blockFormat().hasProperty(
                     QTextFormat.Property.BlockCodeLanguage):
                 continue
+            # (Up to the paragraph's start, or the mark before this one.)
+            first = max(block.position(), taken[number - 1][0] if number else 0)
             start = position
-            while start > block.position() and doc.characterAt(start - 1) == " ":
+            while start > first and doc.characterAt(start - 1) == " ":
                 start -= 1
             goes_on = start > block.position() and doc.characterAt(position) == " "
+            if goes_on and start == position and doc.characterAt(start - 1) == "\\":
+                start -= 1
+                while start > first and doc.characterAt(start - 1) == " ":
+                    start -= 1
             cursor.setPosition(start)
             cursor.setPosition(position + goes_on, QTextCursor.MoveMode.KeepAnchor)
             if goes_on:
@@ -1431,14 +1442,17 @@ def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
                 # The same: read with the entities, the words after one as
                 # Qt's reader formats them.
                 joined, kept = read(text)
-        return joined, kept
+        # (Entities, and no mark free for them: read so too, and not held.)
+        return joined, kept and (entity_mark is not None or not spelled)
 
     broken, hard_mark = _marked_hard_breaks(markdown, breaks)
     joined, kept = read_entities(broken)
-    if hard_mark is not None and not _keep_hard_breaks(doc, hard_mark, len(breaks)):
-        # The same: read with the hard breaks as Qt's reader takes them,
-        # the line after each a paragraph of its own.
-        joined, _kept = read_entities(markdown)
+    if breaks and (hard_mark is None or not _keep_hard_breaks(doc, hard_mark, len(breaks))):
+        # The same, and where no mark is free: read with the hard breaks as
+        # Qt's reader takes them, the line after each a paragraph of its
+        # own.
+        if hard_mark is not None:
+            joined, _kept = read_entities(markdown)
         kept = False
     normalize_after_markdown_load(doc)
     if groups:
@@ -1614,14 +1628,15 @@ _LINE_ENDS = ("\n", "\r", "\u2028", "\u2029")
 def _marked_entities(markdown: str) -> Tuple[str, Optional[str], List[str]]:
     """The Markdown with a mark (_ENTITY_MARKS) in place of each entity
     (in a reference definition's label too, which must match its links'),
-    the mark, and the entities shown, in their order; as it was, None and
-    none when it has no entity or no mark can be used."""
+    the mark, and the entities shown, in their order; as it was and None
+    when it has no entity, or no mark can be used (the entities are told
+    then)."""
     if "&" not in markdown:
         return markdown, None, []
     found = entities(markdown)
     mark = _free_mark(markdown, _ENTITY_MARKS) if found else None
     if mark is None:
-        return markdown, None, []
+        return markdown, None, [markdown[start:end] for start, end, _shown in found]
     pieces, last = [], 0
     for start, end, _shown in found:
         pieces += [markdown[last:start], mark]

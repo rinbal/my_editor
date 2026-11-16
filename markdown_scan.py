@@ -231,14 +231,20 @@ def misread_blocks(markdown: str) -> bool:
     return _item_starts(lines, code_lines(lines)).misread
 
 
+def ends_in_break(line: str) -> bool:
+    """Whether ``line`` ends as a hard line break does: in two spaces or
+    more, or in a backslash (one no backslash before it escapes)."""
+    return line.endswith("  ") or (len(line) - len(line.rstrip("\\"))) % 2 == 1
+
+
 def hard_breaks(markdown: str) -> List[int]:
-    """The number of each line that ends as a hard line break does, in two
-    spaces or more, after words a paragraph may hold, with a line of words
-    under it. Whether the paragraph goes on there, and the line's end
-    breaks it, is the reader's to say. None where the line's end is no
-    paragraph's: in code, a heading, a divider or an underline, a table's
-    row, a reference definition, an item with nothing in it."""
-    if "  \n" not in markdown:
+    """The number of each line that ends as a hard line break does
+    (ends_in_break), after words a paragraph may hold, with a line of
+    words under it. Whether the paragraph goes on there, and the line's
+    end breaks it, is the reader's to say. None where the line's end is
+    no paragraph's: in code, a heading, a divider or an underline, a
+    table's row, a reference definition, an item with nothing in it."""
+    if "  \n" not in markdown and "\\\n" not in markdown:
         return []
     lines = markdown.split("\n")
     code = code_lines(lines)
@@ -247,7 +253,7 @@ def hard_breaks(markdown: str) -> List[int]:
     start = 0
     for number, line in enumerate(lines[:-1]):
         start += len(line) + 1
-        if not line.endswith("  ") or code[number] or defined.end(start - 2) is not None:
+        if not ends_in_break(line) or code[number] or defined.end(start - 2) is not None:
             continue
         rest = _inside_quotes(line, _quote_depth(line))
         under = lines[number + 1]
