@@ -411,6 +411,14 @@ def test_a_lone_backtick_in_a_tables_row_makes_no_code_of_the_next():
     assert document_to_markdown(doc, _image_as_read) == source
 
 
+def test_a_table_wider_than_qts_reader_takes_opens_as_text():
+    # 129 columns or more, its rows were saved as one line of text.
+    def table(columns):
+        return "".join("|" + " a |" * columns + "\n" + "|" + " - |" * columns + "\n")
+    assert holds_faithfully(table(128))
+    assert not holds_faithfully(table(129))
+
+
 def test_a_table_with_code_in_a_cell_that_spans_columns_opens():
     # Qt's reader lets a cell before empty ones span them. The escaped pipe
     # in its code was taken out once for each column, the table fell

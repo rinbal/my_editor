@@ -2236,14 +2236,20 @@ def _restore_descriptions(doc: QTextDocument, alts: dict) -> None:
 _HEADER_EMPHASIS = re.compile(r"\*|~~|(?<![\w\\])_|_(?!\w)")
 
 
+# The most columns Qt's reader takes in a table (md4c's own limit): a
+# wider one is a paragraph of its text.
+_MOST_COLUMNS = 128
+
+
 def _table_loses(markdown: str) -> bool:
     """Whether a table says what the editor's tables cannot keep: a
-    column's alignment, or emphasis in its header row (the header is bold
-    by its own format there)."""
+    column's alignment, emphasis in its header row (the header is bold by
+    its own format there), or more columns than Qt's reader takes."""
     lines = markdown.split("\n")
     for index in range(1, len(lines)):
         if DELIMITER_ROW.match(lines[index]) and "|" in lines[index - 1]:
-            if ":" in lines[index] or _HEADER_EMPHASIS.search(lines[index - 1]):
+            if (":" in lines[index] or _HEADER_EMPHASIS.search(lines[index - 1])
+                    or lines[index].strip().strip("|").count("|") >= _MOST_COLUMNS):
                 return True
     return False
 
