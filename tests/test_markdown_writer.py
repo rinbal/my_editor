@@ -312,6 +312,7 @@ def test_a_line_that_holds_only_a_backslash_keeps_both_line_breaks():
         doc = QTextDocument()
         read_markdown(doc, source)
         assert doc.firstBlock().text().count("\u2028") == 2 and "\\" not in doc.toPlainText()
+        assert document_to_markdown(doc) == source.replace("red\\\n", "red  \n")
 
 
 def test_a_line_break_after_an_empty_link_is_kept_in_its_place():
@@ -1141,7 +1142,9 @@ def test_a_line_break_typed_after_a_soft_one_is_a_hard_break():
     breaks = [fmt.boolProperty(SOFT_BREAK_PROPERTY) for text, fmt in _runs(ed.document())
               for char in text if char == "\u2028"]
     assert breaks == [True, False]
-    assert document_to_markdown(ed.document()) == "first line\n  \nnewsecond line\n"
+    # (The break on the empty line is a backslash: two spaces alone made a
+    # blank line, and two paragraphs.)
+    assert document_to_markdown(ed.document()) == "first line\n\\\nnewsecond line\n"
     ed.close()
 
 

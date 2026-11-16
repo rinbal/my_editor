@@ -710,7 +710,12 @@ def _inline_markdown(spans: List[_Span], hard_break: str = "  \n",
     # A soft break is the line end it was; where a hard one is a space (a
     # heading), so is a soft one.
     soft = "\n" if hard_break.endswith("\n") else hard_break
-    return text.replace(LINE_SEPARATOR, hard_break).replace(_SOFT, soft)
+    lines = text.replace(_SOFT, soft).split(LINE_SEPARATOR)
+    # A line with nothing on it but two spaces is a blank one, where the
+    # paragraph would end: its line break is a backslash.
+    return "".join(line + ("\\\n" if hard_break == "  \n" and not line.rpartition("\n")[2].strip()
+                           else hard_break)
+                   for line in lines[:-1]) + lines[-1]
 
 
 def bare_words(block) -> List[Tuple[int, int]]:
