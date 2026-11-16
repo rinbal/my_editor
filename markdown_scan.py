@@ -502,8 +502,9 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
                 paragraph = (depth, None if opened else columns[-1])
                 first, latest, count = words, words, 1
             continue
-        if table == depth:
-            continue                    # a row of the table
+        if table == depth:              # a row of the table
+            misread = misread or _pipe_in_code(rest)
+            continue
         table = None
         if in_place:
             if DELIMITER_ROW.match(rest):
@@ -604,6 +605,17 @@ def _cells(row: str) -> List[str]:
     if row.endswith("|") and not row.endswith("\\|"):
         row = row[:-1]
     return _CELL_PIPE.split(row)
+
+
+def _pipe_in_code(row: str) -> bool:
+    """Whether a pipe stands in code in a table's ``row``."""
+    at = row.find("`")
+    while at >= 0:
+        end = code_span_end(row, at)
+        if _CELL_PIPE.search(row, at, end):
+            return True
+        at = row.find("`", end)
+    return False
 
 
 def _empty_item_alone(lines: List[str], code: List[str], number: int, depth: int,
