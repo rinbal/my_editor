@@ -94,10 +94,9 @@ from doc_walk import (
 import photo_group
 import photo_group_find
 from markdown_scan import (DELIMITER_ROW, ESCAPABLE, FENCE_LINE,
-                           autolinks, bracketed, descriptions, emphasized_code, empty_items,
+                           autolinks, bracketed, code_tabs, descriptions, emphasized_code, empty_items,
                            ends_in_break, entities, escapes, fence_words, hard_breaks,
-                           lossy_definition, misread_blocks, pictures, set_apart, tab_in_code_indent,
-                           titled_link)
+                           lossy_definition, misread_blocks, pictures, set_apart, titled_link)
 from rich_text import code_info, normalize_after_markdown_load, same_code_block
 
 log = logging.getLogger(__name__)
@@ -2311,7 +2310,7 @@ def holds_faithfully(markdown: str) -> bool:
 
 def _holds(markdown: str) -> bool:
     if (any(pattern.search(markdown) for pattern in _LOSSY) or _raw_html(markdown)
-            or _soft_wrapped(markdown) or tab_in_code_indent(markdown) or _table_loses(markdown)
+            or _soft_wrapped(markdown) or _table_loses(markdown)
             or titled_link(markdown) or lossy_definition(markdown) or emphasized_code(markdown)
             or misread_blocks(markdown)):
         return False
@@ -2326,6 +2325,8 @@ def _holds(markdown: str) -> bool:
     first = QTextDocument()
     if not _read_counting(first, markdown, groups=False):
         return False            # a soft break or an empty item not read as marked
+    if "\t" in markdown and _code_tabs_read(first) < code_tabs(markdown):
+        return False            # a tab in code read as spaces
     laid_out = _laid_out(document_blocks(first, _image_as_read))
     shown = _fingerprint(first), _shape(laid_out)
     written = _written(laid_out)
@@ -2337,6 +2338,13 @@ def _holds(markdown: str) -> bool:
     # would be saved otherwise than it is.
     return shown == (_fingerprint(second),
                      _shape(_laid_out(document_blocks(second, _image_as_read))))
+
+
+def _code_tabs_read(doc: QTextDocument) -> int:
+    """How many tabs the code blocks of ``doc`` hold."""
+    return sum(block.text().count("\t") for block in iter_blocks(doc)
+               if block.blockFormat().property(QTextFormat.Property.BlockCodeFence)
+               or block.blockFormat().hasProperty(QTextFormat.Property.BlockCodeLanguage))
 
 
 def _image_as_read(fmt) -> str:

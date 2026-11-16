@@ -691,6 +691,15 @@ def test_a_tab_after_the_start_of_a_code_line_is_kept():
     assert holds_faithfully(source) and document_to_markdown(doc) == source
 
 
+def test_a_tab_in_code_that_qts_reader_keeps_opens_the_file():
+    # After a fenced block Qt's reader keeps a tab that sets in a line of
+    # indented code: the file opened as text for it.
+    source = "```js\nx\n```\n\n    \tx\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert holds_faithfully(source) and "\n\tx\n" in document_to_markdown(doc)
+
+
 def test_a_fence_is_judged_by_the_lines_it_holds():
     # A longer fence holds a shorter one's line as code, and one set in
     # where its quote opens loses nothing while no line of it is set in:
