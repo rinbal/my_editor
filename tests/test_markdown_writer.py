@@ -573,6 +573,8 @@ def test_a_heading_or_a_divider_in_a_quote_opens_as_text():
     "- a\n\n\n  b\n",                                  # an item's paragraph after two blank lines
     "> - a\n>\n>   b\n",                                # after one, in a quote
     "- a\n  - b\n\n    c\n",                             # a nested item's
+    "    a\n\n>\n\n    b\n",                              # an empty quote between code
+    "> a\n> >\n",                                       # an empty quote in a quote
     "a\u2028b\n",                                  # the document's own line break
 ])
 def test_blocks_qts_reader_reads_otherwise_open_as_text(source):

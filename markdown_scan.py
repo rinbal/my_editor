@@ -245,7 +245,8 @@ def misread_blocks(markdown: str) -> bool:
     they are, outside code. A heading or a thematic break in a list item
     or a quote ("- # a", "- a\\n  ---", "- a\\n\\n  # b", "> ---"): it
     takes it out of its list or quote, or makes it the item's words in
-    bold. An item that opens with another list's item or a quote ("- - a",
+    bold. A quote with nothing in it (">"). An item that opens with
+    another list's item or a quote ("- - a",
     "- > a"), what goes on in an item after a blank line ("- a\\n\\n  b":
     it takes that out of the list), and a marker alone, with spaces after
     it, under words ("a\\n* "). A heading with no words, a fence with nothing in it or
@@ -440,6 +441,8 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
     shifted: Optional[Tuple[int, int]] = None
     # Whether a blank line, in the quote, came since the last line of words.
     gap = False
+    # For each quote open, outermost first, whether anything stands in it.
+    held: List[bool] = []
     misread = False
     for number, line in enumerate(lines):
         starts.append(False)
@@ -452,6 +455,11 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
         lazy = (paragraph is not None and paragraph[0] > depth and bool(rest.strip())
                 and not code[number] and item is None and not heading)
         opens = depth > quoted
+        if not lazy:
+            misread = _close_quotes(held, depth) or misread
+            held += [False] * (depth - len(held))
+        if held and (lazy or rest.strip()):
+            held[-1] = True
         if not lazy:
             quoted = depth
             if depth != items_depth:
@@ -561,7 +569,22 @@ def _item_starts(lines: List[str], code: List[str]) -> _Lists:
             count, latest = count + 1, rest     # words of a quote's paragraph, its marks left out
             continue
         paragraph, first, latest, count = (depth, 0 if indent == 0 else None), rest, rest, 1
+    misread = _close_quotes(held, 0) or misread
     return _Lists(starts, listed, misread)
+
+
+def _close_quotes(held: List[bool], depth: int) -> bool:
+    """End the quotes in ``held`` deeper than ``depth``; whether one of
+    them held nothing (Qt's reader leaves an empty quote out, and runs the
+    blocks on either side of it together). A quote holds what a quote in
+    it holds."""
+    empty = False
+    while len(held) > depth:
+        holds = held.pop()
+        empty = empty or not holds
+        if holds and held:
+            held[-1] = True
+    return empty
 
 
 # A heading with no words ("#", "## ##").
