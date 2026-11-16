@@ -15,7 +15,10 @@ from __future__ import annotations
 import re
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
-FENCE_LINE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+# A fence's line: three backticks or tildes or more, and what it says;
+# a backtick fence says nothing with a backtick in it (CommonMark 4.5:
+# "```npm run build```" is code in a line).
+FENCE_LINE = re.compile(r"^ {0,3}(`{3,}(?=[^`]*$)|~{3,})(.*)$")
 LIST_LINE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
 # A list item with nothing in it, not even a task's box.
 EMPTY_ITEM_LINE = re.compile(r"^ *(?:[-*+]|\d{1,9}[.)])[ \t]*$")

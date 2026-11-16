@@ -586,6 +586,17 @@ def test_dashes_alone_on_a_line_keep_the_line_break_after_them():
     assert document_to_markdown(doc) == source
 
 
+def test_three_backticks_around_words_in_a_line_are_code_in_the_line():
+    # A backtick fence says nothing with a backtick in it: the line was
+    # taken for a fence, and the mark that keeps a fence's words together
+    # stayed between them, in the file, the clipboard and a published note.
+    source = "To build it:\n\n```npm run build```\n\nThen ship.\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert "\x1f" not in doc.toRawText()
+    assert document_to_markdown(doc) == "To build it:\n\n`npm run build`\n\nThen ship.\n"
+
+
 def test_a_fence_is_judged_by_the_lines_it_holds():
     # A longer fence holds a shorter one's line as code, and one set in
     # where its quote opens loses nothing while no line of it is set in:
