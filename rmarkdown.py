@@ -50,6 +50,7 @@ import photo_page
 import photo_group
 import photo_layout
 from doc_walk import (
+    apart,
     bullet_depth,
     iter_block_runs,
     iter_blocks,
@@ -355,8 +356,10 @@ def document_to_rmd(doc, title: str, copy_image=None) -> str:
         if quote and text.strip():
             prefix = "> " * quote
             if prev_kind == "quote":
-                # A new paragraph in the quote, at the shallower depth.
-                lines.append(("> " * min(prev_quote, quote)).rstrip())
+                # A new paragraph in the quote, at the shallower depth; a
+                # quote of its own where the file set it apart.
+                kept = min(prev_quote, quote) - (apart(block) or 0)
+                lines.append(("> " * max(0, kept)).rstrip())
             elif prev_kind not in (None, "blank"):
                 lines.append("")
             if block.textList() is not None:
@@ -371,8 +374,10 @@ def document_to_rmd(doc, title: str, copy_image=None) -> str:
             continue
 
         if block.textList() is not None:
-            if prev_kind in ("text", "quote"):
-                lines.append("")  # a list needs a blank line before it
+            if prev_kind in ("text", "quote") or apart(block) is not None:
+                # A list needs a blank line before it, and an item the
+                # file set apart (a loose list's) has one.
+                lines.append("")
             lines.append(_list_item_md(block, copy_image))
             prev_kind = "bullet"
             continue

@@ -218,7 +218,7 @@ class _Block:
     group: int = -1            # which list an item belongs to
     other_marker: bool = False  # an item written with "*" or ")" (_set_list_markers)
     quote: int = 0             # how deep in block quotes it sits
-    apart: Optional[int] = None  # set apart from the block before, in so many quotes (apart)
+    apart: Optional[int] = None  # set apart from the block before: the quotes that end (apart)
     literal: bool = False      # text to be read back as text (see literal_text)
 
 
@@ -687,8 +687,10 @@ def _inline_markdown(spans: List[_Span], hard_break: str = "  \n",
     if seen is not None and caption is not None:
         seen.extend((caption + start, caption + end, bare) for start, end, bare in in_caption)
     # A line break at the very end of a block breaks nothing, and Markdown
-    # drops it; trailing spaces there mean nothing either.
-    text = "".join(out).rstrip(LINE_SEPARATOR + _SOFT + " ")
+    # drops it; trailing spaces there mean nothing either. Nor does one at
+    # its very start (Return before a line break leaves one there): written,
+    # it was an item with spaces for words.
+    text = "".join(out).rstrip(LINE_SEPARATOR + _SOFT + " ").lstrip(LINE_SEPARATOR + _SOFT)
     # A soft break is the line end it was; where a hard one is a space (a
     # heading), so is a soft one.
     soft = "\n" if hard_break.endswith("\n") else hard_break
@@ -952,7 +954,7 @@ def _set_list_markers(blocks: List[_Block]) -> None:
     for block in blocks:
         if block.kind == "empty":
             continue
-        if block.kind != "item" or (block.apart is not None and block.apart < block.quote):
+        if block.kind != "item" or block.apart:
             last_at.clear()                 # (a paragraph, a heading, a quote's end ends a list)
         if block.kind != "item":
             continue
@@ -978,9 +980,10 @@ def _separator(previous: _Block, block: _Block) -> str:
     if previous.kind == "empty":
         return "\n\n"
     if block.apart is not None:
-        # The blank line the file had there, in the quotes the two stay in:
-        # it ends a code block or a quote, or sets a list's items apart.
-        depth = min(block.apart, _quote_depth(previous), _quote_depth(block))
+        # The blank line the file had there, in the quotes the two stay in
+        # (those they stand in now, but the ones that ended there): it ends
+        # a code block or a quote, or sets a list's items apart.
+        depth = max(0, min(_quote_depth(previous), _quote_depth(block)) - block.apart)
         return "\n" + ("> " * depth).rstrip() + "\n"
     if previous.kind == "item" and block.kind == "item":
         # A different list at the same depth is a list of its own, by its
@@ -1449,9 +1452,9 @@ def _read_once(doc: QTextDocument, markdown: str, features, alts: dict,
     many were joined, and whether all was kept."""
     markdown = literal_footnotes(markdown)
     keeping, keep_mark, kinds, lost = _marked_keeps(markdown, features)
-    keeping, apart_mark_, quotes, runs_on = _marked_apart(keeping)
+    keeping, apart_mark_, ended, runs_on = _marked_apart(keeping)
     doc.setMarkdown(keeping, features)
-    if not ((apart_mark_ is None or _set_apart(doc, apart_mark_, quotes))
+    if not ((apart_mark_ is None or _set_apart(doc, apart_mark_, ended))
             and (keep_mark is None or _kept_by_marks(doc, keep_mark, kinds))):
         # Read otherwise than the marks expected: read without them, and
         # what they kept is left out.
@@ -1691,33 +1694,33 @@ _APART_MARKS = ("\u2009", "\u200a", "\u2007", "\u2002")
 def _marked_apart(markdown: str) -> Tuple[str, Optional[str], List[int], bool]:
     """The Markdown with a mark (_APART_MARKS) at the start of each block
     Qt's reader would run into the one before it, the mark (None for
-    none), for each how many quotes it stays in with that one, and
+    none), for each how many quotes end between it and that one, and
     whether a block runs on all the same: one with no words to mark, or
     no free mark."""
     places, runs_on = set_apart(markdown)
     mark = _free_mark(markdown, _APART_MARKS) if places else None
     if mark is None:
         return markdown, None, [], runs_on or bool(places)
-    marked = _with_marks(markdown, [(at, "", "") for at, _quotes in places], mark)
-    return marked, mark, [quotes for _at, quotes in places], runs_on
+    marked = _with_marks(markdown, [(at, "", "") for at, _ended in places], mark)
+    return marked, mark, [ended for _at, ended in places], runs_on
 
 
-def _set_apart(doc: QTextDocument, mark: str, quotes: Sequence[int]) -> bool:
+def _set_apart(doc: QTextDocument, mark: str, ended: Sequence[int]) -> bool:
     """Each ``mark`` _marked_apart set taken out again, and its block set
-    apart from the one before it (``quotes``: in how many quotes the two
-    stay, in the marks' order). False when the marks in the text are not
+    apart from the one before it (``ended``: how many quotes end between
+    the two, in the marks' order). False when the marks in the text are not
     as many, a format holds one, or one stood anywhere but at a block's
     start (the Markdown was not read as the marks expected)."""
     taken = _take_marks(doc, mark)
-    if len(taken) != len(quotes) or _in_formats(doc, mark):
+    if len(taken) != len(ended) or _in_formats(doc, mark):
         return False
     with _one_step(doc) as cursor:
-        for number, ((position, _fmt), kept) in enumerate(zip(taken, quotes), 1):
+        for number, ((position, _fmt), quotes) in enumerate(zip(taken, ended), 1):
             block = doc.findBlock(position)
             if position != block.position():
                 return False
             fmt = block.blockFormat()
-            fmt.setProperty(APART_PROPERTY, apart_mark(number, kept))
+            fmt.setProperty(APART_PROPERTY, apart_mark(number, quotes))
             cursor.setPosition(position)
             cursor.setBlockFormat(fmt)
     return True

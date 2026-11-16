@@ -29,7 +29,7 @@ from PySide6.QtGui import (
 )
 
 import photo_group
-from doc_walk import apart, doc_length, doc_offset, iter_blocks, text_index
+from doc_walk import APART_PROPERTY, apart, doc_length, doc_offset, iter_blocks, text_index
 
 # Inline styles, by name. Underline has no Markdown; it stays in local
 # files only (markdown_writer.has_local_only_formatting).
@@ -534,6 +534,7 @@ def leave_list(block) -> None:
     fmt = block.blockFormat()
     fmt.setIndent(0)
     fmt.clearProperty(QTextFormat.Property.BlockMarker)
+    fmt.clearProperty(APART_PROPERTY)       # (an item set apart in its file's list)
     QTextCursor(block).setBlockFormat(fmt)
 
 
@@ -1772,6 +1773,7 @@ def leave_code(block) -> None:
     fmt = block.blockFormat()
     fmt.clearProperty(QTextFormat.Property.BlockCodeFence)
     fmt.clearProperty(QTextFormat.Property.BlockCodeLanguage)
+    fmt.clearProperty(APART_PROPERTY)       # (a code block set apart in its file)
     fmt.setNonBreakableLines(False)
     QTextCursor(block).setBlockFormat(fmt)
     _restyle_runs(block, QTextCharFormat())

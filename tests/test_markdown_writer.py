@@ -350,6 +350,43 @@ def test_the_marks_of_a_paragraph_are_taken_out_as_one_change():
     assert len(changes) < 20
 
 
+def _all_of(doc) -> QTextCursor:
+    cursor = QTextCursor(doc)
+    cursor.select(QTextCursor.SelectionType.Document)
+    return cursor
+
+
+def test_a_loose_list_made_a_code_block_is_one_code_block():
+    # Each item kept the mark that set it apart, and was a code block of
+    # its own. A paragraph taken out of its list is set apart no more.
+    import rich_text
+    doc = QTextDocument()
+    read_markdown(doc, "- a\n\n- b\n")
+    rich_text.make_code_block(_all_of(doc))
+    assert document_to_markdown(doc) == "```\na\nb\n```\n"
+
+
+def test_a_loose_list_put_in_a_quote_stays_one_quote():
+    # The blank line between its items was written outside the quote, as
+    # the file had it before there was one: two quotes.
+    import rich_text
+    doc = QTextDocument()
+    read_markdown(doc, "- a\n\n- b\n")
+    rich_text.toggle_quote(_all_of(doc))
+    assert document_to_markdown(doc) == "> - a\n>\n> - b\n"
+
+
+def test_a_line_break_that_starts_an_item_is_not_written():
+    # Return before a line break left it at the start of the new item: it
+    # was written as an item of spaces, and gone after the next save.
+    doc = QTextDocument()
+    read_markdown(doc, "- a  \n  b\n- c\n")
+    cursor = QTextCursor(doc)
+    cursor.setPosition(1)
+    cursor.insertBlock()
+    assert document_to_markdown(doc) == "- a\n- b\n- c\n"
+
+
 def test_a_line_broken_off_a_block_set_apart_stays_with_it():
     # Return gives the new line its block's format: it is no third block.
     doc = QTextDocument()

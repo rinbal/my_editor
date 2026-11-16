@@ -273,8 +273,9 @@ def set_apart(markdown: str) -> Tuple[List[Tuple[int, int]], bool]:
     """Where the words, or the code, start of each block that Qt's reader
     runs into the block before it: a code block right after another, a
     quote after another's end, a list item after a blank line (a loose
-    list's). With each, how many quotes the two stay in together (those
-    the blank line between them stands in). And whether such a block has
+    list's). With each, how many of the quotes the two stand in end
+    between them (those the blank line does not stand in). And whether
+    such a block has
     no words to stand before: a fence with no line in it, an item with
     nothing in it, or one that starts with a heading, a divider, a
     table's row or a quote."""
@@ -313,7 +314,7 @@ def set_apart(markdown: str) -> Tuple[List[Tuple[int, int]], bool]:
             if at is None:
                 unsafe = True
             else:
-                places.append((line_start + at, kept))
+                places.append((line_start + at, shared - kept))
         if gap is None and before is not None and not kind and lists.starts[number] is False \
                 and _HEADING_OR_BREAK.fullmatch(rest) is None:
             depth = max(depth, before.depth)    # (the words of a quote's paragraph go on)

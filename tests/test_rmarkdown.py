@@ -142,6 +142,11 @@ def test_a_table_code_and_a_linked_picture_are_written_as_they_are():
     assert "![Alone](m/one.png)\\ \n" in body
 
 
+def test_a_loose_list_and_two_quotes_stay_as_the_file_has_them():
+    assert "- one\n\n- two\n" in _body_of("- one\n\n- two\n")
+    assert "> q1\n\n> q2\n" in _body_of("> q1\n\n> q2\n")
+
+
 def test_bullets_nest_and_get_blank_line_before():
     doc = _doc(["intro", "    • one", "        • two", "after"])
     out = document_to_rmd(doc, "T")
