@@ -127,6 +127,43 @@ def test_a_highlight_is_kept_as_a_span():
     assert '[both]{style="color:#e53935; background-color:#fff59d"}' in out
 
 
+def test_a_table_code_and_a_linked_picture_are_written_as_they_are():
+    # The conversion walked the document's paragraphs alone: a table's
+    # cells and a code block's lines were so many lines of text, and a
+    # picture lost its description and the link around it.
+    body = _body_of("| a | b |\n| --- | --- |\n| *c* | d |\n\n![Alone](one.png)\n\n"
+                    "```py\nx_1 = 1\n```\n\nGo [![The bay](bay.png)](https://u.example) now.\n",
+                    copy_image=lambda name: "m/" + name)
+    assert "| a | b |\n| --- | --- |\n| *c* | d |\n" in body
+    assert "```py\nx_1 = 1\n```\n" in body
+    assert "Go [![The bay](m/bay.png)](https://u.example) now." in body
+    # (Alone in its paragraph, its description is no caption: pandoc's
+    # implicit_figures.)
+    assert "![Alone](m/one.png)\\ \n" in body
+
+
+def test_code_is_written_without_the_documents_own_characters():
+    # A line break in a line of code is a new line, and a picture no part
+    # of it: the document's stand-ins for both went into the file. Inline
+    # code that starts with a backtick stands apart from its own.
+    from PySide6.QtGui import QTextCharFormat
+    import rich_text
+    doc = QTextDocument()
+    cursor = QTextCursor(doc)
+    cursor.insertText("first\u2028second \ufffc")
+    rich_text.make_code_block(cursor)
+    out = document_to_rmd(doc, "T")
+    assert "```\nfirst\nsecond \n```" in out and "\u2028" not in out and "\ufffc" not in out
+    code = QTextCharFormat()
+    code.setFontFixedPitch(True)
+    assert rmarkdown._render_text_run_md("`r x`", code) == "`` `r x` ``"
+
+
+def test_a_loose_list_and_two_quotes_stay_as_the_file_has_them():
+    assert "- one\n\n- two\n" in _body_of("- one\n\n- two\n")
+    assert "> q1\n\n> q2\n" in _body_of("> q1\n\n> q2\n")
+
+
 def test_bullets_nest_and_get_blank_line_before():
     doc = _doc(["intro", "    • one", "        • two", "after"])
     out = document_to_rmd(doc, "T")
@@ -134,11 +171,11 @@ def test_bullets_nest_and_get_blank_line_before():
     assert "intro\n\n- one\n  - two\n\nafter" in body
 
 
-def _body_of(markdown: str) -> str:
-    from markdown_writer import READ_FEATURES
+def _body_of(markdown: str, copy_image=None) -> str:
+    from markdown_writer import read_markdown
     doc = QTextDocument()
-    doc.setMarkdown(markdown, READ_FEATURES)
-    return document_to_rmd(doc, "T").split("---\n\n", 1)[1]
+    read_markdown(doc, markdown)
+    return document_to_rmd(doc, "T", copy_image).split("---\n\n", 1)[1]
 
 
 def test_real_lists_nest_by_four_spaces_and_keep_numbers_and_checks():

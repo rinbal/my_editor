@@ -8,7 +8,7 @@ and the button to press highlighted. Software Update in the app uses the same
 guide for installs that cannot replace themselves (macOS and the `.deb`).
 
 This page explains how the guide is built, deployed, and kept accurate. End
-users read [install.md](install.md) or the guide itself.
+users read [install.md](../use/install.md) or the guide itself.
 
 ---
 

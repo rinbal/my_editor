@@ -1,7 +1,7 @@
 # Packaging
 
 One-click installers for MyEditor, built with PyInstaller plus a
-per-OS wrapper. End users get instructions in [`docs/install.md`](../docs/install.md).
+per-OS wrapper. End users get instructions in [`docs/use/install.md`](../docs/use/install.md).
 
 ```
 packaging/
@@ -24,7 +24,7 @@ Windows, a styled drag-to-Applications disk image on macOS, and a double-click
 ## How a release happens
 
 The whole flow is one command. Follow
-[`docs/release-process.md`](../docs/release-process.md) (it writes the release notes), then run:
+[`docs/develop/release-process.md`](../docs/develop/release-process.md) (it writes the release notes), then run:
 
 ```bash
 bash packaging/release.sh <version>     # for example: packaging/release.sh 3.0
@@ -37,7 +37,7 @@ Intel) and Linux and publishes a GitHub Release that uses
 `docs/releases/v<version>.md` as the body and attaches every platform installer
 as assets. Nothing is built locally (each installer can only be built on its own OS).
 Once the release is out, the workflow dispatches `install-guide.yml`, which
-redeploys the [install guide](../docs/install-guide.md) so its download buttons
+redeploys the [install guide](../docs/develop/install-guide.md) so its download buttons
 point at the new files.
 
 Use the **Run workflow** button on the Actions tab (workflow_dispatch) to build
@@ -149,7 +149,7 @@ Keep the icon centers in the generator in sync with `icon_locations` in
 - The Linux `.deb` installs the app under `/opt/my-editor`, symlinks
   `/usr/bin/my-editor` onto `PATH`, adds the menu launcher and icon, and declares
   the Qt runtime libraries as dependencies so `apt` pulls them in automatically.
-- Spell checking uses each system's own checker (see [`docs/spelling.md`](../docs/spelling.md)).
+- Spell checking uses each system's own checker (see [`docs/develop/spelling.md`](../docs/develop/spelling.md)).
   macOS needs `rubicon-objc` (pure Python, in the bundle); Windows needs nothing;
   on Linux the system's Enchant is used and never bundled, and the `.deb`
   recommends `libenchant-2-2`, which brings an English dictionary.

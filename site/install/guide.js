@@ -1,6 +1,6 @@
 // Entry point of the install guide: reads who is visiting, then hands the
 // page to the Guide. See index.html for the page structure and
-// docs/install-guide.md for how the site is built and deployed.
+// docs/develop/install-guide.md for how the site is built and deployed.
 
 import { applyDownloads, loadDownloads } from "./downloads.js";
 import { detectMacArch, readContext } from "./platform.js";

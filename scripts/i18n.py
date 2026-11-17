@@ -25,7 +25,7 @@
 
 The texts are found by reading the code, not by running it: every call
 of ``_()``, ``ngettext()``, ``pgettext()`` or ``N_()`` with literal
-strings. See docs/translating.md.
+strings. See docs/develop/translating.md.
 """
 
 from __future__ import annotations

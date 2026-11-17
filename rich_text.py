@@ -29,7 +29,8 @@ from PySide6.QtGui import (
 )
 
 import photo_group
-from doc_walk import doc_length, doc_offset, iter_blocks, text_index
+from doc_walk import (APART_PROPERTY, CODE_INFO_PROPERTY, apart, doc_length, doc_offset,
+                      iter_blocks, text_index)
 
 # Inline styles, by name. Underline has no Markdown; it stays in local
 # files only (markdown_writer.has_local_only_formatting).
@@ -534,6 +535,7 @@ def leave_list(block) -> None:
     fmt = block.blockFormat()
     fmt.setIndent(0)
     fmt.clearProperty(QTextFormat.Property.BlockMarker)
+    fmt.clearProperty(APART_PROPERTY)       # (an item set apart in its file's list)
     QTextCursor(block).setBlockFormat(fmt)
 
 
@@ -1454,7 +1456,9 @@ def unescape_cell_code(doc) -> None:
     """A pipe in code in a table cell, as Qt's reader leaves it: with the
     backslash GFM asks for there (the writer writes `a\\|b`), which GFM
     readers drop. Dropped here too, so the code reads as written."""
-    edits = []
+    # By where it stands: a cell that spans columns is its table's cell at
+    # each of them, and its code edited once for each took the table apart.
+    edits = {}
     for table in tables_of(doc):
         for row in range(table.rows()):
             for column in range(table.columns()):
@@ -1468,12 +1472,12 @@ def unescape_cell_code(doc) -> None:
                             fragment = frag.fragment()
                             if (fragment.isValid() and fragment.charFormat().fontFixedPitch()
                                     and "\\|" in fragment.text()):
-                                edits.append((fragment.position(), fragment.length(),
-                                              fragment.text().replace("\\|", "|"),
-                                              QTextCharFormat(fragment.charFormat())))
+                                edits[fragment.position()] = (
+                                    fragment.length(), fragment.text().replace("\\|", "|"),
+                                    QTextCharFormat(fragment.charFormat()))
                             frag += 1
                     it += 1
-    for position, length, text, fmt in reversed(edits):
+    for position, (length, text, fmt) in sorted(edits.items(), reverse=True):
         cursor = QTextCursor(doc)
         cursor.setPosition(position)
         cursor.setPosition(position + length, QTextCursor.MoveMode.KeepAnchor)
@@ -1626,6 +1630,13 @@ def code_language(block) -> Optional[str]:
     return str(block.blockFormat().property(QTextFormat.Property.BlockCodeLanguage) or "")
 
 
+def code_info(block) -> str:
+    """What the fence of a code line's block says: its language, and what
+    its file wrote after it (doc_walk.CODE_INFO_PROPERTY)."""
+    rest = str(block.blockFormat().property(CODE_INFO_PROPERTY) or "")
+    return (code_language(block) or "") + (" " + rest if rest else "")
+
+
 def _code_key(block):
     """What makes lines one code block to the Markdown writer: the same
     fence, language and quote; None for a paragraph that is no code."""
@@ -1637,21 +1648,21 @@ def _code_key(block):
 
 
 def same_code_block(one, other) -> bool:
-    """Whether two lines are lines of one code block (given they are next
-    to each other)."""
+    """Whether two lines are lines of one code block, given ``other`` is
+    the line after ``one``: the same fence, language and quote, and the
+    second not the start of a code block the file set apart from the one
+    before it (doc_walk.apart)."""
     key = _code_key(one)
-    return key is not None and key == _code_key(other)
+    return key is not None and key == _code_key(other) and apart(other) is None
 
 
 def code_run(block):
-    """The first and last line of the code block ``block`` is a line of:
-    the lines next to it with the same fence, language and quote, which
-    Markdown writes as one fenced block."""
-    key = _code_key(block)
+    """The first and last line of the code block ``block`` is a line of
+    (same_code_block), which Markdown writes as one fenced block."""
     first = last = block
-    while first.previous().isValid() and _code_key(first.previous()) == key:
+    while same_code_block(first.previous(), first):
         first = first.previous()
-    while last.next().isValid() and _code_key(last.next()) == key:
+    while same_code_block(last, last.next()):
         last = last.next()
     return first, last
 
@@ -1770,6 +1781,8 @@ def leave_code(block) -> None:
     fmt = block.blockFormat()
     fmt.clearProperty(QTextFormat.Property.BlockCodeFence)
     fmt.clearProperty(QTextFormat.Property.BlockCodeLanguage)
+    fmt.clearProperty(APART_PROPERTY)       # (a code block set apart in its file)
+    fmt.clearProperty(CODE_INFO_PROPERTY)
     fmt.setNonBreakableLines(False)
     QTextCursor(block).setBlockFormat(fmt)
     _restyle_runs(block, QTextCharFormat())

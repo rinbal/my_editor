@@ -16,8 +16,9 @@ serialize them.
 
 import itertools
 import re
+from typing import Optional
 
-from PySide6.QtGui import QTextCharFormat, QTextFormat
+from PySide6.QtGui import QTextCharFormat, QTextFormat, QTextTable
 
 BULLET_MARKER = "• "
 
@@ -71,9 +72,51 @@ BARE_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B5
 # may drop (markdown_writer's _keep_entities).
 ENTITY_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B6
 
+# An address a file wrote in angle brackets ("<https://a.example>"). It
+# reads as a link that shows its address, as a bare one does, which the
+# writer writes bare where readers find it; this one it writes in its
+# brackets again, while its words are its address (markdown_writer's
+# _marked_keeps).
+ANGLED_TEXT_PROPERTY = QTextFormat.Property.UserProperty + 0x5B8
+
 # The marks above belong to the characters that carry them alone.
 READ_MARKS = (SOFT_BREAK_PROPERTY, ESCAPED_TEXT_PROPERTY, TYPED_TEXT_PROPERTY,
-              BARE_TEXT_PROPERTY, ENTITY_TEXT_PROPERTY)
+              BARE_TEXT_PROPERTY, ENTITY_TEXT_PROPERTY, ANGLED_TEXT_PROPERTY)
+
+
+# What a fence says after its language ("```js title=x", "```{r setup,
+# echo=FALSE}"), on each line of its code block. Qt's reader keeps a
+# fence's first word alone, as the block's language; the rest was gone
+# with the first save (markdown_writer's _whole_infos).
+CODE_INFO_PROPERTY = QTextFormat.Property.UserProperty + 0x5B9
+
+# A block the file set apart from the block before it in a way the
+# document does not show: a code block right after another, a quote after
+# another's end, a list item after a blank line (a loose list's). The
+# writer writes the blank line again, and so keeps the two apart
+# (markdown_writer's _set_apart). The value: how many of the quotes the
+# two stand in end between them (the others the blank line stands in, as
+# the two stand in them now), and the block's number among the file's
+# (apart): a line broken off the block by Return takes its format, and is
+# no second block set apart. A paragraph taken out of its list, its quote
+# or its code block is set apart no more (rich_text).
+APART_PROPERTY = QTextFormat.Property.UserProperty + 0x5B7
+_APART_QUOTES = 256
+
+
+def apart_mark(number: int, ended: int) -> int:
+    """APART_PROPERTY's value for the ``number``-th block set apart (from
+    1), between which and the block before it ``ended`` quotes end."""
+    return number * _APART_QUOTES + min(ended, _APART_QUOTES - 1)
+
+
+def apart(block) -> Optional[int]:
+    """How many quotes end between ``block`` and the block before it,
+    when the file set it apart from that one (APART_PROPERTY); else None."""
+    mark = block.blockFormat().property(APART_PROPERTY)
+    if not mark or mark == block.previous().blockFormat().property(APART_PROPERTY):
+        return None
+    return int(mark) % _APART_QUOTES
 
 
 def without_read_marks(fmt: QTextCharFormat) -> QTextCharFormat:
@@ -145,6 +188,41 @@ def iter_blocks(doc):
     while block.isValid():
         yield block
         block = block.next()
+
+
+def iter_frame(frame):
+    """What ``frame`` holds, in order: each of its blocks, and each table
+    as the one thing it is (table_rows); of a frame in it that is no
+    table, what that holds. The walk of the writers that write a table as
+    a table: iter_blocks gives a table's cells as so many paragraphs."""
+    it = frame.begin()
+    while not it.atEnd():
+        child = it.currentFrame()
+        block = it.currentBlock()
+        if isinstance(child, QTextTable):
+            yield child
+        elif child is not None:
+            yield from iter_frame(child)
+        elif block.isValid():
+            yield block
+        it += 1
+
+
+def table_rows(table: QTextTable) -> list:
+    """The blocks of each cell of ``table``, row by row."""
+    rows = []
+    for row in range(table.rows()):
+        cells = []
+        for column in range(table.columns()):
+            blocks = []
+            it = table.cellAt(row, column).begin()
+            while not it.atEnd():
+                if it.currentBlock().isValid():
+                    blocks.append(it.currentBlock())
+                it += 1
+            cells.append(blocks)
+        rows.append(cells)
+    return rows
 
 
 def picture_pieces(text: str, fmt: QTextCharFormat):

@@ -1,158 +1,101 @@
-# MyEditor
-
-**A clean, distraction-free desktop text editor. Write locally, publish to Nostr, keep your key on this computer or in your own signer app.**
-
 <p align="center">
-  <img src="assets/MyEditor_screenshot_v3.png" width="780" alt="MyEditor screenshot"/>
+  <img src="packaging/icons/icon-256.png" width="96" alt="MyEditor's icon: coloured lines of text and a cursor on a dark tile">
 </p>
 
-MyEditor is a fast, local-first note editor for lecture notes, quick drafts, and
-long-form writing. Write in a calm, focused window, then publish straight to Nostr
-as a short note or a full article. Your files stay on your disk, and your private
-key stays where you put it: protected on this computer, or in a signer app on your
-phone, where it can move any time.
+<h1 align="center">MyEditor</h1>
 
 <p align="center">
-  <a href="https://github.com/rinbal/my_editor/releases/latest"><b>Download for Windows, macOS, or Linux</b></a>
+  A calm app for writing notes and reading PDFs, with your files in your own folders.<br>
+  For lecture notes, drafts and long-form writing, on Mac, Windows and Linux, in English and German.
 </p>
 
----
+<p align="center">
+  <a href="https://github.com/rinbal/my_editor/releases/latest"><b>Download</b></a> ·
+  <a href="https://rinbal.github.io/my_editor/install/">Install guide</a> ·
+  <a href="docs/README.md">User guide</a> ·
+  <a href="docs/releases/README.md">What's new</a> ·
+  <a href="README.de.md">Deutsch</a>
+</p>
 
-## Highlights
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.png">
+  <img src="docs/images/hero-light.png" alt="MyEditor with a note about a kite festival in a calm reading column: a short paragraph, two bright pictures with captions and a list">
+</picture>
 
-**Focused writing.** A real writing editor with each platform's own keys:
-headings, lists, checklists, quotes, tables, footnotes and code blocks, links,
-a slash menu, Markdown shortcuts as you type, and Write, Preview and Split
-views. Spelling is checked as you type with your system's own checker. Choose
-your font and its size, zoom the text, and pick light, dark or automatic
-appearance, tabs, line numbers, and lined / dotted / grid backgrounds. Text
-runs across the whole window, or on a page of its own in Paper Mode. In English
-or German.
+## What you can do
 
-**Your folders, every file.** Add your folders to the sidebar and see everything
-in them, as in the Finder: notes, pictures, films, sound, PDFs, spreadsheets and
-office documents, in a list or a gallery, with search and Quick Look on `Space`.
-Move, rename and delete the real files (into the Trash), and the links in your
-notes follow. Pictures, films, sound and Word or Writer documents open in viewers
-of their own, with Open in your app, Insert into Note and Import as Note.
-Spreadsheets (`.xlsx`, `.ods`, `.csv`, `.tsv`) open as tables you can edit, with
-formulas in your language. Side panels open beside the text, never over it.
+- **Write without distraction.** Headings, lists, checklists, tables, footnotes and code, with each system's own keys. Type `/` for everything you can insert. Notes are Markdown files any app can open.
+- **Show pictures as a mosaic.** Pictures that follow each other become a calm photo group in which each keeps its shape. Caption, describe, move and crop them where they stand.
+- **Read PDFs.** A quiet reader that remembers your page, with the keys of SumatraPDF, search, and its table of contents.
+- **Keep every file in your folders.** Add folders to the sidebar and see notes, pictures, films, PDFs and office documents, with Quick Look on **Space**. Rename or move a file, and the links in your notes follow.
+- **Edit spreadsheets.** Excel, OpenDocument and CSV files open as tables you can edit, with formulas in your language.
+- **Lock a note with a password.** It is encrypted in place, in an open format that opens without MyEditor too.
+- **Save, print and export** to HTML, PDF, RTF and R Markdown. HTML and PDF files carry their pictures inside.
+- **Publish to Nostr, if you like.** Send a note or an article to the open Nostr network, keep encrypted drafts across devices, and manage your media. It stays out of sight until you choose it.
 
-**Private when you need it.** Lock any document with a password: it is
-encrypted in place in the open age format (it opens without MyEditor too), and
-its crash backups are encrypted as well.
+## A closer look
 
-**Dictate and listen.** Start Dictation uses your Mac's dictation or Windows
-Voice typing, and dictates offline on this computer where there is none (Linux,
-or Windows by choice) after a one-time download, your voice never leaving it.
-Edit > Speech reads a draft aloud.
+<p>
+  <a href="docs/use/folders-and-files.md"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/folders-dark.png">
+    <img src="docs/images/folders-light.png" width="32%" alt="The sidebar with a trip folder, its notes, PDF and spreadsheet in the file list, and the selected note open on the right">
+  </picture></a>
+  <a href="docs/use/pdf.md"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/pdf-dark.png">
+    <img src="docs/images/pdf-light.png" width="32%" alt="A trail guide PDF open in the reader, with its table of contents expanded on the left">
+  </picture></a>
+  <a href="docs/use/spreadsheets.md"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/sheet-dark.png">
+    <img src="docs/images/sheet-light.png" width="32%" alt="A trip budget workbook open in MyEditor, the total's cell selected and its SUM formula in the formula bar">
+  </picture></a>
+</p>
 
-**Publish to Nostr.** Send notes or long-form articles signed on your phone via
-NIP-46, keep private encrypted drafts that sync across your devices, and manage
-media on your own Blossom servers. New to Nostr? Create an account in the app,
-with a password-protected backup. EINUNDZWANZIG membership lives in the Nostr
-menu too: members get the members' relay, media storage and a Nostr address,
-and see all of it at a glance.
-[Read the Nostr guide](docs/nostr.md).
-
-**Import from anywhere.** Nostr > Imports follows websites and keeps their new
-posts in an inbox on this computer until you make private drafts of the ones you
-want. It reads RSS / Atom / JSON feeds, Nostr authors and articles, NostrHub
-NIPs, Bluesky threads, Markdown files and GitHub folders, sitemaps, WordPress
-and Ghost exports, Medium and Substack ZIPs, and podcast feeds (with chapters).
-Read a post before anything is signed, fetch the whole article for feeds that
-send a summary, and copy images to your media server. Your sources are one
-private list on your relays, shared with EINUNDZWANZIG STANDUP; OPML lists come
-in and go out.
-
-**Reads PDFs, too.** A built-in distraction-free PDF viewer: open any PDF in a
-tab, find text, select and copy passages straight into your notes, follow links,
-zoom or fit to width, browse the table of contents, and pick up on the exact
-page you left off. Keyboard-first navigation (j/k, n/p, g, Space) follows the
-muscle memory of readers like SumatraPDF, and regenerated PDFs (LaTeX builds,
-re-exports) refresh in place.
-
-**Stays out of your way.** Crash recovery, session restore, external-change
-detection, recent files, drag and drop, and export to `.txt`, `.html`, `.pdf`,
-`.md`, `.rtf`, and `.Rmd`. HTML and PDF exports are self-contained (images
-embedded, metadata, page numbers, Page Setup dialog).
-
-**R Markdown.** Open and edit `.Rmd` files as source, convert rich documents to
-R Markdown, and knit to HTML or PDF; missing toolchain parts (R, pandoc,
-rmarkdown, TinyTeX) install on demand from their official sources.
-
-> Tested on Windows, macOS and Linux with every change.
-
----
+From left: [your folders beside your writing](docs/use/folders-and-files.md), [a PDF reader made for reading](docs/use/pdf.md), and [spreadsheets edited in place](docs/use/spreadsheets.md), with formulas in your language.
 
 ## Install
 
-The **[step-by-step install guide](https://rinbal.github.io/my_editor/install/)**
-picks the right file for your computer and shows every security prompt with a
-picture. In short, download the file for your system from the
-[latest release](https://github.com/rinbal/my_editor/releases/latest) and open it.
+Download the file for your computer from the [latest release](https://github.com/rinbal/my_editor/releases/latest), or let the [install guide](https://rinbal.github.io/my_editor/install/) pick it for you.
 
-- **Windows:** run the `-windows-setup.exe`. If SmartScreen warns, click
-  **More info**, then **Run anyway**.
-- **macOS:** open the `.dmg` and drag MyEditor onto **Applications** (follow the
-  arrow). Open it once and click **Done**, then click **Open Anyway** in
-  **System Settings > Privacy & Security**. Use `-arm64` for Apple silicon,
-  `-x86_64` for Intel Macs.
-- **Linux:** on Ubuntu, Debian, Mint, or Pop!_OS, double-click the `.deb` and
-  click **Install**. On any other distribution, use the AppImage:
+- **Mac:** open the `.dmg` and drag MyEditor to Applications (`-arm64` for Apple silicon, `-x86_64` for Intel).
+- **Windows:** run the `-windows-setup.exe`.
+- **Linux:** the `.deb` on Ubuntu, Debian, Mint and Pop!_OS, the AppImage anywhere else.
 
-  ```bash
-  chmod +x my-editor-*.AppImage
-  ./my-editor-*.AppImage
-  ```
+> [!NOTE]
+> MyEditor is not signed by Apple or Microsoft, so the first launch shows a one-time security prompt. The [install guide](https://rinbal.github.io/my_editor/install/) shows each prompt with a picture, and [Install MyEditor](docs/use/install.md) has the same steps as text.
 
-The app is unsigned, so the first launch shows a one-time security prompt. The
-[install guide](https://rinbal.github.io/my_editor/install/) walks through every
-prompt step by step, and [docs/install.md](docs/install.md) has the same steps
-as text.
-
----
-
-## Documentation
-
-- [Install guide](https://rinbal.github.io/my_editor/install/) ([as text](docs/install.md)) - downloads, security prompts, troubleshooting
-- [Nostr publishing, drafts, media, and RSS import](docs/nostr.md)
-- [Keyboard shortcuts, menus, and save formats](docs/usage.md)
-- [Release process](docs/release-process.md) - for maintainers
-- [Maintaining the install guide](docs/install-guide.md) - for maintainers
-
----
+MyEditor updates itself: it offers each new version in the app.
 
 ## Run from source
 
-For development, or on a platform without a prebuilt installer (Python 3.10+):
+For development, or on a system without an installer.
 
-```bash
+<details>
+<summary>Steps for developers</summary>
+
+You need Python 3.11 or later (CI tests 3.12):
+
+```sh
 git clone https://github.com/rinbal/my_editor.git
 cd my_editor
-python -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-python main.py
+python main.py                   # or: python main.py path/to/file.md
 ```
 
-Open a file directly with `python main.py /path/to/file.txt`.
+</details>
 
----
+## Help, contributing and licence
 
-## License
+- **Help:** start with [Getting started](docs/use/getting-started.md) and the [user guide](docs/README.md). Questions are welcome in the [community chat][chat]; problems go to the [issues](https://github.com/rinbal/my_editor/issues).
+- **Contributing:** reports, tests and translations help as much as code. [CONTRIBUTING.md](CONTRIBUTING.md) says how, and [Translating](docs/develop/translating.md) how to add a language. Security problems: [SECURITY.md](SECURITY.md).
+- **Licence:** MyEditor is free software under the [GNU Affero General Public License v3.0 or later](LICENSE) (AGPL-3.0-or-later). Copyright (C) 2026 rinbal. A few photo group files from STANDUP keep STANDUP's MIT licence:
 
-MyEditor is free software, licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
+  <details>
+  <summary>Files under STANDUP's MIT licence</summary>
 
-Copyright (C) 2026 rinbal.
+  The photo group engine and page parts taken over from STANDUP keep STANDUP's MIT licence, Copyright (c) 2026 DoktorShift ([LICENSES/MIT-STANDUP.txt](LICENSES/MIT-STANDUP.txt)): `photo_layout.py`, `web/photo_layout.js`, `web/photo_viewer.js`, `web/photo_groups.js`, `web/photo_groups.css` and `web/photo-group-messages.json`, and the test data `tests/fixtures/photo_layout_vectors.json`, `tests/fixtures/photo_markup_cases.json` and `tests/fixtures/standup_editorial_fixtures.json` (a copy of STANDUP's `docs/editorial-fixtures.json`).
 
-The photo group engine and page parts taken over from STANDUP keep STANDUP's MIT licence, Copyright (c) 2026 DoktorShift ([LICENSES/MIT-STANDUP.txt](LICENSES/MIT-STANDUP.txt)): `photo_layout.py`, `web/photo_layout.js`, `web/photo_viewer.js`, `web/photo_groups.js`, `web/photo_groups.css` and `web/photo-group-messages.json`, and the test data `tests/fixtures/photo_layout_vectors.json`, `tests/fixtures/photo_markup_cases.json` and `tests/fixtures/standup_editorial_fixtures.json` (a copy of STANDUP's `docs/editorial-fixtures.json`).
+  </details>
 
-This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. You should have received a copy of the license along with this program; if not, see <https://www.gnu.org/licenses/>.
-
----
-
-*built by rinbal & the Community*
-
-Join the Public [Community Chat](https://nostr-ecosystem.netlify.app/join/g/groups.0xchat.com/my-editor-public-talk?n=My+Editor+-+Public+Talk&a=A+community+for+users%2C+contributors%2C+and+anyone+interested+in+a+clean%2C+distraction-free+note-taking+editor+built+with+Python+and+PySide6.%0A%0AS&p=https%3A%2F%2Fblossom.primal.net%2F6173a8dc06038a1d67d6149755166fb48d74d92d41ef6af8b6cd863489eb3095) to Discuss, Report or provide Feedback or Feature Requests.
-
+[chat]: https://nostr-ecosystem.netlify.app/join/g/groups.0xchat.com/my-editor-public-talk?n=My+Editor+-+Public+Talk&a=A+community+for+users%2C+contributors%2C+and+anyone+interested+in+a+clean%2C+distraction-free+note-taking+editor+built+with+Python+and+PySide6.%0A%0AS&p=https%3A%2F%2Fblossom.primal.net%2F6173a8dc06038a1d67d6149755166fb48d74d92d41ef6af8b6cd863489eb3095

@@ -1,5 +1,7 @@
 # Night Violet implementation plan
 
+> Archived 2026-11-15. Current: [decision 1, Night Violet](../decisions/0001-night-violet.md) and [Look and theme](../develop/architecture.md#look-and-theme).
+
 Nostr windows and controls should be immediately recognizable while MyEditor remains a comfortable local editor. **Night Violet from `MyEditor_Nostr_Design.html` is the selected visual reference.** Implement its violet surfaces, restrained glow, accent hierarchy, and EINUNDZWANZIG treatment through the existing application components.
 
 This is a planning PR. It changes no application behavior. The future implementation is one complete PR, divided into reviewable commits, with every inventory entry accounted for.

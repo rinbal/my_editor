@@ -27,7 +27,8 @@ typed <br> would cut the document there. An older build ignores the list
 and restores the HTML; a record from a build that kept Markdown instead
 is restored from that only when it gives back exactly the HTML's text.
 
-The record also keeps what the tab is besides its text (tab_identity):
+The record also keeps what kind of tab it is (a document, or text such
+as R Markdown), and what the tab is besides its text (tab_identity):
 the Nostr draft it is bound to and the published article it edits, so a
 recovered tab saves that draft again and publishes that article again,
 rather than starting a new one under another identifier.
@@ -43,18 +44,22 @@ import uuid
 
 from PySide6.QtCore import QTimer
 
-from PySide6.QtGui import QTextCursor, QTextDocument, QTextFormat
+from PySide6.QtGui import QTextCharFormat, QTextCursor, QTextDocument, QTextFormat
 
 import front_matter
 import user_dirs
 import tab_details
 import rich_text
 from atomic_file import write_text
-from doc_walk import iter_blocks, iter_image_names
+from doc_walk import (
+    ANGLED_TEXT_PROPERTY, APART_PROPERTY, BARE_TEXT_PROPERTY, CODE_INFO_PROPERTY,
+    ENTITY_TEXT_PROPERTY, ESCAPED_TEXT_PROPERTY, SOFT_BREAK_PROPERTY, TYPED_TEXT_PROPERTY,
+    iter_blocks, iter_image_names,
+)
 from export_html import normalize_after_set_html
 import photo_group
 import photo_group_find
-from markdown_writer import holds_faithfully, read_markdown
+from markdown_writer import ALT_SPELLING_PROPERTY, holds_faithfully, read_markdown
 from nostr.media.assets import ASSET_SCHEME
 
 
@@ -221,6 +226,9 @@ def load_backup_content(editor, record: dict, *, modified: bool = True) -> None:
     if record.get("markdown_source"):
         # Opened as its Markdown text: it is still saved as written.
         editor._markdown_source = True
+    if record.get("kind") in ("rich", "source"):
+        # What the tab was, where no path says it (MainWindow._editor_kind).
+        editor._backup_kind = record["kind"]
     doc = editor.document()
     doc.clearUndoRedoStacks()
     # Set from the other state, so it holds: Qt remembers the undo step that
@@ -237,12 +245,28 @@ def _text_print(doc) -> str:
     return hashlib.sha256(doc.toRawText().encode("utf-8", "surrogatepass")).hexdigest()
 
 
+# What the reading of a Markdown file leaves on a document's characters
+# and paragraphs, so that it is saved as the file has it (doc_walk,
+# markdown_writer), by the name a backup knows each by. They are part of
+# what the document says: a restored tab without them was saved with its
+# code blocks and quotes run together, its escapes gone, "&lt;div&gt;" as
+# a tag.
+_READ_MARKS = {"soft": SOFT_BREAK_PROPERTY, "typed": TYPED_TEXT_PROPERTY,
+               "escaped": ESCAPED_TEXT_PROPERTY, "bare": BARE_TEXT_PROPERTY,
+               "entity": ENTITY_TEXT_PROPERTY, "angled": ANGLED_TEXT_PROPERTY,
+               "spelling": ALT_SPELLING_PROPERTY}
+_BLOCK_MARKS = {"apart": APART_PROPERTY, "info": CODE_INFO_PROPERTY}
+
+
 def structure_of(doc) -> dict | None:
     """What an HTML snapshot cannot carry, by position: each paragraph's
-    quote level and code block (fence and language), and the stretches of
-    inline code. None when the document has none of them."""
+    quote level, code block (fence and language) and what its file's
+    reading left on it (_BLOCK_MARKS), the stretches of inline code, and
+    the stretches that carry a mark of the reading (_READ_MARKS). None
+    when the document has none of them."""
     blocks = []
     code = []
+    marks = []
     for number, block in enumerate(iter_blocks(doc)):
         fmt = block.blockFormat()
         kept = {}
@@ -252,22 +276,32 @@ def structure_of(doc) -> dict | None:
         if rich_text.is_code_block(block):
             kept["fence"] = str(fmt.property(QTextFormat.Property.BlockCodeFence) or "")
             kept["language"] = str(fmt.property(QTextFormat.Property.BlockCodeLanguage) or "")
+        kept.update({name: fmt.property(mark) for name, mark in _BLOCK_MARKS.items()
+                     if fmt.hasProperty(mark)})
         if kept:
             blocks.append([number, kept])
         it = block.begin()
         while not it.atEnd():
             fragment = it.fragment()
             it += 1
-            if fragment.isValid() and fragment.charFormat().fontFixedPitch() \
-                    and not fragment.charFormat().isImageFormat():
-                start, end = fragment.position(), fragment.position() + fragment.length()
+            if not fragment.isValid():
+                continue
+            look = fragment.charFormat()
+            start, end = fragment.position(), fragment.position() + fragment.length()
+            if look.fontFixedPitch() and not look.isImageFormat():
                 if code and code[-1][1] == start:
                     code[-1][1] = end
                 else:
                     code.append([start, end])
-    if not blocks and not code:
+            said = {name: look.property(mark) for name, mark in _READ_MARKS.items()
+                    if look.hasProperty(mark)}
+            if said and marks and marks[-1][1] == start and marks[-1][2] == said:
+                marks[-1][1] = end
+            elif said:
+                marks.append([start, end, said])
+    if not blocks and not code and not marks:
         return None
-    return {"text": _text_print(doc), "blocks": blocks, "code": code}
+    return {"text": _text_print(doc), "blocks": blocks, "code": code, "marks": marks}
 
 
 def _whole_number(value, low: int, high: int) -> bool:
@@ -294,11 +328,15 @@ def apply_structure(doc, structure: dict) -> bool:
         kept = item[1]
         if _whole_number(kept.get("quote"), 1, 32):
             rich_text.set_quote_depth(block, kept["quote"])
+        fmt = block.blockFormat()
         if "fence" in kept or "language" in kept:
-            fmt = block.blockFormat()
             fmt.setProperty(QTextFormat.Property.BlockCodeFence, str(kept.get("fence") or "`"))
             fmt.setProperty(QTextFormat.Property.BlockCodeLanguage,
                             str(kept.get("language") or ""))
+        for name, mark in _BLOCK_MARKS.items():
+            if isinstance(kept.get(name), (int, str)) and not isinstance(kept[name], bool):
+                fmt.setProperty(mark, kept[name])
+        if fmt != block.blockFormat():
             QTextCursor(block).setBlockFormat(fmt)
     code_style = rich_text.style_format(rich_text.CODE, True)
     for item in code:
@@ -309,6 +347,20 @@ def apply_structure(doc, structure: dict) -> bool:
         piece.setPosition(item[0])
         piece.setPosition(item[1], QTextCursor.MoveMode.KeepAnchor)
         piece.mergeCharFormat(code_style)
+    # (A record of an earlier version has no marks.)
+    for item in structure.get("marks") or []:
+        if not (isinstance(item, list) and len(item) == 3 and _whole_number(item[0], 0, length)
+                and _whole_number(item[1], item[0] + 1, length + 1)
+                and isinstance(item[2], dict)):
+            continue
+        said = QTextCharFormat()
+        for name, value in item[2].items():
+            if name in _READ_MARKS and isinstance(value, (bool, str)):
+                said.setProperty(_READ_MARKS[name], value)
+        piece = QTextCursor(doc)
+        piece.setPosition(item[0])
+        piece.setPosition(item[1], QTextCursor.MoveMode.KeepAnchor)
+        piece.mergeCharFormat(said)
     cursor.endEditBlock()
     return True
 
@@ -352,13 +404,16 @@ def classify_backup(record: dict) -> str:
 class EditorBackup:
     """Manages the backup lifecycle for a single editor instance."""
 
-    def __init__(self, editor, file_path: str | None, *, externalize=None):
+    def __init__(self, editor, file_path: str | None, *, externalize=None, kind=None):
         self._editor = editor
         self._file_path = file_path
         self._backup_id = _backup_id_for(file_path)
         # Maps a data: URI to a resolvable asset key. Injected so this
         # module stays testable without the asset layer running.
         self._externalize = externalize
+        # What the tab is, "rich" or "source" (MainWindow._editor_kind):
+        # a copy restored without its file's path still is that.
+        self._kind = kind
         self._last_hash = ""
         self._written_revision = None
         self._oversize_until = 0.0
@@ -558,6 +613,8 @@ class EditorBackup:
             record["photo_groups"] = True
         if getattr(self._editor, "_markdown_source", False):
             record["markdown_source"] = True
+        if self._kind is not None:
+            record["kind"] = self._kind(self._editor)
         record.update(identity)
         lock = self._lock()
         payload = json.dumps(_sealed(record, lock) if lock is not None else record,

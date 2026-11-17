@@ -240,7 +240,7 @@ def test_the_guides_name_how_to_refresh_the_drafts_panel():
     # pointed at a refresh button that is gone.
     import pathlib
     docs = pathlib.Path(__file__).resolve().parent.parent / "docs"
-    usage = (docs / "usage.md").read_text(encoding="utf-8")
-    nostr = (docs / "nostr.md").read_text(encoding="utf-8")
-    assert "| `Ctrl+R` (Command-R) on macOS, `F5` elsewhere | Refresh the Drafts panel" in usage
-    assert "⟲" not in nostr and "Nostr > Refresh Drafts" in nostr
+    shortcuts = (docs / "use" / "shortcuts.md").read_text(encoding="utf-8")
+    drafts = (docs / "use" / "nostr" / "drafts.md").read_text(encoding="utf-8")
+    assert "| Refresh the Drafts panel | **⌘R** | **F5** |" in shortcuts
+    assert "⟲" not in drafts and "Nostr > Refresh Drafts" in drafts

@@ -31,7 +31,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtGui import (  # noqa: E402
-    QFont, QTextCharFormat, QTextCursor, QTextDocument, QTextFormat, QTextImageFormat,
+    QFont, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument, QTextFormat,
+    QTextImageFormat, QTextListFormat,
 )
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -244,8 +245,8 @@ def test_an_entity_for_characters_nobody_sees_is_written_as_it_was(source):
 @pytest.mark.parametrize("source, written", [
     ("- a\n* b\n", "- a\n* b\n"),
     ("> - a\n> * b\n", "> - a\n> * b\n"),
-    ("1. a\n\n2) b\n", "1. a\n2) b\n"),
-    ("- a\n\n+ b\n", "- a\n* b\n"),
+    ("1. a\n\n2) b\n", "1. a\n\n2) b\n"),
+    ("- a\n\n+ b\n", "- a\n\n* b\n"),
 ])
 def test_a_list_right_after_another_stays_a_list_of_its_own(source, written):
     # Both were written with "-" (or "."): one list, and in a quote two
@@ -254,6 +255,279 @@ def test_a_list_right_after_another_stays_a_list_of_its_own(source, written):
     doc = QTextDocument()
     read_markdown(doc, source)
     assert document_to_markdown(doc, _image_as_read) == written
+
+
+@pytest.mark.parametrize("source", [
+    "```\na\n```\n\n```\nb\n```\n",
+    "> a\n\n> b\n",
+    "- a\n\n- b\n- c\n",
+    "> - a\n\n> - b\n",
+])
+def test_blocks_a_file_sets_apart_stay_apart(source):
+    # Qt's reader ran them together: one code block, one quote, a list
+    # with its items close, and the file was saved so.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_code_blocks_a_file_sets_apart_are_two_in_the_editor_too():
+    # Its highlighting and its look go by the rule the writer goes by.
+    import rich_text
+    doc = QTextDocument()
+    read_markdown(doc, "```\na\nb\n```\n\n```\nc\n```\n")
+    first, last = rich_text.code_run(doc.firstBlock())
+    assert (first.text(), last.text()) == ("a", "b")
+
+
+@pytest.mark.parametrize("source", ["first  \nsecond\n", "[see](u)  \nnext\n",
+                                    "- a  \n  b\n- c\n", "> a  \n> b\n"])
+def test_a_hard_line_break_stays_a_line_break(source):
+    # Qt's reader made the line after one a paragraph of its own: a line
+    # break typed here (Shift+Return) came back as two paragraphs.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
+@pytest.mark.parametrize("source, written", [("> a\\\n> b\n", "> a  \n> b\n"),
+                                             ("- a \\\n  b\n", "- a  \n  b\n"),
+                                             ("a\\\n\nb\n", "a\\\n\nb\n")])
+def test_a_backslash_at_a_lines_end_breaks_the_line_too(source, written):
+    # In a quote it made two paragraphs, in a list two items. Where the
+    # paragraph ends with it, it is its last word.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == written
+
+
+def test_a_line_that_holds_only_a_backslash_keeps_both_line_breaks():
+    # The empty line of a poem: the line break before it took the space
+    # that stood for the one after it, which was lost, and its backslash
+    # showed.
+    for source in ("Roses are red\\\n\\\nViolets are blue\n", "a  \n\\\nb\n"):
+        doc = QTextDocument()
+        read_markdown(doc, source)
+        assert doc.firstBlock().text().count("\u2028") == 2 and "\\" not in doc.toPlainText()
+        assert document_to_markdown(doc) == source.replace("red\\\n", "red  \n")
+
+
+def test_a_line_break_after_an_empty_link_is_kept_in_its_place():
+    # The search for the break started past the link's mark, set a
+    # cursor out of the document, and Qt said so in the log.
+    from PySide6.QtCore import qInstallMessageHandler
+    warned = []
+    previous = qInstallMessageHandler(lambda kind, context, message: warned.append(message))
+    try:
+        read_markdown(QTextDocument(), "  \n`c`\n\nline   \n  [](u)  \n#\n\n")
+    finally:
+        qInstallMessageHandler(previous)
+    assert not [message for message in warned if "out of range" in message]
+
+
+def test_a_file_that_holds_every_mark_of_a_kind_opens_as_text():
+    # With no mark free for its line breaks or its entities, they were
+    # read as Qt's reader reads them, and nothing said so.
+    assert not holds_faithfully("x\u2003\u2001\u2000\u205f\n\na  \nb\n")
+    assert not holds_faithfully("x\u2e35\u2e36\u2e37\u2e38\n\n[a &amp; b](u)\n")
+
+
+def test_text_right_under_an_underlined_heading_is_no_part_of_it():
+    # The underline was taken for a line of the paragraph under it, and
+    # the heading became that paragraph's first words.
+    source = "Why?\n----\nText under it.\n"
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == "## Why?\n\nText under it.\n"
+
+
+@pytest.mark.parametrize("source", ["<https://a.example>\n", "See <a@b.example>.\n",
+                                    "text\nhttps://a.example\n"])
+def test_an_address_is_written_as_the_file_wrote_it(source):
+    # One in angle brackets was written bare, and a bare one that starts
+    # a line in angle brackets.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
+@pytest.mark.parametrize("source", ["a [](u) b\n", "[x <https://a.example>](u)\n",
+                                    "[a https://a.example b](u)\n", "[x]()\n"])
+def test_a_link_the_editor_cannot_hold_opens_as_text(source):
+    # Qt's reader drops a link with no words and the link of one with no
+    # address, and takes an address in a link's words out of the link, in
+    # angle brackets or bare.
+    assert not holds_faithfully(source)
+
+
+@pytest.mark.parametrize("source, written", [
+    ("See [AT&amp;T](https://att.example) now.\n", "See [AT\\&T](https://att.example) now.\n"),
+    ("**<https://a.example>**\n", "**<https://a.example>**\n"),
+    ("1. Press `\n2. See [![a](p.png)](u)\n3. Press ` again\n",
+     "1. Press `\n2. See [![a](p.png)](u)\n3. Press ` again\n"),
+    ("> Press `\n>\n> [![a](p.png)](u) `\n", "> Press `\n>\n> [![a](p.png)](u) `\n"),
+    ("# Press `\n[![a](p.png)](u) `\n", "# Press `\n\n[![a](p.png)](u) `\n"),
+    ("Look ![the *new* logo][logo] and tell me.\n", "Look ![the *new* logo][logo] and tell me.\n"),
+    ("![a *b*][]\n\n[a *b*]: x.png\n", "![a *b*](x.png)\n"),
+])
+def test_what_stands_beside_a_links_words_does_not_change_them(source, written):
+    # An entity right before the link's address lost the link its words
+    # after it (the address counted as the entity's word). An address in
+    # angle brackets and in bold was written as a link with words. A
+    # backtick alone in each of two list items hid the picture's link
+    # between them as code. A picture whose reference nothing defines was
+    # saved with the reading's own word for its description, and one whose
+    # description is its reference twice.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == written
+
+
+@pytest.mark.parametrize("words, written", [
+    ("#", "- \\#\n"), (">", "- \\>\n"), ("```", "- \\```\n"), ("~~~", "- \\~~~\n"),
+    ("+", "- \\+\n"), ("* a", "- \\* a\n"), ("1.", "- 1\\.\n"), ("2) b", "- 2\\) b\n"),
+    ("    x", "- &#32;&#32;&#32;&#32;x\n"), ("\tx", "- &#9;x\n"), ("#a", "- #a\n"),
+    ("[ ] a", "- \\[ ] a\n"), ("[x] a", "- \\[x] a\n"), ("[X]", "- \\[X]\n"), ("[y] a", "- [y] a\n"),
+])
+def test_an_item_whose_words_would_open_a_block_keeps_them(words, written):
+    # "- #" is a heading to a reader, "- >" a quote, "- ```" code, "- +"
+    # a list in the item, and spaces before the words it drops (four of
+    # them are code), "- [ ] a" a task: each was saved as that.
+    for style, marker in ((QTextListFormat.Style.ListDisc, "-"),
+                          (QTextListFormat.Style.ListDecimal, "1.")):
+        doc = QTextDocument()
+        cursor = QTextCursor(doc)
+        cursor.insertList(style)
+        cursor.insertText(words)
+        assert document_to_markdown(doc) == marker + written[1:]
+        read_markdown(doc, marker + written[1:])
+        assert doc.blockCount() == 1 and doc.firstBlock().textList() is not None
+        assert doc.firstBlock().text() == words
+        assert doc.firstBlock().blockFormat().marker() == QTextBlockFormat.MarkerType.NoMarker
+
+
+def test_an_item_that_would_read_as_a_divider_is_written_as_an_item():
+    # "- --" is a divider to a reader: an item that says "--" was saved
+    # as one, and gone from its list.
+    for style, words, expected in ((QTextListFormat.Style.ListDisc, "--", "- \\--\n"),
+                                   (QTextListFormat.Style.ListDecimal, "* * *", "1. \\* * *\n")):
+        doc = QTextDocument()
+        cursor = QTextCursor(doc)
+        cursor.insertList(style)
+        cursor.insertText(words)
+        written = document_to_markdown(doc)
+        assert written == expected
+        read_markdown(doc, written)
+        assert doc.firstBlock().textList() is not None and doc.firstBlock().text() == words
+
+
+def test_a_lone_backtick_in_a_tables_row_makes_no_code_of_the_next():
+    # Code ends with its row: the address was taken for code that ran
+    # from the first row to the last, and lost its angle brackets.
+    source = "| ` | b |\n| --- | --- |\n| c | <https://a.example> |\n| `x` | d |\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_a_table_wider_than_qts_reader_takes_opens_as_text():
+    # 129 columns or more, its rows were saved as one line of text.
+    def table(columns):
+        return "".join("|" + " a |" * columns + "\n" + "|" + " - |" * columns + "\n")
+    assert holds_faithfully(table(128))
+    assert not holds_faithfully(table(129))
+
+
+def test_a_table_with_code_in_a_cell_that_spans_columns_opens():
+    # Qt's reader lets a cell before empty ones span them. The escaped pipe
+    # in its code was taken out once for each column, the table fell
+    # apart, and no tab opened.
+    assert not holds_faithfully(
+        "| x | y | z |\n| --- | --- | --- |\n| `a\\|b` |  |  |\n|  |  | c |\n")
+
+
+def test_a_file_the_check_fails_on_opens_as_its_text(monkeypatch):
+    import markdown_writer
+    monkeypatch.setattr(markdown_writer, "_holds", lambda markdown: 1 / 0)
+    assert holds_faithfully("Text\n") is False
+
+
+def test_the_marks_of_a_paragraph_are_taken_out_as_one_change():
+    # A change for each mark costs the length of its paragraph each time:
+    # one paragraph of 5,000 line breaks, or of 5,000 addresses in angle
+    # brackets, opened in 40 seconds.
+    doc = QTextDocument()
+    changes = []
+    doc.contentsChanged.connect(lambda: changes.append(1))
+    read_markdown(doc, "".join(f"line {n}  \n" for n in range(300))
+                  + "".join(f"<https://a.example/{n}> " for n in range(300))
+                  + "soft\nbreak \\* &amp;\n")
+    assert len(changes) < 20
+
+
+def _all_of(doc) -> QTextCursor:
+    cursor = QTextCursor(doc)
+    cursor.select(QTextCursor.SelectionType.Document)
+    return cursor
+
+
+def test_a_loose_list_made_a_code_block_is_one_code_block():
+    # Each item kept the mark that set it apart, and was a code block of
+    # its own. A paragraph taken out of its list is set apart no more.
+    import rich_text
+    doc = QTextDocument()
+    read_markdown(doc, "- a\n\n- b\n")
+    rich_text.make_code_block(_all_of(doc))
+    assert document_to_markdown(doc) == "```\na\nb\n```\n"
+
+
+def test_a_loose_list_put_in_a_quote_stays_one_quote():
+    # The blank line between its items was written outside the quote, as
+    # the file had it before there was one: two quotes.
+    import rich_text
+    doc = QTextDocument()
+    read_markdown(doc, "- a\n\n- b\n")
+    rich_text.toggle_quote(_all_of(doc))
+    assert document_to_markdown(doc) == "> - a\n>\n> - b\n"
+
+
+def test_a_line_break_that_starts_an_item_is_not_written():
+    # Return before a line break left it at the start of the new item: it
+    # was written as an item of spaces, and gone after the next save.
+    doc = QTextDocument()
+    read_markdown(doc, "- a  \n  b\n- c\n")
+    cursor = QTextCursor(doc)
+    cursor.setPosition(1)
+    cursor.insertBlock()
+    assert document_to_markdown(doc) == "- a\n- b\n- c\n"
+
+
+@pytest.mark.parametrize("source", ["```{r setup, include=FALSE}\nsummary(cars)\n```\n",
+                                    "> ```python title=\"app.py\"\n> a\n> ```\n"])
+def test_a_fence_keeps_what_it_says_after_its_language(source):
+    # Qt's reader keeps the first word: "```{r setup, include=FALSE}" was
+    # saved as "```{r".
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_a_line_broken_off_a_block_set_apart_stays_with_it():
+    # Return gives the new line its block's format: it is no third block.
+    doc = QTextDocument()
+    read_markdown(doc, "```\na\n```\n\n```\nb\n```\n")
+    cursor = QTextCursor(doc)
+    cursor.movePosition(QTextCursor.MoveOperation.End)
+    cursor.insertBlock()
+    cursor.insertText("c")
+    assert document_to_markdown(doc) == "```\na\n```\n\n```\nb\nc\n```\n"
 
 
 def test_an_entity_that_makes_a_line_break_opens_as_text():
@@ -302,6 +576,177 @@ def test_an_empty_item_after_a_headings_underline_is_kept():
 def test_a_heading_in_a_list_item_opens_as_text(source):
     # Qt's reader takes it out of its list: saved, the item was gone.
     assert not holds_faithfully(source)
+
+
+def test_a_heading_or_a_divider_in_a_quote_opens_as_text():
+    # Qt's reader takes it out of its quote: saved, the quote was two, or
+    # none. Words that start with "#" are no heading.
+    for source in ("> a\n>\n> ---\n>\n> b\n", "> a\n> ---\n", "> # H\n"):
+        assert not holds_faithfully(source)
+    assert holds_faithfully("> #nostr is a word\n")
+
+
+@pytest.mark.parametrize("source", [
+    "- Added\n- - support unix\n- path\n",        # an item that opens with a list
+    "- > q\n",                                     # an item that opens with a quote
+    "1. `a`\n2. # h\n",                            # a heading in an item after code
+    "- a\n\n    - b\n- - c\n",                     # another list's item after a nested list
+    "1. a\n\n   1. x\n2. - -\n",                   # an item that is a divider
+    "- w\n\n   1. <me@b.example>\n   2. # h\n",     # a heading in a nested item
+    "#\ntext\n",                                   # a heading with no words
+    "```\n\na\n```\n",                            # a blank first line in a fence, first of all
+    "x\n\n```\n```\n",                            # a fence with nothing in it
+    "Options:\n| a | b |\n| --- | --- |\n| c | d |\n",    # a table under words
+    "| a | b |\n| --- |\n| c | d |\n",             # fewer columns than the header has
+    "| a |\n| --- |\n| b |\n# H\n",                # a heading right under a table
+    "> | a |\n> | --- |\n> | b |\n",               # a table in a quote
+    "| a | b |\n| --- | --- |\n| `a|b` | c |\n",   # a pipe in a row's code
+    "a\n*  \nb\n",                                # a marker alone, spaces after it, under words
+    "a\n2.  \nb\n",
+    "- a\n\n\n  b\n",                                  # an item's paragraph after two blank lines
+    "> - a\n>\n>   b\n",                                # after one, in a quote
+    "- a\n  - b\n\n    c\n",                             # a nested item's
+    "    a\n\n>\n\n    b\n",                              # an empty quote between code
+    "> a\n> >\n",                                       # an empty quote in a quote
+    "- ```\n- b\n",                                      # an item that opens a fence
+    "1. Install.\n\n   > Note\n",                          # a quote in an item
+    "- a\n\n\n  > q\n",                                   # after two blank lines
+    "> - a\n>\n>   > q\n",                                 # in an item in a quote
+    "a\u2028b\n",                                  # the document's own line break
+])
+def test_blocks_qts_reader_reads_otherwise_open_as_text(source):
+    # Each was saved as what Qt's reader made of it: a list under the
+    # wrong item, a quote or a table out of its place, a table as one
+    # line of text, a row more, a line less.
+    assert not holds_faithfully(source)
+
+
+def test_a_list_set_in_where_its_quote_opens_opens_as_text():
+    # Qt's reader takes the second item for one inside the first, and it
+    # was saved so; set in less, or after the quote's first line, it is
+    # read as it is.
+    assert not holds_faithfully(">   - a\n>   - b\n")
+    assert holds_faithfully(">  - a\n>  - b\n")
+    assert holds_faithfully("> x\n>\n>   - a\n>   - b\n")
+
+
+def test_dashes_alone_on_a_line_keep_the_line_break_after_them():
+    # Under a line of words they are a heading's underline; alone they
+    # are words, and were taken for one: the break after them was lost.
+    source = "a\n\n--  \nb\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc) == source
+
+
+def test_three_backticks_around_words_in_a_line_are_code_in_the_line():
+    # A backtick fence says nothing with a backtick in it: the line was
+    # taken for a fence, and the mark that keeps a fence's words together
+    # stayed between them, in the file, the clipboard and a published note.
+    source = "To build it:\n\n```npm run build```\n\nThen ship.\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert "\x1f" not in doc.toRawText()
+    assert document_to_markdown(doc) == "To build it:\n\n`npm run build`\n\nThen ship.\n"
+
+
+def test_no_mark_of_the_reading_is_left_in_what_it_read(monkeypatch):
+    # However a mark is misread, the document never holds one: it is read
+    # as Qt reads the file, and the file opens as its text.
+    import markdown_writer
+    monkeypatch.setattr(markdown_writer, "_split_infos", lambda doc, mark: None)
+    source = "```js title=x\na\n```\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert "\x1f" not in doc.firstBlock().blockFormat().stringProperty(
+        QTextFormat.Property.BlockCodeLanguage)
+    assert not holds_faithfully(source)
+
+
+def test_a_space_a_file_writes_by_name_is_no_mark():
+    # A block set apart is marked with a thin space; "&thinsp;" in the
+    # file makes one too, and was taken for the mark.
+    source = "- a\n\n- b &thinsp; c\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc) == source
+
+
+@pytest.mark.parametrize("kind", ["NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION"])
+def test_a_github_alert_keeps_its_first_line(kind):
+    # GitHub shows "> [!NOTE]" as a box only while the words start on the
+    # next line: the two lines were saved as one, and the box was gone.
+    source = f"> [!{kind}]\n> Read this first.\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert holds_faithfully(source) and document_to_markdown(doc) == source
+
+
+def test_lines_of_a_quote_or_an_item_stay_lines():
+    # A hard-wrapped quote or item was saved as one line: a word changed,
+    # every wrapped item of the file was rewritten. An item's second
+    # paragraph opens the file as its text.
+    for source in ("> a\n> b\n", "- a\n  b\n", "> - a\n>   b\n",
+                   "> [!TIP]\n> Keep it short.\n> Really.\n", "- a\n    - b\n      c\n"):
+        doc = QTextDocument()
+        read_markdown(doc, source)
+        assert holds_faithfully(source) and document_to_markdown(doc) == source, source
+    assert not holds_faithfully("- a\n\n  b\n  c\n")
+
+
+def test_a_block_under_a_github_alert_stays_a_block():
+    # The line under "> [!NOTE]" was joined to it as words even where it
+    # starts a block: a list's first item, a fence. A list, code or a quote
+    # is saved as one (with the quote's blank line before it); a heading or
+    # a table there opens the file as text, as before.
+    for body in ("- Run it twice.\n> - Then restart.", "1. One\n> 2. Two", "```\n> x\n> ```",
+                 "> Inner"):
+        source = f"> [!NOTE]\n> {body}\n"
+        doc = QTextDocument()
+        read_markdown(doc, source)
+        assert holds_faithfully(source)
+        assert document_to_markdown(doc) == f"> [!NOTE]\n>\n> {body}\n", body
+    for body in ("# Head", "| a |\n> | - |\n> | 1 |"):
+        assert not holds_faithfully(f"> [!NOTE]\n> {body}\n"), body
+
+
+def test_a_tab_after_the_start_of_a_code_line_is_kept():
+    # Qt's reader makes a tab in a code line's indent spaces, and only
+    # there: a code block with a tab between its words opens as it is.
+    source = "```\na\tb\n```\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert holds_faithfully(source) and document_to_markdown(doc) == source
+
+
+def test_a_tab_in_code_that_qts_reader_keeps_opens_the_file():
+    # After a fenced block Qt's reader keeps a tab that sets in a line of
+    # indented code: the file opened as text for it.
+    source = "```js\nx\n```\n\n    \tx\n"
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert holds_faithfully(source) and "\n\tx\n" in document_to_markdown(doc)
+
+
+def test_a_quote_mark_in_a_fence_is_code():
+    # A ">" alone on a line of code was taken for an empty quote, and the
+    # file opened as text.
+    for source in ("```\n>\n```\n", "> ```\n> >\n> ```\n"):
+        doc = QTextDocument()
+        read_markdown(doc, source)
+        assert holds_faithfully(source) and document_to_markdown(doc) == source
+
+
+def test_a_fence_is_judged_by_the_lines_it_holds():
+    # A longer fence holds a shorter one's line as code, and one set in
+    # where its quote opens loses nothing while no line of it is set in:
+    # both opened as text. One never closed, with nothing under it, was
+    # left out of the file.
+    assert document_to_markdown(from_markdown("````\n```\n````\n")) == "````\n```\n````\n"
+    assert holds_faithfully("````\n```\n````\n")
+    assert holds_faithfully(">  ```\n> a\n>  ```\n")
+    assert not holds_faithfully(">  ```\n>   a\n>  ```\n")
+    assert not holds_faithfully("~~~ words\n")
 
 
 def test_a_quote_with_two_paragraphs_stays_one_quote():
@@ -440,8 +885,8 @@ def test_indented_code_stays_code():
 
 
 def test_a_link_that_shows_its_address_is_an_autolink():
-    doc = typed(("https://x.example/a_b", {"href": "https://x.example/a_b"}))
-    assert document_to_markdown(doc) == "<https://x.example/a_b>\n"
+    doc = typed(("https://x.example/_a_", {"href": "https://x.example/_a_"}))
+    assert document_to_markdown(doc) == "<https://x.example/_a_>\n"
 
 
 @pytest.mark.parametrize("words, href, written", [
@@ -449,6 +894,10 @@ def test_a_link_that_shows_its_address_is_an_autolink():
      "https://example.com/photo.jpg"),
     ("www.example.com", "http://www.example.com", "www.example.com"),
     ("ada@example.com", "mailto:ada@example.com", "ada@example.com"),
+    # (An underscore between letters is no emphasis to any reader: it got
+    # angle brackets, in a file that had it bare too.)
+    ("https://github.com/rinbal/my_editor", "https://github.com/rinbal/my_editor",
+     "https://github.com/rinbal/my_editor"),
 ])
 def test_a_link_that_shows_its_own_address_is_written_bare(words, href, written):
     doc = typed(("see ", {}), (words, {"href": href}), (". Next", {}))
@@ -595,6 +1044,15 @@ def test_a_note_keeps_list_markers_and_link_addresses():
         "Heading\n\n• one\n• two\n\n1. first\n\nA site (https://x.example).")
 
 
+def test_a_note_keeps_the_link_around_a_picture():
+    # A note names a picture by its address; the link around it went out
+    # with the brackets, and nothing said so.
+    doc = QTextDocument()
+    read_markdown(doc, "Words [![alt](https://p.example/p.png)](https://u.example/page) more.\n")
+    text = document_to_note_text(doc, lambda fmt: fmt.name())
+    assert text == "Words https://p.example/p.png (https://u.example/page) more."
+
+
 def test_a_note_keeps_typed_bullets_exactly():
     doc = typed("List:\n    • a\n        • b")
     assert document_to_note_text(doc) == "List:\n    • a\n        • b"
@@ -692,10 +1150,11 @@ def test_markdown_the_editor_can_hold(source):
     # Soft line breaks the editor cannot hold as lines: in an indented
     # paragraph, after a backslash break, where a line may be a table's.
     "  Indented line one\n  line two\n",
-    "Line one\\\nline two\n",
     "a | b\nc | d\n",
     # Review M6 (CP3): what the editor's own reader changes.
     "```make\nall:\n\tcc main.c\n```\n",                      # a tab in code
+    "all:\n\n    all:\n    \techo hi\n",                      # in indented code
+    "> ```\n> \tx\n> ```\n",                                  # in a fence in a quote
     "| a | b |\n| :--- | ---: |\n| 1 | 2 |\n",                    # alignment
     "| **a** | b |\n| --- | --- |\n| 1 | 2 |\n",                 # emphasis in a header
     "1. Run this:\n\n   ```sh\n   make\n   ```\n",            # code in a list item
@@ -792,7 +1251,9 @@ def test_a_line_break_typed_after_a_soft_one_is_a_hard_break():
     breaks = [fmt.boolProperty(SOFT_BREAK_PROPERTY) for text, fmt in _runs(ed.document())
               for char in text if char == "\u2028"]
     assert breaks == [True, False]
-    assert document_to_markdown(ed.document()) == "first line\n  \nnewsecond line\n"
+    # (The break on the empty line is a backslash: two spaces alone made a
+    # blank line, and two paragraphs.)
+    assert document_to_markdown(ed.document()) == "first line\n\\\nnewsecond line\n"
     ed.close()
 
 
@@ -916,7 +1377,7 @@ def test_a_break_tag_between_two_pictures_is_read_as_a_break():
         doc = QTextDocument()
         read_markdown(doc, "![a](a.png)<br>![b](b.png) <BR />\n![c](c.png)\n", features)
         assert document_to_markdown(doc, _image_as_read) == (
-            "![a](a.png)\n\n![b](b.png)\n\n![c](c.png)\n")
+            "![a](a.png)  \n![b](b.png)  \n![c](c.png)\n")
         assert [unit.alt for unit in photo_group.groups_in(doc)[0].units] == ["a", "b", "c"]
     for source in ("In HTML, <br> breaks a line.\n", "`![a](a.png)<br>![b](b.png)`\n"):
         doc = QTextDocument()

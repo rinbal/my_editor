@@ -29,6 +29,7 @@ from PySide6.QtWidgets import QApplication
 import export_html
 import photo_page
 from markdown_writer import read_markdown
+import rmarkdown
 from rmarkdown import KnitRunner, document_to_rmd, lay_out_knitted_groups
 from tests.photo_corners import PHOTOS
 from tests.test_export_photo_groups import (
@@ -70,10 +71,20 @@ def test_a_group_is_a_div_of_one_paragraph_and_the_rest_reads_as_before():
     body = rmd.split("---\n", 2)[2]
     assert body == ("\n# Bothy weekend\n\nWe walked in from the station.\n\n" + GROUP_RMD
                     + "\n\nThe next morning it rained.\n")
-    # A picture on its own is written as it was.
+    # A picture on its own is no group.
     lone = document_to_rmd(_doc("Text\n\n![Hut](square.png)\n\nMore\n"), "x",
                            copy_image=lambda name: "m/" + name)
-    assert "photo-group" not in lone and "![](m/square.png)" in lone
+    assert "photo-group" not in lone and "![Hut](m/square.png)" in lone
+
+
+def test_a_linked_picture_in_a_group_keeps_its_link():
+    rmd = document_to_rmd(_doc("![A](a.png)\n\n[![B](b.png)](https://u.example/two)\n"), "x",
+                          copy_image=lambda name: "m/" + name)
+    assert "[![B](m/b.png)](https://u.example/two)" in rmd
+    figures = rmarkdown._knitted_figures(
+        '<img src="m/a.png" alt="A" /><br />\n'
+        '<a href="https://u.example/two"><img src="m/b.png" alt="B" /></a>')
+    assert [figure.href for figure in figures] == ["", "https://u.example/two"]
 
 
 def test_a_picture_that_cannot_be_had_keeps_its_place_in_the_group():
@@ -201,6 +212,7 @@ def test_in_a_browser_the_knitted_group_shows_every_picture_whole(tmp_path):
 
 
 def test_the_help_says_how_a_group_knits():
-    usage = (Path(__file__).resolve().parent.parent / "docs" / "usage.md").read_text(encoding="utf-8")
+    page = Path(__file__).resolve().parent.parent / "docs" / "use" / "save-export-print.md"
+    usage = page.read_text(encoding="utf-8")
     knitting = usage[usage.index("## R Markdown knitting"):]
     assert "one under another" in knitting.split("\n## ")[0]

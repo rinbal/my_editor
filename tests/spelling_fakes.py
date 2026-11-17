@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 rinbal
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """A spell checker that knows a handful of words, and an editor wired to
-spelling the way docs/spelling.md says, for the spelling tests."""
+spelling the way docs/develop/spelling.md says, for the spelling tests."""
 
 from __future__ import annotations
 
@@ -158,7 +158,7 @@ def drain(spelling):
 
 
 class Editor:
-    """A QTextEdit wired the way docs/spelling.md says: it tells the
+    """A QTextEdit wired the way docs/develop/spelling.md says: it tells the
     service where its cursor is, keeps its underlines as text cursors
     (which is what extra selections are, and they move and grow with
     edits), and redraws only the blocks ``misspellingsChanged`` names.

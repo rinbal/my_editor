@@ -4,13 +4,18 @@
 
 Export model (mirrors how RStudio treats documents):
 - A tab opened from an .Rmd file is SOURCE and saves as plain text.
-- A rich-text tab saved as .Rmd is converted: YAML frontmatter plus a
-  Pandoc-markdown body. Bold, italic, strikethrough, inline code, links,
+- A rich-text tab saved as .Rmd is converted, once, and is that source
+  from then on (main_window's _becomes_rmd_source): YAML frontmatter
+  plus a Pandoc-markdown body. Bold, italic, strikethrough, inline code, links,
   headings and lists (bulleted, numbered, checklists) map natively;
   underline, colors and highlights use Pandoc bracketed spans
   ([x]{.underline}, [x]{style="color:#hex"},
   [x]{style="background-color:#hex"}) which rmarkdown renders in HTML
   output.
+- A table is a pipe table, a code block a fenced one, a picture keeps
+  its description and the link around it: the document is walked as the
+  Markdown writer walks it (doc_walk.iter_frame), and tables and fences
+  are written by its helpers.
 - Images are NOT embedded as data URIs (unreadable to edit, and they
   break LaTeX PDF knitting). Instead the caller provides copy_image()
   which copies each image into a sidecar media folder next to the .Rmd
@@ -37,21 +42,27 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, Signal
-from PySide6.QtGui import QTextBlockFormat, QTextCharFormat, QTextListFormat
+from PySide6.QtGui import (
+    QTextBlockFormat, QTextCharFormat, QTextFormat, QTextListFormat, QTextTable,
+)
 
 import atomic_file
 import photo_page
 import photo_group
 import photo_layout
 from doc_walk import (
+    apart,
     bullet_depth,
     iter_block_runs,
     iter_blocks,
+    iter_frame,
     parse_bullet_line,
     skip_prefix,
+    table_rows,
 )
+from export_html import safe_href
 from image_safety import MAX_PICTURE_BYTES, data_uri_bytes, declared_size
-from markdown_writer import link_markdown
+from markdown_writer import code_span, code_text, fenced_code, link_markdown, pipe_table
 import rich_text
 import rmd_toolchain
 from i18n import _
@@ -100,8 +111,7 @@ def derive_title(doc, fallback: str) -> str:
 
 def _render_text_run_md(text: str, fmt, heading: bool = False) -> str:
     if fmt.fontFixedPitch():
-        ticks = "``" if "`" in text else "`"
-        return f"{ticks}{text.replace(_LINE_SEP, ' ')}{ticks}"
+        return code_span(text.replace(_LINE_SEP, " "))
     out = _escape_md(text).replace(_LINE_SEP, "\\\n")
     bold = fmt.fontWeight() > 400 and not heading
     strike = fmt.fontStrikeOut()
@@ -162,29 +172,63 @@ def _render_runs_md(runs, copy_image, heading: bool = False) -> str:
             link_parts.clear()
 
     for text, fmt in runs:
-        href = fmt.anchorHref() if fmt.isAnchor() and not fmt.isImageFormat() else ""
+        target = None
+        if fmt.isImageFormat():
+            target = copy_image(fmt.toImageFormat().name()) if copy_image else None
+        # (Audio or video is a link of its own: none around it.)
+        href = fmt.anchorHref() if fmt.isAnchor() and not isinstance(target, MediaLink) else ""
         if href != link:
             close_link()
             link = href
-        if href:
-            text = text.replace(_OBJ, "")
-            if text:
-                link_parts.append(_render_text_run_md(text, fmt))
-            continue
+        into = link_parts if href else parts
         if fmt.isImageFormat():
-            target = copy_image(fmt.toImageFormat().name()) if copy_image else None
             if isinstance(target, MediaLink):
-                parts.append(target.markdown())
+                into.append(target.markdown())
             elif target:
-                parts.append(f"![]({target})")
+                alt = str(fmt.property(QTextFormat.Property.ImageAltText) or "")
+                into.append(f"![{_escape_md(alt)}]({target})")
             else:
-                parts.append("*[image unavailable]*")
+                into.append(_UNAVAILABLE_MD)
             continue
         text = text.replace(_OBJ, "")
         if text:
-            parts.append(_render_text_run_md(text, fmt, heading))
+            into.append(_render_text_run_md(text, fmt, heading and not href))
     close_link()
     return "".join(parts)
+
+
+# What keeps a picture alone in its paragraph a picture: pandoc shows the
+# description of such a one under it as a caption (implicit_figures), and
+# does not when anything stands beside it, a no-break space too.
+_NO_CAPTION = "\\ "
+
+
+def _described_picture(block) -> bool:
+    """Whether ``block`` holds one picture with a description, and
+    nothing else."""
+    if block.text() != _OBJ:
+        return False
+    fmt = block.begin().fragment().charFormat()
+    return fmt.isImageFormat() and bool(fmt.property(QTextFormat.Property.ImageAltText))
+
+
+def _table_rmd(table: QTextTable, copy_image) -> list[str]:
+    """A table as a pipe table (pandoc's), its first row the header; a
+    line break in a cell, which a pipe table cannot hold, a space."""
+    return pipe_table([
+        [" ".join(_render_runs_md(list(iter_block_runs(block)), copy_image, number == 0)
+                  for block in blocks).replace("\\\n", " ")
+         for blocks in cells]
+        for number, cells in enumerate(table_rows(table))]).split("\n")
+
+
+def _code_rmd(blocks) -> list[str]:
+    """A code block (``blocks``: its lines) as a fenced one, in the quote
+    it stands in."""
+    code = fenced_code("\n".join(code_text(block) for block in blocks),
+                       rich_text.code_info(blocks[0]))
+    prefix = "> " * rich_text.quote_depth(blocks[0])
+    return [(prefix + line).rstrip() if prefix else line for line in code.split("\n")]
 
 
 _ORDERED_STYLES = {QTextListFormat.Style.ListDecimal, QTextListFormat.Style.ListLowerAlpha,
@@ -229,7 +273,10 @@ def _group_rmd(group, copy_image) -> list[str]:
     for unit in group.units:
         target = copy_image(photo_group.without_wide(unit.name)) if copy_image else None
         if isinstance(target, str) and target:
-            lines.append(f"![{_escape_md(unit.alt)}]({target})" + ("{.wide}" if unit.wide else ""))
+            picture = f"![{_escape_md(unit.alt)}]({target})" + ("{.wide}" if unit.wide else "")
+            # (In the link around it, when it has one.)
+            lines.append(f"[{picture}]({unit.image.anchorHref()})" if unit.image.isAnchor()
+                         and unit.image.anchorHref() else picture)
         else:
             lines.append(_UNAVAILABLE_MD)
         if not unit.has_caption or not unit.caption_text.strip():
@@ -258,7 +305,24 @@ def document_to_rmd(doc, title: str, copy_image=None) -> str:
     prev_kind = None  # None | "text" | "bullet" | "blank" | "quote"
     prev_quote = 0
     next_group, written = 0, -1
-    for block in iter_blocks(doc):
+    code: list = []     # the lines of the code block being read
+    alone: set = set()  # the lines that are a described picture's whole paragraph
+    for block in [*iter_frame(doc.rootFrame()), None]:
+        table = isinstance(block, QTextTable)
+        if code and (block is None or table
+                     or not rich_text.same_code_block(code[-1], block)):
+            lines.extend(_code_rmd(code))
+            lines.append("")
+            code, prev_kind = [], "blank"
+        if block is None:
+            break
+        if table:
+            if prev_kind not in (None, "blank"):
+                lines.append("")
+            lines.extend(_table_rmd(block, copy_image))
+            lines.append("")
+            prev_kind = "blank"
+            continue
         # A block of a group's tables (or one Qt keeps around them): the
         # group is written where its first one is, the rest skipped.
         position = block.position()
@@ -274,6 +338,11 @@ def document_to_rmd(doc, title: str, copy_image=None) -> str:
                 lines.extend(_group_rmd(group, copy_image))
                 lines.append("")
                 prev_kind = "blank"
+            continue
+        if rich_text.is_code_block(block):
+            if not code and prev_kind not in (None, "blank"):
+                lines.append("")
+            code.append(block)
             continue
         text = block.text()
         spaces, has_bullet = parse_bullet_line(text)
@@ -291,8 +360,10 @@ def document_to_rmd(doc, title: str, copy_image=None) -> str:
         if quote and text.strip():
             prefix = "> " * quote
             if prev_kind == "quote":
-                # A new paragraph in the quote, at the shallower depth.
-                lines.append(("> " * min(prev_quote, quote)).rstrip())
+                # A new paragraph in the quote, at the shallower depth; a
+                # quote of its own where the file set it apart.
+                kept = min(prev_quote, quote) - (apart(block) or 0)
+                lines.append(("> " * max(0, kept)).rstrip())
             elif prev_kind not in (None, "blank"):
                 lines.append("")
             if block.textList() is not None:
@@ -300,13 +371,17 @@ def document_to_rmd(doc, title: str, copy_image=None) -> str:
             else:
                 lines.append(prefix + _guard_line_start(
                     _render_runs_md(list(iter_block_runs(block)), copy_image)))
+                if _described_picture(block):
+                    alone.add(len(lines) - 1)
             prev_kind = "quote"
             prev_quote = quote
             continue
 
         if block.textList() is not None:
-            if prev_kind in ("text", "quote"):
-                lines.append("")  # a list needs a blank line before it
+            if prev_kind in ("text", "quote") or apart(block) is not None:
+                # A list needs a blank line before it, and an item the
+                # file set apart (a loose list's) has one.
+                lines.append("")
             lines.append(_list_item_md(block, copy_image))
             prev_kind = "bullet"
             continue
@@ -353,12 +428,17 @@ def document_to_rmd(doc, title: str, copy_image=None) -> str:
             # Keep the editor's line structure: hard break, not a merged
             # paragraph and not a paragraph gap.
             lines[-1] += "\\"
+            alone.discard(len(lines) - 1)
         elif prev_kind in ("bullet", "quote"):
             # A blank line ends the list or quote (else the line joins it).
             lines.append("")
         lines.append(content)
+        if prev_kind != "text" and _described_picture(block):
+            alone.add(len(lines) - 1)
         prev_kind = "text"
 
+    for line in alone:
+        lines[line] += _NO_CAPTION
     body = "\n".join(lines).strip("\n")
     return f"{header}\n\n{body}\n"
 
@@ -387,7 +467,7 @@ def _media_link(block, copy_image):
 _GROUP_PARAGRAPH = re.compile(
     r'<div class="' + GROUP_CLASS + r'">\s*<p>(.*?)</p>\s*</div>', re.S)
 _LINE_BREAK = re.compile(r"<br\s*/?>")
-_PICTURE_LINE = re.compile(r"(<img\s[^>]*>)", re.S)
+_PICTURE_LINE = re.compile(r'(?:<a\s[^>]*?href="([^"]*)"[^>]*>)?(<img\s[^>]*>)(?:</a>)?', re.S)
 _UNAVAILABLE_HTML = "<em>[image unavailable]</em>"
 _TAG = re.compile(r"<[^>]*>")
 # A caption is shown as the export shows it: in its words, not in italic.
@@ -408,7 +488,7 @@ class _ImgAttributes(HTMLParser):
     handle_startendtag = handle_starttag
 
 
-def _knitted_figure(tag: str):
+def _knitted_figure(tag: str, href: str = ""):
     attributes = _ImgAttributes(tag).attributes
     src = attributes.get("src") or None
     size = None
@@ -420,7 +500,8 @@ def _knitted_figure(tag: str):
     # pandoc may break a long line where a description has a space.
     alt = " ".join(attributes.get("alt", "").split())
     return photo_page.Figure(src, size, None, alt,
-                                   wide="wide" in attributes.get("class", "").split())
+                             wide="wide" in attributes.get("class", "").split(),
+                             href=safe_href(html.unescape(href)))
 
 
 def _knitted_figures(paragraph: str):
@@ -443,8 +524,8 @@ def _knitted_figures(paragraph: str):
         picture = _PICTURE_LINE.fullmatch(line)
         if picture is not None or line == _UNAVAILABLE_HTML:
             close_caption()
-            figures.append(_knitted_figure(picture.group(1)) if picture is not None
-                           else photo_page.Figure(None, None, None, ""))
+            figures.append(_knitted_figure(picture.group(2), picture.group(1) or "")
+                           if picture is not None else photo_page.Figure(None, None, None, ""))
         elif figures and "<img" not in line:
             captions.append(line)
         else:
