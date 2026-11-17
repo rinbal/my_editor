@@ -52,7 +52,9 @@ points (a Blossom URL, a sidecar file); this module never does.
 from __future__ import annotations
 
 import hashlib
+import html.entities
 import re
+import unicodedata
 import uuid
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
@@ -64,7 +66,9 @@ from PySide6.QtGui import (
 )
 
 from doc_walk import (
+    BARE_TEXT_PROPERTY,
     BULLET_MARKER,
+    ENTITY_TEXT_PROPERTY,
     ESCAPED_TEXT_PROPERTY,
     LINE_SEPARATOR,
     OBJECT_REPLACEMENT,
@@ -78,8 +82,9 @@ from doc_walk import (
 )
 import photo_group
 import photo_group_find
-from markdown_scan import (ESCAPABLE, FENCE_LINE, LIST_LINE, descriptions, emphasized_code,
-                           escapes, lossy_definition, pictures, titled_link)
+from markdown_scan import (DELIMITER_ROW, EMPTY_ITEM_LINE, ESCAPABLE, FENCE_LINE, LIST_LINE,
+                           bracketed, descriptions, emphasized_code, empty_items, entities,
+                           escapes, heading_in_item, lossy_definition, pictures, titled_link)
 from rich_text import normalize_after_markdown_load
 
 ImageTarget = Callable[[object], Optional[str]]
@@ -179,6 +184,8 @@ class _Span:
     raw: bool = False          # an image's text from the caller, written as is
     literal: bool = False      # text to be read back as text (see literal_text)
     escaped: bool = False      # escaped in the file: written escaped again
+    bare: bool = False         # a "<" bare in the file's link words: written bare again
+    spelled: str = ""          # the entity the file wrote for it (ENTITY_TEXT_PROPERTY)
 
 
 @dataclass
@@ -197,6 +204,7 @@ class _Block:
     rows: List[List[List[_Span]]] = field(default_factory=list)
     bullet_text: str = ""      # a typed bullet line, exactly as typed
     group: int = -1            # which list an item belongs to
+    other_marker: bool = False  # an item written with "*" or ")" (_set_list_markers)
     quote: int = 0             # how deep in block quotes it sits
     literal: bool = False      # text to be read back as text (see literal_text)
 
@@ -217,7 +225,12 @@ def _spans_of(runs, image_target: Optional[ImageTarget]) -> List[_Span]:
                 continue
             target = image_target(fmt.toImageFormat())
             if target:
-                spans.append(_Span(text=_as_spelled(fmt, target), raw=True))
+                # A picture keeps the link on it ("[![a](p.png)](u)"); an
+                # address standing bare (audio, video, a note's picture)
+                # is the reader's to show, and stays bare.
+                linked = fmt.isAnchor() and target.startswith("![")
+                spans.append(_Span(text=_as_spelled(fmt, target), raw=True,
+                                   href=fmt.anchorHref() if linked else ""))
             continue
         text = text.replace(OBJECT_REPLACEMENT, "")
         if not text:
@@ -228,7 +241,9 @@ def _spans_of(runs, image_target: Optional[ImageTarget]) -> List[_Span]:
         spans.append(_Span(text=text, bold=_is_bold(fmt), italic=fmt.fontItalic(),
                            strike=fmt.fontStrikeOut(), code=_is_code(fmt),
                            href=href or "", literal=fmt.boolProperty(TYPED_TEXT_PROPERTY),
-                           escaped=fmt.boolProperty(ESCAPED_TEXT_PROPERTY)))
+                           escaped=fmt.boolProperty(ESCAPED_TEXT_PROPERTY),
+                           bare=fmt.boolProperty(BARE_TEXT_PROPERTY),
+                           spelled=str(fmt.property(ENTITY_TEXT_PROPERTY) or "")))
     return _merged(spans)
 
 
@@ -258,9 +273,9 @@ def _merged(spans: List[_Span]) -> List[_Span]:
     for span in spans:
         if (out and not span.raw and not out[-1].raw
                 and (out[-1].bold, out[-1].italic, out[-1].strike, out[-1].code, out[-1].href,
-                     out[-1].literal, out[-1].escaped) == (span.bold, span.italic, span.strike,
-                                                           span.code, span.href, span.literal,
-                                                           span.escaped)):
+                     out[-1].literal, out[-1].escaped, out[-1].bare, out[-1].spelled)
+                == (span.bold, span.italic, span.strike, span.code, span.href, span.literal,
+                    span.escaped, span.bare, span.spelled)):
             out[-1].text += span.text
         else:
             out.append(span)
@@ -316,7 +331,8 @@ def _unit_paragraphs(units, fmt) -> List[list]:
     previous = None
     for unit in units:
         if photo_group.joins_previous(previous, unit):
-            paragraphs[-1].extend(photo_group.join_runs(unit.join))
+            paragraphs[-1].extend(photo_group.join_runs(
+                unit.join, photo_group.link_between(previous, unit)))
         else:
             paragraphs.append([])
         previous = unit
@@ -631,19 +647,21 @@ def _inline_markdown(spans: List[_Span], hard_break: str = "  \n",
     i = 0
     while i < len(spans):
         span = spans[i]
-        if span.raw:
+        if span.raw and not span.href:
             out.append(span.text)
             i += 1
             continue
         if span.href:
-            # One link around every neighbour that points at the same place.
+            # One link around every neighbour that points at the same
+            # place, a picture among them too.
             first = i
             group = []
-            while i < len(spans) and spans[i].href == span.href and not spans[i].raw:
+            while i < len(spans) and spans[i].href == span.href:
                 group.append(spans[i])
                 i += 1
             following = spans[i] if i < len(spans) else None
-            if _is_nostr_reference(span.href) and not span.literal:
+            pictured = any(s.raw for s in group)
+            if _is_nostr_reference(span.href) and not span.literal and not pictured:
                 # Bare, for readers, in the styles all its words have; a
                 # copy keeps the words it shows.
                 bare = _styled([_Span(text=span.href, bold=all(s.bold for s in group),
@@ -653,7 +671,7 @@ def _inline_markdown(spans: List[_Span], hard_break: str = "  \n",
                 continue
             words = "".join(s.text for s in group).replace(LINE_SEPARATOR, " ").replace(
                 _SOFT, " ")
-            address = _own_address(words.strip(), span.href)
+            address = "" if pictured else _own_address(words.strip(), span.href)
             if address and not any(s.bold or s.italic or s.strike for s in group):
                 written = _autolink(address, span.href, "".join(out), following)
                 if seen is not None:
@@ -725,10 +743,12 @@ def _style(span: _Span) -> Tuple[bool, bool, bool, bool]:
 
 
 def _style_runs(spans: List[_Span]) -> List[List[_Span]]:
-    """``spans`` cut where the style changes (_style)."""
+    """``spans`` cut where the style changes (_style), a picture a run of
+    its own."""
     runs: List[List[_Span]] = []
     for span in spans:
-        if runs and _style(runs[-1][0]) == _style(span):
+        if runs and not span.raw and not runs[-1][0].raw \
+                and _style(runs[-1][0]) == _style(span):
             runs[-1].append(span)
         else:
             runs.append([span])
@@ -739,7 +759,17 @@ def _words(span: _Span, label: bool) -> str:
     """A span's text as Markdown, without its style: what the file escaped
     escaped as it was, literal text escaped, else web addresses kept text
     and, in a link's label, a bracket or a "<" (read as HTML) escaped,
-    which would end or change the link when the file is read again."""
+    which would end or change the link when the file is read again; a
+    "<" the file wrote bare there bare again (BARE_TEXT_PROPERTY: it is
+    read as the words it is), elsewhere escaped; characters nobody sees
+    as the entity the file wrote for them, while they are what it says."""
+    if span.spelled:
+        made = _entity_text(span.spelled)
+        times = len(span.text) // len(made)
+        if span.text == made * times:
+            return span.spelled * times
+    if span.bare:
+        return span.text if label else span.text.replace("<", "\\<")
     if span.escaped:
         # (Only the punctuation: a word typed in its format stays words.)
         return "".join("\\" + char if char in ESCAPABLE else char for char in span.text)
@@ -753,6 +783,8 @@ def _words(span: _Span, label: bool) -> str:
 def _styled(spans: List[_Span], label: bool = False) -> str:
     """Neighbouring ``spans`` in one style as Markdown (_style_runs)."""
     first = spans[0]
+    if first.raw:
+        return "".join(span.text for span in spans)
     if first.code:
         parts = "".join(span.text for span in spans).split(LINE_SEPARATOR)
         return LINE_SEPARATOR.join(_code_span(p) for p in parts if p)
@@ -817,7 +849,10 @@ def _block_markdown(block: _Block) -> str:
         return "\n".join(prefix + line if line else prefix.rstrip()
                          for line in body.split("\n"))
     if block.kind == "item":
-        marker = f"{block.number}." if block.ordered else "-"
+        if block.ordered:
+            marker = f"{block.number}{')' if block.other_marker else '.'}"
+        else:
+            marker = "*" if block.other_marker else "-"
         if block.task is not None:
             marker += " [x]" if block.task else " [ ]"
         pad = " " * (LIST_INDENT * (block.level - 1))
@@ -843,6 +878,7 @@ def document_to_markdown(doc, image_target: Optional[ImageTarget] = None, *,
     blocks = document_blocks(doc, image_target)
     if literal:
         _make_literal(blocks)
+    _set_list_markers(blocks)
     out: List[str] = []
     previous: Optional[_Block] = None
     for block in blocks:
@@ -872,6 +908,30 @@ def _new_list(previous: _Block, block: _Block) -> bool:
     return previous.group != block.group and previous.level == block.level
 
 
+def _set_list_markers(blocks: List[_Block]) -> None:
+    """Give a list that follows another of its kind at its depth, with only
+    empty lines between, the other marker ("*" for "-", ")" for "."): with
+    the same one a reader takes the two for one list ("- a\n\n- b")."""
+    last_at: dict = {}                      # depth: the last item written at it
+    for block in blocks:
+        if block.kind == "empty":
+            continue
+        if block.kind != "item":
+            last_at.clear()                 # (a paragraph, a heading, ... ends a list)
+            continue
+        for level in [level for level in last_at if level > block.level]:
+            del last_at[level]
+        last = last_at.get(block.level)
+        if last is not None and last.ordered == block.ordered and last.quote == block.quote:
+            block.other_marker = last.other_marker != (last.group != block.group)
+        last_at[block.level] = block
+
+
+def _says_nothing(item: _Block) -> bool:
+    """Whether a list item has nothing in it, not even a task's box."""
+    return item.task is None and not _inline_markdown(item.spans)
+
+
 def _quote_depth(block: _Block) -> int:
     return block.level if block.kind == "quote" else block.quote
 
@@ -881,8 +941,17 @@ def _separator(previous: _Block, block: _Block) -> str:
     if previous.kind == "empty":
         return "\n\n"
     if previous.kind == "item" and block.kind == "item":
-        # A different list at the same depth is a list of its own.
-        return "\n\n" if _new_list(previous, block) else "\n"
+        # A different list at the same depth is a list of its own, by its
+        # other marker (_set_list_markers): a blank line would end a quote
+        # around both, and spread out the item around both.
+        if _new_list(previous, block):
+            return "\n" if previous.quote == block.quote else "\n\n"
+        if block.level > previous.level and _says_nothing(block) and not _says_nothing(previous):
+            # An empty item cannot follow words of a paragraph: right under
+            # them it would join them ("- a\n    -" is a heading "a"). A
+            # blank line ends them first, in the quote the items are in.
+            return "\n" + ("> " * block.quote).rstrip() + "\n"
+        return "\n"
     depth = min(_quote_depth(previous), _quote_depth(block))
     if depth:
         # Two parts of one quote stay in it.
@@ -902,7 +971,7 @@ def _inline_note(spans: List[_Span]) -> str:
     i = 0
     while i < len(spans):
         span = spans[i]
-        if span.href:
+        if span.href and not span.raw:
             group = []
             while i < len(spans) and spans[i].href == span.href and not spans[i].raw:
                 group.append(spans[i].text)
@@ -973,15 +1042,43 @@ def has_local_only_formatting(doc) -> bool:
     """Whether the document holds what Markdown cannot carry: underline,
     text color or highlight. A link's own color and underline are how it
     looks, not formatting, so links do not count."""
+    return any(_local_only(fmt) for block in iter_blocks(doc)
+               for _text, fmt in iter_block_runs(block))
+
+
+def remove_local_only_formatting(doc) -> None:
+    """Take what has_local_only_formatting finds off ``doc``: a document
+    saved as Markdown without it then shows what the file holds."""
+    found = []
     for block in iter_blocks(doc):
-        for _text, fmt in iter_block_runs(block):
-            if fmt.isImageFormat() or fmt.isAnchor():
-                continue
-            if (fmt.fontUnderline()
-                    or fmt.hasProperty(QTextCharFormat.Property.ForegroundBrush)
-                    or fmt.hasProperty(QTextCharFormat.Property.BackgroundBrush)):
-                return True
-    return False
+        it = block.begin()
+        while not it.atEnd():
+            fragment = it.fragment()
+            if fragment.isValid() and _local_only(fragment.charFormat()):
+                found.append((fragment.position(), fragment.length(), fragment.charFormat()))
+            it += 1
+    cursor = QTextCursor(doc)
+    for position, length, fmt in found:
+        plain = QTextCharFormat(fmt)
+        for words in _LOCAL_ONLY:
+            plain.clearProperty(words)
+        cursor.setPosition(position)
+        cursor.setPosition(position + length, QTextCursor.MoveMode.KeepAnchor)
+        cursor.setCharFormat(plain)
+
+
+# What of a format Markdown cannot carry (has_local_only_formatting).
+_LOCAL_ONLY = (QTextFormat.Property.FontUnderline, QTextFormat.Property.TextUnderlineStyle,
+               QTextFormat.Property.ForegroundBrush, QTextFormat.Property.BackgroundBrush)
+
+
+def _local_only(fmt) -> bool:
+    """Whether a piece in ``fmt`` holds what Markdown cannot carry
+    (has_local_only_formatting); a picture and a link never."""
+    if fmt.isImageFormat() or fmt.isAnchor():
+        return False
+    return (fmt.fontUnderline() or fmt.hasProperty(QTextFormat.Property.ForegroundBrush)
+            or fmt.hasProperty(QTextFormat.Property.BackgroundBrush))
 
 
 # Markdown the editor's document cannot hold, so reading it in would lose
@@ -989,27 +1086,40 @@ def has_local_only_formatting(doc) -> bool:
 # editor keeps footnotes as their text, one paragraph each), a tab where a
 # line starts (lists and code are indented with spaces), code inside a
 # list item (it moves out of the item), an escaped footnote mark, raw
-# HTML, a link around an image, a heading inside a quote, a paragraph
-# continued inside a list item, and lines that wrap inside a paragraph (a
-# draft saved as plain text by an earlier version). Also (below): a tab
-# inside fenced code, a column's alignment, emphasis in a table's header
+# HTML, a heading inside a quote, a paragraph continued inside a list
+# item, and lines that wrap inside a paragraph (a draft saved as plain
+# text by an earlier version). Also (below): a tab inside fenced code, a
+# column's alignment, emphasis in a table's header
 # row, a link title (markdown_scan.titled_link), a link reference
 # definition in a quote or a list item or with a title
 # (markdown_scan.lossy_definition), emphasis around nothing but code
-# (markdown_scan.emphasized_code); these three outside code.
+# (markdown_scan.emphasized_code), a heading or a divider inside a list
+# item (markdown_scan.heading_in_item); these four outside code.
 _LOSSY = [
     re.compile(r"^ {0,3}\[\^[^\]]+\]:.*\n(?:[ \t]*\n)+(?: {4}|\t)\S",
                re.MULTILINE),                              # a note of two paragraphs
     re.compile(r"^\t", re.MULTILINE),                     # a tab where a line starts
     re.compile(r"^ {2,}(?:```|~~~)", re.MULTILINE),        # code inside a list item
     re.compile(r"\\\[\^"),                                 # an escaped footnote mark
-    # raw HTML: not an escaped "\<", nor a link's whole address in <…>
-    # (one with a space); a "<" that opens no such address is HTML
-    re.compile(r"(?<!\\)(?<!\]\()<(?:[A-Za-z][\w-]*[\s/>]|/[A-Za-z]|!--)"),
+    # raw HTML (also _raw_html): a "<" after "](" that opens no whole address
     re.compile(r"\]\(<(?![^<>\n]*>\))"),
-    re.compile(r"\[!\["),                                  # image inside a link
     re.compile(r"^\s*>\s*#", re.MULTILINE),               # heading in a quote
 ]
+# Raw HTML: a "<" that opens a tag or a comment, not an escaped "\<", nor
+# a link's whole address in <…> (one with a space).
+_RAW_HTML = re.compile(r"(?<!\\)(?<!\]\()<(?:[A-Za-z][\w-]*[\s/>]|/[A-Za-z]|!--)")
+
+
+def _raw_html(markdown: str) -> bool:
+    """Whether ``markdown`` holds raw HTML Qt's reader would drop: any but
+    a tag in a link's words the editor keeps as its words (_label_tags)."""
+    found = _RAW_HTML.search(markdown)
+    if found is None:
+        return False
+    kept = {start for start, _end in _label_tags(markdown)}
+    return any(tag.start() not in kept for tag in _RAW_HTML.finditer(markdown, found.start()))
+
+
 _BLOCK_START = re.compile(r"^\s*(?:[-*+]\s|\d+[.)]\s|>|#|\||```|~~~|    |\t)")
 
 
@@ -1051,7 +1161,10 @@ def _soft_breaks(markdown: str) -> Tuple[bool, List[int]]:
                 return True, []
             found.append(index - 1)
         if (line.startswith(("  ", "\t")) and line.strip() and not before.strip()
-                and index >= 2 and LIST_LINE.match(lines[index - 2])):
+                and index >= 2 and LIST_LINE.match(lines[index - 2])
+                and not EMPTY_ITEM_LINE.match(line)):
+            # (Not an empty item: the writer puts that blank line before
+            # one right under an item's words, which it would join.)
             return True, []
     if found and _free_mark(markdown, _SOFT_MARKS) is None:
         return True, []
@@ -1173,44 +1286,69 @@ def read_markdown(doc: QTextDocument, markdown: str, features=READ_FEATURES) -> 
 
 
 def _read_counting(doc: QTextDocument, markdown: str, features=READ_FEATURES, *,
-                   groups: bool = True) -> Tuple[int, int]:
-    """read_markdown, saying how many soft line breaks the Markdown has
-    that the editor holds, and how many it holds. The editor's reading
-    (READ_FEATURES) keeps them; a preview or a paste reads them as
-    Markdown readers do, as spaces. ``groups``: pictures that follow each
-    other are folded into their group, as the editor shows them; without,
-    they stay the paragraphs they are in the Markdown."""
+                   groups: bool = True) -> bool:
+    """read_markdown, saying whether the editor holds all the reading
+    marked: every soft line break the Markdown has that the editor holds
+    read as one, all Qt's reader would leave out kept (_marked_keeps), and
+    each entity a character in its line (_keep_entities).
+    The editor's reading (READ_FEATURES) keeps soft line breaks; a preview
+    or a paste reads them as Markdown readers do, as spaces. ``groups``:
+    pictures that follow each other are folded into their group, as the
+    editor shows them; without, they stay the paragraphs they are in the
+    Markdown."""
     markdown = _breaks_between_pictures(markdown)
     markdown, alts = _whole_descriptions(markdown, features)
     marked, soft_mark = 0, None
     if features == READ_FEATURES:
         markdown, soft_mark, marked = _marked_soft_breaks(markdown)
-    escaped, mark = _marked_escapes(markdown)
-    joined = _read_once(doc, escaped, features, alts, (soft_mark, marked))
-    if mark and not _keep_escaped(doc, mark, escaped.count(mark)):
-        # A mark Qt's reader put outside the text (a link's address, a
-        # picture's file, a title), where nothing takes it out: read
-        # without marks, the escapes then are saved as the writer writes
-        # text, and holds_faithfully opens the file as its text when
-        # that would change it.
-        joined = _read_once(doc, markdown, features, alts, (soft_mark, marked))
+
+    def read(text: str) -> Tuple[int, bool]:
+        escaped, mark = _marked_escapes(text)
+        result = _read_once(doc, escaped, features, alts, (soft_mark, marked))
+        if mark and not _keep_escaped(doc, mark, escaped.count(mark)):
+            # A mark Qt's reader put outside the text (a link's address, a
+            # picture's file, a title), where nothing takes it out: read
+            # without marks, the escapes then are saved as the writer writes
+            # text, and holds_faithfully opens the file as its text when
+            # that would change it.
+            result = _read_once(doc, text, features, alts, (soft_mark, marked))
+        return result
+
+    held, entity_mark, spelled = _marked_entities(markdown)
+    joined, kept = read(held)
+    if entity_mark is not None:
+        placed, faithful = _keep_entities(doc, entity_mark, spelled)
+        if placed:
+            kept = kept and faithful
+        else:
+            # The same: read with the entities, the words after one as Qt's
+            # reader formats them.
+            joined, kept = read(markdown)
     normalize_after_markdown_load(doc)
     if groups:
         # Pictures that follow each other show as one group (photo_group).
         photo_group_find.fold(doc)
-    return marked, joined
+    return joined == marked and kept
 
 
 def _read_once(doc: QTextDocument, markdown: str, features, alts: dict,
-               soft: Tuple[Optional[str], int]) -> int:
-    """Qt's reading of the marked ``markdown`` into ``doc``, the pictures
-    given their descriptions (``alts``) and the ``soft`` breaks (their
-    mark, how many) joined; how many were joined."""
-    doc.setMarkdown(literal_footnotes(markdown), features)
+               soft: Tuple[Optional[str], int]) -> Tuple[int, bool]:
+    """Qt's reading of the marked ``markdown`` into ``doc``, what it would
+    leave out kept (_marked_keeps), the pictures given their descriptions
+    (``alts``) and the ``soft`` breaks (their mark, how many) joined; how
+    many were joined, and whether all was kept."""
+    markdown = literal_footnotes(markdown)
+    keeping, keep_mark, lost = _marked_keeps(markdown, features)
+    doc.setMarkdown(keeping, features)
+    if keep_mark is not None and not _kept_by_marks(doc, keep_mark, keeping.count(keep_mark)):
+        # Read otherwise than the marks expected: read without them, and
+        # what they kept is left out.
+        doc.setMarkdown(markdown, features)
+        lost = True
     if alts:
         _restore_descriptions(doc, alts)
     soft_mark, marked = soft
-    return _join_soft_breaks(doc, soft_mark) if marked else 0
+    return (_join_soft_breaks(doc, soft_mark) if marked else 0), not lost
 
 
 # --------------------------------------------------------------------------- #
@@ -1255,13 +1393,32 @@ def _marked_escapes(markdown: str) -> Tuple[str, Optional[str]]:
     mark = _free_mark(markdown, _ESCAPE_MARKS) if found else None
     if mark is None:
         return markdown, None
+    return _with_marks(markdown, [(at, "", "") for at in found], mark), mark
+
+
+def _with_marks(text: str, places: Sequence[Tuple[int, str, str]], mark: str) -> str:
+    """``text`` with ``mark`` at each of ``places``, as (where, what goes
+    before the mark, what goes after it), in rising order."""
     pieces, last = [], 0
-    for at in found:
-        pieces.append(markdown[last:at])
-        pieces.append(mark)
+    for at, before, after in places:
+        pieces += [text[last:at], before, mark, after]
         last = at
-    pieces.append(markdown[last:])
-    return "".join(pieces), mark
+    pieces.append(text[last:])
+    return "".join(pieces)
+
+
+def _take_marks(doc: QTextDocument, mark: str) -> List[Tuple[int, QTextCharFormat]]:
+    """Each ``mark`` in ``doc``'s text taken out, first to last, as where
+    it stood (once all are out) and the format it had."""
+    taken: List[Tuple[int, QTextCharFormat]] = []
+    position = 0
+    while True:
+        cursor = doc.find(mark, position)
+        if cursor.isNull():
+            return taken
+        position = cursor.selectionStart()
+        taken.append((position, QTextCharFormat(cursor.charFormat())))
+        cursor.removeSelectedText()
 
 
 def _keep_escaped(doc: QTextDocument, mark: str, placed: int) -> bool:
@@ -1270,20 +1427,246 @@ def _keep_escaped(doc: QTextDocument, mark: str, placed: int) -> bool:
     ``placed`` marks were in the text, or a format holds one (a link's
     address, a picture's file or description, a title): it is then in
     what is saved, copied, exported and published."""
-    position, removed = 0, 0
     text = QTextCharFormat()
     text.setProperty(ESCAPED_TEXT_PROPERTY, True)
-    while True:
-        cursor = doc.find(mark, position)
-        if cursor.isNull():
-            break
-        position = cursor.selectionStart()
-        cursor.removeSelectedText()
-        removed += 1
+    taken = _take_marks(doc, mark)
+    for position, _fmt in taken:
         if doc.characterAt(position) in ESCAPABLE:
+            cursor = QTextCursor(doc)
+            cursor.setPosition(position)
             cursor.setPosition(position + 1, QTextCursor.MoveMode.KeepAnchor)
             cursor.mergeCharFormat(text)
-    return removed == placed and not _in_formats(doc, mark)
+    return len(taken) == placed and not _in_formats(doc, mark)
+
+
+# --------------------------------------------------------------------------- #
+# An entity, read in the format of the words around it                         #
+# --------------------------------------------------------------------------- #
+#
+# Qt's reader reads an entity ("&amp;") as its character, but inserts it as
+# HTML, which sets the format back: the words after it, to where their
+# emphasis or link ends, lose it ("[x &amp; y](u)" was the link "x " and
+# the words "& y", saved so), and a space it makes is dropped ("a&#32;b"
+# was "ab"). For the time Qt reads the Markdown, a mark stands in each
+# entity's place (markdown_scan.entities): a Po character, punctuation as
+# the "&" is, so the emphasis beside it reads as before; once read, the
+# mark becomes what CommonMark reads the entity as (_entity_text), in the
+# format the mark had, and a punctuation mark so made is marked escaped,
+# as the file did not write it bare ("&lt;" stays words), characters
+# nobody sees with the entity (doc_walk.ENTITY_TEXT_PROPERTY). A file is
+# read with the first mark it holds nowhere (_free_mark).
+_ENTITY_MARKS = ("\u2e35", "\u2e36", "\u2e37", "\u2e38")
+# What an entity can make that the editor holds as a new paragraph or a
+# line break, not as a character in the line ("&#10;").
+_LINE_ENDS = ("\n", "\r", "\u2028", "\u2029")
+
+
+def _marked_entities(markdown: str) -> Tuple[str, Optional[str], List[str]]:
+    """The Markdown with a mark (_ENTITY_MARKS) in place of each entity
+    (in a reference definition's label too, which must match its links'),
+    the mark, and the entities shown, in their order; as it was, None and
+    none when it has no entity or no mark can be used."""
+    if "&" not in markdown:
+        return markdown, None, []
+    found = entities(markdown)
+    mark = _free_mark(markdown, _ENTITY_MARKS) if found else None
+    if mark is None:
+        return markdown, None, []
+    pieces, last = [], 0
+    for start, end, _shown in found:
+        pieces += [markdown[last:start], mark]
+        last = end
+    pieces.append(markdown[last:])
+    return ("".join(pieces), mark,
+            [markdown[start:end] for start, end, shown in found if shown])
+
+
+def _entity_text(entity: str) -> str:
+    """What CommonMark reads ``entity`` (as markdown_scan.entities finds
+    one) as: a name HTML5 has its character(s), one it has not the words
+    as written; a number its character, and U+FFFD for 0 or a number that
+    is no character."""
+    if entity[1] != "#":
+        return html.entities.html5.get(entity[1:], entity)
+    code = int(entity[3:-1], 16) if entity[2] in "xX" else int(entity[2:-1])
+    if code == 0 or 0xD800 <= code <= 0xDFFF or code > 0x10FFFF:
+        return "\ufffd"
+    return chr(code)
+
+
+def _unseen(text: str) -> bool:
+    """Whether ``text`` (what an entity makes) is only characters nobody
+    sees: spaces of any width, a tab, a zero-width space, a soft hyphen,
+    a direction mark. A reader may drop them where a line starts, and in
+    the file they would not be seen."""
+    return all(char.isspace() or unicodedata.category(char) in ("Cc", "Cf") for char in text)
+
+
+def _keep_entities(doc: QTextDocument, mark: str, spelled: Sequence[str]) -> Tuple[bool, bool]:
+    """Each ``mark`` _marked_entities set made what its entity says
+    (``spelled``, in their order), in the mark's format: whether the marks
+    stood where expected (False when they are not as many in the text, or
+    a format holds one, as for _keep_escaped), and whether each is a
+    character in its line (_LINE_ENDS: one that is not is a space)."""
+    taken = _take_marks(doc, mark)
+    if len(taken) != len(spelled) or _in_formats(doc, mark):
+        return False, False
+    in_line = True
+    for (position, fmt), entity in zip(reversed(taken), reversed(spelled)):
+        text = _entity_text(entity)
+        character = QTextCharFormat(fmt)
+        if any(end in text for end in _LINE_ENDS):
+            in_line, text = False, " "
+        elif _unseen(text):
+            character.setProperty(ENTITY_TEXT_PROPERTY, entity)
+        if text in ESCAPABLE:
+            character.setProperty(ESCAPED_TEXT_PROPERTY, True)
+        cursor = QTextCursor(doc)
+        cursor.setPosition(position)
+        cursor.insertText(text, character)
+    return True, in_line
+
+
+# --------------------------------------------------------------------------- #
+# What Qt's reader leaves out, kept by a mark                                  #
+# --------------------------------------------------------------------------- #
+#
+# Qt's reader leaves out:
+#
+# - A list item with nothing in it ("- One\n-\n" was one item, and saved
+#   so). A mark stands in each such item (markdown_scan.empty_items), and
+#   once read the item is emptied again.
+# - The link around a picture ("[![a](p.png)](u)": the picture, without
+#   the link). A mark stands before each picture in brackets
+#   (markdown_scan.bracketed): it is text, so it gets the link the words
+#   around it get, and once read the picture gets it.
+# - A tag in a link's words ("[x <y>](u)": "x", the tag taken for HTML
+#   and dropped). Its "<" is escaped behind a mark, so the tag is read as
+#   the words it is, and once read the "<" is marked as written bare
+#   (BARE_TEXT_PROPERTY), so it is written bare again. Only where Qt's
+#   reader reads HTML (not for a preview or a paste), and only a tag that
+#   is no HTML element's and then reads as itself (_tag_is_its_text):
+#   real HTML ("[x<sup>2</sup>](u)") opens the file as its text.
+#
+# For the time Qt reads the Markdown the mark is in it: a Po character no
+# HTML entity names, none of _ESCAPE_MARKS, punctuation as the "!" of the
+# picture is, so emphasis beside it reads as before. A file is read with
+# the first one it holds nowhere (_free_mark).
+_KEEP_MARKS = ("\u2e31", "\u2e33", "\u2e34", "\u2e32")
+
+
+def _marked_keeps(markdown: str, features) -> Tuple[str, Optional[str], bool]:
+    """The Markdown with a mark (_KEEP_MARKS) where Qt's reader, reading
+    with ``features``, would leave out what the editor holds, the mark
+    (None for none), and whether something is left out all the same: an
+    empty list item where a word would change the lists, raw HTML but
+    the tags kept, or no free mark."""
+    items, lost = empty_items(markdown)
+    # (After the line's spaces and tabs: Qt's reader keeps a tab after
+    # the words of an item.)
+    places = [(at, "" if markdown[at - 1] in " \t" else " ", "") for at in items]
+    pictured, tags = bracketed(markdown)
+    places += [(at, "", "") for at in pictured]
+    html = _reads_html(features)
+    if html:
+        places += [(start, "", "\\") for start, end in tags
+                   if _tag_is_its_text(markdown[start:end])]
+    places.sort()
+    mark = _free_mark(markdown, _KEEP_MARKS) if places else None
+    marked = markdown if mark is None else _with_marks(markdown, places, mark)
+    # (The tags kept are escaped now: raw HTML left is dropped.)
+    return marked, mark, (lost or (bool(places) and mark is None)
+                          or (html and _RAW_HTML.search(marked) is not None))
+
+
+def _reads_html(features) -> bool:
+    """Whether Qt's reader, reading with ``features``, takes a tag for
+    HTML (the editor's reading), not for text (a preview's, a paste's)."""
+    no_html = QTextDocument.MarkdownFeature.MarkdownNoHTML.value
+    return (features.value & no_html) != no_html
+
+
+def _label_tags(markdown: str) -> List[Tuple[int, int]]:
+    """Where each tag in a link's words starts and ends that the editor
+    keeps as the words it is (_marked_keeps)."""
+    return [(start, end) for start, end in bracketed(markdown)[1]
+            if _tag_is_its_text(markdown[start:end])]
+
+
+# The names of HTML's elements: the WHATWG HTML standard's index of the
+# elements (MathML's and SVG's roots among them) and the elements it
+# lists as obsolete, and "image", which its parser reads as "img".
+_HTML_ELEMENTS = frozenset("""
+    a abbr address area article aside audio b base bdi bdo blockquote body br button canvas
+    caption cite code col colgroup data datalist dd del details dfn dialog div dl dt em embed
+    fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 head header hgroup hr html i
+    iframe img input ins kbd label legend li link main map mark math menu meta meter nav
+    noscript object ol optgroup option output p picture pre progress q rp rt ruby s samp script
+    search section select selectedcontent slot small source span strong style sub summary sup
+    svg table tbody td template textarea tfoot th thead time title tr track u ul var video wbr
+    applet acronym bgsound dir frame frameset noframes isindex keygen listing menuitem nextid
+    noembed param plaintext rb rtc strike xmp basefont big blink center font marquee multicol
+    nobr spacer tt image
+""".split())
+_TAG_NAME = re.compile(r"</?([A-Za-z][\w-]*)")
+
+
+@lru_cache(maxsize=1024)
+def _tag_is_its_text(tag: str) -> bool:
+    """Whether ``tag`` in a link's words is words in angle brackets, not
+    HTML a writer meant ("<y>", not "<sup>", "<br>", "<my-card>" or a
+    comment): its name no element's (_HTML_ELEMENTS) and no custom
+    element's (one with a hyphen); and whether, its "<" escaped, it reads
+    as the words it is, in the link's format alone: nothing in it a reader
+    takes for emphasis, code, an entity or an escape."""
+    name = _TAG_NAME.match(tag)
+    if name is None or "-" in name.group(1) or name.group(1).lower() in _HTML_ELEMENTS:
+        return False
+    doc = QTextDocument()
+    doc.setMarkdown(f"[\\{tag}](u)", READ_FEATURES)
+    runs = list(iter_block_runs(doc.begin()))
+    return (doc.blockCount() == 1 and len(runs) == 1 and runs[0][0] == tag
+            and runs[0][1].anchorHref() == "u" and not _is_bold(runs[0][1])
+            and not runs[0][1].fontItalic() and not runs[0][1].fontStrikeOut()
+            and not _is_code(runs[0][1]))
+
+
+def _kept_by_marks(doc: QTextDocument, mark: str, placed: int) -> bool:
+    """Each ``mark`` _marked_keeps set taken out again, and what it kept
+    given to its place: to the picture after it, the link the mark was
+    in; to the "<" after it, that it was written bare in a link's words;
+    else an empty list item. False when fewer than the ``placed`` marks
+    were in the text, a format holds one, or one stood anywhere else (the
+    Markdown was not read as the marks expected)."""
+    taken = _take_marks(doc, mark)
+    if len(taken) != placed or _in_formats(doc, mark):
+        return False
+    bare = QTextCharFormat()
+    bare.setProperty(BARE_TEXT_PROPERTY, True)
+    for position, fmt in taken:
+        if doc.characterAt(position) == "<":
+            if not (fmt.isAnchor() and fmt.anchorHref()):
+                return False            # brackets that were no link
+            tag = QTextCursor(doc)
+            tag.setPosition(position)
+            tag.setPosition(position + 1, QTextCursor.MoveMode.KeepAnchor)
+            tag.mergeCharFormat(bare)
+            continue
+        if doc.characterAt(position) == OBJECT_REPLACEMENT:
+            picture = QTextCursor(doc)
+            picture.setPosition(position)
+            picture.setPosition(position + 1, QTextCursor.MoveMode.KeepAnchor)
+            if picture.charFormat().isImageFormat():
+                if fmt.isAnchor() and fmt.anchorHref():
+                    link = QTextCharFormat()
+                    link.setAnchor(True)
+                    link.setAnchorHref(fmt.anchorHref())
+                    picture.mergeCharFormat(link)
+                continue
+        block = doc.findBlock(position)
+        if block.textList() is None or block.length() != 1:
+            return False
+    return True
 
 
 # Where Qt's reader puts words of the Markdown that are not its text.
@@ -1421,7 +1804,6 @@ def _tab_in_fence(markdown: str) -> bool:
     return False
 
 
-_DELIMITER_ROW = re.compile(r"^[ \t]*\|?(?:[ \t]*:?-+:?[ \t]*\|)+[ \t]*(?::?-+:?)?[ \t]*$")
 _HEADER_EMPHASIS = re.compile(r"\*|~~|(?<![\w\\])_|_(?!\w)")
 
 
@@ -1431,7 +1813,7 @@ def _table_loses(markdown: str) -> bool:
     by its own format there)."""
     lines = markdown.split("\n")
     for index in range(1, len(lines)):
-        if _DELIMITER_ROW.match(lines[index]) and "|" in lines[index - 1]:
+        if DELIMITER_ROW.match(lines[index]) and "|" in lines[index - 1]:
             if ":" in lines[index] or _HEADER_EMPHASIS.search(lines[index - 1]):
                 return True
     return False
@@ -1440,9 +1822,10 @@ def _table_loses(markdown: str) -> bool:
 def holds_faithfully(markdown: str) -> bool:
     """Whether the editor can hold this Markdown and write it back without
     losing anything. When it cannot, open it as its Markdown text."""
-    if (any(pattern.search(markdown) for pattern in _LOSSY) or _soft_wrapped(markdown)
-            or _tab_in_fence(markdown) or _table_loses(markdown) or titled_link(markdown)
-            or lossy_definition(markdown) or emphasized_code(markdown)):
+    if (any(pattern.search(markdown) for pattern in _LOSSY) or _raw_html(markdown)
+            or _soft_wrapped(markdown) or _tab_in_fence(markdown) or _table_loses(markdown)
+            or titled_link(markdown) or lossy_definition(markdown) or emphasized_code(markdown)
+            or heading_in_item(markdown)):
         return False
     # Read as the editor reads it (footnotes as their text, code in cells
     # without the escape of its pipes), but with its pictures as the
@@ -1453,9 +1836,8 @@ def holds_faithfully(markdown: str) -> bool:
     # as much again (10,000 groups: seconds of processor time and hundreds
     # of megabytes).
     first = QTextDocument()
-    marked, joined = _read_counting(first, markdown, groups=False)
-    if joined != marked:
-        return False            # a soft break Qt did not read as marked
+    if not _read_counting(first, markdown, groups=False):
+        return False            # a soft break or an empty item not read as marked
     shown = _fingerprint(first)
     written = document_to_markdown(first, _image_as_read)
     del first                   # freed before the next read
@@ -1518,5 +1900,5 @@ __all__: Tuple[str, ...] = (
     "MARKDOWN", "NOTE", "document_blocks", "document_to", "document_to_markdown",
     "document_to_note_text", "has_local_only_formatting", "holds_faithfully",
     "image_markdown", "link_markdown", "literal_footnotes", "literal_text", "read_markdown", "READ_FEATURES",
-    "PASTE_FEATURES",
+    "PASTE_FEATURES", "remove_local_only_formatting",
 )

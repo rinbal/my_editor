@@ -26,10 +26,12 @@ from PySide6.QtGui import QFont, QTextBlockFormat, QTextCharFormat, QTextCursor,
 
 import media_files
 import photo_caption
-from doc_walk import (ESCAPED_TEXT_PROPERTY, LINE_SEPARATOR, OBJECT_REPLACEMENT,
-                      SOFT_BREAK_PROPERTY, TYPED_TEXT_PROPERTY, doc_length, picture_pieces)
+from doc_walk import (BARE_TEXT_PROPERTY, ENTITY_TEXT_PROPERTY, ESCAPED_TEXT_PROPERTY,
+                      LINE_SEPARATOR, OBJECT_REPLACEMENT, SOFT_BREAK_PROPERTY,
+                      TYPED_TEXT_PROPERTY, doc_length, picture_pieces)
 from photo_group import (
     GROUP,
+    LINKED,
     SOFT,
     CaptionRun,
     Unit,
@@ -73,15 +75,19 @@ def is_picture(text: str, fmt: QTextCharFormat) -> bool:
 
 def _join_text(pieces) -> Optional[str]:
     """The text of pieces that join two parts of a paragraph (spaces and
-    line breaks only), soft breaks as SOFT; None for anything else."""
+    line breaks only), soft breaks as SOFT, starting with LINKED when all
+    of it is in one link; None for anything else."""
     out = []
+    links = set()
     for _position, text, fmt in pieces:
         if text.strip(" \t" + LINE_SEPARATOR):
             return None
         if fmt.boolProperty(SOFT_BREAK_PROPERTY):
             text = text.replace(LINE_SEPARATOR, SOFT)
         out.append(text)
-    return "".join(out)
+        links.add(fmt.anchorHref() if fmt.isAnchor() else "")
+    linked = len(links) == 1 and "" not in links
+    return (LINKED if linked else "") + "".join(out)
 
 
 def _is_caption_pieces(pieces) -> bool:
@@ -130,7 +136,9 @@ def _caption_of(pieces) -> Tuple[CaptionRun, ...]:
                    fmt.fontStrikeOut(), bool(fmt.fontFixedPitch()),
                    (fmt.anchorHref() if fmt.isAnchor() else "") or "",
                    fmt.boolProperty(SOFT_BREAK_PROPERTY), fmt.boolProperty(TYPED_TEXT_PROPERTY),
-                   fmt.boolProperty(ESCAPED_TEXT_PROPERTY))
+                   fmt.boolProperty(ESCAPED_TEXT_PROPERTY),
+                   fmt.boolProperty(BARE_TEXT_PROPERTY),
+                   str(fmt.property(ENTITY_TEXT_PROPERTY) or ""))
         for _position, text, fmt in pieces))
 
 

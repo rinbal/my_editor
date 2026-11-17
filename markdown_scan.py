@@ -17,15 +17,23 @@ from typing import Dict, List, Optional, Tuple
 
 FENCE_LINE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 LIST_LINE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
+# A list item with nothing in it, not even a task's box.
+EMPTY_ITEM_LINE = re.compile(r"^ *(?:[-*+]|\d{1,9}[.)])[ \t]*$")
 ESCAPABLE = set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
+_AUTOLINK_PATTERN = r"<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*|[^\s<>@]+@[^\s<>]+)>"
+_AUTOLINK = re.compile(_AUTOLINK_PATTERN)
 _AUTOLINK_OR_TAG = re.compile(
-    r"<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*|[^\s<>@]+@[^\s<>]+"
-    r"|/?[A-Za-z][\w-]*(?:\s[^<>]*)?/?|!--.*?--)>", re.S)
+    _AUTOLINK_PATTERN + r"|<(?:/?[A-Za-z][\w-]*(?:\s[^<>]*)?/?|!--.*?--)>", re.S)
 _CODE_INDENT = re.compile(r"^(?: {4}|\t)")
 # Where an escape, a code span, an autolink or tag, or a picture may start.
 _STARTS_INLINE = re.compile(r"[\\`<]|!\[")
 # The same, and where a link may start.
 _STARTS_INLINE_OR_LINK = re.compile(r"[\\`<\[]|!\[")
+# The same, where brackets close, and where a paragraph ends.
+_STARTS_INLINE_BRACKET_OR_BLANK = re.compile(r"[\\`<\[\]]|!\[|\n[ \t]*\n")
+# A bracket that may open no picture: one without a "!" before it, or
+# after an escaped one ("\\![a](u)" is a link).
+_OWN_BRACKET = re.compile(r"(?<!!)\[|\\!\[")
 _BACKTICKS = re.compile(r"`+")
 _EMPHASIS_MARKS = ("*", "_", "~")
 # Where an escape, or something an escape inside is no escape of, may
@@ -81,14 +89,309 @@ def code_lines(lines: List[str]) -> List[bool]:
             out.append(True)
             continue
         blank = not line.strip()
-        if LIST_LINE.match(line):
+        code = bool(_CODE_INDENT.match(line)) and previous_blank and not in_list
+        if LIST_LINE.match(line) and not code:      # ("    - a" there is code)
             in_list = True
         elif not blank and not line[:1].isspace():
             in_list = False
-        code = bool(_CODE_INDENT.match(line)) and previous_blank and not in_list
         out.append(code)
         previous_blank = blank or code
     return out
+
+
+# A quote's mark at a line's start, and a list item's start after the
+# quote marks: its indent, its marker and the words after it.
+_QUOTE_MARK = re.compile(r" {0,3}> ?")
+_ITEM = re.compile(r"( *)([-*+]|\d{1,9}[.)])(?=[ \t]|$)[ \t]*(.*)")
+_TASK_BOX = re.compile(r"\[[ xX]\][ \t]*")
+# A line that may be such an item with nothing in it (empty_items).
+_MAYBE_EMPTY_ITEM = re.compile(r"^[ >]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]+\[[ xX]\])?[ \t]*$", re.M)
+# A line that may start a list item, after the quote marks.
+_ANY_ITEM = re.compile(r"^[ >]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)", re.M)
+# A line no paragraph goes on past, after its indent: an ATX heading, or a
+# thematic break ("---" under a paragraph is its heading's underline,
+# which ends it all the same).
+_HEADING_OR_BREAK = re.compile(r" *(?:#{1,6}(?:[ \t].*)?|([-*_])(?:[ \t]*\1){2,}[ \t]*)")
+# A setext heading's underline after its indent ("---" is a break too).
+_UNDERLINE = re.compile(r"(?:=+|-+)[ \t]*")
+# A table's delimiter row ("| --- | :-: |"), and a pipe between cells.
+DELIMITER_ROW = re.compile(r"^[ \t]*\|?(?:[ \t]*:?-+:?[ \t]*\|)+[ \t]*(?::?-+:?)?[ \t]*$")
+_CELL_PIPE = re.compile(r"(?<!\\)\|")
+
+
+def _inside_quotes(line: str, depth: int) -> Optional[str]:
+    """``line`` without the marks of ``depth`` quotes; None when it has
+    fewer."""
+    at = 0
+    for _quote in range(depth):
+        found = _QUOTE_MARK.match(line, at)
+        if found is None:
+            return None
+        at = found.end()
+    return line[at:]
+
+
+def _quote_depth(line: str) -> int:
+    """How many quotes ``line`` stands in, by the marks it starts with."""
+    depth, at = 0, 0
+    while True:
+        found = _QUOTE_MARK.match(line, at)
+        if found is None:
+            return depth
+        depth, at = depth + 1, found.end()
+
+
+def _indent(text: str) -> Optional[int]:
+    """How many spaces ``text`` starts with; None for a tab among them,
+    whose width depends on the column."""
+    spaces = len(text) - len(text.lstrip(" "))
+    return None if text[spaces:spaces + 1] == "\t" else spaces
+
+
+def empty_items(markdown: str) -> Tuple[List[int], bool]:
+    """Where the line of each list item with nothing in it ("-", "2.",
+    "- [ ]") ends, outside code, when words written there leave the lists
+    as they are (_empty_item_alone); and whether such an item stands
+    where words would change them, or where it is not known whether it
+    is one (_item_starts).
+
+    Qt's reader leaves an item with nothing in it out (md4c gives it no
+    text), and keeps one with a word in it."""
+    if _MAYBE_EMPTY_ITEM.search(markdown) is None:
+        return [], False
+    lines = markdown.split("\n")
+    code = code_lines(lines)
+    starts = _item_starts(lines, code)[0]
+    places: List[int] = []
+    unsafe = False
+    start = 0
+    for number, line in enumerate(lines):
+        line_start, start = start, start + len(line) + 1
+        if starts[number] is False:
+            continue                    # no item, or a paragraph's words
+        depth = _quote_depth(line)
+        item = _ITEM.fullmatch(_inside_quotes(line, depth))
+        words = item.group(3)
+        box = _TASK_BOX.fullmatch(words)
+        if words.strip() and box is None:
+            continue
+        if starts[number] is None:
+            unsafe = True
+        elif box is None:
+            alone = _empty_item_alone(lines, code, number, depth,
+                                      len(item.group(1)) + len(item.group(2)) + 1)
+            if alone:
+                places.append(line_start + len(line))
+            elif alone is not None:
+                unsafe = True
+        elif _empty_item_alone(lines, code, number, depth, item.start(3)):
+            # (A task's box is a paragraph already: a line that would join
+            # the words joins the box, and the task is not empty.)
+            places.append(line_start + len(line))
+    return places, unsafe
+
+
+def heading_in_item(markdown: str) -> bool:
+    """Whether a heading or a thematic break stands in a list item ("- # a",
+    "- a\\n  ---", "- a\\n\\n  # b"), outside code: Qt's reader takes it out
+    of its list, or makes it the item's words in bold."""
+    if _ANY_ITEM.search(markdown) is None:
+        return False
+    lines = markdown.split("\n")
+    return _item_starts(lines, code_lines(lines))[1]
+
+
+def _item_starts(lines: List[str], code: List[bool]) -> Tuple[List[Optional[bool]], bool]:
+    """For each line, whether a list item starts on it, by the lines above
+    it as CommonMark reads them: False for a line that is no item, or the
+    words of the paragraph going on above it ("Text\\n-" is a heading,
+    "Text\\n*" one paragraph, "- a\\n  -" a heading in the item); None
+    where this cannot tell. An item with nothing in it, or numbered other
+    than 1, does not interrupt a paragraph in its place: in its quote, at
+    the words of the paragraph's item or right of them ("- a\\nb\\n-" is
+    two items, "> a\\n-" a quote and an item). And whether a heading or a
+    thematic break stands in an item (heading_in_item)."""
+    starts: List[Optional[bool]] = []
+    # The paragraph going on: its quote depth and the column of the words
+    # of the item it is in (0: in none; None: not known), its first line,
+    # and how many lines it has; the quote depth of a table going on.
+    paragraph: Optional[Tuple[int, Optional[int]]] = None
+    first, count = "", 0
+    table: Optional[int] = None
+    # The columns of the words of the items open, outermost first, in the
+    # quote the line before stands in (an item ends with its quote).
+    items: List[int] = []
+    items_depth = 0
+    inner = False
+    for number, line in enumerate(lines):
+        starts.append(False)
+        depth = _quote_depth(line)
+        rest = _inside_quotes(line, depth)
+        if depth != items_depth:
+            items, items_depth = [], depth
+        indent = _indent(rest)
+        if code[number] or not rest.strip():
+            paragraph = table = None
+            if code[number] and indent is not None:
+                _close_items(items, indent)
+            continue
+        item = _ITEM.fullmatch(rest)
+        if indent is None:              # a tab in the indent: its column is not known
+            starts[number] = None if item else False
+            paragraph, table = (depth, None), None
+            continue
+        in_place = paragraph is not None and paragraph[0] == depth
+        column = paragraph[1] if in_place else None
+        if column is not None and _UNDERLINE.fullmatch(rest.lstrip(" ")) \
+                and column <= indent < column + 4:
+            # The paragraph's heading (a "-" under its words is no item);
+            # in an item when the paragraph's words are.
+            inner = inner or column > 0
+            paragraph, table = None, None
+            continue
+        heading = _HEADING_OR_BREAK.fullmatch(rest) is not None
+        if not (in_place and item is None and not heading):
+            _close_items(items, indent)     # (words going on keep the items open)
+        if heading:
+            inner = inner or bool(items) and indent - items[-1] < 4
+            # (Indented 4 or more it may be code, or words going on.)
+            paragraph, table = (None if indent < 4 else (depth, None)), None
+            continue
+        if item is not None:
+            start = _item_start(item, paragraph if in_place else None, indent)
+            starts[number] = start
+            if start is False:
+                count += 1              # the paragraph's words
+                continue
+            columns, words = _item_words(rest, item)
+            items += columns
+            table = None
+            if start is None:
+                paragraph = (depth, None)
+            elif not words.strip() or _HEADING_OR_BREAK.fullmatch(words):
+                # Nothing in it, or one in it inside ("- -", a heading, a break).
+                inner = inner or bool(words.strip())
+                paragraph = None
+            else:
+                # The column of its words, not known when they open a quote,
+                # code or HTML.
+                paragraph = (depth, None) if words[:1] in ">`~<" else (depth, columns[-1])
+                first, count = words, 1
+            continue
+        if table == depth:
+            continue                    # a row of the table
+        table = None
+        if in_place:
+            if DELIMITER_ROW.match(rest):
+                # A table when the line above is its header alone, as
+                # readers agree; else what this does not tell.
+                header = count == 1 and "|" in first
+                if header and len(_cells(first)) == len(_cells(rest)):
+                    paragraph, table = None, depth
+                else:
+                    paragraph = (depth, None)
+            else:
+                count += 1              # words going on
+            continue
+        if paragraph is not None and paragraph[0] > depth:
+            count += 1                  # words of a quote's paragraph, its marks left out
+            continue
+        paragraph, first, count = (depth, 0 if indent == 0 else None), rest, 1
+    return starts, inner
+
+
+def _close_items(items: List[int], indent: int) -> None:
+    """End the items a line ``indent`` spaces in stands left of the words of."""
+    while items and indent < items[-1]:
+        items.pop()
+
+
+def _item_start(item: re.Match, paragraph: Optional[Tuple[int, Optional[int]]],
+                indent: int) -> Optional[bool]:
+    """Whether the item matched (``indent`` spaces in) starts one, by the
+    ``paragraph`` going on in its quote (None for none): it does when it
+    stands left of the words of the paragraph's item, or interrupts the
+    paragraph (has words, is bulleted or numbered 1, and stands less than
+    4 columns right of them); None when the paragraph's item is not known
+    and it may not interrupt."""
+    if paragraph is None:
+        return True
+    marker, words = item.group(2), item.group(3)
+    interrupts = bool(words.strip()) and (marker[-1] not in ".)" or int(marker[:-1]) == 1)
+    column = paragraph[1]
+    if column is None:
+        return True if interrupts and indent < 4 else None
+    return indent < column or (interrupts and indent - column < 4)
+
+
+def _item_words(rest: str, item: re.Match) -> Tuple[List[int], str]:
+    """The columns of the words of the item matched on the line ``rest``
+    and of each item it starts with ("- - a": two), and the words after
+    their markers (an item's with nothing in it: right of its marker)."""
+    columns: List[int] = []
+    while True:
+        words = item.group(3)
+        columns.append(item.start(3) if words.strip() else item.end(2) + 1)
+        if not words.strip() or _HEADING_OR_BREAK.fullmatch(words):
+            return columns, words
+        inner = _ITEM.fullmatch(rest, item.start(3))
+        if inner is None:
+            return columns, words
+        item = inner
+
+
+def _cells(row: str) -> List[str]:
+    """The cells of a table's row, its outer pipes left out."""
+    row = row.strip()
+    if row.startswith("|"):
+        row = row[1:]
+    if row.endswith("|") and not row.endswith("\\|"):
+        row = row[:-1]
+    return _CELL_PIPE.split(row)
+
+
+def _empty_item_alone(lines: List[str], code: List[bool], number: int, depth: int,
+                      column: int) -> Optional[bool]:
+    """Whether words written in the empty item on line ``number`` (in
+    ``depth`` quotes, its words' column ``column``) stay alone: True when
+    the text ends after it, a blank line ends them, or an item follows
+    (one inside it numbered 1 or bulleted, as an item must be to follow a
+    paragraph); False when a line would join them (one left of the
+    column, as a paragraph's lazy line, or a second paragraph, which an
+    item that starts empty cannot have); None when the next line holds
+    the item's words (it is not empty)."""
+    following = number + 1
+    if following == len(lines):
+        return True
+    if code[following]:
+        return False
+    rest = _inside_quotes(lines[following], depth)
+    if rest is None and lines[following].strip():
+        # Out of the quote: an item there starts a list of its own; other
+        # words are a lazy line of the quote's paragraph.
+        own = _inside_quotes(lines[following], _quote_depth(lines[following]))
+        return _ITEM.fullmatch(own or "") is not None
+    if rest is None or not rest.strip():
+        # A blank line ends the words; the first line after it with words
+        # is the item's second paragraph when it stands in the column.
+        for later in lines[following + 1:]:
+            inside = _inside_quotes(later, depth)
+            if inside is None:
+                return True             # the quote ended
+            if inside.strip():
+                indent = _indent(inside)
+                return indent is not None and indent < column
+        return True
+    indent = _indent(rest)
+    if indent is None:
+        return False
+    item = _ITEM.fullmatch(rest)
+    if item is None:
+        return None if indent >= column else False
+    if indent < column:
+        return True                     # an item of this list or one around it
+    marker = item.group(2)
+    return indent < column + 4 and (marker[-1] not in ".)" or int(marker[:-1]) == 1)
 
 
 def code_span_end(text: str, start: int, found: Optional[Found] = None) -> int:
@@ -365,6 +668,73 @@ def pictures(markdown: str) -> List[Tuple[int, int, int]]:
     return found
 
 
+def bracketed(markdown: str) -> Tuple[List[int], List[Tuple[int, int]]]:
+    """What of ``markdown`` stands inside brackets, outside code, where the
+    words of a link may hold it: each picture, by where it starts (its
+    "!"; "[![a](p.png)](u)", "[see ![a](p.png)](u)"), and each tag on
+    one line ("[x <y>](u)"), by where it starts and ends. A tag in a
+    picture's description is the description's."""
+    if _OWN_BRACKET.search(markdown) is None:
+        return [], []                   # no bracket but the pictures' own
+    found = pictures(markdown)
+    after = {start - 2: end for start, _end, end in found}
+    blocked = _Blocked(_code_ranges(markdown))
+    scanned = Found()
+    pairs: List[Tuple[int, int]] = []
+    tags: List[Tuple[int, int]] = []
+    opened: List[int] = []
+    index = 0
+    while True:
+        nearest = _STARTS_INLINE_BRACKET_OR_BLANK.search(markdown, index)
+        if nearest is None:
+            break
+        index = nearest.start()
+        end = blocked.end(index)
+        if end is not None:
+            index = end + 1
+            continue
+        char = markdown[index]
+        if index in after:
+            # A picture is passed whole, as a reader takes it first: its
+            # description's brackets and its address's are its own.
+            index = after[index]
+        elif char == "\n":
+            opened.clear()              # a paragraph ends
+            index = nearest.end()
+        elif char == "[":
+            opened.append(index)
+            index += 1
+        elif char == "]":
+            if opened:
+                pairs.append((opened.pop(), index))
+            index += 1
+        else:
+            skipped = skip_inline(markdown, index, scanned)
+            if (skipped is not None and char == "<" and _AUTOLINK.match(markdown, index) is None
+                    and "\n" not in markdown[index:skipped]):
+                tags.append((index, skipped))
+            index = index + 1 if skipped is None else skipped
+    pairs.sort()
+    held = set(_held(tags, pairs))
+    return (_held([(start - 2, end) for start, _end, end in found], pairs),
+            [(start, end) for start, end in tags if start in held])
+
+
+def _held(spans: List[Tuple[int, int]], pairs: List[Tuple[int, int]]) -> List[int]:
+    """The start of each of ``spans`` (start, end; rising, none holding a
+    bracket) that a pair of brackets of ``pairs`` (by opener; nested or
+    apart) opens before and closes after."""
+    out: List[int] = []
+    furthest, at = -1, 0
+    for start, end in spans:
+        while at < len(pairs) and pairs[at][0] < start:
+            furthest = max(furthest, pairs[at][1])
+            at += 1
+        if furthest >= end:
+            out.append(start)
+    return out
+
+
 def lossy_definition(markdown: str) -> bool:
     """Whether a link reference definition Qt's reader does not keep as
     written stands in ``markdown``, outside code: one shown in a fence or
@@ -442,15 +812,48 @@ def escapes(markdown: str) -> List[int]:
     for the character after it (``\\*`` for a star that is no emphasis):
     outside code, an autolink or a tag, a picture's description and a
     link's address (a reference definition's too)."""
+    return _escapes_and_entities(markdown, False)[0]
+
+
+def entities(markdown: str) -> List[Tuple[int, int, bool]]:
+    """Where each entity of ``markdown`` is (start, end) that a reader
+    takes for its character ("&amp;" for "&"), where escapes are
+    (escapes), but in a word that may be a web or an email address (Qt's
+    reader links none with an entity in it); and whether it is shown,
+    not in a reference definition's label, which the reader takes away."""
+    labels = _Blocked([(definition.start(), definition.start(1))
+                       for definition in _DEFINITION.finditer(markdown)])
+    addresses = _Blocked([word.span() for word in _WORD.finditer(markdown)
+                          if any(part in word.group(0).lower() for part in ("://", "www.", "@"))])
+    return [(start, end, labels.end(start) is None)
+            for start, end in _escapes_and_entities(markdown, True)[1]
+            if addresses.end(start) is None]
+
+
+# An entity as Qt's reader takes one (md4c's md_is_entity_str): "&", then a
+# name of 2 to 48 letters and digits, the first a letter, or "#" and 1 to
+# 7 digits, or "#x" and 1 to 6 hexadecimal ones; then ";".
+_ENTITY = re.compile(r"&(?:[A-Za-z][A-Za-z0-9]{1,47}|#[0-9]{1,7}|#[xX][0-9A-Fa-f]{1,6});")
+_STARTS_ESCAPE_OR_ENTITY = re.compile(r"[\\`<&]|!\[|\]\(")
+# A word, which may be a web or an email address (holding "://", "www."
+# or "@").
+_WORD = re.compile(r"[^ \t\n]+")
+
+
+def _escapes_and_entities(markdown: str, entities_too: bool) -> Tuple[List[int],
+                                                                       List[Tuple[int, int]]]:
+    """escapes, and the entities where they are (entities)."""
     blocked = _Blocked(_code_ranges(markdown)
                        + [definition.span(1) for definition in _DEFINITION.finditer(markdown)])
     found: List[int] = []
+    found_entities: List[Tuple[int, int]] = []
+    starts = _STARTS_ESCAPE_OR_ENTITY if entities_too else _STARTS_ESCAPE
     scanned = Found()
     index = 0
     while True:
-        nearest = _STARTS_ESCAPE.search(markdown, index)
+        nearest = starts.search(markdown, index)
         if nearest is None:
-            return found
+            return found, found_entities
         index = nearest.start()
         end = blocked.end(index)
         if end is not None:
@@ -461,8 +864,14 @@ def escapes(markdown: str) -> List[int]:
         elif markdown.startswith("](", index):
             close = destination_end(markdown, index + 1, scanned)
             index = index + 2 if close is None else close + 1
+        elif markdown[index] == "&":
+            entity = _ENTITY.match(markdown, index)
+            if entity is not None:
+                found_entities.append(entity.span())
+            index = index + 1 if entity is None else entity.end()
         else:
             skipped = skip_inline(markdown, index, scanned)
             if skipped == index + 2 and markdown[index] == "\\":
                 found.append(index)
             index = index + 1 if skipped is None else skipped
+

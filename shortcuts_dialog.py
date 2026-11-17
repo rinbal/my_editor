@@ -46,6 +46,7 @@ from PySide6.QtWidgets import (
 )
 
 from i18n import _, pgettext
+from pdf_viewer import reader_key_text
 
 
 # --------------------------------------------------------------------------- #
@@ -98,9 +99,10 @@ OTHER_KEYS: Tuple[Tuple[str, Tuple[Tuple[str, str], ...]], ...] = (
         ("End", _("Last page")),
         ("Ctrl+=", _("Zoom in (also Ctrl+wheel)")),
         ("Ctrl+-", _("Zoom out (also Ctrl+wheel)")),
-        ("Ctrl+0", _("Fit page width")),
-        ("Ctrl+1", _("Actual size")),
-        ("Ctrl+2", _("Fit whole page")),
+        # The reader's zoom keys differ on a Mac (pdf_viewer.reader_keys).
+        (reader_key_text("fit width"), _("Fit page width")),
+        (reader_key_text("actual size"), _("Actual size")),
+        (reader_key_text("fit page"), _("Fit whole page")),
         ("F12", _("Toggle table of contents")),
     )),
 )

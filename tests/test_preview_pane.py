@@ -313,3 +313,50 @@ def test_write_preview_and_split_in_the_window(tmp_path):
     assert md["as_text"] and md["switch_shown"] and md["preview"]
     assert "A claim with <b>raw</b> HTML." in md["drawn"]
     assert "one" in md["drawn"] and "- one" not in md["drawn"]
+
+
+COLORED = r"""
+import json, os, sys
+sys.path.insert(0, sys.argv[1])
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
+from PySide6.QtWidgets import QApplication
+app = QApplication(sys.argv[:1])
+import main_window
+
+w = main_window.MainWindow()
+w.resize(1500, 800)
+w.show()
+ed = w.new_tab()
+ed.insertPlainText("A red word")
+word = QTextCursor(ed.document())
+word.setPosition(2)
+word.setPosition(5, QTextCursor.MoveMode.KeepAnchor)
+red = QTextCharFormat()
+red.setForeground(QColor("red"))
+word.mergeCharFormat(red)
+w.act_view_preview.trigger()
+app.processEvents()
+pane = ed._preview_pane
+r = {"colored": [pane._checks.isVisible(), pane._checks.text()]}
+word.setCharFormat(QTextCharFormat())
+pane.render()
+r["plain"] = [pane._checks.isVisible(), pane._checks.text()]
+word.mergeCharFormat(red)
+w.nostr_state._active = True
+r["article"] = list(w._preview_content(ed, "article").checks)
+r["note"] = list(w._preview_content(ed, "note").checks)
+w.nostr_state._active = False
+ed.document().setModified(False)
+w.close()
+print("RESULT " + json.dumps(r))
+"""
+
+
+def test_the_preview_says_it_leaves_colors_out(tmp_path):
+    r = run_window_script(COLORED, tmp_path)
+    assert r["colored"] == [True, "Colors, highlights and underlines aren’t part of Markdown, "
+                                  "so the preview leaves them out."]
+    assert r["plain"] == [False, ""]
+    assert "Colors, highlights and underlines don’t reach readers." in r["article"]
+    assert "Colors, highlights and underlines don’t reach readers." in r["note"]

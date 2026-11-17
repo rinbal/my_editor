@@ -73,9 +73,10 @@ def test_the_pdf_reader_never_takes_a_tab_key(monkeypatch, platform):
     monkeypatch.setattr(commands, "sys", types.SimpleNamespace(platform=platform))
     zoom = {words: tab for _s, words, _a, tab, _v in reader_keys()}
     mac = platform == "darwin"
-    assert zoom["Actual size"] == (("Ctrl+Alt+1",) if mac else ("Ctrl+1",))
+    # Command-0 is Actual Size on a Mac, as in Preview and View > Actual Size.
+    assert zoom["Actual size"] == (("Ctrl+0", "Ctrl+Alt+1") if mac else ("Ctrl+1",))
     assert zoom["Fit whole page"] == (("Ctrl+Alt+2",) if mac else ("Ctrl+2",))
-    assert zoom["Fit page width"] == ("Ctrl+0",)
+    assert zoom["Fit page width"] == (("Ctrl+Alt+0",) if mac else ("Ctrl+0",))
 
 
 def test_a_reader_key_on_a_command_that_stays_on_is_refused():

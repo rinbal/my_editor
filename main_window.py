@@ -96,7 +96,7 @@ from doc_walk import image_positions, iter_block_runs, iter_blocks, iter_image_n
 from plain_writer import serialize_plain_with_images
 from markdown_writer import (
     document_to, document_to_markdown, has_local_only_formatting, holds_faithfully,
-    image_markdown, read_markdown,
+    image_markdown, read_markdown, remove_local_only_formatting,
 )
 from editor import CARET_STYLES, DEFAULT_CARET_STYLE, PROSE_INSET, HtmlEditor
 import panel_layout
@@ -5290,32 +5290,72 @@ class MainWindow(QMainWindow):
             # only underline and colors stay behind.
             return has_local_only_formatting(ed.document())
         if lowered.endswith('.rmd'):
-            return self._has_formatting(ed)
+            # Converted, the formatting goes into the R Markdown; only a tab
+            # saved as its source text leaves it out (_to_rmd_content).
+            return self._saves_rmd_source(ed) and self._has_formatting(ed)
         return self._has_formatting(ed) or self._has_images(ed)
 
+    def _ask_before_losing(self, ed, path: str) -> str:
+        """Ask before saving ``ed`` to ``path`` drops what the file cannot
+        hold (_loses_content_on_save): "save" (nothing is lost, or it is
+        saved without it), "without colors" (a Markdown file saved without
+        its colors, highlights and underlines: _save_to takes them off the
+        document too once the file is written), "html", "rtf" or "cancel"."""
+        if not self._loses_content_on_save(ed, path):
+            return "save"
+        result = self._warn_formatting_loss(os.path.splitext(path)[1])
+        if result != "anyway":
+            return result
+        return "without colors" if path.lower().endswith(".md") else "save"
+
     def _warn_formatting_loss(self, ext_label: str) -> str:
-        """Ask before saving to a format that drops content.
-        Returns 'anyway', 'html', 'rtf', or 'cancel'."""
+        """Ask before saving to a format that drops content, saying what it
+        drops (_loses_content_on_save). Returns 'anyway', 'html', 'rtf', or
+        'cancel'."""
+        lowered = ext_label.lower()
+        if lowered == ".md":
+            # Only what Markdown cannot carry goes.
+            title = _("Save as {ext} without colors?").format(ext=ext_label)
+            message = _("Markdown can’t keep colors, highlights and underlines. "
+                        "Bold, italic, links and pictures stay.")
+            anyway = Button(_("Save Without Colors"), "anyway", DESTRUCTIVE,
+                            _("Removes them from this document too. You can undo this."))
+        elif lowered == ".rtf":
+            # RTF keeps the formatting and the colors; only pictures go.
+            title = _("Save as {ext} without pictures?").format(ext=ext_label)
+            message = _("RTF can’t keep pictures. Text, formatting and colors stay.")
+            anyway = Button(_("Save as {ext} Anyway").format(ext=ext_label), "anyway",
+                            DESTRUCTIVE, _("Pictures will be left out of the saved file."))
+        elif lowered == ".rmd":
+            # Only a tab saved as its source text asks (_loses_content_on_save):
+            # the formatting made in it goes, its pictures stay.
+            title = _("Save as {ext} without formatting?").format(ext=ext_label)
+            message = _("R Markdown is saved as its source text, so bold, italic, colors "
+                        "and other formatting made here are left out. Pictures stay.")
+            anyway = Button(_("Save as {ext} Anyway").format(ext=ext_label), "anyway",
+                            DESTRUCTIVE, _("Formatting and colors will be left out of the "
+                                           "saved file."))
+        else:
+            title = _("Save as {ext} without formatting?").format(ext=ext_label)
+            message = _("This document has colors, text formatting or images "
+                        "that {ext} can't store.").format(ext=ext_label)
+            anyway = Button(_("Save as {ext} Anyway").format(ext=ext_label), "anyway",
+                            DESTRUCTIVE, _("Formatting, colors and images will be permanently "
+                                           "removed from the saved file."))
         buttons = [
-            Button(_("Save as {ext} Anyway").format(ext=ext_label), "anyway", DESTRUCTIVE,
-                   _("Formatting, colors and images will be permanently removed "
-                     "from the saved file.")),
+            anyway,
             Button(_("Save as {ext}").format(ext=".html"), "html", NORMAL,
                    _("Saves all colors, bold, italic and formatting.\n"
                      "Best choice for editing in this editor.")),
         ]
         # Offering .rtf as the escape from an .rtf save would be a loop.
-        if ext_label.lower() != ".rtf":
+        if lowered != ".rtf":
             buttons.append(Button(
                 _("Save as {ext}").format(ext=".rtf"), "rtf", NORMAL,
                 _("Saves all colors, bold, italic and formatting.\n"
                   "Compatible with Word, LibreOffice and other apps.")))
         buttons.append(Button(_("Cancel"), "cancel", DEFAULT))
-        return ask(
-            self, title=_("Save as {ext} without formatting?").format(ext=ext_label),
-            message=_("This document has colors, text formatting or images "
-                      "that {ext} can't store.").format(ext=ext_label),
-            buttons=buttons, caution=True)
+        return ask(self, title=title, message=message, buttons=buttons, caution=True)
 
     def save(self) -> bool:
         if self.current_pdf_viewer() is not None:
@@ -5362,15 +5402,14 @@ class MainWindow(QMainWindow):
                 return True
             return self.save_as()
         ed = self.current_editor()
-        if ed and self._loses_content_on_save(ed, path):
-            result = self._warn_formatting_loss(os.path.splitext(path)[1])
-            if result == 'cancel':
-                return False
-            elif result == 'html':
-                return self.save_as(self._suggest_path(path, '.html'), ".html (*.html)")
-            elif result == 'rtf':
-                return self.save_as(self._suggest_path(path, '.rtf'), ".rtf (*.rtf)")
-        return self._save_to(path)
+        result = self._ask_before_losing(ed, path) if ed else "save"
+        if result == 'cancel':
+            return False
+        elif result == 'html':
+            return self.save_as(self._suggest_path(path, '.html'), ".html (*.html)")
+        elif result == 'rtf':
+            return self.save_as(self._suggest_path(path, '.rtf'), ".rtf (*.rtf)")
+        return self._save_to(path, without_colors=result == "without colors")
 
     def _suggest_path(self, current_path: str, new_ext: str) -> str:
         """Return current_path with its extension replaced by new_ext."""
@@ -5400,14 +5439,13 @@ class MainWindow(QMainWindow):
 
         # Warn if saving to a format that loses formatting
         ed = self.current_editor()
-        if ed and self._loses_content_on_save(ed, path):
-            result = self._warn_formatting_loss(os.path.splitext(path)[1])
-            if result == 'cancel':
-                return False
-            elif result == 'html':
-                return self.save_as(self._suggest_path(path, '.html'), ".html (*.html)")
-            elif result == 'rtf':
-                return self.save_as(self._suggest_path(path, '.rtf'), ".rtf (*.rtf)")
+        result = self._ask_before_losing(ed, path) if ed else "save"
+        if result == 'cancel':
+            return False
+        elif result == 'html':
+            return self.save_as(self._suggest_path(path, '.html'), ".html (*.html)")
+        elif result == 'rtf':
+            return self.save_as(self._suggest_path(path, '.rtf'), ".rtf (*.rtf)")
 
         old_path = self.current_path()
 
@@ -5416,7 +5454,7 @@ class MainWindow(QMainWindow):
             # was saved from, while it is still the one in front.
             if ed is None or self.current_editor() is ed:
                 self._saved_as(path, old_path)
-        ok = self._save_to(path, then=saved)
+        ok = self._save_to(path, then=saved, without_colors=result == "without colors")
         if ok:
             self._saved_as(path, old_path)
         return ok
@@ -5437,12 +5475,17 @@ class MainWindow(QMainWindow):
         self._populate_recent_menu()
         self._update_knit_actions()
 
-    def _save_to(self, path: str, *, asked: bool = False, then=None) -> bool:
+    def _save_to(self, path: str, *, asked: bool = False, then=None,
+                 without_colors: bool = False) -> bool:
         """Write the current document to ``path``; True once it is written.
         ``asked``: the caller asked already about writing over a file that
         another app changed (_confirm_save_over_changes). A page or a PDF
         whose web pictures are still to come is written once they are
-        (_with_web_pictures): False now, and ``then()`` once it is."""
+        (_with_web_pictures): False now, and ``then()`` once it is.
+        ``without_colors``: a Markdown file saved without its colors,
+        highlights and underlines (_ask_before_losing); once it is written
+        they are taken off the document too, as one step of Undo, so the
+        window shows what the file holds and the next save asks nothing."""
         ed = self.current_editor()
         if not ed:
             return False
@@ -5516,6 +5559,9 @@ class MainWindow(QMainWindow):
                 ed._front_matter = front
                 ed._details_not_saved = front.refused if front is not None else frozenset()
                 tab_details.file_changed(ed)
+                if without_colors:
+                    with ed.undo_step(N_("Remove Colors")):
+                        remove_local_only_formatting(ed.document())
             ed._recovered_title = ""
             self._resolve_disk_change(ed)
             ed.document().setModified(False)
@@ -6250,15 +6296,9 @@ class MainWindow(QMainWindow):
         return bytes(buf.data())
 
     def _to_rmd_content(self, ed, path: str) -> str:
-        """Content for a .Rmd save: source passthrough or rich conversion.
-
-        A tab that came from an .Rmd file (including one restored by crash
-        recovery, which loses the flag but keeps the path) is already
-        source. A plain tab whose text already starts with a YAML fence is
-        treated as source too, so raw Rmd typed into a new tab is not
-        double-wrapped. Everything else is converted with frontmatter.
-        """
-        origin = (getattr(ed, "_file_path", "") or "").lower()
+        """Content for a .Rmd save: the tab's text when it is R Markdown
+        source (_saves_rmd_source), else the document converted, with
+        front matter."""
         # R Markdown is markdown, so a pasted image serializes to real
         # ![alt](sidecar) syntax here. Reading the source out as plain text
         # would drop it, leaving a bare U+FFFC for pandoc to choke on.
@@ -6272,14 +6312,23 @@ class MainWindow(QMainWindow):
             link = self._media_file_link(media, path)
             return link.markdown() if link is not None else None
 
-        source = serialize_plain_with_images(ed.document(), reference)
-        if getattr(ed, "_loaded_as_rmd_source", False) or origin.endswith(".rmd"):
-            return source
-        if source.lstrip().startswith("---") and not self._has_formatting(ed):
-            return source
+        if self._saves_rmd_source(ed):
+            return serialize_plain_with_images(ed.document(), reference)
         title = derive_title(ed.document(), self._export_title_for(path))
         return document_to_rmd(ed.document(), title,
                                copy_image=self._make_rmd_image_copier(ed, path))
+
+    def _saves_rmd_source(self, ed) -> bool:
+        """Whether ``ed`` is saved to .Rmd as its text, not converted
+        (_to_rmd_content): a tab that came from an .Rmd file is source
+        (one restored by crash recovery too, which loses the flag but
+        keeps the path), and so is a plain tab whose text starts with a
+        YAML fence, so raw Rmd typed into a new tab is not wrapped twice."""
+        origin = (getattr(ed, "_file_path", "") or "").lower()
+        if getattr(ed, "_loaded_as_rmd_source", False) or origin.endswith(".rmd"):
+            return True
+        return (ed.document().toPlainText().lstrip().startswith("---")
+                and not self._has_formatting(ed))
 
     def _make_rmd_image_copier(self, ed, rmd_path: str):
         """Copy images into the .Rmd's sidecar media folder.
@@ -6748,9 +6797,8 @@ class MainWindow(QMainWindow):
             # Auto-save before knitting, RStudio-style. It goes through the
             # same guard as an explicit save, so an automatic step can never
             # discard more than a deliberate one would.
-            if self._loses_content_on_save(ed, path):
-                if self._warn_formatting_loss(os.path.splitext(path)[1]) == 'cancel':
-                    return
+            if self._ask_before_losing(ed, path) == 'cancel':
+                return
             if not self._save_to(path):
                 return
         runner = self._ensure_knit_runner()
@@ -8608,6 +8656,11 @@ class MainWindow(QMainWindow):
         while a Nostr account is in use, what will be published (as an
         ARTICLE or a NOTE) and what of it readers will not see."""
         names = self._preview_name
+        # Colors, highlights and underlines, which Markdown cannot carry,
+        # are not in the preview: said, so their words drawn plain do not
+        # read as broken Markdown.
+        colors = (not getattr(ed, "_markdown_source", False)
+                  and has_local_only_formatting(ed.document()))
         if not self.nostr_state.active:
             def pictures(fmt):
                 media = _media_asset(self._asset_manager, fmt.name())
@@ -8622,7 +8675,9 @@ class MainWindow(QMainWindow):
                 markdown = serialize_plain_with_images(ed.document(), pictures)
             else:
                 markdown = document_to_markdown(ed.document(), pictures)
-            return PreviewContent(DOCUMENT, markdown.rstrip("\n"), names=names)
+            checks = (_("Colors, highlights and underlines aren’t part of Markdown, so the "
+                        "preview leaves them out."),) if colors else ()
+            return PreviewContent(DOCUMENT, markdown.rstrip("\n"), names=names, checks=checks)
         profile = self._profile_store.default()
         author = (profile.display_name or profile.npub_short()) if profile is not None else ""
         checks = []
@@ -8633,6 +8688,8 @@ class MainWindow(QMainWindow):
                 "has uploaded it.",
                 "{count} files are not on your media servers yet: they show here once "
                 "publishing has uploaded them.", local).format(count=local))
+        if colors:
+            checks.append(_("Colors, highlights and underlines don’t reach readers."))
         if kind == NOTE:
             text = self._publish_payload(ed, "note")[0]
             return PreviewContent(NOTE, text, author=author, names=names, checks=tuple(checks))

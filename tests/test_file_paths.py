@@ -242,7 +242,7 @@ class _SaveAsWindow:
     def current_path(self):
         return None
 
-    def _save_to(self, path, then=None):
+    def _save_to(self, path, then=None, without_colors=False):
         self.saved.append(path)
         return True
 

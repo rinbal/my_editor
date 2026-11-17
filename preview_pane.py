@@ -10,10 +10,12 @@ Q-E): it shows what the document's Markdown says, which is what a file,
 a draft or a publication carries, not the editor's own drawing of it.
 
 Without a Nostr account in use the preview shows the document as it
-reads. With one, it shows what will be published, as an article (cover,
-title, summary, byline, the body and hashtags) or as a note (plain text,
-the way every app shows notes), chosen with Preview As; and it says what
-will not reach readers the way it looks in the editor.
+reads, and says when it leaves out colors, highlights and underlines,
+which Markdown cannot carry. With one, it shows what will be published,
+as an article (cover, title, summary, byline, the body and hashtags) or
+as a note (plain text, the way every app shows notes), chosen with
+Preview As; and it says what will not reach readers the way it looks in
+the editor.
 
 The pane draws only while it is shown, 300 ms after the text last
 changed, and keeps its place in the text across redraws.

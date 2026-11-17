@@ -31,13 +31,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtGui import (  # noqa: E402
-    QFont, QTextCharFormat, QTextCursor, QTextDocument, QTextImageFormat,
+    QFont, QTextCharFormat, QTextCursor, QTextDocument, QTextFormat, QTextImageFormat,
 )
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from doc_walk import iter_block_runs  # noqa: E402
 from markdown_writer import (  # noqa: E402
-    READ_FEATURES, document_to, document_to_markdown, document_to_note_text, holds_faithfully,
+    READ_FEATURES, _image_as_read, document_to, document_to_markdown, document_to_note_text,
+    holds_faithfully, read_markdown,
 )
 
 
@@ -109,6 +110,198 @@ def test_a_markdown_file_comes_back_the_same(source):
     assert once == source
     # And it is stable: writing what was written changes nothing.
     assert document_to_markdown(from_markdown(once)) == once
+
+
+EMPTY_ITEMS = [
+    "- One\n-\n",
+    "- One\n-\n- Three\n",
+    "1. One\n2.\n3. Three\n",
+    "- [x] done\n- [ ]\n",
+    "> - quoted\n> -\n",
+    "-\n-\n-\n",
+]
+
+
+@pytest.mark.parametrize("source", EMPTY_ITEMS)
+def test_an_empty_list_item_comes_back_the_same(source):
+    # Qt's reader leaves an item with nothing in it out.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc) == source
+
+
+@pytest.mark.parametrize("source", ["-\t\n", "- a\n-\t\n", "- [ ]\t\n"])
+def test_an_empty_item_with_a_tab_after_its_marker_is_kept(source):
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert doc.lastBlock().textList() is not None and doc.lastBlock().text() == ""
+
+
+def test_indented_code_that_looks_like_a_list_opens_as_code():
+    assert holds_faithfully("    - One\n    -\n")
+    doc = QTextDocument()
+    read_markdown(doc, "    - One\n    -\n")
+    assert doc.toPlainText() == "- One\n-" and doc.begin().textList() is None
+
+
+def test_an_empty_item_under_an_items_words_reads_back_as_an_item():
+    # Right under them it would be a heading: "- a\n    -" is "## a".
+    doc = from_markdown("- a\n    - b\n")
+    cursor = QTextCursor(doc.findBlockByNumber(1))
+    cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+    cursor.removeSelectedText()
+    written = document_to_markdown(doc)
+    assert written == "- a\n\n    -\n" and holds_faithfully(written)
+    again = QTextDocument()
+    read_markdown(again, written)
+    assert [(block.text(), block.textList().format().indent())
+            for block in (again.findBlockByNumber(0), again.findBlockByNumber(1))] == [
+        ("a", 1), ("", 2)]
+
+
+LINKED_PICTURES = [
+    "[![badge](https://x.example/b.png)](https://x.example)\n",
+    "See [![a](p.png)](https://u.example) here.\n",
+    "[see ![a](p.png) this](https://u.example)\n",
+    "[![a](p.png)](https://a.example)\n*Caption*\n\n![b](q.png)\n",   # in a photo group
+    "[![a](p.png) ![b](q.png)](u)\n",                                 # two in one link
+]
+
+
+@pytest.mark.parametrize("source", LINKED_PICTURES)
+def test_a_linked_picture_comes_back_the_same(source):
+    # Qt's reader leaves the link around a picture out.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_a_linked_picture_shows_with_its_link_and_description():
+    doc = QTextDocument()
+    read_markdown(doc, "[![badge](https://x.example/b.png)](https://x.example)\n")
+    picture = doc.begin().begin().fragment().charFormat().toImageFormat()
+    assert (picture.name(), picture.property(QTextFormat.Property.ImageAltText),
+            picture.anchorHref()) == ("https://x.example/b.png", "badge", "https://x.example")
+
+
+TAGS_IN_LINK_WORDS = [
+    "[x <y>](u)\n",
+    "See [a </y> c](https://u.example) here.\n",
+    "![a](p.png)\n[*x <y>*](u)\n\n![b](q.png)\n",                # in a photo group's caption
+]
+
+
+@pytest.mark.parametrize("source", TAGS_IN_LINK_WORDS)
+def test_a_tag_in_a_links_words_stays_its_words(source):
+    # Qt's reader takes the tag for HTML and drops it.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
+def test_a_tag_out_of_its_link_is_written_as_words():
+    doc = QTextDocument()
+    read_markdown(doc, "Go [x <y>](u) now.\n")
+    unlinked = QTextCharFormat()
+    unlinked.setAnchor(False)
+    unlinked.setAnchorHref("")
+    cursor = QTextCursor(doc)
+    cursor.select(QTextCursor.SelectionType.Document)
+    cursor.mergeCharFormat(unlinked)
+    assert document_to_markdown(doc) == "Go x \\<y> now.\n"
+
+
+@pytest.mark.parametrize("source, written", [
+    ("[x &amp; y](u)\n", "[x \\& y](u)\n"),
+    ("*Fish &amp; Chips* z\n", "*Fish \\& Chips* z\n"),
+    ("[x &amp; y][]\n\n[x &amp; y]: /u\n", "[x \\& y](/u)\n"),
+    ("a&#32;b\n", "a&#32;b\n"),
+])
+def test_an_entity_keeps_the_format_of_its_words(source, written):
+    # Qt's reader set the format back after an entity: "[x &amp; y](u)"
+    # was the link "x " and the words "& y", saved as "[x ](u)& y"; and
+    # it dropped a space an entity made.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == written
+
+
+@pytest.mark.parametrize("source", ["&ThickSpace;x\n", "a&nbsp;&nbsp;b\n",
+                                    "![a](p.png)\n*x&nbsp;y*\n\n![b](q.png)\n"])
+def test_an_entity_for_characters_nobody_sees_is_written_as_it_was(source):
+    # Written as its characters, a reader dropped them where a line starts,
+    # and nobody saw them in the file.
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == source
+
+
+@pytest.mark.parametrize("source, written", [
+    ("- a\n* b\n", "- a\n* b\n"),
+    ("> - a\n> * b\n", "> - a\n> * b\n"),
+    ("1. a\n\n2) b\n", "1. a\n2) b\n"),
+    ("- a\n\n+ b\n", "- a\n* b\n"),
+])
+def test_a_list_right_after_another_stays_a_list_of_its_own(source, written):
+    # Both were written with "-" (or "."): one list, and in a quote two
+    # quotes.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == written
+
+
+def test_an_entity_that_makes_a_line_break_opens_as_text():
+    assert not holds_faithfully("a&#10;b\n")
+
+
+def test_a_dash_under_words_stays_a_heading():
+    doc = QTextDocument()
+    read_markdown(doc, "Text\n-\n")
+    assert doc.begin().blockFormat().headingLevel() == 2
+
+
+@pytest.mark.parametrize("source", ["Text\n*\n-\n", "Notes:\n1.\n-\n", "- a\n  *\n  -\n",
+                                    "Text\n2. a\n-\n"])
+def test_a_marker_in_a_paragraphs_words_stays_its_words(source):
+    # An item with nothing in it, or numbered other than 1, does not
+    # interrupt a paragraph: one heading, its words all the lines above.
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert doc.blockCount() == 1 and doc.begin().blockFormat().headingLevel() == 2
+
+
+@pytest.mark.parametrize("source", ["- a\nb\n-\n", "> a\n-\n", "# H\n-\n",
+                                    "| a |\n| - |\n| b |\n-\n"])
+def test_an_empty_item_after_a_paragraph_out_of_its_place_is_kept(source):
+    # Left of the words of the paragraph's item, out of its quote, or after
+    # what is no paragraph, it is an item.
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert doc.lastBlock().textList() is not None and doc.lastBlock().text() == ""
+
+
+def test_an_empty_item_after_a_headings_underline_is_kept():
+    # The "-" right under the words is their heading's underline, the
+    # next one an item: it was taken for the words and the item lost.
+    source = "Text\n-\n-\n- a\n"
+    assert holds_faithfully(source)
+    doc = QTextDocument()
+    read_markdown(doc, source)
+    assert document_to_markdown(doc, _image_as_read) == "## Text\n\n-\n- a\n"
+
+
+@pytest.mark.parametrize("source", ["- a\n  ---\n-\n", "- a\n  -\n-\n", "- # a\n- b\n",
+                                    "- a\n\n  # b\n- c\n", "- ***\n- b\n"])
+def test_a_heading_in_a_list_item_opens_as_text(source):
+    # Qt's reader takes it out of its list: saved, the item was gone.
+    assert not holds_faithfully(source)
 
 
 def test_a_quote_with_two_paragraphs_stays_one_quote():
@@ -486,8 +679,14 @@ def test_markdown_the_editor_can_hold(source):
 @pytest.mark.parametrize("source", [
     "Footnote[^1].\n\n[^1]: The note,\n\n    and its second paragraph.\n",
     "<div>raw</div>\n",
+    "[x <y>] in brackets that are no link\n",
+    # HTML in a link's words, not words in angle brackets.
+    '[<img src="logo.png" width="100">](u)\n',
+    "[x<sup>2</sup>](u)\n",
+    "[Line<br>break](u)\n",
+    "[x <!-- c -->](u)\n",
+    "[x <my-card>](u)\n",
     'A [link](https://x.example "with a title").\n',
-    "[![badge](https://x.example/b.png)](https://x.example)\n",
     "> # a heading in a quote\n",
     "- item\n\n  second paragraph of the item\n- two\n",
     # Soft line breaks the editor cannot hold as lines: in an indented
@@ -552,7 +751,7 @@ def test_undo_right_after_opening_a_draft_keeps_it():
 
 # -- soft line breaks: lines of one paragraph, kept as lines ------------------------------
 
-from markdown_writer import SOFT_BREAK_PROPERTY, _image_as_read, read_markdown  # noqa: E402
+from markdown_writer import SOFT_BREAK_PROPERTY  # noqa: E402
 
 SOFT_WRAPPED = [
     "Line one\nLine two of the same paragraph\n",
