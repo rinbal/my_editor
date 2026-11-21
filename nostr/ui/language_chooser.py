@@ -3,27 +3,83 @@
 """One searchable, offline language chooser for writing and article details.
 
 A short initial palette is a convenience, never the supported-language list.
-Selection is immediate; paging bounds widget count even for the full registry.
+Selection is immediate. "All languages" is one scrolling list in the order of
+the names shown (red-b-5); a search shows its best matches, and "More
+languages" adds the next ones below them. The versions this article already
+has come first, under their own heading, and the current one carries a check
+mark beside its name, not in it (red-b-12). Names are plain words: a region
+by its name, the code only in the tooltip (red-b-6).
 QLineEdit owns IME handling, so composing Return never creates a document.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, Qt, Signal
+import re
+
+from PySide6.QtCore import QCollator, QEvent, QLocale, Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QPushButton, QVBoxLayout,
 )
 
 from i18n import _, language as interface_language
-from ..content_language import language_name as catalogue_name, search_languages
+from ..content_language import (
+    _CATALOG, language_name as catalogue_name, normalize_language, search_languages,
+)
 from . import appearance
+from .imports_glyphs import glyph_icon
 
 PAGE_SIZE = 40
 
+# Registry words that are no language's name ("Swahili (macrolanguage)").
+_REGISTRY_WORDS = re.compile(r"\s*\((?:macrolanguage|individual language)\)", re.IGNORECASE)
+
+
+def _region_name(region: str, code: str, interface: str) -> str:
+    """``region`` (``BR``, ``AT``) as a name in the interface's language
+    where Qt has it (Österreich, Schweiz in German; every region in
+    English), else as the region calls itself (Brasil). Qt reads no name
+    for a numeric region (419): that one stays as it is."""
+    territory = QLocale.codeToTerritory(region)
+    if territory == QLocale.Country.AnyTerritory:
+        return region
+    ui = QLocale(interface)
+    there = QLocale(ui.language(), territory)
+    if there.language() == ui.language() and there.territory() == territory:
+        return there.nativeTerritoryName()
+    if ui.language() == QLocale.Language.English:
+        return QLocale.territoryToString(territory)
+    own = QLocale(code.replace("-", "_"))
+    if own.territory() == territory and own.nativeTerritoryName():
+        return own.nativeTerritoryName()
+    return QLocale.territoryToString(territory)
+
 
 def language_name(code):
-    """A human label in the current interface, alongside native names in lists."""
-    return catalogue_name(code, interface_language())
+    """A human label in the current interface, alongside native names in
+    lists: "Portugiesisch (Brasilien)", never "(pt-BR)" (red-b-6)."""
+    interface = interface_language()
+    language = normalize_language(code)
+    if not language:
+        return ""
+    base, *rest = language.split("-")
+    name = _REGISTRY_WORDS.sub("", catalogue_name(base, interface))
+    parts = []
+    for part in rest:
+        if len(part) == 4 and part.isalpha():
+            script = QLocale.codeToScript(part)
+            parts.append(QLocale.scriptToString(script)
+                         if script != QLocale.Script.AnyScript else part)
+        elif len(part) == 2 and part.isalpha() or len(part) == 3 and part.isdigit():
+            parts.append(_region_name(part, language, interface))
+        else:
+            parts.append(part)
+    return f"{name} ({', '.join(parts)})" if parts else name
+
+
+def _native_name(code):
+    base = normalize_language(code).split("-")[0]
+    return _REGISTRY_WORDS.sub("", _CATALOG["native_names"].get(base, ""))
 
 
 class LanguageChooser(QDialog):
@@ -42,6 +98,7 @@ class LanguageChooser(QDialog):
         self._recent = tuple(dict.fromkeys((current, *existing, *recent, "en", "de", "es", "fr")))
         self._all = False
         self._offset = 0
+        self._dark = dark
         self._composing = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 10)
@@ -64,6 +121,7 @@ class LanguageChooser(QDialog):
         self.all_button.setAutoDefault(False)
         self.all_button.clicked.connect(self._show_all)
         self.more_button = QPushButton(_("More languages"))
+        self.more_button.setAccessibleDescription(_("Adds more languages below the list"))
         self.more_button.setAutoDefault(False)
         self.more_button.clicked.connect(self._more)
         footer.addWidget(self.all_button)
@@ -79,6 +137,7 @@ class LanguageChooser(QDialog):
         self._search()
 
     def apply_theme(self, dark):
+        self._dark = dark
         appearance.surface(self, dark, kind="popover", glow=False)
         self.setStyleSheet(appearance.controls(dark) +
                           f"QDialog#LanguageChooser {{ background: {appearance.roles(dark).popover}; }}")
@@ -109,36 +168,77 @@ class LanguageChooser(QDialog):
 
     def _fill(self):
         query = self.search.text().strip()
-        if query or self._all:
-            rows = search_languages(query, recent=self._recent,
-                                    limit=PAGE_SIZE + 1, offset=self._offset)
+        appending = bool(self._offset)
+        if self._all and not query:
+            # Every language, in the order of the names shown.
+            # Sorted as the interface's language sorts (Ä with A in German),
+            # a leading apostrophe ignored ('Are'are with A).
+            collator = QCollator(QLocale(interface_language()))
+            rows = sorted(({"code": code} for code, _names in _CATALOG["languages"]),
+                          key=lambda row: collator.sortKey(
+                              language_name(row["code"]).lstrip("'’ -")))
+        elif query:
+            rows = search_languages(query, recent=self._recent, limit=PAGE_SIZE + 1,
+                                    offset=self._offset, locale=interface_language())
         else:
             # Resolve only palette codes, then render their normal names.
-            rows = [{"code": code, "name": language_name(code), "native_name": ""}
-                    for code in self._recent[:8] if code]
-        self.results.clear()
-        for row in rows[:PAGE_SIZE]:
-            code = row["code"]
-            name = language_name(code)
-            native = row.get("native_name", "")
-            label = f"{native} · {name}" if native and native != name else name
-            if code == self._current:
-                label += "  ✓"
-            item = QListWidgetItem(label)
-            item.setData(Qt.ItemDataRole.UserRole, code)
-            item.setToolTip(_("Open existing version") if code in self._existing else name)
-            self.results.addItem(item)
-        self.empty.setVisible(not self.results.count())
+            rows = [{"code": code} for code in self._recent[:8] if code]
+        page = rows if self._all and not query else rows[:PAGE_SIZE]
+        if not appending:
+            self.results.clear()
+        existing = [row for row in page if row["code"] in self._existing]
+        others = [row for row in page if row["code"] not in self._existing]
+        if existing and not appending:
+            self._heading(_("Versions of this article"))
+            for row in existing:
+                self._add(row["code"])
+            self._heading(_("Other languages"))
+        for row in (others if not appending else page):
+            self._add(row["code"])
+        self.empty.setVisible(not self._choosable())
         self.all_button.setVisible(not self._all and not query)
-        self.more_button.setVisible(len(rows) > PAGE_SIZE)
-        if self.results.count():
-            self.results.setCurrentRow(0)
+        self.more_button.setVisible(bool(query) and len(rows) > PAGE_SIZE)
+        if not appending:
+            # The first row that opens something: never the current one.
+            first = next((row for row in self._choosable()
+                          if self.results.item(row).data(Qt.ItemDataRole.UserRole)
+                          != self._current), None)
+            if first is not None:
+                self.results.setCurrentRow(first)
+
+    def _heading(self, text):
+        item = QListWidgetItem(text)
+        item.setFlags(Qt.ItemFlag.NoItemFlags)
+        font = item.font()
+        font.setBold(True)
+        item.setFont(font)
+        self.results.addItem(item)
+
+    def _add(self, code):
+        name = language_name(code)
+        native = _native_name(code)
+        label = f"{native} · {name}" if native and native != name else name
+        item = QListWidgetItem(label)
+        item.setData(Qt.ItemDataRole.UserRole, code)
+        item.setToolTip(code)
+        if code == self._current:
+            item.setIcon(glyph_icon("check", 14, QColor(appearance.roles(self._dark).text)))
+            item.setData(Qt.ItemDataRole.AccessibleDescriptionRole, _("Current language"))
+        elif code in self._existing:
+            item.setData(Qt.ItemDataRole.AccessibleDescriptionRole, _("Opens this version"))
+        self.results.addItem(item)
+
+    def _choosable(self):
+        return [row for row in range(self.results.count())
+                if self.results.item(row).flags() & Qt.ItemFlag.ItemIsEnabled]
 
     def _choose_first(self):
-        if not self._composing and self.results.count():
-            self._select(self.results.item(0))
+        rows = self._choosable()
+        if not self._composing and rows:
+            current = self.results.currentRow()
+            self._select(self.results.item(current if current in rows else rows[0]))
 
     def _select(self, item):
-        if item is not None:
+        if item is not None and item.flags() & Qt.ItemFlag.ItemIsEnabled:
             self.chosen.emit(item.data(Qt.ItemDataRole.UserRole))
             self.accept()
