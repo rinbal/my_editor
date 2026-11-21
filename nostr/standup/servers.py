@@ -5,9 +5,8 @@
 A submission server's address comes from the publication's verified key
 event (``server``, contract 8.1). The server this app asks first is the
 one ``MYEDITOR_STANDUP_SERVER`` names (a developer's), else the
-association's instance built in as ``DEFAULT_SERVER``, if set (G16: it
-stays empty until the association names it). Without one nothing is
-sent (the UI says "kommt vom Verein"). Only https, except plain http to
+association's instance built in as ``DEFAULT_SERVER`` (G16). Without
+one nothing is sent (the UI says "kommt vom Verein"). Only https, except plain http to
 exactly ``127.0.0.1`` when a developer allows it
 (``MYEDITOR_STANDUP_LOCAL_HTTP=1``) for a local STANDUP.
 
@@ -27,8 +26,8 @@ from ..signed_api import usable_base_url
 
 # A developer's own server (a local STANDUP): it wins over the built-in one.
 ENV_SERVER: str = "MYEDITOR_STANDUP_SERVER"
-# The association's STANDUP instance, built in: "" until it is named (G16).
-DEFAULT_SERVER: str = ""
+# The association's STANDUP instance, built in (G16).
+DEFAULT_SERVER: str = "https://media.einundzwanzig.space"
 # "1" allows plain http to exactly 127.0.0.1, for a local STANDUP.
 ENV_LOCAL_HTTP: str = "MYEDITOR_STANDUP_LOCAL_HTTP"
 _LOCAL_HTTP_HOSTS = frozenset({"127.0.0.1"})

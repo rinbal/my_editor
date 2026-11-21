@@ -44,8 +44,7 @@ def test_the_developer_setting_comes_from_the_environment(monkeypatch):
 
 def test_the_env_var_wins_otherwise_the_built_in_address_if_set(monkeypatch):
     monkeypatch.delenv(servers.ENV_SERVER, raising=False)
-    assert servers.DEFAULT_SERVER == ""                     # until the association names it
-    assert servers.configured_server() == ""
+    assert servers.configured_server() == "https://media.einundzwanzig.space"
     monkeypatch.setattr(servers, "DEFAULT_SERVER", "https://standup.example")
     assert servers.configured_server() == "https://standup.example"
     monkeypatch.setenv(servers.ENV_SERVER, "https://standup.local.example")
