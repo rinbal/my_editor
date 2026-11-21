@@ -9,10 +9,12 @@ changes the reviewed source pin or either editor's contents.
 
 Each step of the read (the reference, its deletions, the root, the root's
 deletions) ends on the relays' own ends, as the other queries do
-(queries._EventsQuery): once every relay asked ended, or as soon as one
-relay that sent what the step looks for has ended. A slow, closed or
-unreachable relay never decides alone (quiet partial failure), and each
-step has its own time; one that runs out decides with what was received.
+(queries._EventsQuery). The reference and the root are there as soon as
+one relay that sent them has ended. Their deletions and a newer revision
+are heard from every relay, until each has ended: one slower relay may be
+the only one that has them. A slow, closed or unreachable relay never
+decides alone (quiet partial failure), and each step has its own time; one
+that runs out decides with what was received.
 """
 from __future__ import annotations
 import re
@@ -147,7 +149,7 @@ class SourceCheck(QObject):
         self._address = article_address(source.get('address'))
         self._id = source.get('eventId', '')
         # Which relays sent each event, and the relays that ended this step.
-        self._seen_on, self._step_ended, self._holders = {}, set(), set()
+        self._seen_on, self._step_ended = {}, set()
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.setInterval(self.STEP_MS)
@@ -178,12 +180,12 @@ class SourceCheck(QObject):
         ]
         self._subscribe(filters)
 
-    def _subscribe(self, filters, holders=()):
-        """One step of the read. ``holders``: the relays whose end decides
-        it (those that sent what it asks about); none, the first relay
-        that sends what the step looks for and ends decides."""
+    def _subscribe(self, filters):
+        """One step of the read: the reference (or the root) step ends at
+        the first relay that sent it and ended; the deletion step when
+        every relay has ended; either when its time is up."""
         self._close_subscription()
-        self._step_ended, self._holders = set(), set(holders)
+        self._step_ended = set()
         self._timer.start()                      # each step has its own time
         sub = self._pool.subscribe(self._relays, filters)
         self._subscription = sub
@@ -212,8 +214,7 @@ class SourceCheck(QObject):
         if self._finished:
             return
         self._step_ended.add(url)
-        if url in self._holders or self._sent_what_is_sought(url) \
-                or set(self._relays) <= self._step_ended:
+        if self._sent_what_is_sought(url) or set(self._relays) <= self._step_ended:
             self._ended()
 
     def _relay_gone(self, url, _reason=''):
@@ -225,7 +226,7 @@ class SourceCheck(QObject):
 
     def _sent_what_is_sought(self, url):
         """Whether ``url`` sent what this step looks for: the reference
-        itself, or in the root step the root (deletion steps have holders)."""
+        itself, or in the root step the root (the deletion step hears all)."""
         if self._reading_deletions:
             return False
         if self._root_phase:
@@ -279,12 +280,15 @@ class SourceCheck(QObject):
             # NIP-09 allows event-ID-only deletions. Query the IDs actually
             # observed, including a newer source or the root approval, before
             # interpreting either as available public evidence.
+            # A deletion or a newer revision may sit on a slower relay only:
+            # this step hears every relay out, until each has ended or its
+            # time is up, and says nothing of the ones that stay silent
+            # (me68-verify-6).
             self._reading_deletions = True
-            signer = address.split(':', 2)[1]
-            holders = set().union(*(self._seen_on.get(i, set()) for i in identifiers))
+            signer, d = address.split(':', 2)[1:]
             self._subscribe([{'kinds': [5], 'authors': [signer], '#e': identifiers[:16], 'limit': 32},
-                             {'kinds': [5], 'authors': [signer], '#a': [address], 'limit': 16}],
-                            holders)
+                             {'kinds': [5], 'authors': [signer], '#a': [address], 'limit': 16},
+                             {'kinds': [30023], 'authors': [signer], '#d': [d], 'limit': 4}])
             return
         if self._root_phase:
             roots = [event for event in self._events.values()

@@ -222,6 +222,32 @@ def test_the_first_relay_with_the_reference_decides_and_a_dead_relay_stays_quiet
     settle()
     deletions = pool.subs[-1]
     assert deletions is not reference and not results
-    deletions.answer(deletions.urls[0])
+    for url in deletions.urls[:-1]:
+        deletions.answer(url)
+    deletions.fail(deletions.urls[-1])
     settle()
     assert results and results[0]['available'] and not results[0]['deleted']
+
+
+def test_a_deletion_only_a_slower_relay_has_is_still_heard():
+    # me68-verify-6: the first relay with the original decides that it is
+    # there; whether it was deleted is heard from every relay.
+    event = signed(30023, [['d', 'source']], 'Published original')
+    gone = signed(5, [['e', event['id']], ['a', f"30023:{PK}:source"]], '')
+    pool, results = HandPool(), []
+    check_source_snapshot(pool, FakeRelayDirectory({PK: ['wss://one.example']}), source(event),
+                          results.append)
+    settle()
+    reference = pool.subs[-1]
+    reference.answer(reference.urls[0], event)
+    settle()
+    deletions = pool.subs[-1]
+    assert deletions is not reference
+    deletions.answer(deletions.urls[0])
+    settle()
+    assert not results                          # the others are still heard
+    deletions.answer(deletions.urls[1], gone)
+    for url in deletions.urls[2:]:
+        deletions.answer(url)
+    settle()
+    assert results and not results[0]['available'] and results[0]['deleted']
