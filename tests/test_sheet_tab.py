@@ -6,7 +6,6 @@ columns and sheets, what typing means, and saving that never loses data."""
 import datetime as dt
 import os
 import threading
-import time
 
 import openpyxl
 import pytest
