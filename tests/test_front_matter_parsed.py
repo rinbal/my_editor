@@ -42,8 +42,9 @@ def changes(details):
     import json
     from nostr.content_language import is_language_tag, language_tags
     language_carried = tuple(t for t in details.carried if not is_language_tag(t)) + tuple(tuple(t) for t in language_tags('th'))
-    carried = details.carried + (('alt', 'Multilingual metadata: retained'),)
-    written = json.dumps([list(t) for t in carried if not is_language_tag(t)], ensure_ascii=False, separators=(',', ':'))
+    # A translator's credit is the one carried tag a file keeps (red-a-5).
+    carried = details.carried + (('p', 'ab' * 32, '', 'translator'),)
+    written = json.dumps([list(t) for t in carried if t[0] == 'p'], ensure_ascii=False, separators=(',', ':'))
     return [
         ('lang', {'carried': language_carried}, 'th'),
         ('nostr_tags', {'carried': carried}, written),

@@ -823,15 +823,24 @@ def _without(mapping: dict, places: Sequence[Tuple[str, ...]]) -> dict:
     return mapping
 
 
+def _kept_in_front(tag) -> bool:
+    """Whether a carried tag is written in a file's front matter
+    (``nostr_tags``): a translator's credit only, which nothing else keeps.
+    The tags the app writes on the wire (pictures, alt text, the language
+    links, made again at each publication) never go into a file
+    (red-a-5)."""
+    return len(tag) >= 4 and tag[0] == "p" and tag[3] == "translator"
+
+
 def _front_values(details: ArticleDetails) -> dict:
     """The details as the values compared and written in front matter."""
     return {"title": details.title.strip(), "summary": details.summary.strip(),
             "image": details.image.strip(), "tags": list(details.hashtags),
             "slug": details.identifier.strip(),
             "lang": details.language,
-            "nostr_tags": json.dumps([list(t) for t in details.carried if not is_language_tag(t)
-                                      and t[0] != PRIVATE_LINK_TAG], ensure_ascii=False, separators=(",", ":"))
-                          if any(not is_language_tag(t) and t[0] != PRIVATE_LINK_TAG for t in details.carried) else "",
+            "nostr_tags": json.dumps([list(t) for t in details.carried if _kept_in_front(t)],
+                                     ensure_ascii=False, separators=(",", ":"))
+                          if any(_kept_in_front(t) for t in details.carried) else "",
             "date": details.published_at or 0,
             "coauthors": [_address(pubkey, hint) for pubkey, hint in details.coauthors],
             "zap_split": [f"{_address(tag[1], tag[2] if len(tag) > 2 else '')} "

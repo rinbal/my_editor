@@ -5602,8 +5602,6 @@ class MainWindow(QMainWindow):
                 front = getattr(ed, "_front_matter", None)
                 if not tab_details.untouched(ed):
                     front = front_matter_with(self._article_details_of(ed), front)
-                front = multilingual_authoring.front_with_link(
-                    front, self._multilingual.file_record(ed, path))
                 if not self._saving_without(ed, front, path):
                     return False
                 head = front_matter.head(front, content)
@@ -8694,7 +8692,7 @@ class MainWindow(QMainWindow):
 
     def _sync_view_switch(self, ed, shown: str) -> None:
         rich = self._previewable(ed)
-        self.view_switch.setVisible(rich and not self.nostr_state.active)
+        self.view_switch.setVisible(rich)
         for action in (self.act_view_write, self.act_view_preview, self.act_view_split):
             action.setEnabled(rich)
         if not rich:
@@ -10954,6 +10952,9 @@ class MainWindow(QMainWindow):
         dialog = PublishArticleDialog(
             body_markdown=body,
             language_context=self._multilingual.context(ed),
+            # The language links it publishes with (publication_details) are
+            # no detail of the document: they never go back to it.
+            document_carried=self._article_details_of(ed).carried,
             pair_source=self._multilingual.pair_source(ed),
             active_profile=active,
             store=self._profile_store,
@@ -11011,6 +11012,7 @@ class MainWindow(QMainWindow):
         else:
             # The active version is the editor that opened this sheet, even
             # when its first link name was assigned inside the Publish sheet.
+            # Its details stay as they are (red-a-5).
             self._multilingual.published(target, event)
 
     def _open_language_original(self, target):
@@ -11063,8 +11065,13 @@ class MainWindow(QMainWindow):
         self._multilingual.prepare_source(ed, lambda ready: self._open_submit_publication(ed) if ready else None)
 
     def _open_submit_publication(self, ed) -> None:
-        if ed is not self.current_editor():
+        if ed is None or not shiboken6.isValid(ed) or self._editor_widget_index(ed) < 0:
             return
+        if ed is not self.current_editor():
+            # Another tab came to the front while the reference was being
+            # checked: the document Submit was chosen for comes back
+            # (red-a-11), never another one.
+            self.tabs.setCurrentIndex(self._editor_widget_index(ed))
         active = self._profile_store.default()
         ed = self.current_editor()
         if active is None:
@@ -12435,9 +12442,18 @@ class MainWindow(QMainWindow):
         )
         if inner is None:
             return
-        private = multilingual_authoring.private_link(getattr(ed, "_language_link", None))
+        field = multilingual_authoring.PRIVATE_DRAFT_FIELD
+
+        def fits(link) -> bool:
+            # The reference's text stays in the draft while the draft can
+            # still be saved with it (red-a-4).
+            try:
+                return not draft_size_problem({**inner, field: link}, profile)
+            except (KeyError, TypeError, ValueError):
+                return False
+        private = multilingual_authoring.draft_link(getattr(ed, "_language_link", None), fits)
         if private is not None:
-            inner[multilingual_authoring.PRIVATE_DRAFT_FIELD] = private
+            inner[field] = private
         self._fire_draft_publish_job(ed, profile, choice, inner)
 
     def _may_replace_draft(self, prior: Optional[DraftBinding], identifier: str) -> bool:

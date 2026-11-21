@@ -4,7 +4,11 @@
 
 The writing target is always the active tab. A reference is a read-only snapshot
 and can never retarget formatting, saving or publishing. Private linkage belongs
-only to recovery records and encrypted-inner root metadata, never event tags.
+only to the tab's restart and crash records, the encrypted draft (its inner
+root field) and, for a saved file, this computer's own record of it
+(nostr/language_links.py): never event tags, and never the Markdown file,
+which people share. Signed events are kept in memory only; they can be read
+again by their id.
 """
 from __future__ import annotations
 
@@ -13,6 +17,7 @@ import json
 import math
 import os
 import re
+import hashlib
 import uuid
 import time
 from dataclasses import replace
@@ -25,9 +30,9 @@ from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QL
 from constants import DARK_FG, LIGHT_FG
 from i18n import _
 import format_icons
-import front_matter
 from settings import load_settings, save_setting
 from nostr.events import verify_event
+from nostr.language_links import LanguageLinks
 from nostr.private_draft import PRIVATE_DRAFT_FIELD
 from nostr.multilingual import is_translation_tag, translation_metadata, translation_tags
 from nostr.content_language import normalize_language
@@ -39,9 +44,24 @@ REFERENCE_MIN_WIDTH = 900
 MAX_LINK_BYTES = 2 * 1024 * 1024
 
 
+_PROJECTION = ("content", "title", "summary", "image", "language")
+
+
+def projection_key(snapshot):
+    """A short fingerprint of what a translation is made from (its text,
+    title, summary, cover and language), kept with a reference whose text
+    had to be left out of a draft (draft_link)."""
+    values = [str(snapshot.get(field, "") or "") for field in _PROJECTION]
+    values[0] = values[0].rstrip()
+    return hashlib.sha256(json.dumps(values, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
 def same_source_projection(left, right):
-    """Only writing metadata counts; links, tags and publication dates do not."""
-    for field in ("content", "title", "summary", "image", "language"):
+    """Only writing metadata counts; links, tags and publication dates do not.
+    A reference kept without its text (draft_link) compares by fingerprint."""
+    if "content" not in right and right.get("projection"):
+        return projection_key(left) == right["projection"]
+    for field in _PROJECTION:
         before, after = left.get(field, ""), right.get(field, "")
         if field == "content":
             before, after = before.rstrip(), after.rstrip()
@@ -75,6 +95,10 @@ def private_link(value):
         if len(raw.encode("utf-8")) > MAX_LINK_BYTES:
             return None
         record = json.loads(raw)
+        if isinstance(record.get("source"), dict):
+            # A signed event is never kept: its id names it, and it is read
+            # again (me68-red-a-4).
+            record["source"].pop("event", None)
         view = record.get("view")
         if view is not None:
             if not isinstance(view, dict):
@@ -99,47 +123,39 @@ def private_link(value):
 
 
 
-FILE_LINK_KEY = PRIVATE_DRAFT_FIELD
 
-
-def link_from_front(front):
-    """Private file provenance is separate from publishable article details."""
-    if front is None:
-        return None
-    entries = [entry for entry in front.entries if entry.key == FILE_LINK_KEY]
-    if len(entries) != 1 or not isinstance(entries[0].value, str):
-        return None
-    try:
-        return private_link(json.loads(entries[0].value))
-    except (TypeError, ValueError, RecursionError):
-        return None
-
-
-def front_with_link(front, record):
+def draft_link(record, fits=lambda _record: True):
+    """The link as an encrypted draft keeps it: without where the versions
+    are saved on this computer (documents); the reference's text only
+    while the draft still ``fits`` with it, else its fingerprint instead
+    (projection_key), and the text is read again from the published
+    reference or the original."""
     link = private_link(record)
-    if not link:
-        return front
-    base = front or front_matter.FrontMatter((), changed=True)
-    old = [entry for entry in base.entries if entry.key == FILE_LINK_KEY]
-    # An existing unrecognized value belongs to the file, as other opaque
-    # front matter does; never erase it in the name of an optional feature.
-    if old and link_from_front(base) is None:
-        return front
-    if link_from_front(base) == link:
-        return front
-    entry = front_matter.entry(FILE_LINK_KEY, json.dumps(link, ensure_ascii=False, separators=(",", ":")),
-                               syntax=base.syntax)
-    entries = [entry if item.key == FILE_LINK_KEY else item for item in base.entries]
-    if not old:
-        # TOML plain keys must precede its tables.
-        at = next((i for i, item in enumerate(entries) if item.table), len(entries))
-        entries.insert(at, entry)
-    return base.with_entries(entries)
+    if link is None:
+        return None
+    link.pop("documents", None)
+    for key in ("expected_event_id", "reference_unavailable"):
+        link.pop(key, None)
+    source = link.get("source")
+    if isinstance(source, dict):
+        source["projection"] = projection_key(source)
+        if "content" in source and not fits(link):
+            source.pop("content")
+    return link
 
 
-def verified_source(source):
-    event = source.get("event") if isinstance(source, dict) else None
-    if not isinstance(event, dict) or event.get("kind") != 30023 or not verify_event(event):
+def is_document_uuid(identifier):
+    """Whether ``identifier`` is one this app made for a new document (a
+    UUID): such a document can't be out before it is published from here."""
+    try:
+        return str(uuid.UUID(identifier)) == identifier
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
+def verified_source(source, event):
+    """``event`` when it is the signed revision ``source`` names."""
+    if not isinstance(source, dict) or not isinstance(event, dict) or event.get("kind") != 30023 or not verify_event(event):
         return None
     identifiers = [tag[1] for tag in event.get("tags", []) if len(tag) > 1 and tag[0] == "d"]
     if len(identifiers) != 1 or not identifiers[0]:
@@ -207,24 +223,36 @@ class MultilingualAuthoring(QObject):
         row = QHBoxLayout(self.controls)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(2)
-        self.preview = QToolButton()
-        self.preview.setAccessibleName(_("Preview"))
-        self.preview.setToolTip(_("Preview"))
-        self.preview.setCheckable(True)
-        self.preview.clicked.connect(self.toggle_preview)
         self.languages = QToolButton()
         self.languages.setDefaultAction(window.act_write_language)
         self.languages.setAccessibleName(window.act_write_language.text())
         self.reference = QToolButton()
         self.reference.setDefaultAction(window.act_language_reference)
         self.reference.setAccessibleName(window.act_language_reference.text())
-        for button in (self.preview, self.languages, self.reference):
+        for button in (self.languages, self.reference):
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
             button.setIconSize(QSize(format_icons.SIZE, format_icons.SIZE))
             button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             row.addWidget(button)
         self._chooser = None
         self._confirmed_public = set()
+        # The signed public events read or published this session, by id.
+        self._public_events = {}
+        self._links = LanguageLinks()
+
+    def _set_link(self, ed, record):
+        """``record`` becomes ``ed``'s link, and a saved document's link is
+        kept on this computer (language_links), never in its file."""
+        ed._language_link = record
+        self._keep(ed)
+
+    def _keep(self, ed):
+        record = private_link(getattr(ed, "_language_link", None))
+        if record and getattr(ed, "_file_path", None):
+            for key in ("expected_event_id", "reference_unavailable"):
+                record.pop(key, None)
+            self._links.keep(record.get("owner") or self._owner(),
+                             self.window._article_details_of(ed).identifier, record)
 
     def remember_view(self, ed, **changes):
         record = private_link(getattr(ed, "_language_link", None)) if ed is not None else None
@@ -244,16 +272,6 @@ class MultilingualAuthoring(QObject):
             details = record.get("view", {}).get("details", False)
             self.window.act_article_details.setChecked(bool(details))
 
-    def toggle_preview(self):
-        w = self.window
-        if w._shown_view(w.current_editor()) == "preview":
-            ed = w.current_editor()
-            if ed is not None:
-                ed._language_reference_narrow = False
-            w.act_view_write.trigger()
-        else:
-            w.act_view_preview.trigger()
-
     def editors(self):
         w = self.window
         for i in range(w.tabs.count()):
@@ -267,11 +285,12 @@ class MultilingualAuthoring(QObject):
 
     def context(self, ed):
         record = private_link(getattr(ed, "_language_link", None)) if ed is not None else None
-        if record is None and ed is not None:
-            record = link_from_front(getattr(ed, "_front_matter", None))
+        owner = self._owner()
+        if record is None and ed is not None and getattr(ed, "_file_path", None):
+            # A saved document's link is this computer's (language_links).
+            record = private_link(self._links.get(owner, self.window._article_details_of(ed).identifier))
             if record is not None:
                 ed._language_link = copy.deepcopy(record)
-        owner = self._owner()
         if record and not record.get("owner") and owner:
             # Older optional private metadata can omit ownership. Adopting
             # the selected account does not establish any public provenance.
@@ -279,16 +298,29 @@ class MultilingualAuthoring(QObject):
             ed._language_link = copy.deepcopy(record)
         if record and (record.get("owner") or owner) == owner:
             if record.get("source"):
-                event = verified_source(record["source"])
-                record["source"]["public"] = bool(event and event["id"] in self._confirmed_public)
+                record["source"]["public"] = self._public_event(record["source"]) is not None
             event = getattr(ed, "_published_event", None)
             remembered = record.get("published", {}).get("eventId", "")
-            record["expected_event_id"] = (event["id"] if isinstance(event, dict) and verify_event(event)
-                                           else remembered if isinstance(remembered, str) and re.fullmatch(r"[0-9a-f]{64}", remembered)
-                                           else None)
+            known = (event["id"] if isinstance(event, dict) and verify_event(event)
+                     else remembered if isinstance(remembered, str) and re.fullmatch(r"[0-9a-f]{64}", remembered)
+                     else None)
+            record.pop("expected_event_id", None)
+            if known:
+                record["expected_event_id"] = known
+            elif is_document_uuid(self.window._article_details_of(ed).identifier or self.identity(ed)):
+                # Made here and never published from here: not out yet.
+                record["expected_event_id"] = None
+            # Otherwise not known (an article opened from its file, public
+            # perhaps): "not known" never becomes "not out yet" (red-a-2).
             record["reference_unavailable"] = getattr(ed, "_language_source_check", {}).get("available") is False
             return record
         return None
+
+    def _public_event(self, source):
+        """The signed public revision ``source`` names, when this session
+        saw it public (note_public), else None."""
+        event = self._public_events.get((source or {}).get("eventId", ""))
+        return verified_source(source, event) if event is not None else None
 
     def identity(self, ed):
         record = private_link(getattr(ed, "_language_link", None))
@@ -344,7 +376,7 @@ class MultilingualAuthoring(QObject):
             for sibling in self.versions(ed):
                 own = self.context(sibling)
                 own["versions"] = dict(versions)
-                sibling._language_link = own
+                self._set_link(sibling, own)
                 sibling.document().setModified(True)
         self.refresh()
 
@@ -357,12 +389,14 @@ class MultilingualAuthoring(QObject):
                    else self.window._publish_payload(ed, "markdown", keep_local=True)[0])
         # Existing public source uses its actual published revision, never
         # silently pins unsaved local changes as though they were public.
-        return {"dTag": details.identifier or self.identity(ed), "language": shown_details.language if public else language,
-                "title": shown_details.title or default_title(content), "summary": shown_details.summary, "image": shown_details.image,
-                "content": content,
-                "eventId": str(event.get("id", "")) if public else "",
-                "address": f"30023:{event['pubkey']}:{details.identifier}" if public else "",
-                "public": public, "event": copy.deepcopy(event) if public else None}
+        snapshot = {"dTag": details.identifier or self.identity(ed), "language": shown_details.language if public else language,
+                    "title": shown_details.title or default_title(content), "summary": shown_details.summary, "image": shown_details.image,
+                    "content": content,
+                    "eventId": str(event.get("id", "")) if public else "",
+                    "address": f"30023:{event['pubkey']}:{details.identifier}" if public else "",
+                    "public": public}
+        snapshot["projection"] = projection_key(snapshot)
+        return snapshot
 
     def open_language(self, source_ed, code):
         w = self.window
@@ -408,8 +442,8 @@ class MultilingualAuthoring(QObject):
         for sibling in self.editors():
             existing = self.context(sibling)
             if sibling is source_ed or existing and existing["groupId"] == group:
-                sibling._language_link = {**(existing or common), "versions": dict(versions),
-                                          "documentId": (existing or {}).get("documentId") or self.identity(sibling)}
+                self._set_link(sibling, {**(existing or common), "versions": dict(versions),
+                                         "documentId": (existing or {}).get("documentId") or self.identity(sibling)})
                 sibling.document().setModified(True)
         source = self._snapshot(source_ed, source_lang)
         source["dTag"] = source_id
@@ -419,7 +453,7 @@ class MultilingualAuthoring(QObject):
         inherited = replace(source_details, identifier=target_id, title="", summary="",
                             published_at=None, carried=(), kept=frozenset())
         w._set_article_details(target, inherited.with_language(code))
-        target._language_link = {**common, "source": source, "documentId": target_id, "view": {"details": False}}
+        self._set_link(target, {**common, "source": source, "documentId": target_id, "view": {"details": False}})
         target._language_reference_visible = True
         target._language_reference_narrow = False
         target.setPlaceholderText(_("Write or paste your {language} version.").format(language=language_name(code)))
@@ -432,34 +466,126 @@ class MultilingualAuthoring(QObject):
         save_setting("article_recent_languages", list(dict.fromkeys((code, *recent)))[:8])
         self.refresh()
         target.setFocus()
+        # An original opened from its file may be public already: then its
+        # published revision is the reference (red-a-2).
+        self._look_up_public(source_ed, lambda t=target: self._repin_source(t))
         return target
 
-    def file_record(self, ed, path):
-        """Remember ordinary saved files without embedding local paths publicly."""
+    def _look_up_public(self, ed, finished):
+        """Read once whether the article in ``ed`` is public already, when
+        that is not known (an article opened from its file, from Drafts,
+        after a restart): found and verified, it is ``ed``'s published
+        version. ``finished()`` then, found or not; at once when there is
+        nothing to read. Quiet: no status, no message."""
+        if not self._needs_public_lookup(ed):
+            finished()
+            return
+        ed._language_public_looked_up = True
+        owner = self._owner()
+        identifier = self.window._article_details_of(ed).identifier
+        from nostr.outbox import defaults
+        from nostr.outbox.lookup import fetch_addressable
+        from nostr.outbox.policy import dedupe_relays
+        from nostr.source_provenance import check_source_snapshot
+
+        def proved(proof):
+            if not shiboken6.isValid(ed) or owner != self._owner():
+                return
+            event = proof.get("current") if proof.get("available") else None
+            if event is not None and self._address_of(event) == f"30023:{owner}:{identifier}":
+                self.note_public(event)
+                ed._published_event = copy.deepcopy(event)
+                own = private_link(getattr(ed, "_language_link", None))
+                if own:
+                    own["published"] = self._published_record(event)
+                    self._set_link(ed, own)
+            finished()
+
+        def found(results):
+            if not shiboken6.isValid(ed) or owner != self._owner():
+                return
+            event = results[identifier].event if identifier in results else None
+            if event is None:
+                finished()
+                return
+            snapshot = {"address": f"30023:{owner}:{identifier}", "eventId": event["id"],
+                        "content": event["content"]}
+            ed._language_public_check = check_source_snapshot(
+                self.window._relay_pool, self.window._relay_directory, snapshot, proved, parent=ed)
+
+        def planned(plan):
+            if not shiboken6.isValid(ed):
+                return
+            ed._language_public_lookup = fetch_addressable(
+                self.window._relay_pool, dedupe_relays(plan.targets, defaults.INDEXER_RELAYS),
+                kind=30023, author=owner, d_tags=[identifier], on_done=found, parent=ed)
+        self.window._relay_directory.publish_plan(owner, planned)
+
+    def _needs_public_lookup(self, ed):
+        """Whether it is not known yet whether the article in ``ed`` is out:
+        it has a link name not made here, and no published version known."""
+        if ed is None or not shiboken6.isValid(ed) or not self._owner():
+            return False
+        identifier = self.window._article_details_of(ed).identifier
+        record = self.context(ed)
+        return bool(identifier and not is_document_uuid(identifier)
+                    and not isinstance(getattr(ed, "_published_event", None), dict)
+                    and not (record or {}).get("published", {}).get("eventId")
+                    and not getattr(ed, "_language_public_looked_up", False))
+
+    @staticmethod
+    def _address_of(event):
+        ds = [t[1] for t in event.get("tags", []) if len(t) > 1 and t[0] == "d"]
+        return f"30023:{event.get('pubkey', '')}:{ds[0]}" if len(ds) == 1 else ""
+
+    def _published_record(self, event):
+        """What a document's link keeps of its published version."""
+        return {"eventId": event.get("id", ""), "address": self._address_of(event),
+                "root": translation_metadata(event.get("tags", []))["root"]}
+
+    def _repin_source(self, target):
+        """The original turned out to be public: a reference not yet pinned
+        to a published revision becomes that revision."""
+        if not shiboken6.isValid(target):
+            return
+        record = self.context(target)
+        source = (record or {}).get("source")
+        source_ed = self.source_editor(target)
+        if not source or source.get("eventId") or source_ed is None:
+            return
+        event = getattr(source_ed, "_published_event", None)
+        if not (isinstance(event, dict) and self._public_event({"eventId": event.get("id"),
+                                                                 "address": self._address_of(event)})):
+            return
+        pinned = self._snapshot(source_ed, source.get("language", ""))
+        pinned["dTag"] = source.get("dTag", pinned["dTag"])
+        record["source"] = pinned
+        self._set_link(target, record)
+        self.refresh()
+
+    def file_saved(self, ed, path):
+        """A version was saved at ``path``: every version's link knows where
+        it is (to open it from the others), and each saved one's link is
+        kept on this computer; the file itself holds none of it."""
         record = self.context(ed)
         if not record:
-            return None
+            return
         documents = dict(record.get("documents", {}))
         for sibling in self.versions(ed):
             identifier = self.window._article_details_of(sibling).identifier
             own_path = path if sibling is ed else getattr(sibling, "_file_path", None)
             if identifier and own_path:
                 documents[identifier] = os.path.abspath(own_path)
-        record["documents"] = documents
-        return record
-
-    def file_saved(self, ed, path):
-        record = self.file_record(ed, path)
-        if record:
-            for sibling in self.versions(ed):
-                own = self.context(sibling)
-                own["documents"] = dict(record["documents"])
-                sibling._language_link = own
+        for sibling in self.versions(ed):
+            own = self.context(sibling)
+            own["documents"] = dict(documents)
+            self._set_link(sibling, own)
 
     def note_public(self, event):
         """Called only by verified public ingestion or an accepted publication."""
         if isinstance(event, dict) and event.get("kind") == 30023 and verify_event(event):
             self._confirmed_public.add(event["id"])
+            self._public_events[event["id"]] = copy.deepcopy(event)
 
     def _schedule_source_check(self, ed, record):
         """Check on first open/restore, then at most once per two minutes."""
@@ -492,11 +618,22 @@ class MultilingualAuthoring(QObject):
             done(True)
             return
         if getattr(ed, "_language_preparing", False):
-            if not quiet and getattr(ed, "_language_prepare_callback", None) is None:
+            if not quiet:
+                # The latest action asked for is the one that follows
+                # (Publish, then Submit: Submit opens), red-a-11.
                 ed._language_prepare_callback = done
                 self.window.status.showMessage(_("Checking the published version…"), nostr=True)
             return
+        original = self.source_editor(ed) if source else ed
+        if not quiet and not source.get("eventId") and self._needs_public_lookup(original):
+            # Whether the original is out already is read first (red-a-2).
+            self.window.status.showMessage(_("Checking the published version…"), nostr=True)
+            self._look_up_public(original, lambda: (self._repin_source(ed) if source else None,
+                                                    self.prepare_source(ed, done, quiet=quiet)))
+            return
+        source = (self.context(ed) or {}).get("source", {})
         if source and (not source.get("address") or not source.get("eventId")):
+            self.window.status.clearMessage()
             done(True)
             return
         owner, group, document_id = self._owner(), record["groupId"], self.identity(ed)
@@ -559,9 +696,10 @@ class MultilingualAuthoring(QObject):
                 self.note_public(event)
                 own = private_link(getattr(ed, "_language_link", None))
                 if own and own.get("source", {}).get("eventId") == source["eventId"]:
-                    own["source"]["event"] = copy.deepcopy(event)
+                    # A reference whose text a draft left out reads it here.
+                    own["source"].setdefault("content", event.get("content", ""))
                     own["source"]["public"] = True
-                    ed._language_link = own
+                    self._set_link(ed, own)
             elif foreground:
                 self.window.status.showMessage(_("The reference could not be verified. Try again."), 10000, nostr=True)
             self.refresh()
@@ -619,8 +757,10 @@ class MultilingualAuthoring(QObject):
         def accepted():
             latest = self.context(ed)
             if latest:
-                latest["source"] = copy.deepcopy(candidate)
-                ed._language_link = latest
+                latest["source"] = {key: value for key, value in copy.deepcopy(candidate).items()
+                                    if key != "event"}
+                latest["source"]["projection"] = projection_key(latest["source"])
+                self._set_link(ed, latest)
                 ed._language_source_check = {"available": True, "event": candidate.get("event"),
                                              "current": candidate.get("event"), "changed": False,
                                              "confirmed_root": result.get("confirmed_root", "")}
@@ -644,13 +784,22 @@ class MultilingualAuthoring(QObject):
         details = self.window._article_details_of(ed)
         record = self.context(ed)
         source = (record or {}).get("source", {})
-        event = verified_source(source)
-        if event is None or event["id"] not in self._confirmed_public:
+        event = self._public_event(source) if source else None
+        if event is None:
             if not source and record:
                 evidence = getattr(ed, "_language_group_check", {})
                 if not evidence.get("conflict") and evidence.get("events"):
-                    tags = translation_tags({"root": evidence.get("root", ""),
-                                             "translations": evidence.get("translations", [])})
+                    own = f"30023:{record.get('owner') or self._owner()}:{details.identifier}"
+                    root = evidence.get("root", "")
+                    translations = list(evidence.get("translations", []))
+                    if root == own:
+                        # This version is the group's root: it names its
+                        # verified versions, never itself as its own
+                        # original (red-a-3).
+                        root = ""
+                        translations = [self._address_of(item) for item in evidence["events"]]
+                    tags = translation_tags({"root": root, "translations": sorted(
+                        {address for address in translations if address and address != own})})
                     carried = tuple(tag for tag in details.carried if not is_translation_tag(tag))
                     return details.with_changes(carried=carried + tuple(tuple(tag) for tag in tags))
             return details
@@ -687,14 +836,21 @@ class MultilingualAuthoring(QObject):
             problem = _("The original is empty. Open it to finish writing.")
         if self._source_group_conflict(ed, getattr(ed, "_language_source_check", {}).get("confirmed_root", "")):
             problem = _("This reference is linked to another article. Your current reference is kept.")
-        return {"body": body, "details": details, "media": tuple(media),
+        pair = {"body": body, "details": details, "media": tuple(media),
                 "language": details.language, "problem": problem, "editor": source_ed,
                 "owner": self._owner()}
+        original = self.context(source_ed) or {}
+        if "expected_event_id" in original:
+            # Known: the original's published version, or not out yet.
+            pair["expected_event_id"] = original["expected_event_id"]
+        return pair
 
     def _source_group_conflict(self, ed, confirmed_root):
         record = self.context(ed)
-        is_public = bool(getattr(ed, "_published_event", None) or (record or {}).get("published", {}).get("eventId"))
-        root = translation_metadata(self.window._article_details_of(ed).carried)["root"]
+        published = (record or {}).get("published", {})
+        is_public = bool(getattr(ed, "_published_event", None) or published.get("eventId"))
+        root = (translation_metadata(self.window._article_details_of(ed).carried)["root"]
+                or published.get("root", ""))
         return bool(is_public and root and root != confirmed_root)
 
     def source_published(self, target, event):
@@ -715,9 +871,9 @@ class MultilingualAuthoring(QObject):
         if not same_source_projection(projection, source):
             return
         source.update(eventId=event["id"], address=f"30023:{event['pubkey']}:{details.identifier}",
-                      event=copy.deepcopy(event), public=True)
+                      public=True)
         record["source"] = source
-        target._language_link = record
+        self._set_link(target, record)
         self.note_public(event)
         target._language_last_source_token = (self._owner(), record["groupId"], event["id"])
         target._language_source_checked_at = time.monotonic()
@@ -735,16 +891,13 @@ class MultilingualAuthoring(QObject):
             return
         self.note_public(event)
         ed._published_event = copy.deepcopy(event)
-        published_details = ArticleDetails.from_tags(event.get("tags", []), signer=event.get("pubkey", ""))
-        current = self.window._article_details_of(ed)
-        self.window._set_article_details(ed, current.with_changes(
-            identifier=published_details.identifier, published_at=published_details.published_at,
-            carried=published_details.carried))
+        # The document's details stay as they are: the link name and first
+        # date go back through the publish sheet (details), and nothing of
+        # the wire is written into a file (red-a-5).
         record = self.context(ed)
         if record:
-            record["published"] = {"eventId": event.get("id", ""),
-                                   "address": f"30023:{event.get('pubkey', '')}:{self.window._article_details_of(ed).identifier}"}
-            ed._language_link = record
+            record["published"] = self._published_record(event)
+            self._set_link(ed, record)
 
     def remember_reference(self, splitter):
         for ed in self.editors():
@@ -776,7 +929,9 @@ class MultilingualAuthoring(QObject):
     def refresh(self):
         w, ed = self.window, self.window.current_editor()
         active = bool(getattr(w.nostr_state, "active", False))
-        w.view_switch.setVisible(w._previewable(ed) and not active)
+        # Write, Preview and Split stay as they are for every document; the
+        # language controls join them only on a tab that can be an article
+        # (red-a-10, red-b-3).
         if not active:
             self.controls.hide()
             w.act_write_language.setVisible(False)
@@ -790,13 +945,8 @@ class MultilingualAuthoring(QObject):
         raw_link = private_link(getattr(ed, "_language_link", None)) if ed is not None else None
         owned = not raw_link or not raw_link.get("owner") or raw_link["owner"] == self._owner()
         enabled = owned and ed is not None and w._can_be_an_article(ed)
-        self.controls.setVisible(active)
-        previewing = ed is not None and w._shown_view(ed) == "preview"
-        self.preview.setVisible(w._previewable(ed))
-        self.preview.setEnabled(w._previewable(ed))
-        self.preview.setChecked(previewing)
-        self.preview.setToolTip(_("Write") if previewing else _("Preview"))
-        self.preview.setAccessibleName(self.preview.toolTip())
+        self.controls.setVisible(enabled)
+        self.languages.setVisible(enabled)
         w.act_write_language.setVisible(active)
         w.act_write_language.setEnabled(enabled)
         record = self.context(ed)
@@ -808,9 +958,8 @@ class MultilingualAuthoring(QObject):
         has_source = bool(source)
         w.act_language_reference.setVisible(has_source and active)
         w.act_language_reference.setEnabled(has_source and enabled)
-        self.reference.setVisible(has_source and active)
+        self.reference.setVisible(has_source and enabled)
         ink = QColor(DARK_FG if w.is_dark_theme else LIGHT_FG)
-        self.preview.setIcon(format_icons.write(ink) if previewing else format_icons.preview(ink))
         w.act_write_language.setIcon(format_icons.languages(ink))
         w.act_language_reference.setIcon(format_icons.reference(ink))
         lang = w._article_details_of(ed).language if ed is not None else ""

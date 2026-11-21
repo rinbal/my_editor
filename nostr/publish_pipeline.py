@@ -63,6 +63,9 @@ Mention = Tuple[str, str]               # (pubkey_hex, relay_hint), hint may be 
 
 _PUBKEY_HEX = re.compile(r"[0-9a-f]{64}")
 _UNCHECKED = object()
+# What a caller passes as ``expected_event_id`` when it does not know which
+# version is public: nothing is compared before sending.
+UNCHECKED = _UNCHECKED
 
 
 def not_taken_words(results: Sequence[PublishResult]) -> str:

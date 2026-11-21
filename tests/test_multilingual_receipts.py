@@ -79,13 +79,20 @@ for legacy_owner in (None, ''):
     result['legacy_owner_' + str(legacy_owner)] = (context['owner'] == PK
         and restored._language_link['owner'] == PK
         and restored._language_link['published']['eventId'] == restored_event['id'])
-# An ordinary first publish can assign its link name inside the Publish sheet.
+# An ordinary publish is remembered, and changes nothing of the document
+# (me68-red-a-5): its link name and date come back through the sheet.
 ordinary = w.new_tab()
 ordinary.insertPlainText('First published article')
-first_event = signed(30023, [['d', 'first-publication'], ['published_at', '1700000000']], 'First published article')
+w._set_article_details(ordinary, ArticleDetails(identifier='first-publication', title='First'))
+ordinary.document().setModified(False)
+before = w._article_details_of(ordinary)
+first_event = signed(30023, [['d', 'first-publication'], ['published_at', '1700000000'],
+                             ['alt', 'An article'], ['L', 'ISO-639-1'], ['l', 'en', 'ISO-639-1']],
+                     'First published article')
 w._language_version_published(ordinary, first_event)
 result['first_receipt_updated'] = ordinary._published_event['id'] == first_event['id']
-result['first_identifier_kept'] = w._article_details_of(ordinary).identifier == 'first-publication'
+result['ordinary_publish_changes_nothing'] = (not ordinary.document().isModified()
+                                              and w._article_details_of(ordinary) == before)
 result['first_public_reference_known'] = w._multilingual._snapshot(ordinary, '')['public']
 for editor in w._multilingual.editors():
     editor.document().setModified(False)

@@ -15,6 +15,7 @@ from PySide6.QtCore import QObject, Signal
 
 from .publisher import PublishJob
 from .publication_journal import PublicationJournal
+from .publish_pipeline import UNCHECKED
 
 
 class PairPublication(QObject):
@@ -26,8 +27,8 @@ class PairPublication(QObject):
 
     def __init__(self, *, source_event: dict, target_factory, relay_pool,
                  relay_directory, session_pool, profile, entitled_relays=(),
-                 journal=None, source_expected_event_id=None,
-                 target_expected_event_id=None, parent=None):
+                 journal=None, source_expected_event_id=UNCHECKED,
+                 target_expected_event_id=UNCHECKED, parent=None):
         super().__init__(parent)
         if source_event.get("pubkey") != profile.user_pubkey:
             raise ValueError("the reviewed source belongs to another account")

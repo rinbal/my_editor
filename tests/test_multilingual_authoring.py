@@ -9,10 +9,7 @@ from PySide6.QtGui import QInputMethodEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-import front_matter
-from multilingual_authoring import (
-    front_with_link, link_from_front, private_link,
-)
+from multilingual_authoring import draft_link, private_link, same_source_projection
 from nostr.article_details import ArticleDetails
 from nostr.drafts import serialize_inner_event, parse_inner_event
 from nostr.ui.language_chooser import LanguageChooser
@@ -47,18 +44,17 @@ def test_ime_composition_does_not_select_the_first_result():
     assert chosen == ["ja"]
 
 
-@pytest.mark.parametrize("source", ["---\ncustom: retained\n---\n\nBody", "+++\ncustom = 'retained'\n[params]\nkeep = true\n+++\n\nBody", "Body"])
-def test_private_file_provenance_roundtrip_preserves_other_front_matter(source):
-    front, body = front_matter.split(source)
-    after = front_with_link(front, PRIVATE)
-    text = front_matter.join(after, body)
-    restored, same_body = front_matter.split(text)
-    assert same_body == body
-    assert link_from_front(restored) == PRIVATE
-    assert front_matter.parsed(restored)["standup_multilingual"]
-    if "custom" in source:
-        assert front_matter.parsed(restored)["custom"] == "retained"
-    assert front_with_link(restored, PRIVATE) is restored
+def test_a_draft_keeps_no_local_paths_and_leaves_out_a_reference_too_long():
+    # me68-red-a-4 and -9: where the versions are saved stays on this
+    # computer; a reference that would make the draft too long is kept as
+    # its fingerprint, which still tells a changed original.
+    link = {**PRIVATE, "documents": {"target-id": "/Users/someone/blog/post.md"}}
+    kept = draft_link(link)
+    assert "documents" not in kept and kept["source"]["content"] == "PRIVATE SOURCE SENTINEL"
+    short = draft_link(link, fits=lambda _record: False)
+    assert "content" not in short["source"]
+    assert same_source_projection({**PRIVATE["source"]}, short["source"])
+    assert not same_source_projection({**PRIVATE["source"], "content": "Changed"}, short["source"])
 
 
 def test_encrypted_link_is_a_private_root_field_not_an_event_tag():
@@ -199,7 +195,7 @@ record = workspace_restore.capture_editor_tab(target)
 r["workspace_link"] = record.language_link["source"]["content"].endswith("PRIVATE SOURCE SENTINEL")
 path = os.path.join(sys.argv[2], "thai.md")
 assert w._save_to(path)
-w.set_current_path(path)
+w._saved_as(path, "")
 idx = w._editor_widget_index(target)
 target.document().setModified(False)
 w.close_tab(idx); app.processEvents()
@@ -207,6 +203,10 @@ restored = w.open_path(path)
 app.processEvents()
 link = w._multilingual.context(restored)
 r["file_link"] = link["groupId"] == record.language_link["groupId"]
+with open(path, encoding="utf-8") as saved:
+    written = saved.read()
+r["file_keeps_nothing_private"] = ("standup_multilingual" not in written and "SENTINEL" not in written
+                                   and PK not in written and sys.argv[2] not in written)
 body, media = w._publish_payload(restored, "markdown")
 event = build_article(content=body, pubkey_hex=profile.user_pubkey, slug=w._article_details_of(restored).identifier,
                       title="Thai", published_at=1700000000,
@@ -337,6 +337,39 @@ untitled_source = untitled_target._language_link["source"]
 untitled_event = signed(30023, [["d", untitled_source["dTag"]], ["title", untitled_source["title"]], *language_tags("de")], untitled_source["content"])
 w._multilingual.source_published(untitled_target, untitled_event)
 r["derived_title_pair_recovery"] = read_backup(untitled_target._backup.path)["language_link"]["source"]["eventId"] == untitled_event["id"]
+# The original after a translation went out names it, never itself (red-a-3).
+source_address = "30023:" + PK + ":" + w._article_details_of(source).identifier
+source._language_group_check = {"root": source_address, "events": [target_event],
+                                "translations": [], "conflict": False}
+as_root = translation_metadata(w._multilingual.publication_details(source).carried)
+r["root_never_its_own_original"] = (as_root["root"] == "" and as_root["translations"]
+                                    == ["30023:" + PK + ":" + target_details.identifier])
+# A file's original that is public already is found when linking (red-a-2).
+public_file = w.new_tab()
+public_file.insertPlainText("Published long ago")
+w._set_article_details(public_file, ArticleDetails(identifier="published-long-ago", title="Old").with_language("de"))
+r["not_known_is_not_absent"] = "expected_event_id" not in (w._multilingual.context(public_file) or {"x": 1}) \
+    and w._multilingual._needs_public_lookup(public_file)
+out_there = signed(30023, [["d", "published-long-ago"], ["title", "Old"], *language_tags("de")], "Published long ago")
+pool = SourcePool(); pool.stored = {out_there["id"]: out_there}
+w._relay_pool, w._relay_directory = pool, FakeRelayDirectory({PK: ["wss://test.example"]})
+linked = w._multilingual.open_language(public_file, "en")
+settle(60)
+w._relay_pool, w._relay_directory = old_pool, old_directory
+r["public_original_found"] = (linked._language_link["source"]["eventId"] == out_there["id"]
+                              and w._multilingual.context(public_file)["expected_event_id"] == out_there["id"])
+# The latest action asked for while the reference is read is the one that follows (red-a-11).
+pending = []
+source_provenance.check_source_snapshot = lambda pool, directory, snapshot, done, parent=None: pending.append(done)
+restored._language_last_source_token = None
+restored._language_preparing = False
+first_action, second_action = [], []
+w._multilingual.prepare_source(restored, first_action.append)
+w._multilingual.prepare_source(restored, second_action.append)
+pending[0]({"available": True, "event": new_source, "current": latest_source, "changed": True, "confirmed_root": root_address})
+app.processEvents()
+r["latest_action_follows"] = first_action == [] and second_action == [True]
+source_provenance.check_source_snapshot = checker
 # Switching accounts during a public read never opens an old send under a new account.
 import nostr.source_provenance as source_provenance
 from PySide6.QtCore import QTimer
@@ -355,7 +388,12 @@ w._on_nostr_in_use_changed(False); app.processEvents()
 r["local_controls_restore"] = w.view_switch.isVisible() and not w._multilingual.controls.isVisible()
 w.nostr_state._active = True
 w._on_nostr_in_use_changed(True); app.processEvents()
-r["nostr_icons_restore"] = not w.view_switch.isVisible() and w._multilingual.controls.isVisible()
+# Write, Preview and Split stay; the language controls join them on an article.
+r["nostr_icons_restore"] = w.view_switch.isVisible() and w._multilingual.controls.isVisible()
+code = w.new_tab()
+w._editor_kind = (lambda original: lambda ed: "code" if ed is code else original(ed))(w._editor_kind)
+w._multilingual.refresh(); app.processEvents()
+r["no_language_icon_off_articles"] = not w._multilingual.languages.isVisible()
 for editor in w._multilingual.editors():
     editor.document().setModified(False)
 w.close()

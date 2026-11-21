@@ -264,6 +264,7 @@ class PublishArticleDialog(QDialog):
         *,
         body_markdown: str,
         language_context: Optional[dict] = None,
+        document_carried: Optional[Sequence[Tuple[str, ...]]] = None,
         pair_source: Optional[dict] = None,
         active_profile: Profile,
         store: ProfileStore,
@@ -301,6 +302,8 @@ class PublishArticleDialog(QDialog):
         # What is published: the document's text, as written.
         self._body = body_markdown.strip()
         self._language_context = language_context
+        self._document_carried = (tuple(tuple(tag) for tag in document_carried)
+                                  if document_carried is not None else None)
         self._pair_source = pair_source
         self._publish_pair = False
         self._journal = PublicationJournal() if language_context else None
@@ -840,7 +843,9 @@ class PublishArticleDialog(QDialog):
         document's because the sheet was closed (review round 3, M2)."""
         identifier, published_at = self._published_as or (self._details.identifier,
                                                            self._details.published_at)
-        return self._details.with_changes(
+        details = (self._details if self._document_carried is None
+                   else self._details.with_changes(carried=self._document_carried))
+        return details.with_changes(
             identifier=identifier,
             title=self._title_edit.text().strip(),
             summary=self._summary_edit.text().strip(),
@@ -957,7 +962,8 @@ class PublishArticleDialog(QDialog):
         # New linked documents have an independent app-created UUID. Their
         # compare-before-send check establishes absence or reports uncertainty;
         # a second "publish as new" decision would ask the author to guess.
-        if self._language_context and self._language_context.get("expected_event_id") is None:
+        if (self._language_context and "expected_event_id" in self._language_context
+                and self._language_context["expected_event_id"] is None):
             try:
                 is_document_uuid = str(UUID(slug)) == slug
             except (ValueError, AttributeError):
@@ -1116,8 +1122,10 @@ class PublishArticleDialog(QDialog):
                        entitled_relays=relays_from(self._entitled_relays), parent=self)
         if self._journal is not None:
             options["journal"] = self._journal
-            if not self._publish_pair:
-                options["expected_event_id"] = self._language_context.get("expected_event_id")
+            if not self._publish_pair and "expected_event_id" in self._language_context:
+                # Compared before sending only when known: a version not
+                # known to be out is never taken as "not out" (red-a-2).
+                options["expected_event_id"] = self._language_context["expected_event_id"]
         if self._publish_pair:
             source = self._pair_source
             source_details = source["details"]
@@ -1150,11 +1158,13 @@ class PublishArticleDialog(QDialog):
                 target["tags"].extend(translation_tags({"root": root, "source": address,
                                                        "source_event": signed_source["id"]}))
                 return target
-            source_base = self._pair_source.get("editor")
-            source_base = getattr(source_base, "_published_event", None)
+            expected = {}
+            if "expected_event_id" in self._pair_source:
+                expected["source_expected_event_id"] = self._pair_source["expected_event_id"]
+            if "expected_event_id" in self._language_context:
+                expected["target_expected_event_id"] = self._language_context["expected_event_id"]
             self._job = PairPublication(source_event=approved_source, target_factory=target_factory,
-                                        source_expected_event_id=source_base.get("id") if source_base else None,
-                                        target_expected_event_id=self._language_context.get("expected_event_id"), **options)
+                                        **expected, **options)
             self._job.version_published.connect(self.version_published)
         else:
             self._job = PublishJob(unsigned_event=unsigned, **options)
