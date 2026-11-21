@@ -29,6 +29,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from i18n import N_, _
 
+from ..multilingual import requires_multilingual, supports_revision_format
 from . import conversation, crypto, formats
 from .pictures import PICTURE_MIMES, upright_size
 from .formats import FormatError
@@ -37,6 +38,8 @@ from .submission import submission_body
 from .trust import RedaktionKey
 
 # The client named in the revision and the body (at most 64 characters).
+MULTILINGUAL_UNSUPPORTED = N_("This publication does not support linked language versions yet. Your draft is kept.")
+
 CLIENT = "MyEditor"
 
 TITLE_MISSING = N_("Give the article a title to submit it.")
@@ -180,6 +183,7 @@ class ArticleDraft:
     lang: str = ""
     published_at: Optional[int] = None
     zaps: Tuple[Tuple[str, ...], ...] = ()
+    extra_tags: Tuple[Tuple[str, ...], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -282,7 +286,8 @@ def _work(draft: ArticleDraft, pictures: Sequence[EncryptedPicture]) -> dict:
             # is published with it (publishing.published_template, plan
             # A.3); one the publication signs takes the agreed split instead.
             "extra_tags": [list(tag) for tag in draft.zaps
-                           if tag[:1] == ("zap",) and all(isinstance(x, str) for x in tag)]}
+                           if tag[:1] == ("zap",) and all(isinstance(x, str) for x in tag)]
+                          + [list(tag) for tag in draft.extra_tags if tag and tag[0] != "standup:multilingual"]}
 
 
 def submission_id_of(draft: ArticleDraft, choice: Choice, writer: str, round_: int) -> str:
@@ -325,13 +330,16 @@ def seal(draft: ArticleDraft, choice: Choice, key: RedaktionKey,
     a co-author whose key is not one: :func:`blockers` says so first),
     :class:`TooLarge` when it is larger than the publication takes."""
     formats.need(not any(picture_type_refused(p) for p in pictures), "a picture's type")
+    work = _work(draft, pictures)
+    if requires_multilingual(work) and not supports_revision_format(key):
+        raise FormatError(_(MULTILINGUAL_UNSUPPORTED))
     sid = submission_id_of(draft, choice, writer, round_)
     if revision > 1 and held is None:
         raise HeldNotUsable("a later revision keeps the keys of its submission")
     s_sub, status_key = _secrets(sid, held)
     number = revision
     revision = formats.build_revision(
-        submission_id=sid, revision=number, kind="article", work=_work(draft, pictures),
+        submission_id=sid, revision=number, kind="article", work=work,
         rights={"confirmed": choice.rights, "license": None},
         checklist=checklist_results(key.rules.get("checklist"), draft),
         change_summary=change_summary if number > 1 else None,
@@ -419,7 +427,8 @@ def _signs_anything(_unsigned: dict) -> bool:
 def blockers(draft: ArticleDraft, *, writer: str, rights: bool, rights_required: bool,
              private_names: Sequence[str] = (), message: str = "",
              submitted_to: str = "", checklist: Any = (), publication: str = "",
-             signable: Callable[[dict], bool] = _signs_anything) -> List[str]:
+             signable: Callable[[dict], bool] = _signs_anything,
+             revision_formats: Optional[Sequence[int]] = None) -> List[str]:
     """Why the article cannot be submitted as it is, in the person's
     words (translated), most pressing first; empty when it can.
     ``private_names`` are the names of its pictures that are private in
@@ -430,6 +439,8 @@ def blockers(draft: ArticleDraft, *, writer: str, rights: bool, rights_required:
     says whether the writer's signer can sign an event (the message's
     seal; signer_limits.signable)."""
     found: List[str] = []
+    if revision_formats is not None and not supports_revision_format({"rules": {"revision_formats": revision_formats}}) and requires_multilingual({"lang": draft.lang, "extra_tags": draft.extra_tags}):
+        found.append(_(MULTILINGUAL_UNSUPPORTED))
     title = draft.title.strip()
     if not title:
         found.append(_(TITLE_MISSING))

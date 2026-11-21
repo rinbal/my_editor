@@ -470,7 +470,7 @@ def build_article(
     own = build_imeta_tags(media, content)
     tags.extend(own)
     if extra_tags:
-        tags.extend(_beside_own_imeta(extra_tags, own))
+        tags.extend(_beside_own_imeta([tag for tag in extra_tags if tag and tag[0] != "standup:multilingual"], own))
     tags = _one_tag_per_person(tags, pubkey_hex)
     return build_event(
         kind=30023,
@@ -1495,38 +1495,38 @@ class DraftBulkDeleteJob(QObject):
 
 
 def _one_tag_per_person(tags: List[List[str]], signer: str = "") -> List[List[str]]:
-    """``tags`` with one ``p`` tag per person. The authors' tags come
-    first, where the first ``p`` tag stood, in their order with the
-    signer's first: whoever reads the first author tag as the writer
-    (the editorial index, contract 10) never meets a person the text
-    only mentions, or a co-author, before them (RG-M4-c 2). A co-author
-    also mentioned in the text keeps the tag that names them a co-author
-    (with its marker), and the mention's relay hint when that one has
-    none."""
+    """Credit authors first and retain distinct contributor roles for one key.
+
+    A translator who also authored the text needs both role declarations.
+    Inline mentions remain deduplicated and cannot displace an author.
+    """
     hints: Dict[str, str] = {}
     for tag in tags:
-        if tag[0] == "p" and len(tag) >= 3 and tag[2]:
+        if tag and tag[0] == "p" and len(tag) >= 3 and tag[2]:
             hints.setdefault(tag[1], tag[2])
-    authors: List[List[str]] = []
-    seen = set()
+    roles: List[List[str]] = []
+    seen_roles = set()
     for tag in tags:
-        if tag[0] == "p" and len(tag) >= 4 and tag[3] == AUTHOR_MARKER \
-                and tag[1] not in seen:
-            seen.add(tag[1])
-            relay = tag[2] or hints.get(tag[1], "")
-            authors.append(list(tag) if relay == tag[2] else
-                           ["p", tag[1], relay, AUTHOR_MARKER])
-    authors.sort(key=lambda tag: tag[1] != signer)          # stable: the rest keep order
+        if tag and tag[0] == "p" and len(tag) >= 4 and tag[3] in (AUTHOR_MARKER, "translator"):
+            key = (tag[1], tag[3])
+            if key not in seen_roles:
+                seen_roles.add(key)
+                roles.append([*tag[:2], tag[2] or hints.get(tag[1], ""), *tag[3:]])
+    roles.sort(key=lambda tag: (tag[3] != AUTHOR_MARKER, tag[1] != signer))
+    credited = {tag[1] for tag in roles}
     out: List[List[str]] = []
     placed = False
+    seen_mentions = set()
     for tag in tags:
-        if tag[0] != "p" or len(tag) < 2:
+        if not tag or tag[0] != "p" or len(tag) < 2:
             out.append(tag)
             continue
         if not placed:
-            out.extend(authors)
+            out.extend(roles)
             placed = True
-        if tag[1] not in seen:
-            seen.add(tag[1])
+        if len(tag) >= 4 and tag[3] in (AUTHOR_MARKER, "translator"):
+            continue
+        if tag[1] not in credited and tag[1] not in seen_mentions:
+            seen_mentions.add(tag[1])
             out.append(list(tag))
     return out

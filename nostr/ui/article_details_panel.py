@@ -44,6 +44,7 @@ from . import appearance
 from i18n import _, format_moment
 
 from ..article_details import ArticleDetails
+from .language_chooser import language_name
 from ..blossom.store import MediaStore
 from ..media.media_visibility import MediaVisibility
 from ..media.private_library import PrivateLibrary
@@ -104,6 +105,7 @@ class ArticleDetailsPanel(QFrame):
     View and Nostr menus, its key), so it has no close button."""
 
     changed = Signal(object)
+    language_requested = Signal()
     # (document, address): a picture dropped as the cover of a document no
     # longer in front is uploaded: that document's cover.
     cover_uploaded = Signal(object, str)
@@ -217,6 +219,11 @@ class ArticleDetailsPanel(QFrame):
         self.summary_edit.setPlaceholderText(_("Shown under the title in feeds"))
         self._add_labeled(form, _("Summary"), self.summary_edit)
         self._add_kept_note(form, "summary")
+
+        self.language_button = QPushButton()
+        self.language_button.setAccessibleName(_("Article language"))
+        self.language_button.clicked.connect(self.language_requested)
+        self._add_labeled(form, _("Language"), self.language_button)
 
         self._section(form, _("Cover"))
         self.cover = CoverImageField(
@@ -420,6 +427,7 @@ class ArticleDetailsPanel(QFrame):
             self.cover.set_owner(document, details.image)
             self._shown = details
             self._show_kept(kept_in_file)
+            self.language_button.setEnabled(not {"lang", "nostr_tags"} & (details.kept | self._kept))
             if not typed:
                 self._fill_fields(details)
             else:
@@ -471,6 +479,7 @@ class ArticleDetailsPanel(QFrame):
         self.summary_edit.style().polish(self.summary_edit)
 
     def _fill_fields(self, details: ArticleDetails) -> None:
+        self.language_button.setText(language_name(details.language) or _("Choose language…"))
         self._set_text(self.title_edit, details.title)
         if self.summary_edit.toPlainText() != details.summary:
             self.summary_edit.setPlainText(details.summary)

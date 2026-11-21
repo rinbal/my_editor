@@ -147,6 +147,10 @@ def tab_identity(editor) -> dict:
     details = tab_details.set_in_tab(editor)
     if details is not None:
         identity["details"] = details.tags()
+    from multilingual_authoring import private_link
+    link = private_link(getattr(editor, "_language_link", None))
+    if link is not None:
+        identity["language_link"] = link
     front = getattr(editor, "_front_matter", None)
     if front is not None:
         # A Markdown file's front matter as written, every byte of it.

@@ -660,6 +660,7 @@ class SubmitSheet(QDialog):
             submitted_to=destination.name if self._round is not None
             and self._round.round is None else "",
             checklist=rules.get("checklist"), publication=destination.name,
+            revision_formats=rules.get("revision_formats", [1]),
             signable=lambda unsigned: signable(self.account.profile(), unsigned))
         if not found and self.message.toPlainText().strip() and not self._bound_known:
             # The message's seal is measured over the relays of the signer

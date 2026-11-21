@@ -38,6 +38,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from i18n import _
 
 from .crypto import NIP44_MAX_PLAINTEXT_LEN
+from .private_draft import PRIVATE_DRAFT_FIELD, private_multilingual, without_private_tags
 
 
 # --------------------------------------------------------------------------- #
@@ -131,7 +132,7 @@ def build_inner_event(
     return {
         "kind": int(kind),
         "content": content,
-        "tags": list(tags or []),
+        "tags": without_private_tags(list(tags or [])),
         "created_at": int(created_at),
         "pubkey": pubkey_hex.lower(),
     }
@@ -149,10 +150,13 @@ def serialize_inner_event(inner: Dict[str, Any]) -> str:
     payload = {
         "kind": int(inner["kind"]),
         "content": str(inner.get("content", "")),
-        "tags": list(inner.get("tags", [])),
+        "tags": without_private_tags(list(inner.get("tags", []))),
         "created_at": int(inner["created_at"]),
         "pubkey": str(inner["pubkey"]).lower(),
     }
+    private = private_multilingual(inner.get(PRIVATE_DRAFT_FIELD))
+    if private is not None:
+        payload[PRIVATE_DRAFT_FIELD] = private
     return json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
 
 
@@ -186,13 +190,18 @@ def parse_inner_event(plaintext: str) -> Dict[str, Any]:
     # render, see the kind branch in ``set_decrypted``.
     if not all(isinstance(t, list) and all(isinstance(x, str) for x in t) for t in tags):
         raise ValueError(_("draft payload tags must be list[list[str]]"))
-    return {
+    payload = {
         "kind": kind,
         "content": content,
-        "tags": tags,
+        "tags": without_private_tags(tags),
         "created_at": created_at,
         "pubkey": pubkey,
     }
+
+    private = private_multilingual(data.get(PRIVATE_DRAFT_FIELD))
+    if private is not None:
+        payload[PRIVATE_DRAFT_FIELD] = private
+    return payload
 
 
 # --------------------------------------------------------------------------- #

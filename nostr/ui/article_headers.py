@@ -72,6 +72,7 @@ class ArticleHeaders(QObject):
         header.set_text_font(ed.font())
         details = self._details_of(ed)
         header.show_article(details.title, details.summary, details.image)
+        header.set_compact(getattr(ed, "_language_link", None) is not None)
         header.set_derived_title(self._derived_title(ed))
 
     def show_derived_title(self, ed) -> None:

@@ -43,6 +43,7 @@ A subclass gives the words (``_waiting_words``, ``_sending_words``,
 from __future__ import annotations
 
 import re
+import logging
 from typing import List, Optional, Sequence, Tuple
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -51,7 +52,9 @@ from i18n import _
 
 from . import failures
 from .bunker import signer_failure_words
-from .outbox.policy import dedupe_relays, relays_from
+from .outbox.policy import LookupState, dedupe_relays, relays_from
+from .outbox.lookup import fetch_addressable
+from .outbox import defaults
 from .outbox.writer import signed_matches
 from .signer_limits import size_problem
 
@@ -59,6 +62,7 @@ PublishResult = Tuple[str, bool, str]   # (relay_url, ok, message)
 Mention = Tuple[str, str]               # (pubkey_hex, relay_hint), hint may be empty
 
 _PUBKEY_HEX = re.compile(r"[0-9a-f]{64}")
+_UNCHECKED = object()
 
 
 def not_taken_words(results: Sequence[PublishResult]) -> str:
@@ -121,7 +125,8 @@ class PublishPipeline(QObject):
     def __init__(self, *, relay_pool, relay_directory, session_pool, profile,
                  unsigned_event: dict, entitled_relays=(), extra_relays: Sequence[str] = (),
                  mentioned: Optional[Sequence[Mention]] = None,
-                 parent: Optional[QObject] = None) -> None:
+                 parent: Optional[QObject] = None, journal=None,
+                 expected_event_id=_UNCHECKED) -> None:
         super().__init__(parent)
         author = str(profile.user_pubkey).lower()
         if str(unsigned_event.get("pubkey", "")).lower() != author:
@@ -146,6 +151,13 @@ class PublishPipeline(QObject):
         self._failed = False
         self._cancelled = False
         self._failure_words = ""
+        # Opt-in for linked articles. Ordinary notes, deletion requests and
+        # existing callers keep their original publication behavior.
+        self._journal = journal
+        self._expected_event_id = expected_event_id
+        self._checked_current = expected_event_id is _UNCHECKED
+        self._checking_current = False
+        self._recovered_receipts = None
 
     # -- public API --------------------------------------------------------
 
@@ -176,6 +188,29 @@ class PublishPipeline(QObject):
         at once, before anything is asked, with words that say so
         (``signer_limits.size_problem``), on the next turn as a signer's
         refusal would."""
+        if self._journal is not None:
+            try:
+                previous = self._journal.find(self._unsigned)
+            except Exception as exc:
+                self._journal_failed(exc)
+                return
+            if previous:
+                self._signed_event = previous["event"]
+                self._unsigned = {key: value for key, value in self._signed_event.items()
+                                  if key not in ("id", "sig")}
+                self._signed(self._signed_event)
+                if previous["status"] == "accepted":
+                    # The already successful member of a pair is never signed
+                    # or sent again. Emit on the next turn, as real jobs do.
+                    if self._expected_event_id is _UNCHECKED:
+                        QTimer.singleShot(0, self, lambda: None if self._cancelled else
+                                          self.completed.emit(previous["receipts"]))
+                        return
+                    self._recovered_receipts = previous["receipts"]
+                self._relay_directory.publish_plan(
+                    self._author, self._on_plan, mentioned=self._mentioned,
+                    entitled=relays_from(self._entitled))
+                return
         too_long = size_problem(
             self._profile, event=self._unsigned,
             key_here=lambda: self._session_pool.key_here(self._author))
@@ -196,7 +231,14 @@ class PublishPipeline(QObject):
         if (self._signed_event is None or self._targets is None or self._cancelled
                 or self._sending):
             return False
-        self._send()
+        if self._expected_event_id is _UNCHECKED:
+            self._send()
+        else:
+            self._failed = False
+            self._failure_words = ""
+            self._checked_current = False
+            self._sent = False
+            self._send_when_ready()
         return True
 
     def cancel(self) -> None:
@@ -263,6 +305,12 @@ class PublishPipeline(QObject):
                        words=_("Your signer app signed something other than what was "
                                "asked: nothing was sent, so try again."))
             return
+        if self._journal is not None:
+            try:
+                self._journal.remember(event)
+            except Exception as exc:
+                self._journal_failed(exc)
+                return
         self._signed_event = event
         self._signed(event)
         if self._plan is None:
@@ -273,10 +321,90 @@ class PublishPipeline(QObject):
         if (self._sent or self._failed or self._cancelled or self._targets is None
                 or self._signed_event is None):
             return
+        if not self._checked_current:
+            if not self._checking_current:
+                self._checking_current = True
+                self._say(_("Checking the published version…"))
+                names = [tag[1] for tag in self._unsigned.get("tags", [])
+                         if len(tag) > 1 and tag[0] == "d"]
+                if len(names) != 1:
+                    self._fail("an article needs one stable address")
+                    return
+                identifier = names[0]
+                fetch_addressable(self._relay_pool, dedupe_relays(self._targets, defaults.INDEXER_RELAYS),
+                    kind=30023, author=self._author, d_tags=[identifier],
+                    on_done=lambda results: self._current_checked(results[identifier]), parent=self)
+            return
         self._sent = True
         self._send()
 
+    def _current_checked(self, result) -> None:
+        self._checking_current = False
+        if self._cancelled or self._failed:
+            return
+        if result.state is LookupState.UNKNOWN:
+            self._fail("the current publication could not be verified",
+                       words=_("The published version could not be checked. Try again when connected."))
+            return
+        found = result.event
+        if found is not None:
+            # A relay can retain an article after its NIP-09 deletion. A
+            # newest-event read alone cannot authorize resurrecting it.
+            from .source_provenance import check_source_snapshot
+            identifier = next(tag[1] for tag in found['tags'] if tag[0] == 'd')
+            snapshot = {'address': f"30023:{found['pubkey']}:{identifier}",
+                        'eventId': found['id'], 'content': found['content']}
+            self._checking_current = True
+            self._publication_check = check_source_snapshot(
+                self._relay_pool, self._relay_directory, snapshot,
+                lambda proof: self._publication_checked(proof), parent=self)
+            return
+        self._finish_current_check(found, result.answered)
+
+    def _publication_checked(self, proof):
+        self._checking_current = False
+        if self._cancelled or self._failed:
+            return
+        if not proof['available']:
+            self._fail("the published article is deleted or unavailable",
+                       words=_("This article is unavailable or was deleted. Open its latest version before publishing."))
+            return
+        self._finish_current_check(proof['current'], ())
+
+    def _finish_current_check(self, found, answered):
+        if found and found.get("id") == self._signed_event["id"]:
+            # A lost acknowledgement is a successful publication, not a
+            # reason to dispatch again. Keep the same exact signed ID.
+            receipts = [(url, True, "") for url in answered]
+            if not receipts:
+                receipts = [(self._targets[0], True, "")]
+            if self._journal is not None:
+                try:
+                    self._journal.answered(self._signed_event["id"], receipts)
+                except Exception:
+                    # The verified event is public already; retain its success
+                    # in the UI even if its local receipt cannot be written.
+                    logging.getLogger(__name__).exception("Could not retain the reconciled publication receipt")
+            self.completed.emit(receipts)
+            return
+        if self._recovered_receipts is not None or (found.get("id") if found else None) != self._expected_event_id:
+            self._fail("the article changed after it was opened",
+                       words=_("This article changed elsewhere. Open its latest version before publishing."))
+            return
+        if found and self._signed_event["created_at"] <= found["created_at"]:
+            self._fail("the reviewed revision is not newer than its base",
+                       words=_("The published version is newer. Reopen the article and try again."))
+            return
+        self._checked_current = True
+        self._send_when_ready()
+
     def _send(self) -> None:
+        if self._journal is not None:
+            try:
+                self._journal.dispatching(self._signed_event["id"])
+            except Exception as exc:
+                self._journal_failed(exc)
+                return
         self._sending = True
         self._say(self._sending_words(len(self._targets)))
         job = self._relay_pool.publish(self._targets, self._signed_event)
@@ -289,6 +417,13 @@ class PublishPipeline(QObject):
             self.relay_result.emit(url, ok, message)
 
     def _on_first_accept(self, url: str) -> None:
+        if self._journal is not None:
+            # The write already happened, including when the window closed
+            # during dispatch. Preserve its receipt before silencing the UI.
+            try:
+                self._journal.accepted(self._signed_event["id"], url)
+            except Exception:
+                logging.getLogger(__name__).exception("Could not retain the publication receipt")
         if self._cancelled:
             return
         self._say(self._accepted_words(url))
@@ -296,6 +431,11 @@ class PublishPipeline(QObject):
 
     def _on_all_done(self, results: List[PublishResult]) -> None:
         self._sending = False
+        if self._journal is not None:
+            try:
+                self._journal.answered(self._signed_event["id"], results)
+            except Exception:
+                logging.getLogger(__name__).exception("Could not retain the publication receipts")
         self._answered(list(results))
         if self._cancelled:
             return
@@ -313,3 +453,9 @@ class PublishPipeline(QObject):
         reason = reason or "the signer app gave no reason"
         self._failure_words = words or signer_failure_words(reason)
         self.failed.emit(reason)
+
+    def _journal_failed(self, exc: Exception) -> None:
+        # Never dispatch a signature we cannot retain for an exact retry.
+        self._sent = False
+        self._fail(str(exc), words=_("The publication could not be saved on this computer. "
+                                     "Check free disk space, then try again."))

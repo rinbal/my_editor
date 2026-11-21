@@ -36,6 +36,7 @@ on the draft's wrap, and a draft the person saved has none.
 from __future__ import annotations
 
 import functools
+import json
 import re
 from dataclasses import dataclass, field, fields, replace
 from datetime import date, datetime, timezone
@@ -46,6 +47,8 @@ from typing import (
 import front_matter
 
 from . import refs
+from .content_language import language_from_tags, language_tags, is_language_tag, normalize_language
+from .multilingual import PRIVATE_LINK_TAG
 from .bech32 import encode_nprofile, encode_npub
 from .drafts import derive_title_from_markdown, flatten_markdown_inline
 
@@ -166,6 +169,10 @@ class ArticleDetails:
             elif name == "p" and len(tag) >= 4 and tag[3] == AUTHOR_MARKER:
                 if value != signer and value not in (pubkey for pubkey, _hint in coauthors):
                     coauthors.append((value, tag[2]))
+            elif name == "p" and len(tag) >= 4 and tag[3] == "translator":
+                carried.append(tuple(tag))
+            elif name == PRIVATE_LINK_TAG:
+                continue
             elif name == "zap":
                 zaps.append(tuple(tag))
             elif name not in REBUILT:
@@ -205,22 +212,26 @@ class ArticleDetails:
 
     @property
     def language(self) -> str:
-        """The language the article labels itself with, as NIP-32 has it
-        (``["l", "de", "ISO-639-1"]``) and STANDUP reads it, two letters,
-        or ``""``: a bare ``l`` tag is some other label, and no language
-        is better than a wrong one."""
-        for tag in self.carried:
-            if len(tag) >= 3 and tag[0] == "l" and tag[2] == "ISO-639-1":
-                code = re.split(r"[-_]", tag[1].strip().lower(), maxsplit=1)[0]
-                if re.fullmatch(r"[a-z]{2}", code):
-                    return code
-        return ""
+        """Canonical content language; conflicting labels remain unresolved."""
+        return language_from_tags(self.carried)
+
+    def with_language(self, code: str) -> "ArticleDetails":
+        """Explicit language correction, retaining all other carried metadata."""
+        if "lang" in self.kept or "nostr_tags" in self.kept:
+            return self
+        from .content_language import normalize_language
+        if code and not normalize_language(code):
+            raise ValueError("Invalid content language")
+        return replace(self, carried=tuple(t for t in self.carried if not is_language_tag(t))
+                       + tuple(tuple(t) for t in language_tags(code)))
 
     def carried_tags(self, content: str) -> List[List[str]]:
         """The carried tags, as lists: picture descriptions only for the
         pictures still in ``content``."""
         kept = []
         for tag in self.carried:
+            if tag[0] == PRIVATE_LINK_TAG:
+                continue
             if tag[0] == "imeta":
                 url = imeta_url(tag)
                 if not url or not refs.address_in(url, content):
@@ -278,7 +289,7 @@ class ArticleDetails:
 _FRONT_KEYS = (("title", ()), ("summary", ("description",)),
                ("image", ("cover", "cover_image")), ("tags", ("hashtags",)),
                ("slug", ()), ("date", ("published_at",)), ("coauthors", ()),
-               ("zap_split", ()))
+               ("zap_split", ()), ("lang", ("language",)), ("nostr_tags", ()))
 
 
 def from_front_matter(front: Optional[front_matter.FrontMatter]) -> ArticleDetails:
@@ -299,10 +310,18 @@ def from_front_matter(front: Optional[front_matter.FrontMatter]) -> ArticleDetai
         person = _person(address)
         if person is not None and weight.strip().isdigit():
             zaps.append(("zap", person[0], person[1], weight.strip()))
-    return ArticleDetails(identifier=values["slug"], title=values["title"],
+    carried = ()
+    try:
+        raw_tags = json.loads(values["nostr_tags"] or "[]")
+        if isinstance(raw_tags, list):
+            carried = ArticleDetails.from_tags(raw_tags).carried
+    except (ValueError, TypeError):
+        pass
+    details = ArticleDetails(identifier=values["slug"], title=values["title"],
                           summary=values["summary"], image=values["image"],
                           hashtags=values["tags"], published_at=values["date"],
-                          coauthors=tuple(coauthors), zaps=tuple(zaps))
+                          coauthors=tuple(coauthors), zaps=tuple(zaps), carried=carried)
+    return details.with_language(values["lang"]) if normalize_language(values["lang"]) else details
 
 
 def _reading(front: Optional[front_matter.FrontMatter], key: str) -> Any:
@@ -379,7 +398,7 @@ def _refused(details: ArticleDetails, front: Optional[front_matter.FrontMatter],
 # The field of ArticleDetails each detail is.
 _FIELDS = {"title": "title", "summary": "summary", "image": "image", "tags": "hashtags",
            "slug": "identifier", "date": "published_at", "coauthors": "coauthors",
-           "zap_split": "zaps"}
+           "zap_split": "zaps", "lang": "carried", "nostr_tags": "carried"}
 # Someone a co-author or a zap share is tried with (_trials): the public
 # key of secp256k1's generator, a key no one writes as theirs.
 _SOMEONE = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
@@ -389,6 +408,8 @@ def _trials(key: str, details: ArticleDetails) -> List[dict]:
     """The changes a detail is tried with before it can be changed
     (kept_in_file): to a value YAML needs quoted, of several lines for the
     summary, or one more item; and to none."""
+    if key in ("lang", "nostr_tags"):
+        return [{"carried": tuple(tuple(t) for t in language_tags("th"))}, {"carried": ()}]
     if key == "tags":
         values = (details.hashtags + ('trial, "#2"',), ())
     elif key == "date":
@@ -540,7 +561,7 @@ def _held(front: Optional[front_matter.FrontMatter], key: str) -> Union[str, Lis
 
 
 # The details that are a text (a list or a mapping for one is read as one).
-_TEXTS = ("title", "summary", "image", "slug")
+_TEXTS = ("title", "summary", "image", "slug", "lang", "nostr_tags")
 
 
 def _first_text(mapping: dict) -> Optional[str]:
@@ -772,6 +793,10 @@ def _front_values(details: ArticleDetails) -> dict:
     return {"title": details.title.strip(), "summary": details.summary.strip(),
             "image": details.image.strip(), "tags": list(details.hashtags),
             "slug": details.identifier.strip(),
+            "lang": details.language,
+            "nostr_tags": json.dumps([list(t) for t in details.carried if not is_language_tag(t)
+                                      and t[0] != PRIVATE_LINK_TAG], ensure_ascii=False, separators=(",", ":"))
+                          if any(not is_language_tag(t) and t[0] != PRIVATE_LINK_TAG for t in details.carried) else "",
             "date": details.published_at or 0,
             "coauthors": [_address(pubkey, hint) for pubkey, hint in details.coauthors],
             "zap_split": [f"{_address(tag[1], tag[2] if len(tag) > 2 else '')} "
