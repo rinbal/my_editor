@@ -6,7 +6,6 @@ import json
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QInputMethodEvent
-from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from multilingual_authoring import draft_link, private_link, same_source_projection
