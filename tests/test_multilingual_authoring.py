@@ -292,7 +292,7 @@ r["byline_one_line"] = ("\u00a0" in sheet._card.byline.text() and QFontMetrics(
 r["pair_half_failure"] = ("Thai wasn’t published" in sheet._status.text()
                           and "German is public. Try again to publish Thai." in sheet._status.text()
                           and sheet._status.toolTip() == "relay.example: blocked"
-                          and sheet._scope.text().startswith("Thai will be public."))
+                          and not sheet._scope.isVisible())   # no contradicting plan line
 sheet._set_pair(False); app.processEvents()
 r["optional_hidden"] = not sheet._summary_edit.isVisible() and not sheet._hashtags.isVisible()
 sheet.reject()

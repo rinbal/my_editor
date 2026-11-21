@@ -834,6 +834,9 @@ class PublishArticleDialog(QDialog):
         if self._language_context.get("reference_unavailable") and not self._publish_pair:
             words += " " + _("Reference unavailable. Only this version will be published.")
         self._scope.setText(words)
+        # While a failure is said, it alone says what is public and what
+        # is not: the plan line would contradict it.
+        self._scope.setVisible(not self._try_again)
         self._publish_btn.setText(self._button_label())
 
     def _pair_version_out(self, event: dict) -> None:
@@ -1285,6 +1288,7 @@ class PublishArticleDialog(QDialog):
                          title=title, error=True, detail=detail)
         self._refit()                               # room for the message
         self._try_again = True
+        self._update_scope()                        # the failure replaces the plan line
         self._publish_btn.setText(self._button_label())
         self._set_busy(False)
 
