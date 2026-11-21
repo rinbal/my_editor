@@ -293,6 +293,16 @@ def test_a_profile_read_without_a_name_offers_edit_profile(tmp_path):
     assert edited == [True] and not sheet.edit_profile.isDefault()
 
 
+def test_a_name_read_in_after_edit_profile_takes_the_line_away(tmp_path):
+    # Red team S1: the name saved in Edit Profile comes in later, read anew.
+    sheet = _sheet(tmp_path, name="", fetched=1_700_000_000, edit_profile=lambda: None)
+    profile = sheet._store.get(WRITER)
+    profile.display_name, profile.metadata_cached_at = "Jana Roth", 1_800_000_000
+    sheet._store.upsert(profile)
+    sheet.profile_updated(profile)
+    assert sheet.no_name.isHidden()
+
+
 def test_a_profile_never_read_says_nothing_of_its_name(tmp_path):
     # S9: its name is not known yet, so it is not said to be missing.
     sheet = _sheet(tmp_path, name="", fetched=0, edit_profile=lambda: None)

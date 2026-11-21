@@ -11005,6 +11005,8 @@ class MainWindow(QMainWindow):
                             is_dark=self.is_dark_theme, edit_profile=self._on_edit_profile,
                             parent=self)
         sheet.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        # A slot of the sheet's: let go with it.
+        self._metadata_fetcher.updated.connect(sheet.profile_updated)
         sheet.submitted.connect(lambda d, ed=ed: self._keep_submitted_identifier(ed, d))
         sheet.view_submission.connect(self._submissions.open_detail)
         if becomes_article:

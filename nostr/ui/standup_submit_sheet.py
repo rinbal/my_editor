@@ -513,6 +513,11 @@ class SubmitSheet(QDialog):
             self.no_name.setVisible(shown)
             self._grow()
 
+    def profile_updated(self, _profile=None) -> None:
+        """A profile was read anew (the name saved in Edit Profile… comes
+        in after its window closed): the line follows it."""
+        self._show_no_name()
+
     def changeEvent(self, event) -> None:  # noqa: N802, Qt's name
         """In front again (after Edit Profile…): a name given there takes
         the line away."""
