@@ -414,8 +414,13 @@ def build_article(
     hashtags: Iterable[str] = (),
     extra_tags: Optional[List[List[str]]] = None,
     media: Sequence[PublishedMedia] = (),
+    writer_first: bool = False,
 ) -> dict:
     """Construct an unsigned NIP-23 long-form article (kind 30023).
+
+    The authors keep the order ``extra_tags`` gives them (the signer at its
+    place, G15c); ``writer_first`` puts the signer first among them, as a
+    Redaktion's publication of a writer's work does (RG-M4-c 2).
 
     The ``slug`` becomes the ``d``-tag, the identifier that makes this
     event addressable. Re-publishing with the same slug replaces the
@@ -471,7 +476,7 @@ def build_article(
     tags.extend(own)
     if extra_tags:
         tags.extend(_beside_own_imeta([tag for tag in extra_tags if tag and tag[0] != "standup:multilingual"], own))
-    tags = _one_tag_per_person(tags, pubkey_hex)
+    tags = _one_tag_per_person(tags, pubkey_hex if writer_first else "")
     return build_event(
         kind=30023,
         content=content,
@@ -1497,8 +1502,8 @@ class DraftBulkDeleteJob(QObject):
 def _one_tag_per_person(tags: List[List[str]], signer: str = "") -> List[List[str]]:
     """``tags`` with one ``p`` tag per person and role. The authors' tags
     come first, where the first ``p`` tag stood, in the order the details
-    gave them (ArticleDetails.authors: the signer at its place, G15c), then
-    the translators: whoever reads the first author tag as the writer (the
+    gave them (ArticleDetails.authors: the signer at its place, G15c), or
+    with ``signer`` first when it is given, then the translators: whoever reads the first author tag as the writer (the
     editorial index, contract 10) never meets a person the text only
     mentions before them (RG-M4-c 2). A translator who also wrote the text
     keeps both roles. A co-author also mentioned in the text keeps the tag
@@ -1516,7 +1521,8 @@ def _one_tag_per_person(tags: List[List[str]], signer: str = "") -> List[List[st
             if key not in seen_roles:
                 seen_roles.add(key)
                 roles.append([*tag[:2], tag[2] or hints.get(tag[1], ""), *tag[3:]])
-    roles.sort(key=lambda tag: tag[3] != AUTHOR_MARKER)     # stable: authors keep order
+    # Stable: the authors keep their order, the signer first only when asked.
+    roles.sort(key=lambda tag: (tag[3] != AUTHOR_MARKER, bool(signer) and tag[1] != signer))
     credited = {tag[1] for tag in roles}
     out: List[List[str]] = []
     placed = False
