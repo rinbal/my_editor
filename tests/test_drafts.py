@@ -396,6 +396,11 @@ def test_snippet_truncates_with_ellipsis():
     assert len(snippet) == 20
 
 
+def test_a_cut_at_a_sentence_end_shows_the_ellipsis_alone():
+    # me68-verify-5: never ".…".
+    assert derive_preview_snippet("Es zeigt. " + "x" * 200, max_chars=11) == "Es zeigt…"
+
+
 # --------------------------------------------------------------------------- #
 # flatten_markdown_inline / derive_title_from_markdown                        #
 # --------------------------------------------------------------------------- #

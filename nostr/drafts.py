@@ -530,6 +530,12 @@ def derive_title_from_markdown(
     return fallback
 
 
+def ellipsized(text: str) -> str:
+    """``text`` cut short, with "…": a cut at a sentence's end shows the
+    ellipsis alone, never ".…" (me68-verify-5)."""
+    return text.rstrip().rstrip(".,;:!?").rstrip() + "…"
+
+
 def derive_preview_snippet(content: str, *, max_chars: int = 140) -> str:
     """Return a single-line preview for a list row.
 
@@ -554,4 +560,4 @@ def derive_preview_snippet(content: str, *, max_chars: int = 140) -> str:
     flat = " ".join(lines)
     if len(flat) <= max_chars:
         return flat
-    return flat[: max_chars - 1].rstrip() + "…"
+    return ellipsized(flat[: max_chars - 1])

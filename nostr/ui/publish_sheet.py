@@ -51,6 +51,7 @@ from ..article_details import AUTHOR_MARKER
 from ..failures import markup, spoken
 from ..avatar_store import AvatarStore
 from ..bech32 import encode_npub
+from ..drafts import ellipsized
 from ..known_people import KnownPeople
 from ..profiles import Profile, ProfileStore
 from ..publisher import extract_inline_mentions
@@ -247,7 +248,7 @@ def cut_after_a_word(metrics: QFontMetrics, text: str, width: int, lines: int) -
             more = more[:-1]
         if len(more) >= len(shown) + 4:             # three letters of it, at the least
             shown = more
-    return breakable(shown.rstrip() + "…")
+    return breakable(ellipsized(shown))
 
 
 def grow_with_text(edit: QPlainTextEdit, *, least: int, most: int, floor: int = 0) -> None:

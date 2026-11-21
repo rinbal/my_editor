@@ -643,10 +643,11 @@ class PublishArticleDialog(QDialog):
         around = self.sizeHint().height() - self._scroll.sizeHint().height()
         return around + needed + 8
 
-    def _fit(self, width: int) -> None:
-        """As tall as what it shows needs, as much as its window has."""
-        fit_to_window(self, QSize(width, max(self.height() if self.isVisible() else 0,
-                                             self._wanted_height(width))))
+    def _fit(self, width: int, *, exact: bool = False) -> None:
+        """As tall as what it shows needs, as much as its window has;
+        ``exact``, also shorter than it is now (what it shows got less)."""
+        kept = self.height() if self.isVisible() and not exact else 0
+        fit_to_window(self, QSize(width, max(kept, self._wanted_height(width))))
 
     def _show_details(self, shown: bool) -> None:
         self._details_toggle.setText(_("Hide Details") if shown else _("Show Details"))
@@ -715,12 +716,22 @@ class PublishArticleDialog(QDialog):
 
         def byline(body: str, language: str) -> str:
             # Both versions going out: each card says its language first,
-            # the same way (red-b-11).
+            # the same way (red-b-11). One line: the reading time held
+            # together ("1 Min. Lesezeit"), the name cut short when the
+            # line is too short for it (me68-verify-5).
             minutes = reading_minutes(body)
-            parts = ((language_name(language),) if self._publish_pair and language else ()) + (
-                profile.display_name or profile.npub_short(),
-                ngettext("{n} min read", "{n} min read", minutes).format(n=minutes))
-            return " · ".join(parts)
+            fixed = [ngettext("{n} min read", "{n} min read", minutes).format(n=minutes)
+                     .replace(" ", "\u00a0")]
+            if self._publish_pair and language:
+                fixed.insert(0, language_name(language).replace(" ", "\u00a0"))
+            self._card.byline.ensurePolished()
+            metrics = QFontMetrics(self._card.byline.font())
+            room = ArticleCard.WIDTH - 26 - metrics.horizontalAdvance(
+                " · ".join(fixed) + " ·  · ")
+            name = metrics.elidedText(profile.display_name or profile.npub_short(),
+                                      Qt.TextElideMode.ElideRight,
+                                      max(room, metrics.horizontalAdvance("W…")))
+            return " · ".join(fixed[:-1] + [name, fixed[-1]])
         self._card.show_article(self._title_edit.text().strip(),
                                 self._summary_edit.text().strip(), self._cover.picture(),
                                 byline(self._body, self._details.language))
@@ -830,7 +841,13 @@ class PublishArticleDialog(QDialog):
                            if len(tag) > 1 and tag[0] == "d"), "")
         if self._pair_source and identifier == self._pair_source["details"].identifier:
             self._pair_source_out = True
+            # Only what is still to go out stays on the sheet: the public
+            # original is the one quiet line of the message, not a card
+            # (me68-verify-1).
+            if self._source_card is not None:
+                self._source_card.hide()
             self._update_scope()
+            self._refit()
 
     def _pair_problem_words(self) -> str:
         """Why both versions can't go out now: the original's own problem,
@@ -850,17 +867,23 @@ class PublishArticleDialog(QDialog):
     def _set_pair(self, enabled):
         self._publish_pair = bool(enabled and self._pair_source)
         if self._source_card is not None:
-            self._source_card.setVisible(self._publish_pair)
+            self._source_card.setVisible(self._publish_pair and not self._pair_source_out)
         self._refresh_card()
         problem = self._pair_problem_words() if self._publish_pair else ""
         self._pair_problem.setVisible(bool(self._publish_pair and self._pair_source.get("problem")))
         self._set_status(problem, error=bool(problem))
         self._update_scope()
         self._refresh_publish_enabled()
+        self._refit()
+
+    def _refit(self) -> None:
+        """As tall as what it shows now needs: a card gone or a message
+        come (after the layout has measured them, and once more when Qt
+        has drawn them)."""
         if self.isVisible():
             self._scroll.widget().layout().activate()
-            self._fit(self.width())
-            QTimer.singleShot(0, self, lambda: self._fit(self.width()))
+            self._fit(self.width(), exact=True)
+            QTimer.singleShot(0, self, lambda: self._fit(self.width(), exact=True))
 
     # -- state ------------------------------------------------------------------------
 
@@ -1260,6 +1283,7 @@ class PublishArticleDialog(QDialog):
                 source=source, target=target)
         self._status.say(sentence or signer_failure_words(detail),
                          title=title, error=True, detail=detail)
+        self._refit()                               # room for the message
         self._try_again = True
         self._publish_btn.setText(self._button_label())
         self._set_busy(False)
