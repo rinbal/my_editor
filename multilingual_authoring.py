@@ -23,7 +23,7 @@ import time
 from dataclasses import replace
 
 import shiboken6
-from PySide6.QtCore import QObject, QPoint, Qt, QSize, QTimer, Signal
+from PySide6.QtCore import QObject, QPoint, QRect, Qt, QSize, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QSplitter, QToolButton, QVBoxLayout, QWidget
 
@@ -33,14 +33,18 @@ import format_icons
 from settings import load_settings, save_setting
 from nostr.events import verify_event
 from nostr.language_links import LanguageLinks
-from nostr.private_draft import PRIVATE_DRAFT_FIELD
+from nostr.private_draft import PRIVATE_DRAFT_FIELD  # noqa: F401 (the window reads it here)
+from popup_placement import place_below
 from nostr.multilingual import is_translation_tag, translation_metadata, translation_tags
 from nostr.content_language import normalize_language
 from nostr.article_details import ArticleDetails, default_title
 from nostr.ui.language_chooser import LanguageChooser, language_name
 from nostr.ui import appearance
 
-REFERENCE_MIN_WIDTH = 900
+# The narrowest room for the writing beside the reference: the writing's
+# least (400) and the reference's (260) with the divider between them
+# (red-b-7). Narrower, one of them is shown at a time.
+REFERENCE_MIN_WIDTH = 400 + 260 + 8
 MAX_LINK_BYTES = 2 * 1024 * 1024
 
 
@@ -170,6 +174,8 @@ class ReferencePane(QFrame):
     """A private reference view; never another editable document binding."""
 
     review_requested = Signal()
+    back_requested = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("LanguageReference")
@@ -177,10 +183,20 @@ class ReferencePane(QFrame):
         column = QVBoxLayout(self)
         column.setContentsMargins(14, 12, 14, 8)
         column.setSpacing(8)
+        top = QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
         self.caption = QLabel()
         self.caption.setTextFormat(Qt.TextFormat.PlainText)
         self.caption.setWordWrap(True)
-        column.addWidget(self.caption)
+        top.addWidget(self.caption, 1)
+        # Shown when the window is too narrow for both and only the
+        # reference is: the way back to the writing, where it is read.
+        self.back = QPushButton()
+        self.back.setAutoDefault(False)
+        self.back.clicked.connect(self.back_requested)
+        self.back.hide()
+        top.addWidget(self.back)
+        column.addLayout(top)
         self.change_hint = QLabel()
         self.change_hint.setTextFormat(Qt.TextFormat.PlainText)
         self.change_hint.setWordWrap(True)
@@ -352,9 +368,24 @@ class MultilingualAuthoring(QObject):
             chooser.chosen.connect(lambda code, source=ed: self.set_language(source, code))
         else:
             chooser.chosen.connect(lambda code, source=ed: self.open_language(source, code))
-        chooser.move(self.languages.mapToGlobal(QPoint(0, self.languages.height())))
+        # Under the control it was opened from, inside the screen, its
+        # trailing edge at the control's (red-b-4).
+        anchor = (getattr(w._article_details_panel, "language_button", None)
+                  if edit_current else None)
+        if anchor is None or not anchor.isVisible():
+            anchor = self.languages if self.languages.isVisible() else w.format_toolbar
+        chooser.adjustSize()
+        rect = anchor.rect()
+        place_below(chooser, QRect(rect.right() + 1 - chooser.width(), rect.top(),
+                                   chooser.width(), rect.height()), anchor)
         self._chooser = chooser
         chooser.open()
+        # Where the system gives the popup a frame, the frame stays on
+        # screen too.
+        frame, area = chooser.frameGeometry(), chooser.screen().availableGeometry()
+        shift = min(0, area.right() - frame.right()) or max(0, area.left() - frame.left())
+        if shift:
+            chooser.move(chooser.pos() + QPoint(shift, 0))
         chooser.search.setFocus()
 
     def set_language(self, ed, code):
@@ -458,6 +489,7 @@ class MultilingualAuthoring(QObject):
         target._language_reference_narrow = False
         target.setPlaceholderText(_("Write or paste your {language} version.").format(language=language_name(code)))
         target.setAccessibleDescription(_("Writing in {language}").format(language=language_name(code)))
+        w._update_tab_title(target)                  # named after its original
         w.act_article_details.setChecked(False)
         # Reference is the supplementary pane; don't retain a third preview.
         w._choose_view("write")
@@ -980,6 +1012,7 @@ class MultilingualAuthoring(QObject):
             ed._language_reference_pane = pane
             ed._language_reference_initialized = False
             pane.review_requested.connect(lambda target=ed: self.review_source(target))
+            pane.back_requested.connect(self.toggle_reference)
             ed._view_splitter.addWidget(pane)
         pane.show_source(source, w.is_dark_theme)
         self._schedule_source_check(ed, record)
@@ -1028,8 +1061,8 @@ class MultilingualAuthoring(QObject):
         name = language_name(lang)
         reference_label = (_("Back to {language}").format(language=name) if reference_only
                            else _("Show reference") if narrow or not wants else _("Hide reference"))
+        w.act_language_reference.setText(_("Hide Reference") if shown else _("Show Reference"))
         w.act_language_reference.setToolTip(reference_label)
         self.reference.setAccessibleName(reference_label)
-        blocked = w.act_language_reference.blockSignals(True)
-        w.act_language_reference.setChecked(shown)
-        w.act_language_reference.blockSignals(blocked)
+        pane.back.setText(_("Back to {language}").format(language=name) if name else _("Back to Writing"))
+        pane.back.setVisible(bool(shown and reference_only))

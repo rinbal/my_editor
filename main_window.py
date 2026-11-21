@@ -1730,6 +1730,13 @@ class MainWindow(QMainWindow):
         published = getattr(ed, "_published_article", None)
         if published is not None and published.title:
             return published.title
+        # A language version without a title of its own yet is named after
+        # its original and its language (red-b-8): "Der Wald · English".
+        link = getattr(ed, "_language_link", None)
+        source = link.get("source") if isinstance(link, dict) else None
+        if isinstance(source, dict) and source.get("title") and own is not None and own.language:
+            from nostr.ui.language_chooser import language_name
+            return f"{source['title']} · {language_name(own.language)}"
         if binding:
             return _("Untitled draft")
         return _("Untitled")
@@ -2906,13 +2913,20 @@ class MainWindow(QMainWindow):
                     keywords=(_("inspector"), _("title"), _("summary"), _("cover"),
                               _("hashtags"))),
             toggled=self._show_article_details_panel)
+        # Option-Command-L and -R on a Mac; elsewhere Ctrl+F8 and Ctrl+F9,
+        # beside Article Details' Ctrl+F5 (Ctrl+Alt is AltGr there).
         self.act_write_language = add(
             Command("nostr.write_language", _("Write in Another Language…"), NOSTR,
+                    platform_keys("Ctrl+Alt+L", "Ctrl+F8"),
                     nostr=True, keywords=(_("language"), _("translation"))),
             triggered=lambda: self._multilingual.choose())
+        # Its title says what it does now, Show Reference or Hide Reference
+        # (as View > Show Sidebar does), with no check mark (red-b-9).
         self.act_language_reference = add(
             Command("nostr.language_reference", _("Show Reference"), NOSTR,
-                    nostr=True, checkable=True, keywords=(_("reference"), _("translation"))),
+                    platform_keys("Ctrl+Alt+R", "Ctrl+F9"),
+                    nostr=True, listed_as=_("Show or hide the reference"),
+                    keywords=(_("reference"), _("translation"))),
             triggered=lambda: self._multilingual.toggle_reference())
         # Audio or video, put in the text as a card, and published as its
         # address on the media servers, where readers show a player.
