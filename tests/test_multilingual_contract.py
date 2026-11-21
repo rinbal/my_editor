@@ -9,7 +9,7 @@ from nostr.content_language import normalize_language, language_from_tags, langu
 from nostr.multilingual import translation_metadata, projection_hash, translatable_projection
 from nostr.publisher import build_article
 from nostr.standup import formats, publishing
-V = json.loads(Path(__file__).with_name('fixtures').joinpath('multilingual-vectors.json').read_text())
+V = json.loads(Path(__file__).with_name('fixtures').joinpath('multilingual-vectors.json').read_text(encoding='utf-8'))
 
 @pytest.mark.parametrize('case', V['languages'], ids=lambda c: str(c['input']))
 def test_registered_language_vectors(case):
@@ -74,7 +74,7 @@ def test_complete_correction_advances_only_accepted_provenance():
 
 def test_old_reader_version_guard_refuses_new_revision():
     # Exact check_revision function from the recorded upstream a88c403a.
-    source=Path(__file__).with_name('fixtures').joinpath('editorial-v1-check_revision.py.txt').read_text()
+    source=Path(__file__).with_name('fixtures').joinpath('editorial-v1-check_revision.py.txt').read_text(encoding='utf-8')
     scope=dict(vars(formats));exec(compile(source,'upstream-a88c403a-check_revision','exec'),scope)
     with pytest.raises(formats.FormatError, match='version 1'):
         scope['check_revision'](V['editorial']['revision'])
@@ -102,7 +102,7 @@ def test_contract_pins_catalogue_and_shared_vectors():
     import hashlib
     import nostr
     package=Path(nostr.__file__).parent
-    contract=json.loads((package/'multilingual_contract.json').read_text())
+    contract=json.loads((package/'multilingual_contract.json').read_text(encoding='utf-8'))
     assert hashlib.sha256((package/'language_catalog.json').read_bytes()).hexdigest()==contract['catalog_sha256']
     assert hashlib.sha256(Path(__file__).with_name('fixtures').joinpath('multilingual-vectors.json').read_bytes()).hexdigest()==contract['vectors_sha256']
 

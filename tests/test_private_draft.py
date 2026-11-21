@@ -36,7 +36,7 @@ def test_old_known_reader_and_public_builders_cannot_publish_private_extension()
     import nostr.drafts as drafts
     import nostr.article_details as details
     import nostr.publisher as publisher
-    snapshots=json.loads(Path(__file__).with_name('fixtures').joinpath('private-draft-old-builders.json').read_text())
+    snapshots=json.loads(Path(__file__).with_name('fixtures').joinpath('private-draft-old-builders.json').read_text(encoding='utf-8'))
     scopes={name:dict(vars(module)) for name,module in [('drafts',drafts),('details',details),('publisher',publisher)]}
     for name,source in snapshots['sources'].items():
         exec(compile(source,'upstream-a88c403a-'+name,'exec'),scopes[name])
