@@ -350,6 +350,20 @@ def test_a_files_co_authors_with_the_own_address_keep_its_place():
     assert _authors_in(details.published_tags("Body", author=(ME, RELAY))) == [BOB, ME]
 
 
+def test_a_co_author_removed_and_another_added_never_go_before_the_signer():
+    # Red team B1 and S3: read [CAROL, ME], remove CAROL, add BOB.
+    read = ArticleDetails.from_tags([["p", CAROL, "", "author"], ["p", ME, "", "author"]],
+                                    signer=ME)
+    panel, sent, asked = panel_with(read)
+    section = authors(panel)
+    section.select(CAROL)
+    section.remove_button.click()
+    section.add_button.click()
+    asked[-1](Person(pubkey=BOB, display_name="Bob"))
+    assert _authors_in(sent[-1].published_tags("Body", author=(ME, ""))) == [ME, BOB]
+    assert list(section.shares_shown()) == ["", BOB]
+
+
 def test_the_authors_section_shows_the_order_published():
     # S8: as the tags of an article PUB signed; and one that names its
     # account at the second place.
