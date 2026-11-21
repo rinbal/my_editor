@@ -10107,7 +10107,7 @@ msgstr "Anteil für {name}"
 #: nostr/ui/authors_section.py:200
 #, python-brace-format
 msgid "This article doesn’t list you by name. You keep {share} % of the zaps."
-msgstr "Dieser Artikel nennt dich nicht mit Namen. Du behältst {share} % der Zaps."
+msgstr "Dieser Artikel nennt dich nicht mit Namen. Du behältst {share} % der Zaps."
 
 #: nostr/ui/authors_section.py:263
 #, python-brace-format
