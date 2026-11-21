@@ -36,7 +36,7 @@ msgstr ""
 #: link_popover.py:100
 #: main_window.py:5691
 #: main_window.py:5397
-#: main_window.py:12816
+#: main_window.py:12818
 #: main_window.py:398
 #: main_window.py:5333
 msgid "Cancel"
@@ -208,7 +208,7 @@ msgstr ""
 #: editor.py:2475
 #: editor.py:3249
 #: main_window.py:2263
-#: main_window.py:11375
+#: main_window.py:11377
 #: sheet_tab.py:2746
 #: sheet_tab.py:2472
 msgid "Paste"
@@ -239,7 +239,7 @@ msgstr ""
 
 #: editor.py:2137
 #: main_window.py:4915
-#: main_window.py:11395
+#: main_window.py:11397
 msgid "Link"
 msgstr ""
 
@@ -1734,23 +1734,23 @@ msgstr ""
 msgid "On this computer only. Publishing uploads it to your media servers."
 msgstr ""
 
-#: main_window.py:11268
+#: main_window.py:11270
 msgid "Your article is published."
 msgstr ""
 
-#: main_window.py:11268
+#: main_window.py:11270
 msgid "Your note is published."
 msgstr ""
 
-#: main_window.py:11832
+#: main_window.py:11834
 msgid "Drafts are saved on your usual relays again."
 msgstr ""
 
-#: main_window.py:11920
+#: main_window.py:11922
 msgid "Trying again. Approve the request in your signer app…"
 msgstr ""
 
-#: main_window.py:11980
+#: main_window.py:11982
 #: main_window.py:2293
 #: main_window.py:7998
 #: nostr/ui/media_library_dialog.py:787
@@ -1759,23 +1759,23 @@ msgstr ""
 msgid "Delete"
 msgstr ""
 
-#: main_window.py:12103
+#: main_window.py:12105
 msgid "Your draft wasn’t deleted"
 msgstr ""
 
-#: main_window.py:12104
+#: main_window.py:12106
 msgid "Some drafts weren’t deleted"
 msgstr ""
 
-#: main_window.py:12104
+#: main_window.py:12106
 msgid "Your drafts weren’t deleted"
 msgstr ""
 
-#: main_window.py:12741
+#: main_window.py:12743
 msgid "Already saving this draft - wait for it to finish."
 msgstr ""
 
-#: main_window.py:12804
+#: main_window.py:12806
 msgid "(unknown account)"
 msgstr ""
 
@@ -2179,7 +2179,6 @@ msgstr ""
 
 #: main_window.py:2983
 #: main_window.py:9221
-#: nostr/ui/standup_confirm_sheet.py:160
 #: nostr/ui/standup_submit_sheet.py:258
 msgid "Edit Profile…"
 msgstr ""
@@ -2240,7 +2239,7 @@ msgstr ""
 
 #: main_window.py:4511
 #: main_window.py:4915
-#: main_window.py:11400
+#: main_window.py:11402
 #: main_window.py:4896
 #: media_files.py:109
 #: nostr/ui/media_library_dialog.py:1416
@@ -2609,75 +2608,75 @@ msgstr ""
 msgid "Anyone who has it can publish as its owner and read their private messages, and once published it can never be taken back. MyEditor did not paste it. Keep it in a password manager or a signer app."
 msgstr ""
 
-#: main_window.py:11429
-#: main_window.py:11443
+#: main_window.py:11431
+#: main_window.py:11445
 msgid "That link cannot be inserted."
 msgstr ""
 
-#: main_window.py:11509
+#: main_window.py:11511
 msgid "Your file wasn’t uploaded"
 msgstr ""
 
-#: main_window.py:11510
+#: main_window.py:11512
 msgid "Some files weren’t uploaded"
 msgstr ""
 
-#: main_window.py:11534
+#: main_window.py:11536
 msgid "That image could not be added."
 msgstr ""
 
-#: main_window.py:11850
+#: main_window.py:11852
 msgid "Draft isn't ready to open yet - still decrypting."
 msgstr ""
 
-#: main_window.py:11963
+#: main_window.py:11965
 msgid ""
 "They use a draft format this editor doesn't recognise, so removing them from here might leave them visible in the other client.\n"
 "\n"
 "To remove them cleanly, open them in the app that created them and delete them there."
 msgstr ""
 
-#: main_window.py:11979
+#: main_window.py:11981
 msgid "Delete “this draft” from your Nostr drafts?"
 msgstr ""
 
-#: main_window.py:11994
+#: main_window.py:11996
 msgid "A blank-content replacement will be published to your relays. Other clients (and your other devices) will treat the draft as removed. This action can't be undone."
 msgid_plural "A blank-content replacement will be published to your relays. Other clients (and your other devices) will treat them as removed. This action can't be undone."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:12002
+#: main_window.py:12004
 msgid "A draft whose link name holds a secret key is deleted by a request instead, which doesn't send the key again. Your other devices, and apps that follow such requests, will treat it as removed. This action can't be undone."
 msgid_plural "Drafts whose link names hold a secret key are deleted by a request each instead, which doesn't send the keys again. Your other devices, and apps that follow such requests, will treat them as removed. This action can't be undone."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:12075
+#: main_window.py:12077
 msgid "Deleting drafts…"
 msgstr ""
 
-#: main_window.py:12075
+#: main_window.py:12077
 #: nostr/ui/media_library_dialog.py:316
 #: nostr/ui/media_preview.py:165
 msgid "Stop"
 msgstr ""
 
-#: main_window.py:12076
+#: main_window.py:12078
 msgid "Deleting drafts"
 msgstr ""
 
-#: main_window.py:12334
+#: main_window.py:12336
 msgid "The draft was not saved: another account is in use."
 msgstr ""
 
-#: main_window.py:12358
+#: main_window.py:12360
 msgid "Replacing it overwrites its text on all your devices."
 msgstr ""
 
-#: main_window.py:12359
+#: main_window.py:12361
 #: main_window.py:6981
-#: main_window.py:12976
+#: main_window.py:12978
 #: sheet_window.py:151
 #: update_flow.py:138
 #: update_flow.py:169
@@ -2685,7 +2684,7 @@ msgstr ""
 msgid "Replace"
 msgstr ""
 
-#: main_window.py:12822
+#: main_window.py:12824
 msgid "Saving under the current account would create a separate draft. How would you like to handle it?"
 msgstr ""
 
@@ -3090,7 +3089,7 @@ msgstr ""
 
 #: main_window.py:9910
 #: main_window.py:10880
-#: main_window.py:11046
+#: main_window.py:11048
 msgid "The current document is empty."
 msgstr ""
 
@@ -3137,7 +3136,7 @@ msgid "Paste Public Key"
 msgstr ""
 
 #: main_window.py:10986
-#: main_window.py:11045
+#: main_window.py:11047
 msgid "Nothing to submit"
 msgstr ""
 
@@ -3145,7 +3144,7 @@ msgstr ""
 msgid "Open the text you want to submit, then choose Submit to a Publication again."
 msgstr ""
 
-#: main_window.py:11049
+#: main_window.py:11051
 #: preview_pane.py:100
 #: nostr/refs.py:160
 #: nostr/ui/article_details_panel.py:210
@@ -3156,41 +3155,41 @@ msgstr ""
 msgid "Article"
 msgstr ""
 
-#: main_window.py:11828
+#: main_window.py:11830
 msgid "Drafts are now saved only on the relay you chose."
 msgid_plural "Drafts are now saved only on the {count} relays you chose."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:11982
+#: main_window.py:11984
 #, python-brace-format
 msgid "Delete {count} draft from your Nostr drafts?"
 msgid_plural "Delete {count} drafts from your Nostr drafts?"
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:11985
+#: main_window.py:11987
 #, python-brace-format
 msgid "Delete {count} Draft"
 msgid_plural "Delete {count} Drafts"
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:12029
+#: main_window.py:12031
 msgid "An imported draft takes a second request, which tells other apps it is gone."
 msgid_plural "Imported drafts take a second request each, which tells other apps they are gone."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:12418
+#: main_window.py:12420
 msgid "Nothing to save as a draft"
 msgstr ""
 
-#: main_window.py:12419
+#: main_window.py:12421
 msgid "The current document is empty. Add some content first."
 msgstr ""
 
-#: main_window.py:12474
+#: main_window.py:12476
 msgid "Draft saved."
 msgstr ""
 
@@ -3910,74 +3909,74 @@ msgstr ""
 msgid "“{name}” wasn’t added to your Media Library."
 msgstr ""
 
-#: main_window.py:11749
+#: main_window.py:11751
 msgid "This article has a draft that can’t be shown yet."
 msgstr ""
 
-#: main_window.py:11837
+#: main_window.py:11839
 #, python-brace-format
 msgid "Copied event id {id}…"
 msgstr ""
 
-#: main_window.py:11960
+#: main_window.py:11962
 msgid "This draft was created by another Nostr client"
 msgid_plural "These {count} drafts were created by other Nostr clients"
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:11976
+#: main_window.py:11978
 #, python-brace-format
 msgid "Delete “{name}” from your Nostr drafts?"
 msgstr ""
 
-#: main_window.py:12022
+#: main_window.py:12024
 #, python-brace-format
 msgid "Your signer app will ask you to approve each one, so expect {count} request. You can stop partway through."
 msgid_plural "Your signer app will ask you to approve each one, so expect {count} requests. You can stop partway through."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:12036
+#: main_window.py:12038
 #, python-brace-format
 msgid "{count} draft from another Nostr client is not included, and will be left alone."
 msgid_plural "{count} drafts from another Nostr client are not included, and will be left alone."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:12064
+#: main_window.py:12066
 msgid "These drafts can’t be deleted from here: delete them in the app that made them."
 msgstr ""
 
-#: main_window.py:12151
+#: main_window.py:12153
 msgid "Draft deleted."
 msgid_plural "{count} drafts deleted."
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:12356
+#: main_window.py:12358
 #, python-brace-format
 msgid "A draft named “{name}” already exists. Do you want to replace it?"
 msgstr ""
 
-#: main_window.py:12428
-#: main_window.py:12658
+#: main_window.py:12430
+#: main_window.py:12660
 msgid "Couldn't prepare the draft"
 msgstr ""
 
-#: main_window.py:12429
+#: main_window.py:12431
 msgid "Its contents could not be prepared for encryption."
 msgstr ""
 
-#: main_window.py:12819
+#: main_window.py:12821
 #, python-brace-format
 msgid "This draft was last saved as {original}, but you're signed in as {active}"
 msgstr ""
 
-#: main_window.py:12975
+#: main_window.py:12977
 msgid "Replace this draft with the newer version?"
 msgstr ""
 
-#: main_window.py:12976
+#: main_window.py:12978
 msgid "Your unsaved changes will be lost."
 msgstr ""
 
@@ -4115,47 +4114,47 @@ msgstr[1] ""
 msgid "“{name}” wasn’t added to your Media Library. {reason}"
 msgstr ""
 
-#: main_window.py:11750
+#: main_window.py:11752
 msgid "Its draft couldn’t be decrypted: double-click it in the Drafts panel to try again, or open the version that is published now."
 msgstr ""
 
-#: main_window.py:11753
+#: main_window.py:11755
 msgid "Its draft is still being decrypted: choose Edit again once its title shows in the Drafts panel, or open the version that is published now."
 msgstr ""
 
-#: main_window.py:11761
+#: main_window.py:11763
 msgid "This article has a draft with changes you haven’t published."
 msgstr ""
 
-#: main_window.py:11763
+#: main_window.py:11765
 msgid "Open the draft to go on with it, or open the version that is published."
 msgstr ""
 
-#: main_window.py:12045
+#: main_window.py:12047
 msgid "Not included:"
 msgstr ""
 
-#: main_window.py:12086
+#: main_window.py:12088
 #, python-brace-format
 msgid "Deleting draft {current} of {total}…"
 msgstr ""
 
-#: main_window.py:12244
+#: main_window.py:12246
 #: main_window.py:5437
 msgid "That account isn’t signed in anymore"
 msgstr ""
 
-#: main_window.py:12245
+#: main_window.py:12247
 #: main_window.py:5438
 msgid "Connect it again with Nostr > Connect Signer App… to save here."
 msgstr ""
 
-#: main_window.py:12811
+#: main_window.py:12813
 #, python-brace-format
 msgid "Switch to {name} and Save"
 msgstr ""
 
-#: main_window.py:12814
+#: main_window.py:12816
 #, python-brace-format
 msgid "Save a Copy as {name}"
 msgstr ""
@@ -4201,7 +4200,7 @@ msgstr ""
 msgid "{error} Check that it's turned on and connected, then try again."
 msgstr ""
 
-#: main_window.py:11049
+#: main_window.py:11051
 #: nostr/ui/standup_handoff.py:654
 #, python-brace-format
 msgid "{count} picture"
@@ -4209,8 +4208,8 @@ msgid_plural "{count} pictures"
 msgstr[0] ""
 msgstr[1] ""
 
-#: main_window.py:11755
-#: main_window.py:11766
+#: main_window.py:11757
+#: main_window.py:11768
 msgid "Open Published Version"
 msgstr ""
 
@@ -4219,7 +4218,7 @@ msgstr ""
 msgid "Couldn't reload “{name}”"
 msgstr ""
 
-#: main_window.py:11767
+#: main_window.py:11769
 msgid "Open Draft"
 msgstr ""
 
@@ -8756,7 +8755,7 @@ msgid "Send a Reminder"
 msgstr ""
 
 #: nostr/standup/situations.py:57
-#: nostr/ui/standup_confirm_sheet.py:182
+#: nostr/ui/standup_confirm_sheet.py:184
 #: nostr/ui/standup_correction_sheet.py:131
 #: nostr/ui/standup_correction_sheet.py:178
 #: nostr/ui/standup_publish_sheet.py:199
@@ -9123,13 +9122,13 @@ msgstr ""
 
 #: nostr/standup/thread.py:171
 #: nostr/ui/authors_section.py:186
-#: nostr/ui/standup_confirm_sheet.py:197
+#: nostr/ui/standup_confirm_sheet.py:199
 #: nostr/ui/submission_thread.py:147
 msgid "You"
 msgstr ""
 
 #: nostr/standup/thread.py:171
-#: nostr/ui/standup_confirm_sheet.py:197
+#: nostr/ui/standup_confirm_sheet.py:199
 #: nostr/ui/submission_detail.py:583
 #: nostr/ui/submission_detail.py:755
 #: nostr/ui/submission_thread.py:147
@@ -12959,7 +12958,7 @@ msgid "Edit Profile"
 msgstr ""
 
 #: nostr/ui/profile_window.py:219
-#: nostr/ui/standup_confirm_sheet.py:60
+#: nostr/ui/standup_confirm_sheet.py:61
 msgid "Reading your profile…"
 msgstr ""
 
@@ -13506,55 +13505,59 @@ msgstr ""
 msgid "After"
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:53
+#: nostr/ui/standup_confirm_sheet.py:54
 #, python-brace-format
 msgid "Your share goes to {address}."
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:56
+#: nostr/ui/standup_confirm_sheet.py:57
 msgid "Apps that support splits divide zaps this way."
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:58
+#: nostr/ui/standup_confirm_sheet.py:59
 msgid "So zaps for your share reach you, add a Lightning address. You can also do this later."
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:61
-msgid "My contribution is mine."
-msgstr ""
-
 #: nostr/ui/standup_confirm_sheet.py:62
-#, python-brace-format
-msgid "My contribution ({part}) is mine."
+msgid "My contribution is mine."
 msgstr ""
 
 #: nostr/ui/standup_confirm_sheet.py:63
 #, python-brace-format
-msgid "I agree to the license {license}."
+msgid "My contribution ({part}) is mine."
 msgstr ""
 
 #: nostr/ui/standup_confirm_sheet.py:64
-msgid "Not confirmed"
+#, python-brace-format
+msgid "I agree to the license {license}."
 msgstr ""
 
 #: nostr/ui/standup_confirm_sheet.py:65
+msgid "Not confirmed"
+msgstr ""
+
+#: nostr/ui/standup_confirm_sheet.py:66
 msgid "A short question about the split: "
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:108
-#: nostr/ui/standup_confirm_sheet.py:144
+#: nostr/ui/standup_confirm_sheet.py:109
+#: nostr/ui/standup_confirm_sheet.py:145
 msgid "Confirm Your Share"
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:188
+#: nostr/ui/standup_confirm_sheet.py:162
+msgid "Add Lightning Address…"
+msgstr ""
+
+#: nostr/ui/standup_confirm_sheet.py:190
 msgid "Confirm Share"
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:258
+#: nostr/ui/standup_confirm_sheet.py:260
 msgid "Confirming…"
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:200
+#: nostr/ui/standup_confirm_sheet.py:202
 #, python-brace-format
 msgid "The split: {shares}"
 msgstr ""
@@ -13966,20 +13969,20 @@ msgstr ""
 msgid "Submitting as {name}"
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:530
+#: nostr/ui/standup_submit_sheet.py:535
 msgid "The server’s address comes from the association."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:553
+#: nostr/ui/standup_submit_sheet.py:558
 msgid "No publication takes submissions right now."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:647
+#: nostr/ui/standup_submit_sheet.py:652
 #, python-brace-format
 msgid "{publication} publishes it under your name. Before that, you briefly confirm your share of the zaps."
 msgstr ""
 
-#: nostr/ui/standup_submit_sheet.py:650
+#: nostr/ui/standup_submit_sheet.py:655
 #, python-brace-format
 msgid "After acceptance you publish it yourself, and {publication} shows it on its own page."
 msgstr ""

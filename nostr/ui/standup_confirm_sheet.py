@@ -19,10 +19,11 @@ names that revision's verified hash and that rumor's id. A writer
 confirms the split, a contributor the split and their rights. Bestätigen
 is always there (R5): a share reaches its person at the lightning
 address their profile names, and where it names none one quiet line
-says so, with Profil bearbeiten beside it; an address added later counts
-for what is out already, and meanwhile the share goes to the others. A
-profile that could not be read says nothing (quiet failures). The
-primary action comes first in the focus order. Rückfrage stellen closes the sheet and puts the question into the
+says so, with Lightning-Adresse eintragen under it (Edit Profile); an
+address added later counts for what is out already, and meanwhile the
+share goes to the others. A profile that could not be read says nothing
+(quiet failures). The primary action comes first in the focus order.
+Rückfrage stellen closes the sheet and puts the question into the
 conversation's composer. A contributor's rights are the web's sentences
 (RG-M4-b 7), their part as the revision credits it and the license the
 revision names, in a label that wraps.
@@ -157,7 +158,8 @@ class ConfirmSheet(QDialog):
         root.addWidget(self.address)
         # Beside the line, never among the sheet's buttons: Confirm stays
         # the one primary action (as WaysOut places its Try Again).
-        self.edit_profile = QPushButton(_("Edit Profile…"))
+        # What the line asks for; it opens Edit Profile, where it is added.
+        self.edit_profile = QPushButton(_("Add Lightning Address…"))
         self.edit_profile.setAutoDefault(False)
         self.edit_profile.clicked.connect(self._edit_profile)
         root.addWidget(self.edit_profile, 0, Qt.AlignmentFlag.AlignLeft)
@@ -284,7 +286,7 @@ class ConfirmSheet(QDialog):
 
     def changeEvent(self, event) -> None:  # noqa: N802, Qt's name
         """Back from editing the profile, the address is read again, so a
-        newly named one enables Confirm without reopening the sheet."""
+        newly named one is said without reopening the sheet."""
         super().changeEvent(event)
         if (event.type() == QEvent.Type.ActivationChange and self.isActiveWindow()
                 and getattr(self, "_profile_edited", False) and not self._address):

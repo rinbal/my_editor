@@ -600,6 +600,7 @@ def test_a_share_is_confirmed_without_a_lightning_address_and_one_quiet_line_off
         confirm=lambda confirms, done: sent.append(confirms), is_dark=False)
     answers[-1]("")
     assert sheet.address.text() == NO_ADDRESS and sheet.edit_profile.isVisibleTo(sheet)
+    assert sheet.edit_profile.text() == "Add Lightning Address…"
     assert sheet.confirm_button.isDefault() and not sheet.edit_profile.isDefault()
     sheet.confirm_button.click()
     assert sent == [("split",)]
