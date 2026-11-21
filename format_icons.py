@@ -643,3 +643,64 @@ def paint(name: str, painter: QPainter, rect: QRectF, color: QColor) -> None:
     painter.scale(rect.width() / SIZE, rect.height() / SIZE)
     _GLYPHS[name](painter, QColor(color))
     painter.restore()
+
+
+def languages(color: QColor) -> QIcon:
+    """Shared Languages mark: Latin and CJK glyphs, distinct from a globe."""
+    def draw(painter: QPainter, ink: QColor) -> None:
+        painter.setPen(ink)
+        font = QFont()
+        font.setPixelSize(11)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(QRectF(0, 0, 10, 13), Qt.AlignmentFlag.AlignCenter, "A")
+        font.setPixelSize(10)
+        font.setBold(False)
+        painter.setFont(font)
+        painter.drawText(QRectF(8, 6, 10, 12), Qt.AlignmentFlag.AlignCenter, "文")
+    return _icon(draw, color)
+
+
+def reference(color: QColor) -> QIcon:
+    """A writing page beside its reference, in the existing toolbar weight."""
+    def draw(painter: QPainter, ink: QColor) -> None:
+        painter.setPen(_pen(ink))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(QRectF(1.5, 2.5, 15, 13), 1.5, 1.5)
+        painter.drawLine(QPointF(10.5, 3), QPointF(10.5, 15))
+        painter.drawLine(QPointF(4, 6), QPointF(8, 6))
+        painter.drawLine(QPointF(4, 9), QPointF(8, 9))
+        painter.drawLine(QPointF(13, 6), QPointF(14, 6))
+        painter.drawLine(QPointF(13, 9), QPointF(14, 9))
+    return _icon(draw, color)
+
+
+def preview(color: QColor) -> QIcon:
+    """Preview: an eye, in the same stroke as the other toolbar controls."""
+    def draw(painter: QPainter, ink: QColor) -> None:
+        painter.setPen(_pen(ink))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        path = QPainterPath()
+        path.moveTo(1.5, 9)
+        path.cubicTo(5.5, 2.5, 12.5, 2.5, 16.5, 9)
+        path.cubicTo(12.5, 15.5, 5.5, 15.5, 1.5, 9)
+        painter.drawPath(path)
+        painter.drawEllipse(QPointF(9, 9), 2.3, 2.3)
+    return _icon(draw, color)
+
+
+def write(color: QColor) -> QIcon:
+    """Return from Preview to writing: a pencil, never a second mode bar."""
+    def draw(painter: QPainter, ink: QColor) -> None:
+        painter.setPen(_pen(ink))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        path = QPainterPath()
+        path.moveTo(3, 15)
+        path.lineTo(4, 11)
+        path.lineTo(12.5, 2.5)
+        path.lineTo(15.5, 5.5)
+        path.lineTo(7, 14)
+        path.closeSubpath()
+        painter.drawPath(path)
+        painter.drawLine(QPointF(10.5, 4.5), QPointF(13.5, 7.5))
+    return _icon(draw, color)

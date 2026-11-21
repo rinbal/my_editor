@@ -5,6 +5,7 @@ The technical side of MyEditor's Nostr features: which NIPs and event kinds it u
 | Feature | NIPs and kinds | Main modules |
 |---|---|---|
 | Notes and articles | kind 1, NIP-23 kind 30023, NIP-27 mentions, NIP-18 quotes, NIP-89 client tag | `nostr/publisher.py`, `nostr/publish_pipeline.py`, `markdown_writer.py` |
+| Linked language versions | One kind 30023 per version; NIP-32 labels and documented application references | `nostr/content_language.py`, `nostr/multilingual.py`, `nostr/source_provenance.py`, `multilingual_authoring.py` |
 | Signing | NIP-46 over NIP-44 v2, NIP-49 backups | `nostr/bunker.py`, `nostr/local_signer.py`, `nostr/key_vault.py` |
 | Relays | NIP-65 outbox model, NIP-42 sign-in | `nostr/outbox/`, `nostr/relay_auth.py` |
 | Drafts | NIP-37 kind 31234, NIP-40 expiry | `nostr/drafts.py`, `nostr/draft_sync.py`, `nostr/draft_relays.py` |
@@ -23,6 +24,8 @@ The technical side of MyEditor's Nostr features: which NIPs and event kinds it u
 - **The date an article first went out** stays with it through every edit: readers date the article by it. MyEditor takes it from the article's draft, or from what this computer remembers of its own publications (`~/.config/my_editor/article_first_published.json`), or asks the relays you publish to, the ones you read from and the indexers. An article none of them holds is new and dated today, as long as at least one of the relays you publish to (and an indexer) answered: one relay that is down does not hold up a new article. When none of the relays you publish to answers, nobody can tell whether the article went out before, so MyEditor asks you: **Try Again**, **Publish as New** (today's date) or **Cancel**. A draft saved after publishing keeps the date, so another device that opens the draft keeps it too.
 
 Both flows display a `Published from MyEditor` client tag so readers that honour NIP-89 can show which app produced the note.
+
+Multilingual behavior and verification are recorded in [the implementation review](../design/multilingual-implementation.md). Private references are stored in local documents or the encrypted draft JSON field `standup_multilingual`, never in public event tags. Known older clients copy unknown tags into public articles, but discard the private JSON extension when rebuilding events. Linked publication reuses approved signed events through `nostr/publication_journal.py`; recovery never authorizes a new signature by itself.
 
 ## Signing
 

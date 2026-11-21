@@ -80,6 +80,7 @@ def capture_editor_tab(ed) -> Optional[TabState]:
         article_author=identity.get("article_author", ""),
         details=identity.get("details"),
         front_matter=identity.get("front_matter"),
+        language_link=identity.get("language_link"),
     )
 
 
@@ -249,7 +250,7 @@ def resume_tab(window, tab: TabState, *, draft_type):
                      None if from_file else tab.details,
                      None if from_file else tab.front_matter,
                      record.get("newline") if record is not None else None,
-                     draft_type=draft_type)
+                     draft_type=draft_type, language_link=tab.language_link)
     index = _tab_index(window, ed)
     if index >= 0:
         window.tabs.setTabText(index, window._compose_tab_title(ed))
@@ -358,13 +359,15 @@ def _tab_index(window, widget) -> int:
 
 
 def restore_identity(ed, draft, article, article_author, details=None,
-                     matter=None, newline=None, *, draft_type) -> None:
+                     matter=None, newline=None, *, draft_type, language_link=None) -> None:
     """Give a reopened tab back what it was besides its text
     (recovery.tab_identity): the draft it is bound to, rebuilt as
     ``draft_type``, the published article it edits with whose it is, the
     article details set in it, its file's front matter as it was written,
     and the line ending its file's text is saved with. Anything malformed
     is left out: the tab is then a plain document."""
+    from multilingual_authoring import private_link
+    ed._language_link = private_link(language_link)
     if newline in ("\r\n", "\n", "\r"):
         ed._newline = newline
     if isinstance(draft, dict):

@@ -6,6 +6,10 @@ revision, the limits (editorial contract sections 1, 2, 5, 13 and 15).
 Pure: no Qt, no network, no clock. Everything a server or another app
 sends is read with :func:`read_revision` and the ``is_*`` checks, which
 raise :class:`FormatError` (a ValueError) for anything malformed.
+
+This module is longer than most so canonicalization, wire shapes and limits
+remain one auditable pure boundary. Shared language and provenance rules
+live separately in ``nostr.multilingual``.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ from i18n import N_
 
 from .. import refs
 from ..paged_list import PAGE_PAYLOAD_MAX
+from ..multilingual import requires_multilingual, check_revision_work
 
 # --------------------------------------------------------------------------- #
 # Limits (section 15, and where else the contract names one)                  #
@@ -395,7 +400,7 @@ def check_revision(revision: Any, *, submission_id_: Optional[str] = None,
     """``revision`` when it has the contract's shape (5), else FormatError.
     Unknown fields are left alone (readers ignore them)."""
     need(isinstance(revision, dict), "a revision is an object")
-    need(revision.get("v") == 1, "revision version 1")
+    need(type(revision.get("v")) is int and revision["v"] in (1, 2), "unsupported revision format")
     need(revision.get("type") == "standup-revision", "not a standup revision")
     need(is_hex64(revision.get("submission_id")), "revision submission_id")
     if submission_id_ is not None:
@@ -405,6 +410,7 @@ def check_revision(revision: Any, *, submission_id_: Optional[str] = None,
         need(revision["revision"] == revision_number, "another revision than the one named")
     need(revision.get("kind") in KINDS, "revision kind")
     _check_work(revision.get("work"))
+    check_revision_work(revision["work"], revision["v"], error=FormatError)
     _check_audio(revision.get("audio"), revision["kind"])
     _check_people(revision.get("credits"), revision.get("rights"))
     _check_checklist(revision.get("checklist"))
@@ -509,7 +515,7 @@ def build_revision(
     work.setdefault("authors", [])
     work.setdefault("extra_tags", [])
     value = {
-        "v": 1,
+        "v": 2 if requires_multilingual(work) else 1,
         "type": "standup-revision",
         "submission_id": submission_id,
         "revision": revision,

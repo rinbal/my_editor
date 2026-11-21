@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "convention": "standup-multilingual-v1",
+  "revision_format": 2,
+  "capability_field": "revision_formats",
+  "language_namespaces": [
+    "ISO-639-1",
+    "lang"
+  ],
+  "root_marker": "original",
+  "source_marker": "source",
+  "approval_marker": "translation",
+  "translator_marker": "translator",
+  "catalog_sha256": "b94a82cb51d1e31bd071e23b782a5180f95bf1bf613ed179ee082caceb92a82b",
+  "registry_sha256": "8ac4e58567593c96e9e6d66e2017dbb8d3953dbcb42fe32ecd3b3fccdfdaba7b",
+  "vectors_sha256": "a3ac4eda3ff30623772d2e924fa34e2a09aa99d48495a35be611a3a03c0f25b2",
+  "private_draft_field": "standup_multilingual"
+}

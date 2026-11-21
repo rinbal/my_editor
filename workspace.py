@@ -79,6 +79,7 @@ class TabState:
     details: Optional[list] = None
     # A Markdown file's front matter as written, every byte of it.
     front_matter: Optional[str] = None
+    language_link: Optional[dict] = None  # private linkage; never public article tags
 
 
 @dataclass(frozen=True)
@@ -191,6 +192,7 @@ def _parse_tab(raw) -> Optional[TabState]:
         article_author=_str(raw.get("article_author")) or "",
         details=details,
         front_matter=matter,
+        language_link=raw.get("language_link") if isinstance(raw.get("language_link"), dict) else None,
     )
 
 

@@ -50,9 +50,10 @@ from __future__ import annotations
 
 import sys
 import time
+from uuid import UUID
 from typing import Callable, List, Optional, Sequence, Tuple
 
-from PySide6.QtCore import QDateTime, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QDateTime, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QFontMetrics, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (
     QBoxLayout, QDialog, QDialogButtonBox, QFormLayout, QFrame, QLabel,
@@ -66,7 +67,7 @@ from constants import (
 )
 from i18n import N_, _, format_moment, ngettext
 
-from ..article_details import ArticleDetails
+from ..article_details import ArticleDetails, default_title
 from ..avatar_store import AvatarStore
 from ..bech32 import encode_naddr
 from ..blossom.store import MediaStore
@@ -82,6 +83,10 @@ from ..outbox import RelayDirectory, relays_from
 from ..preview import reading_minutes
 from ..profiles import Profile, ProfileStore
 from ..publish_pipeline import answers_detail, not_taken_words, same_event
+from .language_chooser import language_name
+from ..multilingual import is_translation_tag, translation_metadata, translation_tags
+from ..publication_journal import PublicationJournal
+from ..multilingual_publish import PairPublication
 from ..publisher import (
     FOUND, NEVER, FirstPublication, PublishedMedia, PublishJob, PublishResult, build_article,
     file_link_names, find_first_publication, link_name, slugify,
@@ -98,6 +103,7 @@ from .publish_sheet import (
 )
 from .secret_key_check import publishable, slug_problem
 from .tag_field import TagField
+from .split_action_button import SplitActionButton
 
 # What did not happen, the title of a total failure (lessons 36).
 ARTICLE_NOT_PUBLISHED = N_("Your article wasn’t published")
@@ -115,8 +121,9 @@ class ArticleCard(QFrame):
     # The card's corners, and the cover's inside its one-point border.
     RADIUS = 8
 
-    def __init__(self, is_dark: bool, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, is_dark: bool, parent: Optional[QWidget] = None, *, compact_missing_cover=False) -> None:
         super().__init__(parent)
+        self._compact_missing_cover = compact_missing_cover
         self.setObjectName("article_card")
         self.setAccessibleName(_("Preview"))
         self.setFixedWidth(self.WIDTH)
@@ -200,6 +207,8 @@ class ArticleCard(QFrame):
         self.summary.setVisible(bool(summary))
         self.byline.setText(byline)
         self.cover.setPixmap(QPixmap() if picture.isNull() else self._cover(picture))
+        self.cover.setVisible(not picture.isNull() or not self._compact_missing_cover)
+        self.layout().setContentsMargins(0, 10 if self.cover.isHidden() else 0, 0, 12)
         self.setAccessibleDescription(". ".join(part for part in (
             title or _("Untitled"), summary, byline) if part))
         # As tall as its words take at its own width: a layout would ask
@@ -247,11 +256,15 @@ class PublishArticleDialog(QDialog):
 
     # Args: (naddr_string, list[PublishResult])
     published = Signal(str, list)
+    version_published = Signal(dict)
+    open_original = Signal()
 
     def __init__(
         self,
         *,
         body_markdown: str,
+        language_context: Optional[dict] = None,
+        pair_source: Optional[dict] = None,
         active_profile: Profile,
         store: ProfileStore,
         relay_pool: RelayPool,
@@ -287,6 +300,10 @@ class PublishArticleDialog(QDialog):
 
         # What is published: the document's text, as written.
         self._body = body_markdown.strip()
+        self._language_context = language_context
+        self._pair_source = pair_source
+        self._publish_pair = False
+        self._journal = PublicationJournal() if language_context else None
         self._store = store
         self._relay_pool = relay_pool
         self._relay_directory = relay_directory
@@ -405,8 +422,20 @@ class PublishArticleDialog(QDialog):
         page.addLayout(self._columns, 1)
         self._columns.setContentsMargins(0, 0, 4, 0)
         self._columns.setSpacing(20)
-        self._card = ArticleCard(self._is_dark)
-        self._columns.addWidget(self._card, 0, Qt.AlignmentFlag.AlignTop)
+        self._card = ArticleCard(self._is_dark, compact_missing_cover=bool(self._language_context))
+        self._cards = QVBoxLayout()
+        self._cards.addWidget(self._card, 0, Qt.AlignmentFlag.AlignTop)
+        self._cards.addStretch(1)
+        self._columns.addLayout(self._cards, 0)
+        self._source_card = None
+        if self._pair_source:
+            self._source_card = ArticleCard(self._is_dark, compact_missing_cover=True)
+            details = self._pair_source["details"]
+            self._source_card.show_article(details.title or _("Original"),
+                                           self._pair_source["body"][:180], QPixmap(),
+                                           language_name(details.language))
+            self._cards.insertWidget(1, self._source_card, 0, Qt.AlignmentFlag.AlignTop)
+            self._source_card.hide()
         # Made before the form, which names its account (the cover's
         # uploads are this account's), but placed after it in the sheet.
         self._account = AccountRow(profile, self._store, self._avatars,
@@ -416,16 +445,36 @@ class PublishArticleDialog(QDialog):
         self._scroll = scroll_area(content)
         root.addWidget(self._scroll, 1)
 
+        self._scope = QLabel()
+        self._scope.setTextFormat(Qt.TextFormat.PlainText)
+        self._scope.setWordWrap(True)
+        self._scope.setVisible(bool(self._language_context))
+        root.addWidget(self._scope)
+        self._pair_problem = QPushButton(_("Open original"))
+        self._pair_problem.clicked.connect(self._return_to_original)
+        self._pair_problem.hide()
+        root.addWidget(self._pair_problem)
         self._status = StatusLine(self._is_dark)
         root.addWidget(self._status)
 
         buttons = QDialogButtonBox()
         self._cancel_btn = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
-        self._publish_btn = buttons.addButton(_("Publish"),
-                                              QDialogButtonBox.ButtonRole.AcceptRole)
+        self._publish_btn = (SplitActionButton(_("Publish"), dark=self._is_dark)
+                             if self._pair_source else QPushButton(_("Publish")))
+        buttons.addButton(self._publish_btn, QDialogButtonBox.ButtonRole.AcceptRole)
         self._cancel_btn.clicked.connect(self._on_cancel)
         self._publish_btn.clicked.connect(self._on_publish)
+        if self._pair_source:
+            from PySide6.QtWidgets import QMenu
+            self._publication_options = self._publish_btn.options
+            self._publication_options.setAccessibleName(_("Publication options"))
+            self._publication_options.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+            menu = QMenu(self._publication_options)
+            menu.addAction(_("Publish this language"), lambda: self._set_pair(False))
+            menu.addAction(_("Publish both…"), lambda: self._set_pair(True))
+            self._publication_options.setMenu(menu)
         root.addWidget(BottomRow(self._account, buttons))
+        self._update_scope()
         # Tab goes through the fields, then the account, then the buttons.
         QWidget.setTabOrder(self._details_toggle, self._slug_edit)
         QWidget.setTabOrder(self._slug_edit, self._image_edit)
@@ -456,6 +505,7 @@ class PublishArticleDialog(QDialog):
         self._add_row(_("Title:"), self._title_edit, self._title_edit)
         self._add_kept_note(form, "title")
 
+        self._optional_start = form.rowCount()
         self._summary_edit = QLineEdit()
         self._summary_edit.setPlaceholderText(_("Short summary (one sentence)"))
         self._summary_edit.setAccessibleName(_("Summary"))
@@ -499,6 +549,7 @@ class PublishArticleDialog(QDialog):
         self._people.remove_requested.connect(self._remove_coauthor)
         self._add_row(_("People:"), self._add_coauthor, self._people)
 
+        self._optional_end = form.rowCount()
         self._details_toggle = QToolButton()
         self._details_toggle.setObjectName("disclosure")
         self._details_toggle.setCheckable(True)
@@ -589,6 +640,9 @@ class PublishArticleDialog(QDialog):
         if self._details_toggle.isChecked() != shown:
             self._details_toggle.setChecked(shown)
             return                                  # toggled: shown from there
+        if self._language_context:
+            for row in range(self._optional_start, self._optional_end):
+                self._form.setRowVisible(row, shown)
         for row in range(self._link_row, self._form.rowCount()):
             self._form.setRowVisible(row, shown)
         if self.isVisible():
@@ -598,6 +652,8 @@ class PublishArticleDialog(QDialog):
         """The app's appearance changed while the sheet is open: all of it
         takes the new one, as the window does."""
         self._is_dark = is_dark
+        if isinstance(getattr(self, "_publish_btn", None), SplitActionButton):
+            self._publish_btn.apply_theme(is_dark)
         self.setStyleSheet(sheet_stylesheet(is_dark))
         appearance.surface(self, is_dark)
         self._card.set_dark(is_dark)
@@ -718,6 +774,44 @@ class PublishArticleDialog(QDialog):
         self._show_people()
         self._refresh_card()
 
+    def _update_scope(self):
+        if not self._language_context:
+            return
+        target = language_name(self._details.language) or _("This version")
+        source = self._language_context.get("source", {})
+        source_name = language_name(source.get("language", "")) or _("Original")
+        if self._publish_pair:
+            words = _("{source} and {target} will be public.").format(source=source_name, target=target)
+            button = _("Publish {source} and {target}").format(source=source_name, target=target)
+        elif source and not source.get("public") and not (source.get("address") and source.get("eventId")):
+            words = _("{target} will be public. {source} stays a draft.").format(target=target, source=source_name)
+            button = _("Publish {language}").format(language=target)
+        else:
+            words = _("{language} will be public.").format(language=target)
+            button = _("Publish {language}").format(language=target)
+        if self._language_context.get("reference_unavailable") and not self._publish_pair:
+            words += " " + _("Reference unavailable. Only this version will be published.")
+        self._scope.setText(words)
+        self._publish_btn.setText(button)
+
+    def _return_to_original(self):
+        self.reject()
+        self.open_original.emit()
+
+    def _set_pair(self, enabled):
+        self._publish_pair = bool(enabled and self._pair_source)
+        if self._source_card is not None:
+            self._source_card.setVisible(self._publish_pair)
+        problem = self._pair_source.get("problem", "") if self._publish_pair else ""
+        self._pair_problem.setVisible(bool(problem))
+        self._set_status(problem, error=bool(problem))
+        self._update_scope()
+        self._refresh_publish_enabled()
+        if self.isVisible():
+            self._scroll.widget().layout().activate()
+            self._fit(self.width())
+            QTimer.singleShot(0, self, lambda: self._fit(self.width()))
+
     # -- state ------------------------------------------------------------------------
 
     def details(self) -> ArticleDetails:
@@ -756,6 +850,8 @@ class PublishArticleDialog(QDialog):
         self._publish_btn.setEnabled(self._job is None and not self._looking_up
                                      and bool(slug) and bool(self._body) and not problem
                                      and not self._cover.uploading())
+        if self._pair_source:
+            self._publication_options.setEnabled(self._job is None and not self._looking_up)
 
     def _set_status(self, text: str, *, error: bool = False) -> None:
         self._status.say(text, error=error)
@@ -810,10 +906,24 @@ class PublishArticleDialog(QDialog):
         if (not slug or not self._body or self._job is not None or self._looking_up
                 or slug_problem(slug) or self._cover.uploading()):
             return
+        if self._publish_pair and self._pair_source.get("problem"):
+            self._set_status(self._pair_source["problem"], error=True)
+            return
         author = self._account.profile().user_pubkey
         known = self._first_published.get(slug) or (
             self._first_publications.get(author, slug)
             if self._first_publications is not None else None)
+        # New linked documents have an independent app-created UUID. Their
+        # compare-before-send check establishes absence or reports uncertainty;
+        # a second "publish as new" decision would ask the author to guess.
+        if self._language_context and self._language_context.get("expected_event_id") is None:
+            try:
+                is_document_uuid = str(UUID(slug)) == slug
+            except (ValueError, AttributeError):
+                is_document_uuid = False
+            if is_document_uuid:
+                self._publish(slug, self._body, known or int(time.time()))
+                return
         # A file's article with the link name made for it may be out under
         # the file's own name: asked about in the same question, now that
         # the person publishes, for the account and the link name of now,
@@ -920,6 +1030,10 @@ class PublishArticleDialog(QDialog):
 
     def _publish(self, slug: str, body: str, published_at: int) -> None:
         profile = self._account.profile()
+        if self._publish_pair and (self._pair_source.get("problem")
+                                   or self._pair_source.get("owner") != profile.user_pubkey.lower()):
+            self._set_status(self._pair_source.get("problem") or _("Use the account that owns these versions."), error=True)
+            return
         try:
             unsigned = build_article(
                 content=body,
@@ -947,6 +1061,7 @@ class PublishArticleDialog(QDialog):
         self._set_busy(True)
         self._set_status("")
         self._publish_btn.setText(_("Publish"))
+        self._update_scope()
         self._publishing = (slug, published_at)
         kept, self._not_taken = self._not_taken, None
         if kept is not None and same_event(kept.unsigned_event, unsigned) and kept.send_again():
@@ -955,15 +1070,53 @@ class PublishArticleDialog(QDialog):
             self._job = kept
             return
 
-        self._job = PublishJob(
-            relay_pool=self._relay_pool,
-            relay_directory=self._relay_directory,
-            session_pool=self._session_pool,
-            profile=profile,
-            entitled_relays=relays_from(self._entitled_relays),
-            unsigned_event=unsigned,
-            parent=self,
-        )
+        options = dict(relay_pool=self._relay_pool, relay_directory=self._relay_directory,
+                       session_pool=self._session_pool, profile=profile,
+                       entitled_relays=relays_from(self._entitled_relays), parent=self)
+        if self._journal is not None:
+            options["journal"] = self._journal
+            if not self._publish_pair:
+                options["expected_event_id"] = self._language_context.get("expected_event_id")
+        if self._publish_pair:
+            source = self._pair_source
+            source_details = source["details"]
+            source_body = source["body"]
+            try:
+                source_event = build_article(
+                    content=source_body, pubkey_hex=profile.user_pubkey,
+                    slug=source_details.identifier,
+                    title=source_details.title or default_title(source_body),
+                    summary=source_details.summary, image=source_details.image,
+                    published_at=source_details.published_at or published_at,
+                    hashtags=list(source_details.hashtags), media=source["media"],
+                    extra_tags=source_details.published_tags(source_body, author=(
+                        profile.user_pubkey, self._relay_directory.relay_hint(profile.user_pubkey))) or None)
+            except ValueError as exc:
+                self._set_busy(False)
+                self._say_not_published(_("Open the original to check its article details."), str(exc))
+                return
+            approved_source = publishable(self, source_event, is_dark=self._is_dark)
+            if approved_source is None:
+                self._set_busy(False)
+                return
+            from copy import deepcopy
+            target_template = deepcopy(unsigned)
+            def target_factory(signed_source):
+                target = deepcopy(target_template)
+                address = f"30023:{signed_source['pubkey']}:{source_details.identifier}"
+                root = translation_metadata(signed_source.get("tags", []))["root"] or address
+                target["tags"] = [tag for tag in target["tags"] if not is_translation_tag(tag)]
+                target["tags"].extend(translation_tags({"root": root, "source": address,
+                                                       "source_event": signed_source["id"]}))
+                return target
+            source_base = self._pair_source.get("editor")
+            source_base = getattr(source_base, "_published_event", None)
+            self._job = PairPublication(source_event=approved_source, target_factory=target_factory,
+                                        source_expected_event_id=source_base.get("id") if source_base else None,
+                                        target_expected_event_id=self._language_context.get("expected_event_id"), **options)
+            self._job.version_published.connect(self.version_published)
+        else:
+            self._job = PublishJob(unsigned_event=unsigned, **options)
         self._job.status_changed.connect(self._set_status)
         self._job.signed.connect(self._on_signed)
         self._job.completed.connect(self._on_completed)
@@ -980,9 +1133,18 @@ class PublishArticleDialog(QDialog):
             self._not_taken = job
             self._say_not_published(not_taken_words(results), answers_detail(results))
             return
+        signed = getattr(job, "signed_event", None)
+        if signed is not None:
+            self.version_published.emit(signed)
         author = self._account.profile().user_pubkey
         # What it went out as: the document's record of it (details()).
         self._published_as = self._publishing
+        if signed is not None:
+            # Restart recovery can reuse an older identical signed event.
+            # Persist its actual wire metadata, never today's proposed tuple.
+            actual = ArticleDetails.from_tags(signed.get("tags", []), signer=signed.get("pubkey", ""))
+            self._published_as = (actual.identifier, actual.published_at or int(signed["created_at"]))
+            author = signed.get("pubkey", author)
         slug, published_at = self._published_as
         if self._first_publications is not None and published_at:
             # This computer remembers it, for when the relays cannot tell.

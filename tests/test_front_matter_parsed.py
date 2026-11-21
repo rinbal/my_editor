@@ -31,14 +31,22 @@ SAMPLES = [(path.name, path.read_bytes().decode("utf-8")) for path in sorted(COR
 # Each detail's names, as article_details reads them.
 NAMES = {"title": {"title"}, "summary": {"summary", "description"},
          "image": {"image", "cover", "cover_image"}, "tags": {"tags", "hashtags"},
-         "slug": {"slug"}, "date": {"date", "published_at"}}
+         "slug": {"slug"}, "date": {"date", "published_at"},
+         "lang": {"lang", "language"}, "nostr_tags": {"nostr_tags"}}
 WHEN = 1791876318
 MISSING = object()
 
 
 def changes(details):
     """(detail, change, what the parser should read for it) of each change tried."""
+    import json
+    from nostr.content_language import is_language_tag, language_tags
+    language_carried = tuple(t for t in details.carried if not is_language_tag(t)) + tuple(tuple(t) for t in language_tags('th'))
+    carried = details.carried + (('alt', 'Multilingual metadata: retained'),)
+    written = json.dumps([list(t) for t in carried if not is_language_tag(t)], ensure_ascii=False, separators=(',', ':'))
     return [
+        ('lang', {'carried': language_carried}, 'th'),
+        ('nostr_tags', {'carried': carried}, written),
         ("tags", {"hashtags": details.hashtags + ("Extra",)}, details.hashtags + ("Extra",)),
         ("tags", {"hashtags": details.hashtags[1:]}, details.hashtags[1:]),
         ("tags", {"hashtags": ()}, ()),

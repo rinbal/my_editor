@@ -46,6 +46,23 @@ def _icon() -> str:
     return "packaging/icons/icon-256.png"
 
 
+def _language_catalogue() -> str:
+    """Exercise the actual offline resources, including in frozen builds."""
+    import hashlib
+    import json
+    from pathlib import Path
+    from resources import resource_path
+    from nostr.content_language import normalize_language, search_languages
+    catalogue = Path(resource_path("nostr/language_catalog.json"))
+    contract = json.loads(Path(resource_path("nostr/multilingual_contract.json")).read_text(encoding="utf-8"))
+    if hashlib.sha256(catalogue.read_bytes()).hexdigest() != contract["catalog_sha256"]:
+        raise RuntimeError("the bundled language catalogue does not match its contract")
+    for query, code in (("ไทย", "th"), ("ລາວ", "lo"), ("ខ្មែរ", "km"), ("日本語", "ja"), ("Hmong", "hmn")):
+        if normalize_language(code) != code or search_languages(query, limit=1)[0]["code"] != code:
+            raise RuntimeError(f"the bundled language catalogue cannot resolve {code}")
+    return f'{len(json.loads(catalogue.read_text(encoding="utf-8"))["languages"])} offline languages'
+
+
 def _secure_connections() -> str:
     # Relays, media servers and updates are all reached over TLS.
     from PySide6.QtNetwork import QSslSocket
@@ -154,6 +171,7 @@ def _dictation() -> str:
 
 CHECKS: List[Check] = [
     ("translations", _translations),
+    ("article languages", _language_catalogue),
     ("icon", _icon),
     ("secure connections", _secure_connections),
     ("keys and encryption", _keys_and_encryption),

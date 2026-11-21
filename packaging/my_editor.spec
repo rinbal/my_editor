@@ -39,6 +39,10 @@ else:
 # Bundle the window icon, preserving its repo-relative path so resource_path()
 # in main.py finds it identically from source and when frozen.
 datas = [(os.path.join(ICON_DIR, "icon-256.png"), os.path.join("packaging", "icons"))]
+# Offline article-language rules are loaded relative to the frozen nostr
+# modules. Missing data would prevent ArticleDetails (and the app) importing.
+datas += [(os.path.join(ROOT, "nostr", name), "nostr")
+          for name in ("language_catalog.json", "multilingual_contract.json")]
 # The translations (i18n.py reads locale/<language>.po at startup).
 datas += [(os.path.join(ROOT, "locale", name), "locale")
           for name in sorted(os.listdir(os.path.join(ROOT, "locale")))
@@ -47,7 +51,7 @@ datas += [(os.path.join(ROOT, "locale", name), "locale")
 # (export_html.py inlines web/ in the page).
 datas += [(os.path.join(ROOT, "web", name), "web")
           for name in sorted(os.listdir(os.path.join(ROOT, "web")))
-          if name.endswith((".css", ".js"))]
+          if name.endswith((".css", ".js", ".json"))]
 
 # Static analysis misses these (native ext / lazily-imported Qt submodules).
 hiddenimports = [

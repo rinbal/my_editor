@@ -76,6 +76,7 @@ from commands import (
 )
 import front_matter
 import tab_details
+import multilingual_authoring
 import media_badge
 import media_files
 import slash_menu
@@ -1843,10 +1844,14 @@ class MainWindow(QMainWindow):
     def _on_tab_changed(self, index=None):
         # Dictation writes into the tab it started in: another tab stops it.
         self._stop_dictation()
+        if getattr(self, "_multilingual", None) is not None:
+            self._multilingual.tab_changed()
         self._show_backup_status()
         self._fill_article_details_panel()
         self._article_headers.update(self.current_editor())
         self._apply_view(self.current_editor())
+        if getattr(self, "_multilingual", None) is not None:
+            self._multilingual.refresh()
         self._update_window_title()
         self._update_word_count()
         self._update_undo_redo_buttons()
@@ -2068,6 +2073,7 @@ class MainWindow(QMainWindow):
         self._note_side_in_use(new)
         self._follow_field(new)
         self._on_field_changed()
+        self._update_editor_commands()
 
     def _follow_field(self, widget) -> None:
         """Cut, Copy, Delete, Undo and Redo follow the text field with the
@@ -2900,6 +2906,14 @@ class MainWindow(QMainWindow):
                     keywords=(_("inspector"), _("title"), _("summary"), _("cover"),
                               _("hashtags"))),
             toggled=self._show_article_details_panel)
+        self.act_write_language = add(
+            Command("nostr.write_language", _("Write in another language…"), NOSTR,
+                    nostr=True, keywords=(_("language"), _("translation"))),
+            triggered=lambda: self._multilingual.choose())
+        self.act_language_reference = add(
+            Command("nostr.language_reference", _("Show Reference"), NOSTR,
+                    nostr=True, checkable=True, keywords=(_("reference"), _("translation"))),
+            triggered=lambda: self._multilingual.toggle_reference())
         # Audio or video, put in the text as a card, and published as its
         # address on the media servers, where readers show a player.
         self.act_insert_audio_video = add(
@@ -3285,6 +3299,8 @@ class MainWindow(QMainWindow):
         m_nostr.addAction(self.act_insert_reference)
         m_nostr.addAction(self.act_insert_audio_video)
         m_nostr.addAction(self.act_article_details)
+        m_nostr.addAction(self.act_write_language)
+        m_nostr.addAction(self.act_language_reference)
         m_nostr.addSeparator()
         m_nostr.addAction(self.act_nostr_drafts)
         m_nostr.addAction(self.act_nostr_published)
@@ -3406,6 +3422,8 @@ class MainWindow(QMainWindow):
         # The switch sits right of the toolbar, outside it, so a narrow
         # window never hides it in the toolbar's chevron.
         self._view_switch_holder = self.format_toolbar.add_trailing(self.view_switch)
+        self._multilingual = multilingual_authoring.MultilingualAuthoring(self)
+        self.format_toolbar.add_trailing(self._multilingual.controls)
         self.format_toolbar.add_trailing(self._build_paper_toggle())
         self.format_toolbar.add_trailing(self._build_pane_toggles())
         self.format_bar = QWidget()
@@ -3510,6 +3528,8 @@ class MainWindow(QMainWindow):
             relay_hint=self._relay_directory.relay_hint, is_dark=self.is_dark_theme)
         self._article_details_panel.changed.connect(
             lambda details: self._set_article_details(self.current_editor(), details))
+        self._article_details_panel.language_requested.connect(
+            lambda: self._multilingual.choose(edit_current=True))
         self._article_details_panel.cover_uploaded.connect(self._cover_uploaded_for)
         self._article_details_panel.check_link_name.connect(self._check_link_name)
         # An article's cover, title and summary on its page (decision 1 of
@@ -3707,7 +3727,7 @@ class MainWindow(QMainWindow):
         workspace_restore.restore_identity(
             ed, backup.get("draft"), backup.get("article"), backup.get("article_author"),
             backup.get("details"), backup.get("front_matter"), backup.get("newline"),
-            draft_type=DraftBinding)
+            draft_type=DraftBinding, language_link=backup.get("language_link"))
         self._attach_highlighter(ed, ed._file_path)
 
         container, notice = self._editor_container(ed)
@@ -5509,6 +5529,7 @@ class MainWindow(QMainWindow):
         if ed:
             self._attach_highlighter(ed, path)
             self._update_status_bar()
+            self._multilingual.file_saved(ed, path)
         if ed and hasattr(ed, '_backup'):
             ed._backup.update_file_path(path)
         add_recent(path)
@@ -5581,6 +5602,8 @@ class MainWindow(QMainWindow):
                 front = getattr(ed, "_front_matter", None)
                 if not tab_details.untouched(ed):
                     front = front_matter_with(self._article_details_of(ed), front)
+                front = multilingual_authoring.front_with_link(
+                    front, self._multilingual.file_record(ed, path))
                 if not self._saving_without(ed, front, path):
                     return False
                 head = front_matter.head(front, content)
@@ -8419,6 +8442,8 @@ class MainWindow(QMainWindow):
                 self._submissions.apply_theme(self.is_dark_theme)
         if getattr(self, "_article_details_panel", None) is not None:
             self._article_details_panel.set_dark(self.is_dark_theme)
+        if getattr(self, "_multilingual", None) is not None:
+            self._multilingual.refresh()
             self._article_headers.set_dark(self.is_dark_theme, self._all_editors())
         if getattr(self, "_library_window", None) is not None:
             self._library_window.update_theme(self.is_dark_theme)
@@ -8599,7 +8624,13 @@ class MainWindow(QMainWindow):
             self._library_window.sync_commands()
 
     def _shows_preview_only(self, ed) -> bool:
-        return ed is not None and self._shown_view(ed) == PREVIEW
+        pane = getattr(ed, "_language_reference_pane", None) if ed is not None else None
+        reference_reading = bool(pane is not None and pane.isVisible()
+                                 and pane.isAncestorOf(QApplication.focusWidget()))
+        return ed is not None and (self._shown_view(ed) == PREVIEW or reference_reading
+                                  or getattr(ed, "_language_reference_narrow", False)
+                                  and ed._view_splitter.width() < multilingual_authoring.REFERENCE_MIN_WIDTH
+                                  and pane is not None and pane.isVisible())
 
     def _choose_view(self, mode: str) -> None:
         """Write, Preview or Split, chosen. In a tab too narrow for Split
@@ -8648,17 +8679,22 @@ class MainWindow(QMainWindow):
                     ratio = float(load_settings().get("split_ratio", 0.5))
                     ratio = min(0.8, max(0.2, ratio))
                     width = splitter.width()
-                    splitter.setSizes([round(width * ratio), width - round(width * ratio)])
+                    sizes = [0] * splitter.count()
+                    sizes[0] = round(width * ratio)
+                    sizes[splitter.indexOf(pane)] = width - sizes[0]
+                    splitter.setSizes(sizes)
                 if pane is not None and pane.view.hasFocus():
                     ed.setFocus()
         self._sync_view_switch(ed, shown)
         self._update_editor_commands()
+        if getattr(self, "_multilingual", None) is not None:
+            self._multilingual.refresh()
         if shown == PREVIEW and self.findbar.isVisible():
             self._close_findbar()
 
     def _sync_view_switch(self, ed, shown: str) -> None:
         rich = self._previewable(ed)
-        self.view_switch.setVisible(rich)
+        self.view_switch.setVisible(rich and not self.nostr_state.active)
         for action in (self.act_view_write, self.act_view_preview, self.act_view_split):
             action.setEnabled(rich)
         if not rich:
@@ -8685,8 +8721,12 @@ class MainWindow(QMainWindow):
             self._sync_view_switch(ed, self._shown_view(ed))
         elif ed._split_fits is not None and ed._split_fits != self._split_fits(ed):
             self._apply_view(ed)
+        if getattr(self, "_multilingual", None) is not None:
+            self._multilingual.refresh()
 
     def _remember_split(self, splitter) -> None:
+        if getattr(self, "_multilingual", None) is not None and self._multilingual.remember_reference(splitter):
+            return
         sizes = splitter.sizes()
         if len(sizes) == 2 and sum(sizes) > 0 and all(sizes):
             save_setting("split_ratio", round(sizes[0] / sum(sizes), 3))
@@ -9289,10 +9329,14 @@ class MainWindow(QMainWindow):
                 self.commands.action(command.id).setEnabled(enabled)
         # Refresh Drafts also needs the panel shown.
         self._update_refresh_command()
+        if getattr(self, "_multilingual", None) is not None:
+            self._multilingual.refresh()
 
     def _on_nostr_in_use_changed(self, active: bool) -> None:
         """Nothing of Nostr stays on screen once no account is in use."""
         self._show_pane_toggles(active)
+        if getattr(self, "_multilingual", None) is not None:
+            self._multilingual.refresh()
         self._update_article_headers()
         self._redraw_badges()
         if not active:
@@ -9964,6 +10008,8 @@ class MainWindow(QMainWindow):
     # -- Article Details ----------------------------------------------------------
 
     def _show_article_details_panel(self, shown: bool) -> None:
+        if getattr(self, "_multilingual", None) is not None:
+            self._multilingual.remember_view(self.current_editor(), details=shown)
         panel = self._article_details_panel
         # Opening it on a tab makes the tab an article (decision 2).
         self._article_headers.update(self.current_editor())
@@ -9976,6 +10022,8 @@ class MainWindow(QMainWindow):
                 if ed is not None:
                     ed.setFocus()
             self._side_panels.close(ARTICLE_DETAILS_PANEL)
+        if getattr(self, "_multilingual", None) is not None:
+            self._multilingual.refresh()
 
     def _article_details_folded(self, folded: bool) -> None:
         """Article Details folded away to make room, or back: its command
@@ -10867,7 +10915,8 @@ class MainWindow(QMainWindow):
             self._offer_publishing_account()
             return
         ed = self.current_editor()
-        self._after_uploads(ed, lambda: self._open_publish_article(ed))
+        self._multilingual.prepare_source(ed, lambda ready: self._after_uploads(
+            ed, lambda: self._open_publish_article(ed)) if ready else None)
 
     def _open_publish_article(self, ed) -> None:
         active = self._profile_store.default()
@@ -10890,7 +10939,7 @@ class MainWindow(QMainWindow):
         # A draft of an article (an import, an edit) brings all its details:
         # summary, cover, hashtags, source, and when it first went out (a
         # new version keeps that date).
-        details = self._article_details_of(ed)
+        details = self._multilingual.publication_details(ed)
         title = details.title or default_title(body, self._preview_name)
         default_slug = details.identifier
         first_published = details.published_at
@@ -10904,6 +10953,8 @@ class MainWindow(QMainWindow):
 
         dialog = PublishArticleDialog(
             body_markdown=body,
+            language_context=self._multilingual.context(ed),
+            pair_source=self._multilingual.pair_source(ed),
             active_profile=active,
             store=self._profile_store,
             relay_pool=self._relay_pool,
@@ -10930,11 +10981,27 @@ class MainWindow(QMainWindow):
             parent=self,
             is_dark=self.is_dark_theme,
         )
+        dialog.version_published.connect(lambda event, target=ed: self._language_version_published(target, event))
+        dialog.open_original.connect(lambda target=ed: self._open_language_original(target))
         dialog.published.connect(self._on_nostr_article_published)
         dialog.finished.connect(lambda _result, d=dialog, e=ed: self._article_sheet_closed(d, e))
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self._publish_sheet = dialog
         dialog.open()
+
+    def _language_version_published(self, target, event):
+        self._multilingual.source_published(target, event)
+        d = next((tag[1] for tag in event.get("tags", []) if len(tag) > 1 and tag[0] == "d"), "")
+        for ed in self._multilingual.editors():
+            if self._article_details_of(ed).identifier == d:
+                self._multilingual.published(ed, event)
+                break
+
+    def _open_language_original(self, target):
+        source = self._multilingual.source_editor(target)
+        if source is not None:
+            self.tabs.setCurrentIndex(self._editor_widget_index(source))
+            source.setFocus()
 
     # -- submitting to a STANDUP publication (plan 10.2) -----------------------
 
@@ -10975,6 +11042,12 @@ class MainWindow(QMainWindow):
         return writer
 
     def _on_nostr_submit_publication(self) -> None:
+        ed = self.current_editor()
+        self._multilingual.prepare_source(ed, lambda ready: self._open_submit_publication(ed) if ready else None)
+
+    def _open_submit_publication(self, ed) -> None:
+        if ed is not self.current_editor():
+            return
         active = self._profile_store.default()
         ed = self.current_editor()
         if active is None:
@@ -11180,7 +11253,7 @@ class MainWindow(QMainWindow):
         already and stay so: they are never called encrypted (contract 7,
         feat/redaktion ee3e5d7)."""
         content, _media = self._publish_payload(ed, "markdown", keep_local=True)
-        details = self._article_details_of(ed)
+        details = self._multilingual.publication_details(ed)
         title = details.title or default_title(content, self._preview_name)
         d = (details.identifier
              or self._link_name_for_file(getattr(ed, "_file_path", None), profile.user_pubkey)
@@ -11224,7 +11297,8 @@ class MainWindow(QMainWindow):
             tags=tuple(details.hashtags), image=image, authors=tuple(details.coauthors),
             pictures=pictures, thumb=thumbnail(cover_bytes) if cover_bytes else None,
             lang=details.language, published_at=details.published_at,
-            zaps=tuple(tuple(tag) for tag in details.zaps))
+            zaps=tuple(tuple(tag) for tag in details.zaps),
+            extra_tags=tuple(tuple(tag) for tag in details.carried_tags(content)))
         return draft, cover, len(names), list(dict.fromkeys(private)), public
 
     @staticmethod
@@ -11779,6 +11853,8 @@ class MainWindow(QMainWindow):
             identifier=item.identifier, title=details.title or item.title,
             published_at=item.first_published)
         ed._published_author = str(item.event.get("pubkey") or "").lower()
+        ed._published_event = dict(item.event)
+        self._multilingual.note_public(ed._published_event)
         self._update_tab_title()
 
     def _draft_of_published(self, item):
@@ -12299,6 +12375,7 @@ class MainWindow(QMainWindow):
             StashKind.ARTICLE
             if (prior is not None and prior.inner_kind == INNER_KIND_LONG_FORM)
             or (prior is None and published is not None)
+            or getattr(ed, "_language_link", None) is not None
             else StashKind.NOTE
         )
         title_hint, slug_hint, summary_hint, existing_note_id = (
@@ -12338,6 +12415,9 @@ class MainWindow(QMainWindow):
         )
         if inner is None:
             return
+        private = multilingual_authoring.private_link(getattr(ed, "_language_link", None))
+        if private is not None:
+            inner[multilingual_authoring.PRIVATE_DRAFT_FIELD] = private
         self._fire_draft_publish_job(ed, profile, choice, inner)
 
     def _may_replace_draft(self, prior: Optional[DraftBinding], identifier: str) -> bool:
@@ -12522,6 +12602,9 @@ class MainWindow(QMainWindow):
             # An article opened from the Published view carries its own.
             return self._published_article_of(ed) or ArticleDetails()
         record = self._draft_store.get(binding.identifier)
+        if record is not None and getattr(ed, "_language_link", None) is None:
+            ed._language_link = multilingual_authoring.private_link(
+                getattr(record, "standup_multilingual", None))
         details = (ArticleDetails.from_tags(record.inner_tags, signer=binding.profile_pubkey)
                    if record is not None
                    else ArticleDetails())
@@ -12574,6 +12657,8 @@ class MainWindow(QMainWindow):
         if ed is self.current_editor():
             self._fill_article_details_panel()
             self._update_submission_pill()
+            if getattr(self, "_multilingual", None) is not None:
+                self._multilingual.refresh()
 
     def _stash_defaults_for(
         self,
@@ -12910,6 +12995,8 @@ class MainWindow(QMainWindow):
         """Put a draft's text in the editor the way it was written: an
         article draft is Markdown, a note is plain text."""
         ed.clear_highlights()               # a whole new text (see there)
+        ed._language_link = multilingual_authoring.private_link(
+            getattr(record, "standup_multilingual", None))
         if record.inner_kind == INNER_KIND_LONG_FORM:
             cls._load_markdown(ed, record.content)
         else:
