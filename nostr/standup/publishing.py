@@ -247,7 +247,7 @@ def published_template(revision: Mapping, *, writer: str, d: str,
         _with_public_media(work["content"], media_urls), writer, d, title=work["title"],
         summary=work["summary"], image=image, published_at=published_at,
         hashtags=work["tags"],
-        extra_tags=people + own_zaps + _language_tags(work["lang"]) + carried)
+        extra_tags=people + own_zaps + _language_tags(work["lang"]) + carried, writer_first=True)
     event["created_at"] = created_at
     return event
 
@@ -459,7 +459,7 @@ def corrected_template(revision: Mapping, published: Mapping, *, writer: str,
     event = publisher.build_article(
         content, writer, d, title=work["title"], summary=work["summary"], image=image,
         published_at=publisher.published_at_of(dict(published)) or created_at,
-        hashtags=work["tags"], extra_tags=_language_tags(work["lang"]) + pictures + kept)
+        hashtags=work["tags"], extra_tags=_language_tags(work["lang"]) + pictures + kept, writer_first=True)
     before = published.get("created_at")
     event["created_at"] = before + 1 if isinstance(before, int) and created_at <= before \
         else created_at

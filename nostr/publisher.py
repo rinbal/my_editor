@@ -414,8 +414,13 @@ def build_article(
     hashtags: Iterable[str] = (),
     extra_tags: Optional[List[List[str]]] = None,
     media: Sequence[PublishedMedia] = (),
+    writer_first: bool = False,
 ) -> dict:
     """Construct an unsigned NIP-23 long-form article (kind 30023).
+
+    The authors keep the order ``extra_tags`` gives them (the signer at its
+    place, G15c); ``writer_first`` puts the signer first among them, as a
+    Redaktion's publication of a writer's work does (RG-M4-c 2).
 
     The ``slug`` becomes the ``d``-tag, the identifier that makes this
     event addressable. Re-publishing with the same slug replaces the
@@ -471,7 +476,7 @@ def build_article(
     tags.extend(own)
     if extra_tags:
         tags.extend(_beside_own_imeta(extra_tags, own))
-    tags = _one_tag_per_person(tags, pubkey_hex)
+    tags = _one_tag_per_person(tags, pubkey_hex if writer_first else "")
     return build_event(
         kind=30023,
         content=content,
@@ -1496,8 +1501,8 @@ class DraftBulkDeleteJob(QObject):
 
 def _one_tag_per_person(tags: List[List[str]], signer: str = "") -> List[List[str]]:
     """``tags`` with one ``p`` tag per person. The authors' tags come
-    first, where the first ``p`` tag stood, in their order with the
-    signer's first: whoever reads the first author tag as the writer
+    first, where the first ``p`` tag stood, in their order (with
+    ``signer`` first when it is given): whoever reads the first author tag as the writer
     (the editorial index, contract 10) never meets a person the text
     only mentions, or a co-author, before them (RG-M4-c 2). A co-author
     also mentioned in the text keeps the tag that names them a co-author
@@ -1516,7 +1521,8 @@ def _one_tag_per_person(tags: List[List[str]], signer: str = "") -> List[List[st
             relay = tag[2] or hints.get(tag[1], "")
             authors.append(list(tag) if relay == tag[2] else
                            ["p", tag[1], relay, AUTHOR_MARKER])
-    authors.sort(key=lambda tag: tag[1] != signer)          # stable: the rest keep order
+    if signer:
+        authors.sort(key=lambda tag: tag[1] != signer)      # stable: the rest keep order
     out: List[List[str]] = []
     placed = False
     for tag in tags:
