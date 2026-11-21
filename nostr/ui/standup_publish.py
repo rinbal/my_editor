@@ -94,6 +94,9 @@ class PublishPorts:
     - ``clock()``: seconds.
     - ``confirm(confirms, revision_hash, on_done)``: ``/confirmation``
       (a correction's run confirms it first).
+    - ``remember(author, d, published_at)``: this computer's record of
+      the articles it published (FirstPublications.remember, G15d), once
+      a relay took it.
     """
 
     api: object
@@ -112,11 +115,12 @@ class PublishPorts:
     cleanup: Optional[Callable[[str, Callable[[], None]], None]] = None
     # The account's QuietReport: a public work whose report did not arrive.
     unlisted: Optional[object] = None
+    remember: Optional[Callable[[str, str, int], None]] = None
 
 
 def run_for(following, account, profile, sid: str, *, store, fetch, session_pool, relay_pool,
             relay_directory, entitled_relays=None, parent=None,
-            cleanup=None) -> Optional["AcceptedPublish"]:
+            cleanup=None, remember=None) -> Optional["AcceptedPublish"]:
     """The one publish run of ``sid``, made when the verified newest
     accept names the verified revision opened here and the writer signs
     (or, for a published work, when that revision is a verified
@@ -173,7 +177,7 @@ def run_for(following, account, profile, sid: str, *, store, fetch, session_pool
                          relays_hold=relays_hold,
                          confirm=confirm,
                          key_here=lambda: session_pool.key_here(profile.user_pubkey),
-                         cleanup=cleanup, unlisted=following.unlisted)
+                         cleanup=cleanup, unlisted=following.unlisted, remember=remember)
     made = dict(sid=sid, profile=profile, version=version, accepted=accepted,
                 revision_hash=view.revision_hash,
                 publication=following.publication_name(view.publication), ports=ports,
@@ -574,6 +578,9 @@ class AcceptedPublish(QObject):
             self._say(Stage.NOT_STORED, _(NOT_PUBLISHED), not_taken_words(results))
             return
         self.naddr = bech32.encode_naddr(self.d, self.writer, 30023, took[:LINK_RELAYS])
+        if self._ports.remember:
+            # Publish as Article says Update for it from now on.
+            self._ports.remember(self.writer, self.d, published_at_of(self.signed_article) or 0)
         self._report()
 
     # -- 4: reported -----------------------------------------------------------------------

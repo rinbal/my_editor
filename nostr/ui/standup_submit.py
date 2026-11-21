@@ -95,6 +95,7 @@ class StandupWriter(QObject):
                  uploads: Optional[Callable] = None, accounts: Optional[Callable] = None,
                  marks: Optional[SubmittedMarks] = None,
                  clock: Callable[[], float] = time.time,
+                 first_publications=None,
                  parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self._session_pool = session_pool
@@ -108,6 +109,9 @@ class StandupWriter(QObject):
         self._fetcher = None                 # made on the first publish
         self._accounts = accounts or self._new_account
         self._clock = clock
+        # This computer's record of the articles it published: one
+        # published through the Redaktion is in it too (G15d).
+        self._first_publications = first_publications
         self._account: Optional[Account] = None
         # What is shown of the account's submissions; stopped with it.
         self._following: Optional[Following] = None
@@ -186,7 +190,9 @@ class StandupWriter(QObject):
                        session_pool=self._session_pool, relay_pool=self._relay_pool,
                        relay_directory=self._relay_directory,
                        entitled_relays=self._entitled_relays, parent=self,
-                       cleanup=self._cleanup.after_publishing if self._cleanup else None)
+                       cleanup=self._cleanup.after_publishing if self._cleanup else None,
+                       remember=self._first_publications.remember
+                       if self._first_publications is not None else None)
 
     def _new_account(self, profile) -> Account:
         return Account(profile, session_pool=self._session_pool, relay_pool=self._relay_pool,

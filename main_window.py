@@ -10968,7 +10968,8 @@ class MainWindow(QMainWindow):
                 session_pool=self._session_pool, relay_pool=self._relay_pool,
                 relay_directory=self._relay_directory, media_store=self._media_store,
                 entitled_relays=self._entitled_relays,
-                marks=getattr(self, "_submitted_marks", None), parent=self)
+                marks=getattr(self, "_submitted_marks", None),
+                first_publications=self._first_publications, parent=self)
             writer.status.connect(lambda text: self.statusBar().showMessage(text, 8000))
             # A text submitted before keeps its link name (RG-M2r 10).
             writer.listed.connect(lambda _writer: self._fill_article_details_panel())
