@@ -22,7 +22,7 @@ import pytest
 import shiboken6
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel
 
 import i18n
 from nostr.avatar_store import AvatarStore
@@ -189,16 +189,17 @@ DRAFT = ArticleDraft(d="ein-jahr", title="Ein Jahr mit Lightning im Café",
 
 def _sheet(tmp_path, writer=None, *, draft=DRAFT, dark=False, private=(),
            public=0, relays=("wss://bunker.example",), logos=None,
-           avatars=None) -> SubmitSheet:
+           avatars=None, name="Jana Roth", fetched=0, edit_profile=None) -> SubmitSheet:
     store = ProfileStore(path=tmp_path / "profiles.json")
-    profile = Profile(user_pubkey=WRITER, bunker_pubkey="b" * 64, display_name="Jana Roth",
-                      bunker_relays=list(relays), local_secret_hex="0" * 64)
+    profile = Profile(user_pubkey=WRITER, bunker_pubkey="b" * 64, display_name=name,
+                      bunker_relays=list(relays), local_secret_hex="0" * 64,
+                      metadata_cached_at=fetched)
     store.upsert(profile)
     return SubmitSheet(writer=writer or Writer(), draft=draft, cover=QPixmap(),
                        byline="Jana Roth · Artikel · 1 Bild", private_names=private,
                        profile=profile, store=store, avatars=avatars or AvatarStore(),
                        logos=logos or PublicationLogos(lambda *_a: None), is_dark=dark,
-                       public_pictures=public, pictures=1)
+                       public_pictures=public, pictures=1, edit_profile=edit_profile)
 
 
 def _entries(sheet) -> List[tuple]:
@@ -256,12 +257,56 @@ def test_published_by_and_the_rights_show_only_where_they_are_asked_for(tmp_path
     assert sheet.choice().signer == "writer"
     sheet.picker.setCurrentIndex(1)
     assert sheet.by_me.isVisible() and sheet.rights.isVisible()
-    assert sheet.by_hint.text() == ("Nach der Annahme veröffentlichst du selbst, von deinem "
-                                    "Konto aus.")
+    assert sheet.by_hint.text() == ("Nach der Annahme veröffentlichst du ihn selbst, und "
+                                    "<b>Ein Blog</b> zeigt ihn auf der eigenen Seite.")
     sheet.by_publication.setChecked(True)
-    assert sheet.by_hint.text() == ("Die Redaktion schlägt bei der Annahme die Aufteilung der "
-                                    "Zaps vor, du bestätigst sie.")
+    assert sheet.by_hint.text() == ("<b>Ein Blog</b> veröffentlicht ihn unter deinem Namen. "
+                                    "Vorher bestätigst du kurz deinen Anteil an den Zaps.")
     assert sheet.choice().signer == "publication"
+
+
+def test_published_by_says_the_publication_where_it_publishes(tmp_path):
+    # G15b: nothing to choose, and still said who publishes.
+    redaktion = _destination("redaktion", "Die <Redaktion>",
+                             publish_by={"article": "publication"})
+    sheet = _sheet(tmp_path, Writer(destinations=(redaktion,)))
+    sheet.show()
+    assert sheet.by_fixed.isVisible() and sheet.by_fixed.text() == "der Publikation"
+    assert not sheet.by_me.isVisible() and not sheet.by_publication.isVisible()
+    assert sheet._by_label.buddy() is sheet.by_fixed
+    assert sheet.by_hint.text() == ("<b>Die &lt;Redaktion&gt;</b> veröffentlicht ihn unter "
+                                    "deinem Namen. Vorher bestätigst du kurz deinen Anteil an "
+                                    "den Zaps.")
+    assert sheet.choice().signer == "publication"
+
+
+def test_a_profile_read_without_a_name_offers_edit_profile(tmp_path):
+    # G15e: one quiet line, Edit Profile beside it; Submit stays the default.
+    edited = []
+    sheet = _sheet(tmp_path, name="", fetched=1_700_000_000,
+                   edit_profile=lambda: edited.append(True))
+    assert not sheet.no_name.isHidden()
+    assert sheet.no_name.findChild(QLabel).text() == (
+        "Dein Profil hat noch keinen Namen. Füge einen hinzu, damit andere sehen, wer den "
+        "Text geschrieben hat.")
+    sheet.edit_profile.click()
+    assert edited == [True] and not sheet.edit_profile.isDefault()
+
+
+def test_a_name_read_in_after_edit_profile_takes_the_line_away(tmp_path):
+    # Red team S1: the name saved in Edit Profile comes in later, read anew.
+    sheet = _sheet(tmp_path, name="", fetched=1_700_000_000, edit_profile=lambda: None)
+    profile = sheet._store.get(WRITER)
+    profile.display_name, profile.metadata_cached_at = "Jana Roth", 1_800_000_000
+    sheet._store.upsert(profile)
+    sheet.profile_updated(profile)
+    assert sheet.no_name.isHidden()
+
+
+def test_a_profile_never_read_says_nothing_of_its_name(tmp_path):
+    # S9: its name is not known yet, so it is not said to be missing.
+    sheet = _sheet(tmp_path, name="", fetched=0, edit_profile=lambda: None)
+    assert sheet.no_name.isHidden()
 
 
 def test_einreichen_is_the_default_dimmed_by_a_blocker_whose_reason_is_said(tmp_path):

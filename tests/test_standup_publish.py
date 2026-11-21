@@ -227,7 +227,7 @@ def accepted():
 
 
 def _run(case, *, store=None, took=(True,), reread_hash=None, key_here=False, profile=None,
-         relays_hold=None, changed_from=0, cleanup=None, taken=False):
+         relays_hold=None, changed_from=0, cleanup=None, taken=False, remember=None):
     store = store or FakeStore()
     jobs = []
     following, api = case.following, case.writer.api
@@ -255,6 +255,7 @@ def _run(case, *, store=None, took=(True,), reread_hash=None, key_here=False, pr
         if url.endswith(case.entry["cipher_sha256"]) else on_failure("404"),
         job=job, key_here=lambda: key_here, serve=following.serve, reread=reread,
         held_at=held_at, clock=case.world.clock, cleanup=cleanup, unlisted=following.unlisted,
+        remember=remember,
         relays_hold=relays_hold or (lambda _unsigned, done: done({"wss://r.example": (True, [])})))
     run = AcceptedPublish(sid=case.sid, profile=profile or case.writer.profile,
                           version=following.reading.latest(case.sid),
@@ -275,6 +276,18 @@ def test_publishing_puts_the_picture_up_in_plain_signs_sends_and_reports(accepte
     assert f"{SERVER}/{accepted.entry['plain_sha256']}.png" in event["content"]
     assert accepted.world.record(accepted.sid).state == "published"
     assert run.naddr.startswith("naddr1") and store.deleted == []
+
+
+def test_an_article_published_through_the_redaktion_is_remembered_as_published_here(accepted,
+                                                                                    tmp_path):
+    # G15d: Publish as Article then says Update for it.
+    from nostr.first_publications import FirstPublications
+    from nostr.publisher import published_at_of
+    record = FirstPublications(tmp_path / "first.json")
+    run, _store, jobs = _run(accepted, remember=record.remember)
+    run.start()
+    accepted.world.settle()
+    assert record.get(run.writer, run.d) == published_at_of(jobs[0].signed_event) > 0
 
 
 def test_no_relay_took_it_so_try_again_sends_the_same_signed_article(accepted):
@@ -715,7 +728,7 @@ def test_once_public_the_sheet_says_the_result_and_no_more_of_the_step_before(ac
 
 def test_the_confirm_and_publish_sheets_read_whole_at_their_minimum_size_in_german(accepted):
     # RG-M4-c 9: at its own minimum size, in German, no button clips and no
-    # wrapping line is cut (Profil bearbeiten …, Erneut versuchen, Q1).
+    # wrapping line is cut (Lightning-Adresse eintragen …, Q1).
     import i18n
     from PySide6.QtWidgets import QApplication, QLabel, QPushButton
     from nostr.ui.standup_confirm_sheet import ConfirmSheet
@@ -736,7 +749,7 @@ def test_the_confirm_and_publish_sheets_read_whole_at_their_minimum_size_in_germ
 
     i18n.install("de")
     try:
-        for address in ("", None):                   # Profil bearbeiten …, Erneut versuchen
+        for address in ("", None):                   # Lightning-Adresse eintragen …, not read
             sheet = ConfirmSheet(
                 role="writer", publication="Magazin", number=2,
                 shares=((pk("writer"), 70, "writer"), (pk("contributor"), 30, "contributor")),
