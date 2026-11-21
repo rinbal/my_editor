@@ -3,12 +3,13 @@
 """Where STANDUP requests may go.
 
 A submission server's address comes from the publication's verified key
-event (``server``, contract 8.1), never from this app: the association
-runs the instance and names it, so no address is built in and without
-one nothing is sent (the UI says "kommt vom Verein"). Only https, except
-plain http to exactly ``127.0.0.1`` when a developer allows it
-(``MYEDITOR_STANDUP_LOCAL_HTTP=1``) for a local STANDUP, which
-``MYEDITOR_STANDUP_SERVER`` can name.
+event (``server``, contract 8.1). The server this app asks first is the
+one ``MYEDITOR_STANDUP_SERVER`` names (a developer's), else the
+association's instance built in as ``DEFAULT_SERVER``, if set (G16: it
+stays empty until the association names it). Without one nothing is
+sent (the UI says "kommt vom Verein"). Only https, except plain http to
+exactly ``127.0.0.1`` when a developer allows it
+(``MYEDITOR_STANDUP_LOCAL_HTTP=1``) for a local STANDUP.
 
 An address is an origin and nothing else (8.1, feat/redaktion 0820f0d):
 ``https://host`` or ``https://host:port``, no path, no trailing slash, a
@@ -24,9 +25,10 @@ from urllib.parse import urlsplit
 
 from ..signed_api import usable_base_url
 
-# A developer's own server (a local STANDUP). Unset in production, where
-# the server comes from the publication's verified key event.
+# A developer's own server (a local STANDUP): it wins over the built-in one.
 ENV_SERVER: str = "MYEDITOR_STANDUP_SERVER"
+# The association's STANDUP instance, built in: "" until it is named (G16).
+DEFAULT_SERVER: str = ""
 # "1" allows plain http to exactly 127.0.0.1, for a local STANDUP.
 ENV_LOCAL_HTTP: str = "MYEDITOR_STANDUP_LOCAL_HTTP"
 _LOCAL_HTTP_HOSTS = frozenset({"127.0.0.1"})
@@ -55,10 +57,11 @@ def usable_server_url(value: Any, *, local_http: Optional[bool] = None) -> str:
 
 
 def configured_server() -> str:
-    """The server a developer named, or ``""``. Never a built-in address.
-    Spaces and a trailing slash around it are forgiven (typed by hand)."""
-    return usable_server_url(os.environ.get(ENV_SERVER, "").strip().rstrip("/"))
+    """The server a developer named (spaces and a trailing slash around it
+    forgiven, typed by hand); else the built-in one, if set; else ``""``."""
+    named = os.environ.get(ENV_SERVER, "").strip().rstrip("/")
+    return usable_server_url(named if named else DEFAULT_SERVER)
 
 
-__all__ = ["ENV_LOCAL_HTTP", "ENV_SERVER", "configured_server", "local_http_allowed",
-           "usable_server_url"]
+__all__ = ["DEFAULT_SERVER", "ENV_LOCAL_HTTP", "ENV_SERVER", "configured_server",
+           "local_http_allowed", "usable_server_url"]
