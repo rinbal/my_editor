@@ -23,9 +23,13 @@ and the rules of the chosen one under it; one that takes no articles is
 dimmed with the reason. **Veröffentlicht von** is a choice when the
 publication lets the writer choose, and says "der Publikation" when the
 publication publishes; under it, who does what, as the guest post page
-says it. The rights show only when it asks for them. **Einreichen** is the default button, dimmed only by a blocker,
-whose reason is said above it (drafting.blockers, the Redaktion's key
-not confirmed, the server's address not known yet: "kommt vom Verein").
+says it. The rights show only when it asks for them. A profile known to
+have no name (read from the relays, or an account made here) gets one
+quiet line under the fields, with Edit Profile… beside it (G15e): read
+again as the account changes and when the sheet is in front again.
+**Einreichen** is the default button, dimmed only by a blocker, whose
+reason is said above it (drafting.blockers, the Redaktion's key not
+confirmed, the server's address not known yet: "kommt vom Verein").
 
 The publications' logos and rules are :mod:`.standup_publications`'s,
 the lock line and its Details :mod:`.standup_privacy`'s.
@@ -121,6 +125,7 @@ class SubmitSheet(QDialog):
                  store: ProfileStore, avatars: AvatarStore,
                  logos: PublicationLogos, is_dark: bool,
                  public_pictures: int = 0, pictures: int = 0,
+                 edit_profile: Optional[Callable[[], None]] = None,
                  parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(_("Submit to a Publication"))
@@ -140,6 +145,7 @@ class SubmitSheet(QDialog):
         self._avatars = avatars             # the people's (the account row)
         self._logos = logos                 # the publications', by address (12.9)
         self._is_dark = is_dark
+        self._edit_profile = edit_profile           # Edit Profile for the account in use
         self._destinations: List[Destination] = []
         # The round this text would go in at the chosen publication, as
         # StandupWriter.round_for answered: None while asking.
@@ -243,6 +249,18 @@ class SubmitSheet(QDialog):
         fields.addStretch(1)
         columns.addLayout(fields, 1)
         inner.addLayout(columns)
+        self.no_name = QWidget()
+        no_name = QHBoxLayout(self.no_name)
+        no_name.setContentsMargins(0, 0, 0, 0)
+        hint = self._hint()
+        hint.setText(_("Your profile has no name yet. Add one so others see who wrote it."))
+        no_name.addWidget(hint, 1)
+        self.edit_profile = QPushButton(_("Edit Profile…"))
+        self.edit_profile.setAutoDefault(False)     # Submit stays the one default
+        self.edit_profile.clicked.connect(lambda: self._edit_profile and self._edit_profile())
+        no_name.addWidget(self.edit_profile, 0, Qt.AlignmentFlag.AlignTop)
+        self.no_name.hide()
+        inner.addWidget(self.no_name)
         self.privacy = PrivacyBox(self.privacy_words, is_dark=self._is_dark)
         self.privacy_toggle, self.privacy_lines = self.privacy.toggle, self.privacy.lines
         self.privacy_toggle.toggled.connect(lambda _shown: self._grow())
@@ -483,7 +501,27 @@ class SubmitSheet(QDialog):
 
         return answer
 
+    def _show_no_name(self) -> None:
+        """The line for a profile without a name, only where that is known:
+        a profile never read has no name yet only here (S9)."""
+        pubkey = self.account.profile().user_pubkey
+        profile = self._store.get(pubkey) or self.account.profile()
+        known = profile.metadata_cached_at > 0 or profile.setup_pending
+        shown = (self._edit_profile is not None and known
+                 and not profile.display_name.strip())
+        if shown == self.no_name.isHidden():
+            self.no_name.setVisible(shown)
+            self._grow()
+
+    def changeEvent(self, event) -> None:  # noqa: N802, Qt's name
+        """In front again (after Edit Profile…): a name given there takes
+        the line away."""
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.ActivationChange and self.isActiveWindow():
+            self._show_no_name()
+
     def _load(self) -> None:
+        self._show_no_name()                        # the account's, as it is now
         self._generation += 1                       # the account asked for now
         self._load_failed = self._load_limited = False
         self._load_problem = ""

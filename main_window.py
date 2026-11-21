@@ -11002,7 +11002,8 @@ class MainWindow(QMainWindow):
                             profile=active,
                             store=self._profile_store,
                             avatars=self._avatars, logos=self._publication_logos,
-                            is_dark=self.is_dark_theme, parent=self)
+                            is_dark=self.is_dark_theme, edit_profile=self._on_edit_profile,
+                            parent=self)
         sheet.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         sheet.submitted.connect(lambda d, ed=ed: self._keep_submitted_identifier(ed, d))
         sheet.view_submission.connect(self._submissions.open_detail)
