@@ -63,9 +63,17 @@ class Coauthors:
         """``details`` with ``coauthors``. A co-author no longer among them
         gives their share back to the author; anyone else the zaps are
         shared with (as another app set them) keeps theirs, and the zap
-        tags stay as written while nobody's share changes."""
-        changed = details.with_changes(coauthors=tuple(coauthors))
+        tags stay as written while nobody's share changes. The signer keeps
+        their place among those kept (signer_place): after the co-authors
+        kept before them, so one added comes after them; with no co-author
+        left the place is not known any more, and the signer comes first."""
         kept = {pubkey for pubkey, _hint in coauthors}
+        place = details.signer_place
+        if place is not None and place >= 0:
+            place = sum(1 for pubkey, _hint in details.coauthors[:place] if pubkey in kept)
+        if not coauthors:
+            place = None
+        changed = details.with_changes(coauthors=tuple(coauthors), signer_place=place)
         gone = {pubkey for pubkey, _hint in details.coauthors if pubkey not in kept}
         shares = self.shares(details)
         if not gone & set(shares):

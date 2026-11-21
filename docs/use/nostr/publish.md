@@ -54,6 +54,16 @@ The original stays beside your writing as a read-only reference. The reference i
 
 Pictures you put into a document stay on this computer until you publish, then go to your media servers. **Settings > Upload files: Right Away** uploads them as soon as you add them instead. Camera and location details are removed from a cover before it is uploaded.
 
+## Submit to a publication
+
+Publications on [EINUNDZWANZIG STANDUP](https://media.einundzwanzig.space) have an editorial team that reads what writers hand in. You don't need to be a member: a publication that takes guest posts takes them from anyone.
+
+- **Nostr > Submit to a Publication…** hands in the text in front: title, summary and cover as in **Publish as Article**, then the publication. The sheet says who publishes the text: you, or the publication under your name.
+- **Nostr > Submissions** (**⇧⌘Y** / **Ctrl+Shift+Y**) lists what you handed in, with each one's state and your conversation with the team. From there you can **Hand In New Version…**, **Withdraw…**, **Take the Correction** or **Ask a Question**.
+- When the team accepts the text, **Confirm Share…** shows how the zaps are shared, and you confirm. A Lightning address in your profile lets your share reach you; you can add it later too.
+
+The text and the conversation are encrypted end to end. The server sees titles and states, never the text.
+
 ## What you published
 
 Choose **Nostr > Published** (**⇧⌘B** / **Ctrl+Shift+B**) to see your notes and articles, newest first, in the Drafts panel's **Published** view. **Load More Notes** at the end brings older notes. **Nostr > Refresh Drafts** (**⌘R** / **F5**), which is named for the view shown, reads the list again. Right-click a row, or press the Menu key, for:

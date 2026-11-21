@@ -5,6 +5,7 @@ MyEditor is a writing app first. If you also want to publish what you write, it 
 ## What you get
 
 - **Publish as a note or an article.** A short note for a quick thought, a long-form article with a title, a summary, a cover and hashtags. [Publish](publish.md)
+- **Submit to a publication.** Hand a text in to a publication on EINUNDZWANZIG STANDUP and talk it through with its editorial team. [Submit](publish.md#submit-to-a-publication)
 - **Private drafts on every device.** Drafts are encrypted so that only you can read them, and they follow you to every computer and phone where you use the same account. [Drafts](drafts.md)
 - **A media library.** Your pictures, films and sound on media servers you choose, ready to put into any article. [Media Library](media.md)
 - **Imports.** Bring your blog or a website you follow into drafts, from a feed, an export file or a single link. [Imports](imports.md)

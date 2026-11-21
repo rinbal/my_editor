@@ -2,12 +2,11 @@
 
 MyEditor can hand a text in to a STANDUP publication: an EINUNDZWANZIG STANDUP site with an editorial team (its Redaktion). The writer submits, the team answers, and the two talk it through until the work is published. Everything is end to end encrypted; the submission server stores and forwards, and can read titles and states, never the work, the conversation or a key.
 
-> [!NOTE]
-> This is not switched on for everyone yet. The association runs the submission server and has not named its address, so no address is built into the app. Until then, **Nostr > Submit to a Publication…** and **Nostr > Submissions** are hidden, and the user guide does not describe them. Developers turn them on as below.
+The association's server, `https://media.einundzwanzig.space`, is built in (`DEFAULT_SERVER` in `nostr/standup/servers.py`). The user guide describes the feature in [Submit to a publication](../use/nostr/publish.md#submit-to-a-publication).
 
-## Try it against a local STANDUP
+## Try it against another STANDUP
 
-Set the server's address in the environment before you start MyEditor from source:
+To use another server, a local one for example, set its address in the environment before you start MyEditor from source:
 
 ```sh
 MYEDITOR_STANDUP_SERVER=https://standup.example python main.py
@@ -19,7 +18,7 @@ For a STANDUP running on your own computer, allow plain HTTP to `127.0.0.1` only
 MYEDITOR_STANDUP_LOCAL_HTTP=1 MYEDITOR_STANDUP_SERVER=http://127.0.0.1:8000 python main.py
 ```
 
-An address is an origin and nothing else: `https://host` or `https://host:port`, no path and no trailing slash (`nostr/standup/servers.py`). With an address set and an account in use, the two commands appear in the Nostr menu, and the Drafts panel gets a **Submissions** view.
+An address is an origin and nothing else: `https://host` or `https://host:port`, no path and no trailing slash (`nostr/standup/servers.py`). The address in the environment wins over the built-in one. With an account in use, the two commands appear in the Nostr menu, and the Drafts panel gets a **Submissions** view.
 
 ## What the writer sees
 

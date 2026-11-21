@@ -57,9 +57,14 @@ DETAILS = ("d", "title", "summary", "image", "published_at", "t")
 REBUILT = ("client", "p", "q")
 # An author: ["p", <pubkey>, <relay hint>, "author"] (NIP-84's role, the
 # marker standup writes and reads back for "this person wrote it"). When an
-# article names co-authors, its signer is written first, as standup takes
-# the first one for the writer; the co-authors follow.
+# article names co-authors, its signer stands where the article had them
+# (signer_place), first when that is not known, as standup takes the first
+# one for the writer; the co-authors around them.
 AUTHOR_MARKER = "author"
+# Where the signer stands among the authors, in the tags kept for a
+# restart only (ArticleDetails.tags): ["p", "", <place>, SIGNER_PLACE].
+# Never published, and no author to a reader that does not know it.
+SIGNER_PLACE = "myeditor-signer-place"
 
 
 def imeta_url(tag) -> str:
@@ -145,15 +150,23 @@ class ArticleDetails:
     # (kept_in_file, named as in _FRONT_KEYS): no window changes them, and
     # each shows them read-only, saying so.
     kept: FrozenSet[str] = field(default=frozenset(), compare=False)
+    # Where the signer stands among the authors (G15c): 0 and on its place,
+    # -1 when the article does not name them, None when it is not known
+    # (the signer first). As ``kept``, no change to the article.
+    signer_place: Optional[int] = field(default=None, compare=False)
 
     @classmethod
     def from_tags(cls, tags: Iterable[Sequence[str]], signer: str = "") -> "ArticleDetails":
         """The details an event's tags hold (the first of each kind wins;
         every hashtag counts). ``signer``, the event's author, is no
-        co-author of their own article."""
+        co-author of their own article; where they stand among its authors
+        is kept (signer_place), and without ``signer`` read from the tags
+        kept for a restart (tags), else not known."""
         found = {}
         hashtags: List[str] = []
         coauthors: List[Tuple[str, str]] = []
+        place: Optional[int] = None
+        signer_seen: Optional[int] = None
         zaps: List[Tuple[str, ...]] = []
         carried: List[Tuple[str, ...]] = []
         for tag in tags or ():
@@ -167,10 +180,15 @@ class ArticleDetails:
             elif name in DETAILS:
                 found.setdefault(name, value)
             elif name == "p" and len(tag) >= 4 and tag[3] == AUTHOR_MARKER:
-                if value != signer and value not in (pubkey for pubkey, _hint in coauthors):
+                if signer and value == signer:
+                    if signer_seen is None:
+                        signer_seen = len(coauthors)
+                elif value not in (pubkey for pubkey, _hint in coauthors):
                     coauthors.append((value, tag[2]))
             elif name == "p" and len(tag) >= 4 and tag[3] == "translator":
                 carried.append(tuple(tag))
+            elif name == "p" and len(tag) >= 4 and tag[3] == SIGNER_PLACE:
+                place = int(tag[2]) if re.fullmatch(r"-1|\d+", tag[2]) else None
             elif name == PRIVATE_LINK_TAG:
                 continue
             elif name == "zap":
@@ -182,10 +200,14 @@ class ArticleDetails:
             published_at = int(found.get("published_at", "").strip()) or None
         except ValueError:
             pass
+        if signer and (coauthors or signer_seen is not None):
+            # Only a signer given can be missing from the authors (B2).
+            place = signer_seen if signer_seen is not None else -1
         return cls(identifier=found.get("d", ""), title=found.get("title", ""),
                    summary=found.get("summary", ""), image=found.get("image", ""),
                    hashtags=tuple(hashtags), published_at=published_at,
-                   coauthors=tuple(coauthors), zaps=tuple(zaps), carried=tuple(carried))
+                   coauthors=tuple(coauthors), zaps=tuple(zaps), carried=tuple(carried),
+                   signer_place=place)
 
     def with_changes(self, **changes) -> "ArticleDetails":
         """These details with ``changes`` (a field and its value each), but
@@ -256,8 +278,11 @@ class ArticleDetails:
     def tags(self) -> List[List[str]]:
         """Every detail as a tag, the carried ones all as they are:
         ``from_tags`` makes the same details of them again (for keeping
-        them somewhere, such as a tab written down for a restart)."""
-        return self._detail_tags() + [list(tag) for tag in self.carried]
+        them somewhere, such as a tab written down for a restart), the
+        signer's place among the authors too, when it is known."""
+        place = ([["p", "", str(self.signer_place), SIGNER_PLACE]]
+                 if self.signer_place is not None else [])
+        return self._detail_tags() + place + [list(tag) for tag in self.carried]
 
     def _detail_tags(self, with_people: bool = True) -> List[List[str]]:
         tags: List[List[str]] = [["d", self.identifier]]
@@ -272,14 +297,24 @@ class ArticleDetails:
         tags.extend(["t", tag.lower()] for tag in self.hashtags)
         return tags + (self._people_tags() if with_people else [])
 
-    def _people_tags(self, author: Tuple[str, str] = ("", "")) -> List[List[str]]:
-        """The authors, the signer first when co-authors are named and the
-        signer is known, then the co-authors; then the zap shares."""
+    def authors(self, author: Tuple[str, str] = ("", "")) -> List[Tuple[str, str]]:
+        """The authors in their order (G15c), (pubkey, relay hint) each: as
+        the details name them when they name the signer ``author`` too (a
+        file's coauthors with the own address); else the co-authors with
+        the signer at its place, first when the place is not known, left
+        out when the article does not name them. Published (published_tags)
+        and shown (the Authors section) in this one order."""
         pubkey, hint = author
-        writers = [(pk, relay) for pk, relay in self.coauthors if pk != pubkey]
-        if pubkey and writers:
-            writers.insert(0, (pubkey, hint))
-        return ([["p", pk, relay, AUTHOR_MARKER] for pk, relay in writers]
+        if pubkey and any(pk == pubkey for pk, _relay in self.coauthors):
+            return [(pk, hint if pk == pubkey else relay) for pk, relay in self.coauthors]
+        writers = list(self.coauthors)
+        if pubkey and writers and self.signer_place != -1:
+            writers.insert(min(self.signer_place or 0, len(writers)), (pubkey, hint))
+        return writers
+
+    def _people_tags(self, author: Tuple[str, str] = ("", "")) -> List[List[str]]:
+        """The authors (authors), then the zap shares."""
+        return ([["p", pk, relay, AUTHOR_MARKER] for pk, relay in self.authors(author)]
                 + [list(tag) for tag in self.zaps])
 
 

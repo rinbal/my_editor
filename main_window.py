@@ -11051,7 +11051,8 @@ class MainWindow(QMainWindow):
                 session_pool=self._session_pool, relay_pool=self._relay_pool,
                 relay_directory=self._relay_directory, media_store=self._media_store,
                 entitled_relays=self._entitled_relays,
-                marks=getattr(self, "_submitted_marks", None), parent=self)
+                marks=getattr(self, "_submitted_marks", None),
+                first_publications=self._first_publications, parent=self)
             writer.status.connect(lambda text: self.statusBar().showMessage(text, 8000))
             # A text submitted before keeps its link name (RG-M2r 10).
             writer.listed.connect(lambda _writer: self._fill_article_details_panel())
@@ -11090,8 +11091,11 @@ class MainWindow(QMainWindow):
                             profile=active,
                             store=self._profile_store,
                             avatars=self._avatars, logos=self._publication_logos,
-                            is_dark=self.is_dark_theme, parent=self)
+                            is_dark=self.is_dark_theme, edit_profile=self._on_edit_profile,
+                            parent=self)
         sheet.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        # A slot of the sheet's: let go with it.
+        self._metadata_fetcher.updated.connect(sheet.profile_updated)
         sheet.submitted.connect(lambda d, ed=ed: self._keep_submitted_identifier(ed, d))
         sheet.view_submission.connect(self._submissions.open_detail)
         if becomes_article:

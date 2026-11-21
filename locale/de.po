@@ -22,12 +22,12 @@ msgstr "Details"
 
 #: alerts.py:213
 #: alerts.py:220
-#: nostr/ui/publish_article_dialog.py:637
+#: nostr/ui/publish_article_dialog.py:640
 msgid "Show Details"
 msgstr "Details einblenden"
 
 #: alerts.py:220
-#: nostr/ui/publish_article_dialog.py:637
+#: nostr/ui/publish_article_dialog.py:640
 msgid "Hide Details"
 msgstr "Details ausblenden"
 
@@ -36,7 +36,7 @@ msgstr "Details ausblenden"
 #: link_popover.py:100
 #: main_window.py:5714
 #: main_window.py:5417
-#: main_window.py:12915
+#: main_window.py:12919
 #: main_window.py:399
 #: main_window.py:5353
 msgid "Cancel"
@@ -208,7 +208,7 @@ msgstr "Einzug verkleinern"
 #: editor.py:2475
 #: editor.py:3249
 #: main_window.py:2269
-#: main_window.py:11463
+#: main_window.py:11467
 #: sheet_tab.py:2746
 #: sheet_tab.py:2472
 msgid "Paste"
@@ -239,7 +239,7 @@ msgstr "Notiz oder Artikel"
 
 #: editor.py:2137
 #: main_window.py:4935
-#: main_window.py:11483
+#: main_window.py:11487
 msgid "Link"
 msgstr "Link"
 
@@ -1735,23 +1735,23 @@ msgstr "Auf diesem Computer"
 msgid "On this computer only. Publishing uploads it to your media servers."
 msgstr "Nur auf diesem Computer. Beim Veröffentlichen wird es auf deine Medienserver hochgeladen."
 
-#: main_window.py:11356
+#: main_window.py:11360
 msgid "Your article is published."
 msgstr "Dein Artikel ist veröffentlicht."
 
-#: main_window.py:11356
+#: main_window.py:11360
 msgid "Your note is published."
 msgstr "Deine Notiz ist veröffentlicht."
 
-#: main_window.py:11922
+#: main_window.py:11926
 msgid "Drafts are saved on your usual relays again."
 msgstr "Entwürfe werden wieder auf deinen üblichen Relays gespeichert."
 
-#: main_window.py:12010
+#: main_window.py:12014
 msgid "Trying again. Approve the request in your signer app…"
 msgstr "Neuer Versuch. Bestätige die Anfrage in deiner Signer-App …"
 
-#: main_window.py:12070
+#: main_window.py:12074
 #: main_window.py:2299
 #: main_window.py:8021
 #: nostr/ui/media_library_dialog.py:787
@@ -1760,23 +1760,23 @@ msgstr "Neuer Versuch. Bestätige die Anfrage in deiner Signer-App …"
 msgid "Delete"
 msgstr "Löschen"
 
-#: main_window.py:12193
+#: main_window.py:12197
 msgid "Your draft wasn’t deleted"
 msgstr "Dein Entwurf wurde nicht gelöscht"
 
-#: main_window.py:12194
+#: main_window.py:12198
 msgid "Some drafts weren’t deleted"
 msgstr "Einige Entwürfe wurden nicht gelöscht"
 
-#: main_window.py:12194
+#: main_window.py:12198
 msgid "Your drafts weren’t deleted"
 msgstr "Deine Entwürfe wurden nicht gelöscht"
 
-#: main_window.py:12840
+#: main_window.py:12844
 msgid "Already saving this draft - wait for it to finish."
 msgstr "Dieser Entwurf wird schon gespeichert. Warte, bis das fertig ist."
 
-#: main_window.py:12903
+#: main_window.py:12907
 msgid "(unknown account)"
 msgstr "(unbekanntes Konto)"
 
@@ -2192,7 +2192,7 @@ msgstr "Schlüssel in Signer-App verschieben …"
 
 #: main_window.py:2997
 #: main_window.py:9261
-#: nostr/ui/standup_confirm_sheet.py:185
+#: nostr/ui/standup_submit_sheet.py:258
 msgid "Edit Profile…"
 msgstr "Profil bearbeiten …"
 
@@ -2252,7 +2252,7 @@ msgstr "Es gibt keine Datei zum Löschen"
 
 #: main_window.py:4531
 #: main_window.py:4935
-#: main_window.py:11488
+#: main_window.py:11492
 #: main_window.py:4916
 #: media_files.py:109
 #: nostr/ui/media_library_dialog.py:1416
@@ -2299,7 +2299,7 @@ msgstr "Ein anderer Export lädt noch seine Bilder."
 #: nostr/ui/article_details_panel.py:215
 #: nostr/ui/article_header.py:259
 #: nostr/ui/article_header.py:317
-#: nostr/ui/publish_article_dialog.py:503
+#: nostr/ui/publish_article_dialog.py:506
 #: nostr/ui/stash_kind_dialog.py:319
 msgid "Title"
 msgstr "Titel"
@@ -2307,7 +2307,7 @@ msgstr "Titel"
 #: main_window.py:5826
 #: nostr/ui/article_details_panel.py:220
 #: nostr/ui/article_header.py:267
-#: nostr/ui/publish_article_dialog.py:511
+#: nostr/ui/publish_article_dialog.py:514
 msgid "Summary"
 msgstr "Zusammenfassung"
 
@@ -2321,13 +2321,13 @@ msgstr "Titelbild"
 #: main_window.py:5827
 #: nostr/ui/article_details_panel.py:240
 #: nostr/ui/article_details_panel.py:242
-#: nostr/ui/publish_article_dialog.py:517
+#: nostr/ui/publish_article_dialog.py:520
 msgid "Hashtags"
 msgstr "Hashtags"
 
 #: main_window.py:5827
 #: nostr/ui/article_details_panel.py:270
-#: nostr/ui/publish_article_dialog.py:563
+#: nostr/ui/publish_article_dialog.py:566
 #: nostr/ui/stash_kind_dialog.py:327
 msgid "Link name"
 msgstr "Linkname"
@@ -2623,28 +2623,28 @@ msgstr "Das ist ein geheimer Schlüssel"
 msgid "Anyone who has it can publish as its owner and read their private messages, and once published it can never be taken back. MyEditor did not paste it. Keep it in a password manager or a signer app."
 msgstr "Wer ihn hat, kann im Namen seines Besitzers veröffentlichen und dessen private Nachrichten lesen, und einmal veröffentlicht, lässt er sich nie mehr zurückholen. MyEditor hat ihn nicht eingesetzt. Bewahre ihn in einem Passwortmanager oder einer Signer-App auf."
 
-#: main_window.py:11517
-#: main_window.py:11531
+#: main_window.py:11521
+#: main_window.py:11535
 msgid "That link cannot be inserted."
 msgstr "Dieser Link kann nicht eingefügt werden."
 
-#: main_window.py:11597
+#: main_window.py:11601
 msgid "Your file wasn’t uploaded"
 msgstr "Deine Datei wurde nicht hochgeladen"
 
-#: main_window.py:11598
+#: main_window.py:11602
 msgid "Some files weren’t uploaded"
 msgstr "Einige Dateien wurden nicht hochgeladen"
 
-#: main_window.py:11622
+#: main_window.py:11626
 msgid "That image could not be added."
 msgstr "Dieses Bild konnte nicht hinzugefügt werden."
 
-#: main_window.py:11940
+#: main_window.py:11944
 msgid "Draft isn't ready to open yet - still decrypting."
 msgstr "Der Entwurf lässt sich noch nicht öffnen: Er wird noch entschlüsselt."
 
-#: main_window.py:12053
+#: main_window.py:12057
 msgid ""
 "They use a draft format this editor doesn't recognise, so removing them from here might leave them visible in the other client.\n"
 "\n"
@@ -2654,47 +2654,47 @@ msgstr ""
 "\n"
 "Um sie sauber zu entfernen, öffne sie in der App, mit der sie erstellt wurden, und lösche sie dort."
 
-#: main_window.py:12069
+#: main_window.py:12073
 msgid "Delete “this draft” from your Nostr drafts?"
 msgstr "Diesen Entwurf aus deinen Nostr-Entwürfen löschen?"
 
-#: main_window.py:12084
+#: main_window.py:12088
 msgid "A blank-content replacement will be published to your relays. Other clients (and your other devices) will treat the draft as removed. This action can't be undone."
 msgid_plural "A blank-content replacement will be published to your relays. Other clients (and your other devices) will treat them as removed. This action can't be undone."
 msgstr[0] "Auf deinen Relays wird ein leerer Ersatz veröffentlicht. Andere Apps (und deine anderen Geräte) behandeln den Entwurf dann als gelöscht. Das lässt sich nicht rückgängig machen."
 msgstr[1] "Auf deinen Relays wird ein leerer Ersatz veröffentlicht. Andere Apps (und deine anderen Geräte) behandeln die Entwürfe dann als gelöscht. Das lässt sich nicht rückgängig machen."
 
-#: main_window.py:12092
+#: main_window.py:12096
 msgid "A draft whose link name holds a secret key is deleted by a request instead, which doesn't send the key again. Your other devices, and apps that follow such requests, will treat it as removed. This action can't be undone."
 msgid_plural "Drafts whose link names hold a secret key are deleted by a request each instead, which doesn't send the keys again. Your other devices, and apps that follow such requests, will treat them as removed. This action can't be undone."
 msgstr[0] "Ein Entwurf, in dessen Linknamen ein geheimer Schlüssel steht, wird stattdessen mit einer Anfrage gelöscht, die den Schlüssel nicht noch einmal sendet. Deine anderen Geräte und Apps, die solche Anfragen beachten, behandeln ihn dann als gelöscht. Das lässt sich nicht rückgängig machen."
 msgstr[1] "Entwürfe, in deren Linknamen ein geheimer Schlüssel steht, werden stattdessen mit je einer Anfrage gelöscht, die die Schlüssel nicht noch einmal sendet. Deine anderen Geräte und Apps, die solche Anfragen beachten, behandeln sie dann als gelöscht. Das lässt sich nicht rückgängig machen."
 
-#: main_window.py:12165
+#: main_window.py:12169
 msgid "Deleting drafts…"
 msgstr "Entwürfe werden gelöscht …"
 
-#: main_window.py:12165
+#: main_window.py:12169
 #: nostr/ui/media_library_dialog.py:316
 #: nostr/ui/media_preview.py:165
 msgid "Stop"
 msgstr "Stoppen"
 
-#: main_window.py:12166
+#: main_window.py:12170
 msgid "Deleting drafts"
 msgstr "Entwürfe werden gelöscht"
 
-#: main_window.py:12425
+#: main_window.py:12429
 msgid "The draft was not saved: another account is in use."
 msgstr "Der Entwurf wurde nicht gespeichert: Ein anderes Konto ist aktiv."
 
-#: main_window.py:12452
+#: main_window.py:12456
 msgid "Replacing it overwrites its text on all your devices."
 msgstr "Beim Ersetzen wird sein Text auf all deinen Geräten überschrieben."
 
-#: main_window.py:12453
+#: main_window.py:12457
 #: main_window.py:7004
-#: main_window.py:13077
+#: main_window.py:13081
 #: sheet_window.py:151
 #: update_flow.py:138
 #: update_flow.py:169
@@ -2702,7 +2702,7 @@ msgstr "Beim Ersetzen wird sein Text auf all deinen Geräten überschrieben."
 msgid "Replace"
 msgstr "Ersetzen"
 
-#: main_window.py:12921
+#: main_window.py:12925
 msgid "Saving under the current account would create a separate draft. How would you like to handle it?"
 msgstr "Wenn du unter dem aktuellen Konto speicherst, entsteht ein eigener Entwurf. Wie möchtest du vorgehen?"
 
@@ -3109,7 +3109,7 @@ msgstr "Nichts zu veröffentlichen"
 
 #: main_window.py:9954
 #: main_window.py:10929
-#: main_window.py:11133
+#: main_window.py:11137
 msgid "The current document is empty."
 msgstr "Das aktuelle Dokument ist leer."
 
@@ -3155,16 +3155,16 @@ msgstr "Noch nicht hochgeladen. Beim Veröffentlichen oder Speichern als Entwurf
 msgid "Paste Public Key"
 msgstr "Öffentlichen Schlüssel einsetzen"
 
-#: main_window.py:11074
-#: main_window.py:11132
+#: main_window.py:11075
+#: main_window.py:11136
 msgid "Nothing to submit"
 msgstr "Nichts zum Einreichen"
 
-#: main_window.py:11075
+#: main_window.py:11076
 msgid "Open the text you want to submit, then choose Submit to a Publication again."
 msgstr "Öffne den Text, den du einreichen möchtest, und wähle dann erneut „Bei Publikation einreichen“."
 
-#: main_window.py:11136
+#: main_window.py:11140
 #: preview_pane.py:100
 #: nostr/refs.py:160
 #: nostr/ui/article_details_panel.py:212
@@ -3175,41 +3175,41 @@ msgstr "Öffne den Text, den du einreichen möchtest, und wähle dann erneut „
 msgid "Article"
 msgstr "Artikel"
 
-#: main_window.py:11918
+#: main_window.py:11922
 msgid "Drafts are now saved only on the relay you chose."
 msgid_plural "Drafts are now saved only on the {count} relays you chose."
 msgstr[0] "Entwürfe werden jetzt nur auf dem Relay gespeichert, das du gewählt hast."
 msgstr[1] "Entwürfe werden jetzt nur auf den {count} Relays gespeichert, die du gewählt hast."
 
-#: main_window.py:12072
+#: main_window.py:12076
 #, python-brace-format
 msgid "Delete {count} draft from your Nostr drafts?"
 msgid_plural "Delete {count} drafts from your Nostr drafts?"
 msgstr[0] "{count} Entwurf aus deinen Nostr-Entwürfen löschen?"
 msgstr[1] "{count} Entwürfe aus deinen Nostr-Entwürfen löschen?"
 
-#: main_window.py:12075
+#: main_window.py:12079
 #, python-brace-format
 msgid "Delete {count} Draft"
 msgid_plural "Delete {count} Drafts"
 msgstr[0] "{count} Entwurf löschen"
 msgstr[1] "{count} Entwürfe löschen"
 
-#: main_window.py:12119
+#: main_window.py:12123
 msgid "An imported draft takes a second request, which tells other apps it is gone."
 msgid_plural "Imported drafts take a second request each, which tells other apps they are gone."
 msgstr[0] "Ein importierter Entwurf braucht eine zweite Anfrage, die anderen Apps sagt, dass er gelöscht ist."
 msgstr[1] "Importierte Entwürfe brauchen je eine zweite Anfrage, die anderen Apps sagt, dass sie gelöscht sind."
 
-#: main_window.py:12512
+#: main_window.py:12516
 msgid "Nothing to save as a draft"
 msgstr "Nichts als Entwurf zu speichern"
 
-#: main_window.py:12513
+#: main_window.py:12517
 msgid "The current document is empty. Add some content first."
 msgstr "Das aktuelle Dokument ist leer. Füge zuerst Inhalt hinzu."
 
-#: main_window.py:12568
+#: main_window.py:12572
 msgid "Draft saved."
 msgstr "Entwurf gespeichert."
 
@@ -3943,74 +3943,74 @@ msgstr "Wird vorbereitet …"
 msgid "“{name}” wasn’t added to your Media Library."
 msgstr "„{name}“ wurde deiner Mediathek nicht hinzugefügt."
 
-#: main_window.py:11837
+#: main_window.py:11841
 msgid "This article has a draft that can’t be shown yet."
 msgstr "Zu diesem Artikel gibt es einen Entwurf, der sich noch nicht anzeigen lässt."
 
-#: main_window.py:11927
+#: main_window.py:11931
 #, python-brace-format
 msgid "Copied event id {id}…"
 msgstr "Kennung {id}… kopiert"
 
-#: main_window.py:12050
+#: main_window.py:12054
 msgid "This draft was created by another Nostr client"
 msgid_plural "These {count} drafts were created by other Nostr clients"
 msgstr[0] "Dieser Entwurf wurde mit einer anderen Nostr-App erstellt"
 msgstr[1] "Diese {count} Entwürfe wurden mit anderen Nostr-Apps erstellt"
 
-#: main_window.py:12066
+#: main_window.py:12070
 #, python-brace-format
 msgid "Delete “{name}” from your Nostr drafts?"
 msgstr "„{name}“ aus deinen Nostr-Entwürfen löschen?"
 
-#: main_window.py:12112
+#: main_window.py:12116
 #, python-brace-format
 msgid "Your signer app will ask you to approve each one, so expect {count} request. You can stop partway through."
 msgid_plural "Your signer app will ask you to approve each one, so expect {count} requests. You can stop partway through."
 msgstr[0] "Deine Signer-App fragt bei jedem einzeln nach, rechne also mit {count} Anfrage. Du kannst zwischendurch aufhören."
 msgstr[1] "Deine Signer-App fragt bei jedem einzeln nach, rechne also mit {count} Anfragen. Du kannst zwischendurch aufhören."
 
-#: main_window.py:12126
+#: main_window.py:12130
 #, python-brace-format
 msgid "{count} draft from another Nostr client is not included, and will be left alone."
 msgid_plural "{count} drafts from another Nostr client are not included, and will be left alone."
 msgstr[0] "{count} Entwurf aus einer anderen Nostr-App ist nicht dabei und bleibt unverändert."
 msgstr[1] "{count} Entwürfe aus einer anderen Nostr-App sind nicht dabei und bleiben unverändert."
 
-#: main_window.py:12154
+#: main_window.py:12158
 msgid "These drafts can’t be deleted from here: delete them in the app that made them."
 msgstr "Diese Entwürfe lassen sich hier nicht löschen: Lösche sie in der App, mit der sie erstellt wurden."
 
-#: main_window.py:12241
+#: main_window.py:12245
 msgid "Draft deleted."
 msgid_plural "{count} drafts deleted."
 msgstr[0] "Entwurf gelöscht."
 msgstr[1] "{count} Entwürfe gelöscht."
 
-#: main_window.py:12450
+#: main_window.py:12454
 #, python-brace-format
 msgid "A draft named “{name}” already exists. Do you want to replace it?"
 msgstr "Es gibt schon einen Entwurf namens „{name}“. Möchtest du ihn ersetzen?"
 
-#: main_window.py:12522
-#: main_window.py:12757
+#: main_window.py:12526
+#: main_window.py:12761
 msgid "Couldn't prepare the draft"
 msgstr "Der Entwurf konnte nicht vorbereitet werden"
 
-#: main_window.py:12523
+#: main_window.py:12527
 msgid "Its contents could not be prepared for encryption."
 msgstr "Sein Inhalt konnte nicht für die Verschlüsselung vorbereitet werden."
 
-#: main_window.py:12918
+#: main_window.py:12922
 #, python-brace-format
 msgid "This draft was last saved as {original}, but you're signed in as {active}"
 msgstr "Dieser Entwurf wurde zuletzt als {original} gespeichert, aber du bist als {active} angemeldet"
 
-#: main_window.py:13076
+#: main_window.py:13080
 msgid "Replace this draft with the newer version?"
 msgstr "Diesen Entwurf durch die neuere Version ersetzen?"
 
-#: main_window.py:13077
+#: main_window.py:13081
 msgid "Your unsaved changes will be lost."
 msgstr "Deine nicht gespeicherten Änderungen gehen verloren."
 
@@ -4144,47 +4144,47 @@ msgstr[1] "Beenden bricht auch das Speichern von {count} Dateien ab."
 msgid "“{name}” wasn’t added to your Media Library. {reason}"
 msgstr "„{name}“ wurde deiner Mediathek nicht hinzugefügt. {reason}"
 
-#: main_window.py:11838
+#: main_window.py:11842
 msgid "Its draft couldn’t be decrypted: double-click it in the Drafts panel to try again, or open the version that is published now."
 msgstr "Sein Entwurf konnte nicht entschlüsselt werden: Doppelklicke in der Seitenleiste „Entwürfe“ darauf, um es erneut zu versuchen, oder öffne jetzt die veröffentlichte Fassung."
 
-#: main_window.py:11841
+#: main_window.py:11845
 msgid "Its draft is still being decrypted: choose Edit again once its title shows in the Drafts panel, or open the version that is published now."
 msgstr "Sein Entwurf wird noch entschlüsselt: Wähle erneut „Bearbeiten“, sobald sein Titel in der Seitenleiste „Entwürfe“ erscheint, oder öffne jetzt die veröffentlichte Fassung."
 
-#: main_window.py:11849
+#: main_window.py:11853
 msgid "This article has a draft with changes you haven’t published."
 msgstr "Zu diesem Artikel gibt es einen Entwurf mit Änderungen, die du noch nicht veröffentlicht hast."
 
-#: main_window.py:11851
+#: main_window.py:11855
 msgid "Open the draft to go on with it, or open the version that is published."
 msgstr "Öffne den Entwurf, um daran weiterzuarbeiten, oder öffne die veröffentlichte Fassung."
 
-#: main_window.py:12135
+#: main_window.py:12139
 msgid "Not included:"
 msgstr "Nicht dabei:"
 
-#: main_window.py:12176
+#: main_window.py:12180
 #, python-brace-format
 msgid "Deleting draft {current} of {total}…"
 msgstr "Entwurf {current} von {total} wird gelöscht …"
 
-#: main_window.py:12334
+#: main_window.py:12338
 #: main_window.py:5457
 msgid "That account isn’t signed in anymore"
 msgstr "Dieses Konto ist nicht mehr angemeldet"
 
-#: main_window.py:12335
+#: main_window.py:12339
 #: main_window.py:5458
 msgid "Connect it again with Nostr > Connect Signer App… to save here."
 msgstr "Verbinde es erneut unter Nostr > Signer-App verbinden …, um hier zu speichern."
 
-#: main_window.py:12910
+#: main_window.py:12914
 #, python-brace-format
 msgid "Switch to {name} and Save"
 msgstr "Zu {name} wechseln und speichern"
 
-#: main_window.py:12913
+#: main_window.py:12917
 #, python-brace-format
 msgid "Save a Copy as {name}"
 msgstr "Kopie als {name} speichern"
@@ -4230,7 +4230,7 @@ msgstr "„{name}“ konnte nicht gespeichert werden"
 msgid "{error} Check that it's turned on and connected, then try again."
 msgstr "{error} Prüfe, ob der Drucker eingeschaltet und verbunden ist, und versuche es dann erneut."
 
-#: main_window.py:11136
+#: main_window.py:11140
 #: nostr/ui/standup_handoff.py:654
 #, python-brace-format
 msgid "{count} picture"
@@ -4238,8 +4238,8 @@ msgid_plural "{count} pictures"
 msgstr[0] "{count} Bild"
 msgstr[1] "{count} Bilder"
 
-#: main_window.py:11843
-#: main_window.py:11854
+#: main_window.py:11847
+#: main_window.py:11858
 msgid "Open Published Version"
 msgstr "Veröffentlichte Fassung öffnen"
 
@@ -4248,7 +4248,7 @@ msgstr "Veröffentlichte Fassung öffnen"
 msgid "Couldn't reload “{name}”"
 msgstr "„{name}“ konnte nicht neu geladen werden"
 
-#: main_window.py:11855
+#: main_window.py:11859
 msgid "Open Draft"
 msgstr "Entwurf öffnen"
 
@@ -4346,8 +4346,9 @@ msgstr "Referenz"
 #: multilingual_authoring.py:189
 #: multilingual_authoring.py:857
 #: picture_crop.py:77
-#: nostr/ui/publish_article_dialog.py:782
-#: nostr/ui/publish_article_dialog.py:434
+#: nostr/ui/publish_article_dialog.py:791
+#: nostr/ui/publish_article_dialog.py:437
+#: nostr/ui/publish_article_dialog.py:888
 msgid "Original"
 msgstr "Original"
 
@@ -4383,7 +4384,7 @@ msgid "Article language"
 msgstr "Artikelsprache"
 
 #: multilingual_authoring.py:374
-#: nostr/ui/publish_article_dialog.py:1035
+#: nostr/ui/publish_article_dialog.py:811
 msgid "Use the account that owns these versions."
 msgstr "Verwende das Konto, dem diese Fassungen gehören."
 
@@ -7562,7 +7563,7 @@ msgstr "Das Passwort ist falsch."
 
 #: nostr/preview.py:525
 #: nostr/ui/drafts_preview.py:469
-#: nostr/ui/publish_article_dialog.py:702
+#: nostr/ui/publish_article_dialog.py:705
 #, python-brace-format
 msgid "{n} min read"
 msgid_plural "{n} min read"
@@ -8923,7 +8924,7 @@ msgid "Send a Reminder"
 msgstr "Erinnern"
 
 #: nostr/standup/situations.py:57
-#: nostr/ui/standup_confirm_sheet.py:176
+#: nostr/ui/standup_confirm_sheet.py:184
 #: nostr/ui/standup_correction_sheet.py:132
 #: nostr/ui/standup_correction_sheet.py:179
 #: nostr/ui/standup_publish_sheet.py:199
@@ -9289,14 +9290,14 @@ msgid "Version {number} by {name}"
 msgstr "Fassung {number} von {name}"
 
 #: nostr/standup/thread.py:171
-#: nostr/ui/authors_section.py:178
-#: nostr/ui/standup_confirm_sheet.py:196
+#: nostr/ui/authors_section.py:189
+#: nostr/ui/standup_confirm_sheet.py:199
 #: nostr/ui/submission_thread.py:147
 msgid "You"
 msgstr "Du"
 
 #: nostr/standup/thread.py:171
-#: nostr/ui/standup_confirm_sheet.py:196
+#: nostr/ui/standup_confirm_sheet.py:199
 #: nostr/ui/submission_detail.py:583
 #: nostr/ui/submission_detail.py:755
 #: nostr/ui/submission_thread.py:147
@@ -10102,7 +10103,7 @@ msgstr "Alle Details bleiben so, wie sie in der Datei stehen: MyEditor kann dere
 
 #: nostr/ui/article_details_panel.py:214
 #: nostr/ui/article_details_panel.py:515
-#: nostr/ui/publish_article_dialog.py:502
+#: nostr/ui/publish_article_dialog.py:505
 #: nostr/ui/stash_kind_dialog.py:316
 msgid "Article title"
 msgstr "Titel des Artikels"
@@ -10117,7 +10118,7 @@ msgid "Cover"
 msgstr "Titelbild"
 
 #: nostr/ui/article_details_panel.py:246
-#: nostr/ui/authors_section.py:81
+#: nostr/ui/authors_section.py:83
 msgid "Authors"
 msgstr "Autoren"
 
@@ -10134,7 +10135,7 @@ msgid "Check Again"
 msgstr "Erneut prüfen"
 
 #: nostr/ui/article_details_panel.py:329
-#: nostr/ui/publish_article_dialog.py:867
+#: nostr/ui/publish_article_dialog.py:908
 #: nostr/ui/stash_kind_dialog.py:232
 msgid "Kept as written in the file."
 msgstr "Bleibt so, wie es in der Datei steht."
@@ -10144,7 +10145,7 @@ msgid "Choose language…"
 msgstr "Sprache wählen…"
 
 #: nostr/ui/article_details_panel.py:524
-#: nostr/ui/publish_article_dialog.py:598
+#: nostr/ui/publish_article_dialog.py:601
 msgid "Not published yet."
 msgstr "Noch nicht veröffentlicht."
 
@@ -10157,13 +10158,13 @@ msgid "Check"
 msgstr "Prüfen"
 
 #: nostr/ui/article_details_panel.py:576
-#: nostr/ui/publish_article_dialog.py:562
+#: nostr/ui/publish_article_dialog.py:565
 #: nostr/ui/stash_kind_dialog.py:323
 msgid "my-article"
 msgstr "mein-artikel"
 
 #: nostr/ui/article_details_panel.py:522
-#: nostr/ui/publish_article_dialog.py:596
+#: nostr/ui/publish_article_dialog.py:599
 #, python-brace-format
 msgid "First published {moment}"
 msgstr "Zuerst veröffentlicht am {moment}"
@@ -10212,55 +10213,64 @@ msgstr "Schritt {number}, erledigt"
 msgid "Step {number}, failed"
 msgstr "Schritt {number}, fehlgeschlagen"
 
-#: nostr/ui/authors_section.py:108
-#: nostr/ui/publish_article_dialog.py:544
+#: nostr/ui/authors_section.py:110
+#: nostr/ui/publish_article_dialog.py:547
 msgid "Add Co-Author…"
 msgstr "Mitautor hinzufügen …"
 
-#: nostr/ui/authors_section.py:110
+#: nostr/ui/authors_section.py:112
 msgid "Remove Co-Author"
 msgstr "Mitautor entfernen"
 
-#: nostr/ui/authors_section.py:115
+#: nostr/ui/authors_section.py:117
 msgid "Split Evenly"
 msgstr "Gleich aufteilen"
 
-#: nostr/ui/authors_section.py:119
+#: nostr/ui/authors_section.py:121
 msgid "Give you and every co-author who can be paid an equal share of the zaps."
 msgstr "Gibt dir und allen Mitautoren, die bezahlt werden können, den gleichen Anteil der Zaps."
 
-#: nostr/ui/authors_section.py:148
+#: nostr/ui/authors_section.py:159
 msgid "Apps with zap splits pay each share; others pay you."
 msgstr "Apps mit Zap-Aufteilung zahlen jeden Anteil, andere zahlen dich."
 
-#: nostr/ui/authors_section.py:149
+#: nostr/ui/authors_section.py:160
 msgid "Apps that support zap splits, like Amethyst and noStrudel, pay each person their share. Other apps pay you."
 msgstr "Apps, die Zap-Aufteilungen unterstützen, etwa Amethyst und noStrudel, zahlen jeder Person ihren Anteil. Andere Apps zahlen dich."
 
-#: nostr/ui/authors_section.py:143
+#: nostr/ui/authors_section.py:154
 msgid "Share of the zaps"
 msgstr "Anteil an den Zaps"
 
-#: nostr/ui/authors_section.py:177
+#: nostr/ui/authors_section.py:201
+msgid "This article doesn’t list you by name."
+msgstr "Dieser Artikel nennt dich nicht mit Namen."
+
+#: nostr/ui/authors_section.py:188
 #, python-brace-format
 msgid "{name} · you"
 msgstr "{name} · du"
 
-#: nostr/ui/authors_section.py:192
+#: nostr/ui/authors_section.py:213
 msgid "No lightning address in their profile, so they can’t be paid a share."
 msgstr "Keine Lightning-Adresse im Profil, darum kann kein Anteil gezahlt werden."
 
-#: nostr/ui/authors_section.py:233
+#: nostr/ui/authors_section.py:255
 msgid "You keep what the others leave."
 msgstr "Du behältst, was die anderen übrig lassen."
 
-#: nostr/ui/authors_section.py:245
-#: nostr/ui/authors_section.py:252
+#: nostr/ui/authors_section.py:267
+#: nostr/ui/authors_section.py:274
 #, python-brace-format
 msgid "Share for {name}"
 msgstr "Anteil für {name}"
 
-#: nostr/ui/authors_section.py:241
+#: nostr/ui/authors_section.py:200
+#, python-brace-format
+msgid "This article doesn’t list you by name. You keep {share} % of the zaps."
+msgstr "Dieser Artikel nennt dich nicht mit Namen. Du behältst {share} % der Zaps."
+
+#: nostr/ui/authors_section.py:263
 #, python-brace-format
 msgid "{name} has no lightning address in their profile, so they can’t be paid a share."
 msgstr "{name} hat keine Lightning-Adresse im Profil, darum kann kein Anteil gezahlt werden."
@@ -12997,7 +13007,7 @@ msgid "This computer couldn’t write the file there: choose another place and t
 msgstr "Dieser Computer konnte die Datei dort nicht schreiben: Wähle einen anderen Ort und versuche es erneut."
 
 #: nostr/ui/mention_picker.py:227
-#: nostr/ui/publish_article_dialog.py:548
+#: nostr/ui/publish_article_dialog.py:551
 #: nostr/ui/publish_note_dialog.py:293
 msgid "People"
 msgstr "Personen"
@@ -13157,7 +13167,7 @@ msgid "Edit Profile"
 msgstr "Profil bearbeiten"
 
 #: nostr/ui/profile_window.py:219
-#: nostr/ui/standup_confirm_sheet.py:59
+#: nostr/ui/standup_confirm_sheet.py:61
 msgid "Reading your profile…"
 msgstr "Dein Profil wird gelesen …"
 
@@ -13210,70 +13220,66 @@ msgid "Your article wasn’t published"
 msgstr "Dein Artikel wurde nicht veröffentlicht"
 
 #: nostr/ui/publish_article_dialog.py:297
-#: nostr/ui/publish_article_dialog.py:418
+#: nostr/ui/publish_article_dialog.py:421
 msgid "Publish as Article"
 msgstr "Als Artikel veröffentlichen"
 
-#: nostr/ui/publish_article_dialog.py:453
+#: nostr/ui/publish_article_dialog.py:456
 msgid "Open original"
 msgstr "Original öffnen"
 
-#: nostr/ui/publish_article_dialog.py:505
+#: nostr/ui/publish_article_dialog.py:508
 msgid "Title:"
 msgstr "Titel:"
 
-#: nostr/ui/publish_article_dialog.py:510
+#: nostr/ui/publish_article_dialog.py:513
 msgid "Short summary (one sentence)"
 msgstr "Kurze Zusammenfassung (ein Satz)"
 
-#: nostr/ui/publish_article_dialog.py:513
+#: nostr/ui/publish_article_dialog.py:516
 msgid "Summary:"
 msgstr "Zusammenfassung:"
 
-#: nostr/ui/publish_article_dialog.py:518
+#: nostr/ui/publish_article_dialog.py:521
 msgid "Hashtags:"
 msgstr "Hashtags:"
 
-#: nostr/ui/publish_article_dialog.py:542
+#: nostr/ui/publish_article_dialog.py:545
 msgid "Cover image:"
 msgstr "Titelbild:"
 
-#: nostr/ui/publish_article_dialog.py:550
+#: nostr/ui/publish_article_dialog.py:553
 #: nostr/ui/publish_note_dialog.py:289
 msgid "People:"
 msgstr "Personen:"
 
-#: nostr/ui/publish_article_dialog.py:582
+#: nostr/ui/publish_article_dialog.py:585
 msgid "A saved or published article keeps its link name; publishing it under another one makes another article."
 msgstr "Ein gespeicherter oder veröffentlichter Artikel behält seinen Linknamen; unter einem anderen veröffentlicht, wird er ein anderer Artikel."
 
-#: nostr/ui/publish_article_dialog.py:589
+#: nostr/ui/publish_article_dialog.py:592
 msgid "Link name:"
 msgstr "Linkname:"
 
-#: nostr/ui/publish_article_dialog.py:591
+#: nostr/ui/publish_article_dialog.py:594
 msgid "Cover image address"
 msgstr "Adresse des Titelbilds"
 
-#: nostr/ui/publish_article_dialog.py:593
+#: nostr/ui/publish_article_dialog.py:596
 msgid "Cover image address:"
 msgstr "Adresse des Titelbilds:"
 
-#: nostr/ui/publish_article_dialog.py:780
+#: nostr/ui/publish_article_dialog.py:789
+#: nostr/ui/publish_article_dialog.py:890
 msgid "This version"
 msgstr "Diese Fassung"
 
-#: nostr/ui/publish_article_dialog.py:939
-msgid "Checking whether this article was published before…"
-msgstr "Prüfe, ob dieser Artikel schon veröffentlicht wurde …"
+#: nostr/ui/publish_article_dialog.py:895
+msgctxt "an article published before"
+msgid "Update"
+msgstr "Aktualisieren"
 
-#: nostr/ui/publish_article_dialog.py:1008
-msgid "If it went out before, publishing it as new gives it today’s date: try again, or publish it as new."
-msgstr "Falls er schon einmal erschienen ist, bekommt er als neuer Artikel das heutige Datum: Versuche es noch einmal, oder veröffentliche ihn als neu."
-
-#: nostr/ui/publish_article_dialog.py:1063
-#: nostr/ui/publish_article_dialog.py:462
-#: nostr/ui/publish_article_dialog.py:463
+#: nostr/ui/publish_article_dialog.py:895
 #: nostr/ui/publish_note_dialog.py:304
 #: nostr/ui/publish_note_dialog.py:395
 #: nostr/ui/standup_correction_sheet.py:181
@@ -13282,71 +13288,84 @@ msgstr "Falls er schon einmal erschienen ist, bekommt er als neuer Artikel das h
 msgid "Publish"
 msgstr "Veröffentlichen"
 
-#: nostr/ui/publish_article_dialog.py:470
+#: nostr/ui/publish_article_dialog.py:980
+msgid "Checking whether this article was published before…"
+msgstr "Prüfe, ob dieser Artikel schon veröffentlicht wurde …"
+
+#: nostr/ui/publish_article_dialog.py:1049
+msgid "If it went out before, publishing it as new gives it today’s date: try again, or publish it as new."
+msgstr "Falls er schon einmal erschienen ist, bekommt er als neuer Artikel das heutige Datum: Versuche es noch einmal, oder veröffentliche ihn als neu."
+
+#: nostr/ui/publish_article_dialog.py:473
 msgid "Publication options"
 msgstr "Veröffentlichungsoptionen"
 
-#: nostr/ui/publish_article_dialog.py:473
+#: nostr/ui/publish_article_dialog.py:476
 msgid "Publish this language"
 msgstr "Diese Sprachfassung veröffentlichen"
 
-#: nostr/ui/publish_article_dialog.py:474
+#: nostr/ui/publish_article_dialog.py:477
 msgid "Publish both…"
 msgstr "Beide veröffentlichen…"
 
-#: nostr/ui/publish_article_dialog.py:793
+#: nostr/ui/publish_article_dialog.py:799
 msgid "Reference unavailable. Only this version will be published."
 msgstr "Die Referenz ist nicht verfügbar. Nur diese Fassung wird veröffentlicht."
 
-#: nostr/ui/publish_article_dialog.py:1013
+#: nostr/ui/publish_article_dialog.py:1054
 msgid "Couldn't check whether this article was published before"
 msgstr "Es konnte nicht geprüft werden, ob dieser Artikel schon veröffentlicht wurde"
 
-#: nostr/ui/publish_article_dialog.py:784
+#: nostr/ui/publish_article_dialog.py:793
 #, python-brace-format
 msgid "{source} and {target} will be public."
 msgstr "{source} und {target} werden öffentlich."
 
-#: nostr/ui/publish_article_dialog.py:785
-#, python-brace-format
-msgid "Publish {source} and {target}"
-msgstr "{source} und {target} veröffentlichen"
-
-#: nostr/ui/publish_article_dialog.py:1001
+#: nostr/ui/publish_article_dialog.py:1042
 #, python-brace-format
 msgid "Earlier versions of MyEditor published this file as “{name}”, and another name makes a second article: try again, or choose the name to publish it under."
 msgstr "Frühere Versionen von MyEditor haben diese Datei als „{name}“ veröffentlicht, und ein anderer Name ergibt einen zweiten Artikel: Versuche es noch einmal, oder wähle den Namen, unter dem er erscheinen soll."
 
-#: nostr/ui/publish_article_dialog.py:1010
+#: nostr/ui/publish_article_dialog.py:1051
 msgid "Publish as New"
 msgstr "Als neu veröffentlichen"
 
-#: nostr/ui/publish_article_dialog.py:1054
+#: nostr/ui/publish_article_dialog.py:1094
 msgid "Something in Article Details can’t be used: check it and try again."
 msgstr "Etwas in den Artikeldetails lässt sich nicht verwenden: Prüfe sie und versuche es noch einmal."
 
-#: nostr/ui/publish_article_dialog.py:787
+#: nostr/ui/publish_article_dialog.py:795
 #, python-brace-format
 msgid "{target} will be public. {source} stays a draft."
 msgstr "{target} wird öffentlich. {source} bleibt ein Entwurf."
 
-#: nostr/ui/publish_article_dialog.py:788
-#: nostr/ui/publish_article_dialog.py:791
-#, python-brace-format
-msgid "Publish {language}"
-msgstr "{language} veröffentlichen"
-
-#: nostr/ui/publish_article_dialog.py:790
+#: nostr/ui/publish_article_dialog.py:797
 #, python-brace-format
 msgid "{language} will be public."
 msgstr "{language} wird öffentlich."
 
-#: nostr/ui/publish_article_dialog.py:1096
+#: nostr/ui/publish_article_dialog.py:889
+#, python-brace-format
+msgid "Publish {source} and {target}"
+msgstr "{source} und {target} veröffentlichen"
+
+#: nostr/ui/publish_article_dialog.py:1136
 msgid "Open the original to check its article details."
 msgstr "Öffne das Original, um seine Artikeldetails zu prüfen."
 
-#: nostr/ui/publish_article_dialog.py:1004
-#: nostr/ui/publish_article_dialog.py:1006
+#: nostr/ui/publish_article_dialog.py:893
+#, python-brace-format
+msgctxt "an article published before"
+msgid "Update {language}"
+msgstr "{language} aktualisieren"
+
+#: nostr/ui/publish_article_dialog.py:894
+#, python-brace-format
+msgid "Publish {language}"
+msgstr "{language} veröffentlichen"
+
+#: nostr/ui/publish_article_dialog.py:1045
+#: nostr/ui/publish_article_dialog.py:1047
 #, python-brace-format
 msgid "Publish as “{name}”"
 msgstr "Als „{name}“ veröffentlichen"
@@ -13755,59 +13774,59 @@ msgstr "Vorher"
 msgid "After"
 msgstr "Nachher"
 
-#: nostr/ui/standup_confirm_sheet.py:53
+#: nostr/ui/standup_confirm_sheet.py:54
 #, python-brace-format
 msgid "Your share goes to {address}."
 msgstr "Dein Anteil geht an {address}."
 
-#: nostr/ui/standup_confirm_sheet.py:56
+#: nostr/ui/standup_confirm_sheet.py:57
 msgid "Apps that support splits divide zaps this way."
 msgstr "Apps, die Aufteilungen unterstützen, teilen Zaps so auf."
 
-#: nostr/ui/standup_confirm_sheet.py:58
-msgid "For your share, your Nostr profile needs a Lightning address."
-msgstr "Für deinen Anteil braucht dein Nostr-Profil eine Lightning-Adresse."
+#: nostr/ui/standup_confirm_sheet.py:59
+msgid "So zaps for your share reach you, add a Lightning address. You can also do this later."
+msgstr "Damit Zaps für deinen Anteil bei dir ankommen, trag eine Lightning-Adresse ein. Das geht auch später."
 
-#: nostr/ui/standup_confirm_sheet.py:60
-msgid "Your profile couldn’t be read, so it’s not known where your share goes."
-msgstr "Dein Profil ließ sich nicht lesen. Darum ist offen, wohin dein Anteil geht."
-
-#: nostr/ui/standup_confirm_sheet.py:61
+#: nostr/ui/standup_confirm_sheet.py:62
 msgid "My contribution is mine."
 msgstr "Mein Beitrag gehört mir."
 
-#: nostr/ui/standup_confirm_sheet.py:62
+#: nostr/ui/standup_confirm_sheet.py:63
 #, python-brace-format
 msgid "My contribution ({part}) is mine."
 msgstr "Mein Beitrag ({part}) gehört mir."
 
-#: nostr/ui/standup_confirm_sheet.py:63
+#: nostr/ui/standup_confirm_sheet.py:64
 #, python-brace-format
 msgid "I agree to the license {license}."
 msgstr "Ich bin mit der Lizenz {license} einverstanden."
 
-#: nostr/ui/standup_confirm_sheet.py:64
+#: nostr/ui/standup_confirm_sheet.py:65
 msgid "Not confirmed"
 msgstr "Nicht bestätigt"
 
-#: nostr/ui/standup_confirm_sheet.py:65
+#: nostr/ui/standup_confirm_sheet.py:66
 msgid "A short question about the split: "
 msgstr "Kurze Frage zur Aufteilung: "
 
-#: nostr/ui/standup_confirm_sheet.py:108
-#: nostr/ui/standup_confirm_sheet.py:144
+#: nostr/ui/standup_confirm_sheet.py:109
+#: nostr/ui/standup_confirm_sheet.py:145
 msgid "Confirm Your Share"
 msgstr "Anteil bestätigen"
 
-#: nostr/ui/standup_confirm_sheet.py:182
+#: nostr/ui/standup_confirm_sheet.py:162
+msgid "Add Lightning Address…"
+msgstr "Lightning-Adresse eintragen …"
+
+#: nostr/ui/standup_confirm_sheet.py:190
 msgid "Confirm Share"
 msgstr "Anteil bestätigen"
 
-#: nostr/ui/standup_confirm_sheet.py:261
+#: nostr/ui/standup_confirm_sheet.py:260
 msgid "Confirming…"
 msgstr "Wird bestätigt …"
 
-#: nostr/ui/standup_confirm_sheet.py:199
+#: nostr/ui/standup_confirm_sheet.py:202
 #, python-brace-format
 msgid "The split: {shares}"
 msgstr "Die Aufteilung: {shares}"
@@ -13912,7 +13931,8 @@ msgid "Reload"
 msgstr "Erneut laden"
 
 #: nostr/ui/standup_privacy.py:30
-#: nostr/ui/standup_submit_sheet.py:307
+#: nostr/ui/standup_submit_sheet.py:327
+#: nostr/ui/standup_submit_sheet.py:335
 #: nostr/ui/submission_detail.py:749
 msgid "the publication"
 msgstr "der Publikation"
@@ -14004,15 +14024,15 @@ msgid_plural "at most {count} open submissions"
 msgstr[0] "höchstens {count} offene Einreichung"
 msgstr[1] "höchstens {count} offene Einreichungen"
 
-#: nostr/ui/standup_publish.py:647
+#: nostr/ui/standup_publish.py:654
 msgid "Taking the correction…"
 msgstr "Wird übernommen …"
 
-#: nostr/ui/standup_publish.py:648
+#: nostr/ui/standup_publish.py:655
 msgid "Correction taken."
 msgstr "Korrektur übernommen."
 
-#: nostr/ui/standup_publish.py:649
+#: nostr/ui/standup_publish.py:656
 msgid "Correction not taken"
 msgstr "Korrektur nicht übernommen"
 
@@ -14115,7 +14135,7 @@ msgid "Will be sent again as version {number}."
 msgstr "Wird erneut als Fassung {number} gesendet."
 
 #: nostr/ui/standup_revise_sheet.py:62
-#: nostr/ui/standup_submit_sheet.py:326
+#: nostr/ui/standup_submit_sheet.py:353
 msgid "I have the rights to the text and the pictures."
 msgstr "Ich habe die Rechte an Text und Bildern."
 
@@ -14171,69 +14191,75 @@ msgid_plural "{count} other submissions stopped as well."
 msgstr[0] "{count} weitere Einreichung wurde ebenfalls angehalten."
 msgstr[1] "{count} weitere Einreichungen wurden ebenfalls angehalten."
 
-#: nostr/ui/standup_submit_sheet.py:124
-#: nostr/ui/standup_submit_sheet.py:193
+#: nostr/ui/standup_submit_sheet.py:131
+#: nostr/ui/standup_submit_sheet.py:201
 msgid "Submit to a Publication"
 msgstr "Bei Publikation einreichen"
 
-#: nostr/ui/standup_submit_sheet.py:259
+#: nostr/ui/standup_submit_sheet.py:256
+msgid "Your profile has no name yet. Add one so others see who wrote it."
+msgstr "Dein Profil hat noch keinen Namen. Füge einen hinzu, damit andere sehen, wer den Text geschrieben hat."
+
+#: nostr/ui/standup_submit_sheet.py:279
 msgid "Submit"
 msgstr "Einreichen"
 
-#: nostr/ui/standup_submit_sheet.py:284
+#: nostr/ui/standup_submit_sheet.py:304
 #: nostr/ui/submission_detail.py:752
 msgid "Publication"
 msgstr "Publikation"
 
-#: nostr/ui/standup_submit_sheet.py:304
+#: nostr/ui/standup_submit_sheet.py:324
 msgid "To:"
 msgstr "An:"
 
-#: nostr/ui/standup_submit_sheet.py:306
+#: nostr/ui/standup_submit_sheet.py:326
 msgid "me"
 msgstr "mir"
 
-#: nostr/ui/standup_submit_sheet.py:324
+#: nostr/ui/standup_submit_sheet.py:350
 msgid "Published by:"
 msgstr "Veröffentlicht von:"
 
-#: nostr/ui/standup_submit_sheet.py:328
+#: nostr/ui/standup_submit_sheet.py:355
 msgid "Rights:"
 msgstr "Rechte:"
 
-#: nostr/ui/standup_submit_sheet.py:334
-#: nostr/ui/standup_submit_sheet.py:342
+#: nostr/ui/standup_submit_sheet.py:361
+#: nostr/ui/standup_submit_sheet.py:369
 msgid "Message to the Editorial Team"
 msgstr "Nachricht an die Redaktion"
 
-#: nostr/ui/standup_submit_sheet.py:341
+#: nostr/ui/standup_submit_sheet.py:368
 msgid "Optional. For example, why the text suits you."
 msgstr "Optional. Zum Beispiel, warum der Text zu euch passt."
 
-#: nostr/ui/standup_submit_sheet.py:254
+#: nostr/ui/standup_submit_sheet.py:274
 msgid "Submitting as"
 msgstr "Einreichen als"
 
-#: nostr/ui/standup_submit_sheet.py:254
+#: nostr/ui/standup_submit_sheet.py:274
 #, python-brace-format
 msgid "Submitting as {name}"
 msgstr "Einreichen als {name}"
 
-#: nostr/ui/standup_submit_sheet.py:483
+#: nostr/ui/standup_submit_sheet.py:535
 msgid "The server’s address comes from the association."
 msgstr "Die Adresse des Servers kommt vom Verein."
 
-#: nostr/ui/standup_submit_sheet.py:506
+#: nostr/ui/standup_submit_sheet.py:558
 msgid "No publication takes submissions right now."
 msgstr "Gerade nimmt keine Publikation Einreichungen an."
 
-#: nostr/ui/standup_submit_sheet.py:592
-msgid "After acceptance you publish it yourself, from your account."
-msgstr "Nach der Annahme veröffentlichst du selbst, von deinem Konto aus."
+#: nostr/ui/standup_submit_sheet.py:652
+#, python-brace-format
+msgid "{publication} publishes it under your name. Before that, you briefly confirm your share of the zaps."
+msgstr "{publication} veröffentlicht ihn unter deinem Namen. Vorher bestätigst du kurz deinen Anteil an den Zaps."
 
-#: nostr/ui/standup_submit_sheet.py:594
-msgid "At acceptance the editorial team proposes how zaps are split; you confirm it."
-msgstr "Die Redaktion schlägt bei der Annahme die Aufteilung der Zaps vor, du bestätigst sie."
+#: nostr/ui/standup_submit_sheet.py:655
+#, python-brace-format
+msgid "After acceptance you publish it yourself, and {publication} shows it on its own page."
+msgstr "Nach der Annahme veröffentlichst du ihn selbst, und {publication} zeigt ihn auf der eigenen Seite."
 
 #: nostr/ui/standup_talk.py:51
 msgid "Sending…"

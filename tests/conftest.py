@@ -101,6 +101,17 @@ def _backups_of_its_own(tmp_path_factory, monkeypatch):
     monkeypatch.setattr(recovery, "BACKUP_DIR", str(tmp_path_factory.mktemp("backups")))
 
 
+@pytest.fixture(autouse=True)
+def _no_association_server(request, monkeypatch):
+    """A window a test builds never talks to the association's STANDUP
+    server, which the app has built in: tests name their own, or none.
+    Only the test of that built-in address sees it."""
+    if request.module.__name__.endswith("test_standup_servers"):
+        return
+    from nostr.standup import servers
+    monkeypatch.setattr(servers, "DEFAULT_SERVER", "")
+
+
 def pytest_configure(config):
     if os.environ.get("MYEDITOR_TEST_AS") == "other":
         import alerts

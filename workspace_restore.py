@@ -400,7 +400,9 @@ def _set_in_tab(details, front) -> Optional[ArticleDetails]:
     own = from_front_matter(front)
     if tuple(tag.lower() for tag in own.hashtags) == restored.hashtags:
         restored = replace(restored, hashtags=own.hashtags)
-    return None if restored == own else restored
+    # The signer's place is no detail of the file (signer_place): known,
+    # it is kept.
+    return None if restored == own and restored.signer_place is None else restored
 
 
 def _dataclass_from(cls, data: dict):

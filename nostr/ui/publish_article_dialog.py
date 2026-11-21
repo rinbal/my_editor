@@ -65,7 +65,7 @@ from alerts import CANCEL, DEFAULT, NORMAL, Button, ask, answer_return_as_the_sy
 from constants import (
     DARK_BORDER, DARK_MENU_BG, DARK_MUTED_FG, LIGHT_BG, LIGHT_BORDER, LIGHT_MUTED_FG,
 )
-from i18n import N_, _, format_moment, ngettext
+from i18n import N_, _, format_moment, ngettext, pgettext
 
 from ..article_details import ArticleDetails, default_title
 from ..avatar_store import AvatarStore
@@ -381,6 +381,9 @@ class PublishArticleDialog(QDialog):
         self._file_names = (own_names if own_names and not self._details.identifier
                             and default_slug not in own_names else [])
         self._slug_typed = False
+        # No relay took the last publish: the button is Try Again until
+        # the next one (_button_label; set before _build, which names it).
+        self._try_again = False
 
         self._build(active_profile, default_title, default_slug)
         self._coauthors = Coauthors(profile=self._account.profile,
@@ -459,8 +462,8 @@ class PublishArticleDialog(QDialog):
 
         buttons = QDialogButtonBox()
         self._cancel_btn = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
-        self._publish_btn = (SplitActionButton(_("Publish"), dark=self._is_dark)
-                             if self._pair_source else QPushButton(_("Publish")))
+        self._publish_btn = (SplitActionButton(self._button_label(), dark=self._is_dark)
+                             if self._pair_source else QPushButton(self._button_label()))
         buttons.addButton(self._publish_btn, QDialogButtonBox.ButtonRole.AcceptRole)
         self._cancel_btn.clicked.connect(self._on_cancel)
         self._publish_btn.clicked.connect(self._on_publish)
@@ -720,6 +723,7 @@ class PublishArticleDialog(QDialog):
         # Typed: it no longer follows the title, and it is the person's.
         self._slug_is_auto = False
         self._slug_typed = True
+        self._try_again = False                     # another article: Publish or Update
         self._refresh_publish_enabled()
 
     def _slug(self) -> str:
@@ -773,6 +777,11 @@ class PublishArticleDialog(QDialog):
     def _on_account_switched(self, _profile: Profile) -> None:
         self._show_people()
         self._refresh_card()
+        self._try_again = False                         # another account's article
+        if self._publish_pair:                          # both are the owner's only
+            self._set_pair(True)
+        self._update_scope()
+        self._refresh_publish_enabled()                 # Update is the account's
 
     def _update_scope(self):
         if not self._language_context:
@@ -782,17 +791,25 @@ class PublishArticleDialog(QDialog):
         source_name = language_name(source.get("language", "")) or _("Original")
         if self._publish_pair:
             words = _("{source} and {target} will be public.").format(source=source_name, target=target)
-            button = _("Publish {source} and {target}").format(source=source_name, target=target)
         elif source and not source.get("public") and not (source.get("address") and source.get("eventId")):
             words = _("{target} will be public. {source} stays a draft.").format(target=target, source=source_name)
-            button = _("Publish {language}").format(language=target)
         else:
             words = _("{language} will be public.").format(language=target)
-            button = _("Publish {language}").format(language=target)
         if self._language_context.get("reference_unavailable") and not self._publish_pair:
             words += " " + _("Reference unavailable. Only this version will be published.")
         self._scope.setText(words)
-        self._publish_btn.setText(button)
+        self._publish_btn.setText(self._button_label())
+
+    def _pair_problem_words(self) -> str:
+        """Why both versions can't go out now: the original's own problem,
+        or an account that does not own them; "" when they can."""
+        if not self._pair_source:
+            return ""
+        if self._pair_source.get("problem"):
+            return self._pair_source["problem"]
+        if self._pair_source.get("owner") != self._account.profile().user_pubkey.lower():
+            return _("Use the account that owns these versions.")
+        return ""
 
     def _return_to_original(self):
         self.reject()
@@ -802,8 +819,8 @@ class PublishArticleDialog(QDialog):
         self._publish_pair = bool(enabled and self._pair_source)
         if self._source_card is not None:
             self._source_card.setVisible(self._publish_pair)
-        problem = self._pair_source.get("problem", "") if self._publish_pair else ""
-        self._pair_problem.setVisible(bool(problem))
+        problem = self._pair_problem_words() if self._publish_pair else ""
+        self._pair_problem.setVisible(bool(self._publish_pair and self._pair_source.get("problem")))
         self._set_status(problem, error=bool(problem))
         self._update_scope()
         self._refresh_publish_enabled()
@@ -852,6 +869,30 @@ class PublishArticleDialog(QDialog):
                                      and not self._cover.uploading())
         if self._pair_source:
             self._publication_options.setEnabled(self._job is None and not self._looking_up)
+        self._publish_btn.setText(self._button_label())
+
+    def _button_label(self) -> str:
+        """The one label of the Publish button: Try Again after no relay
+        took it; for a language version both languages when both go out,
+        else "Update German" or "Publish German"; otherwise Update for an
+        article this computer published before under the account and link
+        name of now (FirstPublications, G15d), else Publish."""
+        if self._try_again:
+            return _("Try Again")
+        record = self._first_publications
+        out = bool(record is not None
+                   and record.get(self._account.profile().user_pubkey, self._slug()))
+        if self._language_context:
+            target = language_name(self._details.language)
+            if self._publish_pair:
+                source = language_name(self._pair_source["details"].language) or _("Original")
+                return _("Publish {source} and {target}").format(
+                    source=source, target=target or _("This version"))
+            out = out or bool(self._language_context.get("expected_event_id"))
+            if target:
+                return (pgettext("an article published before", "Update {language}")
+                        if out else _("Publish {language}")).format(language=target)
+        return pgettext("an article published before", "Update") if out else _("Publish")
 
     def _set_status(self, text: str, *, error: bool = False) -> None:
         self._status.say(text, error=error)
@@ -1030,9 +1071,8 @@ class PublishArticleDialog(QDialog):
 
     def _publish(self, slug: str, body: str, published_at: int) -> None:
         profile = self._account.profile()
-        if self._publish_pair and (self._pair_source.get("problem")
-                                   or self._pair_source.get("owner") != profile.user_pubkey.lower()):
-            self._set_status(self._pair_source.get("problem") or _("Use the account that owns these versions."), error=True)
+        if self._publish_pair and self._pair_problem_words():
+            self._set_status(self._pair_problem_words(), error=True)
             return
         try:
             unsigned = build_article(
@@ -1060,8 +1100,9 @@ class PublishArticleDialog(QDialog):
 
         self._set_busy(True)
         self._set_status("")
-        self._publish_btn.setText(_("Publish"))
+        self._try_again = False
         self._update_scope()
+        self._publish_btn.setText(self._button_label())
         self._publishing = (slug, published_at)
         kept, self._not_taken = self._not_taken, None
         if kept is not None and same_event(kept.unsigned_event, unsigned) and kept.send_again():
@@ -1169,7 +1210,8 @@ class PublishArticleDialog(QDialog):
         the signer app answered only in the tooltip (lessons 36)."""
         self._status.say(sentence or signer_failure_words(detail),
                          title=_(ARTICLE_NOT_PUBLISHED), error=True, detail=detail)
-        self._publish_btn.setText(_("Try Again"))
+        self._try_again = True
+        self._publish_btn.setText(self._button_label())
         self._set_busy(False)
 
     def _on_cancel(self) -> None:
