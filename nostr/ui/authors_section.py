@@ -17,9 +17,10 @@ A list you add to and remove from, as a Mac's settings have them (Users,
 Login Items): the list, then + and − under it, then the controls for the
 row selected. Each person's share is said once, in the list; the slider
 and the exact value beside it (Apple's guidelines pair a slider with a
-field for a precise value) change the selected co-author's. You come
-first and keep what the others leave, so the shares always add up to
-100 % (nostr/zap_shares.py). A co-author is credited and receives nothing
+field for a precise value) change the selected co-author's. The list is
+in the order the article is published with (ArticleDetails.authors),
+you first when it names no place for you. You keep what the others
+leave, so the shares always add up to 100 % (nostr/zap_shares.py). A co-author is credited and receives nothing
 until given a share; one whose profile has no lightning address can't be
 paid, and the controls say so. The line under them only says what is
 true, and only while zaps are shared: whether a zap is split depends on
@@ -101,6 +102,13 @@ class AuthorsSection(QWidget):
         # Delete removes the selected co-author, as in a Mac's lists.
         self.table.installEventFilter(self)
         column.addWidget(self.table)
+        # An article that names its co-authors and not the account's own
+        # person (signer_place -1): said, quietly, where your row would be.
+        self.unnamed = QLabel(_("This article doesn’t list you by name."), self)
+        self.unnamed.setObjectName("article_details_hint")
+        self.unnamed.setWordWrap(True)
+        self.unnamed.hide()
+        column.addWidget(self.unnamed)
 
         buttons = QHBoxLayout()
         buttons.setContentsMargins(0, 0, 0, 0)
@@ -176,9 +184,15 @@ class AuthorsSection(QWidget):
         # short key only while the account has none.
         you = (_("{name} · you").format(name=self._own_name() or self._name_of(own))
                if own else _("You"))
-        people: List[tuple] = [("", you, zap_shares.author_share(shares))]
-        people += [(pubkey, self._name_of(pubkey), shares.get(pubkey, 0))
-                   for pubkey, _hint in details.coauthors]
+        # In the order the article is published with (ArticleDetails.authors);
+        # without an account or co-authors, you, then them.
+        order = (details.authors((own, "")) if own and details.coauthors
+                 else [(own, "")] + list(details.coauthors))
+        people: List[tuple] = [
+            ("", you, zap_shares.author_share(shares)) if pubkey == own
+            else (pubkey, self._name_of(pubkey), shares.get(pubkey, 0))
+            for pubkey, _hint in order]
+        self.unnamed.setVisible(not any(pubkey == "" for pubkey, _n, _s in people))
         self.table.blockSignals(True)
         self.table.setRowCount(len(people))
         for row, (pubkey, name, share) in enumerate(people):
@@ -198,7 +212,8 @@ class AuthorsSection(QWidget):
         self.table.setFixedHeight(self.table.verticalHeader().length() + 2 * self.table.frameWidth()
                                   if rows else 0)
         chosen = self._chosen if any(p == self._chosen for p, _n, _s in people) else None
-        keep = chosen if chosen is not None else (people[1][0] if len(people) > 1 else "")
+        first = next((p for p, _n, _s in people if p), "")      # the first co-author
+        keep = chosen if chosen is not None else first
         self.table.selectRow(next(i for i, (p, _n, _s) in enumerate(people) if p == keep))
         self.table.blockSignals(False)
         self.add_button.setEnabled(self._pick_person is not None and editable)

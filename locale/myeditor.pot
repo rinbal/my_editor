@@ -9121,7 +9121,7 @@ msgid "Version {number} by {name}"
 msgstr ""
 
 #: nostr/standup/thread.py:171
-#: nostr/ui/authors_section.py:178
+#: nostr/ui/authors_section.py:186
 #: nostr/ui/standup_confirm_sheet.py:196
 #: nostr/ui/submission_thread.py:147
 msgid "You"
@@ -9949,7 +9949,7 @@ msgid "Cover"
 msgstr ""
 
 #: nostr/ui/article_details_panel.py:239
-#: nostr/ui/authors_section.py:81
+#: nostr/ui/authors_section.py:82
 msgid "Authors"
 msgstr ""
 
@@ -10040,55 +10040,59 @@ msgstr ""
 msgid "Step {number}, failed"
 msgstr ""
 
-#: nostr/ui/authors_section.py:108
+#: nostr/ui/authors_section.py:107
+msgid "This article doesn’t list you by name."
+msgstr ""
+
+#: nostr/ui/authors_section.py:116
 #: nostr/ui/publish_article_dialog.py:494
 msgid "Add Co-Author…"
 msgstr ""
 
-#: nostr/ui/authors_section.py:110
+#: nostr/ui/authors_section.py:118
 msgid "Remove Co-Author"
 msgstr ""
 
-#: nostr/ui/authors_section.py:115
+#: nostr/ui/authors_section.py:123
 msgid "Split Evenly"
 msgstr ""
 
-#: nostr/ui/authors_section.py:119
+#: nostr/ui/authors_section.py:127
 msgid "Give you and every co-author who can be paid an equal share of the zaps."
 msgstr ""
 
-#: nostr/ui/authors_section.py:148
+#: nostr/ui/authors_section.py:156
 msgid "Apps with zap splits pay each share; others pay you."
 msgstr ""
 
-#: nostr/ui/authors_section.py:149
+#: nostr/ui/authors_section.py:157
 msgid "Apps that support zap splits, like Amethyst and noStrudel, pay each person their share. Other apps pay you."
 msgstr ""
 
-#: nostr/ui/authors_section.py:143
+#: nostr/ui/authors_section.py:151
 msgid "Share of the zaps"
 msgstr ""
 
-#: nostr/ui/authors_section.py:177
+#: nostr/ui/authors_section.py:185
 #, python-brace-format
 msgid "{name} · you"
 msgstr ""
 
-#: nostr/ui/authors_section.py:192
+#: nostr/ui/authors_section.py:206
 msgid "No lightning address in their profile, so they can’t be paid a share."
 msgstr ""
 
-#: nostr/ui/authors_section.py:233
+#: nostr/ui/authors_section.py:248
 msgid "You keep what the others leave."
 msgstr ""
 
-#: nostr/ui/authors_section.py:245
-#: nostr/ui/authors_section.py:252
+#: nostr/ui/authors_section.py:260
+#: nostr/ui/authors_section.py:267
 #, python-brace-format
 msgid "Share for {name}"
 msgstr ""
 
-#: nostr/ui/authors_section.py:241
+#: nostr/ui/authors_section.py:256
 #, python-brace-format
 msgid "{name} has no lightning address in their profile, so they can’t be paid a share."
 msgstr ""

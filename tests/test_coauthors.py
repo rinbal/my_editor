@@ -320,6 +320,52 @@ def test_the_signer_is_written_first_so_standup_credits_the_writer():
     assert not [tag for tag in alone if tag[0] == "p"]
 
 
+GUEST, PUB = BOB, "d4" * 32
+
+
+def _authors_in(tags):
+    return [tag[1] for tag in tags if tag[0] == "p" and tag[3] == "author"]
+
+
+def test_an_article_published_by_its_publication_keeps_its_authors_order():
+    # G15c: PUB signed [GUEST, CAROL]; published again, and after a restart.
+    signed = [["d", "x"], ["p", GUEST, "", "author"], ["p", CAROL, "", "author"]]
+    details = ArticleDetails.from_tags(signed, signer=PUB)
+    assert _authors_in(details.published_tags("Body", author=(PUB, ""))) == [GUEST, CAROL]
+    restarted = ArticleDetails.from_tags(details.tags())
+    assert _authors_in(restarted.published_tags("Body", author=(PUB, ""))) == [GUEST, CAROL]
+
+
+def test_co_authors_kept_for_a_restart_without_a_place_still_put_the_signer_first():
+    # B2: no signer given, no place written: not known, so the signer first.
+    details = ArticleDetails.from_tags(ArticleDetails(coauthors=((BOB, ""),)).tags())
+    assert _authors_in(details.published_tags("Body", author=(ME, ""))) == [ME, BOB]
+
+
+def test_a_files_co_authors_with_the_own_address_keep_its_place():
+    # S7: the file's front matter names BOB, then the own address.
+    front, _text = front_matter.split(
+        f"---\ncoauthors:\n  - {bech32.encode_npub(BOB)}\n  - {bech32.encode_npub(ME)}\n---\n")
+    details = from_front_matter(front)
+    assert _authors_in(details.published_tags("Body", author=(ME, RELAY))) == [BOB, ME]
+
+
+def test_the_authors_section_shows_the_order_published():
+    # S8: as the tags of an article PUB signed; and one that names its
+    # account at the second place.
+    named = ArticleDetails.from_tags([["p", GUEST, "", "author"], ["p", CAROL, "", "author"]],
+                                     signer=ME)
+    panel, _sent, _asked = panel_with(named)
+    section = authors(panel)
+    assert list(section.shares_shown()) == [GUEST, CAROL]
+    assert section.unnamed.isVisibleTo(panel)
+    second = ArticleDetails.from_tags([["p", GUEST, "", "author"], ["p", ME, "", "author"],
+                                       ["p", CAROL, "", "author"]], signer=ME)
+    panel, _sent, _asked = panel_with(second)
+    assert list(authors(panel).shares_shown()) == [GUEST, "", CAROL]
+    assert not authors(panel).unnamed.isVisibleTo(panel)
+
+
 def test_a_profile_no_relay_answered_is_asked_again_with_backoff():
     """No relay answering is no answer: the lookup is asked again, waiting
     longer each time as the relays' own reconnecting does, up to its
