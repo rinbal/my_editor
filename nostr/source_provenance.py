@@ -311,7 +311,9 @@ class SourceCheck(QObject):
                                                  or current and self._was_deleted(current, self._address)))
             self._unavailable()
             return
-        if event.get('content') != self._source.get('content'):
+        # The id fixes the text; a reference kept without its text (left
+        # out of a draft that would be too long, red-a-4) is read back here.
+        if 'content' in self._source and event.get('content') != self._source.get('content'):
             self._unavailable()
             return
         self._observed_source, self._current = event, current

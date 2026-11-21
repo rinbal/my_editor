@@ -64,6 +64,17 @@ def test_exact_source_observed_publicly_is_verified_even_without_embedded_event(
     assert not result['changed']
 
 
+def test_a_reference_kept_without_its_text_is_read_back_by_its_id():
+    # me68-red-a-4: a draft too long for the original's text keeps only
+    # its fingerprint; the public original still confirms it.
+    event = signed(30023, [['d', 'source']], 'Published original')
+    snapshot = source(event)
+    snapshot.pop('event')
+    snapshot.pop('content')
+    result, _op = check(snapshot, event)
+    assert result['available'] and result['event'] == event
+
+
 def test_source_pin_stays_old_and_only_translatable_changes_need_review():
     old = signed(30023, [['d', 'source'], ['title', 'Title']], 'Original')
     metadata_edit = signed(30023, [['d', 'source'], ['title', 'Title'], ['t', 'new']], 'Original', created_at=old['created_at'] + 1)
