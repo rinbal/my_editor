@@ -317,6 +317,19 @@ def test_a_failure_is_said_in_red_and_publish_can_be_tried_again(tmp_path, captu
     assert sheet._publish_btn.isEnabled() and sheet._publish_btn.text() == "Try Again"
 
 
+def test_an_article_this_computer_published_says_update_and_try_again_after_a_failure(
+        tmp_path, captured):
+    # G15d: by this computer's record for the account and the link name.
+    from nostr.first_publications import FirstPublications
+    record = FirstPublications(tmp_path / "first.json")
+    record.remember(PK, "t", 1_700_000_000)
+    sheet = article(tmp_path, default_title="T", default_slug="t", first_publications=record)
+    assert sheet._publish_btn.text() == "Update"
+    sheet._publish("t", sheet._body, 1_700_000_000)
+    sheet._on_completed([("wss://a.example", False, "publish timeout")])
+    assert sheet._publish_btn.text() == "Try Again"
+
+
 def _start(sheet):
     """Press Publish on either sheet; the article's date is known."""
     if isinstance(sheet, article_module.PublishArticleDialog):

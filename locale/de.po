@@ -22,12 +22,12 @@ msgstr "Details"
 
 #: alerts.py:213
 #: alerts.py:220
-#: nostr/ui/publish_article_dialog.py:586
+#: nostr/ui/publish_article_dialog.py:589
 msgid "Show Details"
 msgstr "Details einblenden"
 
 #: alerts.py:220
-#: nostr/ui/publish_article_dialog.py:586
+#: nostr/ui/publish_article_dialog.py:589
 msgid "Hide Details"
 msgstr "Details ausblenden"
 
@@ -2286,7 +2286,7 @@ msgstr "Ein anderer Export lädt noch seine Bilder."
 #: nostr/ui/article_details_panel.py:213
 #: nostr/ui/article_header.py:258
 #: nostr/ui/article_header.py:306
-#: nostr/ui/publish_article_dialog.py:454
+#: nostr/ui/publish_article_dialog.py:457
 #: nostr/ui/stash_kind_dialog.py:319
 msgid "Title"
 msgstr "Titel"
@@ -2294,7 +2294,7 @@ msgstr "Titel"
 #: main_window.py:5803
 #: nostr/ui/article_details_panel.py:218
 #: nostr/ui/article_header.py:266
-#: nostr/ui/publish_article_dialog.py:461
+#: nostr/ui/publish_article_dialog.py:464
 msgid "Summary"
 msgstr "Zusammenfassung"
 
@@ -2308,13 +2308,13 @@ msgstr "Titelbild"
 #: main_window.py:5804
 #: nostr/ui/article_details_panel.py:233
 #: nostr/ui/article_details_panel.py:235
-#: nostr/ui/publish_article_dialog.py:467
+#: nostr/ui/publish_article_dialog.py:470
 msgid "Hashtags"
 msgstr "Hashtags"
 
 #: main_window.py:5804
 #: nostr/ui/article_details_panel.py:263
-#: nostr/ui/publish_article_dialog.py:512
+#: nostr/ui/publish_article_dialog.py:515
 #: nostr/ui/stash_kind_dialog.py:327
 msgid "Link name"
 msgstr "Linkname"
@@ -7430,7 +7430,7 @@ msgstr "Das Passwort ist falsch."
 
 #: nostr/preview.py:525
 #: nostr/ui/drafts_preview.py:469
-#: nostr/ui/publish_article_dialog.py:646
+#: nostr/ui/publish_article_dialog.py:649
 #, python-brace-format
 msgid "{n} min read"
 msgid_plural "{n} min read"
@@ -9946,7 +9946,7 @@ msgstr "Alle Details bleiben so, wie sie in der Datei stehen: MyEditor kann dere
 
 #: nostr/ui/article_details_panel.py:212
 #: nostr/ui/article_details_panel.py:506
-#: nostr/ui/publish_article_dialog.py:453
+#: nostr/ui/publish_article_dialog.py:456
 #: nostr/ui/stash_kind_dialog.py:316
 msgid "Article title"
 msgstr "Titel des Artikels"
@@ -9978,13 +9978,13 @@ msgid "Check Again"
 msgstr "Erneut prüfen"
 
 #: nostr/ui/article_details_panel.py:322
-#: nostr/ui/publish_article_dialog.py:771
+#: nostr/ui/publish_article_dialog.py:786
 #: nostr/ui/stash_kind_dialog.py:232
 msgid "Kept as written in the file."
 msgstr "Bleibt so, wie es in der Datei steht."
 
 #: nostr/ui/article_details_panel.py:515
-#: nostr/ui/publish_article_dialog.py:547
+#: nostr/ui/publish_article_dialog.py:550
 msgid "Not published yet."
 msgstr "Noch nicht veröffentlicht."
 
@@ -9997,13 +9997,13 @@ msgid "Check"
 msgstr "Prüfen"
 
 #: nostr/ui/article_details_panel.py:567
-#: nostr/ui/publish_article_dialog.py:511
+#: nostr/ui/publish_article_dialog.py:514
 #: nostr/ui/stash_kind_dialog.py:323
 msgid "my-article"
 msgstr "mein-artikel"
 
 #: nostr/ui/article_details_panel.py:513
-#: nostr/ui/publish_article_dialog.py:545
+#: nostr/ui/publish_article_dialog.py:548
 #, python-brace-format
 msgid "First published {moment}"
 msgstr "Zuerst veröffentlicht am {moment}"
@@ -10057,7 +10057,7 @@ msgid "This article doesn’t list you by name."
 msgstr "Dieser Artikel nennt dich nicht mit Namen."
 
 #: nostr/ui/authors_section.py:116
-#: nostr/ui/publish_article_dialog.py:494
+#: nostr/ui/publish_article_dialog.py:497
 msgid "Add Co-Author…"
 msgstr "Mitautor hinzufügen …"
 
@@ -12816,7 +12816,7 @@ msgid "This computer couldn’t write the file there: choose another place and t
 msgstr "Dieser Computer konnte die Datei dort nicht schreiben: Wähle einen anderen Ort und versuche es erneut."
 
 #: nostr/ui/mention_picker.py:227
-#: nostr/ui/publish_article_dialog.py:498
+#: nostr/ui/publish_article_dialog.py:501
 #: nostr/ui/publish_note_dialog.py:293
 msgid "People"
 msgstr "Personen"
@@ -13029,12 +13029,57 @@ msgid "Your article wasn’t published"
 msgstr "Dein Artikel wurde nicht veröffentlicht"
 
 #: nostr/ui/publish_article_dialog.py:284
-#: nostr/ui/publish_article_dialog.py:401
+#: nostr/ui/publish_article_dialog.py:404
 msgid "Publish as Article"
 msgstr "Als Artikel veröffentlichen"
 
-#: nostr/ui/publish_article_dialog.py:424
-#: nostr/ui/publish_article_dialog.py:949
+#: nostr/ui/publish_article_dialog.py:459
+msgid "Title:"
+msgstr "Titel:"
+
+#: nostr/ui/publish_article_dialog.py:463
+msgid "Short summary (one sentence)"
+msgstr "Kurze Zusammenfassung (ein Satz)"
+
+#: nostr/ui/publish_article_dialog.py:466
+msgid "Summary:"
+msgstr "Zusammenfassung:"
+
+#: nostr/ui/publish_article_dialog.py:471
+msgid "Hashtags:"
+msgstr "Hashtags:"
+
+#: nostr/ui/publish_article_dialog.py:495
+msgid "Cover image:"
+msgstr "Titelbild:"
+
+#: nostr/ui/publish_article_dialog.py:503
+#: nostr/ui/publish_note_dialog.py:289
+msgid "People:"
+msgstr "Personen:"
+
+#: nostr/ui/publish_article_dialog.py:534
+msgid "A saved or published article keeps its link name; publishing it under another one makes another article."
+msgstr "Ein gespeicherter oder veröffentlichter Artikel behält seinen Linknamen; unter einem anderen veröffentlicht, wird er ein anderer Artikel."
+
+#: nostr/ui/publish_article_dialog.py:541
+msgid "Link name:"
+msgstr "Linkname:"
+
+#: nostr/ui/publish_article_dialog.py:543
+msgid "Cover image address"
+msgstr "Adresse des Titelbilds"
+
+#: nostr/ui/publish_article_dialog.py:545
+msgid "Cover image address:"
+msgstr "Adresse des Titelbilds:"
+
+#: nostr/ui/publish_article_dialog.py:773
+msgctxt "an article published before"
+msgid "Update"
+msgstr "Aktualisieren"
+
+#: nostr/ui/publish_article_dialog.py:773
 #: nostr/ui/publish_note_dialog.py:304
 #: nostr/ui/publish_note_dialog.py:395
 #: nostr/ui/standup_correction_sheet.py:180
@@ -13043,74 +13088,33 @@ msgstr "Als Artikel veröffentlichen"
 msgid "Publish"
 msgstr "Veröffentlichen"
 
-#: nostr/ui/publish_article_dialog.py:456
-msgid "Title:"
-msgstr "Titel:"
-
-#: nostr/ui/publish_article_dialog.py:460
-msgid "Short summary (one sentence)"
-msgstr "Kurze Zusammenfassung (ein Satz)"
-
-#: nostr/ui/publish_article_dialog.py:463
-msgid "Summary:"
-msgstr "Zusammenfassung:"
-
-#: nostr/ui/publish_article_dialog.py:468
-msgid "Hashtags:"
-msgstr "Hashtags:"
-
-#: nostr/ui/publish_article_dialog.py:492
-msgid "Cover image:"
-msgstr "Titelbild:"
-
-#: nostr/ui/publish_article_dialog.py:500
-#: nostr/ui/publish_note_dialog.py:289
-msgid "People:"
-msgstr "Personen:"
-
-#: nostr/ui/publish_article_dialog.py:531
-msgid "A saved or published article keeps its link name; publishing it under another one makes another article."
-msgstr "Ein gespeicherter oder veröffentlichter Artikel behält seinen Linknamen; unter einem anderen veröffentlicht, wird er ein anderer Artikel."
-
-#: nostr/ui/publish_article_dialog.py:538
-msgid "Link name:"
-msgstr "Linkname:"
-
-#: nostr/ui/publish_article_dialog.py:540
-msgid "Cover image address"
-msgstr "Adresse des Titelbilds"
-
-#: nostr/ui/publish_article_dialog.py:542
-msgid "Cover image address:"
-msgstr "Adresse des Titelbilds:"
-
-#: nostr/ui/publish_article_dialog.py:829
+#: nostr/ui/publish_article_dialog.py:844
 msgid "Checking whether this article was published before…"
 msgstr "Prüfe, ob dieser Artikel schon veröffentlicht wurde …"
 
-#: nostr/ui/publish_article_dialog.py:898
+#: nostr/ui/publish_article_dialog.py:913
 msgid "If it went out before, publishing it as new gives it today’s date: try again, or publish it as new."
 msgstr "Falls er schon einmal erschienen ist, bekommt er als neuer Artikel das heutige Datum: Versuche es noch einmal, oder veröffentliche ihn als neu."
 
-#: nostr/ui/publish_article_dialog.py:903
+#: nostr/ui/publish_article_dialog.py:918
 msgid "Couldn't check whether this article was published before"
 msgstr "Es konnte nicht geprüft werden, ob dieser Artikel schon veröffentlicht wurde"
 
-#: nostr/ui/publish_article_dialog.py:891
+#: nostr/ui/publish_article_dialog.py:906
 #, python-brace-format
 msgid "Earlier versions of MyEditor published this file as “{name}”, and another name makes a second article: try again, or choose the name to publish it under."
 msgstr "Frühere Versionen von MyEditor haben diese Datei als „{name}“ veröffentlicht, und ein anderer Name ergibt einen zweiten Artikel: Versuche es noch einmal, oder wähle den Namen, unter dem er erscheinen soll."
 
-#: nostr/ui/publish_article_dialog.py:900
+#: nostr/ui/publish_article_dialog.py:915
 msgid "Publish as New"
 msgstr "Als neu veröffentlichen"
 
-#: nostr/ui/publish_article_dialog.py:940
+#: nostr/ui/publish_article_dialog.py:955
 msgid "Something in Article Details can’t be used: check it and try again."
 msgstr "Etwas in den Artikeldetails lässt sich nicht verwenden: Prüfe sie und versuche es noch einmal."
 
-#: nostr/ui/publish_article_dialog.py:894
-#: nostr/ui/publish_article_dialog.py:896
+#: nostr/ui/publish_article_dialog.py:909
+#: nostr/ui/publish_article_dialog.py:911
 #, python-brace-format
 msgid "Publish as “{name}”"
 msgstr "Als „{name}“ veröffentlichen"
