@@ -42,3 +42,17 @@ The latest complete affected UI/model/front-matter/draft batch passed 782 cases.
 Ten actual Cocoa client captures live in the workspace's `WorkPictures/multilingual-implementation/`. `native-manifest.json` records macOS, Qt/PySide, production Fusion/AppStyle and stylesheet guard, scale, logical dimensions, source hashes and synthetic fixture provenance. Captures cover writing, Khmer search, normal and paired publication in Light/Dark, plus narrow writing/reference. They were inspected; placeholder cover blocks, initial equal-width panes and clipped pair previews found during inspection were corrected and recaptured.
 
 The fixture uses an isolated home, a synthetic profile provider and example documents. It invokes no signer and publishes no events. These are native Cocoa client captures, not evidence of VoiceOver, real signer interaction, other operating systems, native frame parity or a seven-client interoperability audit. The capture log reports Qt's Apple-system-font OpenType fallback warning for Khmer; the native popup renders readable Khmer glyphs. Real external-signer and cross-platform acceptance remain separately identified integration checks.
+
+## PR integration review — 2026-11-21
+
+An adversarial reviewer and a separate integrator reproduced and resolved the remaining native integration findings:
+
+- Independently confirmed incoming backlinks retain their established root even when that root has no local document. Conflicting proven roots remain unresolved.
+- Publication receipts update the intended document or the same group’s source under the signing owner. An unrelated imported document with the same bare identifier cannot receive that receipt. A first identifier assigned in the publication sheet still updates its intended document.
+- Optional private ownership omitted or empty in a restored record adopts the selected account; an explicit different owner remains protected. This adoption never proves a public relationship.
+- Exact event-ID deletions apply irrespective of clock skew; address deletions retain their timestamp cutoff, matching [NIP-09](https://github.com/nostr-protocol/nips/blob/master/09.md). The publication preflight reuses this same availability verifier.
+- A late application-focus callback safely ignores a destroyed Qt object.
+
+The final 115-case source-proof, actual-window receipt/restoration, authoring, journal and publication-sheet batch passed without the teardown error. German/English translation completeness and whitespace checks passed. These fixes extend existing ownership and verifier boundaries; they introduce no second routing, recovery or signing subsystem.
+
+[Actual Light/Dark evidence](https://github.com/DoktorShift/my_editor/tree/1aa32be7d60a5e528c9abc250f85ad8d9c071ce7/multilingual-articles) identifies the capture revision `29c38cee`. The later corrections above do not change the captured composition; the original capture hashes are retained rather than labeling a newer commit as captured.

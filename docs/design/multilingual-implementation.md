@@ -6,7 +6,7 @@ The owner approved the reviewed design for implementation on 2026-11-21. The two
 
 - MyEditor: `feat/multilingual-articles`, based on `rinbal/dev` at `a88c403a4d4ce99cfc00874d33c5940e28530787`.
 - STANDUP: `feat/multilingual-articles`, based on official `main` at `ebcfc35aa69474d37e353290dd9d1bc695240a27`.
-- Local worktrees: `/Users/drshift/projects/my_editor-multilingual` and `/Users/drshift/projects/standup_working-multilingual`. The original working copies retain their previous branches and files.
+- The implementation uses isolated sibling worktrees on `feat/multilingual-articles`; the original working copies retain their previous branches and files.
 - No production database, real keys, live Nostr publication, deployment, merge or release tag was used for verification.
 
 ## Maintenance boundaries
@@ -55,7 +55,7 @@ The native reference stays on the right, preserving the primary editor's existin
 
 ## Activation and recovery
 
-This candidate is not a production release. STANDUP's official main deploys automatically; release preparation must follow `RELEASING.md`, including one coordinated version bump, dated notes and the release check against official main. MyEditor must follow its own native release process.
+The STANDUP PR prepares version 1.15.0 with dated notes, migration/backfill instructions and the release check against official main. Its official main deploys automatically; opening the PR does not authorize merging or activation. MyEditor must follow its own native release process.
 
 Before activation, apply additive database migrations `e01a21000114` and `e01a21000115` on a backup/test database and run the bounded public-evidence backfill. Deploy compatible public readers/server and web creator together; upgrade publication capabilities through their existing signed settings action. Do not automatically re-sign existing publication keys. Deploy the matching native candidate after the server path is available.
 
