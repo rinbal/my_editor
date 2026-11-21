@@ -13667,7 +13667,8 @@ msgid "Reload"
 msgstr "Erneut laden"
 
 #: nostr/ui/standup_privacy.py:30
-#: nostr/ui/standup_submit_sheet.py:307
+#: nostr/ui/standup_submit_sheet.py:309
+#: nostr/ui/standup_submit_sheet.py:317
 #: nostr/ui/submission_detail.py:749
 msgid "the publication"
 msgstr "der Publikation"
@@ -13870,7 +13871,7 @@ msgid "Will be sent again as version {number}."
 msgstr "Wird erneut als Fassung {number} gesendet."
 
 #: nostr/ui/standup_revise_sheet.py:62
-#: nostr/ui/standup_submit_sheet.py:326
+#: nostr/ui/standup_submit_sheet.py:335
 msgid "I have the rights to the text and the pictures."
 msgstr "Ich habe die Rechte an Text und Bildern."
 
@@ -13926,69 +13927,71 @@ msgid_plural "{count} other submissions stopped as well."
 msgstr[0] "{count} weitere Einreichung wurde ebenfalls angehalten."
 msgstr[1] "{count} weitere Einreichungen wurden ebenfalls angehalten."
 
-#: nostr/ui/standup_submit_sheet.py:124
-#: nostr/ui/standup_submit_sheet.py:193
+#: nostr/ui/standup_submit_sheet.py:126
+#: nostr/ui/standup_submit_sheet.py:195
 msgid "Submit to a Publication"
 msgstr "Bei Publikation einreichen"
 
-#: nostr/ui/standup_submit_sheet.py:259
+#: nostr/ui/standup_submit_sheet.py:261
 msgid "Submit"
 msgstr "Einreichen"
 
-#: nostr/ui/standup_submit_sheet.py:284
+#: nostr/ui/standup_submit_sheet.py:286
 #: nostr/ui/submission_detail.py:752
 msgid "Publication"
 msgstr "Publikation"
 
-#: nostr/ui/standup_submit_sheet.py:304
+#: nostr/ui/standup_submit_sheet.py:306
 msgid "To:"
 msgstr "An:"
 
-#: nostr/ui/standup_submit_sheet.py:306
+#: nostr/ui/standup_submit_sheet.py:308
 msgid "me"
 msgstr "mir"
 
-#: nostr/ui/standup_submit_sheet.py:324
+#: nostr/ui/standup_submit_sheet.py:332
 msgid "Published by:"
 msgstr "Veröffentlicht von:"
 
-#: nostr/ui/standup_submit_sheet.py:328
+#: nostr/ui/standup_submit_sheet.py:337
 msgid "Rights:"
 msgstr "Rechte:"
 
-#: nostr/ui/standup_submit_sheet.py:334
-#: nostr/ui/standup_submit_sheet.py:342
+#: nostr/ui/standup_submit_sheet.py:343
+#: nostr/ui/standup_submit_sheet.py:351
 msgid "Message to the Editorial Team"
 msgstr "Nachricht an die Redaktion"
 
-#: nostr/ui/standup_submit_sheet.py:341
+#: nostr/ui/standup_submit_sheet.py:350
 msgid "Optional. For example, why the text suits you."
 msgstr "Optional. Zum Beispiel, warum der Text zu euch passt."
 
-#: nostr/ui/standup_submit_sheet.py:254
+#: nostr/ui/standup_submit_sheet.py:256
 msgid "Submitting as"
 msgstr "Einreichen als"
 
-#: nostr/ui/standup_submit_sheet.py:254
+#: nostr/ui/standup_submit_sheet.py:256
 #, python-brace-format
 msgid "Submitting as {name}"
 msgstr "Einreichen als {name}"
 
-#: nostr/ui/standup_submit_sheet.py:483
+#: nostr/ui/standup_submit_sheet.py:492
 msgid "The server’s address comes from the association."
 msgstr "Die Adresse des Servers kommt vom Verein."
 
-#: nostr/ui/standup_submit_sheet.py:506
+#: nostr/ui/standup_submit_sheet.py:515
 msgid "No publication takes submissions right now."
 msgstr "Gerade nimmt keine Publikation Einreichungen an."
 
-#: nostr/ui/standup_submit_sheet.py:592
-msgid "After acceptance you publish it yourself, from your account."
-msgstr "Nach der Annahme veröffentlichst du selbst, von deinem Konto aus."
+#: nostr/ui/standup_submit_sheet.py:609
+#, python-brace-format
+msgid "{publication} publishes it under your name. Before that, you briefly confirm your share of the zaps."
+msgstr "{publication} veröffentlicht ihn unter deinem Namen. Vorher bestätigst du kurz deinen Anteil an den Zaps."
 
-#: nostr/ui/standup_submit_sheet.py:594
-msgid "At acceptance the editorial team proposes how zaps are split; you confirm it."
-msgstr "Die Redaktion schlägt bei der Annahme die Aufteilung der Zaps vor, du bestätigst sie."
+#: nostr/ui/standup_submit_sheet.py:612
+#, python-brace-format
+msgid "After acceptance you publish it yourself, and {publication} shows it on its own page."
+msgstr "Nach der Annahme veröffentlichst du ihn selbst, und {publication} zeigt ihn auf der eigenen Seite."
 
 #: nostr/ui/standup_talk.py:51
 msgid "Sending…"

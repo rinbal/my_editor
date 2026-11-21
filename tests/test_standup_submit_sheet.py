@@ -256,11 +256,26 @@ def test_published_by_and_the_rights_show_only_where_they_are_asked_for(tmp_path
     assert sheet.choice().signer == "writer"
     sheet.picker.setCurrentIndex(1)
     assert sheet.by_me.isVisible() and sheet.rights.isVisible()
-    assert sheet.by_hint.text() == ("Nach der Annahme veröffentlichst du selbst, von deinem "
-                                    "Konto aus.")
+    assert sheet.by_hint.text() == ("Nach der Annahme veröffentlichst du ihn selbst, und "
+                                    "<b>Ein Blog</b> zeigt ihn auf der eigenen Seite.")
     sheet.by_publication.setChecked(True)
-    assert sheet.by_hint.text() == ("Die Redaktion schlägt bei der Annahme die Aufteilung der "
-                                    "Zaps vor, du bestätigst sie.")
+    assert sheet.by_hint.text() == ("<b>Ein Blog</b> veröffentlicht ihn unter deinem Namen. "
+                                    "Vorher bestätigst du kurz deinen Anteil an den Zaps.")
+    assert sheet.choice().signer == "publication"
+
+
+def test_published_by_says_the_publication_where_it_publishes(tmp_path):
+    # G15b: nothing to choose, and still said who publishes.
+    redaktion = _destination("redaktion", "Die <Redaktion>",
+                             publish_by={"article": "publication"})
+    sheet = _sheet(tmp_path, Writer(destinations=(redaktion,)))
+    sheet.show()
+    assert sheet.by_fixed.isVisible() and sheet.by_fixed.text() == "der Publikation"
+    assert not sheet.by_me.isVisible() and not sheet.by_publication.isVisible()
+    assert sheet._by_label.buddy() is sheet.by_fixed
+    assert sheet.by_hint.text() == ("<b>Die &lt;Redaktion&gt;</b> veröffentlicht ihn unter "
+                                    "deinem Namen. Vorher bestätigst du kurz deinen Anteil an "
+                                    "den Zaps.")
     assert sheet.choice().signer == "publication"
 
 

@@ -20,9 +20,10 @@ be taken back, publishing is public.
 **An** lists the publications open for submissions, the ones submitted
 to before first, each with its logo (its profile picture, or a monogram),
 and the rules of the chosen one under it; one that takes no articles is
-dimmed with the reason. **Veröffentlicht von** shows only when the
-publication lets the writer choose; the rights only when it asks for
-them. **Einreichen** is the default button, dimmed only by a blocker,
+dimmed with the reason. **Veröffentlicht von** is a choice when the
+publication lets the writer choose, and says "der Publikation" when the
+publication publishes; under it, who does what, as the guest post page
+says it. The rights show only when it asks for them. **Einreichen** is the default button, dimmed only by a blocker,
 whose reason is said above it (drafting.blockers, the Redaktion's key
 not confirmed, the server's address not known yet: "kommt vom Verein").
 
@@ -51,6 +52,7 @@ share its state, so the module is a little longer than most.
 
 from __future__ import annotations
 
+import html
 import time
 from dataclasses import replace
 from typing import Callable, List, Optional, Sequence
@@ -310,7 +312,12 @@ class SubmitSheet(QDialog):
         for button in (self.by_me, self.by_publication):
             group.addButton(button)
             button.toggled.connect(self._show_by_hint)
+        # Where the publication publishes, the row says so in words: there
+        # is nothing to choose (G15b).
+        self.by_fixed = QLabel(_("the publication"))
         self.by_hint = self._hint()
+        # The publication's name stands out (R1): bold, the name escaped.
+        self.by_hint.setTextFormat(Qt.TextFormat.RichText)
         by = QWidget()
         by_column = QVBoxLayout(by)
         by_column.setContentsMargins(0, 0, 0, 0)
@@ -318,10 +325,12 @@ class SubmitSheet(QDialog):
         radios = QHBoxLayout()
         radios.addWidget(self.by_me)
         radios.addWidget(self.by_publication)
+        radios.addWidget(self.by_fixed)
         radios.addStretch(1)
         by_column.addLayout(radios)
         by_column.addWidget(self.by_hint)
         self._by_row = row(_("Published by:"), self.by_me, by)
+        self._by_label = self._labels[-1]
 
         self.rights = QCheckBox(_("I have the rights to the text and the pictures."))
         self.rights.toggled.connect(self._refresh)
@@ -565,8 +574,13 @@ class SubmitSheet(QDialog):
         rules = destination.key.rules if destination is not None and destination.key else {}
         self.rules.setText(rules_words(rules) if destination is not None else "")
         self.rules.setVisible(bool(self.rules.text()))
-        self._form.setRowVisible(self._by_row, destination is not None
-                                 and publish_by(destination) == "both")
+        by = publish_by(destination) if destination is not None else ""
+        self._form.setRowVisible(self._by_row, by in ("both", "publication"))
+        for button in (self.by_me, self.by_publication):
+            button.setVisible(by == "both")
+        self.by_fixed.setVisible(by == "publication")
+        # VoiceOver reads "Published by:" with what shows beside it.
+        self._by_label.setBuddy(self.by_fixed if by == "publication" else self.by_me)
         self._form.setRowVisible(self._rights_row, bool(rules.get("rights_required")))
         self._arrange()                             # other rows, other room
         self._grow()
@@ -588,11 +602,15 @@ class SubmitSheet(QDialog):
     # -- what the person chooses ---------------------------------------------
 
     def _show_by_hint(self, *_args) -> None:
+        """Who publishes, in the words of the guest post page (R3)."""
+        choice = self.choice()
+        name = f"<b>{html.escape(choice.name)}</b>" if choice is not None else ""
         self.by_hint.setText(
-            _("After acceptance you publish it yourself, from your account.")
-            if self.by_me.isChecked()
-            else _("At acceptance the editorial team proposes how zaps are split; "
-                   "you confirm it."))
+            _("{publication} publishes it under your name. Before that, you briefly confirm "
+              "your share of the zaps.").format(publication=name)
+            if choice is not None and choice.signer == "publication"
+            else _("After acceptance you publish it yourself, and {publication} shows it on "
+                   "its own page.").format(publication=name))
 
     def _show_message(self, shown: bool) -> None:
         self.message_toggle.setArrowType(Qt.ArrowType.DownArrow if shown
