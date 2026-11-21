@@ -1495,11 +1495,15 @@ class DraftBulkDeleteJob(QObject):
 
 
 def _one_tag_per_person(tags: List[List[str]], signer: str = "") -> List[List[str]]:
-    """Credit authors first and retain distinct contributor roles for one key.
-
-    A translator who also authored the text needs both role declarations.
-    Inline mentions remain deduplicated and cannot displace an author.
-    """
+    """``tags`` with one ``p`` tag per person and role. The authors' tags
+    come first, where the first ``p`` tag stood, in the order the details
+    gave them (ArticleDetails.authors: the signer at its place, G15c), then
+    the translators: whoever reads the first author tag as the writer (the
+    editorial index, contract 10) never meets a person the text only
+    mentions before them (RG-M4-c 2). A translator who also wrote the text
+    keeps both roles. A co-author also mentioned in the text keeps the tag
+    that names them a co-author, with the mention's relay hint when that
+    one has none; a mention is never written twice."""
     hints: Dict[str, str] = {}
     for tag in tags:
         if tag and tag[0] == "p" and len(tag) >= 3 and tag[2]:
@@ -1512,7 +1516,7 @@ def _one_tag_per_person(tags: List[List[str]], signer: str = "") -> List[List[st
             if key not in seen_roles:
                 seen_roles.add(key)
                 roles.append([*tag[:2], tag[2] or hints.get(tag[1], ""), *tag[3:]])
-    roles.sort(key=lambda tag: (tag[3] != AUTHOR_MARKER, tag[1] != signer))
+    roles.sort(key=lambda tag: tag[3] != AUTHOR_MARKER)     # stable: authors keep order
     credited = {tag[1] for tag in roles}
     out: List[List[str]] = []
     placed = False
