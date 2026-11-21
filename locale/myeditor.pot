@@ -9122,13 +9122,13 @@ msgstr ""
 
 #: nostr/standup/thread.py:171
 #: nostr/ui/authors_section.py:186
-#: nostr/ui/standup_confirm_sheet.py:196
+#: nostr/ui/standup_confirm_sheet.py:195
 #: nostr/ui/submission_thread.py:147
 msgid "You"
 msgstr ""
 
 #: nostr/standup/thread.py:171
-#: nostr/ui/standup_confirm_sheet.py:196
+#: nostr/ui/standup_confirm_sheet.py:195
 #: nostr/ui/submission_detail.py:583
 #: nostr/ui/submission_detail.py:755
 #: nostr/ui/submission_thread.py:147
@@ -12958,7 +12958,7 @@ msgid "Edit Profile"
 msgstr ""
 
 #: nostr/ui/profile_window.py:219
-#: nostr/ui/standup_confirm_sheet.py:59
+#: nostr/ui/standup_confirm_sheet.py:60
 msgid "Reading your profile…"
 msgstr ""
 
@@ -13515,11 +13515,7 @@ msgid "Apps that support splits divide zaps this way."
 msgstr ""
 
 #: nostr/ui/standup_confirm_sheet.py:58
-msgid "For your share, your Nostr profile needs a Lightning address."
-msgstr ""
-
-#: nostr/ui/standup_confirm_sheet.py:60
-msgid "Your profile couldn’t be read, so it’s not known where your share goes."
+msgid "So zaps for your share reach you, add a Lightning address. You can also do this later."
 msgstr ""
 
 #: nostr/ui/standup_confirm_sheet.py:61
@@ -13553,11 +13549,11 @@ msgstr ""
 msgid "Confirm Share"
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:261
+#: nostr/ui/standup_confirm_sheet.py:256
 msgid "Confirming…"
 msgstr ""
 
-#: nostr/ui/standup_confirm_sheet.py:199
+#: nostr/ui/standup_confirm_sheet.py:198
 #, python-brace-format
 msgid "The split: {shares}"
 msgstr ""

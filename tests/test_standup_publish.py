@@ -715,7 +715,7 @@ def test_once_public_the_sheet_says_the_result_and_no_more_of_the_step_before(ac
 
 def test_the_confirm_and_publish_sheets_read_whole_at_their_minimum_size_in_german(accepted):
     # RG-M4-c 9: at its own minimum size, in German, no button clips and no
-    # wrapping line is cut (Profil bearbeiten …, Erneut versuchen, Q1).
+    # wrapping line is cut (Profil bearbeiten …, Q1).
     import i18n
     from PySide6.QtWidgets import QApplication, QLabel, QPushButton
     from nostr.ui.standup_confirm_sheet import ConfirmSheet
@@ -736,7 +736,7 @@ def test_the_confirm_and_publish_sheets_read_whole_at_their_minimum_size_in_germ
 
     i18n.install("de")
     try:
-        for address in ("", None):                   # Profil bearbeiten …, Erneut versuchen
+        for address in ("", None):                   # Profil bearbeiten …, not read
             sheet = ConfirmSheet(
                 role="writer", publication="Magazin", number=2,
                 shares=((pk("writer"), 70, "writer"), (pk("contributor"), 30, "contributor")),
