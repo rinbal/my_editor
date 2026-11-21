@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, List, Set
 
+import shiboken6
+
 from tests.outbox_fakes import FakePool, HandPool, settle
 
 
@@ -91,6 +93,8 @@ class Relays(HandPool):
             while self._answered < len(self.subs):
                 sub = self.subs[self._answered]
                 self._answered += 1
+                if not shiboken6.isValid(sub) or sub.is_closed:
+                    continue                    # closed or gone: nobody asks any more
                 kinds = {k for flt in sub.filters for k in flt.get("kinds", [])}
                 for url in sub.urls:
                     if url in self.silent:
