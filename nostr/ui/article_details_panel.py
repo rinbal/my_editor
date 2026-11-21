@@ -427,6 +427,7 @@ class ArticleDetailsPanel(QFrame):
             self.cover.set_owner(document, details.image)
             self._shown = details
             self._show_kept(kept_in_file)
+            self.language_button.setEnabled(not {"lang", "nostr_tags"} & (details.kept | self._kept))
             if not typed:
                 self._fill_fields(details)
             else:
@@ -479,7 +480,6 @@ class ArticleDetailsPanel(QFrame):
 
     def _fill_fields(self, details: ArticleDetails) -> None:
         self.language_button.setText(language_name(details.language) or _("Choose language…"))
-        self.language_button.setEnabled("lang" not in details.kept)
         self._set_text(self.title_edit, details.title)
         if self.summary_edit.toPlainText() != details.summary:
             self.summary_edit.setPlainText(details.summary)
