@@ -328,6 +328,10 @@ def test_an_article_this_computer_published_says_update_and_try_again_after_a_fa
     sheet._publish("t", sheet._body, 1_700_000_000)
     sheet._on_completed([("wss://a.example", False, "publish timeout")])
     assert sheet._publish_btn.text() == "Try Again"
+    # Red team K5: another link name is another article, never tried before.
+    sheet._slug_edit.setText("other")
+    sheet._slug_edit.textEdited.emit("other")
+    assert sheet._publish_btn.text() == "Publish"
 
 
 def _start(sheet):

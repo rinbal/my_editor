@@ -255,7 +255,8 @@ def _run(case, *, store=None, took=(True,), reread_hash=None, key_here=False, pr
         if url.endswith(case.entry["cipher_sha256"]) else on_failure("404"),
         job=job, key_here=lambda: key_here, serve=following.serve, reread=reread,
         held_at=held_at, clock=case.world.clock, cleanup=cleanup, unlisted=following.unlisted,
-        remember=remember, relays_hold=relays_hold or (lambda _unsigned, done: done({"wss://r.example": (True, [])})))
+        remember=remember,
+        relays_hold=relays_hold or (lambda _unsigned, done: done({"wss://r.example": (True, [])})))
     run = AcceptedPublish(sid=case.sid, profile=profile or case.writer.profile,
                           version=following.reading.latest(case.sid),
                           accepted=following.reading.accepted(case.sid),

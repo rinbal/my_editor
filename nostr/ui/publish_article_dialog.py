@@ -667,6 +667,7 @@ class PublishArticleDialog(QDialog):
         # Typed: it no longer follows the title, and it is the person's.
         self._slug_is_auto = False
         self._slug_typed = True
+        self._try_again = False                     # another article: Publish or Update
         self._refresh_publish_enabled()
 
     def _slug(self) -> str:
@@ -720,6 +721,7 @@ class PublishArticleDialog(QDialog):
     def _on_account_switched(self, _profile: Profile) -> None:
         self._show_people()
         self._refresh_card()
+        self._try_again = False                         # another account's article
         self._refresh_publish_enabled()                 # Update is the account's
 
     # -- state ------------------------------------------------------------------------
