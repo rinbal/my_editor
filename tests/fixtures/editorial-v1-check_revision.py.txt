@@ -1,0 +1,27 @@
+def check_revision(revision: Any, *, submission_id_: Optional[str] = None,
+                   revision_number: Optional[int] = None) -> dict:
+    """``revision`` when it has the contract's shape (5), else FormatError.
+    Unknown fields are left alone (readers ignore them)."""
+    need(isinstance(revision, dict), "a revision is an object")
+    need(revision.get("v") == 1, "revision version 1")
+    need(revision.get("type") == "standup-revision", "not a standup revision")
+    need(is_hex64(revision.get("submission_id")), "revision submission_id")
+    if submission_id_ is not None:
+        need(revision["submission_id"] == submission_id_, "a revision of another submission")
+    need(is_int(revision.get("revision"), low=1), "revision number")
+    if revision_number is not None:
+        need(revision["revision"] == revision_number, "another revision than the one named")
+    need(revision.get("kind") in KINDS, "revision kind")
+    _check_work(revision.get("work"))
+    _check_audio(revision.get("audio"), revision["kind"])
+    _check_people(revision.get("credits"), revision.get("rights"))
+    _check_checklist(revision.get("checklist"))
+    summary = revision.get("change_summary")
+    need(summary is None or isinstance(summary, str), "revision change_summary")
+    _check_thumb(revision.get("thumb"))
+    media = revision.get("media")
+    need(isinstance(media, list), "revision media")
+    for entry in media:
+        check_media_entry(entry)
+    _check_str(revision.get("client"), "revision client")
+    return revision

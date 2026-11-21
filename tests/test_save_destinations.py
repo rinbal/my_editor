@@ -62,6 +62,8 @@ class SaveWindow(_Window):
 
     def __init__(self, cache_dir):
         super().__init__(cache_dir)
+        # These save dispatch cases contain no linked language documents.
+        self._multilingual = types.SimpleNamespace(file_record=lambda _ed, _path: None)
         self._saved_stamps = {}
         self._ed = None
         self.status = types.SimpleNamespace(showMessage=lambda *a, **k: None)

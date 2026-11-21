@@ -2907,7 +2907,7 @@ class MainWindow(QMainWindow):
                               _("hashtags"))),
             toggled=self._show_article_details_panel)
         self.act_write_language = add(
-            Command("nostr.write_language", _("Write in another language…"), NOSTR,
+            Command("nostr.write_language", _("Write in Another Language…"), NOSTR,
                     nostr=True, keywords=(_("language"), _("translation"))),
             triggered=lambda: self._multilingual.choose())
         self.act_language_reference = add(

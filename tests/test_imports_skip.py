@@ -334,6 +334,7 @@ def test_the_edit_menu_follows_the_focused_field(window, monkeypatch):
         _on_field_changed = MainWindow._on_field_changed
         _update_clipboard_commands = MainWindow._update_clipboard_commands
         _update_undo_redo_buttons = MainWindow._update_undo_redo_buttons
+        _update_editor_commands = MainWindow._update_editor_commands
 
     host = Host()
     host.tabs, host.current_editor = QWidget(), lambda: document
