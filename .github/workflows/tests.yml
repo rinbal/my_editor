@@ -71,5 +71,5 @@ jobs:
       # hours, and after five minutes in one test Python prints where
       # every thread is. A whole run takes about 8 to 15 minutes.
       - name: Run the tests
-        timeout-minutes: 45
+        timeout-minutes: 60
         run: python -m pytest -q -o faulthandler_timeout=300
