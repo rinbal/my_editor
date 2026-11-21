@@ -350,6 +350,16 @@ def test_a_files_co_authors_with_the_own_address_keep_its_place():
     assert _authors_in(details.published_tags("Body", author=(ME, RELAY))) == [BOB, ME]
 
 
+def test_the_published_event_keeps_the_authors_order():
+    # G15c on the wire: read [GUEST, ME] signed by ME, published again.
+    details = ArticleDetails.from_tags([["p", GUEST, "", "author"], ["p", ME, "", "author"]],
+                                       signer=ME)
+    event = build_article(content="Body", pubkey_hex=ME, slug="x", title="T",
+                          extra_tags=details.published_tags("Body", author=(ME, "")))
+    assert _authors_in(event["tags"]) == [GUEST, ME]
+    assert standup_author(event["tags"], ME) == GUEST
+
+
 def test_a_co_author_removed_and_another_added_never_go_before_the_signer():
     # Red team B1 and S3: read [CAROL, ME], remove CAROL, add BOB.
     read = ArticleDetails.from_tags([["p", CAROL, "", "author"], ["p", ME, "", "author"]],
