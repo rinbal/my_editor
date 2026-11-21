@@ -6,7 +6,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 from nostr.source_provenance import check_source_snapshot, check_linked_siblings
 from tests.outbox_fakes import (PK, OTHER_PK, OTHER_SK, FakePool, FakeSubscription,
-                               FakeRelayDirectory, signed, settle)
+                               FakeRelayDirectory, HandPool, signed, settle)
 
 
 @pytest.fixture(scope='module', autouse=True)
@@ -196,3 +196,21 @@ def test_exact_event_deletion_is_not_limited_by_the_article_timestamp(marker, fo
     deletion = signed(5, [[marker, target]], '', created_at=199, **({'sk': OTHER_SK} if foreign else {}))
     result, _operation = check(source(event), event, deletion)
     assert result['available'] is available
+
+
+def test_the_first_relay_with_the_reference_decides_and_a_dead_relay_stays_quiet():
+    event = signed(30023, [['d', 'source']], 'Published original')
+    pool, results = HandPool(), []
+    check_source_snapshot(pool, FakeRelayDirectory({PK: ['wss://one.example']}), source(event),
+                          results.append)
+    settle()
+    reference = pool.subs[-1]
+    assert len(reference.urls) > 2
+    reference.answer(reference.urls[0], event)          # the others say nothing yet
+    reference.fail(reference.urls[-1])
+    settle()
+    deletions = pool.subs[-1]
+    assert deletions is not reference and not results
+    deletions.answer(deletions.urls[0])
+    settle()
+    assert results and results[0]['available'] and not results[0]['deleted']

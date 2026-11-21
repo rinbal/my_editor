@@ -6,6 +6,13 @@ A valid signature proves authorship, not publication. This bounded read must
 observe the reference on a public relay before restored private state can
 produce public provenance. Newer text is reported separately; checking never
 changes the reviewed source pin or either editor's contents.
+
+Each step of the read (the reference, its deletions, the root, the root's
+deletions) ends on the relays' own ends, as the other queries do
+(queries._EventsQuery): once every relay asked ended, or as soon as one
+relay that sent what the step looks for has ended. A slow, closed or
+unreachable relay never decides alone (quiet partial failure), and each
+step has its own time; one that runs out decides with what was received.
 """
 from __future__ import annotations
 import re
@@ -35,7 +42,8 @@ class SiblingCheck(QObject):
         self.destroyed.connect(lambda: setattr(self, '_finished', True))
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
-        self._timer.setInterval(12000)
+        # Room for the lookup and each check's steps (SourceCheck.STEP_MS).
+        self._timer.setInterval(40000)
         self._timer.timeout.connect(lambda: self._finish(unavailable=True))
         self._timer.start()
         if not re.fullmatch('[0-9a-f]{64}', owner or '') or len(self._names) > 64:
@@ -119,6 +127,9 @@ def check_source_snapshot(pool, directory, source, on_done, *, parent=None):
 class SourceCheck(QObject):
     """One public reference read, with an optional direct root approval read."""
 
+    # The time one step of the read has (see the module docstring).
+    STEP_MS = 8000
+
     def __init__(self, pool, directory, source, on_done, *, parent=None):
         super().__init__(parent)
         self._pool, self._directory = pool, directory
@@ -132,12 +143,15 @@ class SourceCheck(QObject):
         self._root_from_backlink = False
         self._reading_deletions = False
         self._observed_source = self._current = None
+        self._deleted_seen = False
         self._address = article_address(source.get('address'))
         self._id = source.get('eventId', '')
+        # Which relays sent each event, and the relays that ended this step.
+        self._seen_on, self._step_ended, self._holders = {}, set(), set()
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
-        self._timer.setInterval(8000)
-        self._timer.timeout.connect(self._unavailable)
+        self._timer.setInterval(self.STEP_MS)
+        self._timer.timeout.connect(self._ended)
         self._timer.start()
         if not self._address or not isinstance(self._id, str) or not re.fullmatch('[0-9a-f]{64}', self._id):
             QTimer.singleShot(0, self, self._unavailable)
@@ -164,31 +178,67 @@ class SourceCheck(QObject):
         ]
         self._subscribe(filters)
 
-    def _subscribe(self, filters):
+    def _subscribe(self, filters, holders=()):
+        """One step of the read. ``holders``: the relays whose end decides
+        it (those that sent what it asks about); none, the first relay
+        that sends what the step looks for and ends decides."""
         self._close_subscription()
+        self._step_ended, self._holders = set(), set(holders)
+        self._timer.start()                      # each step has its own time
         sub = self._pool.subscribe(self._relays, filters)
         self._subscription = sub
         self.destroyed.connect(sub.close)
         self.destroyed.connect(sub.deleteLater)
-        sub.event.connect(self._event)
-        sub.eose.connect(self._ended)
+        sub.relay_event.connect(self._event)
+        sub.relay_eose.connect(self._relay_answered)
+        sub.relay_closed.connect(self._relay_gone)
+        sub.relay_failed.connect(self._relay_gone)
 
     def _close_subscription(self):
         sub, self._subscription = self._subscription, None
         if sub is not None:
             sub.close()
-            try:
-                sub.event.disconnect(self._event)
-                sub.eose.disconnect(self._ended)
-            except (RuntimeError, TypeError):
-                pass
+            for signal, slot in ((sub.relay_event, self._event),
+                                 (sub.relay_eose, self._relay_answered),
+                                 (sub.relay_closed, self._relay_gone),
+                                 (sub.relay_failed, self._relay_gone)):
+                try:
+                    signal.disconnect(slot)
+                except (RuntimeError, TypeError):
+                    pass
             sub.deleteLater()
 
-    def _event(self, event):
+    def _relay_answered(self, url):
+        if self._finished:
+            return
+        self._step_ended.add(url)
+        if url in self._holders or self._sent_what_is_sought(url) \
+                or set(self._relays) <= self._step_ended:
+            self._ended()
+
+    def _relay_gone(self, url, _reason=''):
+        if self._finished:
+            return
+        self._step_ended.add(url)
+        if set(self._relays) <= self._step_ended:
+            self._ended()
+
+    def _sent_what_is_sought(self, url):
+        """Whether ``url`` sent what this step looks for: the reference
+        itself, or in the root step the root (deletion steps have holders)."""
+        if self._reading_deletions:
+            return False
+        if self._root_phase:
+            return any(url in self._seen_on.get(event['id'], ()) for event in self._events.values()
+                       if self._address_of(event) == self._root)
+        return url in self._seen_on.get(self._id, ())
+
+    def _event(self, url, event):
         if self._finished or not isinstance(event, dict):
             return
         event_id = event.get('id')
-        if event_id in self._events:
+        if event_id in self._events or any(d.get('id') == event_id for d in self._deleted):
+            self._seen_on.setdefault(event_id, set()).add(url)
             return
         self._checks += 1
         if self._checks > 64:
@@ -200,6 +250,9 @@ class SourceCheck(QObject):
             self._deleted.append(event)
         elif event.get('kind') == 30023:
             self._events[event_id] = event
+        else:
+            return
+        self._seen_on.setdefault(event_id, set()).add(url)
 
     @staticmethod
     def _address_of(event):
@@ -228,8 +281,10 @@ class SourceCheck(QObject):
             # interpreting either as available public evidence.
             self._reading_deletions = True
             signer = address.split(':', 2)[1]
+            holders = set().union(*(self._seen_on.get(i, set()) for i in identifiers))
             self._subscribe([{'kinds': [5], 'authors': [signer], '#e': identifiers[:16], 'limit': 32},
-                             {'kinds': [5], 'authors': [signer], '#a': [address], 'limit': 16}])
+                             {'kinds': [5], 'authors': [signer], '#a': [address], 'limit': 16}],
+                            holders)
             return
         if self._root_phase:
             roots = [event for event in self._events.values()
@@ -252,6 +307,8 @@ class SourceCheck(QObject):
         current = min(candidates, key=lambda value: (-value['created_at'], value['id'])) if candidates else None
         if (not event or not current or self._address_of(event) != self._address
                 or self._was_deleted(event, self._address) or self._was_deleted(current, self._address)):
+            self._deleted_seen = bool(event and (self._was_deleted(event, self._address)
+                                                 or current and self._was_deleted(current, self._address)))
             self._unavailable()
             return
         if event.get('content') != self._source.get('content'):
@@ -298,5 +355,5 @@ class SourceCheck(QObject):
         self._close_subscription()
         event, current = self._observed_source, self._current
         self._done({'available': available, 'event': event, 'current': current,
-                    'confirmed_root': confirmed_root,
+                    'confirmed_root': confirmed_root, 'deleted': self._deleted_seen,
                     'changed': bool(available and event and current and projection_hash(event) != projection_hash(current))})
