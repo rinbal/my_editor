@@ -98,6 +98,6 @@ python main.py                   # or: python main.py path/to/file.md
 
   </details>
 
-  The German region and script names the language chooser shows, `nostr/language_display_names.json`, are Unicode CLDR data under the Unicode License V3, Copyright © 2015-2024 Unicode, Inc. ([LICENSES/Unicode-3.0.txt](LICENSES/Unicode-3.0.txt)); `tools/cldr_display_names.py` makes the file again from a pinned CLDR release.
+  The German region and script names the language chooser shows, `nostr/language_display_names.json`, are Unicode CLDR data under the Unicode License V3, Copyright © 2015-2024 Unicode, Inc. ([LICENSES/Unicode-3.0.txt](LICENSES/Unicode-3.0.txt)); `scripts/cldr_display_names.py` makes the file again from a pinned CLDR release.
 
 [chat]: https://nostr-ecosystem.netlify.app/join/g/groups.0xchat.com/my-editor-public-talk?n=My+Editor+-+Public+Talk&a=A+community+for+users%2C+contributors%2C+and+anyone+interested+in+a+clean%2C+distraction-free+note-taking+editor+built+with+Python+and+PySide6.%0A%0AS&p=https%3A%2F%2Fblossom.primal.net%2F6173a8dc06038a1d67d6149755166fb48d74d92d41ef6af8b6cd863489eb3095

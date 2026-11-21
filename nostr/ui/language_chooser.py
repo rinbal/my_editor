@@ -42,7 +42,7 @@ _REGISTRY_WORDS = re.compile(r"\s*\((?:macrolanguage|individual language)\)", re
 
 def _display_names() -> dict:
     """Region and script names per interface language, from Unicode CLDR
-    (nostr/language_display_names.json, made by tools/cldr_display_names.py):
+    (nostr/language_display_names.json, made by scripts/cldr_display_names.py):
     Qt names them in English only (me68-verify-2)."""
     global _DISPLAY
     if _DISPLAY is None:

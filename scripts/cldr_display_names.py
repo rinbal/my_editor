@@ -10,7 +10,7 @@ territories.json and scripts.json) and keeps the names of the regions and
 scripts the catalogue knows (its validation lists). Run it again to move to
 another CLDR release:
 
-    python tools/cldr_display_names.py [--from DIR]
+    python scripts/cldr_display_names.py [--from DIR]
 
 ``--from`` reads the two files of each locale from DIR/<locale>/ instead of
 the network (the files as cldr-json ships them).
@@ -63,7 +63,7 @@ def main(argv=None) -> int:
                   "territories.json, scripts.json)",
         "license": "Unicode License V3, Copyright © 2015-2024 Unicode, Inc. (the release's LICENSE), "
                    "https://www.unicode.org/license.txt",
-        "generator": "tools/cldr_display_names.py",
+        "generator": "scripts/cldr_display_names.py",
         "locales": locales,
     }
     OUT.write_text(json.dumps(out, ensure_ascii=False, indent=1, sort_keys=False) + "\n",
