@@ -11065,9 +11065,9 @@ class MainWindow(QMainWindow):
         self._multilingual.prepare_source(ed, lambda ready: self._open_submit_publication(ed) if ready else None)
 
     def _open_submit_publication(self, ed) -> None:
-        if ed is None or not shiboken6.isValid(ed) or self._editor_widget_index(ed) < 0:
-            return
-        if ed is not self.current_editor():
+        if ed is not None and (not shiboken6.isValid(ed) or self._editor_widget_index(ed) < 0):
+            return                                  # closed while it was checked
+        if ed is not None and ed is not self.current_editor():
             # Another tab came to the front while the reference was being
             # checked: the document Submit was chosen for comes back
             # (red-a-11), never another one.
