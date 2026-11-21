@@ -13,10 +13,13 @@ QLineEdit owns IME handling, so composing Return never creates a document.
 """
 from __future__ import annotations
 
+import json
 import re
+from functools import lru_cache
+from pathlib import Path
 
-from PySide6.QtCore import QCollator, QEvent, QLocale, Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QCollator, QEvent, QLocale, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QPushButton, QVBoxLayout,
@@ -24,22 +27,48 @@ from PySide6.QtWidgets import (
 
 from i18n import _, language as interface_language
 from ..content_language import (
-    _CATALOG, language_name as catalogue_name, normalize_language, search_languages,
+    _CATALOG, _search_text, language_name as catalogue_name, normalize_language,
+    search_languages,
 )
 from . import appearance
 from .imports_glyphs import glyph_icon
 
 PAGE_SIZE = 40
+MARK = 14            # the check mark's room, at the start of every row
 
 # Registry words that are no language's name ("Swahili (macrolanguage)").
 _REGISTRY_WORDS = re.compile(r"\s*\((?:macrolanguage|individual language)\)", re.IGNORECASE)
 
 
+def _display_names() -> dict:
+    """Region and script names per interface language, from Unicode CLDR
+    (nostr/language_display_names.json, made by tools/cldr_display_names.py):
+    Qt names them in English only (me68-verify-2)."""
+    global _DISPLAY
+    if _DISPLAY is None:
+        try:
+            path = Path(__file__).resolve().parent.parent / "language_display_names.json"
+            _DISPLAY = json.loads(path.read_text(encoding="utf-8")).get("locales", {})
+        except (OSError, ValueError):
+            _DISPLAY = {}
+    return _DISPLAY
+
+
+_DISPLAY = None
+
+
+def _cldr(kind: str, code: str, interface: str) -> str:
+    return _display_names().get(interface.split("-")[0].lower(), {}).get(kind, {}).get(code, "")
+
+
 def _region_name(region: str, code: str, interface: str) -> str:
-    """``region`` (``BR``, ``AT``) as a name in the interface's language
-    where Qt has it (Österreich, Schweiz in German; every region in
-    English), else as the region calls itself (Brasil). Qt reads no name
-    for a numeric region (419): that one stays as it is."""
+    """``region`` (``BR``, ``419``) as a name in the interface's language:
+    CLDR's (Brasilien, Lateinamerika) where MyEditor carries them, else
+    Qt's where it has them (every region in English), else as the region
+    calls itself (Brasil)."""
+    named = _cldr("regions", region.upper(), interface)
+    if named:
+        return named
     territory = QLocale.codeToTerritory(region)
     if territory == QLocale.Country.AnyTerritory:
         return region
@@ -55,6 +84,48 @@ def _region_name(region: str, code: str, interface: str) -> str:
     return QLocale.territoryToString(territory)
 
 
+def _script_name(part: str, interface: str) -> str:
+    named = _cldr("scripts", part.title(), interface)
+    if named:
+        return named
+    script = QLocale.codeToScript(part)
+    return QLocale.scriptToString(script) if script != QLocale.Script.AnyScript else part
+
+
+def _plain(name: str) -> str:
+    """A registry description as words: "Basa (Cameroon)" as "Basa, Cameroon"."""
+    return re.sub(r"\s*\(([^()]*)\)", r", \1", _REGISTRY_WORDS.sub("", name)).strip()
+
+
+@lru_cache(maxsize=4)
+def _base_names(interface: str) -> dict:
+    """Every catalogue language's name in ``interface``, two languages
+    never under one name (me68-verify-3). Where the interface's names
+    meet ("Chinook" for chh and chn), the one the registry calls otherwise
+    says so ("Chinook (Chinook jargon)"); a single language of a group
+    of the same name ("Malay" zlm, beside the group ms) says that."""
+    shown = {code: _REGISTRY_WORDS.sub("", catalogue_name(code, interface))
+             for code, _names in _CATALOG["languages"]}
+    registry = {code: names[0] for code, names in _CATALOG["languages"]}
+    groups = {}
+    for code, name in shown.items():
+        groups.setdefault(name.casefold(), []).append(code)
+    for codes in (group for group in groups.values() if len(group) > 1):
+        for code in codes:
+            own = _plain(registry[code])
+            if own.casefold() != shown[code].casefold():
+                shown[code] = f"{shown[code]} ({own})"
+            elif "individual language" in registry[code].lower():
+                shown[code] = f"{shown[code]} ({_('single language')})"
+        left = {}
+        for code in codes:
+            left.setdefault(shown[code].casefold(), []).append(code)
+        for same in (group for group in left.values() if len(group) > 1):
+            for code in same[1:]:
+                shown[code] = f"{shown[code]} ({code})"
+    return shown
+
+
 def language_name(code):
     """A human label in the current interface, alongside native names in
     lists: "Portugiesisch (Brasilien)", never "(pt-BR)" (red-b-6)."""
@@ -63,18 +134,41 @@ def language_name(code):
     if not language:
         return ""
     base, *rest = language.split("-")
-    name = _REGISTRY_WORDS.sub("", catalogue_name(base, interface))
+    name = _base_names(interface).get(base) or _REGISTRY_WORDS.sub(
+        "", catalogue_name(base, interface))
     parts = []
     for part in rest:
         if len(part) == 4 and part.isalpha():
-            script = QLocale.codeToScript(part)
-            parts.append(QLocale.scriptToString(script)
-                         if script != QLocale.Script.AnyScript else part)
+            parts.append(_script_name(part, interface))
         elif len(part) == 2 and part.isalpha() or len(part) == 3 and part.isdigit():
             parts.append(_region_name(part, language, interface))
         else:
             parts.append(part)
     return f"{name} ({', '.join(parts)})" if parts else name
+
+
+def _regional_matches(query: str, interface: str, recent=()) -> list:
+    """Regional versions a search names in the interface's words: a
+    version already used whose label holds the query, and "Portugiesisch
+    Brasilien" as pt-BR (CLDR region names, me68-verify-2)."""
+    needle = _search_text(query)
+    if not needle:
+        return []
+    found = [code for code in recent if "-" in code and needle in _search_text(language_name(code))]
+    regions = _display_names().get(interface.split("-")[0].lower(), {}).get("regions", {})
+    words = needle.split()
+    if len(words) > 1 and regions:
+        for index, word in enumerate(words):
+            if len(word) < 4:
+                continue
+            for region, name in regions.items():
+                if region.isalpha() and _search_text(name).startswith(word):
+                    rest = " ".join(words[:index] + words[index + 1:])
+                    rows = search_languages(rest, limit=1, locale=interface)
+                    code = normalize_language(f"{rows[0]['code']}-{region}") if rows else ""
+                    if code and "-" in code and code not in found:
+                        found.append(code)
+    return found
 
 
 def _native_name(code):
@@ -110,6 +204,7 @@ class LanguageChooser(QDialog):
         layout.addWidget(self.search)
         self.results = QListWidget()
         self.results.setAccessibleName(_("Languages"))
+        self.results.setIconSize(QSize(MARK, MARK))
         self.results.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.results.setMinimumHeight(180)
         layout.addWidget(self.results, 1)
@@ -180,6 +275,11 @@ class LanguageChooser(QDialog):
         elif query:
             rows = search_languages(query, recent=self._recent, limit=PAGE_SIZE + 1,
                                     offset=self._offset, locale=interface_language())
+            if not self._offset:
+                regional = [{"code": code} for code in
+                            _regional_matches(query, interface_language(), self._recent)]
+                rows = regional + [row for row in rows
+                                   if row["code"] not in {r["code"] for r in regional}]
         else:
             # Resolve only palette codes, then render their normal names.
             rows = [{"code": code} for code in self._recent[:8] if code]
@@ -207,7 +307,7 @@ class LanguageChooser(QDialog):
                 self.results.setCurrentRow(first)
 
     def _heading(self, text):
-        item = QListWidgetItem(text)
+        item = QListWidgetItem(self._no_mark(), text)
         item.setFlags(Qt.ItemFlag.NoItemFlags)
         font = item.font()
         font.setBold(True)
@@ -218,15 +318,24 @@ class LanguageChooser(QDialog):
         name = language_name(code)
         native = _native_name(code)
         label = f"{native} · {name}" if native and native != name else name
-        item = QListWidgetItem(label)
+        # Every row keeps the check mark's room, so all are as tall and
+        # start at one edge, as a menu's items do (me68-verify-4).
+        item = QListWidgetItem(self._no_mark(), label)
         item.setData(Qt.ItemDataRole.UserRole, code)
         item.setToolTip(code)
         if code == self._current:
-            item.setIcon(glyph_icon("check", 14, QColor(appearance.roles(self._dark).text)))
+            item.setIcon(glyph_icon("check", MARK, QColor(appearance.roles(self._dark).text)))
             item.setData(Qt.ItemDataRole.AccessibleDescriptionRole, _("Current language"))
         elif code in self._existing:
             item.setData(Qt.ItemDataRole.AccessibleDescriptionRole, _("Opens this version"))
         self.results.addItem(item)
+
+    @staticmethod
+    def _no_mark():
+        blank = QPixmap(MARK * 2, MARK * 2)
+        blank.setDevicePixelRatio(2.0)
+        blank.fill(Qt.GlobalColor.transparent)
+        return QIcon(blank)
 
     def _choosable(self):
         return [row for row in range(self.results.count())

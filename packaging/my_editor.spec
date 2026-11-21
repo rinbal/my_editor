@@ -42,7 +42,8 @@ datas = [(os.path.join(ICON_DIR, "icon-256.png"), os.path.join("packaging", "ico
 # Offline article-language rules are loaded relative to the frozen nostr
 # modules. Missing data would prevent ArticleDetails (and the app) importing.
 datas += [(os.path.join(ROOT, "nostr", name), "nostr")
-          for name in ("language_catalog.json", "multilingual_contract.json")]
+          for name in ("language_catalog.json", "multilingual_contract.json",
+                       "language_display_names.json")]
 # The translations (i18n.py reads locale/<language>.po at startup).
 datas += [(os.path.join(ROOT, "locale", name), "locale")
           for name in sorted(os.listdir(os.path.join(ROOT, "locale")))
