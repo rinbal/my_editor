@@ -373,6 +373,9 @@ def test_the_authors_section_shows_the_order_published():
     section = authors(panel)
     assert list(section.shares_shown()) == [GUEST, CAROL]
     assert section.unnamed.isVisibleTo(panel)
+    # Red team K2: what you keep is said there, your row being absent.
+    assert section.unnamed.text() == ("This article doesn’t list you by name. "
+                                      "You keep 100 % of the zaps.")
     second = ArticleDetails.from_tags([["p", GUEST, "", "author"], ["p", ME, "", "author"],
                                        ["p", CAROL, "", "author"]], signer=ME)
     panel, _sent, _asked = panel_with(second)

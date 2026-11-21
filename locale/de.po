@@ -9133,7 +9133,7 @@ msgid "Version {number} by {name}"
 msgstr "Fassung {number} von {name}"
 
 #: nostr/standup/thread.py:171
-#: nostr/ui/authors_section.py:186
+#: nostr/ui/authors_section.py:189
 #: nostr/ui/standup_confirm_sheet.py:199
 #: nostr/ui/submission_thread.py:147
 msgid "You"
@@ -9961,7 +9961,7 @@ msgid "Cover"
 msgstr "Titelbild"
 
 #: nostr/ui/article_details_panel.py:239
-#: nostr/ui/authors_section.py:82
+#: nostr/ui/authors_section.py:83
 msgid "Authors"
 msgstr "Autoren"
 
@@ -10052,59 +10052,64 @@ msgstr "Schritt {number}, erledigt"
 msgid "Step {number}, failed"
 msgstr "Schritt {number}, fehlgeschlagen"
 
-#: nostr/ui/authors_section.py:107
-msgid "This article doesn’t list you by name."
-msgstr "Dieser Artikel nennt dich nicht mit Namen."
-
-#: nostr/ui/authors_section.py:116
+#: nostr/ui/authors_section.py:110
 #: nostr/ui/publish_article_dialog.py:497
 msgid "Add Co-Author…"
 msgstr "Mitautor hinzufügen …"
 
-#: nostr/ui/authors_section.py:118
+#: nostr/ui/authors_section.py:112
 msgid "Remove Co-Author"
 msgstr "Mitautor entfernen"
 
-#: nostr/ui/authors_section.py:123
+#: nostr/ui/authors_section.py:117
 msgid "Split Evenly"
 msgstr "Gleich aufteilen"
 
-#: nostr/ui/authors_section.py:127
+#: nostr/ui/authors_section.py:121
 msgid "Give you and every co-author who can be paid an equal share of the zaps."
 msgstr "Gibt dir und allen Mitautoren, die bezahlt werden können, den gleichen Anteil der Zaps."
 
-#: nostr/ui/authors_section.py:156
+#: nostr/ui/authors_section.py:159
 msgid "Apps with zap splits pay each share; others pay you."
 msgstr "Apps mit Zap-Aufteilung zahlen jeden Anteil, andere zahlen dich."
 
-#: nostr/ui/authors_section.py:157
+#: nostr/ui/authors_section.py:160
 msgid "Apps that support zap splits, like Amethyst and noStrudel, pay each person their share. Other apps pay you."
 msgstr "Apps, die Zap-Aufteilungen unterstützen, etwa Amethyst und noStrudel, zahlen jeder Person ihren Anteil. Andere Apps zahlen dich."
 
-#: nostr/ui/authors_section.py:151
+#: nostr/ui/authors_section.py:154
 msgid "Share of the zaps"
 msgstr "Anteil an den Zaps"
 
-#: nostr/ui/authors_section.py:185
+#: nostr/ui/authors_section.py:201
+msgid "This article doesn’t list you by name."
+msgstr "Dieser Artikel nennt dich nicht mit Namen."
+
+#: nostr/ui/authors_section.py:188
 #, python-brace-format
 msgid "{name} · you"
 msgstr "{name} · du"
 
-#: nostr/ui/authors_section.py:206
+#: nostr/ui/authors_section.py:213
 msgid "No lightning address in their profile, so they can’t be paid a share."
 msgstr "Keine Lightning-Adresse im Profil, darum kann kein Anteil gezahlt werden."
 
-#: nostr/ui/authors_section.py:248
+#: nostr/ui/authors_section.py:255
 msgid "You keep what the others leave."
 msgstr "Du behältst, was die anderen übrig lassen."
 
-#: nostr/ui/authors_section.py:260
 #: nostr/ui/authors_section.py:267
+#: nostr/ui/authors_section.py:274
 #, python-brace-format
 msgid "Share for {name}"
 msgstr "Anteil für {name}"
 
-#: nostr/ui/authors_section.py:256
+#: nostr/ui/authors_section.py:200
+#, python-brace-format
+msgid "This article doesn’t list you by name. You keep {share} % of the zaps."
+msgstr "Dieser Artikel nennt dich nicht mit Namen. Du behältst {share} % der Zaps."
+
+#: nostr/ui/authors_section.py:263
 #, python-brace-format
 msgid "{name} has no lightning address in their profile, so they can’t be paid a share."
 msgstr "{name} hat keine Lightning-Adresse im Profil, darum kann kein Anteil gezahlt werden."

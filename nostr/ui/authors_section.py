@@ -20,9 +20,10 @@ and the exact value beside it (Apple's guidelines pair a slider with a
 field for a precise value) change the selected co-author's. The list is
 in the order the article is published with (ArticleDetails.authors),
 you first when it names no place for you. You keep what the others
-leave, so the shares always add up to 100 % (nostr/zap_shares.py). A co-author is credited and receives nothing
-until given a share; one whose profile has no lightning address can't be
-paid, and the controls say so. The line under them only says what is
+leave, so the shares always add up to 100 % (nostr/zap_shares.py). A
+co-author is credited and receives nothing until given a share; one
+whose profile has no lightning address can't be paid, and the controls
+say so. The line under them only says what is
 true, and only while zaps are shared: whether a zap is split depends on
 the reader's app.
 """
@@ -102,13 +103,6 @@ class AuthorsSection(QWidget):
         # Delete removes the selected co-author, as in a Mac's lists.
         self.table.installEventFilter(self)
         column.addWidget(self.table)
-        # An article that names its co-authors and not the account's own
-        # person (signer_place -1): said, quietly, where your row would be.
-        self.unnamed = QLabel(_("This article doesn’t list you by name."), self)
-        self.unnamed.setObjectName("article_details_hint")
-        self.unnamed.setWordWrap(True)
-        self.unnamed.hide()
-        column.addWidget(self.unnamed)
 
         buttons = QHBoxLayout()
         buttons.setContentsMargins(0, 0, 0, 0)
@@ -130,6 +124,15 @@ class AuthorsSection(QWidget):
             lambda: self._hand_back(self._coauthors.split_evenly(self._details)))
         buttons.addWidget(self.even_button)
         column.addLayout(buttons)
+        # An article that names its co-authors and not the account's own
+        # person (signer_place -1): said quietly under the list and its
+        # + and − (kept together, as a Mac's lists have them), with what
+        # you keep, since your row is not there to say it.
+        self.unnamed = QLabel(self)
+        self.unnamed.setObjectName("article_details_hint")
+        self.unnamed.setWordWrap(True)
+        self.unnamed.hide()
+        column.addWidget(self.unnamed)
 
         self.share_title = QLabel(self)
         self.share_title.setObjectName("article_details_label")
@@ -192,6 +195,10 @@ class AuthorsSection(QWidget):
             ("", you, zap_shares.author_share(shares)) if pubkey == own
             else (pubkey, self._name_of(pubkey), shares.get(pubkey, 0))
             for pubkey, _hint in order]
+        kept = zap_shares.author_share(shares)
+        self.unnamed.setText(
+            _("This article doesn’t list you by name. You keep {share} % of the zaps.")
+            .format(share=kept) if kept else _("This article doesn’t list you by name."))
         self.unnamed.setVisible(not any(pubkey == "" for pubkey, _n, _s in people))
         self.table.blockSignals(True)
         self.table.setRowCount(len(people))
