@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "convention": "standup-multilingual-v1",
   "revision_format": 2,
   "capability_field": "revision_formats",
@@ -11,8 +11,9 @@
   "source_marker": "source",
   "approval_marker": "translation",
   "translator_marker": "translator",
-  "catalog_sha256": "b94a82cb51d1e31bd071e23b782a5180f95bf1bf613ed179ee082caceb92a82b",
+  "catalog_sha256": "3d9d603892a0d05d00a25c8fc94cb9d2da450c47abaef124732e2de52ddeff96",
   "registry_sha256": "8ac4e58567593c96e9e6d66e2017dbb8d3953dbcb42fe32ecd3b3fccdfdaba7b",
-  "vectors_sha256": "a3ac4eda3ff30623772d2e924fa34e2a09aa99d48495a35be611a3a03c0f25b2",
-  "private_draft_field": "standup_multilingual"
+  "vectors_sha256": "32ef7471a2c453c38637b337862dd9261566b65a3a980d2efa493756d1fc4354",
+  "private_draft_field": "standup_multilingual",
+  "localized_names_field": "localized_names"
 }

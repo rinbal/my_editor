@@ -108,13 +108,10 @@ def projection_hash(event):
 
 
 def requires_multilingual(work):
-    lang = normalize_language(work.get('lang', ''))
-    labels = [t for t in work.get('extra_tags', []) if is_language_tag(t)]
-    unresolved = any(t[0] == 'l' for t in labels) and not language_from_tags(labels)
-    qualified = any(len(t) > 2 and t[0] == 'l' and t[2] == 'lang' for t in labels)
-    return unresolved or qualified or bool(lang and len(lang) != 2) or any(is_translation_tag(t) or (
-        isinstance(t, (list, tuple)) and len(t) > 3 and t[0] == 'p' and t[3] == 'translator')
-        for t in work.get('extra_tags', []))
+    """Only an explicit link to another version, or a translator's credit, needs revision format 2. A language label
+    alone, also a qualified one such as ``en-US``, is an ordinary article (contract version 2)."""
+    return any(is_translation_tag(t) or (isinstance(t, (list, tuple)) and len(t) > 3 and t[0] == 'p' and t[3] == 'translator')
+               for t in work.get('extra_tags', []))
 
 
 def check_multilingual_work(work):

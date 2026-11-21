@@ -1,5 +1,5 @@
 {
-  "contract_version": 1,
+  "contract_version": 2,
   "languages": [
     {
       "input": "th",
@@ -1151,5 +1151,197 @@
       "envelope_sha256": "f09903abfff628118744a3a684787359b0816ecc369f3b8a0b1769544b3c9767",
       "revision_hash": "d208f986403295ebc05f1b8260806bb2b57df7b00fd630e9a76a2aa78c58d275"
     }
-  }
+  },
+  "language_tags": [
+    {
+      "code": "de",
+      "tags": [
+        [
+          "L",
+          "ISO-639-1"
+        ],
+        [
+          "l",
+          "de",
+          "ISO-639-1"
+        ]
+      ]
+    },
+    {
+      "code": "en-US",
+      "tags": [
+        [
+          "L",
+          "ISO-639-1"
+        ],
+        [
+          "l",
+          "en",
+          "ISO-639-1"
+        ],
+        [
+          "L",
+          "lang"
+        ],
+        [
+          "l",
+          "en-US",
+          "lang"
+        ]
+      ]
+    },
+    {
+      "code": "zh-hant-tw",
+      "tags": [
+        [
+          "L",
+          "ISO-639-1"
+        ],
+        [
+          "l",
+          "zh",
+          "ISO-639-1"
+        ],
+        [
+          "L",
+          "lang"
+        ],
+        [
+          "l",
+          "zh-Hant-TW",
+          "lang"
+        ]
+      ]
+    },
+    {
+      "code": "hmn",
+      "tags": [
+        [
+          "L",
+          "lang"
+        ],
+        [
+          "l",
+          "hmn",
+          "lang"
+        ]
+      ]
+    },
+    {
+      "code": "zz",
+      "tags": []
+    }
+  ],
+  "requires_multilingual": [
+    {
+      "name": "plain",
+      "work": {
+        "lang": "de",
+        "extra_tags": []
+      },
+      "expected": false
+    },
+    {
+      "name": "qualified-language-only",
+      "work": {
+        "lang": "en-US",
+        "extra_tags": [
+          [
+            "L",
+            "ISO-639-1"
+          ],
+          [
+            "l",
+            "en",
+            "ISO-639-1"
+          ],
+          [
+            "L",
+            "lang"
+          ],
+          [
+            "l",
+            "en-US",
+            "lang"
+          ]
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "three-letter-language-only",
+      "work": {
+        "lang": "hmn",
+        "extra_tags": [
+          [
+            "L",
+            "lang"
+          ],
+          [
+            "l",
+            "hmn",
+            "lang"
+          ]
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "root-link",
+      "work": {
+        "lang": "en",
+        "extra_tags": [
+          [
+            "a",
+            "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+            "",
+            "original"
+          ]
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "translator-credit",
+      "work": {
+        "lang": "en",
+        "extra_tags": [
+          [
+            "p",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "",
+            "translator"
+          ]
+        ]
+      },
+      "expected": true
+    }
+  ],
+  "localized_names": [
+    {
+      "code": "it",
+      "locale": "de",
+      "name": "Italienisch"
+    },
+    {
+      "code": "nl",
+      "locale": "de",
+      "name": "Niederländisch"
+    },
+    {
+      "code": "zh",
+      "locale": "de",
+      "name": "Chinesisch"
+    },
+    {
+      "code": "el",
+      "locale": "en",
+      "name": "Greek"
+    },
+    {
+      "code": "de",
+      "locale": "de",
+      "name": "Deutsch"
+    }
+  ]
 }

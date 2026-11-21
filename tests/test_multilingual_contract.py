@@ -20,6 +20,24 @@ def test_label_resolution_vectors(case):
     assert language_from_tags(case['tags']) == case['language']
     assert language_from_tags(list(reversed(case['tags']))) == case['language']
 
+@pytest.mark.parametrize('case', V['language_tags'], ids=lambda c: c['code'])
+def test_language_tag_vectors(case):
+    # Contract 2: a qualified code also carries its two-letter base.
+    assert language_tags(case['code']) == case['tags']
+    assert language_from_tags(case['tags']) == normalize_language(case['code'])
+
+@pytest.mark.parametrize('case', V['requires_multilingual'], ids=lambda c: c['name'])
+def test_requires_multilingual_vectors(case):
+    from nostr.multilingual import requires_multilingual
+    assert requires_multilingual(case['work']) is case['expected']
+
+@pytest.mark.parametrize('case', V['localized_names'], ids=lambda c: f"{c['locale']}-{c['code']}")
+def test_localized_name_vectors(case):
+    # me68-red-b-1, red-a-8: names and search in the interface's language.
+    from nostr.content_language import language_name
+    assert language_name(case['code'], case['locale']) == case['name']
+    assert search_languages(case['name'], limit=1, locale=case['locale'])[0]['code'] == case['code']
+
 @pytest.mark.parametrize('case', V['relations'], ids=lambda c: c['name'])
 def test_declaration_vectors(case):
     assert translation_metadata(case['tags']) == case['expected']

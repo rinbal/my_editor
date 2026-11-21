@@ -90,20 +90,29 @@ def language_from_tags(tags):
 
 
 def language_tags(code):
+    """The labels for ``code``. A qualified code with a two-letter base also carries that base in ISO-639-1, so
+    readers that know only ISO-639-1 keep the language (``language_from_tags`` reads the pair as the qualified code)."""
     language = normalize_language(code)
-    namespace = NAMESPACE if len(language) == 2 else 'lang'
-    return [['L', namespace], ['l', language, namespace]] if language else []
+    if not language:
+        return []
+    base = language.split('-')[0]
+    iso = [['L', NAMESPACE], ['l', base, NAMESPACE]] if len(base) == 2 else []
+    return iso if language == base and iso else [*iso, ['L', 'lang'], ['l', language, 'lang']]
+
+
+_LOCALIZED = _CATALOG['localized_names']['locales']
 
 
 def language_name(code, locale='en'):
+    """A language's name in an interface ``locale`` from the shared catalogue (CLDR), or ``'native'``."""
     language = normalize_language(code)
     if not language:
         return ''
     base = language.split('-')[0]
-    name = _CATALOG['native_names'].get(base) if locale == 'native' else None
-    if locale.startswith('de'):
-        name = {'de': 'Deutsch', 'en': 'Englisch', 'es': 'Spanisch', 'fr': 'Französisch',
-                'th': 'Thailändisch', 'lo': 'Laotisch', 'km': 'Khmer', 'ja': 'Japanisch'}.get(base)
+    if locale == 'native':
+        name = _CATALOG['native_names'].get(base)
+    else:
+        name = _LOCALIZED.get(str(locale).split('-')[0].lower(), {}).get(base)
     return (name or _NAMES.get(base, [base])[0]) + (f' ({language})' if '-' in language else '')
 
 
@@ -116,13 +125,14 @@ def _search_entries():
     entries = []
     for code, names in _CATALOG['languages']:
         native = _CATALOG['native_names'].get(code, names[0])
-        labels = [code, native, *names, language_name(code, 'de'), *_CATALOG['search_aliases'].get(code, [])]
+        localized = [names_in[code] for names_in in _LOCALIZED.values() if code in names_in]
+        labels = [code, native, *names, *localized, *_CATALOG['search_aliases'].get(code, [])]
         entries.append(({'code': code, 'name': names[0], 'native_name': native}, tuple(map(_search_text, labels))))
     return entries
 
 
-def search_languages(query='', recent=(), limit=40, offset=0):
-    """Bounded catalogue search, exact names before prefix/substring matches."""
+def search_languages(query='', recent=(), limit=40, offset=0, locale='en'):
+    """Bounded catalogue search, exact names before prefix/substring matches; ``name`` is in ``locale``."""
     needle = _search_text(normalize_language(query) or query)
     recent = list(dict.fromkeys(normalize_language(c) for c in recent if normalize_language(c)))
     ranked = []
@@ -132,6 +142,7 @@ def search_languages(query='', recent=(), limit=40, offset=0):
             entry = {'code': code, 'name': language_name(code), 'native_name': language_name(code, 'native')}
             entries.append((entry, tuple(_search_text(v) for v in (code, entry['name'], entry['native_name']))))
     for index, (entry, labels) in enumerate(entries):
+        entry = {**entry, 'name': language_name(entry['code'], locale)}
         rank = 0 if needle in labels else 1 if any(s.startswith(needle) for s in labels) else 2
         if needle and rank == 2 and not any(needle in label for label in labels):
             continue
@@ -139,7 +150,7 @@ def search_languages(query='', recent=(), limit=40, offset=0):
         ranked.append((rank if needle else priority, index, entry))
     qualified = normalize_language(query)
     if qualified and '-' in qualified and qualified not in recent:
-        ranked.insert(0, (-1, -1, {'code': qualified, 'name': language_name(qualified),
+        ranked.insert(0, (-1, -1, {'code': qualified, 'name': language_name(qualified, locale),
                                   'native_name': language_name(qualified, 'native')}))
     ranked.sort(key=lambda item: item[:2])
     return [entry for _, _, entry in ranked[max(0, offset):max(0, offset) + min(max(1, limit), 200)]]
