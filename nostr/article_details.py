@@ -48,7 +48,7 @@ import front_matter
 
 from . import refs
 from .content_language import language_from_tags, language_tags, is_language_tag, normalize_language
-from .multilingual import PRIVATE_LINK_TAG
+from .multilingual import PRIVATE_LINK_TAG, is_translation_tag
 from .bech32 import encode_nprofile, encode_npub
 from .drafts import derive_title_from_markdown, flatten_markdown_inline
 
@@ -825,11 +825,13 @@ def _without(mapping: dict, places: Sequence[Tuple[str, ...]]) -> dict:
 
 def _kept_in_front(tag) -> bool:
     """Whether a carried tag is written in a file's front matter
-    (``nostr_tags``): a translator's credit only, which nothing else keeps.
-    The tags the app writes on the wire (pictures, alt text, the language
-    links, made again at each publication) never go into a file
-    (red-a-5)."""
-    return len(tag) >= 4 and tag[0] == "p" and tag[3] == "translator"
+    (``nostr_tags``): the article's provenance only, a translator's credit
+    and a link to the version it was translated from or into, which are
+    public on the article and which a file opened again must still have.
+    The tags the app writes on the wire for each publication (pictures,
+    alt text) never go into a file (red-a-5)."""
+    return (len(tag) >= 4 and tag[0] == "p" and tag[3] == "translator") \
+        or is_translation_tag(tag)
 
 
 def _front_values(details: ArticleDetails) -> dict:
