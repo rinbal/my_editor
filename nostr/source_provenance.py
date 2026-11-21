@@ -94,7 +94,9 @@ class SiblingCheck(QObject):
         for proof in self._proofs if not unavailable else ():
             event = proof['current']
             relation = parse_relations(event)
-            if relation.get('root'):
+            if relation.get('root') or proof['confirmed_root'] != SourceCheck._address_of(event):
+                # Incoming signed backlinks can prove a root that has no local
+                # draft/tab and therefore is absent from this candidate set.
                 established.add(proof['confirmed_root'])
             elif any(address in addresses and addresses[address]['pubkey'] == event['pubkey']
                      for address in relation.get('translations', [])):
@@ -206,9 +208,9 @@ class SourceCheck(QObject):
 
     def _was_deleted(self, event, address):
         return any(deletion['pubkey'] == event['pubkey']
-                   and deletion['created_at'] >= event['created_at']
                    and any(len(tag) > 1 and (tag[0] == 'e' and tag[1] == event['id']
-                                            or tag[0] == 'a' and tag[1] == address)
+                           or tag[0] == 'a' and tag[1] == address
+                           and deletion['created_at'] >= event['created_at'])
                            for tag in deletion['tags']) for deletion in self._deleted)
 
     def _ended(self):

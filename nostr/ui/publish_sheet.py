@@ -32,6 +32,7 @@ who publishes it, the same way:
 from __future__ import annotations
 
 import sys
+import shiboken6
 from typing import Iterable, List, Optional, Tuple
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, Signal, Slot
@@ -158,6 +159,8 @@ class _FocusInView(QObject):
         return False
 
     def _show(self, widget: Optional[QWidget]) -> None:
+        if not shiboken6.isValid(self._scroll) or widget is not None and not shiboken6.isValid(widget):
+            return
         page = self._scroll.widget()
         # A field of the page: the page itself with the focus (the handoff)
         # is not brought into view, it stays where it was scrolled to.

@@ -10990,12 +10990,28 @@ class MainWindow(QMainWindow):
         dialog.open()
 
     def _language_version_published(self, target, event):
+        if target is None or not shiboken6.isValid(target):
+            return
+        link = multilingual_authoring.private_link(getattr(target, "_language_link", None))
+        signer = event.get("pubkey", "")
+        if link and link.get("owner") and link["owner"] != signer:
+            return
         self._multilingual.source_published(target, event)
         d = next((tag[1] for tag in event.get("tags", []) if len(tag) > 1 and tag[0] == "d"), "")
-        for ed in self._multilingual.editors():
-            if self._article_details_of(ed).identifier == d:
-                self._multilingual.published(ed, event)
-                break
+        source_id = (link or {}).get("source", {}).get("dTag")
+        if source_id and d == source_id and d != self._article_details_of(target).identifier:
+            # A pair's source can finish while another tab is in front. Its
+            # receipt belongs only to this group's source and signing owner.
+            for ed in self._multilingual.editors():
+                own = multilingual_authoring.private_link(getattr(ed, "_language_link", None))
+                if (own and own["groupId"] == link["groupId"] and (own.get("owner") or signer) == signer
+                        and self._article_details_of(ed).identifier == d):
+                    self._multilingual.published(ed, event)
+                    return
+        else:
+            # The active version is the editor that opened this sheet, even
+            # when its first link name was assigned inside the Publish sheet.
+            self._multilingual.published(target, event)
 
     def _open_language_original(self, target):
         source = self._multilingual.source_editor(target)

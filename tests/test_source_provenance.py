@@ -166,3 +166,33 @@ def test_conflicting_incoming_roots_cannot_grant_an_implicit_group_claim():
     french = signed(30023, [['d', 'french'], ['a', source(english)['address'], '', 'translation']], 'French')
     result, _op = check(source(english), english, german, french)
     assert result['available'] and not result['confirmed_root']
+
+
+def test_late_original_preserves_incoming_root_absent_from_private_versions():
+    """A verified root can be learned through a sibling, without a local tab."""
+    spanish_address = f'30023:{PK}:es'
+    english = signed(30023, [['d', 'en'], ['a', spanish_address, '', 'translation']], 'English')
+    spanish = signed(30023, [['d', 'es']], 'Spanish')
+    result, _operation = siblings({'de': 'de', 'es': 'es'}, english, spanish)
+    assert result['root'] == f'30023:{PK}:en'
+    assert not result['conflict'] and not result['translations']
+    assert [event['id'] for event in result['events']] == [spanish['id']]
+
+
+def test_external_incoming_roots_are_not_merged_by_a_late_original():
+    english = signed(30023, [['d', 'en'], ['a', f'30023:{PK}:es', '', 'translation']], 'English')
+    spanish = signed(30023, [['d', 'es']], 'Spanish')
+    thai = signed(30023, [['d', 'th'], ['a', f'30023:{PK}:lo', '', 'translation']], 'Thai')
+    lao = signed(30023, [['d', 'lo']], 'Lao')
+    result, _operation = siblings({'de': 'de', 'es': 'es', 'lo': 'lo'}, english, spanish, thai, lao)
+    assert result['conflict']
+    assert not result['root'] and not result['translations']
+
+
+@pytest.mark.parametrize('marker,foreign,available', [('e', False, False), ('a', False, True), ('e', True, True)])
+def test_exact_event_deletion_is_not_limited_by_the_article_timestamp(marker, foreign, available):
+    event = signed(30023, [['d', 'source']], 'Reference', created_at=200)
+    target = event['id'] if marker == 'e' else source(event)['address']
+    deletion = signed(5, [[marker, target]], '', created_at=199, **({'sk': OTHER_SK} if foreign else {}))
+    result, _operation = check(source(event), event, deletion)
+    assert result['available'] is available

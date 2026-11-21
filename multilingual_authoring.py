@@ -267,7 +267,13 @@ class MultilingualAuthoring(QObject):
             record = link_from_front(getattr(ed, "_front_matter", None))
             if record is not None:
                 ed._language_link = copy.deepcopy(record)
-        if record and record.get("owner", self._owner()) == self._owner():
+        owner = self._owner()
+        if record and not record.get("owner") and owner:
+            # Older optional private metadata can omit ownership. Adopting
+            # the selected account does not establish any public provenance.
+            record["owner"] = owner
+            ed._language_link = copy.deepcopy(record)
+        if record and (record.get("owner") or owner) == owner:
             if record.get("source"):
                 event = verified_source(record["source"])
                 record["source"]["public"] = bool(event and event["id"] in self._confirmed_public)
@@ -360,7 +366,7 @@ class MultilingualAuthoring(QObject):
         if not code or not shiboken6.isValid(source_ed):
             return None
         raw_link = private_link(getattr(source_ed, "_language_link", None))
-        if raw_link and raw_link.get("owner", self._owner()) != self._owner():
+        if raw_link and raw_link.get("owner") and raw_link["owner"] != self._owner():
             w.status.showMessage(_("Use the account that owns these versions."), 10000, nostr=True)
             return None
         source_details = w._article_details_of(source_ed)
@@ -778,7 +784,7 @@ class MultilingualAuthoring(QObject):
                     ed._view_splitter.widget(0).show()
             return
         raw_link = private_link(getattr(ed, "_language_link", None)) if ed is not None else None
-        owned = not raw_link or raw_link.get("owner", self._owner()) == self._owner()
+        owned = not raw_link or not raw_link.get("owner") or raw_link["owner"] == self._owner()
         enabled = owned and ed is not None and w._can_be_an_article(ed)
         self.controls.setVisible(active)
         previewing = ed is not None and w._shown_view(ed) == "preview"
