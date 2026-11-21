@@ -155,9 +155,17 @@ class PublishPipeline(QObject):
         # existing callers keep their original publication behavior.
         self._journal = journal
         self._expected_event_id = expected_event_id
-        self._checked_current = expected_event_id is _UNCHECKED
+        # Compare before send: the article public now must be the one the
+        # person's version was based on (an id, or None for "not out yet").
+        self._guarded = expected_event_id is not _UNCHECKED
+        self._checked_current = not self._guarded
         self._checking_current = False
         self._recovered_receipts = None
+        # A signature taken from the journal (an earlier attempt), and what
+        # was asked before it replaced the request: it goes out only when
+        # it still can (_finish_current_check), else it is signed anew.
+        self._recovered = None
+        self._requested = dict(unsigned_event)
 
     # -- public API --------------------------------------------------------
 
@@ -196,17 +204,17 @@ class PublishPipeline(QObject):
                 return
             if previous:
                 self._signed_event = previous["event"]
+                self._recovered = previous
                 self._unsigned = {key: value for key, value in self._signed_event.items()
                                   if key not in ("id", "sig")}
                 self._signed(self._signed_event)
                 if previous["status"] == "accepted":
                     # The already successful member of a pair is never signed
-                    # or sent again. Emit on the next turn, as real jobs do.
-                    if self._expected_event_id is _UNCHECKED:
-                        QTimer.singleShot(0, self, lambda: None if self._cancelled else
-                                          self.completed.emit(previous["receipts"]))
-                        return
+                    # or sent again, once the relays show it is still the one
+                    # public (a deletion, or a newer version written
+                    # elsewhere, and it is signed anew: _finish_current_check).
                     self._recovered_receipts = previous["receipts"]
+                    self._checked_current = False
                 self._relay_directory.publish_plan(
                     self._author, self._on_plan, mentioned=self._mentioned,
                     entitled=relays_from(self._entitled))
@@ -365,13 +373,23 @@ class PublishPipeline(QObject):
         self._checking_current = False
         if self._cancelled or self._failed:
             return
+        if proof.get('deleted'):
+            # Deleted: nothing of it is public any more.
+            self._finish_current_check(None, (), deleted=proof.get('event') or proof.get('current'))
+            return
         if not proof['available']:
-            self._fail("the published article is deleted or unavailable",
-                       words=_("This article is unavailable or was deleted. Open its latest version before publishing."))
+            self._fail("the published article could not be verified",
+                       words=_("The published version could not be checked. Try again when connected."))
             return
         self._finish_current_check(proof['current'], ())
 
-    def _finish_current_check(self, found, answered):
+    def _finish_current_check(self, found, answered, deleted=None):
+        """What the relays show public now is ``found`` (None: nothing, or
+        ``deleted``, the article deleted since): the same signed article is
+        a success already; with a guard, it must be the version the
+        person's was based on; a signature from the journal that can't go
+        out any more (it was out and is gone or replaced, or it is older
+        than what is public) is thrown away and the article signed anew."""
         if found and found.get("id") == self._signed_event["id"]:
             # A lost acknowledgement is a successful publication, not a
             # reason to dispatch again. Keep the same exact signed ID.
@@ -387,9 +405,18 @@ class PublishPipeline(QObject):
                     logging.getLogger(__name__).exception("Could not retain the reconciled publication receipt")
             self.completed.emit(receipts)
             return
-        if self._recovered_receipts is not None or (found.get("id") if found else None) != self._expected_event_id:
+        current = found.get("id") if found else None
+        if self._guarded and current != self._expected_event_id and not (
+                current is None and self._own_and_gone(deleted)):
             self._fail("the article changed after it was opened",
                        words=_("This article changed elsewhere. Open its latest version before publishing."))
+            return
+        recovered = self._recovered
+        if recovered is not None and (
+                recovered["status"] == "accepted"
+                or deleted is not None and deleted.get("id") == self._signed_event["id"]
+                or found and self._signed_event["created_at"] <= found["created_at"]):
+            self._sign_anew(found)
             return
         if found and self._signed_event["created_at"] <= found["created_at"]:
             self._fail("the reviewed revision is not newer than its base",
@@ -397,6 +424,38 @@ class PublishPipeline(QObject):
             return
         self._checked_current = True
         self._send_when_ready()
+
+    def _own_and_gone(self, deleted) -> bool:
+        """Whether nothing being public now is the person's own doing: the
+        version theirs was based on went out from here and was deleted
+        since. Publishing it again is then theirs to do."""
+        expected = self._expected_event_id
+        if not expected or self._journal is None:
+            return False
+        if deleted is not None and deleted.get("id") == expected:
+            return True
+        try:
+            return self._journal.was_accepted(expected)
+        except Exception:
+            return False
+
+    def _sign_anew(self, found) -> None:
+        """The journal's signature can't go out again: the article as asked
+        is signed now, newer than what is public."""
+        self._recovered = self._recovered_receipts = None
+        self._signed_event = None
+        self._unsigned = dict(self._requested)
+        if found and self._unsigned.get("created_at", 0) <= found["created_at"]:
+            self._unsigned["created_at"] = found["created_at"] + 1
+        self._checked_current = True
+        too_long = size_problem(
+            self._profile, event=self._unsigned,
+            key_here=lambda: self._session_pool.key_here(self._author))
+        if too_long:
+            self._fail(too_long, words=too_long)
+            return
+        self._say(_("Connecting to your signer app…"))
+        self._session_pool.get(self._profile, on_ready=self._on_signer, on_error=self._fail)
 
     def _send(self) -> None:
         if self._journal is not None:

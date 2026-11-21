@@ -206,3 +206,28 @@ def test_receipt_failure_after_verified_publication_does_not_hang(tmp_path, monk
     job.start()
     settle(15)
     assert results and not pool.published
+
+
+@pytest.mark.parametrize("elsewhere", ["deleted", "newer"])
+def test_identical_text_goes_out_again_after_a_deletion_or_a_newer_version(tmp_path, elsewhere):
+    # me68-red-a-6: the journal's accepted signature is reused only while
+    # it is the one public; else the same text is signed anew.
+    journal = PublicationJournal(tmp_path / 'journal.sqlite3')
+    event = signed(30023, article()["tags"], 'Reference', created_at=1_700_000_000)
+    journal.remember(event)
+    journal.accepted(event['id'], 'wss://test.example')
+    pool, client = ArticlePool(), FakeClient()
+    expected = event['id']
+    if elsewhere == "newer":
+        newer = signed(30023, article()["tags"], 'Written on the web', created_at=1_800_000_500)
+        pool.stored[newer['id']] = newer
+        expected = newer['id']                      # opened its latest version
+    job = PublishJob(unsigned_event={**article(), "content": "Reference"},
+                     expected_event_id=expected, **options(journal, pool, client))
+    job.start()
+    settle(20)
+    assert len(client.requests) == 1 and len(pool.published) == 1
+    sent = pool.published[0][1]
+    assert sent['content'] == 'Reference' and sent['id'] != event['id']
+    if elsewhere == "newer":
+        assert sent['created_at'] > newer['created_at']

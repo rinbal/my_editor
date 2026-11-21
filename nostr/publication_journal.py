@@ -83,6 +83,13 @@ class PublicationJournal:
             raise ValueError("damaged publication receipt")
         return {"event": event, "status": row[2], "receipts": json.loads(row[3])}
 
+    def was_accepted(self, event_id: str) -> bool:
+        """Whether a relay took ``event_id`` when it went out from here."""
+        with self._connect() as db:
+            row = db.execute("SELECT status FROM publications WHERE event_id=?",
+                             (event_id,)).fetchone()
+        return bool(row and row[0] == "accepted")
+
     def remember(self, event: dict) -> None:
         if not verify_event(event):
             raise ValueError("only valid signed events enter the publication journal")
