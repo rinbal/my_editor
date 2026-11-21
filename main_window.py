@@ -9798,6 +9798,9 @@ class MainWindow(QMainWindow):
         self._draft_deletions.stop()
         self._private_library.stop()
         self._server_list.forget_account()
+        # A read of whether an original is public belongs to the account.
+        if getattr(self, "_multilingual", None) is not None:
+            self._multilingual.account_changed()
         # The library lists one account's files; the next account must
         # never see them, not even until its own fetch lands.
         self._media_store.clear()

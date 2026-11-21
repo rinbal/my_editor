@@ -48,6 +48,20 @@ def test_the_chooser_speaks_the_interface_language_and_shows_the_versions(monkey
     assert picker.results.item(0).data(Qt.ItemDataRole.UserRole) == "it"
     assert language_chooser.language_name("de-AT") == "Deutsch (Österreich)"
     assert language_chooser.language_name("sw") == "Suaheli"
+    # me68-verify-2: CLDR's German names for regions and scripts, and found by them.
+    assert language_chooser.language_name("pt-BR") == "Portugiesisch (Brasilien)"
+    assert language_chooser.language_name("zh-Hant") == "Chinesisch (Traditionell)"
+    picker.search.setText("Portugiesisch Brasilien")
+    first = picker.results.item(picker._choosable()[0])
+    assert first.data(Qt.ItemDataRole.UserRole) == "pt-BR"
+    # me68-verify-3: two languages never under one name.
+    assert language_chooser.language_name("chn") != language_chooser.language_name("chh")
+    # me68-verify-4: every row keeps the check mark's room.
+    picker.search.setText("")
+    heights = {picker.results.visualItemRect(picker.results.item(i)).height()
+               for i in range(picker.results.count())}
+    assert len(heights) == 1 and all(not picker.results.item(i).icon().isNull()
+                                     for i in range(picker.results.count()))
     picker.search.setText("")
     picker.all_button.click()
     names = [picker.results.item(i).text().split(" · ")[-1]
@@ -266,6 +280,15 @@ r["pair_cards_balanced"] = (sheet._source_card.byline.text().startswith("German"
 # red-b-2: the original went out and the second did not: said as such.
 sheet._pair_version_out({"tags": [["d", w._article_details_of(source).identifier]]})
 sheet._say_not_published("", "relay.example: blocked")
+# me68-verify-1, -5: only what is still to go out stays, as tall as it
+# needs; the bylines keep to one line.
+app.processEvents()
+from PySide6.QtGui import QFontMetrics
+from nostr.ui.publish_article_dialog import ArticleCard
+r["half_failure_only_the_rest"] = (not sheet._source_card.isVisible()
+                                   and not sheet._scroll.verticalScrollBar().isVisible())
+r["byline_one_line"] = ("\u00a0" in sheet._card.byline.text() and QFontMetrics(
+    sheet._card.byline.font()).horizontalAdvance(sheet._card.byline.text()) <= ArticleCard.WIDTH - 26)
 r["pair_half_failure"] = ("Thai wasn’t published" in sheet._status.text()
                           and "German is public. Try again to publish Thai." in sheet._status.text()
                           and sheet._status.toolTip() == "relay.example: blocked"
@@ -407,6 +430,53 @@ settle(60)
 w._relay_pool, w._relay_directory = old_pool, old_directory
 r["public_original_found"] = (linked._language_link["source"]["eventId"] == out_there["id"]
                               and w._multilingual.context(public_file)["expected_event_id"] == out_there["id"])
+# me68-verify-7: while it is read whether an original is out, the latest
+# action follows, once; an account change stops the read and its status.
+from tests.outbox_fakes import HandPool
+from nostr.profiles import Profile as _Profile
+
+
+def answer_all(hand):
+    for _round in range(6):
+        settle()
+        for sub in list(hand.subs):
+            if not sub.is_closed:
+                for url in sub.urls:
+                    sub.answer(url)
+    settle(10)
+
+
+hand = HandPool()
+w._relay_pool, w._relay_directory = hand, FakeRelayDirectory({PK: ["wss://test.example"]})
+maybe = w.new_tab()
+maybe.insertPlainText("Maybe out")
+w._set_article_details(maybe, ArticleDetails(identifier="maybe-out", title="Maybe").with_language("de"))
+maybe_target = w._multilingual.open_language(maybe, "en")
+settle()
+earlier, later = [], []
+w._multilingual.prepare_source(maybe_target, earlier.append)
+w._multilingual.prepare_source(maybe_target, later.append)
+answer_all(hand)
+r["lookup_latest_follows"] = earlier == [] and later == [True]
+hand = HandPool()
+w._relay_pool = hand
+other = w.new_tab()
+other.insertPlainText("Other maybe")
+w._set_article_details(other, ArticleDetails(identifier="other-maybe", title="Other").with_language("de"))
+other_target = w._multilingual.open_language(other, "en")
+settle()
+never = []
+w._multilingual.prepare_source(other_target, never.append)
+reading_shown = bool(w.status.currentMessage())
+saved_default = w._profile_store.default
+w._profile_store.default = lambda: _Profile(user_pubkey="e5" * 32, bunker_pubkey="", bunker_relays=[],
+                                            local_secret_hex="", display_name="Someone else")
+w._multilingual.account_changed()
+answer_all(hand)
+r["lookup_cancelled_by_account"] = (reading_shown and never == [] and not w.status.currentMessage()
+                                    and not other_target._language_preparing)
+w._profile_store.default = saved_default
+w._relay_pool, w._relay_directory = old_pool, old_directory
 # The latest action asked for while the reference is read is the one that follows (red-a-11).
 pending = []
 source_provenance.check_source_snapshot = lambda pool, directory, snapshot, done, parent=None: pending.append(done)

@@ -503,16 +503,22 @@ class MultilingualAuthoring(QObject):
         self._look_up_public(source_ed, lambda t=target: self._repin_source(t))
         return target
 
-    def _look_up_public(self, ed, finished):
+    def _look_up_public(self, ed, finished, *, cancelled=None):
         """Read once whether the article in ``ed`` is public already, when
         that is not known (an article opened from its file, from Drafts,
         after a restart): found and verified, it is ``ed``'s published
         version. ``finished()`` then, found or not; at once when there is
-        nothing to read. Quiet: no status, no message."""
+        nothing to read. Asked again while it reads, the asker waits for the
+        same read. Quiet: no status, no message. An account change
+        meanwhile ends it with ``cancelled()`` (account_changed)."""
+        if getattr(ed, "_language_public_cancel", None) is not None:
+            ed._language_public_waiters.append((finished, cancelled))
+            return
         if not self._needs_public_lookup(ed):
             finished()
             return
         ed._language_public_looked_up = True
+        ed._language_public_waiters = [(finished, cancelled)]
         owner = self._owner()
         identifier = self.window._article_details_of(ed).identifier
         from nostr.outbox import defaults
@@ -520,8 +526,39 @@ class MultilingualAuthoring(QObject):
         from nostr.outbox.policy import dedupe_relays
         from nostr.source_provenance import check_source_snapshot
 
+        stopped = []
+
+        def waiters():
+            stopped.append(True)
+            ed._language_public_cancel = None
+            waiting, ed._language_public_waiters = ed._language_public_waiters, []
+            return waiting
+
+        def abort() -> None:
+            if stopped:
+                return
+            ed._language_public_looked_up = False       # the next account reads its own
+            self._stop_public_lookup(ed)
+            for _finished, on_cancel in waiters():
+                if on_cancel is not None:
+                    on_cancel()
+
+        def done() -> None:
+            for on_finish, _cancelled in waiters():
+                on_finish()
+
+        def gone() -> bool:
+            if stopped or not shiboken6.isValid(ed):
+                return True
+            if owner != self._owner():
+                abort()
+                return True
+            return False
+
+        ed._language_public_cancel = abort
+
         def proved(proof):
-            if not shiboken6.isValid(ed) or owner != self._owner():
+            if gone():
                 return
             event = proof.get("current") if proof.get("available") else None
             if event is not None and self._address_of(event) == f"30023:{owner}:{identifier}":
@@ -531,14 +568,14 @@ class MultilingualAuthoring(QObject):
                 if own:
                     own["published"] = self._published_record(event)
                     self._set_link(ed, own)
-            finished()
+            done()
 
         def found(results):
-            if not shiboken6.isValid(ed) or owner != self._owner():
+            if gone():
                 return
             event = results[identifier].event if identifier in results else None
             if event is None:
-                finished()
+                done()
                 return
             snapshot = {"address": f"30023:{owner}:{identifier}", "eventId": event["id"],
                         "content": event["content"]}
@@ -546,12 +583,31 @@ class MultilingualAuthoring(QObject):
                 self.window._relay_pool, self.window._relay_directory, snapshot, proved, parent=ed)
 
         def planned(plan):
-            if not shiboken6.isValid(ed):
+            if gone():
                 return
             ed._language_public_lookup = fetch_addressable(
                 self.window._relay_pool, dedupe_relays(plan.targets, defaults.INDEXER_RELAYS),
                 kind=30023, author=owner, d_tags=[identifier], on_done=found, parent=ed)
         self.window._relay_directory.publish_plan(owner, planned)
+
+    def _stop_public_lookup(self, ed):
+        for name in ("_language_public_lookup", "_language_public_check"):
+            operation = getattr(ed, name, None)
+            setattr(ed, name, None)
+            if operation is not None and shiboken6.isValid(operation):
+                if hasattr(operation, "cancel"):
+                    operation.cancel()
+                operation.deleteLater()
+        ed._language_public_cancel = None
+
+    def account_changed(self):
+        """The account was switched or signed out: a read of whether an
+        original is public stops, and its "Checking …" with it
+        (me68-verify-7)."""
+        for ed in self.editors():
+            cancel = getattr(ed, "_language_public_cancel", None)
+            if cancel is not None:
+                cancel()
 
     def _needs_public_lookup(self, ed):
         """Whether it is not known yet whether the article in ``ed`` is out:
@@ -657,11 +713,31 @@ class MultilingualAuthoring(QObject):
                 self.window.status.showMessage(_("Checking the published version…"), nostr=True)
             return
         original = self.source_editor(ed) if source else ed
-        if not quiet and not source.get("eventId") and self._needs_public_lookup(original):
-            # Whether the original is out already is read first (red-a-2).
+        reading = getattr(original, "_language_public_cancel", None) is not None
+        if not quiet and not source.get("eventId") and (reading or self._needs_public_lookup(original)):
+            # Whether the original is out already is read first (red-a-2),
+            # or the read under way is waited for. An action asked for
+            # meanwhile replaces this one, as during the reference check
+            # (me68-verify-7).
+            ed._language_preparing = True
+            ed._language_prepare_callback = done
             self.window.status.showMessage(_("Checking the published version…"), nostr=True)
-            self._look_up_public(original, lambda: (self._repin_source(ed) if source else None,
-                                                    self.prepare_source(ed, done, quiet=quiet)))
+
+            def looked_up():
+                callback = getattr(ed, "_language_prepare_callback", None)
+                ed._language_preparing = False
+                ed._language_prepare_callback = None
+                if source:
+                    self._repin_source(ed)
+                if callback is not None:
+                    self.prepare_source(ed, callback)
+
+            def cancelled():
+                # The account changed while it was read: nothing follows.
+                ed._language_preparing = False
+                ed._language_prepare_callback = None
+                self.window.status.clearMessage()
+            self._look_up_public(original, looked_up, cancelled=cancelled)
             return
         source = (self.context(ed) or {}).get("source", {})
         if source and (not source.get("address") or not source.get("eventId")):
