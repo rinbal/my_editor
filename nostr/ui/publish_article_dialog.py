@@ -68,6 +68,7 @@ from constants import (
 from i18n import N_, _, format_moment, ngettext, pgettext
 
 from ..article_details import ArticleDetails, default_title
+from ..drafts import derive_preview_snippet
 from ..avatar_store import AvatarStore
 from ..bech32 import encode_naddr
 from ..blossom.store import MediaStore
@@ -107,6 +108,15 @@ from .split_action_button import SplitActionButton
 
 # What did not happen, the title of a total failure (lessons 36).
 ARTICLE_NOT_PUBLISHED = N_("Your article wasn’t published")
+
+
+def _excerpt(markdown: str) -> str:
+    """A card's few words of an article: its text in plain words, without
+    the heading it opens with (the card shows the title)."""
+    lines = (markdown or "").strip().split("\n")
+    if lines and lines[0].lstrip().startswith("#"):
+        lines = lines[1:]
+    return derive_preview_snippet("\n".join(lines))
 
 # The sheet's width, as the window has room for it.
 _WIDTH = 760
@@ -306,6 +316,9 @@ class PublishArticleDialog(QDialog):
                                   if document_carried is not None else None)
         self._pair_source = pair_source
         self._publish_pair = False
+        # Both going out, and the original already public (red-b-2): what
+        # is said after that is about the second version only.
+        self._pair_source_out = False
         self._journal = PublicationJournal() if language_context else None
         self._store = store
         self._relay_pool = relay_pool
@@ -436,10 +449,6 @@ class PublishArticleDialog(QDialog):
         self._source_card = None
         if self._pair_source:
             self._source_card = ArticleCard(self._is_dark, compact_missing_cover=True)
-            details = self._pair_source["details"]
-            self._source_card.show_article(details.title or _("Original"),
-                                           self._pair_source["body"][:180], QPixmap(),
-                                           language_name(details.language))
             self._cards.insertWidget(1, self._source_card, 0, Qt.AlignmentFlag.AlignTop)
             self._source_card.hide()
         # Made before the form, which names its account (the cover's
@@ -703,13 +712,24 @@ class PublishArticleDialog(QDialog):
 
     def _refresh_card(self, *_args) -> None:
         profile = self._account.profile()
-        minutes = reading_minutes(self._body)
-        byline = " · ".join((profile.display_name or profile.npub_short(),
-                                  ngettext("{n} min read", "{n} min read",
-                                           minutes).format(n=minutes)))
+
+        def byline(body: str, language: str) -> str:
+            # Both versions going out: each card says its language first,
+            # the same way (red-b-11).
+            minutes = reading_minutes(body)
+            parts = ((language_name(language),) if self._publish_pair and language else ()) + (
+                profile.display_name or profile.npub_short(),
+                ngettext("{n} min read", "{n} min read", minutes).format(n=minutes))
+            return " · ".join(parts)
         self._card.show_article(self._title_edit.text().strip(),
                                 self._summary_edit.text().strip(), self._cover.picture(),
-                                byline)
+                                byline(self._body, self._details.language))
+        if self._source_card is not None:
+            details = self._pair_source["details"]
+            body = self._pair_source["body"]
+            self._source_card.show_article(details.title or default_title(body) or _("Original"),
+                                           details.summary or _excerpt(body), QPixmap(),
+                                           byline(body, details.language))
 
     # -- title and link name -------------------------------------------------------------
 
@@ -792,16 +812,25 @@ class PublishArticleDialog(QDialog):
         target = language_name(self._details.language) or _("This version")
         source = self._language_context.get("source", {})
         source_name = language_name(source.get("language", "")) or _("Original")
-        if self._publish_pair:
+        if self._publish_pair and self._pair_source_out:
+            words = _("{language} will be public.").format(language=target)
+        elif self._publish_pair:
             words = _("{source} and {target} will be public.").format(source=source_name, target=target)
         elif source and not source.get("public") and not (source.get("address") and source.get("eventId")):
-            words = _("{target} will be public. {source} stays a draft.").format(target=target, source=source_name)
+            words = _("{target} will be public. {source} stays unpublished.").format(target=target, source=source_name)
         else:
             words = _("{language} will be public.").format(language=target)
         if self._language_context.get("reference_unavailable") and not self._publish_pair:
             words += " " + _("Reference unavailable. Only this version will be published.")
         self._scope.setText(words)
         self._publish_btn.setText(self._button_label())
+
+    def _pair_version_out(self, event: dict) -> None:
+        identifier = next((tag[1] for tag in event.get("tags", [])
+                           if len(tag) > 1 and tag[0] == "d"), "")
+        if self._pair_source and identifier == self._pair_source["details"].identifier:
+            self._pair_source_out = True
+            self._update_scope()
 
     def _pair_problem_words(self) -> str:
         """Why both versions can't go out now: the original's own problem,
@@ -822,6 +851,7 @@ class PublishArticleDialog(QDialog):
         self._publish_pair = bool(enabled and self._pair_source)
         if self._source_card is not None:
             self._source_card.setVisible(self._publish_pair)
+        self._refresh_card()
         problem = self._pair_problem_words() if self._publish_pair else ""
         self._pair_problem.setVisible(bool(self._publish_pair and self._pair_source.get("problem")))
         self._set_status(problem, error=bool(problem))
@@ -889,7 +919,7 @@ class PublishArticleDialog(QDialog):
                    and record.get(self._account.profile().user_pubkey, self._slug()))
         if self._language_context:
             target = language_name(self._details.language)
-            if self._publish_pair:
+            if self._publish_pair and not self._pair_source_out:
                 source = language_name(self._pair_source["details"].language) or _("Original")
                 return _("Publish {source} and {target}").format(
                     source=source, target=target or _("This version"))
@@ -1166,6 +1196,7 @@ class PublishArticleDialog(QDialog):
             self._job = PairPublication(source_event=approved_source, target_factory=target_factory,
                                         **expected, **options)
             self._job.version_published.connect(self.version_published)
+            self._job.version_published.connect(self._pair_version_out)
         else:
             self._job = PublishJob(unsigned_event=unsigned, **options)
         self._job.status_changed.connect(self._set_status)
@@ -1218,8 +1249,17 @@ class PublishArticleDialog(QDialog):
         """A total failure, said once: what did not happen, why and what
         to do in one sentence, Try Again beside Cancel; what each relay or
         the signer app answered only in the tooltip (lessons 36)."""
+        title = _(ARTICLE_NOT_PUBLISHED)
+        if self._publish_pair and self._pair_source_out:
+            # The original went out: one sentence says so, and what is left
+            # (red-b-2); the reason stays in the tooltip.
+            target = language_name(self._details.language) or _("This version")
+            source = language_name(self._pair_source["details"].language) or _("The original")
+            title = _("{language} wasn’t published").format(language=target)
+            sentence = _("{source} is public. Try again to publish {target}.").format(
+                source=source, target=target)
         self._status.say(sentence or signer_failure_words(detail),
-                         title=_(ARTICLE_NOT_PUBLISHED), error=True, detail=detail)
+                         title=title, error=True, detail=detail)
         self._try_again = True
         self._publish_btn.setText(self._button_label())
         self._set_busy(False)

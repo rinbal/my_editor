@@ -31,6 +31,33 @@ def test_search_reaches_all_languages_including_native_names(query, expected):
     picker.close()
 
 
+def test_the_chooser_speaks_the_interface_language_and_shows_the_versions(monkeypatch):
+    # me68-red-b-1, -5, -6, -12: German names, every language in name
+    # order, regions by name, the versions apart, the current one checked
+    # beside its name and never the row Return would open.
+    from nostr.ui import language_chooser
+    monkeypatch.setattr(language_chooser, "interface_language", lambda: "de")
+    picker = LanguageChooser(current="de", existing=("de", "en"), dark=False)
+    rows = [picker.results.item(i) for i in range(picker.results.count())]
+    assert [row.text() for row in rows[:4]] == [
+        "Versions of this article", "Deutsch", "English · Englisch", "Other languages"]
+    assert not rows[0].flags() & Qt.ItemFlag.ItemIsEnabled
+    assert not rows[1].icon().isNull() and "✓" not in rows[1].text()
+    assert rows[1].data(Qt.ItemDataRole.AccessibleDescriptionRole) == "Current language"
+    assert picker.results.currentItem() is rows[2]
+    picker.search.setText("Italienisch")
+    assert picker.results.item(0).data(Qt.ItemDataRole.UserRole) == "it"
+    assert language_chooser.language_name("de-AT") == "Deutsch (Österreich)"
+    assert language_chooser.language_name("sw") == "Suaheli"
+    picker.search.setText("")
+    picker.all_button.click()
+    names = [picker.results.item(i).text().split(" · ")[-1]
+             for i in range(4, picker.results.count())]
+    assert len(names) > 7000 and not picker.more_button.isVisible()
+    assert names.index("Italienisch") < names.index("Japanisch") < names.index("Niederländisch")
+    picker.close()
+
+
 def test_ime_composition_does_not_select_the_first_result():
     picker = LanguageChooser()
     chosen = []
@@ -150,6 +177,16 @@ r = {"blank": target.toPlainText() == "", "source_kept": "PRIVATE SOURCE SENTINE
      "different_id": w._article_details_of(source).identifier != w._article_details_of(target).identifier,
      "reference": target._language_reference_pane.isVisible(), "details_closed": not w.act_article_details.isChecked()}
 r["reference_measured"] = target._language_reference_pane.width() >= 260 and target.width() >= 400
+# red-b-8, -9: the new tab says which version it is; the command says
+# what it does now, with no check mark.
+r["tab_named"] = w._document_name(target) == "Original · Thai"
+r["hide_reference_title"] = (w.act_language_reference.text() == "Hide Reference"
+                             and not w.act_language_reference.isCheckable())
+# red-b-4: the chooser opens inside the screen, under its control.
+w._multilingual.choose(); app.processEvents()
+chooser = w._multilingual._chooser
+r["chooser_on_screen"] = chooser.screen().availableGeometry().contains(chooser.frameGeometry())
+chooser.close(); w.activateWindow(); app.processEvents()
 target.insertPlainText("ภาษาไทย\n\nงานเขียนของฉัน")
 cursor = target.textCursor(); cursor.setPosition(2); target.setTextCursor(cursor)
 original_cursor = target.textCursor().position()
@@ -188,7 +225,9 @@ w.resize(700, 850); app.processEvents(); app.processEvents()
 r["narrow_writing"] = target.isVisible() and not reference.isVisible()
 w._multilingual.toggle_reference(); app.processEvents()
 r["narrow_reference"] = reference.isVisible() and not target.isVisible() and w.current_editor() is target
-w._multilingual.toggle_reference(); app.processEvents()
+# red-b-7: reference-only shows its way back, beside the caption.
+r["narrow_back_shown"] = reference.back.isVisible() and reference.back.text() == "Back to Thai"
+reference.back.click(); app.processEvents()
 r["narrow_return"] = target.isVisible() and target.toPlainText().startswith("ภาษาไทย")
 w.resize(1450, 850); app.processEvents(); app.processEvents()
 record = workspace_restore.capture_editor_tab(target)
@@ -217,10 +256,21 @@ r["private_submission_safe"] = "PRIVATE SOURCE SENTINEL" not in json.dumps(draft
 w._open_publish_article(restored)
 app.processEvents()
 sheet = w._publish_sheet
-r["scope"] = "stays a draft" in sheet._scope.text()
+r["scope"] = "stays unpublished" in sheet._scope.text()
 r["named_publish"] = "Thai" in sheet._publish_btn.text()
 sheet._set_pair(True); app.processEvents()
 r["pair_named_scope"] = "German" in sheet._publish_btn.text() and "Thai" in sheet._publish_btn.text() and sheet._source_card.isVisible()
+# red-b-11: both cards say their language; the original's shows words, not Markdown.
+r["pair_cards_balanced"] = (sheet._source_card.byline.text().startswith("German")
+                            and sheet._card.byline.text().startswith("Thai")
+                            and "#" not in sheet._source_card.summary.text())
+# red-b-2: the original went out and the second did not: said as such.
+sheet._pair_version_out({"tags": [["d", w._article_details_of(source).identifier]]})
+sheet._say_not_published("", "relay.example: blocked")
+r["pair_half_failure"] = ("Thai wasn’t published" in sheet._status.text()
+                          and "German is public. Try again to publish Thai." in sheet._status.text()
+                          and sheet._status.toolTip() == "relay.example: blocked"
+                          and sheet._scope.text().startswith("Thai will be public."))
 sheet._set_pair(False); app.processEvents()
 r["optional_hidden"] = not sheet._summary_edit.isVisible() and not sheet._hashtags.isVisible()
 sheet.reject()
