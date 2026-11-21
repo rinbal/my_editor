@@ -69,7 +69,9 @@ jobs:
       # A test that hangs (a dialog nobody answers, a wait that never
       # ends) stops the run after 45 minutes instead of GitHub's six
       # hours, and after five minutes in one test Python prints where
-      # every thread is. A whole run takes about 8 to 15 minutes.
+      # every thread is. Windows' complete suite already took over 42 minutes
+      # before multilingual coverage, so it has 60 minutes to finish and
+      # report failures. Other platforms keep their existing limit.
       - name: Run the tests
-        timeout-minutes: 60
+        timeout-minutes: ${{ matrix.name == 'windows' && 60 || 45 }}
         run: python -m pytest -q -o faulthandler_timeout=300
