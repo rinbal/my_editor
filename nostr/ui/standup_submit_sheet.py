@@ -20,11 +20,16 @@ be taken back, publishing is public.
 **An** lists the publications open for submissions, the ones submitted
 to before first, each with its logo (its profile picture, or a monogram),
 and the rules of the chosen one under it; one that takes no articles is
-dimmed with the reason. **Veröffentlicht von** shows only when the
-publication lets the writer choose; the rights only when it asks for
-them. **Einreichen** is the default button, dimmed only by a blocker,
-whose reason is said above it (drafting.blockers, the Redaktion's key
-not confirmed, the server's address not known yet: "kommt vom Verein").
+dimmed with the reason. **Veröffentlicht von** is a choice when the
+publication lets the writer choose, and says "der Publikation" when the
+publication publishes; under it, who does what, as the guest post page
+says it. The rights show only when it asks for them. A profile known to
+have no name (read from the relays, or an account made here) gets one
+quiet line under the fields, with Edit Profile… beside it (G15e): read
+again as the account changes and when the sheet is in front again.
+**Einreichen** is the default button, dimmed only by a blocker, whose
+reason is said above it (drafting.blockers, the Redaktion's key not
+confirmed, the server's address not known yet: "kommt vom Verein").
 
 The publications' logos and rules are :mod:`.standup_publications`'s,
 the lock line and its Details :mod:`.standup_privacy`'s.
@@ -51,6 +56,7 @@ share its state, so the module is a little longer than most.
 
 from __future__ import annotations
 
+import html
 import time
 from dataclasses import replace
 from typing import Callable, List, Optional, Sequence
@@ -119,6 +125,7 @@ class SubmitSheet(QDialog):
                  store: ProfileStore, avatars: AvatarStore,
                  logos: PublicationLogos, is_dark: bool,
                  public_pictures: int = 0, pictures: int = 0,
+                 edit_profile: Optional[Callable[[], None]] = None,
                  parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(_("Submit to a Publication"))
@@ -138,6 +145,7 @@ class SubmitSheet(QDialog):
         self._avatars = avatars             # the people's (the account row)
         self._logos = logos                 # the publications', by address (12.9)
         self._is_dark = is_dark
+        self._edit_profile = edit_profile           # Edit Profile for the account in use
         self._destinations: List[Destination] = []
         # The round this text would go in at the chosen publication, as
         # StandupWriter.round_for answered: None while asking.
@@ -241,6 +249,18 @@ class SubmitSheet(QDialog):
         fields.addStretch(1)
         columns.addLayout(fields, 1)
         inner.addLayout(columns)
+        self.no_name = QWidget()
+        no_name = QHBoxLayout(self.no_name)
+        no_name.setContentsMargins(0, 0, 0, 0)
+        hint = self._hint()
+        hint.setText(_("Your profile has no name yet. Add one so others see who wrote it."))
+        no_name.addWidget(hint, 1)
+        self.edit_profile = QPushButton(_("Edit Profile…"))
+        self.edit_profile.setAutoDefault(False)     # Submit stays the one default
+        self.edit_profile.clicked.connect(lambda: self._edit_profile and self._edit_profile())
+        no_name.addWidget(self.edit_profile, 0, Qt.AlignmentFlag.AlignTop)
+        self.no_name.hide()
+        inner.addWidget(self.no_name)
         self.privacy = PrivacyBox(self.privacy_words, is_dark=self._is_dark)
         self.privacy_toggle, self.privacy_lines = self.privacy.toggle, self.privacy.lines
         self.privacy_toggle.toggled.connect(lambda _shown: self._grow())
@@ -310,7 +330,12 @@ class SubmitSheet(QDialog):
         for button in (self.by_me, self.by_publication):
             group.addButton(button)
             button.toggled.connect(self._show_by_hint)
+        # Where the publication publishes, the row says so in words: there
+        # is nothing to choose (G15b).
+        self.by_fixed = QLabel(_("the publication"))
         self.by_hint = self._hint()
+        # The publication's name stands out (R1): bold, the name escaped.
+        self.by_hint.setTextFormat(Qt.TextFormat.RichText)
         by = QWidget()
         by_column = QVBoxLayout(by)
         by_column.setContentsMargins(0, 0, 0, 0)
@@ -318,10 +343,12 @@ class SubmitSheet(QDialog):
         radios = QHBoxLayout()
         radios.addWidget(self.by_me)
         radios.addWidget(self.by_publication)
+        radios.addWidget(self.by_fixed)
         radios.addStretch(1)
         by_column.addLayout(radios)
         by_column.addWidget(self.by_hint)
         self._by_row = row(_("Published by:"), self.by_me, by)
+        self._by_label = self._labels[-1]
 
         self.rights = QCheckBox(_("I have the rights to the text and the pictures."))
         self.rights.toggled.connect(self._refresh)
@@ -474,7 +501,32 @@ class SubmitSheet(QDialog):
 
         return answer
 
+    def _show_no_name(self) -> None:
+        """The line for a profile without a name, only where that is known:
+        a profile never read has no name yet only here (S9)."""
+        pubkey = self.account.profile().user_pubkey
+        profile = self._store.get(pubkey) or self.account.profile()
+        known = profile.metadata_cached_at > 0 or profile.setup_pending
+        shown = (self._edit_profile is not None and known
+                 and not profile.display_name.strip())
+        if shown == self.no_name.isHidden():
+            self.no_name.setVisible(shown)
+            self._grow()
+
+    def profile_updated(self, _profile=None) -> None:
+        """A profile was read anew (the name saved in Edit Profile… comes
+        in after its window closed): the line follows it."""
+        self._show_no_name()
+
+    def changeEvent(self, event) -> None:  # noqa: N802, Qt's name
+        """In front again (after Edit Profile…): a name given there takes
+        the line away."""
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.ActivationChange and self.isActiveWindow():
+            self._show_no_name()
+
     def _load(self) -> None:
+        self._show_no_name()                        # the account's, as it is now
         self._generation += 1                       # the account asked for now
         self._load_failed = self._load_limited = False
         self._load_problem = ""
@@ -565,8 +617,13 @@ class SubmitSheet(QDialog):
         rules = destination.key.rules if destination is not None and destination.key else {}
         self.rules.setText(rules_words(rules) if destination is not None else "")
         self.rules.setVisible(bool(self.rules.text()))
-        self._form.setRowVisible(self._by_row, destination is not None
-                                 and publish_by(destination) == "both")
+        by = publish_by(destination) if destination is not None else ""
+        self._form.setRowVisible(self._by_row, by in ("both", "publication"))
+        for button in (self.by_me, self.by_publication):
+            button.setVisible(by == "both")
+        self.by_fixed.setVisible(by == "publication")
+        # VoiceOver reads "Published by:" with what shows beside it.
+        self._by_label.setBuddy(self.by_fixed if by == "publication" else self.by_me)
         self._form.setRowVisible(self._rights_row, bool(rules.get("rights_required")))
         self._arrange()                             # other rows, other room
         self._grow()
@@ -588,11 +645,15 @@ class SubmitSheet(QDialog):
     # -- what the person chooses ---------------------------------------------
 
     def _show_by_hint(self, *_args) -> None:
+        """Who publishes, in the words of the guest post page (R3)."""
+        choice = self.choice()
+        name = f"<b>{html.escape(choice.name)}</b>" if choice is not None else ""
         self.by_hint.setText(
-            _("After acceptance you publish it yourself, from your account.")
-            if self.by_me.isChecked()
-            else _("At acceptance the editorial team proposes how zaps are split; "
-                   "you confirm it."))
+            _("{publication} publishes it under your name. Before that, you briefly confirm "
+              "your share of the zaps.").format(publication=name)
+            if choice is not None and choice.signer == "publication"
+            else _("After acceptance you publish it yourself, and {publication} shows it on "
+                   "its own page.").format(publication=name))
 
     def _show_message(self, shown: bool) -> None:
         self.message_toggle.setArrowType(Qt.ArrowType.DownArrow if shown

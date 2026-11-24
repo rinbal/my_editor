@@ -64,7 +64,7 @@ from alerts import CANCEL, DEFAULT, NORMAL, Button, ask, answer_return_as_the_sy
 from constants import (
     DARK_BORDER, DARK_MENU_BG, DARK_MUTED_FG, LIGHT_BG, LIGHT_BORDER, LIGHT_MUTED_FG,
 )
-from i18n import N_, _, format_moment, ngettext
+from i18n import N_, _, format_moment, ngettext, pgettext
 
 from ..article_details import ArticleDetails
 from ..avatar_store import AvatarStore
@@ -364,6 +364,9 @@ class PublishArticleDialog(QDialog):
         self._file_names = (own_names if own_names and not self._details.identifier
                             and default_slug not in own_names else [])
         self._slug_typed = False
+        # No relay took the last publish: the button is Try Again until
+        # the next one (_button_label; set before _build, which names it).
+        self._try_again = False
 
         self._build(active_profile, default_title, default_slug)
         self._coauthors = Coauthors(profile=self._account.profile,
@@ -421,7 +424,7 @@ class PublishArticleDialog(QDialog):
 
         buttons = QDialogButtonBox()
         self._cancel_btn = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
-        self._publish_btn = buttons.addButton(_("Publish"),
+        self._publish_btn = buttons.addButton(self._button_label(),
                                               QDialogButtonBox.ButtonRole.AcceptRole)
         self._cancel_btn.clicked.connect(self._on_cancel)
         self._publish_btn.clicked.connect(self._on_publish)
@@ -664,6 +667,7 @@ class PublishArticleDialog(QDialog):
         # Typed: it no longer follows the title, and it is the person's.
         self._slug_is_auto = False
         self._slug_typed = True
+        self._try_again = False                     # another article: Publish or Update
         self._refresh_publish_enabled()
 
     def _slug(self) -> str:
@@ -717,6 +721,8 @@ class PublishArticleDialog(QDialog):
     def _on_account_switched(self, _profile: Profile) -> None:
         self._show_people()
         self._refresh_card()
+        self._try_again = False                         # another account's article
+        self._refresh_publish_enabled()                 # Update is the account's
 
     # -- state ------------------------------------------------------------------------
 
@@ -756,6 +762,17 @@ class PublishArticleDialog(QDialog):
         self._publish_btn.setEnabled(self._job is None and not self._looking_up
                                      and bool(slug) and bool(self._body) and not problem
                                      and not self._cover.uploading())
+        self._publish_btn.setText(self._button_label())
+
+    def _button_label(self) -> str:
+        """Try Again after no relay took it; Update for an article this
+        computer published before under the account and link name of now
+        (FirstPublications, G15d); else Publish."""
+        if self._try_again:
+            return _("Try Again")
+        record = self._first_publications
+        out = record is not None and record.get(self._account.profile().user_pubkey, self._slug())
+        return pgettext("an article published before", "Update") if out else _("Publish")
 
     def _set_status(self, text: str, *, error: bool = False) -> None:
         self._status.say(text, error=error)
@@ -946,7 +963,8 @@ class PublishArticleDialog(QDialog):
 
         self._set_busy(True)
         self._set_status("")
-        self._publish_btn.setText(_("Publish"))
+        self._try_again = False
+        self._publish_btn.setText(self._button_label())
         self._publishing = (slug, published_at)
         kept, self._not_taken = self._not_taken, None
         if kept is not None and same_event(kept.unsigned_event, unsigned) and kept.send_again():
@@ -1007,7 +1025,8 @@ class PublishArticleDialog(QDialog):
         the signer app answered only in the tooltip (lessons 36)."""
         self._status.say(sentence or signer_failure_words(detail),
                          title=_(ARTICLE_NOT_PUBLISHED), error=True, detail=detail)
-        self._publish_btn.setText(_("Try Again"))
+        self._try_again = True
+        self._publish_btn.setText(self._button_label())
         self._set_busy(False)
 
     def _on_cancel(self) -> None:

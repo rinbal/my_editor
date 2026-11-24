@@ -137,6 +137,12 @@ class _Kept(_Submitting):
     def __init__(self, cache_dir) -> None:
         super().__init__(cache_dir, ArticleDetails())
         self.open_tabs = []
+        # What the sheet is handed for a profile without a name (G15e).
+        self._metadata_fetcher = types.SimpleNamespace(
+            updated=types.SimpleNamespace(connect=lambda _slot: None))
+
+    def _on_edit_profile(self) -> None:
+        pass
 
     def _published_article_of(self, _ed):
         return None
@@ -287,6 +293,9 @@ def test_the_submit_command_keeps_the_identifier_its_sheet_sent(tmp_path, monkey
         def open(self) -> None:
             Sheet.opened.append(self)
 
+        def profile_updated(self, _profile=None) -> None:
+            pass
+
     monkeypatch.setattr(main_window, "SubmitSheet", Sheet)
     win = _Kept(tmp_path / "cache")
     ed = _editor_with(text="Just words.")
@@ -318,6 +327,7 @@ def _submit_window(tmp_path, monkeypatch, *, text=True, article=False, finished=
     class Sheet:
         submitted = view_submission = types.SimpleNamespace(connect=lambda _slot: None)
         run = None                                  # nothing on its way: cancelled
+        profile_updated = None
 
         def __init__(self, **kw) -> None:
             opened.append(kw["draft"])

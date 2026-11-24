@@ -587,13 +587,10 @@ def test_a_contributor_confirms_the_split_and_their_rights_from_their_own_app():
     assert OTHER not in rules.waiting_for(mine.row(sid))
 
 
-def test_confirm_is_there_only_after_a_read_that_names_a_lightning_address():
-    # RG-M4-a 3, RG-M4-b 2: a share reaches a person only at the address
-    # their profile names. No Bestätigen while it is read, where it names
-    # none (Profil bearbeiten instead) or could not be read (Erneut
-    # versuchen reads it again); once a read names one, Bestätigen is the
-    # primary action.
-    from nostr.ui.standup_confirm_sheet import NO_ADDRESS, PROFILE_NOT_READ, ConfirmSheet
+def test_a_share_is_confirmed_without_a_lightning_address_and_one_quiet_line_offers_it():
+    # R5: Bestätigen is always the primary action; without an address one
+    # line says how zaps for the share reach the person, with Edit Profile.
+    from nostr.ui.standup_confirm_sheet import NO_ADDRESS, ConfirmSheet
     answers, sent = [], []
     sheet = ConfirmSheet(
         role="writer", publication="Magazin", number=2,
@@ -601,18 +598,10 @@ def test_confirm_is_there_only_after_a_read_that_names_a_lightning_address():
         name_of=lambda p: NAMES.get(p, ""),
         zap_address=lambda pubkey, answer: answers.append(answer),
         confirm=lambda confirms, done: sent.append(confirms), is_dark=False)
-    assert not sheet.confirm_button.isVisibleTo(sheet)
-    answers[-1](None)
-    assert sheet.address.text() == PROFILE_NOT_READ and sheet.read_again.isDefault()
-    assert not sheet.confirm_button.isVisibleTo(sheet)
-    sheet.read_again.click()
-    assert len(answers) == 2
     answers[-1]("")
-    assert sheet.address.text() == NO_ADDRESS and sheet.edit_profile.isDefault()
-    assert not sheet.confirm_button.isVisibleTo(sheet) and sent == []
-    answers[-1]("jana@getalby.com")
-    assert sheet.confirm_button.isVisibleTo(sheet) and sheet.confirm_button.isDefault()
-    assert not sheet.edit_profile.isVisibleTo(sheet)
+    assert sheet.address.text() == NO_ADDRESS and sheet.edit_profile.isVisibleTo(sheet)
+    assert sheet.edit_profile.text() == "Add Lightning Address…"
+    assert sheet.confirm_button.isDefault() and not sheet.edit_profile.isDefault()
     sheet.confirm_button.click()
     assert sent == [("split",)]
     sheet.close()

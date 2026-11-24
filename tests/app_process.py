@@ -31,15 +31,19 @@ from typing import MutableMapping
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Run at the start of every child's script: a run made as Windows and Linux
-# see it (MYEDITOR_TEST_AS, tests/conftest.py) is so in the child too.
+# see it (MYEDITOR_TEST_AS, tests/conftest.py) is so in the child too, and
+# the child never talks to the association's STANDUP server, as the test
+# run itself does not (tests/conftest.py).
 CHILD_PROLOGUE = (
     "import os as _os, sys as _sys\n"
+    "_sys.path.insert(0, _sys.argv[1])\n"
     "if _os.environ.get('MYEDITOR_TEST_AS') == 'linux':\n"
     "    _sys.platform = 'linux'\n"
     "elif _os.environ.get('MYEDITOR_TEST_AS') == 'other':\n"
-    "    _sys.path.insert(0, _sys.argv[1])\n"
     "    import alerts as _alerts\n"
-    "    _alerts.IS_MAC = False\n")
+    "    _alerts.IS_MAC = False\n"
+    "from nostr.standup import servers as _servers\n"
+    "_servers.DEFAULT_SERVER = ''\n")
 # Run at the end of every child's script.
 CHILD_EPILOGUE = "\nfrom tests.app_process import release_clipboard\nrelease_clipboard()\n"
 

@@ -42,9 +42,11 @@ def test_the_developer_setting_comes_from_the_environment(monkeypatch):
     assert servers.usable_server_url("http://127.0.0.1:5000") == "http://127.0.0.1:5000"
 
 
-def test_no_server_address_is_built_in(monkeypatch):
+def test_the_env_var_wins_otherwise_the_built_in_address_if_set(monkeypatch):
     monkeypatch.delenv(servers.ENV_SERVER, raising=False)
-    assert servers.configured_server() == ""
+    assert servers.configured_server() == "https://media.einundzwanzig.space"
+    monkeypatch.setattr(servers, "DEFAULT_SERVER", "https://standup.example")
+    assert servers.configured_server() == "https://standup.example"
     monkeypatch.setenv(servers.ENV_SERVER, "https://standup.local.example")
     assert servers.configured_server() == "https://standup.local.example"
     # Typed by a developer: the slash at the end is forgiven, a path is not.
