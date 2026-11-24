@@ -452,3 +452,15 @@ def test_a_co_author_not_found_out_is_asked_again_next_time():
     panel.show_article(ArticleDetails(title="Other", coauthors=((BOB, RELAY),)),
                        fixed_identifier=False)
     assert [pubkey for pubkey, _answer in checks] == [BOB, BOB]
+
+
+def test_a_language_version_goes_out_with_the_authors_in_their_order():
+    # #67's rule on the wire for every language version: ME signed at the
+    # second place, a translator after the authors.
+    read = ArticleDetails.from_tags([["p", GUEST, "", "author"], ["p", ME, "", "author"],
+                                     ["p", CAROL, "", "author"], ["p", BOB, "", "translator"],
+                                     ["l", "de", "ISO-639-1"]], signer=ME)
+    event = build_article(content="Text", pubkey_hex=ME, slug="x", title="T",
+                          extra_tags=read.published_tags("Text", author=(ME, "")))
+    people = [(tag[1], tag[3]) for tag in event["tags"] if tag[0] == "p"]
+    assert people == [(GUEST, "author"), (ME, "author"), (CAROL, "author"), (BOB, "translator")]

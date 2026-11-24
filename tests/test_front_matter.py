@@ -691,7 +691,7 @@ def test_a_hashtag_with_quotes_and_commas_comes_back_from_the_field(tags):
 # -- what is read is what a YAML or TOML parser reads (round 7) ----------------
 
 ALL_DETAILS = frozenset({"title", "summary", "image", "tags", "slug", "date",
-                         "coauthors", "zap_split"})
+                         "coauthors", "zap_split", "lang", "nostr_tags"})
 
 
 @pytest.mark.parametrize("text, kept, shown", [

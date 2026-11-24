@@ -101,7 +101,7 @@ def make(*stored, refuse_publish=(), down=(), client=None):
     model = PublishedList(relay_pool=relays,
                           relay_directory=FakeRelayDirectory({PK: [R1, R2]}),
                           session_pool=FakeSessionPool(client or FakeClient()),
-                          clock=lambda: NOW)
+                          clock=lambda: NOW, query_timeout_ms=600_000)
     view = PublishedView(model, is_dark=False)
     view.resize(320, 480)
     said = []

@@ -288,7 +288,7 @@ def captured(monkeypatch):
 
 
 def _dialog(tmp_path, *, slug="my-post", first_published=None, lookup=None,
-            first_publications=None):
+            first_publications=None, **options):
     from nostr.avatar_store import AvatarStore
     from nostr.known_people import KnownPeople
     from nostr.profiles import Profile as StoredProfile
@@ -308,7 +308,7 @@ def _dialog(tmp_path, *, slug="my-post", first_published=None, lookup=None,
         session_pool=FakeSessionPool(FakeClient()), known_people=people,
         search_client=Nip50SearchClient(HandPool(), people), avatars=AvatarStore(),
         default_title="Hello", default_slug=slug, first_published=first_published,
-        first_publications=first_publications, published_at_lookup=lookup)
+        first_publications=first_publications, published_at_lookup=lookup, **options)
 
 
 def _published_at(job) -> int:

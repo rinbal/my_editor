@@ -75,7 +75,7 @@ def _credits(event: Mapping) -> Tuple[List[Any], List[Any]]:
     """Whom ``event`` credits (its author ``p`` tags, in order) and pays
     (its ``zap`` tags, in order)."""
     tags = [tag for tag in event.get("tags") or () if isinstance(tag, list) and tag]
-    return ([tag for tag in tags if tag[0] == "p" and len(tag) >= 4 and tag[3] == AUTHOR_MARKER],
+    return ([tag for tag in tags if tag[0] == "p" and len(tag) >= 4 and tag[3] in (AUTHOR_MARKER, "translator")],
             [tag for tag in tags if tag[0] == "zap"])
 
 

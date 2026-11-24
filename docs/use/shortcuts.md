@@ -114,6 +114,8 @@ These work while a Nostr account is in use; without one, the commands are dimmed
 | Insert Note or Article… | **⇧⌘R** | **Ctrl+Shift+R** |
 | Insert Audio or Video… | **⇧⌘J** | **Ctrl+Shift+J** |
 | Article Details | **⌥⌘I** | **Ctrl+F5** |
+| Write in Another Language… | **⌥⌘L** | **Ctrl+F8** |
+| Show or Hide Reference | **⌥⌘R** | **Ctrl+F9** |
 | Drafts | **⇧⌘D** | **Ctrl+Shift+D** |
 | Published | **⇧⌘B** | **Ctrl+Shift+B** |
 | Refresh the Drafts panel | **⌘R** | **F5** |

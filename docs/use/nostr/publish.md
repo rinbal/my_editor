@@ -32,6 +32,14 @@ The article's text is your document exactly as written: headings, bold, italic, 
 
 A Markdown file keeps these details in its front matter, the block at its top that Jekyll, Hugo and Obsidian use. MyEditor changes only the lines you changed, in the file's own style, and leaves everything else in that block as written.
 
+## Write in another language
+
+With a Nostr account in use, choose the **Languages** icon beside **Preview**, or **Nostr > Write in another language…**. Search for a language by name, including its native name, and choose it. A blank document opens immediately; choosing an existing version returns to its text. The recent choices are a shortcut to the full offline catalogue, including Thai, Lao, Khmer and Japanese.
+
+The original stays beside your writing as a read-only reference. The reference icon hides it; in a narrow window the same action opens it and returns to your writing. **Article Details** uses that supplementary space. Selecting or copying reference text never changes what **Publish** sends. If a published reference changes, **Review** lets you compare it and deliberately use the new reference; unpublished original edits are not included automatically.
+
+**Publish English**, for example, publishes only the English document. The review states when the original stays a private draft. The arrow attached to Publish offers **Publish both…**, shows both versions and names both in its final action. If one version already published, retry keeps that success and sends only unfinished work. Save linked documents as Markdown or encrypted drafts to retain their private references; plain shared drafts do not carry private reference data between devices.
+
 ## Co-authors and zaps
 
 **Add Co-Author…** names a person as a co-author. That is credit and nothing more. If you also want to share the zaps readers send, turn on **Share zaps equally with co-authors**: then everyone, you included, gets an equal share. A co-author without a Lightning address in their profile cannot receive zaps, and a line under the option says so. [Decision 4](../../decisions/0004-co-author-credit-zaps-optional.md) explains why.

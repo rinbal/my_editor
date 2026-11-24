@@ -43,6 +43,10 @@ class _Submitting(_Window):
     def __init__(self, cache_dir, details: ArticleDetails, private=()) -> None:
         super().__init__(cache_dir)
         self._details = details
+        # This media/submission host holds ordinary, unlinked articles.
+        self._multilingual = types.SimpleNamespace(
+            publication_details=self._article_details_of,
+            prepare_source=lambda _ed, done: done(True))
         self._media_visibility = types.SimpleNamespace(
             state_of=lambda sha: PRIVATE if sha in private else PUBLIC)
 
@@ -133,6 +137,7 @@ class _Kept(_Submitting):
     _set_article_details = MainWindow._set_article_details
     _keep_submitted_identifier = MainWindow._keep_submitted_identifier
     _submission_for_sheet = MainWindow._submission_for_sheet
+    _open_submit_publication = MainWindow._open_submit_publication
 
     def __init__(self, cache_dir) -> None:
         super().__init__(cache_dir, ArticleDetails())

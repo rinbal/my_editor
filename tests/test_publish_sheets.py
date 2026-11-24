@@ -218,7 +218,8 @@ def test_the_card_shows_the_article_as_readers_see_it_and_follows_the_fields(tmp
     card = sheet._card
     assert card.accessibleName() == "Preview"
     assert card.title.text() == "Fafuui S s @Bob Writer"
-    assert card.byline.text() == "DrShift · 1 min read"
+    # The reading time held together, so the byline keeps to one line.
+    assert card.byline.text() == "DrShift · 1\u00a0min\u00a0read"
     sheet._summary_edit.setText("Why a calm editor matters.")
     sheet._title_edit.setText("A new title")
     assert card.title.text() == "A new title" and card.summary.text() == \

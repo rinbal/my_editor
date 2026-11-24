@@ -65,7 +65,7 @@ def setup(*, client=None, lists=None, refuse_publish=()):
     directory = FakeRelayDirectory(lists if lists is not None else {PK: [R1, R2]})
     model = PublishedList(relay_pool=relays, relay_directory=directory,
                           session_pool=FakeSessionPool(client or FakeClient()),
-                          clock=lambda: NOW)
+                          clock=lambda: NOW, query_timeout_ms=600_000)
     seen = {"done": [], "not_taken": [], "refused": [], "status": []}
     model.deletion_done.connect(lambda item, results: seen["done"].append((item.id, results)))
     model.deletion_not_taken.connect(

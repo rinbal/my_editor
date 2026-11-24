@@ -32,6 +32,7 @@ who publishes it, the same way:
 from __future__ import annotations
 
 import sys
+import shiboken6
 from typing import Iterable, List, Optional, Tuple
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, Signal, Slot
@@ -50,6 +51,7 @@ from ..article_details import AUTHOR_MARKER
 from ..failures import markup, spoken
 from ..avatar_store import AvatarStore
 from ..bech32 import encode_npub
+from ..drafts import ellipsized
 from ..known_people import KnownPeople
 from ..profiles import Profile, ProfileStore
 from ..publisher import extract_inline_mentions
@@ -158,6 +160,8 @@ class _FocusInView(QObject):
         return False
 
     def _show(self, widget: Optional[QWidget]) -> None:
+        if not shiboken6.isValid(self._scroll) or widget is not None and not shiboken6.isValid(widget):
+            return
         page = self._scroll.widget()
         # A field of the page: the page itself with the focus (the handoff)
         # is not brought into view, it stays where it was scrolled to.
@@ -244,7 +248,7 @@ def cut_after_a_word(metrics: QFontMetrics, text: str, width: int, lines: int) -
             more = more[:-1]
         if len(more) >= len(shown) + 4:             # three letters of it, at the least
             shown = more
-    return breakable(shown.rstrip() + "…")
+    return breakable(ellipsized(shown))
 
 
 def grow_with_text(edit: QPlainTextEdit, *, least: int, most: int, floor: int = 0) -> None:

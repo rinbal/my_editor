@@ -445,8 +445,8 @@ def test_the_link_name_shown_before_one_is_typed_is_the_sheets():
 
 @pytest.mark.parametrize("tags, language", [
     ([["L", "ISO-639-1"], ["l", "de", "ISO-639-1"]], "de"),
-    ([["l", "en-US", "ISO-639-1"]], "en"),
-    ([["l", "pt_BR", "ISO-639-1"]], "pt"),
+    ([["l", "en-US", "ISO-639-1"]], "en-US"),
+    ([["l", "pt_BR", "ISO-639-1"]], "pt-BR"),
     ([["l", "de"]], ""),                                    # a bare label is some other label
     ([["l", "german", "ISO-639-1"]], ""),
     ([["l", "de", "other"]], ""),

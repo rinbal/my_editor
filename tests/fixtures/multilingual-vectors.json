@@ -1,0 +1,1347 @@
+{
+  "contract_version": 2,
+  "languages": [
+    {
+      "input": "th",
+      "expected": "th"
+    },
+    {
+      "input": "lo",
+      "expected": "lo"
+    },
+    {
+      "input": "km",
+      "expected": "km"
+    },
+    {
+      "input": "ja",
+      "expected": "ja"
+    },
+    {
+      "input": "hmn",
+      "expected": "hmn"
+    },
+    {
+      "input": "zh-hant-tw",
+      "expected": "zh-Hant-TW"
+    },
+    {
+      "input": "sr_latn",
+      "expected": "sr-Latn"
+    },
+    {
+      "input": "de-1901",
+      "expected": "de-1901"
+    },
+    {
+      "input": "en-GB",
+      "expected": "en-GB"
+    },
+    {
+      "input": "zz",
+      "expected": ""
+    },
+    {
+      "input": "not-a-language",
+      "expected": ""
+    },
+    {
+      "input": "en-Zzzz",
+      "expected": "en-Zzzz"
+    },
+    {
+      "input": "en-ZZ",
+      "expected": "en-ZZ"
+    },
+    {
+      "input": "en-Fake",
+      "expected": ""
+    },
+    {
+      "input": "en-abcde",
+      "expected": ""
+    },
+    {
+      "input": "de-1901-1901",
+      "expected": ""
+    }
+  ],
+  "labels": [
+    {
+      "tags": [
+        [
+          "l",
+          "de",
+          "ISO-639-1"
+        ]
+      ],
+      "language": "de"
+    },
+    {
+      "tags": [
+        [
+          "l",
+          "hmn",
+          "lang"
+        ]
+      ],
+      "language": "hmn"
+    },
+    {
+      "tags": [
+        [
+          "l",
+          "hmn",
+          "ISO-639-1"
+        ]
+      ],
+      "language": ""
+    },
+    {
+      "tags": [
+        [
+          "l",
+          "en",
+          "ISO-639-1"
+        ],
+        [
+          "l",
+          "en-GB",
+          "lang"
+        ]
+      ],
+      "language": "en-GB"
+    },
+    {
+      "tags": [
+        [
+          "l",
+          "de",
+          "ISO-639-1"
+        ],
+        [
+          "l",
+          "en-GB",
+          "lang"
+        ]
+      ],
+      "language": ""
+    },
+    {
+      "tags": [
+        [
+          "l",
+          "de",
+          "ISO-639-1"
+        ],
+        [
+          "l",
+          "en",
+          "ISO-639-1"
+        ]
+      ],
+      "language": ""
+    },
+    {
+      "tags": [
+        [
+          "l",
+          "th"
+        ]
+      ],
+      "language": ""
+    },
+    {
+      "tags": [
+        [
+          "l",
+          "en-US",
+          "lang"
+        ],
+        [
+          "l",
+          "en-US",
+          "ISO-639-1"
+        ]
+      ],
+      "language": "en-US"
+    },
+    {
+      "tags": [
+        [
+          "l",
+          "sr-Latn",
+          "lang"
+        ],
+        [
+          "l",
+          "sr-Cyrl",
+          "lang"
+        ]
+      ],
+      "language": ""
+    },
+    {
+      "tags": [
+        [
+          "l",
+          "en-US",
+          "lang"
+        ],
+        [
+          "l",
+          "en-GB",
+          "ISO-639-1"
+        ]
+      ],
+      "language": ""
+    }
+  ],
+  "relations": [
+    {
+      "name": "standalone",
+      "tags": [],
+      "expected": {
+        "root": "",
+        "source": "",
+        "source_event": "",
+        "source_pubkey": "",
+        "translations": [],
+        "root_valid": true,
+        "source_valid": true,
+        "valid": true
+      }
+    },
+    {
+      "name": "actual-English-source-not-German-root",
+      "tags": [
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+          "",
+          "original"
+        ],
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:english",
+          "",
+          "source"
+        ],
+        [
+          "e",
+          "1111111111111111111111111111111111111111111111111111111111111111",
+          "",
+          "source",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ]
+      ],
+      "expected": {
+        "root": "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+        "source": "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:english",
+        "source_event": "1111111111111111111111111111111111111111111111111111111111111111",
+        "source_pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "translations": [],
+        "root_valid": true,
+        "source_valid": true,
+        "valid": true
+      }
+    },
+    {
+      "name": "legacy-source",
+      "tags": [
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+          "",
+          "original"
+        ],
+        [
+          "e",
+          "1111111111111111111111111111111111111111111111111111111111111111",
+          "",
+          "original",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ]
+      ],
+      "expected": {
+        "root": "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+        "source": "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+        "source_event": "1111111111111111111111111111111111111111111111111111111111111111",
+        "source_pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "translations": [],
+        "root_valid": true,
+        "source_valid": true,
+        "valid": true
+      }
+    },
+    {
+      "name": "new-source-precedes-legacy",
+      "tags": [
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+          "",
+          "original"
+        ],
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:english",
+          "",
+          "source"
+        ],
+        [
+          "e",
+          "1111111111111111111111111111111111111111111111111111111111111111",
+          "",
+          "source",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        [
+          "e",
+          "2222222222222222222222222222222222222222222222222222222222222222",
+          "",
+          "original",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ]
+      ],
+      "expected": {
+        "root": "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+        "source": "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:english",
+        "source_event": "1111111111111111111111111111111111111111111111111111111111111111",
+        "source_pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "translations": [],
+        "root_valid": true,
+        "source_valid": true,
+        "valid": true
+      }
+    },
+    {
+      "name": "conflicting-root",
+      "tags": [
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+          "",
+          "original"
+        ],
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:english",
+          "",
+          "original"
+        ]
+      ],
+      "expected": {
+        "root": "",
+        "source": "",
+        "source_event": "",
+        "source_pubkey": "",
+        "translations": [],
+        "root_valid": false,
+        "source_valid": true,
+        "valid": false
+      }
+    },
+    {
+      "name": "source-event-without-address",
+      "tags": [
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+          "",
+          "original"
+        ],
+        [
+          "e",
+          "1111111111111111111111111111111111111111111111111111111111111111",
+          "",
+          "source",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ]
+      ],
+      "expected": {
+        "root": "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+        "source": "",
+        "source_event": "",
+        "source_pubkey": "",
+        "translations": [],
+        "root_valid": true,
+        "source_valid": false,
+        "valid": false
+      }
+    },
+    {
+      "name": "source-address-without-event",
+      "tags": [
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+          "",
+          "original"
+        ],
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:english",
+          "",
+          "source"
+        ]
+      ],
+      "expected": {
+        "root": "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+        "source": "",
+        "source_event": "",
+        "source_pubkey": "",
+        "translations": [],
+        "root_valid": true,
+        "source_valid": false,
+        "valid": false
+      }
+    },
+    {
+      "name": "different-pin-author",
+      "tags": [
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+          "",
+          "original"
+        ],
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:english",
+          "",
+          "source"
+        ],
+        [
+          "e",
+          "1111111111111111111111111111111111111111111111111111111111111111",
+          "",
+          "source",
+          "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+        ]
+      ],
+      "expected": {
+        "root": "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+        "source": "",
+        "source_event": "",
+        "source_pubkey": "",
+        "translations": [],
+        "root_valid": true,
+        "source_valid": false,
+        "valid": false
+      }
+    },
+    {
+      "name": "conflicting-pins",
+      "tags": [
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+          "",
+          "original"
+        ],
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:english",
+          "",
+          "source"
+        ],
+        [
+          "e",
+          "1111111111111111111111111111111111111111111111111111111111111111",
+          "",
+          "source",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        [
+          "e",
+          "2222222222222222222222222222222222222222222222222222222222222222",
+          "",
+          "source",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ]
+      ],
+      "expected": {
+        "root": "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+        "source": "",
+        "source_event": "",
+        "source_pubkey": "",
+        "translations": [],
+        "root_valid": true,
+        "source_valid": false,
+        "valid": false
+      }
+    },
+    {
+      "name": "malformed-root",
+      "tags": [
+        [
+          "a",
+          "30023:not-a-key:x",
+          "",
+          "original"
+        ]
+      ],
+      "expected": {
+        "root": "",
+        "source": "",
+        "source_event": "",
+        "source_pubkey": "",
+        "translations": [],
+        "root_valid": false,
+        "source_valid": true,
+        "valid": false
+      }
+    },
+    {
+      "name": "same-signer-backlink",
+      "tags": [
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:khmer",
+          "",
+          "translation"
+        ]
+      ],
+      "expected": {
+        "root": "",
+        "source": "",
+        "source_event": "",
+        "source_pubkey": "",
+        "translations": [
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:khmer"
+        ],
+        "root_valid": true,
+        "source_valid": true,
+        "valid": true
+      }
+    },
+    {
+      "name": "unmarked-address-is-unrelated",
+      "tags": [
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original"
+        ]
+      ],
+      "expected": {
+        "root": "",
+        "source": "",
+        "source_event": "",
+        "source_pubkey": "",
+        "translations": [],
+        "root_valid": true,
+        "source_valid": true,
+        "valid": true
+      }
+    },
+    {
+      "name": "duplicate-identical-source",
+      "tags": [
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+          "",
+          "original"
+        ],
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+          "",
+          "original"
+        ],
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:english",
+          "",
+          "source"
+        ],
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:english",
+          "",
+          "source"
+        ],
+        [
+          "e",
+          "1111111111111111111111111111111111111111111111111111111111111111",
+          "",
+          "source",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        [
+          "e",
+          "1111111111111111111111111111111111111111111111111111111111111111",
+          "",
+          "source",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ]
+      ],
+      "expected": {
+        "root": "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+        "source": "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:english",
+        "source_event": "1111111111111111111111111111111111111111111111111111111111111111",
+        "source_pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "translations": [],
+        "root_valid": true,
+        "source_valid": true,
+        "valid": true
+      }
+    }
+  ],
+  "projection": {
+    "event": {
+      "kind": 30023,
+      "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "created_at": 100,
+      "content": "ไทย ລາວ ខ្មែរ 日本語 😀",
+      "tags": [
+        [
+          "d",
+          "english"
+        ],
+        [
+          "title",
+          "A multilingual title"
+        ],
+        [
+          "summary",
+          "Résumé"
+        ],
+        [
+          "l",
+          "en",
+          "ISO-639-1"
+        ]
+      ]
+    },
+    "expected": {
+      "content": "ไทย ລາວ ខ្មែរ 日本語 😀",
+      "image": "",
+      "language": "en",
+      "summary": "Résumé",
+      "title": "A multilingual title"
+    },
+    "sha256": "2f55fd9564127ba7d12e56c01e6e680e5e18af302177ae2d342e1e88de5d04d5"
+  },
+  "editorial": {
+    "writer": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "revision": {
+      "v": 2,
+      "type": "standup-revision",
+      "submission_id": "3333333333333333333333333333333333333333333333333333333333333333",
+      "revision": 1,
+      "kind": "article",
+      "work": {
+        "d": "khmer",
+        "title": "ខ្មែរ",
+        "summary": "",
+        "image": null,
+        "tags": [],
+        "lang": "km",
+        "published_at": null,
+        "content": "សួស្តី\n\nខ្មែរ",
+        "authors": [
+          {
+            "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "relay": ""
+          }
+        ],
+        "extra_tags": [
+          [
+            "a",
+            "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+            "",
+            "original"
+          ],
+          [
+            "a",
+            "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:english",
+            "",
+            "source"
+          ],
+          [
+            "e",
+            "1111111111111111111111111111111111111111111111111111111111111111",
+            "",
+            "source",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          [
+            "p",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "",
+            "translator"
+          ],
+          [
+            "alt",
+            "Writing"
+          ]
+        ]
+      },
+      "audio": null,
+      "credits": [],
+      "rights": {
+        "confirmed": true,
+        "license": null
+      },
+      "checklist": [],
+      "change_summary": null,
+      "thumb": null,
+      "media": [],
+      "client": "contract-fixture"
+    },
+    "published": {
+      "myeditor": {
+        "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "kind": 30023,
+        "created_at": 100,
+        "tags": [
+          [
+            "d",
+            "khmer"
+          ],
+          [
+            "client",
+            "MyEditor"
+          ],
+          [
+            "title",
+            "ខ្មែរ"
+          ],
+          [
+            "published_at",
+            "100"
+          ],
+          [
+            "p",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "",
+            "author"
+          ],
+          [
+            "p",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "",
+            "author"
+          ],
+          [
+            "p",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "",
+            "translator"
+          ],
+          [
+            "L",
+            "ISO-639-1"
+          ],
+          [
+            "l",
+            "km",
+            "ISO-639-1"
+          ],
+          [
+            "a",
+            "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+            "",
+            "original"
+          ],
+          [
+            "a",
+            "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:english",
+            "",
+            "source"
+          ],
+          [
+            "e",
+            "1111111111111111111111111111111111111111111111111111111111111111",
+            "",
+            "source",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          [
+            "alt",
+            "Writing"
+          ]
+        ],
+        "content": "សួស្តី\n\nខ្មែរ",
+        "id": "4002e384303ff00bce88f04c65d31cbf64bb58d3a2c988c47736c88b80c6f589"
+      },
+      "standup": {
+        "kind": 30023,
+        "created_at": 100,
+        "tags": [
+          [
+            "d",
+            "khmer"
+          ],
+          [
+            "title",
+            "ខ្មែរ"
+          ],
+          [
+            "published_at",
+            "100"
+          ],
+          [
+            "p",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "",
+            "author"
+          ],
+          [
+            "p",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "",
+            "author"
+          ],
+          [
+            "p",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "",
+            "translator"
+          ],
+          [
+            "L",
+            "ISO-639-1"
+          ],
+          [
+            "l",
+            "km",
+            "ISO-639-1"
+          ],
+          [
+            "a",
+            "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+            "",
+            "original"
+          ],
+          [
+            "a",
+            "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:english",
+            "",
+            "source"
+          ],
+          [
+            "e",
+            "1111111111111111111111111111111111111111111111111111111111111111",
+            "",
+            "source",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          [
+            "alt",
+            "Writing"
+          ],
+          [
+            "client",
+            "EINUNDZWANZIG HUB"
+          ]
+        ],
+        "content": "សួស្តី\n\nខ្មែរ"
+      }
+    },
+    "before": {
+      "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "kind": 30023,
+      "created_at": 101,
+      "content": "Before",
+      "tags": [
+        [
+          "d",
+          "khmer"
+        ],
+        [
+          "title",
+          "Before"
+        ],
+        [
+          "published_at",
+          "100"
+        ],
+        [
+          "p",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "",
+          "author"
+        ],
+        [
+          "p",
+          "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+          "",
+          "author"
+        ],
+        [
+          "p",
+          "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+          "",
+          "translator"
+        ],
+        [
+          "L",
+          "ISO-639-1"
+        ],
+        [
+          "l",
+          "km",
+          "ISO-639-1"
+        ],
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+          "",
+          "original"
+        ],
+        [
+          "a",
+          "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:english",
+          "",
+          "source"
+        ],
+        [
+          "e",
+          "1111111111111111111111111111111111111111111111111111111111111111",
+          "",
+          "source",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        [
+          "alt",
+          "Writing"
+        ],
+        [
+          "zap",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "",
+          "100"
+        ]
+      ]
+    },
+    "correction": {
+      "v": 2,
+      "type": "standup-revision",
+      "submission_id": "3333333333333333333333333333333333333333333333333333333333333333",
+      "revision": 2,
+      "kind": "article",
+      "work": {
+        "d": "khmer",
+        "title": "ខ្មែរ",
+        "summary": "",
+        "image": null,
+        "tags": [],
+        "lang": "km",
+        "published_at": null,
+        "content": "សួស្តី\n\nខ្មែរ",
+        "authors": [
+          {
+            "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "relay": ""
+          }
+        ],
+        "extra_tags": [
+          [
+            "a",
+            "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+            "",
+            "original"
+          ],
+          [
+            "a",
+            "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:english",
+            "",
+            "source"
+          ],
+          [
+            "e",
+            "2222222222222222222222222222222222222222222222222222222222222222",
+            "",
+            "source",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          [
+            "p",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "",
+            "translator"
+          ],
+          [
+            "alt",
+            "Writing"
+          ]
+        ]
+      },
+      "audio": null,
+      "credits": [],
+      "rights": {
+        "confirmed": true,
+        "license": null
+      },
+      "checklist": [],
+      "change_summary": null,
+      "thumb": null,
+      "media": [],
+      "client": "contract-fixture"
+    },
+    "corrected": {
+      "myeditor": {
+        "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "kind": 30023,
+        "created_at": 102,
+        "tags": [
+          [
+            "d",
+            "khmer"
+          ],
+          [
+            "client",
+            "MyEditor"
+          ],
+          [
+            "title",
+            "ខ្មែរ"
+          ],
+          [
+            "published_at",
+            "100"
+          ],
+          [
+            "L",
+            "ISO-639-1"
+          ],
+          [
+            "l",
+            "km",
+            "ISO-639-1"
+          ],
+          [
+            "a",
+            "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+            "",
+            "original"
+          ],
+          [
+            "a",
+            "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:english",
+            "",
+            "source"
+          ],
+          [
+            "e",
+            "2222222222222222222222222222222222222222222222222222222222222222",
+            "",
+            "source",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          [
+            "p",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "",
+            "author"
+          ],
+          [
+            "p",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "",
+            "author"
+          ],
+          [
+            "p",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "",
+            "translator"
+          ],
+          [
+            "alt",
+            "Writing"
+          ],
+          [
+            "zap",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "",
+            "100"
+          ]
+        ],
+        "content": "សួស្តី\n\nខ្មែរ",
+        "id": "09b24e11daa570a40f16542c6d0058e071f71f35c536ab58b147c9138340467c"
+      },
+      "standup": {
+        "kind": 30023,
+        "created_at": 102,
+        "tags": [
+          [
+            "d",
+            "khmer"
+          ],
+          [
+            "title",
+            "ខ្មែរ"
+          ],
+          [
+            "published_at",
+            "100"
+          ],
+          [
+            "p",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "",
+            "author"
+          ],
+          [
+            "p",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "",
+            "author"
+          ],
+          [
+            "p",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            "",
+            "translator"
+          ],
+          [
+            "zap",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "",
+            "100"
+          ],
+          [
+            "L",
+            "ISO-639-1"
+          ],
+          [
+            "l",
+            "km",
+            "ISO-639-1"
+          ],
+          [
+            "alt",
+            "Writing"
+          ],
+          [
+            "a",
+            "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+            "",
+            "original"
+          ],
+          [
+            "a",
+            "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:english",
+            "",
+            "source"
+          ],
+          [
+            "e",
+            "2222222222222222222222222222222222222222222222222222222222222222",
+            "",
+            "source",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          [
+            "client",
+            "EINUNDZWANZIG HUB"
+          ]
+        ],
+        "content": "សួស្តី\n\nខ្មែរ"
+      }
+    },
+    "envelope": {
+      "s_sub": "0707070707070707070707070707070707070707070707070707070707070707",
+      "nonce": "080808080808080808080808",
+      "envelope": "CAgICAgICAgICAgIAnAnDb1lymNQewsADGhLJhDCu+/prRfIxjtxEWxV/4GVIE5FWN3tXAqhvWjv2YIDv9ZWb29fpEtbH9+x/BRb6TkNB+qhhviQqNce17SEKlnVPAcxrR8RxUi1GiHQ+ngn2liA4YvZdnE9NmRKbt5HiHPS2bck/djWjB3EXRdO/GUh/vtA4EGFrmTGApPMCtxWvUN0xKaJJxV5xOmx9nTc89m9PlXDoIDqjuEFrGq0dCY2Pi22wlw+Pywwi+H+i4DAa+AM6keyjWC7k3Uzw6ihuTSomrlBtz+8n0UJtLH6G5I8w6XGe8N0che3Gym+I5si5Kf5XrGH9TMIn1R5nsedO1grx59eYP6bXGrgz49Zo9dsnPEbAo/zmdHeBLfQj+ENQmkSPXrtQuzOETcz4Cs1xhv9iMps0GsEnL8tYVeYHeFPS+5xFNvzyr1L9vnoHFa5+mzm9G6HEO/UmIGXrRlLWmlMePUiSKphfi4CWxy+nkYtvT0P10X7e2gcYOsHYEE/sB3ITfL0z7wzIBjUsRtBz9ivu8SHpNrmXwDttoiu6i+5ofTPHP+vK2jtQnlz9YXZPXHVNK9jwUP/ZREJCninTwIg9BTNcuuPOQmwW6xWF/OIo9RkirM9iRJvD6V7X09rpKnfnzetP6JTlWcrTbHBA4tI2z96OGLVKY+Af6qeUt6vU3h0Z9DRBfTHF9ungvQeqGvEsmp+fqllwpiRbGqNLYXt5FVH9hoTFYMM2yAdF7/0zSMo6PNTANecHAATRJhhR+1GSvKi99peHnl6f+SvFcP/86Dsm3d3vgvvNDx2C7jk+7WutyUkFloeIDBnRwkWlh6A/dsrcmlGkDrAvhzpEu0u96zl2O1VSsjxbqTvNILqvXHViLgCpNOuz7wk6/NnCGuTrzxMPxowOPezCnbMP3eo1ZRLUj64yDDbGkCfPfnRtvPUvJkT4cVW5t0XFTuTOcmWa/xYzc43fXtfvK1Di0G0Y/egUk5XrQicnCwrXSlexjkY05Vz61dqX718wt/+qIlpLlnkiBDdyrUkVfh+SQUecJFP5wBx1BvsJE4SaBiq8UOCNuXa6Vl8DKDtUH0Zdq8GA9WIG/H79rqnGdX0nDHaSzuw0dr5puhmZxMLyu2dcluWcK0MGQlQTBCaYvVW/KZwy75IjCJzXO99jmZKlimJzyXOOxBc0947zVRgDZCqX0NsGnYYP0itFCjFk8llYV+83MXgiLvoY7ThXDvhQLvW1tRAVnwr9TrwnMgxqNPRXdrHlZpM28Rt58Zg3ZV+vd1aO7+19JpRZxMYPHVaZqFsrpumCoEIwLSVP3T+5+3IDYgvcI02YcYGlRsEFVPFLyR8/4hvFWliPwewmgWOZ/kLxwhblpByElBa2/sGhd9MRW3Akd7D4/R2pvD1qSG0rP2auuk=",
+      "envelope_sha256": "f09903abfff628118744a3a684787359b0816ecc369f3b8a0b1769544b3c9767",
+      "revision_hash": "d208f986403295ebc05f1b8260806bb2b57df7b00fd630e9a76a2aa78c58d275"
+    }
+  },
+  "language_tags": [
+    {
+      "code": "de",
+      "tags": [
+        [
+          "L",
+          "ISO-639-1"
+        ],
+        [
+          "l",
+          "de",
+          "ISO-639-1"
+        ]
+      ]
+    },
+    {
+      "code": "en-US",
+      "tags": [
+        [
+          "L",
+          "ISO-639-1"
+        ],
+        [
+          "l",
+          "en",
+          "ISO-639-1"
+        ],
+        [
+          "L",
+          "lang"
+        ],
+        [
+          "l",
+          "en-US",
+          "lang"
+        ]
+      ]
+    },
+    {
+      "code": "zh-hant-tw",
+      "tags": [
+        [
+          "L",
+          "ISO-639-1"
+        ],
+        [
+          "l",
+          "zh",
+          "ISO-639-1"
+        ],
+        [
+          "L",
+          "lang"
+        ],
+        [
+          "l",
+          "zh-Hant-TW",
+          "lang"
+        ]
+      ]
+    },
+    {
+      "code": "hmn",
+      "tags": [
+        [
+          "L",
+          "lang"
+        ],
+        [
+          "l",
+          "hmn",
+          "lang"
+        ]
+      ]
+    },
+    {
+      "code": "zz",
+      "tags": []
+    }
+  ],
+  "requires_multilingual": [
+    {
+      "name": "plain",
+      "work": {
+        "lang": "de",
+        "extra_tags": []
+      },
+      "expected": false
+    },
+    {
+      "name": "qualified-language-only",
+      "work": {
+        "lang": "en-US",
+        "extra_tags": [
+          [
+            "L",
+            "ISO-639-1"
+          ],
+          [
+            "l",
+            "en",
+            "ISO-639-1"
+          ],
+          [
+            "L",
+            "lang"
+          ],
+          [
+            "l",
+            "en-US",
+            "lang"
+          ]
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "three-letter-language-only",
+      "work": {
+        "lang": "hmn",
+        "extra_tags": [
+          [
+            "L",
+            "lang"
+          ],
+          [
+            "l",
+            "hmn",
+            "lang"
+          ]
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "root-link",
+      "work": {
+        "lang": "en",
+        "extra_tags": [
+          [
+            "a",
+            "30023:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:original",
+            "",
+            "original"
+          ]
+        ]
+      },
+      "expected": true
+    },
+    {
+      "name": "translator-credit",
+      "work": {
+        "lang": "en",
+        "extra_tags": [
+          [
+            "p",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "",
+            "translator"
+          ]
+        ]
+      },
+      "expected": true
+    }
+  ],
+  "localized_names": [
+    {
+      "code": "it",
+      "locale": "de",
+      "name": "Italienisch"
+    },
+    {
+      "code": "nl",
+      "locale": "de",
+      "name": "Niederländisch"
+    },
+    {
+      "code": "zh",
+      "locale": "de",
+      "name": "Chinesisch"
+    },
+    {
+      "code": "el",
+      "locale": "en",
+      "name": "Greek"
+    },
+    {
+      "code": "de",
+      "locale": "de",
+      "name": "Deutsch"
+    }
+  ]
+}

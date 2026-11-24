@@ -175,7 +175,7 @@ def test_seal_revision_round_trips():
 @pytest.mark.parametrize("change", [
     lambda r: r.update(kind="video"),
     lambda r: r.update(type="other"),
-    lambda r: r.update(v=2),
+    lambda r: r.update(v=3),
     lambda r: r["work"].update(title="x" * 301),
     lambda r: r.update(audio={"medium": "podcast"}),
     lambda r: r["checklist"][0].update(level="optional"),

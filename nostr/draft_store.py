@@ -28,6 +28,8 @@ from PySide6.QtCore import QObject, Signal
 
 from i18n import _
 
+from .private_draft import PRIVATE_DRAFT_FIELD, private_multilingual, without_private_tags
+
 from .drafts import (
     DraftWrapMeta,
     INNER_KIND_LONG_FORM,
@@ -74,6 +76,8 @@ class DraftRecord:
     # never persist plaintext to disk. Wiped on profile switch.
     content: str = ""
     inner_tags: List[List[str]] = field(default_factory=list)
+    # Private extension of encrypted plaintext; never part of article tags.
+    standup_multilingual: Optional[dict] = None
     event_id: str = ""                    # outer wrap event id
     created_at: int = 0                   # outer wrap created_at (== last stash time)
     expiration: Optional[int] = None      # NIP-40 expiration unix, if any
@@ -290,7 +294,8 @@ class DraftStore(QObject):
         if kind:
             record.inner_kind = kind
         record.content = str(inner.get("content", ""))
-        record.inner_tags = [list(t) for t in inner.get("tags", []) if isinstance(t, list)]
+        record.inner_tags = [list(t) for t in without_private_tags(inner.get("tags", [])) if isinstance(t, list)]
+        record.standup_multilingual = private_multilingual(inner.get(PRIVATE_DRAFT_FIELD))
         record.state = DraftState.READY
         record.failure_reason = ""
         # We've got the plaintext now, drop the ciphertext to keep the

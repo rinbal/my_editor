@@ -114,6 +114,16 @@ def test_a_tab_without_an_article_says_so():
     assert panel._pages.currentWidget() is panel._form
 
 
+@pytest.mark.parametrize("kept", [frozenset({"lang"}), frozenset({"nostr_tags"})])
+def test_language_preserved_as_opaque_file_metadata_cannot_be_changed(kept):
+    details = ArticleDetails.from_tags([["l", "th", "ISO-639-1"]])
+    panel, sent = panel_with(details.keeping(kept))
+    assert not panel.language_button.isEnabled()
+    assert sent == []
+    panel.show_article(details, fixed_identifier=False)
+    assert panel.language_button.isEnabled()
+
+
 def test_every_control_has_a_name():
     panel, _sent = panel_with()
     panel.advanced_toggle.setChecked(True)

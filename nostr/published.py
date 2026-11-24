@@ -253,9 +253,13 @@ class PublishedList(QObject):
     def __init__(self, *, relay_pool, relay_directory, session_pool,
                  entitled_relays: Optional[Callable[[], Sequence[str]]] = None,
                  clock: Callable[[], float] = time.time,
+                 query_timeout_ms: int = QUERY_TIMEOUT_MS,
                  parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self._pool = relay_pool
+        # How long a page waits for relays that do not answer (a test that
+        # is not about that waits as long as a slow machine may need).
+        self._query_timeout_ms = query_timeout_ms
         self._directory = relay_directory
         self._session_pool = session_pool
         self._entitled = entitled_relays
@@ -454,7 +458,7 @@ class PublishedList(QObject):
              on_done: Callable[[Fetched], None],
              kinds: Tuple[int, ...] = (NOTE_KIND, *ADDRESSABLE_KINDS)) -> None:
         fetch_events(self._pool, relays, filters, on_done, accept=self._accepts(kinds),
-                     timeout_ms=QUERY_TIMEOUT_MS, parent=self)
+                     timeout_ms=self._query_timeout_ms, parent=self)
 
     def _read_first_page(self) -> None:
         generation = self._generation

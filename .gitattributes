@@ -10,3 +10,7 @@ web/photo_groups.js text eol=lf
 web/photo-group-messages.json text eol=lf
 web/photo_groups.css text eol=lf
 tests/fixtures/standup_editorial_fixtures.json text eol=lf
+nostr/language_catalog.json text eol=lf
+nostr/multilingual_contract.json text eol=lf
+tests/fixtures/multilingual-vectors.json text eol=lf
+tests/fixtures/editorial-v1-check_revision.py.txt text eol=lf

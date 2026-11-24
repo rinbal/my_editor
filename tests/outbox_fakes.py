@@ -111,7 +111,10 @@ class FakeSubscription(QObject):
         self.is_closed = True
 
     def answer(self, url, *events_):
-        """``url`` sends ``events_`` and ends its stored events."""
+        """``url`` sends ``events_`` and ends its stored events. A closed
+        subscription hears nothing more, as the real one does."""
+        if self.is_closed:
+            return
         self.send(url, *events_)
         self._end(url)
         self.relay_eose.emit(url)
@@ -120,16 +123,22 @@ class FakeSubscription(QObject):
 
     def send(self, url, *events_):
         """``url`` sends ``events_`` and has not ended yet."""
+        if self.is_closed:
+            return
         for event in events_:
             self.event.emit(event)
             self.relay_event.emit(url, event)
 
     def refuse(self, url, reason="blocked: not today"):
+        if self.is_closed:
+            return
         self._end(url)
         self.relay_closed.emit(url, reason)
         self.closed.emit(reason)
 
     def fail(self, url, reason="socket error: host not found"):
+        if self.is_closed:
+            return
         self._end(url)
         self.relay_failed.emit(url, reason)
 

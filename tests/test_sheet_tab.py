@@ -4,10 +4,8 @@
 columns and sheets, what typing means, and saving that never loses data."""
 
 import datetime as dt
-import gc
 import os
 import threading
-import time
 
 import openpyxl
 import pytest
@@ -1000,16 +998,84 @@ def test_large_copies_clears_and_pastes_match_small_ones(tab, monkeypatch):
     assert value(tab, "A6") is None
 
 
+# The measuring, in a process of its own (test_large_changes_keep_the_window_
+# responsive): one run over the big sheet gives the longest the window was
+# away during each change; three runs at most, until each change's best is
+# under the bound.
+_RESPONSIVE_SCRIPT = r'''
+import gc, json, sys, time
+from PySide6.QtCore import QTimer
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication
+app = QApplication(sys.argv[:1])
+from sheet_tab import SheetTab
+path, rows, bound = sys.argv[2], int(sys.argv[3]), float(sys.argv[4])
+gc.collect()
+gc.freeze()
+
+
+def measure():
+    tab = SheetTab(path, background=False)
+    gaps, last = [], [time.monotonic()]
+
+    def tick():
+        now = time.monotonic()
+        gaps.append(now - last[0])
+        last[0] = now
+
+    timer = QTimer()
+    timer.setInterval(10)
+    timer.timeout.connect(tick)
+    try:
+        tab.resize(900, 600)
+        tab.show()
+        QTest.qWait(50)
+        timer.start()
+
+        def worst(action):
+            QTest.qWait(30)
+            gaps.clear()
+            last[0] = time.monotonic()
+            action()
+            QTest.qWait(40)
+            return max(gaps)
+
+        stalls = {
+            "insert": worst(lambda: tab.insert_rows(0)),
+            "undo": worst(tab.undo_stack.undo),
+            "select all": worst(tab.grid.selectAll),
+            "copy": worst(tab.copy),
+            "clear": worst(tab.clear_selection),
+            "undo clear": worst(tab.undo_stack.undo),
+            "save": worst(lambda: tab.save()),
+        }
+        assert tab.sheet.cells[(rows, 1)].value == sum(2 * r for r in range(1, rows + 1))
+        return stalls
+    finally:
+        timer.stop()
+        tab.release()
+        tab.deleteLater()
+
+
+runs = []
+for _run in range(3):
+    runs.append(measure())
+    best = {change: min(run[change] for run in runs) for change in runs[0]}
+    if all(stall < bound for stall in best.values()):
+        break
+print("RESULT " + json.dumps({"runs": runs}))
+'''
+
+
 def test_large_changes_keep_the_window_responsive(tmp_path):
     # 25 000 rows, 50 000 formulas: inserting a row, Undo, clearing every
     # cell, copying them and saving each took the window away for one to
     # several seconds. The bound is generous: a busy machine stays far
     # below it, a change made on the window's thread does not.
-    # What earlier tests left on the heap is set aside: a collection of it,
-    # due by chance while this one measures, would be counted as this
-    # sheet's stall (a whole suite leaves millions of objects).
-    gc.collect()
-    gc.freeze()
+    # Measured in a fresh process (me68-red-a-13): in the suite's own one,
+    # the heap, windows and timers earlier tests left behind made each
+    # change ten to thirty times slower than the sheet makes it.
+    from tests.app_process import run_window_script
     path = tmp_path / "Big.xlsx"
     book = openpyxl.Workbook(write_only=True)
     sheet = book.create_sheet("Data")
@@ -1019,66 +1085,16 @@ def test_large_changes_keep_the_window_responsive(tmp_path):
     sheet.append([None, f"=SUM(B1:B{rows})"])
     book.save(path)
 
-    def measure() -> dict:
-        """One run over the big sheet: the longest the window was away
-        during each change."""
-        tab = SheetTab(str(path), background=False)
-        gaps, last = [], [time.monotonic()]
-
-        def tick():
-            now = time.monotonic()
-            gaps.append(now - last[0])
-            last[0] = now
-
-        timer = QTimer()
-        timer.setInterval(10)
-        timer.timeout.connect(tick)
-        try:
-            tab.resize(900, 600)
-            tab.show()
-            QTest.qWait(50)
-            timer.start()
-
-            def worst(action) -> float:
-                QTest.qWait(30)
-                gaps.clear()
-                last[0] = time.monotonic()
-                action()
-                QTest.qWait(40)
-                return max(gaps)
-
-            stalls = {
-                "insert": worst(lambda: tab.insert_rows(0)),
-                "undo": worst(tab.undo_stack.undo),
-                "select all": worst(tab.grid.selectAll),
-                "copy": worst(tab.copy),
-                "clear": worst(tab.clear_selection),
-                "undo clear": worst(tab.undo_stack.undo),
-                "save": worst(lambda: tab.save()),
-            }
-            assert tab.sheet.cells[(rows, 1)].value == sum(2 * r for r in range(1, rows + 1))
-            return stalls
-        finally:
-            timer.stop()
-            tab.release()
-            tab.deleteLater()
-
     # A shared runner now and then takes the whole process away for half a
     # second (the macOS runner did in three runs of four): that is the
     # machine's stall, not the sheet's. A change made on the window's thread
     # stalls in every run, so the best of three still tells the two apart:
     # each change's best, as the machine's stalls fall on other changes in
     # other runs (rinbal's macOS runner: insert in one run, copy in another).
-    runs = []
-    try:
-        for _run in range(3):
-            runs.append(measure())
-            best = {change: min(run[change] for run in runs) for change in runs[0]}
-            if all(stall < 0.5 for stall in best.values()):
-                break
-        assert all(stall < 0.5 for stall in best.values()), runs
-    finally:
-        gc.unfreeze()
+    runs = run_window_script(_RESPONSIVE_SCRIPT, tmp_path, str(path), str(rows), "0.5",
+                             timeout=600)["runs"]
+    best = {change: min(run[change] for run in runs) for change in runs[0]}
+    assert all(stall < 0.5 for stall in best.values()), runs
 
 
 def test_steps_are_never_taken_from_under_a_running_undo(every_change_is_large, tmp_path):

@@ -36,3 +36,5 @@ An address is an origin and nothing else: `https://host` or `https://host:port`,
 | Whether the commands are offered | `MainWindow._offer_submitting` in `main_window.py` |
 
 Section numbers in the comments of `nostr/standup/` are the contract's. Change the contract in STANDUP first, then copy its fixtures here.
+
+Multilingual work uses editorial revision format 2 and requires that format in the publication's verified signed key capabilities. Ordinary work remains format 1. A destination without support leaves the multilingual draft intact and makes the unavailable send explicit. The pinned language/provenance rules and complete publication/correction vectors are in `nostr/multilingual_contract.json` and `tests/fixtures/multilingual-vectors.json`; older revision guard tests demonstrate rejection before lossy mutation. Private reference snapshots never enter editorial work.

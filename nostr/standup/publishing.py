@@ -40,6 +40,8 @@ from .. import publisher, zap_shares
 from ..article_details import AUTHOR_MARKER
 from ..bech32 import decode_naddr
 from . import following as rules
+from ..content_language import language_tags, language_from_tags, is_language_tag
+from ..multilingual import is_translation_tag, check_multilingual_work, translation_metadata
 from . import formats, views
 from .formats import FormatError
 from .former import Formers
@@ -53,7 +55,7 @@ from .release import Release, credited_writer, held_credit, release
 _PEOPLE_MAX = 50
 _EXTRA_TAGS_MAX = 100
 _PART_MAX = 1024
-NEVER_CARRIED = frozenset({"expiration", "zap"})
+NEVER_CARRIED = frozenset({"expiration", "zap", "standup:multilingual"})
 _MEDIA_REF = re.compile(r"standup-media:[0-9a-f]{64}")
 _IMETA_URL = re.compile(r"^url (standup-media:[0-9a-f]{64})$")
 # The ending a plain file goes up under: its type's, never its name's.
@@ -214,10 +216,7 @@ def credited(revision: Mapping, writer: str) -> List[str]:
 
 
 def _language_tags(lang: str) -> List[List[str]]:
-    code = lang.strip().lower()
-    if not re.fullmatch(r"[a-z]{2}", code):
-        return []
-    return [["L", LANGUAGE_NAMESPACE], ["l", code, LANGUAGE_NAMESPACE]]
+    return language_tags(lang)
 
 
 def published_template(revision: Mapping, *, writer: str, d: str,
@@ -249,6 +248,7 @@ def published_template(revision: Mapping, *, writer: str, d: str,
         hashtags=work["tags"],
         extra_tags=people + own_zaps + _language_tags(work["lang"]) + carried, writer_first=True)
     event["created_at"] = created_at
+    event["id"] = nostr_events.compute_event_id(event["pubkey"], event["created_at"], event["kind"], event["tags"], event["content"])
     return event
 
 
@@ -410,15 +410,14 @@ def section_of(items: Sequence[views.TimelineItem], sid: str, address: str, publ
 # The tags a correction writes itself; the published event's of these go.
 _CORRECTED = frozenset({"d", "client", "title", "summary", "image", "published_at", "t",
                         "q", "imeta"})
-_NEVER = frozenset({"expiration"})
+_NEVER = frozenset({"expiration", "standup:multilingual"})
 # A public picture's address names its plain file's hash (BUD-01).
 _PUBLIC_PICTURE = re.compile(r"https://[^\s)\"'<>]+?/([0-9a-f]{64})(?:\.[a-z0-9]{2,5})?")
 _IMAGE = re.compile(r"!\[[^\]]*\]\(\s*<?([^\s)>]+)")
 
 
 def _language_tag(tag: List[str]) -> bool:
-    return (tag[0] == "L" and tag[1:2] == [LANGUAGE_NAMESPACE]) or (
-        tag[0] == "l" and len(tag) >= 3 and tag[2] == LANGUAGE_NAMESPACE)
+    return is_language_tag(tag)
 
 
 def _tag(event: Mapping, name: str) -> str:
@@ -437,6 +436,11 @@ def corrected_template(revision: Mapping, published: Mapping, *, writer: str,
     if not d:
         raise NotPublishable("invalid", "the published article has no address")
     work = work_of(revision)
+    if revision.get("v") == 2:
+        def translators(tags):
+            return [list(t) for t in tags if _is_tag(t) and t[0] == "p" and len(t) > 3 and t[3] == "translator"]
+        if translators(work["extra_tags"]) != translators(published.get("tags", [])):
+            raise NotPublishable("invalid", "A source update cannot change translator credit")
     media = [e for e in revision.get("media") or () if isinstance(e, Mapping)]
     content = _with_public_media(work["content"], media_urls)
     image = _with_public_media(work["image"], media_urls) if work["image"] else ""
@@ -453,16 +457,26 @@ def corrected_template(revision: Mapping, published: Mapping, *, writer: str,
                            for tag in work["extra_tags"] if tag[0] == "imeta") if shown(tag)]
         + [list(tag) for tag in published.get("tags") or ()
            if _is_tag(tag) and tag[0] == "imeta" and shown(tag)])
+    provenance = []
+    if revision.get("v") == 2:
+        try:
+            check_multilingual_work(revision["work"])
+        except ValueError as exc:
+            raise NotPublishable("invalid", str(exc)) from None
+        provenance = [list(tag) for tag in work["extra_tags"] if is_translation_tag(tag)]
     kept = [list(tag) for tag in published.get("tags") or ()
             if _is_tag(tag) and tag[0] not in _CORRECTED and tag[0] not in _NEVER
-            and not _language_tag(tag)]
+            and not _language_tag(tag)
+            and not (revision.get("v") == 2 and is_translation_tag(tag))]
     event = publisher.build_article(
         content, writer, d, title=work["title"], summary=work["summary"], image=image,
         published_at=publisher.published_at_of(dict(published)) or created_at,
-        hashtags=work["tags"], extra_tags=_language_tags(work["lang"]) + pictures + kept, writer_first=True)
+        hashtags=work["tags"], extra_tags=_language_tags(work["lang"]) + pictures + provenance + kept,
+        writer_first=True)
     before = published.get("created_at")
     event["created_at"] = before + 1 if isinstance(before, int) and created_at <= before \
         else created_at
+    event["id"] = nostr_events.compute_event_id(event["pubkey"], event["created_at"], event["kind"], event["tags"], event["content"])
     return event
 
 
@@ -525,12 +539,12 @@ def correction_changes(revision: Mapping, published: Mapping) -> List[Tuple[str,
     old = published.get("content") if isinstance(published.get("content"), str) else ""
     if _pictures(old, {}) != _pictures(work["content"], _plain_hashes(revision)):
         found.append(("pictures", ""))
-    old_lang = next((tag[1] for tag in published.get("tags") or ()
-                     if _is_tag(tag) and len(tag) >= 3 and tag[0] == "l"
-                     and tag[2] == LANGUAGE_NAMESPACE), "")
+    old_lang = language_from_tags(published.get("tags") or ())
     new_lang = (_language_tags(work["lang"]) or [[], ["", ""]])[1][1]
-    if new_lang and new_lang != old_lang:
+    if new_lang != old_lang and (new_lang or revision.get("v") == 2):
         found.append(("language", new_lang))
+    if revision.get("v") == 2 and translation_metadata(work["extra_tags"]) != translation_metadata(published.get("tags", [])):
+        found.append(("reference", ""))
     return found
 
 

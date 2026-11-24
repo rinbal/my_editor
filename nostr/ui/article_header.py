@@ -204,6 +204,7 @@ class ArticleHeader(HeaderWidget):
         self._dark = is_dark
         self._filling = False
         # The cover shown; None until the first is, so that one is applied.
+        self._compact = False
         self._cover: Optional[str] = None
         self._cover_hash = ""
         self._loader: Optional[ThumbnailLoader] = (
@@ -299,6 +300,16 @@ class ArticleHeader(HeaderWidget):
         finally:
             self._filling = False
         self._show_cover(cover)
+        self._show_optional_fields()
+
+    def set_compact(self, compact: bool) -> None:
+        """Linked writing keeps empty optional fields in Article Details."""
+        self._compact = compact
+        self._show_optional_fields()
+
+    def _show_optional_fields(self) -> None:
+        self.add_cover.setVisible(not self._cover and not self._compact)
+        self.summary_edit.setVisible(bool(self.summary_edit.toPlainText()) or not self._compact)
 
     def set_derived_title(self, title: str) -> None:
         """The title the article publishes with while none is typed (its
@@ -371,9 +382,16 @@ class ArticleHeader(HeaderWidget):
                              self.summary_edit.toPlainText().strip())
 
     def _to_summary(self) -> None:
-        self.summary_edit.setFocus(Qt.FocusReason.TabFocusReason)
+        if self.summary_edit.isHidden():
+            self.leave_down.emit()
+        else:
+            self.summary_edit.setFocus(Qt.FocusReason.TabFocusReason)
 
     def enter_from_below(self) -> None:
+        if self.summary_edit.isHidden():
+            self.title_edit.setFocus(Qt.FocusReason.BacktabFocusReason)
+            self.title_edit.end(False)
+            return
         self.summary_edit.setFocus(Qt.FocusReason.BacktabFocusReason)
         self.summary_edit.moveCursor(QTextCursor.MoveOperation.End)
 

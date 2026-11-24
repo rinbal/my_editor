@@ -65,7 +65,8 @@ def _field_names() -> dict:
             "cover": pgettext("correction field", "cover picture"),
             "pictures": pgettext("correction field", "pictures"),
             "topics": pgettext("correction field", "topics"),
-            "language": pgettext("correction field", "language")}
+            "language": pgettext("correction field", "language"),
+            "reference": pgettext("correction field", "source reference")}
 
 
 def change_words(changes: Sequence[Tuple[str, str]]) -> str:
