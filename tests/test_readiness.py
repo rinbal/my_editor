@@ -9,13 +9,13 @@ from pathlib import Path
 import pytest
 
 from nostr import readiness
-from nostr.readiness import BLOCKER, NOSTR, STANDUP, evaluate
+from nostr.readiness import BLOCKER, STANDUP, evaluate
 
 ROOT = Path(__file__).resolve().parent.parent
 CASES = json.loads((ROOT / "tests" / "fixtures" / "publication_check_cases.json").read_text(encoding="utf-8"))
 # Copied unchanged from STANDUP (see tests/fixtures/README.md); re-copy, never edit.
 RULES_SHA256 = "adc5d7c51e35e75762d92ecfe63e05b26cda2e3ea243f3bde026972b3dcda2df"
-CASES_SHA256 = "3a5f0ba808791a5cad5b80fce78bb8203da831ffaeb7f4b59314f8d2cfccde71"
+CASES_SHA256 = "ae8e03561bea3d785161d2f93d552e54f493b82ec1c570fafedff01e95ef9675"
 
 
 def _content(value):
@@ -52,19 +52,15 @@ def test_a_secret_key_or_no_link_name_blocks_first():
     assert evaluate(_article([["d", "a-read"], *tags]), now=CASES["now"]).ready
 
 
-def test_myeditors_stricter_cover_rule_raises_what_it_would_drop():
+def test_myeditors_stricter_cover_rule_says_what_it_would_drop_in_its_own_words():
+    """An address the shared rule allows and the publisher's refuses (one
+    on this network only) is MyEditor's cover.local, not "use https"."""
     tags = [["d", "a"], ["title", "A long enough title"], ["image", "http://old-blog.example.org/c.jpg"]]
     assert "cover.unsafe" not in [f.code for f in evaluate(_article(tags), now=1).findings]
     strict = evaluate(_article(tags), now=1, cover_ok=lambda address: address.startswith("https://"))
-    assert [f.code for f in strict.blockers] == ["cover.unsafe"]
-
-
-def test_a_picture_named_image_or_after_its_file_has_no_description():
-    """The "No ALT" chip's rule (picture_names.description_of)."""
-    content = "![image](https://x.org/a.jpg)\n\n![b](https://x.org/b.png)\n\n![A cat](https://x.org/c.jpg)"
-    found = [f for f in evaluate(_article([["d", "a"], ["title", "T"]], content), now=1).findings
-             if f.code == "media.alt_missing"]
-    assert [dict(f.params) for f in found] == [{"count": 2}]
+    assert [f.code for f in strict.blockers] == [readiness.COVER_LOCAL]
+    unsafe = evaluate(_article([["d", "a"], ["title", "T"], ["image", "data:image/png;base64,AA"]]), now=1)
+    assert [f.code for f in unsafe.blockers] == ["cover.unsafe"]
 
 
 def test_the_words_follow_the_interface_language():

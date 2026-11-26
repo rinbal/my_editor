@@ -159,6 +159,29 @@ def test_invalid_pair_keeps_single_version_menu_and_opens_original(tmp_path, mon
     assert opened == [True] and not dialog.isVisible()
 
 
+def test_publish_both_checks_the_original_too(tmp_path, monkeypatch):
+    """The original goes out with this version: what keeps it from going
+    out is said, and nothing is sent (a cover the publisher would drop)."""
+    from uuid import uuid4
+    from tests.test_article_published_at import _dialog, CapturedJob
+    from tests.outbox_fakes import PK
+    import nostr.ui.publish_article_dialog as module
+    CapturedJob.made = []
+    monkeypatch.setattr(module, "PublishJob", CapturedJob)
+    original = ArticleDetails(identifier=str(uuid4()), title="Drachenfest am See",
+                              image="http://192.168.1.10/cover.jpg").with_language("de")
+    dialog = _dialog(tmp_path, slug=str(uuid4()), lookup=lambda *args: None,
+                     language_context={"expected_event_id": None, "source": {"language": "de"}},
+                     pair_source={"details": original, "body": "Drei Tage Wind.", "media": (),
+                                  "language": "de", "owner": PK})
+    dialog.show()
+    dialog._set_pair(True)
+    assert dialog._pair_problem_words().startswith("The original can’t go out yet. The cover's")
+    assert dialog._pair_problem.isVisible()                     # Open original
+    dialog._on_publish()
+    assert CapturedJob.made == []
+
+
 SCRIPT = r'''
 import json, os, sys
 sys.path.insert(0, sys.argv[1])

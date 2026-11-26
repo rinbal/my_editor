@@ -3510,6 +3510,9 @@ class MainWindow(QMainWindow):
                                             pill=self.submission_pill,
                                             name_of=self._profile_names.name, parent=self)
         self._publication_logos.changed.connect(self._submissions.logo_arrived)
+        # A text handed in to a publication on STANDUP is checked for STANDUP.
+        self._standup_texts: frozenset = frozenset()
+        self._submissions.handed_in_changed.connect(self._on_handed_in_changed)
         self._profile_names.learned.connect(self._submissions.names_learned)
         self._drafts_panel.view_changed.connect(self._follow_account_in_published)
         self._drafts_panel.view_changed.connect(self._update_refresh_command)
@@ -3549,13 +3552,12 @@ class MainWindow(QMainWindow):
             lambda: self._multilingual.choose(edit_current=True))
         self._article_details_panel.cover_uploaded.connect(self._cover_uploaded_for)
         self._article_details_panel.check_link_name.connect(self._check_link_name)
-        self._article_details_panel.text_requested.connect(self._show_finding_in_text)
         # An article's cover, title and summary on its page (decision 1 of
         # the Article Details review), for the tabs that are articles.
         self._article_headers = ArticleHeaders(
             wanted=self._wants_article_header, details_of=self._article_details_of,
-            set_details=self._set_article_details, derived_title=self._derived_title_of,
-            choose_cover=self._choose_cover_for, readiness=self._readiness_of,
+            set_details=self._set_article_details, article_now=self._article_now,
+            choose_cover=self._choose_cover_for,
             show_readiness=self._show_readiness_of, media_store=self._media_store,
             is_dark=self.is_dark_theme, parent=self)
         # What the article takes from its text (the title it publishes with
@@ -5208,7 +5210,8 @@ class MainWindow(QMainWindow):
         if waits:
             self.status.clearMessage()
 
-    def _publish_payload(self, ed, flavor: str, *, keep_local: bool = False) -> tuple[str, list]:
+    def _publish_payload(self, ed, flavor: str, *, keep_local: bool = False,
+                         descriptions: Optional[dict] = None) -> tuple[str, list]:
         """Document text for a signed event, plus what its media is.
 
         toPlainText() emits U+FFFC for every image, so a published note
@@ -5230,7 +5233,9 @@ class MainWindow(QMainWindow):
         address publishing uploaded it to (_asset_named), its name in the
         document unchanged. With ``keep_local`` a file on this computer only
         is written as its asset key (a submission encrypts and uploads it
-        itself, drafting.py) instead of being left out.
+        itself, drafting.py) instead of being left out. ``descriptions``,
+        when given, gets each picture's description as the "No ALT" chip
+        reads it, by the address written (the Publication Check's).
         """
         records: dict = {}
 
@@ -5279,7 +5284,12 @@ class MainWindow(QMainWindow):
                 return None
             if _is_media(self._asset_manager, fmt.name()):
                 return url                     # where readers show a player
-            return image_markdown(str(fmt.property(QTextImageFormat.ImageAltText) or ""), url)
+            alt = str(fmt.property(QTextImageFormat.ImageAltText) or "")
+            if descriptions is not None:
+                asset = self._asset_named(ed, fmt.name())
+                descriptions[url] = photo_group.description_of(
+                    alt, fmt.name(), asset.stored_name if asset is not None else "")
+            return image_markdown(alt, url)
 
         def as_note(fmt) -> Optional[str]:
             url = destination(fmt)
@@ -10052,9 +10062,10 @@ class MainWindow(QMainWindow):
         self.act_article_details.setChecked(not folded)
         self.act_article_details.blockSignals(blocked)
 
-    def _fill_article_details_panel(self) -> None:
+    def _fill_article_details_panel(self, now=None) -> None:
         """Article Details shows the article in the tab in front: its details
-        (_article_details_of), or why there are none."""
+        (_article_details_of), or why there are none. ``now``: its
+        article_now, when the caller has it."""
         panel = getattr(self, "_article_details_panel", None)
         if panel is None or not panel.isVisible() and not self.act_article_details.isChecked():
             return
@@ -10076,8 +10087,9 @@ class MainWindow(QMainWindow):
             panel.show_article(details, fixed_identifier=fixed, kept_in_file=details.kept,
                                document=ed, made_identifier=made,
                                link_name_lock=self._link_name_lock(profile, details.identifier))
-            panel.set_derived_title(self._derived_title_of(ed))
-            panel.show_readiness(self._readiness_of(ed))
+            title, result = now or self._article_now(ed)
+            panel.set_derived_title(title)
+            panel.show_readiness(result)
 
     def _link_name_lock(self, profile, d: str) -> LinkNameLock:
         """Whether the text ``d`` keeps its link name for its submissions:
@@ -10096,10 +10108,19 @@ class MainWindow(QMainWindow):
         if profile is not None:
             self._standup().check_link_name(profile)
 
-    def _derived_title_of(self, ed) -> str:
-        """The title ``ed``'s article publishes with while none is set: its
-        first heading or line (article_details.default_title)."""
-        return default_title(self._publish_payload(ed, "markdown")[0], self._preview_name)
+    def _article_now(self, ed):
+        """``(title, verdict)`` of ``ed``'s article, its text read once: the
+        title it publishes with while none is set (its first heading or
+        line, article_details.default_title) and the Publication Check's
+        verdict. The text is read as Publish sends it once its pictures are
+        uploaded: one only on this computer counts, by its asset key, with
+        its description by the "No ALT" rule. No article: ("", None)."""
+        if not self._can_be_an_article(ed):
+            return "", None
+        descriptions: dict = {}
+        payload = self._publish_payload(ed, "markdown", keep_local=True, descriptions=descriptions)
+        return (default_title(payload[0], self._preview_name),
+                self._readiness_of(ed, payload, descriptions))
 
     def _on_document_changed_for_article(self, ed) -> None:
         if ed is self.current_editor():
@@ -10114,15 +10135,11 @@ class MainWindow(QMainWindow):
         ed, panel = self.current_editor(), self._article_details_panel
         if ed is None:
             return
-        # The text read once: the title it publishes with, and the check.
-        payload = self._publish_payload(ed, "markdown")
-        title = default_title(payload[0], self._preview_name)
-        result = self._readiness_of(ed, payload)
+        title, result = now = self._article_now(ed)
         if panel.isVisible() and panel.shows_article():
             panel.set_derived_title(title)
             panel.show_readiness(result)
-        self._article_headers.show_derived_title(ed, title)
-        self._article_headers.show_readiness(ed, result)
+        self._article_headers.show_article_now(ed, now)
 
     def _publish_start(self, ed, pubkey: str, payload=None):
         """What Publish as Article starts with for ``ed``: its text and
@@ -10147,20 +10164,41 @@ class MainWindow(QMainWindow):
             file_name = self._file_name(path)
         return body, media, details, title, slug, file_name
 
-    def _readiness_of(self, ed, payload=None):
+    def _readiness_of(self, ed, payload, descriptions):
         """The Publication Check on ``ed``'s article as Publish as Article
-        would start with it now (readiness_view), or None for no article."""
-        if not self._can_be_an_article(ed):
-            return None
+        would start with it now (readiness_view), ``payload`` its text read
+        by _article_now; a cover still uploading in Article Details counts."""
         profile = self._profile_store.default()
         pubkey = profile.user_pubkey if profile is not None else ""
         body, media, details, title, slug, _file = self._publish_start(ed, pubkey, payload)
+        panel = self._article_details_panel
+        uploading = (ed is self.current_editor() and panel.shows_article()
+                     and panel.cover.uploading())
         return check_article(
             body=body, title=title, summary=details.summary, image=details.image,
             hashtags=details.hashtags, link_name=slug or None,
             published_at=details.published_at or None, media=media,
             extra_tags=details.published_tags(body, author=(pubkey, "")) or None,
-            pubkey=pubkey, outcome=outcome_for(self._submitting_offered()))
+            pubkey=pubkey, outcome=outcome_for(self._handed_in_to_standup(ed)),
+            uploading=uploading, descriptions=descriptions)
+
+    def _handed_in_to_standup(self, ed) -> bool:
+        """Whether the text in ``ed`` was handed in to a publication on
+        STANDUP (Submissions know it by its identifier): then it is
+        checked for STANDUP, with what Discover asks."""
+        host = getattr(self, "_submissions", None)
+        return ed is not None and host is not None and host.handed_in(
+            self._article_details_of(ed).identifier)
+
+    def _on_handed_in_changed(self) -> None:
+        """Submissions learned what was handed in: an open text whose check
+        is for STANDUP now, or no longer, is checked again."""
+        texts = frozenset(self._article_details_of(ed).identifier
+                          for ed in self._all_editors() if self._handed_in_to_standup(ed))
+        if texts != self._standup_texts:
+            self._standup_texts = texts
+            self._update_article_headers()
+            self._fill_article_details_panel()
 
     def _show_readiness_of(self, ed) -> None:
         """The page's verdict line: Article Details open at the check."""
@@ -10168,12 +10206,6 @@ class MainWindow(QMainWindow):
             return
         self.act_article_details.setChecked(True)
         self._article_details_panel.show_readiness_section()
-
-    def _show_finding_in_text(self, _finding) -> None:
-        """Show, for what the check found in the text: the text, focused."""
-        ed = self.current_editor()
-        if ed is not None:
-            ed.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _wants_article_header(self, ed) -> bool:
         """Whether ``ed`` shows its article's head on the page: while a Nostr
@@ -11045,7 +11077,7 @@ class MainWindow(QMainWindow):
             details=details,
             first_publications=self._first_publications,
             media=media,
-            outcome=outcome_for(self._submitting_offered()),
+            outcome=outcome_for(self._handed_in_to_standup(ed)),
             parent=self,
             is_dark=self.is_dark_theme,
         )
@@ -12769,9 +12801,10 @@ class MainWindow(QMainWindow):
         if pane is not None:
             pane.schedule()
         self._update_tab_title(ed)
-        self._article_headers.update(ed)
+        now = self._article_now(ed)             # the text read once for the page and the panel
+        self._article_headers.update(ed, now)
         if ed is self.current_editor():
-            self._fill_article_details_panel()
+            self._fill_article_details_panel(now)
             self._update_submission_pill()
             if getattr(self, "_multilingual", None) is not None:
                 self._multilingual.refresh()

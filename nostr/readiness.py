@@ -16,9 +16,11 @@ content), so it judges what readers would get, plus two facts only the
 editor knows: whether an upload is still running, and whether the article is
 scheduled (its future date is then intended).
 
-MyEditor adds two blockers of its own, in its own words (gettext): a secret
-key anywhere in the event, which no signer here signs, and an empty link
-name, without which an article has no address.
+MyEditor adds findings of its own, in its own words (gettext): a secret key
+anywhere in the event, which no signer here signs, said at the field that
+holds it; an empty link name, without which an article has no address; and
+a cover on this network only, which the publisher drops (its rule is
+stricter than the shared one, which says such an address is fine).
 """
 
 import json
@@ -30,7 +32,7 @@ from typing import Callable, Dict, List, Mapping, Optional, Tuple
 from urllib.parse import urlsplit
 
 from i18n import N_, _, language
-from nostr.refs import secret_keys_in_event
+from nostr.refs import secret_keys_in, secret_keys_in_event
 from picture_names import description_of
 
 NOSTR = "nostr"          # Ready to Publish
@@ -43,9 +45,12 @@ RULES: dict = json.loads(Path(__file__).with_name("publication_check.json").read
 # MyEditor's own findings, first: they stop signing or building outright.
 SECRET_KEY = "secret.in_event"
 NO_LINK_NAME = "slug.missing"
+COVER_LOCAL = "cover.local"
 _OWN_SENTENCES = {
     SECRET_KEY: N_("The article contains a secret key. Remove it before publishing."),
     NO_LINK_NAME: N_("Give the article a link name before publishing."),
+    COVER_LOCAL: N_("The cover's address only opens on this network. Use a web address "
+                    "readers can open."),
 }
 _OWN_GROUPS = {"secret": N_("Secret keys"), "link": N_("Link name")}
 
@@ -178,13 +183,15 @@ def _article_of(event: dict, now: int) -> _Article:
                   "tags": [list(t) for t in tags], "content": content})
 
 
-def _undescribed_pictures(prose: str) -> Optional[int]:
+def _undescribed_pictures(prose: str, describe: Callable[[str, str], str]) -> Optional[int]:
     """How many pictures have no description, None when there are none.
-    "No description" is the "No ALT" chip's rule (picture_names)."""
+    ``describe(alt, address)`` is the description by the "No ALT" chip's
+    rule (picture_names.description_of; the window knows a picture's stored
+    name too)."""
     pictures = _PICTURE.findall(prose)
     if not pictures:
         return None
-    return sum(1 for alt, address in pictures if not description_of(alt, address))
+    return sum(1 for alt, address in pictures if not describe(alt, address))
 
 
 def _werbelinks(prose: str, rules: dict) -> Tuple[int, bool]:
@@ -240,7 +247,7 @@ def _too_big_for_standup(a: _Article, facts, rules):
 
 
 def _alt_missing(a: _Article, facts, rules):
-    undescribed = _undescribed_pictures(a.prose)
+    undescribed = _undescribed_pictures(a.prose, facts["describe"])
     if undescribed is None:
         return None
     return {"count": undescribed} if undescribed else False
@@ -281,26 +288,40 @@ _CHECKS: Dict[str, Callable] = {
 }
 
 
+def _secret_field(unsigned: dict) -> str:
+    """Where the first secret key is: the field that holds it, else the text."""
+    for field_name, name in (("title", "title"), ("summary", "summary"), ("tags", "t"),
+                             ("link_name", "d"), ("image", "image")):
+        if any(secret_keys_in(tag[1]) for tag in unsigned["tags"]
+               if len(tag) > 1 and tag[0] == name and isinstance(tag[1], str)):
+            return field_name
+    return "body"
+
+
 def evaluate(event: dict, *, outcome: str = NOSTR, now: int, uploading: bool = False,
              scheduled: bool = False, rules: Optional[dict] = None,
              cover_ok: Callable[[str], bool] = is_web_address,
+             describe: Callable[[str, str], str] = description_of,
              own_checks: bool = True) -> Result:
     """The verdict for ``event`` (the article as it would be built) under
     ``outcome``. ``findings`` come most pressing first: MyEditor's own
     blockers, then the rule file's order. ``cover_ok`` may be stricter than
-    the shared rule (the publisher's, which drops what it refuses).
+    the shared rule (the publisher's, which drops what it refuses): an
+    address only the shared rule allows is then MyEditor's ``cover.local``.
+    ``describe(alt, address)`` is a picture's description ("": none).
     ``own_checks`` False leaves MyEditor's own findings out (the shared
     cases)."""
     rules = rules or RULES
     article = _article_of(event, now)
-    facts = {"now": now, "uploading": uploading, "scheduled": scheduled, "cover_ok": cover_ok}
+    facts = {"now": now, "uploading": uploading, "scheduled": scheduled, "cover_ok": cover_ok,
+             "describe": describe}
     findings: List[Finding] = []
     passed: List[str] = []
     raised = set()
     if own_checks:
         keys = secret_keys_in_event(article.unsigned)     # None: it can't be read, so no signer signs it
         for code, group, field_name, found in (
-                (SECRET_KEY, "secret", "body", keys is None or bool(keys)),
+                (SECRET_KEY, "secret", _secret_field(article.unsigned), keys is None or bool(keys)),
                 (NO_LINK_NAME, "link", "link_name", not article.link_name)):
             if found:
                 findings.append(Finding(code, BLOCKER, field_name, group))
@@ -319,7 +340,10 @@ def evaluate(event: dict, *, outcome: str = NOSTR, now: int, uploading: bool = F
             passed.append(rule["group"])
             continue
         raised.add(rule["group"])
-        findings.append(Finding(rule["code"], severity, rule["field"], rule["group"],
+        code = rule["code"]
+        if code == "cover.unsafe" and own_checks and is_web_address(article.image):
+            code = COVER_LOCAL                  # fine by the shared rule, not by the publisher's
+        findings.append(Finding(code, severity, rule["field"], rule["group"],
                                 verdict if isinstance(verdict, dict) else {}))
     checked = tuple(dict.fromkeys(g for g in passed if g not in raised))
     return Result(outcome, tuple(findings), checked)

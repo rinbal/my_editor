@@ -372,7 +372,7 @@ def test_the_window_offers_and_previews_the_same_default_title():
     one rule (article_details.default_title), not a line of their own."""
     import inspect
     from main_window import MainWindow
-    for method in (MainWindow._open_publish_article, MainWindow._preview_content):
+    for method in (MainWindow._publish_start, MainWindow._preview_content):
         source = inspect.getsource(method)
         assert "default_title(" in source and 'lstrip("# ")' not in source
 

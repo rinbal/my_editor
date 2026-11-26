@@ -181,7 +181,7 @@ class _Details:
 
     _fill_article_details_panel = MainWindow._fill_article_details_panel
     _link_name_lock = MainWindow._link_name_lock
-    _readiness_of = staticmethod(lambda _ed: None)     # the check: test_readiness_wiring
+    _article_now = staticmethod(lambda _ed: ("", None))   # title and check: test_readiness_wiring
 
     def __init__(self, writer, details: ArticleDetails, *, active: bool = True) -> None:
         self.shown = []
@@ -212,9 +212,6 @@ class _Details:
         return self._details
 
     def _link_name_for_file(self, _path, _author) -> str:
-        return ""
-
-    def _derived_title_of(self, _ed) -> str:
         return ""
 
 

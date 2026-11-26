@@ -429,6 +429,27 @@ def test_a_key_in_any_field_of_the_article_dialog_is_not_published(tmp_path, ans
     assert ["title", f"About {OWNER}"] in event["tags"]
 
 
+def test_a_key_in_the_title_is_said_there_and_its_row_replaces_it_for_publish(tmp_path, answers):
+    """The check names the field that holds the key, and its row offers
+    Replace with Public Key; Publish then sends the link to its owner."""
+    from nostr.publisher import NEVER, FirstPublication
+    from nostr.readiness import SECRET_KEY
+    _queue, asked = answers
+    dialog = _dialog("article", tmp_path, None)
+    dialog._published_at_lookup = lambda author, slug, answer, **kw: answer(FirstPublication(NEVER))
+    dialog._title_edit.setText(f"About {NSEC}")
+    [found] = dialog._readiness.result().blockers
+    assert (found.code, found.field) == (SECRET_KEY, "title") and not dialog._publish_btn.isEnabled()
+    replace = dialog._readiness.focus_chain()[1]
+    assert replace.text() == "Replace with Public Key"
+    replace.click()
+    assert dialog._publish_btn.isEnabled() and asked == []
+    dialog._on_publish()
+    settle()
+    event = dialog._relay_pool.published[-1][1]
+    assert ["title", f"About {OWNER}"] in event["tags"] and refs.secret_keys_in_event(event) == []
+
+
 def test_a_key_in_the_slug_is_refused_never_rewritten(tmp_path, answers):
     queue, asked = answers
     dialog = _dialog("article", tmp_path, None)

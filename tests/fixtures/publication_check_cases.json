@@ -202,6 +202,14 @@
       "checked": ["title", "body", "cover", "summary", "tags"]
     },
     {
+      "name": "\"image\" and the file's own name describe no picture",
+      "outcome": "nostr",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "Short."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": "![image](https://media.example.org/a.jpg)\n\n![market.jpg](https://media.example.org/market.jpg?w=800)\n\n![Stalls](https://media.example.org/stalls.PNG#wide)\n\n![The stalls at noon](https://media.example.org/b.jpg)" },
+      "ready": true,
+      "findings": [{ "code": "media.alt_missing", "severity": "suggestion", "params": { "count": 3 } }],
+      "checked": ["title", "body", "cover", "summary", "tags"]
+    },
+    {
       "name": "a Werbelink without a note saying so",
       "outcome": "nostr",
       "event": { "tags": [["title", "A long enough title"], ["summary", "Short."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": "I use [this wallet*](https://shop.example.org/w \"Werbelink\").\n\n**Werbung**" },

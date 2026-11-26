@@ -7,9 +7,11 @@ where the article starts.
     │ [ cover, 16:9 as the article card ]      │  Change Cover…  Remove (hover)
     │                                          │
     │ Plain text, forever                      │  the title (placeholder: the
-    │ Why the files outlive the apps.          │  one it publishes with)
-    │ ✓ Ready to Publish · 2 suggestions        │  the summary
-    │ ──────────────────────────────────────── │  the Publication Check
+    │                                          │  one it publishes with)
+    │ Why the files outlive the apps.          │  the summary
+    │ ✓ Ready to Publish · 2 suggestions       │  Before Publishing: opens
+    │                                          │  Article Details at the check
+    │ ──────────────────────────────────────── │
     │ Every tool I loved is gone …             │  the text (the editor's)
     └──────────────────────────────────────────┘
 
@@ -281,7 +283,7 @@ class ArticleHeader(HeaderWidget):
         self.readiness.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.readiness.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.readiness.setToolTip(_("Show in Article Details"))
-        self.readiness.setAccessibleName(_("Publication Check"))
+        self.readiness.setAccessibleName(_("Before Publishing"))
         self.readiness.clicked.connect(self.readiness_requested)
         self.readiness.hide()
         self._readiness_result = None
@@ -367,7 +369,9 @@ class ArticleHeader(HeaderWidget):
             f"QPlainTextEdit#article_header_summary {{ background: transparent; color: {muted};"
             f" border: none; padding: 0; }}"
             f"QFrame#article_header_rule {{ background: {line}; border: none; }}"
-            f"QToolButton#article_header_readiness {{ color: {muted}; border: none; padding: 1px 0; }}"
+            f"QToolButton#article_header_readiness {{ color: {muted}; border: 1px solid transparent;"
+            f" border-radius: 4px; padding: 1px 2px; }}"
+            f"QToolButton#article_header_readiness:focus {{ border-color: {appearance.roles(dark).focus}; }}"
             f"QToolButton#article_header_add_cover {{ color: {appearance.roles(dark).ink}; border: none;"
             f" padding: 2px 0; }}"
             "QPushButton#article_header_cover_action { color: white; background: rgba(0,0,0,150);"

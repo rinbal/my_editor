@@ -14,7 +14,7 @@ whenever a tab's article, or whether it is one, may have changed.
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 from PySide6.QtCore import QObject
 
@@ -30,18 +30,18 @@ class ArticleHeaders(QObject):
 
     ``wanted(ed)``: whether ``ed`` shows its article's head now.
     ``details_of(ed)`` / ``set_details(ed, details)``: the tab's article.
-    ``derived_title(ed)``: the title it publishes with while none is set.
+    ``article_now(ed)``: ``(title, verdict)``, the title it publishes with
+    while none is set and the Publication Check's verdict (or None), from
+    one reading of its text.
     ``choose_cover(ed)``: open the cover picker for ``ed``'s article.
-    ``readiness(ed)``: the Publication Check's verdict on it, or None;
-    ``show_readiness(ed)``: show that check in full (Article Details).
+    ``show_readiness(ed)``: show the check in full (Article Details).
     """
 
     def __init__(self, *, wanted: Callable[[object], bool],
                  details_of: Callable[[object], ArticleDetails],
                  set_details: Callable[[object, ArticleDetails], None],
-                 derived_title: Callable[[object], str],
+                 article_now: Callable[[object], Tuple[str, object]],
                  choose_cover: Callable[[object], None],
-                 readiness: Callable[[object], object] = lambda ed: None,
                  show_readiness: Callable[[object], None] = lambda ed: None,
                  media_store: Optional[MediaStore] = None, is_dark: bool = False,
                  parent: Optional[QObject] = None) -> None:
@@ -49,9 +49,8 @@ class ArticleHeaders(QObject):
         self._wanted = wanted
         self._details_of = details_of
         self._set_details = set_details
-        self._derived_title = derived_title
+        self._article_now = article_now
         self._choose_cover = choose_cover
-        self._readiness = readiness
         self._show_readiness = show_readiness
         self._media_store = media_store
         self._is_dark = is_dark
@@ -61,9 +60,9 @@ class ArticleHeaders(QObject):
         slot: Optional[EditorHeader] = getattr(ed, "_article_header", None)
         return slot.header if slot is not None else None
 
-    def update(self, ed) -> None:
+    def update(self, ed, now: Optional[Tuple[str, object]] = None) -> None:
         """Show ``ed``'s article on its page, or take the head away when it
-        is no article now."""
+        is no article now. ``now``: its article_now, when the caller has it."""
         if ed is None:
             return
         slot: Optional[EditorHeader] = getattr(ed, "_article_header", None)
@@ -79,20 +78,15 @@ class ArticleHeaders(QObject):
         details = self._details_of(ed)
         header.show_article(details.title, details.summary, details.image)
         header.set_compact(getattr(ed, "_language_link", None) is not None)
-        header.set_derived_title(self._derived_title(ed))
-        header.show_readiness(self._readiness(ed))
+        self.show_article_now(ed, now or self._article_now(ed))
 
-    def show_derived_title(self, ed, title: Optional[str] = None) -> None:
-        """The text changed: the title ``ed``'s article publishes with
-        (``title`` when the caller has it), again."""
+    def show_article_now(self, ed, now: Tuple[str, object]) -> None:
+        """The text changed: the title ``ed``'s article publishes with and
+        the check's verdict on it, again."""
         header = self.header_of(ed)
         if header is not None:
-            header.set_derived_title(self._derived_title(ed) if title is None else title)
-
-    def show_readiness(self, ed, result) -> None:
-        """The text changed: the check's verdict on ``ed``'s article, again."""
-        header = self.header_of(ed)
-        if header is not None:
+            title, result = now
+            header.set_derived_title(title)
             header.show_readiness(result)
 
     def set_dark(self, is_dark: bool, editors) -> None:

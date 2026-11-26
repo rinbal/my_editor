@@ -32,7 +32,7 @@ from dataclasses import dataclass, replace
 from typing import Callable, Dict, Optional
 
 import shiboken6
-from PySide6.QtCore import QObject, QTimer, QUrl
+from PySide6.QtCore import QObject, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QPixmap
 
 from i18n import N_, _
@@ -145,6 +145,9 @@ class Ports:
 class SubmissionsHost(QObject):
     """See the module docstring."""
 
+    # What the account in use handed in may have changed (handed_in).
+    handed_in_changed = Signal()
+
     def __init__(self, ports: Ports, *, view: SubmissionsView, pill: SubmissionPill,
                  name_of: Callable[[str], str], comparer: Optional[Comparer] = None,
                  cover_fetch: Callable[[QObject], CoverFetch] = CoverFetch,
@@ -198,14 +201,18 @@ class SubmissionsHost(QObject):
             following = writer.following(profile)
             if following is not self._following:
                 following.changed.connect(self.update_pill)
+                following.changed.connect(self.handed_in_changed)
                 following.changed.connect(self._detail_logo)
                 following.news.connect(self._on_news)
             if getattr(profile, "is_local", False):
                 following.start()
+        changed = following is not self._following
         self._following = following
         self.view.set_following(following, signed_in=profile is not None,
                                 server=bool(writer.server))
         self.update_pill()
+        if changed:
+            self.handed_in_changed.emit()
 
     def account_stopped(self, *_writer) -> None:
         """The account was let go: nothing of it stays on screen, and
@@ -213,6 +220,7 @@ class SubmissionsHost(QObject):
         self._following = None
         self.view.set_following(None, signed_in=False)
         self.pill.clear()
+        self.handed_in_changed.emit()
         self.comparer.stop()
         for sheet in (self._dialog, self._sheet, self._publish_sheet, self._confirm_sheet,
                       self._correction_sheet):
@@ -276,6 +284,11 @@ class SubmissionsHost(QObject):
         self.update_pill()
         if self._following is not None and self.view.showing_detail():
             self.view.detail.refresh()
+
+    def handed_in(self, d: str) -> bool:
+        """Whether the account in use handed in the work ``d`` to a
+        publication (its list says so)."""
+        return bool(d) and self._following is not None and self._following.row_for_work(d) is not None
 
     def update_pill(self) -> None:
         """The pill says the status of the article in the current tab,
