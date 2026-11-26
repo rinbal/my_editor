@@ -23,7 +23,10 @@ Windows, a styled drag-to-Applications disk image on macOS, and a double-click
 
 ## How a release happens
 
-The whole flow is one command. Follow
+Stable releases come from `main` with `release.sh`. Betas are tagged on `dev`
+with `release-beta.sh` (see [Beta releases](#beta-releases)).
+
+For a stable release the whole flow is one command. Follow
 [`docs/develop/release-process.md`](../docs/develop/release-process.md) (it writes the release notes), then run:
 
 ```bash
@@ -43,6 +46,41 @@ point at the new files.
 Use the **Run workflow** button on the Actions tab (workflow_dispatch) to build
 without tagging; it uploads the installers as artifacts but does not publish a
 release.
+
+## Beta releases
+
+A beta is a preview of the next version for people who want to try it. Set
+`APP_VERSION` on `dev` to the plain version it previews (`4.0.0`, without
+`-beta1`), try a build with **Run workflow** on `dev`, then run:
+
+```bash
+packaging/release-beta.sh 4.0.0-beta1             # what origin/dev holds now
+packaging/release-beta.sh 4.0.0-beta1 <commit>    # exactly the commit you tried
+```
+
+The script changes no branch and no file, so open changes in your working tree
+do not matter. It checks that the version has the form `x.y.z-betaN`, that the
+commit is on `origin/dev`, that its `APP_VERSION` is `x.y.z`, that its workflow
+publishes betas as pre-releases and that the tag is new. Then it shows the
+commit, asks, and pushes only the tag (`--yes` skips the question). Never use
+`release.sh` for a beta: it pushes to `main`.
+
+The workflow publishes a tag with `-beta` as a **pre-release** that never
+becomes "Latest". The app's update check and the install guide read the latest
+release, so nobody on a stable version is offered the beta, and the guide is not
+refreshed. GitHub writes the list of changes, unless
+`docs/releases/v<version>-betaN.md` exists.
+
+What testers should know:
+
+- A beta is the normal MyEditor with the same settings and files. On Windows and
+  macOS and as a `.deb` it replaces the stable version; an AppImage is a file of
+  its own beside the old one.
+- All betas of one version carry the same `APP_VERSION`, so none is offered as
+  an update to another. Testers download the next one themselves, and install a
+  newer `.deb` with `sudo apt install --reinstall ./<file>.deb`.
+- Give the final release the next patch number (4.0.1 after the betas of
+  4.0.0). Only a higher version is offered to beta testers as an update.
 
 ## Building locally
 

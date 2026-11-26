@@ -16,6 +16,10 @@ The installers can only be built on their own runners, so the build and the asse
 upload happen in CI (`.github/workflows/build-installers.yml`), not locally.
 Everything the local machine needs is git and python.
 
+This runbook is for stable releases, which come from `main`. A beta is tagged on
+`dev` with `packaging/release-beta.sh`, needs no release notes and is published
+as a pre-release: see [Beta releases](../../packaging/README.md#beta-releases).
+
 ---
 
 ## Prompt (copy from here)
@@ -29,8 +33,10 @@ If {VERSION} was not given, ask for it. Never guess. The tag will be v{VERSION}.
 ### Step 2. Write the release notes
 1. Read the git state, read-only. Do not stash or discard anything:
    - git status
-   - git describe --tags
-   - LAST=$(git describe --tags --abbrev=0) for the previous release tag
+   - git describe --tags --exclude '*-beta*'
+   - LAST=$(git describe --tags --abbrev=0 --exclude '*-beta*') for the previous
+     stable release tag. Beta tags are left out, so the notes cover everything
+     since the last stable release.
    - git log "$LAST"..HEAD --oneline for the commit list since that tag
    - git diff "$LAST" --stat for overall scope
 2. Find every "Merge pull request #N" in that range. If the gh CLI is installed,

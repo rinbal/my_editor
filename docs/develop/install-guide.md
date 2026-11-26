@@ -73,8 +73,10 @@ Actions**.
 After that, `.github/workflows/install-guide.yml` deploys:
 
 - on every push to `main` that touches the site or its build,
-- after every release: `build-installers.yml` dispatches it once the release is
-  published, so the buttons point at the new files,
+- after every stable release: `build-installers.yml` dispatches it once the
+  release is published, so the buttons point at the new files (a
+  [beta](../../packaging/README.md#beta-releases) is a pre-release, which the
+  guide does not offer),
 - on demand from the Actions tab (**Run workflow**).
 
 ## Previewing locally
