@@ -8,7 +8,8 @@ where the article starts.
     │                                          │
     │ Plain text, forever                      │  the title (placeholder: the
     │ Why the files outlive the apps.          │  one it publishes with)
-    │ ──────────────────────────────────────── │  the summary
+    │ ✓ Ready to Publish · 2 suggestions        │  the summary
+    │ ──────────────────────────────────────── │  the Publication Check
     │ Every tool I loved is gone …             │  the text (the editor's)
     └──────────────────────────────────────────┘
 
@@ -25,7 +26,9 @@ text; Up on the text's first line comes back here (EditorHeader). The
 cover is chosen the way Article Details chooses it (``cover_requested``
 opens its picker) and shows the media library's copy of a library
 picture; an address typed is never downloaded to show it
-(cover_field.library_picture_hash).
+(cover_field.library_picture_hash). Under the summary, the Publication
+Check's verdict in one quiet line; it opens Article Details, where the
+check is in full (``readiness_requested``).
 """
 
 from __future__ import annotations
@@ -33,7 +36,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PySide6.QtCore import QEvent, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap, QTextCursor, QTextOption
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPixmap, QTextCursor, QTextOption
 from PySide6.QtWidgets import (
     QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLineEdit, QPlainTextEdit, QPushButton,
     QSizePolicy, QToolButton, QVBoxLayout, QWidget,
@@ -46,6 +49,7 @@ from . import appearance
 
 from ..blossom.store import MediaStore
 from .cover_field import library_picture_hash
+from .readiness_view import headline_line, verdict_symbol
 from .thumbnail_loader import ThumbnailLoader
 
 # The cover in the article card's 16:9 framing (cover_field.THUMB), as
@@ -194,6 +198,7 @@ class ArticleHeader(HeaderWidget):
     edited = Signal(str, str)          # title, summary, as typed
     cover_requested = Signal()         # Add Cover / Change Cover…
     cover_removed = Signal()
+    readiness_requested = Signal()     # the verdict's line: Article Details, at it
 
     def __init__(self, *, media_store: Optional[MediaStore] = None, is_dark: bool = False,
                  parent: Optional[QWidget] = None) -> None:
@@ -270,6 +275,18 @@ class ArticleHeader(HeaderWidget):
         self.summary_edit.leave_up.connect(self.title_edit.setFocus)
         column.addWidget(self.summary_edit)
 
+        self.readiness = QToolButton(self)
+        self.readiness.setObjectName("article_header_readiness")
+        self.readiness.setAutoRaise(True)
+        self.readiness.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.readiness.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.readiness.setToolTip(_("Show in Article Details"))
+        self.readiness.setAccessibleName(_("Publication Check"))
+        self.readiness.clicked.connect(self.readiness_requested)
+        self.readiness.hide()
+        self._readiness_result = None
+        column.addWidget(self.readiness, 0, Qt.AlignmentFlag.AlignLeft)
+
         self._rule = QFrame(self)
         self._rule.setObjectName("article_header_rule")
         self._rule.setFixedHeight(1)
@@ -283,6 +300,7 @@ class ArticleHeader(HeaderWidget):
         self.setTabOrder(self.change_cover, self.remove_cover)
         self.setTabOrder(self.remove_cover, self.title_edit)
         self.setTabOrder(self.title_edit, self.summary_edit)
+        self.setTabOrder(self.summary_edit, self.readiness)
         self._show_cover("")
         self.set_dark(is_dark)
 
@@ -311,6 +329,18 @@ class ArticleHeader(HeaderWidget):
         self.add_cover.setVisible(not self._cover and not self._compact)
         self.summary_edit.setVisible(bool(self.summary_edit.toPlainText()) or not self._compact)
 
+    def show_readiness(self, result) -> None:
+        """The Publication Check's verdict (nostr.readiness.Result) in a
+        line, or none."""
+        self._readiness_result = result
+        if result is None:
+            self.readiness.hide()
+            return
+        self.readiness.setText(headline_line(result))
+        self.readiness.setAccessibleName(headline_line(result))
+        self.readiness.setIcon(QIcon(verdict_symbol(result.ready, self._dark, self.devicePixelRatioF())))
+        self.readiness.show()
+
     def set_derived_title(self, title: str) -> None:
         """The title the article publishes with while none is typed (its
         first heading or line), as the title's placeholder."""
@@ -327,6 +357,8 @@ class ArticleHeader(HeaderWidget):
     def set_dark(self, dark: bool) -> None:
         self._dark = dark
         self.banner.set_dark(dark)
+        if getattr(self, "_readiness_result", None) is not None:
+            self.show_readiness(self._readiness_result)
         ink, muted, line = ((DARK_FG, DARK_MUTED_FG, DARK_BORDER) if dark
                             else (LIGHT_FG, LIGHT_MUTED_FG, LIGHT_BORDER))
         self.setStyleSheet(
@@ -335,6 +367,7 @@ class ArticleHeader(HeaderWidget):
             f"QPlainTextEdit#article_header_summary {{ background: transparent; color: {muted};"
             f" border: none; padding: 0; }}"
             f"QFrame#article_header_rule {{ background: {line}; border: none; }}"
+            f"QToolButton#article_header_readiness {{ color: {muted}; border: none; padding: 1px 0; }}"
             f"QToolButton#article_header_add_cover {{ color: {appearance.roles(dark).ink}; border: none;"
             f" padding: 2px 0; }}"
             "QPushButton#article_header_cover_action { color: white; background: rgba(0,0,0,150);"

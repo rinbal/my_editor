@@ -300,7 +300,7 @@ def evaluate(event: dict, *, outcome: str = NOSTR, now: int, uploading: bool = F
     if own_checks:
         keys = secret_keys_in_event(article.unsigned)     # None: it can't be read, so no signer signs it
         for code, group, field_name, found in (
-                (SECRET_KEY, "secret", "content", keys is None or bool(keys)),
+                (SECRET_KEY, "secret", "body", keys is None or bool(keys)),
                 (NO_LINK_NAME, "link", "link_name", not article.link_name)):
             if found:
                 findings.append(Finding(code, BLOCKER, field_name, group))

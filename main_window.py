@@ -239,6 +239,7 @@ from nostr.ui.media_viewer import MediaViewer
 from nostr.ui.reference_popover import ReferencePopover
 from nostr.ui.article_details_panel import ArticleDetailsPanel, DEFAULT_WIDTH as ARTICLE_DETAILS_WIDTH
 from nostr.ui.article_headers import ArticleHeaders
+from nostr.ui.readiness_view import check_article, outcome_for
 from nostr import refs
 from nostr.failures import CHECK_CONNECTION, spoken as failure_spoken
 from nostr.blossom.errors import friendly_message
@@ -3548,12 +3549,14 @@ class MainWindow(QMainWindow):
             lambda: self._multilingual.choose(edit_current=True))
         self._article_details_panel.cover_uploaded.connect(self._cover_uploaded_for)
         self._article_details_panel.check_link_name.connect(self._check_link_name)
+        self._article_details_panel.text_requested.connect(self._show_finding_in_text)
         # An article's cover, title and summary on its page (decision 1 of
         # the Article Details review), for the tabs that are articles.
         self._article_headers = ArticleHeaders(
             wanted=self._wants_article_header, details_of=self._article_details_of,
             set_details=self._set_article_details, derived_title=self._derived_title_of,
-            choose_cover=self._choose_cover_for, media_store=self._media_store,
+            choose_cover=self._choose_cover_for, readiness=self._readiness_of,
+            show_readiness=self._show_readiness_of, media_store=self._media_store,
             is_dark=self.is_dark_theme, parent=self)
         # What the article takes from its text (the title it publishes with
         # while none is set), read again once typing pauses, as the preview.
@@ -10074,6 +10077,7 @@ class MainWindow(QMainWindow):
                                document=ed, made_identifier=made,
                                link_name_lock=self._link_name_lock(profile, details.identifier))
             panel.set_derived_title(self._derived_title_of(ed))
+            panel.show_readiness(self._readiness_of(ed))
 
     def _link_name_lock(self, profile, d: str) -> LinkNameLock:
         """Whether the text ``d`` keeps its link name for its submissions:
@@ -10110,9 +10114,66 @@ class MainWindow(QMainWindow):
         ed, panel = self.current_editor(), self._article_details_panel
         if ed is None:
             return
+        # The text read once: the title it publishes with, and the check.
+        payload = self._publish_payload(ed, "markdown")
+        title = default_title(payload[0], self._preview_name)
+        result = self._readiness_of(ed, payload)
         if panel.isVisible() and panel.shows_article():
-            panel.set_derived_title(self._derived_title_of(ed))
-        self._article_headers.show_derived_title(ed)
+            panel.set_derived_title(title)
+            panel.show_readiness(result)
+        self._article_headers.show_derived_title(ed, title)
+        self._article_headers.show_readiness(ed, result)
+
+    def _publish_start(self, ed, pubkey: str, payload=None):
+        """What Publish as Article starts with for ``ed``: its text and
+        media, its details, the title it shows first (the article's own,
+        else its first heading or line), the link name it keeps (the
+        article's own, else a file's; none: made of the title in the
+        sheet) and the file's own name to ask the relays about."""
+        body, media = payload or (self._publish_payload(ed, "markdown") if ed is not None
+                                  else ("", []))
+        body = body.rstrip()
+        # A draft of an article (an import, an edit) brings all its details:
+        # summary, cover, hashtags, source, and when it first went out (a
+        # new version keeps that date).
+        details = self._multilingual.publication_details(ed)
+        title = details.title or default_title(body, self._preview_name)
+        slug, file_name = details.identifier, ""
+        if not slug:
+            path = getattr(ed, "_file_path", None) if ed is not None else None
+            slug = self._link_name_for_file(path, pubkey)
+            # The file's name as it is, which version 3.3 published files
+            # under: the sheet asks the relays about it at Publish.
+            file_name = self._file_name(path)
+        return body, media, details, title, slug, file_name
+
+    def _readiness_of(self, ed, payload=None):
+        """The Publication Check on ``ed``'s article as Publish as Article
+        would start with it now (readiness_view), or None for no article."""
+        if not self._can_be_an_article(ed):
+            return None
+        profile = self._profile_store.default()
+        pubkey = profile.user_pubkey if profile is not None else ""
+        body, media, details, title, slug, _file = self._publish_start(ed, pubkey, payload)
+        return check_article(
+            body=body, title=title, summary=details.summary, image=details.image,
+            hashtags=details.hashtags, link_name=slug or None,
+            published_at=details.published_at or None, media=media,
+            extra_tags=details.published_tags(body, author=(pubkey, "")) or None,
+            pubkey=pubkey, outcome=outcome_for(self._submitting_offered()))
+
+    def _show_readiness_of(self, ed) -> None:
+        """The page's verdict line: Article Details open at the check."""
+        if ed is not self.current_editor():
+            return
+        self.act_article_details.setChecked(True)
+        self._article_details_panel.show_readiness_section()
+
+    def _show_finding_in_text(self, _finding) -> None:
+        """Show, for what the check found in the text: the text, focused."""
+        ed = self.current_editor()
+        if ed is not None:
+            ed.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _wants_article_header(self, ed) -> bool:
         """Whether ``ed`` shows its article's head on the page: while a Nostr
@@ -10939,13 +11000,6 @@ class MainWindow(QMainWindow):
         active = self._profile_store.default()
         if active is None:
             return
-        body, media = self._publish_payload(ed, "markdown") if ed is not None else ("", [])
-        body = body.rstrip()
-        if not body:
-            inform(self, title=_("Nothing to publish"),
-                   message=_("The current document is empty."), nostr=True)
-            return
-
         # Pre-fill metadata. Precedence:
         #   1. Draft binding (so a published article inherits the exact
         #      ``d`` and title from its draft, preserving the addressable
@@ -10953,20 +11007,13 @@ class MainWindow(QMainWindow):
         #   2. File path basename for disk-backed tabs.
         #   3. The first heading, else the first line, as plain text, for
         #      a title (article_details.default_title).
-        # A draft of an article (an import, an edit) brings all its details:
-        # summary, cover, hashtags, source, and when it first went out (a
-        # new version keeps that date).
-        details = self._multilingual.publication_details(ed)
-        title = details.title or default_title(body, self._preview_name)
-        default_slug = details.identifier
+        body, media, details, title, default_slug, file_name = self._publish_start(
+            ed, active.user_pubkey)
+        if not body:
+            inform(self, title=_("Nothing to publish"),
+                   message=_("The current document is empty."), nostr=True)
+            return
         first_published = details.published_at
-        file_name = ""
-        if not default_slug:
-            path = getattr(ed, "_file_path", None) if ed is not None else None
-            default_slug = self._link_name_for_file(path, active.user_pubkey)
-            # The file's name as it is, which version 3.3 published files
-            # under: the sheet asks the relays about it at Publish.
-            file_name = self._file_name(path)
 
         dialog = PublishArticleDialog(
             body_markdown=body,
@@ -10998,6 +11045,7 @@ class MainWindow(QMainWindow):
             details=details,
             first_publications=self._first_publications,
             media=media,
+            outcome=outcome_for(self._submitting_offered()),
             parent=self,
             is_dark=self.is_dark_theme,
         )

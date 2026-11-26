@@ -340,7 +340,7 @@ def _beside_own_imeta(carried: List[List[str]], own: List[List[str]]) -> List[Li
             if not (tag and tag[0] == "imeta" and imeta_url(tag) in described)]
 
 
-def _is_publishable_cover(url: str) -> bool:
+def is_publishable_cover(url: str) -> bool:
     """Whether a NIP-23 cover address may be signed into an event.
 
     An imported article's cover is lifted straight out of untrusted feed
@@ -436,7 +436,7 @@ def build_article(
     caller's responsibility.
 
     ``image`` is the cover. It is gated through
-    :func:`_is_publishable_cover` because an imported article's cover
+    :func:`is_publishable_cover` because an imported article's cover
     comes from untrusted feed HTML; a refused address drops the tag and
     still publishes the article.
 
@@ -464,7 +464,7 @@ def build_article(
     if summary.strip():
         tags.append(["summary", summary.strip()])
     cover = image.strip()
-    if cover and _is_publishable_cover(cover):
+    if cover and is_publishable_cover(cover):
         tags.append(["image", cover])
     if published_at is not None:
         tags.append(["published_at", str(int(published_at))])

@@ -32,6 +32,8 @@ class ArticleHeaders(QObject):
     ``details_of(ed)`` / ``set_details(ed, details)``: the tab's article.
     ``derived_title(ed)``: the title it publishes with while none is set.
     ``choose_cover(ed)``: open the cover picker for ``ed``'s article.
+    ``readiness(ed)``: the Publication Check's verdict on it, or None;
+    ``show_readiness(ed)``: show that check in full (Article Details).
     """
 
     def __init__(self, *, wanted: Callable[[object], bool],
@@ -39,6 +41,8 @@ class ArticleHeaders(QObject):
                  set_details: Callable[[object, ArticleDetails], None],
                  derived_title: Callable[[object], str],
                  choose_cover: Callable[[object], None],
+                 readiness: Callable[[object], object] = lambda ed: None,
+                 show_readiness: Callable[[object], None] = lambda ed: None,
                  media_store: Optional[MediaStore] = None, is_dark: bool = False,
                  parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -47,6 +51,8 @@ class ArticleHeaders(QObject):
         self._set_details = set_details
         self._derived_title = derived_title
         self._choose_cover = choose_cover
+        self._readiness = readiness
+        self._show_readiness = show_readiness
         self._media_store = media_store
         self._is_dark = is_dark
 
@@ -74,12 +80,20 @@ class ArticleHeaders(QObject):
         header.show_article(details.title, details.summary, details.image)
         header.set_compact(getattr(ed, "_language_link", None) is not None)
         header.set_derived_title(self._derived_title(ed))
+        header.show_readiness(self._readiness(ed))
 
-    def show_derived_title(self, ed) -> None:
-        """The text changed: the title ``ed``'s article publishes with, again."""
+    def show_derived_title(self, ed, title: Optional[str] = None) -> None:
+        """The text changed: the title ``ed``'s article publishes with
+        (``title`` when the caller has it), again."""
         header = self.header_of(ed)
         if header is not None:
-            header.set_derived_title(self._derived_title(ed))
+            header.set_derived_title(self._derived_title(ed) if title is None else title)
+
+    def show_readiness(self, ed, result) -> None:
+        """The text changed: the check's verdict on ``ed``'s article, again."""
+        header = self.header_of(ed)
+        if header is not None:
+            header.show_readiness(result)
 
     def set_dark(self, is_dark: bool, editors) -> None:
         self._is_dark = is_dark
@@ -95,4 +109,5 @@ class ArticleHeaders(QObject):
         header.cover_removed.connect(lambda e=ed: self._set_details(
             e, self._details_of(e).with_changes(image="")))
         header.cover_requested.connect(lambda e=ed: self._choose_cover(e))
+        header.readiness_requested.connect(lambda e=ed: self._show_readiness(e))
         return header

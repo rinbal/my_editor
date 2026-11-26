@@ -57,6 +57,7 @@ from .authors_section import AuthorsSection
 from .coauthors import Coauthors
 from .cover_field import CoverImageField
 from .secret_key_check import slug_problem
+from .readiness_view import ReadinessView
 from .tag_field import TagField
 
 MIN_WIDTH = 260
@@ -111,6 +112,8 @@ class ArticleDetailsPanel(QFrame):
     cover_uploaded = Signal(object, str)
     # Check (Again): whether the text was submitted was not or could not be told.
     check_link_name = Signal()
+    # Show, for a Publication Check finding in the text: the window's.
+    text_requested = Signal(object)
 
     def __init__(self, *, media_store: Optional[MediaStore] = None,
                  media_visibility: Optional[MediaVisibility] = None,
@@ -207,9 +210,16 @@ class ArticleDetailsPanel(QFrame):
         self._all_kept_note.hide()
         form.addWidget(self._all_kept_note)
 
+        # The Publication Check first: what keeps the article from going
+        # out, what would make it better (readiness_view).
+        self._section(form, _("Readiness"), first=True)
+        self.readiness = ReadinessView(compact=False, is_dark=self._is_dark)
+        self.readiness.show_requested.connect(self._show_finding)
+        form.addWidget(self.readiness)
+
         # Grouped as Pages groups its inspector: a title over each section and
         # a line between them, what is changed most often first.
-        self._section(form, _("Article"), first=True)
+        self._section(form, _("Article"))
         self.title_edit = QLineEdit()
         self.title_edit.setPlaceholderText(_("Article title"))
         self._add_labeled(form, _("Title"), self.title_edit)
@@ -393,6 +403,7 @@ class ArticleDetailsPanel(QFrame):
         self._is_dark = is_dark
         self.cover.set_dark(is_dark)
         self.hashtags.set_dark(is_dark)
+        self.readiness.set_dark(is_dark)
         self._apply_theme()
 
     # -- showing a tab's article ------------------------------------------------
@@ -574,6 +585,35 @@ class ArticleDetailsPanel(QFrame):
         title = self.title_edit.text().strip() or self._derived_title
         self.identifier_edit.setPlaceholderText(
             self._made_identifier or (slugify(title) if title else _("my-article")))
+
+    # -- the Publication Check ------------------------------------------------
+
+    def show_readiness(self, result) -> None:
+        """The check's verdict on the article shown (nostr.readiness.Result)."""
+        self.readiness.show_result(result)
+
+    def show_readiness_section(self) -> None:
+        """Scrolled to the check, with its first control focused (the
+        page's verdict line asks for it)."""
+        self._form.verticalScrollBar().setValue(0)
+        first = next((w for w in self.readiness.focus_chain() if w.isVisibleTo(self)), None)
+        (first or self.title_edit).setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _show_finding(self, finding) -> None:
+        """Show: the field here that holds what a finding is about; one in
+        the text is the window's (``text_requested``)."""
+        if finding.field in ("link_name", "date"):
+            self.advanced_toggle.setChecked(True)
+        field = {"title": self.title_edit, "summary": self.summary_edit, "tags": self.hashtags,
+                 "image": (self.cover.url_edit if finding.code == "cover.unsafe"
+                           else self.cover.pick_button or self.cover),
+                 "link_name": self.identifier_edit,
+                 "date": self.first_published}.get(finding.field)
+        if field is None:
+            self.text_requested.emit(finding)
+            return
+        self._form.ensureWidgetVisible(field)
+        field.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _say_cover_problem(self, reason: str) -> None:
         announce.field_problem(self.cover.url_edit, self.cover_problem, reason)

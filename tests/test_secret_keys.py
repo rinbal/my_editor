@@ -488,7 +488,11 @@ def test_a_key_in_the_slug_never_leaves_the_computer(tmp_path, monkeypatch):
     assert asked == [] and dialog._relay_pool.published == []
     dialog._slug_edit.setText("backup")
     dialog._on_slug_edited("backup")
-    assert dialog._slug_problem.isHidden() and dialog._publish_btn.isEnabled()
+    # The title still holds it: the Publication Check says so, Publish waits.
+    assert dialog._slug_problem.isHidden() and not dialog._publish_btn.isEnabled()
+    assert "secret.in_event" in [f.code for f in dialog._readiness.result().blockers]
+    dialog._title_edit.setText("Backup")
+    assert dialog._publish_btn.isEnabled()
     dialog._slug_edit.setText(f"backup-{NSEC}")
     dialog._on_slug_edited(dialog._slug_edit.text())
     heard.clear()

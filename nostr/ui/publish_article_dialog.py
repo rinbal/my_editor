@@ -87,6 +87,7 @@ from ..publish_pipeline import answers_detail, not_taken_words, same_event
 from .language_chooser import language_name
 from ..multilingual import is_translation_tag, translation_metadata, translation_tags
 from ..publication_journal import PublicationJournal
+from ..readiness import NOSTR, Finding, Result
 from ..multilingual_publish import PairPublication
 from ..publisher import (
     FOUND, NEVER, FirstPublication, PublishedMedia, PublishJob, PublishResult, build_article,
@@ -97,6 +98,7 @@ from ..search import Nip50SearchClient
 from .coauthors import Coauthors
 from .cover_field import CoverImageField
 from .mention_picker import MentionPicker
+from .readiness_view import ReadinessView, check_article
 from . import appearance
 from .publish_sheet import (
     AccountRow, BottomRow, PeopleRow, StatusLine, cut_after_a_word, fit_margins, fit_to_window,
@@ -301,6 +303,7 @@ class PublishArticleDialog(QDialog):
         published_at_lookup: Optional[
             Callable[[str, str, Callable[[FirstPublication], None]], None]] = None,
         media: Sequence[PublishedMedia] = (),
+        outcome: str = NOSTR,
         parent=None,
         is_dark: bool = True,
     ) -> None:
@@ -374,6 +377,8 @@ class PublishArticleDialog(QDialog):
         # What is known of the pictures, audio and video in the text, for
         # their descriptions (NIP-92 imeta).
         self._media = tuple(media)
+        # Which Publication Check verdict it waits for (readiness_view).
+        self._outcome = outcome
         # The link name follows the title until it is typed. An article
         # that has one already (its draft's, its file's) keeps it, and so
         # does one this computer published under it: another one would
@@ -457,6 +462,15 @@ class PublishArticleDialog(QDialog):
                                    is_dark=self._is_dark)
         self._account.switched.connect(self._on_account_switched)
         self._columns.addLayout(self._build_form(default_title, default_slug), 1)
+        # The Publication Check, when it has something to say: under the
+        # fields, scrolling with them in the smallest window.
+        self._readiness = ReadinessView(compact=True, is_dark=self._is_dark,
+                                        can_show=lambda finding: finding.field in self._FIELDS)
+        self._readiness.show_requested.connect(self._show_finding)
+        # What it says is in sight: the sheet grows with it (rows that
+        # came, suggestions unfolded), as far as its window has room.
+        self._readiness.size_changed.connect(self._refit)
+        page.addWidget(self._readiness)
         self._scroll = scroll_area(content)
         root.addWidget(self._scroll, 1)
 
@@ -493,7 +507,7 @@ class PublishArticleDialog(QDialog):
         # Tab goes through the fields, then the account, then the buttons.
         QWidget.setTabOrder(self._details_toggle, self._slug_edit)
         QWidget.setTabOrder(self._slug_edit, self._image_edit)
-        QWidget.setTabOrder(self._image_edit, self._account.button)
+        self._order_tabs()
         answer_return_as_the_system_does(self.findChildren(QPushButton))
 
     def _add_row(self, label: str, buddy: Optional[QWidget], field: QWidget) -> None:
@@ -525,11 +539,13 @@ class PublishArticleDialog(QDialog):
         self._summary_edit.setPlaceholderText(_("Short summary (one sentence)"))
         self._summary_edit.setAccessibleName(_("Summary"))
         self._summary_edit.textChanged.connect(self._refresh_card)
+        self._summary_edit.textChanged.connect(self._refresh_publish_enabled)
         self._add_row(_("Summary:"), self._summary_edit, self._summary_edit)
         self._add_kept_note(form, "summary")
 
         self._hashtags = TagField(is_dark=self._is_dark)
         self._hashtags.setAccessibleName(_("Hashtags"))
+        self._hashtags.changed.connect(self._refresh_publish_enabled)
         self._add_row(_("Hashtags:"), self._hashtags, self._hashtags)
         self._add_kept_note(form, "hashtags")
 
@@ -554,6 +570,7 @@ class PublishArticleDialog(QDialog):
         self._add_kept_note(cover_column, "image")
         self._cover.problem.connect(self._say_cover_problem)
         self._cover.changed.connect(lambda _text: self._cover_problem.hide())
+        self._cover.changed.connect(lambda _text: self._refresh_publish_enabled())
         self._add_row(_("Cover image:"), self._cover.pick_button or self._cover.preview, cover)
 
         self._add_coauthor = QPushButton(_("Add Co-Author…"))
@@ -677,6 +694,7 @@ class PublishArticleDialog(QDialog):
         self._cover.set_dark(is_dark)
         self._account.set_dark(is_dark)
         self._status.set_dark(is_dark)
+        self._readiness.set_dark(is_dark)
         if self._coauthor_picker is not None:
             self._coauthor_picker.set_dark(is_dark)
 
@@ -923,14 +941,50 @@ class PublishArticleDialog(QDialog):
         announce.field_problem(self._slug_edit, self._slug_problem, problem)
         if problem:
             self._show_details(True)
-        # NIP-23 requires the d-tag; an empty document has nothing to say;
-        # a cover still uploading is waited for.
+        # The Publication Check: no link name (NIP-23 requires the d-tag),
+        # no text, a cover still uploading or one that can't be published,
+        # a secret key, and whatever else it blocks on.
+        if self._readiness.show_result(self._check()):
+            self._order_tabs()
         self._publish_btn.setEnabled(self._job is None and not self._looking_up
-                                     and bool(slug) and bool(self._body) and not problem
-                                     and not self._cover.uploading())
+                                     and self._readiness.result().ready and not problem)
         if self._pair_source:
             self._publication_options.setEnabled(self._job is None and not self._looking_up)
         self._publish_btn.setText(self._button_label())
+
+    def _order_tabs(self) -> None:
+        """Tab goes top to bottom: the fields, the check's controls (made
+        anew with each verdict), the account, the buttons."""
+        chain = [self._image_edit, *self._readiness.focus_chain(), self._account.button]
+        for before, after in zip(chain, chain[1:]):
+            QWidget.setTabOrder(before, after)
+
+    def _check(self) -> Result:
+        """The Publication Check on the article as Publish would build it."""
+        profile = self._account.profile()
+        return check_article(
+            body=self._body, title=self._title_edit.text(), summary=self._summary_edit.text(),
+            image=self._image_edit.text(), hashtags=self._hashtags.tags(),
+            # Following the title, the link name is the title's: no second finding.
+            link_name=None if self._slug_is_auto else self._slug(),
+            published_at=self._details.published_at or None, media=self._media,
+            extra_tags=self._details.published_tags(self._body, author=(profile.user_pubkey, ""))
+            or None, pubkey=profile.user_pubkey, outcome=self._outcome,
+            uploading=self._cover.uploading())
+
+    # Where Show takes a finding: the field that holds it (the text is not
+    # in the sheet; its findings are said, not shown).
+    _FIELDS = ("title", "summary", "tags", "image", "link_name")
+
+    def _show_finding(self, finding: Finding) -> None:
+        if finding.field == "link_name" or finding.code == "cover.unsafe":
+            self._show_details(True)
+        field = {"title": self._title_edit, "summary": self._summary_edit, "tags": self._hashtags,
+                 "link_name": self._slug_edit,
+                 "image": (self._image_edit if finding.code == "cover.unsafe"
+                           else self._cover.pick_button or self._cover.preview)}[finding.field]
+        self._scroll.ensureWidgetVisible(field)
+        field.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _button_label(self) -> str:
         """The one label of the Publish button: Try Again after no relay
@@ -1005,8 +1059,8 @@ class PublishArticleDialog(QDialog):
 
     def _on_publish(self) -> None:
         slug = self._slug()
-        if (not slug or not self._body or self._job is not None or self._looking_up
-                or slug_problem(slug) or self._cover.uploading()):
+        if (self._job is not None or self._looking_up or slug_problem(slug)
+                or not self._check().ready):
             return
         if self._publish_pair and self._pair_source.get("problem"):
             self._set_status(self._pair_source["problem"], error=True)
