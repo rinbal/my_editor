@@ -175,11 +175,16 @@ def test_publish_both_checks_the_original_too(tmp_path, monkeypatch):
                      pair_source={"details": original, "body": "Drei Tage Wind.", "media": (),
                                   "language": "de", "owner": PK})
     dialog.show()
-    dialog._set_pair(True)
-    assert dialog._pair_problem_words().startswith("The original can’t go out yet. The cover's")
-    assert dialog._pair_problem.isVisible()                     # Open original
-    dialog._on_publish()
-    assert CapturedJob.made == []
+    try:
+        dialog._set_pair(True)
+        assert dialog._pair_problem_words().startswith("The original can’t go out yet. The cover's")
+        assert dialog._pair_problem.isVisible()                 # Open original
+        dialog._on_publish()
+        assert CapturedJob.made == []
+    finally:
+        # Left open, this window-modal sheet holds back what later tests
+        # wait for while a dialog is up (SheetTab.after_job).
+        dialog.close()
 
 
 SCRIPT = r'''
