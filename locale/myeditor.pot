@@ -2321,6 +2321,7 @@ msgid "Hashtags"
 msgstr ""
 
 #: main_window.py:5839
+#: nostr/readiness.py:50
 #: nostr/ui/article_details_panel.py:270
 #: nostr/ui/publish_article_dialog.py:578
 #: nostr/ui/stash_kind_dialog.py:327
@@ -4339,7 +4340,7 @@ msgstr ""
 #: picture_crop.py:77
 #: nostr/ui/publish_article_dialog.py:825
 #: nostr/ui/publish_article_dialog.py:741
-#: nostr/ui/publish_article_dialog.py:946
+#: nostr/ui/publish_article_dialog.py:949
 msgid "Original"
 msgstr ""
 
@@ -4375,7 +4376,7 @@ msgid "Article language"
 msgstr ""
 
 #: multilingual_authoring.py:439
-#: nostr/ui/publish_article_dialog.py:860
+#: nostr/ui/publish_article_dialog.py:863
 msgid "Use the account that owns these versions."
 msgstr ""
 
@@ -7698,6 +7699,18 @@ msgstr ""
 msgid "Could not encrypt draft: {reason}"
 msgstr ""
 
+#: nostr/readiness.py:47
+msgid "The article contains a secret key. Remove it before publishing."
+msgstr ""
+
+#: nostr/readiness.py:48
+msgid "Give the article a link name before publishing."
+msgstr ""
+
+#: nostr/readiness.py:50
+msgid "Secret keys"
+msgstr ""
+
 #: nostr/refs.py:338
 msgid "It contains a secret key, and MyEditor never signs anything with a secret key in it. Remove the key and try again."
 msgstr ""
@@ -10132,7 +10145,7 @@ msgid "Check Again"
 msgstr ""
 
 #: nostr/ui/article_details_panel.py:329
-#: nostr/ui/publish_article_dialog.py:966
+#: nostr/ui/publish_article_dialog.py:969
 #: nostr/ui/stash_kind_dialog.py:232
 msgid "Kept as written in the file."
 msgstr ""
@@ -13281,17 +13294,17 @@ msgid "Cover image address:"
 msgstr ""
 
 #: nostr/ui/publish_article_dialog.py:823
-#: nostr/ui/publish_article_dialog.py:1279
-#: nostr/ui/publish_article_dialog.py:948
+#: nostr/ui/publish_article_dialog.py:1282
+#: nostr/ui/publish_article_dialog.py:951
 msgid "This version"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:953
+#: nostr/ui/publish_article_dialog.py:956
 msgctxt "an article published before"
 msgid "Update"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:953
+#: nostr/ui/publish_article_dialog.py:956
 #: nostr/ui/publish_note_dialog.py:304
 #: nostr/ui/publish_note_dialog.py:395
 #: nostr/ui/standup_correction_sheet.py:181
@@ -13300,11 +13313,11 @@ msgstr ""
 msgid "Publish"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:1039
+#: nostr/ui/publish_article_dialog.py:1042
 msgid "Checking whether this article was published before…"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:1108
+#: nostr/ui/publish_article_dialog.py:1111
 msgid "If it went out before, publishing it as new gives it today’s date: try again, or publish it as new."
 msgstr ""
 
@@ -13324,11 +13337,11 @@ msgstr ""
 msgid "Reference unavailable. Only this version will be published."
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:1113
+#: nostr/ui/publish_article_dialog.py:1116
 msgid "Couldn't check whether this article was published before"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:1280
+#: nostr/ui/publish_article_dialog.py:1283
 msgid "The original"
 msgstr ""
 
@@ -13338,25 +13351,25 @@ msgstr ""
 msgid "{language} will be public."
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:1101
+#: nostr/ui/publish_article_dialog.py:1104
 #, python-brace-format
 msgid "Earlier versions of MyEditor published this file as “{name}”, and another name makes a second article: try again, or choose the name to publish it under."
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:1110
+#: nostr/ui/publish_article_dialog.py:1113
 msgid "Publish as New"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:1153
+#: nostr/ui/publish_article_dialog.py:1156
 msgid "Something in Article Details can’t be used: check it and try again."
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:1281
+#: nostr/ui/publish_article_dialog.py:1284
 #, python-brace-format
 msgid "{language} wasn’t published"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:1282
+#: nostr/ui/publish_article_dialog.py:1285
 #, python-brace-format
 msgid "{source} is public. Try again to publish {target}."
 msgstr ""
@@ -13366,12 +13379,12 @@ msgstr ""
 msgid "{source} and {target} will be public."
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:947
+#: nostr/ui/publish_article_dialog.py:950
 #, python-brace-format
 msgid "Publish {source} and {target}"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:1198
+#: nostr/ui/publish_article_dialog.py:1201
 msgid "Open the original to check its article details."
 msgstr ""
 
@@ -13380,19 +13393,19 @@ msgstr ""
 msgid "{target} will be public. {source} stays unpublished."
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:951
+#: nostr/ui/publish_article_dialog.py:954
 #, python-brace-format
 msgctxt "an article published before"
 msgid "Update {language}"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:952
+#: nostr/ui/publish_article_dialog.py:955
 #, python-brace-format
 msgid "Publish {language}"
 msgstr ""
 
-#: nostr/ui/publish_article_dialog.py:1104
-#: nostr/ui/publish_article_dialog.py:1106
+#: nostr/ui/publish_article_dialog.py:1107
+#: nostr/ui/publish_article_dialog.py:1109
 #, python-brace-format
 msgid "Publish as “{name}”"
 msgstr ""

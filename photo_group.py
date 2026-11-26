@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import itertools
 import json
-import posixpath
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
@@ -54,6 +53,7 @@ from PySide6.QtGui import (
 import photo_caption
 from doc_walk import LINE_SEPARATOR, OBJECT_REPLACEMENT, SOFT_BREAK_PROPERTY
 from photo_caption import CaptionRun
+from picture_names import WIDE_SUFFIX, description_of, is_wide, without_wide  # noqa: F401 (photo_group's own words)
 
 # --------------------------------------------------------------------------- #
 # Marks in the document                                                        #
@@ -74,36 +74,6 @@ SOFT = "\ue0b1"
 # A join's first character when it stood in the link around the pictures
 # beside it ("[![a](a.png) ![b](b.png)](u)": one link, the space in it).
 LINKED = "\ue0b2"
-
-# A picture's address ending in this asks for a picture as wide as the page.
-WIDE_SUFFIX = "#wide"
-
-
-def is_wide(name: str) -> bool:
-    """Whether a picture's address asks for the page's width (#wide), as
-    STANDUP reads it: the address ends in it, in any case."""
-    return bool(name) and name.lower().endswith(WIDE_SUFFIX)
-
-
-def without_wide(name: str) -> str:
-    """The address to load a picture from: without its #wide."""
-    return name[:-len(WIDE_SUFFIX)] if is_wide(name) else name
-
-
-def description_of(alt: str, name: str, stored: str = "") -> str:
-    """``alt``, the description of the picture at ``name``, when it
-    describes it; "" when it says nothing a person could not see: empty,
-    "image" (what the app and Qt's writer put for none), the file's own
-    name, with or without its extension (what the app gave a picture it
-    added, before), or ``stored``, the name the app keeps for a file of
-    its own (an asset's, its file's name when it was added: the address
-    "myeditor-asset:…" does not say it)."""
-    words = alt.strip()
-    file = posixpath.basename(without_wide(name).replace("\\", "/").split("?")[0])
-    names = {"", "image"}
-    for named in (file, stored):
-        names.update((named.casefold(), posixpath.splitext(named)[0].casefold()))
-    return "" if words.casefold() in names else words
 
 
 def without_wide_url(url: QUrl) -> QUrl:

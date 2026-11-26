@@ -1,0 +1,302 @@
+{
+  "_contract": "Verdicts of the Publication Check for the rules in shared/publication-check.json, the same in STANDUP (src/utils/publicationCheck.js) and MyEditor (nostr/readiness.py, vendored with this file). Each case is an article as it would be built (event: tags and content; content is a string or a list of pieces, a piece { repeat, times } standing for repeat written times times), the facts only the editor knows, and the outcome. findings are in the rule file's order; params are left out when empty; checked lists the groups looked at and found fine, in the rule file's order.",
+  "now": 1764000000,
+  "cases": [
+    {
+      "name": "a complete article is ready to publish",
+      "outcome": "nostr",
+      "event": {
+        "tags": [["d", "a-long-read"], ["title", "A long enough title"], ["summary", "What this article is about, said in a sentence that runs past eighty characters."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]],
+        "content": [{ "repeat": "word ", "times": 400 }]
+      },
+      "ready": true,
+      "findings": [],
+      "checked": ["title", "body", "cover", "summary", "tags"]
+    },
+    {
+      "name": "a complete article is ready for STANDUP",
+      "outcome": "standup",
+      "event": {
+        "tags": [["d", "a-long-read"], ["title", "A long enough title"], ["summary", "What this article is about, said in a sentence that runs past eighty characters."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]],
+        "content": [{ "repeat": "word ", "times": 400 }]
+      },
+      "ready": true,
+      "findings": [],
+      "checked": ["title", "body", "cover", "size", "summary", "tags", "discover"]
+    },
+    {
+      "name": "an empty article has two things to fix and three suggestions",
+      "outcome": "nostr",
+      "event": { "tags": [["d", "x"]], "content": "" },
+      "ready": false,
+      "findings": [
+        { "code": "title.missing", "severity": "blocker" },
+        { "code": "body.empty", "severity": "blocker" },
+        { "code": "summary.missing", "severity": "suggestion" },
+        { "code": "cover.missing", "severity": "suggestion" },
+        { "code": "tags.missing", "severity": "suggestion" }
+      ],
+      "checked": []
+    },
+    {
+      "name": "an empty article for STANDUP leaves the Discover checks out",
+      "outcome": "standup",
+      "event": { "tags": [["d", "x"], ["title", "   "]], "content": "  \n " },
+      "ready": false,
+      "findings": [
+        { "code": "title.missing", "severity": "blocker" },
+        { "code": "body.empty", "severity": "blocker" },
+        { "code": "summary.missing", "severity": "suggestion" },
+        { "code": "cover.missing", "severity": "suggestion" },
+        { "code": "tags.missing", "severity": "suggestion" }
+      ],
+      "checked": ["size"]
+    },
+    {
+      "name": "a short note-like article publishes with suggestions",
+      "outcome": "nostr",
+      "event": { "tags": [["title", "Hi"]], "content": "Hello there." },
+      "ready": true,
+      "findings": [
+        { "code": "summary.missing", "severity": "suggestion" },
+        { "code": "cover.missing", "severity": "suggestion" },
+        { "code": "tags.missing", "severity": "suggestion" }
+      ],
+      "checked": ["title", "body"]
+    },
+    {
+      "name": "the same article for STANDUP adds what Discover needs",
+      "outcome": "standup",
+      "event": { "tags": [["title", "Hi"]], "content": "Hello there." },
+      "ready": true,
+      "findings": [
+        { "code": "summary.missing", "severity": "suggestion" },
+        { "code": "cover.missing", "severity": "suggestion" },
+        { "code": "tags.missing", "severity": "suggestion" },
+        { "code": "discover.title_short", "severity": "suggestion", "params": { "count": 8 } },
+        { "code": "discover.body_short", "severity": "suggestion", "params": { "count": 400 } }
+      ],
+      "checked": ["title", "body", "size"]
+    },
+    {
+      "name": "a title of 7 characters is short for Discover",
+      "outcome": "standup",
+      "event": { "tags": [["title", "Seven c"], ["summary", "What this article is about, said in a sentence that runs past eighty characters."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": [{ "repeat": "word ", "times": 400 }] },
+      "ready": true,
+      "findings": [{ "code": "discover.title_short", "severity": "suggestion", "params": { "count": 8 } }],
+      "checked": ["title", "body", "cover", "size", "summary", "tags"]
+    },
+    {
+      "name": "a title of 8 characters is long enough for Discover",
+      "outcome": "standup",
+      "event": { "tags": [["title", "Eight ch"], ["summary", "What this article is about, said in a sentence that runs past eighty characters."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": [{ "repeat": "word ", "times": 400 }] },
+      "ready": true,
+      "findings": [],
+      "checked": ["title", "body", "cover", "size", "summary", "tags", "discover"]
+    },
+    {
+      "name": "eight emoji are eight characters",
+      "outcome": "standup",
+      "event": { "tags": [["title", "🙂🙂🙂🙂🙂🙂🙂🙂"], ["summary", "What this article is about, said in a sentence that runs past eighty characters."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": [{ "repeat": "word ", "times": 400 }] },
+      "ready": true,
+      "findings": [],
+      "checked": ["title", "body", "cover", "size", "summary", "tags", "discover"]
+    },
+    {
+      "name": "a placeholder title is not a title for Discover",
+      "outcome": "standup",
+      "event": { "tags": [["title", "Neuer Artikel"], ["summary", "What this article is about, said in a sentence that runs past eighty characters."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": [{ "repeat": "word ", "times": 400 }] },
+      "ready": true,
+      "findings": [{ "code": "discover.title_short", "severity": "suggestion", "params": { "count": 8 } }],
+      "checked": ["title", "body", "cover", "size", "summary", "tags"]
+    },
+    {
+      "name": "a web address is not a title for Discover",
+      "outcome": "standup",
+      "event": { "tags": [["title", "https://example.org/post"], ["summary", "What this article is about, said in a sentence that runs past eighty characters."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": [{ "repeat": "word ", "times": 400 }] },
+      "ready": true,
+      "findings": [{ "code": "discover.title_short", "severity": "suggestion", "params": { "count": 8 } }],
+      "checked": ["title", "body", "cover", "size", "summary", "tags"]
+    },
+    {
+      "name": "a summary of 79 characters is short for Discover, 399 words too",
+      "outcome": "standup",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "What this article is about, said in a sentence that runs past eighty characters"], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": [{ "repeat": "word ", "times": 399 }] },
+      "ready": true,
+      "findings": [
+        { "code": "discover.summary_short", "severity": "suggestion", "params": { "count": 80 } },
+        { "code": "discover.body_short", "severity": "suggestion", "params": { "count": 400 } }
+      ],
+      "checked": ["title", "body", "cover", "size", "summary", "tags"]
+    },
+    {
+      "name": "no hashtag Discover can use as a topic",
+      "outcome": "standup",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "What this article is about, said in a sentence that runs past eighty characters."], ["image", "https://media.example.org/cover.jpg"], ["t", "rss"], ["t", "#Test"], ["t", "a"], ["t", "2026"], ["t", "nostr.com"], ["t", "c++"], ["t", "agent-notes"], ["t", "a1b2c3d4e5f6a7b8"], ["t", "a_b"]], "content": [{ "repeat": "word ", "times": 400 }] },
+      "ready": true,
+      "findings": [{ "code": "discover.no_topic", "severity": "suggestion" }],
+      "checked": ["title", "body", "cover", "size", "summary", "tags"]
+    },
+    {
+      "name": "one usable topic is enough",
+      "outcome": "standup",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "What this article is about, said in a sentence that runs past eighty characters."], ["image", "https://media.example.org/cover.jpg"], ["t", "rss"], ["t", "#Ökonomie"], ["t", "a1b2c3d4e5f6a7b"]], "content": [{ "repeat": "word ", "times": 400 }] },
+      "ready": true,
+      "findings": [],
+      "checked": ["title", "body", "cover", "size", "summary", "tags", "discover"]
+    },
+    {
+      "name": "a cover that is not a web address can't be published",
+      "outcome": "nostr",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "Short."], ["image", "javascript:alert(1)"], ["t", "bitcoin"]], "content": "Text." },
+      "ready": false,
+      "findings": [{ "code": "cover.unsafe", "severity": "blocker" }],
+      "checked": ["title", "body", "summary", "tags"]
+    },
+    {
+      "name": "a cover with a user name can't be published",
+      "outcome": "nostr",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "Short."], ["image", "https://user:secret@media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": "Text." },
+      "ready": false,
+      "findings": [{ "code": "cover.unsafe", "severity": "blocker" }],
+      "checked": ["title", "body", "summary", "tags"]
+    },
+    {
+      "name": "a cover with a space in its address can't be published",
+      "outcome": "nostr",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "Short."], ["image", "https://media.example.org/my cover.jpg"], ["t", "bitcoin"]], "content": "Text." },
+      "ready": false,
+      "findings": [{ "code": "cover.unsafe", "severity": "blocker" }],
+      "checked": ["title", "body", "summary", "tags"]
+    },
+    {
+      "name": "a cover over plain http is fine",
+      "outcome": "nostr",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "Short."], ["image", "http://old-blog.example.org/cover.jpg"], ["t", "bitcoin"]], "content": "Text." },
+      "ready": true,
+      "findings": [],
+      "checked": ["title", "body", "cover", "summary", "tags"]
+    },
+    {
+      "name": "one picture without a description",
+      "outcome": "nostr",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "Short."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": "![](https://media.example.org/a.jpg)\n\n![A cat on a mat](https://media.example.org/b.jpg)\n\n[![  ](https://media.example.org/c.jpg)](https://example.org)" },
+      "ready": true,
+      "findings": [{ "code": "media.alt_missing", "severity": "suggestion", "params": { "count": 2 } }],
+      "checked": ["title", "body", "cover", "summary", "tags"]
+    },
+    {
+      "name": "every picture described; pictures in code are not pictures",
+      "outcome": "nostr",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "Short."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": "![A cat](https://media.example.org/a.jpg)\n\n```markdown\n![](https://media.example.org/b.jpg)\n```\n\nWrite `![](x)` for a picture." },
+      "ready": true,
+      "findings": [],
+      "checked": ["title", "body", "cover", "summary", "tags", "pictures"]
+    },
+    {
+      "name": "a single undescribed picture is said in the singular",
+      "outcome": "nostr",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "Short."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": "![](https://media.example.org/a.jpg)" },
+      "ready": true,
+      "findings": [{ "code": "media.alt_missing", "severity": "suggestion", "params": { "count": 1 } }],
+      "checked": ["title", "body", "cover", "summary", "tags"]
+    },
+    {
+      "name": "a Werbelink without a note saying so",
+      "outcome": "nostr",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "Short."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": "I use [this wallet*](https://shop.example.org/w \"Werbelink\").\n\n**Werbung**" },
+      "ready": true,
+      "findings": [{ "code": "sponsored.undisclosed", "severity": "suggestion" }],
+      "checked": ["title", "body", "cover", "summary", "tags"]
+    },
+    {
+      "name": "a Werbelink disclosed in an italic last line, footnotes after it",
+      "outcome": "nostr",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "Short."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": "I use [this wallet*](https://shop.example.org/w 'Anzeige')[^1].\n\n*Links marked with a star are Werbelinks: I earn a commission.*\n\n[^1]: Since 2024." },
+      "ready": true,
+      "findings": [],
+      "checked": ["title", "body", "cover", "summary", "tags", "sponsored"]
+    },
+    {
+      "name": "a link with another title is no Werbelink",
+      "outcome": "nostr",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "Short."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": "See [the docs](https://example.org/docs \"Documentation\")." },
+      "ready": true,
+      "findings": [],
+      "checked": ["title", "body", "cover", "summary", "tags"]
+    },
+    {
+      "name": "a publication date in the future",
+      "outcome": "nostr",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "Short."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"], ["published_at", "1764086400"]], "content": "Text." },
+      "ready": true,
+      "findings": [{ "code": "date.future", "severity": "suggestion" }],
+      "checked": ["title", "body", "cover", "summary", "tags"]
+    },
+    {
+      "name": "a scheduled article's future date is intended",
+      "outcome": "nostr",
+      "facts": { "scheduled": true },
+      "event": { "tags": [["title", "A long enough title"], ["summary", "Short."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"], ["published_at", "1764086400"]], "content": "Text." },
+      "ready": true,
+      "findings": [],
+      "checked": ["title", "body", "cover", "summary", "tags", "date"]
+    },
+    {
+      "name": "a past publication date is fine",
+      "outcome": "nostr",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "Short."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"], ["published_at", "1700000000"]], "content": "Text." },
+      "ready": true,
+      "findings": [],
+      "checked": ["title", "body", "cover", "summary", "tags", "date"]
+    },
+    {
+      "name": "a picture still uploading blocks",
+      "outcome": "nostr",
+      "facts": { "uploading": true },
+      "event": { "tags": [["title", "A long enough title"], ["summary", "Short."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": "Text." },
+      "ready": false,
+      "findings": [{ "code": "media.uploading", "severity": "blocker" }],
+      "checked": ["title", "body", "cover", "summary", "tags"]
+    },
+    {
+      "name": "just within STANDUP's size, counted with umlauts escaped",
+      "outcome": "standup",
+      "event": { "tags": [["title", "Long read"]], "content": [{ "repeat": "ä", "times": 43591 }] },
+      "ready": true,
+      "findings": [
+        { "code": "summary.missing", "severity": "suggestion" },
+        { "code": "cover.missing", "severity": "suggestion" },
+        { "code": "tags.missing", "severity": "suggestion" },
+        { "code": "discover.body_short", "severity": "suggestion", "params": { "count": 400 } }
+      ],
+      "checked": ["title", "body", "size"]
+    },
+    {
+      "name": "one umlaut more is too long for STANDUP",
+      "outcome": "standup",
+      "event": { "tags": [["title", "Long read"]], "content": [{ "repeat": "ä", "times": 43592 }] },
+      "ready": false,
+      "findings": [
+        { "code": "size.standup", "severity": "blocker" },
+        { "code": "summary.missing", "severity": "suggestion" },
+        { "code": "cover.missing", "severity": "suggestion" },
+        { "code": "tags.missing", "severity": "suggestion" },
+        { "code": "discover.body_short", "severity": "suggestion", "params": { "count": 400 } }
+      ],
+      "checked": ["title", "body"]
+    },
+    {
+      "name": "size matters only for STANDUP",
+      "outcome": "nostr",
+      "event": { "tags": [["title", "Long read"]], "content": [{ "repeat": "ä", "times": 43592 }] },
+      "ready": true,
+      "findings": [
+        { "code": "summary.missing", "severity": "suggestion" },
+        { "code": "cover.missing", "severity": "suggestion" },
+        { "code": "tags.missing", "severity": "suggestion" }
+      ],
+      "checked": ["title", "body"]
+    }
+  ]
+}
