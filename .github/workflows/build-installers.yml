@@ -1,8 +1,9 @@
 name: Build installers
 
 # Builds the one-click installers for all three platforms and, when triggered by
-# a version tag (vX.Y.Z), attaches them to a GitHub Release. Use the manual
-# "Run workflow" button (workflow_dispatch) to test a build without tagging.
+# a version tag (vX.Y.Z), attaches them to a GitHub Release. A beta tag
+# (vX.Y.Z-betaN) is published as a pre-release. Use the manual "Run workflow"
+# button (workflow_dispatch) to test a build without tagging.
 on:
   push:
     tags:
@@ -155,19 +156,27 @@ jobs:
             echo "auto=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # A beta tag is a pre-release and never "Latest". The app's update
+      # check and the install guide read the latest release, so a beta is
+      # offered to nobody on a stable version. For any other tag make_latest
+      # stays empty, which leaves the choice to GitHub, as before.
       - name: Create / update release
         uses: softprops/action-gh-release@v3
         with:
           body_path: ${{ steps.notes.outputs.path }}
           generate_release_notes: ${{ steps.notes.outputs.auto }}
+          prerelease: ${{ contains(github.ref_name, '-beta') }}
+          make_latest: ${{ contains(github.ref_name, '-beta') && 'false' || '' }}
           files: artifacts/**/*
           fail_on_unmatched_files: true
 
       # Point the install guide's download buttons at the new files. A run
       # started with this job's token cannot trigger workflows through a push
       # or release event, but it can dispatch one, and dispatching on main
-      # satisfies the github-pages environment's branch rule.
+      # satisfies the github-pages environment's branch rule. A beta leaves
+      # the latest release as it was, so there is nothing to refresh.
       - name: Refresh the install guide
+        if: ${{ !contains(github.ref_name, '-beta') }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run install-guide.yml --repo "$GITHUB_REPOSITORY" --ref main
