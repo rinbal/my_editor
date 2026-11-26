@@ -159,7 +159,7 @@ class Harness:
     """A controller over a real directory with a fake roster transport."""
 
     def __init__(self, *, roster=(MEMBER_KEY,), profile=None, now=1000.0, relay_lists=None,
-                 media_usage=None):
+                 media_usage=None, offers_submissions=False):
         self.profile = profile if profile is not None else Profile()
         self.clock = {"t": now}
         self.nam = FakeNam({2026: roster_bytes(*roster)})
@@ -171,6 +171,7 @@ class Harness:
         self.status = []
         self.links = []
         self.libraries = 0
+        self.submissions = 0
         self.connects = 0
         self.controller = MembershipController(
             profile_provider=lambda: self.profile,
@@ -182,6 +183,8 @@ class Harness:
             connect_signer=self.connect,
             media_usage=media_usage or (lambda _origin: None),
             open_media_library=self.open_library,
+            submissions_offered=lambda: offers_submissions,
+            open_submissions=self.open_submissions,
             add_relay_job=self.make_job,
             publish_list_job=self.make_job,
             profile_address_job=self.make_address_job,
@@ -215,6 +218,9 @@ class Harness:
 
     def open_library(self):
         self.libraries += 1
+
+    def open_submissions(self):
+        self.submissions += 1
 
     def answer(self):
         """Settle the newest roster request."""
@@ -559,6 +565,13 @@ def test_open_media_library_in_the_window_opens_the_library():
     window.close()
 
 
+def test_standup_in_the_window_shows_submissions():
+    h = member_harness(offers_submissions=True)
+    window = open_member_window(h)
+    window._standup_row.button.click()
+    assert h.submissions == 1
+
+
 def test_the_window_is_told_the_year_of_the_roster_that_lists_the_member():
     # In January, before the association rolls its roster over, last
     # year's lists the members: the card names that year.
@@ -701,6 +714,14 @@ def test_the_controller_is_given_the_storage_and_the_media_library(init_body):
     call = constructor(init_body, "MembershipController")
     assert attribute_argument(call, "media_usage") == "_media_usage"
     assert attribute_argument(call, "open_media_library") == "_on_nostr_media_library"
+
+
+def test_the_controller_is_given_submissions(init_body):
+    # The member page's STANDUP row is there where Submissions are offered,
+    # and shows them beside the text.
+    call = constructor(init_body, "MembershipController")
+    assert attribute_argument(call, "submissions_offered") == "_submitting_offered"
+    assert attribute_argument(call, "open_submissions") == "_show_submissions"
 
 
 class Store:

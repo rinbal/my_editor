@@ -17,6 +17,7 @@ The member page shows each service as a row, as System Settings shows iCloud+. A
 - **Members' relay**: added to your relay list, so your posts reach it.
 - **Nostr address**: **Choose…** a name, and MyEditor offers to show it on your profile (**Add to Profile**). **Not Now** keeps the button there for later.
 - **Media storage**: 5 GB on the members' media server, used by your [Media Library](media.md). The row says how much is used and opens the library.
+- **STANDUP**: the association's publishing platform. There is nothing to set up: **Open Submissions** shows what you [handed in to its publications](publish.md#submit-to-a-publication).
 
 Services you set up on the association's website, such as the watchtower and the community group, have a row with **Open Guide**.
 

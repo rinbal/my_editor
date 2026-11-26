@@ -867,6 +867,8 @@ class MainWindow(QMainWindow):
             show_status=lambda text, ms: self.status.showMessage(text, ms, nostr=True),
             media_usage=self._media_usage,
             open_media_library=self._on_nostr_media_library,
+            submissions_offered=self._submitting_offered,
+            open_submissions=self._show_submissions,
             parent=self,
         )
         self._membership.benefits_changed.connect(self._on_membership_benefits_changed)
@@ -11050,6 +11052,10 @@ class MainWindow(QMainWindow):
         for action in (self.act_nostr_submit, self.act_nostr_submissions):
             action.setVisible(offered)
 
+    def _submitting_offered(self) -> bool:
+        """Whether handing in to a publication is offered (_offer_submitting)."""
+        return self.act_nostr_submissions.isVisible()
+
     def _update_submit_command(self, *_args) -> None:
         """Submit to a Publication… is for a text written here, while an
         account is in use: as Publish as Article is, so nobody finds it
@@ -11690,6 +11696,15 @@ class MainWindow(QMainWindow):
         else:
             panel.show_view(view)
             self._show_drafts_panel()
+
+    def _show_submissions(self) -> None:
+        """The panel on its Einreichungen view, never put away: from the
+        member page's STANDUP row, which is there only where the view is."""
+        panel = self._drafts_panel
+        if panel is not None and SUBMISSIONS_VIEW in panel.views():
+            panel.show_view(SUBMISSIONS_VIEW)
+            self._show_drafts_panel()
+            self.activateWindow()
 
     def _on_show_published(self) -> None:
         """Nostr > Published: the panel on its Published view, or the

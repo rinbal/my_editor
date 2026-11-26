@@ -90,6 +90,8 @@ class MembershipController(QObject):
         show_status: Callable[[str, int], None] = lambda _text, _ms: None,
         media_usage: Callable[[str], Optional[int]] = lambda _origin: None,
         open_media_library: Callable[[], None] = lambda: None,
+        submissions_offered: Callable[[], bool] = lambda: False,
+        open_submissions: Callable[[], None] = lambda: None,
         directory: Optional[MembershipDirectory] = None,
         api_factory: Optional[Callable[[object], object]] = None,
         window_factory: Optional[Callable[..., MembershipWindow]] = None,
@@ -113,6 +115,10 @@ class MembershipController(QObject):
         # last listed it in full; None when that is not known.
         self._media_usage = media_usage
         self._open_media_library = open_media_library
+        # Whether handing in to a publication is offered (a STANDUP server
+        # is set), asked as a window opens; and showing Submissions.
+        self._submissions_offered = submissions_offered
+        self._open_submissions = open_submissions
         self._api_factory = api_factory or self._default_api
         self._window_factory = window_factory or MembershipWindow
         # Today's Bitcoin price, so the window can show the fee in sats, CHF
@@ -262,7 +268,8 @@ class MembershipController(QObject):
             profile = self._profile_provider()
             window = self._window_factory(
                 self._api_factory(profile), **self._identity(profile),
-                storage_used=self.storage_used, is_dark=self._is_dark(),
+                storage_used=self.storage_used,
+                offers_submissions=self._submissions_offered(), is_dark=self._is_dark(),
                 prices=self._prices_factory(), parent=self._window_parent)
             window.setWindowFlag(Qt.Window, True)
             window.connect_requested.connect(self._on_connect_requested)
@@ -274,6 +281,7 @@ class MembershipController(QObject):
             window.profile_address_requested.connect(self._on_profile_address)
             window.data_erased.connect(self._on_data_erased)
             window.media_library_requested.connect(self._open_media_library)
+            window.submissions_requested.connect(self._open_submissions)
             self._window = window
         window.show()
         window.raise_()

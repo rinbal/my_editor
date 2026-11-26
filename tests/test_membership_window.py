@@ -195,7 +195,7 @@ def invoice(*, paid=False, bolt11="lnbcrt1", checkout="https://pay.einundzwanzig
 
 def window(api=None, *, pubkey=PUBKEY, known_member=None, handle=None,
            signs_locally=False, prices=None, profile_address="", relay_listed=False,
-           member_year=None, storage_used=None):
+           member_year=None, storage_used=None, offers_submissions=False):
     watchers = []
 
     def factory(api_, year, parent):
@@ -208,6 +208,7 @@ def window(api=None, *, pubkey=PUBKEY, known_member=None, handle=None,
                            signs_locally=signs_locally, profile_address=profile_address,
                            relay_listed=relay_listed, member_year=member_year,
                            storage_used=storage_used,
+                           offers_submissions=offers_submissions,
                            watcher_factory=factory,
                            prices=prices)
     win.watchers = watchers
@@ -930,6 +931,22 @@ def test_open_media_library_asks_for_the_library():
     assert button_of(win._storage_row) == "Open Media Library"
     win._storage_row.button.click()
     assert asked == [()]
+
+
+# -- being a member: STANDUP -------------------------------------------------------------
+
+def test_standup_shows_submissions_and_the_page_steps_aside():
+    win = window(known_member=True, offers_submissions=True)
+    win.show()
+    asked = recorder(win.submissions_requested)
+    assert button_of(win._standup_row) == "Open Submissions"
+    win._standup_row.button.click()
+    assert asked == [()]
+    assert not win.isVisible()
+
+
+def test_standup_is_left_out_where_nothing_can_be_handed_in():
+    assert window(known_member=True)._standup_row is None
 
 
 # -- being a member: the Nostr address ---------------------------------------------------
