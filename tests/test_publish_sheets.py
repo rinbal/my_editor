@@ -441,10 +441,11 @@ def test_every_control_is_named_and_tab_goes_top_to_bottom(tmp_path):
                    and widget.isVisibleTo(sheet) and widget.isEnabled()):
             widget = widget.nextInFocusChain()
     left_to_right = sorted((sheet._cancel_btn, sheet._publish_btn), key=lambda b: b.x())
-    assert chain[:13] == [
+    assert chain[:14] == [
         "Title", "Summary", "Remove bitcoin", "Hashtags", "Choose Cover Image",
         "Remove Carol", "Add Co-Author…", "Hide Details", "Link name",
-        "Cover image address", "Publishing as DrShift"] + [b.text() for b in left_to_right]
+        "Cover image address", "2 suggestions", "Publishing as DrShift"] + [
+            b.text() for b in left_to_right]
     sheet.close()
 
 
@@ -1111,8 +1112,8 @@ def test_the_alert_claims_nothing_of_the_relays_that_may_be_untrue(
     monkeypatch.setattr(article_module, "ask", lambda *a, **k: alerts.append(k) or "cancel")
     asked = []
     sheet = (file_article(tmp_path, asked) if from_file else article(
-        tmp_path, default_slug="my-post", published_at_lookup=lambda a, s, done: asked.append(
-            (a, s, (), done))))
+        tmp_path, default_title="Hello", default_slug="my-post",
+        published_at_lookup=lambda a, s, done: asked.append((a, s, (), done))))
     sheet._on_publish()
     asked[-1][3](FirstPublication(UNKNOWN))
     message = alerts[0]["message"]

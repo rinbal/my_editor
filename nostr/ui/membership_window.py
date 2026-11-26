@@ -8,7 +8,7 @@ One window with a page for each stage of joining, in the order it happens:
     apply      the statutes, consent, and the optional details
     pay        the invoice as a QR code to scan with a wallet, and Copy Invoice
     member     the membership card, then what MyEditor set up and the one
-               step left for each, and Manage for the rest
+               step left for each, STANDUP, and Manage for the rest
     working    the short wait while the signer and the association answer
 
 The window follows Apple's Human Interface Guidelines the way the rest of
@@ -23,10 +23,12 @@ runs (it is renewed by hand, and nothing is charged automatically), then
 a row for each thing MyEditor sets up. A row says it is done, in words
 beside a check mark, only when it is (the relay list has the members'
 relay, the profile shows the address); otherwise it offers the one
-button left. What the association's guide sets up gets a row of its
-own, without a check mark. What needs the membership service is said to
-be unavailable while the service can't be reached, with Try Again,
-rather than vanishing. Receipt, details, export and deletion are in
+button left. STANDUP, the association's publishing platform, needs
+nothing set up: its row opens Submissions, where MyEditor hands articles
+in to its publications. What the association's guide sets up gets a row
+of its own, without a check mark. What needs the membership service is
+said to be unavailable while the service can't be reached, with Try
+Again, rather than vanishing. Receipt, details, export and deletion are in
 Manage; Done starts with the focus.
 
 Nothing is signed by opening the window. The fee is read without a
@@ -108,6 +110,7 @@ _CALENDAR_NOTE = _("Membership runs for a calendar year. You renew it yourself; 
 _RELAY_TINT = ORANGE.name()
 _STORAGE_TINT = "#0A84FF"
 _ADDRESS_TINT = "#5E5CE6"
+_STANDUP_TINT = "#40C8E0"
 _MORE_TINT = "#8E8E93"
 # From here the storage is said to be almost full, in the bar's color too.
 _ALMOST_FULL = 0.9
@@ -162,12 +165,14 @@ class MembershipWindow(AssistantWindow):
     profile_address_requested = Signal(str)
     data_erased = Signal(str)         # pubkey whose membership data the association deleted
     media_library_requested = Signal()  # open the Media Library, from Media storage
+    submissions_requested = Signal()    # show Submissions, from STANDUP
 
     def __init__(self, api, *, pubkey: Optional[str] = None,
                  known_member: Optional[bool] = None, handle: Optional[str] = None,
                  signs_locally: bool = False, profile_address: str = "",
                  relay_listed: bool = False, member_year: Optional[int] = None,
                  storage_used: Optional[Callable[[], Optional[int]]] = None,
+                 offers_submissions: bool = False,
                  is_dark: bool = True,
                  watcher_factory: Optional[Callable] = None,
                  prices=None,
@@ -194,6 +199,9 @@ class MembershipWindow(AssistantWindow):
         # Media Library last listed them in full; None when that is not
         # known. Read whenever the member page shows.
         self._storage_used = storage_used or (lambda: None)
+        # Handing in to a publication is offered (a STANDUP server is set):
+        # the member page then has a STANDUP row.
+        self._offers_submissions = offers_submissions
 
         self._build_overview()
         self._build_working()
@@ -970,6 +978,14 @@ class MembershipWindow(AssistantWindow):
             _("Nostr address"), symbol="at", tint=_ADDRESS_TINT))
         self._address_row.show_button(_("Choose…"))
         self._address_row.button.clicked.connect(self._on_address_button)
+        self._standup_row = None
+        if self._offers_submissions:
+            self._standup_row = mine.add_row(ListRow("STANDUP", symbol="article",
+                                                     tint=_STANDUP_TINT))
+            self._standup_row.set_detail(_("Hand in articles to its publications and talk "
+                                           "them through with the editorial team."))
+            self._standup_row.show_button(_("Open Submissions"))
+            self._standup_row.button.clicked.connect(self._open_submissions)
         col.addWidget(mine)
         col.addSpacing(16)
 
@@ -1115,6 +1131,14 @@ class MembershipWindow(AssistantWindow):
             bar.style().polish(bar)
         self._storage_row.set_detail(detail)
         bar.setVisible(used is not None)
+
+    # -- STANDUP ---------------------------------------------------------------------
+
+    def _open_submissions(self) -> None:
+        """Submissions are in the main window, beside the text: the member
+        page steps aside so nothing covers them."""
+        self.submissions_requested.emit()
+        self.accept()
 
     # -- the Nostr address -----------------------------------------------------------
 

@@ -14,3 +14,5 @@ nostr/language_catalog.json text eol=lf
 nostr/multilingual_contract.json text eol=lf
 tests/fixtures/multilingual-vectors.json text eol=lf
 tests/fixtures/editorial-v1-check_revision.py.txt text eol=lf
+nostr/publication_check.json text eol=lf
+tests/fixtures/publication_check_cases.json text eol=lf

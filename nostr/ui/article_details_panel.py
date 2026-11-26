@@ -57,6 +57,8 @@ from .authors_section import AuthorsSection
 from .coauthors import Coauthors
 from .cover_field import CoverImageField
 from .secret_key_check import slug_problem
+from ..readiness import COVER_LOCAL
+from .readiness_view import ReadinessView
 from .tag_field import TagField
 
 MIN_WIDTH = 260
@@ -206,6 +208,24 @@ class ArticleDetailsPanel(QFrame):
         self._all_kept_note.setWordWrap(True)
         self._all_kept_note.hide()
         form.addWidget(self._all_kept_note)
+
+        # The Publication Check first: what keeps the article from going
+        # out, what would make it better (readiness_view). Show goes to a
+        # field here; what is in the text is said, not shown. With no
+        # article, the section is not there at all.
+        self._readiness_section = QWidget()
+        box = QVBoxLayout(self._readiness_section)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(form.spacing())
+        self._section(box, _("Before Publishing"), first=True)
+        self.readiness = ReadinessView(
+            compact=False, is_dark=self._is_dark,
+            action=lambda finding: _("Show") if finding.field in self._FIELDS else None)
+        self.readiness.action_requested.connect(self._show_finding)
+        box.addWidget(self.readiness)
+        self._section(box, "")                      # the line to the next section
+        self._readiness_section.hide()
+        form.addWidget(self._readiness_section)
 
         # Grouped as Pages groups its inspector: a title over each section and
         # a line between them, what is changed most often first.
@@ -393,6 +413,7 @@ class ArticleDetailsPanel(QFrame):
         self._is_dark = is_dark
         self.cover.set_dark(is_dark)
         self.hashtags.set_dark(is_dark)
+        self.readiness.set_dark(is_dark)
         self._apply_theme()
 
     # -- showing a tab's article ------------------------------------------------
@@ -574,6 +595,35 @@ class ArticleDetailsPanel(QFrame):
         title = self.title_edit.text().strip() or self._derived_title
         self.identifier_edit.setPlaceholderText(
             self._made_identifier or (slugify(title) if title else _("my-article")))
+
+    # -- the Publication Check ------------------------------------------------
+
+    def show_readiness(self, result) -> None:
+        """The check's verdict on the article shown (nostr.readiness.Result),
+        or None: no section."""
+        self.readiness.show_result(result)
+        self._readiness_section.setVisible(result is not None)
+
+    def show_readiness_section(self) -> None:
+        """Scrolled to the check, with its first control focused (the
+        page's verdict line asks for it)."""
+        self._form.verticalScrollBar().setValue(0)
+        first = next((w for w in self.readiness.focus_chain() if w.isVisibleTo(self)), None)
+        (first or self.title_edit).setFocus(Qt.FocusReason.OtherFocusReason)
+
+    # The fields here Show can take a finding to.
+    _FIELDS = ("title", "summary", "tags", "image", "link_name")
+
+    def _show_finding(self, finding) -> None:
+        """Show: the field here that holds what a finding is about."""
+        if finding.field == "link_name":
+            self.advanced_toggle.setChecked(True)
+        field = {"title": self.title_edit, "summary": self.summary_edit, "tags": self.hashtags,
+                 "image": (self.cover.url_edit if finding.code in ("cover.unsafe", COVER_LOCAL)
+                           else self.cover.pick_button or self.cover),
+                 "link_name": self.identifier_edit}[finding.field]
+        self._form.ensureWidgetVisible(field)
+        field.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _say_cover_problem(self, reason: str) -> None:
         announce.field_problem(self.cover.url_edit, self.cover_problem, reason)

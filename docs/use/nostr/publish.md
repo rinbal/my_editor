@@ -24,11 +24,13 @@ Choose **Nostr > Publish as Article…** (**⇧⌘A** / **Ctrl+Shift+A**). The s
 
 The article's text is your document exactly as written: headings, bold, italic, links, lists, quotes, code, tables, footnotes and photo groups. Underline and colors have no Markdown and stay in your local file.
 
+**Before it goes out, MyEditor checks the article.** Under the fields the sheet says what still keeps it from going out, such as a missing title or a cover address that can't be published, and **Publish** waits until that is fixed. **Show** takes you to the field. A secret key in the title, summary or text gets **Replace with Public Key** instead: the article then links to the key's owner. What would make the article better, such as a summary or a description for a picture, is one folded line of suggestions; they never stop you. For an article you handed in to a publication on [STANDUP](einundzwanzig.md), the check says **Ready for STANDUP** and also what helps an article on Discover. What only STANDUP refuses, such as an article longer than STANDUP takes, never keeps it from your relays: it is said as a suggestion. The same verdict is under the article's summary on the page (click it to open **Before Publishing** in Article Details), and in full in **Article Details**. **Publish both** checks the original too. STANDUP's editor checks with the same rules and words.
+
 **Publishing again updates the article.** An article keeps its link name once it is out, so publishing it again replaces the old version at the same address, and readers keep the date it first went out.
 
 ## Article Details
 
-**View > Article Details** (**⌥⌘I** / **Ctrl+F5**) opens the same details in a panel beside the document, as Pages has its inspector: title, summary, cover, hashtags, authors, and under **Advanced** the link name and when it first went out. What you type there belongs to the article at once, and the publish sheet shows the same.
+**View > Article Details** (**⌥⌘I** / **Ctrl+F5**) opens the same details in a panel beside the document, as Pages has its inspector: first the check before publishing, then title, summary, cover, hashtags, authors, and under **Advanced** the link name and when it first went out. What you type there belongs to the article at once, and the publish sheet shows the same.
 
 A Markdown file keeps these details in its front matter, the block at its top that Jekyll, Hugo and Obsidian use. MyEditor changes only the lines you changed, in the file's own style, and leaves everything else in that block as written.
 

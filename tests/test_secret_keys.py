@@ -234,6 +234,18 @@ def test_json_that_cant_be_read_in_full_is_never_signed(content):
     assert _sign_locally(event) == {"refused": refs.UNREADABLE_REFUSED}
 
 
+@pytest.mark.parametrize("opening", ["[Intro](https://example.com) ", '"Quote" ', "{note} "])
+def test_a_long_article_that_opens_like_json_is_read_as_text(opening):
+    """Notes and articles are text: their first character never makes them
+    JSON, so length alone doesn't refuse them, and a key in them is found."""
+    for kind in (1, 30023):
+        article = {"kind": kind, "created_at": 1, "tags": [],
+                   "content": opening + "Words. " * 45_000}               # 315,000 characters
+        assert refs.secret_keys_in_event(article) == []
+        article["content"] += NSEC
+        assert refs.secret_keys_in_event(article) == [NSEC]
+
+
 def test_a_key_deep_in_json_that_can_be_read_is_found():
     event = {"kind": 0, "created_at": 1_800_000_000, "tags": [],
              "content": "[" * 900 + json.dumps(f"My key:\n{NSEC}") + "]" * 900}
@@ -417,6 +429,27 @@ def test_a_key_in_any_field_of_the_article_dialog_is_not_published(tmp_path, ans
     assert ["title", f"About {OWNER}"] in event["tags"]
 
 
+def test_a_key_in_the_title_is_said_there_and_its_row_replaces_it_for_publish(tmp_path, answers):
+    """The check names the field that holds the key, and its row offers
+    Replace with Public Key; Publish then sends the link to its owner."""
+    from nostr.publisher import NEVER, FirstPublication
+    from nostr.readiness import SECRET_KEY
+    _queue, asked = answers
+    dialog = _dialog("article", tmp_path, None)
+    dialog._published_at_lookup = lambda author, slug, answer, **kw: answer(FirstPublication(NEVER))
+    dialog._title_edit.setText(f"About {NSEC}")
+    [found] = dialog._readiness.result().blockers
+    assert (found.code, found.field) == (SECRET_KEY, "title") and not dialog._publish_btn.isEnabled()
+    replace = dialog._readiness.focus_chain()[1]
+    assert replace.text() == "Replace with Public Key"
+    replace.click()
+    assert dialog._publish_btn.isEnabled() and asked == []
+    dialog._on_publish()
+    settle()
+    event = dialog._relay_pool.published[-1][1]
+    assert ["title", f"About {OWNER}"] in event["tags"] and refs.secret_keys_in_event(event) == []
+
+
 def test_a_key_in_the_slug_is_refused_never_rewritten(tmp_path, answers):
     queue, asked = answers
     dialog = _dialog("article", tmp_path, None)
@@ -476,7 +509,11 @@ def test_a_key_in_the_slug_never_leaves_the_computer(tmp_path, monkeypatch):
     assert asked == [] and dialog._relay_pool.published == []
     dialog._slug_edit.setText("backup")
     dialog._on_slug_edited("backup")
-    assert dialog._slug_problem.isHidden() and dialog._publish_btn.isEnabled()
+    # The title still holds it: the Publication Check says so, Publish waits.
+    assert dialog._slug_problem.isHidden() and not dialog._publish_btn.isEnabled()
+    assert "secret.in_event" in [f.code for f in dialog._readiness.result().blockers]
+    dialog._title_edit.setText("Backup")
+    assert dialog._publish_btn.isEnabled()
     dialog._slug_edit.setText(f"backup-{NSEC}")
     dialog._on_slug_edited(dialog._slug_edit.text())
     heard.clear()

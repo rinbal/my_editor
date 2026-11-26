@@ -181,11 +181,13 @@ class _Details:
 
     _fill_article_details_panel = MainWindow._fill_article_details_panel
     _link_name_lock = MainWindow._link_name_lock
+    _article_now = staticmethod(lambda _ed: ("", None))   # title and check: test_readiness_wiring
 
     def __init__(self, writer, details: ArticleDetails, *, active: bool = True) -> None:
         self.shown = []
         self._article_details_panel = types.SimpleNamespace(
             isVisible=lambda: True, set_derived_title=lambda _title: None,
+            show_readiness=lambda _result: None,
             show_article=lambda _details, **kw: self.shown.append(kw))
         self.act_article_details = types.SimpleNamespace(isChecked=lambda: True)
         self._ed = types.SimpleNamespace()
@@ -210,9 +212,6 @@ class _Details:
         return self._details
 
     def _link_name_for_file(self, _path, _author) -> str:
-        return ""
-
-    def _derived_title_of(self, _ed) -> str:
         return ""
 
 

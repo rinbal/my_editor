@@ -61,7 +61,7 @@ from PySide6.QtWidgets import (
 )
 
 import announce
-from alerts import CANCEL, DEFAULT, NORMAL, Button, ask, answer_return_as_the_system_does
+from alerts import CANCEL, DEFAULT, NORMAL, Button, answer_return_as_the_system_does, ask, inform
 from constants import (
     DARK_BORDER, DARK_MENU_BG, DARK_MUTED_FG, LIGHT_BG, LIGHT_BORDER, LIGHT_MUTED_FG,
 )
@@ -87,16 +87,18 @@ from ..publish_pipeline import answers_detail, not_taken_words, same_event
 from .language_chooser import language_name
 from ..multilingual import is_translation_tag, translation_metadata, translation_tags
 from ..publication_journal import PublicationJournal
+from ..readiness import COVER_LOCAL, NOSTR, SECRET_KEY, Finding, Result, finding_sentence
 from ..multilingual_publish import PairPublication
 from ..publisher import (
     FOUND, NEVER, FirstPublication, PublishedMedia, PublishJob, PublishResult, build_article,
-    file_link_names, find_first_publication, link_name, slugify,
+    file_link_names, find_first_publication, link_name, slugify, without_secret_keys,
 )
 from ..relay import RelayPool
 from ..search import Nip50SearchClient
 from .coauthors import Coauthors
 from .cover_field import CoverImageField
 from .mention_picker import MentionPicker
+from .readiness_view import ReadinessView, check_article
 from . import appearance
 from .publish_sheet import (
     AccountRow, BottomRow, PeopleRow, StatusLine, cut_after_a_word, fit_margins, fit_to_window,
@@ -301,6 +303,7 @@ class PublishArticleDialog(QDialog):
         published_at_lookup: Optional[
             Callable[[str, str, Callable[[FirstPublication], None]], None]] = None,
         media: Sequence[PublishedMedia] = (),
+        outcome: str = NOSTR,
         parent=None,
         is_dark: bool = True,
     ) -> None:
@@ -362,6 +365,9 @@ class PublishArticleDialog(QDialog):
         # the file's own names (find_first_publication).
         self._published_at_lookup = published_at_lookup or self._look_up_published_at
         self._looking_up = False
+        # Replace with Public Key, chosen on the check's row: every plain
+        # secret key goes out as the link to its owner (secret_key_check).
+        self._replace_keys = False
         # The link name and first publication date being published with,
         # and once a relay took it, published with: only then do they go
         # back to the document (details()).
@@ -374,6 +380,8 @@ class PublishArticleDialog(QDialog):
         # What is known of the pictures, audio and video in the text, for
         # their descriptions (NIP-92 imeta).
         self._media = tuple(media)
+        # Which Publication Check verdict it waits for (readiness_view).
+        self._outcome = outcome
         # The link name follows the title until it is typed. An article
         # that has one already (its draft's, its file's) keeps it, and so
         # does one this computer published under it: another one would
@@ -457,6 +465,16 @@ class PublishArticleDialog(QDialog):
                                    is_dark=self._is_dark)
         self._account.switched.connect(self._on_account_switched)
         self._columns.addLayout(self._build_form(default_title, default_slug), 1)
+        # The Publication Check, when it has something to say: under the
+        # fields, scrolling with them in the smallest window.
+        self._readiness = ReadinessView(compact=True, is_dark=self._is_dark,
+                                        action=self._action_for)
+        self._readiness.action_requested.connect(self._on_finding_action)
+        # What it says is in sight: the sheet grows with it (rows that
+        # came, suggestions unfolded), as far as its window has room, and
+        # keeps that height while a blocker comes and goes with the typing.
+        self._readiness.size_changed.connect(self._grow)
+        page.addWidget(self._readiness)
         self._scroll = scroll_area(content)
         root.addWidget(self._scroll, 1)
 
@@ -493,7 +511,7 @@ class PublishArticleDialog(QDialog):
         # Tab goes through the fields, then the account, then the buttons.
         QWidget.setTabOrder(self._details_toggle, self._slug_edit)
         QWidget.setTabOrder(self._slug_edit, self._image_edit)
-        QWidget.setTabOrder(self._image_edit, self._account.button)
+        self._order_tabs()
         answer_return_as_the_system_does(self.findChildren(QPushButton))
 
     def _add_row(self, label: str, buddy: Optional[QWidget], field: QWidget) -> None:
@@ -517,7 +535,15 @@ class PublishArticleDialog(QDialog):
         self._title_edit.setPlaceholderText(_("Article title"))
         self._title_edit.setAccessibleName(_("Title"))
         self._title_edit.textChanged.connect(self._on_title_changed)
-        self._add_row(_("Title:"), self._title_edit, self._title_edit)
+        title = QWidget()
+        title_column = QVBoxLayout(title)
+        title_column.setContentsMargins(0, 0, 0, 0)
+        title_column.setSpacing(3)
+        title_column.addWidget(self._title_edit)
+        # What keeps the title from being published, under it (the check's).
+        self._title_problem = self._problem_label()
+        title_column.addWidget(self._title_problem)
+        self._add_row(_("Title:"), self._title_edit, title)
         self._add_kept_note(form, "title")
 
         self._optional_start = form.rowCount()
@@ -525,11 +551,13 @@ class PublishArticleDialog(QDialog):
         self._summary_edit.setPlaceholderText(_("Short summary (one sentence)"))
         self._summary_edit.setAccessibleName(_("Summary"))
         self._summary_edit.textChanged.connect(self._refresh_card)
+        self._summary_edit.textChanged.connect(self._refresh_publish_enabled)
         self._add_row(_("Summary:"), self._summary_edit, self._summary_edit)
         self._add_kept_note(form, "summary")
 
         self._hashtags = TagField(is_dark=self._is_dark)
         self._hashtags.setAccessibleName(_("Hashtags"))
+        self._hashtags.changed.connect(self._refresh_publish_enabled)
         self._add_row(_("Hashtags:"), self._hashtags, self._hashtags)
         self._add_kept_note(form, "hashtags")
 
@@ -554,6 +582,7 @@ class PublishArticleDialog(QDialog):
         self._add_kept_note(cover_column, "image")
         self._cover.problem.connect(self._say_cover_problem)
         self._cover.changed.connect(lambda _text: self._cover_problem.hide())
+        self._cover.changed.connect(lambda _text: self._refresh_publish_enabled())
         self._add_row(_("Cover image:"), self._cover.pick_button or self._cover.preview, cover)
 
         self._add_coauthor = QPushButton(_("Add Co-Author…"))
@@ -677,6 +706,7 @@ class PublishArticleDialog(QDialog):
         self._cover.set_dark(is_dark)
         self._account.set_dark(is_dark)
         self._status.set_dark(is_dark)
+        self._readiness.set_dark(is_dark)
         if self._coauthor_picker is not None:
             self._coauthor_picker.set_dark(is_dark)
 
@@ -857,11 +887,32 @@ class PublishArticleDialog(QDialog):
         or an account that does not own them; "" when they can."""
         if not self._pair_source:
             return ""
-        if self._pair_source.get("problem"):
-            return self._pair_source["problem"]
+        original = self._original_problem()
+        if original:
+            return original
         if self._pair_source.get("owner") != self._account.profile().user_pubkey.lower():
             return _("Use the account that owns these versions.")
         return ""
+
+    def _original_problem(self) -> str:
+        """What keeps the original from going out with this version: its
+        own problem (the window's), else the first thing the Publication
+        Check finds that blocks it, as Publish both would send it; "" for
+        none. A secret key in it is asked about at Publish, as before
+        (secret_key_check)."""
+        if self._pair_source.get("problem"):
+            return self._pair_source["problem"]
+        source, profile = self._pair_source, self._account.profile()
+        details, body = source["details"], source["body"]
+        found = check_article(
+            body=body, title=details.title or default_title(body), summary=details.summary,
+            image=details.image, hashtags=details.hashtags, link_name=details.identifier,
+            published_at=details.published_at or None, media=source["media"],
+            extra_tags=details.published_tags(body, author=(profile.user_pubkey, "")) or None,
+            pubkey=profile.user_pubkey)
+        blocker = next((f for f in found.blockers if f.code != SECRET_KEY), None)
+        return (_("The original can’t go out yet.") + " " + finding_sentence(blocker)
+                if blocker is not None else "")
 
     def _return_to_original(self):
         self.reject()
@@ -873,11 +924,16 @@ class PublishArticleDialog(QDialog):
             self._source_card.setVisible(self._publish_pair and not self._pair_source_out)
         self._refresh_card()
         problem = self._pair_problem_words() if self._publish_pair else ""
-        self._pair_problem.setVisible(bool(self._publish_pair and self._pair_source.get("problem")))
+        self._pair_problem.setVisible(bool(self._publish_pair and self._original_problem()))
         self._set_status(problem, error=bool(problem))
         self._update_scope()
         self._refresh_publish_enabled()
         self._refit()
+
+    def _grow(self) -> None:
+        if self.isVisible():
+            self._scroll.widget().layout().activate()
+            self._fit(self.width())
 
     def _refit(self) -> None:
         """As tall as what it shows now needs: a card gone or a message
@@ -916,21 +972,85 @@ class PublishArticleDialog(QDialog):
 
     def _refresh_publish_enabled(self) -> None:
         slug = self._slug()
-        # A key in the link name is said under it, before anything is sent
-        # (not even the question whether the article went out before),
-        # with Show Details open so the field it names can be seen.
+        # The Publication Check: no title, no link name (NIP-23 requires the
+        # d-tag), no text, a cover still uploading or one that can't be
+        # published, a secret key, and whatever else it blocks on.
+        result = self._check()
+        if self._readiness.show_result(result):
+            self._order_tabs()
+        # A blocker of the title or the link name is said under the field
+        # too, the first one each. A key in the link name is said there
+        # before anything is sent (not even the question whether the article
+        # went out before), with Show Details open so the field can be seen.
+        said = {f.field: finding_sentence(f) for f in reversed(result.blockers)}
+        announce.field_problem(self._title_edit, self._title_problem, said.get("title", ""))
         problem = slug_problem(slug) or ""
-        announce.field_problem(self._slug_edit, self._slug_problem, problem)
+        announce.field_problem(self._slug_edit, self._slug_problem,
+                               problem or said.get("link_name", ""))
         if problem:
             self._show_details(True)
-        # NIP-23 requires the d-tag; an empty document has nothing to say;
-        # a cover still uploading is waited for.
         self._publish_btn.setEnabled(self._job is None and not self._looking_up
-                                     and bool(slug) and bool(self._body) and not problem
-                                     and not self._cover.uploading())
+                                     and self._readiness.result().ready and not problem)
         if self._pair_source:
             self._publication_options.setEnabled(self._job is None and not self._looking_up)
         self._publish_btn.setText(self._button_label())
+
+    def _order_tabs(self) -> None:
+        """Tab goes top to bottom: the fields, the check's controls (made
+        anew with each verdict), the account, the buttons."""
+        chain = [self._image_edit, *self._readiness.focus_chain(), self._account.button]
+        for before, after in zip(chain, chain[1:]):
+            QWidget.setTabOrder(before, after)
+
+    def _check(self) -> Result:
+        """The Publication Check on the article as Publish would build it."""
+        profile = self._account.profile()
+        return check_article(
+            body=self._body, title=self._title_edit.text(), summary=self._summary_edit.text(),
+            image=self._image_edit.text(), hashtags=self._hashtags.tags(),
+            # Following the title, the link name is the title's: no second finding.
+            link_name=None if self._slug_is_auto else self._slug(),
+            published_at=self._details.published_at or None, media=self._media,
+            extra_tags=self._details.published_tags(self._body, author=(profile.user_pubkey, ""))
+            or None, pubkey=profile.user_pubkey, outcome=self._outcome,
+            uploading=self._cover.uploading(), replace_keys=self._replace_keys)
+
+    # Where Show takes a finding: the field that holds it (the text is not
+    # in the sheet; its findings are said, not shown).
+    _FIELDS = ("title", "summary", "tags", "image", "link_name")
+
+    def _action_for(self, finding: Finding) -> Optional[str]:
+        """What a finding's row offers: a secret key, replaced by the link
+        to its owner (never one in the link name, the article's address);
+        else Show, for a field the sheet has."""
+        if finding.code == SECRET_KEY and finding.field != "link_name":
+            return _("Replace with Public Key")
+        return _("Show") if finding.field in self._FIELDS else None
+
+    def _on_finding_action(self, finding: Finding) -> None:
+        if finding.code != SECRET_KEY:
+            self._show_finding(finding)
+            return
+        self._replace_keys = True
+        self._refresh_publish_enabled()
+        if any(f.code == SECRET_KEY for f in self._readiness.result().blockers):
+            # An encrypted key names no owner to link to.
+            inform(self, title=_("This text contains a secret key"), caution=True,
+                   is_dark=self._is_dark,
+                   message=_("Anyone who has it can publish as its owner, and once "
+                             "published it can never be taken back. Remove it before "
+                             "publishing."), nostr=True)
+
+    def _show_finding(self, finding: Finding) -> None:
+        typed_cover = finding.code in ("cover.unsafe", COVER_LOCAL)
+        if finding.field == "link_name" or typed_cover:
+            self._show_details(True)
+        field = {"title": self._title_edit, "summary": self._summary_edit, "tags": self._hashtags,
+                 "link_name": self._slug_edit,
+                 "image": (self._image_edit if typed_cover
+                           else self._cover.pick_button or self._cover.preview)}[finding.field]
+        self._scroll.ensureWidgetVisible(field)
+        field.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _button_label(self) -> str:
         """The one label of the Publish button: Try Again after no relay
@@ -1005,11 +1125,11 @@ class PublishArticleDialog(QDialog):
 
     def _on_publish(self) -> None:
         slug = self._slug()
-        if (not slug or not self._body or self._job is not None or self._looking_up
-                or slug_problem(slug) or self._cover.uploading()):
+        if (self._job is not None or self._looking_up or slug_problem(slug)
+                or not self._check().ready):
             return
-        if self._publish_pair and self._pair_source.get("problem"):
-            self._set_status(self._pair_source["problem"], error=True)
+        if self._publish_pair and self._pair_problem_words():
+            self._set_status(self._pair_problem_words(), error=True)
             return
         author = self._account.profile().user_pubkey
         known = self._first_published.get(slug) or (
@@ -1156,6 +1276,8 @@ class PublishArticleDialog(QDialog):
             self._say_not_published(_("Something in Article Details can’t be used: check it "
                                       "and try again."), str(exc))
             return
+        if self._replace_keys:
+            unsigned = without_secret_keys(unsigned) or unsigned
         unsigned = publishable(self, unsigned, is_dark=self._is_dark)
         if unsigned is None:
             return
