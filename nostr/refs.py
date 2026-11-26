@@ -344,6 +344,11 @@ UNREADABLE_REFUSED = N_("Its text is too long or too deeply nested to check for 
 # reading it would hold up signing (it is refused instead).
 _JSON_LIMIT = 256 * 1024
 
+# Kinds whose content is text (a note, a Markdown article), never JSON: read
+# as it stands, so a long article that opens with a link, a quote or a brace
+# is not taken for JSON too long to read and refused.
+_TEXT_KINDS = frozenset({1, 30023})
+
 
 def secret_keys_in_event(event: dict) -> Optional[List[str]]:
     """The Nostr secret keys in what ``event`` makes public: its content
@@ -352,7 +357,7 @@ def secret_keys_in_event(event: dict) -> Optional[List[str]]:
     every tag, each once. None when the content is JSON too long or too
     deeply nested to read in full: what can't be read can't be cleared."""
     content = event.get("content") or ""
-    values = _content_strings(content)
+    values = [content] if event.get("kind") in _TEXT_KINDS else _content_strings(content)
     if values is None:
         return None
     values += [value for tag in event.get("tags") or () for value in tag

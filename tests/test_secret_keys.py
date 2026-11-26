@@ -234,6 +234,18 @@ def test_json_that_cant_be_read_in_full_is_never_signed(content):
     assert _sign_locally(event) == {"refused": refs.UNREADABLE_REFUSED}
 
 
+@pytest.mark.parametrize("opening", ["[Intro](https://example.com) ", '"Quote" ', "{note} "])
+def test_a_long_article_that_opens_like_json_is_read_as_text(opening):
+    """Notes and articles are text: their first character never makes them
+    JSON, so length alone doesn't refuse them, and a key in them is found."""
+    for kind in (1, 30023):
+        article = {"kind": kind, "created_at": 1, "tags": [],
+                   "content": opening + "Words. " * 45_000}               # 315,000 characters
+        assert refs.secret_keys_in_event(article) == []
+        article["content"] += NSEC
+        assert refs.secret_keys_in_event(article) == [NSEC]
+
+
 def test_a_key_deep_in_json_that_can_be_read_is_found():
     event = {"kind": 0, "created_at": 1_800_000_000, "tags": [],
              "content": "[" * 900 + json.dumps(f"My key:\n{NSEC}") + "]" * 900}
