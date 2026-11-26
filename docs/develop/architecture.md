@@ -47,4 +47,4 @@ The tests live in `tests/` and run with pytest. `tests/conftest.py` gives every 
 
 ## Releases
 
-Release notes are written per version in [docs/releases/](../releases/README.md); the release workflow uses `docs/releases/v<version>.md` as the GitHub release text. The steps are in [release-process.md](release-process.md).
+Release notes are written per version in [docs/releases/](../releases/README.md); the release workflow uses `docs/releases/v<version>.md` as the GitHub release text. The steps are in [release-process.md](release-process.md). A beta tagged on `dev` is published as a pre-release, with a list of changes GitHub writes: see [Beta releases](../../packaging/README.md#beta-releases).
