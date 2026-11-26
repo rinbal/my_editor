@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CASES = json.loads((ROOT / "tests" / "fixtures" / "publication_check_cases.json").read_text(encoding="utf-8"))
 # Copied unchanged from STANDUP (see tests/fixtures/README.md); re-copy, never edit.
 RULES_SHA256 = "adc5d7c51e35e75762d92ecfe63e05b26cda2e3ea243f3bde026972b3dcda2df"
-CASES_SHA256 = "ae8e03561bea3d785161d2f93d552e54f493b82ec1c570fafedff01e95ef9675"
+CASES_SHA256 = "dc47e15ddc5901037e34837e49e79d1ffbf66c0132629b9b41ba023fea4bf535"
 
 
 def _content(value):

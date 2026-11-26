@@ -35,6 +35,8 @@ def description_of(alt: str, name: str, stored: str = "") -> str:
     words = alt.strip()
     file = posixpath.basename(without_wide(name).replace("\\", "/").split("?")[0])
     names = {"", "image"}
+    # lower(), not casefold(): STANDUP's twin (publicationCheck.js
+    # descriptionOf) has only toLowerCase, and both apps count alike.
     for named in (file, stored):
-        names.update((named.casefold(), posixpath.splitext(named)[0].casefold()))
-    return "" if words.casefold() in names else words
+        names.update((named.lower(), posixpath.splitext(named)[0].lower()))
+    return "" if words.lower() in names else words

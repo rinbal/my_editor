@@ -93,8 +93,19 @@ _PICTURE = re.compile(r"!\[([^\]]*)\]\(\s*<?([^\s)>]*)")
 _TITLED_LINK = re.compile(r"\]\(\s*<?[^\s)>]*>?\s+(?:\"([^\"]*)\"|'([^']*)')\s*\)")
 _PARAGRAPH_BREAK = re.compile(r"\n[ \t]*\n")
 _ITALIC = re.compile(r"([*_])(?![*_\s])[\s\S]*\S\1")
-_WEB_ADDRESS = re.compile(r"https?://", re.IGNORECASE)
+_WEB_ADDRESS = re.compile(r"https?://")           # as Discover tells one (discover_selection.lead_eligible)
+# A gallery's, an interview's or a recording's front matter: STANDUP's own
+# (htmlgen/structured_content.py), which Discover leaves out of the words.
+_FRONT_MATTER = re.compile(r"^---\r?\n(.*?)\r?\n---(?:\r?\n|$)", re.DOTALL)
+_STRUCTURED = re.compile(r"^type:\s*(gallery|interview|podcast)\s*$", re.MULTILINE)
 _UNSAFE_CHARACTER = re.compile(r"[\s\x00-\x1f\x7f]")
+
+
+def readable_body(content: str) -> str:
+    """The words Discover counts: the text without a gallery's or an
+    interview's front matter. An article's own ``---`` lines stay text."""
+    found = _FRONT_MATTER.match(content)
+    return content[found.end():] if found and _STRUCTURED.search(found.group(1)) else content
 
 
 def prose_of(markdown: str) -> str:
@@ -238,7 +249,7 @@ def _body_short(a: _Article, facts, rules):
     if not a.content.strip():
         return None
     minimum = _discover(rules)["body_min_words"]
-    return {"count": minimum} if len(a.content.split()) < minimum else False
+    return {"count": minimum} if len(readable_body(a.content).split()) < minimum else False
 
 
 def _too_big_for_standup(a: _Article, facts, rules):
@@ -261,11 +272,11 @@ def _sponsored(a: _Article, facts, rules):
 def _date_future(a: _Article, facts, rules):
     if not a.published_at:
         return None
-    try:
-        moment = float(a.published_at)
-    except ValueError:
-        return False                    # as STANDUP reads it: no number, no future
-    return not facts["scheduled"] and moment > facts["now"]
+    # A date is a Unix time in plain digits (NIP-23); anything else is no
+    # date, so no future one (as STANDUP reads it).
+    if not re.fullmatch(r"[0-9]+", a.published_at):
+        return False
+    return not facts["scheduled"] and int(a.published_at) > facts["now"]
 
 
 _CHECKS: Dict[str, Callable] = {

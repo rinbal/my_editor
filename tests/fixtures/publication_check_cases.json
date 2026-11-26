@@ -39,6 +39,14 @@
       "checked": []
     },
     {
+      "name": "a text of only a next-line and a line separator is empty, as Python strips it",
+      "outcome": "nostr",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "Short."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": "\u0085\u2028" },
+      "ready": false,
+      "findings": [{ "code": "body.empty", "severity": "blocker" }],
+      "checked": ["title", "cover", "summary", "tags"]
+    },
+    {
       "name": "an empty article for STANDUP leaves the Discover checks out",
       "outcome": "standup",
       "event": { "tags": [["d", "x"], ["title", "   "]], "content": "  \n " },
@@ -116,6 +124,22 @@
       "event": { "tags": [["title", "https://example.org/post"], ["summary", "What this article is about, said in a sentence that runs past eighty characters."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": [{ "repeat": "word ", "times": 400 }] },
       "ready": true,
       "findings": [{ "code": "discover.title_short", "severity": "suggestion", "params": { "count": 8 } }],
+      "checked": ["title", "body", "cover", "size", "summary", "tags"]
+    },
+    {
+      "name": "a title in capitals that starts like a web address is a title for Discover",
+      "outcome": "standup",
+      "event": { "tags": [["title", "HTTPS://example.org/post"], ["summary", "What this article is about, said in a sentence that runs past eighty characters."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": [{ "repeat": "word ", "times": 400 }] },
+      "ready": true,
+      "findings": [],
+      "checked": ["title", "body", "cover", "size", "summary", "tags", "discover"]
+    },
+    {
+      "name": "a gallery's front matter is no words for Discover",
+      "outcome": "standup",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "What this article is about, said in a sentence that runs past eighty characters."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"]], "content": ["---\ntype: gallery\nnote: ", { "repeat": "word ", "times": 400 }, "\n---\n\nA few words."] },
+      "ready": true,
+      "findings": [{ "code": "discover.body_short", "severity": "suggestion", "params": { "count": 400 } }],
       "checked": ["title", "body", "cover", "size", "summary", "tags"]
     },
     {
@@ -240,6 +264,14 @@
       "ready": true,
       "findings": [{ "code": "date.future", "severity": "suggestion" }],
       "checked": ["title", "body", "cover", "summary", "tags"]
+    },
+    {
+      "name": "a date in anything but plain digits is no date",
+      "outcome": "nostr",
+      "event": { "tags": [["title", "A long enough title"], ["summary", "Short."], ["image", "https://media.example.org/cover.jpg"], ["t", "bitcoin"], ["published_at", "1_900_000_000"]], "content": "Text." },
+      "ready": true,
+      "findings": [],
+      "checked": ["title", "body", "cover", "summary", "tags", "date"]
     },
     {
       "name": "a scheduled article's future date is intended",
